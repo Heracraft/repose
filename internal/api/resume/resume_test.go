@@ -46,7 +46,7 @@ func newEnv(t *testing.T, enforce bool) *env {
 }
 
 func (e *env) wire(enforce bool) {
-	gate := billing.NewGate(e.h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.herakraft.co", Enforce: enforce}, e.h.Metrics, e.h.Log)
+	gate := billing.NewGate(e.h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.run", Enforce: enforce}, e.h.Metrics, e.h.Log)
 	e.r = resume.New(e.h.Pool, e.h.Engine, gate, e.h.Metrics, e.h.Log)
 	e.r.Now = e.clock
 	e.r.Enabled = func() bool { return true }
@@ -773,12 +773,12 @@ func TestNoticeText(t *testing.T) {
 	back := time.Date(2026, 10, 10, 5, 46, 12, 0, time.UTC)
 	got := resume.NoticeText(back,
 		resume.Line{Slug: "todo-app", Outcome: resume.OutcomeStarted, Mux: "tmux"},
-		resume.Line{Slug: "api", Outcome: resume.OutcomeRefused, Reason: "Your account is suspended. Pay at https://repose.herakraft.co/billing to lift it, or email support."},
+		resume.Line{Slug: "api", Outcome: resume.OutcomeRefused, Reason: "Your account is suspended. Pay at https://repose.run/billing to lift it, or email support."},
 		resume.Line{Slug: "gone", Outcome: resume.OutcomeDestroyed},
 		resume.Line{Slug: "halted", Outcome: resume.OutcomeUserStopped},
 	)
 	want := "The server running your machines restarted; it was back at 05:46 UTC.\n" +
-		"api: not started: Your account is suspended. Pay at https://repose.herakraft.co/billing to lift it, or email support. `repose start api` starts it.\n" +
+		"api: not started: Your account is suspended. Pay at https://repose.run/billing to lift it, or email support. `repose start api` starts it.\n" +
 		"todo-app: running again; its last agent turn was interrupted."
 	if got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)

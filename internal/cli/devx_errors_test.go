@@ -58,7 +58,7 @@ func TestLaptopSSHFaults(t *testing.T) {
 		{"unix_listener: path \"/Users/someone/.ssh/x\" too long for Unix domain socket", true, "ControlPath"},
 		{"/Users/a/.ssh/config: line 4: Bad configuration option: usekeychainx\n/Users/a/.ssh/config: terminating, 1 bad configuration options", true, "Fix the line"},
 		{"ssh: Could not resolve hostname todo-app.repose: nodename nor servname provided, or not known", true, "Include ~/.ssh/repose/config"},
-		{"ssh: Could not resolve hostname ssh.repose.herakraft.co: Name or service not known", true, ""},
+		{"ssh: Could not resolve hostname ssh.repose.run: Name or service not known", true, ""},
 		{"Host key verification failed.", true, "known_hosts"},
 		{"Bad owner or permissions on /home/a/.ssh/config", true, "chmod 600"},
 		{"ssh: connect to host 10.64.0.2 port 22: Connection refused", false, ""},

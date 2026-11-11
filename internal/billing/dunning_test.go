@@ -57,7 +57,7 @@ func TestDunningDays(t *testing.T) {
 	if k := eventKinds(t, pool, a); len(k) != 2 || k[1] != "payment_failed" {
 		t.Fatalf("events %v", k)
 	}
-	if p := accountEmail(t, pool, a, "payment_failed", "Solo", "$49.00", "https://repose.herakraft.co/billing"); p["plan"] != "solo" || p["amount_cents"] != float64(4900) {
+	if p := accountEmail(t, pool, a, "payment_failed", "Solo", "$49.00", "https://repose.run/billing"); p["plan"] != "solo" || p["amount_cents"] != float64(4900) {
 		t.Fatalf("day 2 payload %v", p)
 	}
 	if outboxEmails(t, pool, a) != 2 {

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-955 entries.
+957 entries.
 
 ## Scope
 
@@ -987,3 +987,5 @@ pointer, not a summary.
 - **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32842
 - **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32880
 - **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32914
+- **I-1156** repose answers on `repose.run`; the Logto API resource and the host-to-api gRPC name keep the old name — 2026-11-11; L33028
+- **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33093

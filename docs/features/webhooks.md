@@ -15,7 +15,7 @@ User-facing documentation is `apps/web/src/content/docs/webhooks.md`.
 ## 1. The URL
 
 ```
-https://hooks.repose.herakraft.co/<project_id>/<route>/<token>[/rest][?query]
+https://hooks.repose.run/<project_id>/<route>/<token>[/rest][?query]
 ```
 
 - `project_id` is the project's UUIDv7. It is stable: a handle can
@@ -43,7 +43,7 @@ key).
 
 ```
 $ repose webhooks add stripe 3000/api/webhooks/stripe
-https://hooks.repose.herakraft.co/<project_id>/stripe/<token>
+https://hooks.repose.run/<project_id>/stripe/<token>
 
 $ repose webhooks
 NAME     TARGET                      START  LAST DELIVERY  STATUS
@@ -84,7 +84,7 @@ of the edge's memory gives no working URL.
 
 1. The sender POSTs to the URL. nftables accepts :443 under the
    per-source connection limits (256 open, 100 a second).
-2. The gateway's :443 completes TLS. SNI `hooks.repose.herakraft.co`
+2. The gateway's :443 completes TLS. SNI `hooks.repose.run`
    selects the `autocert` certificate; any other name falls through to
    the preview stub.
 3. The handler parses the path. A malformed one is 404.

@@ -6,5 +6,5 @@ Attach from your laptop
   repose attach --project todo-app
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
-About agents on your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+repose. Open the dashboard: https://repose.run
+About agents on your machines. Stop these emails: https://api.repose.run/v1/notify/unsubscribe?token=abc.def

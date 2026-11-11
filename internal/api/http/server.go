@@ -173,7 +173,7 @@ func New(d Deps) *Server {
 		d.Gate = billing.NewGate(d.Pool, billing.Config{Enforce: d.BillingEnforce}, d.Metrics, d.Log)
 	}
 	if d.Gateway.Host == "" {
-		d.Gateway = Gateway{Host: "ssh.repose.herakraft.co", Port: 22}
+		d.Gateway = Gateway{Host: "ssh.repose.run", Port: 22}
 	}
 	lim := DefaultRateLimits
 	if d.Limits != nil {
@@ -362,12 +362,14 @@ const corsExposedHeaders = "Repose-Event-Count, X-Request-Id"
 func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if component == "http" {
-			// The dashboard (repose.herakraft.co) and the api
-			// (api.repose.herakraft.co) are different origins, and every
-			// route here is authenticated by a bearer token, never a
-			// cookie, so a wildcard origin leaks no ambient credential
-			// (I-79). /internal is never called from a browser and gets
-			// no CORS headers at all.
+			// The dashboard (repose.run) and the api (api.repose.run)
+			// are different origins, and every route here is
+			// authenticated by a bearer token, never a cookie, so a
+			// wildcard origin leaks no ambient credential (I-79). The
+			// wildcard is also what lets the old repose.herakraft.co
+			// dashboard keep calling the api while both names answer
+			// (I-1156). /internal is never called from a browser and
+			// gets no CORS headers at all.
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", corsAllowedMethods)
 			w.Header().Set("Access-Control-Allow-Headers", corsAllowedHeaders)

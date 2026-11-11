@@ -224,7 +224,7 @@ func fmtGB(bytes int64) string {
 
 // PlanLimitMessage names the machines using the memory, or the class that
 // does not fit at all: "Your Solo plan runs 8 GB at once and todo-app is
-// using it. Stop it, or upgrade at https://repose.herakraft.co/billing."
+// using it. Stop it, or upgrade at https://repose.run/billing."
 // The fake api sends the same words; its test holds them equal.
 func PlanLimitMessage(plan Plan, class string, slugs []string, url string) string {
 	need := ClassMemoryGB(class)

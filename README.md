@@ -3,7 +3,7 @@
 Persistent remote environments for coding agents. `cd` into a project, run
 `repose run`, and an agent keeps working in a NixOS microVM after your laptop
 closes. Multi-tenant, billed by the hour with a monthly cap, hosted at
-`repose.herakraft.co`.
+`repose.run`.
 
 Everything about what this is and how it is built lives in [`docs/`](docs/README.md).
 Start there. Contributors and agents also read [`CLAUDE.md`](CLAUDE.md)

@@ -29,7 +29,7 @@
                       "type": "OUTLINED",
                       "onClick": {
                         "openLink": {
-                          "url": "https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb\u0026via=gchat"
+                          "url": "https://api.repose.run/v1/questions/reply?token=aaa.bbb\u0026via=gchat"
                         }
                       }
                     },
@@ -38,7 +38,7 @@
                       "type": "OUTLINED",
                       "onClick": {
                         "openLink": {
-                          "url": "https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd\u0026via=gchat"
+                          "url": "https://api.repose.run/v1/questions/reply?token=ccc.ddd\u0026via=gchat"
                         }
                       }
                     }

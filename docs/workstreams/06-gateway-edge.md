@@ -33,7 +33,7 @@ ports and the kernel's WireGuard, so it is a NixOS appliance deployed with
   the SSH session's project.
 - A stub for the HTTPS preview proxy: the listener on 443 exists, serves a
   static "previews are not enabled yet" page, and the code path that would
-  route `<port>-<slug>.repose.herakraft.co` is laid out with the
+  route `<port>-<slug>.repose.run` is laid out with the
   authentication cookie check as a documented function that returns
   `not implemented` until `features/ports-and-previews.md` is built.
 
@@ -265,7 +265,7 @@ do not add it.
 
 `:443` serves a static page and `/healthz`. `internal/gateway/preview/`
 contains `Route(host string) (Target, error)` parsing
-`<port>-<name>.repose.herakraft.co` into the port and the name as one
+`<port>-<name>.repose.run` into the port and the name as one
 opaque label (I-438: a slug and a handle joined by a dash cannot be split
 back), `Authenticate(r *http.Request) (userID, error)`
 returning `not implemented`, and a reverse proxy skeleton. The wildcard
@@ -276,7 +276,7 @@ pipeline is proven before the feature exists.
 ### 5.9 Webhook deliveries on the public :443 (DECISIONS I-1110)
 
 The same listener carries one more name,
-`hooks.repose.herakraft.co`, whose certificate Go's `autocert` gets over
+`hooks.repose.run`, whose certificate Go's `autocert` gets over
 TLS-ALPN-01 on that listener: no DNS token, no second port, and the
 listener may open before any certificate file exists, which amends
 I-479. The cache is a directory under the unit's `StateDirectory`,
@@ -315,7 +315,7 @@ to `127.0.0.1:<port>`, keeping one connection per project for 30 s.
 | Source IP auth flood | 4 connections in the handshake, then closed before the handshake (`rate_limited`) | metric |
 | Webhook route table stale (api unreachable) | the table keeps routing for up to 1 h from the last refresh, as the revocation cache does; a wake or a start needs the api, so a frozen machine's delivery is 503 `Retry-After: 30` | `webhook_table_fail` in the log; deliveries resume when the api returns |
 | Webhook delivery batch unsent | retried on the next flush; dropped after 10 minutes | the counts are missing from `repose webhooks` for that stretch |
-| Webhook certificate not issued | the handshake for the hooks name fails; the preview name is unaffected | `openssl s_client -servername hooks.repose.herakraft.co` shows no chain; check the DNS A record and the ACME cache |
+| Webhook certificate not issued | the handshake for the hooks name fails; the preview name is unaffected | `openssl s_client -servername hooks.repose.run` shows no chain; check the DNS A record and the ACME cache |
 
 ## 7. Testing
 
@@ -442,8 +442,8 @@ except keys and certificates, which are not changed by deploys.
       token, 11 §10)
 - [ ] The webhook name serves a Let's Encrypt chain on the same 443, and
       the preview name still gets the stub. Evidence: `openssl s_client
-      -servername hooks.repose.herakraft.co -connect <edge>:443`. Waits
-      on: owner (the A record for `hooks.repose.herakraft.co` while
+      -servername hooks.repose.run -connect <edge>:443`. Waits
+      on: owner (the A record for `hooks.repose.run` while
       `manage_dns` is false, `infra/README.md`), then a switch of the
       edge
 - [x] A webhook delivery reaches a listener on the guest's loopback over
@@ -512,7 +512,7 @@ listed here keep the local evidence of the 06 session.
   51820/udp public; 2222 from the tunnel and the operator /32; 8443, 6081,
   9100, 9102 from wg0 only); external scan of 20.102.98.254: 22, 443 open,
   2222 open from the operator address, 997 ports filtered.
-- Plain keys refused: `ssh probe.nobody@ssh.repose.herakraft.co` answers
+- Plain keys refused: `ssh probe.nobody@ssh.repose.run` answers
   `permission denied (certificate required)`; wrong principal at the real
   gateway and at a real guest's sshd: m3's isolation suite, two accounts.
 - The guest dialed with the gateway-issued certificate: every relay into

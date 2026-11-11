@@ -10,7 +10,7 @@ The CLI runs on Linux and macOS, x86-64 or ARM64. On Windows, install it inside 
 ## Install
 
 ```
-curl -fsSL https://repose.herakraft.co/install.sh | sh
+curl -fsSL https://repose.run/install.sh | sh
 ```
 
 The script downloads the latest release, checks it and installs `~/.local/bin/repose`. If `~/.local/bin` isn't on your `PATH`, the script adds it to your shell's startup file and says so; when that file can't be written, home-manager's read-only `~/.bashrc` for instance, it prints the line to add instead. Open a new terminal afterwards.
@@ -21,10 +21,10 @@ Other options:
 
 ```
 # for every user, in /usr/local/bin
-curl -fsSL https://repose.herakraft.co/install.sh | sh -s -- --system
+curl -fsSL https://repose.run/install.sh | sh -s -- --system
 
 # a particular release
-curl -fsSL https://repose.herakraft.co/install.sh \
+curl -fsSL https://repose.run/install.sh \
   | sh -s -- --version v0.1.11
 ```
 
@@ -81,7 +81,7 @@ If a package manager installed the binary (Nix, Homebrew, snap, your distributio
 A CLI too old to have the command updates the old way. Run the install command again:
 
 ```
-curl -fsSL https://repose.herakraft.co/install.sh | sh
+curl -fsSL https://repose.run/install.sh | sh
 ```
 
 ## Uninstall

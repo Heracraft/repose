@@ -75,7 +75,7 @@ let
         crontab | cron | crond | at)
           {
             printf '%s: command not found\n' "$cmd"
-            printf 'This machine has no cron; a systemd user timer runs a job on a schedule: https://repose.herakraft.co/docs/machine#scheduled-jobs\n'
+            printf 'This machine has no cron; a systemd user timer runs a job on a schedule: https://repose.run/docs/machine#scheduled-jobs\n'
           } >&2
           exit 127
           ;;

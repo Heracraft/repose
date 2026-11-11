@@ -148,6 +148,12 @@ in
         Where hostd registers and holds its gRPC stream. Production is the
         api; before it exists this is the `hostdev` stand-in (DECISIONS
         I-17), for example the edge's public address on 443.
+
+        It keeps the herakraft.co name after the move to repose.run: this
+        is the internal host-to-api address, and it is the name on the
+        certificate the api issues from its own CA, so moving it reissues
+        that certificate and needs a switch of every host and the edge in
+        the same window (DECISIONS I-1156).
       '';
     };
 

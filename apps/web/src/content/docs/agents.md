@@ -180,7 +180,7 @@ Gemini CLI on the machine doesn't ask whether you trust a folder. Turning `secur
 
 ## What agents are told about the machine
 
-repose gives every agent on the machine a short guide to it: that the machine is its own and can't reach your laptop, how to install a missing tool and keep it (`repose config add`), where your secrets are and never to print them, and how to reach you. It also points the agent at [/llms.txt](https://repose.herakraft.co/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. Your own `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are never changed, and what they say comes on top of the guide, which changes only with a platform update. To read the guide, on the machine:
+repose gives every agent on the machine a short guide to it: that the machine is its own and can't reach your laptop, how to install a missing tool and keep it (`repose config add`), where your secrets are and never to print them, and how to reach you. It also points the agent at [/llms.txt](https://repose.run/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. Your own `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are never changed, and what they say comes on top of the guide, which changes only with a platform update. To read the guide, on the machine:
 
 ```
 cat /etc/claude-code/CLAUDE.md

@@ -102,7 +102,7 @@ test('the install command shows in the hero and the first step, and its button c
 }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/');
-	const install = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
+	const install = 'curl -fsSL https://repose.run/install.sh | sh';
 	await expect(page.locator('.hero .install')).toHaveText(install);
 	await expect(page.locator('.steps li').first().locator('.code-copy')).toContainText(install);
 	expect(

@@ -3,10 +3,10 @@ claude · main · asked 28 Sep 18:00 UTC · open until 18:30 UTC
 
 Which address should the invoices go to?
 
-Write an answer: https://repose.herakraft.co/questions
+Write an answer: https://repose.run/questions
 
 Or from your laptop: repose reply todo-app
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
-About agents on your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+repose. Open the dashboard: https://repose.run
+About agents on your machines. Stop these emails: https://api.repose.run/v1/notify/unsubscribe?token=abc.def

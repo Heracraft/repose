@@ -121,7 +121,8 @@ restarts with a few seconds of stream loss that hostd's reconnect absorbs).
 
 `internal/api/auth`: middleware fetches Logto's JWKS from
 `<issuer>/oidc/jwks`, caches 1 hour, verifies RS256 or ES384, checks `aud`
-equals `https://api.repose.herakraft.co` and `exp`. The `sub` claim is the
+equals `https://api.repose.herakraft.co` (the audience, which did not move
+with the api, I-1156) and `exp`. The `sub` claim is the
 Logto user id. On first request for an unknown `sub`, the middleware calls
 Logto's Management API (`GET /api/users/<sub>`) to read email and the
 GitHub identity, derives `handle` from the GitHub login (lowercase, `[^a-z0-9-]`
@@ -230,7 +231,7 @@ host key pair for the guest, signing a host certificate with principal
 grpc doc gains `host_key` and `host_cert` fields on `CreateGuest` and
 `Restore`; recorded as I-3 and added to the interface doc by this
 workstream). Gateway host certificate: `repose-admin ca sign-host
---principal ssh.repose.herakraft.co` prints it for workstream 06's
+--principal ssh.repose.run` prints it for workstream 06's
 deployment.
 
 Revocation: `POST /certs/revoke` sets `revoked_at`; `/internal/revoked?since=`

@@ -1,14 +1,17 @@
-# Cloudflare records for the herakraft.co names repose answers on.
+# Cloudflare records for the names repose answers on, in whichever zone
+# the environment names (prod: repose.run, DECISIONS I-1156).
 #
 # This is a module, not a root, so DNS is created in the same apply as the
 # addresses it points at (docs/workstreams/11-infra-opentofu.md §2). A record
-# that outlives the IP it names is how `ssh.repose.herakraft.co` starts
+# that outlives the IP it names is how `ssh.repose.run` starts
 # resolving to somebody else's VM.
 #
-# Names: docs/DECISIONS.md R4-12 and I-15. repose.herakraft.co (dashboard),
-# api.repose.herakraft.co, ssh.repose.herakraft.co (gateway). Logto is the
-# owner's existing accounts.herakraft.co (I-84), not a name here. The wildcard for preview URLs is not
-# created; previews are out of scope for the first release (DESIGN §18).
+# Names: docs/DECISIONS.md R4-12, I-15 and I-1156. repose.run (dashboard),
+# api.repose.run, ssh.repose.run (gateway). Logto is the owner's existing
+# accounts.herakraft.co (I-84), not a name here, and neither are the old
+# repose.herakraft.co names that keep answering through the overlap. The
+# wildcard for preview URLs is not created; previews are out of scope for
+# the first release (DESIGN §18).
 
 terraform {
   required_version = ">= 1.6.0"

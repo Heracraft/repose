@@ -166,7 +166,7 @@ account's slugs for PROJECT and `--project`.
    unset, `DISPLAY` or macOS, not inside a guest (`REPOSE=1`)): start a
    listener on `127.0.0.1:0`, build the authorization URL with
    `code_challenge` (S256), `scope=openid offline_access profile email`,
-   `resource=https://api.repose.herakraft.co`, open the browser, wait up to
+   `resource=https://api.repose.herakraft.co` (the audience, I-1156), open the browser, wait up to
    5 minutes for the callback, exchange the code. Print `Logged in as
    <handle> (<email>)`.
 3. Otherwise, and by default, device code: `POST /oidc/device/auth`, print
@@ -186,7 +186,7 @@ account's slugs for PROJECT and `--project`.
 5. Call `GET /me`. If `billing.has_card` is false, print
 
    ```
-   No card on file. Add one at https://repose.herakraft.co/billing before
+   No card on file. Add one at https://repose.run/billing before
    the first `repose run`.
    ```
 
@@ -268,7 +268,7 @@ created; `repose ls` shows it.``
   certificate 0600. Nothing is `ssh-add`ed: the config names the key and
   certificate, and the key has no passphrase to cache.
 - Write `~/.ssh/repose/known_hosts` with `@cert-authority
-  ssh.repose.herakraft.co,10.64.* <host_ca_pub>` from the response.
+  ssh.repose.run,10.64.* <host_ca_pub>` from the response.
 - Rewrite `~/.ssh/repose/hosts` with one `Host <slug>.repose` block per
   project (the block in `interfaces/ssh-gateway.md`, with `ControlMaster
   auto`, `ControlPath ~/.ssh/repose/cm-%C`, `ControlPersist 10m` except on
@@ -666,7 +666,7 @@ under its old name, hidden from help, with one stderr line saying so.
 
 ### 5.11 Install, update and release
 
-`install.sh` at `https://repose.herakraft.co/install.sh`: detects
+`install.sh` at `https://repose.run/install.sh`: detects
 `uname -sm`, downloads `repose_<version>_<os>_<arch>.tar.gz` from the
 GitHub release, verifies the sha256 from `checksums.txt`, installs to
 `~/.local/bin` (or `/usr/local/bin` with sudo when `--system`), prints the
@@ -727,7 +727,7 @@ command line, a guest id, or the host's own wording (that is the op's
 | Situation | Outcome |
 |---|---|
 | Not logged in or refresh failed | exit 3, `Not logged in. Run \`repose login\`.` |
-| No card on file on create/start | exit 7, `Add a card at https://repose.herakraft.co/billing first.` |
+| No card on file on create/start | exit 7, `Add a card at https://repose.run/billing first.` |
 | `capacity` from create/start | exit 8, `repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.` (run.go, env.go; I-623 removed the "(We have been alerted.)" this row used to quote) |
 | `insufficient_capacity` from a failed op | exit 8, `Could not start <slug>: <the api's sentence> (insufficient_capacity).` The api names the cause and what works for it, one sentence per hostd producer, and the CLI adds nothing of its own (I-771, closing I-756 and amending I-724): free memory says stopping one frees room, the thin pool says the operator must grow it, the build queue says it starts when one finishes, the store says only the operator clears it, a draining host says nothing starts on it |
 | Guest not running on `attach`/`open` | exit 5, the true state and its fix, e.g. `todo-app is stopped. Start it with \`repose start todo-app\`, or \`repose run\` in its checkout to start, sync and attach.` or `todo-app is in an error state: <reason>. …` (I-153) |
@@ -738,7 +738,7 @@ command line, a guest id, or the host's own wording (that is the op's
 | Gateway rejects certificate | re-issue once; if still rejected exit 1 with the gateway banner verbatim |
 | `~/.ssh/config` unwritable, a read-only link, or its Include not effective | warning naming the file and the exact line to add (for a link, where); the command goes on with `ssh -F ~/.ssh/repose/config`; nothing partial written (write temp + rename), a link never replaced (I-151) |
 | Browser cannot open | print the URL and continue |
-| API unreachable | exit 1, `Cannot reach api.repose.herakraft.co: <err>`; never retried more than 3 times with backoff |
+| API unreachable | exit 1, `Cannot reach api.repose.run: <err>`; never retried more than 3 times with backoff |
 | Rate limited on `/certs` | reuse existing cert if valid, warn on stderr |
 | Prompt given but agent not installed in guest | exit 1, `Agent 'pi' is not in this guest's config. Add it with \`repose config edit\`.` |
 | Second prompt while agent window exists | new window `<agent>-2` (then `-3`, ..., the lowest free, I-253), stderr warning `Another claude window is open in the same working tree.` (no warning with `--worktree`); the flag it used to name went with I-894 |

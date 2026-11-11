@@ -118,7 +118,7 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	// The gateway's host key, certified by the Host CA for the addresses a
 	// client may use.
 	_, hostKey := genKey(t)
-	hostCert, err := ca.SignHostCert(hostKey.PublicKey(), "host:gateway", []string{"127.0.0.1", "ssh.repose.herakraft.co"}, time.Hour)
+	hostCert, err := ca.SignHostCert(hostKey.PublicKey(), "host:gateway", []string{"127.0.0.1", "ssh.repose.run"}, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

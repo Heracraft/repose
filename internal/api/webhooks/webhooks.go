@@ -172,7 +172,7 @@ type Store struct {
 // DefaultHostname is the one public name webhook routes answer on. It is
 // kept for good: a URL pasted into a provider's dashboard outlives a
 // change of product domain (R4-12, DECISIONS I-1110).
-const DefaultHostname = "hooks.repose.herakraft.co"
+const DefaultHostname = "hooks.repose.run"
 
 // New builds a store. hostname empty takes DefaultHostname.
 func New(pool *db.Pool, sec *secrets.Store, hostname string) *Store {

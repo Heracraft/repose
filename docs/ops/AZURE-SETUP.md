@@ -74,23 +74,28 @@ a day.
     thing worth reading before you need it is `docs/ops/coolify.md`,
     "The instance's .env is half any backup".
 
-11. **DNS for `herakraft.co`.** The zone already answers every name under it
-    from a **proxied wildcard**, so the repose names resolve today, to
-    Cloudflare's proxy, which carries neither SSH nor WireGuard. That makes
-    `ssh.repose.herakraft.co` resolve to the wrong place instead of failing
-    to resolve (`DECISIONS.md` I-72). Until a token is in `CLOUDFLARE_API_TOKEN` and
-    `manage_dns = true`, create these four by hand as A records **with the
-    proxy off**: `ssh.repose` → the edge's IP, and `repose`, `api.repose`,
-    `auth.repose` → the control plane's. The table with the reasons is in
-    `infra/README.md`, "DNS while manage_dns is false"; `*.repose` for
-    previews is later. If Logto stays on your personal server, its hostname
-    stays as it is.
+11. **DNS for `repose.run`.** Until a token is in `CLOUDFLARE_API_TOKEN`
+    and `manage_dns = true`, create these by hand as A records **with the
+    proxy off**: `ssh` → the edge's IP, and `@`, `www`, `api` and `hooks`
+    → the control plane's (`hooks` → the edge's). The table with the
+    reasons is in `infra/README.md`, "DNS while manage_dns is false";
+    `*.repose.run` for previews is later. Logto stays on your personal
+    server at `accounts.herakraft.co` and its hostname does not change.
+
+    A zone can answer a name that has no record, which is worse than no
+    answer: `herakraft.co` serves every name under it from a **proxied
+    wildcard**, so before the move to `repose.run` (I-1156) the repose
+    names resolved to Cloudflare's proxy, which carries neither SSH nor
+    WireGuard, and `ssh.repose.herakraft.co` reached the wrong place
+    instead of failing to resolve (`DECISIONS.md` I-72). The old names
+    keep answering while installed CLIs move; leave their records alone.
 
 12. **Logto.** In your existing Logto: create an API resource with
-    identifier `https://api.repose.herakraft.co`; a Native application
+    identifier `https://api.repose.herakraft.co` (an audience, not an
+    address: it did not move with the api, DECISIONS I-1156); a Native application
     named `repose-cli` (device flow and loopback redirect
     `http://127.0.0.1:*/callback` allowed); a Single-page application named
-    `repose-web` with redirect `https://repose.herakraft.co/callback`.
+    `repose-web` with redirect `https://repose.run/callback`.
     Confirm the GitHub connector is enabled. Copy the app ids and the
     issuer URL; agents need them as environment variables, never in git.
 
@@ -101,8 +106,9 @@ a day.
     there is a hostname to point the webhook at. The production
     organization is a launch step (`LAUNCH.md`), not a prerequisite.
 
-14. **Resend.** Verify the sending domain (`herakraft.co` or
-    `repose.herakraft.co`) and copy an API key.
+14. **Resend.** Verify the sending domain `mailing.repose.run`, which is
+    what `NOTIFY_FROM` sends as (`repose <notify@mailing.repose.run>`), and
+    copy an API key.
 
 15. **GitHub.** The repo should be private until the leaked-key history is
     handled (see `CHECKLIST.md`). Agents need push access to `main`.
@@ -127,7 +133,7 @@ a day.
     ```
 
     It uses `POLAR_ENVIRONMENT` (sandbox by default) and points the
-    webhook at `https://api.repose.herakraft.co/v1/billing/webhook` unless
+    webhook at `https://api.repose.run/v1/billing/webhook` unless
     given `--webhook-url`. It creates, or finds on a
     rerun by `metadata.repose`: the meter "Egress overage" (events named
     `egress_overage`, the sum of `metadata.gb`); the products `repose

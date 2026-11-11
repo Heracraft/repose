@@ -41,7 +41,7 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
-const aud = "https://api.repose.herakraft.co"
+const aud = "https://api.repose.run"
 
 type env struct {
 	h        *apitest.Harness
@@ -110,7 +110,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		// logic is what the tests exercise; without a key every start is
 		// subscription_required (TestBillingDisabledRoutes covers the
 		// routes' 503). BillingEnforce=false still lets everything through.
-		deps.Gate = billing.NewGate(h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.herakraft.co", Enforce: deps.BillingEnforce}, h.Metrics, log)
+		deps.Gate = billing.NewGate(h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.run", Enforce: deps.BillingEnforce}, h.Metrics, log)
 	}
 	e.srv = httpapi.New(deps)
 	e.srv.SetReady(true)
@@ -589,7 +589,7 @@ func TestSignInAndProjectsLifecycle(t *testing.T) {
 	if r.status != 402 || errCode(r) != "payment_required" || errDetail(r, "reason") != "subscription_required" {
 		t.Fatalf("no plan: %d %s", r.status, r.raw)
 	}
-	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != "Choose a plan at https://repose.herakraft.co/billing first." {
+	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != "Choose a plan at https://repose.run/billing first." {
 		t.Fatalf("message %q", msg)
 	}
 	e.subscribe(t, "sub-alice", "plus")

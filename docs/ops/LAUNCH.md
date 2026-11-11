@@ -45,7 +45,7 @@ runs the production organization.
    Plus $89, Pro $169, each with the metered overage price at 5 cents a GB
    and a seven-day trial), Solo's founding discount ($10 off the first
    twelve charges, I-672), and the webhook endpoint at
-   `https://api.repose.herakraft.co/v1/billing/webhook`; it sets the
+   `https://api.repose.run/v1/billing/webhook`; it sets the
    organization (one subscription per customer, trial abuse prevention,
    plan changes off in the customer portal, prices exclusive of tax) and
    prints the env block: `POLAR_ENVIRONMENT`, `POLAR_PRODUCT_SOLO`,
@@ -66,7 +66,7 @@ runs the production organization.
    `repose-admin billing overage-now <handle>`.
 6. Going live: create the production organization at https://polar.sh
    and its access token, then
-   `POLAR_ACCESS_TOKEN=... POLAR_ENVIRONMENT=production ops/polar/bootstrap.sh --production --webhook-url https://api.repose.herakraft.co/v1/billing/webhook > /tmp/polar.env`,
+   `POLAR_ACCESS_TOKEN=... POLAR_ENVIRONMENT=production ops/polar/bootstrap.sh --production --webhook-url https://api.repose.run/v1/billing/webhook > /tmp/polar.env`,
    and paste the block with the token and `POLAR_ENVIRONMENT=production`
    into Coolify for `api` and `api-grpc`. Tests refuse a production
    environment.
@@ -86,10 +86,10 @@ months, limited to 20 redemptions) can go in the tweet.
 
 ## 2. Resend (ten minutes)
 
-1. https://resend.com, add and verify the domain `repose.herakraft.co`
+1. https://resend.com, add and verify the domain `repose.run`
    (the DNS records are in `AZURE-SETUP.md` "Resend"), create an API key.
 2. Set `RESEND_API_KEY` on both api apps and redeploy. `NOTIFY_FROM` stays
-   `repose <notify@repose.herakraft.co>`.
+   `repose <notify@mailing.repose.run>`.
 3. Check: sign in with a fresh GitHub account; the `welcome` email arrives.
    The dashboard's Settings page has **Send test**.
 
@@ -364,7 +364,7 @@ what was lost.
 
 ## 5. The tweet
 
-The link is `https://repose.herakraft.co`. The landing page shows the two
+The link is `https://repose.run`. The landing page shows the two
 plans and the live seat count, "Start with GitHub" leads to the dashboard,
 the dashboard's Billing page to checkout or the waitlist. Watch:
 

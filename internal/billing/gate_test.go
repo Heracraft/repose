@@ -47,7 +47,7 @@ func TestGateEveryReason(t *testing.T) {
 	defer f.Close()
 	g := newGate(pool, f)
 	ctx := context.Background()
-	const url = "https://repose.herakraft.co/billing"
+	const url = "https://repose.run/billing"
 
 	// subscription_required: no plan; with a waitlist place in detail.
 	a := seedAccount(t, pool, "", "none", "", "")

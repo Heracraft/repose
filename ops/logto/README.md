@@ -20,9 +20,9 @@ renaming an app renames it in every email it causes.
 
 Each repose app has an application sign-in experience (Applications, the
 app, Branding): display name `repose`, logo
-`https://repose.herakraft.co/favicon.png` (the mark), terms
-`https://repose.herakraft.co/terms`, privacy
-`https://repose.herakraft.co/privacy`. Job Alerts has display name `Job
+`https://repose.run/favicon.png` (the mark), terms
+`https://repose.run/terms`, privacy
+`https://repose.run/privacy`. Job Alerts has display name `Job
 Alerts` and logo `https://recruiting.herakraft.co/apple-touch-icon.png`.
 The logo is also the mark in the sign-in emails
 (`{{application.branding.logoUrl}}`), so it has to be a PNG or JPEG over
@@ -35,7 +35,7 @@ drawing, kept for a larger PNG render.
   register on one page.
 - Social: automatic account linking on.
 - Custom CSS: `ops/logto/sign-in.css`, pasted whole.
-- Unknown-session fallback: `https://repose.herakraft.co`.
+- Unknown-session fallback: `https://repose.run`.
 - MFA: passkey and TOTP offered, never prompted.
 
 ## Emails

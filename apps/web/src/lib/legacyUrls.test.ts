@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { legacyTarget } from './legacyUrls';
 
 // One case per row of ia-final.md section 4 (DECISIONS I-841).
-const at = (s: string) => legacyTarget(new URL(s, 'https://repose.herakraft.co'));
+const at = (s: string) => legacyTarget(new URL(s, 'https://repose.run'));
 
 describe('legacyTarget', () => {
 	it('moves the Settings sections that became tabs', () => {

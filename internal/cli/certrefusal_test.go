@@ -15,7 +15,7 @@ import (
 // banners are the gateway's own constants, so a reworded banner fails here.
 func TestRevokedCertificateIsReissuedOnce(t *testing.T) {
 	refused := func(banner string) *sshError {
-		return &sshError{ExitCode: 255, Stderr: banner + "\nizma.me@ssh.repose.herakraft.co: Permission denied (publickey).\n"}
+		return &sshError{ExitCode: 255, Stderr: banner + "\nizma.me@ssh.repose.run: Permission denied (publickey).\n"}
 	}
 	for _, m := range []string{gateway.MsgRevoked, gateway.MsgExpired, gateway.MsgNotYetValid, gateway.MsgBadCA, gateway.MsgCertRequired, gateway.MsgWrongPrincipal, ""} {
 		if !isCertRefusal(refused(m)) {

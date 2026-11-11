@@ -21,9 +21,9 @@ locals {
   tags = merge(var.tags, { "repose:role" = "edge" })
 }
 
-# ssh.repose.herakraft.co points here and every host's WireGuard endpoint is
-# this address. Replacing it silently breaks every host's tunnel and every
-# user's known SSH target.
+# ssh.repose.run points here and every host's WireGuard endpoint is this
+# address. Replacing it silently breaks every host's tunnel and every user's
+# known SSH target.
 resource "azurerm_public_ip" "main" {
   name                = "pip-${var.name}"
   resource_group_name = var.resource_group_name

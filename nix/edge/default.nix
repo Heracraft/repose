@@ -4,7 +4,7 @@
 #   * the SSH gateway on :22 (public), which relays a user into their guest;
 #   * the WireGuard hub on 51820/udp that every host dials outbound, so the
 #     gateway can reach guests without a host having any inbound port;
-#   * the public :443: webhook deliveries on hooks.repose.herakraft.co,
+#   * the public :443: webhook deliveries on hooks.repose.run,
 #     whose certificate Let's Encrypt issues over TLS-ALPN-01 on that same
 #     listener, and the preview-proxy stub on every other name (a static
 #     page until the feature exists);
@@ -67,7 +67,7 @@ in
 
     webhookHost = lib.mkOption {
       type = lib.types.str;
-      default = "hooks.repose.herakraft.co";
+      default = "hooks.repose.run";
       description = "The one public name webhook routes answer on (docs/features/webhooks.md, DECISIONS I-1110). Its certificate is issued by Let's Encrypt over TLS-ALPN-01 on the gateway's own :443, so it needs one A record and no DNS token. Empty switches the webhook path off and leaves :443 to the preview stub.";
     };
 

@@ -104,7 +104,7 @@ Stripe account yet. In order:
    blocking a start at zero, and the limit change after the first paid
    invoice. Close every row of 09 §9 with evidence.
 3. **Live mode, one charge**: the owner adds their own card at
-   `https://repose.herakraft.co/billing` and is charged for a known short
+   `https://repose.run/billing` and is charged for a known short
    pattern; the invoice, `explain` and the `usage` rows agree to the cent;
    the Stripe Tax address is collected. Refund is the owner's call.
 4. `docs/PRICING.md` and `features/pricing.md` match what Stripe shows;

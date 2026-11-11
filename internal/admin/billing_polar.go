@@ -14,7 +14,7 @@ import (
 )
 
 // DefaultWebhookURL is the api's public webhook route (docs/ops/coolify.md).
-const DefaultWebhookURL = "https://api.repose.herakraft.co/v1/billing/webhook"
+const DefaultWebhookURL = "https://api.repose.run/v1/billing/webhook"
 
 // PolarBaseURL overrides the Polar API origin (tests point it at the fake).
 var PolarBaseURL string

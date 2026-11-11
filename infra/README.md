@@ -678,9 +678,14 @@ under `ssh.`: Cloudflare's proxy carries neither SSH nor WireGuard.
 
 ### DNS while manage_dns is false
 
-**A name with no record still answers here.** `herakraft.co` serves every name
-under it from a proxied wildcard, so with `manage_dns` off the repose names
-resolve to Cloudflare's proxy rather than failing:
+Production answers on `repose.run` (DECISIONS I-1156). The old
+`*.repose.herakraft.co` names keep answering beside it for the overlap, so
+nothing here assumes they are gone; they are deleted only when the owner
+says the last installed CLI has moved.
+
+**A name with no record can still answer.** `herakraft.co` serves every
+name under it from a proxied wildcard, so with `manage_dns` off the old
+repose names resolved to Cloudflare's proxy rather than failing:
 
 ```
 $ dig +short ssh.repose.herakraft.co
@@ -688,9 +693,11 @@ $ dig +short ssh.repose.herakraft.co
 104.21.31.82                       # Cloudflare, not the edge (2026-09-20)
 ```
 
-A user following the documented `ssh ssh.repose.herakraft.co` reaches
+A user following the documented `ssh ssh.repose.run` then reaches
 Cloudflare's proxy, which does not carry SSH, and every host configured with
-that hostname as its WireGuard endpoint fails the same way. The environment
+that hostname as its WireGuard endpoint fails the same way. Whether
+`repose.run` has a wildcard is the owner's to say; a missing record there
+fails outright instead, which is louder and no better. The environment
 module raises this as a plan-time warning (`check "dns_is_managed_or_manual"`),
 so you see it before a connection hangs.
 
@@ -700,10 +707,14 @@ Until a token exists, create these by hand in the Cloudflare dashboard, as
 
 | Name | Points at | Proxy | Why |
 |---|---|---|---|
-| `ssh.repose` | `edge_public_ip` output | **off** | SSH gateway and every host's WireGuard endpoint; the proxy carries neither |
-| `repose` | `control_public_ip` output | off | dashboard; the proxy Coolify installs on the server terminates TLS |
-| `api.repose` | `control_public_ip` output | off | proxying hides client addresses from the api's rate limits |
-| `hooks.repose` | `edge_public_ip` output | **off** | webhook deliveries (DECISIONS I-1110). The edge answers this name on its own :443 and gets the certificate over TLS-ALPN-01 on that port, which a proxy would terminate first; a proxy would also see every tenant's request body, which the privacy policy would then have to name. The edge serves the name as soon as the record exists: nothing else has to change |
+| `ssh` (`ssh.repose.run`) | `edge_public_ip` output | **off** | SSH gateway and every host's WireGuard endpoint; the proxy carries neither |
+| `@` (`repose.run`) | `control_public_ip` output | off | dashboard; the proxy Coolify installs on the server terminates TLS |
+| `www` | `control_public_ip` output | off | `www.repose.run`; Coolify redirects it to the apex |
+| `api` (`api.repose.run`) | `control_public_ip` output | off | proxying hides client addresses from the api's rate limits |
+| `hooks` (`hooks.repose.run`) | `edge_public_ip` output | **off** | webhook deliveries (DECISIONS I-1110). The edge answers this name on its own :443 and gets the certificate over TLS-ALPN-01 on that port, which a proxy would terminate first; a proxy would also see every tenant's request body, which the privacy policy would then have to name. The edge serves the name as soon as the record exists: nothing else has to change |
+
+The same four names under `repose.herakraft.co` stay as they are, with the
+proxy off, while both domains answer.
 
 ## Wiring the control plane to the edge
 

@@ -187,7 +187,7 @@ type lane struct{ rows []row }
 
 // New builds an outbox with the given channel senders.
 func New(pool *db.Pool, senders map[string]Sender, m *metrics.M, log *slog.Logger) *Outbox {
-	return &Outbox{pool: pool, senders: senders, m: m, log: log.With("component", "api"), Now: time.Now, Dashboard: "https://repose.herakraft.co", APIBase: "https://api.repose.herakraft.co", Interval: 2 * time.Second,
+	return &Outbox{pool: pool, senders: senders, m: m, log: log.With("component", "api"), Now: time.Now, Dashboard: "https://repose.run", APIBase: "https://api.repose.run", Interval: 2 * time.Second,
 		Workers: DefaultWorkers, lanes: map[laneKey]*lane{}, inflight: map[rowKey]bool{}}
 }
 
@@ -783,7 +783,7 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	}
 	from := e.From
 	if from == "" {
-		from = "repose <notify@repose.herakraft.co>"
+		from = "repose <notify@mailing.repose.run>"
 	}
 	url := e.URL
 	if url == "" {
