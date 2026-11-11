@@ -399,12 +399,6 @@ pkgs.testers.runNixOSTest {
             guest.sleep(2)
         assert "claude-2" in [a["tmuxWindow"] for a in agents()], agents()
 
-        guest.execute(
-            "guestd call ping --dev-socket /run/repose/guestd.sock --watch 60s "
-            ">/tmp/say-notes.txt 2>&1 &"
-        )
-        guest.sleep(1)
-
         # Two agents and no window named: the refusal names them both.
         status, out = guest.execute(
             "guestd call say-to-agent '{\"sayId\": \"0199ffff-0000-7000-8000-00000000000a\", "
@@ -413,17 +407,27 @@ pkgs.testers.runNixOSTest {
         )
         assert status != 0 and "claude" in out and "claude-2" in out, (status, out)
 
-        # Named, and the agent is at its prompt: it goes in now.
-        res = first_json(call("say-to-agent", {
+        # Named, and the agent is at its prompt: it goes in now. The
+        # call holds its own connection open for the notifications,
+        # because guestd notifies the newest connection and every other
+        # `guestd call` here would take the stream from a watcher
+        # started earlier.
+        out = call("say-to-agent", {
             "sayId": "0199ffff-0000-7000-8000-00000000000b", "window": "claude-2",
             "text": "run the tests before you commit", "sender": "heracraft", "fromOwner": True,
-        }))
+        }, extra="--watch 8s")
+        res = first_json(out)
         assert res["ok"] is True, res
         assert res["say"]["state"] == "delivered", res
         assert res["say"]["window"] == "claude-2", res
         guest.wait_until_succeeds(
             "sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2' "
             "| grep -q 'TOOK run the tests before you commit'", timeout=30)
+        # hostd heard the delivery, with the sender and not a word of
+        # the message.
+        assert "agent_prompted" in out, out
+        assert "heracraft" in out, out
+        assert "run the tests before you commit" not in out, out
 
         # The same say_id again types nothing twice.
         again = first_json(call("say-to-agent", {
@@ -436,18 +440,21 @@ pkgs.testers.runNixOSTest {
 
         # Mid-turn: a prompt hook makes the agent working, and the
         # message waits rather than landing in the middle of the turn.
+        # This one's connection stays open across the turn's end, which
+        # is where its delivery notification comes from.
         guest.succeed(
             "sudo -u dev repose-hook --agent claude --window claude-2 "
             "--socket /run/repose/hooks.sock "
             "'{\"agent\":\"claude\",\"kind\":\"prompt\",\"summary\":\"\"}'"
         )
-        res = first_json(call("say-to-agent", {
-            "sayId": "0199ffff-0000-7000-8000-00000000000c", "window": "claude-2",
-            "text": "and squash the fixups", "sender": "heracraft", "fromOwner": True,
-        }))
-        assert res["ok"] is True, res
-        assert res["say"]["state"] == "waiting", res
-        guest.sleep(6)
+        guest.execute(
+            "guestd call say-to-agent '{\"sayId\": \"0199ffff-0000-7000-8000-00000000000c\", "
+            "\"window\": \"claude-2\", \"text\": \"and squash the fixups\", "
+            "\"sender\": \"heracraft\", \"fromOwner\": true}' "
+            "--dev-socket /run/repose/guestd.sock --watch 60s >/tmp/say2.txt 2>&1 &"
+        )
+        guest.wait_until_succeeds("grep -q waiting /tmp/say2.txt", timeout=30)
+        guest.sleep(8)
         pane = guest.succeed("sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2'")
         assert "and squash the fixups" not in pane, pane
 
@@ -460,13 +467,10 @@ pkgs.testers.runNixOSTest {
         guest.wait_until_succeeds(
             "sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2' "
             "| grep -q 'TOOK and squash the fixups'", timeout=60)
+        guest.wait_until_succeeds("grep -q agent_prompted /tmp/say2.txt", timeout=40)
+        guest.succeed("grep -q heracraft /tmp/say2.txt")
+        guest.fail("grep -q 'squash the fixups' /tmp/say2.txt")
 
-        # hostd hears two agent_prompted events, each carrying the sender
-        # and not a word of either message.
-        guest.wait_until_succeeds("grep -c agent_prompted /tmp/say-notes.txt | grep -qx 2", timeout=30)
-        guest.succeed("grep -q heracraft /tmp/say-notes.txt")
-        guest.fail("grep -q 'run the tests before you commit' /tmp/say-notes.txt")
-        guest.fail("grep -q 'squash the fixups' /tmp/say-notes.txt")
         # Never logged, by either name.
         guest.fail("journalctl -u guestd | grep -q 'run the tests before you commit'")
         guest.fail("journalctl -u guestd | grep -q 'squash the fixups'")
