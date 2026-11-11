@@ -183,7 +183,7 @@ The owner chose this on 2026-11-04, after comparing it with a flat add-on that r
 - hostd measures CPU time above each guest's base share from the guest cgroup's `cpu.stat`. Only time above the base counts. The sold cores (1, 2 or 4) are never metered.
 - Each plan includes burst core-hours per billing period. The council's 20, 50 and 120 on Solo, Plus and Pro is the starting proposal, with the aim that most users never reach the allowance. The numbers need checking against measured burst on host-02.
 - **Overage is off by default.** When the allowance runs out, burst stops and each machine runs on its base cores until the period ends. Nothing stops: builds and agents continue, at base speed.
-- **A user can turn overage on**, with a monthly cap in dollars. Burst then continues past the allowance and is billed per core-hour. At the cap, burst stops the same way it stops at the allowance. A proposed starting price is about $0.04 per core-hour: the marginal cost is about $0, and the most it can cost repose is $0.13 per core-hour at Azure list price. At that price, 6 extra cores for 4 hours a day for 22 days come to about $21.
+- **A user can turn overage on**, with a monthly cap in dollars. Burst then continues past the allowance and is billed per core-hour. At the cap, burst stops the same way it stops at the allowance. A proposed starting price is about $0.04 per core-hour: the marginal cost is about $0, and the most it can cost repose is $0.13 per core-hour at Azure list price. At that price, an xl that bursts its 4 extra cores for 4 hours a day for 22 days pays about $14 (352 core-hours).
 - Billing uses the same path as egress overage: a metered charge on the Polar subscription, shown on the invoice, with "Additional metered charges may apply" already at checkout.
 - The latency gate still comes first. Overage buys burst time, but only while the host has idle cores. Paying never pushes busy guest vCPUs past physical cores.
 
@@ -254,6 +254,23 @@ The four theses agree. repose is the machine where your exact laptop state lands
 - **Browser bridge.** The daily driver voted trim, because it needs the laptop open, which works against the lid-closed loop. The other three voted keep, because it costs no host resources and makes a good security post.
 - **Phone surface.** Daily driver and economist want a repose phone console. Innovation lowered it, because Claude Code Remote Control and Cursor's iOS app already exist, and proposed registering with them instead.
 - **machine.nix.** The economist voted trim, because of fleet-wide rebuilds on each save. The other three voted keep and agreed on the same fix.
+
+## Owner picks (2026-11-10)
+
+The owner chose these items from the build list for proposals. Each proposal is in `docs/proposals/`:
+
+| Item | Proposal |
+|---|---|
+| Waitlist joined by `GET /billing` (already fixed by I-1033; the rest) | `2026-11-10-waitlist-billing-get.md` |
+| CLI update and version skew | `2026-11-10-cli-update-and-skew.md` |
+| Idle Chromium and stray headless browsers | `2026-11-10-idle-browser.md` |
+| One-key choice on `repose sync` exit 6 | `2026-11-10-sync-conflict-choice.md` |
+| Reverse forwards and visible forwards | `2026-11-10-forwards-both-ways.md` |
+| Automatic burst cores and metering (key) | `2026-11-10-burst-cores.md` |
+| Claude Remote Control and Cursor host, with an off switch | `2026-11-10-remote-control-host.md` |
+| Webhook routes per service (key) | `2026-11-10-webhooks.md` |
+
+Parked and documented only: scheduled agent prompts (`2026-11-10-scheduled-prompts.md`) and the overnight recap page (`2026-11-10-recap-page.md`). The owner decided to remove `repose fork` (`2026-11-10-remove-fork.md`). The other items on the list are not planned now.
 
 ## Appendix: each member's round-2 card
 
