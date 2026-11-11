@@ -280,6 +280,14 @@ I-553, I-554):
 | Gemini CLI | `/etc/gemini-cli/system-defaults.json` `mcpServers`, a copied root 0644 file | `{"mcp":{"excluded":["playwright"]}}` in `~/.gemini/settings.json` | replaces ours whole |
 | pi | `pi.registerMcpServer` in `/etc/repose/pi-extension.js` (pi 0.99 and later) | `{"mcpServers":{"playwright":{"command":"playwright-mcp","enabled":false}}}` in `~/.pi/agent/mcp.json` | wins |
 
+Gemini CLI declares an MCP tool to the model only where it could ask
+about it. `gemini -p` is not interactive, so its policy's default
+decision is DENY and it leaves out of the request every tool no rule
+allows -- the two browser servers and its own `write_file`, `replace`
+and `run_shell_command` alike. An agent window is a terminal, where the
+default is ASK_USER and all of them are declared. `guest-agent-guide`'s
+capture run therefore passes `--approval-mode=yolo` (DECISIONS I-1148).
+
 Rejected layers: Claude Code's `managed-mcp.json` takes exclusive control
 (`claude mcp add` fails and user servers disappear from `claude mcp
 list`). Codex's `/etc/codex/config.toml` would put the servers beneath the

@@ -60,10 +60,31 @@ func (e *env) clock() time.Time {
 	return e.now
 }
 
+// advance puts the clock d past the database's own clock, which is what
+// the resumer measures against: every deadline it has
+// (guest_resumes.created_at for the notice, interrupted_at for the
+// window) is a timestamp Postgres wrote, and r.Now() is this clock.
+// Adding d to the clock newEnv captured is a proxy for that, and it
+// fails in the direction that reads as a bug in the subject: newEnv
+// reads time.Now() before the harness has made a user, two projects and
+// a host Hello, so the seconds that setup takes come out of d. On an
+// idle box they are tenths; under load, with the package beside the rest
+// of a shared-DATABASE_URL run, they are seconds, and the clock lands
+// short of the deadline (DECISIONS I-1150). Taking the database's clock
+// makes the gap to any row written before this call at least d by
+// construction.
 func (e *env) advance(d time.Duration) {
+	e.t.Helper()
+	var dbNow time.Time
+	if err := e.h.Pool.QueryRow(e.ctx, "select now()").Scan(&dbNow); err != nil {
+		e.t.Fatalf("the database's clock: %v", err)
+	}
 	e.mu.Lock()
+	defer e.mu.Unlock()
+	if dbNow.After(e.now) {
+		e.now = dbNow
+	}
 	e.now = e.now.Add(d)
-	e.mu.Unlock()
 }
 
 // reboot restarts the fake host under the running guests and reconnects

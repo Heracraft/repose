@@ -31996,6 +31996,118 @@ message, and that the message neither ends in a full stop nor names
 pointer and exits 2, and `repose --help` no longer lists fork. The
 section-7 greps of the proposal print nothing outside `docs/DECISIONS.md`,
 `docs/proposals/`, `docs/workstreams/` and the stub with its test.
+
+**I-1148. A headless `gemini -p` is not the configuration an agent on a
+machine runs in, and the browser check was reading it as one.**
+(red-checks, 2026-11-11; amends I-553.)
+
+`guest-agent-guide`'s capture run gives each agent a stand-in model API
+that writes every request to a file and answers 400, and asserts that the
+platform browser tools reach the model: `browser_navigate` in what
+opencode and Gemini CLI sent, `mcp__playwright` in what pi sent. The
+Gemini arm has been red since it was written. I-553 says why it was never
+seen: "the VM subtests in guest-base, guest-agent-guide and guest-desktop
+need the dev box", and the branch's own evidence came from the real
+binaries on kanali, not from the VM.
+
+The cause is one line of Gemini CLI 0.61.0's policy engine:
+
+    defaultDecision: interactive ? ASK_USER : DENY,
+    nonInteractive: !interactive,
+
+and `getExcludedTools`, which drops from the request every tool that no
+rule allows once the default decision is DENY. `gemini -p` is not
+interactive, so it cannot ask, so it declares to the model only the tools
+that would never need a confirmation. Captured here against the same
+stand-in API, `gemini -p hi` sent `list_directory`, `read_file`,
+`grep_search`, `glob`, `google_web_search`, `enter_plan_mode`,
+`invoke_agent` and `update_topic` -- no MCP tool, and no `write_file`,
+`replace`, `run_shell_command` or `web_fetch` either. `gemini
+--approval-mode=yolo -p hi`, everything else equal, sent all of those
+plus the playwright server's 25 tools, `mcp_playwright_browser_navigate`
+among them. `gemini mcp list` reported `playwright ... Connected` in both
+runs: the server was registered and discovered; its tools were withheld.
+
+So nothing about the machine is broken, and the assertion is right about
+the product: an agent window is a terminal, Gemini's default there is
+ASK_USER, and the browser tools are declared and confirmed. The check was
+running the agent in the one shape where that is false. The fix is the
+check: the capture run passes `--approval-mode=yolo`, which is what an
+agent on a machine has (no prompts), and the comment beside it names the
+difference, as `docs/CHECKLIST.md` asks of a check that cannot run in the
+real configuration.
+
+Rejected: weakening the assertion to Gemini alone, or dropping it. It is
+the only thing that would notice the browser tools going missing from
+Gemini, and they are there.
+
+Rejected: making the machine set Gemini's approval mode, or `mcp.allowed`
+/ `mcpServers.*.trust` / `mcp.autoAllowInHeadless` in
+`/etc/gemini-cli/system-defaults.json`. Any of those would turn the
+check green in its own configuration, and each removes a confirmation the
+user gets today in an interactive session, or auto-allows the user's own
+MCP servers along with ours. I-250 left Gemini's prompts alone on
+purpose, and a headless Gemini still could not write a file or run a
+command, so handing it the browser alone buys nothing. It is the owner's
+call, not a side effect of fixing a test.
+
+The Gemini arm now matches the fully qualified name
+`mcp_playwright_browser_navigate` rather than the bare substring: that is
+what Gemini puts in the request, and the bare one is true of a body that
+merely quotes the guide.
+
+*Evidence.* The cause reproduced outside the VM, with gemini-cli 0.61.0
+from the pinned overlay, `nix/guest/tests/capture-llm.py`, the pinned
+`playwright-mcp`, and a temporary HOME: default `-p` run, 8 function
+declarations, 0 matching `mcp_`; `--approval-mode=yolo`, same files, 40
+declarations including `mcp_playwright_browser_navigate`. `nix build
+./nix#checks.x86_64-linux.guest-agent-guide` green, with the subtest's
+output in the commit message.
+
+**I-1150. A test clock read before the fixture exists is a proxy for the
+database's clock, and it fails in the direction that reads as a bug.**
+(red-checks, 2026-11-11; the class of I-1038, I-1054, I-1058.)
+
+`TestNoticeAtTenMinutesListsWaiting` failed in 2 of 3 full `go test -race
+./...` runs on 2026-11-11 with `DATABASE_URL` at one shared server, always
+`notice []`, and passed every time on its own.
+
+The resumer sends a user's notice when `r.Now().Sub(first) >= NoticeAfter`,
+where `first` is `min(guest_resumes.created_at)` -- a timestamp Postgres
+wrote. The test's clock is a `time.Time` that `newEnv` reads from
+`time.Now()` before the harness has made a user, two projects, a host
+restart and the Hello that writes those rows. `e.advance(resume.NoticeAfter
++ time.Second)` then adds ten minutes and one second to a clock that is
+already behind the rows by however long the setup took. One second of
+slack. Alone, setup takes tenths of a second and the test passes; beside
+the rest of a shared-database run, where this package takes two minutes,
+it takes one to two seconds and the test fails.
+
+The probe, printed between the advance and the tick: "clock
+2026-11-11 03:09:08.373, oldest row created_at 2026-11-11 02:59:10.162,
+clock-first 9m58.210454177s (needs >= 10m0s)". Three such runs read
+9m58.2s, 9m59.4s and 9m59.5s and failed; two read 10m0.4s and passed.
+Nothing about the resumer is wrong in either.
+
+`advance` now reads `select now()` and moves the clock to d past the later
+of that and its own value, so the gap to any row written before the call
+is at least d by construction, whatever the setup cost. It is the same
+move as I-1038: wait on the thing, which here is the database's clock,
+because that is the clock the subject compares against.
+
+Rejected: advancing by `NoticeAfter + time.Minute`. A bigger constant is
+the rejected move of I-1038 -- it is still a proxy, it is still sized
+against a machine, and the next busy runner moves the number again.
+Rejected: freezing `created_at` by passing the test's clock into the
+insert. `OnHello` runs inside the api under the harness, and a column the
+production path fills with `now()` would then be filled by a test seam
+that nothing else uses.
+
+*Evidence.* Before the fix, `go test -race -count=5 -run
+TestNoticeAtTenMinutesListsWaiting ./internal/api/resume` beside `go test
+-race ./internal/cli`, both on one `DATABASE_URL`: 4 of 5 failed,
+`resume_test.go:741: notice []` each time. After, the same load: 10 of 10
+green (30.0 s), and the whole package twice, 91.9 s, green.
 **I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
 
 The owner, 2026-11-10: users do not need to know a base was published. A

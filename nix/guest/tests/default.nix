@@ -2867,7 +2867,15 @@ in
               "claude": ("USER-CLAUDE-MARK", "ANTHROPIC_BASE_URL=http://127.0.0.1:18777 ANTHROPIC_API_KEY=sk-x CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "claude -p hi --max-turns 1"),
               "codex": ("USER-CODEX-MARK", "FAKE_KEY=x", "codex exec --skip-git-repo-check hi"),
               "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "opencode run hi"),
-              "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini -p hi"),
+              # --approval-mode=yolo: Gemini CLI's policy denies, and
+              # leaves out of the request, every tool that would need a
+              # confirmation when it cannot ask -- the MCP tools and its
+              # own write_file, replace and run_shell_command alike
+              # (defaultDecision is DENY when nonInteractive). An agent
+              # window on a machine is a terminal, where the default is
+              # ASK_USER and the browser tools are declared; `-p` is not
+              # that configuration, so the run says so (DECISIONS I-1148).
+              "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini --approval-mode=yolo -p hi"),
               "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "env PATH=/tmp/pishim:$PATH pi --provider fake --model m -p hi"),
           }
           # I-554: pi starts both platform servers, seen by wrappers on its
@@ -2888,7 +2896,7 @@ in
               # Codex (code mode) names no MCP tool in the request; its
               # registration is checked with codex mcp list above
               # (DECISIONS I-553).
-              tool = {"opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
+              tool = {"opencode": "browser_navigate", "gemini": "mcp_playwright_browser_navigate", "pi": "mcp__playwright"}.get(agent)
               if tool:
                   assert tool in bodies, f"{agent}: {tool} is not in what it sent"
               if agent == "pi":

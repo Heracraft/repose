@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-944 entries.
+946 entries.
 
 ## Scope
 
@@ -561,7 +561,7 @@ pointer, not a summary.
 - **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13213
 - **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13234
 - **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13261
-- **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; L13277
+- **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; amended by I-1148; L13277
 - **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13348
 - **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; amended by I-558; L13378
 - **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13513
@@ -970,9 +970,11 @@ pointer, not a summary.
 - **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31780
 - **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31873
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31910
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31999
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32029
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32093
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32142
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32236
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32274
+- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32000
+- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32067
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32111
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32141
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32205
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32254
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32348
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32386
