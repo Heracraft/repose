@@ -956,8 +956,8 @@ pointer, not a summary.
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
 - **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31058
-- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31135
-- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31182
-- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31236
-- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31292
-- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31314
+- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31144
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31191
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31245
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31301
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31323

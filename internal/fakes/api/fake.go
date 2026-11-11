@@ -145,13 +145,16 @@ type Fake struct {
 	// the copies (I-701); oldFork answers it, and a snapshot's reason, as
 	// an api before I-701 and I-703 did.
 	forkNoClone, oldFork bool
-	certs                map[uint64]*cert
-	revoked              []revocation
-	failOnce             []failRule
-	failAlways           map[string]string
-	hits                 map[string][]time.Time
-	hosts                []Host // nil means the one canned host
-	gatewayCerts         int    // POST /internal/gateway-certs calls, for cache tests
+	// webhookTombstones are the hex sha256 of tokens rotated or removed
+	// (DECISIONS I-1110); the edge answers 410 for them.
+	webhookTombstones []string
+	certs             map[uint64]*cert
+	revoked           []revocation
+	failOnce          []failRule
+	failAlways        map[string]string
+	hits              map[string][]time.Time
+	hosts             []Host // nil means the one canned host
+	gatewayCerts      int    // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
@@ -656,6 +659,9 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/webhooks/{name}", f.getWebhook)
 	f.handle("DELETE /v1/projects/{id}/webhooks/{name}", f.deleteWebhook)
 	f.handle("POST /v1/projects/{id}/webhooks/{name}/rotate", f.rotateWebhook)
+	f.handle("GET /v1/internal/webhook-routes", f.internalWebhookRoutes)
+	f.handle("POST /v1/internal/webhook-start", f.internalWebhookStart)
+	f.handle("POST /v1/internal/webhook-deliveries", f.internalWebhookDeliveries)
 	f.handle("GET /v1/me/secrets", f.listAccountSecrets)
 	f.handle("PUT /v1/me/secrets/{name}", f.putAccountSecret)
 	f.handle("DELETE /v1/me/secrets/{name}", f.deleteAccountSecret)

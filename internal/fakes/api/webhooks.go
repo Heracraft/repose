@@ -2,7 +2,9 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -174,6 +176,7 @@ func (f *Fake) rotateWebhook(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	for _, route := range p.webhooks {
 		if route.Name == r.PathValue("name") {
+			f.webhookTombstones = append(f.webhookTombstones, hashWebhookToken(route.token))
 			route.token = fakeWebhookToken()
 			route.URL = webhookURL(p.ID, route.Name, route.token)
 			route.UpdatedAt = f.now()
@@ -192,10 +195,93 @@ func (f *Fake) deleteWebhook(w http.ResponseWriter, r *http.Request) *apiError {
 	name := r.PathValue("name")
 	for i, route := range p.webhooks {
 		if route.Name == name {
+			f.webhookTombstones = append(f.webhookTombstones, hashWebhookToken(route.token))
 			p.webhooks = append(p.webhooks[:i], p.webhooks[i+1:]...)
 			w.WriteHeader(http.StatusNoContent)
 			return nil
 		}
 	}
 	return notFound("webhook route")
+}
+
+// The edge's side of the webhook routes (DECISIONS I-1110). The fake
+// serves them so the contract test and anything driving the fake edge
+// has the same shapes the api sends.
+
+func (f *Fake) internalWebhookRoutes(w http.ResponseWriter, r *http.Request) *apiError {
+	type edgeRoute struct {
+		RouteID    string `json:"route_id"`
+		ProjectID  string `json:"project_id"`
+		Name       string `json:"name"`
+		Port       int    `json:"port"`
+		Path       string `json:"path"`
+		AllowStart bool   `json:"allow_start"`
+		TokenHash  string `json:"token_sha256"`
+	}
+	out := struct {
+		Version    string      `json:"version"`
+		Routes     []edgeRoute `json:"routes"`
+		Tombstones []string    `json:"tombstones"`
+		Unchanged  bool        `json:"unchanged,omitempty"`
+	}{Routes: []edgeRoute{}, Tombstones: f.webhookTombstones}
+	n := 0
+	for _, p := range f.projects {
+		if p.destroyed {
+			continue
+		}
+		for _, route := range p.webhooks {
+			n++
+			out.Routes = append(out.Routes, edgeRoute{RouteID: route.RouteID, ProjectID: p.ID, Name: route.Name,
+				Port: route.Port, Path: route.Path, AllowStart: route.AllowStart,
+				TokenHash: hashWebhookToken(route.token)})
+		}
+	}
+	out.Version = strconv.Itoa(n) + "." + strconv.Itoa(len(f.webhookTombstones))
+	if since := r.URL.Query().Get("since"); since != "" && since == out.Version {
+		writeJSON(w, http.StatusOK, map[string]any{"version": out.Version, "unchanged": true,
+			"routes": []edgeRoute{}, "tombstones": []string{}})
+		return nil
+	}
+	if out.Tombstones == nil {
+		out.Tombstones = []string{}
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func hashWebhookToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
+func (f *Fake) internalWebhookStart(w http.ResponseWriter, r *http.Request) *apiError {
+	var body struct {
+		ProjectID string `json:"project_id"`
+		RouteID   string `json:"route_id"`
+	}
+	if e := decodeBody(r, &body, false); e != nil {
+		return e
+	}
+	p, ok := f.projects[body.ProjectID]
+	if !ok || p.destroyed {
+		return notFound("project")
+	}
+	if p.State != "stopped" {
+		writeJSON(w, http.StatusOK, map[string]any{"started": false, "reason": "not_stopped"})
+		return nil
+	}
+	p.State = "starting"
+	writeJSON(w, http.StatusOK, map[string]any{"started": true, "reason": "started"})
+	return nil
+}
+
+func (f *Fake) internalWebhookDeliveries(w http.ResponseWriter, r *http.Request) *apiError {
+	var body struct {
+		Deliveries []WebhookDelivery `json:"deliveries"`
+	}
+	if e := decodeBody(r, &body, false); e != nil {
+		return e
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

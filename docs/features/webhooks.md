@@ -59,7 +59,10 @@ output of `add`, `url` and `rotate` is the URL and nothing else, so it
 pipes.
 
 `repose status` gains a `webhooks` row for the routes a provider has
-called.
+called. The dashboard has the same list under Webhooks on a project's
+Config tab, with Copy, Rotate and Remove; the URL is never printed
+there, because a dashboard is a screen, and Copy puts it on the
+clipboard for the user who needs the characters.
 
 ## 3. Where a route lives
 

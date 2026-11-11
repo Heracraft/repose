@@ -31102,6 +31102,15 @@ working URL. That is the two homes CLAUDE.md allows, and no third.
 `secrets.SealValue`/`OpenValue` are the envelope lifted out for a caller
 with its own table.
 
+*The dashboard* has the same list under Webhooks on a project's Config
+tab, beside Secrets, with Copy, Rotate and Remove. It never prints a
+URL: the token is in it, a dashboard is a screen somebody may be
+sharing, and Copy puts the characters on the clipboard for the user who
+needs them. Below 640 the row becomes a block -- the name, the target
+under it, the three actions on their own line -- because three buttons
+and a target do not fit a 390 row side by side, and squeezing them broke
+the target mid-word and pushed Remove past the frame.
+
 *The CLI noun is `webhooks`.* `hooks` is taken by agent hooks
 (`cmd/repose-hook`, the edge's `/hooks`, Claude Code's `hooks` key), and
 a second name for the same word is how a grep misses half the uses.

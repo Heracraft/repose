@@ -28,7 +28,7 @@ github   :3000/api/webhooks/github   on     1h04m ago      503 stopped
 twilio   :4000/sms                   off    never
 ```
 
-`repose webhooks url stripe` prints one URL again. `--json` adds the last 20 deliveries, each with its status, outcome, duration and byte counts.
+`repose webhooks url stripe` prints one URL again. `--json` adds the last 20 deliveries, each with its status, outcome, duration and byte counts. The dashboard has the same list under **Webhooks** on a project's Config tab, with Copy, Rotate and Remove.
 
 A project can have 20 routes.
 
