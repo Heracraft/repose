@@ -653,6 +653,10 @@ in
           user("herdr server stop")
           guest.wait_until_succeeds("! pgrep -u dev -fx 'sleep 4242'", timeout=20)
           guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q checkout", timeout=40)
+          # The restarted server answers its socket before systemd marks the
+          # unit active, so a single read here saw `activating` (2026-11-11,
+          # twice). Wait on the unit, not on the socket (I-1038's rule).
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
           assert unit_state("repose-herdr-server.service") == "active"
           # Back to tmux for the subtests below.
           user("systemctl --user stop repose-herdr-server.service")
