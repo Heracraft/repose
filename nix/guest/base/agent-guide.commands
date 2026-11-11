@@ -27,6 +27,7 @@ repose-checkout needs
 repose-guest-profile needs
 repose-mcp needs
 repose-notify needs
+repose-presence needs
 rustup
 sh
 sudo

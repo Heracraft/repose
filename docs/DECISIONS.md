@@ -31054,3 +31054,147 @@ are listed as the project's clients, the project's session follows to
 `logs`, and after both detach only `<slug>` is left. The two existing
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
+
+**I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: users do not need to know a base was published. A
+platform base reaching a machine is repose's own housekeeping. It asks
+the owner for nothing, and the one case where it needs them, a kernel
+change that waits for a stop and start, is still waiting the next time
+they look. A notification per published base, on every project an
+account holds, is the shape I-688 took turn ends off for.
+
+- `base_updated` leaves `notifyKinds` (`internal/api/events/events.go`).
+  It is still inserted by `basebump.OnOpFinished` and still shows in
+  `repose events`, in the dashboard's event stream and in the project's
+  history, with the summary that says whether the new base is running or
+  waits for a stop and start.
+- `base_update_failed` keeps notifying: the machine stayed on the base
+  it had, with the user's configuration unbuilt, which is theirs to fix.
+- The email and Google Chat golden files for `base_updated` stay. The
+  renderer can still render the kind, as it can `completed`, which left
+  the notifying kinds at I-688 and kept its goldens; a kind's rendering
+  and whether a row is queued for it are two things.
+- Rejected: deleting the event. The dashboard's event stream answers
+  "what happened to my machine", and a base that changed the machine
+  under the user belongs in that answer.
+- *Evidence.* `TestBaseUpdatedNotifiesNobodyAndFailureDoes`
+  (`internal/api/events/events_test.go`): one `base_updated` row in
+  `events`, zero rows in `events_outbox`; one `base_update_failed`
+  queues two, one per channel. `TestHeldWhilePresentThenSent` used
+  `base_updated` as its stand-in platform kind and now uses
+  `snapshot_failed`.
+
+**I-1096. A notification carries a way into the dashboard only where the dashboard has an act.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: "unless there's something they can do on the
+dashboard, why leave them there?" Every Google Chat card ended with
+"Open project" and most emails with "Open todo-app". For a done report,
+a message, a permission prompt, a failed snapshot or a restarted server,
+that button leads to a page that says what the notification already
+said. CLAUDE.md "Trust the reader": a line that gives the reader nothing
+on their fiftieth notification is cut, and each of these looked helpful
+in its own diff.
+
+- Kept, because the dashboard has the act: a question (its options'
+  reply links, else one link to where it is answered), a failed payment
+  or a stopped plan (`billing_stopped` to `/billing`, and the account
+  kinds `payment_failed`, `trial_ending`, `subscription_cancelled`,
+  `subscription_ended`, `plan_changed`, `egress_stopped`,
+  `disk_over_plan` to the billing page), a waitlist seat
+  (`waitlist_joined`, `waitlist_invited`, `waitlist_expired`,
+  `welcome` to the plan page), and a broken channel
+  (`notify_channel_broken`, `test` to the notification settings).
+- Dropped: `agent_done`, `agent_message`, `needs_input`, `error`,
+  `completed`, `idle_running`, `temp_expiring`, `temp_destroyed`,
+  `machines_restarted`, `host_moved`, `base_update_failed`,
+  `snapshot_failed`, `destroy_failed`, `stop_failed`, `personal_failed`,
+  `boot_failed`, `abuse_stopped`, `notifications_paused`. On Google
+  Chat their cards now carry no button; the `agent` and `agent_done`
+  email partials, `abuse_stopped` and `machines_restarted` lost their
+  `link_label`/`link_url` blocks, and `agent_question` its "Open
+  <project>" quiet link beside the answer buttons.
+- `abuse_stopped` is in the dropped list although the machine can be
+  started again: the notification tells the owner to look at the
+  machine, not to press a button, and a third stop in 24 hours refuses
+  the start anyway. It is not the "suspended plan" the owner named,
+  which is `billing_stopped`.
+- Where a link stays on a question, it points at the page with the act:
+  `Message.AnswerURL` is now the dashboard's Questions page
+  (`/questions`), which lists every waiting question and answers it in
+  place (I-693). A question that asks for a secret (I-929) keeps the
+  project page and its `?answer=<id>` query: that page holds the secret
+  dialog, and `apps/web/src/lib/signin.ts` allows only that shape as a
+  signed-out return path. ntfy's `Click` header is the notification's
+  tap target rather than a button and follows the same rule: the
+  Questions page for a question, the project's page otherwise.
+- The agent's own `--link` (I-931) is untouched and is now the only
+  button a message or a done report carries, which is what I-931 wanted
+  it to be.
+- Not changed: the grey "Open the dashboard" line in every email's
+  footer. It is the message's provenance, not an action, it sits beside
+  the unsubscribe link where nobody mistakes it for a next step, and it
+  is on account mail too, which this entry does not touch.
+- Rejected: one shared table of acts for the two channels. The email
+  partials have always named their own act, per kind, in the template
+  that renders them; a second source would have to agree with them kind
+  by kind. `TestGChatCardsOnlyLeadToAnAct` enumerates the project kinds
+  instead, which fails when a new kind arrives with a button nobody
+  justified.
+- *Evidence.* `TestGChatCardsOnlyLeadToAnAct`: nineteen project and
+  notice kinds render with no `openLink` at all, `billing_stopped` with
+  one "Your plan" to `/billing`, a question without reply links with one
+  to `/questions`. `TestAgentLinkOnEveryChannel`: the done report's card
+  holds exactly one button, the agent's link. `TestEmailTemplate` and
+  `TestEmailQuestionHasReplyLinks` now assert the project URL is
+  absent. 38 golden files regenerated; `go test ./internal/api/...` ok.
+
+**I-1098. `repose-presence`: the guest asks whether the owner is at the machine.** (notify-presence, 2026-11-11)
+
+An agent that finishes a dev server has to hand the user an address, and
+it cannot know which one works. While the user is attached, every port
+1024 and up is on their laptop's `localhost` at the same number, so
+`http://localhost:5173` opens. While they are away, that address is
+their own laptop's port and opens nothing: the port is on the machine
+and needs `repose open PORT` or an attach. Agents guessed, and guessed
+`localhost` because the guide's ports line says so first.
+
+- `repose-presence` prints `attached` or `away` and exits 0 either way;
+  exit 1 only when guestd does not answer, so an agent can tell `away`
+  from "I could not ask". It takes no arguments.
+- It is `repose-hook` under a third name beside `repose-notify` and
+  `repose-ask` (I-244), a symlink from the same package, so the guest
+  base gains no binary and `repose` stays the only prefix.
+  `repose-hook presence` is the same command.
+- guestd serves `GET /presence` on the hook socket, which is already
+  0660 root:dev, so only the guest's own user can ask. It carries no
+  payload in either direction beyond one word, and logs nothing: two
+  numbers the sample already counts decide it.
+- Present means what the presence hold means (I-689): a tmux client or
+  an SSH session, a laptop herdr bridge counting as an SSH session
+  (I-511). It is read live from the guest (`sample.Handler.Attached`)
+  rather than from the api's latest sample, so it has no 2 minute
+  staleness window; a session opened a moment ago is already present.
+  The tmux client count comes from the watcher's 5 second cache, and a
+  cache too old to be `fresh` still answers, because a stale count of
+  clients beats no answer and the SSH count beside it is read now.
+- The guide (`nix/guest/base/agent-guide.md`) gains one line in "Servers
+  and ports", and loses the separate `repose open PORT` line and the
+  "Tell them open http://localhost:PORT" clause that line now owns, so
+  the rule is stated once.
+- Rejected: having the agent read presence itself (`tmux list-clients`,
+  `who`). It would be a second definition of "at the machine" that
+  drifts from the one the hold uses, and agents would each write their
+  own.
+- Rejected: a new binary. The guest closure has 4 MiB of headroom under
+  its limit (`guest-closure-size`); a third symlink costs nothing.
+- *Evidence.* `TestPresenceBothStates`
+  (`internal/guestd/hooks/presence_test.go`): the route answers
+  `attached`/`away` with the source set and refuses without one.
+  `TestPresencePrintsAttachedAndAway` (`cmd/repose-hook`): both words on
+  stdout with exit 0 over a real hook socket, exit 1 and nothing on
+  stdout with no guestd, exit 2 for an argument. The `guestd` VM test's
+  "repose-presence says attached with a tmux client and away without"
+  subtest runs the installed command on a booted guest: `away`, then
+  `attached` once a real tmux client is attached on a pty, then `away`
+  again after `detach-client`, and `repose-hook presence` the same.

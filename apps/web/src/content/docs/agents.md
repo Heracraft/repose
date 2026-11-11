@@ -98,6 +98,8 @@ A window with another name counts as an agent's while the agent is its foregroun
 
 Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
+`repose-presence` prints `attached` while you're at the machine and `away` while you aren't, by the same reading as the notification hold: a tmux client or an SSH connection, your editor and a herdr bridge included. The guide tells an agent to run it before it hands you a URL for a port on the machine, so it offers `http://localhost:PORT` while that port is on your laptop and names [`repose open PORT`](/docs/machine#ports) while it isn't. It exits 0 either way, and 1 when the machine's agent service doesn't answer.
+
 ## Log in
 
 Logins are kept on the machine's disk, except Claude Code's. They survive stops and are in snapshots.

@@ -102,9 +102,9 @@ func TestHeldWhilePresentThenSent(t *testing.T) {
 	start := h.now
 	h.sample(start.Add(-30*time.Second), 1, 0)
 	done := h.insert("agent_done", "main")
-	platform := h.insert("base_updated", "")
+	platform := h.insert("snapshot_failed", "")
 	h.pass(start.Add(time.Second))
-	if len(h.sent.sent) != 1 || h.sent.sent[0].Kind != "base_updated" {
+	if len(h.sent.sent) != 1 || h.sent.sent[0].Kind != "snapshot_failed" {
 		t.Fatalf("sent %v, want the platform notice only", h.sent.sent)
 	}
 	if got := h.delivered(done); got != notify.DeliveredHeld {
@@ -297,7 +297,7 @@ func TestHoldMetricsAndLag(t *testing.T) {
 	}
 	// Nobody picks the held row up once it is due: the lag grows, without
 	// a pass, on any replica that runs Gauges.
-	_, next, _ := h.outbox(h.insertAs("", "base_updated", ""))
+	_, next, _ := h.outbox(h.insertAs("", "snapshot_failed", ""))
 	h.now = next.Add(7 * time.Minute)
 	h.ob.Gauges(h.ctx)
 	if lag := testutil.ToFloat64(h.m.OutboxLagSeconds); lag < 7*60-1 {

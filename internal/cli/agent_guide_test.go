@@ -93,6 +93,8 @@ var notCommands = map[string]string{
 	"chrome-devtools":      "an MCP server name",
 	"redis":                "a menu entry",
 	"mysql":                "a menu entry",
+	"attached":             "a word repose-presence prints",
+	"away":                 "a word repose-presence prints",
 	"use flake":            "a line for .envrc",
 	"flake.nix":            "a file name",
 	"env_vars":             "a Codex config key",

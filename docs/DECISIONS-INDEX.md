@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-923 entries.
+926 entries.
 
 ## Scope
 
@@ -955,3 +955,6 @@ pointer, not a summary.
 - **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31058
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31088
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31152

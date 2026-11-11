@@ -1,11 +1,9 @@
-{{/* repose-ask (DECISIONS I-245, I-688): the question on a sunken block, one button per option to its signed reply link, the dashboard for a free answer. A question for a secret (I-929) links the dashboard's form for it; no value is ever taken by email. */}}
+{{/* repose-ask (DECISIONS I-245, I-688): the question on a sunken block, one button per option to its signed reply link, the dashboard for a free answer. A question for a secret (I-929) links the dashboard's form for it; no value is ever taken by email. The answer links are the only ones: a question with options is answered from the email itself, so nothing else leads to the dashboard (I-1096). */}}
 {{define "preheader"}}{{.M.Summary}}{{end}}
 {{define "heading"}}{{.Title}}{{end}}
 {{define "meta"}}{{.Meta}}{{end}}
 {{define "quote"}}{{.M.Summary}}{{end}}
 {{define "buttons_label"}}Answer with one click{{end}}
-{{define "quiet_label"}}{{if .M.Question}}{{if .M.Question.Options}}Open {{.M.Project}}{{end}}{{end}}{{end}}
-{{define "quiet_url"}}{{.ProjectURL}}{{end}}
 {{define "link_label"}}{{if .M.Question}}{{if .M.Question.Secret}}Enter {{.M.Question.Secret}}{{else if not .M.Question.Options}}Write an answer{{end}}{{else}}Write an answer{{end}}{{end}}
 {{define "link_url"}}{{.M.AnswerURL}}{{end}}
 {{define "lines"}}{{if .M.Question}}{{if .M.Question.Secret}}Replying to this email does not set it.
