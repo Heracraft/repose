@@ -101,6 +101,7 @@ type Fake struct {
 	guests   map[string]*Guest
 	results  map[string]*hostdv1.Result
 	failMsg  map[string]string
+	refuse   string
 	draining bool
 	nextIP   int
 	send     func(*hostdv1.HostMessage) error
@@ -901,6 +902,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		why := ""
 		switch {
+		case f.refuse != "":
+			why = f.refuse
 		case g.State != "running":
 			why = "not_running"
 		case g.Resting:
@@ -993,4 +996,14 @@ func fakeBoot(create bool) *hostdv1.BootTimings {
 		b.VolumeMs, b.TotalMs = 200, 15500
 	}
 	return b
+}
+
+// RefusePause makes every later PauseGuest answer the way hostd answers
+// a pause it must not take: `ok` with paused=false and this lower_snake
+// why_not (`timer_due`, `command_in_flight`, `host_stopping`), which is
+// a refusal and not a failure (DECISIONS I-818). "" turns it off.
+func (f *Fake) RefusePause(why string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refuse = why
 }

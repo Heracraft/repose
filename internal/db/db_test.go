@@ -369,6 +369,20 @@ func TestPartitions(t *testing.T) {
 	if len(dropped) < 2 {
 		t.Fatalf("expected the five-month-old partitions dropped, got %v", dropped)
 	}
+	// Every partitioned table's retention is real, not only the two the
+	// test was written for: a table added to the list and left out of the
+	// drop grows for ever and nothing else breaks (DECISIONS I-1152).
+	for _, base := range []string{"meter_samples", "proc_samples", "rest_verdicts"} {
+		found := false
+		for _, d := range dropped {
+			if strings.HasPrefix(d, base+"_") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no %s partition was dropped; its retention deletes nothing: %v", base, dropped)
+		}
+	}
 	if _, err := pool.Exec(ctx, "insert into meter_samples (ts, project_id, state, class) values ($1, '00000000-0000-7000-8000-000000000000', 'running', 'large')", now); err != nil {
 		t.Fatalf("insert into current partition: %v", err)
 	}

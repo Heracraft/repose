@@ -147,6 +147,32 @@ create table if not exists proc_samples (
   primary key (project_id, ts, comm)
 ) partition by range (ts);
 
+-- Why a running machine did not freeze (DECISIONS I-1152). Partitioned by
+-- month like the two sample tables, so ops/sql/partitions.sql has a third
+-- table to create and drop.
+create table if not exists rest_verdicts (
+  ts timestamptz not null,
+  project_id uuid not null,
+  host_id uuid,
+  sample_ts timestamptz,
+  would_rest boolean not null,
+  blocked_by text not null,
+  host_pauses boolean not null,
+  keep_awake boolean not null,
+  ops_open integer not null default 0,
+  sessions_open integer not null default 0,
+  questions_open integer not null default 0,
+  samples_seen integer not null default 0,
+  samples_quiet integer not null default 0,
+  attached_max integer not null default 0,
+  agents_working integer not null default 0,
+  guestd_down integer not null default 0,
+  cpu_ns_max bigint not null default 0,
+  net_bytes_max bigint not null default 0,
+  why_not text not null default '',
+  primary key (project_id, ts)
+) partition by range (ts);
+
 create table if not exists usage_hours (
   project_id uuid not null references projects(id),
   hour timestamptz not null,

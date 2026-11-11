@@ -14,7 +14,7 @@ edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki
                        api :9103 /metrics ◀─ Alloy on the Docker network ─▶ remote_write to Prometheus (I-960)
                        alloy :12345 /metrics, node_exporter :9100  ◀─ Prometheus scrape over WireGuard
-Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (read with psql, or a Grafana datasource the owner adds by hand)
+Postgres               meter_samples, proc_samples, rest_verdicts, usage_hours, events, audit_log (read with psql, or a Grafana datasource the owner adds by hand)
 personal server        Loki, Prometheus, Grafana (evaluates the alerts and notifies the owner)
 ```
 
@@ -177,6 +177,44 @@ for `repose.host.pauseIdle` on a host that carries anyone. Loki
 `{component="api"} | json | event="resting_rule"` writes one line each
 time the picture changes.
 
+Why one machine stayed warm (DECISIONS I-1152). The two counters above
+say how much of a fleet would rest; they do not say what held any
+machine back, and the rule kept no record of it, so "I'm not attached,
+the agent is idle, but the machine is still running and not frozen" had
+no answer after the fact. The rule now writes its verdict down. One row
+in `rest_verdicts` per running machine per five minutes, from the rule's
+own tick (no second timer): `blocked_by` is the column to read, the one
+condition that kept the machine awake, and `would_rest` is the rule's own
+yes or no beside it.
+
+`blocked_by` is lower_snake and bounded. The rule's own terms are
+`resting` (the machine IS frozen; the launch query leaves it out of the
+warm minutes), `host_unreachable`, `host_not_ready`, `keep_awake`, `op`,
+`question`, `session` (a gateway session, which is what an attach, a held
+forward and a browser viewer all are), `too_young`, `samples_missing`
+(the sampler, not the machine), `attached`, `agent_working`,
+`guestd_down`, `cpu`, `net` and the catch-all `not_quiet`. Past the rule
+there are two more: `host_no_pause`, the rule saying yes on a host that
+does not take pauses (I-844's dry run), and `host_<why_not>`, the rule
+saying yes and hostd refusing the pause with its own word
+(`host_timer_due`, `host_command_in_flight`). Several terms can be true
+at once; `blocked_by` names the first in that order and the counts beside
+it say what else was true -- `samples_seen`, `samples_quiet`,
+`attached_max`, `agents_working`, `guestd_down`, `cpu_ns_max`,
+`net_bytes_max`, `ops_open`, `sessions_open`, `questions_open`,
+`host_pauses`, `keep_awake`, `why_not`.
+
+The row copies nothing from inside a guest. The signals stay in
+`meter_samples` and the process names in `proc_samples`; `sample_ts` is
+the newest sample the verdict read, so a join on `(project_id,
+sample_ts)` gives both. `ops/sql/launch.sql` Q13 is that join: for the
+last 14 days, the running-but-not-frozen minutes per machine by
+`blocked_by`, with the three processes that spent the most CPU in those
+minutes. A failure to read or write a verdict logs `resting_verdict_fail`
+at Error and never delays a pause; no dashboard panel reads the table,
+because the question it answers is per-project and Prometheus may not
+carry `project_id`.
+
 ## The launch numbers
 
 Liveness was instrumented and margin was not: before I-800 no dashboard
@@ -189,14 +227,16 @@ anywhere. Three places answer the money questions now.
    even) and seat **use** (the memory actually running over the memory the
    sold seats may run, which is capacity bought and idle); and the three
    seat lines, delivered, sold and running.
-2. `ops/sql/launch.sql` (I-804). Twelve queries for what cannot be a
+2. `ops/sql/launch.sql` (I-804). Thirteen queries for what cannot be a
    Prometheus series because it is per-account: signups and how many ever
    ran a machine, the trial funnel by plan, activation in the product's own
    terms, the subscribers who have gone quiet, cohort retention, the
    founding offer's burn, the plan mix with its waiting downgrades, MRR
    that left, the dunning list, the waitlist's throughput and what it
-   wasted, disk against the plan, and the ops still open. Run them with
-   `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as `grafana_ro`.
+   wasted, disk against the plan, the ops still open, and the
+   running-but-not-frozen minutes by what kept each machine awake (I-1152).
+   Run them with `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as
+   `grafana_ro`.
 3. The daily digest (I-810): `ops/digest/digest.py`, a timer on the
    personal server, one email at 08:00 with the eight numbers worth
    reading every day in the launch window. It sends through the same SMTP
@@ -347,15 +387,20 @@ stays in the logs after the incident is fixed.
 | Prometheus | 90 days |
 | `meter_samples` | 90 days (monthly partitions) |
 | `proc_samples` | 30 days |
+| `rest_verdicts` | 30 days (monthly partitions) |
 | `usage_hours`, `events`, `audit_log`, `build_logs` | indefinite (`build_logs` trimmed to the last 20 ops per project) |
 
 Loki's retention is `ops/loki/retention.yaml` and does nothing unless the
 compactor runs with `retention_enabled`. Prometheus's is the flag
-`--storage.tsdb.retention.time=90d`, not a config key. The two Postgres
+`--storage.tsdb.retention.time=90d`, not a config key. The three Postgres
 sample tables are partitioned by month and dropped by
 `repose_partitions_maintain()` (`ops/sql/partitions.sql`), which the api
 calls hourly and logs `partition_drop_fail` when it fails; because a whole
-month has to age out, the real retention is 90 or 30 days plus up to a month.
+month has to age out, the real retention is 90 or 30 days plus up to a
+month. `rest_verdicts` is kept as long as `proc_samples` and not as long
+as `meter_samples`, because a verdict whose process names have aged out
+is half an answer: `cpu` as the condition and nothing to say what spent
+it.
 
 ## Alerts
 
