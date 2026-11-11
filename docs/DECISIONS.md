@@ -31176,7 +31176,7 @@ field 19). Per second, not from the minute's average: a guest that uses
 three cores for thirty seconds and none for thirty averages 1.5, which
 would bill a small for half of what it used. hostd bounds a sample at
 `(ceiling - base) x 66 s` and the api clamps it again, the way I-446
-bounds every figure that crosses that line. A migration (0036) adds
+bounds every figure that crosses that line. A migration (0037) adds
 `meter_samples.burst_cpu_ns`, null from a hostd that sends none, and
 `usage_hours.burst_cpu_ns`, which the hourly rollup sums beside
 `egress_bytes`.
