@@ -261,8 +261,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, d *delivery, r
 	}
 	d.bytesIn = n
 	head := h.requestHead(r, route, rest, n)
-	deadline := h.clock().Add(ReplyTimeout)
-	_ = conn.SetDeadline(deadline)
+	_ = conn.SetDeadline(h.clock().Add(ReplyTimeout))
 	if _, err := conn.Write(head); err != nil {
 		h.refuse(w, d, http.StatusBadGateway, "no_listener", "repose: the app closed the connection", 0)
 		return
@@ -273,7 +272,12 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, d *delivery, r
 			return
 		}
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	// The 30 s is the app's, measured from the last request byte, so a
+	// slow upload does not eat the time the handler has to answer.
+	_ = conn.SetDeadline(h.clock().Add(ReplyTimeout))
+	// The request goes in so ReadResponse knows a HEAD has no body,
+	// whatever Content-Length the app sent.
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: r.Method})
 	if err != nil {
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			h.refuse(w, d, http.StatusBadGateway, "no_listener", "repose: the app closed the connection", 0)

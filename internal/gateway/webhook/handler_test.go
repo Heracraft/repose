@@ -676,3 +676,27 @@ func TestTableRefresh(t *testing.T) {
 		t.Fatalf("an unchanged answer emptied the table: %d routes", tbl.Len())
 	}
 }
+
+// A HEAD reaches the app and its reply comes back with no body, however
+// long a Content-Length the app sent: a provider that verifies an
+// endpoint with a HEAD gets an answer rather than a hang.
+func TestHeadGetsAnEmptyBody(t *testing.T) {
+	hp := newHarness(t)
+	hp.app.answer(func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "11")
+		w.WriteHeader(200)
+	})
+	r := httptest.NewRequest(http.MethodHead, "https://hooks.test"+hp.url(""), nil)
+	r.RemoteAddr = "54.187.174.169:51234"
+	w := hp.do(r)
+	if w.Code != 200 {
+		t.Fatalf("%d", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("a HEAD came back with %d body bytes", w.Body.Len())
+	}
+	if got := hp.app.requests(); len(got) != 1 || got[0].method != "HEAD" {
+		t.Fatalf("the app saw %v", got)
+	}
+}
