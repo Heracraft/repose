@@ -31054,3 +31054,87 @@ are listed as the project's clients, the project's session follows to
 `logs`, and after both detach only `<slug>` is left. The two existing
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
+
+**I-1090. A billing-exempt account cannot join the waitlist, and the
+queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
+ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends
+I-290 and I-294.)
+*Made during implementation* (`docs/proposals/2026-11-10-waitlist-billing-get.md`
+§2.1 and §2.2, decision 1, the recommended option).
+
+I-1033 stopped `GET /billing` from joining the waitlist. It left the two
+routes that join on purpose open to an account that has nothing to join
+for. An exempt account needs no plan: the gate lets every start through
+on `billing_status = 'exempt'` alone, so a place in the queue buys it
+nothing — and an invitation for it holds one of the fleet's seats for 72
+hours, which no checkout will ever convert, while the account behind it
+waits. That is the shape of the one real occurrence: the exempt account
+the 2026-10-17 review found on the list, whose hold the owner deleted on
+prod on 2026-10-18.
+
+So `POST /billing/checkout` and `POST /billing/waitlist` answer such an
+account `409 conflict`, `detail.reason = exempt`, with "This account is
+billing-exempt, so it has no plan to choose and no place to wait for."
+The dashboard already shows an exempt account no plan cards and no Join
+button, so nothing a user does reaches this; it is the api refusing to be
+driven into a state the UI cannot produce.
+
+The row, if one exists, keeps its data and takes no place: the three
+queries that rank the queue — `store.waitlistSQL`, `Count`'s `Waiting`
+and `billing.WaitlistPlace` — all add `billing_status <> 'exempt'` beside
+the suspended, cancelled and deleted filters they already carry. All
+three, not one: they must agree, or `GET /me` reports a position that
+`repose-admin waitlist list` does not show and the inviter does not
+honour. A status back to `none` puts the user in line at the same
+`joined_at`, since nothing is deleted.
+
+*Rejected:* leaving the api open and relying on the dashboard. The
+dashboard is one client; the refusal is the contract, and the cost of the
+open version is a held seat nobody can use.
+
+*Not changed:* `repose-admin waitlist admit HANDLE` still invites an
+exempt account if an operator names one. An operator asking by hand is a
+choice, and `admit --next N` reads `ListWaiting`, so the queue walk skips
+them anyway.
+
+**I-1092. The waitlist rows a page view made are cleared by an operator
+command, not a migration.** (waitlist-choice, 2026-11-11; conductor's
+ruling, owner's standing approval of 2026-11-11.)
+*Made during implementation* (`docs/proposals/2026-11-10-waitlist-billing-get.md`
+§2.3, decision 2).
+
+Between 2026-09-27 (I-289) and 2026-11-04 (I-1033, in v0.1.44) every
+visit to `/billing` by a plan-less account while the fleet was full put
+the visitor on the waitlist. Those rows are indistinguishable in the
+schema from a row a person made by choosing. Each costs a seat for three
+days when its turn comes, and counts toward the "N waiting" the landing
+page prints, until it lapses on its own.
+
+A migration cannot tell the two apart, and a migration that lapses a row
+a person really chose loses their place with no way back for the operator
+who ran it. What separates them is outside the database: the api's
+request log has `route` and `user_id`, so a `POST /v1/billing/checkout`
+or `POST /v1/billing/waitlist` at the row's `joined_at` means a choice
+and only a `GET /v1/billing` means the bug. A human with Loki open has to
+judge that.
+
+So `repose-admin waitlist stale` lists the candidates and writes nothing:
+the rows still waiting that joined before `--before`, which defaults to
+`2026-11-06T02:00:00Z`, when v0.1.44 reached prod. It prints each
+account's handle, join time, billing status and whether it ever
+subscribed, and the count. `--lapse` then sets `lapsed_at` on exactly the
+rows it listed, under the waitlist advisory lock and insisting each row
+is still waiting, so a row the tick invited in between keeps its
+invitation. It is audited `waitlist_lapse` per account and sends nothing:
+the lapse goes in with a plain update rather than through
+`Inviter.expire`, whose job is to send `waitlist_expired`, which here
+would tell a person they missed an invitation they never had.
+
+A row lapsed by mistake is one click on `/billing` away from the back of
+the list (I-1033), which is why the read-only listing plus a flag is
+enough and a per-row confirmation is not.
+
+*Rejected:* a migration (cannot read the logs, runs on every deploy, and
+is the wrong unit for a judgement call); leaving the rows to lapse by
+themselves (each still costs a seat for 72 hours and an email that reads
+as an invitation the user never asked for).
