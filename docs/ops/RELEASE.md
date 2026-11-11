@@ -285,7 +285,8 @@ else integrated with it.
    2026-11-02, so that is host-02) and the `edge` switch (its first switch
    onto a unit that gained a `StateDirectory` needs a restart; the gateway's
    host certificate must name every SSH hostname users use: RUNBOOK "Switch
-   the edge" and "Move the gateway to another name").
+   the edge" and "Move the gateway to another name"; both were lived through
+   on 2026-11-11 when repose.run went live).
    When the base sends a guest kind or field the running hostd refuses
    (`agent_done`, I-688), switch the hosts first and publish the base
    after them.
