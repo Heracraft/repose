@@ -31,7 +31,16 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 		if p.DestroyedAt != nil {
 			return db.ErrNotFound
 		}
-		writeJSON(w, http.StatusOK, routeAnswer(p))
+		// The login the guest's host certificate is issued for
+		// (<slug>.<handle>, I-42). A delivery has no login of its own
+		// and still has to check the host key against that principal.
+		u, err := store.GetUser(r.Context(), s.d.Pool, p.UserID)
+		if err != nil {
+			return err
+		}
+		out := routeAnswer(p)
+		out["login"] = p.Slug + "." + u.Handle
+		writeJSON(w, http.StatusOK, out)
 		return nil
 	}
 	login := r.URL.Query().Get("login")
@@ -44,12 +53,14 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	out := routeAnswer(p)
+	out["login"] = login
 	// resting (DECISIONS I-818) tells the gateway to ask for a wake
 	// before it dials. The state stays `running`, so nothing in the
 	// gateway refuses on this flag: its route cache holds an answer for
 	// five seconds, which makes the flag stale in both directions, and
 	// the wake is idempotent precisely so that does not matter.
-	writeJSON(w, http.StatusOK, routeAnswer(p))
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 

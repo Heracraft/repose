@@ -117,7 +117,7 @@ type fakeDialer struct {
 	fail  bool
 }
 
-func (d *fakeDialer) DialGuestPort(ctx context.Context, _, _ string, _ int) (net.Conn, error) {
+func (d *fakeDialer) DialGuestPort(ctx context.Context, _, _, _ string, _ int) (net.Conn, error) {
 	d.dials.Add(1)
 	if d.fail {
 		return nil, fmt.Errorf("connect failed")

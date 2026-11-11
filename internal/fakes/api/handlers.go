@@ -2129,6 +2129,24 @@ func (f *Fake) getUsage(w http.ResponseWriter, r *http.Request) *apiError {
 // Internal (gateway).
 
 func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
+	// The project_id form is what a webhook delivery reads (DECISIONS
+	// I-1110): it knows the project the URL names and no login. The
+	// answer is the same body, with the login in it, because the guest's
+	// host certificate is issued for <slug>.<handle> and the dial still
+	// has to check it.
+	if pid := r.URL.Query().Get("project_id"); pid != "" {
+		p, ok := f.projects[pid]
+		if !ok || p.destroyed {
+			return notFound("project")
+		}
+		u := f.users[p.owner]
+		writeJSON(w, http.StatusOK, map[string]any{
+			"project_id": p.ID, "login": p.Slug + "." + u.Handle, "guest_ip": p.GuestIP, "state": p.State,
+			"principals": []string{p.ID}, "host_unreachable": p.HostUnreachable,
+			"resting": p.State == "running" && p.Resting != nil,
+		})
+		return nil
+	}
 	login := r.URL.Query().Get("login")
 	i := strings.LastIndex(login, ".")
 	if i <= 0 || i == len(login)-1 {
@@ -2151,7 +2169,7 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 			// banner until I-721. `resting` (I-818) is here for the same
 			// reason: it is what makes the gateway ask for a wake, and a
 			// fake that left it out would make the whole wake untestable.
-			"project_id": p.ID, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
+			"project_id": p.ID, "login": login, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
 			"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.Resting != nil,
 		})
 		return nil

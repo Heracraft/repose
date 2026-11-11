@@ -242,7 +242,7 @@ func (h *Handler) stopped(w http.ResponseWriter, r *http.Request, d *delivery, r
 
 // forward writes the request into the guest and streams the reply back.
 func (h *Handler) forward(w http.ResponseWriter, r *http.Request, d *delivery, route Route, state *ProjectState, rest, outcome string) {
-	conn, err := h.cfg.Dial.DialGuestPort(r.Context(), route.ProjectID, state.GuestIP, route.Port)
+	conn, err := h.cfg.Dial.DialGuestPort(r.Context(), route.ProjectID, state.Login, state.GuestIP, route.Port)
 	if err != nil {
 		h.refuse(w, d, http.StatusBadGateway, "no_listener",
 			"repose: nothing is listening on port "+strconv.Itoa(route.Port), 0)

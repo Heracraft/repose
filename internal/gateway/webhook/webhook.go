@@ -73,7 +73,11 @@ type RouteTable struct {
 
 // ProjectState is the part of GET /internal/route a delivery reads.
 type ProjectState struct {
-	ProjectID       string `json:"project_id"`
+	ProjectID string `json:"project_id"`
+	// Login is <slug>.<handle>, the principal the guest's host
+	// certificate carries (I-42). A delivery has no login of its own
+	// and still checks the host key against it.
+	Login           string `json:"login"`
 	GuestIP         string `json:"guest_ip"`
 	State           string `json:"state"`
 	HostUnreachable bool   `json:"host_unreachable"`
@@ -104,7 +108,7 @@ type API interface {
 // Dialer opens a TCP stream to a port inside a guest, through the
 // gateway's own SSH connection to that guest's sshd.
 type Dialer interface {
-	DialGuestPort(ctx context.Context, projectID, guestIP string, port int) (net.Conn, error)
+	DialGuestPort(ctx context.Context, projectID, login, guestIP string, port int) (net.Conn, error)
 }
 
 // HashToken is the lookup form of a token.

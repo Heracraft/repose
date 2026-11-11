@@ -22,8 +22,8 @@ import (
 // A delivery is not a gateway session: nothing is posted to
 // /internal/sessions, so a run of deliveries never holds a machine awake
 // past the session window (amends I-818, I-822).
-func (g *Gateway) DialGuestPort(ctx context.Context, projectID, guestIP string, port int) (net.Conn, error) {
-	client, err := g.webhookClient(ctx, projectID, guestIP)
+func (g *Gateway) DialGuestPort(ctx context.Context, projectID, login, guestIP string, port int) (net.Conn, error) {
+	client, err := g.webhookClient(ctx, projectID, login, guestIP)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func (g *Gateway) DialGuestPort(ctx context.Context, projectID, guestIP string, 
 	// not at the handshake, so one retry on a fresh connection is the
 	// difference between a delivery and a 502.
 	g.webhookConns.drop(projectID, client)
-	client, err2 := g.webhookClient(ctx, projectID, guestIP)
+	client, err2 := g.webhookClient(ctx, projectID, login, guestIP)
 	if err2 != nil {
 		return nil, err
 	}
@@ -60,11 +60,11 @@ func dialLoopback(client *ssh.Client, port int) (net.Conn, error) {
 // been used inside webhook.IdleReuse and opened otherwise. A provider
 // that sends a burst pays one handshake; one that sends an event an
 // hour pays one each time.
-func (g *Gateway) webhookClient(ctx context.Context, projectID, guestIP string) (*ssh.Client, error) {
+func (g *Gateway) webhookClient(ctx context.Context, projectID, login, guestIP string) (*ssh.Client, error) {
 	if c := g.webhookConns.get(projectID); c != nil {
 		return c, nil
 	}
-	client, err := g.dialGuestSSH(ctx, projectID, guestIP)
+	client, err := g.dialGuestSSH(ctx, projectID, login, guestIP)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (g *Gateway) webhookClient(ctx context.Context, projectID, guestIP string) 
 // dialGuestSSH is the handshake: a five-minute gateway certificate for
 // the project, the guest's host certificate checked against the Host CA,
 // and the user `dev`, as a relay's dial does.
-func (g *Gateway) dialGuestSSH(ctx context.Context, projectID, guestIP string) (*ssh.Client, error) {
+func (g *Gateway) dialGuestSSH(ctx context.Context, projectID, login, guestIP string) (*ssh.Client, error) {
 	signer, err := g.certs.Signer(ctx, g.cfg.API, g.cfg.GatewayKey, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("gateway certificate: %w", err)
@@ -107,10 +107,10 @@ func (g *Gateway) dialGuestSSH(ctx context.Context, projectID, guestIP string) (
 		}
 	})
 	// The address here is what CheckHostKey takes the expected
-	// principal from. A webhook has no login name, and the guest's
-	// certificate carries the project id as a principal, which is what
-	// the gateway certificate is issued for.
-	c, chans, reqs, err := ssh.NewClientConn(nc, projectID+":"+strconv.Itoa(g.cfg.GuestPort), &ssh.ClientConfig{
+	// principal from: the login name the api sent with the route, not
+	// the guest's address, as a relay's dial does. A delivery has no
+	// login of its own, which is why /internal/route carries one.
+	c, chans, reqs, err := ssh.NewClientConn(nc, login+":"+strconv.Itoa(g.cfg.GuestPort), &ssh.ClientConfig{
 		User:            "dev",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: checker.CheckHostKey,
