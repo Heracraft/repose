@@ -563,3 +563,9 @@ month the line is dated in.
 2026-11-11 | release r20261111-5 | conductor, woker-1 | released | 6 branches: burst-cores (I-1126,I-1128), red-checks (I-1148,I-1150), idle-metrics (I-1152), idle-browser (I-1122,I-1124), remote-control-host (I-1132,I-1134,I-1136,I-1138), say (I-1144,I-1146) shipped as api,base,cli,edge,host,web. Evidence and what is not done: docs/releases/r20261111-5.md
 2026-11-11 | release r20261111-6 | conductor, woker-1 | released | 1 branches: domain-repose-run (I-1156,I-1158) shipped as api,base,cli,edge,host,infra,web. Evidence and what is not done: docs/releases/r20261111-6.md
 2026-11-11 | release r20261111-7 | conductor, woker-1 | released | 2 branches: release-followups (I-1160), say-replicas (I-1162) shipped as api,web. Evidence and what is not done: docs/releases/r20261111-7.md
+2026-11-11 | release r20261111-8 | conductor, woker-1 | released | 1 branches: rel-record shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261111-8.md
+2026-11-11 | release r20261111-9 | conductor, woker-1 | released | 1 branches: attach-window-ci (I-1166) shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261111-9.md
+2026-11-11 | release r20261111-10 | conductor, woker-1 | released | 1 branches: burst-measurement shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261111-10.md
+2026-11-11 | release r20261111-11 | conductor, woker-1 | released | 1 branches: webhook-test-clock shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261111-11.md
+2026-11-11 | release r20261111-12 | conductor, woker-1 | released | 1 branches: always-on-framework shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261111-12.md
+2026-11-11 | release r20261111-13 | conductor, woker-1 | released | 1 branches: conductor-handoff shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261111-13.md
