@@ -467,6 +467,7 @@ default_size = "small"
 default_agent = "codex"
 editor = "cursor"
 default_multiplexer = "herdr"
+remote_control = true
 
 [sync]
 exclude = ["dist", "*.mp4"]
@@ -496,11 +497,12 @@ reverse = ["15432:5432"]
 | `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                     |
 | `editor`              | none     | What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                            |
 | `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
+| `remote_control`      | `false`  | Offer the machine's Claude Code to the Claude app, so you can read and drive its agents from your phone. See [Drive it from the Claude app](/docs/agents#drive-it-from-the-claude-app).                      |
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
 | `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends.                                                      |
 | `forward.reverse`     | none     | Ports of your laptop that the machine's `localhost` reaches while you're attached: `5037` for the same port on both sides, `"15432:5432"` to listen on another one, at most 16, 1024 and above, not 9222, 9229, 2375 or 2376. Everything on the machine, agents included, reaches a lent port as a program on your laptop would: see [Your laptop's ports on the machine](/docs/machine#your-laptops-ports-on-the-machine). |
-| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project, and `[projects.NAME.forward]` with `reverse` adds ports. |
+| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project, and `[projects.NAME.forward]` with `reverse` adds ports. `[projects.NAME]` with `remote_control` replaces `remote_control` for that project. |
 | `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
 | `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |

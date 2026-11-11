@@ -721,6 +721,22 @@ in
           assert s["tui"] == "fullscreen" and fresh["tui"] == "fullscreen" and plan["tui"] == "fullscreen", (s, fresh, plan)
           guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/tui/.claude && echo {\\\"tui\\\":\\\"default\\\"} > /tmp/tui/.claude/settings.json && HOME=/tmp/tui repose-agent-setup claude'")
           assert json.loads(guest.succeed("cat /tmp/tui/.claude/settings.json"))["tui"] == "default"
+          # I-1132, I-1134, I-1136: remoteControlAtStartup follows the
+          # switch the carry writes, and is absent while it is off.
+          assert "remoteControlAtStartup" not in s and "remoteControlAtStartup" not in fresh, (s, fresh)
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/rc/.repose && echo on > /tmp/rc/.repose/remote-control && HOME=/tmp/rc repose-agent-setup claude'")
+          assert json.loads(guest.succeed("cat /tmp/rc/.claude/settings.json"))["remoteControlAtStartup"] is True
+          guest.succeed("test -e /tmp/rc/.local/state/repose/remote-control-startup")
+          guest.succeed("sudo -u dev sh -c 'echo off > /tmp/rc/.repose/remote-control && HOME=/tmp/rc repose-agent-setup claude'")
+          assert "remoteControlAtStartup" not in json.loads(guest.succeed("cat /tmp/rc/.claude/settings.json"))
+          guest.fail("test -e /tmp/rc/.local/state/repose/remote-control-startup")
+          # A key the user set is theirs, and disableRemoteControl stops
+          # it whatever the switch says (I-196).
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/rcu/.claude /tmp/rcu/.repose && jq -n \"{remoteControlAtStartup:false}\" > /tmp/rcu/.claude/settings.json && echo on > /tmp/rcu/.repose/remote-control && HOME=/tmp/rcu repose-agent-setup claude'")
+          assert json.loads(guest.succeed("cat /tmp/rcu/.claude/settings.json"))["remoteControlAtStartup"] is False
+          guest.fail("test -e /tmp/rcu/.local/state/repose/remote-control-startup")
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/rcd/.claude /tmp/rcd/.repose && jq -n \"{disableRemoteControl:true}\" > /tmp/rcd/.claude/settings.json && echo on > /tmp/rcd/.repose/remote-control && HOME=/tmp/rcd repose-agent-setup claude'")
+          assert "remoteControlAtStartup" not in json.loads(guest.succeed("cat /tmp/rcd/.claude/settings.json"))
           mcp = json.loads(guest.succeed("cat /home/dev/.claude.json"))
           assert set(mcp["mcpServers"]) >= {"playwright", "chrome-devtools"}, mcp
           # I-283: no auto-mode offer to catch a sent prompt under bypass;
@@ -3343,6 +3359,105 @@ in
   # build's whole store, most of it unknown to the VM's database: a GC
   # deletes those (they are not this guest's), and the next start brings
   # them back.
+  # The Remote Control window (DECISIONS I-1132, I-1134, I-1136): the
+  # conditions that open it, the argv it starts, the restart loop, and
+  # the switch and Claude Code's own keys closing it again. `claude` here
+  # is a stub in dev's ~/.local/bin, first on the login PATH (I-227),
+  # which records its argv; the real one would ask Anthropic for a login.
+  guest-remote-control = mkTest "guest-remote-control" {
+    nodes.guest = { ... }: { imports = [ node ]; };
+    testScript = ''
+      import shlex
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+
+      def dev(cmd):
+          return guest.succeed(f"sudo -H -u dev sh -c {shlex.quote(cmd)}")
+
+      def windows():
+          code, out = guest.execute("sudo -H -u dev tmux list-windows -t '=todo-app' -F '#{window_name}'")
+          return out.split() if code == 0 else []
+
+      def argv():
+          code, out = guest.execute("cat /home/dev/claude-argv")
+          return [l for l in out.splitlines() if l] if code == 0 else []
+
+      with subtest("a machine with a checkout, a session and a stub claude"):
+          dev("mkdir -p ~/.repose ~/.local/bin ~/todo-app ~/.claude")
+          dev("printf '%s\\n' '{\"project_id\":\"p1\",\"slug\":\"todo-app\",\"multiplexer\":\"tmux\"}' > ~/.repose/project.json")
+          dev("printf 'todo-app\\n' > ~/.repose/checkout")
+          dev("cd ~/todo-app && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init")
+          guest.succeed("""cat > /home/dev/.local/bin/claude <<'STUB'
+      #!/bin/sh
+      printf '%s\\n' "$*" >> "$HOME/claude-argv"
+      sleep 3600
+      STUB
+      chmod 755 /home/dev/.local/bin/claude && chown dev:dev /home/dev/.local/bin/claude""")
+          dev("tmux new-session -d -s todo-app -n shell -c ~/todo-app")
+          assert windows() == ["shell"], windows()
+
+      with subtest("off by default, and off until the login share holds a login (I-1134, I-278)"):
+          dev("repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("printf 'on\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("printf '{}\\n' > ~/.claude/.credentials.json")
+
+      with subtest("the window opens with the proposal's argv, once"):
+          dev("repose-remote-control")
+          guest.wait_until_succeeds("test -s /home/dev/claude-argv", timeout=30)
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+          assert argv() == ["remote-control --spawn worktree --name todo-app --no-chrome"], argv()
+          dev("repose-remote-control")
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+          assert len(argv()) == 1, argv()
+
+      with subtest("a setup token closes it again: Remote Control refuses one"):
+          dev("mkdir -p /tmp/sec && : > /tmp/sec/CLAUDE_CODE_OAUTH_TOKEN")
+          dev("REPOSE_SECRETS_DIR=/tmp/sec repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("rm /tmp/sec/CLAUDE_CODE_OAUTH_TOKEN")
+
+      with subtest("the stub's exit brings the window's claude back (the restart loop)"):
+          dev("repose-remote-control")
+          guest.wait_until_succeeds("test $(wc -l < /home/dev/claude-argv) -eq 2", timeout=30)
+          guest.succeed("pkill -f 'sleep 3600'")
+          guest.wait_until_succeeds("test $(wc -l < /home/dev/claude-argv) -eq 3", timeout=180)
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+
+      with subtest("the switch off closes the window repose opened (I-1136)"):
+          dev("printf 'off\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert windows() == ["shell"], windows()
+
+      with subtest("Claude Code's own key wins over the switch (I-196)"):
+          dev("printf 'on\\n' > ~/.repose/remote-control")
+          dev("jq -n \"{remoteControlAtStartup:false}\" > ~/.claude/settings.json && repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("jq -n \"{disableRemoteControl:true}\" > ~/.claude/settings.json && repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("rm ~/.claude/settings.json")
+
+      with subtest("a window of that name the user made is left alone"):
+          dev("tmux new-window -d -t '=todo-app' -n remote-control -c ~/todo-app 'sleep 3600'")
+          dev("printf 'off\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+          dev("tmux kill-window -t '=todo-app:remote-control'")
+
+      with subtest("a checkout that is no git repository gets --spawn same-dir (I-1065)"):
+          dev("rm -rf ~/todo-app/.git && : > ~/claude-argv")
+          dev("printf 'on\\n' > ~/.repose/remote-control && repose-remote-control")
+          guest.wait_until_succeeds("test -s /home/dev/claude-argv", timeout=30)
+          assert argv()[0] == "remote-control --spawn same-dir --name todo-app --no-chrome", argv()
+
+      with subtest("a herdr project builds no window"):
+          dev("printf 'off\\n' > ~/.repose/remote-control && repose-remote-control")
+          dev("printf '%s\\n' '{\"project_id\":\"p1\",\"slug\":\"todo-app\",\"multiplexer\":\"herdr\"}' > ~/.repose/project.json")
+          dev("printf 'on\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert windows() == ["shell"], windows()
+    '';
+  };
+
   guest-store-whiteouts = mkTest "guest-store-whiteouts" {
     nodes.guest = { lib, ... }: {
       imports = [ node ];

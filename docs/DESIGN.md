@@ -509,8 +509,13 @@ error}, summary)` and delivers by the user's configured channels: email
 (Resend) and ntfy (any ntfy-compatible endpoint the user sets, so phone apps
 work). Telegram and Discord webhooks are next. Events also show in `repose
 status` and the dashboard. Claude Code Remote Control and channels remain
-available to users who log in with a subscription; the platform does nothing
-to them.
+available to users who log in with a subscription; the platform proxies
+neither, reads no transcript and opens no port for them. It does start
+Remote Control, where the user asked for it with `remote_control = true` in
+`config.toml`: `remoteControlAtStartup` in the machine's Claude settings and
+a `remote-control` tmux window running `claude remote-control`, so the
+Claude app can read, prompt and start sessions on the machine (DECISIONS
+I-1132, amends this paragraph). Off unless asked for (I-1134).
 
 ## 14. Billing and metering
 

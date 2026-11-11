@@ -23,9 +23,10 @@ let
   checkout = import ./checkout.nix { inherit pkgs; };
   multiplexerIs = import ./multiplexer-is.nix { inherit pkgs; };
   loginPath = import ./login-path.nix { inherit pkgs; };
+  remoteControl = import ./remote-control.nix { inherit pkgs; };
   tmuxSession = pkgs.writeShellApplication {
     name = "repose-tmux-session";
-    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash pkgs.util-linux checkout loginPath ];
+    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash pkgs.util-linux checkout loginPath remoteControl ];
     text = ''
       project="$HOME/.repose/project.json"
       # Exit 3: nothing for the unit to keep running. A failed start is
@@ -220,6 +221,11 @@ let
         flock -u 9 || true
         exec 9>&-
       fi
+      # The Remote Control window, where the laptop's config.toml turned
+      # it on (DECISIONS I-1132, I-1136). It exits 0 on every path and
+      # opens nothing unless every condition holds, so the session is
+      # never held up by it.
+      repose-remote-control || true
     '';
   };
   # repose-tmux-save records the session's agent windows (DECISIONS

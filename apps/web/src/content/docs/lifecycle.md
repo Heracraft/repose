@@ -118,6 +118,8 @@ The machine's clock keeps time while it's frozen, so nothing of yours sees it ju
 
 Connections the machine itself had open to the internet don't survive a long freeze. The server drops an outbound connection idle for 30 minutes and the far end can drop one sooner, and the program on the machine sees the connection closed when it next uses it: one that reconnects carries on, one that doesn't has to be restarted. Keep the machine from freezing for a job that has to hold a connection open.
 
+A machine that offers its Claude Code to the [Claude app](/docs/agents#drive-it-from-the-claude-app) is offline there while frozen, and nothing you do in the app wakes it.
+
 To keep one machine out of this, [stop it freezing](/docs/config#keeping-a-machine-from-freezing).
 
 ## Snapshots

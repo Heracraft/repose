@@ -24,6 +24,13 @@
 #          Claude login share is bind-mounted over .credentials.json and
 #          the key is absent, since first-run onboarding asks for a login
 #          method even when the shared file already holds one (I-278);
+#          settings.json remoteControlAtStartup is set to true when the
+#          laptop's config.toml turned Remote Control on for this machine
+#          (~/.repose/remote-control holds `on`, DECISIONS I-1132,
+#          I-1136) and the key is absent; a key the user or the laptop
+#          set is theirs either way, and disableRemoteControl stops it.
+#          The true this added is removed again when the switch goes off,
+#          by the marker ~/.local/state/repose/remote-control-startup;
 #          ~/.claude.json hasSeenAutoDefaultNudge is set to true when
 #          settings.json's permissions.defaultMode is bypassPermissions and
 #          the key is absent: Claude Code's one-time "Make auto mode your
@@ -150,6 +157,37 @@ writeShellApplication {
       fi
     }
 
+    # remote_control_startup: Claude Code's own remoteControlAtStartup,
+    # which makes every interactive session register itself with Remote
+    # Control, so the Claude app shows the machine's agent windows
+    # (DECISIONS I-1132). Added only where the laptop's switch is on
+    # (I-1136) and the user's file has no such key, the same rule as
+    # defaultMode (I-250). disableRemoteControl, wherever it came from,
+    # stops this: Claude Code's own keys win (I-196). The marker records
+    # that this wrote the true, so that turning the switch off removes
+    # that one and never a value the user set.
+    remote_control_startup() {
+      local settings="$HOME/.claude/settings.json"
+      local marker="$HOME/.local/state/repose/remote-control-startup" want
+      { [ -s "$settings" ] && jq -e . "$settings" >/dev/null 2>&1; } || return 0
+      if jq -e '.disableRemoteControl == true' "$settings" >/dev/null 2>&1; then
+        return 0
+      fi
+      want=$(cat "$HOME/.repose/remote-control" 2>/dev/null || true)
+      if [ "$want" = on ]; then
+        if jq -e 'has("remoteControlAtStartup") | not' "$settings" >/dev/null 2>&1; then
+          jq '.remoteControlAtStartup = true' "$settings" | write_atomic "$settings" 0600
+          mkdir -p "$(dirname "$marker")" && : > "$marker"
+        fi
+      elif [ -e "$marker" ]; then
+        if jq -e '.remoteControlAtStartup == true' "$settings" >/dev/null 2>&1; then
+          jq 'del(.remoteControlAtStartup)' "$settings" | write_atomic "$settings" 0600
+        fi
+        rm -f "$marker"
+      fi
+      return 0
+    }
+
     setup_claude() {
       local settings="$HOME/.claude/settings.json"
       mkdir -p "$HOME/.claude"
@@ -207,6 +245,7 @@ writeShellApplication {
           jq '.skipDangerousModePermissionPrompt = true' "$settings" | write_atomic "$settings" 0600
         fi
       fi
+      remote_control_startup
     }
 
     # userjson_default <key>: set ~/.claude.json's <key> to true unless the

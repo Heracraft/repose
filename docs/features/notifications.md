@@ -376,7 +376,11 @@ the same layout. Dates in payloads are RFC 3339 and render as `4 October
 Agents' own features are untouched: Claude Code Remote Control works from a
 guest when the user logged in with a subscription inside it; Claude channels
 (Telegram, Discord) work if the user configures them. The platform does not
-proxy or intercept these.
+proxy or intercept these. Where `remote_control = true` asks for it, repose
+starts Remote Control on the machine (DECISIONS I-1132,
+`docs/features/agents.md`); a turn that ends then pushes twice, once from
+repose's `--done` and once from Claude's own **Push when Claude decides**, if
+the user turned that on. repose changes neither.
 
 Dashboard and CLI:
 

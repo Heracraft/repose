@@ -29,6 +29,7 @@ let
     # Registration failures must never block an agent (a blocked agent is a
     # silently wasted night), so setup is best-effort.
     ${pkgs.repose-agent-setup}/bin/repose-agent-setup ${bin} || true
+    ${pkgs.lib.optionalString (bin == "claude") remoteControl}
     # The checkout's dev environment: its .envrc, or its flake's dev shell
     # when it has no .envrc (DECISIONS I-259). Never blocks the agent.
     . ${devshell}
@@ -37,6 +38,18 @@ let
       _repose_devshell_flake_root _repose_devshell_shadow _repose_devshell_prompt
     ${pkgs.lib.optionalString (bin == "codex") codexDaemon}
     exec ${pkg}/bin/${bin} "$@"
+  '';
+
+  # The machine's `remote-control` tmux window, where the laptop's
+  # config.toml turned it on (DECISIONS I-1132). The guest installs
+  # repose-remote-control; a claude run outside a guest has no such
+  # command and this does nothing. In the background and detached from
+  # the agent's output: it opens a tmux window, which must never delay
+  # the agent nor print above it.
+  remoteControl = ''
+    if command -v repose-remote-control >/dev/null 2>&1; then
+      ( repose-remote-control >/dev/null 2>&1 & ) || true
+    fi
   '';
 
   # Interactive Codex runs its turns in a shared app-server daemon whose

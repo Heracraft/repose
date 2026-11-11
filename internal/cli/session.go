@@ -72,6 +72,9 @@ type sessionOptions struct {
 	// Reverse is [forward] reverse: the laptop's ports lent to the
 	// machine's localhost for as long as the attach lasts (I-1104).
 	Reverse []reverseForward `json:"reverse,omitempty"`
+	// RemoteControl is config.toml's remote_control for this project
+	// (DECISIONS I-1136), which the carry sends on.
+	RemoteControl bool `json:"remote_control,omitempty"`
 	// Messages are shown on the multiplexer first: a line the run printed
 	// just before the attach covered it (DECISIONS I-618).
 	Messages []string `json:"messages,omitempty"`
@@ -234,7 +237,7 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 	if err != nil {
 		return nil, err
 	}
-	co := carryOptions{TZ: opts.TZ, Markers: parseMarkers(string(out))}
+	co := carryOptions{TZ: opts.TZ, RemoteControl: opts.RemoteControl, Markers: parseMarkers(string(out))}
 	var warnings []string
 	if opts.RepoDir != "" {
 		gc, err := buildGitCarry(opts.RepoDir, opts.HomeDir)

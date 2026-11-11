@@ -88,6 +88,8 @@ An agent finishing its turn sends you nothing. The turn lands in `repose events`
 
 A notification carries a way into the dashboard only where the dashboard has something for you to do: a question's answers, a failed payment, a seat that's yours. Everything else says what happened and stops. A `--link` an agent passed is its own button.
 
+The Claude app's own pushes are separate: with [Remote Control on](/docs/agents#drive-it-from-the-claude-app) and **Push when Claude decides** turned on in Claude Code's `/config`, a finished turn can reach your phone twice, once from here and once from Claude.
+
 ## Emails about your account
 
 Account emails are email only, they're sent even with notification emails off, and they carry no unsubscribe link, because each one answers something you did or are about to be charged for. Polar, which takes the payments, sends the receipt for each charge, the confirmation of a new plan and the reminder when your card is about to expire. The rest are ours.
