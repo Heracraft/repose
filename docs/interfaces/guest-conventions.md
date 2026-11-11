@@ -228,7 +228,11 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   A window with any other name counts as an agent window while an agent's
   program is its foreground process (`sample.AgentByCommand`, I-421:
   `claude` typed in the `shell` window), except gemini, whose process is
-  `node`; hooks from it carry that window's name.
+  `node`; hooks from it carry that window's name. The `remote-control`
+  window (`repose-remote-control`, I-1132) is one of those: its
+  foreground process is `claude`, so it counts as a claude window, and
+  every session Remote Control spawns reports under it, since they
+  inherit the server's `TMUX_PANE`.
 - `repose run --worktree -p "prompt"` (I-253, I-342) first runs `git -C
   /home/dev/<checkout> worktree add -b worktree-<N>
   /home/dev/<checkout>-worktree-<N> <HEAD>`, copies the checkout's
