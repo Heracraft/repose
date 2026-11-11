@@ -66,7 +66,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 
 | Path | What |
 |---|---|
-| `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a fork, a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
+| `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
 | `/home/dev/.repose/checkout` | one line, the checkout's directory name under `/home/dev` (`[A-Za-z0-9._-]`, no leading dot, no `/`), written by the CLI's first sync (I-368); absent on a machine with no checkout and on one set up before I-368 |
 | `/home/dev/<checkout>-worktree-<N>` | a git worktree of the checkout on branch `worktree-<N>`, made by `repose run --worktree` (DECISIONS I-253, I-342); see "tmux". Worktrees made before I-342 are `/home/dev/<slug>-<window>` on `repose/<window>` and stay as they are |
 | `/home/dev/.repose/mcp/` | the MCP registry, `laptop.json`, `forward/NAME.json`, `agents/<agent>.json`, `rendered.json` (DECISIONS I-555); see "MCP registry" |
@@ -189,7 +189,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   minute save and the restore hold `flock ~/.repose/agent-windows.lock`.
 - When `repose-tmux-session` creates the session, it reopens the windows
   of one record, unless the record names another project id than
-  project.json (a fork's or a `snapshots restore --as` copy), which it
+  project.json (a `snapshots restore --as` copy), which it
   removes and reopens nothing: `agent-windows` if present (and removes
   `agent-windows.live`); otherwise `agent-windows.live` when its boot is
   not this one, whether or not `stopped` names that boot (a stop whose
@@ -959,7 +959,7 @@ state and is named once.
 | markers | `/home/dev/.repose/carry/<item>` | the hash of the laptop input last applied; the probe prints them as `#marker <item> <hash>`, and `#marker tools-notices waiting` while `~/.repose/tools-notices` is non-empty |
 | the tool logins' files (DECISIONS I-224) | `/home/dev/.repose/creds-paths`, one expanded path per line | written with marker `creds` after the logins; the probe prints `#credsmissing` when one of them is gone, and the logins are sent again |
 | the last completed sync's key (DECISIONS I-224) | `.git/repose-synced-key` in the checkout | hex sha256 of what the laptop sent; emptied before the apply touches the checkout, written at its end; the probe prints `#synckey`, `#head` and `#headref` |
-| what the last apply left, per path (DECISIONS I-573) | `.git/repose-synced-paths` in the checkout | NUL-separated: the `HEAD` the apply left, then `<hash>` and `<path>` for each path the laptop's work wrote (a blob hash, `l:<target>` for a symlink, a submodule's `<HEAD> <tree>`, `-` for none, `?` for anything else); rewritten at the end of every apply. A path whose content still matches, under the same `HEAD`, is the last sync's own: the next apply stashes it rather than treating it as the guest's work. Read and written only by the sync's own scripts; a missing file means none of the guest's changes is the last sync's |
+| what the last apply left, per path (DECISIONS I-573) | `.git/repose-synced-paths` in the checkout | NUL-separated: the `HEAD` the apply left, then `<hash>` and `<path>` for each path the laptop's work wrote (a blob hash, `l:<target>` for a symlink, a submodule's `<HEAD> <tree>`, `-` for none, `?` for anything else); rewritten at the end of every apply. A path whose content still matches, under the same `HEAD`, is the last sync's own: the next apply stashes it rather than treating it as the guest's work. A path whose copy the sync kept for the machine (the overlap menu's `m`, DECISIONS I-1100) is left out, so the next sync asks about it again rather than stashing the agent's work as the last sync's own. Read and written only by the sync's own scripts; a missing file means none of the guest's changes is the last sync's |
 
 ### Tools carry (DECISIONS I-221, I-222)
 
@@ -1197,9 +1197,37 @@ Anything the user binds on `0.0.0.0` or `127.0.0.1` (or `::`, `::1`)
 inside the guest is reachable through `repose open <port>` (SSH `-L`), and
 is forwarded automatically while a CLI is attached (DECISIONS I-199), read
 with `ss -Hltn` (iproute2, in the base). Platform-owned ports, never
-auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296). Each attached CLI records its forwarded
+auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), and
+5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
+holds (I-1104). Each attached CLI records its forwarded
 ports in `/home/dev/.repose/forwards/<id>`; the project session's
 `status-right` is set from their union and unset when none is left.
+
+That file's format (I-199, extended by I-1106): line 1 is the guest
+ports that CLI forwards to its laptop, space-separated bare numbers,
+which is all any reader before I-1106 takes (`tr ' ' '\n' | grep -E
+'^[0-9]+$'`). Lines after it name one forward each, fields joined by
+colons so that reader steps over them:
+
+```
+3000 5173
+out:3000:3001
+out:5173:5173
+in:5037:5037:adb
+```
+
+`out:MACHINE:LAPTOP` is a guest port on that laptop. `in:MACHINE:LAPTOP`
+is a laptop port lent to the guest (I-1104), with the laptop's process
+name after it when its own tools said, cut to `[A-Za-z0-9._-]`. An entry
+is re-stamped every 20 s and ignored after 60 s. Both shapes are read
+for one release. `repose status` reads the same file for its `on your
+laptop` marks and its `laptop` row.
+
+A reverse forward's listener is the guest's sshd, on `127.0.0.1` and
+`::1` only: `GatewayPorts no` (`nix/guest/base/ssh.nix`) keeps it off
+every other address whatever the client asks for, and the client asks
+for one address per request, so both loopbacks take two requests.
+
 Nothing is exposed otherwise. The desktop listens only on `127.0.0.1`: the viewer on 6080 (the
 socket-activated entry point), websockify on 6081, Xvnc's VNC on 5900 (up
 whenever the display is); the agents' browser's DevTools on 9224

@@ -89,10 +89,10 @@ const sshRetryInterval = time.Second
 
 // errPromptNotSubmitted marks the give-up of I-752's submit loop: the
 // agent started and the prompt was typed, only the Enter was never
-// taken. A caller that wraps a failed start (`repose fork --prompt`,
-// fork.go) must not call this "could not start the agent" or answer it
-// with a command that starts a second one -- the prompt is sitting in
-// the input of the one that is already there.
+// taken. A caller that wraps a failed start must not call this "could
+// not start the agent" or answer it with a command that starts a second
+// one -- the prompt is sitting in the input of the one that is already
+// there.
 var errPromptNotSubmitted = errors.New("the agent started but did not take the prompt")
 
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.
@@ -346,6 +346,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		helper.MCPOff = true // I-556: attach honours the off switch too
 	}
 	helper.MCP = e.Cfg.mcpForward(project.Slug) // I-557
+	if helper.Forward {
+		helper.Reverse = e.Cfg.forwardReverse(project.Slug) // I-1104
+	}
 	// This folder's checkout on the machine: the machine's own (the same
 	// remote), or another one the folder is (I-480), not one that
 	// PROJECT:CHECKOUT named from elsewhere.
@@ -478,6 +481,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			EnvLater: waitEnv,
 			EnvOff:   skip[envLogin],
 			Probe:    early.forProject(),
+			Choose:   overlapAsker(e, opts),
 			Carry: func(markers map[string]string) (*credCarry, error) {
 				b := <-carryDone
 				gc, cc := b.gc, b.cc

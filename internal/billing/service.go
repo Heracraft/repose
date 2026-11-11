@@ -51,6 +51,7 @@ var (
 	ErrNotCancelled     = errors.New("no cancellation is scheduled")
 	ErrSamePlan         = errors.New("the account is on that plan already")
 	ErrNoSeat           = errors.New("no free seat for the upgrade")
+	ErrExempt           = errors.New("the account is billing-exempt")
 )
 
 // WaitlistedError is the checkout refusal when the plan's seats are not
@@ -206,6 +207,12 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID, customerI
 	}
 	if s.seats == nil || s.polar == nil {
 		return "", ErrDisabled
+	}
+	// Before Reserve: an exempt account has no plan to choose, so a
+	// checkout must not put it on the waitlist and hold a seat that
+	// nothing will ever convert (I-1090).
+	if u.BillingStatus == "exempt" {
+		return "", ErrExempt
 	}
 	sub, err := LiveSubscription(ctx, s.pool, u.ID)
 	if err != nil {

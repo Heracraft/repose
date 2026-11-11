@@ -43,7 +43,7 @@ To start in another mode, set `defaultMode` in `~/.claude/settings.json`, on you
 
 Claude Code also starts with its fullscreen renderer, which fills the tmux window and scrolls inside itself. Set `"tui": "default"` in `~/.claude/settings.json`, on your laptop or the machine, to draw it inline, or run `/tui default` in Claude Code.
 
-Codex CLI also starts without asking: `approval_policy = "never"` and `sandbox_mode = "danger-full-access"`, from the machine's system config. To start it otherwise, set those keys in `~/.codex/config.toml` on the machine. That file wins over the system config one key at a time, so setting only `approval_policy` leaves the sandbox as the machine set it. The file belongs to that one machine; your other machines keep what they had, and a fork gets a copy.
+Codex CLI also starts without asking: `approval_policy = "never"` and `sandbox_mode = "danger-full-access"`, from the machine's system config. To start it otherwise, set those keys in `~/.codex/config.toml` on the machine. That file wins over the system config one key at a time, so setting only `approval_policy` leaves the sandbox as the machine set it. The file belongs to that one machine; your other machines keep what they had, and a machine restored from its snapshot gets a copy.
 
 opencode, Gemini CLI and pi keep their own permission prompts unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
 
@@ -97,6 +97,8 @@ A window with another name counts as an agent's while the agent is its foregroun
 ## Let it ask you
 
 Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
+
+`repose-presence` prints `attached` while you're at the machine and `away` while you aren't, by the same reading as the notification hold: a tmux client or an SSH connection, your editor and a herdr bridge included. The guide tells an agent to run it before it hands you a URL for a port on the machine, so it offers `http://localhost:PORT` while that port is on your laptop and names [`repose open PORT`](/docs/machine#ports) while it isn't. It exits 0 either way, and 1 when the machine's agent service doesn't answer.
 
 ## Log in
 

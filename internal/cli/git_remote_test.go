@@ -142,9 +142,9 @@ func TestCheckoutOwnsProject(t *testing.T) {
 	if !e.checkoutOwnsProject(dir, &Project{ID: "p1", Slug: "todo-app", RemoteURL: "github.com/you/todo-app"}) {
 		t.Error("the checkout's own project is not recognised")
 	}
-	// A fork copy (no remote) or another repository's project: no.
-	if e.checkoutOwnsProject(dir, &Project{ID: "p2", Slug: "todo-app-fork-1"}) {
-		t.Error("a fork copy with no remote was taken as the checkout's")
+	// A second machine (no remote) or another repository's project: no.
+	if e.checkoutOwnsProject(dir, &Project{ID: "p2", Slug: "todo-app-2"}) {
+		t.Error("a second machine with no remote was taken as the checkout's")
 	}
 	if e.checkoutOwnsProject(dir, &Project{ID: "p3", Slug: "other", RemoteURL: "github.com/you/other"}) {
 		t.Error("another repository's project was taken as the checkout's")
@@ -160,7 +160,7 @@ func TestCheckoutOwnsProject(t *testing.T) {
 	if !e.checkoutOwnsProject(root, &Project{ID: "p4", Slug: "scratch"}) {
 		t.Error("a --name project is not recognised in its directory")
 	}
-	if e.checkoutOwnsProject(root, &Project{ID: "p5", Slug: "scratch-fork-1"}) {
+	if e.checkoutOwnsProject(root, &Project{ID: "p5", Slug: "scratch-2"}) {
 		t.Error("another no-remote project was taken as the directory's")
 	}
 }
@@ -322,10 +322,10 @@ func TestRunAddsTheReposeRemote(t *testing.T) {
 	}
 }
 
-// `repose rm` of several fork copies removes each copy's remote: the
+// `repose rm` of several second machines removes each one's remote: the
 // destroys run at once, and git refuses a second writer of .git/config,
 // so the edits take turns (I-631).
-func TestRmOfSeveralForksRemovesEachRemote(t *testing.T) {
+func TestRmOfSeveralMachinesRemovesEachRemote(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	f := newRunFixture(t, fake)
@@ -333,23 +333,23 @@ func TestRmOfSeveralForksRemovesEachRemote(t *testing.T) {
 	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
 		t.Fatalf("runRun: %v", err)
 	}
-	var forks []string
-	for i := 1; i <= 4; i++ {
-		slug := fmt.Sprintf("%s-fork-%d", testSlug, i)
+	var machines []string
+	for i := 2; i <= 5; i++ {
+		slug := fmt.Sprintf("%s-%d", testSlug, i)
 		if _, err := fake.CreateProject(slug, "small"); err != nil {
 			t.Fatal(err)
 		}
-		forks = append(forks, slug)
-	}
-	if got := addForkRemotes(f.local, testSlug, forks); len(got) != len(forks) {
-		t.Fatalf("fork remotes added: %v", got)
+		machines = append(machines, slug)
+		if !addMachineRemote(f.local, slug, testSlug) {
+			t.Fatalf("remote for %s not added", slug)
+		}
 	}
 	out := &discardWriter{}
 	f.env.ErrOut = out
-	if err := DestroyProjectsCmd(ctx, f.env, forks, true, false, nil); err != nil {
+	if err := DestroyProjectsCmd(ctx, f.env, machines, true, false, nil); err != nil {
 		t.Fatalf("rm: %v", err)
 	}
-	for _, slug := range forks {
+	for _, slug := range machines {
 		if got := remoteURLOf(f.local, slug); got != "" {
 			t.Errorf("remote %s still there: %q", slug, got)
 		}
@@ -358,6 +358,6 @@ func TestRmOfSeveralForksRemovesEachRemote(t *testing.T) {
 		}
 	}
 	if remoteURLOf(f.local, "repose") == "" {
-		t.Error("rm of the forks took the source's repose remote")
+		t.Error("rm of the second machines took the checkout's repose remote")
 	}
 }

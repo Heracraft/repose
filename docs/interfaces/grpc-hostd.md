@@ -214,10 +214,17 @@ and leaves the guest `error`, so nothing starts it. Empty means
 unchecked: a snapshot from before I-462, or an api older than it. A
 value that is not 64 hex digits is `invalid_argument`.
 
-`clone` (field 19, I-701) is set instead of `blob_path` for a fork's copy
-on its source's host, only to a host whose Hello names `local_clone`:
-`{source_guest_id, point_id, sibling_guest_ids}`. The first copy of a
-fork to arrive freezes the source on its own worker, snapshots its volume
+`clone` (field 19, I-701) is **no longer sent**: `repose fork` was its
+only caller and is gone (I-1082). hostd still accepts it for one
+release, so a host that has not been switched yet keeps working with an
+api that predates the removal; the field and `local_clone` become
+`reserved` in the release after v0.1.45, and the description below is
+what hostd still does with a clone that arrives.
+
+`clone` is set instead of `blob_path` for a copy on its source's host,
+only to a host whose Hello names `local_clone`:
+`{source_guest_id, point_id, sibling_guest_ids}`. The first copy to
+arrive freezes the source on its own worker, snapshots its volume
 into `fp-<point_id>` and thaws; every copy (`sibling_guest_ids`, this one
 included) becomes a thin clone of that point, grown to `volume_bytes`
 when the source's is smaller (smaller is `invalid_argument`), with no

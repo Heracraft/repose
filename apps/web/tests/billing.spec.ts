@@ -297,7 +297,7 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	await expect(disk).toContainText('112.4 GB of 100 GB · over');
 	// What is refused is a banner under the meters, one sentence (I-837).
 	await expect(page.getByTestId('disk-over')).toHaveText(
-		'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less.'
+		'Creating and restoring projects, and growing a disk, are refused until your projects hold less.'
 	);
 	await setBilling({ disk_held_gb: 37.5 });
 	await page.reload();

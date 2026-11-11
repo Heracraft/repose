@@ -29,7 +29,7 @@ func errMessage(r resp) string {
 }
 
 // The compute gate at every call site (api.md's payment_required table):
-// start, create, restore, fork, snapshot restore, class change and volume
+// start, create, restore, snapshot restore, class change and volume
 // growth; each refusal carries the reason and the whole sentence, and an
 // exempt account passes everything (I-16).
 func TestBillingGateBlocksCompute(t *testing.T) {

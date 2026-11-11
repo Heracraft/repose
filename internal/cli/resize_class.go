@@ -136,8 +136,8 @@ func planMemoryRefusalOf(me *Me, list func() ([]Project, error), ask planAsk) st
 	return fmt.Sprintf("Your %s plan runs %d GB at once and %s %s using it. %s, or upgrade at %s.", plan, limit, joinNames(slugs), isAre(len(slugs)), fixOr(ask.Fix, slugs), billingURL)
 }
 
-// fixOr is the way out a memory refusal names: the caller's own (fork's
-// --no-start), else `repose stop` of the machines in the way.
+// fixOr is the way out a memory refusal names: the caller's own, else
+// `repose stop` of the machines in the way.
 func fixOr(fix string, slugs []string) string {
 	if fix != "" {
 		return fix

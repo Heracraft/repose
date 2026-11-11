@@ -54,7 +54,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/snapshots", a(s.listSnapshots))
 	s.route(m, "POST /v1/projects/{id}/snapshots", a(s.createSnapshot))
 	s.route(m, "POST /v1/projects/{id}/snapshots/{sid}/restore", a(s.restoreSnapshot))
-	s.route(m, "POST /v1/projects/{id}/fork", a(s.forkProject))
+	s.route(m, "POST /v1/projects/{id}/fork", a(s.forkRemoved))
 	// Events and logs
 	s.route(m, "GET /v1/projects/{id}/events", a(s.listEvents))
 	s.route(m, "GET /v1/projects/{id}/logs", a(s.projectLogs))

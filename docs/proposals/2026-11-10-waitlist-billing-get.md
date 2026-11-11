@@ -1,6 +1,14 @@
 # Only a choice puts an account on the waitlist (proposal, 2026-11-10)
 
-**Status: proposal; nothing here is decided.** The product value council
+**Status: settled on 2026-11-11.** The GET bug was already fixed by
+I-1033 (v0.1.44). What this file proposed on top of it is decided and
+built as DECISIONS I-1090 (an exempt account cannot join and the queue
+passes its row over, decision 1's recommended option) and I-1092 (the
+rows a page view made are cleared by `repose-admin waitlist stale
+--lapse`, not a migration, decision 2). Decision 3 stands: the 2026-10-17
+UI notes stay out, on branch `waitlist-feedback`. The body below is the
+reasoning record and describes the repo as it was on 2026-11-06; where it
+and a decision entry disagree, the entry wins. The product value council
 (`reports/2026-11-04-product-value-council.md`, "waitlist-seats", all
 four members) asked for a fix of the bug where loading the Billing page
 puts a plan-less account on the waitlist. The owner found the bug on

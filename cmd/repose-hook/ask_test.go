@@ -33,6 +33,8 @@ type guestSide struct {
 	asked    []questions.Question
 	// herdr resolves herdr pane ids as guestd's watcher would.
 	herdr hooks.HerdrResolver
+	// attached is what the presence source answers (I-1098).
+	attached bool
 	// noRelay: the hostd has not said it relays a secret's name (I-929).
 	noRelay bool
 }
@@ -68,6 +70,11 @@ func (g *guestSide) start(t *testing.T) {
 	srv := hooks.NewServer(g.socket, -1, func(string, string, string, string) {}, nil, log)
 	srv.SetHerdrResolver(g.herdr)
 	srv.SetSecretRelay(func() bool { return !g.noRelay })
+	srv.SetPresence(func(context.Context) bool {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		return g.attached
+	})
 	srv.SetLinkSink(func(agent, window, kind, summary string, l msglink.Link) {
 		g.mu.Lock()
 		g.messages = append(g.messages, strings.Join([]string{agent, window, kind, summary, l.URL, l.Label}, "|"))
@@ -115,6 +122,8 @@ func TestIsSubPicksTheModeFromTheNameOrTheFirstWord(t *testing.T) {
 		{[]string{"repose-ask", "q"}, "ask"},
 		{[]string{"repose-hook", "ask", "q"}, "ask"},
 		{[]string{"repose-hook", "notify"}, "notify"},
+		{[]string{"/run/current-system/sw/bin/repose-presence"}, "presence"},
+		{[]string{"repose-hook", "presence"}, "presence"},
 		{[]string{"repose-hook", `{"hook_event_name":"Stop"}`}, ""},
 		{[]string{"repose-hook"}, ""},
 	} {

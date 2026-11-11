@@ -15,21 +15,6 @@
                 "textParagraph": {
                   "text": "The nightly snapshot failed: the volume was busy. The next one runs tonight."
                 }
-              },
-              {
-                "buttonList": {
-                  "buttons": [
-                    {
-                      "text": "Open project",
-                      "type": "OUTLINED",
-                      "onClick": {
-                        "openLink": {
-                          "url": "https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1"
-                        }
-                      }
-                    }
-                  ]
-                }
               }
             ]
           }

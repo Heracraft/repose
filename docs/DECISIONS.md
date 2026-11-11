@@ -23040,6 +23040,9 @@ The owner's audit struck step 6 of the quickstart ("Get a notification when it's
 - This is a docs-placement decision and nothing else. No command, flag or channel is removed; a retreat from the feature itself would be its own decision and its own workstream.
 
 **I-749. `install.md` says "Update command coming soon".** (docs-prose, 2026-10-15)
+*Amended by I-1086 (2026-11-11): the command shipped as `repose version
+update`, so the line became its documentation and the exception ended,
+which is what this entry said would happen.*
 
 I-242 and the no-ghost-features rule say the docs carry nothing that has not shipped: there is no `repose update`, so the line is a doc for an unshipped command. The owner kept it anyway, in his words because it "gives the thing a soul", and reaffirmed it after the conflict was named. Recorded here so the next session does not quietly delete it as a stray, and so the exception stays an exception: it is one line, it names a debt rather than promising a date, and it sits beside what to do today (run the install command again, which replaces the binary and leaves your login alone). Nothing else in the docs gets this. When `repose update` ships, this line becomes its documentation and the exception ends.
 
@@ -31232,3 +31235,756 @@ the next tick. `internal/hostd/guest/burst_test.go`
 `TestBurstStopsForAGuestPastItsAllowance`: `SetBurst allowed=false` puts
 the guest at its base in that call, holds it there on a quiet host,
 survives in bbolt and rides in Hello.
+**I-1090. A billing-exempt account cannot join the waitlist, and the
+queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
+ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends
+I-290 and I-294.)
+*Made during implementation* (`docs/proposals/2026-11-10-waitlist-billing-get.md`
+§2.1 and §2.2, decision 1, the recommended option).
+
+I-1033 stopped `GET /billing` from joining the waitlist. It left the two
+routes that join on purpose open to an account that has nothing to join
+for. An exempt account needs no plan: the gate lets every start through
+on `billing_status = 'exempt'` alone, so a place in the queue buys it
+nothing — and an invitation for it holds one of the fleet's seats for 72
+hours, which no checkout will ever convert, while the account behind it
+waits. That is the shape of the one real occurrence: the exempt account
+the 2026-10-17 review found on the list, whose hold the owner deleted on
+prod on 2026-10-18.
+
+So `POST /billing/checkout` and `POST /billing/waitlist` answer such an
+account `409 conflict`, `detail.reason = exempt`, with "This account is
+billing-exempt, so it has no plan to choose and no place to wait for."
+The dashboard already shows an exempt account no plan cards and no Join
+button, so nothing a user does reaches this; it is the api refusing to be
+driven into a state the UI cannot produce.
+
+The row, if one exists, keeps its data and takes no place: the three
+queries that rank the queue — `store.waitlistSQL`, `Count`'s `Waiting`
+and `billing.WaitlistPlace` — all add `billing_status <> 'exempt'` beside
+the suspended, cancelled and deleted filters they already carry. All
+three, not one: they must agree, or `GET /me` reports a position that
+`repose-admin waitlist list` does not show and the inviter does not
+honour. A status back to `none` puts the user in line at the same
+`joined_at`, since nothing is deleted.
+
+*Rejected:* leaving the api open and relying on the dashboard. The
+dashboard is one client; the refusal is the contract, and the cost of the
+open version is a held seat nobody can use.
+
+*Not changed:* `repose-admin waitlist admit HANDLE` still invites an
+exempt account if an operator names one. An operator asking by hand is a
+choice, and `admit --next N` reads `ListWaiting`, so the queue walk skips
+them anyway.
+
+**I-1092. The waitlist rows a page view made are cleared by an operator
+command, not a migration.** (waitlist-choice, 2026-11-11; conductor's
+ruling, owner's standing approval of 2026-11-11.)
+*Made during implementation* (`docs/proposals/2026-11-10-waitlist-billing-get.md`
+§2.3, decision 2).
+
+Between 2026-09-27 (I-289) and 2026-11-04 (I-1033, in v0.1.44) every
+visit to `/billing` by a plan-less account while the fleet was full put
+the visitor on the waitlist. Those rows are indistinguishable in the
+schema from a row a person made by choosing. Each costs a seat for three
+days when its turn comes, and counts toward the "N waiting" the landing
+page prints, until it lapses on its own.
+
+A migration cannot tell the two apart, and a migration that lapses a row
+a person really chose loses their place with no way back for the operator
+who ran it. What separates them is outside the database: the api's
+request log has `route` and `user_id`, so a `POST /v1/billing/checkout`
+or `POST /v1/billing/waitlist` at the row's `joined_at` means a choice
+and only a `GET /v1/billing` means the bug. A human with Loki open has to
+judge that.
+
+So `repose-admin waitlist stale` lists the candidates and writes nothing:
+the rows still waiting that joined before `--before`, which defaults to
+`2026-11-06T02:00:00Z`, when v0.1.44 reached prod. It prints each
+account's handle, join time, billing status and whether it ever
+subscribed, and the count. `--lapse` then sets `lapsed_at` on exactly the
+rows it listed, under the waitlist advisory lock and insisting each row
+is still waiting, so a row the tick invited in between keeps its
+invitation. It is audited `waitlist_lapse` per account and sends nothing:
+the lapse goes in with a plain update rather than through
+`Inviter.expire`, whose job is to send `waitlist_expired`, which here
+would tell a person they missed an invitation they never had.
+
+A row lapsed by mistake is one click on `/billing` away from the back of
+the list (I-1033), which is why the read-only listing plus a flag is
+enough and a per-row confirmation is not.
+
+*Rejected:* a migration (cannot read the logs, runs on every deploy, and
+is the wrong unit for a judgement call); leaving the rows to lapse by
+themselves (each still costs a seat for 72 hours and an email that reads
+as an invitation the user never asked for).
+**I-1086. `repose version update` replaces the CLI, with install.sh's
+checks; amends I-749.** (cli, 2026-11-11.)
+*Made during implementation.*
+
+The product value council asked for an update command
+(`reports/2026-11-04-product-value-council.md`), and `install.md` has
+carried "Update command coming soon" since I-749 waiting for it. Until
+now updating meant pasting 55 characters of `curl | sh` that the
+once-per-release notice printed in full.
+
+It is `repose version update [VERSION]`, under the noun that already
+answers "which CLI do I have", not a top-level `repose update`
+(the proposal's decision 1; conductor's ruling, owner's standing approval
+of 2026-11-11). "Update" already means the machine's **base updates** to
+a repose user (`config.md`, the `base updated` notification, the `base
+updates held` setup line), and a 36th top-level command reading "update
+my machine" is the collision that causes. `repose version` gets
+`SuggestFor: update, upgrade, self-update`, so `repose update` answers
+with `repose version`, and `repose version` alone still prints `repose
+0.1.44 (herakraft)` byte for byte, because scripts read it.
+
+The command makes exactly the checks `install.sh` makes, in the same
+order, because a second way to install must not be a weaker way: resolve
+`latest` through the releases/latest redirect (not the api's
+`X-Repose-CLI-Latest`, which is a hint and carries no signature);
+download the archive, `checksums.txt` and `checksums.txt.sig`; verify the
+signature against the release key with `crypto/ecdsa` (so no `openssl` is
+needed); then the archive's SHA-256 against its line in `checksums.txt`.
+Nothing is written unless both pass. The new binary is written beside the
+running one, chmod 755, run with `version` to see that it starts and
+names the release, and then renamed over the old path. A rename leaves
+the running process alone, and the old file's bytes are never rewritten
+in place, which is what keeps a signed macOS binary runnable after an
+update.
+
+The key now has two copies, `install.sh` and
+`internal/cli/versionupdate.go`.
+`test/supplychain.TestReleaseKeyIsTheSameInInstallShAndTheCLI` fails
+while they differ, as `release.yml` already reads the one in `install.sh`
+to check the signature it just made. A rotation that changes one and not
+the other would otherwise ship a CLI that refuses every release.
+
+It refuses, touching no network, on a machine (`REPOSE=1`, exit 2: the
+guest's repose comes with its base), on a build whose version does not
+parse (exit 2), on Windows (exit 1: no Windows release exists), and when
+`os.Executable()` with symlinks resolved is under `/nix/store/`, a
+`Cellar/` directory, `/opt/homebrew/`, `/home/linuxbrew/`, `/snap/`,
+`/usr/bin/repose` or `/bin/repose` — a write there breaks a store hash or
+is undone at the next upgrade, so the command names the owner and exits
+1. A directory the user cannot write is not that case: it says `Can't
+write /usr/local/bin. Run it as root: sudo repose version update`, which
+is the `install.sh --system` user's answer. Releases before v0.1.28 have
+no signature (I-430 pins theirs by hash in `install.sh` instead) and are
+refused with the `install.sh --version` line.
+
+Two things the proposal left open and the docs' rules decided. The
+optional `[VERSION]` stays (its decision 2): a rollback is the answer to
+a bad release and the alternative is telling the user to go back to
+`curl | sh`, which this command exists to replace. An explicit VERSION
+equal to the running one answers `repose 0.1.40 is already installed.`
+rather than "is the latest release", which would be false for a
+rollback; a VERSION that is not `vX.Y.Z` is exit 2 naming the shape.
+`repose_api_cli_requests_total{version}` (its decision 5) is **not**
+added: nothing reads it until the owner plans to raise `Oldest`, and the
+counter can ship with that.
+
+*Evidence.* `TestVersionUpdateReplacesTheBinary`,
+`TestVersionUpdateAlreadyTheLatest`, `TestVersionUpdateRollsBack`,
+`TestVersionUpdateRefusesAndKeepsTheBinary` (no signature, bad
+signature, archive mismatch, a binary that will not start, one that
+names another release, no such release, before signing, not a tag — each
+asserting the old file's SHA-256 is unchanged and no temporary file is
+left behind), `TestVersionUpdateRefusesBeforeTheNetwork` (machine, dev
+build, nix store, Windows, with the fake release server asserting it was
+never called), `TestVersionUpdateNamesAnotherReposeFirstOnPATH`,
+`TestBinaryOwner`, all against an `httptest` release server signed with
+its own key. One mutation, `verifyChecksums` short-circuited, fails
+`bad_signature` with "the binary changed".
+
+**I-1088. `X-Repose-CLI-Oldest`, and a skew line that repeats while it
+matters.** (api, cli, 2026-11-11.)
+*Made during implementation.*
+
+I-626's line prints once per newer release. That is right for "a newer
+one exists" and wrong for "this one is no longer answered the way the
+docs describe": the second is a reason the user's next command may do
+something other than its page says, and once, months ago, is not a
+warning.
+
+The api sends a second header, `X-Repose-CLI-Oldest: vX.Y.Z`, the oldest
+CLI release it still answers as `docs/interfaces/api.md` describes.
+`clirelease.Oldest` is a constant beside `DefaultURL`, `""` today, so the
+header is absent and this prints for nobody; the repository keeps an old
+request or answer shape for one release after a contract change
+(`CLAUDE.md`), and the commit that removes such a shape raises the
+constant to the first release that no longer carries it. Shipping the
+header unset now means that commit is a one-line change instead of a
+protocol change. It never refuses anything: I-626's reason for no
+refusal (the api has no version it cannot serve at all) still holds.
+
+A CLI below `Oldest` prints, on stderr, at the end of every `run`,
+`attach` and `sync`, and before an attach hands over to ssh:
+
+```
+repose 0.1.30 is too old for some of repose's answers. `repose version update` updates it.
+```
+
+Those three commands and no others: they are the ones that move the
+user's work between laptop and machine, where a wrong answer costs
+something, and `ls` and `status` staying quiet is what keeps the line
+worth reading.
+
+The once-per-release line stays, with new text naming the new command
+(conductor's ruling on the proposal's decision 3, owner's standing
+approval of 2026-11-11), and when both would apply only the stronger one
+prints, with the newer release recorded so the weaker line does not
+arrive afterwards saying less about the same version. Two lines in one
+run, both telling the user to update, is the pile-up "Trust the reader"
+(I-484, I-485) is about.
+
+For a binary a package manager owns (I-1086's table) both lines end
+"Update it with Homebrew." instead of naming a command that would refuse
+to run.
+
+The `v` bug is fixed. A release build carries `0.1.43`
+(`.goreleaser.yaml` sets `main.version={{ .Version }}`) and the header
+carries `v0.1.44`, so the real line read "repose 0.1.43 is older than
+v0.1.44" while its test used `v0.1.20` on both sides and saw nothing.
+Both are now printed through `release()`, which drops the `v`;
+`TestNewerCLINoticeOncePerRelease` uses `0.1.20` and `v0.1.24`, the real
+shapes.
+
+The machine guide's line (`nix/guest/base/agent-guide.md`) now tells an
+agent to say `repose version update` rather than "run the install command
+again"; it reaches machines with the next base.
+
+*Evidence.* `TestTooOldCLIWarnsOnEveryRun` (three runs below `Oldest`
+print three lines, `ls` prints none, above `Oldest` only the
+once-per-release line, no header prints nothing),
+`TestNewerCLINoticeOncePerRelease`,
+`TestNewerCLINoticeNamesThePackageManager`,
+`TestAnswersNameTheOldestCLI` (header present with a value, absent
+without), `TestOldestCLIIsUnsetUntilAShapeIsRemoved`.
+**I-1100. On a terminal the sync's overlap refusal is a one-key choice,
+not a flag to type the command again with.** (sync-conflict-choice,
+2026-11-11; amends I-573, I-618; proposal
+`docs/proposals/2026-11-10-sync-conflict-choice.md`.)
+
+I-573 narrowed `repose sync`'s exit 6 to the files the machine changed
+that the laptop changed too, and named them. Acting on that list still
+meant reading it, deciding, and running the command again with
+`--stash-machine`, which takes *every* change the machine has, the ones
+the refusal did not name included. There was no way to say "mine" for
+those files, and no way to say "the machine's, send the rest". The
+product value council of 2026-11-04 asked for the choice at the point
+the user is already looking at the list.
+
+From a terminal (stdin and stderr both terminals, as I-1065's question
+asks), with no `--json` and no `--stash-machine` or `--discard-machine`,
+the refusal's last line is replaced by a menu, read in raw mode, one key,
+no Enter:
+
+```
+Not synced: the machine changed 2 files that your laptop changed too:
+  src/session.ts
+  notes.md
+  l  use the laptop's copy; the machine's goes to its git stash
+  m  keep the machine's copy; sync the rest
+  s  move all of the machine's changes to its git stash, then sync
+Choose l, m or s, or Enter to stop:
+```
+
+- `l` syncs the laptop's copy over the machine's and stashes the
+  machine's copy of the overlapping files, and only those, under
+  `repose sync: the machine's copy`. The summary names the stash commit
+  (`git stash apply <commit>`, never `pop`: one stash stack per machine,
+  and a bare `pop` takes whatever is on top, which is how another
+  session's work landed in the wrong tree here on 2026-10-17).
+- `m` keeps the machine's copy of those files and syncs everything else.
+- `s` is `--stash-machine` (I-618), unchanged.
+- Enter, `q`, Esc and the input ending stop: exit 6 with nothing more
+  printed, the refusal being on the screen already. Ctrl-C exits 130.
+  Any other key is ignored.
+
+Mechanically, a key runs the whole sync again with the paths the refusal
+listed. The apply writes them to `$t/chosen`, and `repose_guard` lets an
+overlap through only when it is one of them: a file the agent changed
+while the user was deciding refuses again, with the longer list, and the
+menu comes back. Nothing is stashed that the user did not see. The stash
+itself is `repose_stash_own`'s `git stash push -u -m <name>
+--pathspec-from-file`, in each overlapping submodule first.
+
+`m` has two details that are not obvious. The record
+(`.git/repose-synced-paths`) leaves those paths out: with their hash in
+it, the next sync would read the agent's work as the last sync's own and
+stash it without asking, which is exactly the loss `m` was pressed to
+avoid; the whole-tree fingerprint goes for the same reason. And the
+laptop still has its own version, so the next sync finds the same
+overlap and asks again until the laptop commits, reverts or stashes it.
+That recurrence is the true state of the two copies, not a bug; reverse
+sync (`repose sync --pull`) is the thing that would end it, and it stays
+a separate proposal. `m` is not offered when one of the overlapping
+paths is a checked-out submodule on the machine (the apply reports those
+as `#overlapsub`): a submodule's copy cannot be restored from a stash
+without a commit of its own.
+
+What was considered and not done. Flags `--keep-laptop` and
+`--keep-machine` for scripts: a script has `--stash-machine`, and a
+second pair of flags for a question only a person answers is two more
+names for `docs/interfaces/README.md` to carry (decision 1 of the
+proposal, conductor's ruling, owner's standing approval of 2026-11-11).
+Listing every overlapping file on a terminal rather than eight and a
+count: the keys act on all of them either way and the summary says how
+many, so a 40-line list buys nothing (decision 2). Offering `d`
+(`--discard-machine`) at the mid-merge refusal: that refusal is about
+state a stash cannot hold, and discarding is not a key to press by
+accident (decision 3). Keys `1`, `2`, `3`: `l` and `m` say which side
+they mean (decision 4).
+
+*Evidence.* `internal/cli/sync_choice_test.go`, against the real git
+checkouts on both sides of `newSyncFixture` over the in-process sshd:
+`l` leaves the laptop's bytes, a stash holding only the machine's copy
+of the overlapping file, and the machine's change to a file the laptop
+did not touch untouched; `m` leaves the machine's bytes, brings the rest
+of the laptop's work, leaves no stash behind, keeps the file untracked
+when it was untracked, lands the laptop's commit under the machine's
+copy, and asks again on the next sync -- with the probe that the record
+is what decides, a mutation writing the path back into the record, after
+which the second sync stops asking and stashes the agent's copy as the
+last sync's own; a second overlapping file appearing between the refusal
+and the key refuses again, naming both, and stashes nothing; `s` equals
+`--stash-machine`; Enter exits 6 with nothing moved and nothing
+reprinted; without a `Choose` the message is byte for byte what it was;
+the keys, the submodule case and the menu's text are read as a user
+reads them.
+
+**I-1102. The guest's apply reports the overlapping paths that are
+submodules, and the stash of a chosen copy is found by its commit, never
+by its index.** (sync-conflict-choice, 2026-11-11.)
+
+Two small shapes I-1100 needed, written down because the next person
+changing `syncGuardFns` will meet them.
+
+The overlap list on the apply's stderr gains `#overlapsub <path>` beside
+`#overlap <path>` for each overlapping path that is a checked-out
+submodule on the machine. The CLI cannot work this out from the laptop's
+side: a submodule the machine has and the laptop does not would be
+missed, and the menu would offer `m` for a path it cannot restore. The
+`$t/overlap` file became NUL-separated at the same time so one gawk pass
+can intersect it with the chosen list; the stderr lines are still one
+path each, so `overlapFiles` reads both prefixes the same way.
+
+A key runs the sync again, which means `run`'s callbacks are called
+again, and three of them read a channel the laptop's work was sent down
+once (the `.env` walk, the git and Claude carry, the early probe). The
+second call waited forever: the command hung after the key, with the
+menu still on the screen. `SyncOptions.reusable` memoises them for a
+sync that may ask, which is right as well as necessary -- the refused
+attempt stopped before the carry ran, so the second has to send exactly
+what the first built. Found by the pty end-to-end test
+(`TestSyncOverlapMenuEndToEndOnATerminal`), not by the integration
+tests, which pass bare options with no callbacks: an in-process test of
+a function is not a test of the command that calls it.
+
+`m`'s restore drops the stash it made. It finds it by matching the
+commit it recorded against `git stash list --format='%gd %H'`, and drops
+that ref, never `stash@{0}`: an agent pushing a stash of its own between
+the sync's stash and its restore shifts every index, and a drop by
+position would then throw away the agent's work. `pruneSyncStashes`
+already works this way for the same reason (I-210). `repose_stash_pick`
+also compares `stash@{0}` before and after its push: a push that stashed
+nothing leaves the previous stash on top, and taking that for ours would
+restore a stranger's files over the sync's.
+**I-1082. `repose fork` is removed: the command, the api route's work and
+the api's half of hostd's clone.** (remove-fork, 2026-11-11.)
+*Made during implementation*, on the owner's decision of 2026-11-10 and
+the plan in `docs/proposals/2026-11-10-remove-fork.md`. Conductor's
+ruling on every choice the proposal left open: as proposed, owner's
+standing approval of 2026-11-11.
+
+**Supersedes I-254** (the command), **I-701** (clones on the source's
+host), **I-702** (the per-copy timed lines) and **I-703** (the fork
+snapshot). **Amends** I-255 (the fork half; a restore under another name
+keeps its checkout rule), I-610 (drops the fork half and `fork
+--no-start`), I-622 and I-631 (the fork remotes; `rm` keeps removing a
+second machine's remote, and `forgetForkRemote` is now
+`forgetMachineRemote`), I-633 (the fork interrupt lines), I-730 (the
+fork's wait on a background stop), I-736 (the fork term in placement:
+`scheduler.FitsOn` is gone, so `cpuRoomSQL` no longer takes a `single`
+argument — every placement it is asked about adds one guest), I-433 and
+I-474 (`Secrets.CopyNamed`, which nothing else called), I-549 and I-646
+(restore as new only), I-569 and I-585 (no N-copy check), I-460 (a held
+project cannot be restored as new), I-630 (`clone` and `copy` as typed
+words) and I-293 and I-300 where they name fork.
+
+Why: the product value council voted fork a gimmick, 4 of 4, score 3.9
+(`reports/2026-11-04-product-value-council.md`). Three 8 GB copies fill a
+Solo plan right after the demo, the owner does not use it, and worktrees
+give parallel attempts inside one machine's memory. What it did is
+covered: `repose run --worktree -p "..."` for N agents on N approaches in
+one machine's plan memory, `repose run NAME` for a second machine with
+the laptop's checkout, and `repose snapshots restore ID --as NAME` for a
+copy of a machine's own disk, which stays and is now the only way to
+copy one.
+
+**The reading of "one release" for something removed.** CLAUDE.md says
+the old shape stays accepted for one release. A removed endpoint and a
+removed command have no new shape to move to, so the rule is read as:
+for one release the old request still reaches something that answers it
+deliberately.
+
+- `repose fork` stays as a hidden command with `DisableFlagParsing`, so
+  any old flag reaches it. It prints where to go and exits 2 (usage).
+  `docs_test.go`'s `hiddenCommands` carries it with its reason, so
+  `cli.md` does not have to name a command nobody should type.
+  **v0.1.46 deletes it**, with its line in `hiddenCommands`. Naming the
+  release is the point: I-603's "for one release" form was still there
+  eight releases later (I-888).
+- `POST /projects/:id/fork` stays as a route and answers `400 invalid`
+  with `detail.reason: "fork_removed"`. The code behind it is gone. The
+  shape of the refusal is fixed by two released CLIs (v0.1.43, v0.1.44):
+  one prints an `invalid` as "Could not fork X: <message>. Nothing was
+  created." and exits 1, so the message reads as a clause after a colon
+  and ends without a full stop; and one falls back to taking a fork
+  snapshot on `409 snapshot_needed` or on an `invalid` whose message
+  contains "snapshot_id is required", so the refusal matches neither and
+  no old `repose fork` takes a snapshot for nothing. `gone` (410) was
+  considered: `api.md` keeps one list of codes, and an old CLI prints an
+  unknown code through its generic path with no message of its own.
+  The route goes one release after v0.1.45.
+- hostd keeps `Restore.clone`, `guest/clone.go`, `lvm.Clone` and the
+  `local_clone` feature for this release: the api has stopped sending
+  the field, and a host that is switched later than the api is deployed
+  must still answer an api that predates the removal. Reserving proto
+  field 19 and deleting that code is the release after v0.1.45, named in
+  `docs/interfaces/grpc-hostd.md` in this commit.
+
+**Owed, named here so it is not lost.** No migration ships with this
+entry. `fork` snapshots expire a day after they are taken (I-703), so a
+day after this deploys none is live; the next release's migration sets
+any `reason = 'fork'` row to `manual` and narrows
+`snapshots_reason_check` to `scheduled, stop, manual`, and takes with it
+the `fork` branches in `internal/api/snapshots/expiry.go`,
+`internal/api/ops/phases.go` and the `{reason: "fork"}` body of `POST
+/projects/:id/snapshots`. `hosts.features` stays: the idle pause reads
+`pause` from it (I-818). Fork copies users already have are ordinary
+projects named `X-fork-N`; they keep working and `repose rm` removes
+each one and its remote. Nothing migrates them.
+
+A failed clone copy that is still in `error` used to be told to remove
+it and fork the source again; it now reads the ordinary unfinished
+restore line, which already offers `repose rm`.
+
+*Evidence.* `go test ./internal/cli/...`, `./internal/api/...`,
+`./internal/hostd/...`, `./internal/billing/...` and `./internal/fakes/...`
+pass. `TestForkRouteRefuses` posts three bodies to the route against a
+real test server and holds the 400, the `fork_removed` reason, the exact
+message, and that the message neither ends in a full stop nor names
+`snapshot_id`. `go run ./cmd/repose fork todo-app -n 3` prints the
+pointer and exits 2, and `repose --help` no longer lists fork. The
+section-7 greps of the proposal print nothing outside `docs/DECISIONS.md`,
+`docs/proposals/`, `docs/workstreams/` and the stub with its test.
+**I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: users do not need to know a base was published. A
+platform base reaching a machine is repose's own housekeeping. It asks
+the owner for nothing, and the one case where it needs them, a kernel
+change that waits for a stop and start, is still waiting the next time
+they look. A notification per published base, on every project an
+account holds, is the shape I-688 took turn ends off for.
+
+- `base_updated` leaves `notifyKinds` (`internal/api/events/events.go`).
+  It is still inserted by `basebump.OnOpFinished` and still shows in
+  `repose events`, in the dashboard's event stream and in the project's
+  history, with the summary that says whether the new base is running or
+  waits for a stop and start.
+- `base_update_failed` keeps notifying: the machine stayed on the base
+  it had, with the user's configuration unbuilt, which is theirs to fix.
+- The email and Google Chat golden files for `base_updated` stay. The
+  renderer can still render the kind, as it can `completed`, which left
+  the notifying kinds at I-688 and kept its goldens; a kind's rendering
+  and whether a row is queued for it are two things.
+- Rejected: deleting the event. The dashboard's event stream answers
+  "what happened to my machine", and a base that changed the machine
+  under the user belongs in that answer.
+- *Evidence.* `TestBaseUpdatedNotifiesNobodyAndFailureDoes`
+  (`internal/api/events/events_test.go`): one `base_updated` row in
+  `events`, zero rows in `events_outbox`; one `base_update_failed`
+  queues two, one per channel. `TestHeldWhilePresentThenSent` used
+  `base_updated` as its stand-in platform kind and now uses
+  `snapshot_failed`.
+
+**I-1096. A notification carries a way into the dashboard only where the dashboard has an act.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: "unless there's something they can do on the
+dashboard, why leave them there?" Every Google Chat card ended with
+"Open project" and most emails with "Open todo-app". For a done report,
+a message, a permission prompt, a failed snapshot or a restarted server,
+that button leads to a page that says what the notification already
+said. CLAUDE.md "Trust the reader": a line that gives the reader nothing
+on their fiftieth notification is cut, and each of these looked helpful
+in its own diff.
+
+- Kept, because the dashboard has the act: a question (its options'
+  reply links, else one link to where it is answered), a failed payment
+  or a stopped plan (`billing_stopped` to `/billing`, and the account
+  kinds `payment_failed`, `trial_ending`, `subscription_cancelled`,
+  `subscription_ended`, `plan_changed`, `egress_stopped`,
+  `disk_over_plan` to the billing page), a waitlist seat
+  (`waitlist_joined`, `waitlist_invited`, `waitlist_expired`,
+  `welcome` to the plan page), and a broken channel
+  (`notify_channel_broken`, `test` to the notification settings).
+- Dropped: `agent_done`, `agent_message`, `needs_input`, `error`,
+  `completed`, `idle_running`, `temp_expiring`, `temp_destroyed`,
+  `machines_restarted`, `host_moved`, `base_update_failed`,
+  `snapshot_failed`, `destroy_failed`, `stop_failed`, `personal_failed`,
+  `boot_failed`, `abuse_stopped`, `notifications_paused`. On Google
+  Chat their cards now carry no button; the `agent` and `agent_done`
+  email partials, `abuse_stopped` and `machines_restarted` lost their
+  `link_label`/`link_url` blocks, and `agent_question` its "Open
+  <project>" quiet link beside the answer buttons.
+- `abuse_stopped` is in the dropped list although the machine can be
+  started again: the notification tells the owner to look at the
+  machine, not to press a button, and a third stop in 24 hours refuses
+  the start anyway. It is not the "suspended plan" the owner named,
+  which is `billing_stopped`.
+- Where a link stays on a question, it points at the page with the act:
+  `Message.AnswerURL` is now the dashboard's Questions page
+  (`/questions`), which lists every waiting question and answers it in
+  place (I-693). A question that asks for a secret (I-929) keeps the
+  project page and its `?answer=<id>` query: that page holds the secret
+  dialog, and `apps/web/src/lib/signin.ts` allows only that shape as a
+  signed-out return path. ntfy's `Click` header is the notification's
+  tap target rather than a button and follows the same rule: the
+  Questions page for a question, the project's page otherwise.
+- The agent's own `--link` (I-931) is untouched and is now the only
+  button a message or a done report carries, which is what I-931 wanted
+  it to be.
+- Not changed: the grey "Open the dashboard" line in every email's
+  footer. It is the message's provenance, not an action, it sits beside
+  the unsubscribe link where nobody mistakes it for a next step, and it
+  is on account mail too, which this entry does not touch.
+- Rejected: one shared table of acts for the two channels. The email
+  partials have always named their own act, per kind, in the template
+  that renders them; a second source would have to agree with them kind
+  by kind. `TestGChatCardsOnlyLeadToAnAct` enumerates the project kinds
+  instead, which fails when a new kind arrives with a button nobody
+  justified.
+- *Evidence.* `TestGChatCardsOnlyLeadToAnAct`: nineteen project and
+  notice kinds render with no `openLink` at all, `billing_stopped` with
+  one "Your plan" to `/billing`, a question without reply links with one
+  to `/questions`. `TestAgentLinkOnEveryChannel`: the done report's card
+  holds exactly one button, the agent's link. `TestEmailTemplate` and
+  `TestEmailQuestionHasReplyLinks` now assert the project URL is
+  absent. 38 golden files regenerated; `go test ./internal/api/...` ok.
+
+**I-1098. `repose-presence`: the guest asks whether the owner is at the machine.** (notify-presence, 2026-11-11)
+
+An agent that finishes a dev server has to hand the user an address, and
+it cannot know which one works. While the user is attached, every port
+1024 and up is on their laptop's `localhost` at the same number, so
+`http://localhost:5173` opens. While they are away, that address is
+their own laptop's port and opens nothing: the port is on the machine
+and needs `repose open PORT` or an attach. Agents guessed, and guessed
+`localhost` because the guide's ports line says so first.
+
+- `repose-presence` prints `attached` or `away` and exits 0 either way;
+  exit 1 only when guestd does not answer, so an agent can tell `away`
+  from "I could not ask". It takes no arguments.
+- It is `repose-hook` under a third name beside `repose-notify` and
+  `repose-ask` (I-244), a symlink from the same package, so the guest
+  base gains no binary and `repose` stays the only prefix.
+  `repose-hook presence` is the same command.
+- guestd serves `GET /presence` on the hook socket, which is already
+  0660 root:dev, so only the guest's own user can ask. It carries no
+  payload in either direction beyond one word, and logs nothing: two
+  numbers the sample already counts decide it.
+- Present means what the presence hold means (I-689): a tmux client or
+  an SSH session, a laptop herdr bridge counting as an SSH session
+  (I-511). It is read live from the guest (`sample.Handler.Attached`)
+  rather than from the api's latest sample, so it has no 2 minute
+  staleness window; a session opened a moment ago is already present.
+  The tmux client count comes from the watcher's 5 second cache, and a
+  cache too old to be `fresh` still answers, because a stale count of
+  clients beats no answer and the SSH count beside it is read now.
+- The guide (`nix/guest/base/agent-guide.md`) gains one line in "Servers
+  and ports", and loses the separate `repose open PORT` line and the
+  "Tell them open http://localhost:PORT" clause that line now owns, so
+  the rule is stated once.
+- Rejected: having the agent read presence itself (`tmux list-clients`,
+  `who`). It would be a second definition of "at the machine" that
+  drifts from the one the hold uses, and agents would each write their
+  own.
+- Rejected: a new binary. The guest closure has 4 MiB of headroom under
+  its limit (`guest-closure-size`); a third symlink costs nothing.
+- *Evidence.* `TestPresenceBothStates`
+  (`internal/guestd/hooks/presence_test.go`): the route answers
+  `attached`/`away` with the source set and refuses without one.
+  `TestPresencePrintsAttachedAndAway` (`cmd/repose-hook`): both words on
+  stdout with exit 0 over a real hook socket, exit 1 and nothing on
+  stdout with no guestd, exit 2 for an argument. The `guestd` VM test's
+  "repose-presence says attached with a tmux client and away without"
+  subtest runs the installed command on a booted guest: `away`, then
+  `attached` once a real tmux client is attached on a pty, then `away`
+  again after `detach-client`, and `repose-hook presence` the same.
+**I-1104. The laptop lends ports to the machine: `[forward] reverse` in
+config.toml, held by the session helper for the length of an attach.**
+(forwards-both-ways, 2026-11-11. Adds to SECURITY.md boundary 13.)
+
+Every member of the 2026-11-04 product value council named the same gap:
+the agents cannot reach the laptop's Android emulator, its Ollama or its
+local database. `docs/proposals/2026-11-10-forwards-both-ways.md` turned
+it into behaviour; this entry is the part that was built, with the
+conductor's ruling of 2026-11-11 (the owner's standing approval) on the
+one question the proposal left open.
+
+**Decision 1 of the proposal is accepted.** The CLI passes a laptop port
+through without inspecting what goes over it. Every other path from the
+guest to the laptop is one the CLI reads: the browser bridge polices CDP
+message by message (I-311) and `repose mcp forward` runs one named
+server. A reverse forward decides only the port. What bounds it instead
+is the user's own file, a deny list and the words where they set it.
+
+- `[forward] reverse` and `[projects.NAME.forward] reverse` list laptop
+  ports, merged for a project as `[mcp] forward` is (I-557), each machine
+  port once. A number is the same port on both sides; `"MACHINE:LAPTOP"`
+  puts the laptop's port on another one on the machine, the listening
+  port first, as `repose open LOCAL:PORT` (I-619) and ssh's `-L` and `-R`
+  spell it. `REPOSE_NO_FORWARD=1` stays the one knob and now turns off
+  both directions.
+- A refused entry fails the config load, so every command names the file
+  and the key, as an unknown `default_multiplexer` does: below 1024,
+  above 65535, a port in `forwardPlatformPorts`, 9222, 9229, 2375 or 2376
+  on the laptop side, more than 16 ports, or a value that is neither a
+  number nor `"MACHINE:LAPTOP"`. A forward dropped in silence would read
+  as a broken forward, which is the reason the Windows line for `[mcp]
+  forward` exists. The refusal exits 2, and so does every other
+  config.toml refusal from now on: `cli.md` has said since I-922 that an
+  unknown `default_size` "makes every command exit 2 naming the file",
+  and the code exited 1, because `loadConfig` returned a plain error and
+  `exitCodeFor` has no case for one. CLAUDE.md says to fix the code when
+  it and a doc disagree, so `loadConfig`'s three refusals and a file that
+  is not TOML are now `exitf(ExitUsage, ...)`, with their messages
+  unchanged. A bad config file is wrong usage, which is what 2 means.
+- The deny list is kept (proposal decision 3). 9222 has the bridge, and
+  Node's inspector, Docker's API and Docker's TLS API run code on the
+  laptop by design.
+- The forwards live inside an attach, on a connection of the helper's
+  own with `ExitOnForwardFailure=yes`, not on the ControlMaster: a `-R`
+  there would outlive the detach by ControlPersist's ten minutes
+  (I-149), and a laptop port must not stay open on the machine after the
+  user walks away. The remote command is `exec cat >/dev/null`, so the
+  helper's exit, however it comes, closes the pipe and takes the
+  listeners with it. The guest needs no change, so machines running now
+  get it from the CLI alone.
+- Two `-R` per port, `127.0.0.1` and `::1`. The proposal asked for both
+  and this was measured rather than assumed: against OpenSSH 9.6 sshd
+  with `GatewayPorts no`, `-R 127.0.0.1:P` binds 127.0.0.1 and leaves
+  `::1:P` free, and the two requests together bind both and neither
+  fails. Some clients on the machine try `::1` first for `localhost`.
+- The loop the design must prevent: the reverse listener is a listener
+  like any other, so auto-forward would see `sshd-session` on
+  `127.0.0.1:5037`, find 5037 taken on the laptop and forward the
+  machine's 5037 to the laptop's 5038 — the laptop's own adb, round a
+  loop. The forwarder skips every port it lends and every port another
+  laptop's registry entry marks `in:` (I-1106), as it skips 9226 today.
+- A port the machine already holds is left out before the connection
+  starts and said once, with the remap to use. The laptop's process name
+  comes from the laptop's own tools (`lsof` on macOS, `ss` on Linux) and
+  is left out when they do not answer. On Windows no helper runs and a
+  set key prints a line saying so.
+- The freeze is untouched. A reverse forward exists only while an attach
+  does, and an attach already fails I-818's rest rule twice. The hold
+  must never outlive its attach, or it would be the gateway session with
+  no bytes on it that I-930 forbids; the `cat` hold, the helper's
+  parent check and the test below are what keep it from happening.
+
+*What a lent port gives.* `SECURITY.md` boundary 13 and
+`/docs/machine#your-laptops-ports-on-the-machine` say it once, in the
+same words: everything on the machine, agents included, reaches a lent
+port as a local program on the laptop would. adb serves every device the
+laptop has, a phone on USB included; Ollama has no authentication; a
+Homebrew Postgres with `trust` on localhost and a superuser default role
+turns `COPY ... FROM PROGRAM` into commands on the laptop. That line
+prevents a loss the user cannot undo, so I-485 keeps it.
+
+*Evidence.* `TestForwardReverseConfig` parses the numbers, the remap and
+the project merge and prints each refusal with its file. `TestReverseSSHArgs`
+holds the ssh line. `TestReverseMessages` holds the text.
+`TestForwarderDoesNotForwardALentPortBack` gives the forwarder an `ss`
+with `sshd-session` on 5037 and 11434 and a registry line `in:11434:...`
+from another id, and only 5173 is forwarded.
+`TestReverseForwardReachesTheLaptopAndEndsWithTheAttach` runs the real
+ssh against the test guest: a listener on the laptop, bytes read back
+through the machine's `127.0.0.1:P` and `[::1]:P`, and the listener gone
+within a second of the attach ending. The rest rule is unchanged code;
+`TestRestRuleHoldsEveryTerm`'s "a tmux client" case is what proves an
+attach holds a machine awake.
+
+**I-1106. The forward messages name the laptop, the registry says which
+way each forward goes, and `repose status` shows both.** (forwards-both-ways,
+2026-11-11. Amends I-199, I-324, I-616.)
+
+The payoff of auto-forward was hard to see. `⇄ localhost:5173 → :5173`
+names two ports and no place, so a user who had not read the docs could
+not tell which side was the laptop, and nothing outside tmux listed a
+forward at all.
+
+- The messages become `⇄ localhost:5173 → your laptop`, `⇄ localhost:3000,
+  3001, 5173 → your laptop` for up to eight ports, `⇄ 12 ports → your
+  laptop: 3000, …` beyond that, and `⇄ :3000 → your laptop's
+  localhost:3001 (3000 is taken there)` for a moved one. Portless keeps
+  its own line. The status bar is unchanged.
+- `~/.repose/forwards/<id>` keeps its first line, the guest ports as bare
+  numbers, because every reader since I-199 takes that line through `grep
+  -E '^[0-9]+$'` and nothing else. Lines after it name one forward each,
+  colon-joined so that reader steps over them: `out:MACHINE:LAPTOP` and
+  `in:MACHINE:LAPTOP[:PROCESS]`. Both shapes are read for one release, as
+  CLAUDE.md asks of a contract change; `interfaces/guest-conventions.md`
+  has the format.
+- `repose status` reads the registry in the SSH call it already makes.
+  A listening row gains `, on your laptop`, and `at :3001` when the
+  laptop holds it elsewhere; a `laptop` row lists the ports a laptop
+  lends, with the laptop's process; `--json` gains `forwards` with
+  `port`, `laptop_port`, `direction` and `process`. The reverse
+  listeners leave the `listening` rows: `sshd-session :5037 up 2h` under
+  `listening` is a row nobody acts on, and the `laptop` row says what it
+  is. The extra SSH session the hold makes is counted in `attached`,
+  because it is one (proposal decision 7, as recommended).
+
+*Evidence.* `TestStatusMarksTheForwardedPortsAndTheLaptopsOwn` holds the
+rows and the JSON. `TestOldRegistryReadersSeeTheSameUnion` writes an
+entry with the new lines, takes the union the publish script takes, then
+rewrites the file as a pre-I-1106 CLI would and takes it again: `3000
+5173` both times, with no lent port in it. The three existing message
+tests (I-199, I-324, I-469) hold the new text.
+
+**I-1108. A `localhost` link the machine opens goes to the laptop port
+its forward uses, or nowhere.** (forwards-both-ways, 2026-11-11. Amends
+I-634, which amends I-541.)
+
+I-634 opens an `https` link the machine hands to `$BROWSER` in the
+laptop's browser. It had a hole and a gap. The hole: `https://localhost:8443/`
+passed `openableURL` and opened on the laptop as written, so the laptop
+opened its own 8443, or nothing. The gap: a dev server's `--open` hands
+over `http://localhost:5173/`, which was never recorded at all, so the
+most common link on a dev machine was the one that did not travel.
+
+`repose-print-url` now records an `http` or `https` link whose host is
+the machine's own loopback, beside the `https` ones. The laptop never
+opens such a link as written: it waits up to 5 s for a forward of that
+port, because a dev server hands over its URL a moment before it
+listens, opens the laptop end of that forward (`http://localhost:3001/`
+for the machine's 3000), and with no forward opens nothing and says `A
+program on the machine opened localhost:3000, and no forward reaches
+it.` The same link opens at most once a minute, so a dev server
+restarting with `--open` in a loop does not fill the laptop with tabs.
+With `REPOSE_NO_FORWARD=1` nothing reaches a loopback port, so the line
+is said once per port and no tab opens.
+
+This is a base change: a machine on an older base records `https` links
+only, and the laptop's new rule then applies to the `https://localhost`
+ones it does record, which is the hole closed.
+
+*Evidence.* `TestLoopbackLinksOpenOnTheForwardedPort` covers each case:
+the rewrite onto a moved forward, the once-a-minute cap, the forward
+that appears two seconds late, nothing opened with no forward and the
+line said once, `https://localhost:8443` under the same rule, and
+`http://example.com` never opened. `TestOpenURLsTakenOnce` (I-634) still
+passes.
