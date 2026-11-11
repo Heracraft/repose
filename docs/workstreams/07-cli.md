@@ -128,6 +128,7 @@ repose notify [--json]                            # I-622: the settings
 repose notify set [--email on|off] [--ntfy URL|off]   # none is the old off (I-619)
 repose notify test
 repose version
+repose version update [VERSION]   # replace this binary with a release (I-1086)
 repose completion bash|zsh|fish
 repose mcp forward ...           # reserved, prints not-available message
 repose browser bridge [PROJECT] [--cdp URL] [--user-data-dir DIR] [--no-browser]   # I-296
@@ -657,7 +658,7 @@ under its old name, hidden from help, with one stderr line saying so.
   `--as-new` requires the project stopped and asks for confirmation.
 - `logs`: `GET /logs`, `--follow` polls every 2 s with `since`.
 
-### 5.11 Install and release
+### 5.11 Install, update and release
 
 `install.sh` at `https://repose.herakraft.co/install.sh`: detects
 `uname -sm`, downloads `repose_<version>_<os>_<arch>.tar.gz` from the
@@ -666,6 +667,33 @@ GitHub release, verifies the sha256 from `checksums.txt`, installs to
 PATH hint if needed. GoReleaser config in `.goreleaser.yaml`, CGO off, `-s
 -w`, version from the tag into `internal/version`. `nix run
 github:heracraft/repose#repose` works via the flake's `packages.repose`.
+
+`repose version update [VERSION]` (DECISIONS I-1086,
+`internal/cli/versionupdate.go`) is the same install from the laptop,
+without curl. It resolves `latest` through the releases/latest redirect
+install.sh follows, downloads the archive, `checksums.txt` and
+`checksums.txt.sig`, checks the signature against the release key the CLI
+carries (`crypto/ecdsa`, no openssl) and then the archive against
+`checksums.txt`, writes the new binary beside the running one, runs it
+with `version` to see that it starts and says the right release, and
+renames it over the old path. Nothing is written unless both checks pass,
+and the old bytes are never overwritten in place, which is what keeps a
+signed macOS binary runnable. The key has two copies, `install.sh` and
+`internal/cli/versionupdate.go`; `test/supplychain` fails while they
+differ.
+
+It refuses before any network call on a machine (`REPOSE=1`, exit 2), on a
+development build (exit 2), on Windows (exit 1) and when the binary's path
+belongs to Nix, Homebrew, snap or the system's package manager (exit 1,
+naming the owner). A directory the user cannot write is not a refusal to
+update but a refusal to write: "Can't write /usr/local/bin. Run it as
+root: sudo repose version update" (exit 1). Releases before v0.1.28 carry
+no signature and are refused with the `install.sh --version` line (exit
+2).
+
+The version-skew lines (DECISIONS I-626, I-1088) name this command, or
+the package manager that owns the binary. Both versions are printed
+without the tag's `v`.
 
 ### 5.12 Output rules
 
@@ -895,6 +923,21 @@ removes all of them including the `Include` line.
       "cli GoReleaser matrix build" (asserts the four dist binaries),
       "install.sh (ubuntu-latest)", "install.sh (macos-latest)" (`repose
       version` greps the tag)
+- [x] `repose version update` replaces the binary and only a release
+      that verifies (I-1086). Evidence: a real run of a build stamped
+      0.1.43 against the GitHub release. Closed, 2026-11-11: `Downloading
+      repose_v0.1.44_linux_amd64.tar.gz...` / `Updated
+      /tmp/rt/realrun/bin/repose from 0.1.43 to 0.1.44.`, the file's
+      sha256 c62b7d95…281f → 7bb1ca96…3e33 and `repose version` printing
+      `repose 0.1.44 (herakraft)`; `repose version update v0.1.42` rolls
+      back; a second run says `repose 0.1.44 is the latest release.`; the
+      same binary under `…/Cellar/repose/0.1.43/bin/repose` answers
+      `belongs to Homebrew. Update it with Homebrew.` and exits 1;
+      `v0.1.20` exits 2 naming `install.sh --version`; `REPOSE=1` exits 2.
+      `go test ./internal/cli -run TestVersionUpdate` covers the signature
+      and checksum refusals against a signed fake release server, and one
+      mutation (the signature check short-circuited) turns `bad_signature`
+      red with "the binary changed"
 - [x] `nix run .#repose` works. Evidence: CI job. Closed: CI run
       35875626476 on 264e6c2
       (https://github.com/Heracraft/factory/actions/runs/35875626476) job

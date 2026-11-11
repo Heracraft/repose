@@ -51,6 +51,10 @@ type Options struct {
 	// CLILatest, when set, is sent as every answer's X-Repose-CLI-Latest
 	// header, the newest CLI release (DECISIONS I-626).
 	CLILatest string
+	// CLIOldest, when set, is sent as every answer's X-Repose-CLI-Oldest
+	// header, the oldest CLI release the api answers as documented
+	// (DECISIONS I-1088).
+	CLIOldest string
 	// StartDelay makes POST /projects/:id/start on a stopped project leave
 	// the project "starting" and its op "running" (phase start_guest) for
 	// the delay, then running and done. Zero keeps the instant start.
@@ -502,6 +506,9 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Request-Id", fmt.Sprintf("req-%06d", f.reqSeq))
 	if f.opts.CLILatest != "" {
 		w.Header().Set("X-Repose-CLI-Latest", f.opts.CLILatest)
+	}
+	if f.opts.CLIOldest != "" {
+		w.Header().Set("X-Repose-CLI-Oldest", f.opts.CLIOldest)
 	}
 	_, pattern := f.mux.Handler(r)
 	if pattern == "" {

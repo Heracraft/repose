@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"testing"
 
+	"github.com/heracraft/repose/internal/api/clirelease"
 	httpapi "github.com/heracraft/repose/internal/api/http"
 )
 
@@ -71,5 +73,39 @@ func TestAnswersNameTheLatestCLI(t *testing.T) {
 		if got := res.Header.Get("X-Repose-CLI-Latest"); got != "v0.1.40" {
 			t.Errorf("status %d: X-Repose-CLI-Latest = %q", res.StatusCode, got)
 		}
+	}
+}
+
+// X-Repose-CLI-Oldest is the oldest release the api still answers as the
+// docs describe; it is absent while every release is (DECISIONS I-1088).
+func TestAnswersNameTheOldestCLI(t *testing.T) {
+	for _, oldest := range []string{"v0.1.30", ""} {
+		e := newEnvWith(t, &httpapi.RateLimits{General: 10000, Certs: 10000, Config: 10000}, func(d *httpapi.Deps) {
+			d.CLIOldest = oldest
+		})
+		tok := e.signIn(t, "sub-clioldest", "clioldest")
+		for _, auth := range []string{"Bearer " + tok, ""} {
+			req, _ := http.NewRequest("GET", e.api.URL+"/v1/me", nil)
+			if auth != "" {
+				req.Header.Set("Authorization", auth)
+			}
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = res.Body.Close()
+			if got := res.Header.Get("X-Repose-CLI-Oldest"); got != oldest {
+				t.Errorf("CLIOldest %q, status %d: X-Repose-CLI-Oldest = %q", oldest, res.StatusCode, got)
+			}
+		}
+	}
+}
+
+// clirelease.Oldest is "" until a request or answer shape is removed;
+// CLAUDE.md keeps the old shape for one release, and the commit that
+// drops it raises this (DECISIONS I-1088).
+func TestOldestCLIIsUnsetUntilAShapeIsRemoved(t *testing.T) {
+	if clirelease.Oldest != "" && !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(clirelease.Oldest) {
+		t.Errorf("clirelease.Oldest = %q, which is neither empty nor vX.Y.Z", clirelease.Oldest)
 	}
 }
