@@ -88,6 +88,10 @@ const (
 	// hourly jobs hold LockRollup only in the first five minutes of an
 	// hour.
 	LockResting int64 = 1015
+	// LockSays picks the one replica that delivers `repose say` rows to
+	// the machines (DECISIONS I-1162). It is the grpc replica's worker:
+	// only the process holding a host's stream can send it a command.
+	LockSays int64 = 1016
 )
 
 // TryLock takes a session-level advisory lock on a dedicated connection

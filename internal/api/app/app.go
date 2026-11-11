@@ -420,6 +420,10 @@ func (a *App) Run(ctx context.Context) error {
 		go a.engine.Run(bg)
 		go a.outbox.Run(bg)
 		go a.questions.Run(bg)
+		// The say delivery worker (DECISIONS I-1162): only the process
+		// holding the host streams can send a SayToAgent, and the http
+		// replica waits on the row this one writes back.
+		go a.say.Run(bg)
 		go a.loops(bg)
 	}
 	if a.cfg.MetricsListen != "" && a.cfg.MetricsListen != "off" {
