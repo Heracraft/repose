@@ -38,7 +38,7 @@ func checkWebhookTarget(target string) error {
 		return exitf(ExitUsage, "TARGET is PORT or PORT/PATH with a port from 1 to 65535, got %q", target)
 	}
 	if hasPath && strings.ContainsAny("/"+rest, " \t?#") {
-		return exitf(ExitUsage, "TARGET's path takes no space, query or fragment, got %q", target)
+		return exitf(ExitUsage, "TARGET's path takes no space, query string or #, got %q", target)
 	}
 	return nil
 }

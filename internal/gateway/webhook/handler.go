@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heracraft/repose/internal/obs"
 	obsmetrics "github.com/heracraft/repose/internal/obs/metrics"
 )
 
@@ -56,7 +57,7 @@ func New(cfg Config) *Handler {
 		cfg.Table = NewTable(cfg.Clock)
 	}
 	if cfg.Log == nil {
-		cfg.Log = slog.New(slog.DiscardHandler)
+		cfg.Log = obs.Nop(obs.ComponentGateway)
 	}
 	return &Handler{
 		cfg: cfg, clock: cfg.Clock,
