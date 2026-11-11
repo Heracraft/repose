@@ -478,6 +478,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			EnvLater: waitEnv,
 			EnvOff:   skip[envLogin],
 			Probe:    early.forProject(),
+			Choose:   overlapAsker(e, opts),
 			Carry: func(markers map[string]string) (*credCarry, error) {
 				b := <-carryDone
 				gc, cc := b.gc, b.cc

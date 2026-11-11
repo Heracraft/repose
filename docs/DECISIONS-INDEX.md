@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-927 entries.
+929 entries.
 
 ## Scope
 
@@ -628,7 +628,7 @@ pointer, not a summary.
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15354
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15381
 - **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15440
-- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; amended by I-618; L15457
+- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; amended by I-618; amended by I-1100; L15457
 - **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15554
 - **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; amended by I-601; L15612
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15657
@@ -661,7 +661,7 @@ pointer, not a summary.
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16919
 - **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16934
 - **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16964
-- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; L16976
+- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16976
 - **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; L17061
 - **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17150
 - **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17176
@@ -959,3 +959,5 @@ pointer, not a summary.
 - **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31103
 - **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31144
 - **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31223
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31287
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31380
