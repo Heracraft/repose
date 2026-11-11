@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-959 entries.
+960 entries.
 
 ## Scope
 
@@ -991,3 +991,4 @@ pointer, not a summary.
 - **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33093
 - **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33117
 - **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33178
+- **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33244

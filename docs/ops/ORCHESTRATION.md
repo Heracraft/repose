@@ -107,6 +107,15 @@ from the wave cycle, it wins.
   PATH.** The dev box has `claude`; the runner does not, so a tmux window
   running it exits at once. Fix the fixture (remain-on-exit, a stub) and
   leave the assertion alone; reproduce first with an exiting shim on PATH.
+- **Or the runner's version of what the test drives.** The dev shell's
+  tmux, git and ssh are pinned by `nix/flake.nix`; `ubuntu-latest` is
+  Ubuntu 24.04, whose tmux is 3.4 and crashes on the grouped session
+  every `repose attach` makes, which failed `internal/cli`'s attach
+  tests on about half of CI's runs (I-1166). Reproduce by putting
+  `/usr/bin` first on PATH and loading the box (`while :; do :; done`
+  per core): both of those failures came back in under a minute. The
+  fix is to give the runner the version a guest has, and to say so in
+  the test rather than skip, which in CI reads as a pass (I-1036).
 
 ## Rounds (since 2026-09-23)
 

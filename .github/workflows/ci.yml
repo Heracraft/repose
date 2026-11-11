@@ -43,6 +43,26 @@ jobs:
       # test now fails rather than skips when CI is set, and this makes
       # sure it has no reason to (DECISIONS I-1036).
       - run: sudo apt-get update && sudo apt-get install -y strace
+      # internal/cli's attach tests drive a real tmux as the fake guest's
+      # (internal/testguest), and since I-1067 an attach is a session
+      # grouped with the project's that is destroyed on detach. tmux 3.4,
+      # which is all ubuntu-24.04 has, segfaults in that destruction when
+      # the machine is busy, taking the project's session with it: two of
+      # the runs on main a9056ba7 died that way. Guests run nixpkgs' tmux,
+      # so the crash is this runner's and not what repose ships; the
+      # release here is the one nix/guest has (DECISIONS I-1166).
+      - name: tmux 3.7c (ubuntu's 3.4 crashes on a grouped session)
+        env:
+          TMUX_VERSION: "3.7c"
+        run: |
+          sudo apt-get install -y libevent-dev libncurses-dev bison pkg-config
+          cd "$(mktemp -d)"
+          curl -fsSL "https://github.com/tmux/tmux/releases/download/$TMUX_VERSION/tmux-$TMUX_VERSION.tar.gz" | tar xz
+          cd "tmux-$TMUX_VERSION"
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+          tmux -V
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,87 @@ import (
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
+
+// requireAttachTmux refuses to run an attach test on a tmux older than
+// 3.5, which crashes on the attach every `repose attach` makes.
+//
+// Since I-1067 an attach is a session of its own grouped with the
+// project's and destroyed when its terminal detaches
+// (tmuxAttachSession). tmux 3.4 segfaults in that destruction: the
+// client it moves to the next session reads a session it has already
+// freed ("Pick newest session (as documented) when looking for next
+// session for detach-on-destroy", tmux CHANGES 3.4 to 3.5). The server
+// dies and takes the project's session with it, so the next command
+// says "no sessions" (TestAttachFallsBackToTheSessionWhenTheWindowIsGone)
+// or "server exited unexpectedly"
+// (TestTwoAttachesKeepTheirOwnWindowAndSize). The crash needs the
+// destruction and a busy machine; on an idle one the tests pass, which
+// is why they failed on about half of CI's runs (42985983675, main
+// a9056ba7) and never here (DECISIONS I-1166).
+//
+// A guest runs nixpkgs' tmux, 3.7c, so this is a limit of the machine
+// the test runs on and not of what repose ships; ubuntu-24.04, the CI
+// runner, is the one that has 3.4. ci.yml therefore builds tmux and
+// this says so rather than skipping, which in the one place the test
+// has to run would read as a pass (I-1036).
+func requireAttachTmux(t *testing.T) {
+	t.Helper()
+	out, err := exec.Command("tmux", "-V").Output()
+	if err != nil {
+		t.Fatalf("tmux -V: %v", err)
+	}
+	version := strings.TrimSpace(strings.TrimPrefix(string(out), "tmux "))
+	if old, why := tmuxCrashesOnGroupDestroy(version); old {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("tmux %s on PATH in CI: %s. ci.yml builds a newer one; that step has gone", version, why)
+		}
+		t.Skipf("tmux %s: %s. `nix develop ./nix` has one that does not", version, why)
+	}
+}
+
+// tmuxCrashesOnGroupDestroy reports whether a `tmux -V` version is one
+// of the releases that crash above, which is anything before 3.5. A
+// version it cannot read (master, next-3.9, a distribution's suffix) is
+// taken as new enough: the guard is for the known-bad releases, and a
+// test that refuses to run on an unknown tmux would be the skip this
+// avoids.
+func tmuxCrashesOnGroupDestroy(version string) (bool, string) {
+	const why = "a session in a group destroyed on detach crashes the server before 3.5, so the attach tests fail at random (DECISIONS I-1166)"
+	digits := func(s string) (int, bool) {
+		n := 0
+		for n < len(s) && s[n] >= '0' && s[n] <= '9' {
+			n++
+		}
+		v, err := strconv.Atoi(s[:n])
+		return v, err == nil
+	}
+	major, minor, ok := strings.Cut(version, ".")
+	if !ok {
+		return false, ""
+	}
+	maj, okMaj := digits(major)
+	mnr, okMnr := digits(minor)
+	if !okMaj || !okMnr {
+		return false, ""
+	}
+	if maj > 3 || (maj == 3 && mnr >= 5) {
+		return false, ""
+	}
+	return true, why
+}
+
+func TestTmuxVersionGuardReadsTheVersionsThatCrash(t *testing.T) {
+	for v, crashes := range map[string]bool{
+		"3.4": true, "3.4a": true, "3.3a": true, "2.9": true,
+		"3.5": false, "3.5a": false, "3.7c": false, "3.10": false, "4.0": false,
+		// Unreadable: a build from git, and a packager's own string.
+		"master": false, "next-3.9": false, "3.7c-openbsd": false,
+	} {
+		if got, _ := tmuxCrashesOnGroupDestroy(v); got != crashes {
+			t.Errorf("tmux %s: crashes=%v, want %v", v, got, crashes)
+		}
+	}
+}
 
 // `repose attach --bridge` over a live master (the no-api fast path)
 // dropped --bridge from the session helper (I-305), and then dropped
@@ -59,6 +142,7 @@ func TestAttachFallsBackToTheSessionWhenTheWindowIsGone(t *testing.T) {
 	if _, err := exec.LookPath("script"); err != nil {
 		t.Skip("needs script(1) to give the fake guest's tmux client a terminal")
 	}
+	requireAttachTmux(t)
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	f := newRunFixture(t, fake)
@@ -172,6 +256,7 @@ func TestTwoAttachesKeepTheirOwnWindowAndSize(t *testing.T) {
 	if _, err := exec.LookPath("script"); err != nil {
 		t.Skip("needs script(1) to give the fake guest's tmux client a terminal")
 	}
+	requireAttachTmux(t)
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	f := newRunFixture(t, fake)
