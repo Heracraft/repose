@@ -33,6 +33,7 @@ import (
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/ratelimit"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
@@ -67,7 +68,10 @@ type Deps struct {
 	// Questions is repose-ask's store (DECISIONS I-245); nil answers the
 	// question routes with 500.
 	Questions *questions.Service
-	Parser    *config.Parser
+	// Say carries `repose say` to the machine (DECISIONS I-1144); nil
+	// answers POST /projects/:id/say with 500.
+	Say    *say.Service
+	Parser *config.Parser
 	Metrics   *metrics.M
 	Registry  *prometheus.Registry
 	Log       *slog.Logger

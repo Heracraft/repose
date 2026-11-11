@@ -62,7 +62,15 @@ var notifyKinds = map[string]bool{
 // written by the api itself, and a guest that names one is refused, so a
 // tenant's own code cannot send its owner mail worded as a platform notice
 // or reach notifications_paused, which skips the dedupe and the hourly cap.
-var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
+// KindAgentPrompted is the machine saying a `repose say` reached the
+// agent's terminal (DECISIONS I-1144).
+const KindAgentPrompted = "agent_prompted"
+
+// agent_prompted (DECISIONS I-1144) is here too: the machine is the only
+// one that knows when a `repose say` actually went into the terminal,
+// because a message sent mid-turn waits for the end of the turn. It
+// notifies nobody and its summary is the sender's name, never the text.
+var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true, KindAgentPrompted: true}
 
 // guestAgents are the agent names a guest may attribute an event to:
 // guestd's five and "shell" for repose-notify and repose-ask run from a
@@ -158,6 +166,14 @@ type Ingest struct {
 	now       func() time.Time
 	questions QuestionHandler
 	resting   RestingHandler
+	says      SayHandler
+}
+
+// SayHandler is internal/api/say's Delivered: the machine typed a
+// `repose say` into an agent's terminal (DECISIONS I-1144), which is
+// what closes a says row that was stored waiting. nil does nothing.
+type SayHandler interface {
+	Delivered(ctx context.Context, projectID uuid.UUID, window string)
 }
 
 // SetQuestions installs the question store (before serving).
@@ -165,6 +181,9 @@ func (i *Ingest) SetQuestions(q QuestionHandler) { i.questions = q }
 
 // SetResting installs the resting service (before serving).
 func (i *Ingest) SetResting(r RestingHandler) { i.resting = r }
+
+// SetSays installs the `repose say` store (before serving).
+func (i *Ingest) SetSays(s SayHandler) { i.says = s }
 
 // New builds an ingest.
 func New(pool *db.Pool, m *metrics.M, log *slog.Logger) *Ingest {
@@ -472,6 +491,11 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 			i.log.Error("agent event insert", "event", "agent_event", "err", err.Error())
 			return false
 		}
+		if kind == KindAgentPrompted && i.says != nil {
+			// The machine typed a message in; a says row stored
+			// `waiting` stops waiting (I-1144).
+			i.says.Delivered(ctx, p.ID, store.CleanText(e.AgentEvent.TmuxWindow, MaxWindow))
+		}
 		return true
 	case *hostdv1.Event_SnapshotDone:
 		p, err := i.projectOnHost(ctx, hostID, e.SnapshotDone.GuestId)
@@ -631,3 +655,4 @@ func (i *Ingest) Platform(ctx context.Context, projectID uuid.UUID, kind, summar
 	_, _, err := i.Insert(ctx, Incoming{ProjectID: projectID, TS: i.now(), Kind: kind, Summary: summary, Source: "api"})
 	return err
 }
+

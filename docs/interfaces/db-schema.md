@@ -315,6 +315,14 @@ host_sessions (host_id pk, replica_id text, since)          -- which api replica
 gateway_sessions (project_id fk, cert_serial bigint, session_id text default '', opened_at,
               primary key (project_id, cert_serial, session_id))   -- one row per gateway relay (0004, I-176)
 settings     (key text pk, value text)                       -- edge_wg_pubkey, edge_wg_endpoint (repose-admin edge init)
+says         (id pk, project_id fk, user_id fk,   -- `repose say` (0039, I-1144)
+              tmux_window text, text text, sender text, from_owner bool,
+              state text,          -- delivered|waiting|replaced|failed; a waiting row
+                                   -- becomes delivered on the machine's agent_prompted event
+              error text null,     -- a few words on failed, never the machine's message
+              command_id uuid,     -- the SayToAgent command (idempotency)
+              created_at, updated_at)
+
 schema_migrations (version int pk, name text, applied_at)
 ```
 
@@ -325,7 +333,8 @@ desc)`, `certificates(user_id) where revoked_at is null`, `usage_hours(hour)`,
 `usage_hours(project_id, period_start)`, `abuse_events(project_id, ts desc)`,
 `questions(project_id, created_at desc)`, `questions(expires_at) where state
 = 'pending'`, `questions(deliver_next_at) where state <> 'pending' and
-delivered_at is null`, `questions(deliver_command_id)`, `usage_hours(hour) where
+delivered_at is null`, `questions(deliver_command_id)`, `says(project_id, created_at desc)`,
+`says(project_id, tmux_window) where state = 'waiting'` (0039), `usage_hours(hour) where
 stripe_usage_record_id is null` (unused since I-289), `credit_ledger(user_id, created_at)`,
 `subscriptions(user_id) where status in (live) unique`, `subscriptions(user_id,
 created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
@@ -337,7 +346,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0030_resting`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0039_says`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

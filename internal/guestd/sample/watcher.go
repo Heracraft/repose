@@ -43,6 +43,10 @@ const (
 	// has printed nothing for PromptQuietAfter: idle until the next hook.
 	// The watcher writes it; no hook sends it.
 	kindQuiet = "quiet"
+	// KindAgentPrompted records that a `repose say` reached the agent's
+	// terminal (DECISIONS I-1144). It notifies nobody and carries the
+	// sender, never the message. The watcher writes it; no hook sends it.
+	KindAgentPrompted = "agent_prompted"
 )
 
 // hooksFile is where the hook states are kept across a guestd restart,
@@ -198,6 +202,15 @@ type Watcher struct {
 	pruneLoaded bool
 	// strays is the stray-browser pass (stray.go, DECISIONS I-1124).
 	strays *strayWatcher
+	// pending is the one `repose say` waiting per window (I-1144), and
+	// saidAlready the last SayRemembered say ids with what became of
+	// them, so a resent command is not typed twice.
+	pending     map[string]*pendingSay
+	saidAlready map[string]SayOutcome
+	saidOrder   []string
+	// delivering is the windows a message is being typed into right now,
+	// so Say and the refresh never type one twice.
+	delivering map[string]bool
 }
 
 // NewWatcher builds a watcher. now may be nil for time.Now.
@@ -626,6 +639,9 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		w.log.Info("agent event", "event", "agent_event", "agent", e.agent, "kind", e.kind)
 		w.emit.AgentEvent(e.agent, e.window, e.kind, e.summary)
 	}
+	// After the states, so a message waiting on a turn that ended in
+	// this refresh goes in now and not five seconds later (I-1144).
+	w.drainSays(ctx, slug)
 }
 
 // computeState is the state machine of docs/workstreams/04-guestd.md §5,

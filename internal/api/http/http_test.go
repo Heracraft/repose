@@ -91,6 +91,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		Outbox:    notify.New(h.Pool, map[string]notify.Sender{"email": sender, "ntfy": sender, "gchat": sender}, h.Metrics, log),
 		Unsub:     unsub,
 		Questions: h.Questions,
+		Say:       h.Say,
 		Resting:   h.Resting,
 		// hooks.test keeps the URLs in these tests short and names the
 		// host the assertions check (DECISIONS I-1110).

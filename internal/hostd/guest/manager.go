@@ -1125,6 +1125,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_SayToAgent:
+		return "SayToAgent"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
@@ -1162,6 +1164,8 @@ func Target(cmd *hostdv1.Command) string {
 		return c.Exec.GuestId
 	case *hostdv1.Command_AnswerQuestion:
 		return c.AnswerQuestion.GuestId
+	case *hostdv1.Command_SayToAgent:
+		return c.SayToAgent.GuestId
 	case *hostdv1.Command_PauseGuest:
 		return c.PauseGuest.GuestId
 	case *hostdv1.Command_WakeGuest:
@@ -1477,6 +1481,9 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 	case *hostdv1.Command_AnswerQuestion:
 		err := m.answerQuestion(ctx, c.AnswerQuestion)
 		return payloadOrErr(id, err, nil)
+	case *hostdv1.Command_SayToAgent:
+		r, err := m.sayToAgent(ctx, c.SayToAgent)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Say{Say: r} })
 	case *hostdv1.Command_PauseGuest:
 		r, err := m.pause(ctx, id, c.PauseGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Pause{Pause: r} })

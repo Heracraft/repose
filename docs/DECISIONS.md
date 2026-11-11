@@ -32476,6 +32476,132 @@ TestNoticeAtTenMinutesListsWaiting ./internal/api/resume` beside `go test
 -race ./internal/cli`, both on one `DATABASE_URL`: 4 of 5 failed,
 `resume_test.go:741: notice []` each time. After, the same load: 10 of 10
 green (30.0 s), and the whole package twice, 91.9 s, green.
+**I-1144. The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11).**
+
+An agent could already reach the owner (`repose-notify`, `repose-ask`,
+I-244) and the owner could answer a question (I-245, I-690). What was
+missing was the owner starting a sentence: "also squash the fixup
+commits" with the laptop closed meant attaching, finding the window and
+typing. `repose say [PROJECT] "<text>"` and `POST /projects/:id/say` do
+that from anywhere.
+
+- **The path is the agent's own terminal.** The api stores a `says` row
+  (0039), sends `SayToAgent` down the host's channel, and hostd relays
+  it to guestd, which types it into the agent's tmux window with
+  `internal/agentprompt` — the same generator, screen check and Enter
+  retries `repose run -w -p` uses (I-752). Not a headless mode and not
+  an agent's own API: R3-14 and I-780 stand, and a message that arrived
+  anywhere else would not be in the session the owner attaches to.
+- **It waits for an idle agent rather than landing mid-turn.** Delivery
+  happens only while the window's hook state is `idle` or `needs_input`
+  (I-694's states). Otherwise the message waits and goes in at the end
+  of the turn, which the agent watcher's 5-second refresh delivers at,
+  in the same pass that announces the state change. Claude Code queues
+  input typed mid-turn, but opencode, codex, gemini and pi do not all
+  behave the same, and a message half-swallowed is worse than one that
+  lands five seconds later. `needs_input` is in, not out: typing is how
+  the owner answers a permission dialog.
+- **One message waits per window, and a newer one replaces it.** The
+  result carries `replaced`, the CLI says so, and the row it replaced
+  moves to `replaced`. This is deliberately *not* the council's "prompt
+  queue per agent": nothing drains a backlog, so nobody can queue five
+  messages and have the agent work through them unattended.
+- **The api does not queue either.** `Send` waits up to 20 seconds for
+  the machine's answer, as `resting.Wake` waits for a wake, and a host
+  that is not connected is a refusal the sender reads
+  (`detail.reason = machine_unreachable`). A `repose say` that said
+  nothing and delivered later is the failure this avoids; the owner
+  types the message, so the owner should hear what became of it. The
+  machine is woken first when it rests (I-818), as an answer wakes it.
+- **The window.** Empty means the guest's one agent window. More than
+  one is `invalid_argument` naming them, so the CLI prints the machine's
+  own sentence and the owner picks with `--agent`. The resolution is
+  guestd's, not the api's: the api's sample is up to a minute old and
+  the windows are the guest's own fact.
+- **The row follows the machine.** A `says` row (0039) is stored
+  `waiting` or `delivered` as the command answered, and a `waiting` one
+  becomes `delivered` on the machine's own `agent_prompted` event, which
+  is the only thing that knows a mid-turn message went in at the end of
+  the turn. The events ingest calls `say.Delivered` through the
+  `SetSays` hook, the shape `SetQuestions` and `SetResting` already
+  have, so `events` does not import `say`.
+- **`agent_prompted`.** A delivery emits an AgentEvent of that kind,
+  added to `events.GuestKinds` and hostd's `guestAgentKinds`. It is not
+  in `notifyKinds`, so it notifies nobody; its summary is the sender's
+  name and never a word of the message, and its verb is "got a message".
+  The guest could forge one, as it could forge any agent event: a
+  forged one notifies nobody, carries no text and counts against the
+  guest's event rate, so the cost of widening the list is nil.
+- **The sender.** The api sends the account's handle and `from_owner`.
+  The agent is shown `[from <name>] ` in front of the text only when
+  the sender is not the project's owner, which is nobody today; the
+  field is built now because adding it later would change what a
+  running agent reads mid-conversation.
+- **The submit script moved to `internal/agentprompt`**, a leaf package,
+  because the CLI and guestd both need it and neither may import the
+  other (the shape of I-729). `internal/cli/prompt_submit.go` is now
+  names for it, so every CLI call site is unchanged, and I-752's
+  measured constants live in one place.
+- *What it does not do.* A herdr agent: guestd reads herdr's panes over
+  herdr's socket and has no write method there, so a message for one is
+  refused by name rather than silently dropped. A message the terminal
+  took and the agent did not submit (I-752's exit 5) is dropped with a
+  log line and no event: typing it again would stack a second copy on
+  the first, and on the waiting path there is nobody to tell. I-752's
+  own measurement does not apply to this path — its 1-in-10 was a
+  *fresh* agent that satisfied a readiness gate without accepting a
+  submission, and a `say` is typed into an agent whose own hook says it
+  is at its prompt — but no live rate has been measured here either.
+- *Rejected.* Delivering through an agent's own HTTP or socket API (five
+  of them, none in the session the owner attaches to). Queueing in the
+  api and answering 202 (the sender learns nothing). A backlog per
+  window (the council's prompt queue, not picked). Resolving the window
+  in the api from the last sample (up to a minute stale).
+
+**I-1146. A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11).**
+
+The brief asked for a plain reply in a Chat card's thread to become a
+`repose say`, and, when it did, for the agent's last line to go back to
+that thread. Neither is built. The missing piece is not an inbound route
+on the api; it is that repose is not a Google Chat app at all.
+
+- **What the channel is today.** One outgoing *incoming webhook* per
+  user (I-692): a URL the owner pastes, which the api POSTs cards to.
+  Every answer travels out, as a signed `openLink` to
+  `/questions/reply` (I-692, `internal/api/notify/reply.go`). There is
+  no Chat app, no Google Cloud project, no service account, no
+  `CARD_CLICKED` or `MESSAGE` endpoint, and `gchatOnClick` has one
+  field, `openLink`.
+- **Why an endpoint alone would not do it.** A message posted by an
+  incoming webhook is not posted by an app, and in a space a Chat app is
+  delivered `MESSAGE` events only for messages that @-mention it; the
+  only unmentioned messages it hears are those in a direct message
+  space with the app itself (Google's "Receive and respond to user
+  interactions", read 2026-11-11:
+  https://developers.google.com/workspace/chat/receive-respond-interactions).
+  So
+  "the owner types a reply in the thread" reaches nothing until repose
+  *is* an app in that space and the cards are posted *as that app*
+  through the Chat REST API with a service account. That replaces the
+  webhook the owner pastes with an app the owner installs, changes the
+  identity every existing card is posted under, and needs a published
+  Chat app configuration (a Google Cloud project with the Chat API on,
+  an app name, an avatar, an HTTP endpoint, a verification audience).
+  It is a second integration, not an extension of this one.
+- **What is owed before anyone builds it.** Confirm against a live space
+  whether a thread started by an incoming webhook can be joined by an
+  app at all (the thread's `threadKey` is set by the poster), since the
+  mapping from a reply back to its event depends on it. Nothing here can
+  be checked from the build box: I-692 and I-695 already record that no
+  message has ever been sent to a real Chat webhook from this codebase.
+- **The last line back is not built either**, and on purpose rather than
+  for lack of time. Its trigger is "a turn ends on a message that came
+  in through a channel", and with no inbound channel no message ever
+  has. Building the column, the thread key and the post-back would be
+  code no input can reach and docs for a thing nobody can do, which is
+  what "no ghost features" forbids. `repose say` from the CLI is
+  explicitly out of it: the owner is in a terminal and reads the answer
+  there.
 **I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
 
 The owner, 2026-11-10: users do not need to know a base was published. A

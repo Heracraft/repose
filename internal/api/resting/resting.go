@@ -99,6 +99,9 @@ const (
 	ReasonOp        = "op"
 	ReasonAnswer    = "answer"
 	ReasonKeepAwake = "keep_awake"
+	// ReasonSay is a `repose say`: the agent has to be awake to be typed
+	// into (DECISIONS I-1144).
+	ReasonSay = "say"
 )
 
 // Sender is hostmgr's Send.

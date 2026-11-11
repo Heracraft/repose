@@ -74,6 +74,9 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 summaries are cycled when given; by default every event is an agent_message with no
 //	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
 //	                 moves to before the first of them (f.BackdateCreation), so it stays the oldest event
+//	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool}
+//	                 -> f.SetSayAgents and f.SetSayState: which agents the machines run and what a
+//	                 `repose say` is answered with (I-1144)
 //	POST /agents     {"project_id","agents": [{agent, window, state}],"ssh_sessions","tmux_clients"}
 //	                 -> f.SetAgents, and f.SetSessions when either count is given
 //
@@ -227,6 +230,25 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		f.LinkLast(body.ProjectID, "", body.Link, body.LinkLabel)
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// `repose say` (DECISIONS I-1144): which agent windows the fake's
+	// machines run, and what it answers a message with.
+	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Agents   *[]string `json:"agents"`
+			State    string    `json:"state"`
+			Replaced bool      `json:"replaced"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Agents != nil {
+			f.SetSayAgents(*body.Agents...)
+		}
+		f.SetSayState(body.State, body.Replaced)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("POST /agents", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			ProjectID   string            `json:"project_id"`

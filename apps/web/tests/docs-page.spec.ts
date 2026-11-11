@@ -59,7 +59,7 @@ test('the CLI reference rail lists its commands', async ({ page }) => {
 	const rail = page.getByRole('navigation', { name: 'On this page' });
 	// The h3s are a list inside their h2's item, by command name.
 	const subs = rail.locator('ul ul a');
-	expect(await subs.count()).toBeGreaterThanOrEqual(29);
+	expect(await subs.count()).toBeGreaterThanOrEqual(30);
 	await expect(rail.getByRole('link', { name: 'repose run', exact: true })).toHaveAttribute(
 		'href',
 		'#repose-run-project'

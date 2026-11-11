@@ -334,6 +334,30 @@ Nix's own `these N derivations will be built:` and `these N paths will be
 fetched (X MiB download, Y MiB unpacked):` lines (and their singular
 forms) are Nix's, not part of this contract, and may change with Nix.
 
+## Messages for an agent (DECISIONS I-1144)
+
+A message is what the owner typed with `repose say`: `Say = {id,
+project_id, window, text, sender, state:
+delivered|waiting|replaced|failed, replaced?: bool, created_at}`. `text`
+is tenant content (at most 4 KB): shown to the owner, typed into the
+agent's terminal, never logged. `window` is the agent window the machine
+resolved the message to, as `repose ps` names it. `sender` is the
+account's handle, which the machine puts in front of the message only
+when the sender is not the project's owner; today it always is.
+
+The api does not queue: it sends a `SayToAgent` down the host's channel
+and answers with what the machine said. `delivered` means the text is in
+the agent's terminal now; `waiting` means the agent was mid-turn and the
+machine types it in at the end of the turn. One message waits per
+window, so a second while one waits answers `replaced: true` and the
+earlier row moves to `replaced`. A `waiting` row becomes `delivered` on
+the machine's `agent_prompted` event, which is the only thing that knows
+a mid-turn message went in at the end of the turn.
+
+| Method | Path | Body / result |
+|---|---|---|
+| POST | `/projects/:id/say` | `{text, agent?}` → `Say`. `agent` names the window (`claude`, `codex-2`); without it the machine uses its one agent window. `400 invalid` for an empty message, for one over 4 KB (`detail.reason = text_too_long`) and when several agents run and none was named (`detail.reason = several_agents`; the message names the windows). `409 conflict` when the machine is not running (`detail.reason = not_running`), when no agent is running there (`detail.reason = no_agent`), and when the machine did not take the message within 20 seconds or its host is not connected (`detail.reason = machine_unreachable`). A delivery the machine made records an `agent_prompted` event, which notifies nobody and carries the sender and the window, never the message |
+
 ## Questions (DECISIONS I-244, I-245)
 
 A question is what an agent asked with `repose-ask` in the guest:

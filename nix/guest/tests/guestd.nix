@@ -23,6 +23,27 @@ SRC
     $CC -O0 -o $out/bin/claude claude.c
   '';
 
+  # A second stand-in agent for the `repose say` subtest (I-1144): it
+  # prints every line typed into it, so the pane's content shows whether
+  # the message landed, and the submit script's screen check (I-752) has
+  # a screen that changes. Installed under libexec, not bin, because its
+  # basename has to be `claude` and so does fakeClaude's.
+  sayClaude = pkgs.runCommand "say-claude" { nativeBuildInputs = [ pkgs.stdenv.cc ]; } ''
+    mkdir -p $out/libexec
+    cat > claude.c <<'SRC'
+    #include <stdio.h>
+    #include <unistd.h>
+    int main(void) {
+      char line[4096];
+      setvbuf(stdout, NULL, _IONBF, 0);
+      while (fgets(line, sizeof line, stdin)) { printf("TOOK %s", line); }
+      for (;;) { pause(); }
+      return 0;
+    }
+SRC
+    $CC -O0 -o $out/libexec/claude claude.c
+  '';
+
   devUID = 1000;
 
   # An agent's shell parent (DECISIONS I-475): a bash that loaded the
@@ -83,7 +104,7 @@ pkgs.testers.runNixOSTest {
     # guest gets these from nix/guest/base/tools.nix (02); the test names them
     # so that a missing one fails here rather than on a tenant's guest.
     environment.systemPackages = with pkgs; [
-      guestdPackage hookPackage fakeClaude
+      guestdPackage hookPackage fakeClaude sayClaude
       git tmux openssh e2fsprogs util-linux procps
       jq curl coreutils python3
     ];
@@ -363,6 +384,103 @@ pkgs.testers.runNixOSTest {
         assert signals["guestdOk"] is True, signals
         assert int(signals.get("tmuxClients", 0)) >= 0, signals
         assert len(sample["sample"]["procs"]) > 0, sample
+
+    with subtest("I-1144: repose say reaches an idle agent, waits while it works, and logs no word of itself"):
+        # A second agent window whose program prints what is typed into
+        # it, so the pane says whether the message landed.
+        guest.succeed(
+            "sudo -u dev tmux new-window -t todo-app -n claude-2 -c /home/dev/factory "
+            "'${sayClaude}/libexec/claude'"
+        )
+        for _ in range(30):
+            windows = [a["tmuxWindow"] for a in agents()]
+            if "claude-2" in windows:
+                break
+            guest.sleep(2)
+        assert "claude-2" in [a["tmuxWindow"] for a in agents()], agents()
+
+        # Two agents and no window named: the refusal names them both.
+        status, out = guest.execute(
+            "guestd call say-to-agent '{\"sayId\": \"0199ffff-0000-7000-8000-00000000000a\", "
+            "\"text\": \"pick one\", \"sender\": \"heracraft\", \"fromOwner\": true}' "
+            "--dev-socket /run/repose/guestd.sock"
+        )
+        assert status != 0 and "claude" in out and "claude-2" in out, (status, out)
+
+        # Named, and the agent is at its prompt: it goes in now. The
+        # call holds its own connection open for the notifications,
+        # because guestd notifies the newest connection and every other
+        # `guestd call` here would take the stream from a watcher
+        # started earlier.
+        out = call("say-to-agent", {
+            "sayId": "0199ffff-0000-7000-8000-00000000000b", "window": "claude-2",
+            "text": "run the tests before you commit", "sender": "heracraft", "fromOwner": True,
+        }, extra="--watch 8s")
+        res = first_json(out)
+        assert res["ok"] is True, res
+        assert res["say"]["state"] == "delivered", res
+        assert res["say"]["window"] == "claude-2", res
+        guest.wait_until_succeeds(
+            "sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2' "
+            "| grep -q 'TOOK run the tests before you commit'", timeout=30)
+        # hostd heard the delivery, with the sender and not a word of
+        # the message.
+        assert "agent_prompted" in out, out
+        assert "heracraft" in out, out
+        assert "run the tests before you commit" not in out, out
+
+        # The same say_id again types nothing twice.
+        again = first_json(call("say-to-agent", {
+            "sayId": "0199ffff-0000-7000-8000-00000000000b", "window": "claude-2",
+            "text": "run the tests before you commit", "sender": "heracraft", "fromOwner": True,
+        }))
+        assert again["ok"] is True, again
+        pane = guest.succeed("sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2'")
+        assert pane.count("TOOK run the tests before you commit") == 1, pane
+
+        # Mid-turn: a prompt hook makes the agent working, and the
+        # message waits rather than landing in the middle of the turn.
+        # This one's connection stays open across the turn's end, which
+        # is where its delivery notification comes from.
+        guest.succeed(
+            "sudo -u dev repose-hook --agent claude --window claude-2 "
+            "--socket /run/repose/hooks.sock "
+            "'{\"agent\":\"claude\",\"kind\":\"prompt\",\"summary\":\"\"}'"
+        )
+        guest.execute(
+            "guestd call say-to-agent '{\"sayId\": \"0199ffff-0000-7000-8000-00000000000c\", "
+            "\"window\": \"claude-2\", \"text\": \"and squash the fixups\", "
+            "\"sender\": \"heracraft\", \"fromOwner\": true}' "
+            "--dev-socket /run/repose/guestd.sock --watch 60s >/tmp/say2.txt 2>&1 &"
+        )
+        guest.wait_until_succeeds("grep -q waiting /tmp/say2.txt", timeout=30)
+        guest.sleep(8)
+        pane = guest.succeed("sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2'")
+        assert "and squash the fixups" not in pane, pane
+
+        # The turn ends: the next refresh types it in.
+        guest.succeed(
+            "sudo -u dev repose-hook --agent claude --window claude-2 "
+            "--socket /run/repose/hooks.sock "
+            "'{\"agent\":\"claude\",\"kind\":\"completed\",\"summary\":\"done\"}'"
+        )
+        guest.wait_until_succeeds(
+            "sudo -u dev tmux capture-pane -p -t '=todo-app:=claude-2' "
+            "| grep -q 'TOOK and squash the fixups'", timeout=60)
+        guest.wait_until_succeeds("grep -q agent_prompted /tmp/say2.txt", timeout=40)
+        guest.succeed("grep -q heracraft /tmp/say2.txt")
+        guest.fail("grep -q 'squash the fixups' /tmp/say2.txt")
+
+        # Never logged, by either name.
+        guest.fail("journalctl -u guestd | grep -q 'run the tests before you commit'")
+        guest.fail("journalctl -u guestd | grep -q 'squash the fixups'")
+        guest.succeed("journalctl -u guestd | grep -q agent_prompted")
+
+        # The window goes before the next subtest, which reads a single
+        # `pgrep -x claude`, and the wait is on the process rather than
+        # the window so two pids never reach it.
+        guest.succeed("sudo -u dev tmux kill-window -t '=todo-app:=claude-2'")
+        guest.wait_until_succeeds("test $(pgrep -xc claude) -eq 1", timeout=30)
 
     with subtest("I-200: the agent and the tmux server are protected, what they start is not"):
         claude = guest.succeed("pgrep -x claude").strip()

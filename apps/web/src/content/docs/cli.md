@@ -392,6 +392,24 @@ Answer a [waiting question](/docs/notifications#agents-can-message-you-and-ask-q
 
 `repose reply --dismiss [PROJECT]` cancels the waiting question without an answer, chosen the same way. With no question waiting it exits 1, as `reply` does. One that closed before the dismiss landed exits 1 with `Not dismissed: answered in the terminal.`
 
+### `repose say [PROJECT] MESSAGE`
+
+Send a message to the agent working on a project, from your laptop. The machine types it into the agent's own terminal, so the agent reads it as if you had typed it there and answers in the session you attach to.
+
+```text
+$ repose say todo-app "run the tests before you commit"
+Sent to claude.
+
+$ repose say todo-app "and squash the fixup commits"
+claude is working. Your message goes in at the end of the turn.
+```
+
+The message is one quoted argument; several words unquoted exit 2. An agent at its prompt, or waiting at a permission prompt, gets it at once. An agent in the middle of a turn gets it when the turn ends, because the five agents do not all take input typed mid-turn. One message waits per agent: a second while one waits replaces it, and the line says so.
+
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several agents exits 1 and names their windows, as `repose ps` does. A machine that is not running, or that runs no agent, exits 1. `--json` prints the message with the window it went to and its state, `delivered` or `waiting`.
+
+A delivered message is an event, so `repose events` and the project page show that the agent got one, with who sent it and which window. The message itself is never in an event, a log line or a notification.
+
 ## Snapshots
 
 | Command                                          | What it does |

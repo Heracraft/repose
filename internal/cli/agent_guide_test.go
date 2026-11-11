@@ -40,6 +40,7 @@ var guideSkippedSections = map[string]string{
 	"agents#what-agents-are-told-about-the-machine": "describes this guide",
 	"agents#agent-states":                           "what the user sees of the agent; the guide's turn line covers what the agent does",
 	"agents#opencode-2":                             "a tool the user installs and runs, not one the machine has (I-481)",
+	"agents#speak-to-it-from-your-laptop":           "a `repose say` arrives in the agent's own input as the user's next prompt (I-1144); there is nothing for the agent to do about it, and a line narrating it would be help nobody asked for",
 	"limits#projects":                               "account limits on the number of projects, not the machine",
 	"limits#when-repose-is-full":                    "the seats waitlist gates choosing a plan (I-290); an agent on a machine is past it",
 	"limits#ssh-connections":                        "the gateway limits connections from laptops into machines; an agent on the machine makes none",

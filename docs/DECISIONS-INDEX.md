@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-953 entries.
+955 entries.
 
 ## Scope
 
@@ -978,10 +978,12 @@ pointer, not a summary.
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L32278
 - **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32368
 - **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32435
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32479
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32509
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32573
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32622
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32716
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32754
-- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32788
+- **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — L32479
+- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L32561
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32605
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32635
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32699
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32748
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32842
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32880
+- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32914

@@ -237,6 +237,7 @@ func newRootCmd(version string) *cobra.Command {
 		newEventsCmd(envJSON, env, g),
 		newQuestionsCmd(envJSON, env, g),
 		newReplyCmd(envJSON, g),
+		newSayCmd(envJSON, env, g),
 		newNotifyCmd(env, g),
 		newResizeCmd(env, g),
 		newVersionCmd(version),
@@ -2034,6 +2035,49 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 
 // newGithubCmd is `repose github`, whose one command stores the GitHub
 // token the machines use in place of the laptop's gh login (I-1064).
+func newSayCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
+	var agent string
+	cmd := &cobra.Command{
+		Use:   "say [PROJECT] MESSAGE",
+		Short: "Send a message to the agent on a machine",
+		Long: "Send a message to the agent working on PROJECT. The machine types it into\n" +
+			"the agent's own terminal, so the agent reads it as if you had typed it there.\n" +
+			"An agent at its prompt gets it at once; one in the middle of a turn gets it\n" +
+			"when the turn ends, and a second message replaces the one still waiting.\n" +
+			"The message is one quoted argument. --agent WINDOW picks one agent when the\n" +
+			"machine runs more than one.",
+		Example: "  repose say \"run the tests before you commit\"\n  repose say todo-app \"use the staging database\"\n  repose say --agent codex-2 \"leave the migration alone\"",
+		Args: func(cmd *cobra.Command, args []string) error {
+			switch len(args) {
+			case 1, 2:
+				return nil
+			case 0:
+				return cobraUsageError{fmt.Errorf("%s takes a message and got no arguments: repose say [PROJECT] \"<message>\"", cmd.CommandPath())}
+			default:
+				return cobraUsageError{fmt.Errorf("%s takes one PROJECT and one message, quoted, got %s", cmd.CommandPath(), gotArgs(args))}
+			}
+		},
+		ValidArgsFunction: completeProject(env),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := envJSON(cmd)
+			if err != nil {
+				return err
+			}
+			project, text := g.project, args[0]
+			if len(args) == 2 {
+				if project != "" && project != args[0] {
+					return cobraUsageError{fmt.Errorf("%q and --project %q name two projects; pass one", args[0], project)}
+				}
+				project, text = args[0], args[1]
+			}
+			return SayCmd(cmd.Context(), e, project, agent, text)
+		},
+	}
+	cmd.Flags().Bool("json", false, "print the message as JSON")
+	cmd.Flags().StringVar(&agent, "agent", "", "the agent `WINDOW` to speak to, as repose ps names it")
+	return cmd
+}
+
 func newGithubCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "github",

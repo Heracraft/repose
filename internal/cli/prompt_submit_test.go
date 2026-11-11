@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/heracraft/repose/internal/agentprompt"
 )
 
 // stubTerminal is a terminal in two files: the screen, which typing
@@ -31,9 +33,9 @@ exit 0
 		t.Fatal(err)
 	}
 	return submitShell{
-		capture: "cat " + shQuote(screen),
-		text:    "printf '%s\\n' \"$repose_pp\" >> " + shQuote(screen),
-		enter:   "sh " + shQuote(enter),
+		Capture: "cat " + shQuote(screen),
+		Text:    "printf '%s\\n' \"$repose_pp\" >> " + shQuote(screen),
+		Enter:   "sh " + shQuote(enter),
 	}, screen, enters
 }
 
@@ -64,7 +66,7 @@ func countLines(t *testing.T, path string) int {
 // never answered.
 func TestTypeAndEnterAloneLosesADroppedEnter(t *testing.T) {
 	sh, screen, enters := stubTerminal(t, 1)
-	script := fmt.Sprintf("repose_pp=%s\n%s && %s\n", shQuote("fix the flaky test"), sh.text, sh.enter)
+	script := fmt.Sprintf("repose_pp=%s\n%s && %s\n", shQuote("fix the flaky test"), sh.Text, sh.Enter)
 	if code := submitExit(t, script); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
@@ -78,9 +80,9 @@ func TestTypeAndEnterAloneLosesADroppedEnter(t *testing.T) {
 
 // I-752: the submit script's own logic against the same stub terminal.
 func TestSubmitPromptPressesEnterAgainAndGivesUp(t *testing.T) {
-	oldPause, oldTries := promptEnterPause, promptEnterTries
-	promptEnterPause = "0" // the real pause is 0.5 s a check
-	t.Cleanup(func() { promptEnterPause, promptEnterTries = oldPause, oldTries })
+	oldPause, oldTries := agentprompt.EnterPause, agentprompt.EnterTries
+	agentprompt.EnterPause = "0" // the real pause is 0.5 s a check
+	t.Cleanup(func() { agentprompt.EnterPause, agentprompt.EnterTries = oldPause, oldTries })
 
 	for _, c := range []struct {
 		name       string
@@ -91,13 +93,13 @@ func TestSubmitPromptPressesEnterAgainAndGivesUp(t *testing.T) {
 	}{
 		{name: "taken at once", wantEnters: 1},
 		{name: "first Enter dropped", drops: 1, wantEnters: 2},
-		{name: "every Enter dropped", drops: 99, wantExit: typeExitNotSubmitted, wantEnters: promptEnterTries},
+		{name: "every Enter dropped", drops: 99, wantExit: typeExitNotSubmitted, wantEnters: agentprompt.EnterTries},
 		{name: "the prompt never showed", typeNoShow: true, wantEnters: 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sh, _, enters := stubTerminal(t, c.drops)
 			if c.typeNoShow {
-				sh.text = "true" // the keys land and nothing is drawn
+				sh.Text = "true" // the keys land and nothing is drawn
 			}
 			if code := submitExit(t, submitPromptFor(sh, "fix the flaky test")); code != c.wantExit {
 				t.Errorf("exit = %d, want %d", code, c.wantExit)
@@ -121,10 +123,10 @@ func TestTypePromptResendsEnterIntoATmuxWindow(t *testing.T) {
 	if err := os.WriteFile(stub, []byte(fmt.Sprintf(`echo e >> %[1]s
 if [ "$(wc -l < %[1]s)" -gt 1 ]; then %[2]s; fi
 exit 0
-`, shQuote(count), sh.enter)), 0o600); err != nil {
+`, shQuote(count), sh.Enter)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	sh.enter = "sh " + shQuote(stub)
+	sh.Enter = "sh " + shQuote(stub)
 	out, err := run(submitPromptFor(sh, "fix the flaky test"))
 	if err != nil {
 		t.Fatalf("submit: %v %s", err, out)

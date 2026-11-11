@@ -118,6 +118,14 @@ type Fake struct {
 	// bootID and bootAt are the host's boot, which Hello carries (I-645).
 	bootID string
 	bootAt time.Time
+	// says are the SayToAgent commands the guests took, and the rest
+	// what the fake answers with (DECISIONS I-1144).
+	says        []*hostdv1.SayToAgent
+	sayState    string
+	sayWindow   string
+	sayReplaced bool
+	sayFailCode string
+	sayFailMsg  string
 }
 
 // Reboot models a host restart under hostd (DECISIONS I-645): the boot id
@@ -545,6 +553,8 @@ func kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_SayToAgent:
+		return "SayToAgent"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
@@ -984,8 +994,76 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			return e
 		}
 		return ok(nil)
+	case *hostdv1.Command_SayToAgent:
+		// The fake guest runs one agent window, `claude`, idle at its
+		// prompt, so a message is delivered (DECISIONS I-1144). Says
+		// records what arrived; SetSayAnswer, SetSayReplaced and
+		// SetSayFailure steer what comes back.
+		m := c.SayToAgent
+		f.mu.Lock()
+		g, e := get(m.GuestId)
+		if e == nil && g.State != "running" {
+			e = errResult(id, "not_found", "guest is "+g.State)
+		}
+		state, window, replaced := f.sayState, f.sayWindow, f.sayReplaced
+		failCode, failMsg := f.sayFailCode, f.sayFailMsg
+		if e == nil {
+			f.says = append(f.says, m)
+		}
+		f.mu.Unlock()
+		if e != nil {
+			return e
+		}
+		if failCode != "" {
+			return errResult(id, failCode, failMsg)
+		}
+		if state == "" {
+			state = "delivered"
+		}
+		if window == "" {
+			window = m.Window
+			if window == "" {
+				window = "claude"
+			}
+		}
+		return ok(func(r *hostdv1.Result) {
+			r.Payload = &hostdv1.Result_Say{Say: &hostdv1.SayResult{State: state, Window: window, Replaced: replaced}}
+		})
 	}
 	return errResult(id, "invalid_argument", "unknown command")
+}
+
+// Says are the SayToAgent commands the fake's guests took (I-1144).
+func (f *Fake) Says() []*hostdv1.SayToAgent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*hostdv1.SayToAgent(nil), f.says...)
+}
+
+// SetSayAnswer steers what the fake answers a SayToAgent with: the state
+// (delivered or waiting) and the window it names. Empty is the default,
+// delivered in the command's window or `claude`.
+func (f *Fake) SetSayAnswer(state, window string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayState, f.sayWindow = state, window
+}
+
+// SetSayReplaced makes the fake report that the message replaced one
+// that was still waiting in that window.
+func (f *Fake) SetSayReplaced(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayReplaced = v
+}
+
+// SetSayFailure makes the fake refuse a SayToAgent with that code and
+// message, the way guestd refuses one it has no agent for. An empty
+// code clears it.
+func (f *Fake) SetSayFailure(code, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayFailCode, f.sayFailMsg = code, message
 }
 
 // fakeBoot is the BootTimings a real hostd reports with a create or start
