@@ -163,8 +163,11 @@ Session and windows (see `interfaces/guest-conventions.md`):
   does; guestd recreates a lost session at boot
   (`guest-conventions.md`), and the CLI does not.
 - Two `repose run` invocations on the same project from two terminals both
-  attach; tmux handles the multi-client case and the smaller terminal
-  constrains the size, as tmux always does. The user docs say so.
+  attach, each to a session grouped with the project's (DECISIONS
+  I-1067): each terminal picks its own window, and with
+  `aggressive-resize` a window takes the size of the terminals showing it.
+  On one window both show, the terminal typed in last sets the size (tmux
+  3.7's `window-size latest`). The user docs say so.
 
 The laptop's clock (I-198):
 

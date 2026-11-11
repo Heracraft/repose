@@ -418,6 +418,14 @@ message GuestSample {
   // deltas are the host's own counters and read about zero. False from a
   // hostd older than I-818.
   bool resting = 17;
+  // Bytes the guest sent to the internet since the last sample: its nft
+  // egress counter, which never sees what it sends the edge (SSH, port
+  // forwards, hooks, the browser view) or the host's caches. This is the
+  // egress the plan bills. net_tx_bytes_delta stays everything the guest
+  // sent through its tap, which the idle rule and the abuse checks read.
+  // Absent from a hostd older than DECISIONS I-1063, where billing falls
+  // back to net_tx_bytes_delta.
+  optional uint64 net_egress_bytes_delta = 18;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

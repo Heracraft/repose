@@ -74,8 +74,20 @@ tmux kill-window -t %[1]s
 // MessageScript shows text on the session's clients for four seconds
 // when it has any, and does nothing otherwise.
 func (tmuxMux) MessageScript(slug, text string) string {
-	return fmt.Sprintf("if tmux list-clients -t %s -F x 2>/dev/null | grep -q .; then tmux display-message -d 4000 -t %s %s; fi",
-		shQuote("="+slug), shQuote("="+slug+":"), shQuote(strings.ReplaceAll(text, "#", "##")))
+	return tmuxShowClients(slug, 4000, shQuote(strings.ReplaceAll(text, "#", "##")))
+}
+
+// tmuxClientsScript prints the name of each terminal attached to the
+// project's session or to a session grouped with it, which is where each
+// attach puts its terminal (DECISIONS I-1067), one per line.
+func tmuxClientsScript(slug string) string {
+	return fmt.Sprintf(`tmux list-clients -F '#{client_name} #{session_name} #{session_group}' 2>/dev/null | awk -v s=%s '$2 == s || $3 == s { print $1 }'`, shQuote(slug))
+}
+
+// tmuxShowClients shows msg, quoted for the shell, on each of those
+// terminals for ms milliseconds.
+func tmuxShowClients(slug string, ms int, msg string) string {
+	return fmt.Sprintf(`for repose_c in $(%s); do tmux display-message -c "$repose_c" -d %d %s; done`, tmuxClientsScript(slug), ms, msg)
 }
 
 // SessionEnded is tmux answering that the session is missing (exit 1);

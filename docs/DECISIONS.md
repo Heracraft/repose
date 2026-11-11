@@ -30867,3 +30867,190 @@ rather than the usage line; it is worth doing and is not done here.
 exists" on this branch and fails against `main` naming all three
 subcommand offenders with their file and line, so it can fail on exactly
 what it was written for.
+
+**I-1063. Egress is what a guest sends the internet, counted by nft, not
+by its tap.** (run-sync-fixes, 2026-11-10.)
+
+The plan's egress, its overage and the 4x stop were all read from the
+guest's tap: every byte the guest sent, wherever it went. A guest's
+sshd answers the edge gateway over WireGuard, so terminal output, port
+forwards, `git fetch repose`, `repose cp`, the hooks to the edge and the
+browser view were all billed as egress. `billing.md` promised the
+opposite ("Incoming data and your own SSH traffic, port forwards
+included, don't count") and nothing in the code kept that promise. A
+user with an agent printing in an attached terminal all day paid for it.
+
+The per-guest `egress-<guest_id>` counter in `guest_dyn` already existed
+and was never read after I-448, and it could not have been: `guest_fwd`
+accepts established packets before the jump to `guest_dyn`, so the
+counter saw each flow's first packet only. Now `guest_dyn` is jumped
+from a new base chain, `guest_meter`, on the forward hook at priority
+`filter + 10` and only for `iifname "br-guests" oifname <uplink>`. An
+accept in `guest_fwd` ends that chain and not the hook, so `guest_meter`
+sees every packet `guest_fwd` accepted on its way to the internet; a
+drop is final, so blocked attempts (25, the stratum ports, the flow
+limits) still never count. Traffic to the edge or to the host's caches
+never leaves on the uplink, so it is not counted.
+
+The counter goes up as a new field, `GuestSample.net_egress_bytes_delta`
+(optional), into a new column, `meter_samples.net_egress` (migration
+0035), and the rollup bills `coalesce(net_egress, net_tx)`: a sample from
+a hostd older than this has no field and bills the tap as before.
+`net_tx` stays the tap's figure. A first version of this change put the
+counter in `net_tx` itself; the review that followed found two readers
+for which the tap is the right figure. The idle rule's `net_rx + net_tx`
+threshold counts the browser view's frames to the edge as use, and
+nothing else marks a machine as watched through `repose browser`; the
+abuse rule and `EgressHigh` (`sum(net_tx) > 1e12`) should see a tenant
+moving terabytes to a laptop over SSH, which the edge pays for.
+
+hostd reads every guest's counter with one `nft list counters` per tick,
+under the sample cursors' lock, so a stop's final reading and a boot's
+baseline cannot interleave with it. Without that lock a tick that read
+the counters before a restart and applied them after the new baseline
+took the reading as a counter reset and counted it in full, which is
+the guest's whole lifetime, since the counter lives until destroy. The
+counter outlives a stop, so a boot takes its value as the baseline
+instead of zeroing the cursor as the tap's is (I-448). A tick that
+cannot read the counters, or finds a guest without one, sends 0 for it,
+logs `samples: egress counters unread` or `samples: guest has no egress
+counter`, and keeps the cursor, so the next reading counts those bytes
+once. The stop's final sample reads the counter after the hypervisor
+has stopped, as it reads the tap; if that read fails it sends no
+egress, and the api bills the tap for that last minute.
+
+Not done:
+- Public preview URLs (`ports-and-previews.md`, not built) will reach a
+  guest over wg0, and their responses must count. When they are built,
+  `guest_meter` gains a rule for what the guest sends the edge from a
+  preview port.
+- The npm cache proxies every method upstream from the host's own
+  address, so an `npm publish` through it is not counted. It reaches
+  only registry.npmjs.org; limiting the proxy to GET and HEAD would also
+  break `npm audit`, which POSTs.
+- A host-level run on a real host; the VM tests do not boot on kanali.
+
+*Evidence.* In network namespaces (guest, host, internet, edge) with
+`guest_fwd` and `guest_meter` as the host has them: 300,000 bytes from
+the guest's port 22 to the edge counted 0 bytes; a 200 KB POST to the
+internet counted 11 packets (the old placement counts 1 per flow); a
+connection to port 25 counted nothing. The host's rendered ruleset
+(`nix eval .#nixosConfigurations.host.config.networking.nftables`)
+passes `nft -c` and loads twice in a row, as a reload does.
+`internal/hostd/guest`: `TestEgressExcludesTrafficToTheEdge` (90 KB to
+the edge, 1200 bytes to the internet: egress 1200, tx 91,200, rx from
+the tap), `TestEgressUnreadTickCountsLater`, and I-448's three metering
+tests summing the billed figure. `internal/hostd/net`: `EgressBytes`
+parses the counters and skips the blocked ones.
+`internal/api/meter`: `TestRollupBillsNetEgressAndFallsBackToNetTx`
+bills 600 for an hour with the field and 60,000 for one without; with
+the rollup reading `sum(net_tx)` it fails (`[60000 60000]`). The host VM
+test now expects every packet of five connections (10 to 30) where it
+expected first packets (under 10).
+
+**I-1065. A folder that is not a git repository is offered one.**
+(run-sync-fixes, 2026-11-10.)
+
+At a demo on 2026-11-07 a user ran `repose run` in their project folder,
+which had no `.git`. The run started an empty machine and printed `Not a
+git repository, so nothing was synced.` (I-358), the agent saw none of
+their files, and the fix was to stop and run `git init` by hand. The
+sync works through git, so the fix belongs there and not in a second,
+file-copying sync.
+
+`repose run` and `repose sync` in such a folder, from a terminal, ask
+`~/todo-app isn't a git repository. Make it one and sync it? [Y/n]`,
+naming the folder, since a run from `~/proj/src` makes `src` the
+repository. Yes runs `git init`, writes a starter `.gitignore` only when
+the folder has none, `git add -A`, and one commit, `Initial commit`, then
+says `Committed N files to a new git repository.` and syncs as usual.
+
+- The starter `.gitignore` leaves out `.env` and `.env.*` (but not
+  `.env.example`), key and credential files (`*.pem`, `*.key`, `*.p12`,
+  `*.pfx`, `*.keystore`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`,
+  `.netrc`, `credentials.json`), `.DS_Store` and the `defaultSkipDirs`.
+  An untracked key in a repository only travels to the machine; a
+  committed one is history, which gets pushed. The `.env` files still
+  reach the machine as I-197 sends them.
+- A folder inside that is a repository of its own goes in
+  `.git/info/exclude` and the run says `Left out vendor/lib: it is a git
+  repository of its own.` Committed, it is a bare commit pointer with no
+  `.gitmodules`, which the sync leaves empty on the machine, and the
+  count of files said one file for it.
+- A step that fails removes the `.git` and the `.gitignore` it wrote and
+  stops with git's line. Git's own "Author identity unknown" is followed
+  by the two commands that fix it, which a one-line error drops, so that
+  case says `Git has no name and email to commit with. Set them with git
+  config --global user.name "Your Name" and git config --global
+  user.email you@example.com, then run again.`
+
+Not offered, and today's behaviour kept: no terminal (scripts), `--temp`
+(a scratch machine from `~/Downloads` is no reason to commit
+`~/Downloads`), a folder holding more than `maxUntrackedBytes` (500 MB)
+or 100,000 files outside what the starter `.gitignore` skips, which
+would be copied into `.git` and then sent, and whose walk would stall the
+run before the question (the line says why), a `.git` git cannot read,
+and no git. A no from `run` makes the empty machine with no further
+line; from `sync` it exits 1 with `Nothing was synced.`. The size check
+does not read a `.gitignore` the folder already has, so such a folder can
+be called too big when its commit would not be.
+
+*Evidence.* `internal/cli/makerepo_test.go`: a yes commits `main.py`,
+`lib/util.py` and `.gitignore` and not `.env` or `node_modules`; keys,
+`.netrc`, `credentials.json` and `.env.local` stay out and
+`.env.example` goes in; a nested repository is excluded and named; an
+existing `.gitignore` is kept; no, no terminal, a sparse 500 MB + 1 file
+and three files against a limit of two leave no `.git` (the size cases
+never ask); a commit refused by a failing signer, and one with
+`user.useConfigOnly` and no identity, leave only the original file, the
+second with the two commands; `--temp` never asks;
+`TestRunInAPlainFolderOffersARepository` runs `runRun` against the fake
+api and an ssh guest: the sync answered no exits 1 and creates nothing,
+and the run answered yes puts `main.py` and the `.gitignore` in
+`~/plainapp` on the machine.
+
+**I-1067. Each attach is its own tmux session, grouped with the
+project's.** (run-sync-fixes, 2026-11-10.)
+
+At the same demo two people shared one account and attached to one
+machine from two laptops with different window sizes. Every attach was
+`tmux attach -t <slug>`, so both terminals were clients of one session:
+when one switched windows the other was moved too, and the window took
+the size of whichever had been active last, which left the other one
+clipped or bordered with dots.
+
+The attach is now `tmux new-session -t =<slug> -s <slug>~<pid>` with
+`destroy-unattached on`: a session in the project's group, sharing its
+windows, with its own current window, gone when its terminal detaches.
+The guest base sets `aggressive-resize on`, so a window is sized for the
+terminals showing it rather than every terminal attached. When both show
+the same window, tmux 3.7's `window-size latest` gives it the size of the
+one typed in last; nothing better exists for one grid shown on two
+screens. A `session-window-changed` hook on the grouped session selects
+the same window in `<slug>`, so the next attach, the reattach after a
+dropped connection (I-469) and `repose attach` with no window open the
+window last chosen, as one shared session did. The title and the status
+line show the group's name, not `<slug>~<pid>`.
+
+What looked for clients of `<slug>` by name now matches `session_name` or
+`session_group`: guestd's `tmux_clients` (which the idle rule reads, so
+an attached terminal kept counting as use), the CLI's status-line
+messages (`display-message -c` per client, since `-t <slug>:` finds no
+client on the project's session any more), the Claude-plugin note, and
+the port-forward indicator, set on every session of the group (a session
+made after it gets it on the next 20 s heartbeat). Session options are
+not shared in a group; nothing else sets one.
+
+Old bases: the CLI's attach works on any tmux with grouped sessions; on
+a base without this change `aggressive-resize` is off, so a window in
+one terminal's session may still be sized by the other, and guestd counts
+only clients of `<slug>`, so an attached terminal shows in
+`ssh_sessions` but not in `tmux_clients`. Both are fixed by the base.
+
+*Evidence.* `TestTwoAttachesKeepTheirOwnWindowAndSize` attaches an 80x24
+and a 200x60 terminal to a real tmux on the test guest: each client is on
+its own window (`editor`, `logs`), the windows are 80x23 and 200x59, both
+are listed as the project's clients, the project's session follows to
+`logs`, and after both detach only `<slug>` is left. The two existing
+attach tests (I-304, I-606) pass with the grouped attach. guestd's
+sampler counts `todo-app` and `todo-app~812` and not `other`.

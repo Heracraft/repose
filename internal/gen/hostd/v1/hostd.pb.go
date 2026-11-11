@@ -3981,9 +3981,17 @@ type GuestSample struct {
 	// is paused with its guest and not lost. cpu_ns_delta and the net
 	// deltas are the host's own counters and read about zero. False from a
 	// hostd older than I-818.
-	Resting       bool `protobuf:"varint,17,opt,name=resting,proto3" json:"resting,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Resting bool `protobuf:"varint,17,opt,name=resting,proto3" json:"resting,omitempty"`
+	// Bytes the guest sent to the internet since the last sample: its nft
+	// egress counter, which never sees what it sends the edge (SSH, port
+	// forwards, hooks, the browser view) or the host's caches. This is the
+	// egress the plan bills. net_tx_bytes_delta stays everything the guest
+	// sent through its tap, which the idle rule and the abuse checks read.
+	// Absent from a hostd older than DECISIONS I-1063, where billing falls
+	// back to net_tx_bytes_delta.
+	NetEgressBytesDelta *uint64 `protobuf:"varint,18,opt,name=net_egress_bytes_delta,json=netEgressBytesDelta,proto3,oneof" json:"net_egress_bytes_delta,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GuestSample) Reset() {
@@ -4133,6 +4141,13 @@ func (x *GuestSample) GetResting() bool {
 		return x.Resting
 	}
 	return false
+}
+
+func (x *GuestSample) GetNetEgressBytesDelta() uint64 {
+	if x != nil && x.NetEgressBytesDelta != nil {
+		return *x.NetEgressBytesDelta
+	}
+	return 0
 }
 
 type HostSample struct {
@@ -5369,7 +5384,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\ftmux_clients\x18\x02 \x01(\rR\vtmuxClients\x122\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
-	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\xb4\x05\n" +
+	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\x89\x06\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +
@@ -5389,7 +5404,9 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x14guest_mem_used_bytes\x18\x0e \x01(\x04R\x11guestMemUsedBytes\x12&\n" +
 	"\x0froot_used_bytes\x18\x0f \x01(\x04R\rrootUsedBytes\x12&\n" +
 	"\x0froot_size_bytes\x18\x10 \x01(\x04R\rrootSizeBytes\x12\x18\n" +
-	"\aresting\x18\x11 \x01(\bR\aresting\"\x81\x01\n" +
+	"\aresting\x18\x11 \x01(\bR\aresting\x128\n" +
+	"\x16net_egress_bytes_delta\x18\x12 \x01(\x04H\x00R\x13netEgressBytesDelta\x88\x01\x01B\x19\n" +
+	"\x17_net_egress_bytes_delta\"\x81\x01\n" +
 	"\n" +
 	"HostSample\x12\x19\n" +
 	"\bmem_free\x18\x01 \x01(\x04R\amemFree\x12\x1b\n" +
@@ -5667,6 +5684,7 @@ func file_repose_hostd_v1_hostd_proto_init() {
 		(*Result_Pause)(nil),
 		(*Result_Wake)(nil),
 	}
+	file_repose_hostd_v1_hostd_proto_msgTypes[46].OneofWrappers = []any{}
 	file_repose_hostd_v1_hostd_proto_msgTypes[56].OneofWrappers = []any{
 		(*Event_GuestStateChanged)(nil),
 		(*Event_AgentEvent)(nil),

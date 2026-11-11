@@ -317,7 +317,6 @@ func TestStopStartDestroy(t *testing.T) {
 	}
 	// Destroy from running, with a final egress sample (from the tap,
 	// I-448) and nothing left.
-	h.net.Counters[gid1] = 12345
 	h.net.Send(h.guest(gid1).Tap, 0, 12345)
 	h.mustOK(cmd(&hostdv1.DestroyGuest{GuestId: gid1}))
 	if _, err := h.st.GetGuest(gid1); err == nil {
@@ -825,6 +824,7 @@ func TestSamplesMergeHostAndGuestd(t *testing.T) {
 	}
 	h.sd.Set("guest@"+gid1, 3_000_000_000, 600<<20)
 	h.net.Stats[h.guest(gid1).Tap] = [2]uint64{1500, 2600}
+	h.net.Counters[gid1] = 2600
 	s = h.m.CollectSamples(ctx)
 	gs := s.Guests[0]
 	if gs.CpuNsDelta != 2_000_000_000 || gs.NetRxBytesDelta != 500 || gs.NetTxBytesDelta != 600 || gs.MemRssBytes != 600<<20 || gs.DiskUsedBytes != 3<<30 || gs.DiskAllocBytes != 40<<30 {

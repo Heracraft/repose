@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-920 entries.
+923 entries.
 
 ## Scope
 
@@ -952,3 +952,6 @@ pointer, not a summary.
 - **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30572
 - **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30680
 - **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L30826
+- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
+- **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
+- **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012

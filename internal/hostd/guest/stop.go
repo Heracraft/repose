@@ -200,8 +200,8 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	}
 	m.log(g).Info("destroying guest", "event", "guest_destroy", "keep_volume", c.KeepVolume)
 	// The guest's last bytes were metered by the stop's final reading of
-	// its tap (finalSample, DECISIONS I-448); the nft counter is not read
-	// again, since its bytes since the last tick are the same bytes.
+	// its tap and egress counter (finalSample, DECISIONS I-448, I-1063);
+	// the counter is not read again, since nothing has run since.
 	if err := m.d.Net.DelCounter(ctx, g.GuestID); err != nil {
 		return errf(CodeInternal, "nft delete counter: %v", err)
 	}

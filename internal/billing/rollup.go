@@ -84,7 +84,10 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 	// activation figure. The agent test is idle.usedSQL's -- a state that
 	// is neither idle nor needs_input -- and the two counts are disjoint
 	// by construction, so neither can be read as the other.
-	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(net_tx),
+	// Egress is net_egress, the host's count of what the guest sent the
+	// internet; a sample from a hostd before I-1063 has none and bills
+	// net_tx, the tap, which also held its SSH traffic.
+	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(coalesce(net_egress, net_tx)),
 		(array_agg(class order by ts desc))[1],
 		count(*) filter (where state = 'running' and (ssh_sessions > 0 or tmux_clients > 0)),
 		count(*) filter (where state = 'running' and ssh_sessions = 0 and tmux_clients = 0

@@ -177,15 +177,40 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		return err
 	}
 	skipSync := false
+	// Why a run outside a repository synced nothing, when it did not.
+	var noRepo gitInitOutcome
 	if err := <-precheck; err != nil {
 		if gitRepoRoot(e.Cwd) != "" {
 			return err
 		}
-		if opts.Sync {
+		// From a terminal, the folder can become a repository here
+		// (DECISIONS I-1065). Not for --temp: a throwaway machine from a
+		// scratch folder is no reason to commit the folder.
+		outcome, made, err := gitInitNotAsked, gitInitDone{}, error(nil)
+		if opts.Temp == 0 {
+			outcome, made, err = offerGitInit(ctx, e.Cwd)
+		}
+		switch {
+		case err != nil:
+			return err
+		case outcome == gitInitMade:
+			for _, l := range made.lines() {
+				_, _ = fmt.Fprintln(e.Out, l)
+			}
+			if err := syncPrecheck(syncRoot(e.Cwd), !opts.Sync); err != nil {
+				return err
+			}
+		case opts.Sync && outcome == gitInitDeclined:
+			return exitf(ExitGeneric, "Nothing was synced.")
+		case opts.Sync && outcome == gitInitTooBig:
+			return exitf(ExitUsage, "This folder isn't a git repository, and it holds over 500 MB or 100,000 files, more than one sync sends.")
+		case opts.Sync:
 			// `repose sync` exists to send a checkout (I-358).
 			return exitf(ExitUsage, "This folder is not a git checkout, so there is nothing to sync.")
+		default:
+			skipSync = true // outside a repository: an empty machine (I-358)
+			noRepo = outcome
 		}
-		skipSync = true // outside a repository: an empty machine (I-358)
 	}
 	// The home folder is never synced, a dotfiles repository included
 	// (I-601); the run carries what --no-sync carries, and says nothing.
@@ -378,7 +403,12 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// window's trust write copies (I-556); read with the carry.
 	var mcpAppr mcpApprovals
 	if skipSync {
-		_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
+		switch noRepo {
+		case gitInitTooBig:
+			_, _ = fmt.Fprintln(e.Out, "Nothing was synced: this folder isn't a git repository, and it holds over 500 MB or 100,000 files, more than one sync sends.")
+		case gitInitNotAsked:
+			_, _ = fmt.Fprintln(e.Out, "Not a git repository, so nothing was synced.")
+		}
 		checkout = e.carryWithoutSync(ctx, target, project, helper.RepoDir, tz)
 	} else if !opts.NoSync && !homeRun {
 		repoRoot := gitRepoRoot(e.Cwd)
@@ -1150,15 +1180,51 @@ func attachCommand(slug, extra, window string) string {
 		return co + fmt.Sprintf(`[ -d "$repose_co" ] || { printf '%%s\n' %[3]s >&2; exit 2; }
 repose_w=$(tmux list-windows -t %[1]s -F '#{window_activity} #{window_name}' 2>/dev/null | while read -r a n; do case $n in %[2]s|%[2]s/*) printf '%%s %%s\n' "$a" "$n" ;; esac; done | sort -n | tail -n 1 | cut -d' ' -f2-)
 if [ -z "$repose_w" ]; then repose_w=%[2]s; tmux new-window -d -t %[1]s -n "$repose_w" -c "$repose_co"; fi
-exec tmux attach -t %[1]s:"$repose_w" -c "$repose_co"`, shQuote(slug), shQuote(windowPrefix(extra)), shQuote(missing))
+`, shQuote(slug), shQuote(windowPrefix(extra)), shQuote(missing)) + tmuxAttachSession(slug, `="$repose_w"`, "")
 	}
 	if window == "" {
-		return co + fmt.Sprintf(`exec tmux attach -t %s -c "$repose_co"`, shQuote(slug))
+		return co + tmuxAttachSession(slug, "", "")
 	}
 	target := shQuote(tmuxWindowTarget(slug, window))
-	msg := fmt.Sprintf("The %s window closed before the attach: the agent in it exited. Attached to the session instead; start the agent again there.", window)
-	return co + fmt.Sprintf("if tmux has-session -t %[1]s 2>/dev/null; then exec tmux attach -t %[1]s -c \"$repose_co\"; fi; printf '%%s\\n' %[3]s >&2; exec tmux attach -t %[2]s -c \"$repose_co\" \\; display-message -d 10000 %[3]s",
-		target, shQuote(slug), shQuote(msg))
+	msg := shQuote(fmt.Sprintf("The %s window closed before the attach: the agent in it exited. Attached to the session instead; start the agent again there.", window))
+	return co + fmt.Sprintf("if tmux has-session -t %s 2>/dev/null; then\n%s\nfi\nprintf '%%s\\n' %s >&2\n", target, tmuxAttachSession(slug, tmuxWindowSuffix(window), ""), msg) +
+		tmuxAttachSession(slug, "", msg)
+}
+
+// tmuxAttachSession is the guest-side attach of this terminal to the
+// project's session, on window (a tmux window target after the colon,
+// already quoted for the shell) or, with window "", on the window last
+// used; msg, when not "", is a quoted line tmux shows for ten seconds.
+// Each attach is a session of its own grouped with the project's
+// (DECISIONS I-1067): the windows are shared, but each laptop picks its
+// own current window, and with `aggressive-resize` a window is sized for
+// the terminals looking at it rather than for every one attached. Two
+// laptops on one machine had fought over one session's window and size.
+// The grouped session goes when its terminal detaches, and a hook moves
+// the project's session to the window it shows, so the next attach opens
+// the window last used, as one session did. A session that is missing is
+// attached to as before, so tmux's own refusal says so.
+func tmuxAttachSession(slug, window, msg string) string {
+	sel := ""
+	if window != "" {
+		sel = ` \; select-window -t "=$repose_s:"` + window
+	}
+	if msg != "" {
+		sel += ` \; display-message -d 10000 ` + msg
+	}
+	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exec tmux attach -t %[1]s
+repose_s=%[2]s~$$
+exec tmux new-session -t %[1]s -s "$repose_s" -c "$repose_co" \; set-option destroy-unattached on \; set-hook session-window-changed %[3]s%[4]s`,
+		shQuote("="+slug), shQuote(slug), shQuote(`run-shell -b "tmux select-window -t '=`+slug+`:#{window_id}'"`), sel)
+}
+
+// tmuxWindowSuffix is a window target's part after the colon, quoted for
+// the shell: a number by index, a name exactly (tmuxWindowTarget).
+func tmuxWindowSuffix(window string) string {
+	if allDigits(window) {
+		return shQuote(window)
+	}
+	return shQuote("=" + window)
 }
 
 // attachNamedCommand is the guest-side command of `attach --window`
@@ -1168,7 +1234,7 @@ func attachNamedCommand(slug, extra, window string) string {
 	target := shQuote(tmuxWindowTarget(slug, window))
 	missing := fmt.Sprintf("%s has no window %s. `repose ps %s` lists them.", slug, window, slug)
 	return checkoutVar(slug, extra) + fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || { printf '%%s\n' %[2]s >&2; exit 2; }
-`+attachTTYGuard+`exec tmux attach -t %[1]s -c "$repose_co"`, target, shQuote(missing))
+`, target, shQuote(missing)) + attachTTYGuard + tmuxAttachSession(slug, tmuxWindowSuffix(window), "")
 }
 
 // attachTTYGuard ends an attach that has no terminal before tmux sees

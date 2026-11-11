@@ -388,6 +388,11 @@ Every 60 seconds, for each guest in bbolt:
 - `net_tx/rx_bytes_delta`: `/sys/class/net/tap-<8hex>/statistics/` (tx on
   the tap is rx for the guest and vice versa; hostd reports from the
   guest's point of view).
+- `net_egress_bytes_delta`: the guest's nft counter `egress-<guest_id>`,
+  what it sent out of the provider NIC, read for every guest with one
+  `nft list counters` under the sample cursor's lock. This is the billed
+  egress; the tap's tx also holds SSH and the rest sent to the edge
+  (DECISIONS I-1063).
 - `disk_alloc_bytes`: from bbolt; `disk_used_bytes`: `lvs --units b -o
   data_percent` times size.
 - `signals` and `procs`: from `guestd Sample`, with `guestd_ok=false` and

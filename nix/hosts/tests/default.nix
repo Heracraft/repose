@@ -204,7 +204,7 @@ in
       with subtest("the repose tables have the documented chains"):
           print(host.succeed("nft list table inet repose"))
           print(host.succeed("nft list table bridge repose"))
-          for chain in ["input", "guest_in", "guest_fwd", "guest_dyn", "nat"]:
+          for chain in ["input", "guest_in", "guest_fwd", "guest_meter", "guest_dyn", "nat"]:
               host.succeed(f"nft list chain inet repose {chain}")
           host.succeed("nft list chain inet repose guest_fwd | grep -q '169.254.169.254'")
           host.succeed("nft list chain inet repose guest_fwd | grep -q '10.64.0.0/12'")
@@ -313,6 +313,10 @@ in
           before = host.succeed("nft list counter inet repose egress-ga")
           print(before)
           assert "packets 0 " not in before
+          # Every packet of the flow, not only its first (DECISIONS I-1063):
+          # a GET is at least the SYN, the request and the FIN.
+          import re
+          assert int(re.search(r"packets (\d+)", before).group(1)) >= 3, before
           host.succeed("systemctl reload nftables.service")
           host.succeed("nft list chain inet repose guest_dyn | grep -q 'counter name \"egress-ga\"'")
           host.succeed("nft list set bridge repose guests | grep -q 'tap-ga'")
@@ -356,12 +360,13 @@ in
           print(f"smtp-ga {smtp} packets, stratum-ga {stratum} packets")
           assert smtp >= 1, "the port 25 attempt was not counted for the guest"
           assert stratum >= 4, "the stratum attempts were not counted for the guest"
-          # Blocked before guest_dyn: a blocked SYN is not egress. guest_dyn
-          # sees a flow's first packet (established ones are accepted above
-          # it), so the five open connections are five packets and the
-          # dozen blocked SYNs none.
+          # A blocked SYN is dropped in guest_fwd and never reaches
+          # guest_meter, so it is not egress. guest_meter sees every packet
+          # of an accepted flow (DECISIONS I-1063): the five open
+          # connections are a SYN, an ACK, a FIN and an ACK or so each,
+          # about 20, where the first-packet count before I-1063 was 5.
           egress = packets("egress-ga") - egress_before
-          assert egress < 10, f"{egress} egress packets for five connections and the blocked attempts"
+          assert 10 <= egress <= 30, f"{egress} egress packets for five connections and the blocked attempts"
           # Another guest's counters are its own.
           host.succeed("ip netns exec gb nc -z -w3 203.0.113.9 587")
           host.fail("ip netns exec gb nc -z -w3 203.0.113.9 25")
