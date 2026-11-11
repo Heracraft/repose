@@ -177,7 +177,7 @@ On a `repose run` both refusals end with `, or pass --no-sync`, which makes the 
 Outside a git repository, `repose run` and `repose sync` ask from a terminal:
 
 ```
-~/todo-app isn't a git repository. Make it one and sync it? [Y/n]
+~/app isn't a git repository. Make it one and sync it? [Y/n]
 Committed 12 files to a new git repository.
 ```
 
