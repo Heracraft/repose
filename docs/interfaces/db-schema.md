@@ -146,6 +146,22 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
               primary key (project_id, ts, comm))  -- partitioned by month, 30-day retention
 
+rest_verdicts (ts, project_id, host_id, sample_ts timestamptz,  -- 0036, I-1152
+              would_rest bool,          -- every term of the rest rule (I-818) passed
+              blocked_by text,          -- the one condition that kept the machine awake, lower_snake, '' when none:
+                                        -- resting|host_unreachable|host_not_ready|keep_awake|op|question|session|
+                                        -- too_young|samples_missing|attached|agent_working|guestd_down|cpu|net|
+                                        -- not_quiet, plus host_no_pause and host_<why_not> past the rule
+              host_pauses bool, keep_awake bool,
+              ops_open int, sessions_open int, questions_open int,
+              samples_seen int, samples_quiet int, attached_max int,
+              agents_working int, guestd_down int, cpu_ns_max bigint, net_bytes_max bigint,
+              why_not text,             -- hostd's own refusal word for the most recent pause, '' when none recent
+              primary key (project_id, ts))  -- partitioned by month, 30-day retention
+              -- One row per running machine per five minutes (resting.VerdictEvery), written by the
+              -- rest rule's own tick. It copies nothing from inside a guest: sample_ts is the newest
+              -- meter_samples row the verdict read, and the join key to meter_samples and proc_samples.
+
 usage_hours  (project_id fk, hour timestamptz, class text, running_seconds int,
               gb_alloc bigint, egress_bytes bigint, cost_cents bigint,
               guest_cents bigint, storage_cents bigint, egress_cents bigint, storage_remainder bigint,
@@ -292,17 +308,23 @@ Rules:
   already narrows. A frozen machine changes nothing about placement:
   `host_reservations` counts its class memory and cores while its state is
   `running`, which is what "the memory stays resident" means.
-- `meter_samples` and `proc_samples` are append-only and never joined to
-  from request paths; the hourly rollup reads them once. The one request
+- `meter_samples`, `proc_samples` and `rest_verdicts` are append-only and
+  never joined to
+  from request paths; the hourly rollup reads the first two once. The one request
   path that reads them is `GET /projects/:id/samples` (I-492): one
-  project, at most seven days, a range scan on each primary key. Both are partitioned
+  project, at most seven days, a range scan on each primary key. `rest_verdicts`
+  is read by no request path at all: it is the analysis table of I-1152, read
+  with psql through `ops/sql/launch.sql` Q13. All three are partitioned
   by month: the api creates the current and next month's partitions at start
   and in its daily job, which also drops the ones past retention and logs
   `partition_drop_fail` with `repose_api_partition_drop_fail_total` when it
   cannot. `ops/sql/partitions.sql` is the same maintenance as SQL functions,
   for an operator with psql and for the dashboard tests; either way a
   partition is dropped only once its whole month is past the retention period,
-  so the effective retention is 90 or 30 days plus up to a month.
+  so the effective retention is 90 or 30 days plus up to a month. A table added
+  to `internal/db.partitionedTables` and left out of `DropExpiredPartitions`
+  grows for ever and nothing else breaks, which is what
+  `TestPartitions` now reads for all three.
 - Secrets values never appear in `audit_log.detail` or anywhere but
   `secrets.ciphertext`.
 - `credit_ledger` is append-only. A usage debit that has to change is

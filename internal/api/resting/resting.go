@@ -149,6 +149,20 @@ type Service struct {
 	// lastSent and lastWould are the previous tick's counts, so the log
 	// line is written when the picture changes rather than every minute.
 	lastSent, lastWould int
+
+	// refusals is hostd's own why_not per project, so a verdict can say
+	// that the rule said yes and the host turned the pause down
+	// (DECISIONS I-1152); months and lastVerdict belong to the verdict
+	// writer in verdict.go.
+	refusals    map[uuid.UUID]refusal
+	months      map[string]bool
+	lastVerdict time.Time
+}
+
+// refusal is the word hostd refused a pause with, and when.
+type refusal struct {
+	why string
+	at  time.Time
 }
 
 type pauseRec struct {
@@ -167,7 +181,7 @@ type wake struct {
 func New(pool *db.Pool, send Sender, log *slog.Logger) *Service {
 	return &Service{pool: pool, send: send, log: log.With("component", "api"), Now: time.Now,
 		waiting: map[uuid.UUID]chan *hostdv1.Result{}, pauses: map[uuid.UUID]pauseRec{}, flight: map[uuid.UUID]*wake{},
-		lastFail: map[uuid.UUID]failedWake{}}
+		lastFail: map[uuid.UUID]failedWake{}, refusals: map[uuid.UUID]refusal{}, months: map[string]bool{}}
 }
 
 // Run evaluates the rule every TickInterval on the one replica that holds
@@ -323,6 +337,10 @@ func (s *Service) Once(ctx context.Context) (int, error) {
 		n++
 	}
 	s.report(n, would, len(cs))
+	// The same tick writes down why every OTHER running machine was not
+	// a candidate, once every VerdictEvery (DECISIONS I-1152). It runs
+	// after the pauses, so a tick never delays one for a write.
+	s.recordVerdicts(ctx, now)
 	return n, nil
 }
 
@@ -363,13 +381,21 @@ func (s *Service) sendPause(ctx context.Context, c Candidate, now time.Time) err
 	return nil
 }
 
-// prune drops the records of pauses whose result never came.
+// prune drops the records of pauses whose result never came, and the
+// refusal words that are too old to explain a machine still being awake.
+// Without the second the map keeps a row per project for ever, including
+// projects that were destroyed.
 func (s *Service) prune(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, p := range s.pauses {
 		if now.Sub(p.at) > 10*time.Minute {
 			delete(s.pauses, id)
+		}
+	}
+	for id, r := range s.refusals {
+		if now.Sub(r.at) > WhyNotFor {
+			delete(s.refusals, id)
 		}
 	}
 }
@@ -579,6 +605,7 @@ func (s *Service) onPauseResult(ctx context.Context, hostID uuid.UUID, rec pause
 			why = p.WhyNot
 		}
 		s.log.Info("pause refused by the host", "event", "guest_resting", "project_id", rec.project.String(), "why_not", why)
+		s.noteRefusal(rec.project, why, s.Now())
 		return
 	}
 	at := time.Unix(p.At, 0).UTC()

@@ -121,8 +121,9 @@ func IsLockNotAvailable(err error) bool {
 	return errors.As(err, &pg) && pg.Code == "55P03"
 }
 
-// EnsurePartitions creates the monthly partitions of meter_samples and
-// proc_samples covering ts and the following month, idempotently.
+// EnsurePartitions creates the monthly partitions of meter_samples,
+// proc_samples and rest_verdicts covering ts and the following month,
+// idempotently.
 func EnsurePartitions(ctx context.Context, pool *Pool, ts time.Time) error {
 	ts = ts.UTC()
 	// One transaction under LockPartitions: "create table if not exists"
@@ -135,7 +136,7 @@ func EnsurePartitions(ctx context.Context, pool *Pool, ts time.Time) error {
 		for i := 0; i < 2; i++ {
 			start := time.Date(ts.Year(), ts.Month()+time.Month(i), 1, 0, 0, 0, 0, time.UTC)
 			end := start.AddDate(0, 1, 0)
-			for _, t := range []string{"meter_samples", "proc_samples"} {
+			for _, t := range partitionedTables {
 				name := fmt.Sprintf("%s_%s", t, start.Format("2006_01"))
 				q := fmt.Sprintf("create table if not exists %s partition of %s for values from ('%s') to ('%s')",
 					name, t, start.Format("2006-01-02"), end.Format("2006-01-02"))
@@ -148,15 +149,21 @@ func EnsurePartitions(ctx context.Context, pool *Pool, ts time.Time) error {
 	})
 }
 
+// partitionedTables are the tables that grow with time rather than with
+// users, each partitioned by month so that retention is a drop and not a
+// delete. Keep ops/sql/partitions.sql, which is the same maintenance for
+// an operator with psql, in step with this list.
+var partitionedTables = []string{"meter_samples", "proc_samples", "rest_verdicts"}
+
 // DropExpiredPartitions drops sample partitions entirely older than the
-// retention (docs/ops/OBSERVABILITY.md: meter_samples 90 days, proc_samples
-// 30 days) and returns the names dropped.
+// retention (docs/ops/OBSERVABILITY.md: meter_samples 90 days,
+// proc_samples and rest_verdicts 30 days) and returns the names dropped.
 func DropExpiredPartitions(ctx context.Context, pool *Pool, now time.Time) ([]string, error) {
 	var dropped []string
 	for _, t := range []struct {
 		table string
 		keep  time.Duration
-	}{{"meter_samples", 90 * 24 * time.Hour}, {"proc_samples", 30 * 24 * time.Hour}} {
+	}{{"meter_samples", 90 * 24 * time.Hour}, {"proc_samples", 30 * 24 * time.Hour}, {"rest_verdicts", 30 * 24 * time.Hour}} {
 		rows, err := pool.Query(ctx, `select c.relname from pg_inherits i join pg_class c on c.oid = i.inhrelid join pg_class p on p.oid = i.inhparent where p.relname = $1`, t.table)
 		if err != nil {
 			return dropped, err

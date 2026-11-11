@@ -31811,3 +31811,117 @@ that appears two seconds late, nothing opened with no forward and the
 line said once, `https://localhost:8443` under the same rule, and
 `http://example.com` never opened. `TestOpenURLsTakenOnce` (I-634) still
 passes.
+
+**I-1152. The rest rule writes down why each machine did not freeze.**
+(idle-metrics, 2026-11-11. Extends I-818, I-844; the data for
+`../proposals/2026-10-11-pause-idle-machines.md` section 5.)
+
+The owner, 2026-11-10: "I'm not attached, the agent is idle, but the
+machine is still running and not frozen. We need data." Nothing could
+answer it. I-844 publishes two counters a tick -- machines paused, and
+machines the rule would have paused -- and the rule throws away which of
+its fourteen terms said no. Afterwards `meter_samples` is still there and
+the verdict is not, so answering means writing the rule a second time in
+SQL over the samples and hoping the two agree. I-930 named the same gap
+from the user's end ("`repose status` can see every term of this rule but
+prints none of them") and left it open.
+
+So the rule records its own verdict, from its own tick, in a new
+`rest_verdicts` table (migration `0036_rest_verdicts`).
+`internal/api/resting/verdict.go` reads every term for every *running*
+project -- not only the candidates -- and writes one row per machine per
+`VerdictEvery`, five minutes. `blocked_by` is the column the owner reads:
+the one condition that kept the machine awake, lower_snake, `''` when
+nothing did. `would_rest` is the rule's own yes or no beside it, so "the
+rule said no" and "the rule said yes and nothing happened" are different
+rows rather than the same silence.
+
+*What was already there, and is therefore not copied.* The signals the
+brief asks for are all in `meter_samples` already, one row a minute since
+day one: `ssh_sessions` and `tmux_clients` (a herdr client counts in
+`ssh_sessions`, I-511), each agent's state in `agents`, `guestd_ok`,
+`cpu_ns`, `net_rx`/`net_tx`, `docker_containers` and `resting`. The
+process names with their CPU are in `proc_samples`, also a row a minute,
+names only. A held forward and a browser viewer are not a third signal:
+both reach the machine over a gateway session, so `gateway_sessions` --
+which the rule already reads -- is what says one exists, and the verdict
+keeps it as `sessions_open`. The reverse forward's held connection of
+I-1106 is counted in `ssh_sessions` too, so it shows twice and is missed
+in neither. So the row holds only what exists nowhere
+else: the verdict, the terms that live only in Postgres (`keep_awake`,
+`ops_open`, `sessions_open`, `questions_open`, `host_pauses`), the shape
+of the quiet window (`samples_seen`, `samples_quiet`, `attached_max`,
+`agents_working`, `guestd_down`, `cpu_ns_max`, `net_bytes_max`) and
+hostd's own refusal word. `sample_ts` is the newest sample the verdict
+read, which is the join key back to both sample tables.
+`TestAVerdictCarriesNothingATenantTyped` pins the column list, so a
+fifteenth column needs a reviewer rather than a default.
+
+*One rule, read twice, and the way that stays true.* The verdict's
+sample term is `quietSQL` itself, the same text the rule reads, and its
+agent term is a substring of `idle.UsedSQL`;
+`TestTheQuietTermIsTheRulesOwn` and `TestTheAgentTermIsIdleUsedSQLsOwn`
+fail when either stops being so, and `TestAVerdictAgreesWithTheRule`
+asserts that a machine `Candidates` picks is a row with `would_rest` true
+and nothing blocking it. Two spellings of one rule that drift apart would
+make the column a lie about what the rule saw, which is worse than no
+column.
+
+*The cadence is the rule's own tick, not a second timer.* The rule runs
+every minute; a verdict is written on the first tick of each five-minute
+bucket, keyed `(project_id, ts)` with the bucket truncated, upserted. A
+tick that runs twice, an api that restarts inside a bucket or a second
+replica that briefly holds the lock rewrite the same row rather than
+doubling the minutes the launch query counts. Five minutes and not one:
+a machine that stays warm for an hour leaves twelve rows saying so, which
+is enough to see a condition change and a fifth of the rows of a
+per-minute table nobody reads on a request path.
+
+*Retention is `proc_samples`'s thirty days, not `meter_samples`'s
+ninety,* and partitioned by month like both. A verdict whose process
+names have aged out is half an answer: `cpu` as the condition and nothing
+to say what spent it. `rest_verdicts` is therefore the third entry in
+`internal/db.partitionedTables` and in `ops/sql/partitions.sql`;
+`TestPartitions` now asserts a dropped partition for each of the three,
+because a table added to the create list and left out of the drop grows
+for ever and nothing else breaks.
+
+*The reading is `ops/sql/launch.sql` Q13,* not a dashboard panel. For the
+last 14 days it lists the running-but-not-frozen minutes per machine by
+`blocked_by`, with the three processes that spent the most CPU in exactly
+those minutes -- the same shape as the proposal's table of CPU hours in
+idle minutes. `blocked_by = 'resting'` is a machine that *was* frozen and
+is left out of the warm count. A panel was considered and dropped: the
+figures are per project, Prometheus refuses `project_id` as a label, and
+a Postgres panel reads "no data" on any Grafana without the
+`repose-postgres` datasource, which is 21 of the 83 panels today.
+
+*Nothing a user sees changes,* so no page under `apps/web/src/content/docs/`
+moves. The privacy policy's two paragraphs already cover every field
+this reads -- the signals it lists by name, and "we sample the processes
+running in your environment once a minute and record their names, CPU
+time, memory use and network bytes" -- and the row adds no new kind of
+reading, only a note of what the rule concluded from the readings it
+already had. `TestAProcessArgumentNeverReachesTheSample` gives a process
+a secret in its command line and another in its environment and asserts
+the sample carries the name alone, so the sentence the policy promises
+stays true where the analysis reads it; the system-call half of that
+promise is `internal/guestd/strace_test.go`.
+
+hostd's `why_not` is bounded to 32 lower_snake
+characters before it reaches the row and anything else becomes `other`:
+it is an enum in the contract, and a host is still a thing that sends us
+bytes, so an unbounded string would become a group-by key of the launch
+query (`TestAHostsRefusalWordIsBounded`).
+
+*Rejected.* A second table for the signals (they exist; `sample_ts` is a
+join). A column per agent state (`agents` is jsonb and already holds
+them). A row a minute (five times the rows for a question nobody asks
+per minute). Deriving the verdict at read time from `meter_samples` (it
+is the rule written twice, and the second copy is the one that is wrong).
+A `repose status` line naming the terms -- I-930 asks for it and it is a
+user-visible change with its own docs, not this.
+
+*Conductor's ruling, owner's standing approval of 2026-11-11:* this is
+observability, not a user feature; OBSERVABILITY.md carries the fields
+and no public docs page changes.
