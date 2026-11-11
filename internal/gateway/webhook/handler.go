@@ -27,8 +27,11 @@ type Config struct {
 	Log    *slog.Logger
 	Metric *obsmetrics.GatewayMetrics
 	Clock  func() time.Time
-	// Host is the public hostname, for the Repose-Webhook-URL header
-	// Twilio's check needs.
+	// Host is the public hostname, for the X-Forwarded-Host and
+	// Repose-Webhook-URL headers Twilio's check needs. The edge gets it
+	// from WEBHOOK_HOST, which is the one place the name is configured
+	// for this component; empty falls back to the Host the sender used,
+	// rather than a second copy of the name in this package.
 	Host string
 }
 
@@ -54,9 +57,6 @@ func New(cfg Config) *Handler {
 	}
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.DiscardHandler)
-	}
-	if cfg.Host == "" {
-		cfg.Host = "hooks.repose.herakraft.co"
 	}
 	return &Handler{
 		cfg: cfg, clock: cfg.Clock,
@@ -163,10 +163,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, d, http.StatusTooManyRequests, "rate_limited", "repose: too many deliveries at once; retry", 1)
 		return
 	}
-	defer h.busy.Release(route.ProjectID)
+	defer func() {
+		h.busy.Release(route.ProjectID)
+		if h.cfg.Metric != nil {
+			h.cfg.Metric.WebhookInflight.Set(float64(h.busy.Total()))
+		}
+	}()
 	if h.cfg.Metric != nil {
 		h.cfg.Metric.WebhookInflight.Set(float64(h.busy.Total()))
-		defer func() { h.cfg.Metric.WebhookInflight.Set(float64(h.busy.Total() - 1)) }()
 	}
 	// Before any wake or dial: a body the edge will not forward costs
 	// the tenant's machine nothing.
@@ -314,6 +318,10 @@ var errTooLarge = errors.New("webhook: body over the cap")
 // order and their exact bytes, which is what a signature over a header
 // needs.
 func (h *Handler) requestHead(r *http.Request, route Route, rest string, length int64) []byte {
+	public := h.cfg.Host
+	if public == "" {
+		public = r.Host
+	}
 	target := route.Path
 	if target == "" {
 		target = "/"
@@ -347,12 +355,12 @@ func (h *Handler) requestHead(r *http.Request, route Route, rest string, length 
 	fmt.Fprintf(&b, "Content-Length: %d\r\n", length)
 	fmt.Fprintf(&b, "X-Forwarded-For: %s\r\n", hostOf(r.RemoteAddr))
 	b.WriteString("X-Forwarded-Proto: https\r\n")
-	fmt.Fprintf(&b, "X-Forwarded-Host: %s\r\n", h.cfg.Host)
+	fmt.Fprintf(&b, "X-Forwarded-Host: %s\r\n", public)
 	fmt.Fprintf(&b, "Repose-Webhook: %s\r\n", route.Name)
 	fmt.Fprintf(&b, "Repose-Delivery: %s\r\n", uuid.Must(uuid.NewV7()).String())
 	// The URL Twilio's check takes as an argument. It holds the token,
 	// and it reaches only the app, inside the user's own machine.
-	fmt.Fprintf(&b, "Repose-Webhook-URL: https://%s%s\r\n", h.cfg.Host, requestURLPath(r))
+	fmt.Fprintf(&b, "Repose-Webhook-URL: https://%s%s\r\n", public, requestURLPath(r))
 	b.WriteString("Connection: close\r\n\r\n")
 	return b.Bytes()
 }

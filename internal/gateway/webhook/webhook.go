@@ -163,7 +163,11 @@ func (t *Table) Refresh(ctx context.Context, api API) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.lastOK, t.primed = now, true
-	if tbl.Unchanged && t.version == tbl.Version {
+	// An unchanged answer carries no rows, so installing it would empty
+	// the table. The api sends it only for the version the edge already
+	// holds; it is refused here whatever version it names, because
+	// routing nothing is the worse of the two mistakes.
+	if tbl.Unchanged {
 		return nil
 	}
 	byHash := make(map[string]Route, len(tbl.Routes))
