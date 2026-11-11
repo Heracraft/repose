@@ -20,6 +20,8 @@
 #                  thin pool with autoextend, a thin volume, the pool monitor
 #   host-park    the guest park's shutdown ordering and hostd's park
 #                  and unpark commands, with the real hostd (park.nix)
+#   host-wg-watchdog  the tunnel watchdog on a real WireGuard interface
+#                  that sends and hears nothing (I-1068, wg-watchdog.nix)
 #   host-services  the real hostd, guests.slice, transient guest survives a
 #                  hostd restart and kill, store export with .links masked,
 #                  registration against a `hostdev` in a second node
@@ -908,6 +910,9 @@ in
   };
   # The guest park's host side (DECISIONS I-652): park.nix.
   host-park = import ./park.nix { inherit pkgs lib hostNode apiNode hostdevDir lanIP hostdevCA; };
+
+  # The tunnel watchdog (DECISIONS I-1068): wg-watchdog.nix.
+  host-wg-watchdog = import ./wg-watchdog.nix { inherit pkgs hostNode; };
 
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";

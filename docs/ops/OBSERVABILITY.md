@@ -450,6 +450,7 @@ arrive at once, read them in this order:
 |---|---|---|
 | `MonitoringPathDown` | `GatewayDown`, `HostdDown`, `ApiDown`, `ApiHostsAbsent` | every scrape goes through the edge's WireGuard, so a dead edge or tunnel fails them together; this one fires a minute earlier |
 | `HostScrapeDown` | every other `warn` and `page` of that host, except `HostdDown` and `HostUnreachable` | a host Prometheus cannot reach produces all of its alerts at once as the series go stale |
+| `HostWgDown` | `HostdDown`, `HostScrapeDown`, `FluentBitLogShipperDown` of that host | the host is alive and only its tunnel to the edge is down, so every alert that reads the host *through* the edge fires while hostd and the host are healthy. This one names the cause; `HostdDown` says the opposite of what is true, and did on 2026-11-10 (I-1070) |
 | `HostdDown` | `HostUnreachable`, and every `warn` of that host | `HostdDown` names the host; `HostUnreachable` is the api's count and names none |
 | `PoolUnavailable` | `PoolHigh`, `PoolFull`, `PoolMetadataHigh`, `PoolUnmonitored` | a pool that is down sets off every pool alert it has (I-644) |
 | `HostUnreachable` | `GuestdLost` | the same loss seen from the api rather than the host |

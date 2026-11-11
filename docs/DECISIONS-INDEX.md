@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-914 entries.
+917 entries.
 
 ## Scope
 
@@ -946,3 +946,6 @@ pointer, not a summary.
 - **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30121
 - **I-1062** The released main is stored when it is known, not grepped for afterwards — 2026-11-06; L30192
 - **I-1064** `repose github setup` gives the machines a GitHub token of the user's own, for the repositories they picked, and stops copying the gh login — 2026-11-08; L30238
+- **I-1068** A host repairs its own one-way tunnel by rebinding the socket, because twice now nothing else has — 2026-11-10; L30356
+- **I-1070** RUNBOOK had a HostWgDown section for an alert that was never written, so the one failure it describes pages as something else — 2026-11-10; L30470
+- **I-1074** A runbook heading that reads as an alert name has to be one, or say why not — 2026-11-10; L30534

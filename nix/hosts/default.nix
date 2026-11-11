@@ -27,6 +27,7 @@ in
     ./caches.nix
     ./vm-hardening.nix
     ./park.nix
+    ./wg-watchdog.nix
   ];
 
   options.repose.host = {
