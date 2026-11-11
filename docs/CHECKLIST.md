@@ -260,7 +260,7 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] One scheme mechanism. Evidence: `rg -ln 'prefers-color-scheme' $W`
       prints only `app.html`, `lib/app-html.test.ts`, `lib/hk/tokens.css`,
       `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts`,
-      `routes/layout.css`, and the pictures `landing/Hero.svelte`,
+      `routes/layout.css`, and the pictures `landing/Wreck.svelte`,
       `landing/Browser.svelte`, `landing/Localhost.svelte` and
       `landing/pictures.css`, which pair each OS rule with the switch's
       `data-theme` rule (I-843), 11 files; `rg -n
@@ -309,7 +309,7 @@ entry and this list with it. Counts as of 2026-10-21.
       `/projects` and a project page (design.spec, landing-motion.spec).
 - [ ] Every picture stops on its final frame when reduced motion turns on
       mid-session. Evidence: `rg --files-without-match watchReducedMotion
-      apps/web/src/lib/components/landing/{Hero,OneCommand,ComesBack,Browser,Localhost}.svelte`
+      apps/web/src/lib/components/landing/{Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
       prints 0 lines. The suites above read the setting at load; this is
       the five drawn pictures answering a change made while the page is
       open (I-397, and the pictures restored by I-843).

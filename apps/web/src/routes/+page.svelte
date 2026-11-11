@@ -14,7 +14,8 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Hero from '$lib/components/landing/Hero.svelte';
+	import Parts from '$lib/components/landing/Parts.svelte';
+	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import OneCommand from '$lib/components/landing/OneCommand.svelte';
 	import ComesBack from '$lib/components/landing/ComesBack.svelte';
 	import Localhost from '$lib/components/landing/Localhost.svelte';
@@ -46,6 +47,17 @@
 		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
 	}
 
+	// The job agent's rows (DECISIONS I-1167): what each step runs on,
+	// set as the cells' commands are, to read rather than to run.
+	const job: { title: string; ref: string }[] = [
+		{
+			title: 'A new role wakes it',
+			ref: 'https://hooks.repose.run/<project-id>/<route>/<token>'
+		},
+		{ title: 'It asks you at a captcha or a login', ref: 'repose-ask --options yes,no' },
+		{ title: 'You clear it in its browser', ref: 'repose browser' }
+	];
+
 	// Each row shows exactly what its Copy puts on the clipboard, and that
 	// runs on a visitor's laptop: the row's title names the folder.
 	const steps: { title: string; command: string; what: string }[] = [
@@ -61,10 +73,10 @@
 </script>
 
 <svelte:head>
-	<title>repose: your dev environment, replicated in the cloud</title>
+	<title>repose: a framework for running always-on agents</title>
 	<meta
 		name="description"
-		content="One command replicates your laptop's dev environment on a cloud machine: your code, tools and logins. For solo founders whose agents run with full permissions there, while the laptop stays out of reach."
+		content="Run any agent with any model on a Linux machine of its own, set up from your laptop in one command. A webhook or a timer wakes the machine, and the agent asks you on your phone when it needs a yes."
 	/>
 </svelte:head>
 
@@ -115,12 +127,11 @@
 <main id="main" tabindex="-1" class="frame landing">
 	<section class="band hero" aria-labelledby="hero-h">
 		<div class="hero-copy">
-			<p class="label eyebrow">For solo founders and their agents</p>
-			<h1 class="hk-h1" id="hero-h">Your dev environment, replicated in the cloud</h1>
+			<p class="label eyebrow">Any agent, any model</p>
+			<h1 class="hk-h1" id="hero-h">A framework for running always-on agents</h1>
 			<p class="hk-lead">
-				Your code, tools and logins sit on a machine of its own, where agents run with full
-				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
-				a wrecked machine back in minutes.
+				Your agent gets a Linux machine of its own, set up from your laptop in one command, and
+				keeps working there while your laptop is shut.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -133,16 +144,96 @@
 					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
 		</div>
-		<div class="fig fig--hero">
-			<div class="stage hero-stage">
-				<Hero />
+		<div class="fig fig--parts">
+			<Parts />
+		</div>
+	</section>
+
+	<section class="band" id="parts" aria-labelledby="parts-h">
+		<div class="head">
+			{@render label('01', 'Parts')}
+			<h2 class="hk-h2" id="parts-h">Everything under your agent</h2>
+			<p class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'webhooks' })}>Webhooks</a>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'notifications' })}
+					>Notifications</a
+				>
+			</p>
+		</div>
+		<ul class="cols">
+			<li>
+				{@render label('1.1', 'Wake-ups')}
+				<h3 class="item-title">Wake it with a webhook or a schedule</h3>
+				<p class="copy">
+					A provider's events reach a port on the machine through a URL of its own, and wake the
+					machine if it's frozen. A systemd timer runs a job on a schedule, and <code
+						>repose say</code
+					> types your message into the agent's terminal.
+				</p>
+				<p class="cmd">repose webhooks add</p>
+			</li>
+			<li>
+				{@render label('1.2', 'Secrets')}
+				<h3 class="item-title">Give it the keys you choose</h3>
+				<p class="copy">
+					A secret you set by name reaches the agent as an environment variable, and a new value
+					reaches its next command. Your SSH keys stay on your laptop.
+				</p>
+				<p class="cmd">repose secrets set NAME</p>
+			</li>
+			<li>
+				{@render label('1.3', 'Notifications')}
+				<h3 class="item-title">Hear from it, and answer from your phone</h3>
+				<p class="copy">
+					An agent's question reaches you by email, ntfy or Google Chat, and you answer there; on
+					ntfy one tap does it.
+				</p>
+				<p class="cmd">repose notify set --ntfy URL</p>
+			</li>
+		</ul>
+	</section>
+
+	<section class="band" aria-labelledby="job-h">
+		<div class="head">
+			{@render label('02', 'Example')}
+			<h2 class="hk-h2" id="job-h">An always-on agent that applies for jobs</h2>
+			<p class="copy side">
+				It runs on a machine with 8 GB. Each <code>role.created</code> webhook from the job board reaches
+				a small server it runs, which starts a session that writes a resume for the posting and applies
+				with it.
+			</p>
+		</div>
+		<ol class="ruled steps refs">
+			{#each job as row, i (row.title)}
+				<li>
+					<h3 class="item-title step-title">
+						<span class="label" aria-hidden="true">2.{i + 1}</span>{row.title}
+					</h3>
+					<p class="ref"><span use:tabStopWhenScrolls={row.title}>{row.ref}</span></p>
+				</li>
+			{/each}
+		</ol>
+	</section>
+
+	<section class="band" aria-labelledby="wreck-h">
+		<div class="head">
+			{@render label('03', 'Permissions')}
+			<h2 class="hk-h2" id="wreck-h">Let it run with full permissions</h2>
+			<p class="copy side">
+				You don't approve its commands one by one. It can touch its machine and anything the logins
+				on it can, and restoring a snapshot brings the machine back as it was.
+			</p>
+		</div>
+		<div class="fig fig--field">
+			<div class="stage field-stage">
+				<Wreck />
 			</div>
 		</div>
 	</section>
 
 	<section class="band" aria-labelledby="setup-h">
 		<div class="head">
-			{@render label('01', 'Setup')}
+			{@render label('04', 'Setup')}
 			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
 			<p class="copy side">
 				You spend an hour setting up a cloud machine: install the CLIs, log in to GitHub, paste the
@@ -158,7 +249,7 @@
 
 	<section class="band" id="features" aria-labelledby="features-h">
 		<div class="head">
-			{@render label('02', 'Machine')}
+			{@render label('05', 'Machine')}
 			<h2 class="hk-h2" id="features-h">Work on the machine as you would on your laptop</h2>
 			<p class="copy side">
 				Each project gets a machine of its own, and you reach it from the tools already on your
@@ -169,7 +260,7 @@
 			<li class="fig">
 				<ComesBack />
 				<div class="cell-copy">
-					{@render label('2.1', 'Snapshots')}
+					{@render label('5.1', 'Snapshots')}
 					<h3 class="item-title">Restore the whole disk</h3>
 					<p class="copy">
 						A snapshot holds the checkout, the installed tools and the logins made on the machine. A
@@ -181,7 +272,7 @@
 			<li class="fig">
 				<Localhost />
 				<div class="cell-copy">
-					{@render label('2.2', 'Ports')}
+					{@render label('5.2', 'Ports')}
 					<h3 class="item-title">Use its ports on your localhost</h3>
 					<p class="copy">
 						Ports your servers listen on, from 1024 up, appear on your localhost while you're
@@ -193,7 +284,7 @@
 			<li class="fig">
 				<Browser />
 				<div class="cell-copy">
-					{@render label('2.3', 'Browser')}
+					{@render label('5.3', 'Browser')}
 					<h3 class="item-title">Watch the agent's browser, and take over</h3>
 					<p class="copy">
 						The agents' browser runs on the machine. Open it on your laptop to watch, or to do a
@@ -205,7 +296,7 @@
 			<li class="fig">
 				<Editor />
 				<div class="cell-copy">
-					{@render label('2.4', 'Editor')}
+					{@render label('5.4', 'Editor')}
 					<h3 class="item-title">Open it in your editor</h3>
 					<p class="copy">
 						Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
@@ -219,7 +310,7 @@
 
 	<section class="band" aria-labelledby="agents-h">
 		<div class="head">
-			{@render label('03', 'Agents')}
+			{@render label('06', 'Agents')}
 			<h2 class="hk-h2" id="agents-h">
 				The agents you use, and the tools they need, on first boot
 			</h2>
@@ -238,7 +329,7 @@
 
 	<section class="band" aria-labelledby="install-h">
 		<div class="head">
-			{@render label('04', 'Install')}
+			{@render label('07', 'Install')}
 			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
@@ -253,7 +344,7 @@
 			{#each steps as step, i (step.title)}
 				<li>
 					<h3 class="item-title step-title">
-						<span class="label" aria-hidden="true">4.{i + 1}</span>{step.title}
+						<span class="label" aria-hidden="true">7.{i + 1}</span>{step.title}
 					</h3>
 					<CodeCopy command={step.command} what={step.what} labelFrom={1200} />
 				</li>
@@ -263,7 +354,7 @@
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head">
-			{@render label('05', 'Pricing')}
+			{@render label('08', 'Pricing')}
 			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
 			<div class="cta-row side">
 				<!-- Signing up here comes back to Billing, where the plans are. -->
@@ -285,7 +376,7 @@
 
 	<section class="band faq-band" aria-labelledby="faq-h">
 		<div class="head">
-			{@render label('06', 'Questions')}
+			{@render label('09', 'Questions')}
 			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>
@@ -307,8 +398,8 @@
 					>Can I close my laptop while the agent works?{@render plus()}</summary
 				>
 				<p class="copy">
-					Yes. Detach and close it; the agent keeps working on the machine, and you attach again to
-					see where it got to.
+					Yes. Detach and close it; the agent keeps working on the machine. You hear by email or on
+					your phone when it's done or needs you, and you attach again to see where it got to.
 				</p>
 			</details>
 			<details>
@@ -323,9 +414,8 @@
 					>Can three agents try three approaches at once?{@render plus()}</summary
 				>
 				<p class="copy">
-					<code>repose run --worktree -p "..."</code> three times puts each agent in its own working
-					tree on its own branch, on the one machine. Fetch the branch that won with git, and delete
-					the rest.
+					<code>repose run --worktree -p "..."</code> three times puts each agent in its own working tree
+					on its own branch, on the one machine. Fetch the branch that won with git, and delete the rest.
 				</p>
 			</details>
 			<details>

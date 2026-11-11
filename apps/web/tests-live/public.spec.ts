@@ -24,7 +24,7 @@ test('landing renders with the install command and the sign-in button', async ({
 }, testInfo) => {
 	await page.goto('/');
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'Your dev environment, replicated in the cloud' })
+		page.getByRole('heading', { level: 1, name: 'A framework for running always-on agents' })
 	).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
 	await expect(

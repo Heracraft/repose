@@ -1,5 +1,6 @@
 <!--
-  The hero: the whole pitch as one moving picture, in the style of "Your
+  The wreck picture, the hero's until DECISIONS I-1167 moved it to a band
+  of its own: the whole pitch as one moving picture, in the style of "Your
   laptop's setup, in one command" (OneCommand.svelte): panels with hairline
   borders, rows and chips, blue for what moves, anime.js. docs/LANDING.md,
   "The hero" and "Motion", is the spec; DECISIONS I-667 records this

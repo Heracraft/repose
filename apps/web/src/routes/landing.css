@@ -92,7 +92,7 @@
 		pointer-events: none;
 	}
 	.landing .band + .band::after,
-	.landing .fig--hero::after,
+	.landing .fig--field::after,
 	:root:has(main.landing) .site-footer > .frame::after,
 	:root:has(main.landing) .site-footer .bottom::before {
 		content: '';
@@ -111,7 +111,7 @@
 	}
 	/* The field's top edge: the figure is the sheet, so the cross sits
 	   on its own edges. */
-	.landing .fig--hero::after {
+	.landing .fig--field::after {
 		left: -5px;
 		right: -5px;
 	}
@@ -440,9 +440,96 @@
 .landing .band > .fig > .stage {
 	padding: var(--field-y) var(--edge);
 }
-/* The setup's field opens on an inner rule under its head. */
-.landing .band > .fig:not(.fig--hero) {
+/* The setup's field opens on an inner rule under its head; the wreck
+   picture's dark field opens on its own edge. */
+.landing .band > .fig:not(.fig--field, .fig--parts) {
 	border-top: 1px solid var(--rule-in);
+}
+
+/* The wreck picture's flights and trail are measured against its
+   windows; while the window narrows with the picture on screen they keep
+   the old width for a frame or two, so its frame clips them at the sides
+   and they never widen the page (its pause button is placed from the
+   figure, outside the clip). */
+.landing .fig--field .hero-frame {
+	overflow-x: clip;
+}
+
+/* ---------- The hero's picture (I-1167) ----------
+
+   The parts of an always-on agent (Parts.svelte) stand on the page's
+   own tone under the hero's copy, with no stage and no rule: one object
+   in white space, as voidzero.dev sets its one object (LANDING.md, "The
+   centrepiece"). Its sides are the text lines; the band's padding
+   under it is the band's own. */
+.landing .band > .fig--parts {
+	margin: 1rem 0 0;
+	padding-block: 0 var(--band-y);
+}
+@media (min-width: 1024px) {
+	.landing .band > .fig--parts {
+		margin-top: calc(var(--band-y) * 0.75 - var(--head-gap));
+	}
+}
+
+/* ---------- The parts: three columns (I-1167) ----------
+
+   Three cells on the thirds of the sheet, split by inner rules with no
+   gap, as the plans are: each its numbered label, its serif title, one
+   paragraph and the command it names, set as the feature grid's are.
+   Below 1024px they stack, each under its own rule. */
+.landing .cols {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	margin: 0 calc(-1 * var(--edge));
+	padding: 0;
+	list-style: none;
+	border-top: 1px solid var(--rule-in);
+}
+.landing .cols > li {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 1.5rem var(--edge) 2rem;
+}
+.landing .cols > li + li {
+	border-top: 1px solid var(--rule-in);
+}
+.landing .cols > li > .num {
+	margin-bottom: 0.5rem;
+}
+.landing .cols .copy {
+	margin-top: 0.5rem;
+}
+.landing .cols .cmd {
+	margin-top: auto;
+	padding-top: 1rem;
+}
+.landing .cols .item-title {
+	text-wrap: balance;
+}
+/* From 1024px the cells stand on the thirds lines as the plans do: the
+   middle cell is a third of the content plus a gap, so the two inner
+   rules stand half a gap before the fifth and ninth column lines. */
+@media (min-width: 1024px) {
+	.landing .cols {
+		grid-template-columns:
+			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
+			minmax(0, 1fr);
+	}
+	.landing .cols > li {
+		padding: 2rem var(--in) 2.5rem calc(var(--in) - 1px);
+	}
+	.landing .cols > li:first-child {
+		padding-left: var(--edge);
+	}
+	.landing .cols > li:last-child {
+		padding-right: var(--edge);
+	}
+	.landing .cols > li + li {
+		border-top: 0;
+		border-left: 1px solid var(--rule-in);
+	}
 }
 
 /* ---------- The feature grid ----------
@@ -664,6 +751,47 @@
 .landing .steps .code-copy wbr {
 	display: none;
 }
+/* The job agent's rows (I-1167) take the steps' layout, with what each
+   step runs on in place of a command to copy: the reference treatment,
+   on the stage's tone, one line scrolling under a fade where the cell is
+   narrower, and no Copy. */
+.landing .refs .ref {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	min-height: 3rem;
+	margin: 0;
+	padding: 0.375rem var(--edge);
+	border-top: 1px solid var(--rule-in);
+	background: var(--stage);
+	font-family: var(--hk-font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-2);
+}
+.landing .refs .ref > span {
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	white-space: pre;
+}
+.landing .refs .ref > span[data-scrolls='true'] {
+	mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
+}
+@media (min-width: 1024px) {
+	.landing .refs .ref {
+		min-height: 100%;
+		padding-left: calc(var(--in) - 1px);
+		border-top: 0;
+		border-left: 1px solid var(--rule-in);
+	}
+}
+@media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {
+	.landing .refs .ref {
+		font-size: 0.75rem;
+	}
+}
+
 /* Between 1024 and 1199px the install line fits its half at 12px, with
    Copy as its icon (labelFrom in +page.svelte). */
 @media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {

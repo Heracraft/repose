@@ -196,7 +196,7 @@ for (const width of [1440, 1280, 1024]) {
 		if (width >= 1200) expect(m.copies).toHaveLength(3);
 		for (const c of m.copies) expect(Math.abs(c - m.right)).toBeLessThanOrEqual(1);
 		const paired = m.heads.filter((h) => h.links.length === 2);
-		expect(paired.map((h) => h.id)).toEqual(['agents-h', 'install-h', 'faq-h']);
+		expect(paired.map((h) => h.id)).toEqual(['parts-h', 'agents-h', 'install-h', 'faq-h']);
 		for (const h of paired) {
 			const [a, b] = h.links;
 			expect(Math.abs(b.right - m.right), h.id).toBeLessThanOrEqual(1);

@@ -33308,3 +33308,78 @@ going reads one that has already been freed.
   `ubuntu-latest` is a distribution release behind. The cheap first
   move is to put the runner's binary first on PATH here and load the
   box, which reproduced this in under a minute.
+
+**I-1167. The landing sells a framework for running always-on agents,
+with any agent and any model (tensions-landing, 2026-11-12). Amends
+I-477's "What we sell" and the hero of I-843 and I-961.**
+
+The owner moved the pitch from "your dev environment, replicated in the
+cloud" to "a framework for running always-on agents" between 2026-11-09
+and 2026-11-11 (the summit deck v3 and its canon, kept in `~/pitch` on
+kanali), and the landing kept I-477's words and its ban on "always-on",
+phones and notifications. One of the two had to give, and the product
+is now closer to the deck: webhooks (I-1110) and `repose say` (I-1144)
+shipped on 2026-11-11, beside questions answered from ntfy, email or
+the dashboard (I-245) and scheduled jobs on a systemd timer (I-518).
+The owner's words, the reason for this entry:
+
+- "It's a framework for running always-on agents. It takes your
+  favorite agent. It doesn't give opinions on which agent." (practice
+  pitch, 2026-11-09)
+- "You can use your sovereign AI, you can bring in Claude Code, Codex,
+  your subscription ... and you get primitives for building an
+  always-on agent." (2026-11-10)
+- "The premise is already there: receiving a webhook, sending a
+  message, a browser inside. It can be an always-on agent for
+  anything." (2026-11-10, on the job-application agent)
+- "I don't want repose to be one of those things that give you a web
+  UI for codex and claude. It should give you primitives to run shit
+  persistently." (2026-10-05)
+
+- **What the page leads with.** The h1 names it, in the owner's words:
+  "A framework for running always-on agents". The eyebrow is "Any agent,
+  any model". The lead is one sentence on what you get: a Linux machine
+  of its own, set up from your laptop in one command, that keeps running
+  with the laptop shut and wakes for a webhook or a timer. Under the
+  hero a band of three columns, the parts a user can use today: wake-ups
+  (`repose webhooks`, a systemd timer, `repose say`), secrets by name,
+  and a line to you (`repose-ask`, by email, ntfy or Google Chat). Then
+  one block on the first use that is not a developer's: the
+  job-application agent, told as what it does (a `role.created` delivery
+  through `hooks.repose.run`, which a small server the agent runs turns
+  into a session that applies in the machine's browser, `repose-ask` at
+  a captcha or a login, the person clearing it with `repose browser`),
+  on a `large`, with no company named and no count of runs. - **What it
+  may mention.** Always-on, any agent and any model, webhooks, `repose
+  say`, scheduled jobs by systemd timer, secrets, the browser,
+  snapshots, notifications by email, phone (ntfy) or Google Chat and
+  answering a question from the dashboard. Each only as far as the
+  public docs say a user can do it today. - **What it still may not
+  claim.** The trigger layer that binds an event to a session (approach
+  A of the 2026-11-12 proposal), per-event machines, a `tiny` class,
+  burst cores (I-1126 shipped off on every host), bare metal or your own
+  hardware: none of these is something a visitor can do. No user or
+  customer counts. No rival named (I-477's rejection stands).
+  Collaboration and "a software factory" stay out. - **The wreck
+  stays.** The wreck-and-restore picture (Hero.svelte) is the demo the
+  summit script points at ("It is the demo on repose.run"), so it moves
+  from the hero to its own band, on the same dark field; the ComesBack
+  cell keeps how a restore runs. - **The hero's picture.** A drawn
+  object on the page's own tone, after voidzero.dev's grammar (one
+  central object under a centred headline; `LANDING.md` "The
+  centrepiece"): the machine, with the agent slot, the secrets and the
+  browser inside it, the wake-ups wired into its left wall and the line
+  to you out of its right. It is flat, in the pictures' existing kit
+  (windows, chips, hairline wires ending on terminal dots), and it does
+  not move. The anatomy skill was the brief's tool; its craft rules
+  apply (solid parts, one lit part, every line ending on an object,
+  every string true) and its isometric projection does not, since the
+  owner killed isometric on the landing (2026-10-04) and the
+  shelf-of-equipment flat version (2026-10-19, I-795 never landed). The
+  deck's flat stack (deck2 DECISIONS 25, "Everything under your agent")
+  is the closest thing the owner kept. - *Rejected:* keeping I-477 and
+  telling the deck it is a promise (the deck now describes what
+  shipped); leading with the job agent (it is one use, and a developer
+  is still the buyer); a motion loop for the new picture (`LANDING.md`
+  "Motion" lists every move, and a wiring diagram that draws itself
+  reads as line-art in motion).

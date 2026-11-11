@@ -52,7 +52,7 @@
 		kind: Kind;
 		tone?: Tone;
 		/** The sphere only: draw the globe's meridians over it. Off by default
-		    because the hero draws its own on top (Hero.svelte, .meridians). */
+		    because the hero draws its own on top (Wreck.svelte, .meridians). */
 		meridians?: boolean;
 		class?: string;
 	} = $props();
