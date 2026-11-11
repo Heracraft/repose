@@ -7,7 +7,7 @@ protobuf (`proto/repose/guestd/v1/guestd.proto`), request/response with
 `request_id`, plus unsolicited `Notify` messages from guestd.
 
 No network listener exists in guestd. A fake for hosts without vsock (dev
-machines) uses a Unix socket at `/run/repose/guestd.sock` with the same
+machines) uses a Unix socket with the same
 framing; hostd picks by flag.
 
 ## Requests (hostd → guestd)

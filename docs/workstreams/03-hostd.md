@@ -106,7 +106,9 @@ At first start `/var/lib/repose/hostd/cert.pem` does not exist. hostd reads
 `/run/repose/join-token`, collects `HostInfo` (hostname, `sku` from IMDS
 `compute/vmSize` when IMDS is reachable from the host, `mem_bytes` from
 `/proc/meminfo`, `vcpus` from `nproc`, `nixos_system` from
-`/run/current-system`, `ch_version` from `cloud-hypervisor --version`,
+`/run/current-system` (read at registration and never refreshed
+afterwards, so the stored value is the system from install day, not the
+running one — I-1076), `ch_version` from `cloud-hypervisor --version`,
 `pool_bytes` from `lvs --units b vg-guests/thin`) and calls `Register` over
 TLS with server verification only. It writes the returned certificate, key,
 `host.json` (`host_id`, `guest_cidr`, `wg_private_key`, edge peer) with mode
