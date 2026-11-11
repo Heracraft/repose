@@ -44,6 +44,7 @@ ship goes over the edge's WireGuard.
    - the guest's console: `{component="console", guest_id="<guest id>"}`
    - api requests: `{component="api"} | json | project_id="<id>"`
    - gateway sessions: `{component="gateway"} | json | event=~"session_.*" | project_id="<id>"`
+   - webhook deliveries: `{component="gateway"} | json | event="webhook_delivery" | project_id="<id>"` (DECISIONS I-1110). The line carries `route_id`, `status`, `outcome`, `ms`, `bytes_in`, `bytes_out` and `source_prefix` (the /24), and never the path, which holds the token, nor the query, a header value or a body byte
 4. Builds: `repose-admin ops list --project <id>` then `ops log <op id>`
    for the full Nix output (stored in `build_logs`, not Loki).
 5. Events the user saw: `select ts, kind, agent, summary, delivered from
@@ -298,6 +299,8 @@ line stored by us:**
 - user IP addresses and user agents (the gateway may keep a per-IP
   counter in memory for rate limiting; it does not log the address)
 - card details of any kind, including last four (Polar holds the card; the api never sees it)
+- a webhook URL's path or query: the path holds the route's token, which
+  is a credential (I-1110). Log `route_id`
 
 `internal/obs` enforces the rules in code (in three packages, so that guestd links a logger and not an exporter:
 DECISIONS I-59):

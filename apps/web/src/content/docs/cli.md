@@ -436,12 +436,12 @@ An account secret is for every project, so `--global` beside a project exits 2.
 | Command                            | What it does |
 | ---------------------------------- | ------------ |
 | `repose webhooks add NAME TARGET`  | Add a [webhook route](/docs/webhooks) and print its URL, and nothing else, so it pipes. TARGET is `PORT` or `PORT/PATH` inside the machine (`3000/api/webhooks/stripe`). Adding a name that exists changes its target and keeps its token. `--start` lets a delivery start the machine while it is stopped, at most once every 10 minutes; `--no-start` is the default. `--json` prints the route. |
-| `repose webhooks list [PROJECT]`   | The routes with their targets, whether `--start` is on, and the last delivery. Alias `ls`, and `repose webhooks` alone. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose webhooks list [PROJECT]`   | The routes with their targets, whether `--start` is on, and the last delivery. Alias `ls`, and `repose webhooks` alone, which takes no flags of its own. `--json` for JSON, `-q`/`--quiet` for names. |
 | `repose webhooks url NAME`         | Print one route's URL, and the last 20 deliveries with `--json`. |
 | `repose webhooks rotate NAME`      | Replace the token and print the new URL. The old one answers 410 for 30 days. `--json` prints the route. |
 | `repose webhooks rm NAME...`       | Remove routes. Alias `remove`. Each URL answers 410 for 30 days. |
 
-`repose webhooks` alone takes `--json` too. A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
+A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
 
 ## Configuration
 

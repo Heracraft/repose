@@ -536,10 +536,45 @@ func (s *Store) Report(ctx context.Context, routeID uuid.UUID, d Delivery) error
 			values ($1, $2, $3, $4, $5, $6, $7, $8)`, uuid.Must(uuid.NewV7()), routeID, at, d.Status, d.Outcome, d.DurationMs, d.BytesIn, d.BytesOut); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `delete from webhook_deliveries where route_id = $1 and id not in (
-			select id from webhook_deliveries where route_id = $1 order by at desc limit $2)`, routeID, DeliveriesKept)
-		return err
+		if _, err := tx.Exec(ctx, `delete from webhook_deliveries where route_id = $1 and id not in (
+			select id from webhook_deliveries where route_id = $1 order by at desc limit $2)`, routeID, DeliveriesKept); err != nil {
+			return err
+		}
+		// The reply bytes are counted where no prune can reach them.
+		var pid uuid.UUID
+		if err := tx.QueryRow(ctx, `select project_id from webhook_routes where id = $1`, routeID).Scan(&pid); err != nil {
+			return err
+		}
+		return s.CountEgress(ctx, tx, pid, at, d.BytesOut)
 	})
+}
+
+// EgressForHour is the reply bytes a project's routes sent in the hour
+// beginning at hour, which the billing rollup adds to its egress.
+func (s *Store) EgressForHour(ctx context.Context, projectID uuid.UUID, hour time.Time) (int64, error) {
+	var n int64
+	err := s.pool.QueryRow(ctx, `select coalesce(bytes, 0) from webhook_egress where project_id = $1 and hour = $2`,
+		projectID, hour.UTC().Truncate(time.Hour)).Scan(&n)
+	if db.IsNoRows(err) {
+		return 0, nil
+	}
+	return n, err
+}
+
+// CountEgress adds a delivery's reply bytes to the project's hour.
+// Reply bytes leave the edge for the internet and are the project's
+// egress; I-1063's nft meter cannot see them, because they reach the
+// edge on the guest's port 22 and look like a terminal's output.
+func (s *Store) CountEgress(ctx context.Context, tx pgx.Tx, projectID uuid.UUID, at time.Time, bytes int64) error {
+	if bytes <= 0 {
+		return nil
+	}
+	if at.IsZero() {
+		at = s.now()
+	}
+	_, err := tx.Exec(ctx, `insert into webhook_egress (project_id, hour, bytes) values ($1, date_trunc('hour', $2::timestamptz at time zone 'UTC') at time zone 'UTC', $3)
+		on conflict (project_id, hour) do update set bytes = webhook_egress.bytes + excluded.bytes`, projectID, at.UTC(), bytes)
+	return err
 }
 
 // ProjectOf returns the project a route id belongs to, or ErrNotFound.

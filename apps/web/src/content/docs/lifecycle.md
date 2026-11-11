@@ -48,7 +48,7 @@ The dashboard asks the same question, in the same words, before a Stop that woul
 
 The command comes back once the stop is under way. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
 
-Your plan's memory is given back the moment the project reads `stopping`. The disk is kept, and a stopped project keeps counting toward [your plan's disk](/docs/billing#what-a-plan-means) until `repose rm`.
+Your plan's memory is given back the moment the project reads `stopping`. The disk is kept, and a stopped project keeps counting toward [your plan's disk](/docs/billing#what-a-plan-means) until `repose rm`. A [webhook route](/docs/webhooks) answers 503 while the machine is stopped, unless it was added with `--start`.
 
 ```text
 $ repose start todo-app
@@ -89,7 +89,7 @@ About 90 seconds after the server stops answering, repose marks it as down. From
 
 ## Unused machines
 
-A running machine is unused once 24 hours pass with no SSH session, no tmux client and no agent `working` or `running`. The 24 hours run from the last of those, or from the boot if there's been none. An agent finished (`idle`) or waiting on you (`needs input`) doesn't count. The machine people forget is the one whose agent has sat at its prompt since `repose run` started it. An agent `running` counts, since repose can't tell whether it's mid-task. A laptop [herdr](/docs/run-and-attach#herdr-instead-of-tmux) counts too, since it keeps an SSH session open to every machine in its sidebar.
+A running machine is unused once 24 hours pass with no SSH session, no tmux client and no agent `working` or `running`. A [webhook delivery](/docs/webhooks) is not use either, so a machine that only receives them is announced as unused. The 24 hours run from the last of those, or from the boot if there's been none. An agent finished (`idle`) or waiting on you (`needs input`) doesn't count. The machine people forget is the one whose agent has sat at its prompt since `repose run` started it. An agent `running` counts, since repose can't tell whether it's mid-task. A laptop [herdr](/docs/run-and-attach#herdr-instead-of-tmux) counts too, since it keeps an SSH session open to every machine in its sidebar.
 
 repose never stops an unused machine; it tells you instead, on every `repose ls`:
 
@@ -112,7 +112,7 @@ A running machine nobody is using has its cores paused after about 15 minutes of
 
 Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change.
 
-Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
+Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 
 The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 
@@ -170,6 +170,8 @@ Within 30 days, bring it back, running, with its size, its configuration and its
 repose ls --destroyed
 repose restore todo-app
 ```
+
+A destroy also removes the project's [webhook routes](/docs/webhooks), and their URLs answer 410 for 30 days. A restore does not bring them back: add them again and paste the new URLs into the providers.
 
 `--as NEW-NAME` restores under another name. A restore started while the destroy is still running waits for its final snapshot. If a live project holds the name, the restore asks you for another. A live project holding the git remote keeps it, and the restored one is reached by name.
 

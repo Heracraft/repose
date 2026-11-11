@@ -325,3 +325,35 @@ func TestWebhookStartOncePerWindow(t *testing.T) {
 		t.Fatalf("second start inside the window: %d %s", second.status, second.raw)
 	}
 }
+
+// The edge's delivery batch banks the reply bytes against the project's
+// hour, where no prune can reach them: webhook_deliveries keeps the
+// newest 20 a route for the user, and billing reads webhook_egress.
+func TestWebhookDeliveriesBankEgress(t *testing.T) {
+	e := newEnv(t)
+	tok, pid := newWebhookProject(t, e, "sub-wh-eg", "wheg")
+	add := e.do(t, tok, "POST", "/projects/"+pid+"/webhooks", map[string]any{"name": "stripe", "target": "3000"})
+	rid := add.body["route_id"].(string)
+	batch := []map[string]any{}
+	// More than the 20 kept, so the prune runs and the bytes must not.
+	for i := 0; i < 30; i++ {
+		batch = append(batch, map[string]any{"route_id": rid, "at": timeAt(i), "status": 200, "outcome": "delivered",
+			"duration_ms": 1, "bytes_in": 100, "bytes_out": 7})
+	}
+	if r := e.internalDo(t, "POST", "/internal/webhook-deliveries", map[string]any{"deliveries": batch}); r.status != 204 {
+		t.Fatalf("batch: %d %s", r.status, r.raw)
+	}
+	var kept, banked int64
+	if err := e.h.Pool.QueryRow(t.Context(), `select count(*) from webhook_deliveries where route_id = $1`, rid).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept != 20 {
+		t.Fatalf("%d deliveries kept, want 20", kept)
+	}
+	if err := e.h.Pool.QueryRow(t.Context(), `select coalesce(sum(bytes), 0) from webhook_egress where project_id = $1`, pid).Scan(&banked); err != nil {
+		t.Fatal(err)
+	}
+	if banked != 30*7 {
+		t.Fatalf("banked %d reply bytes, want %d: the prune ate the count", banked, 30*7)
+	}
+}

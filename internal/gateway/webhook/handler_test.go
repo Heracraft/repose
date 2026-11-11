@@ -371,7 +371,7 @@ func TestReplyRules(t *testing.T) {
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte("3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P"))
 		})
-		w := hp.do(hp.post(mustJSON(map[string]string{"type": "url_verification"}), nil))
+		w := hp.do(hp.post([]byte(`{"type":"url_verification"}`), nil))
 		if w.Code != 200 || !strings.HasPrefix(w.Body.String(), "3eZbrw1aBm2") {
 			t.Fatalf("Slack's challenge did not come back: %d %q", w.Code, w.Body.String())
 		}

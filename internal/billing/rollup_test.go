@@ -132,3 +132,72 @@ func TestAccountAndExplain(t *testing.T) {
 		t.Fatalf("missing hour: %+v %v", ex.Found, err)
 	}
 }
+
+// A webhook reply is the project's egress and no sample holds it
+// (DECISIONS I-1120): it leaves the guest on port 22, where I-1063's nft
+// meter reads it as a terminal's output, so the edge counts it and the
+// rollup adds the hour's bytes to what the samples said.
+func TestRollupAddsWebhookReplyBytesToEgress(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	a := seedAccount(t, pool, "solo", "active", "large", "running")
+	hour := a.Period.Start.Add(5 * time.Hour)
+	ensurePartitions(t, pool, hour, hour)
+	for m := 0; m < 10; m++ {
+		sample(t, pool, a.ProjectID, hour.Add(time.Duration(m)*time.Minute), "running", "large", 40<<30, 1<<20)
+	}
+	r := billing.NewRollup(pool, nop(), quiet())
+	r.Now = at(hour.Add(2 * time.Hour))
+
+	// The probe: without a webhook_egress row the hour is the samples'
+	// 10 MiB, so the difference below is the webhook bytes and not a
+	// column that was always there.
+	rows, err := r.Hour(ctx, hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := rowFor(t, rows, a.ProjectID.String())
+	if base.EgressBytes != 10<<20 {
+		t.Fatalf("samples alone: %d bytes, want %d", base.EgressBytes, 10<<20)
+	}
+
+	if _, err := pool.Exec(ctx, `insert into webhook_egress (project_id, hour, bytes) values ($1, $2, $3)`,
+		a.ProjectID, hour, int64(4096)); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = r.Hour(ctx, hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rowFor(t, rows, a.ProjectID.String())
+	if got.EgressBytes != (10<<20)+4096 {
+		t.Fatalf("with webhook replies: %d bytes, want %d", got.EgressBytes, (10<<20)+4096)
+	}
+	// An hour the project sent nothing itself still bills its replies.
+	next := hour.Add(time.Hour)
+	ensurePartitions(t, pool, next, next)
+	if _, err := pool.Exec(ctx, `insert into webhook_egress (project_id, hour, bytes) values ($1, $2, $3)`,
+		a.ProjectID, next, int64(900)); err != nil {
+		t.Fatal(err)
+	}
+	r.Now = at(next.Add(2 * time.Hour))
+	rows, err = r.Hour(ctx, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := rowFor(t, rows, a.ProjectID.String()).EgressBytes; n != 900 {
+		t.Fatalf("an hour with replies and no samples: %d bytes, want 900", n)
+	}
+}
+
+// rowFor is the one row of the project, or a failure naming what came back.
+func rowFor(t *testing.T, rows []billing.Row, projectID string) billing.Row {
+	t.Helper()
+	for _, row := range rows {
+		if row.ProjectID.String() == projectID {
+			return row
+		}
+	}
+	t.Fatalf("no row for %s in %d rows", projectID, len(rows))
+	return billing.Row{}
+}

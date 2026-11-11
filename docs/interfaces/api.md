@@ -244,6 +244,27 @@ Account secrets take the same names under the same rules. A machine's set
 is its project's secrets plus the account's secrets the project has none
 of its own for; `GET /projects/:id/secrets` lists the project's alone.
 
+## Webhook routes (DECISIONS I-1110)
+
+A public URL into the project's machine, set by the CLI and the
+dashboard. `docs/features/webhooks.md` is the behaviour.
+
+| Method | Path | Body / result |
+|---|---|---|
+| GET | `/projects/:id/webhooks` | `[{route_id, name, port, path, allow_start, url, created_at, updated_at, last_delivery?}]`. `url` carries the token: the caller owns the project, and a list without it would make `webhooks url` a round trip per row |
+| POST | `/projects/:id/webhooks` | `{name, target}` or `{name, port, path}`, with `allow_start?`. Creates (201) or, on a name that exists, changes the target and `allow_start` and keeps the token (200). `target` is `PORT` or `PORT/PATH`. `name` matches `[a-z0-9][a-z0-9-]{0,31}`; a bad name or target, or a 21st route, is `400 invalid` |
+| GET | `/projects/:id/webhooks/:name` | The route, with `deliveries`: the newest 20 |
+| POST | `/projects/:id/webhooks/:name/rotate` | A new token at once; the old hash becomes a tombstone for 30 days. Returns the route with the new `url` |
+| DELETE | `/projects/:id/webhooks/:name` | 204; the token becomes a tombstone for 30 days. `404 not_found` for a name the project does not have |
+
+A destroy removes the project's routes and tombstones each token, in the
+destroy's own transaction, so `repose restore` does not bring a URL back
+(I-1114).
+
+The token is minted by the api and stored twice: `sha256(token)` for the
+edge's lookup, and the token as ciphertext under the account's data key
+with the same envelope as a named secret, so it can be printed again.
+
 ## Snapshots
 
 | Method | Path | Body / result |
@@ -383,13 +404,16 @@ payment_required` with `detail.reason: suspended` and the same sentence
 
 | Method | Path | Body / result |
 |---|---|---|
-| GET | `/internal/route?login=<slug>.<handle>` | `{project_id, guest_ip, state, principals, host_unreachable, resting}`. `host_unreachable` has always been sent and is documented here since I-818; `resting` (I-818) says the machine is frozen, so the gateway asks for a wake below before it dials. The state is still `running` and nothing in the gateway refuses on `resting`: the gateway caches this answer for five seconds, which makes the flag stale in both directions, which is why the wake is idempotent |
+| GET | `/internal/route?login=<slug>.<handle>` or `?project_id=<uuid>` | `{project_id, login, guest_ip, state, principals, host_unreachable, resting}`. The `project_id` form is what a webhook delivery reads (I-1110): it knows the project the URL names and no login. `login` is `<slug>.<handle>`, the principal the guest's host certificate carries, which the dial still has to check; it is new with I-1110 and absent from an older api. `host_unreachable` has always been sent and is documented here since I-818; `resting` (I-818) says the machine is frozen, so the gateway asks for a wake below before it dials. The state is still `running` and nothing in the gateway refuses on `resting`: the gateway caches this answer for five seconds, which makes the flag stale in both directions, which is why the wake is idempotent |
 | POST | `/internal/wake` | `{project_id, reason?}` → `{was_resting, wake_ms}` (DECISIONS I-818): resume a frozen machine, answering once it is awake. Held: the gateway waits on it inside its dial, and the api answers within 8 seconds either way. Idempotent, and `was_resting: false` means the machine was already awake, which is what makes the cached flag above harmless. `reason` is a lower_snake word of at most 32 letters for the host's log line (`connect`); anything else is ignored. A machine that is not running, has no guest, or sits on a host whose Hello did not name the `pause` feature is answered `was_resting: false` with nothing sent. A machine that did not wake answers `internal` with `<slug> did not wake`: a failed wake is a failure, and the one thing about a pause a user is told |
 | GET | `/internal/revoked?since=` | `[serial]` |
 | GET | `/internal/ca` | `{user_ca_pub, host_ca_pub}` |
 | POST | `/internal/sessions` | `{project_id, event: opened\|closed, cert_serial, session_id}` (gateway reports, feeds signals; `session_id` names the relay, up to 64 of `[A-Za-z0-9-]`, so two connections under one certificate are two sessions; absent from a gateway older than I-176, accepted for one release as one session per certificate) → `{open}` |
 | GET | `/internal/hosts` | `[{host_id, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync |
 | POST | `/internal/gateway-certs` | `{public_key, project_id}` → `{certificate}`: 5-minute user certificate for the gateway's own key, principal = project id, key_id suffixed `:via-gateway` |
+| GET | `/internal/webhook-routes?since=<version>` | `{version, routes: [{route_id, project_id, name, port, path, allow_start, token_sha256}], tombstones: [sha256], unchanged}` (DECISIONS I-1110): the table the edge holds in memory, with the hex sha256 of each token and never a token. `since` the caller's version answers `{version, unchanged: true}` and no rows, which is what makes the edge's 5 s poll cheap. `tombstones` are the hashes of tokens rotated or removed inside the 30-day window, which the edge answers 410 for |
+| POST | `/internal/webhook-start` | `{project_id, route_id}` → `{started, reason}` (I-1114): start a stopped machine for a delivery on a route with `--start`, at most once per project per 10 minutes. The owner's own start path, so plan memory and an abuse hold refuse it as they would `repose start`; `started: false` with `reason` `too_soon`, `not_stopped` or `start_refused` is not an error. The edge answers 503 either way |
+| POST | `/internal/webhook-deliveries` | `{deliveries: [{route_id, at, status, outcome, duration_ms, bytes_in, bytes_out}]}` → 204 (I-1110): the edge's batch, every 10 s. `outcome` must be one of `delivered`, `woke`, `stopped`, `started`, `start_refused`, `wake_failed`, `no_listener`, `timeout`, `too_large`, `rate_limited`, `body_dropped`, `unavailable`, `not_found`, `gone`; any other word is `400 invalid`, so nothing a sender chose reaches a row. A route removed while its batch was in flight is skipped, not an error. The api keeps the newest 20 per route, and banks `bytes_out` in `webhook_egress` by the hour, where the prune cannot reach it (I-1120) |
 | POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)`. `kind` is one a guest may report (`completed`, `needs_input`, `error`, `agent_message`, `agent_done` since I-688); any other is `400 invalid` (DECISIONS I-441). An `agent` that is not one guestd sends (`claude`, `opencode`, `codex`, `gemini`, `pi`, `shell`) is stored as no agent |
 
 ## Rate limits

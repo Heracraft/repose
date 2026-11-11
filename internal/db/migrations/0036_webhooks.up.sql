@@ -51,6 +51,17 @@ create table webhook_deliveries (
 );
 create index webhook_deliveries_route_at on webhook_deliveries (route_id, at desc);
 
+-- Reply bytes per project per hour, which the billing rollup adds to
+-- egress (DECISIONS I-1120). Not read off webhook_deliveries: that keeps
+-- the newest 20 a route for the user to look at, so an hour with a
+-- thousand deliveries would bill twenty of them.
+create table webhook_egress (
+  project_id uuid not null references projects(id) on delete cascade,
+  hour       timestamptz not null,
+  bytes      bigint not null default 0,
+  primary key (project_id, hour)
+);
+
 -- When a delivery last started a stopped machine, one row per project:
 -- the "at most once per 10 minutes" of the --start rule has to survive an
 -- api restart, so it is a row and not a counter in memory.

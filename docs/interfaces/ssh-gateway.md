@@ -127,6 +127,20 @@ Two CAs, both ed25519, private keys in the api's secret store:
    change; its relay keeps the old gateway's code until it reconnects.
    Only a restart of the unit or of the edge ends open relays at once.
 
+9. A webhook delivery (DECISIONS I-1110) opens a connection of the
+   gateway's own, with no client behind it: the same five-minute
+   gateway certificate for the project, the same check of the guest's
+   host certificate against the Host CA for `<slug>.<handle>`, the user
+   `dev`, and one `direct-tcpip` channel to `127.0.0.1:<port>` (or
+   `::1:<port>`). It opens no session channel and requests no agent
+   forwarding. It is **not** reported to `POST /internal/sessions`, so a
+   run of deliveries never holds a machine awake past the session
+   window; the gateway keeps one such connection per project for 30
+   seconds after its last use and closes it after that. The login name
+   comes from `GET /internal/route?project_id=`, which carries it for
+   exactly this reason: a delivery has no login of its own and still
+   has to check the host certificate's principal.
+
 ## Guest sshd
 
 ```

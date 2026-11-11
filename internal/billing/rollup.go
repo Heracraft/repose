@@ -86,7 +86,8 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 	// by construction, so neither can be read as the other.
 	// Egress is net_egress, the host's count of what the guest sent the
 	// internet; a sample from a hostd before I-1063 has none and bills
-	// net_tx, the tap, which also held its SSH traffic.
+	// net_tx, the tap, which also held its SSH traffic. Webhook replies
+	// are added below (I-1120).
 	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(coalesce(net_egress, net_tx)),
 		(array_agg(class order by ts desc))[1],
 		count(*) filter (where state = 'running' and (ssh_sessions > 0 or tmux_clients > 0)),
@@ -111,6 +112,34 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 		aggs[pid] = &a
 	}
 	rows.Close()
+	// Webhook replies are the project's egress too and no sample holds
+	// them (DECISIONS I-1120): they leave the guest on port 22 to the
+	// edge, where I-1063's nft meter reads them as a terminal's output,
+	// so the edge counts them and the api banks them by the hour. A
+	// project with replies and no samples still gets its bytes, which is
+	// why this is its own scan and not a join.
+	wrows, err := r.pool.Query(ctx, `select project_id, bytes from webhook_egress where hour = $1`, start)
+	if err != nil {
+		return nil, fmt.Errorf("read webhook_egress for %s: %w", start.Format(time.RFC3339), err)
+	}
+	for wrows.Next() {
+		var pid uuid.UUID
+		var bytes int64
+		if err := wrows.Scan(&pid, &bytes); err != nil {
+			wrows.Close()
+			return nil, err
+		}
+		a, ok := aggs[pid]
+		if !ok {
+			a = &agg{}
+			aggs[pid] = a
+		}
+		a.egress += bytes
+	}
+	wrows.Close()
+	if err := wrows.Err(); err != nil {
+		return nil, err
+	}
 	// Projects that existed during the hour get a row even without
 	// samples (disk is allocated while they exist); a running project
 	// without samples is a gap.

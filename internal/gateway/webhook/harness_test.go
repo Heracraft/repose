@@ -3,7 +3,6 @@ package webhook
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -243,12 +242,4 @@ func (hp *harness) post(body []byte, headers map[string]string) *http.Request {
 func (hp *harness) flushed() []Delivery {
 	hp.h.flush(context.Background())
 	return hp.api.reported()
-}
-
-func mustJSON(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return b
 }

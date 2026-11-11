@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-923 entries.
+929 entries.
 
 ## Scope
 
@@ -43,7 +43,7 @@ pointer, not a summary.
 ## Network and access
 
 - **R2-5** SSH certificate authority in the control plane, short-lived certificates, a gateway that routes by login name — L130
-- **R2-6** Dev-server access is `repose open <port>` (SSH forward) now; per- project HTTPS preview URLs later, documented from day one — L136
+- **R2-6** Dev-server access is `repose open <port>` (SSH forward) now; per- project HTTPS preview URLs later, documented from day one — amended by I-1116; L136
 - **R3-7** The gateway is custom Go, not OpenSSH ProxyJump — L139
 - **R3-8** hostd dials out to the API over a mutual-TLS gRPC stream; hosts have no inbound ports — L143
 - **R4-3** WireGuard between edge and hosts, hosts dial the edge — L146
@@ -79,7 +79,7 @@ pointer, not a summary.
 - **R2-9** Observability reuses the existing Loki, Grafana and Fluent Bit; add Prometheus there; OpenTelemetry in the control plane with no traces backend yet. Record everything non-invasive — L247
 - **R2-12 + R3-16 + R4-7 + R4-8** Stripe from day one, card required before the first guest, $10 credit trial. Meters: guest-hours by class, volume GB-months, egress GB. Hourly rate with a monthly cap per project equal to the flat price (49/99/199) — partly amended by I-205; partly superseded by I-289; L251
 - **R4-11** Retention: destroy deletes the volume and keeps the last snapshot 30 days; cancellation stops guests, keeps snapshots 30 days — L259
-- **R4-12** + R4 domain note. The name is `repose` everywhere. Hosted under `herakraft.co` (`repose.herakraft.co`, `api.repose.herakraft.co`, `ssh.repose.herakraft.co`) until it graduates to its own domain — partly superseded by I-15; L262
+- **R4-12** + R4 domain note. The name is `repose` everywhere. Hosted under `herakraft.co` (`repose.herakraft.co`, `api.repose.herakraft.co`, `ssh.repose.herakraft.co`) until it graduates to its own domain — partly superseded by I-15; amended by I-1110; L262
 - **R5-6** No teams in the first release — L268
 - **R5-7** One repository, one Go module, `nix/` and `infra/` alongside the existing Turborepo — L270
 - **R5-8** Milestone order: benchmark, then hostd and guestd with your own projects over WireGuard, then edge and auth, then Coolify control plane and dashboard, then billing, with observability from milestone two onward — L273
@@ -537,7 +537,7 @@ pointer, not a summary.
 - **I-471** A switch hands the gateway over instead of restarting it — 2026-10-04; L12314
 - **I-472** An edge switch leaves the network up — 2026-10-04; L12364
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12386
-- **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12411
+- **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; amended by I-1112; L12411
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12425
 - **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; amended by I-519; L12461
 - **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; amended by I-509; amended by I-618; L12585
@@ -836,9 +836,9 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24947
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24966
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25003
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; L25008
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; L25008
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25138
-- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25166
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; amended by I-1114; L25166
 - **I-824** The pause must never cost a machine its memory — L25209
 - **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; amended by I-896; L25243
 - **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25275
@@ -952,6 +952,12 @@ pointer, not a summary.
 - **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30572
 - **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30680
 - **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L30826
-- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
+- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L30871
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
+- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31058
+- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31135
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31182
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31236
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31292
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31314

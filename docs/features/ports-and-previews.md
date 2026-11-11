@@ -5,6 +5,11 @@ port forward the CLI manages. Public preview URLs per project have a
 design below; they are not built, and were not approved on 2026-09-25
 (`docs/proposals/2026-09-24-backlog-triage.md`).
 
+The one public path into a guest is a webhook route (`webhooks.md`,
+DECISIONS I-1110): a provider's event forwarded to a port inside the
+machine, which may not serve a page. It is not a preview and does not
+reopen the preview question.
+
 ## What the user sees
 
 While `repose run` or `repose attach` is attached, every port the guest
