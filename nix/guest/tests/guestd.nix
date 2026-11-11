@@ -457,6 +457,21 @@ pkgs.testers.runNixOSTest {
         guest.fail("journalctl -u guestd | grep -q 'ship it'")
         guest.succeed("journalctl -u guestd | grep -q agent_question")
 
+    with subtest("repose-presence says attached with a tmux client and away without"):
+        # DECISIONS I-1098: the guest command an agent runs before it hands
+        # the user a URL for a port here. The test driver is no SSH session
+        # and nothing is attached, so the machine starts away.
+        guest.wait_until_succeeds("sudo -u dev repose-presence | grep -qx away", timeout=30)
+        guest.succeed(
+            "sudo -H -u dev env TERM=xterm script -qfc 'tmux attach -t todo-app' "
+            "/dev/null >/dev/null 2>&1 &"
+        )
+        guest.wait_until_succeeds("sudo -u dev repose-presence | grep -qx attached", timeout=60)
+        guest.succeed("sudo -H -u dev tmux detach-client -s todo-app || true")
+        guest.wait_until_succeeds("sudo -u dev repose-presence | grep -qx away", timeout=60)
+        # The same command under its other spelling.
+        guest.succeed("sudo -u dev repose-hook presence | grep -qx away")
+
     with subtest("Switch applies a new generation without a reboot"):
         guest.fail("test -e /run/current-system/sw/bin/htop")
         closure = guest.succeed(
@@ -551,7 +566,10 @@ pkgs.testers.runNixOSTest {
 
     with subtest("no secret value is ever in a log line"):
         guest.fail("journalctl -u guestd | grep -q 'simple'")
-        guest.fail("journalctl -u guestd | grep -q 'multi'")
+        # The secret's own words, not the single word "multi": that
+        # matched `"multiplexer":"tmux"` in the setup_project line, so the
+        # assertion was red for a field name rather than a leak.
+        guest.fail("journalctl -u guestd | grep -qF \"multi 'line' value\"")
 
     with subtest("guestd is small and light"):
         size = int(guest.succeed("stat -c %s $(readlink -f $(which guestd))").strip())

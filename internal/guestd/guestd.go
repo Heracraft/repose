@@ -195,6 +195,9 @@ func New(cfg Config) (*Server, error) {
 	s.hooks.EnableAsk(s.asks, s.AgentEvent)
 	s.hooks.SetSecretRelay(s.relaysSecret.Load)
 	s.hooks.SetLinkSink(s.AgentEventLinked)
+	// repose-presence reads the owner's presence off the same signals
+	// the hold uses (DECISIONS I-689, I-1098).
+	s.hooks.SetPresence(s.sampler.Attached)
 	return s, nil
 }
 

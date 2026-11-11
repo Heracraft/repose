@@ -107,8 +107,8 @@ func TestForwarderFollowsTheGuest(t *testing.T) {
 	f.announce(time.Now().Add(forwardQuiet))
 	wantSaid := []string{
 		"1355 is taken on your laptop (portless?); izma's portless is on localhost:1356",
-		"⇄ localhost:3001 → :3000 (3000 is taken on your laptop)",
-		"⇄ localhost:5173 → :5173",
+		"⇄ :3000 → your laptop's localhost:3001 (3000 is taken there)",
+		"⇄ localhost:5173 → your laptop",
 	}
 	if strings.Join(*said, "|") != strings.Join(wantSaid, "|") {
 		t.Errorf("messages = %q", *said)
@@ -198,7 +198,10 @@ func TestForwardOverTheControlMaster(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		for _, m := range said {
-			if _, err := fmt.Sscanf(m, "⇄ localhost:%d", &local); err == nil {
+			// The guest's port is taken on this "laptop" too, so the
+			// forward moved: "⇄ :PORT → your laptop's localhost:LOCAL
+			// (PORT is taken there)" (I-1106).
+			if _, err := fmt.Sscanf(m, "⇄ :%d → your laptop's localhost:%d", new(int), &local); err == nil {
 				return true
 			}
 		}
@@ -214,7 +217,7 @@ func TestForwardOverTheControlMaster(t *testing.T) {
 	if string(body) != "hello from vite" {
 		t.Fatalf("body = %q", body)
 	}
-	if local == port || !strings.Contains(said[0], "is taken on your laptop") {
+	if local == port || !strings.Contains(said[0], "is taken there") {
 		t.Errorf("local %d for guest %d, message %q", local, port, said[0])
 	}
 	var bar string
@@ -382,7 +385,7 @@ func TestForwarderCoalescesMessages(t *testing.T) {
 	listen(3000, 3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3010) // 3009 went
 	_, _ = f.sync(ctx)
 	f.announce(time.Now().Add(forwardQuiet))
-	want := "⇄ 10 ports on localhost: 3000, 3001, 3002, 3003, 3004, 3005, 3006, 3007, …"
+	want := "⇄ 10 ports → your laptop: 3000, 3001, 3002, 3003, 3004, 3005, 3006, 3007, …"
 	if len(*said) != 1 || (*said)[0] != want {
 		t.Fatalf("messages %q, want %q", *said, want)
 	}
@@ -392,7 +395,7 @@ func TestForwarderCoalescesMessages(t *testing.T) {
 	_, _ = f.sync(ctx)
 	f.pendingFirst = time.Now().Add(-forwardCoalesceMax)
 	f.announce(time.Now())
-	if len(*said) != 1 || (*said)[0] != "⇄ localhost:4000 → :4000" {
+	if len(*said) != 1 || (*said)[0] != "⇄ localhost:4000 → your laptop" {
 		t.Fatalf("capped wait: %q", *said)
 	}
 }
@@ -416,7 +419,9 @@ func TestForwardPublishWithNoTmuxServer(t *testing.T) {
 		t.Fatalf("publish with no tmux server: %v %s", err, out)
 	}
 	b, err := os.ReadFile(filepath.Join(home, ".repose", "forwards", f.id))
-	if err != nil || strings.TrimSpace(string(b)) != "3000" {
+	// Line 1 is what every reader since I-199 takes; the detail lines
+	// follow it (I-1106).
+	if err != nil || string(b) != "3000\nout:3000:3000\n" {
 		t.Errorf("forward list = %q, %v", b, err)
 	}
 }

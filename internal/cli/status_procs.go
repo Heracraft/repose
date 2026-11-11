@@ -37,13 +37,17 @@ type listeningProc struct {
 	Age    time.Duration
 	RSS    int64 // bytes
 	HasPID bool
+	// Laptop is the laptop port an attached CLI forwards this one to, 0
+	// when none does (I-1106).
+	Laptop int
 }
 
 // statusProcsScript also says how full the root filesystem is, after
-// "#df" (statfs's blocks, blocks available to dev and block size, I-567),
-// and what runs the machine's terminals now (I-509), after "#mux":
-// "herdr", or nothing for tmux.
-var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,rss=,comm= -u "$(id -u)"; echo '#df'; stat -f -c '%b %a %S' /; echo '#mux'; ` + muxProbeScript + ` && echo herdr`
+// "#df", what runs the machine's terminals now, after "#mux", and what
+// the attached laptops forward, after "#fwd": the machine's forward
+// registry, which says which listening ports are on a laptop and which
+// ports a laptop lends the machine (I-1106).
+var statusProcsScript = `ss -Hltnp 2>/dev/null; echo '#ps'; ps -o pid=,etimes=,rss=,comm= -u "$(id -u)"; echo '#df'; stat -f -c '%b %a %S' /; echo '` + forwardRegistryMark + `'; ` + forwardRegistryScript() + `; echo '#mux'; ` + muxProbeScript + ` && echo herdr`
 
 // guestDisk is the guest's root filesystem as statfs sees it: what the
 // guest's writes run out of. The api's disk_used_bytes is the host
@@ -72,7 +76,7 @@ func parseStatusDisk(out string) guestDisk {
 	if !ok {
 		return guestDisk{}
 	}
-	rest, _, _ = strings.Cut(rest, "#mux")
+	rest, _, _ = strings.Cut(rest, forwardRegistryMark)
 	f := strings.Fields(rest)
 	if len(f) < 3 {
 		return guestDisk{}
@@ -92,6 +96,7 @@ var ssUsers = regexp.MustCompile(`users:\(\("((?:[^"\\]|\\.)*)",pid=(\d+)`)
 // auto-forward sees them) with ps's age and memory by pid.
 func parseStatusProcs(out string) []listeningProc {
 	out, _, _ = strings.Cut(out, "#mux")
+	out, _, _ = strings.Cut(out, forwardRegistryMark)
 	out, _, _ = strings.Cut(out, "#df")
 	ssPart, psPart, _ := strings.Cut(out, "#ps")
 	type psRow struct {
@@ -146,6 +151,96 @@ func parseStatusProcs(out string) []listeningProc {
 	return procs
 }
 
+// parseStatusForwards reads the "#fwd" section: what the attached
+// laptops forward, in either direction (I-1106).
+func parseStatusForwards(out string) []forwardRow {
+	_, sec, ok := strings.Cut(out, forwardRegistryMark)
+	if !ok {
+		return nil
+	}
+	sec, _, _ = strings.Cut(sec, "#mux")
+	return parseForwardRows(sec)
+}
+
+// markForwarded marks each listening port an attached laptop forwards
+// and takes the reverse listeners out of the list: the `laptop` row
+// says what they are, and `sshd-session :5037 up 2h` under `listening`
+// says nothing anyone acts on (I-1106).
+func markForwarded(procs []listeningProc, rows []forwardRow) []listeningProc {
+	toLaptop := map[int]int{}
+	fromLaptop := map[int]bool{}
+	for _, r := range rows {
+		if r.In {
+			fromLaptop[r.Machine] = true
+			continue
+		}
+		toLaptop[r.Machine] = r.Laptop
+	}
+	var keep []listeningProc
+	for _, p := range procs {
+		if fromLaptop[p.Port] {
+			continue
+		}
+		p.Laptop = toLaptop[p.Port]
+		keep = append(keep, p)
+	}
+	return keep
+}
+
+// laptopPortsCell is the `laptop` row: the laptop ports lent to the
+// machine, with the laptop's process name when its own tools said.
+// Empty when no laptop lends one.
+func laptopPortsCell(rows []forwardRow) string {
+	var cells []string
+	for _, r := range rows {
+		if !r.In {
+			continue
+		}
+		c := fmt.Sprintf(":%d", r.Machine)
+		if r.Process != "" {
+			c += " " + r.Process
+		}
+		cells = append(cells, c)
+	}
+	return strings.Join(cells, ", ")
+}
+
+// forwardJSON is one entry of `repose status --json`'s forwards
+// (I-1106): a port the attached laptops forward, and which way.
+type forwardJSON struct {
+	// Port is the port on the machine, LaptopPort the port on the
+	// laptop holding the forward.
+	Port       int `json:"port"`
+	LaptopPort int `json:"laptop_port"`
+	// Direction is "to_laptop" for a machine port the laptop can open,
+	// "from_laptop" for a laptop port lent to the machine.
+	Direction string `json:"direction"`
+	// Process is the program holding the port: the machine's for
+	// to_laptop, the laptop's for from_laptop. Absent when unknown.
+	Process string `json:"process,omitempty"`
+}
+
+// statusForwardsJSON is the forwards as --json carries them, with the
+// machine's process name joined in for the ones going to a laptop.
+func statusForwardsJSON(rows []forwardRow, procs []listeningProc) []forwardJSON {
+	comm := map[int]string{}
+	for _, p := range procs {
+		comm[p.Port] = p.Comm
+	}
+	out := make([]forwardJSON, 0, len(rows))
+	for _, r := range rows {
+		f := forwardJSON{Port: r.Machine, LaptopPort: r.Laptop, Direction: "to_laptop", Process: comm[r.Machine]}
+		if r.In {
+			f.Direction, f.Process = "from_laptop", r.Process
+		}
+		out = append(out, f)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // compactAge is "12m", "5h" or "3d".
 func compactAge(d time.Duration) string {
 	switch {
@@ -160,7 +255,7 @@ func compactAge(d time.Duration) string {
 
 // writeListening prints the list under the status lines:
 //
-//	listening  node :5173 up 3d 410.0 MB
+//	listening  node :5173 up 3d 410.0 MB, on your laptop
 //	           :5432
 func writeListening(w io.Writer, procs []listeningProc) {
 	for i, p := range procs {
@@ -175,6 +270,12 @@ func writeListening(w io.Writer, procs []listeningProc) {
 		if p.HasPID {
 			s += fmt.Sprintf(" up %s %s", compactAge(p.Age), humanBytes(p.RSS))
 		}
+		switch {
+		case p.Laptop == p.Port:
+			s += ", on your laptop"
+		case p.Laptop > 0:
+			s += fmt.Sprintf(", on your laptop at :%d", p.Laptop)
+		}
 		_, _ = fmt.Fprintln(w, label+s)
 	}
 }
@@ -182,9 +283,12 @@ func writeListening(w io.Writer, procs []listeningProc) {
 // guestStatus is what status reads from the guest itself.
 type guestStatus struct {
 	procs []listeningProc
-	mux   string // "herdr", "tmux", or "" when the machine did not answer
-	disk  guestDisk
-	git   []gitRow // nil when the machine has no checkout or did not say
+	// forwards is the machine's forward registry: what the attached
+	// laptops forward, in either direction (I-1106).
+	forwards []forwardRow
+	mux      string // "herdr", "tmux", or "" when the machine did not answer
+	disk     guestDisk
+	git      []gitRow // nil when the machine has no checkout or did not say
 	// probeErr is why the machine did not say (I-634): "ssh_timeout"
 	// when it did not answer in time, "ssh_failed" when ssh failed; ""
 	// when it answered.
@@ -255,7 +359,8 @@ func guestStatusReadIn(ctx context.Context, t sshTarget, slug string, have []str
 			mux = multiplexer.Herdr
 		}
 	}
-	return guestStatus{procs: parseStatusProcs(out), mux: mux, disk: parseStatusDisk(out), git: parseStatusGit(out, len(have) > 0)}
+	rows := parseStatusForwards(out)
+	return guestStatus{procs: markForwarded(parseStatusProcs(out), rows), forwards: rows, mux: mux, disk: parseStatusDisk(out), git: parseStatusGit(out, len(have) > 0)}
 }
 
 // statusScript is statusProcsScript, which reads the laptop's commit

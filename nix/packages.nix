@@ -89,13 +89,15 @@ in
   inherit generated;
   guestd = mkBin "guestd";
   # repose-notify and repose-ask are the same binary under the names agents
-  # call (DECISIONS I-244), and repose-mcp the guest's MCP registry command
-  # (I-555); it picks the command from argv[0].
+  # call (DECISIONS I-244), repose-mcp the guest's MCP registry command
+  # (I-555) and repose-presence the one that says whether the owner is at
+  # the machine (I-1098); it picks the command from argv[0].
   repose-hook = (mkBin "repose-hook").overrideAttrs (old: {
     postInstall = (old.postInstall or "") + ''
       ln -s repose-hook $out/bin/repose-notify
       ln -s repose-hook $out/bin/repose-ask
       ln -s repose-hook $out/bin/repose-mcp
+      ln -s repose-hook $out/bin/repose-presence
     '';
   });
   hostd = mkBin "hostd";

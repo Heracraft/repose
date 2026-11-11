@@ -229,6 +229,18 @@ guest, and never its login or its history:
   10 seconds of the hook firing, or within 90 seconds for heuristic agents.
   A finished turn notifies nobody (I-688); the agent says it is done with
   `repose-notify --done`.
+- `repose-presence` (DECISIONS I-1098) prints `attached` while the owner
+  is at the machine and `away` while they are not, by the definition the
+  presence hold uses (I-689: a tmux client or an SSH session, a laptop
+  herdr bridge counting as one), read live from the guest rather than
+  from the api's latest sample. It exits 0 in both states and 1 only
+  when guestd does not answer, so an agent can branch on the word and
+  tell `away` from "I could not ask". It is `repose-hook` under a third
+  name, like `repose-notify` and `repose-ask`, so the guest base gains
+  no binary. The guide's rule: before handing the user a URL for a port
+  on the machine, run it; `attached` means say `http://localhost:PORT`,
+  which the forward carries to the laptop, and `away` means say which
+  port it is here and name `repose open PORT`.
 - A missing login produces the agent's own login prompt in the window plus
   the CLI message above; it never produces a crash loop.
 - `repose status` shows per agent window: `working`, `idle`,

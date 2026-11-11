@@ -519,6 +519,36 @@ func TestTurnEndsNotifyNobodyAndDoneDoes(t *testing.T) {
 	}
 }
 
+// TestBaseUpdatedNotifiesNobodyAndFailureDoes (DECISIONS I-1094): a base
+// that reached the machine is recorded as an event and queues no
+// delivery on any channel; base_update_failed, which leaves the machine
+// on the base it had, queues one row per channel.
+func TestBaseUpdatedNotifiesNobodyAndFailureDoes(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, _, _ := seedOn(t, pool)
+	if err := ing.Platform(ctx, pid, "base_updated", "Platform base 2026.11.11.1 is running on this machine."); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'base_updated'", pid).Scan(&n)
+	if n != 1 {
+		t.Fatalf("base_updated is %d events, want 1: it stays in `repose events` and on the dashboard", n)
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox").Scan(&n)
+	if n != 0 {
+		t.Fatalf("base_updated queued %d deliveries, want none", n)
+	}
+	if err := ing.Platform(ctx, pid, "base_update_failed", "Platform base 2026.11.11.1 did not build with your configuration."); err != nil {
+		t.Fatal(err)
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox o join events e on e.id = o.event_id where e.kind = 'base_update_failed'").Scan(&n)
+	if n != 2 {
+		t.Fatalf("base_update_failed queued %d rows, want 2 (one per channel)", n)
+	}
+}
+
 // TestDoneReportsShareTheCap (DECISIONS I-688): agent_done counts in the
 // hourly cap with agent_message, so a mix of the two past RatePerHour
 // sends RatePerHour and one pause notice.
