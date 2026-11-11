@@ -31646,3 +31646,168 @@ and needs `repose open PORT` or an attach. Agents guessed, and guessed
   subtest runs the installed command on a booted guest: `away`, then
   `attached` once a real tmux client is attached on a pty, then `away`
   again after `detach-client`, and `repose-hook presence` the same.
+**I-1104. The laptop lends ports to the machine: `[forward] reverse` in
+config.toml, held by the session helper for the length of an attach.**
+(forwards-both-ways, 2026-11-11. Adds to SECURITY.md boundary 13.)
+
+Every member of the 2026-11-04 product value council named the same gap:
+the agents cannot reach the laptop's Android emulator, its Ollama or its
+local database. `docs/proposals/2026-11-10-forwards-both-ways.md` turned
+it into behaviour; this entry is the part that was built, with the
+conductor's ruling of 2026-11-11 (the owner's standing approval) on the
+one question the proposal left open.
+
+**Decision 1 of the proposal is accepted.** The CLI passes a laptop port
+through without inspecting what goes over it. Every other path from the
+guest to the laptop is one the CLI reads: the browser bridge polices CDP
+message by message (I-311) and `repose mcp forward` runs one named
+server. A reverse forward decides only the port. What bounds it instead
+is the user's own file, a deny list and the words where they set it.
+
+- `[forward] reverse` and `[projects.NAME.forward] reverse` list laptop
+  ports, merged for a project as `[mcp] forward` is (I-557), each machine
+  port once. A number is the same port on both sides; `"MACHINE:LAPTOP"`
+  puts the laptop's port on another one on the machine, the listening
+  port first, as `repose open LOCAL:PORT` (I-619) and ssh's `-L` and `-R`
+  spell it. `REPOSE_NO_FORWARD=1` stays the one knob and now turns off
+  both directions.
+- A refused entry fails the config load, so every command names the file
+  and the key, as an unknown `default_multiplexer` does: below 1024,
+  above 65535, a port in `forwardPlatformPorts`, 9222, 9229, 2375 or 2376
+  on the laptop side, more than 16 ports, or a value that is neither a
+  number nor `"MACHINE:LAPTOP"`. A forward dropped in silence would read
+  as a broken forward, which is the reason the Windows line for `[mcp]
+  forward` exists. The refusal exits 2, and so does every other
+  config.toml refusal from now on: `cli.md` has said since I-922 that an
+  unknown `default_size` "makes every command exit 2 naming the file",
+  and the code exited 1, because `loadConfig` returned a plain error and
+  `exitCodeFor` has no case for one. CLAUDE.md says to fix the code when
+  it and a doc disagree, so `loadConfig`'s three refusals and a file that
+  is not TOML are now `exitf(ExitUsage, ...)`, with their messages
+  unchanged. A bad config file is wrong usage, which is what 2 means.
+- The deny list is kept (proposal decision 3). 9222 has the bridge, and
+  Node's inspector, Docker's API and Docker's TLS API run code on the
+  laptop by design.
+- The forwards live inside an attach, on a connection of the helper's
+  own with `ExitOnForwardFailure=yes`, not on the ControlMaster: a `-R`
+  there would outlive the detach by ControlPersist's ten minutes
+  (I-149), and a laptop port must not stay open on the machine after the
+  user walks away. The remote command is `exec cat >/dev/null`, so the
+  helper's exit, however it comes, closes the pipe and takes the
+  listeners with it. The guest needs no change, so machines running now
+  get it from the CLI alone.
+- Two `-R` per port, `127.0.0.1` and `::1`. The proposal asked for both
+  and this was measured rather than assumed: against OpenSSH 9.6 sshd
+  with `GatewayPorts no`, `-R 127.0.0.1:P` binds 127.0.0.1 and leaves
+  `::1:P` free, and the two requests together bind both and neither
+  fails. Some clients on the machine try `::1` first for `localhost`.
+- The loop the design must prevent: the reverse listener is a listener
+  like any other, so auto-forward would see `sshd-session` on
+  `127.0.0.1:5037`, find 5037 taken on the laptop and forward the
+  machine's 5037 to the laptop's 5038 — the laptop's own adb, round a
+  loop. The forwarder skips every port it lends and every port another
+  laptop's registry entry marks `in:` (I-1106), as it skips 9226 today.
+- A port the machine already holds is left out before the connection
+  starts and said once, with the remap to use. The laptop's process name
+  comes from the laptop's own tools (`lsof` on macOS, `ss` on Linux) and
+  is left out when they do not answer. On Windows no helper runs and a
+  set key prints a line saying so.
+- The freeze is untouched. A reverse forward exists only while an attach
+  does, and an attach already fails I-818's rest rule twice. The hold
+  must never outlive its attach, or it would be the gateway session with
+  no bytes on it that I-930 forbids; the `cat` hold, the helper's
+  parent check and the test below are what keep it from happening.
+
+*What a lent port gives.* `SECURITY.md` boundary 13 and
+`/docs/machine#your-laptops-ports-on-the-machine` say it once, in the
+same words: everything on the machine, agents included, reaches a lent
+port as a local program on the laptop would. adb serves every device the
+laptop has, a phone on USB included; Ollama has no authentication; a
+Homebrew Postgres with `trust` on localhost and a superuser default role
+turns `COPY ... FROM PROGRAM` into commands on the laptop. That line
+prevents a loss the user cannot undo, so I-485 keeps it.
+
+*Evidence.* `TestForwardReverseConfig` parses the numbers, the remap and
+the project merge and prints each refusal with its file. `TestReverseSSHArgs`
+holds the ssh line. `TestReverseMessages` holds the text.
+`TestForwarderDoesNotForwardALentPortBack` gives the forwarder an `ss`
+with `sshd-session` on 5037 and 11434 and a registry line `in:11434:...`
+from another id, and only 5173 is forwarded.
+`TestReverseForwardReachesTheLaptopAndEndsWithTheAttach` runs the real
+ssh against the test guest: a listener on the laptop, bytes read back
+through the machine's `127.0.0.1:P` and `[::1]:P`, and the listener gone
+within a second of the attach ending. The rest rule is unchanged code;
+`TestRestRuleHoldsEveryTerm`'s "a tmux client" case is what proves an
+attach holds a machine awake.
+
+**I-1106. The forward messages name the laptop, the registry says which
+way each forward goes, and `repose status` shows both.** (forwards-both-ways,
+2026-11-11. Amends I-199, I-324, I-616.)
+
+The payoff of auto-forward was hard to see. `⇄ localhost:5173 → :5173`
+names two ports and no place, so a user who had not read the docs could
+not tell which side was the laptop, and nothing outside tmux listed a
+forward at all.
+
+- The messages become `⇄ localhost:5173 → your laptop`, `⇄ localhost:3000,
+  3001, 5173 → your laptop` for up to eight ports, `⇄ 12 ports → your
+  laptop: 3000, …` beyond that, and `⇄ :3000 → your laptop's
+  localhost:3001 (3000 is taken there)` for a moved one. Portless keeps
+  its own line. The status bar is unchanged.
+- `~/.repose/forwards/<id>` keeps its first line, the guest ports as bare
+  numbers, because every reader since I-199 takes that line through `grep
+  -E '^[0-9]+$'` and nothing else. Lines after it name one forward each,
+  colon-joined so that reader steps over them: `out:MACHINE:LAPTOP` and
+  `in:MACHINE:LAPTOP[:PROCESS]`. Both shapes are read for one release, as
+  CLAUDE.md asks of a contract change; `interfaces/guest-conventions.md`
+  has the format.
+- `repose status` reads the registry in the SSH call it already makes.
+  A listening row gains `, on your laptop`, and `at :3001` when the
+  laptop holds it elsewhere; a `laptop` row lists the ports a laptop
+  lends, with the laptop's process; `--json` gains `forwards` with
+  `port`, `laptop_port`, `direction` and `process`. The reverse
+  listeners leave the `listening` rows: `sshd-session :5037 up 2h` under
+  `listening` is a row nobody acts on, and the `laptop` row says what it
+  is. The extra SSH session the hold makes is counted in `attached`,
+  because it is one (proposal decision 7, as recommended).
+
+*Evidence.* `TestStatusMarksTheForwardedPortsAndTheLaptopsOwn` holds the
+rows and the JSON. `TestOldRegistryReadersSeeTheSameUnion` writes an
+entry with the new lines, takes the union the publish script takes, then
+rewrites the file as a pre-I-1106 CLI would and takes it again: `3000
+5173` both times, with no lent port in it. The three existing message
+tests (I-199, I-324, I-469) hold the new text.
+
+**I-1108. A `localhost` link the machine opens goes to the laptop port
+its forward uses, or nowhere.** (forwards-both-ways, 2026-11-11. Amends
+I-634, which amends I-541.)
+
+I-634 opens an `https` link the machine hands to `$BROWSER` in the
+laptop's browser. It had a hole and a gap. The hole: `https://localhost:8443/`
+passed `openableURL` and opened on the laptop as written, so the laptop
+opened its own 8443, or nothing. The gap: a dev server's `--open` hands
+over `http://localhost:5173/`, which was never recorded at all, so the
+most common link on a dev machine was the one that did not travel.
+
+`repose-print-url` now records an `http` or `https` link whose host is
+the machine's own loopback, beside the `https` ones. The laptop never
+opens such a link as written: it waits up to 5 s for a forward of that
+port, because a dev server hands over its URL a moment before it
+listens, opens the laptop end of that forward (`http://localhost:3001/`
+for the machine's 3000), and with no forward opens nothing and says `A
+program on the machine opened localhost:3000, and no forward reaches
+it.` The same link opens at most once a minute, so a dev server
+restarting with `--open` in a loop does not fill the laptop with tabs.
+With `REPOSE_NO_FORWARD=1` nothing reaches a loopback port, so the line
+is said once per port and no tab opens.
+
+This is a base change: a machine on an older base records `https` links
+only, and the laptop's new rule then applies to the `https://localhost`
+ones it does record, which is the hole closed.
+
+*Evidence.* `TestLoopbackLinksOpenOnTheForwardedPort` covers each case:
+the rewrite onto a moved forward, the once-a-minute cap, the forward
+that appears two seconds late, nothing opened with no forward and the
+line said once, `https://localhost:8443` under the same rule, and
+`http://example.com` never opened. `TestOpenURLsTakenOnce` (I-634) still
+passes.

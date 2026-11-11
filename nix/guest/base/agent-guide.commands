@@ -30,6 +30,7 @@ repose-notify needs
 repose-presence needs
 rustup
 sh
+ss
 sudo
 systemctl
 uv
