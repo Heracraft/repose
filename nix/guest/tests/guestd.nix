@@ -32,11 +32,12 @@ SRC
     mkdir -p $out/libexec
     cat > claude.c <<'SRC'
     #include <stdio.h>
+    #include <unistd.h>
     int main(void) {
       char line[4096];
       setvbuf(stdout, NULL, _IONBF, 0);
       while (fgets(line, sizeof line, stdin)) { printf("TOOK %s", line); }
-      for (;;) { }
+      for (;;) { pause(); }
       return 0;
     }
 SRC
