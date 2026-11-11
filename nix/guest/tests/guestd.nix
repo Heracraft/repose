@@ -472,7 +472,11 @@ pkgs.testers.runNixOSTest {
         guest.fail("journalctl -u guestd | grep -q 'squash the fixups'")
         guest.succeed("journalctl -u guestd | grep -q agent_prompted")
 
+        # The window goes before the next subtest, which reads a single
+        # `pgrep -x claude`, and the wait is on the process rather than
+        # the window so two pids never reach it.
         guest.succeed("sudo -u dev tmux kill-window -t '=todo-app:=claude-2'")
+        guest.wait_until_succeeds("test $(pgrep -xc claude) -eq 1", timeout=30)
 
     with subtest("I-200: the agent and the tmux server are protected, what they start is not"):
         claude = guest.succeed("pgrep -x claude").strip()
