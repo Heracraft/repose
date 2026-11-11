@@ -192,7 +192,13 @@ not delay the attach and reports only through `tmux display-message`,
 never over the pane, and it ends when the SSH session it was started
 beside ends. Windows has no helper. While it runs it also keeps the
 guest's listening ports forwarded to the laptop (ports-and-previews.md,
-I-199), shown in the session's status bar.
+I-199), shown in the session's status bar; lends the guest the laptop
+ports `[forward] reverse` names, on a second connection of its own that
+ends with it (I-1104); and opens the links the guest hands to `$BROWSER`
+in the laptop's browser, a `localhost` one on the laptop end of the
+forward that reaches it (I-634, I-1108). On Windows a set `[forward]
+reverse`, like `[mcp] forward`, prints a line saying it does nothing
+there.
 
 Agent picker:
 

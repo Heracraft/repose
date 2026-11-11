@@ -1197,9 +1197,37 @@ Anything the user binds on `0.0.0.0` or `127.0.0.1` (or `::`, `::1`)
 inside the guest is reachable through `repose open <port>` (SSH `-L`), and
 is forwarded automatically while a CLI is attached (DECISIONS I-199), read
 with `ss -Hltn` (iproute2, in the base). Platform-owned ports, never
-auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296). Each attached CLI records its forwarded
+auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), and
+5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
+holds (I-1104). Each attached CLI records its forwarded
 ports in `/home/dev/.repose/forwards/<id>`; the project session's
 `status-right` is set from their union and unset when none is left.
+
+That file's format (I-199, extended by I-1106): line 1 is the guest
+ports that CLI forwards to its laptop, space-separated bare numbers,
+which is all any reader before I-1106 takes (`tr ' ' '\n' | grep -E
+'^[0-9]+$'`). Lines after it name one forward each, fields joined by
+colons so that reader steps over them:
+
+```
+3000 5173
+out:3000:3001
+out:5173:5173
+in:5037:5037:adb
+```
+
+`out:MACHINE:LAPTOP` is a guest port on that laptop. `in:MACHINE:LAPTOP`
+is a laptop port lent to the guest (I-1104), with the laptop's process
+name after it when its own tools said, cut to `[A-Za-z0-9._-]`. An entry
+is re-stamped every 20 s and ignored after 60 s. Both shapes are read
+for one release. `repose status` reads the same file for its `on your
+laptop` marks and its `laptop` row.
+
+A reverse forward's listener is the guest's sshd, on `127.0.0.1` and
+`::1` only: `GatewayPorts no` (`nix/guest/base/ssh.nix`) keeps it off
+every other address whatever the client asks for, and the client asks
+for one address per request, so both loopbacks take two requests.
+
 Nothing is exposed otherwise. The desktop listens only on `127.0.0.1`: the viewer on 6080 (the
 socket-activated entry point), websockify on 6081, Xvnc's VNC on 5900 (up
 whenever the display is); the agents' browser's DevTools on 9224

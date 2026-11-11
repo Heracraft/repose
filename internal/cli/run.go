@@ -346,6 +346,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		helper.MCPOff = true // I-556: attach honours the off switch too
 	}
 	helper.MCP = e.Cfg.mcpForward(project.Slug) // I-557
+	if helper.Forward {
+		helper.Reverse = e.Cfg.forwardReverse(project.Slug) // I-1104
+	}
 	// This folder's checkout on the machine: the machine's own (the same
 	// remote), or another one the folder is (I-480), not one that
 	// PROJECT:CHECKOUT named from elsewhere.

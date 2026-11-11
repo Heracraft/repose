@@ -198,9 +198,11 @@ On macOS a terminal sends nothing at all for `Cmd+V` when the clipboard holds on
 
 ## Links the machine opens
 
-While you're attached, an `https` link a program on the machine hands to `$BROWSER` opens in your laptop's browser. Claude Code's `/login` goes that way, so only the code comes back through the terminal. A link waits two minutes for a laptop to take it and an older one is dropped, so no attach opens yesterday's login page. With two laptops attached, one of them opens each link.
+While you're attached, an `https` link a program on the machine hands to `$BROWSER` opens in your laptop's browser. Claude Code's `/login` goes that way, so only the code comes back through the terminal. A link waits two minutes for a laptop to take it and an older one is dropped, so no attach opens yesterday's login page. With two laptops attached, one of them opens each link. The same link opens at most once a minute, so a dev server restarting with `--open` doesn't fill the laptop with tabs.
 
-With nobody attached, the link is only [printed on the machine](/docs/machine#browser). Same with `REPOSE_NO_BROWSER=1` on your laptop, or on Linux with neither `DISPLAY` nor `WAYLAND_DISPLAY` set.
+A `localhost` link, `http` or `https`, opens on the laptop end of [the forward](/docs/machine#ports) that reaches it: the machine's `http://localhost:3000/` opens as `http://localhost:3001/` when that forward moved. It waits up to five seconds for the forward, since a dev server hands over its URL a moment before it listens. With no forward it opens nothing and says `A program on the machine opened localhost:3000, and no forward reaches it.` Opening it as written would reach whatever your laptop runs on that port.
+
+With nobody attached, the link is only [printed on the machine](/docs/machine#browser). Same with `REPOSE_NO_BROWSER=1` on your laptop, or on Linux with neither `DISPLAY` nor `WAYLAND_DISPLAY` set. With `REPOSE_NO_FORWARD=1` there are no forwards, so a `localhost` link opens nothing and the line is said once.
 
 ## SSH and editors
 

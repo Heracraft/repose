@@ -208,7 +208,7 @@ Your Claude Code setup is copied too, with the keys that hold credentials taken 
 - **The internet**, outbound, within the [network limits](/docs/limits#network).
 - **Your git host**, with whatever credentials the machine has.
 - **Not your other projects.** Each is a separate machine, and the network stops them from reaching each other. Your [Claude Code login](/docs/agents#log-in) and your [account's secrets](#secrets-for-every-project) are the exceptions; a hook or a setting an agent writes stays on its machine.
-- **Not your laptop.** Nothing on the machine can open a connection to it. A tunnel you open is the exception: a [Chrome bridge](/docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome) hands anything on the machine your logged-in Chrome, and [`repose mcp forward`](/docs/agents#mcp-servers) runs a server on your laptop for the agents to call.
+- **Not your laptop.** Nothing on the machine can open a connection to it. A tunnel you open is the exception: a [Chrome bridge](/docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome) hands anything on the machine your logged-in Chrome, [`repose mcp forward`](/docs/agents#mcp-servers) runs a server on your laptop for the agents to call, and a port in [`forward.reverse`](/docs/machine#your-laptops-ports-on-the-machine) is a plain pipe to that port on your laptop for as long as you're attached.
 
 ## What repose stores
 

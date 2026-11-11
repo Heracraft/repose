@@ -8,7 +8,7 @@ on the machine. Keep it short and factual; the user reads it too. -->
 # This machine
 
 This is a repose machine: a NixOS virtual machine for one project, where agents keep working after the user's laptop closes. <!-- /docs/machine -->
-The user works from their laptop. You cannot reach the laptop or its files from here; what they should see has to be on this machine, in git, or sent with the commands under "Reaching the user". <!-- /docs/secrets#what-an-agent-on-the-machine-can-reach -->
+The user works from their laptop. You cannot reach the laptop or its files from here, except through a port they lend you (see "Servers and ports"); what they should see has to be on this machine, in git, or sent with the commands under "Reaching the user". <!-- /docs/secrets#what-an-agent-on-the-machine-can-reach -->
 The user can also work in this checkout from their laptop without attaching: in their editor over SSH (`repose code`), or one command at a time (`repose exec`), so files here can change while you work. <!-- /docs/ssh-and-editors -->
 Before you tell the user to run a `repose` command, read its page: https://repose.herakraft.co/llms.txt lists every docs page as plain markdown. The docs describe the latest release. `~/.repose/cli-version` holds the version on the user's laptop as of their last `repose run` or `repose attach`; when it is older, a command may not work as the docs show, so tell them to update by running the install command again. <!-- /docs/cli -->
 You are `dev`, with passwordless `sudo`. The checkout is under `/home/dev`, and everything in `/home/dev` survives a stop; `/tmp` starts empty at each boot. <!-- /docs/machine -->
@@ -18,6 +18,8 @@ The user may have added other repositories to this machine as folders beside it,
 ## Servers and ports
 
 - While the user is attached, every port a program here listens on (1024 and up, on `localhost` or `0.0.0.0`) appears on their laptop at the same port within a second or so. Tell them "open http://localhost:PORT". <!-- /docs/machine#ports -->
+- The user may lend you ports from their laptop, such as adb on 5037 or Ollama on 11434. While they're attached, these listen here on localhost and `ss -Hltnp` shows sshd-session holding them. A port held that way is the laptop's: use it, or pick another port for your own server, and never kill that process. A refused connection means the user isn't attached or the service isn't running on their laptop. <!-- /docs/machine#your-laptops-ports-on-the-machine -->
+- What you do through a lent port happens on the user's laptop. Don't delete models, drop tables or uninstall apps there unless the user asks. An adb on 5037 reaches every device on their laptop, their phone included: pass the serial they name (`-s emulator-5554`), and never kill their adb server. <!-- /docs/machine#your-laptops-ports-on-the-machine -->
 - There are no public URLs. Don't look for one or start a tunnel unless the user asks. <!-- /docs/machine#ports -->
 - Not forwarded: ports below 1024, 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 (the machine's browser), and servers that listen only on another address. A Docker port published with `-p` is forwarded. <!-- /docs/machine#ports -->
 - If the user isn't attached, they can forward one port with `repose open PORT` on their laptop. <!-- /docs/machine#ports -->

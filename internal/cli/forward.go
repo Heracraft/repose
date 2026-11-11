@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -52,6 +53,75 @@ const (
 // forwardPortless is portless's proxy port: never remapped silently,
 // because the URLs portless prints name it.
 const forwardPortless = 1355
+
+// The machine's forward registry, `~/.repose/forwards/<id>`, one file
+// per attached CLI (DECISIONS I-199, I-1106). Line 1 is the guest ports
+// this CLI forwards to its laptop, as bare numbers: every reader since
+// I-199 takes that line and nothing else. The lines after it name one
+// forward each, fields joined by colons so the old reader's `grep -E
+// '^[0-9]+$'` steps over them:
+//
+//	3000 5173
+//	out:3000:3001
+//	in:5037:5037:adb
+//
+// `out` is a machine port forwarded to a laptop port. `in` is a laptop
+// port lent to the machine (reverse.go), with the laptop's process name
+// when its own tools said. The format is in
+// docs/interfaces/guest-conventions.md "Ports".
+
+// forwardRegistryMark separates the registry from what comes before it
+// in a script that reads both.
+const forwardRegistryMark = "#fwd"
+
+// forwardRegistryScript prints every entry younger than forwardStale.
+func forwardRegistryScript() string {
+	return fmt.Sprintf(`d="$HOME/.repose/forwards"; [ -d "$d" ] && find "$d" -type f -newermt '%d seconds ago' -exec cat {} + 2>/dev/null; true`, int(forwardStale/time.Second))
+}
+
+// forwardRow is one registry line beyond the first: a forward an
+// attached laptop holds, in either direction.
+type forwardRow struct {
+	// Machine is the port on the machine, Laptop the port on the laptop
+	// holding the forward.
+	Machine, Laptop int
+	// In is a laptop port lent to the machine; false is a machine port
+	// forwarded to the laptop.
+	In bool
+	// Process is the laptop's process on an `in` row, "" when unknown.
+	Process string
+}
+
+// parseForwardRows reads the registry's `out:` and `in:` lines, each
+// machine port once. Bare-number lines (the first of every entry) and
+// anything else are left out.
+func parseForwardRows(out string) []forwardRow {
+	var rows []forwardRow
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Split(strings.TrimSpace(line), ":")
+		if len(f) < 3 || (f[0] != "out" && f[0] != "in") {
+			continue
+		}
+		mp, err1 := strconv.Atoi(f[1])
+		lp, err2 := strconv.Atoi(f[2])
+		if err1 != nil || err2 != nil || mp < 1 || lp < 1 {
+			continue
+		}
+		r := forwardRow{Machine: mp, Laptop: lp, In: f[0] == "in"}
+		if len(f) > 3 {
+			r.Process = reverseProcName.ReplaceAllString(f[3], "")
+		}
+		key := f[0] + ":" + f[1]
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		rows = append(rows, r)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Machine < rows[j].Machine })
+	return rows
+}
 
 // forwardPlatformPorts are the guest's own listeners, never forwarded:
 // the desktop's noVNC, websockify and VNC (guest-conventions.md "Ports"
@@ -156,6 +226,67 @@ type forwarder struct {
 	// openURL, when set, opens the links the machine's BROWSER was
 	// handed, which the same poll takes (I-634).
 	openURL func(string) error
+	// urls are loopback links waiting for the forward that reaches them,
+	// and opened are the links already opened and when (I-1108).
+	urls   []waitingURL
+	opened map[string]time.Time
+
+	// mu guards reverse and reverseDirty, which the helper's reverse
+	// goroutine writes and this loop reads (I-1104).
+	mu sync.Mutex
+	// reverse is what this laptop lends the machine now; the registry
+	// carries it as `in:` lines and sync never forwards one back.
+	reverse []reverseHeld
+	// reverseDirty is a change to reverse the next publish owes.
+	reverseDirty bool
+	// others are the machine ports other attached laptops lend, read
+	// from the registry each poll. Forwarding one back to this laptop
+	// would send the machine's end of their forward home again, the loop
+	// the 9226 exclusion prevents for the bridge (I-296).
+	others map[int]bool
+}
+
+// setReverse records what the reverse connection holds now.
+func (f *forwarder) setReverse(held []reverseHeld) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reverse = append([]reverseHeld(nil), held...)
+	sort.Slice(f.reverse, func(i, j int) bool { return f.reverse[i].Machine < f.reverse[j].Machine })
+	f.reverseDirty = true
+}
+
+// reverseHeldPorts is the machine ports this laptop lends, and whether a
+// publish is owed for them. Reading clears the owing.
+func (f *forwarder) reverseHeldPorts() ([]reverseHeld, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dirty := f.reverseDirty
+	f.reverseDirty = false
+	return append([]reverseHeld(nil), f.reverse...), dirty
+}
+
+// reverseHeldNow is reverseHeldPorts without clearing the owing, for a
+// reader that is not the publish loop.
+func (f *forwarder) reverseHeldNow() []reverseHeld {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]reverseHeld(nil), f.reverse...)
+}
+
+// lentPort is whether a guest port is the machine end of a reverse
+// forward, this laptop's or another's, which is never forwarded back.
+func (f *forwarder) lentPort(port int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.others[port] {
+		return true
+	}
+	for _, h := range f.reverse {
+		if h.Machine == port {
+			return true
+		}
+	}
+	return false
 }
 
 func newForwarder(t sshTarget, slug string, say func(string)) *forwarder {
@@ -167,6 +298,7 @@ func newForwarder(t sshTarget, slug string, say func(string)) *forwarder {
 		if f.openURL != nil {
 			cmd += "; " + takeOpenURLsScript
 		}
+		cmd += "; echo '" + forwardRegistryMark + "'; " + forwardRegistryScript()
 		out, err := runSSH(ctx, t, cmd, nil)
 		return string(out), err
 	}
@@ -232,12 +364,19 @@ func (f *forwarder) sync(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	head, reg, _ := strings.Cut(out, forwardRegistryMark)
+	f.setOthers(parseForwardRows(reg))
 	if f.openURL != nil {
-		for _, u := range parseOpenURLs(out) {
-			_ = f.openURL(u)
+		f.takeURLs(head, time.Now())
+	}
+	want := parseListeners(head)
+	for gp := range want {
+		// A reverse listener is the machine end of a laptop's own port;
+		// forwarding it back would send the laptop's 5037 home as 5038.
+		if f.lentPort(gp) {
+			delete(want, gp)
 		}
 	}
-	want := parseListeners(out)
 	changed := false
 	readd := map[int]bool{}
 	if m := f.masterPID(ctx); m != "" && m != f.masterID {
@@ -291,10 +430,26 @@ func (f *forwarder) sync(ctx context.Context) (bool, error) {
 		case gp == forwardPortless:
 			f.say(fmt.Sprintf("%d is taken on your laptop (portless?); %s's portless is on localhost:%d", gp, f.slug, lp))
 		default:
-			f.say(fmt.Sprintf("⇄ localhost:%d → :%d (%d is taken on your laptop)", lp, gp, gp))
+			f.say(fmt.Sprintf("⇄ :%d → your laptop's localhost:%d (%d is taken there)", gp, lp, gp))
 		}
 	}
+	if f.openURL != nil {
+		f.openWaitingURLs(time.Now())
+	}
 	return changed, nil
+}
+
+// setOthers records the machine ports other attached laptops lend.
+func (f *forwarder) setOthers(rows []forwardRow) {
+	others := map[int]bool{}
+	for _, r := range rows {
+		if r.In {
+			others[r.Machine] = true
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.others = others
 }
 
 // announce says the pending forwards once no new one came for
@@ -316,7 +471,7 @@ func (f *forwarder) announce(now time.Time) {
 	switch len(ports) {
 	case 0:
 	case 1:
-		f.say(fmt.Sprintf("⇄ localhost:%d → :%d", ports[0], ports[0]))
+		f.say(fmt.Sprintf("⇄ localhost:%d → your laptop", ports[0]))
 	default:
 		names := make([]string, 0, forwardListMax+1)
 		for i, p := range ports {
@@ -326,7 +481,11 @@ func (f *forwarder) announce(now time.Time) {
 			}
 			names = append(names, strconv.Itoa(p))
 		}
-		f.say(fmt.Sprintf("⇄ %d ports on localhost: %s", len(ports), strings.Join(names, ", ")))
+		if len(ports) <= forwardListMax {
+			f.say(fmt.Sprintf("⇄ localhost:%s → your laptop", strings.Join(names, ", ")))
+			return
+		}
+		f.say(fmt.Sprintf("⇄ %d ports → your laptop: %s", len(ports), strings.Join(names, ", ")))
 	}
 }
 
@@ -415,9 +574,21 @@ func (f *forwarder) publishScript() string {
 	for _, p := range f.guestPorts() {
 		ports = append(ports, strconv.Itoa(p))
 	}
+	held := f.reverseHeldNow()
 	entry := fmt.Sprintf("rm -f \"$d/%s\"", f.id)
-	if len(ports) > 0 {
-		entry = fmt.Sprintf("printf '%%s\\n' %s > \"$d/%s\"", shQuote(strings.Join(ports, " ")), f.id)
+	if len(ports) > 0 || len(held) > 0 {
+		lines := []string{shQuote(strings.Join(ports, " "))}
+		for _, gp := range f.guestPorts() {
+			lines = append(lines, shQuote(fmt.Sprintf("out:%d:%d", gp, f.fwd[gp].Local)))
+		}
+		for _, h := range held {
+			line := fmt.Sprintf("in:%d:%d", h.Machine, h.Laptop)
+			if h.Process != "" {
+				line += ":" + h.Process
+			}
+			lines = append(lines, shQuote(line))
+		}
+		entry = fmt.Sprintf("printf '%%s\\n' %s > \"$d/%s\"", strings.Join(lines, " "), f.id)
 	}
 	return fmt.Sprintf(`d="$HOME/.repose/forwards"
 mkdir -p "$d"
@@ -457,12 +628,16 @@ func sortedPorts(m map[int]guestListener) []int {
 // every forward and take the entry out.
 func runForwards(ctx context.Context, f *forwarder, alive func() bool) {
 	lastPublish := time.Time{}
+	published := false
 	for alive() && ctx.Err() == nil {
 		changed, err := f.sync(ctx)
 		f.announce(time.Now())
-		if err == nil && (changed || (len(f.fwd) > 0 && time.Since(lastPublish) > forwardHeartbeat)) {
+		held, dirty := f.reverseHeldPorts()
+		live := len(f.fwd) > 0 || len(held) > 0
+		if err == nil && (changed || dirty || (live && time.Since(lastPublish) > forwardHeartbeat)) {
 			if f.publish(ctx) == nil {
 				lastPublish = time.Now()
+				published = published || live
 			}
 		}
 		if sleepOrDone(ctx, forwardPoll) != nil {
@@ -471,9 +646,9 @@ func runForwards(ctx context.Context, f *forwarder, alive func() bool) {
 	}
 	cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	had := len(f.fwd) > 0
 	f.closeAll(cleanup)
-	if had {
+	f.setReverse(nil)
+	if published {
 		_ = f.publish(cleanup)
 	}
 }

@@ -29,6 +29,7 @@ repose-mcp needs
 repose-notify needs
 rustup
 sh
+ss
 sudo
 systemctl
 uv
