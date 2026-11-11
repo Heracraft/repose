@@ -31058,6 +31058,312 @@ are listed as the project's clients, the project's session follows to
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
 
+**I-1110. Webhooks: a project's named routes on one public hostname,
+routed by path, owned by the api.** (webhooks, 2026-11-11.)
+
+A Stripe, GitHub, Clerk or Twilio integration needs a public HTTPS URL
+the provider can POST to. A repose machine had none, and `machine.md`
+sent the user to `cloudflared`. A project now has named webhook routes
+at `https://hooks.repose.herakraft.co/<project_id>/<route>/<token>`,
+each forwarding to a port and path inside the machine, with the body
+bytes and the signature headers unchanged. The design, with the
+alternatives that lost and the provider facts it rests on, is
+`docs/proposals/2026-11-10-webhooks.md`; the behaviour is
+`docs/features/webhooks.md`. Built as proposed, on the conductor's
+ruling under the owner's standing approval of 2026-11-11.
+
+*One hostname, routed by path*, not a subdomain per project. A path
+needs one certificate, which TLS-ALPN-01 gets on the edge's own :443,
+and one A record; a wildcard needs DNS-01 and the Cloudflare token that
+has blocked the preview certificate since 2026-09-20, and per-name
+certificates hit Let's Encrypt's 50 per registered domain per 7 days on
+a domain the dashboard shares. Path segments also split cleanly, so
+I-438's "a slug and a handle joined by a dash cannot be split back" does
+not arise. Origin isolation is the subdomain's one real gain and it
+protects browsers, which a webhook route does not serve (I-1116). The
+URL carries the project's UUIDv7 and not its slug and handle, which
+makes it about 110 characters: a handle can change and a destroyed
+project's slug can be reused, and a URL pasted into a provider's
+dashboard has to outlive both. The name is kept for good even if the
+product moves domains, which amends R4-12 for this one name.
+
+*In the api*, with the CLI and (later) the dashboard writing it, not in
+a repo file. I-820's reasons for `keep_awake` apply in full: a route is
+per-project server state, the edge must know it whether or not a laptop
+is open, and the api never reads a file from a checkout. A `[webhooks]`
+table in `repose.toml` or `repose.nix` also loses on its own terms: the
+token cannot live in the repo, so the file would hold half a route, and
+two laptops on different branches would flip the routes back and forth
+at each `repose run`.
+
+*The token has no new home.* The api mints 128 random bits and stores
+them twice: `sha256(token)` for the edge's lookup, and the token as
+ciphertext under the account's data key, with the same envelope as a
+named secret, so `repose webhooks url` can print it again. The edge
+receives the hash and never the token, so a copy of its memory gives no
+working URL. That is the two homes CLAUDE.md allows, and no third.
+`secrets.SealValue`/`OpenValue` are the envelope lifted out for a caller
+with its own table.
+
+*The dashboard* has the same list under Webhooks on a project's Config
+tab, beside Secrets, with Copy, Rotate and Remove. It never prints a
+URL: the token is in it, a dashboard is a screen somebody may be
+sharing, and Copy puts the characters on the clipboard for the user who
+needs them. Below 640 the row becomes a block -- the name, the target
+under it, the three actions on their own line -- because three buttons
+and a target do not fit a 390 row side by side, and squeezing them broke
+the target mid-word and pushed Remove past the frame.
+
+*The CLI noun is `webhooks`.* `hooks` is taken by agent hooks
+(`cmd/repose-hook`, the edge's `/hooks`, Claude Code's `hooks` key), and
+a second name for the same word is how a grep misses half the uses.
+`open` is a foreground forward that dies with the CLI; `config` is the
+Nix environment; `secrets` is for values the user types. The verbs are
+the ones the CLI already uses: `add`, `rm`, `list`/`ls` and the bare
+noun through `bareRuns`, with `url` and `rotate`. `add`, `url` and
+`rotate` print the URL and nothing else, so `| pbcopy` works.
+
+*Deviations from the proposal, both forced by the code.* Header order
+across different field names is not kept: Go's `http.Server` parses a
+request into a map, so the order it arrived in is gone before the
+handler runs. RFC 9110 §5.3 makes that order insignificant and no
+provider in the proposal's table signs it; duplicates of one name keep
+their order and their exact bytes, which is what a signature over a
+header needs, and the test asserts that rather than the proposal's
+`TestHeadersKeptInOrder`. And the metric's label is `result`, not
+`outcome`: `internal/obs/metrics` refuses a label outside its
+low-cardinality list at registration, so `outcome` would stop the
+binary at start.
+
+*Evidence.* `go test ./internal/api/http -run
+'TestWebhook|TestInternalRouteByProjectID'` against a real Postgres: the
+URL's 22-character token, add-again keeping the token, rotate leaving a
+tombstone, the route limit, the bad-name and bad-target refusals, the
+delivery batch bounded at 20 a route, and the table version moving only
+on a change. `go test ./internal/cli -run
+'TestWebhooks|TestStatusWebhooksRow'` for the output a user reads.
+`go test ./internal/gateway/webhook` for the edge.
+
+**I-1112. The edge's :443 serves the webhook hostname with an autocert
+certificate from TLS-ALPN-01, beside the preview stub.** (webhooks,
+2026-11-11. Amends I-479.)
+
+I-479 opens the :443 listener only once a certificate file loads,
+because a port open with nothing serving it holds clients until they
+time out where a closed one refuses at once. The file is the preview
+wildcard, which was never issued: that needs DNS-01 and the Cloudflare
+token, and STATUS has said so since 2026-10-04. A certificate the
+listener gets from its own handshake has no such file, so the rule now
+reads: the listener opens when either name can be served, and the
+webhook name's certificate comes from Go's `autocert` over TLS-ALPN-01
+on that same port.
+
+The handshake picks by SNI — the `autocert` certificate for
+`WEBHOOK_HOST` or an `acme-tls/1` challenge, the preview key pair for
+every other name — and the handler routes by the `Host` header the same
+way, so the preview stub is untouched and keeps answering what it
+answered. With neither certificate the listener stays shut, which is
+I-479's rule unchanged.
+
+One failure mode changes shape. Today no wildcard exists, so :443 did
+not open at all and the preview names were refused at connect. With the
+hooks name configured the port is open, so those names now fail at the
+handshake instead ("no certificate for <name>"). Both are failures and
+neither reaches the stub; the stub's page comes back the moment a
+preview certificate exists, and nothing else about it changed.
+
+The ACME cache needs somewhere to write. The gateway unit has
+`ReadOnlyPaths = [ stateDir ]`, so the cache is a `StateDirectory`,
+`/var/lib/repose-gateway/acme`: without it every restart would ask
+Let's Encrypt for the certificate again and hit its rate limits.
+
+The DNS record is the owner's: `hooks.repose` as an A record with the
+proxy **off**, pointing at `edge_public_ip`, while `manage_dns` is false
+(`infra/README.md`). The proxy has to be off twice over — a proxied
+record terminates TLS, so the ALPN challenge never reaches the edge, and
+Cloudflare would see every tenant's request body, which the privacy
+policy would then have to name. The edge serves the name as soon as the
+record exists; nothing else has to change.
+
+:443 also gains the per-source caps :22 has had since I-435, at a size
+sized for providers: 256 open connections and 100 new a second per
+source, against :22's 64 and 20. Stripe's fifteen addresses carry every
+tenant's deliveries, so :22's figures would throttle one tenant's events
+with another's.
+
+*Evidence.* `nix eval ./nix#nixosConfigurations.edge.config.system.build.toplevel.drvPath`
+builds the edge with the new unit environment, the `StateDirectory` and
+the nftables sets. The live check — `openssl s_client -servername
+hooks.repose.herakraft.co -connect <edge>:443` showing a Let's Encrypt
+chain, and the preview name still getting the stub — waits on the DNS
+record and a switch of the edge.
+
+**I-1114. A delivery wakes a frozen machine, gets 503 from a stopped
+one, and 410 from a URL that is gone.** (webhooks, 2026-11-11. Amends
+I-818, I-822.)
+
+A frozen machine is woken by `POST /internal/wake` with a new reason,
+`webhook`, and then gets the delivery; the outcome is recorded as `woke`
+rather than `delivered`, so a user can see which deliveries paid for a
+resume. The I-822 recovery is not repeated on this path: a delivery dials
+through the gateway's connection cache, and a stale "awake" flag costs
+one failed dial and a 502 the provider retries, where an SSH user would
+be left staring at a prompt.
+
+A delivery is **not** a gateway session. Nothing is posted to
+`/internal/sessions`, so however many deliveries a project takes, none
+of them holds its machine awake past the 24 h session window; the
+structure carries the rule, because `webhook.API` has no method that
+could report one. A woken machine still stays up about 15 minutes,
+because the samples taken while it rested are not quiet, and deliveries
+are not use for I-262's unused notice either.
+
+A stopped machine answers 503 with `Retry-After: 3600`. A route added
+with `--start` also asks the api to start it, at most once per project
+per 10 minutes, and still answers 503: a start takes 12 to 14 s, longer
+than GitHub's 10 s timeout and far beyond Slack's 3 s, so a held request
+would fail at the provider anyway and tie up an edge connection. The
+provider's retry finds the machine running. `--start` is off by default
+because `repose stop` is a deliberate act that frees plan memory, and a
+route that undid it on every delivery would surprise a user who stopped
+one machine to start another on a full plan; the docs name the four
+providers that cost the most (GitHub, Slack, Shopify, Polar). The start
+runs the owner's own `lifecycle.Start`, so plan memory and an abuse hold
+refuse it exactly as they would refuse `repose start`, and a refusal is
+the outcome `start_refused`, not an error. The "once per 10 minutes" is
+a row in `webhook_starts` and not a counter in memory, because the rule
+has to survive an api restart.
+
+A rotated or removed token, and every token of a destroyed project,
+stays a tombstone for 30 days and answers 410; after that it is a 404
+like any token that never existed. The destroy tombstones the project's
+routes in the destroy's own transaction, so `repose restore` does not
+bring a URL back: a sender that obeyed the 410 has already let it go,
+and new tokens mean new URLs either way.
+
+*Evidence.* `go test ./internal/gateway/webhook`:
+`TestFrozenWakesThenDelivers` (one wake, and the probe that a running
+machine makes none), `TestWakeFailureIs503`, `TestStoppedAnswers503`
+(with and without `--start`), `TestStartRefusedIsRecorded`,
+`TestTransitionalStatesAnswer503`, `TestTombstoneAnswers410` with the
+probe that the same token is a 404 once the window drops it, and
+`TestDeliveryIsNotASession`, which walks `webhook.API`'s method set
+rather than reading a counter nothing increments. `go test
+./internal/api/http -run 'TestWebhookStartOncePerWindow|TestWebhookRemoveAndDestroyTombstone'`
+for the api's half.
+
+**I-1116. A webhook route may answer a provider and may not serve a
+page, which is why it does not reopen the preview question.** (webhooks,
+2026-11-11. Amends R2-6.)
+
+Public previews were not approved on 2026-09-25 and all four council
+members kept the public half shut, because a preview serves pages:
+phishing kits, malware downloads and live products under repose's name,
+paid for in repose's egress. A webhook route is a public URL too, so the
+reason it is allowed has to be written down rather than assumed.
+
+A route serves no page. The reply passes only `application/json`,
+`text/plain`, `application/xml`, `text/xml` or
+`application/x-www-form-urlencoded`, up to 64 KiB; anything else has its
+body dropped with `Repose-Body-Dropped: type`. A 3xx becomes a 502 with
+no `Location`, so the hostname is no open redirect — and every provider
+counts a 3xx as a failure anyway. `Set-Cookie` is removed, so no tenant
+can set a cookie on a `herakraft.co` name the dashboard would then
+receive. Every answer carries `Content-Security-Policy: sandbox;
+default-src 'none'`, `X-Content-Type-Options: nosniff` and
+`Cache-Control: no-store`. The URLs are unguessable and a scan is capped
+at 20 unknown tokens a second per source /24. The rates (10 a second a
+route, 30 a project) serve Stripe's month-start bursts and are too slow
+for a site with real traffic, and the reply bytes are counted against
+the plan.
+
+This is narrower than what repose already allows: `cloudflared` is a
+menu entry (I-251) and gives any guest a full public URL with HTML,
+files and no rate limit. The one use a route makes easier is a live
+service with real users, such as a Telegram bot, and I-257's terms line
+already covers that; the webhooks page points at acceptable use once and
+stops, so no new terms sentence was added.
+
+Store-and-forward was evaluated and is not built. Stripe's, Slack's and
+Svix's libraries reject a delivery whose timestamp is more than five
+minutes old, so a stored body arrives with a signature the app refuses;
+a queue on the edge would hold a Clerk `user.created`'s names and
+emails, which is exactly what the logging rule says never to keep; a
+payload can carry a token, which would be a fourth home for a secret;
+and Stripe, Svix and Polar already store and retry. It would help
+GitHub alone, which has its own Redeliver button.
+
+`Repose-Signature` is not in this version either. The edge would need a
+per-project secret in plain text to sign with, making it a third holder
+of a tenant-scoped secret, which "Secrets have three homes" forbids; and
+what it would prove is only that the request passed the edge's token
+check, while the provider's own signature still has to be verified. The
+compliant shape, if the owner asks for it, is one Ed25519 platform key
+held on the edge as its TLS and SSH host keys are, with the public half
+at `/etc/repose/webhook.pub` in the guest. This is the conductor's
+ruling of 2026-11-11 under the owner's standing approval.
+
+*Evidence.* `go test ./internal/gateway/webhook -run TestReplyRules`:
+an HTML body dropped with the header that says so, `Set-Cookie` gone, a
+302 answered 502 with no `Location`, a 100 KiB JSON reply cut at 64 KiB,
+and Slack's `url_verification` challenge coming back whole.
+
+**I-1118. A webhook delivery's log line and record carry ids and
+counts, and never the URL.** (webhooks, 2026-11-11.)
+
+The path of a webhook URL holds its token, which is a credential. So the
+edge's one line per delivery (`event=webhook_delivery`) carries
+`project_id`, `route_id`, `status`, `outcome`, `ms`, `bytes_in`,
+`bytes_out` and `source_prefix` (the /24, as the SSH gateway logs), and
+no handler or error path may log `r.URL`. The same goes for the record
+the api keeps: 20 deliveries a route, with those fields and no others.
+`outcome` is a closed set of lower_snake words the api refuses anything
+outside, so nothing a sender chose reaches a row or a log line.
+`docs/ops/OBSERVABILITY.md`'s never-log list gains the URL's path and
+query for this reason.
+
+*Evidence.* `TestNoTokenHeaderOrBodyInLogs` plants a distinct marker in
+the token, the query, a header value and the body, runs a delivery and
+an unknown-token 404, and greps both the captured logs and the delivery
+batch for each of the four: 0 hits. Its probe is the other half, because
+an empty log would also pass: the same logs must contain
+`"event":"webhook_delivery"`, `"route_id":"route-1"`, `"status":200`,
+`"outcome":"delivered"` and `"source_prefix":"54.187.174.0/24"`.
+
+**I-1120. A webhook reply's bytes are the project's egress, counted at
+the edge and banked by the hour.** (webhooks, 2026-11-11. Amends
+I-1063.)
+
+I-1063 bills what a guest sends out of the host's uplink, counted by nft
+in the `guest_meter` chain, and its "Not done" note said a preview's
+replies "must count" and would need a rule for the preview port. That
+plan assumed the reply leaves the guest on its own port. A webhook reply
+leaves the guest on port 22, to the edge, where nft cannot tell it from
+a terminal's output; so the rule that was planned cannot be written, and
+the count has to be taken where the bytes become public, which is the
+edge.
+
+The edge counts the reply bytes it streams back and sends them with each
+delivery record. The api banks them in `webhook_egress (project_id,
+hour, bytes)`, and the billing rollup adds the hour's row to the samples'
+`coalesce(net_egress, net_tx)`. The bank is a table of its own and not a
+sum over `webhook_deliveries`, because that keeps only the newest 20 a
+route for the user to look at: an hour with a thousand deliveries would
+bill twenty of them. A project with replies and no samples still gets
+its bytes, which is why the rollup reads it in its own scan rather than
+joining.
+
+At the caps one project can send at most 30 x 64 KiB a second, about
+160 GB a day, so the count matters for abuse even though a real reply is
+a few hundred bytes.
+
+*Evidence.* `go test ./internal/billing -run
+TestRollupAddsWebhookReplyBytesToEgress`: the hour reads the samples'
+10 MiB alone first, which is the probe, then 10 MiB plus 4,096 with a
+`webhook_egress` row, and an hour with replies and no samples bills its
+900 bytes. `go test ./internal/api/http -run
+TestWebhookDeliveriesBankEgress`: a 30-delivery batch leaves 20 records
+and 210 banked bytes, so the prune did not eat the count.
 **I-1090. A billing-exempt account cannot join the waitlist, and the
 queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
 ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends

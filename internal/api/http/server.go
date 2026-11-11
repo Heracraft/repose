@@ -37,6 +37,7 @@ import (
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/waitlist"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -106,6 +107,11 @@ type Deps struct {
 	// nil makes the wake route answer 503 and keep_awake take effect at
 	// the next rest rule rather than at once.
 	Resting Waker
+	// WebhookRoutes is a project's public webhook routes (DECISIONS
+	// I-1110): the `repose webhooks` routes and the table the edge syncs.
+	// nil makes every one of them answer 500, which is what a test that
+	// does not care gets.
+	WebhookRoutes *webhooks.Store
 }
 
 // Waker is internal/api/resting's Wake, the api's only way to resume a

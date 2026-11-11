@@ -128,22 +128,25 @@ type Fake struct {
 	mux    *http.ServeMux
 	routes []string
 
-	mu           sync.Mutex
-	seq          int64
-	reqSeq       int64
-	ipSeq        int
-	serial       uint64
-	tokens       map[string]string // token -> user id
-	users        map[string]*userRec
-	projects     map[string]*project
-	ops          map[string]*op
-	certs        map[uint64]*cert
-	revoked      []revocation
-	failOnce     []failRule
-	failAlways   map[string]string
-	hits         map[string][]time.Time
-	hosts        []Host // nil means the one canned host
-	gatewayCerts int    // POST /internal/gateway-certs calls, for cache tests
+	mu       sync.Mutex
+	seq      int64
+	reqSeq   int64
+	ipSeq    int
+	serial   uint64
+	tokens   map[string]string // token -> user id
+	users    map[string]*userRec
+	projects map[string]*project
+	ops      map[string]*op
+	// webhookTombstones are the hex sha256 of tokens rotated or removed
+	// (DECISIONS I-1110); the edge answers 410 for them.
+	webhookTombstones []string
+	certs             map[uint64]*cert
+	revoked           []revocation
+	failOnce          []failRule
+	failAlways        map[string]string
+	hits              map[string][]time.Time
+	hosts             []Host // nil means the one canned host
+	gatewayCerts      int    // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
@@ -644,6 +647,15 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/secrets", f.listSecrets)
 	f.handle("PUT /v1/projects/{id}/secrets/{name}", f.putSecret)
 	f.handle("DELETE /v1/projects/{id}/secrets/{name}", f.deleteSecret)
+	// Webhook routes (DECISIONS I-1110)
+	f.handle("GET /v1/projects/{id}/webhooks", f.listWebhooks)
+	f.handle("POST /v1/projects/{id}/webhooks", f.putWebhook)
+	f.handle("GET /v1/projects/{id}/webhooks/{name}", f.getWebhook)
+	f.handle("DELETE /v1/projects/{id}/webhooks/{name}", f.deleteWebhook)
+	f.handle("POST /v1/projects/{id}/webhooks/{name}/rotate", f.rotateWebhook)
+	f.handle("GET /v1/internal/webhook-routes", f.internalWebhookRoutes)
+	f.handle("POST /v1/internal/webhook-start", f.internalWebhookStart)
+	f.handle("POST /v1/internal/webhook-deliveries", f.internalWebhookDeliveries)
 	f.handle("GET /v1/me/secrets", f.listAccountSecrets)
 	f.handle("PUT /v1/me/secrets/{name}", f.putAccountSecret)
 	f.handle("DELETE /v1/me/secrets/{name}", f.deleteAccountSecret)

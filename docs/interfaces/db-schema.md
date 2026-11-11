@@ -108,6 +108,37 @@ secrets      (id pk, project_id fk, name text, ciphertext bytea,
               -- the three reserved names of I-10 hold the guest's sshd material (I-42);
               -- the platform pseudo-project 00000000-0000-7000-8000-000000000000 holds the CA keys
 
+webhook_routes (id pk, project_id fk on delete cascade, name text, port int, path text,
+              allow_start bool not null default false,
+              token_sha256 bytea not null unique,   -- the edge's lookup form
+              ciphertext bytea, dek_wrapped bytea, kv_key_version text,
+              unique (project_id, name))            -- 0036, DECISIONS I-1110
+              -- a public webhook URL into the machine. The token lives twice: as its
+              -- sha256 here for the edge's in-memory table, and as ciphertext under the
+              -- account's data key with the secrets envelope, so `repose webhooks url`
+              -- can print it again. 20 rows per project
+
+webhook_tombstones (token_sha256 bytea pk, project_id uuid, at timestamptz)
+              -- a token rotated, removed or destroyed with its project. The edge answers
+              -- 410 for 30 days from `at` and 404 after, so a sender that obeys the 410
+              -- lets go of a URL repose can no longer route
+
+webhook_deliveries (id pk, route_id fk on delete cascade, at timestamptz,
+              status int, outcome text, duration_ms int, bytes_in bigint, bytes_out bigint)
+              -- the newest 20 per route, pruned on insert. Never the path (it holds the
+              -- token), the query, a header or a body byte
+
+webhook_egress (project_id fk on delete cascade, hour timestamptz, bytes bigint,
+              primary key (project_id, hour))
+              -- reply bytes the edge sent for this project in the hour, which the
+              -- billing rollup adds to egress (I-1120). Not read off
+              -- webhook_deliveries: that keeps the newest 20 a route for the user to
+              -- look at, so an hour with a thousand deliveries would bill twenty
+
+webhook_starts (project_id pk fk on delete cascade, at timestamptz)
+              -- when a delivery last started this project's stopped machine; the
+              -- once-per-10-minutes rule of `--start` has to survive an api restart
+
 certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp text,
               key_id text, kind text,  -- user|gateway|host
               issued_at, expires_at, revoked_at)
@@ -304,7 +335,8 @@ Rules:
   partition is dropped only once its whole month is past the retention period,
   so the effective retention is 90 or 30 days plus up to a month.
 - Secrets values never appear in `audit_log.detail` or anywhere but
-  `secrets.ciphertext`.
+  `secrets.ciphertext` and `webhook_routes.ciphertext`. A webhook row's
+  `audit_log.detail` carries the route's name and never its token.
 - `credit_ledger` is append-only. A usage debit that has to change is
   corrected by an `adjustment` row referring to the same `ref`, never by
   updating or deleting the original; `usage_hours` is the ledger of record

@@ -31,7 +31,7 @@ Upgrading to a plan with more seats needs a free seat too, and is refused while 
 
 ## Egress
 
-Data your machines send to the internet counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Past four times it, starting a machine is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.herakraft.co/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.
+Data your machines send to the internet, and what a [webhook route](/docs/webhooks) replies, counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Past four times it, starting a machine is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.herakraft.co/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.
 
 ## Network
 
@@ -40,6 +40,14 @@ Data your machines send to the internet counts against the plan's allowance for 
 - Outbound connections to the ports mining pools use (3333, 5555, 7777, 14433 and 14444) are blocked.
 - A machine can open 200 new outbound connections a second, in bursts of up to 2,000, and hold 16,384 open at once. Past that, new connections are dropped and open ones are never cut. Connections to the caches count toward the 16,384 and have their own 200 a second.
 - Ping to the internet gets no reply. Check connectivity with `curl -sI https://example.com`.
+
+## Webhooks
+
+- A project can have 20 [webhook routes](/docs/webhooks).
+- A request body is at most 1 MB; past it the delivery gets 413 and never reaches the machine. A reply is at most 64 KB and has to be JSON, XML, plain text or form data.
+- An app has 30 seconds to answer a delivery.
+- 10 deliveries a second per route, 30 per project, and 8 at once per project. Past them, 429.
+- Reply bytes count as egress.
 
 ## SSH connections
 

@@ -30,6 +30,7 @@ import (
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/db"
@@ -91,7 +92,10 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		Unsub:     unsub,
 		Questions: h.Questions,
 		Resting:   h.Resting,
-		Gateway:   httpapi.Gateway{Host: "ssh.test", Port: 22}, Limits: limits, BillingEnforce: true,
+		// hooks.test keeps the URLs in these tests short and names the
+		// host the assertions check (DECISIONS I-1110).
+		WebhookRoutes: webhooks.New(h.Pool, h.Secrets, "hooks.test"),
+		Gateway:       httpapi.Gateway{Host: "ssh.test", Port: 22}, Limits: limits, BillingEnforce: true,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, h.Pool)
 			return len(st.Pending), err

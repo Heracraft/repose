@@ -208,9 +208,19 @@ Metrics `repose_gateway_` live in `internal/obs/metrics` as the
 `rate_limited`, `not_found`, `bad_login`, `busy`; `dial_fail_total`;
 `relay_bytes_total{direction}`; `session_seconds` histogram;
 `route_duration_seconds` histogram; `revocation_cache_age_seconds`;
-`wgsync_peers`; `wgsync_errors_total`; `hook_events_total{result}`. An
+`wgsync_peers`; `wgsync_errors_total`; `hook_events_total{result}`;
+`webhook_requests_total{result}`, `webhook_wake_seconds`,
+`webhook_inflight` and `webhook_routes` (I-1110). An
 accepted connection is counted by `sessions_total`, so there is no
 `auth_total{result=ok}`.
+
+The webhook counter's label is `result` and not `outcome`, which the
+proposal wrote: `outcome` is not on the registry's low-cardinality list
+and registering it stops the binary at start. Its values are the
+delivery outcome words of `docs/features/webhooks.md`.
+
+A webhook delivery writes one `webhook_delivery` line and no session
+report (I-1110): see `docs/features/webhooks.md` §7 for its fields.
 
 Logs: one line per connection open (`session_open`) and close
 (`session_close`) with `project_id`, `cert_serial`, `source_prefix` (the
@@ -263,6 +273,29 @@ certificate is provisioned by workstream 11 with DNS validation and placed
 at `/var/lib/repose/edge/tls/`; the stub serves it so the certificate
 pipeline is proven before the feature exists.
 
+### 5.9 Webhook deliveries on the public :443 (DECISIONS I-1110)
+
+The same listener carries one more name,
+`hooks.repose.herakraft.co`, whose certificate Go's `autocert` gets over
+TLS-ALPN-01 on that listener: no DNS token, no second port, and the
+listener may open before any certificate file exists, which amends
+I-479. The cache is a directory under the unit's `StateDirectory`,
+because its `stateDir` is read-only to it. The handshake picks the
+`autocert` certificate for that SNI and the preview key pair for every
+other name; the handler routes by the `Host` header the same way, so
+the preview stub is unchanged.
+
+`internal/gateway/webhook/` holds the handler: an in-memory table of
+`sha256(token)` refreshed from `GET /internal/webhook-routes?since=`
+every 5 s, the rate limits, the request and reply rules and the
+delivery batches. `internal/gateway/webhookapi.go` is the api client
+(the gateway's `*Client` satisfies `webhook.API`), and
+`internal/gateway/webhookdial.go` is the dial: `DialGuestPort` opens the
+gateway's own SSH connection to the guest and a `direct-tcpip` channel
+to `127.0.0.1:<port>`, keeping one connection per project for 30 s.
+
+`docs/features/webhooks.md` is the behaviour, the limits and the states.
+
 ## 6. Failure modes
 
 | Failure | Behaviour | Visible outcome |
@@ -280,6 +313,9 @@ pipeline is proven before the feature exists.
 | Edge VM reboot | every relay drops and nothing connects until it is back | the same reconnects, if it is back within 2 minutes; one edge is a known single point (I-473) |
 | Malformed login name | banner and auth failure | user sees the banner |
 | Source IP auth flood | 4 connections in the handshake, then closed before the handshake (`rate_limited`) | metric |
+| Webhook route table stale (api unreachable) | the table keeps routing for up to 1 h from the last refresh, as the revocation cache does; a wake or a start needs the api, so a frozen machine's delivery is 503 `Retry-After: 30` | `webhook_table_fail` in the log; deliveries resume when the api returns |
+| Webhook delivery batch unsent | retried on the next flush; dropped after 10 minutes | the counts are missing from `repose webhooks` for that stretch |
+| Webhook certificate not issued | the handshake for the hooks name fails; the preview name is unaffected | `openssl s_client -servername hooks.repose.herakraft.co` shows no chain; check the DNS A record and the ACME cache |
 
 ## 7. Testing
 
@@ -404,6 +440,20 @@ except keys and certificates, which are not changed by deploys.
       chain. Evidence: `openssl s_client` output. Waits on: owner (no
       wildcard certificate exists; issuing one needs the Cloudflare API
       token, 11 §10)
+- [ ] The webhook name serves a Let's Encrypt chain on the same 443, and
+      the preview name still gets the stub. Evidence: `openssl s_client
+      -servername hooks.repose.herakraft.co -connect <edge>:443`. Waits
+      on: owner (the A record for `hooks.repose.herakraft.co` while
+      `manage_dns` is false, `infra/README.md`), then a switch of the
+      edge
+- [x] A webhook delivery reaches a listener on the guest's loopback over
+      the gateway's own SSH connection, with the body and the signature
+      header unchanged, and the reply comes back. Closed: `go test
+      ./internal/gateway -run TestWebhookDeliveryReachesTheGuestOverSSH`
+      (a real SSH handshake against a guest sshd that trusts the Host CA,
+      a `direct-tcpip` channel, a GitHub HMAC checked on what the app
+      received), and `go test ./internal/gateway/webhook` for the table,
+      the limits, the reply rules and the log fields
 - [x] `interfaces/api.md` and `DECISIONS.md` carry I-4 (`/internal/hosts`,
       `/internal/events`, `/internal/gateway-certs`). Evidence: the diff.
       Closed: DECISIONS I-4; `interfaces/api.md` internal routes table

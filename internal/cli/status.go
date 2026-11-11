@@ -70,6 +70,8 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	if e.Verbose {
 		route, _ = e.Client.ProjectRoute(ctx, project.ID)
 	}
+	hooks := make(chan []WebhookRoute, 1)
+	go func() { h, _ := e.Client.ListWebhooks(ctx, project.ID); hooks <- h }()
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	events, _ := e.Client.ListEvents(ctx, project.ID, "")
 	noteWaits(project, events)
@@ -81,7 +83,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	writeStatus(e.Out, statusView{
 		p: project, route: route, snaps: snaps, events: events, mux: mux,
 		disk: g.disk, procs: g.procs, forwards: g.forwards, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, probeWaited: g.waited, bill: <-bill, now: time.Now(),
-		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent,
+		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent, hooks: <-hooks,
 	})
 	return nil
 }
@@ -383,7 +385,11 @@ type statusView struct {
 	// compares the project's agent with.
 	defaultAgent string
 	bill         *Billing
-	now          time.Time
+	// hooks are the project's webhook routes (DECISIONS I-1110); the
+	// row shows only the ones a provider has used, so a project with
+	// routes nobody has called yet adds no line.
+	hooks []WebhookRoute
+	now   time.Time
 }
 
 func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event) {
@@ -487,6 +493,9 @@ func writeStatus(w io.Writer, v statusView) {
 		}
 		verb, summary := eventCells(*last)
 		statusRow(w, "last event", fmt.Sprintf("%s, %s%s %q", humanAge(last.TS), agent, verb, summary))
+	}
+	if line := webhookStatusLine(v.hooks); line != "" {
+		statusRow(w, "webhooks", line)
 	}
 	if v.route != nil {
 		host := v.route.HostName

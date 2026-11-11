@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-936 entries.
+942 entries.
 
 ## Scope
 
@@ -43,7 +43,7 @@ pointer, not a summary.
 ## Network and access
 
 - **R2-5** SSH certificate authority in the control plane, short-lived certificates, a gateway that routes by login name — L130
-- **R2-6** Dev-server access is `repose open <port>` (SSH forward) now; per- project HTTPS preview URLs later, documented from day one — L136
+- **R2-6** Dev-server access is `repose open <port>` (SSH forward) now; per- project HTTPS preview URLs later, documented from day one — amended by I-1116; L136
 - **R3-7** The gateway is custom Go, not OpenSSH ProxyJump — L139
 - **R3-8** hostd dials out to the API over a mutual-TLS gRPC stream; hosts have no inbound ports — L143
 - **R4-3** WireGuard between edge and hosts, hosts dial the edge — L146
@@ -79,7 +79,7 @@ pointer, not a summary.
 - **R2-9** Observability reuses the existing Loki, Grafana and Fluent Bit; add Prometheus there; OpenTelemetry in the control plane with no traces backend yet. Record everything non-invasive — L247
 - **R2-12 + R3-16 + R4-7 + R4-8** Stripe from day one, card required before the first guest, $10 credit trial. Meters: guest-hours by class, volume GB-months, egress GB. Hourly rate with a monthly cap per project equal to the flat price (49/99/199) — partly amended by I-205; partly superseded by I-289; L251
 - **R4-11** Retention: destroy deletes the volume and keeps the last snapshot 30 days; cancellation stops guests, keeps snapshots 30 days — L259
-- **R4-12** + R4 domain note. The name is `repose` everywhere. Hosted under `herakraft.co` (`repose.herakraft.co`, `api.repose.herakraft.co`, `ssh.repose.herakraft.co`) until it graduates to its own domain — partly superseded by I-15; L262
+- **R4-12** + R4 domain note. The name is `repose` everywhere. Hosted under `herakraft.co` (`repose.herakraft.co`, `api.repose.herakraft.co`, `ssh.repose.herakraft.co`) until it graduates to its own domain — partly superseded by I-15; amended by I-1110; L262
 - **R5-6** No teams in the first release — L268
 - **R5-7** One repository, one Go module, `nix/` and `infra/` alongside the existing Turborepo — L270
 - **R5-8** Milestone order: benchmark, then hostd and guestd with your own projects over WireGuard, then edge and auth, then Coolify control plane and dashboard, then billing, with observability from milestone two onward — L273
@@ -537,7 +537,7 @@ pointer, not a summary.
 - **I-471** A switch hands the gateway over instead of restarting it — 2026-10-04; L12314
 - **I-472** An edge switch leaves the network up — 2026-10-04; L12364
 - **I-473** One edge for now; the way to two is written down — 2026-10-04; L12386
-- **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; L12411
+- **I-479** A TLS side listener opens only once its certificate loads — 2026-10-04; amended by I-1112; L12411
 - **I-483** A flake dev shell keeps its lock out of the checkout, and a flake applied as a fragment says so — 2026-10-04; L12425
 - **I-490** The personal layer: an account's machine.nix on every machine, applied without asking and never holding a machine up — 2026-10-04; amended by I-519; L12461
 - **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; amended by I-509; amended by I-618; L12585
@@ -836,9 +836,9 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24950
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24969
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25006
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; L25011
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; L25011
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25141
-- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25169
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; amended by I-1114; L25169
 - **I-824** The pause must never cost a machine its memory — L25212
 - **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; amended by I-896; L25246
 - **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25278
@@ -952,19 +952,25 @@ pointer, not a summary.
 - **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30575
 - **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30683
 - **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L30829
-- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30874
+- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L30874
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30954
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31015
-- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31061
-- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31103
-- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31144
-- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31223
-- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31287
-- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31380
-- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31417
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31506
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31536
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31600
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31649
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L31743
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L31781
+- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31061
+- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31147
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31201
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31255
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31311
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31333
+- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31367
+- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31409
+- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31450
+- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31529
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31593
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31686
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31723
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31812
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31842
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31906
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31955
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32049
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32087

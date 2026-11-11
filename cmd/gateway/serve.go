@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/gateway"
-	"github.com/heracraft/repose/internal/gateway/preview"
+	"github.com/heracraft/repose/internal/gateway/webhook"
 	"github.com/heracraft/repose/internal/obs"
 	obsmetrics "github.com/heracraft/repose/internal/obs/metrics"
 )
@@ -127,14 +127,27 @@ func serve(ctx context.Context) error {
 		}
 	}
 
-	// Preview-proxy stub on :443 with the wildcard certificate (§5.8).
-	if addr := env("PREVIEW_LISTEN", ":443"); os.Getenv("PREVIEW_TLS_CERT") != "" {
-		if pln, ok := tlsListener(ls, log, lnPreview, addr, os.Getenv("PREVIEW_TLS_CERT"), os.Getenv("PREVIEW_TLS_KEY")); ok {
+	// The public :443: webhook deliveries on WEBHOOK_HOST, whose
+	// certificate autocert gets over TLS-ALPN-01 on this listener, and
+	// the preview stub on every other name (§5.8, §5.9; DECISIONS
+	// I-1110 amending I-479).
+	webhookHost := os.Getenv("WEBHOOK_HOST")
+	acme := webhookManager(log, webhookHost, os.Getenv("WEBHOOK_ACME_CACHE"))
+	if acme == nil {
+		webhookHost = ""
+	}
+	if tlsCfg := webhookTLS(log, webhookHost, acme, os.Getenv("PREVIEW_TLS_CERT"), os.Getenv("PREVIEW_TLS_KEY")); tlsCfg != nil {
+		if pln, ok := publicListener(ls, log, env("PREVIEW_LISTEN", ":443")); ok {
 			passOn = append(passOn, namedListener{lnPreview, pln})
-			run("preview", func() {
-				serveHTTP(accepting, log, "preview", pln, preview.Handler(), os.Getenv("PREVIEW_TLS_CERT"), os.Getenv("PREVIEW_TLS_KEY"))
-			})
+			wh := newWebhookHandler(ctx, log, m, api, gw, webhookHost)
+			if wh != nil {
+				run("webhooks", func() { wh.Run(refreshing) })
+			}
+			handler := publicHandler(webhookHost, handlerOrNil(wh))
+			run("preview", func() { serveTLS(accepting, log, "preview", pln, handler, tlsCfg) })
 		}
+	} else {
+		log.Warn("listener disabled: no certificate", "event", "listen", "listener", lnPreview)
 	}
 	ls.closeUnused()
 
@@ -256,6 +269,37 @@ func serveHTTP(ctx context.Context, log *slog.Logger, name string, ln net.Listen
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		// ServeTLS returns before serving when the certificate fails, and
 		// leaves the listener open; close it so the port refuses.
+		_ = ln.Close()
+		log.Error("listener stopped", "event", "route_fail", "reason", name, "err", err.Error())
+	}
+}
+
+// handlerOrNil keeps a typed nil out of an interface: a nil
+// *webhook.Handler in an http.Handler is not nil, and publicHandler
+// reads nil as "no webhook name".
+func handlerOrNil(h *webhook.Handler) http.Handler {
+	if h == nil {
+		return nil
+	}
+	return h
+}
+
+// serveTLS serves h on ln under cfg until ctx ends. It is serveHTTP with
+// the certificate decided per handshake rather than read from a file.
+func serveTLS(ctx context.Context, log *slog.Logger, name string, ln net.Listener, h http.Handler, cfg *tls.Config) {
+	srv := &http.Server{
+		Handler:           h,
+		TLSConfig:         cfg,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(sctx)
+	}()
+	log.Info("listener up", "event", "listen", "listener", name, "addr", ln.Addr().String())
+	if err := srv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		_ = ln.Close()
 		log.Error("listener stopped", "event", "route_fail", "reason", name, "err", err.Error())
 	}

@@ -209,6 +209,30 @@ they stop an actor the component map does not draw.
     did not list, a port reachable from off the guest's loopback, and a
     lent port outliving the attach.
 
+14. **The webhook edge between the internet and a guest** (DECISIONS
+    I-1110). A webhook route is the one public path into a machine and
+    the only place an unauthenticated sender reaches tenant code. What
+    bounds it: the URL holds a 128-bit token the api mints, checked
+    against an in-memory table of `sha256(token)` on the edge, so a
+    wrong token is a 404 with no api call, no wake and no dial, and the
+    edge never holds a token in plain text; 20 unknown tokens a second
+    per source /24, which is the scan case; 1 MiB of request, refused
+    before any wake; 10 deliveries a second per route and 30 per
+    project, with 8 at a time, which are per route and per project and
+    never per source, because providers send from a few shared
+    addresses; and the connection into the guest is the gateway's own
+    SSH with a per-project certificate and a single `direct-tcpip`
+    channel, so the guest opens no inbound port and the host's nftables
+    do not change. What bounds the reply: no 3xx (it becomes 502 with no
+    `Location`, so the hostname is no open redirect), no `Set-Cookie`,
+    64 KiB, and a body only for JSON, XML, plain text or form data, with
+    `Content-Security-Policy: sandbox; default-src 'none'` and
+    `nosniff` on every answer. Stops: a scan finding a route; a sender
+    waking or starting a machine it cannot name; a tenant serving a
+    page, setting a cookie on a `herakraft.co` name, or redirecting a
+    visitor from a repose URL. The edge stores no request, so a takedown
+    has no content to remove and the operator removes the route.
+
 ## Non-negotiables
 
 Rules that hold regardless of convenience. Each names its failure.
@@ -421,9 +445,15 @@ Applied at each workstream's PR, recorded as a comment line in
   user. The gateway bounds connections still in the handshake per source
   and in all, separately from authenticated relays, and the edge's
   nftables caps open and new connections per source on 22 (I-435), so one
-  address cannot fill the gateway. A distributed flood can still fill the
-  512 handshake slots and delay logins; there is no upstream DDoS
-  protection beyond what Azure gives a public IP.
+  address cannot fill the gateway. Since I-1110 the public :443 has the
+  same shape of cap at a size sized for providers, which send every
+  tenant's deliveries from a few shared addresses: 256 open connections
+  and 100 new a second per source in nftables, with the real rates per
+  route and per project inside the gateway. A distributed flood can
+  still fill the 512 handshake slots and delay logins; there is no
+  upstream DDoS protection beyond what Azure gives a public IP, and one
+  edge VM carries SSH and webhooks alike, so a flood on :443 also slows
+  logins.
 - **Supply chain of the agent overlay.** Agents are repackaged from
   upstream binary releases with pinned hashes; there is no independent
   verification of upstream builds. The hash is what upstream served when

@@ -21,6 +21,7 @@ import (
 	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -621,6 +622,13 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
 		var err error
 		if id, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(p)}, false); err != nil {
+			return err
+		}
+		// The project's webhook routes go with it, and each token
+		// becomes a tombstone: the URL answers 410 for 30 days and 404
+		// after, and `repose restore` does not bring it back, because a
+		// sender that obeyed the 410 has already let it go (I-1114).
+		if err := webhooks.TombstoneProject(ctx, tx, pid); err != nil {
 			return err
 		}
 		return store.SetProjectState(ctx, tx, pid, "destroying")

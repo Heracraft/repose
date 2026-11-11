@@ -703,6 +703,7 @@ Until a token exists, create these by hand in the Cloudflare dashboard, as
 | `ssh.repose` | `edge_public_ip` output | **off** | SSH gateway and every host's WireGuard endpoint; the proxy carries neither |
 | `repose` | `control_public_ip` output | off | dashboard; the proxy Coolify installs on the server terminates TLS |
 | `api.repose` | `control_public_ip` output | off | proxying hides client addresses from the api's rate limits |
+| `hooks.repose` | `edge_public_ip` output | **off** | webhook deliveries (DECISIONS I-1110). The edge answers this name on its own :443 and gets the certificate over TLS-ALPN-01 on that port, which a proxy would terminate first; a proxy would also see every tenant's request body, which the privacy policy would then have to name. The edge serves the name as soon as the record exists: nothing else has to change |
 
 ## Wiring the control plane to the edge
 

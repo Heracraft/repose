@@ -169,7 +169,7 @@ To forward one port without attaching, [`repose open`](/docs/cli#repose-open-loc
 repose open 3000
 ```
 
-There are no public URLs for a project's ports. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in [the menu](/docs/config#the-menu): `repose config add cloudflared` on your laptop. Then, on the machine:
+The one public path into a machine is a [webhook route](/docs/webhooks): a URL a provider can POST to, forwarded to a port inside the machine. It passes a provider's event through and will not serve a page. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in [the menu](/docs/config#the-menu): `repose config add cloudflared` on your laptop. Then, on the machine:
 
 ```
 cloudflared tunnel --url http://localhost:3000
