@@ -579,7 +579,7 @@
 			{#if diskOver}
 				<div class="hk-banner month-banner" role="status" data-testid="disk-over">
 					<p>
-						Creating, restoring and forking projects, and growing a disk, are refused until your
+						Creating and restoring projects, and growing a disk, are refused until your
 						projects hold less.
 					</p>
 				</div>

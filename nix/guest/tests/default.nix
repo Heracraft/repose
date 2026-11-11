@@ -1314,7 +1314,7 @@ in
           guest.succeed("sleep 2")
           assert windows() == ["shell"], windows()
 
-      with subtest("I-646: a record of another project (a fork's copy) reopens nothing"):
+      with subtest("I-646: a record of another project (a restore under another name) reopens nothing"):
           guest.succeed("rm -f /home/dev/w1/opencode.args /home/dev/w2/pi.args")
           user("systemctl --user stop repose-tmux-session.service")
           guest.succeed("printf '#boot 0000-other-boot 0192e4b0-0000-7000-8000-0000000000ff\\nopencode\\037opencode\\037/home/dev/w1\\037\\037working\\n' | sudo -u dev tee /home/dev/.repose/agent-windows.live > /dev/null")
@@ -2637,7 +2637,7 @@ in
           assert disp == "", disp
 
       with subtest("a stale profile lock and root's stamps do not stop the browser (I-727)"):
-          # What a fork, or a restore under another name, finds after the
+          # What a restore under another name finds after the
           # browser was killed, beside stamps root made before dev did.
           prof = "/home/dev/.local/share/repose/browser"
           guest.succeed(f"sudo -u dev ln -sfn other-machine-4242 {prof}/SingletonLock")

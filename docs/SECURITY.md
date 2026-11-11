@@ -422,7 +422,7 @@ Applied at each workstream's PR, recorded as a comment line in
   cryptocurrency miner (by process name) is stopped with a snapshot, and
   three such stops in 24 hours hold the project until an operator runs
   `repose-admin abuse clear` (DECISIONS I-239). The hold covers copies:
-  a held project cannot be restored as a new project or forked, started
+  a held project cannot be restored as a new project, started
   or not (I-460). Outbound tcp 25 and the
   mining pools' default ports are blocked (I-238, I-239), and new outbound
   flows are rate-limited per guest (I-240). Anything else (a miner under

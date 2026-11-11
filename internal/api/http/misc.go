@@ -317,7 +317,7 @@ func sinceParamNamed(r *http.Request, name string) time.Time {
 // have a console and none stands in for one (I-769).
 func bootsGuest(kind string) bool {
 	switch kind {
-	case "create", "start", "restart", "restore", "resize", "fork":
+	case "create", "start", "restart", "restore", "resize":
 		return true
 	}
 	return false

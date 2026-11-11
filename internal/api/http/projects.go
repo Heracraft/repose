@@ -206,8 +206,8 @@ func (s *Server) userProject(r *http.Request) (*store.Project, error) {
 	return store.GetUserProject(r.Context(), s.d.Pool, userFrom(r.Context()).ID, id)
 }
 
-// projectLimitError is the 400 a create, restore or fork past the
-// account's project cap answers (api.md POST /projects/:id/fork, I-569).
+// projectLimitError is the 400 a create or a restore past the account's
+// project cap answers (api.md POST /projects, I-569).
 // detail.reason lets the CLI say it in its own words; the message is the
 // whole sentence for a client that prints it as it is.
 func projectLimitError(have, limit, requested int) error {

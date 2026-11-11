@@ -436,7 +436,7 @@ func TestSetupLine(t *testing.T) {
 	}
 }
 
-func TestForkRemotes(t *testing.T) {
+func TestMachineRemotes(t *testing.T) {
 	root := t.TempDir()
 	git := func(args ...string) string {
 		out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
@@ -446,34 +446,32 @@ func TestForkRemotes(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	git("init", "-q")
-	// No `repose` remote for the source: nothing is added.
-	if got := addForkRemotes(root, "todo-app", []string{"todo-app-fork-1"}); got != nil {
-		t.Fatalf("added %v without the source's remote", got)
-	}
 	git("remote", "add", "repose", "todo-app.repose:~/todo")
-	git("remote", "add", "todo-app-fork-2", "git@github.com:me/other.git") // the user's own
-	got := addForkRemotes(root, "todo-app", []string{"todo-app-fork-1", "todo-app-fork-2"})
-	if len(got) != 1 || got[0] != "todo-app-fork-1" {
-		t.Fatalf("added %v", got)
+	git("remote", "add", "todo-app-3", "git@github.com:me/other.git") // the user's own
+	if !addMachineRemote(root, "todo-app-2", "todo") {
+		t.Fatal("did not add the second machine's remote")
 	}
-	if u := git("config", "--get", "remote.todo-app-fork-1.url"); u != "todo-app-fork-1.repose:~/todo" {
+	if addMachineRemote(root, "todo-app-3", "todo") {
+		t.Fatal("overwrote the user's own remote")
+	}
+	if u := git("config", "--get", "remote.todo-app-2.url"); u != "todo-app-2.repose:~/todo" {
 		t.Fatalf("url %q", u)
 	}
-	if v := git("config", "--get", "remote.todo-app-fork-1.skipFetchAll"); v != "true" {
+	if v := git("config", "--get", "remote.todo-app-2.skipFetchAll"); v != "true" {
 		t.Fatalf("skipFetchAll %q", v)
 	}
 	// Again: nothing new.
-	if got := addForkRemotes(root, "todo-app", []string{"todo-app-fork-1"}); got != nil {
-		t.Fatalf("added again: %v", got)
+	if addMachineRemote(root, "todo-app-2", "todo") {
+		t.Fatal("added again")
 	}
-	if forgetForkRemote(root, "todo-app-fork-2") {
+	if forgetMachineRemote(root, "todo-app-3") {
 		t.Fatal("removed the user's remote")
 	}
-	if !forgetForkRemote(root, "todo-app-fork-1") || remoteURLOf(root, "todo-app-fork-1") != "" {
-		t.Fatal("did not remove the fork's remote")
+	if !forgetMachineRemote(root, "todo-app-2") || remoteURLOf(root, "todo-app-2") != "" {
+		t.Fatal("did not remove the machine's remote")
 	}
-	if forgetForkRemote(root, "repose") {
-		t.Fatal("forgetForkRemote touched the repose remote")
+	if forgetMachineRemote(root, "repose") {
+		t.Fatal("forgetMachineRemote touched the repose remote")
 	}
 }
 

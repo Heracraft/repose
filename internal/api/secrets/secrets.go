@@ -632,56 +632,6 @@ func (s *Store) ResealLoop(ctx context.Context, log *slog.Logger, opt ResealOpti
 	}
 }
 
-// CopyNamed copies a project's named secrets (not its sshd material) to
-// another project of the same user inside tx: each value is opened and
-// sealed again for the new project under the same data key, so a
-// project-bound row stays bound to its own project (I-433).
-func (s *Store) CopyNamed(ctx context.Context, tx pgx.Tx, fromProjectID, toProjectID string) error {
-	rows, err := tx.Query(ctx, `select name, ciphertext, dek_wrapped, kv_key_version from secrets where project_id = $1 and name ~ '^[A-Z][A-Z0-9_]{0,63}$' order by name`, fromProjectID)
-	if err != nil {
-		return err
-	}
-	type row struct {
-		name, version string
-		ct, wrapped   []byte
-	}
-	var rs []row
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.name, &r.ct, &r.wrapped, &r.version); err != nil {
-			rows.Close()
-			return err
-		}
-		rs = append(rs, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, r := range rs {
-		dek, err := s.unwrap(ctx, r.wrapped, r.version)
-		if err != nil {
-			return err
-		}
-		v, legacy, err := open(dek, fromProjectID, r.name, r.ct)
-		if err == nil && legacy {
-			err = s.refusePlatformDEK(ctx, fromProjectID, dek)
-		}
-		if err != nil {
-			return fmt.Errorf("secret %s: %w", r.name, err)
-		}
-		ct, err := Seal(dek, toProjectID, r.name, v)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version) values ($1, $2, $3, $4, $5, $6)`,
-			uuid.Must(uuid.NewV7()), toProjectID, r.name, ct, r.wrapped, r.version); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Rewrap re-wraps every row's DEK, a project's and an account's, under the Key Vault key's current
 // version without touching ciphertext, and returns how many rows changed.
 func (s *Store) Rewrap(ctx context.Context) (int, error) {

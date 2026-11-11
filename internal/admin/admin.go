@@ -69,7 +69,7 @@ const Usage = `repose-admin <command> [args]
   edge      init --endpoint HOST:PORT --pubkey WGPUB [--out DIR] | loki [URL]
   audit     [--user HANDLE] [--since 24h] [--action A]
   abuse     list [--all] | clear ID|SLUG   (automatic miner stops, I-239; suspending the user is users suspend)
-  waitlist  list | admit HANDLE | admit --next N   (seats waitlist, I-269/I-290; admit invites: a 72 h seat hold and the email; the api invites by itself as seats free up)
+  waitlist  list | stale [--before TIME] [--lapse] | admit HANDLE | admit --next N   (seats waitlist, I-269/I-290; admit invites: a 72 h seat hold and the email; the api invites by itself as seats free up; stale lists the rows that joined before the GET bug was fixed and --lapse takes them out of the queue with no email, I-1092)
   seats     (total, held, free, waiting, and whether the total is SEATS_TOTAL or the hosts', I-290)
   ops       list [--project ID] [--host N] [--state S] | log OPID
   version

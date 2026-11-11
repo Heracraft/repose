@@ -245,7 +245,7 @@ func planWarningsAfter(b *Billing, figures bool) []string {
 	var out []string
 	if l := diskOverPlanLine(b); l != "" {
 		if figures {
-			l = "disk past the plan: creating, restoring, forking and growing a disk are refused until your projects hold less"
+			l = "disk past the plan: creating, restoring and growing a disk are refused until your projects hold less"
 		}
 		out = append(out, l)
 	}
@@ -268,7 +268,7 @@ func planWarningsAfter(b *Billing, figures bool) []string {
 
 // diskOverPlanLine is the line `repose ls` and `repose status` print
 // while the projects hold more than the plan's disk (DECISIONS I-585):
-// creating, restoring, forking and growing a disk are refused until they
+// creating, restoring and growing a disk are refused until they
 // hold less, which the user would otherwise learn only from a refusal.
 // Empty within the plan, with no plan, or from an api that does not say.
 func diskOverPlanLine(b *Billing) string {
@@ -279,7 +279,7 @@ func diskOverPlanLine(b *Billing) string {
 	if held <= float64(b.Usage.DiskGB) {
 		return ""
 	}
-	return fmt.Sprintf("disk: your projects hold %s GB of the plan's %d GB; creating, restoring, forking and growing a disk are refused until they hold less",
+	return fmt.Sprintf("disk: your projects hold %s GB of the plan's %d GB; creating, restoring and growing a disk are refused until they hold less",
 		strconv.FormatFloat(held, 'f', -1, 64), b.Usage.DiskGB)
 }
 
@@ -520,9 +520,9 @@ func count(n int, noun string) string {
 }
 
 // snapshotCell is the newest snapshot's age, from the list or else the
-// project's last_snapshot_at. A fork has none of its own until its first
-// stop or night: "no snapshot yet" says that, where "none" read as if
-// the fork had come from nowhere.
+// project's last_snapshot_at. A project restored under another name has
+// none of its own until its first stop or night: "no snapshot yet" says
+// that, where "none" read as if it had come from nowhere.
 func snapshotCell(p *Project, snaps []Snapshot) string {
 	if s := newestSnapshot(snaps); s != nil {
 		return "snapshot " + humanAge(s.CreatedAt)
@@ -960,7 +960,7 @@ var statusWaitEvery = 2 * time.Second
 
 // StatusWait is `repose status --wait STATE` (I-616): it reads the
 // project until it is in STATE and then prints its status (exit 0), for
-// a script that started something elsewhere (the dashboard, a fork) and
+// a script that started something elsewhere (the dashboard) and
 // needs it there. A project that lands in error, or is destroyed, while
 // another state is awaited exits 1 at once, as does the timeout.
 func StatusWait(ctx context.Context, e *Env, projectArg, want string, timeout time.Duration) error {

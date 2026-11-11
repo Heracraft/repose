@@ -98,6 +98,10 @@ type Deps struct {
 	// answer's X-Repose-CLI-Latest header (DECISIONS I-626); nil or ""
 	// sends no header.
 	CLILatest func() string
+	// CLIOldest is the oldest CLI release this api still answers as
+	// documented ("v0.1.30"), named in every answer's X-Repose-CLI-Oldest
+	// header (DECISIONS I-1088); "" sends no header.
+	CLIOldest string
 	// Resting wakes a machine that rests (DECISIONS I-818): the gateway's
 	// POST /internal/wake and a keep_awake the user has just turned on.
 	// nil makes the wake route answer 503 and keep_awake take effect at
@@ -379,6 +383,9 @@ func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 			if v := s.d.CLILatest(); v != "" {
 				w.Header().Set("X-Repose-CLI-Latest", v)
 			}
+		}
+		if s.d.CLIOldest != "" {
+			w.Header().Set("X-Repose-CLI-Oldest", s.d.CLIOldest)
 		}
 		log := s.d.Log.With("request_id", rid)
 		// info is filled in by authed further down; the request the mux

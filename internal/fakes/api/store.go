@@ -184,11 +184,6 @@ type Op struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
-// forkRec is one project a fork request made, kept to answer its resend.
-type forkRec struct {
-	projectID, name, class, opID string
-}
-
 // Host is one row of GET /internal/hosts.
 type Host struct {
 	HostID    string `json:"host_id"`

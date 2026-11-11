@@ -122,7 +122,6 @@ func TestMinerStopsGuestAndThirdStrikeHoldsStarts(t *testing.T) {
 			{"/projects/restore", map[string]any{"slug": "hashy", "name": "hashy-3", "start": false}},
 			{"/projects/restore", map[string]any{"snapshot_id": sid.String(), "name": "hashy-4", "start": false}},
 			{"/projects/" + pid.String() + "/snapshots/" + sid.String() + "/restore", map[string]any{"as_new_project": "hashy-5", "start": false}},
-			{"/projects/" + pid.String() + "/fork", map[string]any{"snapshot_id": sid.String(), "start": false}},
 		} {
 			rs := e.do(t, tok, "POST", c.path, c.body)
 			errObj, _ := rs.body["error"].(map[string]any)

@@ -289,6 +289,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),
 		CLILatest:     a.cliLatest.Version,
+		CLIOldest:     clirelease.Oldest,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
 			return len(st.Pending), err

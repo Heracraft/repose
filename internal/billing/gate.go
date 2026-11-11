@@ -20,7 +20,7 @@ import (
 
 // The compute gate (api.md "Usage and billing", the payment_required
 // table; PRICING.md "What a plan means, in rules"). Every place compute is
-// asked for goes through Check: create, start, restore, fork, a class
+// asked for goes through Check: create, start, restore, a class
 // change, growing a volume. The refusal carries detail.reason and a
 // message that is the whole sentence, so an older CLI that prints it is
 // right.
@@ -48,10 +48,10 @@ func (r *Refusal) Error() string { return "payment_required: " + r.Message }
 // (empty when no memory is asked for), on behalf of Project (uuid.Nil
 // for a new one), which is excluded from the running memory it is
 // checked against. Disk asks the disk question (DECISIONS I-585): the
-// action may make the projects hold more (a create, a restore or a fork
-// as a new project, growing a volume). AddHeldBytes is about what it
-// adds at once (a new volume's first bytes, the copy of a source's), 0
-// for growing a volume, which raises only the ceiling. VolumeBytes is
+// action may make the projects hold more (a create, a restore as a new
+// project, growing a volume). AddHeldBytes is what it adds at once (a
+// new volume's first bytes, the copy of a source's), 0 for growing a
+// volume, which raises only the ceiling. VolumeBytes is
 // the disk size asked for, new or grown: one project's disk may be at
 // most the plan's whole disk.
 //
@@ -300,17 +300,20 @@ type Place struct {
 // WaitlistPlace reads the user's waitlist place from the 0008 schema
 // (I-290): the position among waiting users of live accounts, oldest
 // first, or the invitation and its hold. nil when the user holds no place
-// (never joined, converted, lapsed (I-1033), or suspended, cancelled or
-// deleted).
+// (never joined, converted, lapsed (I-1033), billing-exempt (I-1090), or
+// suspended, cancelled or deleted). The exempt filter is on both sides of
+// the count, so this position and store.waitlistSQL's agree.
 func WaitlistPlace(ctx context.Context, q store.Querier, userID uuid.UUID) (*Place, error) {
 	var p Place
 	var converted, lapsed *time.Time
 	err := q.QueryRow(ctx, `select w.joined_at, w.invited_at, w.hold_until, w.converted_at, w.lapsed_at,
 		coalesce((select count(*) from waitlist w2 join users u2 on u2.id = w2.user_id
 			where w2.invited_at is null and w2.converted_at is null and w2.lapsed_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null
+			and u2.billing_status <> 'exempt'
 			and (w2.joined_at, w2.user_id) <= (w.joined_at, w.user_id)), 0)::integer
 		from waitlist w join users u on u.id = w.user_id
-		where w.user_id = $1 and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null`, userID).
+		where w.user_id = $1 and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null
+		  and u.billing_status <> 'exempt'`, userID).
 		Scan(&p.JoinedAt, &p.InvitedAt, &p.HoldUntil, &converted, &lapsed, &p.Position)
 	if db.IsNoRows(err) {
 		return nil, nil

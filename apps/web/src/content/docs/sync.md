@@ -94,7 +94,40 @@ Synced: 2 modified, 1 untracked (6 new commits); kept the machine's
 changes to 3 files  1.6s
 ```
 
-If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing, names them and exits with code 6:
+If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing and names them. From a terminal it asks which copy to keep:
+
+```text
+Not synced: the machine changed 2 files that your laptop changed
+too:
+  src/session.ts
+  notes.md
+  l  use the laptop's copy; the machine's goes to its git stash
+  m  keep the machine's copy; sync the rest
+  s  move all of the machine's changes to its git stash, then sync
+Choose l, m or s, or Enter to stop:
+```
+
+One key, no Enter needed. Enter stops the sync, with exit code 6.
+
+`l` syncs your copy over the machine's and puts the machine's copy of those files, and only those, in a stash named "repose sync: the machine's copy". The summary names its commit, and `git stash apply 1a2b3c4` on the machine brings that copy back:
+
+```text
+Synced: 3 modified, 0 untracked; stashed the machine's copy of 2
+files (git stash 1a2b3c4)  1.4s
+```
+
+`m` keeps the machine's copy of those files and syncs everything else, your new commits included:
+
+```text
+Synced: 3 modified, 0 untracked; kept the machine's copy of 2
+files  1.3s
+```
+
+Your laptop still has its own version, so the next sync finds the same files and asks again, until you commit, revert or stash your change. `m` isn't offered when one of the files is a submodule: a submodule's copy can't be put back without a commit of its own.
+
+`s` is `--stash-machine` below.
+
+If the agent changes another of the files while you're deciding, the sync asks again with the longer list: nothing is stashed that you didn't see. Without a terminal, and with `--json`, the sync prints the names and the `--stash-machine` line instead and exits with code 6:
 
 ```text
 Not synced: the machine changed 2 files that your laptop changed

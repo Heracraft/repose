@@ -69,7 +69,7 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
                 -- what the volume holds, which the plan's disk counts (0019, I-585):
                 -- the newest sample's thin volume allocated blocks, or, with
                 -- disk_held_at null, the estimate a new project starts with
-                -- (1 GB; a restore's or fork's source figure); both null
+                -- (1 GB; a restore's source figure); both null
                 -- counts volume_bytes
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null,
@@ -144,8 +144,8 @@ certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp te
               issued_at, expires_at, revoked_at)
 
 snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes bigint,
-              reason text,  -- scheduled|stop|manual|fork (fork: a fork's own, expires_at a day on, never
-                            -- the project's newest for retention; 0025, I-703)
+              reason text,  -- scheduled|stop|manual|fork (fork: 0025, I-703; no longer written since
+                            -- I-1082 removed repose fork, and a later migration narrows the check)
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
               sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
 

@@ -197,8 +197,8 @@ func (p *progress) End() {
 }
 
 // Done ends the current phase and prints a ✓ line for a step that ran
-// without one on screen (a fork's copy that had finished before the
-// command read it): done and the step's own time.
+// without one on screen (a step that had finished before the command
+// read it): done and the step's own time.
 func (p *progress) Done(done string, took time.Duration) {
 	if p == nil || done == "" {
 		return
