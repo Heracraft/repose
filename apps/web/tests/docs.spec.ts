@@ -10,8 +10,8 @@ test('docs are readable while signed out, with search and prev/next', async ({ p
 	await page.goto('/docs/machine');
 	await expect(page).toHaveURL('/docs/machine');
 	await expect(page.getByRole('heading', { level: 1, name: 'The machine' })).toBeVisible();
-	await page.getByRole('link', { name: /Next\s*Installing software/ }).click();
-	await expect(page).toHaveURL('/docs/config');
+	await page.getByRole('link', { name: /Next\s*Webhooks/ }).click();
+	await expect(page).toHaveURL('/docs/webhooks');
 
 	await page.getByRole('button', { name: 'Search docs' }).click();
 	await page.getByRole('combobox', { name: 'Search docs' }).fill('ntfy topic');
