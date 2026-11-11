@@ -31058,149 +31058,6 @@ are listed as the project's clients, the project's session follows to
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
 
-**I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
-
-The owner, 2026-11-10: users do not need to know a base was published. A
-platform base reaching a machine is repose's own housekeeping. It asks
-the owner for nothing, and the one case where it needs them, a kernel
-change that waits for a stop and start, is still waiting the next time
-they look. A notification per published base, on every project an
-account holds, is the shape I-688 took turn ends off for.
-
-- `base_updated` leaves `notifyKinds` (`internal/api/events/events.go`).
-  It is still inserted by `basebump.OnOpFinished` and still shows in
-  `repose events`, in the dashboard's event stream and in the project's
-  history, with the summary that says whether the new base is running or
-  waits for a stop and start.
-- `base_update_failed` keeps notifying: the machine stayed on the base
-  it had, with the user's configuration unbuilt, which is theirs to fix.
-- The email and Google Chat golden files for `base_updated` stay. The
-  renderer can still render the kind, as it can `completed`, which left
-  the notifying kinds at I-688 and kept its goldens; a kind's rendering
-  and whether a row is queued for it are two things.
-- Rejected: deleting the event. The dashboard's event stream answers
-  "what happened to my machine", and a base that changed the machine
-  under the user belongs in that answer.
-- *Evidence.* `TestBaseUpdatedNotifiesNobodyAndFailureDoes`
-  (`internal/api/events/events_test.go`): one `base_updated` row in
-  `events`, zero rows in `events_outbox`; one `base_update_failed`
-  queues two, one per channel. `TestHeldWhilePresentThenSent` used
-  `base_updated` as its stand-in platform kind and now uses
-  `snapshot_failed`.
-
-**I-1096. A notification carries a way into the dashboard only where the dashboard has an act.** (notify-presence, 2026-11-11)
-
-The owner, 2026-11-10: "unless there's something they can do on the
-dashboard, why leave them there?" Every Google Chat card ended with
-"Open project" and most emails with "Open todo-app". For a done report,
-a message, a permission prompt, a failed snapshot or a restarted server,
-that button leads to a page that says what the notification already
-said. CLAUDE.md "Trust the reader": a line that gives the reader nothing
-on their fiftieth notification is cut, and each of these looked helpful
-in its own diff.
-
-- Kept, because the dashboard has the act: a question (its options'
-  reply links, else one link to where it is answered), a failed payment
-  or a stopped plan (`billing_stopped` to `/billing`, and the account
-  kinds `payment_failed`, `trial_ending`, `subscription_cancelled`,
-  `subscription_ended`, `plan_changed`, `egress_stopped`,
-  `disk_over_plan` to the billing page), a waitlist seat
-  (`waitlist_joined`, `waitlist_invited`, `waitlist_expired`,
-  `welcome` to the plan page), and a broken channel
-  (`notify_channel_broken`, `test` to the notification settings).
-- Dropped: `agent_done`, `agent_message`, `needs_input`, `error`,
-  `completed`, `idle_running`, `temp_expiring`, `temp_destroyed`,
-  `machines_restarted`, `host_moved`, `base_update_failed`,
-  `snapshot_failed`, `destroy_failed`, `stop_failed`, `personal_failed`,
-  `boot_failed`, `abuse_stopped`, `notifications_paused`. On Google
-  Chat their cards now carry no button; the `agent` and `agent_done`
-  email partials, `abuse_stopped` and `machines_restarted` lost their
-  `link_label`/`link_url` blocks, and `agent_question` its "Open
-  <project>" quiet link beside the answer buttons.
-- `abuse_stopped` is in the dropped list although the machine can be
-  started again: the notification tells the owner to look at the
-  machine, not to press a button, and a third stop in 24 hours refuses
-  the start anyway. It is not the "suspended plan" the owner named,
-  which is `billing_stopped`.
-- Where a link stays on a question, it points at the page with the act:
-  `Message.AnswerURL` is now the dashboard's Questions page
-  (`/questions`), which lists every waiting question and answers it in
-  place (I-693). A question that asks for a secret (I-929) keeps the
-  project page and its `?answer=<id>` query: that page holds the secret
-  dialog, and `apps/web/src/lib/signin.ts` allows only that shape as a
-  signed-out return path. ntfy's `Click` header is the notification's
-  tap target rather than a button and follows the same rule: the
-  Questions page for a question, the project's page otherwise.
-- The agent's own `--link` (I-931) is untouched and is now the only
-  button a message or a done report carries, which is what I-931 wanted
-  it to be.
-- Not changed: the grey "Open the dashboard" line in every email's
-  footer. It is the message's provenance, not an action, it sits beside
-  the unsubscribe link where nobody mistakes it for a next step, and it
-  is on account mail too, which this entry does not touch.
-- Rejected: one shared table of acts for the two channels. The email
-  partials have always named their own act, per kind, in the template
-  that renders them; a second source would have to agree with them kind
-  by kind. `TestGChatCardsOnlyLeadToAnAct` enumerates the project kinds
-  instead, which fails when a new kind arrives with a button nobody
-  justified.
-- *Evidence.* `TestGChatCardsOnlyLeadToAnAct`: nineteen project and
-  notice kinds render with no `openLink` at all, `billing_stopped` with
-  one "Your plan" to `/billing`, a question without reply links with one
-  to `/questions`. `TestAgentLinkOnEveryChannel`: the done report's card
-  holds exactly one button, the agent's link. `TestEmailTemplate` and
-  `TestEmailQuestionHasReplyLinks` now assert the project URL is
-  absent. 38 golden files regenerated; `go test ./internal/api/...` ok.
-
-**I-1098. `repose-presence`: the guest asks whether the owner is at the machine.** (notify-presence, 2026-11-11)
-
-An agent that finishes a dev server has to hand the user an address, and
-it cannot know which one works. While the user is attached, every port
-1024 and up is on their laptop's `localhost` at the same number, so
-`http://localhost:5173` opens. While they are away, that address is
-their own laptop's port and opens nothing: the port is on the machine
-and needs `repose open PORT` or an attach. Agents guessed, and guessed
-`localhost` because the guide's ports line says so first.
-
-- `repose-presence` prints `attached` or `away` and exits 0 either way;
-  exit 1 only when guestd does not answer, so an agent can tell `away`
-  from "I could not ask". It takes no arguments.
-- It is `repose-hook` under a third name beside `repose-notify` and
-  `repose-ask` (I-244), a symlink from the same package, so the guest
-  base gains no binary and `repose` stays the only prefix.
-  `repose-hook presence` is the same command.
-- guestd serves `GET /presence` on the hook socket, which is already
-  0660 root:dev, so only the guest's own user can ask. It carries no
-  payload in either direction beyond one word, and logs nothing: two
-  numbers the sample already counts decide it.
-- Present means what the presence hold means (I-689): a tmux client or
-  an SSH session, a laptop herdr bridge counting as an SSH session
-  (I-511). It is read live from the guest (`sample.Handler.Attached`)
-  rather than from the api's latest sample, so it has no 2 minute
-  staleness window; a session opened a moment ago is already present.
-  The tmux client count comes from the watcher's 5 second cache, and a
-  cache too old to be `fresh` still answers, because a stale count of
-  clients beats no answer and the SSH count beside it is read now.
-- The guide (`nix/guest/base/agent-guide.md`) gains one line in "Servers
-  and ports", and loses the separate `repose open PORT` line and the
-  "Tell them open http://localhost:PORT" clause that line now owns, so
-  the rule is stated once.
-- Rejected: having the agent read presence itself (`tmux list-clients`,
-  `who`). It would be a second definition of "at the machine" that
-  drifts from the one the hold uses, and agents would each write their
-  own.
-- Rejected: a new binary. The guest closure has 4 MiB of headroom under
-  its limit (`guest-closure-size`); a third symlink costs nothing.
-- *Evidence.* `TestPresenceBothStates`
-  (`internal/guestd/hooks/presence_test.go`): the route answers
-  `attached`/`away` with the source set and refuses without one.
-  `TestPresencePrintsAttachedAndAway` (`cmd/repose-hook`): both words on
-  stdout with exit 0 over a real hook socket, exit 1 and nothing on
-  stdout with no guestd, exit 2 for an argument. The `guestd` VM test's
-  "repose-presence says attached with a tmux client and away without"
-  subtest runs the installed command on a booted guest: `away`, then
-  `attached` once a real tmux client is attached on a pty, then `away`
-  again after `detach-client`, and `repose-hook presence` the same.
 **I-1090. A billing-exempt account cannot join the waitlist, and the
 queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
 ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends
@@ -31761,3 +31618,311 @@ on the api; it is that repose is not a Google Chat app at all.
   what "no ghost features" forbids. `repose say` from the CLI is
   explicitly out of it: the owner is in a terminal and reads the answer
   there.
+**I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: users do not need to know a base was published. A
+platform base reaching a machine is repose's own housekeeping. It asks
+the owner for nothing, and the one case where it needs them, a kernel
+change that waits for a stop and start, is still waiting the next time
+they look. A notification per published base, on every project an
+account holds, is the shape I-688 took turn ends off for.
+
+- `base_updated` leaves `notifyKinds` (`internal/api/events/events.go`).
+  It is still inserted by `basebump.OnOpFinished` and still shows in
+  `repose events`, in the dashboard's event stream and in the project's
+  history, with the summary that says whether the new base is running or
+  waits for a stop and start.
+- `base_update_failed` keeps notifying: the machine stayed on the base
+  it had, with the user's configuration unbuilt, which is theirs to fix.
+- The email and Google Chat golden files for `base_updated` stay. The
+  renderer can still render the kind, as it can `completed`, which left
+  the notifying kinds at I-688 and kept its goldens; a kind's rendering
+  and whether a row is queued for it are two things.
+- Rejected: deleting the event. The dashboard's event stream answers
+  "what happened to my machine", and a base that changed the machine
+  under the user belongs in that answer.
+- *Evidence.* `TestBaseUpdatedNotifiesNobodyAndFailureDoes`
+  (`internal/api/events/events_test.go`): one `base_updated` row in
+  `events`, zero rows in `events_outbox`; one `base_update_failed`
+  queues two, one per channel. `TestHeldWhilePresentThenSent` used
+  `base_updated` as its stand-in platform kind and now uses
+  `snapshot_failed`.
+
+**I-1096. A notification carries a way into the dashboard only where the dashboard has an act.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: "unless there's something they can do on the
+dashboard, why leave them there?" Every Google Chat card ended with
+"Open project" and most emails with "Open todo-app". For a done report,
+a message, a permission prompt, a failed snapshot or a restarted server,
+that button leads to a page that says what the notification already
+said. CLAUDE.md "Trust the reader": a line that gives the reader nothing
+on their fiftieth notification is cut, and each of these looked helpful
+in its own diff.
+
+- Kept, because the dashboard has the act: a question (its options'
+  reply links, else one link to where it is answered), a failed payment
+  or a stopped plan (`billing_stopped` to `/billing`, and the account
+  kinds `payment_failed`, `trial_ending`, `subscription_cancelled`,
+  `subscription_ended`, `plan_changed`, `egress_stopped`,
+  `disk_over_plan` to the billing page), a waitlist seat
+  (`waitlist_joined`, `waitlist_invited`, `waitlist_expired`,
+  `welcome` to the plan page), and a broken channel
+  (`notify_channel_broken`, `test` to the notification settings).
+- Dropped: `agent_done`, `agent_message`, `needs_input`, `error`,
+  `completed`, `idle_running`, `temp_expiring`, `temp_destroyed`,
+  `machines_restarted`, `host_moved`, `base_update_failed`,
+  `snapshot_failed`, `destroy_failed`, `stop_failed`, `personal_failed`,
+  `boot_failed`, `abuse_stopped`, `notifications_paused`. On Google
+  Chat their cards now carry no button; the `agent` and `agent_done`
+  email partials, `abuse_stopped` and `machines_restarted` lost their
+  `link_label`/`link_url` blocks, and `agent_question` its "Open
+  <project>" quiet link beside the answer buttons.
+- `abuse_stopped` is in the dropped list although the machine can be
+  started again: the notification tells the owner to look at the
+  machine, not to press a button, and a third stop in 24 hours refuses
+  the start anyway. It is not the "suspended plan" the owner named,
+  which is `billing_stopped`.
+- Where a link stays on a question, it points at the page with the act:
+  `Message.AnswerURL` is now the dashboard's Questions page
+  (`/questions`), which lists every waiting question and answers it in
+  place (I-693). A question that asks for a secret (I-929) keeps the
+  project page and its `?answer=<id>` query: that page holds the secret
+  dialog, and `apps/web/src/lib/signin.ts` allows only that shape as a
+  signed-out return path. ntfy's `Click` header is the notification's
+  tap target rather than a button and follows the same rule: the
+  Questions page for a question, the project's page otherwise.
+- The agent's own `--link` (I-931) is untouched and is now the only
+  button a message or a done report carries, which is what I-931 wanted
+  it to be.
+- Not changed: the grey "Open the dashboard" line in every email's
+  footer. It is the message's provenance, not an action, it sits beside
+  the unsubscribe link where nobody mistakes it for a next step, and it
+  is on account mail too, which this entry does not touch.
+- Rejected: one shared table of acts for the two channels. The email
+  partials have always named their own act, per kind, in the template
+  that renders them; a second source would have to agree with them kind
+  by kind. `TestGChatCardsOnlyLeadToAnAct` enumerates the project kinds
+  instead, which fails when a new kind arrives with a button nobody
+  justified.
+- *Evidence.* `TestGChatCardsOnlyLeadToAnAct`: nineteen project and
+  notice kinds render with no `openLink` at all, `billing_stopped` with
+  one "Your plan" to `/billing`, a question without reply links with one
+  to `/questions`. `TestAgentLinkOnEveryChannel`: the done report's card
+  holds exactly one button, the agent's link. `TestEmailTemplate` and
+  `TestEmailQuestionHasReplyLinks` now assert the project URL is
+  absent. 38 golden files regenerated; `go test ./internal/api/...` ok.
+
+**I-1098. `repose-presence`: the guest asks whether the owner is at the machine.** (notify-presence, 2026-11-11)
+
+An agent that finishes a dev server has to hand the user an address, and
+it cannot know which one works. While the user is attached, every port
+1024 and up is on their laptop's `localhost` at the same number, so
+`http://localhost:5173` opens. While they are away, that address is
+their own laptop's port and opens nothing: the port is on the machine
+and needs `repose open PORT` or an attach. Agents guessed, and guessed
+`localhost` because the guide's ports line says so first.
+
+- `repose-presence` prints `attached` or `away` and exits 0 either way;
+  exit 1 only when guestd does not answer, so an agent can tell `away`
+  from "I could not ask". It takes no arguments.
+- It is `repose-hook` under a third name beside `repose-notify` and
+  `repose-ask` (I-244), a symlink from the same package, so the guest
+  base gains no binary and `repose` stays the only prefix.
+  `repose-hook presence` is the same command.
+- guestd serves `GET /presence` on the hook socket, which is already
+  0660 root:dev, so only the guest's own user can ask. It carries no
+  payload in either direction beyond one word, and logs nothing: two
+  numbers the sample already counts decide it.
+- Present means what the presence hold means (I-689): a tmux client or
+  an SSH session, a laptop herdr bridge counting as an SSH session
+  (I-511). It is read live from the guest (`sample.Handler.Attached`)
+  rather than from the api's latest sample, so it has no 2 minute
+  staleness window; a session opened a moment ago is already present.
+  The tmux client count comes from the watcher's 5 second cache, and a
+  cache too old to be `fresh` still answers, because a stale count of
+  clients beats no answer and the SSH count beside it is read now.
+- The guide (`nix/guest/base/agent-guide.md`) gains one line in "Servers
+  and ports", and loses the separate `repose open PORT` line and the
+  "Tell them open http://localhost:PORT" clause that line now owns, so
+  the rule is stated once.
+- Rejected: having the agent read presence itself (`tmux list-clients`,
+  `who`). It would be a second definition of "at the machine" that
+  drifts from the one the hold uses, and agents would each write their
+  own.
+- Rejected: a new binary. The guest closure has 4 MiB of headroom under
+  its limit (`guest-closure-size`); a third symlink costs nothing.
+- *Evidence.* `TestPresenceBothStates`
+  (`internal/guestd/hooks/presence_test.go`): the route answers
+  `attached`/`away` with the source set and refuses without one.
+  `TestPresencePrintsAttachedAndAway` (`cmd/repose-hook`): both words on
+  stdout with exit 0 over a real hook socket, exit 1 and nothing on
+  stdout with no guestd, exit 2 for an argument. The `guestd` VM test's
+  "repose-presence says attached with a tmux client and away without"
+  subtest runs the installed command on a booted guest: `away`, then
+  `attached` once a real tmux client is attached on a pty, then `away`
+  again after `detach-client`, and `repose-hook presence` the same.
+**I-1104. The laptop lends ports to the machine: `[forward] reverse` in
+config.toml, held by the session helper for the length of an attach.**
+(forwards-both-ways, 2026-11-11. Adds to SECURITY.md boundary 13.)
+
+Every member of the 2026-11-04 product value council named the same gap:
+the agents cannot reach the laptop's Android emulator, its Ollama or its
+local database. `docs/proposals/2026-11-10-forwards-both-ways.md` turned
+it into behaviour; this entry is the part that was built, with the
+conductor's ruling of 2026-11-11 (the owner's standing approval) on the
+one question the proposal left open.
+
+**Decision 1 of the proposal is accepted.** The CLI passes a laptop port
+through without inspecting what goes over it. Every other path from the
+guest to the laptop is one the CLI reads: the browser bridge polices CDP
+message by message (I-311) and `repose mcp forward` runs one named
+server. A reverse forward decides only the port. What bounds it instead
+is the user's own file, a deny list and the words where they set it.
+
+- `[forward] reverse` and `[projects.NAME.forward] reverse` list laptop
+  ports, merged for a project as `[mcp] forward` is (I-557), each machine
+  port once. A number is the same port on both sides; `"MACHINE:LAPTOP"`
+  puts the laptop's port on another one on the machine, the listening
+  port first, as `repose open LOCAL:PORT` (I-619) and ssh's `-L` and `-R`
+  spell it. `REPOSE_NO_FORWARD=1` stays the one knob and now turns off
+  both directions.
+- A refused entry fails the config load, so every command names the file
+  and the key, as an unknown `default_multiplexer` does: below 1024,
+  above 65535, a port in `forwardPlatformPorts`, 9222, 9229, 2375 or 2376
+  on the laptop side, more than 16 ports, or a value that is neither a
+  number nor `"MACHINE:LAPTOP"`. A forward dropped in silence would read
+  as a broken forward, which is the reason the Windows line for `[mcp]
+  forward` exists. The refusal exits 2, and so does every other
+  config.toml refusal from now on: `cli.md` has said since I-922 that an
+  unknown `default_size` "makes every command exit 2 naming the file",
+  and the code exited 1, because `loadConfig` returned a plain error and
+  `exitCodeFor` has no case for one. CLAUDE.md says to fix the code when
+  it and a doc disagree, so `loadConfig`'s three refusals and a file that
+  is not TOML are now `exitf(ExitUsage, ...)`, with their messages
+  unchanged. A bad config file is wrong usage, which is what 2 means.
+- The deny list is kept (proposal decision 3). 9222 has the bridge, and
+  Node's inspector, Docker's API and Docker's TLS API run code on the
+  laptop by design.
+- The forwards live inside an attach, on a connection of the helper's
+  own with `ExitOnForwardFailure=yes`, not on the ControlMaster: a `-R`
+  there would outlive the detach by ControlPersist's ten minutes
+  (I-149), and a laptop port must not stay open on the machine after the
+  user walks away. The remote command is `exec cat >/dev/null`, so the
+  helper's exit, however it comes, closes the pipe and takes the
+  listeners with it. The guest needs no change, so machines running now
+  get it from the CLI alone.
+- Two `-R` per port, `127.0.0.1` and `::1`. The proposal asked for both
+  and this was measured rather than assumed: against OpenSSH 9.6 sshd
+  with `GatewayPorts no`, `-R 127.0.0.1:P` binds 127.0.0.1 and leaves
+  `::1:P` free, and the two requests together bind both and neither
+  fails. Some clients on the machine try `::1` first for `localhost`.
+- The loop the design must prevent: the reverse listener is a listener
+  like any other, so auto-forward would see `sshd-session` on
+  `127.0.0.1:5037`, find 5037 taken on the laptop and forward the
+  machine's 5037 to the laptop's 5038 — the laptop's own adb, round a
+  loop. The forwarder skips every port it lends and every port another
+  laptop's registry entry marks `in:` (I-1106), as it skips 9226 today.
+- A port the machine already holds is left out before the connection
+  starts and said once, with the remap to use. The laptop's process name
+  comes from the laptop's own tools (`lsof` on macOS, `ss` on Linux) and
+  is left out when they do not answer. On Windows no helper runs and a
+  set key prints a line saying so.
+- The freeze is untouched. A reverse forward exists only while an attach
+  does, and an attach already fails I-818's rest rule twice. The hold
+  must never outlive its attach, or it would be the gateway session with
+  no bytes on it that I-930 forbids; the `cat` hold, the helper's
+  parent check and the test below are what keep it from happening.
+
+*What a lent port gives.* `SECURITY.md` boundary 13 and
+`/docs/machine#your-laptops-ports-on-the-machine` say it once, in the
+same words: everything on the machine, agents included, reaches a lent
+port as a local program on the laptop would. adb serves every device the
+laptop has, a phone on USB included; Ollama has no authentication; a
+Homebrew Postgres with `trust` on localhost and a superuser default role
+turns `COPY ... FROM PROGRAM` into commands on the laptop. That line
+prevents a loss the user cannot undo, so I-485 keeps it.
+
+*Evidence.* `TestForwardReverseConfig` parses the numbers, the remap and
+the project merge and prints each refusal with its file. `TestReverseSSHArgs`
+holds the ssh line. `TestReverseMessages` holds the text.
+`TestForwarderDoesNotForwardALentPortBack` gives the forwarder an `ss`
+with `sshd-session` on 5037 and 11434 and a registry line `in:11434:...`
+from another id, and only 5173 is forwarded.
+`TestReverseForwardReachesTheLaptopAndEndsWithTheAttach` runs the real
+ssh against the test guest: a listener on the laptop, bytes read back
+through the machine's `127.0.0.1:P` and `[::1]:P`, and the listener gone
+within a second of the attach ending. The rest rule is unchanged code;
+`TestRestRuleHoldsEveryTerm`'s "a tmux client" case is what proves an
+attach holds a machine awake.
+
+**I-1106. The forward messages name the laptop, the registry says which
+way each forward goes, and `repose status` shows both.** (forwards-both-ways,
+2026-11-11. Amends I-199, I-324, I-616.)
+
+The payoff of auto-forward was hard to see. `⇄ localhost:5173 → :5173`
+names two ports and no place, so a user who had not read the docs could
+not tell which side was the laptop, and nothing outside tmux listed a
+forward at all.
+
+- The messages become `⇄ localhost:5173 → your laptop`, `⇄ localhost:3000,
+  3001, 5173 → your laptop` for up to eight ports, `⇄ 12 ports → your
+  laptop: 3000, …` beyond that, and `⇄ :3000 → your laptop's
+  localhost:3001 (3000 is taken there)` for a moved one. Portless keeps
+  its own line. The status bar is unchanged.
+- `~/.repose/forwards/<id>` keeps its first line, the guest ports as bare
+  numbers, because every reader since I-199 takes that line through `grep
+  -E '^[0-9]+$'` and nothing else. Lines after it name one forward each,
+  colon-joined so that reader steps over them: `out:MACHINE:LAPTOP` and
+  `in:MACHINE:LAPTOP[:PROCESS]`. Both shapes are read for one release, as
+  CLAUDE.md asks of a contract change; `interfaces/guest-conventions.md`
+  has the format.
+- `repose status` reads the registry in the SSH call it already makes.
+  A listening row gains `, on your laptop`, and `at :3001` when the
+  laptop holds it elsewhere; a `laptop` row lists the ports a laptop
+  lends, with the laptop's process; `--json` gains `forwards` with
+  `port`, `laptop_port`, `direction` and `process`. The reverse
+  listeners leave the `listening` rows: `sshd-session :5037 up 2h` under
+  `listening` is a row nobody acts on, and the `laptop` row says what it
+  is. The extra SSH session the hold makes is counted in `attached`,
+  because it is one (proposal decision 7, as recommended).
+
+*Evidence.* `TestStatusMarksTheForwardedPortsAndTheLaptopsOwn` holds the
+rows and the JSON. `TestOldRegistryReadersSeeTheSameUnion` writes an
+entry with the new lines, takes the union the publish script takes, then
+rewrites the file as a pre-I-1106 CLI would and takes it again: `3000
+5173` both times, with no lent port in it. The three existing message
+tests (I-199, I-324, I-469) hold the new text.
+
+**I-1108. A `localhost` link the machine opens goes to the laptop port
+its forward uses, or nowhere.** (forwards-both-ways, 2026-11-11. Amends
+I-634, which amends I-541.)
+
+I-634 opens an `https` link the machine hands to `$BROWSER` in the
+laptop's browser. It had a hole and a gap. The hole: `https://localhost:8443/`
+passed `openableURL` and opened on the laptop as written, so the laptop
+opened its own 8443, or nothing. The gap: a dev server's `--open` hands
+over `http://localhost:5173/`, which was never recorded at all, so the
+most common link on a dev machine was the one that did not travel.
+
+`repose-print-url` now records an `http` or `https` link whose host is
+the machine's own loopback, beside the `https` ones. The laptop never
+opens such a link as written: it waits up to 5 s for a forward of that
+port, because a dev server hands over its URL a moment before it
+listens, opens the laptop end of that forward (`http://localhost:3001/`
+for the machine's 3000), and with no forward opens nothing and says `A
+program on the machine opened localhost:3000, and no forward reaches
+it.` The same link opens at most once a minute, so a dev server
+restarting with `--open` in a loop does not fill the laptop with tabs.
+With `REPOSE_NO_FORWARD=1` nothing reaches a loopback port, so the line
+is said once per port and no tab opens.
+
+This is a base change: a machine on an older base records `https` links
+only, and the laptop's new rule then applies to the `https://localhost`
+ones it does record, which is the hole closed.
+
+*Evidence.* `TestLoopbackLinksOpenOnTheForwardedPort` covers each case:
+the rewrite onto a moved forward, the once-a-minute cap, the forward
+that appears two seconds late, nothing opened with no forward and the
+line said once, `https://localhost:8443` under the same rule, and
+`http://example.com` never opened. `TestOpenURLsTakenOnce` (I-634) still
+passes.

@@ -59,6 +59,7 @@ var guestCommands = map[string]string{
 	"grep":                "system:NixOS's base system path",
 	"df":                  "system:NixOS's base system path (coreutils)",
 	"dmesg":               "system:NixOS's base system path (util-linux)",
+	"ss":                  "system:NixOS's base system path (iproute2); auto-forward reads it too",
 	"fstrim":              "system:NixOS's base system path (util-linux); base/trim.nix runs it daily (I-585)",
 	"curl":                "nix/guest/base/tool-list.nix:curl",
 	"jq":                  "nix/guest/base/tool-list.nix:jq",

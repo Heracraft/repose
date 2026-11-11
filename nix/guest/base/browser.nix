@@ -213,13 +213,17 @@ in
     # wins (DECISIONS I-541). An https link is also left in
     # ~/.cache/repose/open-urls, which an attached laptop's session
     # helper takes and opens in the laptop's browser (I-634): Claude
-    # Code's /login calls BROWSER.
+    # Code's /login calls BROWSER. A link on this machine's own loopback
+    # is left there too, http as well as https (I-1108): the laptop
+    # opens it on the laptop end of the forward that reaches it, and
+    # opens nothing when none does. Any other http link is printed only.
     BROWSER = "${pkgs.writeShellScript "repose-print-url" ''
       printf 'Open in your browser: %s\n' "$@" >&2
       d="$HOME/.cache/repose"
       for u in "$@"; do
         case "$u" in
-          https://*) mkdir -p "$d" 2>/dev/null && printf '%s %s\n' "$(date +%s)" "$u" >> "$d/open-urls" 2>/dev/null ;;
+          https://* | http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]* | "http://[::1]" | "http://[::1]"[:/]*)
+            mkdir -p "$d" 2>/dev/null && printf '%s %s\n' "$(date +%s)" "$u" >> "$d/open-urls" 2>/dev/null ;;
         esac
       done
       exit 0

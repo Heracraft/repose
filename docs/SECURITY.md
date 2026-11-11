@@ -196,6 +196,19 @@ they stop an actor the component map does not draw.
     in the user's own guest copying out a login it could only use while
     the user lends it, or a laptop file the user did not mean to send.
 
+    A reverse forward the user lists in `config.toml` (`[forward]
+    reverse`, DECISIONS I-1104) is the one path the CLI does not
+    inspect: a TCP pipe to that port on the laptop. It listens on the
+    guest's loopback only (`GatewayPorts no`, plus an explicit
+    `127.0.0.1` and `::1` bind), only while that laptop is attached, and
+    refuses ports below 1024, the guest's own ports and 9222, 9229,
+    2375 and 2376, whose raw form goes round a repose control or runs
+    code by design. Everything in the guest, every agent included,
+    reaches a lent port as a local program on the laptop would, which
+    is what the docs say where the user sets it. Stops: a port the user
+    did not list, a port reachable from off the guest's loopback, and a
+    lent port outliving the attach.
+
 ## Non-negotiables
 
 Rules that hold regardless of convenience. Each names its failure.

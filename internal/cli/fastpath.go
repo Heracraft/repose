@@ -293,6 +293,9 @@ func fastAttachHelper(e *Env, guess *Project, target sshTarget, tz, explicit str
 		helper.MCPOff = true // I-556
 	}
 	helper.MCP = e.Cfg.mcpForward(guess.Slug) // I-557
+	if helper.Forward {
+		helper.Reverse = e.Cfg.forwardReverse(guess.Slug) // I-1104
+	}
 	if root := gitRepoRoot(e.Cwd); root != "" && explicit == "" {
 		// Guessed from this checkout's remote: the checkout is the
 		// project's own, whose git config the carry takes.
