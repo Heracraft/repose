@@ -26,6 +26,7 @@ Where a row names two sections, the first is the common cause.
 | …fails for one project only | "Gateway relay failures" — its table maps the exact refusal the CLI printed to a cause |
 | The CLI printed a refusal and you want to know what it means | "Gateway relay failures" |
 | `kex_exchange_identification` or `read: Connection reset by peer` | "Gateway relay failures", the ban row |
+| `Certificate invalid: name is not a listed principal`, or `Host key verification failed`, for everyone | "Move the gateway to another name" — the host certificate does not name the host they dialled |
 | `<slug> did not answer ssh in N s` after a `run` | "GuestWakeFailed" if the machine was resting, else "CLI: SSH timeout after running" |
 | `ssh host-0X` times out while the api still shows the host `ready` | "HostWgDown" — the tunnel, not the host |
 | A host answers on no path at all | "HostUnreachable" |
@@ -2055,6 +2056,20 @@ Some changes need sessions to end, which drops every one of them (users' `run`,
 - **A change to the gateway's sandbox** (`DynamicUser`, capabilities,
   paths): a handover starts the new build inside the old process's
   sandbox. `systemctl restart gateway`.
+- **A `StateDirectory` or `RuntimeDirectory` added to the unit.** systemd
+  makes those directories when the unit starts, and a handover does not
+  start the unit: the new build runs inside the old process's sandbox,
+  which has no mount for the new path. Observed 2026-11-11 07:18:57Z on
+  the first switch carrying `StateDirectory=repose-gateway` (the webhook
+  listener's ACME cache, I-1110). The handover itself succeeded, and the
+  handed-over process then logged `webhook certificate cache unusable
+  ... mkdir /var/lib/repose-gateway: file exists` — under `DynamicUser`
+  that path is a symlink into `/var/lib/private/`, which the old
+  sandbox cannot enter — so `hooks.repose.run` served no certificate.
+  `systemctl restart gateway` at 07:20, with 0 relays open, fixed it.
+  Check after the switch: `journalctl -u gateway | grep acme_cache`
+  prints nothing, and `ls /var/lib/private/repose-gateway/acme` lists the
+  webhook name's certificate.
 - **wg0's address or key file path removed or changed.** The reload adds
   a new address beside the old and never removes one:
   `systemctl restart wireguard-wg0 wgsync` (wgsync re-adds host peers at
@@ -2062,6 +2077,56 @@ Some changes need sessions to end, which drops every one of them (users' `run`,
 - **A kernel update** needs a reboot, which ends every connection until
   the edge is back (about a minute). Announce it and pick a quiet hour;
   the edge is one VM (I-473).
+
+## Move the gateway to another name
+
+The name users reach the gateway by is the api's `GATEWAY_HOST`: it is
+what the CLI writes into `~/.ssh/repose/config` and what it dials. The
+gateway's SSH host certificate must list every name in use, or ssh
+refuses the connection it was just told to make. On 2026-11-11 at 07:22Z,
+with `GATEWAY_HOST=ssh.repose.run` live and a certificate still naming
+only `ssh.repose.herakraft.co`, every CLI connection failed with
+`Certificate invalid: name is not a listed principal` and then `Host key
+verification failed`.
+
+1. Point the new name's DNS at the edge, and leave the old name
+   answering until nobody's `~/.ssh/repose` still carries it.
+2. Set `GATEWAY_HOST` in the api's environment and restart the api
+   (`ops/coolify/api.env.example`).
+3. Derive the gateway's public key, **on the edge**. The private key is
+   `/var/lib/repose/edge/ssh_host_ed25519_key`, 0640 `root:repose-edge`,
+   and `ssh-keygen -y` refuses a key a group can read, so work from a
+   0600 copy and delete it:
+
+   ```
+   install -m 0600 /var/lib/repose/edge/ssh_host_ed25519_key /root/hk
+   ssh-keygen -y -f /root/hk > /root/hk.pub && rm /root/hk
+   ```
+4. Sign a certificate carrying **every** name, old, new and the edge's
+   address, in the api container on the control VM. That image has no
+   shell, so there is nothing in it to read a file you copied in; feed
+   the public key through stdin instead:
+
+   ```
+   docker exec -i <api container> repose-admin ca sign-host \
+     --principal ssh.repose.run,ssh.repose.herakraft.co,<edge ip> \
+     --pubkey /dev/stdin < hk.pub
+   ```
+
+   It prints one certificate line. Write it to
+   `/var/lib/repose/edge/ssh_host_ed25519_key-cert.pub` on the edge,
+   0640 `root:repose-edge`, beside the key.
+5. `systemctl reload gateway` on the edge. That is a handover, so no
+   session drops ("Switch the edge"). Check `ssh -p 22
+   probe.nobody@<new name>` answers `certificate required`, and that
+   `ssh-keygen -L -f /var/lib/repose/edge/ssh_host_ed25519_key-cert.pub`
+   lists all the principals.
+6. Tell users to delete `~/.ssh/repose/known_hosts` once. The CLI writes
+   that file's `@cert-authority` line for the gateway name it knew, and
+   rewrites it only when it fetches a new certificate, so a laptop with
+   an unexpired one keeps the old name. The CLI says this itself when ssh
+   fails, and the Troubleshooting page says it too
+   (`apps/web/src/content/docs/troubleshooting.md`).
 
 ## Switch failed
 

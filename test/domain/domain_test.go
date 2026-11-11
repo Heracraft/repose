@@ -123,6 +123,11 @@ var allowed = []struct {
 	// A dated observation, kept as the evidence for the plan-time warning.
 	{"infra/README.md", "dig +short ssh.repose.herakraft.co", "what the herakraft.co wildcard answered on 2026-09-20"},
 	{"infra/azure/modules/environment/main.tf", "with manage_dns off ssh.repose.herakraft.co resolved", "the same observation"},
+
+	// The gateway's SSH host certificate carries every name users dial,
+	// so while the old one answers it is on the certificate (I-1160).
+	{"docs/ops/RUNBOOK.md", "only `ssh.repose.herakraft.co`, every CLI connection", "the dated failure that section was written for"},
+	{"docs/ops/RUNBOOK.md", "--principal ssh.repose.run,ssh.repose.herakraft.co", "a certificate missing a live name is a name nobody can reach"},
 }
 
 func repoRoot(t *testing.T) string {

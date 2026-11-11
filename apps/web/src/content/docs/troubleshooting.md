@@ -19,6 +19,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`ssh on this laptop failed before it reached todo-app`.** Your laptop's ssh refused before it got to the gateway: a line in `~/.ssh/config`, a `ControlPath` too long for a socket, or `~/.ssh/repose/known_hosts`. The line quotes ssh and names the fix when it knows one.
 
+**`Host key verification failed`, or ssh says `Certificate invalid: name is not a listed principal`.** The gateway's host key or the name repose reaches it by changed. Delete `~/.ssh/repose/known_hosts`; the next repose command writes it again.
+
 **`No repose project for github.com/you/app`.** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
 
 **`ssh todo-app.repose` says `Could not resolve hostname`.** With ``Not logged in. Run `repose login`.`` on a line before it, log in and connect again. With no other message, ssh isn't reading [the file repose writes](/docs/ssh-and-editors#when-it-doesnt-connect).

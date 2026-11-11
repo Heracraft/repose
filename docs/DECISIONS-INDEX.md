@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-957 entries.
+958 entries.
 
 ## Scope
 
@@ -989,3 +989,4 @@ pointer, not a summary.
 - **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32914
 - **I-1156** repose answers on `repose.run`; the Logto API resource and the host-to-api gRPC name keep the old name — 2026-11-11; L33028
 - **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33093
+- **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33117
