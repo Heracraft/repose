@@ -810,8 +810,10 @@ func TestGuestMessageScriptBothMultiplexers(t *testing.T) {
 	got := guestMessageScript("todo-app", "50% #1 done")
 	for _, want := range []string{
 		`if systemctl --user -q is-active repose-herdr-server.service 2>/dev/null; then herdr notification show repose --body '50% #1 done'`,
-		`; else if tmux list-clients -t '=todo-app' -F x`,
-		`tmux display-message -d 4000 -t '=todo-app:' '50% ##1 done'`,
+		// I-1067: every terminal attached to the session or a session grouped
+		// with it, each by its client name.
+		`; else for repose_c in $(tmux list-clients -F '#{client_name} #{session_name} #{session_group}' 2>/dev/null | awk -v s='todo-app' '$2 == s || $3 == s { print $1 }'); do`,
+		`tmux display-message -c "$repose_c" -d 4000 '50% ##1 done'`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("%s\nlacks %s", got, want)
@@ -895,7 +897,9 @@ func TestGuestMessageScriptPrefersHerdrUnit(t *testing.T) {
 		for name, body := range map[string]string{
 			"systemctl": "exit " + sysExit,
 			"herdr":     `echo herdr >> ` + log,
-			"tmux":      `case "$1" in list-clients) echo x ;; *) echo "tmux $1" >> ` + log + ` ;; esac`,
+			// One client on the session (I-1067's list-clients shape), so the
+			// tmux branch has a terminal to show the message on.
+			"tmux":      `case "$1" in list-clients) echo "/dev/pts/7 todo-app " ;; *) echo "tmux $1" >> ` + log + ` ;; esac`,
 		} {
 			if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755); err != nil {
 				t.Fatal(err)
