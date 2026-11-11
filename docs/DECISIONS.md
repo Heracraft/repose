@@ -30568,3 +30568,111 @@ the thing that cost the time. The guard ships in this branch and not in
 `runbook-triage` for that reason: the check and the alert that satisfies
 it have to land together, or `main` goes red on a merge order nobody
 chose.
+
+**I-1072. The runbook is entered by symptom, because an alert name is not
+one and 101 of its 159 sections are reachable no other way.** (runbook-triage,
+2026-11-10.)
+*Made during implementation.*
+
+On 2026-11-10 a host's WireGuard tunnel went one way. The runbook has a
+section for that failure, and 42 minutes of diagnosis never reached it.
+The post-mortem of *why* is the useful part, because none of it was bad
+luck:
+
+1. **The starting symptom led nowhere.** "gateway might be down" greps to
+   89 lines across 21 sections. Nothing in the file carries the words a
+   person actually uses: `cannot ssh`, `can't connect`, `no logs`,
+   `not responding`, `offline`, `no metrics` and `my machine` return zero
+   hits between them.
+2. **Two sections actively routed the diagnosis away.** `HostUnreachable`
+   step 1 pings the host over the edge's WireGuard and `HostdDown` step 3
+   sshes to it through the same tunnel. Both probes fail when the tunnel
+   is the fault, and both sections concluded "Host network dead after a
+   live migration" from that failure. The discriminator — hostd's
+   heartbeat travels the VNet, so a host that is still `ready` to the api
+   has a working NIC and only a dead tunnel — was stated once, inside the
+   section you could not reach. Both now branch on the api's view before
+   naming the live-migration section.
+3. **The one working symptom path had no inbound link.** The table in
+   "Gateway relay failures" maps each refusal the CLI prints to a cause,
+   and it routes `cannot reach environment: no route to host` to the right
+   section. Nothing anywhere pointed at that table. `GatewayDown`,
+   `GatewayDialFailing` and "CLI: SSH timeout after running" all should
+   have, and none did.
+4. **`GatewayDialFailing` is the page whose text is this symptom** —
+   "A host whose tunnel dropped takes all of its guests with it" — and it
+   named no section, so the alert that fires closest to the truth was a
+   dead end. Its expression is also a fleet-wide `sum()` with no
+   `host_id`, so it cannot say which host; the section now says so and
+   gives the way to find out.
+
+So: a symptom table at the top, keyed on what a person has before they
+know the cause, with one section per row. It costs about 40 lines and
+needs no reorganisation of the 4289 behind it. The header's claim to be
+"Symptom-titled" was false for 58 of its sections and is now accurate
+about both doors.
+
+**Also fixed, all of the same class.** A dangling pointer to
+"HostHeartbeatMissing", an alert and a section that exist nowhere in the
+repository, reached from a message a tenant can read verbatim
+(`MsgUnreachableHostFmt`). Two directional words that sent a reader the
+wrong way through 600 lines, now dropped, since every reference in this
+file is findable by its quoted title alone. Three headings whose
+parenthetical suffix restated their first line and broke title lookup
+(`HostUnregistered`, `StoreHigh`, the Claude login share), with the one
+anchor that depended on the old form. Three sections for "it never became
+ready" that named no other, now entered from one. Two sections owning the
+same user-visible SSH-timeout string with different first steps and no
+discriminator between them, now with the cheap one first — the shape
+`GuestdLost` step 1 already had and the rest of the file should copy.
+`KernelOops` opened with 79 lines of prose before its first step in a
+section whose own framing is "this host is leaving the fleet today"; its
+two known signatures, one of which calls for no action, are now checks at
+the top with the reasoning left below.
+
+**Conflicting remedies for one signature, where the doc was wrong.**
+`HostUnreachable` step 3 and "hostd: api unreachable" both cover a
+`stream_disconnect` loop with a TLS error naming the client certificate.
+The latter said "rotation needs the stream, so … re-register with a new
+token", conflating hostd's own `Rotate` RPC, which does need the stream,
+with `repose-admin hosts rotate-cert`, which does not: it issues from the
+CA, stores the serial and prints the PEMs for the operator to place
+(`internal/admin/cmds.go`). An agent following it took the heavier path
+for no reason. It now points at the lighter one and keeps re-registration
+for the case `rotate-cert` itself refuses.
+
+**The alert count is no longer written down anywhere.** It was stated in
+eleven places, disagreed with itself (53, 54, 56 and 57) and was wrong in
+all of them against an actual 59. Updating the number would have made my
+own branch stale it again, so the numbers are gone and `ops/check.sh`
+prints what it finds. One instance stays: a record of a past measurement,
+where the number is evidence rather than a claim about now.
+
+**Not done.** About 30 sections still have no inbound reference from
+anywhere; the symptom table reaches most of the operationally relevant
+ones, and the long tail of `hostd:`-prefixed sections is unaddressed. The
+`GatewayDialFailing` expression still carries no `host_id` — the section
+says so rather than the metric being fixed, which needs the gateway's
+dial-fail counter to grow a label and is its own change.
+
+**One more misdirection, and the guard for it.** `HostScrapeDown`'s
+`runbook:` annotation resolved to `#hostwgdown` — so the alert that fires
+for a dead tunnel delivered the operator into a different section, whose
+step 3 (before I-1070 corrected it) would have finished the tunnel off.
+It was the only alert in either rules file whose anchor did not match its
+own name, and `ops/check.sh` passed it, because the anchor resolved: the
+existing check asks whether an anchor goes *somewhere*, never whether it
+goes to the right place. An anchor pointing at a real but wrong section is
+worse than one pointing nowhere, since nothing about the page looks
+broken. The annotation now points at its own section and names
+`HostWgDown` as its step 2, and a new check refuses any alert whose
+anchor is not its own slug.
+
+*Evidence.* Every section title quoted in the new table resolves to a
+heading in the same file, checked by script over the table's 41 rows and
+48 titles. `ops/check.sh` ok, with "all anchors resolve" after the
+`HostUnregistered` heading change and its anchor in `ops/alerts.yaml` and
+`ops/alerts_test.yaml`. The claims above about zero-hit symptom words,
+the 89-lines-across-21-sections fan-out, and the two probes that traverse
+the tunnel they are diagnosing were each measured against the file rather
+than assumed.

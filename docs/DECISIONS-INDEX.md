@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-917 entries.
+918 entries.
 
 ## Scope
 
@@ -949,3 +949,4 @@ pointer, not a summary.
 - **I-1068** A host repairs its own one-way tunnel by rebinding the socket, because twice now nothing else has — 2026-11-10; L30356
 - **I-1070** RUNBOOK had a HostWgDown section for an alert that was never written, so the one failure it describes pages as something else — 2026-11-10; L30470
 - **I-1074** A runbook heading that reads as an alert name has to be one, or say why not — 2026-11-10; L30534
+- **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30572

@@ -495,8 +495,8 @@ tests:
               host_id: host-01
             exp_annotations:
               summary: "Prometheus cannot scrape hosts on host-01"
-              description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not."
-              runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+              description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not. Its own section's step 2 is the tunnel, which is HostWgDown."
+              runbook: "docs/ops/RUNBOOK.md#hostscrapedown"
 
   # --- FluentBitStuck -----------------------------------------------------
   - interval: 1m
@@ -1650,7 +1650,7 @@ tests:
             exp_annotations:
               summary: "host-02 has not registered"
               description: "The api has had this host in registering for 30 minutes: no hostd has presented its join token, so nothing is placed on it. For a new host that is a machine that was created and never arrived; for one already running it is a reissued token nothing has used."
-              runbook: "docs/ops/RUNBOOK.md#hostunregistered-host-never-registered"
+              runbook: "docs/ops/RUNBOOK.md#hostunregistered"
 
   - interval: 1m
     name: HostUnregistered is quiet for a host that registers inside the window

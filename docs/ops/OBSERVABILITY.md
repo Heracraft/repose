@@ -418,7 +418,7 @@ the panels (`ops/README.md` step 3).
 **A rule whose query fails reads OK, and one rule is the exception.** Every
 rule is `execErrState: OK`, measured to mean that a datasource answering
 nothing leaves all of them green with health "ok" -- there is no signal in
-Grafana to distinguish that from a quiet fleet. `Error` on all 53 would send
+Grafana to distinguish that from a quiet fleet. `Error` on all of them would send
 53 notifications per Prometheus restart, so exactly one carries it:
 `MonitoringPathDown`, which was already the single alert for a broken
 monitoring path. That is the whole of what notices a dead query path, and it

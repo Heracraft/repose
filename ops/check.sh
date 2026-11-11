@@ -81,6 +81,32 @@ if bad:
 print("all anchors resolve")
 ANCHORS
 
+say "every alert's runbook anchor is its own section"
+# The anchor check above only asks whether the anchor resolves somewhere.
+# HostScrapeDown's resolved to #hostwgdown, so the alert that fires for a
+# dead tunnel delivered the operator into a different section -- one whose
+# step 3, before I-1070, would have finished the tunnel off. An anchor that
+# points at a real but wrong section is worse than one that goes nowhere,
+# because nothing about the page looks broken (DECISIONS I-1072).
+python3 - <<'OWNANCHOR' || fail=1
+import re, sys
+rules = open("ops/alerts.yaml").read() + open("ops/alerts-loki.yaml").read()
+def slug(h):
+    return re.sub(r"[^a-z0-9 -]", "", h.lower()).replace(" ", "-")
+bad, cur = [], None
+for line in rules.splitlines():
+    m = re.match(r"\s*- alert: (\w+)", line)
+    if m:
+        cur = m.group(1)
+    m = re.search(r'runbook: "docs/ops/RUNBOOK\.md#([^"]+)"', line)
+    if m and cur and m.group(1) != slug(cur):
+        bad.append(f"{cur} -> #{m.group(1)} (its own section is #{slug(cur)})")
+if bad:
+    print("alert points at another section's entry:\n  " + "\n  ".join(bad), file=sys.stderr)
+    sys.exit(1)
+print("every alert points at its own section")
+OWNANCHOR
+
 say "every alert has a runbook heading"
 # docs/CHECKLIST.md: an alert with no runbook entry is a notification nobody
 # knows what to do with. The heading is the alert name, lowercased by
