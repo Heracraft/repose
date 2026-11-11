@@ -33113,3 +33113,65 @@ not a secret.
 *Rejected:* hardcoding the resource in the dashboard, which is the one
 value a fork must be able to change; and moving the Logto resource to
 the new name, which I-1156 explains would lock out every installed CLI.
+
+**I-1160. What a switch does to a unit's directories, and what a domain
+move does to the gateway's host certificate, are runbook entries; the
+live suite asserts the words the site has.** (release-followups,
+2026-11-11.)
+
+Three things the 2026-11-11 release taught, each the same shape: a check
+that looked conclusive and was not.
+
+*A handover does not start the unit.* The first edge switch carrying
+`StateDirectory=repose-gateway` (I-1110) reported success and left the
+webhook listener with no certificate cache: systemd makes a state
+directory when a unit starts, and a reload of `gateway` is a handover
+into the old process's sandbox, which has no mount for the new path. At
+07:18:57Z the handed-over process logged `webhook certificate cache
+unusable ... mkdir /var/lib/repose-gateway: file exists` -- under
+`DynamicUser` the path is a symlink into `/var/lib/private/` that the
+old sandbox cannot enter -- and `hooks.repose.run` answered without a
+certificate until a restart at 07:20. "Switch the edge" already listed
+the sandbox and socket cases that need sessions to end; a directory
+added to the unit is the same case and is now a bullet beside them, with
+the check that catches it (`journalctl -u gateway | grep acme_cache`
+empty, `ls /var/lib/private/repose-gateway/acme`).
+
+*A name the certificate does not list is a name nobody can reach.* With
+`GATEWAY_HOST=ssh.repose.run` live (I-1156) and the gateway's SSH host
+certificate still naming only `ssh.repose.herakraft.co`, every CLI
+connection failed at 07:22Z with `Certificate invalid: name is not a
+listed principal`. The new section "Move the gateway to another name"
+records the order and the two things that stop the obvious commands
+working: `ssh-keygen -y` refuses the 0640 key the edge holds, so the
+public key comes from a 0600 copy, and the api image has no shell, so
+the key is fed to `repose-admin ca sign-host` as `--pubkey /dev/stdin`
+through `docker exec -i`. Users then delete
+`~/.ssh/repose/known_hosts` once, which the CLI already tells them and
+which the public troubleshooting page now carries too, because the CLI
+rewrites that file only when it fetches a certificate and a laptop with
+an unexpired one keeps the old name.
+
+*A test whose locator matches nothing passes.* `landing pricing matches
+PRICING.md` in `apps/web/tests-live/public.spec.ts` selected the pricing
+band as the `section` containing a heading named "Pricing". Since the
+ui-revamp the band's heading is "Launch prices" and `05 PRICING` is a
+label, so the filter matched no section and every assertion under it --
+the three plans, their prices, their specs, the absence of "per hour" --
+ran against an empty locator and passed. Only the lede assertion failed,
+which is what drew attention to it. The locator is now `section#pricing`
+and the lede assertions are the two the landing spec names (the heading
+says the launch prices, the button says the free week, I-961,
+`docs/LANDING.md` §6). Fixing the locator exposed two further staleness
+bugs it had been hiding: the seats line needs `useInnerText`, because a
+regex is matched against the text as it is and the count and the word
+sit on two lines of the template; and the privacy policy's second
+pinned sentence is the one legal wrote, "We never copy your existing
+Claude Code credentials from your computer" (I-278, I-283), not the
+paraphrase the test carried.
+
+The rule the three share: a doc records the step that the successful-
+looking output does not cover, and a test asserts the source's words.
+Each sentence pinned in the live suite is now a named constant quoted
+from `apps/web/src/`, so a reworded page fails the test instead of the
+test quietly asserting nothing.

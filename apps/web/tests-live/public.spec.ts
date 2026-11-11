@@ -43,8 +43,16 @@ test('landing renders with the install command and the sign-in button', async ({
 // here.
 test('landing pricing matches PRICING.md', async ({ page }) => {
 	await page.goto('/');
-	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	await expect(pricing.getByText('Launch prices. Seven days free.')).toBeVisible();
+	// `section#pricing`, not a section filtered by a heading named
+	// "Pricing": the band's heading is "Launch prices" and "05 PRICING" is
+	// a label, not a heading, so that filter matched no section at all and
+	// every assertion below it ran against an empty locator and passed
+	// (found 2026-11-11, against the live site).
+	const pricing = page.locator('section#pricing');
+	// docs/LANDING.md §6: the heading says the launch prices and the button
+	// the free week, and neither line repeats the other (I-961).
+	await expect(pricing.getByRole('heading', { level: 2 })).toHaveText('Launch prices');
+	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	// Solo shows $39 while founding places last, then $49 (I-672). The run
 	// line and the disk and egress line are two lines of PlanCells' card.
 	const plans: Array<[string, string | RegExp, string, string]> = [
@@ -64,8 +72,12 @@ test('landing pricing matches PRICING.md', async ({ page }) => {
 	// the api is unreachable; never a third wording.
 	const seats = page.getByTestId('seats-line');
 	if ((await seats.count()) > 0) {
+		// useInnerText, because the count and the word sit on two lines of
+		// the template and a regex is matched against the text as it is:
+		// what a visitor reads is "23 seats left", one line.
 		await expect(seats).toHaveText(
-			/^(\d+ seats? left|Full for now\. \d+ waiting; join the list and you're emailed when a seat frees\.)$/
+			/^(\d+ seats? left|Full for now\. \d+ waiting; join the list and you're emailed when a seat frees\.)$/,
+			{ useInnerText: true }
 		);
 	}
 });
@@ -94,6 +106,14 @@ const SAMPLE_BOUNDARY =
 	'record command-line arguments, environment variables, file paths, file ' +
 	'contents, terminal contents, or the prompts you give to any agent.';
 
+// The second promise the policy makes about Claude Code, word for word
+// from apps/web/src/content/legal/privacy.md "What we never record".
+// Legal's wording is the narrow one — repose never copies the credentials
+// off your computer — and a paraphrase here would pass while the published
+// policy said something else (I-278, I-283).
+const CLAUDE_CREDENTIALS =
+	'We never copy your existing Claude Code credentials from your computer.';
+
 const HOSTED_USE = [
 	'run inside your environment under your own account',
 	'does not hold, proxy, or resell those credentials',
@@ -108,7 +128,7 @@ test('the published privacy policy carries the process-sample boundary verbatim'
 	await page.goto('/privacy');
 	const article = squash((await page.locator('article').innerText()) ?? '');
 	expect(article).toContain(SAMPLE_BOUNDARY);
-	expect(article).toContain('never copy, store or proxy your Claude Code credentials');
+	expect(article).toContain(CLAUDE_CREDENTIALS);
 });
 
 test('the published terms carry the hosted-use statement', async ({ page }) => {
