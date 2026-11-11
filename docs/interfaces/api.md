@@ -28,6 +28,13 @@ Every response
 carries `X-Request-Id`, and `X-Repose-CLI-Latest` (the newest CLI release,
 `vX.Y.Z`) once the api has read it from the releases/latest redirect; a
 client must accept an answer without it (DECISIONS I-626).
+`X-Repose-CLI-Oldest` (`vX.Y.Z`) is the oldest CLI release this api still
+answers as this document describes. It is absent while every release is,
+which is the state `clirelease.Oldest = ""` ships in; the commit that
+removes a request or answer shape raises it to the first release that no
+longer carries that shape. A client must accept an answer without it, and
+the header never refuses anything: a CLI below it says so on stderr and
+goes on (DECISIONS I-1088).
 
 ## Users
 

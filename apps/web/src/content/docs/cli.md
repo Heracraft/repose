@@ -457,6 +457,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook). |
 | `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason the server gave (`failed: the server answered 403`). Six tests a minute. Exits 1 when a channel failed or none is on. |
 | `repose version`                                | Print the version, as `repose 0.1.36 (herakraft)`. |
+| `repose version update [VERSION]`               | Replace this binary with the latest release, or with VERSION (`v0.1.40`) to go back to it. It checks the release signature and the archive's checksum before it writes anything, and leaves your login and settings alone. A binary a package manager owns is never touched: the command names the manager and exits 1. Releases before v0.1.28 are unsigned and exit 2. [Update](/docs/install#update). |
 | `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. [Install](/docs/install#shell-completion) has the line that loads it for each shell. |
 | `repose help [COMMAND]`                         | Print help for a command. `repose help environment`, `repose help exit-codes` and `repose help config-file` print the tables below. A name that is neither exits 2. |
 
@@ -542,6 +543,8 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 ## Output
 
 Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` print local RFC 3339; `--json` prints UTC. Progress lines go to stderr. Without a terminal each step prints a line when it starts, that line with its time every 30 seconds while it runs, and a `✓` line with its time when it ends, unless the command prints the step's result itself. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
+
+Two lines on stderr are about the CLI itself. One release behind the latest, it prints `repose 0.1.43 is older than 0.1.44, the latest release.` once for that release. Older than the oldest release the server still answers as these docs describe, it prints `repose 0.1.30 is too old for some of repose's answers.` at the end of every `run`, `attach` and `sync`. Both name [`repose version update`](#account), or the package manager that owns the binary. Neither changes an exit code, and neither prints on a machine.
 
 ## Exit codes
 

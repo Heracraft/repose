@@ -32,6 +32,11 @@ func noticeAfter(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return true
 	}
+	// `repose version update` has just said which release this is; the
+	// notice after it would name the same one (DECISIONS I-1086).
+	if cmd.CommandPath() == "repose version update" {
+		return false
+	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Hidden || c.Name() == cobra.ShellCompRequestCmd || c.Name() == cobra.ShellCompNoDescRequestCmd {
 			return false
@@ -190,6 +195,7 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		g.command = hintCommand(cmd)
+		noteSkewCommand(cmd.Name())
 		if g.verbose {
 			setVerbose(os.Stderr)
 		}
@@ -2177,15 +2183,38 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 // suffix lets a user tell this binary apart from Arch's unrelated
 // `repose` package on the same PATH).
 func newVersionCmd(version string) *cobra.Command {
-	return &cobra.Command{
+	root := &cobra.Command{
 		Use:   "version",
 		Short: "Print the CLI's version",
 		Args:  noArgs,
+		// `repose update` and `repose upgrade` land here, which is where
+		// the command that updates the CLI lives (DECISIONS I-1086).
+		SuggestFor: []string{"update", "upgrade", "self-update"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Printf("repose %s (herakraft)\n", version)
 			return nil
 		},
 	}
+	update := &cobra.Command{
+		Use:   "update [VERSION]",
+		Short: "Replace this binary with the latest release",
+		Long: `Replace this binary with the latest release of the CLI.
+
+VERSION is a release tag, such as v0.1.40, to go back to that one. Only
+releases from v0.1.28 on are accepted, the ones whose checksums are signed.
+The download is checked against the release signing key before anything is
+written, and a binary a package manager owns is never touched.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var target string
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return VersionUpdateCmd(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), target)
+		},
+	}
+	root.AddCommand(update)
+	return root
 }
 
 // newMCPCmd is `repose mcp`: the MCP servers of the agents on a machine.

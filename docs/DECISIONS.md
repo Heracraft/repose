@@ -23040,6 +23040,9 @@ The owner's audit struck step 6 of the quickstart ("Get a notification when it's
 - This is a docs-placement decision and nothing else. No command, flag or channel is removed; a retreat from the feature itself would be its own decision and its own workstream.
 
 **I-749. `install.md` says "Update command coming soon".** (docs-prose, 2026-10-15)
+*Amended by I-1086 (2026-11-11): the command shipped as `repose version
+update`, so the line became its documentation and the exception ended,
+which is what this entry said would happen.*
 
 I-242 and the no-ghost-features rule say the docs carry nothing that has not shipped: there is no `repose update`, so the line is a doc for an unshipped command. The owner kept it anyway, in his words because it "gives the thing a soul", and reaffirmed it after the conflict was named. Recorded here so the next session does not quietly delete it as a stray, and so the exception stays an exception: it is one line, it names a debt rather than promising a date, and it sits beside what to do today (run the install command again, which replaces the binary and leaves your login alone). Nothing else in the docs gets this. When `repose update` ships, this line becomes its documentation and the exception ends.
 
@@ -31054,3 +31057,147 @@ are listed as the project's clients, the project's session follows to
 `logs`, and after both detach only `<slug>` is left. The two existing
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
+
+**I-1086. `repose version update` replaces the CLI, with install.sh's
+checks; amends I-749.** (cli, 2026-11-11.)
+*Made during implementation.*
+
+The product value council asked for an update command
+(`reports/2026-11-04-product-value-council.md`), and `install.md` has
+carried "Update command coming soon" since I-749 waiting for it. Until
+now updating meant pasting 55 characters of `curl | sh` that the
+once-per-release notice printed in full.
+
+It is `repose version update [VERSION]`, under the noun that already
+answers "which CLI do I have", not a top-level `repose update`
+(the proposal's decision 1; conductor's ruling, owner's standing approval
+of 2026-11-11). "Update" already means the machine's **base updates** to
+a repose user (`config.md`, the `base updated` notification, the `base
+updates held` setup line), and a 36th top-level command reading "update
+my machine" is the collision that causes. `repose version` gets
+`SuggestFor: update, upgrade, self-update`, so `repose update` answers
+with `repose version`, and `repose version` alone still prints `repose
+0.1.44 (herakraft)` byte for byte, because scripts read it.
+
+The command makes exactly the checks `install.sh` makes, in the same
+order, because a second way to install must not be a weaker way: resolve
+`latest` through the releases/latest redirect (not the api's
+`X-Repose-CLI-Latest`, which is a hint and carries no signature);
+download the archive, `checksums.txt` and `checksums.txt.sig`; verify the
+signature against the release key with `crypto/ecdsa` (so no `openssl` is
+needed); then the archive's SHA-256 against its line in `checksums.txt`.
+Nothing is written unless both pass. The new binary is written beside the
+running one, chmod 755, run with `version` to see that it starts and
+names the release, and then renamed over the old path. A rename leaves
+the running process alone, and the old file's bytes are never rewritten
+in place, which is what keeps a signed macOS binary runnable after an
+update.
+
+The key now has two copies, `install.sh` and
+`internal/cli/versionupdate.go`.
+`test/supplychain.TestReleaseKeyIsTheSameInInstallShAndTheCLI` fails
+while they differ, as `release.yml` already reads the one in `install.sh`
+to check the signature it just made. A rotation that changes one and not
+the other would otherwise ship a CLI that refuses every release.
+
+It refuses, touching no network, on a machine (`REPOSE=1`, exit 2: the
+guest's repose comes with its base), on a build whose version does not
+parse (exit 2), on Windows (exit 1: no Windows release exists), and when
+`os.Executable()` with symlinks resolved is under `/nix/store/`, a
+`Cellar/` directory, `/opt/homebrew/`, `/home/linuxbrew/`, `/snap/`,
+`/usr/bin/repose` or `/bin/repose` — a write there breaks a store hash or
+is undone at the next upgrade, so the command names the owner and exits
+1. A directory the user cannot write is not that case: it says `Can't
+write /usr/local/bin. Run it as root: sudo repose version update`, which
+is the `install.sh --system` user's answer. Releases before v0.1.28 have
+no signature (I-430 pins theirs by hash in `install.sh` instead) and are
+refused with the `install.sh --version` line.
+
+Two things the proposal left open and the docs' rules decided. The
+optional `[VERSION]` stays (its decision 2): a rollback is the answer to
+a bad release and the alternative is telling the user to go back to
+`curl | sh`, which this command exists to replace. An explicit VERSION
+equal to the running one answers `repose 0.1.40 is already installed.`
+rather than "is the latest release", which would be false for a
+rollback; a VERSION that is not `vX.Y.Z` is exit 2 naming the shape.
+`repose_api_cli_requests_total{version}` (its decision 5) is **not**
+added: nothing reads it until the owner plans to raise `Oldest`, and the
+counter can ship with that.
+
+*Evidence.* `TestVersionUpdateReplacesTheBinary`,
+`TestVersionUpdateAlreadyTheLatest`, `TestVersionUpdateRollsBack`,
+`TestVersionUpdateRefusesAndKeepsTheBinary` (no signature, bad
+signature, archive mismatch, a binary that will not start, one that
+names another release, no such release, before signing, not a tag — each
+asserting the old file's SHA-256 is unchanged and no temporary file is
+left behind), `TestVersionUpdateRefusesBeforeTheNetwork` (machine, dev
+build, nix store, Windows, with the fake release server asserting it was
+never called), `TestVersionUpdateNamesAnotherReposeFirstOnPATH`,
+`TestBinaryOwner`, all against an `httptest` release server signed with
+its own key. One mutation, `verifyChecksums` short-circuited, fails
+`bad_signature` with "the binary changed".
+
+**I-1088. `X-Repose-CLI-Oldest`, and a skew line that repeats while it
+matters.** (api, cli, 2026-11-11.)
+*Made during implementation.*
+
+I-626's line prints once per newer release. That is right for "a newer
+one exists" and wrong for "this one is no longer answered the way the
+docs describe": the second is a reason the user's next command may do
+something other than its page says, and once, months ago, is not a
+warning.
+
+The api sends a second header, `X-Repose-CLI-Oldest: vX.Y.Z`, the oldest
+CLI release it still answers as `docs/interfaces/api.md` describes.
+`clirelease.Oldest` is a constant beside `DefaultURL`, `""` today, so the
+header is absent and this prints for nobody; the repository keeps an old
+request or answer shape for one release after a contract change
+(`CLAUDE.md`), and the commit that removes such a shape raises the
+constant to the first release that no longer carries it. Shipping the
+header unset now means that commit is a one-line change instead of a
+protocol change. It never refuses anything: I-626's reason for no
+refusal (the api has no version it cannot serve at all) still holds.
+
+A CLI below `Oldest` prints, on stderr, at the end of every `run`,
+`attach` and `sync`, and before an attach hands over to ssh:
+
+```
+repose 0.1.30 is too old for some of repose's answers. `repose version update` updates it.
+```
+
+Those three commands and no others: they are the ones that move the
+user's work between laptop and machine, where a wrong answer costs
+something, and `ls` and `status` staying quiet is what keeps the line
+worth reading.
+
+The once-per-release line stays, with new text naming the new command
+(conductor's ruling on the proposal's decision 3, owner's standing
+approval of 2026-11-11), and when both would apply only the stronger one
+prints, with the newer release recorded so the weaker line does not
+arrive afterwards saying less about the same version. Two lines in one
+run, both telling the user to update, is the pile-up "Trust the reader"
+(I-484, I-485) is about.
+
+For a binary a package manager owns (I-1086's table) both lines end
+"Update it with Homebrew." instead of naming a command that would refuse
+to run.
+
+The `v` bug is fixed. A release build carries `0.1.43`
+(`.goreleaser.yaml` sets `main.version={{ .Version }}`) and the header
+carries `v0.1.44`, so the real line read "repose 0.1.43 is older than
+v0.1.44" while its test used `v0.1.20` on both sides and saw nothing.
+Both are now printed through `release()`, which drops the `v`;
+`TestNewerCLINoticeOncePerRelease` uses `0.1.20` and `v0.1.24`, the real
+shapes.
+
+The machine guide's line (`nix/guest/base/agent-guide.md`) now tells an
+agent to say `repose version update` rather than "run the install command
+again"; it reaches machines with the next base.
+
+*Evidence.* `TestTooOldCLIWarnsOnEveryRun` (three runs below `Oldest`
+print three lines, `ls` prints none, above `Oldest` only the
+once-per-release line, no header prints nothing),
+`TestNewerCLINoticeOncePerRelease`,
+`TestNewerCLINoticeNamesThePackageManager`,
+`TestAnswersNameTheOldestCLI` (header present with a value, absent
+without), `TestOldestCLIIsUnsetUntilAShapeIsRemoved`.
