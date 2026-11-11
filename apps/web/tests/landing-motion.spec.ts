@@ -9,8 +9,8 @@ const playingInGrid = '[data-motion-group="grid"][data-motion="play"]';
 
 async function load(page: Page) {
 	await page.goto('/');
-	// Every picture registers once anime.js has loaded: five buttons.
-	await expect(page.locator(`${frames} > button.pic-pause`)).toHaveCount(5);
+	// Every picture registers once anime.js has loaded: six buttons.
+	await expect(page.locator(`${frames} > button.pic-pause`)).toHaveCount(6);
 }
 
 test('a height-only resize does not restart the hero', async ({ page }) => {
@@ -37,7 +37,7 @@ test('every looping picture has a pause button the keyboard reaches', async ({ p
 	await load(page);
 	const seen = new Set<string>();
 	const names = new Set<string>();
-	for (let i = 0; i < 400 && seen.size < 5; i++) {
+	for (let i = 0; i < 400 && seen.size < 6; i++) {
 		await page.keyboard.press('Tab');
 		const frame = await page.evaluate(() => {
 			const a = document.activeElement;
@@ -48,7 +48,7 @@ test('every looping picture has a pause button the keyboard reaches', async ({ p
 		if (frame === null || seen.has(frame)) continue;
 		seen.add(frame);
 		const button = page.locator('button.pic-pause:focus');
-		// Each names its picture, so five buttons are told apart.
+		// Each names its picture, so six buttons are told apart.
 		const name = await button.getAttribute('aria-label');
 		expect(name).toMatch(/^Pause the .+ picture$/);
 		expect(names.has(name!), name!).toBe(false);
@@ -60,7 +60,7 @@ test('every looping picture has a pause button the keyboard reaches', async ({ p
 		await page.keyboard.press('Enter');
 		await expect(button).toHaveAttribute('aria-pressed', 'false');
 	}
-	expect(seen.size).toBe(5);
+	expect(seen.size).toBe(6);
 });
 
 test('a paused picture stays paused through scrolling out and back', async ({ page }) => {

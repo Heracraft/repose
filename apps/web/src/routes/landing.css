@@ -517,18 +517,30 @@
 			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
 			minmax(0, 1fr);
 	}
+	/* The cells of a row share its tracks (label, title, paragraph,
+	   command), so the paragraphs start on one line whatever the
+	   titles' lengths. */
 	.landing .cols > li {
+		display: grid;
+		grid-row: span 4;
+		grid-template-rows: subgrid;
+		align-content: start;
 		padding: 2rem var(--in) 2.5rem calc(var(--in) - 1px);
 	}
-	.landing .cols > li:first-child {
+	.landing .cols > li:nth-child(3n + 1) {
 		padding-left: var(--edge);
 	}
-	.landing .cols > li:last-child {
+	.landing .cols > li:nth-child(3n) {
 		padding-right: var(--edge);
 	}
 	.landing .cols > li + li {
 		border-top: 0;
+	}
+	.landing .cols > li:not(:nth-child(3n + 1)) {
 		border-left: 1px solid var(--rule-in);
+	}
+	.landing .cols > li:nth-child(n + 4) {
+		border-top: 1px solid var(--rule-in);
 	}
 }
 

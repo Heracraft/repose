@@ -261,9 +261,10 @@ entry and this list with it. Counts as of 2026-10-21.
       prints only `app.html`, `lib/app-html.test.ts`, `lib/hk/tokens.css`,
       `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts`,
       `routes/layout.css`, and the pictures `landing/Wreck.svelte`,
-      `landing/Browser.svelte`, `landing/Localhost.svelte` and
-      `landing/pictures.css`, which pair each OS rule with the switch's
-      `data-theme` rule (I-843), 11 files; `rg -n
+      `landing/Browser.svelte`, `landing/Localhost.svelte`,
+      `landing/Stack.svelte` and `landing/pictures.css`, which pair each
+      OS rule with the switch's `data-theme` rule (I-843, I-1169), 12
+      files; `rg -n
       'class="dark|classList\.(add|toggle)\(.dark' $W` and `rg -n
       'theme="system"|richColors' $W --glob '*.svelte'` print 0 lines.
 - [ ] The inline script's hash is in the CSP, and the first paint matches the
@@ -309,9 +310,9 @@ entry and this list with it. Counts as of 2026-10-21.
       `/projects` and a project page (design.spec, landing-motion.spec).
 - [ ] Every picture stops on its final frame when reduced motion turns on
       mid-session. Evidence: `rg --files-without-match watchReducedMotion
-      apps/web/src/lib/components/landing/{Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
+      apps/web/src/lib/components/landing/{Stack,Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
       prints 0 lines. The suites above read the setting at load; this is
-      the five drawn pictures answering a change made while the page is
+      the six drawn pictures answering a change made while the page is
       open (I-397, and the pictures restored by I-843).
 - [ ] Sizes come from the scale. Evidence: `rg -n
       'text-\[[0-9.]+(px|rem|em)\]' $W --glob '*.svelte'` and `rg -n

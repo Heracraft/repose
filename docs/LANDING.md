@@ -10,31 +10,31 @@ I-837; this file covers what the landing shows and says.
 
 ## What we sell
 
-A framework for running always-on agents, with any agent and any model
-(DECISIONS I-1167, amending I-477). Each agent gets a Linux machine of
-its own, set up from your laptop in one command, and the parts to run
-it while you are away. Two ideas, the first one leading, and every
-section serves one of them:
+A platform for running your own always-on agents, composed in layers,
+with any agent and any model (DECISIONS I-1169, amending I-1167 and
+I-477). Two ideas, the first one leading, and every section serves one
+of them:
 
-1. The parts of an always-on agent, each one a user can use today: a
-   machine with your setup on it, wake-ups (a webhook through
-   `repose webhooks`, a systemd timer, `repose say`), secrets by name,
-   the machine's browser, and a line to you (`repose-ask`,
-   `repose-notify`, by email, ntfy on your phone or Google Chat).
+1. You build an always-on agent in layers: a machine sized to the job,
+   walls that keep it off your laptop and the internet, your dev
+   environment copied in (or left out), secrets by name, triggers (a
+   schedule or a webhook starting a session) and any agent on top,
+   which asks you by email, ntfy or Google Chat.
 2. The agent runs there with full permissions. It reaches that machine
    and what the logins on it reach, and a snapshot brings the machine
    back.
 
 The reader is a developer who runs agents; the eyebrow says "Any agent,
-any model" once. The one use shown that is not a developer's is the
-job-application agent, in its own band; the page invents no other.
+any model" once. The uses the page shows are the owner's: a dev
+environment, a shopping agent and an agent that applies for jobs (the
+centrepiece's three), and the job agent in its own band.
 
-The page may say always-on, phone, notifications and webhooks, each as
-far as the public docs say a user can do it. It never claims what a
-visitor cannot do today: a trigger that binds an event to a session,
-per-event machines, a `tiny` class, burst cores, bare metal or your own
-hardware. No user or customer counts, no rival named, no collaboration
-or software factory.
+Two lines are written ahead of shipping on the owner's word (I-1169):
+triggers that start a session, and a tiny machine of 2 GB. They name no
+command or class that does not exist. Everything else is what the
+public docs say a user can do. Never on the page: burst cores, bare
+metal or your own hardware, user or customer counts, a rival's name,
+collaboration or a software factory.
 
 ## The page (I-837, I-843)
 
@@ -45,34 +45,36 @@ headline starting under the logo, laid out as one ruled sheet on a
 1. **Hero.** Eyebrow "Any agent, any model" in the page's one label
    (12px Geist Mono, upper case, tracked 0.06em; the bands' and cells'
    numbered labels and the step numbers take it too, see "The sheet"),
-   unnumbered; the serif headline "A framework for running always-on
-   agents" (the owner's words, I-1167); the lead, one sentence on what
-   you get ("Your agent gets a Linux machine of its own, set up from
-   your laptop in one command, and keeps working there while your laptop
-   is shut."); the webhook and the timer are 1.1's, so the lead leaves
-   them out. From 1200px the headline (seven columns) and the lead
-   (five) stand side by side on one baseline, and "Get started", "Copy
-   install command" and the install line share one row under both; from
-   1024 to 1199px the headline runs across, the lead under it on the
-   left, and the same row under the lead. The buttons never stand beside
-   the lead at any width (owner, 2026-11-02). The install line is mono,
-   exactly what the button copies, on one line, scrolling under a fade
-   where its column is narrower. Under the copy, the centrepiece
-   (`landing/Parts.svelte`, "The centrepiece" below) on the page's own
-   tone, with no stage and no rule, 72px under the buttons' row from
-   1024px (48px below), the band's padding under it.
-2. **01 Parts. "Everything under your agent"** (`#parts`; the deck's
-   heading, deck2 DECISIONS 25), with "Webhooks" and "Notifications"
-   (the docs pages, set as the Agents links) on the heading's last line,
-   then three cells on the thirds, split by inner rules with no gap, as
-   the plans are: each its numbered label (1.1 Wake-ups, 1.2 Secrets,
-   1.3 Notifications), a serif claim, one paragraph and its command in
-   the reference treatment (`repose webhooks add`, `repose secrets set
-   NAME`, `repose notify set --ntfy URL`). Below 1024px they stack, each
-   under its rule. The paragraphs name only what a user can do today
-   (I-1167): a webhook route that wakes a frozen machine, a systemd
-   timer, `repose say`; a secret by name, the SSH keys staying on the
-   laptop; a question by email, ntfy or Google Chat, answered there. The
+   unnumbered; the serif headline "A platform for running your own
+   always-on agents" (the owner's words, I-1169); the lead, two
+   sentences: the layers you stack ("Pick a machine and stack what your
+   agent needs on it: your dev environment, secrets, schedules and
+   webhooks.") and the walls ("It runs away from your laptop, and from
+   the internet only its webhooks reach it."). From 1200px the headline
+   (seven columns) and the lead (five) stand side by side on one
+   baseline, and "Get started", "Copy install command" and the install
+   line share one row under both; from 1024 to 1199px the headline runs
+   across, the lead under it on the left, and the same row under the
+   lead. The buttons never stand beside the lead at any width (owner,
+   2026-11-02). The install line is mono, exactly what the button
+   copies, on one line, scrolling under a fade where its column is
+   narrower. Under the copy, the centrepiece (`landing/Stack.svelte`,
+   "The centrepiece" below) on the page's own tone, with no stage and no
+   rule, 72px under the buttons' row from 1024px (48px below), the
+   band's padding under it; its pause button stands at the figure's top
+   right, its chip's right edge on the text line.
+2. **01 Layers. "Build it in layers"** (`#parts`), with "Webhooks" and
+   "Notifications" (the docs pages, set as the Agents links) on the
+   heading's last line, then six cells on the thirds in two rows, split
+   by inner rules with no gap, as the plans are, in the centrepiece's
+   order: 1.1 Machine, 1.2 Walls, 1.3 Your setup, 1.4 Secrets, 1.5
+   Triggers, 1.6 Agent. Each is its numbered label, a serif claim, one
+   paragraph and its command in the reference treatment (`repose resize
+   --size large`, `repose run`, `repose secrets set NAME`, `repose
+   notify set --ntfy URL`; the walls and the triggers have none: nothing
+   turns the walls on, and the trigger layer has no command yet). The
+   cells of a row share its tracks (a subgrid), so their paragraphs
+   start on one line. Below 1024px they stack, each under its rule. The
    titles wrap balanced.
 3. **02 Example. "An always-on agent that applies for jobs"**, with one
    paragraph on the heading's last line (a machine with 8 GB; each
@@ -236,10 +238,10 @@ ends on that rule; the questions end on the footer's. Empty space is
 padding inside a band, never a strip between two.
 
 No stat strip: repose has no public figure the page can read at render
-time and a reader can reproduce. No isometric figure, and no anatomy figure of
-physical equipment (a shelf, a rack, brackets and screws), anywhere on
-the page (owner, 2026-10-04 and 2026-10-19). The centrepiece is the
-one drawing of the parts, flat, in the pictures' kit (I-1167).
+time and a reader can reproduce. No isometric figure, and no anatomy
+figure of physical equipment (a shelf, a rack, brackets and screws),
+anywhere on the page (owner, 2026-10-04 and 2026-10-19), with one
+exception the owner asked for: the centrepiece's stack (I-1169).
 
 ## The centrepiece (I-1167)
 
@@ -269,6 +271,45 @@ carrying the hero. What it leaves: the centred headline (the hero's
 copy keeps its I-961 layout, owner, 2026-11-02), the isometric box (no
 isometric on this page) and the loop (a wiring diagram that draws
 itself is line-art in motion).
+
+`landing/Stack.svelte` (I-1169) takes voidzero's stack itself: plates
+seen from above at 30 degrees, bottom to top the machine (the
+thickest), walls, your setup, secrets, triggers and the agent, the one
+lit plate (its edges in the pictures' blue, its sides the blue mixed 16
+percent into the surface, the agent's mark facing you in the middle of
+its face, 48px, as voidzero sets its marks). The other plates take four
+flat tones: the surface on top, the sunken step on the right face, the
+stage's edge on the left in light and the stage in dark, so the light
+comes from the same side in both; hairline edges in the strong rule.
+No gradient, gloss or glow: voidzero's coloured shaders are the part
+repose leaves.
+
+The machine and its walls are every agent's base and stay on screen;
+the layers above are the agent's own, so each agent is a stack of its
+own shape. A layer an agent leaves out is not drawn, and the plates
+above it close up on the walls. Above the stack, the agent it is
+composing, in 15px sans; from 1024px the layers' names stand left of
+the stack in the label type, and the values for that agent right of
+it, each on a 36px dotted leader in the pictures' grey that ends on a
+5px dot at the plate's side corner, level with the middle of its edge,
+the agent's row in the blue; a left-out layer's row is hidden with its
+plate. Below 1024px the stack stands centred (240px wide on a phone)
+and the names and values are a list under it, top down as the stack
+reads, a left-out layer's value "left out" in the faint grey. The
+three agents: a dev environment (2 cores and 8 GB, nothing from the
+internet gets in, your code, tools and logins, a Stripe key, no
+triggers, opencode on your branch), a shopping agent (2 GB on all day,
+nothing gets in, no setup, the store's API key, every morning at 7,
+Codex told to ask before it pays) and an agent that applies for jobs
+(8 GB, only the job board's webhook gets in, your resumes, the job
+board's signing key, a `role.created` webhook, Claude Code told to ask
+at a captcha).
+
+The still frame (reduced motion, no script, and the loop's seam) is the
+dev environment, built. `landing/Parts.svelte`, the flat drawing it
+replaced, stays in the tree unused, and branch `landing-centrepiece-2d`
+has the page with it, for comparison (owner, 2026-11-12). What that
+drawing was:
 
 `landing/Parts.svelte` draws the parts of an always-on agent as one
 object: the machine, in the pictures' window, holding the agent (the
@@ -489,7 +530,7 @@ what the stubs under it leave, so hydration resizes nothing (I-399,
 I-667).
 
 One controller decides when each looping picture plays
-(`landing/motion.svelte.ts`, I-666). Each of the five (the wreck picture,
+(`landing/motion.svelte.ts`, I-666). Each of the six (the centrepiece, the wreck picture,
 OneCommand and the three moving grid pictures) registers with it in
 place of an observer of its own:
 
@@ -499,7 +540,7 @@ place of an observer of its own:
   tab order throughout, and always shown. It never stands over a head or
   content (I-673, I-961): a band picture's in its field's top right
   corner, a cell's at the end of its title's line, its chip's right edge
-  on the text line for all five loops. Its
+  on the text line for all six loops. Its
   name says which picture it pauses. Its hit area is 44px. A paused picture
   stays on its frame through scrolling out and back until play is
   pressed. A pointer moving inside a picture, a press on it, or focus
@@ -513,7 +554,8 @@ place of an observer of its own:
   viewport's middle (a new one takes the turn only when 24px nearer, so
   two cells of a row do not trade it back and forth). The others show
   their still frame, the one drawn with reduced motion: a cut, with no
-  crossfade. The wreck picture and OneCommand are in no group.
+  crossfade. The centrepiece, the wreck picture and OneCommand are in no
+  group.
 - **Turns.** A grid picture's still frame is its loop's last beat, the
   frame at its seam (Localhost 9900ms, Browser 17200ms). Each cycle the
   picture reports that beat (`picture.looped()`); the leader nobody
@@ -657,6 +699,19 @@ place of an observer of its own:
     tile's scale in the first 510ms (`outCubic`); the copy fades in its
     last 150ms (`inQuad`), and the tile comes in (250ms) as it is gone
     (I-675).
+  - *The centrepiece's stack* (I-1169): from the still frame it holds
+    4.2s. Then the title swaps (out 200ms `inQuad`, in 300ms `outQuad`)
+    and so do every value of the agent leaving and the base's values;
+    the leaving agent's own plates go top first, 50ms apart, each
+    rising 16px in 400ms `inQuad` and fading only in its last 120ms
+    (linear), so a plate never shows the ones under it through its
+    face; its rows fade with them, 300ms `inQuad`. The next agent's
+    plates drop in from the walls up, 120ms apart, 24px down to their
+    place in 520ms `inOutCubic`, opaque within their first 120ms
+    (linear), its mark with its top plate; each row moves to its
+    plate's place at once while hidden and fades in 300ms after its
+    plate starts, with its value, 300ms `outQuad`. It holds 4.2s. Dev,
+    shopping, jobs, dev: about 16.6s round, ending on the still frame.
   - *The pointer's press* in the Browser picture: it scales to 0.86 and
     back in 220ms, `outQuad`, as your click lands.
   - *The pause button under the pointer*: its icon and edge darken in

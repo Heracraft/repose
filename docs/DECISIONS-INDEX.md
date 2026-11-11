@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-961 entries.
+962 entries.
 
 ## Scope
 
@@ -992,4 +992,5 @@ pointer, not a summary.
 - **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33117
 - **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33178
 - **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33244
-- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — L33312
+- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — amended by I-1169; L33312
+- **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — L33386

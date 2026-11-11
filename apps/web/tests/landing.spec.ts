@@ -202,7 +202,7 @@ test("each picture band's stage ends on the next band's rule", async ({ page }) 
 
 // I-961 (option D, the owner's pick): the page has one numbering, the
 // mono labels over each band's h2 and each cell's title, and the pictures
-// no figure bars. Each of the five pause buttons shows at rest and is the
+// no figure bars. Each of the six pause buttons shows at rest and is the
 // element under its own centre (a clip on the hero's field once cut the
 // hero's away while its box and opacity said it was there). A band
 // picture's button stands in its field's top right corner, its chip's
@@ -215,8 +215,8 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 		await page.goto('/');
 		await expect(page.locator('main .fig-bar')).toHaveCount(0);
 		const buttons = page.locator('main .fig .pic-pause');
-		await expect(buttons).toHaveCount(5);
-		for (let i = 0; i < 5; i++) {
+		await expect(buttons).toHaveCount(6);
+		for (let i = 0; i < 6; i++) {
 			const b = buttons.nth(i);
 			await b.scrollIntoViewIfNeeded();
 			const m = await b.evaluate((el) => {
@@ -251,7 +251,7 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 // I-961, the owner's pick (alternative C's labels in D): one numbering
 // on the page. Each band after the hero opens on its number and name over
 // its h2, each cell on its band's number (1.1 to 1.3, 5.1 to 5.4) over
-// its title, and the rows count under theirs (2.1 to 2.3, 7.1 to 7.3);
+// its title (1.1 to 1.6 since I-1169), and the rows count under theirs (2.1 to 2.3, 7.1 to 7.3);
 // the label sits on the text line, and its name starts at the number's
 // fixed width, where a step's name does too. I-1167 put the parts, the
 // job agent and the wreck before the setup.
@@ -260,7 +260,7 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 	await page.goto('/');
 	const heads = page.locator('main .band > .head');
 	await expect(heads.locator(':scope > .num')).toHaveText([
-		'01 Parts',
+		'01 Layers',
 		'02 Example',
 		'03 Permissions',
 		'04 Setup',
@@ -271,9 +271,12 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 		'09 Questions'
 	]);
 	await expect(page.locator('#parts .cols > li > .num')).toHaveText([
-		'1.1 Wake-ups',
-		'1.2 Secrets',
-		'1.3 Notifications'
+		'1.1 Machine',
+		'1.2 Walls',
+		'1.3 Your setup',
+		'1.4 Secrets',
+		'1.5 Triggers',
+		'1.6 Agent'
 	]);
 	await expect(page.locator('.refs .step-title .label')).toHaveText(['2.1', '2.2', '2.3']);
 	await expect(page.locator('#features .cell-copy > .num')).toHaveText([
@@ -337,33 +340,37 @@ test('the footer links to the refund policy', async ({ page }) => {
 	).toHaveAttribute('href', '/refunds');
 });
 
-// DECISIONS I-1167: the page sells a framework for running always-on
-// agents, with any agent and any model. The h1 names it, one sentence
-// says what you get, three columns are the parts a user can use today,
-// and one band is the job-application agent. Nothing claims what a
-// visitor cannot do yet, and I-477's words are gone.
-test('the hero, the parts and the job agent say what repose is now', async ({ page }) => {
+// DECISIONS I-1169: the page sells a platform for running your own
+// always-on agents, built in layers. The h1 names it, the lead names the
+// layers and the walls, six cells follow the centrepiece's order, and
+// one band is the job-application agent. Nothing names a command or a
+// class that does not exist, and the earlier headlines are gone.
+test('the hero, the layers and the job agent say what repose is now', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
-	await expect(page).toHaveTitle('repose: a framework for running always-on agents');
+	await expect(page).toHaveTitle('repose: a platform for running your own always-on agents');
 	await expect(page.locator('meta[name="description"]')).toHaveAttribute(
 		'content',
-		/^Run any agent with any model on a Linux machine of its own/
+		/^Run your own always-on agents: pick a machine, bring any agent/
 	);
 	await expect(page.locator('.hero .eyebrow')).toHaveText('Any agent, any model');
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-		'A framework for running always-on agents'
+		'A platform for running your own always-on agents'
 	);
 	await expect(page.locator('.hero .hk-lead')).toHaveText(
-		'Your agent gets a Linux machine of its own, set up from your laptop in one command, and keeps working there while your laptop is shut.'
+		'Pick a machine and stack what your agent needs on it: your dev environment, secrets, schedules and webhooks. It runs away from your laptop, and from the internet only its webhooks reach it.'
 	);
 	await expect(page.locator('#parts .cols .item-title')).toHaveText([
-		'Wake it with a webhook or a schedule',
+		'Size it to the job',
+		'Wall it off from your laptop',
+		'Bring your dev environment, or leave it out',
 		'Give it the keys you choose',
-		'Hear from it, and answer from your phone'
+		'Start it on a schedule or a webhook',
+		'Bring any agent'
 	]);
 	await expect(page.locator('#parts .cols .cmd')).toHaveText([
-		'repose webhooks add',
+		'repose resize --size large',
+		'repose run',
 		'repose secrets set NAME',
 		'repose notify set --ntfy URL'
 	]);
@@ -376,52 +383,72 @@ test('the hero, the parts and the job agent say what repose is now', async ({ pa
 		'repose browser'
 	]);
 	const text = (await page.locator('main').textContent())!;
-	for (const gone of ['replicated in the cloud', 'For solo founders'])
+	for (const gone of ['replicated in the cloud', 'For solo founders', 'A framework for running'])
 		expect(text).not.toContain(gone);
-	// Not built, or shipped off: none of these is something a visitor can do.
+	// Never on the page, and no command or class that does not exist.
 	for (const claim of [
 		/burst/i,
 		/bare metal/i,
 		/your own hardware/i,
 		/repose trigger/i,
-		/\btiny\b/i
+		/--size tiny/i,
+		/\btiny class\b/i
 	])
 		expect(text).not.toMatch(claim);
 });
 
-// The centrepiece (I-1167, LANDING.md "The centrepiece") is one still
-// picture: named for a screen reader, whole in the first screen at 1440,
-// with each wire level with the row it lands on and its machine on the
-// page's centre line; it has no pause button, since nothing in it moves.
-test('the centrepiece stands whole in the first screen, its wires level with their rows', async ({
-	page
+// The centrepiece (I-1169, LANDING.md "The centrepiece") is the stack:
+// named for a screen reader, whole in the first screen at 1440 in its
+// still frame (the dev environment), each leader's dot on its plate's
+// side corner, and a pause button since it loops.
+test('the centrepiece stack stands whole in the first screen, its leaders on its plates', async ({
+	browser
 }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
+	const context = await browser.newContext({
+		reducedMotion: 'reduce',
+		viewport: { width: 1440, height: 900 }
+	});
+	const page = await context.newPage();
 	await page.goto('/');
-	const parts = page.locator('.parts');
-	await expect(parts).toHaveAttribute('role', 'img');
-	await expect(parts).toHaveAttribute('aria-label', /always-on agent/);
-	await expect(page.locator('.fig--parts button')).toHaveCount(0);
+	const stk = page.locator('.stk');
+	await expect(stk).toHaveAttribute('role', 'img');
+	await expect(stk).toHaveAttribute('aria-label', /built in layers/);
+	await expect(page.locator('.stk .use > .on')).toHaveText('A dev environment');
+	await expect(page.locator('.stk .rows .nm')).toHaveText([
+		'Machine',
+		'Walls',
+		'Your setup',
+		'Secrets',
+		'Triggers',
+		'Agent'
+	]);
 	const m = await page.evaluate(() => {
-		const r = (s: string) => document.querySelector(s)!.getBoundingClientRect();
-		const rows = [...document.querySelectorAll('.parts .machine > .row')].map((e) =>
-			e.getBoundingClientRect()
-		);
-		const mid = (b: DOMRect) => b.top + b.height / 2;
+		const r = (e: Element) => e.getBoundingClientRect();
+		const svg = r(document.querySelector('.stk .plates')!);
+		const frame = r(document.querySelector('main.frame')!);
+		// The plate's side: S from the drawing's width (2 S cos 30 + 4).
+		const S = (svg.width - 4) / (2 * Math.cos(Math.PI / 6));
+		const off: number[] = [];
+		document.querySelectorAll('.stk .pl').forEach((g, i) => {
+			const face = r(g.querySelector('.l')!);
+			// The left corner's edge runs down the face's left side; its
+			// middle is where both leaders end.
+			const corner = { y: face.top + (face.height - S / 2) / 2, l: face.left, r: svg.right - 2 };
+			const li = document.querySelectorAll('.stk .rows > li')[i];
+			const l = r(li.querySelector('.lead.l')!);
+			const rr = r(li.querySelector('.lead.r')!);
+			// Each dot is 5px wide, hung 5px past its leader's end.
+			off.push(Math.abs(l.right + 2.5 - corner.l), Math.abs(rr.left - 2.5 - corner.r));
+			off.push(Math.abs(l.top - corner.y), Math.abs(rr.top - corner.y));
+		});
 		return {
-			bottom: r('.parts .grid').bottom,
-			machine: (r('.parts .machine').left + r('.parts .machine').right) / 2,
-			page: (r('main.frame').left + r('main.frame').right) / 2,
-			say: mid(r('.parts .w-say')) - mid(rows[0]),
-			hook: mid(r('.parts .w-hook')) - mid(rows[2]),
-			ask: mid(r('.parts .w-ask')) - mid(rows[0]),
-			sayEnd: r('.parts .w-say').right - r('.parts .machine').left,
-			askStart: r('.parts .w-ask').left - r('.parts .machine').right
+			bottom: svg.bottom,
+			centre: (svg.left + svg.right) / 2 - (frame.left + frame.right) / 2,
+			off
 		};
 	});
 	expect(m.bottom).toBeLessThanOrEqual(900);
-	expect(Math.abs(m.machine - m.page)).toBeLessThanOrEqual(1);
-	for (const k of ['say', 'hook', 'ask'] as const) expect(Math.abs(m[k]), k).toBeLessThanOrEqual(1);
-	expect(Math.abs(m.sayEnd)).toBeLessThanOrEqual(1);
-	expect(Math.abs(m.askStart)).toBeLessThanOrEqual(1);
+	expect(Math.abs(m.centre)).toBeLessThanOrEqual(1);
+	for (const d of m.off) expect(d).toBeLessThanOrEqual(3);
+	await context.close();
 });

@@ -33383,3 +33383,71 @@ The owner's words, the reason for this entry:
   is still the buyer); a motion loop for the new picture (`LANDING.md`
   "Motion" lists every move, and a wiring diagram that draws itself
   reads as line-art in motion).
+**I-1169. The landing sells a platform for running your own always-on
+agents, composed in layers, and its centrepiece is a 3D stack that
+composes three of them (tensions-landing, 2026-11-12). Amends I-1167.**
+
+The owner read I-1167's page and asked for more (2026-11-12, voice):
+"this is a framework for composing all [your] own agents ... how much
+memory, how much cores ... they don't need to know [the classes], and
+then you can put layers on top of it. Bring your own agent, bring
+triggers such as schedules and webhooks. This is in progress, don't
+worry, just write it." And: "a platform for running all [your] own
+agents that is isolated from your machine, that can handle secrets,
+that can replicate your existing dev environment, that can trigger on
+schedules and take in webhooks securely, that is isolated from the
+internet unless your agent actually asks for something and gets a
+response." On machine size: "You guys can have tiny machines. These are
+coming actually. It's just half of the small." On the picture: "I like
+the 2D, but perhaps we can consider a 3D animation ... let's do
+animation", pointing at voidzero.dev's stack.
+
+- **The page leads with** "A platform for running your own always-on
+  agents", and the lead names the layers: pick a machine, bring any
+  agent, stack your dev environment, secrets, schedules and webhooks on
+  top; it runs walled off from your laptop and the internet. Band 01
+  ("Build it in layers") has six cells in the stack's order: machine,
+  walls, your setup, secrets, triggers, agent.
+- **Written ahead of shipping, on the owner's word.** Two claims are
+  not yet something a visitor can do, and the owner told us to write
+  them anyway: a schedule or a webhook starting a session with a prompt
+  (the trigger layer, approach A of the 2026-11-12 proposal), and a
+  tiny machine of 2 GB (half a `small`). This overrides I-1167's "may
+  not claim" for those two only, and it bends CLAUDE.md "Trust the
+  reader", which the owner may do. Nothing names a command or a class
+  that does not exist (no `repose trigger`, no `--size tiny`). When the
+  trigger layer or the tiny class ships, its user docs must match these
+  lines, or the lines change; until then this entry is why they are
+  there. Burst cores, bare metal, your own hardware, user counts and
+  rivals stay out.
+- **The 3D ban lifts for the centrepiece.** The owner killed isometric
+  (2026-10-04) and the equipment shelf (2026-10-19), and asked for this
+  one himself. `landing/Stack.svelte` draws plates at 30 degrees in
+  the pictures' four flat tones and one blue, no gradient, gloss or
+  glow; it loops through three agents (a dev environment, a shopping
+  agent, an agent that applies for jobs) on one base that stays (the
+  machine and its walls), dropping in only the layers each agent needs,
+  so each is a stack of its own shape, with the agent's mark facing you
+  on the top plate. Every move is in LANDING.md "Motion". The ban
+  stands for every other picture.
+- **Review.** A design critic and a copy audit ran on the first build.
+  The critic's verdict was that it read as "a layered box with a logo":
+  every agent the same shape, marks laid flat and unreadable, an empty
+  beat between agents, plates see-through mid-fade, 2.8s holds. The base
+  now stays, left-out layers close up, the marks face you, opacity
+  changes in 120ms, holds are 4.2s. The audit's fixes: the internet line
+  says only webhook routes reach a machine (SSH through repose is the
+  owner's own way in, and a lent port reaches the laptop), "any model"
+  stays only in the owner's eyebrow, a store login is not a secret (an
+  API key is), and an agent "asks" only when told to.
+- **The 2D drawing is kept.** The owner liked I-1167's Parts drawing
+  and asked to keep it to compare: `landing/Parts.svelte` stays in the
+  tree, unused, and branch `landing-centrepiece-2d` (ee1c6c5a) has the
+  page with it in place.
+- *Rejected:* a WebGL scene (a second rendering stack on the page for
+  one picture, and no still frame without a script); the plates
+  carrying the use's text on their faces (skewed text reads badly at
+  13px); a dashed ghost for a left-out layer (hidden under the plates
+  above it, so every agent kept one shape); the machine's thickness
+  following its memory (every plate above would move with it); naming
+  `tiny` (the owner: "they don't need to know").

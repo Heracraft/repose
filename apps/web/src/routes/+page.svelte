@@ -14,7 +14,7 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Parts from '$lib/components/landing/Parts.svelte';
+	import Stack from '$lib/components/landing/Stack.svelte';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import OneCommand from '$lib/components/landing/OneCommand.svelte';
 	import ComesBack from '$lib/components/landing/ComesBack.svelte';
@@ -73,10 +73,10 @@
 </script>
 
 <svelte:head>
-	<title>repose: a framework for running always-on agents</title>
+	<title>repose: a platform for running your own always-on agents</title>
 	<meta
 		name="description"
-		content="Run any agent with any model on a Linux machine of its own, set up from your laptop in one command. A webhook or a timer wakes the machine, and the agent asks you on your phone when it needs a yes."
+		content="Run your own always-on agents: pick a machine, bring any agent, and add your dev environment, secrets, schedules and webhooks. Each one runs on a machine of its own, away from your laptop."
 	/>
 </svelte:head>
 
@@ -128,10 +128,11 @@
 	<section class="band hero" aria-labelledby="hero-h">
 		<div class="hero-copy">
 			<p class="label eyebrow">Any agent, any model</p>
-			<h1 class="hk-h1" id="hero-h">A framework for running always-on agents</h1>
+			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
 			<p class="hk-lead">
-				Your agent gets a Linux machine of its own, set up from your laptop in one command, and
-				keeps working there while your laptop is shut.
+				Pick a machine and stack what your agent needs on it: your dev environment, secrets,
+				schedules and webhooks. It runs away from your laptop, and from the internet only its
+				webhooks reach it.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -145,14 +146,14 @@
 			</div>
 		</div>
 		<div class="fig fig--parts">
-			<Parts />
+			<Stack />
 		</div>
 	</section>
 
 	<section class="band" id="parts" aria-labelledby="parts-h">
 		<div class="head">
-			{@render label('01', 'Parts')}
-			<h2 class="hk-h2" id="parts-h">Everything under your agent</h2>
+			{@render label('01', 'Layers')}
+			<h2 class="hk-h2" id="parts-h">Build it in layers</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'webhooks' })}>Webhooks</a>
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'notifications' })}
@@ -162,31 +163,57 @@
 		</div>
 		<ul class="cols">
 			<li>
-				{@render label('1.1', 'Wake-ups')}
-				<h3 class="item-title">Wake it with a webhook or a schedule</h3>
+				{@render label('1.1', 'Machine')}
+				<h3 class="item-title">Size it to the job</h3>
 				<p class="copy">
-					A provider's events reach a port on the machine through a URL of its own, and wake the
-					machine if it's frozen. A systemd timer runs a job on a schedule, and <code
-						>repose say</code
-					> types your message into the agent's terminal.
+					A tiny machine with 2 GB keeps one agent running all day. A build gets 2 cores and 8 GB,
+					or 4 and 16.
 				</p>
-				<p class="cmd">repose webhooks add</p>
+				<p class="cmd">repose resize --size large</p>
 			</li>
 			<li>
-				{@render label('1.2', 'Secrets')}
+				{@render label('1.2', 'Walls')}
+				<h3 class="item-title">Wall it off from your laptop</h3>
+				<p class="copy">
+					The machine can't open a connection to your laptop unless you lend it a port. From the
+					internet, only its webhook routes reach it, and the answers to the agent's own requests
+					come back.
+				</p>
+			</li>
+			<li>
+				{@render label('1.3', 'Your setup')}
+				<h3 class="item-title">Bring your dev environment, or leave it out</h3>
+				<p class="copy">
+					<code>repose run</code> copies your checkout and your tools. Leave it out for an agent that
+					only shops.
+				</p>
+				<p class="cmd">repose run</p>
+			</li>
+			<li>
+				{@render label('1.4', 'Secrets')}
 				<h3 class="item-title">Give it the keys you choose</h3>
 				<p class="copy">
-					A secret you set by name reaches the agent as an environment variable, and a new value
-					reaches its next command. Your SSH keys stay on your laptop.
+					You set a secret by name, and the agent gets it as an environment variable on its next
+					command. Your SSH keys stay on your laptop.
 				</p>
 				<p class="cmd">repose secrets set NAME</p>
 			</li>
 			<li>
-				{@render label('1.3', 'Notifications')}
-				<h3 class="item-title">Hear from it, and answer from your phone</h3>
+				{@render label('1.5', 'Triggers')}
+				<h3 class="item-title">Start it on a schedule or a webhook</h3>
 				<p class="copy">
-					An agent's question reaches you by email, ntfy or Google Chat, and you answer there; on
-					ntfy one tap does it.
+					Point a schedule or a webhook at a prompt, and a session starts on the machine with the
+					event in hand. A webhook's URL carries its own token, and a wrong one never reaches the
+					machine.
+				</p>
+			</li>
+			<li>
+				{@render label('1.6', 'Agent')}
+				<h3 class="item-title">Bring any agent</h3>
+				<p class="copy">
+					Claude Code, Codex, Gemini CLI, opencode and pi come installed, and opencode and pi take
+					any provider's key. It asks you for a yes by email, ntfy or Google Chat, and you answer
+					there.
 				</p>
 				<p class="cmd">repose notify set --ntfy URL</p>
 			</li>
