@@ -138,6 +138,10 @@ type Gateway struct {
 	// sessions are the open relays, so a revocation can end them (I-436).
 	sessMu   sync.Mutex
 	sessions map[*session]struct{}
+
+	// webhookConns are the SSH connections webhook deliveries reuse,
+	// one per project for webhook.IdleReuse (DECISIONS I-1110).
+	webhookConns *webhookConnCache
 }
 
 // New validates the configuration and applies the defaults of §5.2.
@@ -214,6 +218,8 @@ func New(cfg Config) (*Gateway, error) {
 		users:    newKeyedCounter(cfg.MaxConnsPerUser),
 		log:      cfg.Log,
 		sessions: map[*session]struct{}{},
+
+		webhookConns: newWebhookConnCache(cfg.Clock),
 	}
 	return g, nil
 }
@@ -300,6 +306,10 @@ func (g *Gateway) RefreshLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			// The SSH connections webhook deliveries reuse are the
+			// gateway's own, not a tenant's session, so they end here
+			// (DECISIONS I-1110).
+			g.webhookConns.closeAll()
 			return
 		case <-revTick.C:
 			refreshRev()
@@ -307,6 +317,9 @@ func (g *Gateway) RefreshLoop(ctx context.Context) {
 			if g.cas.Age() > g.cfg.CARefresh {
 				refreshCA()
 			}
+			// A project that stopped sending deliveries should not hold
+			// an SSH connection to its guest open.
+			g.webhookConns.sweep()
 		case <-caTick.C:
 			refreshCA()
 		}

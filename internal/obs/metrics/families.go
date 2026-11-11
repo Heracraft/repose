@@ -51,7 +51,18 @@ type GatewayMetrics struct {
 	WGSyncPeers        prometheus.Gauge
 	WGSyncErrorsTotal  prometheus.Counter
 	HookEventsTotal    *prometheus.CounterVec // result: forwarded, rejected, rate_limited, api_error, not_found
+	// Webhook deliveries on the public :443 (DECISIONS I-1110).
+	WebhookRequestsTotal *prometheus.CounterVec // result: the delivery's outcome word
+	WebhookWakeSeconds   prometheus.Histogram
+	WebhookInflight      prometheus.Gauge
+	WebhookRoutes        prometheus.Gauge
 }
+
+// WebhookOutcomes are the words a delivery ends with
+// (docs/features/webhooks.md); the api refuses any other.
+var WebhookOutcomes = []string{"delivered", "woke", "stopped", "started", "start_refused",
+	"wake_failed", "no_listener", "timeout", "too_large", "rate_limited", "body_dropped",
+	"unavailable", "not_found", "gone"}
 
 // NewGatewayMetrics registers the gateway family. The auth-failure counter
 // is initialised at zero for every reason, because
@@ -71,6 +82,14 @@ func NewGatewayMetrics(m *Metrics) *GatewayMetrics {
 		WGSyncPeers:        f.gauge("wgsync_peers", "WireGuard peers wgsync last applied."),
 		WGSyncErrorsTotal:  f.counter("wgsync_errors_total", "wgsync cycles that failed."),
 		HookEventsTotal:    f.counterVec("hook_events_total", "Hook events received on the ingest port, by result.", "result"),
+
+		WebhookRequestsTotal: f.counterVec("webhook_requests_total", "Webhook deliveries, by outcome.", "result"),
+		WebhookWakeSeconds:   f.histogram("webhook_wake_seconds", "Time to wake a frozen machine for a delivery.", gatewayRouteBuckets),
+		WebhookInflight:      f.gauge("webhook_inflight", "Webhook deliveries being forwarded right now."),
+		WebhookRoutes:        f.gauge("webhook_routes", "Webhook routes in the edge's table."),
+	}
+	for _, o := range WebhookOutcomes {
+		g.WebhookRequestsTotal.WithLabelValues(o)
 	}
 	for _, r := range AuthFailReasons {
 		g.AuthFailTotal.WithLabelValues(r)

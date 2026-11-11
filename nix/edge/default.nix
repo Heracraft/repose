@@ -4,7 +4,10 @@
 #   * the SSH gateway on :22 (public), which relays a user into their guest;
 #   * the WireGuard hub on 51820/udp that every host dials outbound, so the
 #     gateway can reach guests without a host having any inbound port;
-#   * the preview-proxy stub on :443 (a static page until the feature exists);
+#   * the public :443: webhook deliveries on hooks.repose.herakraft.co,
+#     whose certificate Let's Encrypt issues over TLS-ALPN-01 on that same
+#     listener, and the preview-proxy stub on every other name (a static
+#     page until the feature exists);
 #   * the hook-ingest forwarder and the metrics endpoint on the WireGuard
 #     address only;
 #   * an operator sshd on 2222, key-only, restricted to the operator address
@@ -60,6 +63,18 @@ in
       type = lib.types.str;
       default = "10.255.255.1";
       description = "The control plane's address on this hub (infra/azure/modules/coolify `wireguard_address`); the api's gRPC and /internal listeners are reached there, never on its public IP (ops/coolify/README.md).";
+    };
+
+    webhookHost = lib.mkOption {
+      type = lib.types.str;
+      default = "hooks.repose.herakraft.co";
+      description = "The one public name webhook routes answer on (docs/features/webhooks.md, DECISIONS I-1110). Its certificate is issued by Let's Encrypt over TLS-ALPN-01 on the gateway's own :443, so it needs one A record and no DNS token. Empty switches the webhook path off and leaves :443 to the preview stub.";
+    };
+
+    webhookAcmeEmail = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "The address Let's Encrypt sends expiry warnings to for the webhook certificate. Empty asks for none.";
     };
 
     apiUrl = lib.mkOption {
@@ -263,6 +278,10 @@ in
         set gw_conns6 { type ipv6_addr; flags dynamic; size 65535; }
         set gw_rate4 { type ipv4_addr; flags dynamic,timeout; timeout 1m; size 65535; }
         set gw_rate6 { type ipv6_addr; flags dynamic,timeout; timeout 1m; size 65535; }
+        set pub_conns4 { type ipv4_addr; flags dynamic; size 65535; }
+        set pub_conns6 { type ipv6_addr; flags dynamic; size 65535; }
+        set pub_rate4 { type ipv4_addr; flags dynamic,timeout; timeout 1m; size 65535; }
+        set pub_rate6 { type ipv6_addr; flags dynamic,timeout; timeout 1m; size 65535; }
 
         chain input {
           type filter hook input priority filter; policy drop;
@@ -276,6 +295,16 @@ in
           tcp dport 22 ct state new update @gw_rate4 { ip saddr limit rate over 20/second burst 40 packets } counter drop
           tcp dport 22 ct state new update @gw_rate6 { ip6 saddr limit rate over 20/second burst 40 packets } counter drop
           tcp dport 22 accept
+          # Public :443 carries webhook deliveries as well as the
+          # preview stub. Providers send from a few shared addresses --
+          # Stripe's fifteen carry every tenant's deliveries -- so the
+          # per-source caps here are far above the gateway port's 64 and
+          # 20 a second, and the real rates are per route and per
+          # project inside the gateway (DECISIONS I-1110).
+          tcp dport 443 ct state new add @pub_conns4 { ip saddr ct count over 256 } counter reject with tcp reset
+          tcp dport 443 ct state new add @pub_conns6 { ip6 saddr ct count over 256 } counter reject with tcp reset
+          tcp dport 443 ct state new update @pub_rate4 { ip saddr limit rate over 100/second burst 200 packets } counter drop
+          tcp dport 443 ct state new update @pub_rate6 { ip6 saddr limit rate over 100/second burst 200 packets } counter drop
           tcp dport 443 accept
           udp dport ${toString cfg.wgPort} accept
 
@@ -382,6 +411,12 @@ in
         PREVIEW_LISTEN = ":443";
         PREVIEW_TLS_CERT = "${tlsDir}/wildcard.crt";
         PREVIEW_TLS_KEY = "${tlsDir}/wildcard.key";
+        # Webhook deliveries on the same :443, by SNI and Host
+        # (DECISIONS I-1110). The ACME cache is under StateDirectory
+        # and not stateDir, which is read-only to this unit.
+        WEBHOOK_HOST = cfg.webhookHost;
+        WEBHOOK_ACME_CACHE = "/var/lib/repose-gateway/acme";
+        WEBHOOK_ACME_EMAIL = cfg.webhookAcmeEmail;
       };
       serviceConfig = {
         ExecStart = "${cfg.gatewayPackage}/bin/gateway serve";
@@ -393,6 +428,11 @@ in
         NotifyAccess = "all";
         RuntimeDirectory = "repose-gateway";
         RuntimeDirectoryMode = "0700";
+        # The webhook name's certificate and its account key live here.
+        # Without it the unit has nowhere to write one, and every
+        # restart would ask Let's Encrypt again (DECISIONS I-1110).
+        StateDirectory = "repose-gateway";
+        StateDirectoryMode = "0700";
         # 443 is privileged, and so is 22 when the gateway runs without its
         # socket; DynamicUser needs the capability to bind them. Everything else the gateway touches is a file it reads and a
         # network dial, which need no privilege.
