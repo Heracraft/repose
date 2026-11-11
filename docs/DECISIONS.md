@@ -31165,6 +31165,13 @@ way, so the preview stub is untouched and keeps answering what it
 answered. With neither certificate the listener stays shut, which is
 I-479's rule unchanged.
 
+One failure mode changes shape. Today no wildcard exists, so :443 did
+not open at all and the preview names were refused at connect. With the
+hooks name configured the port is open, so those names now fail at the
+handshake instead ("no certificate for <name>"). Both are failures and
+neither reaches the stub; the stub's page comes back the moment a
+preview certificate exists, and nothing else about it changed.
+
 The ACME cache needs somewhere to write. The gateway unit has
 `ReadOnlyPaths = [ stateDir ]`, so the cache is a `StateDirectory`,
 `/var/lib/repose-gateway/acme`: without it every restart would ask

@@ -957,14 +957,14 @@ pointer, not a summary.
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31015
 - **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31061
 - **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31147
-- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31194
-- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31248
-- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31304
-- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31326
-- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31360
-- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31402
-- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31443
-- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31522
-- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31586
-- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31679
-- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31716
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31201
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31255
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31311
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31333
+- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31367
+- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31409
+- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31450
+- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31529
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31593
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31686
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31723
