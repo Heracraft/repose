@@ -31827,7 +31827,7 @@ from the user's end ("`repose status` can see every term of this rule but
 prints none of them") and left it open.
 
 So the rule records its own verdict, from its own tick, in a new
-`rest_verdicts` table (migration `0036_rest_verdicts`).
+`rest_verdicts` table (migration `0038_rest_verdicts`).
 `internal/api/resting/verdict.go` reads every term for every *running*
 project -- not only the candidates -- and writes one row per machine per
 `VerdictEvery`, five minutes. `blocked_by` is the column the owner reads:

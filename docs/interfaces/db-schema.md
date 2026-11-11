@@ -146,7 +146,7 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
               primary key (project_id, ts, comm))  -- partitioned by month, 30-day retention
 
-rest_verdicts (ts, project_id, host_id, sample_ts timestamptz,  -- 0036, I-1152
+rest_verdicts (ts, project_id, host_id, sample_ts timestamptz,  -- 0038, I-1152
               would_rest bool,          -- every term of the rest rule (I-818) passed
               blocked_by text,          -- the one condition that kept the machine awake, lower_snake, '' when none:
                                         -- resting|host_unreachable|host_not_ready|keep_awake|op|question|session|
