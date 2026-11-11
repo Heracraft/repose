@@ -148,11 +148,11 @@ func TestGateEveryReason(t *testing.T) {
 	if err := g.Check(ctx, user(t, pool, d), billing.Request{Class: "large", Project: big}); err != nil {
 		t.Fatalf("start while over the disk: %v", err)
 	}
-	// A fork of three copies counts three times what the source holds.
+	// AddHeldBytes counts whole: three times what a source holds.
 	held(t, pool, big, 30<<30)
 	r = refusal(t, g.Check(ctx, user(t, pool, d), billing.Request{Disk: true, AddHeldBytes: 3 * (30 << 30), VolumeBytes: 40 << 30}))
 	if r.Reason != "disk_limit" || !strings.Contains(r.Message, "hold 36 GB") || !strings.Contains(r.Message, "about 90 GB more") {
-		t.Fatalf("fork: %+v", r)
+		t.Fatalf("three copies of a source: %+v", r)
 	}
 	// A project with no figure at all counts at its disk size.
 	if _, err := pool.Exec(ctx, "update projects set disk_held_bytes = null where id = $1", big); err != nil {

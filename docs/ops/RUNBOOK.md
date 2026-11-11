@@ -289,6 +289,7 @@ copy-paste version):
 | Query audit log | `repose-admin audit --user <handle> --since 24h` |
 | See the seats and the waitlist | `repose-admin seats` (total, held, free, waiting, source, and for a derived total the memory and core ceilings), `repose-admin waitlist list` (position, handle, joined, invited, hold, converted, expired, by) |
 | Invite someone ahead of the queue | `repose-admin waitlist admit <handle>`, or `repose-admin waitlist admit --next N` for the next N; a 72-hour seat hold and one email each, audited `waitlist_admit` (I-269, I-290) |
+| Clear the rows a page view made | `repose-admin waitlist stale` lists the rows still waiting that joined before v0.1.44, when `GET /billing` stopped joining the list, with each account's billing status and whether it ever subscribed; `repose-admin waitlist stale --lapse` lapses exactly those rows, with no email, audited `waitlist_lapse`. A row lapsed by mistake comes back with one click on `/billing`, at the back of the list. `--before <RFC3339>` moves the cut (I-1092) |
 | Publish a base version | `repose-admin base publish --rev <full 40-hex sha on main> --changelog "..." [--security]`; a short, unknown or off-main sha is refused (I-173); `--unverified-rev` skips only the GitHub check, for when GitHub is down |
 | Smoke-test a host | `repose-admin hosts smoke host-NN` (create, snapshot, stop, start, destroy a throwaway guest) |
 | Initialise the CAs (once) | `repose-admin ca init`; then `repose-admin ca sign-client --name gateway --out <dir>` for the edge |

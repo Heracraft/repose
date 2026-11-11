@@ -32,6 +32,11 @@ func noticeAfter(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return true
 	}
+	// `repose version update` has just said which release this is; the
+	// notice after it would name the same one (DECISIONS I-1086).
+	if cmd.CommandPath() == "repose version update" {
+		return false
+	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Hidden || c.Name() == cobra.ShellCompRequestCmd || c.Name() == cobra.ShellCompNoDescRequestCmd {
 			return false
@@ -190,6 +195,7 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		g.command = hintCommand(cmd)
+		noteSkewCommand(cmd.Name())
 		if g.verbose {
 			setVerbose(os.Stderr)
 		}
@@ -221,7 +227,7 @@ func newRootCmd(version string) *cobra.Command {
 		newRmCmd(env, g),
 		newKeepCmd(env, g),
 		newRestoreCmd(env, g),
-		newForkCmd(envJSON, env, g),
+		newForkCmd(),
 		newLogsCmd(envJSON, env, g),
 		newLsCmd(envJSON),
 		newPsCmd(envJSON, env, g),
@@ -629,8 +635,9 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Send this checkout's changes to its machine",
 		Long: "Copy your uncommitted changes and unpushed commits over the machine's checkout,\n" +
 			"creating or starting the machine if needed, without attaching. When the machine\n" +
-			"changed the same files, stop with exit 6 and name them; --stash-machine clears\n" +
-			"the way. Nothing comes back: git fetch repose does that.\n\n" +
+			"changed the same files, name them and ask which copy to keep, or exit 6 with no\n" +
+			"terminal to ask on; --stash-machine decides it in advance. Nothing comes back:\n" +
+			"git fetch repose does that.\n\n" +
 			"sync.exclude in config.toml leaves out files that .gitignore does not.",
 		Example:           "  repose sync\n  repose sync --stash-machine",
 		Args:              cobra.ArbitraryArgs,
@@ -1641,7 +1648,7 @@ func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"With PROJECT:CHECKOUT, remove only that checkout, one repose run --on added,\n" +
 			"with its worktrees, from the running machine. The machine and its own checkout\n" +
 			"stay.",
-		Example:           "  repose rm todo-app-fork-1 todo-app-fork-2\n  repose rm -y tmp-k3f9\n  repose rm todo-app:api",
+		Example:           "  repose rm todo-app-2 todo-app-3\n  repose rm -y tmp-k3f9\n  repose rm todo-app:api",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1749,57 +1756,18 @@ func newRestoreCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
-	opts := ForkOptions{Count: 1}
-	cmd := &cobra.Command{
-		Use:   "fork [PROJECT]",
-		Short: "Copy a project into new projects, each on its own machine",
-		Long: "Copy PROJECT's disk (this checkout's project, by default) as it is now into\n" +
-			"--count new projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each\n" +
-			"running on its own machine with the same files, configuration and secrets.\n" +
-			"PROJECT keeps running. In its checkout, each fork gets a git remote of its\n" +
-			"name, so git fetch NAME-1 brings its commits back.\n\n" +
-			"Each fork counts toward your plan's disk by what it holds, and toward its memory\n" +
-			"while it runs; --no-start creates them stopped.",
-		Example: "  repose fork -n 3 --prompt \"try a different approach to the cache\"\n" +
-			"  git fetch todo-app-fork-2\n" +
-			"  repose rm todo-app-fork-1 todo-app-fork-3",
-		SuggestFor:        []string{"clone", "copy"},
-		Args:              projectArgs,
-		ValidArgsFunction: completeProject(env),
+func newForkCmd() *cobra.Command {
+	// Hidden for one release: an old script or a user's muscle memory
+	// reaches the line that says where to go instead of "unknown command"
+	// (I-1082). DisableFlagParsing lets any old flag through to it.
+	return &cobra.Command{
+		Use:                "fork",
+		Hidden:             true,
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			project, err := projectFrom(args, g)
-			if err != nil {
-				return err
-			}
-			if opts.Agent != "" && !isAgent(opts.Agent) {
-				return cobraUsageError{fmt.Errorf("--agent must be one of %s, got %q", strings.Join(agentNames, ", "), opts.Agent)}
-			}
-			if opts.Agent != "" && opts.Prompt == "" {
-				return cobraUsageError{fmt.Errorf("--agent goes with --prompt")}
-			}
-			if err := checkSizeFlag(opts.Size); err != nil {
-				return err
-			}
-			e, err := envJSON(cmd)
-			if err != nil {
-				return err
-			}
-			opts.ProjectArg = project
-			return ForkCmd(cmd.Context(), e, opts)
+			return ForkCmd()
 		},
 	}
-	cmd.Flags().IntVarP(&opts.Count, "count", "n", 1, "how many forks (1 to 10)")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "prefix for the forks' names (default: PROJECT-fork)")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of the forks: small, large or xl (default: PROJECT's)")
-	cmd.Flags().StringVar(&opts.SnapshotID, "snapshot", "", "fork from this snapshot of PROJECT instead of its disk as it is now")
-	cmd.Flags().StringVar(&opts.Prompt, "prompt", "", "start the agent in every fork with this prompt")
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "with --prompt: claude|opencode|codex|gemini|pi (default: PROJECT's)")
-	cmd.Flags().BoolVar(&opts.NoStart, "no-start", false, "create the forks stopped; they take no plan memory until started")
-	cmd.Flags().Bool("json", false, "print the forks as JSON")
-	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
-	return cmd
 }
 
 func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -2177,15 +2145,38 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 // suffix lets a user tell this binary apart from Arch's unrelated
 // `repose` package on the same PATH).
 func newVersionCmd(version string) *cobra.Command {
-	return &cobra.Command{
+	root := &cobra.Command{
 		Use:   "version",
 		Short: "Print the CLI's version",
 		Args:  noArgs,
+		// `repose update` and `repose upgrade` land here, which is where
+		// the command that updates the CLI lives (DECISIONS I-1086).
+		SuggestFor: []string{"update", "upgrade", "self-update"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Printf("repose %s (herakraft)\n", version)
 			return nil
 		},
 	}
+	update := &cobra.Command{
+		Use:   "update [VERSION]",
+		Short: "Replace this binary with the latest release",
+		Long: `Replace this binary with the latest release of the CLI.
+
+VERSION is a release tag, such as v0.1.40, to go back to that one. Only
+releases from v0.1.28 on are accepted, the ones whose checksums are signed.
+The download is checked against the release signing key before anything is
+written, and a binary a package manager owns is never touched.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var target string
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return VersionUpdateCmd(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), target)
+		},
+	}
+	root.AddCommand(update)
+	return root
 }
 
 // newMCPCmd is `repose mcp`: the MCP servers of the agents on a machine.

@@ -162,6 +162,14 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **Nothing arrives.** Run `repose notify test`. A channel that says `failed` is one repose couldn't send to, with the reason ntfy or Google Chat gave; an email failure says only `failed`, since that one's ours to fix. `Every channel is off; nothing was sent.` means none is set up. If every channel that's on says `sent`, `repose events` shows whether the event was raised; a project past [30 notifications an hour](/docs/notifications#limits) is paused until the time that notice names.
 
+## Updating the CLI
+
+**`repose 0.1.30 is too old for some of repose's answers.`** The server stopped answering a CLI this old the way these docs describe, so a command can behave differently from its page. It prints at the end of every `repose run`, `repose attach` and `repose sync` until you [update](/docs/install#update). The weaker line, `repose 0.1.43 is older than 0.1.44, the latest release.`, prints once for each new release.
+
+**`/nix/store/...-repose-0.1.43/bin/repose belongs to Nix.`** A package manager put that binary there, and `repose version update` won't overwrite it. Update it with that manager, or install repose with [the script](/docs/install#install) into `~/.local/bin`.
+
+**`Can't write /usr/local/bin.`** The binary is in a directory your user can't write, which is where `install.sh --system` puts it. Run `sudo repose version update`.
+
 ## Something else
 
 Post a bug or an idea on the [feedback board](https://repose.fider.io). Sign in with your repose account, the same email or GitHub login you use for `repose login`. Posts are public, so leave out secrets, tokens and private code.

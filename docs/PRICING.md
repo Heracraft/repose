@@ -76,9 +76,9 @@ A plan's rules:
   deleted file stops counting within a day. A volume's size (20, 40, 80 GB
   by class, or what a resize set) is only the ceiling one project can grow
   to, and may be at most the plan's whole disk. While the projects hold
-  more than the plan's disk, a create, a restore or fork as a new project,
+  more than the plan's disk, a create, a restore as a new project,
   and growing a volume are refused with `detail.reason = disk_limit`; a
-  create counts a new volume's first 1 GB, a restore or fork its source's
+  create counts a new volume's first 1 GB, a restore its source's
   figure per copy. Nothing stops: running machines keep running, stopped
   ones start (starting one is how its files are deleted), and one
   `disk_over_plan` email a period says so. It is a cap, with no overage

@@ -99,24 +99,27 @@ func TestVersionOlder(t *testing.T) {
 }
 
 // An old CLI says so once per newer release, read from the api's header
-// (DECISIONS I-626).
+// (DECISIONS I-626). Both versions read the same way: the release build
+// carries 0.1.20 and the header the tag v0.1.24 (I-1088).
 func TestNewerCLINoticeOncePerRelease(t *testing.T) {
 	t.Setenv(envXDGConfigHome, t.TempDir())
 	t.Setenv(envInGuest, "")
 	defer func(v string) { cliVersion = v }(cliVersion)
-	cliVersion = "v0.1.20"
+	cliVersion = "0.1.20"
+	defer func(f func() string) { executablePath = f }(executablePath)
+	executablePath = func() string { return "/home/a/.local/bin/repose" }
 	reset := func(latest string) {
 		latestMu.Lock()
-		latestCLI, noticed = "", false
+		latestCLI, oldestCLI, skewCmd, noticed = "", "", "", false
 		latestMu.Unlock()
 		h := http.Header{}
 		h.Set(latestCLIHeader, latest)
-		noteLatestCLI(h)
+		noteCLIVersions(h)
 	}
 	var buf bytes.Buffer
 	reset("v0.1.24")
 	noteNewerCLITo(&buf)
-	want := "repose v0.1.20 is older than v0.1.24, the latest release. `curl -fsSL https://repose.herakraft.co/install.sh | sh` updates it.\n"
+	want := "repose 0.1.20 is older than 0.1.24, the latest release. `repose version update` updates it.\n"
 	if buf.String() != want {
 		t.Fatalf("notice %q", buf.String())
 	}
@@ -128,7 +131,7 @@ func TestNewerCLINoticeOncePerRelease(t *testing.T) {
 	}
 	reset("v0.1.25")
 	noteNewerCLITo(&buf)
-	if !strings.Contains(buf.String(), "v0.1.25") {
+	if !strings.Contains(buf.String(), "0.1.25") {
 		t.Fatalf("no notice for a newer release: %q", buf.String())
 	}
 	buf.Reset()
@@ -137,6 +140,75 @@ func TestNewerCLINoticeOncePerRelease(t *testing.T) {
 	noteNewerCLITo(&buf)
 	if buf.Len() != 0 {
 		t.Fatalf("notice on a machine: %q", buf.String())
+	}
+}
+
+// A binary a package manager owns is never replaced by the CLI, so the
+// notice names the package manager instead of the command (I-1086).
+func TestNewerCLINoticeNamesThePackageManager(t *testing.T) {
+	t.Setenv(envXDGConfigHome, t.TempDir())
+	t.Setenv(envInGuest, "")
+	defer func(v string) { cliVersion = v }(cliVersion)
+	cliVersion = "0.1.20"
+	defer func(f func() string) { executablePath = f }(executablePath)
+	executablePath = func() string { return "/opt/homebrew/Cellar/repose/0.1.20/bin/repose" }
+	latestMu.Lock()
+	latestCLI, oldestCLI, skewCmd, noticed = "v0.1.24", "", "", false
+	latestMu.Unlock()
+	var buf bytes.Buffer
+	noteNewerCLITo(&buf)
+	want := "repose 0.1.20 is older than 0.1.24, the latest release. Update it with Homebrew.\n"
+	if buf.String() != want {
+		t.Fatalf("notice %q", buf.String())
+	}
+}
+
+// A CLI the api no longer answers as the docs describe says so on every
+// run, attach and sync, not once per release, and on no other command
+// (DECISIONS I-1088).
+func TestTooOldCLIWarnsOnEveryRun(t *testing.T) {
+	t.Setenv(envXDGConfigHome, t.TempDir())
+	t.Setenv(envInGuest, "")
+	defer func(v string) { cliVersion = v }(cliVersion)
+	cliVersion = "0.1.30"
+	defer func(f func() string) { executablePath = f }(executablePath)
+	executablePath = func() string { return "/home/a/.local/bin/repose" }
+	line := func(command, latest, oldest string) string {
+		latestMu.Lock()
+		latestCLI, oldestCLI, skewCmd, noticed = "", "", command, false
+		latestMu.Unlock()
+		h := http.Header{}
+		if latest != "" {
+			h.Set(latestCLIHeader, latest)
+		}
+		if oldest != "" {
+			h.Set(oldestCLIHeader, oldest)
+		}
+		noteCLIVersions(h)
+		var buf bytes.Buffer
+		noteNewerCLITo(&buf)
+		return buf.String()
+	}
+	want := "repose 0.1.30 is too old for some of repose's answers. `repose version update` updates it.\n"
+	for i, command := range []string{"run", "attach", "sync"} {
+		if got := line(command, "v0.1.44", "v0.1.40"); got != want {
+			t.Fatalf("%d. %s printed %q", i+1, command, got)
+		}
+	}
+	// The first of those runs recorded v0.1.44, and the weaker line does
+	// not arrive afterwards saying less about the same release.
+	if got := line("ls", "v0.1.44", "v0.1.40"); got != "" {
+		t.Errorf("ls printed %q", got)
+	}
+	// Above Oldest only the once-per-release line applies.
+	t.Setenv(envXDGConfigHome, t.TempDir())
+	if got := line("run", "v0.1.44", "v0.1.20"); got != "repose 0.1.30 is older than 0.1.44, the latest release. `repose version update` updates it.\n" {
+		t.Errorf("above Oldest: %q", got)
+	}
+	// No header at all: nothing to say.
+	t.Setenv(envXDGConfigHome, t.TempDir())
+	if got := line("run", "", ""); got != "" {
+		t.Errorf("no headers: %q", got)
 	}
 }
 

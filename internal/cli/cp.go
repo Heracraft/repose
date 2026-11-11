@@ -87,6 +87,9 @@ func newCpCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 machine: PROJECT:PATH for a project's, :PATH for this checkout's. A relative
 path on the machine starts in its checkout. Several sources copy into the
 destination directory, so a glob such as ./logs/* works.`,
+		// `copy` led to `repose fork` until it was removed (I-1082);
+		// the command that copies files is the one it means now.
+		SuggestFor: []string{"copy"},
 		Example: "  repose cp :logs/x.log .\n" +
 			"  repose cp todo-app:/tmp/trace.json .\n" +
 			"  repose cp ./report-*.pdf todo-app:/tmp/\n" +

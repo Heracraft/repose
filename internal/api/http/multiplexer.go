@@ -39,7 +39,7 @@ func checkMultiplexer(v string) error {
 // herdrGate refuses herdr on a machine whose base predates it (I-502):
 // 409 conflict, detail.reason = base_update_needed. base is the version
 // the machine would run; nil means the newest published base when
-// nilIsNewest (a create, fork or restore as new, whose build takes the
+// nilIsNewest (a create or a restore as new, whose build takes the
 // newest), and older than any base otherwise (a PATCH on a project that
 // has never been built). tmux is never gated; the caller checks the
 // value first.
@@ -96,8 +96,8 @@ func gateError(slug string, base *string, needs string) error {
 	}
 }
 
-// copiedMultiplexer is the value a fork or a restore as a new project
-// takes from its source: the source's, or tmux when herdr would be
+// copiedMultiplexer is the value a restore as a new project takes from
+// its source: the source's, or tmux when herdr would be
 // refused for the copy's base (api.md, "The base gate").
 func copiedMultiplexer(ctx context.Context, q store.Querier, src *store.Project, slug string, base *string) (string, error) {
 	m := multiplexer.Normalize(src.Multiplexer)

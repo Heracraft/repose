@@ -15,7 +15,7 @@ feature doc wins; on internals, the workstream doc wins.
 | [browser.md](browser.md) | The shared headed Chromium, Playwright MCP, chrome-devtools-mcp, `repose browser` (the viewer), `browser bridge` | built |
 | [secrets.md](secrets.md) | Synced tool logins, `.env` files and named secrets | built |
 | [config.md](config.md) | The menu, the Nix fragment, apply, base bumps, hold | built |
-| [snapshots.md](snapshots.md) | Nightly and on-stop snapshots, list, restore, fork | built |
+| [snapshots.md](snapshots.md) | Nightly and on-stop snapshots, list, restore | built |
 | [notifications.md](notifications.md) | Agent events by email, ntfy and Google Chat, `repose-notify`, `repose-ask` | built; Telegram, Discord not built |
 | [ports-and-previews.md](ports-and-previews.md) | Auto-forward while attached, `repose open <port>`, preview URLs | partly built; preview URLs not built, not approved (2026-09-25) |
 | [stop-start-destroy.md](stop-start-destroy.md) | Lifecycle states, what each one costs, retention | built, temporary machines included (I-347..I-355); idle auto-stop not built |
