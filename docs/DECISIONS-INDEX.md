@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-923 entries.
+925 entries.
 
 ## Scope
 
@@ -283,7 +283,7 @@ pointer, not a summary.
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4394
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4408
 - **I-199** Ports are auto-forwarded while a CLI session is attached — L4413
-- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; L4426
+- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; amended by I-1124; L4426
 - **I-201** `repose cp` — L4438
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4443
 - **I-203** The first sync of a large GitHub repository clones in the guest — amended by I-713; amended by I-714; L4451
@@ -955,3 +955,5 @@ pointer, not a summary.
 - **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
+- **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31059
+- **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31145

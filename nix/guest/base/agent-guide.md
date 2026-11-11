@@ -58,6 +58,7 @@ The user may have added other repositories to this machine as folders beside it,
 - The user may open the bridge with an allowlist. Then a site off the list fails: navigating there returns an error saying it is not on the bridge's allowlist, and pages there fail to load with net::ERR_BLOCKED_BY_CLIENT. Ask the user to add the site; don't try to reach it another way. Tabs of theirs on other sites are hidden from you. <!-- /docs/your-chrome#keep-the-agents-to-some-sites -->
 - Through the bridge, network events carry no cookies, no Authorization or API-key headers, no request bodies and no WebSocket or server-sent event payloads, and reading a response body is refused. Read what you need from the page itself. <!-- /docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome -->
 - `gh browse`, `gh pr create --web` and other commands that open a browser print the URL instead; pass it on to the user. <!-- /docs/machine#browser -->
+- The shared browser stops after 10 minutes unused while no agent is working; your next browser call starts it again on the same pages. A headless browser you started yourself is stopped once the program that started it has exited, nothing is connected to it and the machine is quiet, so keep its launcher running for as long as you need it. <!-- /docs/machine#browser -->
 
 ## Memory and disk
 

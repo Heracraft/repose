@@ -100,7 +100,8 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
 | `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
-| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
+| `/run/repose/desktop/last-cdp` | mtime of the last DevTools **command** to the agents' browser (I-246): stamped when `bytes_received` on the browser's CDP sockets moves, and by `repose-browser-proxy.service` when it starts, which is how a request that opens and closes between two checks is seen (I-930, I-948, I-1122). The idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
+| `/run/repose/desktop/last-agent-working` | mtime of the last guestd refresh that saw an agent in any state but `idle` or `needs_input`; the idle stop reads its age to pick the browser's threshold, 10 minutes or 30 (I-1122). Written by guestd as root and left dev's, as `repose-desktop-stamp` does for the others (I-727). Absent means no agent has worked since the boot, which is the short threshold; nothing else creates it |
 | `/run/repose/mcp/` | tmpfiles `d 0700 dev dev`: one socket per forwarded MCP server, `NAME.sock` (0600 dev), bound by `repose-mcp hold` while a laptop forwards NAME and removed when the hold ends, and `NAME.alive` (0600 dev), touched at each keepalive from the laptop; a missing socket, or a keepalive file more than 30 s old, is how `status` says `laptop not connected` (DECISIONS I-557). A CLI that sends no keepalive leaves no `NAME.alive`, and the socket alone decides |
 | `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246). Before each start, `repose-browser-unlock` removes its `SingletonLock`, `SingletonSocket` and `SingletonCookie` unless the process the lock names runs with this profile (I-727) |
 | `/nix/.ro-store` | read-only virtio-fs mount of the host store (tag `ro-store`) |
@@ -1053,9 +1054,26 @@ root pid, I-535), -800 for the keystroke path (I-576: `dev`'s
 other `dev` process holding a negative value (it inherited the agent's,
 the tmux server's or the SSH session's on fork: a dev server an agent
 started, a pane's shell, a `repose exec` command). A positive value the
-user set is left alone, and nothing is ever killed or stopped by guestd.
-`dev` cannot lower its own value, which is why root owns this. When the
-kernel kills something, guestd's `oom` warning names it.
+user set is left alone. `dev` cannot lower its own value, which is why
+root owns this. When the kernel kills something, guestd's `oom` warning
+names it.
+
+One thing guestd does stop, and nothing else (I-1124, which amends
+I-200): a **stray browser**. Each minute, a process of dev's named
+`chrome-headless`, `chromium`, `chrome` or `headless_shell` whose parent
+is none of those, whose cgroup is a `.scope` under dev's
+`user-<uid>.slice` or is `repose-herdr-server.service`, whose parent is
+pid 1 or dev's user manager, and to whose listening ports no TCP
+connection is established, counts as a stray. A process listening on
+9225 never does, whatever its cgroup says: that is the agents' browser,
+whose own rule is I-1122's. Ten such minutes in a row,
+each of them with no SSH session of dev's, no tmux client and every agent
+`idle` or `needs_input`, and guestd opens a pidfd, checks the start time
+again, sends SIGTERM and SIGKILL ten seconds later. It logs
+`stopped a stray browser, whose launcher had exited` with `comm`, `pid`,
+`ran_s` and `cpu_s`, and sends no warning: a stray is by definition a
+process nobody is using. It reads the fd links only to collect socket
+inodes, and keeps no path from them (R5-3).
 
 The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
 `user@.service` `OOMScoreAdjust=-900`, the user manager's
@@ -1229,10 +1247,13 @@ The agents' browser: `repose-browser.service`, headed Chromium on `:99` as
 dev, profile `/home/dev/.local/share/repose/browser`, DevTools on
 127.0.0.1:9225, in the system slice `repose-browser.slice`, `OOMPolicy=continue`.
 `repose-browser.socket` on 127.0.0.1:9224 starts `repose-browser-proxy.service`
-(systemd-socket-proxyd to 9225), which pulls in the browser and the display
-on the first connection. Both platform MCP servers attach there. A browser
-that exits or is killed takes the proxy with it (`BindsTo`); the socket
-starts both again on the next connection.
+(systemd-socket-proxyd to 9225, `--exit-idle-time=10s`), which pulls in the
+browser and the display on the first connection and stamps `last-cdp` from
+its `ExecStartPre`. It exits ten seconds after its last connection closes,
+so the next request starts it and stamps again (I-1122). Both platform MCP
+servers attach there. A browser that exits or is killed takes the proxy with
+it (`BindsTo`); the socket starts both again on the next connection, with
+the tabs the profile's `session.restore_on_startup` names.
 
 The viewer: `repose-novnc.service` (websockify on 127.0.0.1:6081 to 5900,
 `--web /run/repose/desktop/web --file-only`, serving the page repose ships
@@ -1247,9 +1268,16 @@ viewer page; stock noVNC's `vnc.html` is not served.
 `repose-desktop-idle-check.timer` runs every minute. After 30 minutes
 without a client on 6081 or 5900 it starts `repose-desktop-idle.service`,
 which stops the viewer (`systemctl start repose-desktop-idle` stops it
-now); after 30 minutes with no client on 9225 either, it stops the browser.
+now). It stops the browser once `last-client` and `last-cdp` are both older
+than the browser's threshold: 600 seconds when `last-agent-working` is 600
+seconds old or older or absent, 1800 otherwise (I-1122).
 The MCP servers and any Chromium the user starts run in the user slice
-`repose-browser.slice`. Both slices have `MemoryMax` 1.5 GB small, 3 GB
+`repose-browser.slice`: `repose-browser-scope`, the wrapper on `PATH`,
+re-execs them in a transient scope there. Chromium does not stay in it:
+as soon as it can reach dev's user bus it moves its own process group
+into `app-org.chromium.Chromium-<pid>.scope` under
+`user@<uid>.service/app.slice`, whatever unit or scope it was started in
+(measured, I-1124). Both slices have `MemoryMax` 1.5 GB small, 3 GB
 large, 6 GB xl.
 
 ## `repose-guest-profile`

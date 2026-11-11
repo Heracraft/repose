@@ -196,6 +196,8 @@ type Watcher struct {
 	// pruneLoaded is set while the hook records read at start have not
 	// met a refresh: the first good one drops those whose window is gone.
 	pruneLoaded bool
+	// strays is the stray-browser pass (stray.go, DECISIONS I-1124).
+	strays *strayWatcher
 }
 
 // NewWatcher builds a watcher. now may be nil for time.Now.
@@ -321,6 +323,9 @@ func (w *Watcher) refreshProcs() {
 	if n := w.procs.applyNice(children, servers); n > 0 {
 		w.log.Debug("herdr priority applied", "event", "oom_priority", "changed", n)
 	}
+	// The browser rules: the agent-working stamp the desktop's idle
+	// check reads, and the stray-browser pass (stray.go, I-1122, I-1124).
+	w.refreshBrowsers(devUID)
 }
 
 // sessionExpected is true once this guestd has run SetupProject, or

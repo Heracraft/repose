@@ -600,6 +600,8 @@
             browserUnit = unit "repose-browser.service";
             xvncUnit = unit "repose-xvnc.service";
             novncUnit = unit "repose-novnc.service";
+            proxyUnit = unit "repose-browser-proxy.service";
+            startScript = cfg.systemd.services.repose-browser.serviceConfig.ExecStart;
             # The idle check's script itself (coreutils, iproute2, systemd).
             idleScript = cfg.systemd.services.repose-desktop-idle-check.serviceConfig.ExecStart;
             unlock = "${pkgs.callPackage ./guest/base/browser-unlock.nix { }}/bin/repose-browser-unlock";
@@ -687,7 +689,31 @@
             idle=$idleScript
             if grep -q 'touch ' "$idle"; then fail "the idle check still touches a stamp itself"; fi
             grep -q 'repose-desktop-stamp' "$idle" || fail "the idle check does not use repose-desktop-stamp"
-            echo "stale locks removed, a live one kept, every stamp through repose-desktop-stamp"
+
+            # DECISIONS I-1122: a DevTools COMMAND is use. bytes_sent on
+            # the 9225 side is the browser's replies and its events, and a
+            # page that polls gives an event per request to a tool that
+            # enabled the Network or Runtime domain, with no tool call at
+            # all.
+            grep -q 'bytes_received:' "$idle" || fail "the idle check does not count the bytes the browser received"
+            if grep -q 'bytes_sent:' "$idle"; then fail "the idle check still counts the bytes the browser sent"; fi
+            # The browser's two thresholds, and the stamp that picks one.
+            grep -q 'last-agent-working' "$idle" || fail "the idle check does not read last-agent-working"
+            for n in 600 1800; do
+              grep -q "$n" "$idle" || fail "the idle check has no $n-second threshold"
+            done
+            # The proxy stamps when it starts and exits once its last
+            # connection closes, which is what sees a short request that
+            # opens and closes between two checks (I-948, closed).
+            grep -q '^ExecStartPre=+.*/bin/repose-desktop-stamp last-cdp$' $proxyUnit \
+              || fail "the browser proxy does not stamp last-cdp when it starts"
+            grep -q '^ExecStart=.*systemd-socket-proxyd --exit-idle-time=' $proxyUnit \
+              || fail "the browser proxy never exits, so only its first connection would stamp"
+            # The browser comes back with its tabs.
+            grep -q 'restore_on_startup' $startScript \
+              || fail "the browser's start script does not ask Chromium to restore its tabs"
+            echo "stale locks removed, a live one kept, every stamp through repose-desktop-stamp,"
+            echo "commands counted and not events, two thresholds, a stamping proxy, tabs restored"
             touch $out
           '';
         # A switch that adds, changes or removes a tmux config reaches the

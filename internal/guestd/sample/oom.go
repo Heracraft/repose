@@ -20,8 +20,11 @@ import (
 // user manager, and 0 for any other process of dev's that inherited a
 // negative value, so a vite an agent started, or a command run over SSH,
 // is back to the kernel's ordinary choice within one refresh. Nothing is
-// ever killed or stopped by guestd; the kernel's OOM killer decides, and
-// the existing `oom` warning names what it killed.
+// killed or stopped on this path; the kernel's OOM killer decides, and
+// the existing `oom` warning names what it killed. The one exception is
+// a stray browser (stray.go, DECISIONS I-1124, which amends I-200): a
+// headless browser whose launcher has exited, that nobody is connected
+// to, on a machine that has been quiet for ten minutes.
 //
 // Only process names, stat fields, the uid and the exe link's basename are
 // read, never a command line (DECISIONS R5-3).

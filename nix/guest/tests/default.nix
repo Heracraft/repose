@@ -76,6 +76,41 @@ let
 
   gcLowerProbe = pkgs.writeText "repose-gc-lower-probe" "in the host store only\n";
 
+  # A stand-in for Playwright's `chrome-headless-shell`, whose name the
+  # kernel cuts to `chrome-headless` (DECISIONS I-1124). Compiled rather
+  # than a shell script, because a script's comm is its interpreter's,
+  # and named exactly, because the rule reads the name. It listens on the
+  # port it is given and never accepts: the kernel completes the
+  # handshake, so a client reads as established without the program
+  # doing anything.
+  fakeHeadlessBrowser = pkgs.runCommand "fake-chrome-headless" { nativeBuildInputs = [ pkgs.stdenv.cc ]; } ''
+    mkdir -p $out/bin
+    cat > b.c <<'SRC'
+    #include <netinet/in.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+    int main(int argc, char **argv) {
+      if (argc > 1) {
+        int s = socket(AF_INET, SOCK_STREAM, 0), one = 1;
+        struct sockaddr_in a;
+        if (s < 0) return 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+        memset(&a, 0, sizeof a);
+        a.sin_family = AF_INET;
+        a.sin_port = htons((unsigned short)atoi(argv[1]));
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (bind(s, (struct sockaddr *)&a, sizeof a) != 0) return 1;
+        if (listen(s, 8) != 0) return 1;
+      }
+      for (;;) sleep(60);
+      return 0;
+    }
+SRC
+    $CC -O0 -o $out/bin/chrome-headless b.c
+  '';
+
   helloImage = pkgs.dockerTools.buildImage {
     name = "repose-hello";
     tag = "test";
@@ -2306,7 +2341,7 @@ in
       environment.systemPackages = [ pkgs.imagemagick pkgs.python3 pkgs.xdotool pkgs.xorg.xdpyinfo pkgs.xorg.xrandr ];
     };
     testScript = ''
-      import json, shlex
+      import json, shlex, time
 
       guest.start()
       guest.wait_for_unit("multi-user.target")
@@ -2725,6 +2760,103 @@ in
           guest.wait_until_succeeds("test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -ge 1")
           guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.succeed("systemctl is-active repose-browser.service")
+          guest.succeed("systemctl stop repose-browser.service")
+          guest.wait_until_fails("systemctl is-active repose-xvnc.service")
+
+      # DECISIONS I-1122. guestd writes last-agent-working; this VM runs
+      # the fake guestd, so the test writes it in guestd's place.
+      def idle_check():
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service"
+                        " && systemctl start repose-desktop-idle-check.service")
+
+      def stamp_age(name):
+          return int(guest.succeed(
+              f"echo $(( $(date +%s) - $(stat -c %Y /run/repose/desktop/{name}) ))").strip())
+
+      def start_browser():
+          """A browser up, its proxy gone, and the CDP byte total recorded."""
+          guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl is-active repose-browser.service")
+          # The proxy exits ten seconds after its last connection closes,
+          # so the next short request starts it again and stamps.
+          guest.wait_until_fails("systemctl is-active repose-browser-proxy.service", timeout=120)
+          idle_check()
+
+      def age_stamps(age, *names):
+          paths = " ".join(f"/run/repose/desktop/{n}" for n in names)
+          guest.succeed(f"touch -d '{age}' {paths}")
+
+      with subtest("while an agent works the browser keeps its 30 minutes (I-1122)"):
+          start_browser()
+          guest.succeed("install -o dev -g dev -m 644 /dev/null /run/repose/desktop/last-agent-working")
+          age_stamps("-11 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.succeed("systemctl is-active repose-browser.service")
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+
+      with subtest("with every agent idle or waiting the browser stops after 10 minutes (I-1122)"):
+          start_browser()
+          age_stamps("-11 minutes", "last-agent-working", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+
+      with subtest("a machine whose agents never worked has no stamp and the same 10 minutes"):
+          start_browser()
+          guest.succeed("rm -f /run/repose/desktop/last-agent-working")
+          age_stamps("-11 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+          # The check never makes that stamp: making it would read as work.
+          guest.fail("test -e /run/repose/desktop/last-agent-working")
+
+      with subtest("a short DevTools request stamps the clock (I-948's gap, closed by I-1122)"):
+          start_browser()
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          # One request that opens and closes between two checks. The check
+          # reads bytes off established sockets and cannot see it; the
+          # proxy's own start is what stamps.
+          guest.succeed("curl -s -m 60 -o /dev/null http://127.0.0.1:9224/json/version")
+          assert stamp_age("last-cdp") < 60, stamp_age("last-cdp")
+          idle_check()
+          guest.succeed("systemctl is-active repose-browser.service")
+
+      with subtest("the browser comes back with the tabs it had, with no warming request (I-1122)"):
+          out = mcp("playwright", ("browser_navigate", {"url": page + "?restored"}))
+          assert "?restored" in out, out
+          # Chromium writes its session a couple of seconds after the
+          # navigation commits, so a browser stopped in the same breath
+          # comes back on the page before this one (measured: with no
+          # wait this subtest restored the tab from the subtest before).
+          guest.sleep(10)
+          # The MCP client has gone; wait for its CDP socket to go with
+          # it, or the check reads its bytes as a command just arrived.
+          guest.wait_until_succeeds(
+              "test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -eq 0")
+          idle_check()
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+          t0 = time.monotonic()
+          out = mcp("chrome-devtools", ("list_pages", {}))
+          print(f"MEASURE cold start after an idle stop, no warming request: {time.monotonic() - t0:.1f} s")
+          assert "?restored" in out, out
+
+      with subtest("a viewer keeps the browser although nothing drives it (I-1122)"):
+          guest.succeed("sudo -u dev repose-guest-profile desktop start")
+          guest.succeed("systemctl is-active repose-browser.service repose-novnc.service")
+          guest.succeed(
+              "systemd-run --unit viewerhold python3 -c "
+              "'import socket,time; s=socket.create_connection((\"127.0.0.1\",5900)); time.sleep(600)'"
+          )
+          guest.wait_until_succeeds("test \"$(ss -Htn state established '( sport = :5900 )' | wc -l)\" -ge 1")
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.succeed("systemctl is-active repose-browser.service")
+          assert stamp_age("last-client") < 60, stamp_age("last-client")
+          guest.succeed("systemctl stop viewerhold.service || true")
+          guest.succeed("sudo -u dev repose-guest-profile desktop stop")
           guest.succeed("systemctl stop repose-browser.service")
           guest.wait_until_fails("systemctl is-active repose-xvnc.service")
 
@@ -3313,6 +3445,127 @@ in
           else:
               repaired("repose: store overlay: 0 whiteouts removed")
           guest.succeed(f"test -z \"$(find {upper} -mindepth 1 -maxdepth 1 -type c)\"")
+    '';
+  };
+
+  # DECISIONS I-1124: guestd stops a headless browser whose launching
+  # process has exited, that nobody is connected to, on a machine that has
+  # been quiet for ten minutes, and leaves every other browser alone. The
+  # real guestd, because the rule is its own and the fake one has no /proc
+  # pass. The window is ten one-minute passes, so every case runs in the
+  # same quiet twelve minutes rather than one after another.
+  #
+  # Four of the five browsers are a stand-in: a compiled program named
+  # `chrome-headless`, which is what the kernel's 15-character cut makes
+  # of Playwright's `chrome-headless-shell`, listening on a port and
+  # doing nothing else. That is the whole of what the rule reads -- a
+  # name, a parent, a uid, a cgroup and a listening socket -- and unlike
+  # Chromium it stays in the cgroup it is put in. The fifth is a real
+  # `chromium --headless=new`, which moves itself into
+  # `app-org.chromium.Chromium-<pid>.scope` and is stopped there.
+  guest-stray-browser = mkTest "guest-stray-browser" {
+    nodes.guest = { lib, pkgs, ... }: {
+      imports = [ node ];
+      environment.systemPackages = [ pkgs.python3 fakeHeadlessBrowser ];
+      # mkOverride 10 beats the node's own mkForce back to the fake one.
+      # This VM has no host and no vsock; everything the rule reads is
+      # the guest's own.
+      systemd.services.guestd.serviceConfig.ExecStart = lib.mkOverride 10
+        "${guestd}/bin/guestd --dev-socket /run/repose/guestd.sock --log-level debug";
+    };
+    testScript = ''
+      import shlex, time
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+      guest.wait_for_unit("guestd.service")
+      guest.wait_for_file("/run/repose/guestd.sock")
+
+      uid = int(guest.succeed("id -u dev").strip())
+
+      def dev(cmd):
+          # dev lingers (base/users.nix), so its user manager is up and
+          # systemd-run --user works once the runtime directory is named.
+          return guest.succeed(
+              f"sudo -u dev -H XDG_RUNTIME_DIR=/run/user/{uid} bash -lc {shlex.quote(cmd)}")
+
+      def in_a_scope(cmd):
+          """Run cmd in a transient scope of dev's, which is the shape of a
+          tmux pane (tmux-spawn-*.scope) and of the browser wrapper's own
+          run scope. The shell exits; what it started stays in the scope."""
+          return dev("systemd-run --user --scope --quiet --collect bash -c "
+                     + shlex.quote(cmd))
+
+      def pid_on(port):
+          return guest.succeed(
+              f"ss -Hltnp 'sport = :{port}' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true").strip()
+
+      def cgroup_of(port):
+          pid = pid_on(port)
+          assert pid, f"nothing listens on {port}"
+          return pid, guest.succeed(f"cat /proc/{pid}/cgroup").strip()
+
+      with subtest("five browsers, two of them strays"):
+          # A: the stray. Its launcher exited, nobody is connected.
+          in_a_scope("chrome-headless 9333 &")
+          guest.wait_for_open_port(9333)
+
+          # B: the same, with a client on its port.
+          in_a_scope("chrome-headless 9334 &")
+          guest.wait_for_open_port(9334)
+          guest.succeed(
+              "systemd-run --unit holdb python3 -c "
+              "'import socket,time; s=socket.create_connection((\"127.0.0.1\",9334)); time.sleep(1800)'"
+          )
+          guest.wait_until_succeeds(
+              "test \"$(ss -Htn state established '( sport = :9334 )' | wc -l)\" -ge 1")
+
+          # C: a unit of the user's own.
+          dev("systemd-run --user --unit keepc chrome-headless 9335")
+          guest.wait_for_open_port(9335)
+
+          # D: a launcher that is still running.
+          in_a_scope("chrome-headless 9336 & sleep 1800")
+          guest.wait_for_open_port(9336)
+
+          # E: a real Chromium with no launcher, which moves itself into a
+          # scope of its own (I-1124) and is a stray there all the same.
+          in_a_scope("chromium --headless=new --no-first-run --disable-gpu"
+                     " --user-data-dir=/tmp/stray-chromium --remote-debugging-port=9337"
+                     " about:blank >/tmp/stray-chromium.log 2>&1 &")
+          guest.wait_for_open_port(9337)
+
+          for port in (9333, 9334, 9335, 9336, 9337):
+              pid, cg = cgroup_of(port)
+              print(f"browser on {port}: pid {pid}, cgroup {cg}")
+          assert cgroup_of(9335)[1].endswith("keepc.service"), cgroup_of(9335)
+          assert cgroup_of(9333)[1].endswith(".scope"), cgroup_of(9333)
+          # The finding the docs' escape hatch rests on, recorded here so
+          # a Chromium that stops moving itself shows up as a change.
+          print("MEASURE real chromium cgroup:", cgroup_of(9337)[1])
+
+      with subtest("nothing is stopped in the first five quiet minutes"):
+          time.sleep(300)
+          for port in (9333, 9334, 9335, 9336, 9337):
+              assert pid_on(port), f"the browser on {port} is gone after five minutes"
+
+      with subtest("ten quiet minutes later the two strays are gone and the three others are not"):
+          deadline = time.time() + 600
+          while time.time() < deadline and (pid_on(9333) or pid_on(9337)):
+              time.sleep(15)
+          assert not pid_on(9333), "the stray is still listening after thirteen quiet minutes"
+          assert not pid_on(9337), "the real chromium stray is still listening"
+          for port in (9334, 9335, 9336):
+              assert pid_on(port), (
+                  f"the browser on {port} was stopped; only an orphan nobody is connected to may be")
+          lines = guest.succeed("journalctl -u guestd --no-pager | grep 'stray browser'")
+          print(lines)
+          assert "chrome-headless" in lines and "chromium" in lines, lines
+
+      with subtest("the journal lines carry a name and numbers, and nothing of the tenant's"):
+          lines = guest.succeed("journalctl -u guestd --no-pager | grep 'stray browser'")
+          for secret in ["about:blank", "user-data-dir", "/tmp/stray-chromium", "9333", "9337"]:
+              assert secret not in lines, (secret, lines)
     '';
   };
 }
