@@ -102,6 +102,20 @@ A plan's rules:
   operator can raise it for one account (DECISIONS I-569). Destroyed
   projects and their 30-day snapshots are free.
 
+- **Burst cores.** A plan includes burst core-hours: Solo 20, Plus 50,
+  Pro 120 (DECISIONS I-1128; starting numbers, to be set from the first
+  two weeks of real data, because the cgroup quota hides burst demand
+  today). A burst core-hour is an hour of CPU time a machine used above
+  the base cores its class sells, on a host where burst is on. Past the
+  allowance the account's machines run on their base cores until the
+  period ends: nothing stops, nothing is charged, and every build and
+  agent keeps running. **Nothing here is live.** No host has burst
+  switched on, so every account's burst is 0 and the allowance binds on
+  nobody; the overage switch, its cap and its price are not built, and
+  the public docs say nothing about burst until they are. The gate that
+  decides when a host hands out idle cores is unmeasured
+  (`proposals/2026-11-10-burst-cores.md` §6.2).
+
 Example: a Solo user with a `large` running all month, a 40 GB disk, and
 20 GB of egress pays $49, or $39 in the founding months. The same user
 with 300 GB of egress pays $49 plus $2.50. Two `large` machines at once need Plus; three or four need Pro.
@@ -251,6 +265,9 @@ founding one), $4.95 of a Plus one, $8.95 of a Pro one.
 - Snapshots: included. They are small (used blocks, compressed) and the
   retention is fixed.
 - Builds: included, capped by time and cores instead.
+- Burst cores above a plan's allowance: not charged. Overage is off and
+  unbuilt (I-1128); past the allowance a machine simply uses the base
+  cores its class sells.
 - Notifications, the gateway, the browser view, the dashboard: included.
 - Support: email only.
 - Teams, seats for other people, annual plans, currencies other than USD:

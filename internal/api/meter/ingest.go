@@ -101,6 +101,11 @@ const (
 	maxPressureUs = 3_600_000_000
 	// maxMemUsed is a tebibyte, past any class.
 	maxMemUsed = 1 << 40
+	// maxBurstNs is an hour of burst in nanoseconds on four cores above
+	// the base, which is more than the widest class can have used
+	// between two samples. hostd bounds it per class already (DECISIONS
+	// I-1126); this holds whatever reaches the api.
+	maxBurstNs = 4 * 3_600 * 1_000_000_000
 )
 
 // OnSamples stores one Samples message. Rows are inserted with ON
@@ -176,10 +181,19 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 		v := int64(g.GetNetEgressBytesDelta())
 		egress = &v
 	}
-	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size, resting, net_egress)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) on conflict do nothing`,
+	// burst_cpu_ns is null from a hostd older than I-1126 and from every
+	// host without the `burst` feature, which billing reads as no burst.
+	// It is host-measured, so it sits outside the guestFields block: a
+	// retry that drops the guest-written figures keeps it.
+	var burst *int64
+	if g.BurstCpuNsDelta != nil {
+		v := int64(min(g.GetBurstCpuNsDelta(), maxBurstNs))
+		burst = &v
+	}
+	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size, resting, net_egress, burst_cpu_ns)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) on conflict do nothing`,
 		ts, pid, hostID, g.State, g.Class, int64(g.CpuNsDelta), int64(g.MemRssBytes), int64(g.NetTxBytesDelta), int64(g.NetRxBytesDelta), int64(g.DiskAllocBytes), int64(g.DiskUsedBytes),
-		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize, g.Resting, egress)
+		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize, g.Resting, egress, burst)
 	if held, ok := heldBytes(g); ok {
 		// The plan's disk counts this figure (DECISIONS I-585); a sample
 		// older than the one already recorded leaves it.

@@ -132,11 +132,24 @@ The idle pause (DECISIONS I-818), additive:
   anything that needs the machine. 0 means not resting, which is also
   what a hostd older than I-818 sends.
 
+Burst cores (DECISIONS I-1126, I-1128), additive:
+
+- `GuestStatus.burst_denied` (field 9, bool) is the api's standing
+  withdrawal of this guest's burst: the account used the period's burst
+  core-hours and overage is off, so the guest runs on the base cores its
+  class sells until the period ends. hostd keeps it in bbolt and sends it
+  in every Hello, so an api restart reconciles instead of resending.
+  False is "may burst", which is also what a hostd older than I-1126
+  sends.
+
 `Hello.features` (field 9, DECISIONS I-701) lists what this hostd takes
 beyond the commands every hostd takes: `local_clone`, a `Restore` with
-`clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`. The api keeps it
+`clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`; `burst` (I-1126),
+`SetBurst`, and with it a host that boots guests at their class ceiling
+and runs the `cpu.max` controller. The api keeps it
 in `hosts.features` and sends a shape only to a host that names it, so a
-host without `pause` is never asked to rest a machine. A hostd older than
+host without `pause` is never asked to rest a machine and a host without
+`burst` is never sent a `SetBurst`. A hostd older than
 I-701 sends none.
 
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
@@ -174,6 +187,7 @@ command_id returns the stored result) and one of:
 | `Drain` | (host) | |
 | `AnswerQuestion` | guest_id, question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | none. Relayed to guestd's request of the same name (DECISIONS I-244). `not_found` when the guest is not running or guestd does not know the question, which the api takes as final; any other error is retried by the api with a new command_id. The answer is tenant text and is never logged |
 | `PauseGuest` | guest_id, reason (lower_snake, `idle\|operator`) | `PauseResult {paused, why_not, at}` (DECISIONS I-818; only to a host whose Hello names `pause`). Stops the guest's vCPUs and leaves its memory resident: the hypervisor, virtiofsd, the tap and vsock stay up and nothing is written anywhere. Before it pauses, hostd asks the guest to `sync` (and to drop its page cache when the guest has the balloon) and reads the next elapse of a systemd timer inside it, in the system manager and in `dev`'s. `paused=false` with a `why_not` is a **refusal, not a failure**, and is answered `ok`: `not_running`, `already_resting`, `command_in_flight` (the api has a command for this guest in flight or queued), `host_stopping`, `parked` (the guest has a park record; `frozen` until I-1002, and the api only logs this word, so both read the same to it), `timer_due` (a user timer elapses within 15 minutes), `in_use` (a session or tmux client appeared between the api's newest sample and this pause) or `guest_unreachable`. Every refusal is decided before hostd does anything to the guest, so a guest refused at every tick is never asked to sync or drop its cache. `at` is when it paused, unix seconds. Error codes: `not_found`, `invalid_argument`, `internal` (the hypervisor refused `vm.pause`; the guest keeps running) |
+| `SetBurst` | guest_id, allowed (bool) | no payload (DECISIONS I-1128; only to a host whose Hello names `burst`). Says whether this guest may use cores above the base its class sells. It is a **state the api owns, not an event**: the api sends `allowed=false` when the account has used the period's burst core-hours with overage off, and `allowed=true` at the next period. The same value twice changes nothing, so a resend is harmless, and a guest hostd has heard nothing about may burst. `allowed=false` puts the guest at its base in that call, not at the next controller tick. hostd stores it and reports it as `GuestStatus.burst_denied`. Error codes: `not_found`, `invalid_argument` (no guest_id, or this host does not burst) |
 | `WakeGuest` | guest_id, reason (lower_snake) | `WakeResult {was_resting, wake_ms}` (DECISIONS I-818). Resumes a resting guest, sets its clock to the host's and waits for guestd to answer. **Idempotent**: a guest with no resting marker is answered `ok` with `was_resting=false`, whatever its state, so the api may ask for a wake it does not know it needs. `wake_ms` is from `vm.resume` to guestd's answer. A wake takes no op slot and runs on the guest's own queue, so it never waits behind the host's builds. Error codes: `not_found`, `invalid_argument` (the guest is not running), `guest_unresponsive` (the hypervisor did not resume, or the guest did not answer after it: the one part of this feature a user sees fail, and hostd raises `guest_wake_failed` with it) |
 
 **Result**: `command_id`, `ok`, `error {code, message}`, payload. Snapshot
@@ -262,7 +276,9 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               uint64 guest_mem_used_bytes;     // the three before: I-493
               uint64 root_used_bytes; uint64 root_size_bytes;      // I-567
               bool resting;                                        // I-818
-              optional uint64 net_egress_bytes_delta; }            // I-1063
+              optional uint64 net_egress_bytes_delta;              // I-1063
+              optional uint64 burst_cpu_ns_delta;                  // I-1126
+              uint32 burst_cap_millicores; }                       // I-1126
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
@@ -274,6 +290,13 @@ ProcSample { string comm; uint64 cpu_ns_delta; uint64 rss_bytes; }  // comm only
 // TRUE, because guestd is paused with its guest and not lost; `procs` and the pressure
 // delta are empty, and cpu_ns_delta and the net deltas are the host's own counters and
 // read about zero. False from a hostd older than I-818.
+// burst_cpu_ns_delta (I-1126): nanoseconds this guest used above the base share its
+// class sells, since the last sample, summed per second by the host's controller --
+// not from the minute's average, which undercounts a guest that bursts in spurts.
+// hostd bounds it at (ceiling - base) x 66 s and the api clamps it again. Absent from
+// a hostd older than I-1126 and from every host without the `burst` feature, which
+// billing reads as no burst. burst_cap_millicores is the cap the controller has the
+// guest at now, in thousandths of a core; 0 on a host that runs no controller.
 HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_running; }
 ```
 

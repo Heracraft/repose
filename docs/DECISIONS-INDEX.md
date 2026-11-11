@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-923 entries.
+925 entries.
 
 ## Scope
 
@@ -29,7 +29,7 @@ pointer, not a summary.
 - **R2-3** Guest disks are host-local with snapshots to Blob; projects are pinned to a host — L61
 - **R2-17** Host SKU is Intel D64s_v5 with guest images on a Premium SSD v2 managed data disk — L66
 - **R2-18** Nested virtualization is accepted, gated by a one-day benchmark before anything else is built — L73
-- **R3-2** Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1 oversubscribed, memory never — amended by I-734; amended by I-784; L78
+- **R3-2** Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1 oversubscribed, memory never — amended by I-734; amended by I-784; amended by I-1126; L78
 - **R3-3** Config changes apply in place via switch-to-configuration; reboot only when the kernel or share layout changed — L88
 - **R3-6** LVM thin pool, one thin volume per guest, snapshot with a guest-side fsfreeze over vsock, streamed compressed to Blob. Nightly plus on stop, keep 7 — L93
 - **R3-20** Azure hosts while credits last; the OpenTofu host module is written so Hetzner is a second module — L98
@@ -367,7 +367,7 @@ pointer, not a summary.
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7550
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7563
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7588
-- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; amended by I-604; L7610
+- **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; amended by I-604; amended by I-1128; L7610
 - **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; amended by I-739; amended by I-902; amended by I-1033; L7688
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; amended by I-934; L7727
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7754
@@ -689,7 +689,7 @@ pointer, not a summary.
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18165
 - **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — amended by I-641; L18188
 - **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18209
-- **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; L18238
+- **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; amended by I-1128; L18238
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18385
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18409
 - **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; amended by I-837; amended by I-841; L18428
@@ -739,7 +739,7 @@ pointer, not a summary.
 - **I-734** The oversubscription ratio is counted against physical cores, not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15) — amended by I-784; L20663
 - **I-735** Hosts report physical cores, and the api records them (cpu-weight, 2026-10-15) — L20720
 - **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — L20761
-- **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — L20820
+- **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; L20820
 - **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20858
 - **I-746** The validity pass stops eating the boot deadline and blaming `--load-db` for it (cpu-weight, 2026-10-15) — L20904
 - **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; L20939
@@ -821,7 +821,7 @@ pointer, not a summary.
 - **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23604
 - **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23630
 - **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23661
-- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23674
+- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — partly amended by I-1126; L23674
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23913
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23979
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24210
@@ -955,3 +955,5 @@ pointer, not a summary.
 - **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
+- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; L31058
+- **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31156

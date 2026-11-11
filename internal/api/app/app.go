@@ -489,6 +489,9 @@ func (a *App) loops(ctx context.Context) {
 	expiry := snapshots.New(a.pool, blob, a.m, a.log)
 	go expiry.Run(ctx, 24*time.Hour)
 	rollup := billing.NewRollup(a.pool, a.m, a.log)
+	// The burst allowance (DECISIONS I-1128). It reads usage_hours, so
+	// it runs beside the rollup that fills them and under the same lock.
+	burst := billing.NewAllowance(a.pool, a.hostMgr, a.log)
 	fleet := billing.NewFleet(a.pool, a.m)
 	dunning := billing.NewDunning(a.pool, a.engine, a.events, a.bcfg, a.m, a.log)
 	bump := basebump.New(a.pool, a.engine, a.events, a.log)
@@ -610,6 +613,13 @@ func (a *App) loops(ctx context.Context) {
 			}
 			if _, _, err := a.overage.Run(ctx); err != nil && ctx.Err() == nil {
 				a.log.Error("overage", "event", "overage_fail", "err", err.Error())
+			}
+			// Burst past the plan's allowance stops at the base cores
+			// each class sells; nothing is charged and no machine stops
+			// (DECISIONS I-1128). It reconciles, so a missed tick costs
+			// an hour and nothing else.
+			if _, err := burst.Run(ctx); err != nil && ctx.Err() == nil {
+				a.log.Error("burst allowance", "event", "burst_allowance_fail", "err", err.Error())
 			}
 			// The idle-cost warning: one notification per idle stretch,
 			// never a stop (DECISIONS I-262, R1-5).

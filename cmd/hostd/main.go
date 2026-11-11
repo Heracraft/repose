@@ -88,6 +88,8 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.Substituters, "substituters", "", "nix substituters for builds, space separated (default cache.nixos.org; the host module adds the overlay cache)")
 	fs.StringVar(&o.LogLevel, "log-level", "info", "log level: debug, info, notice, warn, error")
 	fs.BoolVar(&o.PauseIdle, "pause-idle", false, "rest a guest nobody is using: its vCPUs stop and its memory stays resident, and anything that reaches the machine wakes it (DECISIONS I-818). Off until a host is measured: a plain vm.pause and vm.resume of a guest with two vhost-user devices has not been")
+	fs.BoolVar(&o.Burst, "burst", false, "let a guest use cores above the base its class sells while the host has them idle: guests boot at their class ceiling and a controller raises each cgroup's cpu.max under a gate (DECISIONS I-1126). Off until the latency curve that sets the gate is measured on a host")
+	fs.Float64Var(&o.BurstGate, "burst-gate", 0, "the share of this host's physical cores that may be busy before burst stops; 0 takes the default of 0.75, which is UNMEASURED")
 	fs.BoolVar(&o.Park.Enabled, "park", false, "park running guests to an encrypted image when the host shuts down, and restore them at the next start (DECISIONS I-652)")
 	fs.StringVar(&o.Park.KeyVaultURL, "park-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
 	fs.StringVar(&o.Park.KeyName, "park-key-name", "", "name of that key")

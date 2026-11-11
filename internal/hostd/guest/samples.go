@@ -43,6 +43,19 @@ type sampleCursor struct {
 // moves nobody's chart past it (the bound of I-446 for this field).
 const maxPressureDelta = 300_000_000
 
+// maxBurstDelta bounds one sample's burst nanoseconds: the class's cores
+// above its base, for 66 seconds. Samples are a minute apart and the six
+// seconds are room for a late tick, the same shape as maxPressureDelta.
+// A figure past it is a counter that moved in a way the controller cannot
+// have produced, and billing must not read it (DECISIONS I-1126).
+func maxBurstDelta(class string) uint64 {
+	c := Classes[class]
+	if c.CeilingVCPUs <= c.VCPUs {
+		return 0
+	}
+	return uint64(c.CeilingVCPUs-c.VCPUs) * 66 * 1_000_000_000
+}
+
 // maxGuestMem bounds the guest-written memory figure: no class comes near
 // a tebibyte, so a larger value is a guest's invention.
 const maxGuestMem = 1 << 40
@@ -354,6 +367,18 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 			}
 			if d, ok := egress[g.GuestID]; ok {
 				gsm.NetEgressBytesDelta = proto.Uint64(d)
+			}
+			if m.burst != nil {
+				// Burst time the controller counted since the last
+				// sample, bounded the way every counter delta is: a
+				// minute cannot hold more than the ceiling above the
+				// base, plus a late tick's room (DECISIONS I-1126).
+				bd := min(m.BurstNSDelta(g.GuestID), maxBurstDelta(g.Class))
+				gsm.BurstCpuNsDelta = proto.Uint64(bd)
+				gsm.BurstCapMillicores = uint32(m.BurstCapMillicores(g.GuestID))
+				if m.d.Metrics != nil && bd > 0 {
+					m.d.Metrics.BurstCPUSecondsTotal.WithLabelValues(g.Class).Add(float64(bd) / 1e9)
+				}
 			}
 			if m.restingMark(g.GuestID) != nil {
 				// A resting guest is paused, not lost (S4 of

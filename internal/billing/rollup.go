@@ -47,6 +47,10 @@ type Row struct {
 	// whole samples, about a minute apart, as running_seconds is.
 	AttendedSeconds        int
 	UnattendedAgentSeconds int
+	// BurstCPUNs is the hour's CPU time above the base cores the
+	// project's class sells (DECISIONS I-1126). 0 on every host without
+	// the `burst` feature, which is every host until one is measured.
+	BurstCPUNs int64
 	Result
 }
 
@@ -72,6 +76,7 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 		class      string
 		diskAlloc  int64
 		egress     int64
+		burst      int64
 		samples    int
 		attended   int
 		unattended int
@@ -87,7 +92,9 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 	// Egress is net_egress, the host's count of what the guest sent the
 	// internet; a sample from a hostd before I-1063 has none and bills
 	// net_tx, the tap, which also held its SSH traffic.
-	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(coalesce(net_egress, net_tx)),
+	// burst_cpu_ns is null from a host that does not burst, which sums
+	// to null for the hour and is read as 0 (DECISIONS I-1126).
+	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(coalesce(net_egress, net_tx)), sum(burst_cpu_ns),
 		(array_agg(class order by ts desc))[1],
 		count(*) filter (where state = 'running' and (ssh_sessions > 0 or tmux_clients > 0)),
 		count(*) filter (where state = 'running' and ssh_sessions = 0 and tmux_clients = 0
@@ -100,13 +107,16 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 	for rows.Next() {
 		var pid uuid.UUID
 		var a agg
-		var egress *int64
-		if err := rows.Scan(&pid, &a.running, &a.samples, &a.diskAlloc, &egress, &a.class, &a.attended, &a.unattended); err != nil {
+		var egress, burst *int64
+		if err := rows.Scan(&pid, &a.running, &a.samples, &a.diskAlloc, &egress, &burst, &a.class, &a.attended, &a.unattended); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		if egress != nil {
 			a.egress = *egress
+		}
+		if burst != nil {
+			a.burst = *burst
 		}
 		aggs[pid] = &a
 	}
@@ -135,6 +145,7 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 			in.EgressBytes = a.egress
 			row.AttendedSeconds = a.attended * 60
 			row.UnattendedAgentSeconds = a.unattended * 60
+			row.BurstCPUNs = a.burst
 		} else if p.state == "running" {
 			row.Gap = true
 			r.m.BillingGapMinutes.Add(60)
@@ -190,15 +201,16 @@ func (r *Rollup) projectsFor(ctx context.Context, start, end time.Time) ([]rollu
 func (r *Rollup) write(ctx context.Context, row *Row) error {
 	_, err := r.pool.Exec(ctx, `insert into usage_hours (project_id, hour, class, running_seconds, gb_alloc, egress_bytes, cost_cents,
 		guest_cents, storage_cents, egress_cents, storage_remainder, gap, period_start, period_end, credit_cents, price_version,
-		attended_seconds, unattended_agent_seconds)
-		values ($1,$2,$3,$4,$5,$6,0,0,0,0,0,$7,$8,$9,0,$10,$11,$12)
+		attended_seconds, unattended_agent_seconds, burst_cpu_ns)
+		values ($1,$2,$3,$4,$5,$6,0,0,0,0,0,$7,$8,$9,0,$10,$11,$12,$13)
 		on conflict (project_id, hour) do update set class = excluded.class, running_seconds = excluded.running_seconds,
 		gb_alloc = excluded.gb_alloc, egress_bytes = excluded.egress_bytes, cost_cents = 0, guest_cents = 0, storage_cents = 0,
 		egress_cents = 0, storage_remainder = 0, gap = excluded.gap, period_start = excluded.period_start,
 		period_end = excluded.period_end, credit_cents = 0, price_version = excluded.price_version,
-		attended_seconds = excluded.attended_seconds, unattended_agent_seconds = excluded.unattended_agent_seconds`,
+		attended_seconds = excluded.attended_seconds, unattended_agent_seconds = excluded.unattended_agent_seconds,
+		burst_cpu_ns = excluded.burst_cpu_ns`,
 		row.ProjectID, row.Hour, row.Class, row.RunningSeconds, row.GBAlloc, row.EgressBytes, row.Gap,
-		row.Period.Start, row.Period.End, PriceVersion, row.AttendedSeconds, row.UnattendedAgentSeconds)
+		row.Period.Start, row.Period.End, PriceVersion, row.AttendedSeconds, row.UnattendedAgentSeconds, row.BurstCPUNs)
 	if err != nil {
 		return fmt.Errorf("write usage_hours: %w", err)
 	}
