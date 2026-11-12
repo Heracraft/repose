@@ -463,6 +463,8 @@
    centrepiece"). Its sides are the text lines; the band's padding
    under it is the band's own. */
 .landing .band > .fig--parts {
+	--pause-y: calc(100% - var(--band-y) + 16px);
+	--pause-r: 0px;
 	margin: 1rem 0 0;
 	padding-block: 0 var(--band-y);
 }

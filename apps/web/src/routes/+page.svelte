@@ -14,7 +14,7 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Stack from '$lib/components/landing/Stack.svelte';
+	import Compose from '$lib/components/landing/Compose.svelte';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import OneCommand from '$lib/components/landing/OneCommand.svelte';
 	import ComesBack from '$lib/components/landing/ComesBack.svelte';
@@ -130,9 +130,9 @@
 			<p class="label eyebrow">Any agent, any model</p>
 			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
 			<p class="hk-lead">
-				Pick a machine and stack what your agent needs on it: your dev environment, secrets,
-				schedules and webhooks. It runs away from your laptop, and from the internet only its
-				webhooks reach it.
+				Pick a machine and stack what your agent needs on it: your dev environment, secrets, and
+				a schedule or a webhook that wakes it. It keeps working with your laptop shut, and nothing
+				from the internet reaches it but its own webhooks.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -146,7 +146,7 @@
 			</div>
 		</div>
 		<div class="fig fig--parts">
-			<Stack />
+			<Compose />
 		</div>
 	</section>
 
@@ -415,8 +415,7 @@
 				<summary class="item-title">What can I build with it?{@render plus()}</summary>
 				<p class="copy">
 					You can build any agent you'd keep running. A responder wakes on your alerts, reads your
-					metrics and logs, and asks before it changes anything. A dev environment runs three agents
-					on three approaches with <code>repose run --worktree</code>.
+					metrics and logs, and asks before it changes anything.
 				</p>
 			</details>
 			<details>

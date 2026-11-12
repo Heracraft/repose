@@ -169,8 +169,9 @@ headline starting under the logo, laid out as one ruled sheet on a
     the primitives and what is special (2026-11-12, I-1169): what you
     can build (any agent you would keep running: a responder your alerts
     wake, which reads your metrics and logs and asks before it changes
-    anything; three agents on three approaches with `repose run
-    --worktree`); how it differs from your own server (it freezes and
+    anything; nothing a developer already does by hand with tmux and
+    an agent's CLI, such as several agents on worktrees, owner,
+    2026-11-12); how it differs from your own server (it freezes and
     wakes for the next webhook, and a server restart leaves its programs
     and agents running, `lifecycle.md`); closing the laptop (it keeps
     working, and you hear by email or on your phone); what the agent can
