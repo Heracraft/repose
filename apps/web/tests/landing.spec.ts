@@ -362,7 +362,7 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 	await expect(page.locator('#parts .cols .item-title')).toHaveText([
 		'Size it to the job',
 		'Wall it off from your laptop',
-		'Bring your dev environment, or leave it out',
+		'Bring your dev environment',
 		'Give it the keys you choose',
 		'Start it on a schedule or a webhook',
 		'Bring any agent'

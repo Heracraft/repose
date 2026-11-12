@@ -183,7 +183,7 @@
 			</li>
 			<li>
 				{@render label('1.3', 'Your setup')}
-				<h3 class="item-title">Bring your dev environment, or leave it out</h3>
+				<h3 class="item-title">Bring your dev environment</h3>
 				<p class="copy">
 					<code>repose run</code> copies your checkout and your tools. Leave it out for an agent that
 					only works on the web.

@@ -827,22 +827,17 @@
      hidden at this size, as "Let it break the whole machine" draws them.
      The stop tile's machine is the wrecked one, its agent gone. -->
 {#snippet glyph(when: 'night' | 'work' | 'wreck')}
-	<!-- The machine in miniature, in its own words at 9px: the snapshot
-	     holds these rows, as the machine's window shows them. -->
+	<!-- What the snapshot holds, in three rows a reader can read at 11px:
+	     the project with its changes, the database and the toolchain. -->
 	<span class="gl" class:wreck={when === 'wreck'} class:night={when === 'night'}>
-		<i></i>
-		<i class="gr"><b class="gt acc">your-project/</b></i>
-		{#each kids as k (k.n)}
-			<i class="gr kid" class:nu={k.st === 'U'}
-				><b class="gt">{k.n}</b><b class="gs" class:u={k.st === 'U'}>{k.st}</b></i
-			>
-		{/each}
-		<i class="gsep"></i>
+		<i class="gr"
+			><b class="gt acc">your-project/</b><b class="gv"
+				>{when === 'night' ? 'last night' : `${kids.length} changes`}</b
+			></i
+		>
 		{#each sys as m (m.n)}
 			<i class="gr"><b class="gt">{m.n}</b><b class="gv">{when === 'wreck' ? m.bad : m.ok}</b></i>
 		{/each}
-		<i class="gsep"></i>
-		<i class="gr"><b class="gc"></b><b class="gm">bypass permissions on</b></i>
 	</span>
 {/snippet}
 
@@ -1423,9 +1418,11 @@
 	.gl {
 		font-style: normal;
 		display: grid;
-		grid-template-rows: 9fr repeat(4, 28fr) 7fr repeat(2, 28fr) 7fr 40fr;
+		grid-template-rows: repeat(3, auto);
+		align-content: center;
+		row-gap: 8px;
 		height: 100%;
-		padding: 0 7% 0 5%;
+		padding: 0 10px;
 	}
 	.gr {
 		font-style: normal;
@@ -1440,7 +1437,7 @@
 	.gr > b {
 		flex: none;
 		font-family: var(--font-mono);
-		font-size: 9px;
+		font-size: 11px;
 		font-weight: 400;
 		line-height: 1;
 		white-space: nowrap;
@@ -1488,9 +1485,6 @@
 	.night .gs,
 	.night .gr.nu {
 		visibility: hidden;
-	}
-	.wreck .gr.kid .gt {
-		opacity: 0.4;
 	}
 	.wreck .gs,
 	.wreck .gc,
