@@ -57,7 +57,7 @@ passes its row over (I-1090).
 
 | Plan | Running at once | Disk | Egress a month |
 |---|---|---|---|
-| Solo | 8 GB: one `large`, or two `small` | 100 GB | 250 GB |
+| Solo | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB |
 | Plus | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB |
 | Pro | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB |
 

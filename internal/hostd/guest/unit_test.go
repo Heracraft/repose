@@ -36,7 +36,7 @@ func TestGuestUnitPropsGolden(t *testing.T) {
 func TestCPUWeightIsProportionalToTheClass(t *testing.T) {
 	for name, c := range Classes {
 		props := GuestUnitProps(c, "hostd", "/var/lib/repose/guests", "/var/lib/repose/guests/"+gid1, "/dev/vg-guests/g-"+gid1)
-		w := c.VCPUs * CPUWeightPerVCPU
+		w := c.MilliVCPUs * CPUWeightPerVCPU / 1000
 		if want := fmt.Sprintf("CPUWeight=%d", w); !slices.Contains(props, want) {
 			t.Fatalf("class %s: properties lack %q: %v", name, want, props)
 		}

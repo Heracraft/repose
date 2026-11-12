@@ -48,10 +48,14 @@ var reservedSecretNames = map[string]bool{
 }
 
 var classes = map[string]int64{
+	"tiny":  10 << 30,
 	"small": 20 << 30,
 	"large": 40 << 30,
 	"xl":    80 << 30,
 }
+
+// A fifth entry would be a class the api does not have; scheduler.DefaultVolume
+// is the real table and TestFakeVolumesMatchScheduler holds this to it.
 
 // menuCatalog is the real catalog (internal/menu): the fake validates and
 // renders a selection exactly as the api does, {package} items included
@@ -364,7 +368,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 		return nil, invalid("name: must match [A-Za-z0-9._-]{1,64}")
 	}
 	if _, ok := classes[class]; !ok {
-		return nil, invalid("class: must be one of small, large, xl")
+		return nil, invalid("class: must be one of tiny, small, large, xl")
 	}
 	slug := slugOf(name)
 	if slug == "" {
@@ -597,7 +601,7 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.Class != nil && *body.Class != p.Class {
 		if _, ok := classes[*body.Class]; !ok {
-			return invalid("class: must be one of small, large, xl")
+			return invalid("class: must be one of tiny, small, large, xl")
 		}
 		if p.State != "stopped" {
 			return invalid("class: change requires the project to be stopped").withDetail(map[string]any{"state": p.State})
@@ -1042,7 +1046,7 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 	// The real route answers from the same two functions
 	// (internal/api/http/samples.go), so the fake cannot drift from the
 	// class table the way its own copy of it did before I-784.
-	vcpus := scheduler.ClassVCPU(p.Class)
+	vcpus := scheduler.ClassVCPUs(p.Class)
 	mem := scheduler.ClassRAM(p.Class)
 	points := []map[string]any{}
 	procs := []map[string]any{}

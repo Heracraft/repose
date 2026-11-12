@@ -13,18 +13,26 @@ import (
 // database code); TestClassSpecsMatchBillingAndHost pins it to billing,
 // to hostd's own table and to scheduler.ClassVCPU.
 type classSpec struct {
-	VCPUs int
-	MemGB int
+	// MilliVCPUs is the CPU the class sells, in thousandths of a vCPU, as
+	// scheduler.ClassMilliVCPU has it: a half core on `tiny` is why the
+	// unit is thousandths and not cores (DECISIONS I-1168).
+	MilliVCPUs int
+	MemGB      int
 	// Plan is the smallest plan the class fits: a plan buys memory that
 	// may run at once (DECISIONS I-289).
 	Plan string
 }
 
 var classSpecs = map[string]classSpec{
-	"small": {VCPUs: 1, MemGB: 4, Plan: "Solo"},
-	"large": {VCPUs: 2, MemGB: 8, Plan: "Solo"},
-	"xl":    {VCPUs: 4, MemGB: 16, Plan: "Plus"},
+	"tiny":  {MilliVCPUs: 500, MemGB: 2, Plan: "Solo"},
+	"small": {MilliVCPUs: 1000, MemGB: 4, Plan: "Solo"},
+	"large": {MilliVCPUs: 2000, MemGB: 8, Plan: "Solo"},
+	"xl":    {MilliVCPUs: 4000, MemGB: 16, Plan: "Plus"},
 }
+
+// classOrder is the classes smallest first, for every listing and
+// completion, so one order is written once.
+var classOrder = []string{"tiny", "small", "large", "xl"}
 
 // planSpecs is each plan's memory for running machines, smallest first,
 // as docs/PRICING.md lists it; TestClassSpecsMatchBillingAndHost pins it
@@ -149,9 +157,12 @@ func fixOr(fix string, slugs []string) string {
 }
 
 // classSummary is "2 cores, 8 GB memory; fits the Solo plan" or "4 cores,
-// 16 GB memory; needs the Plus plan". The unit a user reads is "core", not
-// "vCPU": the count is the same number, and a vCPU elsewhere in the market
-// is one SMT thread (DECISIONS I-784).
+// 16 GB memory; needs the Plus plan", and "half a core, 2 GB memory; fits
+// the Solo plan" for `tiny`. The unit a user reads is "core", not "vCPU":
+// the count is the same number, and a vCPU elsewhere in the market is one
+// SMT thread (DECISIONS I-784). A half is written as a word rather than
+// "0.5 cores", which reads like a measurement rather than a size
+// (DECISIONS I-1168).
 func classSummary(class string) string {
 	c, ok := classSpecs[class]
 	if !ok {
@@ -161,11 +172,14 @@ func classSummary(class string) string {
 	if c.Plan != "Solo" {
 		verb = "needs the"
 	}
-	unit := "cores"
-	if c.VCPUs == 1 {
-		unit = "core"
+	cores := "half a core"
+	switch {
+	case c.MilliVCPUs == 1000:
+		cores = "1 core"
+	case c.MilliVCPUs > 1000:
+		cores = fmt.Sprintf("%d cores", c.MilliVCPUs/1000)
 	}
-	return fmt.Sprintf("%d %s, %d GB memory; %s %s plan", c.VCPUs, unit, c.MemGB, verb, c.Plan)
+	return fmt.Sprintf("%s, %d GB memory; %s %s plan", cores, c.MemGB, verb, c.Plan)
 }
 
 // classChangePrompt is asked before a running project is stopped to change
@@ -175,7 +189,7 @@ func classChangePrompt(slug, from, to string) string {
 	return fmt.Sprintf("%s is running. Changing it from %s to %s stops it, which ends every process on it, agents included, then starts it again. Go ahead? [y/N] ", slug, from, to)
 }
 
-// ResizeClassCmd implements `repose resize --size small|large|xl` (DECISIONS
+// ResizeClassCmd implements `repose resize --size tiny|small|large|xl` (DECISIONS
 // I-260). The api changes a project's class only while it is stopped, so
 // a running project is stopped, changed and started again, after a
 // confirmation (confirm nil means --yes). The class reaches the machine at
@@ -185,7 +199,7 @@ func classChangePrompt(slug, from, to string) string {
 // 56 s of an 80 s change; DECISIONS I-595).
 func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confirm func(prompt string) (bool, error)) error {
 	if _, ok := classSpecs[class]; !ok {
-		return exitf(ExitUsage, "--size must be small, large or xl, got %q.", class)
+		return exitf(ExitUsage, "--size must be tiny, small, large or xl, got %q.", class)
 	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {

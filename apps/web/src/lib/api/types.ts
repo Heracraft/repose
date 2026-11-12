@@ -3,7 +3,7 @@ import type { AgentLink } from '$lib/agent-link';
 // client's contract; a field added there without a matching field here is a
 // bug in this file, not a reason to read the response as `any`.
 
-export type SizeClass = 'small' | 'large' | 'xl';
+export type SizeClass = 'tiny' | 'small' | 'large' | 'xl';
 
 export type GuestState =
 	| 'creating'

@@ -379,7 +379,7 @@ func TestStartAppliesChangedClass(t *testing.T) {
 	h.create(gid1) // large
 	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
 	res := h.mustFail(cmd(&hostdv1.StartGuest{GuestId: gid1, Class: "huge"}), CodeInvalidArgument)
-	if !strings.Contains(res.Error.Message, "small, large or xl") {
+	if !strings.Contains(res.Error.Message, "tiny, small, large or xl") {
 		t.Fatalf("message %s", res.Error.Message)
 	}
 	if g := h.guest(gid1); g.Class != "large" || g.State != StateStopped {

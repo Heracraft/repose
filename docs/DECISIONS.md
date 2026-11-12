@@ -33308,3 +33308,246 @@ going reads one that has already been freed.
   `ubuntu-latest` is a distribution release behind. The cheap first
   move is to put the runner's binary first on PATH here and load the
   box, which reproduced this in under a minute.
+
+**I-1168. A `tiny` class below `small`: 2 GB of memory and half a guest
+vCPU, four to a seat (tiny-class, 2026-11-12).** Amends R3-2, I-784,
+I-736, I-739, I-737 and I-1126's class table by adding a fourth class,
+and changes the unit the sold CPU of a class is counted in from whole
+guest vCPUs to thousandths, because the ratio I-784 fixed has no whole
+answer below `small`.
+
+`proposals/2026-11-12-always-on-framework.md` §4 asked for the class and
+left three things to decide: the memory line, whether `tiny` may run a
+second agent, and the price.
+
+*The naming rule, first, because it is what the class is* (owner,
+2026-11-12). **Every class runs always-on agents; `tiny` is not "the
+class for agents".** The classes are described by what they are big
+enough for: `tiny` drives a browser, calls APIs and makes documents;
+`small` runs an agent on a codebase; `large` and `xl` are for the hardest
+work, builds, test suites and several agents at once. No class is "for
+agents"; all of them are.
+
+*The shape.* 0.5 base cores up to a ceiling of 2, 2 GB of memory, a
+10 GB default volume, `cpu.weight` 25, `CPUQuota=50%`, 1,000 disk
+operations a second and 40 MB/s. The hypervisor boots it with 1 vCPU
+(2 on a host that bursts, as I-1126 boots every class at its ceiling),
+and the cgroup is what holds it to the half core its class sells.
+
+*Why half a core, and why that is not a fudge.* I-784 made every class
+4 GB of memory per guest vCPU **uniformly**, and said why: "a seat count
+that is right only for one mix of classes is not a seat count". There is
+no whole number of vCPUs that gives a class under 4 GB, so a `tiny` either
+sells a fraction of a core or breaks the invariant. Breaking it is the
+failure I-784 had just removed: a 2 GB class with a whole vCPU commits
+4 guest vCPUs against the 2 that an 8 GB seat stands for, so the fleet's
+seat count -- derived per host from memory, for any mix -- would overstate
+a tiny-heavy host by twice, and placement (I-736) would then refuse the
+memory the plan had sold. At 2 GB and 0.5 the arithmetic closes exactly
+instead: **four `tiny` are one seat's 8 GB and one seat's 2 guest vCPUs.**
+`plans.test.ts`'s "are 4 GB of memory per vCPU, uniformly" passes
+unchanged, because it divides; the Go copies of the figure asserted whole
+division, and that is what moves to thousandths.
+
+*Half a core costs nothing for the work the class is for, measured.* In
+the `guest-base` VM shape at 2048 MiB, a Playwright MCP navigation of the
+shared Chromium took **1.4 s with the browser on a whole core and 1.3 s
+with its slice capped at `CPUQuota=50%`**. That is one local page and not
+a month of real use, so what it refutes is the fear that half a core
+cannot drive a browser at all, not every CPU question about the class.
+A guest's own `CPUQuota` cannot be set from inside this test shape, so
+the half-core figure is the browser's slice, which is the conservative
+half of it: the browser alone gets half a core while everything else
+keeps the rest.
+
+*Why 2 GB and not 3 GB.* Measured in the same shape, at 2048 and 3072 MiB:
+
+| | 2048 | 3072 |
+|---|---|---|
+| `free -m` total | 1970 | 2910 |
+| boot floor, nothing asked for | 305 used, 1664 available | 385 used, 2525 available |
+| display, window manager, cold browser | 464 used | 543 used |
+| one page open, playwright MCP running | 614 used, 1356 available | 699 used, 2211 available |
+| `repose-browser.slice` ceiling (37.5%) | 739 MiB | 1091 MiB |
+| the browser's own anon, one page | 149 MiB | 150 MiB |
+| zram swap | 985 MiB | 1455 MiB |
+
+The browser costs the same wherever it runs: about 150 MiB of anonymous
+memory and about 310 MiB of `used`, at 2 GB and at 3 GB alike. So the
+extra gigabyte buys headroom, not capability. An agent is about 300 MB
+(I-576's task dump has a 319 MB `claude`; the `job` machine has two at
+0.6 GB), which puts the floor plus a browser with a page plus one MCP
+server plus one agent at about **915 MiB of 1970**. And 3 GB divides an
+8 GB seat into two with 2 GB stranded, which is what two `small` already
+give: the only reason to add a fourth class is the thing 3 GB cannot
+deliver. It is 2 GB or no class.
+
+*`tiny` may run a second agent; nothing stops it and nothing should.*
+The measurement leaves about a gigabyte, which is three more agents at
+I-576's size, and a machine that refused to start a process the user
+asked for would be a new kind of limit this product does not have. What
+the docs say instead is what the class is big enough for.
+
+*Do not reason about this from RSS.* The same shared Chromium reads
+**1022 MiB summed over 11 processes against 149 MiB of anon**, because
+every process counts the shared binary. §4's case against 2 GB rests on
+a 1.5 GB RSS sum from `job`, and the comparable figure is several times
+smaller. The same correction applies to `research/guest-freeze.md`'s
+"an idle guest is 0.8 to 1.2 GB whatever its class", which is the size
+of the guest's memory **image on the host**, not memory in use in the
+guest: in the guest the floor is 305 MiB.
+
+*What this costs the fleet, stated plainly.* `OverheadMiB` (512) is
+reserved per guest by hostd's admission (`create.go`), its accounting
+(`manager.go`) and the unit's `MemoryMax` (`unit.go`). So a seat sold as
+four `tiny` reserves **10,240 MiB** of host memory where one `large`
+reserves 8,704 and two `small` reserve 9,216: **18 percent more host
+memory for the same $49**, and four copies of a 305 MiB guest floor
+instead of one. The api's placement counts only the class RAM, so the api
+and hostd already disagree by 6 percent on two `small`; `tiny` widens an
+existing gap rather than opening a new one. That is the trade: a plan that
+can run four always-on machines instead of one, against a host that
+carries 18 percent more to serve it.
+
+*I-711 said no to this question in 2026-10 and is answered, not
+overruled.* It refused making `small` the default on production data: 11
+real `small` projects peaked at 1.8 GiB over 14 days, which is 91 percent
+of a 2 GB machine. Those are `small` users running an agent on a
+codebase, which is the thing this entry's naming rule says `tiny` is not
+for, and `small` stays the default for exactly that reason -- I-711 is
+unchanged. Its revisit condition ("a guest image that idles much
+smaller") has not happened either; what has changed is that a class
+nobody had measured turns out to idle at 305 MiB, and that the class is
+being added beside `small` rather than in front of it.
+
+*The price is the owner's and nothing here sets one.* A plan sells memory
+that may run at once, not machines (I-289), so `tiny` needs no price of
+its own: it takes 2 GB of the plan's memory as every class takes its own.
+`PRICING.md`'s plan table gains "or four `tiny`" on Solo and is marked
+*proposed* until the owner says. The thing for the owner to weigh is the
+paragraph above: Solo's revenue per running machine falls to a quarter
+while the host carries 18 percent more. If that is to be protected, the
+levers are a count of `tiny` machines per account or counting `tiny` as
+more memory than it has, and neither is proposed here, because there is
+no data on who buys it yet.
+
+*Three fallthroughs had to move together, and that is the trap a reviewer
+should check.* An unmigrated class is counted three different ways in one
+placement: migration 0028's `host_reservations` view falls through to
+**xl** (16 GB, 4 vCPU), `scheduler.ClassRAM`/`ClassVCPU`/`ClassVCPUSQL`
+fall through to **large**, and `billing.ClassMemoryGB` falls through to
+**large**. A new migration (0041) replaces the view, renaming its column
+`vcpus` to `vcpu_milli` so that a reader of the old name cannot take
+thousandths for cores, and the class is added to every one of those
+copies in this commit.
+
+*And a fifth copy nobody had pinned, found by adding the class.*
+`nix/guest/microvm.nix`'s `classDefaults` still held R3-2's 2 GB per vCPU
+(small 2, large 4, xl 8) fourteen classes-worth of entries after I-784
+halved them: it is an attribute set indexed by the class, so `tiny` threw
+rather than fell through, which is how it was found. It is the runner's
+default for a runner built without an explicit vcpu and mem -- hostdev
+and a hand-built runner on a dev box; hostd always passes both from
+`guest.Classes` -- so nothing a tenant runs was wrong, and it is
+corrected to I-784's figures here. `TestClassSpecsMatchBillingAndHost`
+cannot reach a Nix file, so this copy is still unpinned; what found it
+was adding a class, and what would find it next is the same.
+
+*Rejected:*
+- **2 GB with a whole vCPU.** Two paragraphs above: it oversells the
+  fleet's seat count by twice for anyone running tinies, which is I-784's
+  entire subject.
+- **3 GB with 0.75 of a core.** Keeps the ratio and buys no buyer: two to
+  a Solo seat is what two `small` already are, with 2 GB stranded.
+- **A bigger share of memory for the browser on `tiny`.** 37.5 percent of
+  2 GB is 739 MiB, five times the browser's own anon with a page open, and
+  the pressure test below shows it contains a runaway tab. A per-class
+  share would be a change with no measurement behind it, and it would end
+  one closure serving every class (I-43).
+- **Fractions on the other three classes.** They are whole numbers and
+  stay whole; thousandths are the unit, not a new shape for `small`.
+
+**I-1170. On every class, the browser's tab is what memory pressure
+takes; the agent is spared and a webhook receiver is not yet (tiny-class,
+2026-11-12).** The rule is not `tiny`'s, but `tiny` is where it was
+measured and where it binds.
+
+The brief for I-1168 asked what dies first on a 2 GB machine: a browser
+tab, the browser, never the agent or a webhook receiver. Two thirds of
+that already held and the third did not.
+
+*The tab goes first, and the mechanism is already there.* Under a page
+that allocated until something gave, on a guest of 1970 MiB, the kernel
+killed inside the browser's own memcg and nothing else moved:
+
+    chromium invoked oom-killer ... oom_score_adj=300
+    oom-kill: constraint=CONSTRAINT_MEMCG, oom_memcg=/repose.slice/repose-browser.slice,
+      task_memcg=.../repose-browser.service, task=chromium, pid=4775,
+      anon-rss:725208kB, oom_score_adj:300
+
+`CONSTRAINT_MEMCG` is the whole result: this was the slice's ceiling
+(I-246's 37.5 percent) reclaiming a renderer that held 725 MB, not the
+machine running out. Afterwards dev's user manager, the tmux server, the
+browser itself and the receiver were all the same pids, the browser still
+answered on 9224, the receiver still answered, no user unit had failed,
+and the guest's `used` had **fallen** from 536 to 421 MiB as the tab's
+memory came back. One thing in that line is worth knowing: the renderer
+ran at `oom_score_adj=300` because **Chromium sets that on its own
+renderers**, so "the tab before the browser" is Chromium's ordering and
+not something repose configures. Renderer scopes running with
+`OOMPolicy=continue` (I-733) are what keeps the kill from stopping the
+unit above them.
+
+*The agent was already spared.* guestd writes `oom_score_adj = -800`
+(`OOMProtected`) to each agent window's agent process on every refresh
+(I-200, I-576), and re-applies it, because the value is inherited on fork
+and `dev` can raise its own but never lower it.
+
+*The receiver was not, and on a small machine that is not a theoretical
+gap.* Measured on the 2 GB guest with both at `oom_score_adj` 0: the
+browser's main process scored `oom_score` **717** and a 19 MiB webhook
+receiver **670**. Within 7 percent of each other, so a machine-wide
+decision between them is close to a coin flip, and the receiver survived
+the test above only because the kill never became machine-wide -- it
+stayed inside the browser's memcg. A receiver is the one process in an
+always-on machine whose death is silent and total: the agent is idle by
+definition when nothing has arrived, so a killed receiver looks exactly
+like a quiet week.
+
+**The receiver's protection is specified here and is not built.** The
+rule it should have is the same fact-based identification I-1124 uses
+rather than a name: a process of dev's that **listens on a port a webhook
+route delivers to** runs at `OOMProtected` (-800, not -1000, for the
+reason I-200 gives: a runaway receiver can still be stopped by the kernel
+rather than hang the guest). What stops it being written today is that
+guestd has no way to know which port that is. There is no `webhook`
+anywhere in `internal/guestd`: the api holds the route's port
+(`internal/api/webhooks/webhooks.go`), the edge delivers to it over the
+gateway, and the guest "learns of the route only from the user"
+(`proposals/2026-11-12-always-on-framework.md` §2). Closing it is a proto
+field, a hostd relay, an api send on every route change and a guestd
+store -- four components and a change to `interfaces/vsock-guestd.md` --
+and it is the next piece of work, not this entry's. It is recorded rather
+than built because a half-delivered port list would protect some
+receivers and not others with nothing to say which.
+
+Two rules that were considered instead, and are not it, because each
+protects the wrong things:
+
+- *A process of dev's listening on any port, in a `.service` under dev's
+  user manager.* It needs no plumbing and it is wrong: a `vite` a user
+  puts in a unit would outrank the build it serves, which inverts I-200
+  for anything a user declares.
+- *A listener the gateway has an established connection to.* Also needs
+  no plumbing, and it is true only of a receiver that has already taken a
+  delivery, so a new route's receiver is unprotected until the first
+  event -- which is exactly the event it must not miss.
+
+*Rejected:*
+- **`systemd-oomd` on the receiver's slice.** I-576 rejected oomd on
+  `app.slice` and the reason stands: oomd kills a whole cgroup and does
+  not read `oom_score_adj`. Confirmed still inert here -- oomd is
+  `active` on a guest and watching nothing.
+- **A `MemoryLow` budget for the receiver.** I-576's budgets are a fixed
+  304 MB for cgroups whose size does not grow with the machine. A
+  receiver is the tenant's program and has no such bound.

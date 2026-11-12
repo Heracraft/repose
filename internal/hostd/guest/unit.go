@@ -28,8 +28,12 @@ func GuestUnitProps(class Class, user, guestsDir, dir, volumeDev string) []strin
 	return []string{
 		fmt.Sprintf("MemoryMax=%dM", class.MemMiB+OverheadMiB),
 		fmt.Sprintf("MemoryHigh=%dM", class.MemMiB+OverheadMiB-HighMarginMiB),
-		fmt.Sprintf("CPUQuota=%d%%", class.VCPUs*100),
-		fmt.Sprintf("CPUWeight=%d", class.VCPUs*CPUWeightPerVCPU),
+		// Both from MilliVCPUs, the CPU the class sells: a quota in
+		// percent of one core (tiny 50) and a weight proportional to it
+		// (tiny 25), with the other three classes' numbers unchanged
+		// (DECISIONS I-1168, I-737).
+		fmt.Sprintf("CPUQuota=%d%%", class.MilliVCPUs/10),
+		fmt.Sprintf("CPUWeight=%d", class.MilliVCPUs*CPUWeightPerVCPU/1000),
 		"Restart=no",
 		"Slice=guests.slice",
 		"User=" + user,
