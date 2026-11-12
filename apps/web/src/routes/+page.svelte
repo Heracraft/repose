@@ -130,9 +130,8 @@
 			<p class="label eyebrow">Any agent, any model</p>
 			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
 			<p class="hk-lead">
-				Pick a machine and stack what your agent needs on it: your dev environment, secrets, and
-				a schedule or a webhook that wakes it. It keeps working with your laptop shut, and nothing
-				from the internet reaches it but its own webhooks.
+				Give your agent a machine of its own, then add what it needs: your dev environment,
+				secrets, a schedule or a webhook that wakes it. It keeps working with your laptop shut.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -251,8 +250,8 @@
 				on it can, and restoring a snapshot brings the machine back as it was.
 			</p>
 		</div>
-		<div class="fig fig--field">
-			<div class="stage field-stage">
+		<div class="fig fig--wreck">
+			<div class="stage">
 				<Wreck />
 			</div>
 		</div>

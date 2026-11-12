@@ -451,7 +451,7 @@
    the old width for a frame or two, so its frame clips them at the sides
    and they never widen the page (its pause button is placed from the
    figure, outside the clip). */
-.landing .fig--field .hero-frame {
+.landing .fig--wreck .hero-frame {
 	overflow-x: clip;
 }
 

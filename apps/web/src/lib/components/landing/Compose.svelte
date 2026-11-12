@@ -1,10 +1,10 @@
 <!--
   Compose: the hero's picture (hero loop, round 1). Three always-on
-  agents, each a machine window built from the same six layers, top down:
-  the agent (the one lit part), its trigger, its secrets, your setup, its
-  walls and the machine. The rows line up across the three windows, so a
+  agents, each a machine window built from the same five layers, top down:
+  the agent (the one lit part), its trigger, your setup, its secrets
+  and the machine. The rows line up across the three windows, so a
   layer reads across and an agent reads down; a layer an agent leaves out
-  is an empty dashed slot. The machine row carries a meter of its memory
+  reads "none" in the faint grey. The machine row carries a meter of its memory
   in 2 GB steps, so a tiny machine and a large one differ at a glance.
 
   The loop shows them always on: the shopping agent's schedule fires at 7
@@ -27,26 +27,27 @@
 	type Cell = { v: string; note?: string; mono?: boolean } | null;
 	type Use = {
 		name: string;
+		short: string;
 		running: boolean;
 		mark: Mark;
 		gb: number;
-		layers: { agent: Cell; trigger: Cell; secrets: Cell; setup: Cell; walls: Cell; machine: Cell };
+		layers: { agent: Cell; trigger: Cell; secrets: Cell; setup: Cell; machine: Cell };
 	};
 	const mark = (n: string) => agentMarks.find((m) => m.name === n)!;
 
-	const layers = ['agent', 'trigger', 'secrets', 'setup', 'walls', 'machine'] as const;
+	const layers = ['agent', 'trigger', 'setup', 'secrets', 'machine'] as const;
 	const names: Record<(typeof layers)[number], string> = {
 		agent: 'Agent',
 		trigger: 'Trigger',
 		secrets: 'Secrets',
 		setup: 'Setup',
-		walls: 'Walls',
 		machine: 'Machine'
 	};
 
 	const uses: Use[] = [
 		{
 			name: 'A dev environment',
+			short: 'dev',
 			running: true,
 			mark: mark('opencode'),
 			gb: 16,
@@ -54,13 +55,13 @@
 				agent: { v: 'opencode', note: 'on your branch' },
 				trigger: null,
 				secrets: { v: 'STRIPE_SECRET_KEY', mono: true },
-				setup: { v: 'your-project/', note: 'code, tools, logins', mono: true },
-				walls: { v: 'closed to the internet' },
+				setup: { v: 'repose run', note: 'code, tools, logins', mono: true },
 				machine: { v: '4 cores, 16 GB' }
 			}
 		},
 		{
 			name: 'A shopping agent',
+			short: 'shopping',
 			running: false,
 			mark: mark('Codex'),
 			gb: 2,
@@ -69,12 +70,12 @@
 				trigger: { v: 'every morning at 7' },
 				secrets: { v: 'STORE_API_KEY', mono: true },
 				setup: null,
-				walls: { v: 'closed to the internet' },
 				machine: { v: '2 GB, on all day' }
 			}
 		},
 		{
 			name: 'An agent that applies for jobs',
+			short: 'jobs',
 			running: false,
 			mark: mark('Claude Code'),
 			gb: 8,
@@ -83,7 +84,6 @@
 				trigger: { v: 'role.created', note: 'webhook', mono: true },
 				secrets: { v: 'JOB_BOARD_KEY', mono: true },
 				setup: { v: 'resumes/', note: 'from your laptop', mono: true },
-				walls: { v: "open to the job board's webhook" },
 				machine: { v: '2 cores, 8 GB' }
 			}
 		}
@@ -98,9 +98,15 @@
 		let tl: { pause(): unknown; play(): unknown } | null = null;
 		const win = (k: number) => pic.querySelector<HTMLElement>(`.win[data-u="${k}"]`)!;
 
+		// On a phone one window shows at a time: the one the loop is on.
+		function show(k: number) {
+			pic.querySelectorAll('.cur').forEach((el) => el.classList.remove('cur'));
+			pic.querySelectorAll(`[data-u="${k}"]`).forEach((el) => el.classList.add('cur'));
+		}
 		function rest() {
 			tl?.pause();
 			tl = null;
+			show(0);
 			uses.forEach((u, k) => {
 				win(k).classList.toggle('on', u.running);
 				win(k).querySelector('.trigger')?.classList.remove('fire');
@@ -120,14 +126,17 @@
 					const t = createTimeline({ autoplay: false, onComplete: () => cycle() });
 					// The schedule wakes the shopping agent, then the webhook the
 					// job agent; both freeze again before the seam.
-					t.call(set(1, 'fire', true, '.trigger'), 1200)
+					t.call(() => show(1), 800)
+						.call(set(1, 'fire', true, '.trigger'), 1200)
 						.call(set(1, 'on', true), 1600)
 						.call(set(1, 'fire', false, '.trigger'), 4200)
+						.call(() => show(2), 4600)
 						.call(set(2, 'fire', true, '.trigger'), 5000)
 						.call(set(2, 'on', true), 5400)
 						.call(set(2, 'fire', false, '.trigger'), 8000)
 						.call(set(1, 'on', false), 10600)
 						.call(set(2, 'on', false), 11200)
+						.call(() => show(0), 12000)
 						.call(() => {}, 12800);
 					tl = t;
 					t.play();
@@ -172,10 +181,13 @@
 		class="cmp"
 		bind:this={pic}
 		role="img"
-		aria-label="Three always-on agents, each on a machine of its own, built from the same layers: agent, trigger, secrets, setup, walls and machine. A dev environment: opencode on your branch, no trigger, STRIPE_SECRET_KEY, your project's code, tools and logins, closed to the internet, 4 cores and 16 GB. A shopping agent: Codex, which asks before it pays, every morning at 7, STORE_API_KEY, no setup, closed to the internet, 2 GB on all day. An agent that applies for jobs: Claude Code, which asks at a captcha, a role.created webhook, JOB_BOARD_KEY, your resumes, open to the job board's webhook, 2 cores and 8 GB. The schedule and the webhook wake their frozen machines."
+		aria-label="Three always-on agents, each on a machine of its own, built from the same layers: agent, trigger, setup, secrets and machine. A dev environment: opencode on your branch, no trigger, your code, tools and logins copied by repose run, STRIPE_SECRET_KEY, 4 cores and 16 GB. A shopping agent: Codex, which asks before it pays, every morning at 7, no setup, STORE_API_KEY, 2 GB on all day. An agent that applies for jobs: Claude Code, which asks at a captcha, a role.created webhook, your resumes, JOB_BOARD_KEY, 2 cores and 8 GB. The schedule and the webhook wake their frozen machines."
 	>
+		<p class="pick" aria-hidden="true">
+			{#each uses as u, k (u.name)}<span class:cur={k === 0} data-u={k}>{u.short}</span>{/each}
+		</p>
 		{#each uses as u, k (u.name)}
-			<div class="win" class:on={u.running} data-u={k} aria-hidden="true">
+			<div class="win" class:on={u.running} class:cur={k === 0} data-u={k} aria-hidden="true">
 				<div class="head">
 					<span class="who">{u.name}</span>
 					<span class="state"
@@ -189,7 +201,7 @@
 					<div class="row {l}" class:out={c === null}>
 						<span class="nm">{names[l]}</span>
 						{#if c === null}
-							<span class="val none">left out</span>
+							<span class="val none">none</span>
 						{:else}
 							<span class="val" class:mono={c.mono}
 								>{#if l === 'agent'}{@render markSvg(u.mark)}{/if}<span class="tx">{c.v}</span></span
@@ -236,12 +248,69 @@
 			font-size: 12px;
 		}
 	}
+	/* A frozen machine is drawn quiet; a running one in full ink, its
+	   edge a step stronger. A trigger waking one brings it up. */
 	.win {
+		--v: var(--pic-ink);
+		--lit: var(--pic-accent);
 		min-width: 0;
 		border: 1px solid var(--rule-strong);
 		border-radius: 6px;
 		background: var(--surface);
 		overflow: hidden;
+		transition: border-color 300ms ease;
+	}
+	.win.on {
+		border-color: var(--control-edge);
+	}
+	.val,
+	.who {
+		color: var(--v);
+		transition: color 300ms ease;
+	}
+	.on .state {
+		color: var(--pic-ink);
+	}
+	.pick {
+		display: none;
+	}
+	/* On a phone the three windows share one place and the loop shows
+	   one at a time (out 200ms, then in 300ms), named in the strip under
+	   it. */
+	@media (max-width: 639.98px) {
+		.cmp > .win {
+			grid-area: 2 / 1;
+			opacity: 0;
+			transition:
+				opacity 200ms ease-in,
+				border-color 300ms ease;
+		}
+		.cmp > .win.cur {
+			opacity: 1;
+			transition:
+				opacity 300ms ease-out 200ms,
+				border-color 300ms ease;
+		}
+		.pick {
+			order: -1;
+			grid-area: 1 / 1;
+			align-self: start;
+			display: flex;
+			justify-content: center;
+			gap: 16px;
+			margin: 0;
+			font-family: var(--font-mono);
+			font-size: 11px;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			color: var(--pic-faint);
+		}
+		.pick > span {
+			transition: color 300ms ease;
+		}
+		.pick > .cur {
+			color: var(--pic-ink);
+		}
 	}
 	.head {
 		display: flex;
@@ -342,20 +411,17 @@
 		text-overflow: ellipsis;
 	}
 	/* A layer left out: an empty slot, dashed. */
-	.none {
-		padding: 1px 8px;
-		border: 1px dashed var(--rule-strong);
-		border-radius: 4px;
-		font-size: 12px;
+	.val.none {
 		color: var(--pic-faint);
 	}
 	/* The one lit part: the agent. */
 	.agent {
-		box-shadow: inset 2px 0 0 var(--pic-accent);
+		box-shadow: inset 2px 0 0 var(--lit);
+		transition: box-shadow 300ms ease;
 	}
 	.agent .nm,
 	.agent .val {
-		color: var(--pic-accent);
+		color: var(--lit);
 	}
 	.agent .val {
 		font-weight: 600;
@@ -382,13 +448,20 @@
 	}
 	.meter > i.f {
 		background: var(--pic-dim);
+		transition: background-color 300ms ease;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.dot,
 		.sw > span,
 		.row,
-		.nm {
-			transition: none;
+		.nm,
+		.win,
+		.cmp > .win,
+		.val,
+		.who,
+		.meter > i,
+		.pick > span {
+			transition: none !important;
 		}
 	}
 </style>

@@ -481,11 +481,20 @@
 	/* The forward between them: its wire takes what the two windows
 	   leave, the chip at its middle. */
 	.hop {
+		position: relative;
 		flex: 1;
 		min-height: 30px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+	}
+	/* The forward's path, drawn before the wire runs along it, so the gap
+	   between the windows reads as their link at every beat. */
+	.hop::before {
+		content: '';
+		position: absolute;
+		inset: 0 auto 0 calc(50% - 0.5px);
+		border-left: 1px dashed var(--rule-strong);
 	}
 	.wire {
 		flex: 1;
