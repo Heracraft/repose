@@ -102,7 +102,17 @@ applies. Each test boots one or two VMs and takes two to five minutes.
 Inside `nix develop` the temporary directory is `/tmp/nix-shell.*`, and the
 tests that put unix sockets under `t.TempDir()` (tmux and vsock fakes) fail
 with "File name too long" on the socket path limit. Run them with a short
-one: `mkdir -p /tmp/rt && TMPDIR=/tmp/rt go test ./...`.
+one, set **inside** the shell: `mkdir -p /tmp/rt && nix develop ./nix -c sh
+-c 'TMPDIR=/tmp/rt go test ./...'`. A `TMPDIR` set outside is replaced by
+the shell with `/tmp/rt/nix-shell.*`, which is 17 bytes longer, and the
+longest test name (`internal/guestd`'s
+`TestStraceReadsEnvironOnlyForTheHookPaneLookup`) then lands on 108
+bytes exactly and fails with `bind: invalid argument`, on main as on any
+branch (2026-11-12).
+
+Run the Go tests in the dev shell or with `DATABASE_URL` set. Outside the
+shell with neither, `internal/db/testdb` finds no `initdb` on PATH and
+every database-backed test skips, printing `ok` in milliseconds.
 
 Playwright's downloaded Chromium does not run here (glibc mismatch). Point
 the web tests at a nixpkgs one; the configs in `apps/web` read
@@ -154,6 +164,12 @@ export PLAYWRIGHT_CHROMIUM_PATH=$(nix build --no-link --print-out-paths nixpkgs#
   hostdev at `/var/lib/hostdev/hostdev --state-dir /var/lib/hostdev` on the
   staging edge (`exec` prints base64 JSON; decode `.exec.stdout`). Run
   `ops/dev/operator-cert.sh --if-stale` first (8 h certificate).
+- **`guest-keystroke-path` cannot pass here.** This box's nix has no build
+  users (`build-users-group` is empty), so a build runs as `azureuser`, and
+  the check's `ulimit -u 128` counts every process of that user, about a
+  hundred before the build starts: every handler fails with `fork: retry:
+  Resource temporarily unavailable`, on main too. CI builds it with build
+  users (`ci.yml`) and is its gate; do not call it the batch's.
 - **Switch from a clean checkout.** A switch evaluated in a dirty checkout
   stamps `-dirty` into hostd's version (host-02 said `374aeab-dirty` for two
   minutes on 2026-11-11). `git worktree add --detach ~/kanali-release-<sha> <sha>`.
