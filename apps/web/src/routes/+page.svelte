@@ -144,8 +144,10 @@
 					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
 		</div>
-		<div class="fig fig--parts">
-			<Compose />
+		<div class="fig fig--hero">
+			<div class="stage hero-stage">
+				<Compose />
+			</div>
 		</div>
 	</section>
 

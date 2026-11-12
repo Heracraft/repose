@@ -442,7 +442,7 @@
 }
 /* The setup's field opens on an inner rule under its head; the wreck
    picture's dark field opens on its own edge. */
-.landing .band > .fig:not(.fig--field, .fig--parts) {
+.landing .band > .fig:not(.fig--field) {
 	border-top: 1px solid var(--rule-in);
 }
 
@@ -455,23 +455,27 @@
 	overflow-x: clip;
 }
 
-/* ---------- The hero's picture (I-1167) ----------
+/* ---------- The hero's picture ----------
 
-   The parts of an always-on agent (Parts.svelte) stand on the page's
-   own tone under the hero's copy, with no stage and no rule: one object
-   in white space, as voidzero.dev sets its one object (LANDING.md, "The
-   centrepiece"). Its sides are the text lines; the band's padding
-   under it is the band's own. */
-.landing .band > .fig--parts {
-	--pause-y: calc(100% - var(--band-y) + 16px);
-	--pause-r: 0px;
-	margin: 1rem 0 0;
-	padding-block: 0 var(--band-y);
+   The three agents (Compose.svelte) stand on the hero's field: the
+   stage's tone across the sheet, from an inner rule under the buttons to
+   the next band's rule, carrying the 16px dot grid the wreck's field
+   carried, with the windows on the text lines and its pause button in
+   the field's top right corner, as a band picture's. */
+.landing .hero-stage {
+	background:
+		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
+		var(--stage);
+	--hero-dot: #dcdce0;
 }
-@media (min-width: 1024px) {
-	.landing .band > .fig--parts {
-		margin-top: calc(var(--band-y) * 0.75 - var(--head-gap));
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
+		--hero-dot: #232327;
 	}
+}
+:root[data-theme='dark'] .landing .hero-stage,
+:root.dark .landing .hero-stage {
+	--hero-dot: #232327;
 }
 
 /* ---------- The parts: three columns (I-1167) ----------

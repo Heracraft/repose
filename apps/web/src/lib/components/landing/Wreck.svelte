@@ -261,7 +261,7 @@
 		// machine with its services and the agent, the project rows dimmed,
 		// the nightly tile alone on the rail.
 		function pre() {
-			utils.set(q('.m-proj'), { opacity: 0.22, y: 0 });
+			utils.set(q('.m-proj'), { opacity: 0.45, y: 0 });
 			utils.set(q('.lw .kid.nu'), { opacity: 0, y: 0 });
 			utils.set(q('.lw .st'), { opacity: 0, scale: 1 });
 			utils.set(q('.lw .strike'), { scaleX: 0 });
@@ -493,7 +493,7 @@
 				.call(() => from.classList.remove('lift'), T.land + 16)
 				.add(
 					q('.m-proj.kid'),
-					{ opacity: [0.22, 1], duration: 320, delay: stagger(90), ease: 'outCubic' },
+					{ opacity: [0.45, 1], duration: 320, delay: stagger(90), ease: 'outCubic' },
 					T.land + 60
 				);
 			// Good work: each file lights as the agent writes it, and gains
@@ -684,7 +684,7 @@
 				// tile, which then rolls up off it from the bottom, so the rail
 				// always shows one whole drawing.
 				.call(() => (restored = false), T.seam)
-				.add(q('.m-proj'), { opacity: 0.22, duration: 450, ease: 'inQuad' }, T.seam)
+				.add(q('.m-proj'), { opacity: 0.45, duration: 450, ease: 'inQuad' }, T.seam)
 				.add(
 					q('.lw .kid.nu, .lw .st, .tile.t-u-stub'),
 					{ opacity: 0, duration: 450, ease: 'inQuad' },
@@ -1028,7 +1028,7 @@
 		   right-hand stack is as tall. */
 		--agent: 40px;
 		/* The dim the project rows rest at before repose run lights them. */
-		--dimmed: 0.22;
+		--dimmed: 0.45;
 		position: relative;
 		display: grid;
 		min-width: 0;
