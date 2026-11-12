@@ -164,19 +164,29 @@ headline starting under the logo, laid out as one ruled sheet on a
    split by inner rules with no card edge: three across on the thirds
    lines from 1024px, stacked below.
 10. **09 Questions. "Before you try it"**, with "Limits" and "Billing"
-    on the heading's last line, set as the Agents links. Five a solo
-    founder asks before trying it, each one a reason to: why not skip
-    permissions on the laptop (what the agent can reach there and here),
-    closing the laptop while the agent works (it keeps working, tells
-    you by email or on your phone when it is done or needs you, and you
-    attach again), how long snapshots are kept (seven days and the
-    newest, and when repose takes them: the wreck itself is the
-    permissions band's), three agents on three approaches (`repose run
-    --worktree`), and why not set up a server yourself. Every answer is
-    from the docs (secrets, lifecycle, sync). No setup trivia (where a
-    login lives, Windows, how commits come back, what a stopped machine
-    costs): those belong in the docs and give a visitor no reason to try
-    it (owner, 2026-10-21).
+    on the heading's last line, set as the Agents links. Six questions,
+    each one a reason to try it, overhauled on the owner's ask to show
+    the primitives and what is special (2026-11-12, I-1169): what you
+    can build (any agent you would keep running: a responder your alerts
+    wake, which reads your metrics and logs and asks before it changes
+    anything; three agents on three approaches with `repose run
+    --worktree`); how it differs from your own server (it freezes and
+    wakes for the next webhook, and a server restart leaves its programs
+    and agents running, `lifecycle.md`); closing the laptop (it keeps
+    working, and you hear by email or on your phone); what the agent can
+    reach (`secrets.md` "What an agent on the machine can reach": `dev`
+    with sudo, the logins copied and the secrets set, no other project,
+    the laptop only through a port or a Chrome you lend it); what
+    happens when it breaks something (a snapshot restores the whole
+    disk, Claude Code's login aside; nightly, at each stop and your own,
+    kept seven days and the newest); what an agent costs while it waits
+    (it freezes after about 15 minutes of quiet and wakes in a second or
+    two; you pay for the memory your plan runs at once). No answer
+    repeats a layer cell: the setup, the secrets, the triggers, the
+    agents, the tiny machine and the notifications are 01's. No setup
+    trivia (where a login lives, Windows, how commits come back, what a
+    stopped machine costs): those belong in the docs and give a visitor
+    no reason to try it (owner, 2026-10-21).
 
 ### The sheet (I-961, option D)
 

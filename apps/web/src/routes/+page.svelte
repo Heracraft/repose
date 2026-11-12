@@ -412,46 +412,55 @@
 		</div>
 		<div class="ruled faq">
 			<details>
-				<summary class="item-title">Why not skip permissions on my laptop?{@render plus()}</summary>
+				<summary class="item-title">What can I build with it?{@render plus()}</summary>
 				<p class="copy">
-					There the agent can read whatever you can, from your SSH keys to the sessions in your
-					browser. On repose it gets a machine holding one project and the logins you chose to copy.
-					The machine can't open a connection to your laptop, and your other projects are separate
-					machines it can't reach.
+					You can build any agent you'd keep running. A responder wakes on your alerts, reads your
+					metrics and logs, and asks before it changes anything. A dev environment runs three agents
+					on three approaches with <code>repose run --worktree</code>.
 				</p>
 			</details>
 			<details>
 				<summary class="item-title"
-					>Can I close my laptop while the agent works?{@render plus()}</summary
+					>How is this different from a server with an agent on it?{@render plus()}</summary
 				>
 				<p class="copy">
-					Yes. Detach and close it; the agent keeps working on the machine. You hear by email or on
-					your phone when it's done or needs you, and you attach again to see where it got to.
+					On your own server you set it all up again for each agent. Here the machine freezes when
+					nobody uses it and wakes for the next webhook, and when the server under it restarts, its
+					programs and agents carry on where they were.
 				</p>
 			</details>
 			<details>
-				<summary class="item-title">How long are snapshots kept?{@render plus()}</summary>
+				<summary class="item-title">Can I close my laptop while it works?{@render plus()}</summary>
 				<p class="copy">
-					Seven days, and the newest one always. repose takes one each night the machine runs and at
-					every stop, and <code>repose snapshots create</code> takes one before something risky.
+					The agent keeps working on its machine, and you hear by email or on your phone when it's
+					done or needs you. Attach again, or open the machine in your editor, to see where it got
+					to.
 				</p>
 			</details>
 			<details>
-				<summary class="item-title"
-					>Can three agents try three approaches at once?{@render plus()}</summary
-				>
+				<summary class="item-title">What can the agent reach?{@render plus()}</summary>
 				<p class="copy">
-					<code>repose run --worktree -p "..."</code> three times puts each agent in its own working tree
-					on its own branch, on the one machine. Fetch the branch that won with git, and delete the rest.
+					It runs as <code>dev</code> with sudo on its own machine, with the logins you copied and the
+					secrets you set. Your other projects are separate machines it can't reach, and it connects to
+					your laptop only through a port or a Chrome you lend it.
 				</p>
 			</details>
 			<details>
-				<summary class="item-title"
-					>Why not rent a server and set it up myself?{@render plus()}</summary
+				<summary class="item-title">What happens when it breaks something?{@render plus()}</summary>
+				<p class="copy">
+					You restore a snapshot and the whole disk comes back: the checkout, the tools and the
+					logins made on the machine, Claude Code's aside. repose takes one each night and at every
+					stop, or you run <code>repose snapshots create</code> first; they're kept seven days, and the
+					newest stays.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title">What does an agent cost while it waits?{@render plus()}</summary
 				>
 				<p class="copy">
-					You can, and you redo that setup for each project. The nightly snapshots and the port
-					forwards are then yours to build as well.
+					A machine nobody is using freezes after about 15 minutes of quiet, and a webhook, a
+					scheduled job or your next command wakes it in a second or two. You pay for the memory
+					your plan runs at once, so a waiting agent costs nothing on top.
 				</p>
 			</details>
 		</div>

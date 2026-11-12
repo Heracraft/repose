@@ -234,7 +234,7 @@ for (const width of [1024, 1100, 1280, 1440, 1920]) {
 }
 
 test('the questions open, one answer at a time as asked', async ({ page }) => {
-	// The first answer is secrets.md's "Not your laptop", in its words.
+	// The reach answer is secrets.md's "Not your laptop", in its words.
 	const secrets = readFileSync(join(DOCS, 'secrets.md'), 'utf8');
 	expect(secrets).toContain('Nothing on the machine can open a connection to it.');
 	// The snapshot answer is lifecycle.md's "Snapshots", in its numbers.
@@ -249,17 +249,24 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 	const q = page.locator('section', {
 		has: page.getByRole('heading', { name: 'Before you try it' })
 	});
+	// I-1169's overhaul: what you can build, what is special, and the
+	// limits a visitor checks before trying it, each answer from the docs.
+	const restart = lifecycle.includes('programs, tmux windows and agents carry on where they were');
+	expect(restart).toBe(true);
 	await expect(q.locator('summary')).toHaveText([
-		'Why not skip permissions on my laptop?',
-		'Can I close my laptop while the agent works?',
-		'How long are snapshots kept?',
-		'Can three agents try three approaches at once?',
-		'Why not rent a server and set it up myself?'
+		'What can I build with it?',
+		'How is this different from a server with an agent on it?',
+		'Can I close my laptop while it works?',
+		'What can the agent reach?',
+		'What happens when it breaks something?',
+		'What does an agent cost while it waits?'
 	]);
-	const first = q.locator('details').first();
-	await expect(first.locator('p')).toBeHidden();
-	await first.locator('summary').click();
-	await expect(first.locator('p')).toContainText("can't open a connection to your laptop");
+	const reach = q.locator('details').nth(3);
+	await expect(reach.locator('p')).toBeHidden();
+	await reach.locator('summary').click();
+	await expect(reach.locator('p')).toContainText(
+		'it connects to your laptop only through a port or a Chrome you lend it'
+	);
 });
 
 // I-961 (option D): the cells are flush on the sheet, split by inner
