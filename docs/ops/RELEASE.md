@@ -214,14 +214,20 @@ Integrate whenever branches are queued; it needs no owner approval.
    or sent back to the branch's agent when it is the branch's own.
    **On woker-1, the always set means** (2026-11-11): a throwaway Postgres
    with `--network host` (`DEV-BOX.md`), `CGO_ENABLED=1` for `-race`,
-   `TMPDIR=/tmp/rt`, playwright with `PLAYWRIGHT_CHROMIUM_PATH` from
+   `TMPDIR=/tmp/rt` set inside the dev shell (`nix develop ./nix -c sh -c
+   'TMPDIR=/tmp/rt go test ...'`; the shell replaces one set outside,
+   `DEV-BOX.md`), playwright with `PLAYWRIGHT_CHROMIUM_PATH` from
    nixpkgs, the a11y suite skipped (no lighthouse here), and the VM checks
    run after the Go and playwright runs, one at a time, or the harness kills
    them for memory. Three checks that are red for reasons that are not the
    batch's, each seen on 2026-11-11: `TestNoticeAtTenMinutesListsWaiting` under
    full-suite load (fixed, I-1150), `guest-base`'s herdr subtest reading a
    restarting unit once (fixed in r20261111-5), and a fixture clock pinned to a
-   date (I-1162's neighbour, fixed in r20261111-11). A red that is not in the
+   date (I-1162's neighbour, fixed in r20261111-11). Two more on
+   2026-11-12: `guest-keystroke-path`, which cannot pass on this box's
+   single-user nix (`DEV-BOX.md`; CI is its gate), and `guest-base`'s
+   I-264 keys probe writing nothing while another VM check or a test run
+   loads the box (green alone). A red that is not in the
    batch's diff is reproduced on main before it is called a flake.
 
    **Migration numbers.** Four branches queued on one day each added
