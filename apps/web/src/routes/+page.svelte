@@ -15,6 +15,9 @@
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import Compose from '$lib/components/landing/Compose.svelte';
+	import PauseButton from '$lib/components/landing/PauseButton.svelte';
+	import { page } from '$app/state';
+	import { heroes } from '$lib/components/landing/heroes';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import OneCommand from '$lib/components/landing/OneCommand.svelte';
 	import ComesBack from '$lib/components/landing/ComesBack.svelte';
@@ -133,10 +136,18 @@
 					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
 		</div>
-		<div class="fig fig--hero">
-			<div class="stage hero-stage">
-				<Compose />
+		<div class="fig fig--hero field-stage">
+			<div class="stage field-stage hero-stage">
+				<!-- Hero loop (2026-11-12): ?hero=orbit|bento|depth|steps draws a
+				     candidate in place of the lanes, so each can be judged. -->
+				{#if heroes[page.url.searchParams.get('hero') ?? '']}
+					{@const Hero = heroes[page.url.searchParams.get('hero')!]}
+					<Hero />
+				{:else}
+					<Compose />
+				{/if}
 			</div>
+			<PauseButton />
 		</div>
 	</section>
 
@@ -322,7 +333,7 @@
 		</div>
 	</section>
 
-	<section class="band" aria-labelledby="install-h">
+	<section class="band field-stage band--dark" aria-labelledby="install-h">
 		<div class="head">
 			{@render label('06', 'Install')}
 			<h2 class="hk-h2" id="install-h">Start in three commands</h2>

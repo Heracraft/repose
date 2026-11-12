@@ -460,6 +460,26 @@
 	overflow-x: clip;
 }
 
+/* ---------- The dark plates ----------
+
+   The page has two dark moments, a rhythm in place of one slab (judges,
+   2026-11-12): the hero's field, where you see what it runs, and the
+   install band, where you start. Each is the wreck's old plate
+   (pictures.css, .field-stage): its dark tokens, run to the window's
+   edges by a spread fill that adds no scroll width. */
+.landing .band.band--dark {
+	background: var(--stage-hero);
+	box-shadow: 0 0 0 100vmax var(--stage-hero);
+	clip-path: inset(0 -100vmax);
+	--rule-band: #2a2a2f;
+	--rule-in: #1f1f23;
+	color: var(--hk-text);
+	padding-bottom: var(--field-y);
+}
+.landing .band--dark .steps .code-copy {
+	background: #18181b;
+}
+
 /* ---------- The hero's picture ----------
 
    The three agents (Compose.svelte) stand on the hero's field: the

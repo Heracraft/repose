@@ -26,7 +26,6 @@
 	import { onMount } from 'svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import { agentMarks, type Mark } from '$lib/components/illustrations/marks';
 
 	type Glyph = 'laptop' | 'bell' | 'globe' | 'phone';
@@ -256,7 +255,6 @@
 			</div>
 		{/each}
 	</div>
-	<PauseButton />
 </div>
 
 <style>
@@ -539,6 +537,17 @@
 		}
 	}
 	@media (max-width: 479.98px) {
+		.head {
+			flex-wrap: wrap;
+			row-gap: 2px;
+			height: auto;
+			padding: 10px 14px;
+		}
+		.use {
+			order: 3;
+			flex-basis: 100%;
+			white-space: normal;
+		}
 		.parts {
 			grid-template-columns: minmax(0, 1fr);
 		}
