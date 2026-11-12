@@ -362,10 +362,9 @@
 		.grid {
 			/* The two outer columns share one width, so the machine stands
 			   on the page's centre line. */
-			grid-template-columns: 12.5rem minmax(10.5rem, 1fr) minmax(0, 23rem) minmax(
-					10.5rem,
-					1fr
-				) 12.5rem;
+			grid-template-columns:
+				12.5rem minmax(10.5rem, 1fr) minmax(0, 23rem) minmax(10.5rem, 1fr)
+				12.5rem;
 			grid-template-rows: repeat(7, auto);
 			grid-template-areas: none;
 			column-gap: 0;

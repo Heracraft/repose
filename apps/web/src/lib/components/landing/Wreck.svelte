@@ -69,7 +69,6 @@
 	import Shape from '$lib/components/landing/Shape.svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture, watchWidth } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 	import SnapshotTile from './SnapshotTile.svelte';
 
@@ -840,9 +839,7 @@
 		{/each}
 		<i class="gsep"></i>
 		{#each sys as m (m.n)}
-			<i class="gr"
-				><b class="gt">{m.n}</b><b class="gv">{when === 'wreck' ? m.bad : m.ok}</b></i
-			>
+			<i class="gr"><b class="gt">{m.n}</b><b class="gv">{when === 'wreck' ? m.bad : m.ok}</b></i>
 		{/each}
 		<i class="gsep"></i>
 		<i class="gr"><b class="gc"></b><b class="gm">bypass permissions on</b></i>
@@ -920,7 +917,6 @@
 {/snippet}
 
 <div class="hero-frame" use:picture.frame>
-	<PauseButton {picture} name="wreck and restore" />
 	<div class="hero-pic" role="img" aria-label={label} aria-describedby="hero-story" bind:this={pic}>
 		<p id="hero-story" hidden>{story}</p>
 

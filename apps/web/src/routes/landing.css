@@ -225,7 +225,12 @@
 .landing .label .n {
 	display: inline-block;
 	min-width: 2.75em;
-	color: var(--hk-text-2);
+	color: var(--pic-accent);
+}
+/* The page's numbers (bands, cells, steps) take the pictures' muted slate
+   blue, the one accent the page's own type carries (owner, 2026-11-12). */
+.landing span.label {
+	color: var(--pic-accent);
 }
 .landing .copy {
 	margin: 0;

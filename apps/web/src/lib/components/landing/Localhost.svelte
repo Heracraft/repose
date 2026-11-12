@@ -50,7 +50,6 @@
 	import { theme } from '$lib/theme.svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 
 	const LOCAL =
@@ -279,7 +278,6 @@
 {/snippet}
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} name="ports" />
 	<div
 		class="lh"
 		bind:this={pic}

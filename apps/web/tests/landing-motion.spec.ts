@@ -1,5 +1,6 @@
 // DECISIONS I-666: the landing's motion controller (landing/motion.svelte.ts).
-// Each looping picture has a pause button (WCAG 2.2.2), only one picture in
+// The page has one motion control (WCAG 2.2.2; owner, 2026-11-12, in place
+// of a pause button per picture), only one picture in
 // the "On every machine" grid plays at a time, and the hero rebuilds only on
 // a change of its own width, never of the window's height alone.
 import { test, expect, type Page } from '@playwright/test';
@@ -9,8 +10,10 @@ const playingInGrid = '[data-motion-group="grid"][data-motion="play"]';
 
 async function load(page: Page) {
 	await page.goto('/');
-	// Every picture registers once anime.js has loaded: six buttons.
-	await expect(page.locator(`${frames} > button.pic-pause`)).toHaveCount(6);
+	// Every picture registers once anime.js has loaded; the page's one
+	// control shows then.
+	await expect(page.locator('button.pic-pause')).toHaveCount(1);
+	await expect(page.locator(frames)).toHaveCount(6);
 }
 
 test('a height-only resize does not restart the hero', async ({ page }) => {
@@ -32,57 +35,42 @@ test('a height-only resize does not restart the hero', async ({ page }) => {
 	expect(after).toEqual(before);
 });
 
-test('every looping picture has a pause button the keyboard reaches', async ({ page }) => {
+test('the one motion control is reached by the keyboard and holds every picture', async ({
+	page
+}) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await load(page);
-	const seen = new Set<string>();
-	const names = new Set<string>();
-	for (let i = 0; i < 400 && seen.size < 6; i++) {
+	const button = page.locator('button.pic-pause');
+	await expect(button).toHaveText('Pause motion');
+	await expect(button).toHaveAttribute('aria-pressed', 'false');
+	for (let i = 0; i < 60; i++) {
 		await page.keyboard.press('Tab');
-		const frame = await page.evaluate(() => {
-			const a = document.activeElement;
-			if (!a?.matches('button.pic-pause')) return null;
-			const f = a.parentElement!;
-			return Array.from(document.querySelectorAll('.pic-frame')).indexOf(f).toString();
-		});
-		if (frame === null || seen.has(frame)) continue;
-		seen.add(frame);
-		const button = page.locator('button.pic-pause:focus');
-		// Each names its picture, so six buttons are told apart.
-		const name = await button.getAttribute('aria-label');
-		expect(name).toMatch(/^Pause the .+ picture$/);
-		expect(names.has(name!), name!).toBe(false);
-		names.add(name!);
-		await expect(button).toHaveCSS('opacity', '1');
-		await expect(button).toHaveAttribute('aria-pressed', 'false');
-		await page.keyboard.press('Space');
-		await expect(button).toHaveAttribute('aria-pressed', 'true');
-		await page.keyboard.press('Enter');
-		await expect(button).toHaveAttribute('aria-pressed', 'false');
+		if (await button.evaluate((b) => b === document.activeElement)) break;
 	}
-	expect(seen.size).toBe(6);
-});
-
-test('a paused picture stays paused through scrolling out and back', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
-	await load(page);
-	const frame = page.locator(frames).filter({ has: page.locator('.lh') });
-	await frame.scrollIntoViewIfNeeded();
-	const button = frame.locator('button.pic-pause');
-	await button.focus();
+	await expect(button).toBeFocused();
 	await page.keyboard.press('Space');
 	await expect(button).toHaveAttribute('aria-pressed', 'true');
-	await page.evaluate(() => (document.activeElement as HTMLElement).blur());
-	await page.evaluate(() => window.scrollTo(0, 0));
-	await expect(frame).toHaveAttribute('data-motion', 'hold');
-	await frame.scrollIntoViewIfNeeded();
-	// Past the 2s a pointer or focus would hold it for.
-	await page.waitForTimeout(2500);
-	await expect(frame).toHaveAttribute('data-motion', 'hold');
+	await expect(page.locator(`${frames}[data-motion="play"]`)).toHaveCount(0);
+	await page.keyboard.press('Enter');
+	await expect(button).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('paused motion stays paused through scrolling out and back', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await load(page);
+	const button = page.locator('button.pic-pause');
+	await button.click();
 	await expect(button).toHaveAttribute('aria-pressed', 'true');
+	const frame = page.locator(frames).filter({ has: page.locator('.lh') });
+	await frame.scrollIntoViewIfNeeded();
+	// Past the 1s quiet and the 2s a pointer would hold it for.
+	await page.waitForTimeout(3000);
+	await expect(frame).toHaveAttribute('data-motion', 'hold');
+	await page.evaluate(() => window.scrollTo(0, 0));
 	await button.click();
 	await expect(button).toHaveAttribute('aria-pressed', 'false');
-	await expect(frame).toHaveAttribute('data-motion', /play|rest/);
+	await frame.scrollIntoViewIfNeeded();
+	await expect(frame).toHaveAttribute('data-motion', /play|rest/, { timeout: 3000 });
 });
 
 test('hovering a picture holds it, and it plays again after the pointer leaves', async ({

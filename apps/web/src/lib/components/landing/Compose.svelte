@@ -1,21 +1,26 @@
 <!--
-  Compose: the hero's picture (hero loop, round 1). Three always-on
-  agents, each a machine window built from the same five layers, top down:
-  the agent (the one lit part), its trigger, your setup, its secrets
-  and the machine. The rows line up across the three windows, so a
-  layer reads across and an agent reads down; a layer an agent leaves out
-  reads "none" in the faint grey. The machine row carries a meter of its memory
-  in 2 GB steps, so a tiny machine and a large one differ at a glance.
+  Compose: the hero's picture (hero loop, round 8). Three always-on
+  agents, each a lane that reads left to right as a sentence: what starts
+  it, the agent on a machine of its own (its setup, secrets and size
+  inside the window, the layers it is built from), and what it does for
+  you, in words a reader who does not code follows (owner, 2026-11-12).
+  The lanes: you from your laptop and opencode in your dev
+  environment; an alert and an on-call responder that asks before it
+  changes anything; a new job posting and an agent that applies. The
+  owner's uses (2026-11-12): a dev environment, the summit deck's
+  responder, the job agent.
 
-  The loop shows them always on: the shopping agent's schedule fires at 7
-  and wakes its frozen machine, then the job board's webhook wakes the
-  job agent; each goes back to frozen once it is done. It moves only by
-  class changes (colour and opacity, CSS transitions), timed by anime.js.
+  The loop shows them always on: the alert wakes the responder's frozen
+  machine, then the posting wakes the job agent's; each start fills its
+  chip, runs a pulse along the wire, and its machine turns running, then
+  a pulse runs out and what it does for you lights; each freezes again
+  before the seam. It moves by class changes (colour, CSS transitions)
+  and the pulses' translate, timed by anime.js.
 
   Still frame (reduced motion, no script, and the loop's seam): the dev
-  environment running, the other two frozen. Every string is a docs fact
-  or one of the two lines I-1169 writes ahead (a schedule or a webhook
-  starting a session, a 2 GB machine).
+  environment running, the other two frozen, every lane drawn. Every
+  string is a docs fact or one of the two lines I-1169 writes ahead (a
+  webhook starting a session, a 2 GB machine).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -24,72 +29,58 @@
 	import PauseButton from './PauseButton.svelte';
 	import { agentMarks, type Mark } from '$lib/components/illustrations/marks';
 
-	type Cell = { v: string; note?: string; mono?: boolean } | null;
-	type Use = {
-		name: string;
+	type Glyph = 'laptop' | 'bell' | 'globe' | 'phone';
+	type Part = { label: string; v: string; mono?: boolean; gb?: number };
+	type Lane = {
 		short: string;
-		src: { text: string; glyph: 'laptop' | 'clock' | 'hook'; mono: boolean };
+		use: string;
+		agent: Mark;
 		running: boolean;
-		mark: Mark;
-		gb: number;
-		layers: { agent: Cell; trigger: Cell; secrets: Cell; setup: Cell; machine: Cell };
+		from: { text: string; glyph: Glyph };
+		parts: Part[];
+		to: string;
 	};
 	const mark = (n: string) => agentMarks.find((m) => m.name === n)!;
 
-	const layers = ['agent', 'trigger', 'setup', 'secrets', 'machine'] as const;
-	const names: Record<(typeof layers)[number], string> = {
-		agent: 'Agent',
-		trigger: 'Trigger',
-		secrets: 'Secrets',
-		setup: 'Setup',
-		machine: 'Machine'
-	};
-
-	const uses: Use[] = [
+	const lanes: Lane[] = [
 		{
-			name: 'A dev environment',
 			short: 'dev',
-			src: { text: 'your laptop', glyph: 'laptop', mono: false },
+			use: 'your dev environment',
+			agent: mark('opencode'),
 			running: true,
-			mark: mark('opencode'),
-			gb: 16,
-			layers: {
-				agent: { v: 'opencode', note: 'on your branch' },
-				trigger: null,
-				secrets: { v: 'STRIPE_SECRET_KEY', mono: true },
-				setup: { v: 'repose run', note: 'code, tools, logins', mono: true },
-				machine: { v: '4 cores, 16 GB' }
-			}
+			from: { text: 'you start it from your laptop', glyph: 'laptop' },
+			parts: [
+				{ label: 'Your setup', v: 'your code, tools, logins' },
+				{ label: 'Secrets', v: 'your Stripe key' },
+				{ label: 'Machine', v: '4 cores, 16 GB', gb: 16 }
+			],
+			to: 'keeps working after you close your laptop'
 		},
 		{
-			name: 'A shopping agent',
-			short: 'shopping',
-			src: { text: '07:00', glyph: 'clock', mono: true },
+			short: 'on call',
+			use: 'an on-call responder',
+			agent: mark('Claude Code'),
 			running: false,
-			mark: mark('Codex'),
-			gb: 2,
-			layers: {
-				agent: { v: 'Codex', note: 'asks before it pays' },
-				trigger: { v: 'every morning at 7' },
-				secrets: { v: 'STORE_API_KEY', mono: true },
-				setup: null,
-				machine: { v: '2 GB, on all day' }
-			}
+			from: { text: 'an alert goes off', glyph: 'bell' },
+			parts: [
+				{ label: 'Your setup', v: "your app's code" },
+				{ label: 'Secrets', v: 'your metrics login' },
+				{ label: 'Machine', v: '2 GB, always on', gb: 2 }
+			],
+			to: 'finds the cause, asks before it fixes anything'
 		},
 		{
-			name: 'An agent that applies for jobs',
 			short: 'jobs',
-			src: { text: 'role.created', glyph: 'hook', mono: true },
+			use: 'an agent that applies for jobs',
+			agent: mark('Codex'),
 			running: false,
-			mark: mark('Claude Code'),
-			gb: 8,
-			layers: {
-				agent: { v: 'Claude Code', note: 'asks at a captcha' },
-				trigger: { v: 'a webhook', note: 'from the job board' },
-				secrets: { v: 'JOB_BOARD_KEY', mono: true },
-				setup: { v: 'resumes/', note: 'from your laptop', mono: true },
-				machine: { v: '2 cores, 8 GB' }
-			}
+			from: { text: 'a new job is posted', glyph: 'globe' },
+			parts: [
+				{ label: 'Your setup', v: 'your resumes' },
+				{ label: 'Secrets', v: "the job board's key" },
+				{ label: 'Machine', v: '2 cores, 8 GB', gb: 8 }
+			],
+			to: 'applies for you, asks you at a captcha'
 		}
 	];
 
@@ -100,9 +91,9 @@
 		let dead = false;
 		let run = 0;
 		let tl: { pause(): unknown; play(): unknown } | null = null;
-		const win = (k: number) => pic.querySelector<HTMLElement>(`.win[data-u="${k}"]`)!;
+		const lane = (k: number) => pic.querySelector<HTMLElement>(`.lane[data-u="${k}"]`)!;
 
-		// On a phone one window shows at a time: the one the loop is on.
+		// Below 1024px one lane shows at a time: the one the loop is on.
 		function show(k: number) {
 			pic.querySelectorAll('.cur').forEach((el) => el.classList.remove('cur'));
 			pic.querySelectorAll(`[data-u="${k}"]`).forEach((el) => el.classList.add('cur'));
@@ -111,11 +102,10 @@
 			tl?.pause();
 			tl = null;
 			show(0);
-			pic.querySelectorAll('.src.fire').forEach((el) => el.classList.remove('fire'));
 			pic.querySelectorAll<HTMLElement>('.pulse').forEach((el) => el.removeAttribute('style'));
-			uses.forEach((u, k) => {
-				win(k).classList.toggle('on', u.running);
-				win(k).querySelector('.trigger')?.classList.remove('fire');
+			lanes.forEach((l, k) => {
+				lane(k).classList.toggle('on', l.running);
+				lane(k).classList.remove('fire', 'done');
 			});
 		}
 
@@ -123,35 +113,39 @@
 			const me = ++run;
 			import('animejs').then(({ createTimeline }) => {
 				if (dead || me !== run) return;
-				const pulse = (k: number) => pic.querySelector<HTMLElement>(`.col[data-u="${k}"] .pulse`)!;
-				const src = (k: number) => pic.querySelector<HTMLElement>(`.col[data-u="${k}"] .src`)!;
-				const set = (k: number, cls: string, on: boolean, sel?: string) => () => {
-					const el = sel ? win(k).querySelector(sel) : win(k);
-					el?.classList.toggle(cls, on);
-				};
+				const cls = (k: number, c: string, on: boolean) => () => lane(k).classList.toggle(c, on);
+				const pulse = (k: number, i: number) =>
+					pic.querySelector<HTMLElement>(`.lane[data-u="${k}"] .w${i} .pulse`)!;
+				const across = () => matchMedia('(min-width: 1024px)').matches;
+				type TL = ReturnType<typeof createTimeline>;
+				// A start: the chip fills, a pulse runs into the machine and it
+				// turns running; then a pulse runs out to what it does for you.
+				function wake(t: TL, k: number, at: number) {
+					const run = (i: number, when: number) =>
+						t.add(
+							pulse(k, i),
+							across()
+								? { x: ['-100%', '100%'], duration: 620, ease: 'inOutCubic' }
+								: { y: ['-100%', '100%'], duration: 620, ease: 'inOutCubic' },
+							when
+						);
+					t.call(() => show(k), at - 600).call(cls(k, 'fire', true), at);
+					run(1, at);
+					t.call(cls(k, 'on', true), at + 560);
+					run(2, at + 1400);
+					t.call(cls(k, 'done', true), at + 1960).call(cls(k, 'fire', false), at + 3200);
+				}
 				function cycle() {
 					if (dead || me !== run) return;
 					const t = createTimeline({ autoplay: false, onComplete: () => cycle() });
-					// The schedule wakes the shopping agent, then the webhook the
-					// job agent; both freeze again before the seam.
-					t.call(() => show(1), 3000)
-						.call(() => src(1).classList.add('fire'), 3000)
-						.add(pulse(1), { y: ['-100%', '200%'], duration: 520, ease: 'inOutCubic' }, 3000)
-						.call(set(1, 'fire', true, '.trigger'), 3400)
-						.call(set(1, 'on', true), 3800)
-						.call(set(1, 'fire', false, '.trigger'), 6400)
-						.call(() => src(1).classList.remove('fire'), 6400)
-						.call(() => show(2), 6800)
-						.call(() => src(2).classList.add('fire'), 6800)
-						.add(pulse(2), { y: ['-100%', '200%'], duration: 520, ease: 'inOutCubic' }, 6800)
-						.call(set(2, 'fire', true, '.trigger'), 7200)
-						.call(set(2, 'on', true), 7600)
-						.call(set(2, 'fire', false, '.trigger'), 10200)
-						.call(() => src(2).classList.remove('fire'), 10200)
-						.call(set(1, 'on', false), 12800)
-						.call(set(2, 'on', false), 13400)
-						.call(() => show(0), 14200)
-						.call(() => {}, 15000);
+					wake(t, 1, 2400);
+					wake(t, 2, 7200);
+					t.call(cls(1, 'on', false), 12000)
+						.call(cls(1, 'done', false), 12000)
+						.call(cls(2, 'on', false), 12400)
+						.call(cls(2, 'done', false), 12400)
+						.call(() => show(0), 12800)
+						.call(() => {}, 14000);
 					tl = t;
 					t.play();
 				}
@@ -190,8 +184,9 @@
 	>
 {/snippet}
 
-{#snippet glyph(kind: 'laptop' | 'clock' | 'hook')}
+{#snippet glyph(kind: Glyph)}
 	<svg
+		class="gl"
 		viewBox="0 0 16 16"
 		width="14"
 		height="14"
@@ -204,14 +199,20 @@
 	>
 		{#if kind === 'laptop'}
 			<rect x="3" y="3.5" width="10" height="7" rx="0.75" /><path d="M1.5 12.5h13" />
-		{:else if kind === 'clock'}
-			<circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" />
-		{:else}
+		{:else if kind === 'bell'}
+			<path d="M4 11V7.5a4 4 0 0 1 8 0V11l1 1.5H3zM6.5 14h3" />
+		{:else if kind === 'globe'}
 			<circle cx="8" cy="8" r="5.5" /><path
 				d="M2.5 8h11M8 2.5c-1.8 1.6-2.6 3.4-2.6 5.5s.8 3.9 2.6 5.5M8 2.5c1.8 1.6 2.6 3.4 2.6 5.5s-.8 3.9-2.6 5.5"
 			/>
+		{:else}
+			<rect x="4.5" y="1.5" width="7" height="13" rx="1.25" /><path d="M7 12.25h2" />
 		{/if}
 	</svg>
+{/snippet}
+
+{#snippet wire(i: number)}
+	<span class="wire w{i}"><i class="line"><i class="pulse"></i></i><i class="tip"></i></span>
 {/snippet}
 
 <div class="cmp-frame" use:picture.frame>
@@ -219,137 +220,131 @@
 		class="cmp"
 		bind:this={pic}
 		role="img"
-		aria-label="Three always-on agents, each on a machine of its own, built from the same layers: agent, trigger, setup, secrets and machine. A dev environment: opencode on your branch, no trigger, your code, tools and logins copied by repose run, STRIPE_SECRET_KEY, 4 cores and 16 GB. A shopping agent: Codex, which asks before it pays, every morning at 7, no setup, STORE_API_KEY, 2 GB on all day. An agent that applies for jobs: Claude Code, which asks at a captcha, a role.created webhook, your resumes, JOB_BOARD_KEY, 2 cores and 8 GB. The schedule and the webhook wake their frozen machines."
+		aria-label="Three always-on agents, each on a machine of its own. You start it from your laptop, and opencode works in your dev environment, with your code, tools and logins, your Stripe key, 4 cores and 16 GB, and keeps working after you close your laptop. An alert goes off, and Claude Code, an on-call responder with your app's code, your metrics login and 2 GB, always on,, finds the cause and asks before it fixes anything. A new job is posted, and Codex, an agent that applies for jobs with your resumes, the job board's key and 2 cores and 8 GB, applies for you and asks you at a captcha."
 	>
 		<p class="pick" aria-hidden="true">
-			{#each uses as u, k (u.name)}<span class:cur={k === 0} data-u={k}>{u.short}</span>{/each}
+			{#each lanes as l, k (l.short)}<span class:cur={k === 0} data-u={k}>{l.short}</span>{/each}
 		</p>
-		{#each uses as u, k (u.name)}
-			<div class="col" class:cur={k === 0} data-u={k} aria-hidden="true">
-				<span class="src" class:mono={u.src.mono}>{@render glyph(u.src.glyph)}{u.src.text}</span>
-				<i class="wire"><i class="pulse"></i></i>
-				<div class="win" class:on={u.running} data-u={k}>
+		{#each lanes as l, k (l.short)}
+			<div class="lane" class:on={l.running} class:cur={k === 0} data-u={k} aria-hidden="true">
+				<span class="from">{@render glyph(l.from.glyph)}{l.from.text}</span>
+				{@render wire(1)}
+				<div class="win">
 					<div class="head">
-						<span class="who">{u.name}</span>
+						<span class="ag">{@render markSvg(l.agent)}<b>{l.agent.name}</b></span>
+						<span class="use">{l.use}</span>
 						<span class="state"
 							><i class="dot"></i><span class="sw"
 								><span class="s-run">running</span><span class="s-frz">frozen</span></span
 							></span
 						>
 					</div>
-					{#each layers as l (l)}
-						{@const c = u.layers[l]}
-						<div class="row {l}" class:out={c === null}>
-							<span class="nm">{names[l]}</span>
-							{#if c === null}
-								<span class="val none">none</span>
-							{:else}
-								{#if l === 'agent'}
-									<span class="val"
-										>{@render markSvg(u.mark)}<span class="ag"
-											><span class="tx">{c.v}</span><span class="ag-n">{c.note}</span></span
-										></span
-									>
-								{:else}
-									<span class="val" class:mono={c.mono}><span class="tx">{c.v}</span></span>
-								{/if}
-								{#if l === 'machine'}
-									<span class="meter" aria-hidden="true"
-										>{#each { length: 8 }, i (i)}<i class:f={i < u.gb / 2}></i>{/each}</span
-									>
-								{:else if c.note && l !== 'agent'}
-									<span class="note">{c.note}</span>
-								{/if}
-							{/if}
-						</div>
-					{/each}
+					<div class="parts">
+						{#each l.parts as p (p.label)}
+							<span class="part"
+								><span class="nm">{p.label}</span><span class="v" class:mono={p.mono}
+									><span class="tx">{p.v}</span>{#if p.gb}<span class="meter"
+											>{#each { length: 8 }, i (i)}<i class:f={i < p.gb / 2}></i>{/each}</span
+										>{/if}</span
+								></span
+							>
+						{/each}
+					</div>
 				</div>
+				{@render wire(2)}
+				<span class="to">{@render glyph('phone')}<span>{l.to}</span></span>
 			</div>
 		{/each}
 	</div>
-	<PauseButton {picture} name="agents" />
+	<PauseButton />
 </div>
 
 <style>
 	.cmp {
-		--row-h: 44px;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 16px;
-		max-width: 26rem;
-		margin-inline: auto;
+		gap: 20px;
 		color: var(--pic-ink);
 		font-family: var(--font-sans);
-		font-size: 14px;
+		font-size: 13px;
 		line-height: 18px;
 	}
-	@media (min-width: 1024px) {
-		.cmp {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-			gap: var(--col-gap, 32px);
-			max-width: none;
-		}
-	}
-	@media (max-width: 639.98px) {
-		.cmp {
-			--row-h: 34px;
-			font-size: 12px;
-		}
-	}
-	/* A frozen machine is drawn quiet; a running one in full ink, its
-	   edge a step stronger. A trigger waking one brings it up. */
-	.col {
-		display: flex;
-		flex-direction: column;
+	/* A lane reads left to right: where it starts, the wire in, the
+	   machine, the wire out, what it does for you. The five tracks are one
+	   template, so the three lanes' parts stand in columns. */
+	.lane {
+		display: grid;
+		grid-template-columns: 11rem minmax(1.5rem, 1fr) minmax(0, 37rem) minmax(1.5rem, 1fr) 14rem;
 		align-items: center;
 		min-width: 0;
 	}
-	/* Where each agent's sessions come from, on a short wire into its
-	   machine's head: your laptop, the schedule's time, the webhook's
-	   event. A trigger firing fills its chip and runs a pulse down the
-	   wire. */
-	.src {
-		display: inline-flex;
+	.pick {
+		display: none;
+	}
+
+	.from,
+	.to {
+		display: flex;
 		align-items: center;
-		gap: 6px;
-		height: 24px;
-		padding: 0 8px;
+		gap: 8px;
+		min-width: 0;
+		padding: 8px 10px;
 		border: 1px solid var(--rule-strong);
 		border-radius: 6px;
 		background: var(--surface);
-		font-size: 12px;
 		color: var(--pic-dim);
 		transition:
 			background-color 180ms ease,
 			border-color 180ms ease,
 			color 180ms ease;
 	}
-	.src.mono {
-		font-family: var(--font-mono);
+	.from {
+		font-weight: 500;
+		color: var(--pic-ink);
 	}
-	.src:global(.fire) {
+	.gl {
+		flex: none;
+	}
+	/* A start: the chip fills in the accent while it wakes the machine. */
+	.lane:global(.fire) .from {
 		border-color: var(--pic-accent);
 		background: var(--pic-accent);
 		color: var(--surface);
 	}
+	/* What the agent does for you, lit once it has done it. */
+	.lane:global(.done) .to {
+		border-color: var(--pic-accent);
+		color: var(--pic-accent);
+	}
+
 	.wire {
+		display: flex;
+		align-items: center;
+		height: 10px;
+		min-width: 0;
+	}
+	.line {
 		position: relative;
-		width: 1px;
-		height: 28px;
+		flex: 1;
+		height: 1px;
 		overflow: hidden;
 		background: var(--rule-strong);
 	}
 	.pulse {
 		position: absolute;
-		inset: 0 -0.5px auto;
-		height: 50%;
+		inset: 0;
 		background: var(--pic-accent);
-		transform: translateY(-100%);
+		transform: translateX(-100%);
 	}
+	.tip {
+		flex: none;
+		width: 0;
+		height: 0;
+		border: 4px solid transparent;
+		border-left: 6px solid var(--rule-strong);
+		border-right: 0;
+	}
+
 	.win {
-		align-self: stretch;
-		--v: var(--pic-ink);
-		--lit: var(--pic-accent);
 		min-width: 0;
 		border: 1px solid var(--rule-strong);
 		border-radius: 6px;
@@ -357,42 +352,176 @@
 		overflow: hidden;
 		transition: border-color 300ms ease;
 	}
-	.win.on {
+	.lane:global(.on) .win {
 		border-color: var(--control-edge);
 	}
-	.val,
-	.who {
-		color: var(--v);
-		transition: color 300ms ease;
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-width: 0;
+		height: 44px;
+		padding: 0 14px;
+		border-bottom: 1px solid var(--rule);
+		box-shadow: inset 2px 0 0 var(--pic-accent);
 	}
-	.on .state {
+	.ag {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 8px;
+		color: var(--pic-accent);
+		font-size: 15px;
+	}
+	.ag b {
+		font-weight: 600;
+	}
+	.use {
+		min-width: 0;
+		overflow: hidden;
+		color: var(--pic-dim);
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.state {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 6px;
+		margin-left: auto;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--pic-dim);
+	}
+	.lane:global(.on) .state {
 		color: var(--pic-ink);
 	}
-	.pick {
-		display: none;
+	.dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--pic-faint);
+		transition: background-color 300ms ease;
 	}
-	/* On a phone the three windows share one place and the loop shows
-	   one at a time (out 200ms, then in 300ms), named in the strip under
-	   it. */
-	@media (max-width: 639.98px) {
-		.cmp > .col {
-			grid-area: 2 / 1;
-			opacity: 0;
-			transition:
-				opacity 200ms ease-in,
-				border-color 300ms ease;
+	.lane:global(.on) .dot {
+		background: var(--color-emerald-500);
+	}
+	.sw {
+		display: inline-grid;
+	}
+	.sw > span {
+		grid-area: 1 / 1;
+		text-align: right;
+		transition: opacity 200ms ease;
+	}
+	.s-run,
+	.lane:global(.on) .s-frz {
+		opacity: 0;
+	}
+	.lane:global(.on) .s-run {
+		opacity: 1;
+	}
+
+	/* The layers it is built from, side by side under the head. */
+	.parts {
+		display: grid;
+		grid-template-columns: 1.2fr 1fr 1.3fr;
+		background: var(--sunken);
+	}
+	.part {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+		padding: 9px 14px 10px;
+	}
+	.part + .part {
+		border-left: 1px solid var(--rule);
+	}
+	.nm {
+		font-family: var(--font-mono);
+		font-size: 10.5px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--pic-faint);
+	}
+	.v {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+	.tx {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.mono {
+		font-family: var(--font-mono);
+		font-size: 12px;
+	}
+	.meter {
+		display: flex;
+		flex: none;
+		gap: 2px;
+		margin-left: auto;
+	}
+	.meter > i {
+		width: 5px;
+		height: 11px;
+		border-radius: 1px;
+		background: var(--rule);
+	}
+	.meter > i.f {
+		background: var(--pic-dim);
+	}
+
+	/* Below 1024px a lane runs down: the start, the machine, what it does,
+	   each wire turned down; the three lanes share one place and the loop
+	   shows one at a time (out 200ms, then in 300ms), named in the strip
+	   over it. */
+	@media (max-width: 1023.98px) {
+		.cmp {
+			max-width: 28rem;
+			margin-inline: auto;
+			gap: 16px;
 		}
-		.cmp > .col.cur {
+		.lane {
+			grid-area: 2 / 1;
+			grid-template-columns: minmax(0, 1fr);
+			justify-items: center;
+			opacity: 0;
+			transition: opacity 200ms ease-in;
+		}
+		.lane.cur {
 			opacity: 1;
-			transition:
-				opacity 300ms ease-out 200ms,
-				border-color 300ms ease;
+			transition: opacity 300ms ease-out 200ms;
+		}
+		.win,
+		.to {
+			justify-self: stretch;
+		}
+		.wire {
+			flex-direction: column;
+			width: 10px;
+			height: 28px;
+		}
+		.line {
+			width: 1px;
+			height: auto;
+		}
+		.pulse {
+			transform: translateY(-100%);
+		}
+		.tip {
+			border: 4px solid transparent;
+			border-top: 6px solid var(--rule-strong);
+			border-bottom: 0;
 		}
 		.pick {
-			order: -1;
-			grid-area: 1 / 1;
-			align-self: start;
 			display: flex;
+			grid-area: 1 / 1;
 			justify-content: center;
 			gap: 16px;
 			margin: 0;
@@ -409,170 +538,35 @@
 			color: var(--pic-ink);
 		}
 	}
-	.head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		height: 40px;
-		padding: 0 12px;
-		border-bottom: 1px solid var(--rule);
-		background: var(--sunken);
-	}
-	.who {
-		min-width: 0;
-		overflow: hidden;
-		font-weight: 600;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-	}
-	.state {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		margin-left: auto;
-		font-family: var(--font-mono);
-		font-size: 11px;
-		color: var(--pic-dim);
-	}
-	.dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--pic-faint);
-		transition: background-color 300ms ease;
-	}
-	.on .dot {
-		background: var(--color-emerald-500);
-	}
-	.sw {
-		display: inline-grid;
-	}
-	.sw > span {
-		grid-area: 1 / 1;
-		text-align: right;
-		transition: opacity 200ms ease;
-	}
-	.s-run,
-	.on .s-frz {
-		opacity: 0;
-	}
-	.on .s-run {
-		opacity: 1;
-	}
-
-	.row {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		min-height: var(--row-h);
-		padding: 0 12px;
-		border-top: 1px solid var(--rule);
-		transition:
-			background-color 300ms ease,
-			box-shadow 300ms ease;
-	}
-	.head + .row {
-		border-top: 0;
-	}
-	.nm {
-		flex: none;
-		width: 4.75rem;
-		font-family: var(--font-mono);
-		font-size: 10.5px;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--pic-faint);
-		transition: color 300ms ease;
-	}
-	.val {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-		white-space: nowrap;
-	}
-	.tx {
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.mono {
-		font-family: var(--font-mono);
-		font-size: 0.923em;
-	}
-	.note {
-		min-width: 0;
-		margin-left: auto;
-		overflow: hidden;
-		color: var(--pic-dim);
-		white-space: nowrap;
-		text-overflow: ellipsis;
-	}
-	/* A layer left out: an empty slot, dashed. */
-	.val.none {
-		color: var(--pic-faint);
-	}
-	/* The one lit part: the agent. */
-	.ag {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-	.ag-n {
-		overflow: hidden;
-		font-size: 13px;
-		font-weight: 400;
-		color: var(--pic-dim);
-		text-overflow: ellipsis;
-	}
-	.agent {
-		min-height: calc(var(--row-h) + 20px);
-		font-size: 15px;
-		box-shadow: inset 2px 0 0 var(--lit);
-		transition: box-shadow 300ms ease;
-	}
-	.agent .nm,
-	.agent .val {
-		color: var(--lit);
-	}
-	.agent .val {
-		font-weight: 600;
-	}
-	/* A trigger firing: its row lights in the accent while it wakes the machine. */
-	.trigger:global(.fire) {
-		background: color-mix(in srgb, var(--pic-accent) 9%, var(--surface));
-		box-shadow: inset 2px 0 0 var(--pic-accent);
-	}
-	.trigger:global(.fire) .nm,
-	.trigger:global(.fire) .val {
-		color: var(--pic-accent);
-	}
-	.meter {
-		display: flex;
-		gap: 2px;
-		margin-left: auto;
-	}
-	.meter > i {
-		width: 7px;
-		height: 14px;
-		border-radius: 1px;
-		background: var(--rule);
-	}
-	.meter > i.f {
-		background: var(--pic-dim);
-		transition: background-color 300ms ease;
+	@media (max-width: 479.98px) {
+		.parts {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.part + .part {
+			border-left: 0;
+			border-top: 1px solid var(--rule);
+		}
+		.part {
+			flex-direction: row;
+			align-items: baseline;
+			gap: 12px;
+		}
+		.nm {
+			flex: none;
+			width: 4.5rem;
+		}
+		.v {
+			flex: 1;
+		}
 	}
 	@media (prefers-reduced-motion: reduce) {
+		.from,
+		.to,
+		.win,
 		.dot,
 		.sw > span,
-		.row,
-		.nm,
-		.win,
-		.cmp > .col,
-		.src,
-		.val,
-		.who,
-		.meter > i,
+		.lane,
+		.lane.cur,
 		.pick > span {
 			transition: none !important;
 		}

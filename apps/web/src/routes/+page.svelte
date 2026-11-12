@@ -47,17 +47,6 @@
 		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
 	}
 
-	// The job agent's rows (DECISIONS I-1167): what each step runs on,
-	// set as the cells' commands are, to read rather than to run.
-	const job: { title: string; ref: string }[] = [
-		{
-			title: 'A new role wakes it',
-			ref: 'https://hooks.repose.run/<project-id>/<route>/<token>'
-		},
-		{ title: 'It asks you at a captcha or a login', ref: 'repose-ask --options yes,no' },
-		{ title: 'You clear it in its browser', ref: 'repose browser' }
-	];
-
 	// Each row shows exactly what its Copy puts on the clipboard, and that
 	// runs on a visitor's laptop: the row's title names the folder.
 	const steps: { title: string; command: string; what: string }[] = [
@@ -130,8 +119,8 @@
 			<p class="label eyebrow">Any agent, any model</p>
 			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
 			<p class="hk-lead">
-				Give your agent a machine of its own, then add what it needs: your dev environment,
-				secrets, a schedule or a webhook that wakes it. It keeps working with your laptop shut.
+				Give your agent a machine of its own, then add what it needs: your dev environment, secrets,
+				a schedule or a webhook that wakes it. It keeps working with your laptop shut.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -186,7 +175,7 @@
 				<h3 class="item-title">Bring your dev environment, or leave it out</h3>
 				<p class="copy">
 					<code>repose run</code> copies your checkout and your tools. Leave it out for an agent that
-					only shops.
+					only works on the web.
 				</p>
 				<p class="cmd">repose run</p>
 			</li>
@@ -221,31 +210,9 @@
 		</ul>
 	</section>
 
-	<section class="band" aria-labelledby="job-h">
-		<div class="head">
-			{@render label('02', 'Example')}
-			<h2 class="hk-h2" id="job-h">An always-on agent that applies for jobs</h2>
-			<p class="copy side">
-				It runs on a machine with 8 GB. Each <code>role.created</code> webhook from the job board reaches
-				a small server it runs, which starts a session that writes a resume for the posting and applies
-				with it.
-			</p>
-		</div>
-		<ol class="ruled steps refs">
-			{#each job as row, i (row.title)}
-				<li>
-					<h3 class="item-title step-title">
-						<span class="label" aria-hidden="true">2.{i + 1}</span>{row.title}
-					</h3>
-					<p class="ref"><span use:tabStopWhenScrolls={row.title}>{row.ref}</span></p>
-				</li>
-			{/each}
-		</ol>
-	</section>
-
 	<section class="band" aria-labelledby="wreck-h">
 		<div class="head">
-			{@render label('03', 'Permissions')}
+			{@render label('02', 'Permissions')}
 			<h2 class="hk-h2" id="wreck-h">Let it run with full permissions</h2>
 			<p class="copy side">
 				You don't approve its commands one by one. It can touch its machine and anything the logins
@@ -261,7 +228,7 @@
 
 	<section class="band" aria-labelledby="setup-h">
 		<div class="head">
-			{@render label('04', 'Setup')}
+			{@render label('03', 'Setup')}
 			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
 			<p class="copy side">
 				You spend an hour setting up a cloud machine: install the CLIs, log in to GitHub, paste the
@@ -277,7 +244,7 @@
 
 	<section class="band" id="features" aria-labelledby="features-h">
 		<div class="head">
-			{@render label('05', 'Machine')}
+			{@render label('04', 'Machine')}
 			<h2 class="hk-h2" id="features-h">Work on the machine as you would on your laptop</h2>
 			<p class="copy side">
 				Each project gets a machine of its own, and you reach it from the tools already on your
@@ -288,7 +255,7 @@
 			<li class="fig">
 				<ComesBack />
 				<div class="cell-copy">
-					{@render label('5.1', 'Snapshots')}
+					{@render label('4.1', 'Snapshots')}
 					<h3 class="item-title">Restore the whole disk</h3>
 					<p class="copy">
 						A snapshot holds the checkout, the installed tools and the logins made on the machine. A
@@ -300,7 +267,7 @@
 			<li class="fig">
 				<Localhost />
 				<div class="cell-copy">
-					{@render label('5.2', 'Ports')}
+					{@render label('4.2', 'Ports')}
 					<h3 class="item-title">Use its ports on your localhost</h3>
 					<p class="copy">
 						Ports your servers listen on, from 1024 up, appear on your localhost while you're
@@ -312,7 +279,7 @@
 			<li class="fig">
 				<Browser />
 				<div class="cell-copy">
-					{@render label('5.3', 'Browser')}
+					{@render label('4.3', 'Browser')}
 					<h3 class="item-title">Watch the agent's browser, and take over</h3>
 					<p class="copy">
 						The agents' browser runs on the machine. Open it on your laptop to watch, or to do a
@@ -324,7 +291,7 @@
 			<li class="fig">
 				<Editor />
 				<div class="cell-copy">
-					{@render label('5.4', 'Editor')}
+					{@render label('4.4', 'Editor')}
 					<h3 class="item-title">Open it in your editor</h3>
 					<p class="copy">
 						Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
@@ -338,7 +305,7 @@
 
 	<section class="band" aria-labelledby="agents-h">
 		<div class="head">
-			{@render label('06', 'Agents')}
+			{@render label('05', 'Agents')}
 			<h2 class="hk-h2" id="agents-h">
 				The agents you use, and the tools they need, on first boot
 			</h2>
@@ -357,7 +324,7 @@
 
 	<section class="band" aria-labelledby="install-h">
 		<div class="head">
-			{@render label('07', 'Install')}
+			{@render label('06', 'Install')}
 			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
@@ -372,7 +339,7 @@
 			{#each steps as step, i (step.title)}
 				<li>
 					<h3 class="item-title step-title">
-						<span class="label" aria-hidden="true">7.{i + 1}</span>{step.title}
+						<span class="label" aria-hidden="true">6.{i + 1}</span>{step.title}
 					</h3>
 					<CodeCopy command={step.command} what={step.what} labelFrom={1200} />
 				</li>
@@ -382,7 +349,7 @@
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head">
-			{@render label('08', 'Pricing')}
+			{@render label('07', 'Pricing')}
 			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
 			<div class="cta-row side">
 				<!-- Signing up here comes back to Billing, where the plans are. -->
@@ -404,7 +371,7 @@
 
 	<section class="band faq-band" aria-labelledby="faq-h">
 		<div class="head">
-			{@render label('09', 'Questions')}
+			{@render label('08', 'Questions')}
 			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>

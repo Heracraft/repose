@@ -202,12 +202,12 @@ test("each picture band's stage ends on the next band's rule", async ({ page }) 
 
 // I-961 (option D, the owner's pick): the page has one numbering, the
 // mono labels over each band's h2 and each cell's title, and the pictures
-// no figure bars. Each of the six pause buttons shows at rest and is the
-// element under its own centre (a clip on the hero's field once cut the
-// hero's away while its box and opacity said it was there). A band
-// picture's button stands in its field's top right corner, its chip's
-// right edge on the text line; a cell's on its title's line.
-test('every pause button shows, takes the pointer, and stands where it belongs', async ({
+// no figure bars. The page's one motion control (owner, 2026-11-12) shows
+// at rest and is the element under its own centre (a clip on a field once
+// cut a button away while its box and opacity said it was there); it
+// stands in the hero field's top right corner, its right edge on the
+// text line.
+test('the motion control shows, takes the pointer, and stands in the hero field', async ({
 	page
 }) => {
 	for (const width of [1440, 1024, 390]) {
@@ -215,8 +215,9 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 		await page.goto('/');
 		await expect(page.locator('main .fig-bar')).toHaveCount(0);
 		const buttons = page.locator('main .fig .pic-pause');
-		await expect(buttons).toHaveCount(6);
-		for (let i = 0; i < 6; i++) {
+		await expect(buttons).toHaveCount(1);
+		await expect(page.locator('.hero .fig .pic-pause')).toHaveCount(1);
+		for (let i = 0; i < 1; i++) {
 			const b = buttons.nth(i);
 			await b.scrollIntoViewIfNeeded();
 			const m = await b.evaluate((el) => {
@@ -261,14 +262,13 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 	const heads = page.locator('main .band > .head');
 	await expect(heads.locator(':scope > .num')).toHaveText([
 		'01 Layers',
-		'02 Example',
-		'03 Permissions',
-		'04 Setup',
-		'05 Machine',
-		'06 Agents',
-		'07 Install',
-		'08 Pricing',
-		'09 Questions'
+		'02 Permissions',
+		'03 Setup',
+		'04 Machine',
+		'05 Agents',
+		'06 Install',
+		'07 Pricing',
+		'08 Questions'
 	]);
 	await expect(page.locator('#parts .cols > li > .num')).toHaveText([
 		'1.1 Machine',
@@ -278,17 +278,16 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 		'1.5 Triggers',
 		'1.6 Agent'
 	]);
-	await expect(page.locator('.refs .step-title .label')).toHaveText(['2.1', '2.2', '2.3']);
 	await expect(page.locator('#features .cell-copy > .num')).toHaveText([
-		'5.1 Snapshots',
-		'5.2 Ports',
-		'5.3 Browser',
-		'5.4 Editor'
+		'4.1 Snapshots',
+		'4.2 Ports',
+		'4.3 Browser',
+		'4.4 Editor'
 	]);
 	await expect(page.locator('.steps:not(.refs) .step-title .label')).toHaveText([
-		'7.1',
-		'7.2',
-		'7.3'
+		'6.1',
+		'6.2',
+		'6.3'
 	]);
 	const m = await page.evaluate(() => {
 		const box = (e: Element) => e.getBoundingClientRect();
@@ -374,14 +373,6 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 		'repose secrets set NAME',
 		'repose notify set --ntfy URL'
 	]);
-	await expect(
-		page.getByRole('heading', { level: 2, name: 'An always-on agent that applies for jobs' })
-	).toBeVisible();
-	await expect(page.locator('.refs .ref')).toHaveText([
-		'https://hooks.repose.run/<project-id>/<route>/<token>',
-		'repose-ask --options yes,no',
-		'repose browser'
-	]);
 	const text = (await page.locator('main').textContent())!;
 	for (const gone of ['replicated in the cloud', 'For solo founders', 'A framework for running'])
 		expect(text).not.toContain(gone);
@@ -397,12 +388,13 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 		expect(text).not.toMatch(claim);
 });
 
-// The centrepiece (LANDING.md "The centrepiece") is three agents built
-// from one set of layers: named for a screen reader, whole in the first
-// screen at 1440 in its still frame (the dev environment running, the
-// other two frozen), the rows level across the three windows, each
-// window under the source wired into it.
-test('the centrepiece shows three agents whose layers line up, in the first screen', async ({
+// The centrepiece (LANDING.md "The centrepiece") is three lanes that read
+// as sentences: what starts an agent, the agent on its machine, what it
+// does for you. Named for a screen reader, in plain words (no command or
+// variable name, owner 2026-11-12), the five parts of each lane in
+// columns across the three, and whole in the first screen once the hero
+// copy is scrolled past at 1440.
+test('the centrepiece reads as three lanes in plain words, their parts in columns', async ({
 	browser
 }) => {
 	const context = await browser.newContext({
@@ -414,39 +406,24 @@ test('the centrepiece shows three agents whose layers line up, in the first scre
 	const cmp = page.locator('.cmp');
 	await expect(cmp).toHaveAttribute('role', 'img');
 	await expect(cmp).toHaveAttribute('aria-label', /Three always-on agents/);
-	await expect(page.locator('.cmp .who')).toHaveText([
-		'A dev environment',
-		'A shopping agent',
-		'An agent that applies for jobs'
+	await expect(page.locator('.cmp .from')).toHaveText([
+		'you start it from your laptop',
+		'an alert goes off',
+		'a new job is posted'
 	]);
-	await expect(page.locator('.cmp .col').first().locator('.nm')).toHaveText([
-		'Agent',
-		'Trigger',
-		'Setup',
-		'Secrets',
-		'Machine'
-	]);
-	await expect(page.locator('.cmp .win.on')).toHaveCount(1);
-	await expect(page.locator('.cmp .src')).toHaveText(['your laptop', '07:00', 'role.created']);
+	await expect(page.locator('.cmp .ag b')).toHaveText(['opencode', 'Claude Code', 'Codex']);
+	await expect(page.locator('.cmp .lane.on')).toHaveCount(1);
+	const text = (await cmp.textContent())!;
+	for (const jargon of [/repose run/, /[A-Z]+_[A-Z]+/]) expect(text).not.toMatch(jargon);
 	const m = await page.evaluate(() => {
-		const wins = [...document.querySelectorAll('.cmp .win')];
-		const tops = wins.map((w) =>
-			[...w.querySelectorAll('.row')].map((r) => r.getBoundingClientRect().top)
+		const lanes = [...document.querySelectorAll('.cmp .lane')];
+		const cols = lanes.map((l) =>
+			[...l.children].map((c) => Math.round(c.getBoundingClientRect().left))
 		);
-		const bottom = Math.max(...wins.map((w) => w.getBoundingClientRect().bottom));
-		const src = [...document.querySelectorAll('.cmp .src')].map((e) => {
-			const r = e.getBoundingClientRect();
-			return (r.left + r.right) / 2;
-		});
-		const mid = wins.map((w) => {
-			const r = w.getBoundingClientRect();
-			return (r.left + r.right) / 2;
-		});
-		return { tops, bottom, off: src.map((x, i) => Math.abs(x - mid[i])) };
+		const r = document.querySelector('.cmp')!.getBoundingClientRect();
+		return { cols, height: r.height };
 	});
-	expect(m.bottom).toBeLessThanOrEqual(900);
-	for (const t of m.tops.slice(1))
-		t.forEach((y, i) => expect(Math.abs(y - m.tops[0][i])).toBeLessThanOrEqual(1));
-	for (const d of m.off) expect(d).toBeLessThanOrEqual(1);
+	for (const c of m.cols.slice(1)) expect(c).toEqual(m.cols[0]);
+	expect(m.height).toBeLessThanOrEqual(900 - 64);
 	await context.close();
 });

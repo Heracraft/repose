@@ -63,7 +63,6 @@
 	import { agentMarks, toolMarks } from '$lib/components/illustrations/marks';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import SnapshotTile from './SnapshotTile.svelte';
 	import WinHead from './WinHead.svelte';
 
@@ -582,7 +581,6 @@
 
 <p id={descId} class="sr-only">{story}</p>
 <div class="shot" use:picture.frame>
-	<PauseButton {picture} name="snapshot restore" />
 	<div
 		class="pic"
 		bind:this={pic}
