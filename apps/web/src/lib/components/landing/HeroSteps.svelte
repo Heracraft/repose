@@ -83,8 +83,8 @@
 				// 1: the agent steps into the window.
 				function ready(t: TL, at: number) {
 					const m = q('.s1 .inmark')[0];
-					t.add(m, { opacity: [0, 0], y: [-18, -18], duration: 1 }, at);
-					t.add(m, { opacity: [0, 1], y: [-18, 0], duration: 560, ease: 'outCubic' }, at + 200);
+					t.add(m, { opacity: [0.4, 0.4], y: [-12, -12], duration: 1 }, at);
+					t.add(m, { opacity: [0.4, 1], y: [-12, 0], duration: 560, ease: 'outCubic' }, at + 200);
 				}
 				// 2: the window dims and its moon comes up.
 				function sleeps(t: TL, at: number) {
@@ -100,27 +100,23 @@
 					t.add(fall, { scaleY: [0, 0], duration: 1 }, at);
 					t.add(fall, { scaleY: [0, 1], duration: 380, ease: 'inOutCubic' }, at + 250);
 					t.call(cls(s, 'off', false), at + 650);
-					q('.s3 .say').forEach((el, i) => {
-						t.add(el, { opacity: [0, 0], duration: 1 }, at);
-						t.add(el, { opacity: [0, 1], duration: 360 }, at + 750 + i * 300);
-					});
 				}
 				// 4: the question comes in, and Yes is pressed.
 				function asks(t: TL, at: number) {
 					const card = q('.s4 .win')[0];
 					const yes = q('.s4 .yes')[0];
-					t.add(card, { opacity: [0, 0], y: [-10, -10], duration: 1 }, at);
-					t.add(card, { opacity: [0, 1], y: [-10, 0], duration: 480, ease: 'outCubic' }, at + 150);
+					t.add(card, { opacity: [0.5, 0.5], y: [-8, -8], duration: 1 }, at);
+					t.add(card, { opacity: [0.5, 1], y: [-8, 0], duration: 480, ease: 'outCubic' }, at + 150);
 					t.add(yes, { scale: [1, 0.9, 1], duration: 360, ease: 'inOutQuad' }, at + 1000);
 					t.call(cls(yes, 'hi', true), at + 1000).call(cls(yes, 'hi', false), at + 1800);
 				}
 				// 5: the result comes in.
 				function done(t: TL, at: number) {
 					const r = q('.s5 .got')[0];
-					t.add(r, { opacity: [0, 0], scale: [0.92, 0.92], duration: 1 }, at);
+					t.add(r, { opacity: [0.5, 0.5], scale: [0.94, 0.94], duration: 1 }, at);
 					t.add(
 						r,
-						{ opacity: [0, 1], scale: [0.92, 1], duration: 480, ease: 'outCubic' },
+						{ opacity: [0.5, 1], scale: [0.94, 1], duration: 480, ease: 'outCubic' },
 						at + 150
 					);
 				}
@@ -249,7 +245,8 @@
 						<div class="win sleeping">
 							{@render head('moon', 'grey')}
 							<div class="body zz">
-								{@render glyph('moon', 18)}<span>asleep</span>
+								<span class="zrow">{@render glyph('moon', 18)}<span>asleep</span></span>
+								<span class="sub">wakes in a second or two</span>
 							</div>
 						</div>
 					{:else if k === 2}
@@ -261,7 +258,8 @@
 						<div class="win woke">
 							{@render head('bell', 'dot')}
 							<div class="body">
-								<span class="say" data-a>Checking 3 failed payments…</span>
+								<span class="say">Checking 3 failed payments…</span>
+								<span class="sub">3 cards declined overnight</span>
 							</div>
 						</div>
 					{:else if k === 3}
@@ -294,10 +292,10 @@
 	.steps {
 		/* The title block, the room above a window, a window's head, a
 		   drawing's width. The line runs through the heads. */
-		--th: 40px;
-		--above: 34px;
-		--hh: 30px;
-		--dw: 188px;
+		--th: 44px;
+		--above: 38px;
+		--hh: 34px;
+		--dw: 200px;
 		display: grid;
 		grid-template-columns: repeat(5, minmax(0, 1fr));
 		padding: 0 16px;
@@ -317,7 +315,7 @@
 	.ttl {
 		margin-right: 12px;
 		font-size: 16px;
-		line-height: 22px;
+		line-height: 24px;
 		font-weight: 600;
 		letter-spacing: -0.01em;
 	}
@@ -362,7 +360,7 @@
 	.draw {
 		position: relative;
 		width: var(--dw);
-		height: 186px;
+		height: 220px;
 	}
 
 	.dot {
@@ -397,12 +395,12 @@
 		align-items: center;
 		gap: 7px;
 		height: calc(var(--hh) - 1px);
-		padding: 0 10px;
+		padding: 0 12px;
 		border-bottom: 1px solid var(--rule);
 		border-radius: 5px 5px 0 0;
 		background: var(--surface);
 		color: var(--pic-ink);
-		font-size: 12px;
+		font-size: 13px;
 		font-weight: 600;
 		white-space: nowrap;
 	}
@@ -424,7 +422,7 @@
 		display: grid;
 		align-content: start;
 		gap: 4px;
-		padding: 10px;
+		padding: 12px;
 	}
 
 	/* 1: ready, the agent in it; your laptop shut, apart. */
@@ -432,7 +430,7 @@
 		display: flex;
 		align-items: center;
 		gap: 9px;
-		padding: 8px 10px 4px;
+		padding: 12px 12px 6px;
 	}
 	.inmark {
 		display: grid;
@@ -440,7 +438,7 @@
 		color: var(--pic-accent);
 	}
 	.big {
-		font-size: 14px;
+		font-size: 15px;
 		font-weight: 600;
 	}
 	.who2 {
@@ -457,17 +455,17 @@
 	}
 	.job-say {
 		margin: 0;
-		padding: 2px 10px 9px;
-		font-size: 13px;
-		line-height: 18px;
+		padding: 2px 12px 12px;
+		font-size: 14px;
+		line-height: 20px;
 	}
 	/* The laptop, attached to the machine's foot: shut, apart from it. */
 	.lap {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		height: 26px;
-		padding: 0 10px;
+		height: 30px;
+		padding: 0 12px;
 		border-top: 1px solid var(--rule);
 		color: var(--pic-ink);
 		font-size: 13px;
@@ -491,8 +489,11 @@
 
 	/* 2: asleep. */
 	.sleeping {
-		border-color: var(--rule);
-		opacity: 0.62;
+		border-color: var(--rule-strong);
+		background: var(--surface);
+	}
+	.sleeping .head {
+		background: var(--sunken);
 	}
 	.sleeping .head {
 		color: var(--pic-dim);
@@ -501,14 +502,15 @@
 		color: var(--pic-dim);
 	}
 	.zz {
+		color: var(--pic-dim);
+	}
+	.zrow {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 14px 10px;
-		color: var(--pic-dim);
+		font-size: 14px;
 	}
 	.s2:global(.off) .sleeping {
-		opacity: 1;
 		border-color: var(--control-edge);
 	}
 
@@ -546,8 +548,9 @@
 		border-color: var(--pic-accent);
 	}
 	.say {
-		font-size: 13px;
-		line-height: 18px;
+		font-size: 14px;
+		line-height: 20px;
+		transition: color 300ms ease;
 	}
 	.alt {
 		margin-left: 4px;
@@ -566,8 +569,11 @@
 		background: var(--pic-faint);
 	}
 	.s3:global(.off) .woke {
-		border-color: var(--rule);
-		opacity: 0.62;
+		border-color: var(--rule-strong);
+	}
+	.s3:global(.off) .head,
+	.s3:global(.off) .say {
+		color: var(--pic-dim);
 	}
 
 	/* 4: asking, on your phone, the phone around the window. */
@@ -598,8 +604,8 @@
 	}
 	.ask {
 		margin: 0 0 6px;
-		font-size: 14px;
-		line-height: 19px;
+		font-size: 15px;
+		line-height: 20px;
 		font-weight: 600;
 	}
 	.btns {
@@ -610,7 +616,7 @@
 	.btns > span {
 		display: grid;
 		place-items: center;
-		height: 28px;
+		height: 30px;
 		border-radius: 6px;
 		font-weight: 600;
 	}
@@ -632,41 +638,50 @@
 		border-color: var(--color-emerald-500);
 	}
 	.sum {
-		font-size: 17px;
-		line-height: 22px;
+		font-size: 19px;
+		line-height: 24px;
 		font-weight: 600;
 	}
 	.sub {
 		color: var(--pic-dim);
-		font-size: 12px;
+		font-size: 13px;
+		line-height: 18px;
 	}
 
-	/* Below 1180px: one state under the other, title at the left, the
-	   arrows running down. */
+	/* Below 1180px: one state under the other, each title above its
+	   window, the arrows running down at the right. */
 	@media (max-width: 1179.98px) {
 		.steps {
 			--above: 0px;
-			--hh: 26px;
-			--dw: 220px;
-			--tc: 96px;
+			--hh: 28px;
+			--dw: 26rem;
 			grid-template-columns: minmax(0, 1fr);
-			row-gap: 18px;
+			row-gap: 14px;
 			max-width: 26rem;
 			margin-inline: auto;
+			padding: 0 16px;
 		}
 		.scene {
-			grid-template-rows: auto;
-			grid-template-columns: var(--tc) minmax(0, 1fr);
-			column-gap: 12px;
+			grid-template-rows: auto auto;
 		}
 		.ttl {
-			margin: 3px 0 0;
-			font-size: 14px;
+			margin: 0 0 5px;
+			font-size: 15px;
+			line-height: 20px;
+		}
+		.say,
+		.job-say,
+		.zrow {
+			font-size: 13px;
 			line-height: 18px;
 		}
+		.sub {
+			font-size: 12px;
+			line-height: 16px;
+		}
 		.thread {
-			left: calc(var(--tc) + 12px + 24px);
-			right: auto;
+			left: auto;
+			right: 32px;
 			top: calc(100% + 2px);
 			width: 1px;
 			height: 14px;
@@ -691,36 +706,31 @@
 		}
 		.head {
 			gap: 6px;
-			padding: 0 8px;
+			padding: 0 10px;
 		}
 		.body {
-			padding: 7px 8px 8px;
+			gap: 2px;
+			padding: 7px 10px 8px;
 		}
 		.body.agent {
-			padding-bottom: 8px;
-		}
-		.big {
-			font-size: 14px;
+			padding: 8px 10px 4px;
 		}
 		.job-say {
-			padding: 0 8px 7px;
+			padding: 2px 10px 8px;
 		}
 		.lap {
-			height: 26px;
-			padding: 0 8px;
+			height: 28px;
+			padding: 0 10px;
 		}
 		.above {
 			position: relative;
-			margin-bottom: 8px;
+			margin-bottom: 6px;
 		}
 		.fall {
 			display: none;
 		}
 		.s4 .draw {
-			padding: 18px 7px 8px;
-		}
-		.zz {
-			padding: 6px 8px;
+			padding: 16px 7px 7px;
 		}
 		.phone {
 			top: 0;
