@@ -568,8 +568,11 @@
 	--cell-pt: 1.5rem;
 	border-top: 1px solid var(--rule-in);
 }
+/* A cell reads top down: its label, title, paragraph and command, then
+   its picture, which ends on the cell's foot, so the pictures of a row
+   stand level and each sits under its own words. */
 .landing .cells > li {
-	--pause-y: calc(var(--shot-h) + 1px + var(--cell-pt) + 1rem + 0.5rem + (1.75rem - 28px) / 2);
+	--pause-y: calc(var(--cell-pt) + 1rem + 0.5rem + (1.75rem - 28px) / 2);
 	--shot-l: var(--edge);
 	--shot-r: var(--edge);
 	position: relative;
@@ -582,9 +585,10 @@
 }
 .landing .cells > li > .shot {
 	flex: none;
-	border-bottom: 1px solid var(--rule-in);
+	border-top: 1px solid var(--rule-in);
 }
 .landing .cell-copy {
+	order: -1;
 	flex: 1;
 	display: flex;
 	flex-direction: column;

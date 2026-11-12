@@ -358,7 +358,7 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 		'A platform for running your own always-on agents'
 	);
 	await expect(page.locator('.hero .hk-lead')).toHaveText(
-		'Pick a machine and stack what your agent needs on it: your dev environment, secrets, schedules and webhooks. It runs away from your laptop, and from the internet only its webhooks reach it.'
+		'Give your agent a machine of its own, then add what it needs: your dev environment, secrets, a schedule or a webhook that wakes it. It keeps working with your laptop shut.'
 	);
 	await expect(page.locator('#parts .cols .item-title')).toHaveText([
 		'Size it to the job',
@@ -397,11 +397,12 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 		expect(text).not.toMatch(claim);
 });
 
-// The centrepiece (I-1169, LANDING.md "The centrepiece") is the stack:
-// named for a screen reader, whole in the first screen at 1440 in its
-// still frame (the dev environment), each leader's dot on its plate's
-// side corner, and a pause button since it loops.
-test('the centrepiece stack stands whole in the first screen, its leaders on its plates', async ({
+// The centrepiece (LANDING.md "The centrepiece") is three agents built
+// from one set of layers: named for a screen reader, whole in the first
+// screen at 1440 in its still frame (the dev environment running, the
+// other two frozen), the rows level across the three windows, each
+// window under the source wired into it.
+test('the centrepiece shows three agents whose layers line up, in the first screen', async ({
 	browser
 }) => {
 	const context = await browser.newContext({
@@ -410,45 +411,42 @@ test('the centrepiece stack stands whole in the first screen, its leaders on its
 	});
 	const page = await context.newPage();
 	await page.goto('/');
-	const stk = page.locator('.stk');
-	await expect(stk).toHaveAttribute('role', 'img');
-	await expect(stk).toHaveAttribute('aria-label', /built in layers/);
-	await expect(page.locator('.stk .use > .on')).toHaveText('A dev environment');
-	await expect(page.locator('.stk .rows .nm')).toHaveText([
-		'Machine',
-		'Walls',
-		'Your setup',
-		'Secrets',
-		'Triggers',
-		'Agent'
+	const cmp = page.locator('.cmp');
+	await expect(cmp).toHaveAttribute('role', 'img');
+	await expect(cmp).toHaveAttribute('aria-label', /Three always-on agents/);
+	await expect(page.locator('.cmp .who')).toHaveText([
+		'A dev environment',
+		'A shopping agent',
+		'An agent that applies for jobs'
 	]);
+	await expect(page.locator('.cmp .col').first().locator('.nm')).toHaveText([
+		'Agent',
+		'Trigger',
+		'Setup',
+		'Secrets',
+		'Machine'
+	]);
+	await expect(page.locator('.cmp .win.on')).toHaveCount(1);
+	await expect(page.locator('.cmp .src')).toHaveText(['your laptop', '07:00', 'role.created']);
 	const m = await page.evaluate(() => {
-		const r = (e: Element) => e.getBoundingClientRect();
-		const svg = r(document.querySelector('.stk .plates')!);
-		const frame = r(document.querySelector('main.frame')!);
-		// The plate's side: S from the drawing's width (2 S cos 30 + 4).
-		const S = (svg.width - 4) / (2 * Math.cos(Math.PI / 6));
-		const off: number[] = [];
-		document.querySelectorAll('.stk .pl').forEach((g, i) => {
-			const face = r(g.querySelector('.l')!);
-			// The left corner's edge runs down the face's left side; its
-			// middle is where both leaders end.
-			const corner = { y: face.top + (face.height - S / 2) / 2, l: face.left, r: svg.right - 2 };
-			const li = document.querySelectorAll('.stk .rows > li')[i];
-			const l = r(li.querySelector('.lead.l')!);
-			const rr = r(li.querySelector('.lead.r')!);
-			// Each dot is 5px wide, hung 5px past its leader's end.
-			off.push(Math.abs(l.right + 2.5 - corner.l), Math.abs(rr.left - 2.5 - corner.r));
-			off.push(Math.abs(l.top - corner.y), Math.abs(rr.top - corner.y));
+		const wins = [...document.querySelectorAll('.cmp .win')];
+		const tops = wins.map((w) =>
+			[...w.querySelectorAll('.row')].map((r) => r.getBoundingClientRect().top)
+		);
+		const bottom = Math.max(...wins.map((w) => w.getBoundingClientRect().bottom));
+		const src = [...document.querySelectorAll('.cmp .src')].map((e) => {
+			const r = e.getBoundingClientRect();
+			return (r.left + r.right) / 2;
 		});
-		return {
-			bottom: svg.bottom,
-			centre: (svg.left + svg.right) / 2 - (frame.left + frame.right) / 2,
-			off
-		};
+		const mid = wins.map((w) => {
+			const r = w.getBoundingClientRect();
+			return (r.left + r.right) / 2;
+		});
+		return { tops, bottom, off: src.map((x, i) => Math.abs(x - mid[i])) };
 	});
 	expect(m.bottom).toBeLessThanOrEqual(900);
-	expect(Math.abs(m.centre)).toBeLessThanOrEqual(1);
-	for (const d of m.off) expect(d).toBeLessThanOrEqual(3);
+	for (const t of m.tops.slice(1))
+		t.forEach((y, i) => expect(Math.abs(y - m.tops[0][i])).toBeLessThanOrEqual(1));
+	for (const d of m.off) expect(d).toBeLessThanOrEqual(1);
 	await context.close();
 });

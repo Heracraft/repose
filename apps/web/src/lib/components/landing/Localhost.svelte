@@ -588,4 +588,16 @@
 			font-size: 11px;
 		}
 	}
+	/* On a phone the windows are short: the forward takes a fixed 64px
+	   and the pair stands in the stage's middle, so no tall empty run of
+	   wire shows between them. */
+	@media (max-width: 479px) {
+		.lh {
+			justify-content: center;
+		}
+		.hop {
+			flex: none;
+			height: 64px;
+		}
+	}
 </style>

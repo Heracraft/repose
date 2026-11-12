@@ -828,28 +828,24 @@
      hidden at this size, as "Let it break the whole machine" draws them.
      The stop tile's machine is the wrecked one, its agent gone. -->
 {#snippet glyph(when: 'night' | 'work' | 'wreck')}
+	<!-- The machine in miniature, in its own words at 9px: the snapshot
+	     holds these rows, as the machine's window shows them. -->
 	<span class="gl" class:wreck={when === 'wreck'} class:night={when === 'night'}>
 		<i></i>
-		<i class="gr"><b class="gi acc"></b><b class="gb" style:width="30%"></b></i>
+		<i class="gr"><b class="gt acc">your-project/</b></i>
 		{#each kids as k (k.n)}
 			<i class="gr kid" class:nu={k.st === 'U'}
-				><b class="gi"></b><b class="gb" style:width="{k.n.length * 2.6}%"></b>{#if k.dir}<b
-						class="gp"
-						style:width="{k.dir.length * 1.5}%"
-					></b>{/if}<b class="gs" class:u={k.st === 'U'}></b></i
+				><b class="gt">{k.n}</b><b class="gs" class:u={k.st === 'U'}>{k.st}</b></i
 			>
 		{/each}
 		<i class="gsep"></i>
 		{#each sys as m (m.n)}
 			<i class="gr"
-				><b class="gi"></b><b class="gb" style:width="{m.n.length * 2.8}%"></b>{#if m.dir}<b
-						class="gp"
-						style:width="{m.dir.length * 1.5}%"
-					></b>{/if}<b class="gv"></b></i
+				><b class="gt">{m.n}</b><b class="gv">{when === 'wreck' ? m.bad : m.ok}</b></i
 			>
 		{/each}
 		<i class="gsep"></i>
-		<i class="gr"><b class="gc"></b><b class="gm"></b></i>
+		<i class="gr"><b class="gc"></b><b class="gm">bypass permissions on</b></i>
 	</span>
 {/snippet}
 
@@ -1429,12 +1425,14 @@
 	   at the tile's size, whatever that size is, and the copy that flies
 	   onto the rail fades into it in place. */
 	.gl {
+		font-style: normal;
 		display: grid;
 		grid-template-rows: 9fr repeat(4, 28fr) 7fr repeat(2, 28fr) 7fr 40fr;
 		height: 100%;
 		padding: 0 7% 0 5%;
 	}
 	.gr {
+		font-style: normal;
 		display: flex;
 		align-items: center;
 		gap: 4%;
@@ -1445,39 +1443,35 @@
 	}
 	.gr > b {
 		flex: none;
-		height: 3px;
-		border-radius: 1px;
+		font-family: var(--font-mono);
+		font-size: 9px;
+		font-weight: 400;
+		line-height: 1;
+		white-space: nowrap;
 	}
-	.gi {
-		width: 3px;
-		background: var(--pic-dim);
+	.gt {
+		overflow: hidden;
+		color: var(--pic-dim);
+		text-overflow: ellipsis;
+		flex-shrink: 1 !important;
+		min-width: 0;
 	}
-	.gi.acc {
-		background: var(--pic-accent);
-	}
-	.gb {
-		background: var(--pic-faint);
-		opacity: 0.8;
-	}
-	.gp {
-		background: var(--pic-faint);
-		opacity: 0.35;
+	.gt.acc {
+		color: var(--pic-ink);
+		font-weight: 600;
 	}
 	.gr > .gs,
 	.gr > .gv {
 		margin-left: auto;
 	}
 	.gs {
-		width: 3px;
-		background: var(--pic-dim);
+		color: var(--pic-dim);
 	}
 	.gs.u {
-		background: var(--pic-add);
+		color: var(--pic-add);
 	}
 	.gv {
-		width: 16%;
-		background: var(--pic-faint);
-		opacity: 0.6;
+		color: var(--pic-dim);
 	}
 	.gr > .gc {
 		width: 5px;
@@ -1486,9 +1480,7 @@
 		background: var(--claude);
 	}
 	.gm {
-		width: 42%;
-		background: var(--mode);
-		opacity: 0.6;
+		color: var(--mode);
 	}
 	.gsep {
 		align-self: center;
@@ -1501,9 +1493,8 @@
 	.night .gr.nu {
 		visibility: hidden;
 	}
-	.wreck .gr.kid .gb,
-	.wreck .gr.kid .gp {
-		opacity: 0.3;
+	.wreck .gr.kid .gt {
+		opacity: 0.4;
 	}
 	.wreck .gs,
 	.wreck .gc,
@@ -1511,8 +1502,7 @@
 		visibility: hidden;
 	}
 	.wreck .gv {
-		background: var(--pic-stop);
-		opacity: 0.85;
+		color: var(--pic-stop);
 	}
 
 	/* The internet: the globe, on the stack's floor, level with the
