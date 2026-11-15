@@ -352,7 +352,8 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 		'content',
 		/^Run your own always-on agents: pick a machine, bring any agent/
 	);
-	await expect(page.locator('.hero .eyebrow')).toHaveText('Any agent, any model');
+	// The eyebrow is gone (owner, 2026-11-15).
+	await expect(page.locator('.hero .eyebrow')).toHaveCount(0);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 		'A platform for running your own always-on agents'
 	);

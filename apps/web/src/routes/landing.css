@@ -368,11 +368,11 @@
 	}
 	.landing .hero .hk-lead {
 		grid-column: 8 / -1;
-		grid-row: 2;
+		grid-row: 1;
 		margin: 0;
 	}
 	.landing .hero-act {
-		grid-row: 3;
+		grid-row: 2;
 	}
 }
 /* On a phone the hero's two buttons take the column's width, one above

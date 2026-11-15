@@ -119,7 +119,6 @@
 <main id="main" tabindex="-1" class="frame landing">
 	<section class="band hero" aria-labelledby="hero-h">
 		<div class="hero-copy">
-			<p class="label eyebrow">Any agent, any model</p>
 			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
 			<p class="hk-lead">
 				Give your agent a machine of its own, then add what it needs: your dev environment, secrets,
@@ -140,9 +139,9 @@
 			<div class="stage field-stage hero-stage">
 				<!-- Hero loop (2026-11-12): ?hero=orbit|bento|depth|steps draws a
 				     candidate in place of the lanes, so each can be judged. -->
-				{#if heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO ?? '']}
+				{#if heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO ?? 'orbitv1']}
 					{@const Hero =
-						heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO]}
+						heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO ?? 'orbitv1']}
 					<Hero />
 				{:else}
 					<Compose />
