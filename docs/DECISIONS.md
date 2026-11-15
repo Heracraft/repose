@@ -33747,3 +33747,54 @@ weight rule to let the pictures keep `<b>`, as I-1210 widened the
 legacy-class rule (that rule is about a class the kit no longer defines;
 this one is about weight, and the fix was mechanical and visible in a
 capture).
+
+**I-1214. Google Tag Manager on repose.run, gated on the hostname, and
+the privacy policy says so (analytics, 2026-11-15).** The owner asked
+for Google Analytics on the website; their container is `GTM-W463L575`.
+What ships is `apps/web/src/lib/analytics.ts`, called from the root
+layout's `afterNavigate`: it initialises `dataLayer`, pushes
+`{'gtm.start', event: 'gtm.js'}` and appends the async `gtm.js` script
+once, then pushes a `page_view` on every navigation, because the app is
+one page that never reloads and the container would otherwise see the
+first URL only. `script-src` in `svelte.config.js` names
+`https://www.googletagmanager.com`; `img-src` and `connect-src` already
+allow `https:`, which is what GA4's beacons need, and the app sets no
+`strict-dynamic`, so the host allowlist is read rather than ignored.
+The snippet the owner pasted is Google's current async form; it was not
+pasted verbatim, because the app's CSP allows exactly one inline script
+by hash (app.html's first paint, I-398) and a second one would need its
+hash recomputed on every edit. A module needs none. The noscript
+`<iframe>` is left out: it would make `frame-src` name
+googletagmanager.com, and a visitor with scripts off fires no tags
+anyway.
+
+The gate is the hostname, not an environment variable (conductor,
+2026-11-15): nobody on this machine holds a Coolify API token, so a
+`PUBLIC_GTM_ID` would have to be set by hand after the push and the site
+would run without analytics until somebody did. The container id is a
+constant in the module and it loads only when `location.hostname` is
+`repose.run` or `www.repose.run`, and never under `dev`. That keeps it
+off `vite dev`, the Playwright fixtures on 127.0.0.1, a preview on the
+Tailscale address and a local `node build`, which is what a
+`PUBLIC_*`-less build gave us for free before.
+
+**The user-visible change is the privacy policy**, which listed every
+third party that receives anything and did not mention analytics or
+cookies at all. A paragraph under "What we record" now names Google Tag
+Manager and Google Analytics, what Google receives (the page address,
+the referrer, the IP address and an approximate location from it, the
+browser and device), that it sets cookies, and the part the owner should
+read twice: the tag is in the root layout, so it runs on the signed-in
+pages too and the address Google receives for a project page carries
+that project's id. Nothing else about a project reaches Google. The two
+alternatives were to load the tag only on the public paths, which
+leaks anyway once a visitor who has loaded it opens the dashboard,
+because GA4's enhanced measurement reports history changes from the
+container's own configuration, which this repository does not control;
+and to send a scrubbed path, which for the same reason would be a
+comfort rather than a boundary. If the owner wants dashboard addresses
+out of Analytics, the fix is in the container (or in a path gate here
+plus enhanced measurement turned off), and this entry is the record
+that it was a choice. No cookie banner was built (owner): consent for
+analytics cookies under UK and EU law is an open question for the owner
+and their lawyer, not something this branch settles.

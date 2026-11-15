@@ -284,7 +284,9 @@ entry and this list with it. Counts as of 2026-10-21.
       'JetBrains Mono' apps/web/src apps/web/static --glob
       '!**/lib/hk/tokens.css' --glob '!**/components/landing/**'` prints 0
       lines; a page load's network panel
-      shows only the site's host.
+      shows only the site's host, and on repose.run
+      `www.googletagmanager.com`, which serves the tag manager and nothing
+      else the page draws (I-1214).
 - [ ] Radii are the kit's. Evidence: `rg -n
       'rounded-(sm|md|lg|xl|2xl|3xl)\b|rounded-\[' $W --glob '*.svelte'`
       prints 0 lines; `rg -nP
