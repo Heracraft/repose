@@ -279,7 +279,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		body.Class = "large"
 	}
 	if !scheduler.ValidClass(body.Class) {
-		return errf("invalid", "class must be small, large or xl")
+		return errf("invalid", "class must be tiny, small, large or xl")
 	}
 	slug := Slug(body.Name)
 	if slug == "" {
@@ -479,7 +479,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	if body.Class != nil {
 		if !scheduler.ValidClass(*body.Class) {
-			return errf("invalid", "class must be small, large or xl")
+			return errf("invalid", "class must be tiny, small, large or xl")
 		}
 		if p.State != "stopped" {
 			return errf("conflict", "changing the class requires the project to be stopped")

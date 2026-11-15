@@ -25,7 +25,7 @@ func benchImage(vg string) *park.Image {
 	return &park.Image{R: r, LVM: &lvm.Real{VG: vg, Pool: "thin", R: r}, Mount: &mount.Real{R: r}}
 }
 
-var classMiB = map[string]uint64{"small": 4096, "large": 8192, "xl": 16384}
+var classMiB = map[string]uint64{"tiny": 2048, "small": 4096, "large": 8192, "xl": 16384}
 
 // img0 is an Image only for FS(), which needs nothing of it.
 func img0(vg string) *park.Image { return benchImage(vg) }

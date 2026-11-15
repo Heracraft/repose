@@ -99,7 +99,7 @@ func TestOverageAndClassMemory(t *testing.T) {
 			t.Errorf("%s %d bytes: %d GB %d cents, want %d GB %d cents", c.plan.ID, c.bytes, g, cents, c.gb, c.cents)
 		}
 	}
-	if billing.ClassMemoryGB("small") != 4 || billing.ClassMemoryGB("large") != 8 || billing.ClassMemoryGB("xl") != 16 {
+	if billing.ClassMemoryGB("tiny") != 2 || billing.ClassMemoryGB("small") != 4 || billing.ClassMemoryGB("large") != 8 || billing.ClassMemoryGB("xl") != 16 {
 		t.Error("class memory drifted from docs/interfaces/README.md")
 	}
 	if !billing.Pro.AllowsXL() || !billing.Plus.AllowsXL() || billing.Solo.AllowsXL() {

@@ -18,8 +18,12 @@
 # whole browser: those scopes run with the user manager's
 # OOMPolicy=continue, as the system unit below does (keystroke-path.nix,
 # DECISIONS I-733). The ceiling is a share of the guest's memory, which
-# systemd resolves at boot: 37.5 percent is 1.5 GB small, 3 GB large, 6 GB
-# xl, so one system closure serves every class (DECISIONS I-34, I-43).
+# systemd resolves at boot: 37.5 percent is 739 MB tiny, 1.5 GB small,
+# 3 GB large, 6 GB xl, so one system closure serves every class
+# (DECISIONS I-34, I-43). The share is the same on `tiny` and holds there:
+# on a 2 GB guest it is five times the browser's own anonymous memory with
+# a page open, and `guest-tiny-oom` is the check that a runaway tab dies
+# inside it (DECISIONS I-1168, I-1170).
 { config, lib, pkgs, ... }:
 let
   browserMemory = "37.5%";

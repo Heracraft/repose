@@ -22,6 +22,12 @@
 	// The size's cores (the api calls the field vcpus); a stopped machine is
 	// not sampled, so the figure comes from the class (I-492, I-784).
 	let vcpus = $derived(classVCPUs(project.class) || undefined);
+	// A `tiny` sells half a core (DECISIONS I-1168). A half is written as a
+	// word, as the CLI's own size summary writes it: "0.5 cores" reads like
+	// a measurement rather than a size.
+	let coresLabel = $derived(
+		vcpus === 0.5 ? 'half a core' : `${vcpus} ${vcpus === 1 ? 'core' : 'cores'}`
+	);
 	/** When the machine was frozen while idle, behind the flag (I-683). */
 	let frozen = $derived(frozenSince(project));
 	// "up 3m" moves with the 30-second clock, not the poll.
@@ -53,7 +59,7 @@
 			<span class="hk-mono" data-testid="project-class">{project.class}</span>
 			{#if vcpus}
 				<span aria-hidden="true">·</span>
-				<span>{vcpus} {vcpus === 1 ? 'core' : 'cores'}</span>
+				<span>{coresLabel}</span>
 				<span aria-hidden="true">·</span>
 				<span>{classMemoryGB(project.class)} GB</span>
 			{/if}

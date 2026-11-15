@@ -232,7 +232,7 @@ func TestBurstBootsAtTheCeilingOnlyWithTheFlag(t *testing.T) {
 		class      string
 		want, base uint32
 	}{
-		{"small", 4, 1}, {"large", 6, 2}, {"xl", 8, 4},
+		{"tiny", 2, 1}, {"small", 4, 1}, {"large", 6, 2}, {"xl", 8, 4},
 	} {
 		if got := on.m.bootVCPUs(Classes[tc.class]); got != tc.want {
 			t.Errorf("%s boots with %d vCPUs on a burst host; want %d", tc.class, got, tc.want)

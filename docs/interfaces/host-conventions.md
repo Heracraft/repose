@@ -256,7 +256,8 @@ stops until the park is done (DECISIONS I-652).
 
 `guests.slice` has `CPUWeight=100`; `nix-daemon.service` (tenant builds)
 has `CPUWeight=50`. Inside the slice each `guest@<id>` carries
-`CPUWeight=<vcpus*50>` (50, 100, 200 by class, DECISIONS I-737; the
+`CPUWeight=<milli_vcpus*50/1000>` (25, 50, 100, 200 by class, DECISIONS
+I-737 and I-1168; the
 multiplier doubled with I-784, which halved the classes' vCPUs, so the
 three weights are unchanged), so contention between guests divides in
 proportion to the class;
@@ -267,7 +268,7 @@ proportion to the class;
 **Burst cores** (`repose.host.burst.enable`, DECISIONS I-1126; off on
 every host at the time of writing). On a host that names the `burst`
 feature, a guest cold-started there boots with its class *ceiling* of
-vCPUs -- small 4, large 6, xl 8 -- and its unit still starts at the
+vCPUs -- tiny 2, small 4, large 6, xl 8 -- and its unit still starts at the
 `CPUQuota` its class sells. A loop in hostd, once a second, reads the
 root cgroup's `cpu.stat usage_usec` and each `guests.slice/guest@<id>.service`'s,
 and writes `cpu.max` straight into each guest's cgroup: its base when the
@@ -326,7 +327,7 @@ and a running guest cannot gain a vCPU, so the ceiling is there from the
 first boot and the cgroup holds the guest to its base. hostd runs it with
 `systemd-run --unit guest@<id> --property
 MemoryMax=<class RAM + 512M> --property MemoryHigh=<class RAM + 384M>
---property CPUQuota=<vcpus*100>% --property CPUWeight=<vcpus*50>
+--property CPUQuota=<milli_vcpus/10>% --property CPUWeight=<milli_vcpus*50/1000>
 --property Slice=guests.slice --property User=hostd` (MemoryHigh since
 I-230; a unit started earlier has only MemoryMax until its next start.
 CPUWeight since I-737; a unit started earlier keeps `cpu.weight=100`
@@ -351,7 +352,7 @@ device nodes. The devices: `--disk path=/dev/vg-guests/g-<id>,image_type=raw,dir
 disk I/O never lands in host page cache charged to the unit, whose RAM part
 is unreclaimable shmem; the guest sees the volume's own 4096-byte logical
 blocks either way; the rate limiter since I-450, reads and writes together,
-per class: `small` 2000 IOPS and 80 MB/s, `large` 3000 and 120, `xl` 4000
+per class: `tiny` 1000 IOPS and 40 MB/s, `small` 2000 and 80, `large` 3000 and 120, `xl` 4000
 and 150, taken at the guest's next start),
 `--net tap=tap-<8hex>,mac=52:54:<4 bytes of the id's sha256>`, `--fs tag=ro-store,socket=
 virtiofsd/virtiofsd.sock`, `--vsock cid=<1000+index>,socket=vsock.sock`,

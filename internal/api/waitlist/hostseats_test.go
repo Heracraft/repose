@@ -164,8 +164,8 @@ func TestBinomialTailAbove(t *testing.T) {
 // left every host's CPU ceiling at the old figure and the seat count
 // quietly wrong in the direction that oversells.
 func TestSeatVCPUsIsALarge(t *testing.T) {
-	if SeatVCPUs != scheduler.ClassVCPU("large") {
-		t.Errorf("SeatVCPUs %d, a large is %d vCPU", SeatVCPUs, scheduler.ClassVCPU("large"))
+	if got := scheduler.ClassMilliVCPU("large"); SeatVCPUs*1000 != got {
+		t.Errorf("SeatVCPUs %d, a large is %d milli-vCPU", SeatVCPUs, got)
 	}
 	if SeatBytes != scheduler.ClassRAM("large") {
 		t.Errorf("SeatBytes %d, a large is %d bytes", SeatBytes, scheduler.ClassRAM("large"))

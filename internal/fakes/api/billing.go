@@ -72,7 +72,7 @@ const ProjectCap = 100
 
 // classGB is each size class's memory, the unit a plan counts
 // (docs/interfaces/README.md).
-var classGB = map[string]int{"small": 4, "large": 8, "xl": 16}
+var classGB = map[string]int{"tiny": 2, "small": 4, "large": 8, "xl": 16}
 
 // planLimitMessage is billing.PlanLimitMessage's sentence, word for word
 // (TestPlanLimitMessageIsTheGates holds them equal): the CLI rewrites the

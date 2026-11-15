@@ -52,7 +52,7 @@ const Usage = `repose-admin <command> [args]
 
   db        migrate | status | rollback --to NNNN | down [n] | verify
   hosts     add --name N [--provider p --sku s --region r] [--reissue] | list | drain N | undrain N | retire N | mark-lost N | reconcile N [--fix] | rotate-cert N | rotate-wg N | smoke N
-  projects  create --user HANDLE --name N [--class small|large|xl] [--host N] [--create-user] [--wait] | destroy ID|SLUG (I-113)
+  projects  create --user HANDLE --name N [--class tiny|small|large|xl] [--host N] [--create-user] [--wait] | destroy ID|SLUG (I-113)
             list [--host N] [--sort disk|closure] | show ID|SLUG | start ID | stop ID [--no-snapshot] | restart ID | snapshot ID | resize ID --bytes B
             move ID --to N | restore ID [--snapshot SID | --latest] [--to N] | destroy ID [--wait=false] | exec ID -- ARGV...
   exec      ID -- ARGV...

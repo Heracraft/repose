@@ -285,7 +285,7 @@ func gotArgs(args []string) string {
 // back as exit 1 in its own words.
 func checkSizeFlag(size string) error {
 	if _, ok := classSpecs[size]; size != "" && !ok {
-		return cobraUsageError{fmt.Errorf("--size must be small, large or xl, got %q", size)}
+		return cobraUsageError{fmt.Errorf("--size must be tiny, small, large or xl, got %q", size)}
 	}
 	return nil
 }
@@ -545,7 +545,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "the agent `NAME` -p starts: claude, opencode, codex, gemini or pi (default: the project's agent, set at creation from config.toml's default_agent); without -p, NAME becomes the project's agent")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: tiny, small, large or xl (default: config.toml's default_size, else large)")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent on this prompt")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.
@@ -574,7 +574,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
+	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
@@ -681,7 +681,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: tiny, small, large or xl (default: config.toml's default_size, else large)")
 	// Before I-603 PROJECT had to exist and --name created; kept hidden
 	// for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
@@ -696,7 +696,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("stash-remote")
 	_ = cmd.Flags().MarkHidden("discard-remote")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
+	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
@@ -1779,10 +1779,10 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "resize [PROJECT] [DISK]",
 		Short: "Grow a project's disk, or change its size",
 		Long: "With DISK (80G, 1T), grow the project's disk; disks can't shrink. With --size,\n" +
-			"change the project's size: small, large or xl. A stopped project starts at the\n" +
-			"new size; a running one is stopped, changed and started again, which ends every\n" +
-			"process on it, after a question that -y skips. PROJECT defaults to this\n" +
-			"checkout's project; one argument that reads as a size is DISK.",
+			"change the project's size: tiny, small, large or xl. A stopped project starts\n" +
+			"at the new size; a running one is stopped, changed and started again, which\n" +
+			"ends every process on it, after a question that -y skips. PROJECT defaults to\n" +
+			"this checkout's project; one argument that reads as a size is DISK.",
 		Example:           "  repose resize 80G\n  repose resize todo-app --size xl\n  repose resize todo-app 160G --size xl -y",
 		Args:              resizeArgs,
 		ValidArgsFunction: completeResize(env),
@@ -1792,11 +1792,11 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return err
 			}
 			if bytes == 0 && size == "" {
-				return cobraUsageError{fmt.Errorf("resize needs a disk size (e.g. 80G), --size small|large|xl, or both")}
+				return cobraUsageError{fmt.Errorf("resize needs a disk size (e.g. 80G), --size tiny|small|large|xl, or both")}
 			}
 			if size != "" {
 				if _, ok := classSpecs[size]; !ok {
-					return cobraUsageError{fmt.Errorf("--size must be small, large or xl, got %q", size)}
+					return cobraUsageError{fmt.Errorf("--size must be tiny, small, large or xl, got %q", size)}
 				}
 			}
 			e, err := env()
@@ -1823,9 +1823,9 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&size, "size", "", "change the project's `SIZE`: small, large or xl")
+	cmd.Flags().StringVar(&size, "size", "", "change the project's `SIZE`: tiny, small, large or xl")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --size on a running project, restart it without asking")
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
+	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 

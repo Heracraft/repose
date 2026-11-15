@@ -381,13 +381,16 @@
 	// Egress reads as the pricing table writes it: 1000 GB is 1 TB.
 	const egressFigure = (n: number) => (n >= 1000 && n % 1000 === 0 ? sizeGB(n) : gbs(n));
 
-	/** "Fits one large, or two small." for a plan's memory (docs/PRICING.md):
-	 * xl 16 GB, large 8, small 4. */
+	/** "Fits one large, two small, or four tiny." for a plan's memory
+	 * (docs/PRICING.md): xl 16 GB, large 8, small 4, tiny 2. Solo names
+	 * every size it fits because its smallest is the one a reader cannot
+	 * work out; a plan with an xl in it names the mix instead, because
+	 * four sizes in one sentence is a table, not a line. */
 	function runsAtOnce(memoryGB: number): string {
 		const xl = Math.floor(memoryGB / 16);
 		const large = Math.floor(memoryGB / 8);
 		if (xl > 0) return `Fits ${count(xl)} xl, ${count(large)} large, or any mix.`;
-		return `Fits ${count(large)} large, or ${count(Math.floor(memoryGB / 4))} small.`;
+		return `Fits ${count(large)} large, ${count(Math.floor(memoryGB / 4))} small, or ${count(Math.floor(memoryGB / 2))} tiny.`;
 	}
 
 	/** Which day of the period today is, of how many. */

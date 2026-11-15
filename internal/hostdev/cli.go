@@ -386,7 +386,7 @@ func buildFor(ctx context.Context, c *Client, p *Project, frag, base string) (st
 func createCmd(ctx context.Context, dir string, c *Client, args []string) error {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	name := fs.String("project", "", "project name (becomes the slug)")
-	class := fs.String("class", "large", "small|large|xl")
+	class := fs.String("class", "large", "tiny|small|large|xl")
 	frag := fs.String("fragment", "", "fragment file (built first)")
 	base := fs.String("base-ref", "", "git revision of the platform nix/ directory")
 	closure := fs.String("closure", "", "an already built system closure")
@@ -411,7 +411,7 @@ func createCmd(ctx context.Context, dir string, c *Client, args []string) error 
 	}
 	p.Class = *class
 	if *volume == "" {
-		*volume = map[string]string{"small": "20G", "large": "40G", "xl": "80G"}[*class]
+		*volume = map[string]string{"tiny": "10G", "small": "20G", "large": "40G", "xl": "80G"}[*class]
 	}
 	if p.VolumeBytes, err = parseSize(*volume); err != nil {
 		return err

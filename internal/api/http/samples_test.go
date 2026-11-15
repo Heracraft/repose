@@ -43,7 +43,7 @@ func TestProjectSamples(t *testing.T) {
 	// A minute of every vCPU the class has, derived rather than written
 	// out, so the bucket stays "full, then half" when the class's vCPUs
 	// move (DECISIONS I-784) instead of reading as a tenth of a machine.
-	busy := int64(scheduler.ClassVCPU("large")) * 60e9
+	busy := int64(scheduler.ClassMilliVCPU("large")) * 60e9 / 1000
 	ins(base.Add(5*time.Second), "running", busy, 0, 0, 6e6, 1<<30)
 	ins(base.Add(50*time.Second), "running", busy/2, 2<<30, 30e6, 0, 2<<30)
 	ins(base.Add(55*time.Second), "stopped", 999e9, 9<<30, 60e6, 60e6, 9<<30)

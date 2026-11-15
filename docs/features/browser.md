@@ -269,7 +269,7 @@ its password field; a new CLI against an older base opens stock noVNC's
   anyway. Xvnc's VNC port is up whenever the display is (the browser
   alone keeps it up), password-protected and on loopback, and the CLI
   never auto-forwards 5900, 6080 or 6081.
-- The browser is limited to 1.5 GB on a small guest, 3 GB on large, 6 GB
+- The browser is limited to 739 MB on a tiny guest, 1.5 GB on small, 3 GB on large, 6 GB
   on xl (the slice `repose-browser.slice`, system level for the agents'
   browser, user level for the MCP servers and any Chromium a user starts),
   because a runaway page in a 4 GB guest takes the agent down with it and

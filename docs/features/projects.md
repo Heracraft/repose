@@ -129,7 +129,7 @@ Limits:
   G or T, with an optional B or iB); a bare number exits 2, and the CLI
   compares with `volume_bytes` before the POST: the same size is a no-op,
   a smaller one exits 2 (I-613).
-  `repose resize --size small|large|xl` changes the class (DECISIONS
+  `repose resize --size tiny|small|large|xl` changes the class (DECISIONS
   I-260): the API accepts `class` on `PATCH /projects/:id` only while the
   project is stopped (`conflict` otherwise), so a running project is
   stopped without a snapshot (I-595), patched and started again after a y/N question

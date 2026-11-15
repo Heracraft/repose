@@ -143,12 +143,19 @@ func (p Plan) EgressHardStopBytes() int64 {
 func (p Plan) AllowsXL() bool { return p.MemoryGB >= ClassMemoryGB("xl") }
 
 // ClassMemoryGB is the memory a size class takes while it runs
-// (docs/DESIGN.md §5: small 1 vCPU 4 GB, large 2 vCPU 8 GB, xl 4 vCPU
-// 16 GB). An unknown class counts as large. The memory is what a plan
-// sells and what I-784 left alone; the vCPUs are
-// scheduler.ClassVCPU's.
+// (docs/DESIGN.md §5: tiny 0.5 vCPU 2 GB, small 1 vCPU 4 GB, large 2 vCPU
+// 8 GB, xl 4 vCPU 16 GB). An unknown class counts as large. The memory is
+// what a plan sells and what I-784 left alone; the CPU is
+// scheduler.ClassMilliVCPU's.
+//
+// A plan sells memory that may run at once and no machine count (I-289),
+// so `tiny` needs no plan rule of its own: it takes its 2 GB as every
+// class takes its own, and Solo's 8 GB therefore runs four of them
+// (DECISIONS I-1168).
 func ClassMemoryGB(class string) int {
 	switch class {
+	case "tiny":
+		return 2
 	case "small":
 		return 4
 	case "xl":

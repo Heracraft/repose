@@ -31,6 +31,8 @@ const LockPlacement int64 = 1100
 // ClassRAM is the memory a class reserves (DESIGN.md §5).
 func ClassRAM(class string) int64 {
 	switch class {
+	case "tiny":
+		return 2 << 30
 	case "small":
 		return 4 << 30
 	case "xl":
@@ -40,26 +42,42 @@ func ClassRAM(class string) int64 {
 	}
 }
 
-// ClassVCPU is the vCPU count of a class: 4 GB of the class's memory per
-// guest vCPU, uniformly across the three (DESIGN.md §5, DECISIONS I-784
-// amending R3-2). It is the api's only Go copy of the figure;
-// ClassVCPUSQL is the only SQL one, and internal/cli and
-// internal/hostd/guest keep their own, pinned to this by
-// TestClassSpecsMatchBillingAndHost.
-func ClassVCPU(class string) int {
+// ClassMilliVCPU is the guest CPU a class sells, in thousandths of a
+// vCPU: 4 GB of the class's memory per vCPU, uniformly across the four
+// (DESIGN.md §5, DECISIONS I-784 amending R3-2, I-1168 adding `tiny`).
+//
+// The unit is thousandths because I-784's ratio has no whole answer below
+// `small`: `tiny` is 2 GB, so it sells half a core, and four of them are
+// one seat's 8 GB and one seat's 2 guest vCPUs. The other three classes
+// are whole numbers and stay whole; 1000 is one core.
+//
+// It is the api's only Go copy of the figure; ClassMilliVCPUSQL is the
+// only SQL one, and internal/cli and internal/hostd/guest keep their own,
+// pinned to this by TestClassSpecsMatchBillingAndHost.
+func ClassMilliVCPU(class string) int {
 	switch class {
+	case "tiny":
+		return 500
 	case "small":
-		return 1
+		return 1000
 	case "xl":
-		return 4
+		return 4000
 	default:
-		return 2
+		return 2000
 	}
+}
+
+// ClassVCPUs is ClassMilliVCPU as cores, for display and for the API's
+// `vcpus` field. It is a fraction on `tiny` (0.5) and whole elsewhere.
+func ClassVCPUs(class string) float64 {
+	return float64(ClassMilliVCPU(class)) / 1000
 }
 
 // DefaultVolume is the default thin volume per class.
 func DefaultVolume(class string) int64 {
 	switch class {
+	case "tiny":
+		return 10 << 30
 	case "small":
 		return 20 << 30
 	case "xl":
@@ -69,9 +87,9 @@ func DefaultVolume(class string) int64 {
 	}
 }
 
-// ValidClass reports whether class is one of the three.
+// ValidClass reports whether class is one of the four.
 func ValidClass(class string) bool {
-	return class == "small" || class == "large" || class == "xl"
+	return class == "tiny" || class == "small" || class == "large" || class == "xl"
 }
 
 // PlacementPoolPct is how full a host's thin pool may be, with the new
@@ -159,10 +177,10 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 		return Pick{}, err
 	}
 	need := ClassRAM(class)
-	vcpu := ClassVCPU(class)
+	vcpuMilli := ClassMilliVCPU(class)
 	var p Pick
-	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpus, 0)", "$6")),
-		now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpu).Scan(&p.HostID, &p.Name, &p.FreeBytes)
+	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6")),
+		now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli).Scan(&p.HostID, &p.Name, &p.FreeBytes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Which term refused is the difference between buying memory
@@ -173,7 +191,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 			// `$6 >= 0` holds for every class and keeps the parameter
 			// referenced, which the extended protocol requires.
 			if err := tx.QueryRow(ctx, pickSQL("$6 >= 0"),
-				now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpu).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
+				now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
 				return Pick{}, ErrNoCPUCapacity
 			}
 			return Pick{}, ErrNoCapacity
@@ -227,7 +245,7 @@ func Freeing(ctx context.Context, q interface {
 		  join lateral (
 		        select coalesce(sum(case when p.state = 'stopping' then `+classRAMSQL+` else 0 end), 0)::bigint as stopping,
 		               coalesce(sum(`+classRAMSQL+`), 0)::bigint as going,
-		               coalesce(sum(case when p.state = 'stopping' then `+ClassVCPUSQL("p.class")+` else 0 end), 0)::integer as stopping_vcpu
+		               coalesce(sum(case when p.state = 'stopping' then `+ClassMilliVCPUSQL("p.class")+` else 0 end), 0)::integer as stopping_vcpu_milli
 		          from projects p
 		         where p.host_id = h.id and p.state in ('stopping', 'destroying')) g on true
 		 where h.state = 'ready'
@@ -238,27 +256,28 @@ func Freeing(ctx context.Context, q interface {
 		   and `+poolRoomSQL+`
 		   and `+slotsSQL+`
 		   and g.going > 0
-		   and `+cpuRoomSQL("(coalesce(r.vcpus, 0) - g.stopping_vcpu)", "$6")+`
+		   and `+cpuRoomSQL("(coalesce(r.vcpu_milli, 0) - g.stopping_vcpu_milli)", "$6")+`
 		   and least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
-		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassVCPU(class)).Scan(&ok)
+		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class)).Scan(&ok)
 	return ok, err
 }
 
 // classRAMSQL is ClassRAM for a projects row aliased p.
-const classRAMSQL = `(case p.class when 'small' then 4::bigint<<30 when 'xl' then 16::bigint<<30 else 8::bigint<<30 end)`
+const classRAMSQL = `(case p.class when 'tiny' then 2::bigint<<30 when 'small' then 4::bigint<<30 when 'xl' then 16::bigint<<30 else 8::bigint<<30 end)`
 
-// ClassVCPUSQL is ClassVCPU in SQL, over the class column named by col
-// ("p.class" for a projects row aliased p, "class" for an unaliased one).
-// Every query that divides by or sums a class's vCPUs calls this, so the
-// figure has one SQL home as well as one Go home: placement here, the
-// Usage charts in internal/api/http/samples.go and the busy-unattended
-// signal in internal/api/abuse each held their own copy until I-784, and
-// a copy that kept the old 2-GB-per-vCPU numbers would have divided a
-// guest's CPU by twice the vCPUs it has. The one copy this cannot reach
-// is the host_reservations view (migration 0028);
+// ClassMilliVCPUSQL is ClassMilliVCPU in SQL, over the class column named
+// by col ("p.class" for a projects row aliased p, "class" for an
+// unaliased one), in the same thousandths. Every query that divides by or
+// sums a class's CPU calls this, so the figure has one SQL home as well
+// as one Go home: placement here, the Usage charts in
+// internal/api/http/samples.go and the busy-unattended signal in
+// internal/api/abuse each held their own copy until I-784, and a copy
+// that kept the old 2-GB-per-vCPU numbers would have divided a guest's
+// CPU by twice the vCPUs it has. The one copy this cannot reach is the
+// host_reservations view (migration 0041);
 // TestHostReservationsVCPUsMatchClassVCPU is what holds that to this.
-func ClassVCPUSQL(col string) string {
-	return `(case ` + col + ` when 'small' then 1 when 'xl' then 4 else 2 end)`
+func ClassMilliVCPUSQL(col string) string {
+	return `(case ` + col + ` when 'tiny' then 500 when 'small' then 1000 when 'xl' then 4000 else 2000 end)`
 }
 
 // PlacementVCPUPct is how many guest vCPUs a host may have committed, as
@@ -305,8 +324,13 @@ const PlacementVCPUPct = 150
 // past the ratio by the guests already on it; HostCPUSaturated (I-738) is
 // the backstop that says so.
 func cpuRoomSQL(committed, want string) string {
+	// Both sides are thousandths of a vCPU (I-1168), so the ratio is
+	// `cores * pct * 10` and nothing divides: at 150 percent a core
+	// admits 1,500 milli-vCPU. The integer division this replaced
+	// truncated, which cost a host up to one whole committed vCPU of
+	// room on an odd core count.
 	return `(h.cores <= 0
 		        or ` + want + ` = 0
 		        or ` + committed + ` = 0
-		        or ` + committed + ` + ` + want + ` <= h.cores * ` + strconv.Itoa(PlacementVCPUPct) + ` / 100)`
+		        or ` + committed + ` + ` + want + ` <= h.cores * ` + strconv.Itoa(PlacementVCPUPct*10) + `)`
 }

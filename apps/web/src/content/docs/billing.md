@@ -11,7 +11,7 @@ Your plan buys memory for running machines, disk for what your projects hold, an
 
 | Plan | A month                     | Running at once                        | Disk   | Egress a month |
 | ---- | --------------------------- | -------------------------------------- | ------ | -------------- |
-| Solo | $39 for 12 months, then $49 | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         |
+| Solo | $39 for 12 months, then $49 | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB         |
 | Plus | $89                         | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         |
 | Pro  | $169                        | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           |
 

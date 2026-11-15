@@ -103,7 +103,7 @@ machine, 2026-10-04). DECISIONS I-485, I-484.
 
 The product, CLI binary, SSH login prefix, config directory, Go module path
 and systemd unit prefix are all `repose`. Guest user is `dev`. Size classes
-are `small`, `large`, `xl`. Guest states, error codes and id formats are
+are `tiny`, `small`, `large`, `xl`. Guest states, error codes and id formats are
 listed in `docs/interfaces/README.md`. Do not introduce a synonym for any of
 them; a second name for the same thing is how a grep misses half the uses.
 

@@ -142,7 +142,7 @@ func (a Account) WriteTo(w io.Writer) (int64, error) {
 	}
 	row("  running memory", fmt.Sprintf("%d of %d GB: %s", a.Usage.RunningGB, a.Plan.MemoryGB, orDash(strings.Join(slugs, ", "))))
 	row("  disk held", fmt.Sprintf("%s of %d GB over %d project(s)", fmtGB(a.Usage.DiskHeldBytes), a.Plan.DiskGB, a.Usage.Projects))
-	for _, c := range []string{"small", "large", "xl"} {
+	for _, c := range []string{"tiny", "small", "large", "xl"} {
 		if secs := a.Hours[c]; secs > 0 {
 			row("  hours "+c, fmt.Sprintf("%.1f", float64(secs)/3600))
 		}

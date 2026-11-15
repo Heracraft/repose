@@ -285,7 +285,7 @@ func (m *Manager) BurstTickOnce(ctx context.Context) {
 			continue
 		}
 		class := Classes[g.Class]
-		base := uint64(class.VCPUs) * 1000
+		base := uint64(class.MilliVCPUs)
 		ceiling := uint64(class.CeilingVCPUs) * 1000
 		if ceiling < base {
 			ceiling = base
@@ -334,7 +334,7 @@ func (m *Manager) BurstTickOnce(ctx context.Context) {
 		mayBurst := allowed && m.restingMark(g.GuestID) == nil
 		list = append(list, burstGuest{
 			id: g.GuestID, class: g.Class, base: base, ceiling: ceiling,
-			weight: uint64(class.VCPUs) * CPUWeightPerVCPU,
+			weight: uint64(class.MilliVCPUs) * CPUWeightPerVCPU / 1000,
 			cap:    capMilli, used: usedMilli, mayBurst: mayBurst,
 			eligible: mayBurst && ceiling > base && usedMilli*burstHungryDen >= capMilli*burstHungryNum,
 		})
