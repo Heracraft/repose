@@ -16,6 +16,7 @@
 	import AppBoundary from '$lib/components/AppBoundary.svelte';
 	import DashRail from '$lib/components/DashRail.svelte';
 	import { legacyTarget } from '$lib/legacyUrls';
+	import { pageView, start as startAnalytics } from '$lib/analytics';
 	import { billingStore } from '$lib/billing.svelte';
 	import { DASH, type DashContext } from '$lib/dash';
 
@@ -67,6 +68,14 @@
 		const target = to ? legacyTarget(to.url) : null;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- legacyTarget answers a same-origin path built from the table
 		if (target) void goto(target, { replaceState: true, noScroll: false });
+		// The one place the site loads Google Tag Manager, on the live host
+		// only (lib/analytics.ts, DECISIONS I-1214). This runs after the
+		// first load too, and the app never reloads, so every page a visitor
+		// reads is one push from here. A navigation that is about to be
+		// replaced is not one of them.
+		if (target || !to) return;
+		startAnalytics();
+		pageView(to.url);
 	});
 
 	let showChildren = $derived(authState.authenticated === true || !isPrivate(page.url.pathname));

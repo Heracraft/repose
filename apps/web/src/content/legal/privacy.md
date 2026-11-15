@@ -1,6 +1,6 @@
 ---
 title: Privacy policy
-effective: 2026-10-08
+effective: 2026-11-15
 status: this policy is under review before launch. The two sentences in bold under "Process samples" already bind the service today.
 ---
 
@@ -15,6 +15,19 @@ under "Process samples" are enforced by tests in the repository, and a
 change to them is a change to the product.
 
 ## What we record
+
+**The website.** Our pages on repose.run load Google Tag Manager, which
+runs Google Analytics. Google receives the address of each page you open,
+the page you came from, your IP address, from which it reads an
+approximate location, and your browser and device, and it sets cookies in
+your browser so that it counts you as one visitor across pages and
+visits. It is the only third-party script the site loads. It runs on the
+signed-in pages too, so the address Google receives for a project page
+carries that project's identifier; it carries nothing else about a
+project, and no name, configuration, log or terminal text ever reaches
+Google. What Google holds is held under
+[Google's privacy policy](https://policies.google.com/privacy), for the
+period set in our Analytics property.
 
 **Your account.** You sign in through our identity provider with your
 email address or with GitHub. We store your email address, your GitHub

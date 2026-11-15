@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-966 entries.
+967 entries.
 
 ## Scope
 
@@ -998,3 +998,4 @@ pointer, not a summary.
 - **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33612
 - **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33697
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714
+- **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33751
