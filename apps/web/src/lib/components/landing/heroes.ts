@@ -7,6 +7,6 @@ const found = import.meta.glob<{ default: Component }>('./Hero*.svelte', { eager
 
 export const heroes: Record<string, Component> = {};
 for (const [path, mod] of Object.entries(found)) {
-	const name = path.match(/Hero([A-Z][a-z]+)\.svelte$/)?.[1]?.toLowerCase();
+	const name = path.match(/Hero([A-Z][A-Za-z0-9]+)\.svelte$/)?.[1]?.toLowerCase();
 	if (name) heroes[name] = mod.default;
 }

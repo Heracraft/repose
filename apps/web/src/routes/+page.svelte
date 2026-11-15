@@ -140,8 +140,9 @@
 			<div class="stage field-stage hero-stage">
 				<!-- Hero loop (2026-11-12): ?hero=orbit|bento|depth|steps draws a
 				     candidate in place of the lanes, so each can be judged. -->
-				{#if heroes[page.url.searchParams.get('hero') ?? '']}
-					{@const Hero = heroes[page.url.searchParams.get('hero')!]}
+				{#if heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO ?? '']}
+					{@const Hero =
+						heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO]}
 					<Hero />
 				{:else}
 					<Compose />
