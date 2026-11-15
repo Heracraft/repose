@@ -207,11 +207,10 @@
 	color: var(--hk-text);
 }
 /* The page's one label: 12px Geist Mono, upper case and tracked, in the
-   third grey. The eyebrow, the bands' and cells' numbered labels and the
-   step numbers take it; a number stands in the second grey at a fixed
-   width, so the names after it start on one line. The eyebrow, the
-   page's title line with no number, is in the second grey whole, so it
-   does not read as a label missing its number. */
+   third grey. The bands' and cells' numbered labels and the step
+   numbers take it; a number stands in the second grey at a fixed width,
+   so the names after it start on one line. The hero has no label: its
+   headline opens the page (I-1212). */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
@@ -312,10 +311,6 @@
 	grid-template-columns: minmax(0, 1fr);
 	padding-bottom: var(--head-gap);
 }
-.landing .hero .eyebrow {
-	margin-bottom: 1.5rem;
-	color: var(--hk-text-2);
-}
 .landing .hero .hk-lead {
 	max-width: 34rem;
 	margin: 2rem 0 0;
@@ -333,52 +328,12 @@
 	flex-wrap: wrap;
 	gap: 0.75rem;
 }
-/* From 1024px the buttons and the install line share one row under the
-   headline and the lead, at every width: never beside the lead (owner,
-   2026-11-02). 1024 to 1199px: the headline across, the lead on the
-   left half under it. */
-@media (min-width: 1024px) {
-	.landing .hero-copy {
-		grid-template-columns: repeat(12, minmax(0, 1fr));
-		column-gap: var(--col-gap);
-		align-items: last baseline;
-	}
-	.landing .hero-copy > * {
-		grid-column: 1 / -1;
-	}
-	.landing .hero .hk-lead {
-		grid-column: 1 / 8;
-	}
-	.landing .hero-act {
-		display: flex;
-		align-items: center;
-		grid-column: 1 / -1;
-		margin-top: 2.5rem;
-	}
-	.landing .hero-act > .ctas {
-		flex: none;
-	}
-}
-/* From 1200px the headline (seven columns) and the lead (five) stand side
-   by side on one baseline, the row of buttons under both: the first
-   screen has no empty quarter. */
-@media (min-width: 1200px) {
-	.landing .hero h1 {
-		grid-column: 1 / 8;
-	}
-	.landing .hero .hk-lead {
-		grid-column: 8 / -1;
-		grid-row: 1;
-		margin: 0;
-	}
-	.landing .hero-act {
-		grid-row: 2;
-	}
-}
 /* From 1024px the hero's copy stands centred over the centred picture
-   (owner, 2026-11-15: no asymmetry): the headline in two balanced lines,
-   the lead under it on its measure, and the buttons with the install line
-   on one centred row under both, never beside the lead. */
+   (owner, 2026-11-15, I-1212: no asymmetry): the headline in two
+   balanced lines, the lead under it on its measure, and the buttons
+   with the install line on one centred row under both, never beside
+   the lead (owner, 2026-11-02). The I-961 twelve-column hero, the
+   headline and lead side by side from 1200px, went with it. */
 @media (min-width: 1024px) {
 	.landing .hero-copy {
 		display: flex;
@@ -395,8 +350,13 @@
 		margin: 1.5rem 0 0;
 	}
 	.landing .hero-act {
+		display: flex;
+		align-items: center;
 		justify-content: center;
 		margin-top: 2.25rem;
+	}
+	.landing .hero-act > .ctas {
+		flex: none;
 	}
 }
 /* On a phone the hero's two buttons take the column's width, one above
@@ -496,19 +456,20 @@
 
 /* ---------- The hero's picture ----------
 
-   The three agents (Compose.svelte) stand on the hero's field: the
-   stage's tone across the sheet, from an inner rule under the buttons to
-   the next band's rule, carrying the 16px dot grid the wreck's field
-   carried, with the windows on the text lines and its pause button in
-   the field's top right corner, as a band picture's. */
+   The Orbit (HeroOrbitV1.svelte) stands on the hero's field: the
+   stage's tone across the sheet, from under the buttons to the next
+   band's rule, carrying the 16px dot grid the wreck's field carried,
+   with its parts on the text lines and the page's one motion control
+   in the field's top right corner, as a band picture's. */
 /* The hero's dot grid and its colours: pictures.css, "The hero's field". */
 
-/* ---------- The parts: three columns (I-1167) ----------
+/* ---------- The layers: six cells on the thirds (I-1167, I-1169) ------
 
-   Three cells on the thirds of the sheet, split by inner rules with no
-   gap, as the plans are: each its numbered label, its serif title, one
-   paragraph and the command it names, set as the feature grid's are.
-   Below 1024px they stack, each under its own rule. */
+   Six cells on the thirds of the sheet in two rows, split by inner
+   rules with no gap, as the plans are: each its numbered label, its
+   serif title, one paragraph and the command it names, set as the
+   feature grid's are. Below 1024px they stack, each under its own
+   rule. */
 .landing .cols {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);

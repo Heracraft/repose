@@ -230,7 +230,7 @@
 				{@render wire(1)}
 				<div class="win">
 					<div class="head">
-						<span class="ag">{@render markSvg(l.agent)}<b>{l.agent.name}</b></span>
+						<span class="ag">{@render markSvg(l.agent)}<span class="bd">{l.agent.name}</span></span>
 						<span class="use">{l.use}</span>
 						<span class="state"
 							><i class="dot"></i><span class="sw"
@@ -371,7 +371,7 @@
 		color: var(--pic-accent);
 		font-size: 15px;
 	}
-	.ag b {
+	.ag .bd {
 		font-weight: 600;
 	}
 	.use {

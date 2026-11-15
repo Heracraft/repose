@@ -201,7 +201,7 @@
 				<span class="alert"
 					><span class="bell"
 						><i class="halo"></i><i class="halo b"></i>{@render glyph('bell', 24)}</span
-					><b>Alert</b></span
+					><span class="bd">Alert</span></span
 				>
 				<span class="alt">{@render glyph('case', 14)}<span>new job</span></span>
 			</div>
@@ -234,8 +234,8 @@
 							<span class="term">
 								<span class="ln l1">Checkout broke after the 2 pm update</span>
 								<span class="diff">
-									<span class="ln l3"><b>-</b> retries: 3</span>
-									<span class="ln l4"><b>+</b> retries: 0</span>
+									<span class="ln l3"><span class="bd">-</span> retries: 3</span>
+									<span class="ln l4"><span class="bd">+</span> retries: 0</span>
 								</span>
 								<span class="ln l5"
 									><span class="ask">Asking you before undoing it<i class="cur"></i></span></span
@@ -268,7 +268,7 @@
 			<!-- The end: fixed. -->
 			<div class="result">
 				<span class="tick">{@render glyph('tick', 22)}</span>
-				<b>Fixed</b>
+				<span class="bd">Fixed</span>
 				<span>checkout works again</span>
 			</div>
 			{@render laptop('m')}
@@ -318,7 +318,7 @@
 		align-items: center;
 		gap: 16px;
 	}
-	.alert b {
+	.alert .bd {
 		font-size: 14px;
 		font-weight: 600;
 		line-height: 18px;
@@ -356,7 +356,7 @@
 		background: var(--surface);
 		color: var(--pic-dim);
 	}
-	.orb:global(.s-sleep:not(.s-ring)) .alert b {
+	.orb:global(.s-sleep:not(.s-ring)) .alert .bd {
 		color: var(--pic-dim);
 	}
 	.orb:global(:is(.s-sleep, .s-wake, .s-ask)) .halo {
@@ -622,7 +622,7 @@
 		font-size: 12px;
 		line-height: 17px;
 	}
-	.diff b {
+	.diff .bd {
 		display: inline-block;
 		width: 2ch;
 		color: var(--pic-faint);
@@ -853,7 +853,7 @@
 		border-radius: 50%;
 		color: var(--color-emerald-500);
 	}
-	.result b {
+	.result .bd {
 		font-size: 16px;
 		font-weight: 600;
 		line-height: 20px;
@@ -998,7 +998,7 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.bell,
-		.alert b,
+		.alert .bd,
 		.wire,
 		.arrow,
 		.bezel,

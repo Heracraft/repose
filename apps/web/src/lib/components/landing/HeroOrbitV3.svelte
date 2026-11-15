@@ -220,8 +220,8 @@
 					<span class="term">
 						<span class="ln l1">Checkout broke after the 2 pm update</span>
 						<span class="diff">
-							<span class="ln l3"><b>-</b> retries: 3</span>
-							<span class="ln l4"><b>+</b> retries: 0</span>
+							<span class="ln l3"><span class="bd">-</span> retries: 3</span>
+							<span class="ln l4"><span class="bd">+</span> retries: 0</span>
 						</span>
 						<span class="ln l5">Asking you before undoing it<i class="cur"></i></span>
 					</span>
@@ -543,7 +543,7 @@
 		font-size: 12px;
 		line-height: 18px;
 	}
-	.diff b {
+	.diff .bd {
 		display: inline-block;
 		width: 2ch;
 		color: var(--pic-faint);

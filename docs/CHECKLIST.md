@@ -310,7 +310,7 @@ entry and this list with it. Counts as of 2026-10-21.
       `/projects` and a project page (design.spec, landing-motion.spec).
 - [ ] Every picture stops on its final frame when reduced motion turns on
       mid-session. Evidence: `rg --files-without-match watchReducedMotion
-      apps/web/src/lib/components/landing/{Stack,Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
+      apps/web/src/lib/components/landing/{HeroOrbitV1,Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
       prints 0 lines. The suites above read the setting at load; this is
       the six drawn pictures answering a change made while the page is
       open (I-397, and the pictures restored by I-843).

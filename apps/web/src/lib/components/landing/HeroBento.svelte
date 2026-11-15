@@ -317,7 +317,7 @@
 				<h3>Your agent, on a machine of its own</h3>
 				<div class="win">
 					<div class="head">
-						<span class="ag">{@render markSvg(claude, 18)}<b>{claude.name}</b></span>
+						<span class="ag">{@render markSvg(claude, 18)}<span class="bd">{claude.name}</span></span>
 						<span class="state"
 							><i class="run"></i><span class="sw"
 								><span class="s-run">running</span><span class="s-frz">frozen</span></span
@@ -375,7 +375,7 @@
 					<div class="note">
 						<span class="from">{@render markSvg(claude, 12)}Claude Code</span>
 						<p>The disk is full. Delete old logs to free space?</p>
-						<span class="btns"><b>No</b><b class="yes">Yes</b></span>
+						<span class="btns"><span class="bd">No</span><span class="bd yes">Yes</span></span>
 					</div>
 				</div>
 			</section>
@@ -617,7 +617,7 @@
 		color: var(--pic-accent);
 		font-size: 14px;
 	}
-	.ag b {
+	.ag .bd {
 		font-weight: 600;
 	}
 	.state {
@@ -853,7 +853,7 @@
 		grid-template-columns: 1fr 1fr;
 		gap: 6px;
 	}
-	.btns b {
+	.btns .bd {
 		padding: 3px 0;
 		border: 1px solid var(--rule-strong);
 		border-radius: 6px;

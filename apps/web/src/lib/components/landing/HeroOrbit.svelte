@@ -331,7 +331,7 @@
 			<!-- The end: paid. -->
 			<div class="result">
 				<span class="tick">{@render glyph('tick', 22)}</span>
-				<b>Paid</b>
+				<span class="bd">Paid</span>
 				<span>$420 recovered</span>
 			</div>
 		</div>
@@ -937,7 +937,7 @@
 		border-radius: 50%;
 		color: var(--color-emerald-500);
 	}
-	.result b {
+	.result .bd {
 		font-size: 16px;
 		font-weight: 600;
 		line-height: 20px;

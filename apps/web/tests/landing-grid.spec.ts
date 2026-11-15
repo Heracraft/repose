@@ -219,17 +219,33 @@ for (const width of [1440, 1280, 1024]) {
 // The owner, 2026-11-02: the hero's buttons never stand beside the lead
 // (a version had Get started and Copy install command to its right).
 // They share one row under the headline and the lead at every width.
+// From 1024px the copy stands centred over the Orbit (owner, 2026-11-15),
+// so the headline, the lead and that row share one centre line: the row
+// is the buttons and the install line together, centred as one.
 for (const width of [1024, 1100, 1280, 1440, 1920]) {
-	test(`the hero's buttons stand under the lead at ${width}`, async ({ page }) => {
+	test(`the hero's copy is centred and its buttons stand under the lead at ${width}`, async ({
+		page
+	}) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
 		const lead = (await page.locator('.hero .hk-lead').boundingBox())!;
 		const h1 = (await page.locator('#hero-h').boundingBox())!;
 		const start = (await page.getByRole('link', { name: 'Get started' }).boundingBox())!;
 		const copy = (await page.getByRole('button', { name: 'Copy install command' }).boundingBox())!;
+		const install = (await page.locator('.hero .install').boundingBox())!;
+		const orb = (await page.locator('.hero .orb').boundingBox())!;
 		expect(start.y).toBeGreaterThan(Math.max(lead.y + lead.height, h1.y + h1.height));
 		expect(Math.abs(copy.y - start.y)).toBeLessThanOrEqual(1);
-		expect(Math.abs(start.x - h1.x)).toBeLessThanOrEqual(1);
+		const middle = (b: { x: number; width: number }) => b.x + b.width / 2;
+		// The row runs from the first button's left edge to the install
+		// line's right edge; nothing of the copy stands off the centre.
+		const row = (start.x + install.x + install.width) / 2;
+		for (const [what, mid] of [
+			['the headline', middle(h1)],
+			['the lead', middle(lead)],
+			['the buttons', row]
+		] as const)
+			expect(Math.abs(mid - middle(orb)), `${what} at ${width}`).toBeLessThanOrEqual(1);
 	});
 }
 
@@ -270,10 +286,10 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 });
 
 // I-961 (option D): the cells are flush on the sheet, split by inner
-// rules with no gap and no stage edge or radius: the centre hairline half
-// a gap left of the column line, so the right cells' text starts on it
-// (the head's right half). The band ends on its last row, on the next
-// band's rule.
+// rules with no gap, the stage square and with no edge but the hairline
+// over it: the centre hairline half a gap left of the column line, so
+// the right cells' text starts on it (the head's right half). The band
+// ends on its last row, on the next band's rule.
 test('the cells are flush, ruled and gapless, on the column line', async ({ page }) => {
 	await grid(page, 1440);
 	const css = await page.locator(cells).evaluateAll((els) =>
@@ -300,7 +316,11 @@ test('the cells are flush, ruled and gapless, on the column line', async ({ page
 	const next = await page.locator('#features + section').boundingBox();
 	expect(Math.round(css[3].b)).toBe(Math.round(band!.y + band!.height));
 	expect(Math.round(band!.y + band!.height)).toBe(Math.round(next!.y));
-	// A stage is the cell: flush to it, square, with no edge.
+	// A stage is the cell: flush to it, square, with no edge of its own.
+	// Since the hero loop's round 4 a cell reads its words first and its
+	// picture under them, so the stage's one hairline is at its top,
+	// between the command and the picture; its other three sides are the
+	// cell's.
 	const shots = await page.locator(`${cells} > .shot`).evaluateAll((els) =>
 		els.map((e) => {
 			const s = getComputedStyle(e);
@@ -308,16 +328,18 @@ test('the cells are flush, ruled and gapless, on the column line', async ({ page
 			const c = e.parentElement!.getBoundingClientRect();
 			return {
 				radius: s.borderTopLeftRadius,
-				edge: s.borderTopWidth,
+				edges: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth],
 				dl: Math.round(r.left - c.left),
-				dr: Math.round(c.right - r.right)
+				dr: Math.round(c.right - r.right),
+				db: Math.round(c.bottom - r.bottom)
 			};
 		})
 	);
 	for (const sh of shots) {
 		expect(sh.radius).toBe('0px');
-		expect(sh.edge).toBe('0px');
+		expect(sh.edges).toEqual(['1px', '0px', '0px', '0px']);
 		expect(sh.dr).toBe(0);
+		expect(sh.db).toBe(0);
 		expect(sh.dl).toBeLessThanOrEqual(1);
 	}
 	// The hairline stands 16px left of the column line, where the right

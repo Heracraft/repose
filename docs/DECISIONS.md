@@ -33710,3 +33710,40 @@ the same directory as its neighbours. Rejected: renaming the classes in
 fourteen files (a mechanical edit across pictures the owner judged by
 eye, for no change the rule was written to catch), and leaving the hits
 (a red grep on main that the next reader has to re-derive).
+
+**I-1212. The landing's hero is the Orbit, with its copy centred over it
+(hero-loop, 2026-11-15).** Amends I-1169's centrepiece and the hero
+layout of I-961 and I-1167. The hero loop judged nineteen rounds of
+whole pages against voidzero.dev's landing at 1440 and 390. What ships
+is `landing/HeroOrbitV1.svelte`: repose on a tile in the middle, the
+five agents as bubbles on a ring around it, what wakes it on the left
+and what it carries on the right in plain words, and the phone it asks
+you on, on the hero's dark field. The copy above it stands centred from
+1024px (owner, 2026-11-15: no asymmetry over a centred picture), with
+no eyebrow; below 1024px it starts on the text line, under the logo.
+I-1169's stack of plates (`landing/Stack.svelte`) and the three lanes of
+rounds 1 to 8 (`landing/Compose.svelte`) are off the page and stay in
+the tree, loadable with `?hero=<name>` (`landing/heroes.ts`), as the
+other candidates are. Three more changes the rounds made and this entry
+records: the job-application agent has no band of its own, so the bands
+are 01 Layers to 08 Questions and the grid's cells 4.1 to 4.4; a grid
+cell reads its words first and its picture under them, so the stage's
+one hairline is at its top; and the page has one motion control in the
+hero field in place of a pause button per picture (owner, 2026-11-12),
+which `PauseButton.svelte` already shipped. `docs/LANDING.md` is
+rewritten to this page, and the landing suites assert it: the copy's one
+centre line (landing-grid, landing), the Orbit named for a screen reader
+with its five bubbles and its still frame under reduced motion
+(landing), and a loop that starts only once the page has been still
+(landing-motion, landing-hero). The pictures' `<b>` elements became
+spans in the same commit: `docs/CHECKLIST.md`'s weight rule forbids
+`<b>`, main had none, and the rounds added 22; each already sat under a
+rule setting 600 or less, so nothing on the page moved. Rejected:
+leaving LANDING.md describing the centrepiece while the page drew the
+Orbit (two agents then build against different pages, and the next
+round's reviewer reads the wrong spec); keeping the fifteen stale tests
+as skips (DECISIONS I-1036: a skip reads as a pass); and widening the
+weight rule to let the pictures keep `<b>`, as I-1210 widened the
+legacy-class rule (that rule is about a class the kit no longer defines;
+this one is about weight, and the fix was mechanical and visible in a
+capture).

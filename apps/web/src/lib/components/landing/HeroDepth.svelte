@@ -187,7 +187,7 @@
 				<div class="win" class:on={w.running} class:front={w.key === 'call'} data-k={w.key}>
 					<div class="head">
 						<span class="ag">{@render markSvg(w.agent)}</span>
-						<span class="who"><b>{w.agent.name}</b><span class="use">{w.use}</span></span>
+						<span class="who"><span class="bd">{w.agent.name}</span><span class="use">{w.use}</span></span>
 						<span class="state"
 							><i class="dot"></i><span class="sw"
 								><span class="s-run">running</span><span class="s-frz">frozen</span></span
@@ -273,7 +273,7 @@
 	.win:not(.front) {
 		font-size: 16px;
 	}
-	.win:not(.front) .who b {
+	.win:not(.front) .who .bd {
 		font-size: 17px;
 	}
 	.win:not(.front) .use {
@@ -312,11 +312,11 @@
 		min-width: 0;
 		line-height: 18px;
 	}
-	.who b {
+	.who .bd {
 		font-size: 15px;
 		font-weight: 600;
 	}
-	.front .who b {
+	.front .who .bd {
 		color: var(--pic-accent);
 	}
 	.use {
@@ -482,7 +482,7 @@
 		.win:not(.front) {
 			font-size: inherit;
 		}
-		.win:not(.front) .who b {
+		.win:not(.front) .who .bd {
 			font-size: 15px;
 		}
 		.win:not(.front) .use {

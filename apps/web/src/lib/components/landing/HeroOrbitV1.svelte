@@ -243,7 +243,7 @@
 						d="M60.6 50.3A21 21 0 1 1 50.3 60.6A5.6 5.6 0 0 0 49.2 54.3L54.3 49.2A5.6 5.6 0 0 0 60.6 50.3Z"
 					/></svg
 				>
-				<b>repose</b>
+				<span class="bd">repose</span>
 				<span class="on">always on</span>
 			</div>
 			{#each agents as a (a.m.name)}
@@ -507,7 +507,7 @@
 	.daughter {
 		fill: var(--pic-accent);
 	}
-	.core b {
+	.core .bd {
 		font-family: var(--hk-font-display);
 		font-size: 19px;
 		font-weight: 600;
@@ -741,7 +741,7 @@
 			width: 96px;
 			height: 96px;
 		}
-		.core b {
+		.core .bd {
 			font-size: 16px;
 		}
 		.rmark {

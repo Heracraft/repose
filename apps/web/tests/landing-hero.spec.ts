@@ -3,7 +3,8 @@
 // and the rail has the nightly snapshot; across a loop the machine always
 // shows its services and the rail a tile; and the laptop's rows are never
 // drawn in the wreck's red. Since I-1167 it stands in the permissions band,
-// so the first screen is the centrepiece's (landing.spec).
+// so the first screen is the Orbit's (landing.spec); the picture keeps
+// the class names it carried as the hero.
 import { test, expect, type Page } from '@playwright/test';
 import { holdClock } from './helpers';
 
@@ -25,6 +26,13 @@ test.describe('without scripts', () => {
 	});
 });
 
+// The controller starts a loop only once the page has been still for
+// QUIET_MS with the picture in view (motion.svelte.ts, hero loop round 6),
+// and the held clock stands still until a test runs it. The helper runs it
+// in steps this long until the picture plays, so the loop has at most one
+// step behind it when the beats below are counted.
+const STEP = 50;
+
 async function loop(page: Page, width: number, height: number) {
 	await page.setViewportSize({ width, height });
 	// The clock is held from the first script, so the loop starts at 0
@@ -32,8 +40,11 @@ async function loop(page: Page, width: number, height: number) {
 	await holdClock(page);
 	await page.goto('/');
 	await page.locator('.hero-pic.mounted').waitFor();
-	await page.locator('.hero-frame').evaluate((e) => e.scrollIntoView({ block: 'start' }));
-	await expect(page.locator('.hero-frame')).toHaveAttribute('data-motion', 'play');
+	const frame = page.locator('.hero-frame');
+	await frame.evaluate((e) => e.scrollIntoView({ block: 'start' }));
+	for (let t = 0; t < 8000 && (await frame.getAttribute('data-motion')) !== 'play'; t += STEP)
+		await page.clock.runFor(STEP);
+	await expect(frame).toHaveAttribute('data-motion', 'play');
 }
 
 for (const [width, height] of [

@@ -1044,7 +1044,7 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   scale (8, 16, 24, 32, 48, 64, 96): a band opens with 96px from 1024px,
   64 from 768, 48 on a phone, and a head stands 48, 40 or 32 above its
   content (I-961).
-- **Heads**: the band's numbered label ("01 Setup" to "06 Questions"),
+- **Heads**: the band's numbered label ("01 Layers" to "08 Questions"),
   the h2 16px under it, and from 1024px the band's one side item in the
   right half on the h2's last baseline: a paragraph from the column
   line, or an action ending on the right text line, either a pair of
@@ -1053,27 +1053,30 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   stands the same distance over its content (pricing's button box,
   taller than a line, the head gap over the plans).
 - **Numbering**: one system, from alternative C (I-961, the owner's
-  pick): the bands' labels, the cells' (2.1 to 2.4, over each cell's
-  title) and the steps' (4.1 to 4.3). No figure bars or "Fig." numbers.
+  pick): the bands' labels, the cells' (1.1 to 1.6 and 4.1 to 4.4, over
+  each cell's title) and the install steps' (6.1 to 6.3). No figure bars
+  or "Fig." numbers.
 - **Type**: `hk-h1` at `clamp(30px, 0.6rem + 5.7vw, 60px)`, `hk-h2` up to
   40px, both Noto Serif. One item title for cells, steps, plans and
   questions: Noto Serif 20px / 28px. Body 15px / 1.6 in `--hk-text-2`, the
   hero's lead 17px on 34rem. One label: Geist Mono 12px, upper case,
-  tracked 0.06em, `--hk-text-3`, tabular numerals, for the eyebrow (in
-  `--hk-text-2`, the title line with no number), the numbered labels
-  and the step numbers; a number stands in `--hk-text-2` at a fixed
-  2.75em. Commands Geist Mono 13px (12px under 640px); a
+  tracked 0.06em, `--hk-text-3`, tabular numerals, for the numbered
+  labels and the step numbers; a number stands in `--hk-text-2` at a
+  fixed 2.75em. The hero carries no label (I-1212). Commands Geist Mono
+  13px (12px under 640px); a
   command named in a sentence is mono in the sentence's grey, with no
   chip. The page's own text uses no blue.
-- **Hero**: the eyebrow, `h1.hk-h1` on seven columns beside the lead on
-  five from 1200px (one baseline), then "Get started" (`hk-btn-lg`), a
-  large page-tone "Copy install command" and the install command in one
-  row, exactly what the button copies. From 1024px that row stands under
-  the headline and the lead, never beside the lead (owner, 2026-11-02). Under them the hero picture on its
-  field.
-- **Figures and stages**: a looping picture's pause button shows at
-  rest: in a band picture's field corner, or at the end of a cell
-  title's line. One stage material for every picture
+- **Hero**: `h1.hk-h1`, the lead under it, then "Get started"
+  (`hk-btn-lg`), a large page-tone "Copy install command" and the
+  install command in one row, exactly what the button copies. That row
+  stands under the headline and the lead, never beside the lead (owner,
+  2026-11-02). From 1024px all three stand centred over the picture, the
+  headline balanced on 26ch and the lead on 36rem (I-1212); below, they
+  start on the text line, under the logo. Under them the hero picture,
+  the Orbit, on its field.
+- **Figures and stages**: the page's one motion control shows at rest
+  in the hero field's top right corner (I-1212, in place of a pause
+  button per picture). One stage material for every picture
   (`landing/pictures.css`):
   `--stage` with a top-left sheen and an inner top highlight, flush from
   rule to rule with no edge or radius. The four grid pictures are each
@@ -1097,15 +1100,17 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   row from the centre hairline to the rail, flush on the stage's tone,
   with no box of their own, darkened by `--hk-active` under the pointer. Two command
   treatments, then: runnable (the steps, with Copy) and reference.
-- **Sections**: the hero; "Your laptop's setup, in one command"; "Work
-  on the machine as you would on your laptop", four flush cells split by
-  inner rules, a 2x2 from 1024px and one column below, the cell and its
-  stage the window's width with the picture's windows between the text
-  lines; "The agents you use, and the tools they need, on first boot",
-  Ready from rail to rail; "Start in three commands"; "Launch prices";
-  "Before you try it", five `details` rows from rail to rail between
-  inner rules, each washed with `--hk-hover` under the pointer, its focus
-  ring inside the row; the full footer.
+- **Sections**: the hero; "Build it in layers", six flush cells on the
+  thirds; "Let it run with full permissions", the wreck picture on its
+  field; "Your laptop's setup, in one command"; "Work on the machine as
+  you would on your laptop", four flush cells split by inner rules, a
+  2x2 from 1024px and one column below, each its words over its picture,
+  the cell and its stage the window's width with the picture's windows
+  between the text lines; "The agents you use, and the tools they need,
+  on first boot", Ready from rail to rail; "Start in three commands";
+  "Launch prices"; "Before you try it", six `details` rows from rail to
+  rail between inner rules, each washed with `--hk-hover` under the
+  pointer, its focus ring inside the row; the full footer.
 - **Pricing**: `PlanCells` in its public variant, three flush cells on the
   thirds from 1024px (stacked below) with no card edge, the founding
   price struck when it applies, in the serif at the item title's size.

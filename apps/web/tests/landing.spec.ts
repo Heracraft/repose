@@ -133,18 +133,31 @@ test('the install command shows in the hero and the first step, and its button c
 	expect(gaps.off).toBeLessThan(1);
 });
 
-test('the headline starts under the logo', async ({ page }) => {
-	for (const width of [1440, 390]) {
+// Below 1024px the headline starts under the logo, on the frame's text
+// line. From 1024px the hero's copy stands centred over the Orbit (owner,
+// 2026-11-15), so the headline stands on the picture's centre line
+// instead, clear of the logo's.
+test('the headline starts under the logo, and stands centred over the picture from 1024px', async ({
+	page
+}) => {
+	for (const width of [390, 768, 1024, 1440]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
-		const logo = await page
+		const logo = (await page
 			.getByRole('link', { name: 'repose, home' })
 			.locator('svg')
 			.filter({ visible: true })
 			.first()
-			.boundingBox();
-		const headline = await page.locator('h1').boundingBox();
-		expect(Math.abs(logo!.x - headline!.x), `at ${width}`).toBeLessThanOrEqual(1);
+			.boundingBox())!;
+		const headline = (await page.locator('h1').boundingBox())!;
+		if (width < 1024) {
+			expect(Math.abs(logo.x - headline.x), `at ${width}`).toBeLessThanOrEqual(1);
+			continue;
+		}
+		const orb = (await page.locator('.hero .orb').boundingBox())!;
+		const mid = (b: { x: number; width: number }) => b.x + b.width / 2;
+		expect(Math.abs(mid(headline) - mid(orb)), `at ${width}`).toBeLessThanOrEqual(1);
+		expect(headline.x, `at ${width}`).toBeGreaterThan(logo.x);
 	}
 });
 
@@ -250,12 +263,13 @@ test('the motion control shows, takes the pointer, and stands in the hero field'
 });
 
 // I-961, the owner's pick (alternative C's labels in D): one numbering
-// on the page. Each band after the hero opens on its number and name over
-// its h2, each cell on its band's number (1.1 to 1.3, 5.1 to 5.4) over
-// its title (1.1 to 1.6 since I-1169), and the rows count under theirs (2.1 to 2.3, 7.1 to 7.3);
-// the label sits on the text line, and its name starts at the number's
-// fixed width, where a step's name does too. I-1167 put the parts, the
-// job agent and the wreck before the setup.
+// on the page. Each band after the hero opens on its number and name
+// over its h2, each cell on its band's number over its title (1.1 to
+// 1.6 and 4.1 to 4.4), and the install rows count under theirs (6.1 to
+// 6.3); the label sits on the text line, and its name starts at the
+// number's fixed width, where a step's name does too. I-1167 put the
+// layers and the wreck before the setup, and I-1212's bands run 01 to
+// 08, the job agent's band folded away.
 test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
@@ -341,10 +355,12 @@ test('the footer links to the refund policy', async ({ page }) => {
 
 // DECISIONS I-1169: the page sells a platform for running your own
 // always-on agents, built in layers. The h1 names it, the lead names the
-// layers and the walls, six cells follow the centrepiece's order, and
-// one band is the job-application agent. Nothing names a command or a
-// class that does not exist, and the earlier headlines are gone.
-test('the hero, the layers and the job agent say what repose is now', async ({ page }) => {
+// machine and what you add to it, and six cells build it bottom to top.
+// Nothing names a command or a class that does not exist, and the
+// earlier headlines are gone. The job-application agent lost its band
+// in the hero loop's round 8 (I-1212): it is a trigger in the Orbit and
+// the triggers cell now.
+test('the hero and the layers say what repose is now', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	await expect(page).toHaveTitle('repose: a platform for running your own always-on agents');
@@ -389,13 +405,15 @@ test('the hero, the layers and the job agent say what repose is now', async ({ p
 		expect(text).not.toMatch(claim);
 });
 
-// The centrepiece (LANDING.md "The centrepiece") is three lanes that read
-// as sentences: what starts an agent, the agent on its machine, what it
-// does for you. Named for a screen reader, in plain words (no command or
-// variable name, owner 2026-11-12), the five parts of each lane in
-// columns across the three, and whole in the first screen once the hero
-// copy is scrolled past at 1440.
-test('the centrepiece reads as three lanes in plain words, their parts in columns', async ({
+// The hero's picture (LANDING.md "The hero's picture") is the Orbit:
+// repose in the middle, the five agents as bubbles on a ring around it,
+// and in plain words what wakes it and what it carries. Named for a
+// screen reader, with no command or variable name in it (owner,
+// 2026-11-12), and whole in the first screen at 1440. Under reduced
+// motion it holds on its still frame: nothing is animating, and the
+// controller has let it go. The three lanes it replaced (Compose, the
+// hero of rounds 1 to 8) are not on the page.
+test('the hero picture is the Orbit, named in plain words, and holds under reduced motion', async ({
 	browser
 }) => {
 	const context = await browser.newContext({
@@ -404,27 +422,39 @@ test('the centrepiece reads as three lanes in plain words, their parts in column
 	});
 	const page = await context.newPage();
 	await page.goto('/');
-	const cmp = page.locator('.cmp');
-	await expect(cmp).toHaveAttribute('role', 'img');
-	await expect(cmp).toHaveAttribute('aria-label', /Three always-on agents/);
-	await expect(page.locator('.cmp .from')).toHaveText([
-		'you start it from your laptop',
-		'an alert goes off',
-		'a new job is posted'
+	const orb = page.locator('.hero .orb');
+	await expect(orb).toHaveAttribute('role', 'img');
+	await expect(orb).toHaveAttribute('aria-label', /^repose in the middle: one always-on machine\./);
+	await expect(orb).toHaveAttribute('aria-label', /Claude Code, Codex, opencode, Gemini CLI and pi/);
+	// The five agents, each its bubble and its name; one of them lit, the
+	// one the loop's alert wakes.
+	await expect(orb.locator('.ag .nm')).toHaveText([
+		'Claude Code',
+		'Codex',
+		'opencode',
+		'Gemini CLI',
+		'pi'
 	]);
-	await expect(page.locator('.cmp .ag b')).toHaveText(['opencode', 'Claude Code', 'Codex']);
-	await expect(page.locator('.cmp .lane.on')).toHaveCount(1);
-	const text = (await cmp.textContent())!;
+	await expect(orb.locator('.ag .bub svg')).toHaveCount(5);
+	await expect(orb.locator('.ag.active')).toHaveCount(1);
+	await expect(orb.locator('.wake .chip')).toHaveText([
+		'every night at 2',
+		'an alert goes off',
+		'a webhook arrives'
+	]);
+	await expect(orb.locator('.carry .chip')).toHaveText(['your code, tools, logins', 'your secrets']);
+	// It asks you on your phone, in the words notifications.md uses.
+	await expect(orb.locator('.phone .q')).toHaveText('Roll back the last deploy?');
+	const text = (await orb.textContent())!;
 	for (const jargon of [/repose run/, /[A-Z]+_[A-Z]+/]) expect(text).not.toMatch(jargon);
-	const m = await page.evaluate(() => {
-		const lanes = [...document.querySelectorAll('.cmp .lane')];
-		const cols = lanes.map((l) =>
-			[...l.children].map((c) => Math.round(c.getBoundingClientRect().left))
-		);
-		const r = document.querySelector('.cmp')!.getBoundingClientRect();
-		return { cols, height: r.height };
-	});
-	for (const c of m.cols.slice(1)) expect(c).toEqual(m.cols[0]);
-	expect(m.height).toBeLessThanOrEqual(900 - 64);
+	// Whole in the first screen, under the copy, and nothing of the three
+	// lanes left on the page.
+	const box = (await orb.boundingBox())!;
+	expect(box.height).toBeLessThanOrEqual(900 - 64);
+	await expect(page.locator('.cmp')).toHaveCount(0);
+	// Reduced motion: the still frame, with no loop behind it.
+	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+	await expect(page.locator('.orb-frame')).not.toHaveAttribute('data-motion', 'play');
+	await expect(page.locator('button.pic-pause')).toHaveCount(0);
 	await context.close();
 });

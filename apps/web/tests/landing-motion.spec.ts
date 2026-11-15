@@ -16,6 +16,23 @@ async function load(page: Page) {
 	await expect(page.locator(frames)).toHaveCount(6);
 }
 
+// Hero loop round 6: a loop starts only once the page has been still for
+// QUIET_MS with its picture in view, so a reader scrolling past sees the
+// still frame and never a move cut off mid-flight. The hero's Orbit is in
+// view from the first paint, so it is the one that shows it.
+test('the Orbit holds while the page moves and plays once it is still', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await load(page);
+	const orb = page.locator('.orb-frame');
+	// Nudging the page keeps it unsettled, with the Orbit in view throughout.
+	for (let i = 0; i < 14; i++) {
+		await page.evaluate((d) => window.scrollBy(0, d), i % 2 ? -8 : 8);
+		await page.waitForTimeout(150);
+	}
+	await expect(orb).toHaveAttribute('data-motion', 'hold');
+	await expect(orb).toHaveAttribute('data-motion', 'play', { timeout: 3000 });
+});
+
 test('a height-only resize does not restart the hero', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await load(page);
@@ -114,6 +131,9 @@ test('scrolling a picture under a resting pointer does not hold it', async ({ pa
 
 for (const width of [1440, 390]) {
 	test(`only one grid picture plays at a time, at ${width}`, async ({ page }) => {
+		// A wait per scroll position, each past the quiet the controller
+		// asks for: about 20 seconds of waiting at either width.
+		test.setTimeout(120_000);
 		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
 		await load(page);
 		const grid = page.locator('[data-motion-group="grid"]');
@@ -123,9 +143,13 @@ for (const width of [1440, 390]) {
 		let withOne = 0;
 		for (let y = top - 900; y < bottom; y += 150) {
 			await page.evaluate((y) => window.scrollTo(0, y), y);
-			await page.waitForTimeout(250);
+			// A loop starts only once the page has been still for QUIET_MS
+			// (motion.svelte.ts, hero loop round 6): a reader scrolling past
+			// sees the still frame. Waiting less than that is waiting for a
+			// picture that is right to be holding.
+			await page.waitForTimeout(1400);
 			const n = await page.locator(playingInGrid).count();
-			expect(n).toBeLessThanOrEqual(1);
+			expect(n, `at ${y}`).toBeLessThanOrEqual(1);
 			if (n === 1) withOne++;
 		}
 		expect(withOne).toBeGreaterThan(0);

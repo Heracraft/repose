@@ -24,10 +24,13 @@ of them:
    and what the logins on it reach, and a snapshot brings the machine
    back.
 
-The reader is a developer who runs agents; the eyebrow says "Any agent,
-any model" once. The uses the page shows are the owner's: a dev
-environment, a shopping agent and an agent that applies for jobs (the
-centrepiece's three), and the job agent in its own band.
+The reader is a developer who runs agents. The page carries no eyebrow
+(owner, 2026-11-15): the headline opens it. The one use it draws is the
+hero's picture, the Orbit (I-1212, "The hero's picture" below): one
+always-on machine, the five agents that can run on it, what wakes it and
+what it carries, and the question it asks you on your phone. The job
+agent no longer has a band of its own; its trigger is the webhook in the
+Orbit and the triggers cell in 01.
 
 Two lines are written ahead of shipping on the owner's word (I-1169):
 triggers that start a session, and a tiny machine of 2 GB. They name no
@@ -39,55 +42,44 @@ collaboration or a software factory.
 ## The page (I-837, I-843)
 
 Guide B 13.1, on the 1200px frame every page shares (I-656), the
-headline starting under the logo, laid out as one ruled sheet on a
-12-column grid (I-961, option D; see "The sheet" below). In order:
+headline centred over the hero's picture from 1024px and starting
+under the logo below it, laid out as one ruled sheet on a 12-column
+grid (I-961, option D; see "The sheet" below). In order:
 
-1. **Hero.** Eyebrow "Any agent, any model" in the page's one label
-   (12px Geist Mono, upper case, tracked 0.06em; the bands' and cells'
-   numbered labels and the step numbers take it too, see "The sheet"),
-   unnumbered; the serif headline "A platform for running your own
-   always-on agents" (the owner's words, I-1169); the lead, two
-   sentences: the layers you stack ("Pick a machine and stack what your
-   agent needs on it: your dev environment, secrets, schedules and
-   webhooks.") and the walls ("It runs away from your laptop, and from
-   the internet only its webhooks reach it."). From 1200px the headline
-   (seven columns) and the lead (five) stand side by side on one
-   baseline, and "Get started", "Copy install command" and the install
-   line share one row under both; from 1024 to 1199px the headline runs
-   across, the lead under it on the left, and the same row under the
-   lead. The buttons never stand beside the lead at any width (owner,
-   2026-11-02). The install line is mono, exactly what the button
-   copies, on one line, scrolling under a fade where its column is
-   narrower. Under the copy, the centrepiece (`landing/Stack.svelte`,
-   "The centrepiece" below) on the page's own tone, with no stage and no
-   rule, 72px under the buttons' row from 1024px (48px below), the
-   band's padding under it; its pause button stands at the figure's top
-   right, its chip's right edge on the text line.
+1. **Hero.** No eyebrow and no number: the serif headline "A platform
+   for running your own always-on agents" (the owner's words, I-1169),
+   then the lead, two sentences: the machine and what you add to it
+   ("Give your agent a machine of its own, then add what it needs: your
+   dev environment, secrets, a schedule or a webhook that wakes it.")
+   and the laptop ("It keeps working with your laptop shut."). From
+   1024px the copy stands centred over the picture (I-1212): the
+   headline balanced on 26ch, the lead under it on 36rem, and "Get
+   started", "Copy install command" and the install line on one centred
+   row under both. The headline, the lead and that row share the
+   picture's centre line; below 1024px all three start on the text
+   line, under the logo. The buttons never stand beside the lead at any
+   width (owner, 2026-11-02). The install line is mono, exactly what the
+   button copies, on one line, scrolling under a fade where its column
+   is narrower. Under the copy, the Orbit
+   (`landing/HeroOrbitV1.svelte`, "The hero's picture" below) on the
+   hero's dark field, which runs to the window's edges and ends on the
+   next band's rule; the page's one motion control stands in the field's
+   top right corner, its chip's right edge on the text line.
 2. **01 Layers. "Build it in layers"** (`#parts`), with "Webhooks" and
    "Notifications" (the docs pages, set as the Agents links) on the
    heading's last line, then six cells on the thirds in two rows, split
-   by inner rules with no gap, as the plans are, in the centrepiece's
-   order: 1.1 Machine, 1.2 Walls, 1.3 Your setup, 1.4 Secrets, 1.5
-   Triggers, 1.6 Agent. Each is its numbered label, a serif claim, one
-   paragraph and its command in the reference treatment (`repose resize
-   --size large`, `repose run`, `repose secrets set NAME`, `repose
-   notify set --ntfy URL`; the walls and the triggers have none: nothing
-   turns the walls on, and the trigger layer has no command yet). The
+   by inner rules with no gap, as the plans are, bottom to top as a
+   machine is built: 1.1 Machine, 1.2 Walls, 1.3 Your setup, 1.4
+   Secrets, 1.5 Triggers, 1.6 Agent. Each is its numbered label, a
+   serif claim, one paragraph and its command in the reference
+   treatment (`repose resize --size large`, `repose run`, `repose
+   secrets set NAME`, `repose notify set --ntfy URL`; the walls and
+   the triggers have none: nothing turns the walls on, and the trigger
+   layer has no command yet). The
    cells of a row share its tracks (a subgrid), so their paragraphs
    start on one line. Below 1024px they stack, each under its rule. The
    titles wrap balanced.
-3. **02 Example. "An always-on agent that applies for jobs"**, with one
-   paragraph on the heading's last line (a machine with 8 GB; each
-   `role.created` webhook from the job board reaches a small server the
-   agent runs, which starts a session that writes a resume and applies:
-   the agent's own code, never repose's), then ruled rows in the steps'
-   layout (2.1 to 2.3): the step's name in the left half and, in the
-   right, what it runs through in the reference treatment on the stage's
-   tone, with no Copy: the webhook URL's shape, `repose-ask --options
-   yes,no` (it asks at a captcha or a login), `repose browser` (you
-   clear it there). The page's one use that is not a developer's; it
-   names no company and counts no runs.
-4. **03 Permissions. "Let it run with full permissions"**, with one
+3. **02 Permissions. "Let it run with full permissions"**, with one
    paragraph on the heading's last line (you don't approve its commands
    one by one; it can touch its machine and anything the logins on it
    can; restoring a snapshot brings the machine back), then the wreck
@@ -102,34 +94,36 @@ headline starting under the logo, laid out as one ruled sheet on a
    (I-843, I-961); it is the demo the summit script points at. The still
    frame (reduced motion, no script) has no globe, since it has no skill
    to come from it; in the loop the globe is drawn in line.
-5. **04 Setup. "Your laptop's setup, in one command"** (the owner's
+4. **03 Setup. "Your laptop's setup, in one command"** (the owner's
    I-772 heading and paragraph, the paragraph on the heading's last
    line), then the OneCommand picture on its field: `repose run` copying
    the laptop's source control, changes and ignored files to the
    machine.
-6. **05 Machine. "Work on the machine as you would on your laptop"**
+5. **04 Machine. "Work on the machine as you would on your laptop"**
    (`#features`, I-961), with "Each project gets a machine of its own,
    and you reach it from the tools already on your laptop." on the
-   heading's last line. Four cells, each its picture (ComesBack,
-   Localhost, Browser, Editor) over its numbered label (5.1 Snapshots,
-   5.2 Ports, 5.3 Browser, 5.4 Editor), a serif claim, one paragraph
-   with a fact the picture cannot carry, and the command the picture
-   shows, under the paragraph, set as the hero's install line is (13px
-   mono, the second grey) with no `$` and no copy button, since a
-   visitor without the CLI cannot run it: the page has two command
-   treatments, runnable (the steps, with Copy) and reference (the hero's
-   line, the cells). The cells are flush on the sheet, split by inner
-   rules with no gap: from 1024px a 2x2 whose centre hairline stands
+   heading's last line. Four cells, each its numbered label (4.1
+   Snapshots, 4.2 Ports, 4.3 Browser, 4.4 Editor), a serif claim, one
+   paragraph with a fact the picture cannot carry, the command the
+   picture shows under the paragraph, and under them its picture
+   (ComesBack, Localhost, Browser, Editor): the words first and the
+   stage under them, ruled at its top (hero loop round 4, owner: the
+   reader meets the claim before the drawing), set as the hero's
+   install line is (13px mono, the second grey) with no `$` and no
+   copy button, since a visitor without the CLI cannot run it: the
+   page has two command treatments, runnable (the steps, with Copy)
+   and reference (the hero's line, the cells). The cells are flush on
+   the sheet, split by inner rules with no gap: from 1024px a 2x2 whose centre hairline stands
    half a gap left of the column line, so the right cells' text starts
    on it, and runs unbroken from the head's foot to the next band's
    rule. Below 1024px they are one column; a cell and its stage run the
    window's width, and the picture's windows run between the text lines,
    the same inset at both sides at every width. The snapshot cell says
    what a snapshot holds and that `--as` restores it to a new machine,
-   which the hero does not show; the Browser cell says what `repose
-   browser` is for (watching, a login or a captcha), and the bridge
-   stays in the docs.
-7. **06 Agents. "The agents you use, and the tools they need, on first
+   which the permissions band's picture does not show; the Browser
+   cell says what `repose browser` is for (watching, a login or a
+   captcha), and the bridge stays in the docs.
+6. **05 Agents. "The agents you use, and the tools they need, on first
    boot"**, with "All agents" and "Everything installed" (grey, with the
    kit's arrow, 16px apart) on the heading's last line, ending on the
    right text line (under the heading below 1024px), then the Ready
@@ -140,10 +134,10 @@ headline starting under the logo, laid out as one ruled sheet on a
    two thirds: a closed window under the "your cloud machine" head on
    the terminals' ground, inset on the stage as the grid's windows are
    (24px above and below, the text lines at the sides).
-8. **07 Install. "Start in three commands"**, with "Install and sign in"
+7. **06 Install. "Start in three commands"**, with "Install and sign in"
    and "Run and attach" (the docs pages, set as the Agents links) on the
-   heading's last line, then ruled rows (I-961): the step's number (7.1
-   to 7.3, in the label's number grey and fixed width) and serif name in
+   heading's last line, then ruled rows (I-961): the step's number (6.1
+   to 6.3, in the label's number grey and fixed width) and serif name in
    the left half, its command filling the right half flush on the
    stage's tone from the centre hairline to the rail, Copy at the cell's
    right end, its label ending on the right text line as the head's
@@ -153,7 +147,7 @@ headline starting under the logo, laid out as one ruled sheet on a
    (`repose run`). Each row shows exactly what its Copy copies, with no
    `$`, on one line at every width (under 640px the install line scrolls
    under the copy box's fade), and it runs on a visitor's laptop.
-9. **08 Pricing. "Launch prices"** (`#pricing`). On the heading's last
+8. **07 Pricing. "Launch prices"** (`#pricing`). On the heading's last
    line, "Start a free week" ending on the right text line as the link
    pairs do, and the seats line before it on the same baseline, from
    `GET /public/seats` ("18 seats left"; the waitlist and seat copy
@@ -163,31 +157,31 @@ headline starting under the logo, laid out as one ruled sheet on a
    public variant (the one drawing of the plans, I-663), as flush cells
    split by inner rules with no card edge: three across on the thirds
    lines from 1024px, stacked below.
-10. **09 Questions. "Before you try it"**, with "Limits" and "Billing"
-    on the heading's last line, set as the Agents links. Six questions,
-    each one a reason to try it, overhauled on the owner's ask to show
-    the primitives and what is special (2026-11-12, I-1169): what you
-    can build (any agent you would keep running: a responder your alerts
-    wake, which reads your metrics and logs and asks before it changes
-    anything; nothing a developer already does by hand with tmux and
-    an agent's CLI, such as several agents on worktrees, owner,
-    2026-11-12); how it differs from your own server (it freezes and
-    wakes for the next webhook, and a server restart leaves its programs
-    and agents running, `lifecycle.md`); closing the laptop (it keeps
-    working, and you hear by email or on your phone); what the agent can
-    reach (`secrets.md` "What an agent on the machine can reach": `dev`
-    with sudo, the logins copied and the secrets set, no other project,
-    the laptop only through a port or a Chrome you lend it); what
-    happens when it breaks something (a snapshot restores the whole
-    disk, Claude Code's login aside; nightly, at each stop and your own,
-    kept seven days and the newest); what an agent costs while it waits
-    (it freezes after about 15 minutes of quiet and wakes in a second or
-    two; you pay for the memory your plan runs at once). No answer
-    repeats a layer cell: the setup, the secrets, the triggers, the
-    agents, the tiny machine and the notifications are 01's. No setup
-    trivia (where a login lives, Windows, how commits come back, what a
-    stopped machine costs): those belong in the docs and give a visitor
-    no reason to try it (owner, 2026-10-21).
+9. **08 Questions. "Before you try it"**, with "Limits" and "Billing"
+   on the heading's last line, set as the Agents links. Six questions,
+   each one a reason to try it, overhauled on the owner's ask to show
+   the primitives and what is special (2026-11-12, I-1169): what you
+   can build (any agent you would keep running: a responder your alerts
+   wake, which reads your metrics and logs and asks before it changes
+   anything; nothing a developer already does by hand with tmux and
+   an agent's CLI, such as several agents on worktrees, owner,
+   2026-11-12); how it differs from your own server (it freezes and
+   wakes for the next webhook, and a server restart leaves its programs
+   and agents running, `lifecycle.md`); closing the laptop (it keeps
+   working, and you hear by email or on your phone); what the agent can
+   reach (`secrets.md` "What an agent on the machine can reach": `dev`
+   with sudo, the logins copied and the secrets set, no other project,
+   the laptop only through a port or a Chrome you lend it); what
+   happens when it breaks something (a snapshot restores the whole
+   disk, Claude Code's login aside; nightly, at each stop and your own,
+   kept seven days and the newest); what an agent costs while it waits
+   (it freezes after about 15 minutes of quiet and wakes in a second or
+   two; you pay for the memory your plan runs at once). No answer
+   repeats a layer cell: the setup, the secrets, the triggers, the
+   agents, the tiny machine and the notifications are 01's. No setup
+   trivia (where a login lives, Windows, how commits come back, what a
+   stopped machine costs): those belong in the docs and give a visitor
+   no reason to try it (owner, 2026-10-21).
 
 ### The sheet (I-961, option D)
 
@@ -214,14 +208,14 @@ field breaks the sheet: the rails stop at its top edge, which carries
 its own pair of crosses.
 
 Every band after the hero opens with the same head: its numbered label
-on the text line ("01 Parts" to "09 Questions"), the h2 16px under it,
+on the text line ("01 Layers" to "08 Questions"), the h2 16px under it,
 and from 1024px the band's one side item in the right half on the h2's
 last baseline (under the h2 below 1024px). Under 640px each link is a
 44px target, and a pair that wraps (the install pair at 320px) stands
-its second line 32px under the first, the targets overlapping. Every band has one: a
-paragraph (example, permissions, setup, machine), starting on the column line, or an action
-ending on the right text line: a pair of links to the docs (agents,
-install, questions), 16px apart, or the pricing button with the seats
+its second line 32px under the first, the targets overlapping. Every
+band has one: a paragraph (permissions, setup, machine), starting on
+the column line, or an action ending on the right text line: a pair of
+links to the docs (agents, install, questions), 16px apart, or the pricing button with the seats
 line before it. Every side action ends on that one right edge. The h2's
 last line stands 43px over what it heads (44 at 1024) whether its side
 item is a paragraph or links; pricing's is 8px more, the button's box
@@ -229,16 +223,15 @@ reaching under the baseline, so the button itself stands the head gap
 over the plans. Its foot is an inner rule across the sheet.
 
 The page has one numbering (I-961, the owner's pick, from alternative
-C): the bands' labels, the cells' labels (1.1 to 1.3 and 5.1 to 5.4,
-8px over the cell's title) and the rows (2.1 to 2.3, 7.1 to 7.3). A label is the page's label
+C): the bands' labels, the cells' labels (1.1 to 1.6 and 4.1 to 4.4,
+8px over the cell's title) and the install rows (6.1 to 6.3). A label is the page's label
 type with its number in the second grey at a fixed 2.75em, so the names
 after the numbers start on one line, and a step's name starts there
 too. Nothing else carries a number: no figure bar, no "Fig.". A band's
-or cell's label is read out and copied as "01 Parts": the space after
+or cell's label is read out and copied as "01 Layers": the space after
 the number is text inside the fixed width; a step's number is
-aria-hidden, since its row is the band's list. The hero's eyebrow takes
-the label type in the second grey, with no number, as the page's title
-line.
+aria-hidden, since its row is the band's list. The hero has no label
+of its own: its headline opens the page (I-1212).
 
 Two rule weights: band rules and rails in `--hk-border`, every rule
 inside a band in `--hk-hairline`. The page has no gap between bands. Each
@@ -252,98 +245,45 @@ No stat strip: repose has no public figure the page can read at render
 time and a reader can reproduce. No isometric figure, and no anatomy
 figure of physical equipment (a shelf, a rack, brackets and screws),
 anywhere on the page (owner, 2026-10-04 and 2026-10-19), with one
-exception the owner asked for: the centrepiece's stack (I-1169).
+exception the owner asked for: the Orbit's ring (I-1212).
 
-## The centrepiece (I-1167)
+## The hero's picture (I-1212)
 
-The hero's picture follows voidzero.dev's landing (read 2026-11-12 at
-1440 and 390; it has one scheme, light, so its dark capture is the same
-page). Its grammar:
+The hero is the Orbit, `landing/HeroOrbitV1.svelte`: repose in the
+middle on its tile ("repose", "always on"), the five agents as bubbles
+on a ring around it, each its mark and its name; out on the left, in
+plain words, what wakes it (every night at 2, an alert goes off, a
+webhook arrives), on the right what it carries (your code, tools,
+logins; your secrets) and the phone it asks you on ("Roll back the last
+deploy?", Yes or No). Hairline traces join the chips to the tile, the
+alert's in the accent. It stands on the hero's dark field, the plate the
+wreck picture used to carry, in both schemes.
 
-- **One object, centred, in white space.** Under a centred two-line
-  headline and a one-line lead sits a single drawn object, about 300px
-  tall at 1440, with no frame, card or plate around it, on the page's
-  own white. Nothing else shares the first screen: no second picture,
-  no stats.
-- **Type does the work.** One sans family at two weights; the headline
-  60px, tracked tight; the lead 18px in the second grey. A small mono
-  status chip ("prod server / running") over the headline is the one
-  label. Sections below use 48px heads and 16px to 18px body.
-- **Space.** The object has as much air above as it is tall; the next
-  section starts after a full band of white and a hairline.
-- **Parts with names.** The object is a line-drawn box whose layers
-  come apart, and small mono chips on short leader lines name a part
-  each (VITE+, VITEST).
-- **Motion.** The box's layers part and close in a slow loop.
+It is named for a screen reader by one `aria-label` on the picture
+(`role="img"`), everything inside it `aria-hidden`, and it names no
+command and no variable: the page's words, not the CLI's.
 
-What repose takes from it: the one object in white space under the
-copy, the parts named by small mono chips on short lines, and the type
-carrying the hero. What it leaves: the centred headline (the hero's
-copy keeps its I-961 layout, owner, 2026-11-02), the isometric box (no
-isometric on this page) and the loop (a wiring diagram that draws
-itself is line-art in motion).
+The loop: an alert goes off, a pulse runs along the blue trace into the
+machine, the machine and Claude Code light, a pulse runs out to the
+phone and the phone asks; then it clears. It moves by class changes and
+the pulses' travel, timed by anime.js, and starts only once the page has
+been still (see "Motion"). The still frame, which is what reduced motion
+and a page with no scripts get, is every part drawn with the phone
+asking. At 1024px and up the parts stand around the tile; below, they
+stack: what wakes it, the ring, then what it carries beside the phone.
 
-`landing/Stack.svelte` (I-1169) takes voidzero's stack itself: plates
-seen from above at 30 degrees, bottom to top the machine (the
-thickest), walls, your setup, secrets, triggers and the agent, the one
-lit plate (its edges in the pictures' blue, its sides the blue mixed 16
-percent into the surface, the agent's mark facing you in the middle of
-its face, 48px, as voidzero sets its marks). The other plates take four
-flat tones: the surface on top, the sunken step on the right face, the
-stage's edge on the left in light and the stage in dark, so the light
-comes from the same side in both; hairline edges in the strong rule.
-No gradient, gloss or glow: voidzero's coloured shaders are the part
-repose leaves.
-
-The machine and its walls are every agent's base and stay on screen;
-the layers above are the agent's own, so each agent is a stack of its
-own shape. A layer an agent leaves out is not drawn, and the plates
-above it close up on the walls. Above the stack, the agent it is
-composing, in 15px sans; from 1024px the layers' names stand left of
-the stack in the label type, and the values for that agent right of
-it, each on a 36px dotted leader in the pictures' grey that ends on a
-5px dot at the plate's side corner, level with the middle of its edge,
-the agent's row in the blue; a left-out layer's row is hidden with its
-plate. Below 1024px the stack stands centred (240px wide on a phone)
-and the names and values are a list under it, top down as the stack
-reads, a left-out layer's value "left out" in the faint grey. The
-three agents: a dev environment (2 cores and 8 GB, nothing from the
-internet gets in, your code, tools and logins, a Stripe key, no
-triggers, opencode on your branch), a shopping agent (2 GB on all day,
-nothing gets in, no setup, the store's API key, every morning at 7,
-Codex told to ask before it pays) and an agent that applies for jobs
-(8 GB, only the job board's webhook gets in, your resumes, the job
-board's signing key, a `role.created` webhook, Claude Code told to ask
-at a captcha).
-
-The still frame (reduced motion, no script, and the loop's seam) is the
-dev environment, built. `landing/Parts.svelte`, the flat drawing it
-replaced, stays in the tree unused, and branch `landing-centrepiece-2d`
-has the page with it, for comparison (owner, 2026-11-12). What that
-drawing was:
-
-`landing/Parts.svelte` draws the parts of an always-on agent as one
-object: the machine, in the pictures' window, holding the agent (the
-five agents' marks, the one lit part, in the accent's label), your
-project, a port, a scheduled job, the secrets and the browser as rows;
-your laptop (its checkout) and a webhook (from Stripe, GitHub or Clerk,
-the providers `webhooks.md` names first) as small windows outside its
-left wall, each joined to its row by a hairline wire with a dot at each
-end and the command or host it runs through as a chip in the middle,
-14px clear of the dots (`repose say`, `hooks.repose.run`); your phone
-outside its right wall, a window of the same width. Each side window
-hangs from its row, its head level with the row its wire lands on, so
-the two sides carry the same weight. The agent's row is marked by a
-2px accent edge and its blue label. `repose-ask` joins it to the phone,
-the wire's first dot in the accent, and the phone's card holds the
-notification title and a question from `notifications.md`, with its
-yes and no. From 1200px the
-machine's rows are a subgrid of the picture's grid, so each wire runs
-level into its row, and the two outer columns share one width, so the
-machine stands on the page's centre line. Below 1200px the picture is
-one 26rem column on the centre line: the two ways in side by side over
-the machine, the phone under it, each wire running down. It does not
-move: no loop, no pause button, nothing in "Motion".
+The rounds behind it (hero loop, 2026-11-12 to 2026-11-15): the hero was
+judged in nineteen rounds against voidzero.dev's landing (read at 1440
+and 390), which is where the page gets one object under the copy, the
+parts named by small chips on short lines, and the type carrying the
+hero. Each direction was drawn and iterated as a whole picture
+(`HeroOrbit*`, `HeroSteps`, `HeroBento`, `HeroDepth`, and `Compose`, the
+three lanes of rounds 1 to 8); the Orbit won. They stay in the tree and
+draw in the hero's place with `?hero=<name>` in the browser
+(`landing/heroes.ts`), so a later round can read them again; the page
+itself ships one hero and loads no other. `landing/Stack.svelte`
+(I-1169's stack of plates) and `landing/Parts.svelte` are in the tree
+unused, and branch `landing-centrepiece-2d` has the page with Parts.
 
 ## The pictures (I-843)
 
@@ -413,13 +353,12 @@ scheme only; in the dark scheme they are drawn inverted with their hues
 turned back (`invert(0.9) hue-rotate(180deg)`), so the app reads as a
 dark page beside the dark windows (I-961).
 
-Each looping picture has a pause button (WCAG 2.2.2), shown at rest in
-the pictures' quiet grey, with its chip's right edge on the text line,
-named after its picture ("Pause the ports picture"). A band picture's
-stands in its field's top right corner; a cell's at the right end of its
-title's line, which keeps clear of it. Ready and the Editor do not loop,
-so they have none, and nothing holds a place for one. On a touch screen
-the button is a 44px target with the 28px chip drawn in its middle.
+The page has one motion control, not one per picture (WCAG 2.2.2;
+owner, 2026-11-12): "Pause motion" in the hero field's top right
+corner, its chip's right edge on the text line, shown at rest in the
+pictures' quiet grey while any loop runs. Pressing it holds every
+picture. On a touch screen it is a 44px target with the chip drawn in
+its middle.
 
 `landing/Terminal.svelte` is no longer on the landing; `/design` still
 shows it.
@@ -501,8 +440,8 @@ into the page.
 ## Where terminals are allowed
 
 Terminal UIs appear only in the feature grid (`#features`) and in the
-agents picture (I-843, restoring main's rule). The centrepiece, the wreck picture and the setup picture
-draw windows, not terminal output; the commands section uses light
+agents picture (I-843, restoring main's rule). The Orbit, the wreck picture and the setup picture
+draw windows and chips, not terminal output; the commands section uses light
 command rows.
 
 ## Motion
@@ -541,20 +480,24 @@ what the stubs under it leave, so hydration resizes nothing (I-399,
 I-667).
 
 One controller decides when each looping picture plays
-(`landing/motion.svelte.ts`, I-666). Each of the six (the centrepiece, the wreck picture,
+(`landing/motion.svelte.ts`, I-666). Each of the six (the Orbit, the wreck picture,
 OneCommand and the three moving grid pictures) registers with it in
 place of an observer of its own:
 
-- **Pause.** Each picture has an icon-only pause button
-  (`PauseButton.svelte`, WCAG 2.2.2): a 28px picture chip with the
-  windows' hairline and `--radius` corners, `aria-pressed` while paused, in the
-  tab order throughout, and always shown. It never stands over a head or
-  content (I-673, I-961): a band picture's in its field's top right
-  corner, a cell's at the end of its title's line, its chip's right edge
-  on the text line for all six loops. Its
-  name says which picture it pauses. Its hit area is 44px. A paused picture
-  stays on its frame through scrolling out and back until play is
-  pressed. A pointer moving inside a picture, a press on it, or focus
+- **Still first.** A loop starts only once its picture has been in view
+  with the page still for a second (`QUIET_MS`, hero loop round 6): a
+  reader scrolling past sees the still frame, never a move cut off
+  mid-flight by the scroll. Scrolling again holds every picture it
+  reaches.
+
+- **Pause.** The page's one control (`PauseButton.svelte`, WCAG 2.2.2):
+  the picture chip with the windows' hairline and `--radius` corners,
+  "Pause motion" beside it, `aria-pressed` while paused, in the tab
+  order throughout, and shown while any loop runs. It never stands over
+  a head or content (I-673, I-961): it stands in the hero field's top
+  right corner, its chip's right edge on the text line. Its hit area is
+  44px. Paused, every picture stays on its frame through scrolling out
+  and back until play is pressed. A pointer moving inside a picture, a press on it, or focus
   inside it holds the frame too, and the loop resumes 2s after they
   leave; a pointer the page scrolls under, with no movement of its own,
   holds nothing. There is no button with reduced motion or without
@@ -565,7 +508,7 @@ place of an observer of its own:
   viewport's middle (a new one takes the turn only when 24px nearer, so
   two cells of a row do not trade it back and forth). The others show
   their still frame, the one drawn with reduced motion: a cut, with no
-  crossfade. The centrepiece, the wreck picture and OneCommand are in no
+  crossfade. The Orbit, the wreck picture and OneCommand are in no
   group.
 - **Turns.** A grid picture's still frame is its loop's last beat, the
   frame at its seam (Localhost 9900ms, Browser 17200ms). Each cycle the
@@ -710,22 +653,17 @@ place of an observer of its own:
     tile's scale in the first 510ms (`outCubic`); the copy fades in its
     last 150ms (`inQuad`), and the tile comes in (250ms) as it is gone
     (I-675).
-  - *The centrepiece's stack* (I-1169): from the still frame it holds
-    4.2s. Then the title swaps (out 200ms `inQuad`, in 300ms `outQuad`)
-    and so do every value of the agent leaving and the base's values;
-    the leaving agent's own plates go top first, 50ms apart, each
-    rising 16px in 400ms `inQuad` and fading only in its last 120ms
-    (linear), so a plate never shows the ones under it through its
-    face; its rows fade with them, 300ms `inQuad`. The next agent's
-    plates drop in from the walls up, 120ms apart, 24px down to their
-    place in 520ms `inOutCubic`, opaque within their first 120ms
-    (linear), its mark with its top plate; each row moves to its
-    plate's place at once while hidden and fades in 300ms after its
-    plate starts, with its value, 300ms `outQuad`. It holds 4.2s. Dev,
-    shopping, jobs, dev: about 16.6s round, ending on the still frame.
+  - *The Orbit* (I-1212): the alert chip lights at 900ms and a pulse
+    runs along the trace into the machine (1100ms `inOutSine`, falling
+    below 1024px, 900ms); the machine and Claude Code light at 2100ms;
+    a pulse runs out to the phone at 3300ms and the phone asks at
+    4300ms; the alert clears at 5200ms, the machine at 6200ms and the
+    phone at 8600ms. A 9.4s round, ending on the still frame. Each
+    change is a class the CSS transitions (colour, opacity, scale);
+    only the pulses travel.
   - *The pointer's press* in the Browser picture: it scales to 0.86 and
     back in 220ms, `outQuad`, as your click lands.
-  - *The pause button under the pointer*: its icon and edge darken in
+  - *The motion control under the pointer*: its icon and edge darken in
     150ms, the CSS `ease` (I-666).
   - *Colour as a class changes* (CSS transitions, the CSS `ease` unless
     named): the `repose run` chip filling as it fires, 180ms (Wreck,
