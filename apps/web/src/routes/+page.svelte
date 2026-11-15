@@ -1,7 +1,7 @@
 <script lang="ts">
 	import './landing.css';
 	import '$lib/components/landing/pictures.css';
-	import { onMount } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { SIGN_IN_FAILED, authState, onSignInLinkClick } from '$lib/auth.svelte';
@@ -14,10 +14,9 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Compose from '$lib/components/landing/Compose.svelte';
+	import HeroOrbitV1 from '$lib/components/landing/HeroOrbitV1.svelte';
 	import PauseButton from '$lib/components/landing/PauseButton.svelte';
-	import { page } from '$app/state';
-	import { heroes } from '$lib/components/landing/heroes';
+	import { loadHero } from '$lib/components/landing/heroes';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import OneCommand from '$lib/components/landing/OneCommand.svelte';
 	import ComesBack from '$lib/components/landing/ComesBack.svelte';
@@ -25,6 +24,15 @@
 	import Browser from '$lib/components/landing/Browser.svelte';
 	import Editor from '$lib/components/landing/Editor.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
+
+	/** The hero picture: the Orbit, or the candidate ?hero= names, loaded after mount. */
+	let Hero = $state<Component>(HeroOrbitV1);
+	onMount(async () => {
+		const name = new URLSearchParams(window.location.search).get('hero');
+		if (!name) return;
+		const alt = await loadHero(name);
+		if (alt) Hero = alt;
+	});
 
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
@@ -137,15 +145,9 @@
 		</div>
 		<div class="fig fig--hero field-stage">
 			<div class="stage field-stage hero-stage">
-				<!-- Hero loop (2026-11-12): ?hero=orbit|bento|depth|steps draws a
-				     candidate in place of the lanes, so each can be judged. -->
-				{#if heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO ?? 'orbitv1']}
-					{@const Hero =
-						heroes[page.url.searchParams.get('hero') ?? import.meta.env.VITE_HERO ?? 'orbitv1']}
-					<Hero />
-				{:else}
-					<Compose />
-				{/if}
+				<!-- Hero loop (2026-11-12): the Orbit; ?hero=<name> draws another
+				     candidate in its place, in the browser only (heroes.ts). -->
+				<Hero />
 			</div>
 			<PauseButton />
 		</div>

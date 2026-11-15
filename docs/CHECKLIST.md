@@ -319,8 +319,10 @@ entry and this list with it. Counts as of 2026-10-21.
       '![pm][xytrbl]?-' $W --glob '*.svelte'` print 0 lines.
 - [ ] The legacy classes are gone. Evidence: `rg -nP
       'class="[^"]*(?<![\w-])(btn|btn-quiet|btn-ghost|btn-danger|badge|dot|card|banner|field|stat-row|codeblock|check-row|frost-band|table)(?![\w-])'
-      $W --glob '*.svelte'` prints 0 lines (the lookarounds keep `hk-btn`
-      and its kin from matching).
+      $W --glob '*.svelte' --glob '!**/components/landing/**'` prints 0
+      lines (the lookarounds keep `hk-btn` and its kin from matching; the
+      landing's drawn pictures name their own parts, `dot` among them, as
+      every other rule here already lets them, I-1210).
 - [ ] Every shared class and custom property is namespaced and documented.
       Evidence: `rg -no '\.hk-[a-z0-9-]+' apps/web/src/lib/hk/repose.css |
       sed 's/.*:\.//' | sort -u | while read c; do rg -qP

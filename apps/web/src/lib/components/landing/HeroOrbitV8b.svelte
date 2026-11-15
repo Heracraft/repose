@@ -43,7 +43,6 @@
 		lines: string[];
 	};
 	const mark = (n: string) => agentMarks.find((m) => m.name === n)!;
-	const five = agentMarks.slice(0, 5);
 
 	// Left to right: two asleep, then the one the webhook wakes.
 	const dev: Machine = {

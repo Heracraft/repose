@@ -33693,3 +33693,20 @@ protects the wrong things:
 - **A `MemoryLow` budget for the receiver.** I-576's budgets are a fixed
   304 MB for cgroups whose size does not grow with the machine. A
   receiver is the tenant's program and has no such bound.
+
+**I-1210. The landing's drawn pictures are exempt from the legacy-class
+grep, as they are from every other look rule (conductor, r20261115-1,
+2026-11-15).** `docs/CHECKLIST.md`'s "legacy classes are gone" grep
+forbids a bare `dot`, `card`, `badge` and the other names the old global
+stylesheet used, so that no page reaches for a class the kit no longer
+defines. Every other rule in that section (`colours`, `radii`,
+`elevation`, `motion`, `font-weight`, `JetBrains Mono`) already excludes
+`components/landing/**`, because the pictures there draw captured
+applications and keep their own palette and vocabulary (I-843). The
+hero-loop branch brought fourteen hero pictures whose scoped styles name
+a `.dot` (the agents' presence marks) and one `win card`, 17 hits, all
+Svelte-scoped and none reaching a global class. The grep now excludes
+the same directory as its neighbours. Rejected: renaming the classes in
+fourteen files (a mechanical edit across pictures the owner judged by
+eye, for no change the rule was written to catch), and leaving the hits
+(a red grep on main that the next reader has to re-derive).

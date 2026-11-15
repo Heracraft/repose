@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-964 entries.
+965 entries.
 
 ## Scope
 
@@ -996,3 +996,4 @@ pointer, not a summary.
 - **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — L33386
 - **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33454
 - **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33612
+- **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33697

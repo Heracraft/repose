@@ -303,3 +303,42 @@
 	background: var(--pic-accent);
 	color: var(--surface);
 }
+
+/* ---------- The two dark moments (landing.css, "band--dark") ----------
+
+   The hero's field and the install band: the wreck's old plate, its dark
+   tokens run to the window's edges by a spread fill that adds no scroll
+   width. The colours live here with the rest of the landing's palette
+   (I-843); the layout that uses them is in routes/landing.css. */
+.landing .band.band--dark {
+	background: var(--stage-hero);
+	box-shadow: 0 0 0 100vmax var(--stage-hero);
+	clip-path: inset(0 -100vmax);
+	--rule-band: #2a2a2f;
+	--rule-in: #1f1f23;
+	color: var(--hk-text);
+	padding-bottom: var(--field-y);
+}
+.landing .band--dark .steps .code-copy {
+	background: #18181b;
+}
+
+/* ---------- The hero's field ----------
+
+   The stage's tone across the sheet with the 16px dot grid the wreck's
+   field carried; the dot's colour pairs the OS rule with the switch's. */
+.landing .hero-stage {
+	background:
+		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
+		var(--stage);
+	--hero-dot: #dcdce0;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
+		--hero-dot: #232327;
+	}
+}
+:root[data-theme='dark'] .landing .hero-stage,
+:root.dark .landing .hero-stage {
+	--hero-dot: #232327;
+}
