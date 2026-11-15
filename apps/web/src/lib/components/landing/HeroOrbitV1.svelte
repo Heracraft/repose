@@ -233,7 +233,6 @@
 		<div class="hub" aria-hidden="true">
 			<i class="track"></i>
 			<i class="spine a"></i><i class="spine b"></i>
-			<i class="ripple"></i>
 			<div class="core">
 				<svg class="rmark" viewBox="9 9 82 82" width="30" height="30" aria-hidden="true"
 					><path
@@ -245,7 +244,7 @@
 					/></svg
 				>
 				<b>repose</b>
-				<span class="on"><i class="dot"></i>always on</span>
+				<span class="on">always on</span>
 			</div>
 			{#each agents as a (a.m.name)}
 				<span
@@ -472,8 +471,7 @@
 		position: absolute;
 		inset: 0;
 	}
-	.track,
-	.ripple {
+	.track {
 		position: absolute;
 		top: 50%;
 		left: 50%;
@@ -482,28 +480,6 @@
 		border: 1px dashed var(--rule-strong);
 		border-radius: 50%;
 		transform: translate(-50%, -50%);
-	}
-	.ripple {
-		width: 128px;
-		height: 128px;
-		border: 1px solid var(--pic-accent);
-		border-radius: 10px;
-		opacity: 0;
-		transform: translate(-50%, -50%) scale(1);
-	}
-	/* The machine wakes: one hairline goes out from the tile and fades. */
-	.orb:global(.hit) .ripple {
-		animation: ripple 1200ms cubic-bezier(0.2, 0.6, 0.3, 1) both;
-	}
-	@keyframes ripple {
-		from {
-			opacity: 1;
-			transform: translate(-50%, -50%) scale(1);
-		}
-		to {
-			opacity: 0;
-			transform: translate(-50%, -50%) scale(1.45);
-		}
 	}
 	.core {
 		position: absolute;
@@ -545,12 +521,6 @@
 		color: var(--pic-dim);
 		font-size: 12px;
 		line-height: 1;
-	}
-	.dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--color-emerald-500);
 	}
 
 	.ag {
@@ -760,16 +730,14 @@
 			bottom: calc(100% + 6px);
 		}
 		.track,
-		.core,
-		.ripple {
+		.core {
 			top: var(--cy);
 		}
 		.track {
 			width: 200px;
 			height: 200px;
 		}
-		.core,
-		.ripple {
+		.core {
 			width: 96px;
 			height: 96px;
 		}
@@ -824,9 +792,6 @@
 		.bub,
 		.phone {
 			transition: none !important;
-		}
-		.orb:global(.hit) .ripple {
-			animation: none;
 		}
 	}
 </style>

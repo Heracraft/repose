@@ -375,6 +375,30 @@
 		grid-row: 2;
 	}
 }
+/* From 1024px the hero's copy stands centred over the centred picture
+   (owner, 2026-11-15: no asymmetry): the headline in two balanced lines,
+   the lead under it on its measure, and the buttons with the install line
+   on one centred row under both, never beside the lead. */
+@media (min-width: 1024px) {
+	.landing .hero-copy {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+	}
+	.landing .hero h1 {
+		max-width: 26ch;
+		text-wrap: balance;
+	}
+	.landing .hero .hk-lead {
+		max-width: 36rem;
+		margin: 1.5rem 0 0;
+	}
+	.landing .hero-act {
+		justify-content: center;
+		margin-top: 2.25rem;
+	}
+}
 /* On a phone the hero's two buttons take the column's width, one above
    the other; pricing's does too (see Pricing). */
 @media (max-width: 479.98px) {
