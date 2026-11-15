@@ -50,7 +50,6 @@
 	import { theme } from '$lib/theme.svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 
 	const LOCAL =
@@ -279,7 +278,6 @@
 {/snippet}
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} name="ports" />
 	<div
 		class="lh"
 		bind:this={pic}
@@ -481,11 +479,20 @@
 	/* The forward between them: its wire takes what the two windows
 	   leave, the chip at its middle. */
 	.hop {
+		position: relative;
 		flex: 1;
 		min-height: 30px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+	}
+	/* The forward's path, drawn before the wire runs along it, so the gap
+	   between the windows reads as their link at every beat. */
+	.hop::before {
+		content: '';
+		position: absolute;
+		inset: 0 auto 0 calc(50% - 0.5px);
+		border-left: 1px dashed var(--rule-strong);
 	}
 	.wire {
 		flex: 1;
@@ -577,6 +584,18 @@
 	@media (max-width: 480px) {
 		.url {
 			font-size: 11px;
+		}
+	}
+	/* On a phone the windows are short: the forward takes a fixed 64px
+	   and the pair stands in the stage's middle, so no tall empty run of
+	   wire shows between them. */
+	@media (max-width: 479px) {
+		.lh {
+			justify-content: center;
+		}
+		.hop {
+			flex: none;
+			height: 64px;
 		}
 	}
 </style>

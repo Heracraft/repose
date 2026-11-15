@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-962 entries.
+966 entries.
 
 ## Scope
 
@@ -528,7 +528,7 @@ pointer, not a summary.
 - **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11927
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11937
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11980
-- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; amended by I-667; amended by I-772; L12010
+- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; amended by I-667; amended by I-772; partly amended by I-1167; L12010
 - **I-475** Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself — 2026-10-04; amended by I-508; L12032
 - **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; amended by I-508; L12166
 - **I-474** Named secrets are written bound to their project, and the api rebinds older rows at start — 2026-10-04; L12192
@@ -992,5 +992,9 @@ pointer, not a summary.
 - **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33117
 - **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33178
 - **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33244
-- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33312
-- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33470
+- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — amended by I-1169; L33312
+- **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — partly amended by I-1212; L33386
+- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33454
+- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33612
+- **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33697
+- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714

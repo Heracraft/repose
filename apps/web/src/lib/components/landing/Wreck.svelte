@@ -1,5 +1,6 @@
 <!--
-  The hero: the whole pitch as one moving picture, in the style of "Your
+  The wreck picture, the hero's until DECISIONS I-1167 moved it to a band
+  of its own: the whole pitch as one moving picture, in the style of "Your
   laptop's setup, in one command" (OneCommand.svelte): panels with hairline
   borders, rows and chips, blue for what moves, anime.js. docs/LANDING.md,
   "The hero" and "Motion", is the spec; DECISIONS I-667 records this
@@ -68,7 +69,6 @@
 	import Shape from '$lib/components/landing/Shape.svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture, watchWidth } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 	import SnapshotTile from './SnapshotTile.svelte';
 
@@ -260,7 +260,7 @@
 		// machine with its services and the agent, the project rows dimmed,
 		// the nightly tile alone on the rail.
 		function pre() {
-			utils.set(q('.m-proj'), { opacity: 0.22, y: 0 });
+			utils.set(q('.m-proj'), { opacity: 0.45, y: 0 });
 			utils.set(q('.lw .kid.nu'), { opacity: 0, y: 0 });
 			utils.set(q('.lw .st'), { opacity: 0, scale: 1 });
 			utils.set(q('.lw .strike'), { scaleX: 0 });
@@ -492,7 +492,7 @@
 				.call(() => from.classList.remove('lift'), T.land + 16)
 				.add(
 					q('.m-proj.kid'),
-					{ opacity: [0.22, 1], duration: 320, delay: stagger(90), ease: 'outCubic' },
+					{ opacity: [0.45, 1], duration: 320, delay: stagger(90), ease: 'outCubic' },
 					T.land + 60
 				);
 			// Good work: each file lights as the agent writes it, and gains
@@ -683,7 +683,7 @@
 				// tile, which then rolls up off it from the bottom, so the rail
 				// always shows one whole drawing.
 				.call(() => (restored = false), T.seam)
-				.add(q('.m-proj'), { opacity: 0.22, duration: 450, ease: 'inQuad' }, T.seam)
+				.add(q('.m-proj'), { opacity: 0.45, duration: 450, ease: 'inQuad' }, T.seam)
 				.add(
 					q('.lw .kid.nu, .lw .st, .tile.t-u-stub'),
 					{ opacity: 0, duration: 450, ease: 'inQuad' },
@@ -827,28 +827,17 @@
      hidden at this size, as "Let it break the whole machine" draws them.
      The stop tile's machine is the wrecked one, its agent gone. -->
 {#snippet glyph(when: 'night' | 'work' | 'wreck')}
+	<!-- What the snapshot holds, in three rows a reader can read at 11px:
+	     the project with its changes, the database and the toolchain. -->
 	<span class="gl" class:wreck={when === 'wreck'} class:night={when === 'night'}>
-		<i></i>
-		<i class="gr"><b class="gi acc"></b><b class="gb" style:width="30%"></b></i>
-		{#each kids as k (k.n)}
-			<i class="gr kid" class:nu={k.st === 'U'}
-				><b class="gi"></b><b class="gb" style:width="{k.n.length * 2.6}%"></b>{#if k.dir}<b
-						class="gp"
-						style:width="{k.dir.length * 1.5}%"
-					></b>{/if}<b class="gs" class:u={k.st === 'U'}></b></i
-			>
-		{/each}
-		<i class="gsep"></i>
+		<i class="gr"
+			><b class="gt acc">your-project/</b><b class="gv"
+				>{when === 'night' ? 'last night' : `${kids.length} changes`}</b
+			></i
+		>
 		{#each sys as m (m.n)}
-			<i class="gr"
-				><b class="gi"></b><b class="gb" style:width="{m.n.length * 2.8}%"></b>{#if m.dir}<b
-						class="gp"
-						style:width="{m.dir.length * 1.5}%"
-					></b>{/if}<b class="gv"></b></i
-			>
+			<i class="gr"><b class="gt">{m.n}</b><b class="gv">{when === 'wreck' ? m.bad : m.ok}</b></i>
 		{/each}
-		<i class="gsep"></i>
-		<i class="gr"><b class="gc"></b><b class="gm"></b></i>
 	</span>
 {/snippet}
 
@@ -923,7 +912,6 @@
 {/snippet}
 
 <div class="hero-frame" use:picture.frame>
-	<PauseButton {picture} name="wreck and restore" />
 	<div class="hero-pic" role="img" aria-label={label} aria-describedby="hero-story" bind:this={pic}>
 		<p id="hero-story" hidden>{story}</p>
 
@@ -1031,7 +1019,7 @@
 		   right-hand stack is as tall. */
 		--agent: 40px;
 		/* The dim the project rows rest at before repose run lights them. */
-		--dimmed: 0.22;
+		--dimmed: 0.45;
 		position: relative;
 		display: grid;
 		min-width: 0;
@@ -1428,12 +1416,16 @@
 	   at the tile's size, whatever that size is, and the copy that flies
 	   onto the rail fades into it in place. */
 	.gl {
+		font-style: normal;
 		display: grid;
-		grid-template-rows: 9fr repeat(4, 28fr) 7fr repeat(2, 28fr) 7fr 40fr;
+		grid-template-rows: repeat(3, auto);
+		align-content: center;
+		row-gap: 8px;
 		height: 100%;
-		padding: 0 7% 0 5%;
+		padding: 0 10px;
 	}
 	.gr {
+		font-style: normal;
 		display: flex;
 		align-items: center;
 		gap: 4%;
@@ -1444,39 +1436,35 @@
 	}
 	.gr > b {
 		flex: none;
-		height: 3px;
-		border-radius: 1px;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 400;
+		line-height: 1;
+		white-space: nowrap;
 	}
-	.gi {
-		width: 3px;
-		background: var(--pic-dim);
+	.gt {
+		overflow: hidden;
+		color: var(--pic-dim);
+		text-overflow: ellipsis;
+		flex-shrink: 1 !important;
+		min-width: 0;
 	}
-	.gi.acc {
-		background: var(--pic-accent);
-	}
-	.gb {
-		background: var(--pic-faint);
-		opacity: 0.8;
-	}
-	.gp {
-		background: var(--pic-faint);
-		opacity: 0.35;
+	.gt.acc {
+		color: var(--pic-ink);
+		font-weight: 600;
 	}
 	.gr > .gs,
 	.gr > .gv {
 		margin-left: auto;
 	}
 	.gs {
-		width: 3px;
-		background: var(--pic-dim);
+		color: var(--pic-dim);
 	}
 	.gs.u {
-		background: var(--pic-add);
+		color: var(--pic-add);
 	}
 	.gv {
-		width: 16%;
-		background: var(--pic-faint);
-		opacity: 0.6;
+		color: var(--pic-dim);
 	}
 	.gr > .gc {
 		width: 5px;
@@ -1485,9 +1473,7 @@
 		background: var(--claude);
 	}
 	.gm {
-		width: 42%;
-		background: var(--mode);
-		opacity: 0.6;
+		color: var(--mode);
 	}
 	.gsep {
 		align-self: center;
@@ -1500,18 +1486,13 @@
 	.night .gr.nu {
 		visibility: hidden;
 	}
-	.wreck .gr.kid .gb,
-	.wreck .gr.kid .gp {
-		opacity: 0.3;
-	}
 	.wreck .gs,
 	.wreck .gc,
 	.wreck .gm {
 		visibility: hidden;
 	}
 	.wreck .gv {
-		background: var(--pic-stop);
-		opacity: 0.85;
+		color: var(--pic-stop);
 	}
 
 	/* The internet: the globe, on the stack's floor, level with the

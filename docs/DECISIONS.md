@@ -33309,6 +33309,148 @@ going reads one that has already been freed.
   move is to put the runner's binary first on PATH here and load the
   box, which reproduced this in under a minute.
 
+**I-1167. The landing sells a framework for running always-on agents,
+with any agent and any model (tensions-landing, 2026-11-12). Amends
+I-477's "What we sell" and the hero of I-843 and I-961.**
+
+The owner moved the pitch from "your dev environment, replicated in the
+cloud" to "a framework for running always-on agents" between 2026-11-09
+and 2026-11-11 (the summit deck v3 and its canon, kept in `~/pitch` on
+kanali), and the landing kept I-477's words and its ban on "always-on",
+phones and notifications. One of the two had to give, and the product
+is now closer to the deck: webhooks (I-1110) and `repose say` (I-1144)
+shipped on 2026-11-11, beside questions answered from ntfy, email or
+the dashboard (I-245) and scheduled jobs on a systemd timer (I-518).
+The owner's words, the reason for this entry:
+
+- "It's a framework for running always-on agents. It takes your
+  favorite agent. It doesn't give opinions on which agent." (practice
+  pitch, 2026-11-09)
+- "You can use your sovereign AI, you can bring in Claude Code, Codex,
+  your subscription ... and you get primitives for building an
+  always-on agent." (2026-11-10)
+- "The premise is already there: receiving a webhook, sending a
+  message, a browser inside. It can be an always-on agent for
+  anything." (2026-11-10, on the job-application agent)
+- "I don't want repose to be one of those things that give you a web
+  UI for codex and claude. It should give you primitives to run shit
+  persistently." (2026-10-05)
+
+- **What the page leads with.** The h1 names it, in the owner's words:
+  "A framework for running always-on agents". The eyebrow is "Any agent,
+  any model". The lead is one sentence on what you get: a Linux machine
+  of its own, set up from your laptop in one command, that keeps running
+  with the laptop shut and wakes for a webhook or a timer. Under the
+  hero a band of three columns, the parts a user can use today: wake-ups
+  (`repose webhooks`, a systemd timer, `repose say`), secrets by name,
+  and a line to you (`repose-ask`, by email, ntfy or Google Chat). Then
+  one block on the first use that is not a developer's: the
+  job-application agent, told as what it does (a `role.created` delivery
+  through `hooks.repose.run`, which a small server the agent runs turns
+  into a session that applies in the machine's browser, `repose-ask` at
+  a captcha or a login, the person clearing it with `repose browser`),
+  on a `large`, with no company named and no count of runs. - **What it
+  may mention.** Always-on, any agent and any model, webhooks, `repose
+  say`, scheduled jobs by systemd timer, secrets, the browser,
+  snapshots, notifications by email, phone (ntfy) or Google Chat and
+  answering a question from the dashboard. Each only as far as the
+  public docs say a user can do it today. - **What it still may not
+  claim.** The trigger layer that binds an event to a session (approach
+  A of the 2026-11-12 proposal), per-event machines, a `tiny` class,
+  burst cores (I-1126 shipped off on every host), bare metal or your own
+  hardware: none of these is something a visitor can do. No user or
+  customer counts. No rival named (I-477's rejection stands).
+  Collaboration and "a software factory" stay out. - **The wreck
+  stays.** The wreck-and-restore picture (Hero.svelte) is the demo the
+  summit script points at ("It is the demo on repose.run"), so it moves
+  from the hero to its own band, on the same dark field; the ComesBack
+  cell keeps how a restore runs. - **The hero's picture.** A drawn
+  object on the page's own tone, after voidzero.dev's grammar (one
+  central object under a centred headline; `LANDING.md` "The
+  centrepiece"): the machine, with the agent slot, the secrets and the
+  browser inside it, the wake-ups wired into its left wall and the line
+  to you out of its right. It is flat, in the pictures' existing kit
+  (windows, chips, hairline wires ending on terminal dots), and it does
+  not move. The anatomy skill was the brief's tool; its craft rules
+  apply (solid parts, one lit part, every line ending on an object,
+  every string true) and its isometric projection does not, since the
+  owner killed isometric on the landing (2026-10-04) and the
+  shelf-of-equipment flat version (2026-10-19, I-795 never landed). The
+  deck's flat stack (deck2 DECISIONS 25, "Everything under your agent")
+  is the closest thing the owner kept. - *Rejected:* keeping I-477 and
+  telling the deck it is a promise (the deck now describes what
+  shipped); leading with the job agent (it is one use, and a developer
+  is still the buyer); a motion loop for the new picture (`LANDING.md`
+  "Motion" lists every move, and a wiring diagram that draws itself
+  reads as line-art in motion).
+**I-1169. The landing sells a platform for running your own always-on
+agents, composed in layers, and its centrepiece is a 3D stack that
+composes three of them (tensions-landing, 2026-11-12). Amends I-1167.**
+
+The owner read I-1167's page and asked for more (2026-11-12, voice):
+"this is a framework for composing all [your] own agents ... how much
+memory, how much cores ... they don't need to know [the classes], and
+then you can put layers on top of it. Bring your own agent, bring
+triggers such as schedules and webhooks. This is in progress, don't
+worry, just write it." And: "a platform for running all [your] own
+agents that is isolated from your machine, that can handle secrets,
+that can replicate your existing dev environment, that can trigger on
+schedules and take in webhooks securely, that is isolated from the
+internet unless your agent actually asks for something and gets a
+response." On machine size: "You guys can have tiny machines. These are
+coming actually. It's just half of the small." On the picture: "I like
+the 2D, but perhaps we can consider a 3D animation ... let's do
+animation", pointing at voidzero.dev's stack.
+
+- **The page leads with** "A platform for running your own always-on
+  agents", and the lead names the layers: pick a machine, bring any
+  agent, stack your dev environment, secrets, schedules and webhooks on
+  top; it runs walled off from your laptop and the internet. Band 01
+  ("Build it in layers") has six cells in the stack's order: machine,
+  walls, your setup, secrets, triggers, agent.
+- **Written ahead of shipping, on the owner's word.** Two claims are
+  not yet something a visitor can do, and the owner told us to write
+  them anyway: a schedule or a webhook starting a session with a prompt
+  (the trigger layer, approach A of the 2026-11-12 proposal), and a
+  tiny machine of 2 GB (half a `small`). This overrides I-1167's "may
+  not claim" for those two only, and it bends CLAUDE.md "Trust the
+  reader", which the owner may do. Nothing names a command or a class
+  that does not exist (no `repose trigger`, no `--size tiny`). When the
+  trigger layer or the tiny class ships, its user docs must match these
+  lines, or the lines change; until then this entry is why they are
+  there. Burst cores, bare metal, your own hardware, user counts and
+  rivals stay out.
+- **The 3D ban lifts for the centrepiece.** The owner killed isometric
+  (2026-10-04) and the equipment shelf (2026-10-19), and asked for this
+  one himself. `landing/Stack.svelte` draws plates at 30 degrees in
+  the pictures' four flat tones and one blue, no gradient, gloss or
+  glow; it loops through three agents (a dev environment, a shopping
+  agent, an agent that applies for jobs) on one base that stays (the
+  machine and its walls), dropping in only the layers each agent needs,
+  so each is a stack of its own shape, with the agent's mark facing you
+  on the top plate. Every move is in LANDING.md "Motion". The ban
+  stands for every other picture.
+- **Review.** A design critic and a copy audit ran on the first build.
+  The critic's verdict was that it read as "a layered box with a logo":
+  every agent the same shape, marks laid flat and unreadable, an empty
+  beat between agents, plates see-through mid-fade, 2.8s holds. The base
+  now stays, left-out layers close up, the marks face you, opacity
+  changes in 120ms, holds are 4.2s. The audit's fixes: the internet line
+  says only webhook routes reach a machine (SSH through repose is the
+  owner's own way in, and a lent port reaches the laptop), "any model"
+  stays only in the owner's eyebrow, a store login is not a secret (an
+  API key is), and an agent "asks" only when told to.
+- **The 2D drawing is kept.** The owner liked I-1167's Parts drawing
+  and asked to keep it to compare: `landing/Parts.svelte` stays in the
+  tree, unused, and branch `landing-centrepiece-2d` (ee1c6c5a) has the
+  page with it in place.
+- *Rejected:* a WebGL scene (a second rendering stack on the page for
+  one picture, and no still frame without a script); the plates
+  carrying the use's text on their faces (skewed text reads badly at
+  13px); a dashed ghost for a left-out layer (hidden under the plates
+  above it, so every agent kept one shape); the machine's thickness
+  following its memory (every plate above would move with it); naming
+  `tiny` (the owner: "they don't need to know").
 **I-1168. A `tiny` class below `small`: 2 GB of memory and half a guest
 vCPU, four to a seat (tiny-class, 2026-11-12).** Amends R3-2, I-784,
 I-736, I-739, I-737 and I-1126's class table by adding a fourth class,
@@ -33551,3 +33693,57 @@ protects the wrong things:
 - **A `MemoryLow` budget for the receiver.** I-576's budgets are a fixed
   304 MB for cgroups whose size does not grow with the machine. A
   receiver is the tenant's program and has no such bound.
+
+**I-1210. The landing's drawn pictures are exempt from the legacy-class
+grep, as they are from every other look rule (conductor, r20261115-1,
+2026-11-15).** `docs/CHECKLIST.md`'s "legacy classes are gone" grep
+forbids a bare `dot`, `card`, `badge` and the other names the old global
+stylesheet used, so that no page reaches for a class the kit no longer
+defines. Every other rule in that section (`colours`, `radii`,
+`elevation`, `motion`, `font-weight`, `JetBrains Mono`) already excludes
+`components/landing/**`, because the pictures there draw captured
+applications and keep their own palette and vocabulary (I-843). The
+hero-loop branch brought fourteen hero pictures whose scoped styles name
+a `.dot` (the agents' presence marks) and one `win card`, 17 hits, all
+Svelte-scoped and none reaching a global class. The grep now excludes
+the same directory as its neighbours. Rejected: renaming the classes in
+fourteen files (a mechanical edit across pictures the owner judged by
+eye, for no change the rule was written to catch), and leaving the hits
+(a red grep on main that the next reader has to re-derive).
+
+**I-1212. The landing's hero is the Orbit, with its copy centred over it
+(hero-loop, 2026-11-15).** Amends I-1169's centrepiece and the hero
+layout of I-961 and I-1167. The hero loop judged nineteen rounds of
+whole pages against voidzero.dev's landing at 1440 and 390. What ships
+is `landing/HeroOrbitV1.svelte`: repose on a tile in the middle, the
+five agents as bubbles on a ring around it, what wakes it on the left
+and what it carries on the right in plain words, and the phone it asks
+you on, on the hero's dark field. The copy above it stands centred from
+1024px (owner, 2026-11-15: no asymmetry over a centred picture), with
+no eyebrow; below 1024px it starts on the text line, under the logo.
+I-1169's stack of plates (`landing/Stack.svelte`) and the three lanes of
+rounds 1 to 8 (`landing/Compose.svelte`) are off the page and stay in
+the tree, loadable with `?hero=<name>` (`landing/heroes.ts`), as the
+other candidates are. Three more changes the rounds made and this entry
+records: the job-application agent has no band of its own, so the bands
+are 01 Layers to 08 Questions and the grid's cells 4.1 to 4.4; a grid
+cell reads its words first and its picture under them, so the stage's
+one hairline is at its top; and the page has one motion control in the
+hero field in place of a pause button per picture (owner, 2026-11-12),
+which `PauseButton.svelte` already shipped. `docs/LANDING.md` is
+rewritten to this page, and the landing suites assert it: the copy's one
+centre line (landing-grid, landing), the Orbit named for a screen reader
+with its five bubbles and its still frame under reduced motion
+(landing), and a loop that starts only once the page has been still
+(landing-motion, landing-hero). The pictures' `<b>` elements became
+spans in the same commit: `docs/CHECKLIST.md`'s weight rule forbids
+`<b>`, main had none, and the rounds added 22; each already sat under a
+rule setting 600 or less, so nothing on the page moved. Rejected:
+leaving LANDING.md describing the centrepiece while the page drew the
+Orbit (two agents then build against different pages, and the next
+round's reviewer reads the wrong spec); keeping the fifteen stale tests
+as skips (DECISIONS I-1036: a skip reads as a pass); and widening the
+weight rule to let the pictures keep `<b>`, as I-1210 widened the
+legacy-class rule (that rule is about a class the kit no longer defines;
+this one is about weight, and the fix was mechanical and visible in a
+capture).

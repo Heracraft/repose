@@ -46,6 +46,26 @@ export type Group = 'grid';
 export const HOLD_MS = 2000;
 /** A new grid picture takes the turn only when nearer the middle by this. */
 const HYSTERESIS = 24;
+/**
+ * A loop starts once the page has been still this long with its picture
+ * in view: a reader scrolling past sees the still frame, never a move cut
+ * off mid-flight by the scroll (hero loop, 2026-11-12).
+ */
+export const QUIET_MS = 1000;
+
+/**
+ * The page's one motion control (hero loop, 2026-11-12, owner: one toggle
+ * in place of a pause button per picture): `paused` holds every picture,
+ * `live` counts the pictures whose loop runs, so the control shows only
+ * while something can move.
+ */
+export const motion = $state({ paused: false, live: 0 });
+
+/** The page's pause control: hold every picture, or let them play. */
+export function toggleMotion() {
+	motion.paused = !motion.paused;
+	for (const p of all) p.update();
+}
 
 // A registry, not state: nothing renders from it.
 // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -57,6 +77,22 @@ let leader: Picture | null = null;
 let turn: Picture | null = null;
 let raf = 0;
 let listening = false;
+let quietTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** The page moved, or a picture came into view: wait for it to be still. */
+function unsettle() {
+	clearTimeout(quietTimer);
+	quietTimer = setTimeout(() => {
+		quietTimer = undefined;
+		for (const p of all) if (p.inView) p.settled = true;
+		coordinate();
+	}, QUIET_MS);
+}
+
+function onScroll() {
+	unsettle();
+	schedule();
+}
 
 function grid() {
 	return [...all].filter((p) => p.group === 'grid' && p.target);
@@ -106,10 +142,10 @@ function listen(on: boolean) {
 	if (on === listening) return;
 	listening = on;
 	if (on) {
-		window.addEventListener('scroll', schedule, { passive: true });
+		window.addEventListener('scroll', onScroll, { passive: true });
 		window.addEventListener('resize', schedule);
 	} else {
-		window.removeEventListener('scroll', schedule);
+		window.removeEventListener('scroll', onScroll);
 		window.removeEventListener('resize', schedule);
 	}
 }
@@ -123,6 +159,8 @@ export class Picture {
 
 	target: Element | null = null;
 	inView = false;
+	/** In view with the page still for QUIET_MS since it came into view. */
+	settled = false;
 	/** Pointer or focus is inside the frame. */
 	inside = false;
 
@@ -155,12 +193,16 @@ export class Picture {
 		this.onMode = onMode;
 		this.mode = null;
 		this.played = false;
+		if (!this.moving) motion.live++;
 		this.moving = true;
 		all.add(this);
 		listen(true);
 		this.io = new IntersectionObserver(
 			([e]) => {
+				const was = this.inView;
 				this.inView = e.isIntersecting && e.intersectionRatio >= threshold;
+				if (!this.inView) this.settled = false;
+				else if (!was) unsettle();
 				if (this.group) schedule();
 				else this.update();
 			},
@@ -177,6 +219,8 @@ export class Picture {
 		this.mode = null;
 		this.target = null;
 		this.inView = false;
+		this.settled = false;
+		if (this.moving) motion.live--;
 		this.moving = false;
 		if (this.node) delete this.node.dataset.motion;
 		if (all.delete(this)) {
@@ -200,8 +244,9 @@ export class Picture {
 	/** The mode now; for a grid picture, `coordinate` has picked the leader. */
 	private want(): Mode {
 		const held = !this.released && (this.hover || this.focus || this.timer !== undefined);
-		if (this.paused || held || !this.inView) return 'hold';
+		if (this.paused || motion.paused || held || !this.inView) return 'hold';
 		if (this.group && leader !== this) return 'rest';
+		if (!this.settled) return 'hold';
 		return 'play';
 	}
 

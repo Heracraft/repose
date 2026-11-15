@@ -1,7 +1,7 @@
 <script lang="ts">
 	import './landing.css';
 	import '$lib/components/landing/pictures.css';
-	import { onMount } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { SIGN_IN_FAILED, authState, onSignInLinkClick } from '$lib/auth.svelte';
@@ -14,13 +14,25 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Hero from '$lib/components/landing/Hero.svelte';
+	import HeroOrbitV1 from '$lib/components/landing/HeroOrbitV1.svelte';
+	import PauseButton from '$lib/components/landing/PauseButton.svelte';
+	import { loadHero } from '$lib/components/landing/heroes';
+	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import OneCommand from '$lib/components/landing/OneCommand.svelte';
 	import ComesBack from '$lib/components/landing/ComesBack.svelte';
 	import Localhost from '$lib/components/landing/Localhost.svelte';
 	import Browser from '$lib/components/landing/Browser.svelte';
 	import Editor from '$lib/components/landing/Editor.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
+
+	/** The hero picture: the Orbit, or the candidate ?hero= names, loaded after mount. */
+	let Hero = $state<Component>(HeroOrbitV1);
+	onMount(async () => {
+		const name = new URLSearchParams(window.location.search).get('hero');
+		if (!name) return;
+		const alt = await loadHero(name);
+		if (alt) Hero = alt;
+	});
 
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
@@ -61,10 +73,10 @@
 </script>
 
 <svelte:head>
-	<title>repose: your dev environment, replicated in the cloud</title>
+	<title>repose: a platform for running your own always-on agents</title>
 	<meta
 		name="description"
-		content="One command replicates your laptop's dev environment on a cloud machine: your code, tools and logins. For solo founders whose agents run with full permissions there, while the laptop stays out of reach."
+		content="Run your own always-on agents: pick a machine, bring any agent, and add your dev environment, secrets, schedules and webhooks. Each one runs on a machine of its own, away from your laptop."
 	/>
 </svelte:head>
 
@@ -115,12 +127,10 @@
 <main id="main" tabindex="-1" class="frame landing">
 	<section class="band hero" aria-labelledby="hero-h">
 		<div class="hero-copy">
-			<p class="label eyebrow">For solo founders and their agents</p>
-			<h1 class="hk-h1" id="hero-h">Your dev environment, replicated in the cloud</h1>
+			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
 			<p class="hk-lead">
-				Your code, tools and logins sit on a machine of its own, where agents run with full
-				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
-				a wrecked machine back in minutes.
+				Give your agent a machine of its own, then add what it needs: your dev environment, secrets,
+				a schedule or a webhook that wakes it. It keeps working with your laptop shut.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -133,16 +143,105 @@
 					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
 		</div>
-		<div class="fig fig--hero">
-			<div class="stage hero-stage">
+		<div class="fig fig--hero field-stage">
+			<div class="stage field-stage hero-stage">
+				<!-- Hero loop (2026-11-12): the Orbit; ?hero=<name> draws another
+				     candidate in its place, in the browser only (heroes.ts). -->
 				<Hero />
+			</div>
+			<PauseButton />
+		</div>
+	</section>
+
+	<section class="band" id="parts" aria-labelledby="parts-h">
+		<div class="head">
+			{@render label('01', 'Layers')}
+			<h2 class="hk-h2" id="parts-h">Build it in layers</h2>
+			<p class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'webhooks' })}>Webhooks</a>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'notifications' })}
+					>Notifications</a
+				>
+			</p>
+		</div>
+		<ul class="cols">
+			<li>
+				{@render label('1.1', 'Machine')}
+				<h3 class="item-title">Size it to the job</h3>
+				<p class="copy">
+					A tiny machine with 2 GB keeps one agent running all day. A build gets 2 cores and 8 GB,
+					or 4 and 16.
+				</p>
+				<p class="cmd">repose resize --size large</p>
+			</li>
+			<li>
+				{@render label('1.2', 'Walls')}
+				<h3 class="item-title">Wall it off from your laptop</h3>
+				<p class="copy">
+					The machine can't open a connection to your laptop unless you lend it a port. From the
+					internet, only its webhook routes reach it, and the answers to the agent's own requests
+					come back.
+				</p>
+			</li>
+			<li>
+				{@render label('1.3', 'Your setup')}
+				<h3 class="item-title">Bring your dev environment</h3>
+				<p class="copy">
+					<code>repose run</code> copies your checkout and your tools. Leave it out for an agent that
+					only works on the web.
+				</p>
+				<p class="cmd">repose run</p>
+			</li>
+			<li>
+				{@render label('1.4', 'Secrets')}
+				<h3 class="item-title">Give it the keys you choose</h3>
+				<p class="copy">
+					You set a secret by name, and the agent gets it as an environment variable on its next
+					command. Your SSH keys stay on your laptop.
+				</p>
+				<p class="cmd">repose secrets set NAME</p>
+			</li>
+			<li>
+				{@render label('1.5', 'Triggers')}
+				<h3 class="item-title">Start it on a schedule or a webhook</h3>
+				<p class="copy">
+					Point a schedule or a webhook at a prompt, and a session starts on the machine with the
+					event in hand. A webhook's URL carries its own token, and a wrong one never reaches the
+					machine.
+				</p>
+			</li>
+			<li>
+				{@render label('1.6', 'Agent')}
+				<h3 class="item-title">Bring any agent</h3>
+				<p class="copy">
+					Claude Code, Codex, Gemini CLI, opencode and pi come installed, and opencode and pi take
+					any provider's key. It asks you for a yes by email, ntfy or Google Chat, and you answer
+					there.
+				</p>
+				<p class="cmd">repose notify set --ntfy URL</p>
+			</li>
+		</ul>
+	</section>
+
+	<section class="band" aria-labelledby="wreck-h">
+		<div class="head">
+			{@render label('02', 'Permissions')}
+			<h2 class="hk-h2" id="wreck-h">Let it run with full permissions</h2>
+			<p class="copy side">
+				You don't approve its commands one by one. It can touch its machine and anything the logins
+				on it can, and restoring a snapshot brings the machine back as it was.
+			</p>
+		</div>
+		<div class="fig fig--wreck">
+			<div class="stage">
+				<Wreck />
 			</div>
 		</div>
 	</section>
 
 	<section class="band" aria-labelledby="setup-h">
 		<div class="head">
-			{@render label('01', 'Setup')}
+			{@render label('03', 'Setup')}
 			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
 			<p class="copy side">
 				You spend an hour setting up a cloud machine: install the CLIs, log in to GitHub, paste the
@@ -158,7 +257,7 @@
 
 	<section class="band" id="features" aria-labelledby="features-h">
 		<div class="head">
-			{@render label('02', 'Machine')}
+			{@render label('04', 'Machine')}
 			<h2 class="hk-h2" id="features-h">Work on the machine as you would on your laptop</h2>
 			<p class="copy side">
 				Each project gets a machine of its own, and you reach it from the tools already on your
@@ -169,7 +268,7 @@
 			<li class="fig">
 				<ComesBack />
 				<div class="cell-copy">
-					{@render label('2.1', 'Snapshots')}
+					{@render label('4.1', 'Snapshots')}
 					<h3 class="item-title">Restore the whole disk</h3>
 					<p class="copy">
 						A snapshot holds the checkout, the installed tools and the logins made on the machine. A
@@ -181,7 +280,7 @@
 			<li class="fig">
 				<Localhost />
 				<div class="cell-copy">
-					{@render label('2.2', 'Ports')}
+					{@render label('4.2', 'Ports')}
 					<h3 class="item-title">Use its ports on your localhost</h3>
 					<p class="copy">
 						Ports your servers listen on, from 1024 up, appear on your localhost while you're
@@ -193,7 +292,7 @@
 			<li class="fig">
 				<Browser />
 				<div class="cell-copy">
-					{@render label('2.3', 'Browser')}
+					{@render label('4.3', 'Browser')}
 					<h3 class="item-title">Watch the agent's browser, and take over</h3>
 					<p class="copy">
 						The agents' browser runs on the machine. Open it on your laptop to watch, or to do a
@@ -205,7 +304,7 @@
 			<li class="fig">
 				<Editor />
 				<div class="cell-copy">
-					{@render label('2.4', 'Editor')}
+					{@render label('4.4', 'Editor')}
 					<h3 class="item-title">Open it in your editor</h3>
 					<p class="copy">
 						Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
@@ -219,7 +318,7 @@
 
 	<section class="band" aria-labelledby="agents-h">
 		<div class="head">
-			{@render label('03', 'Agents')}
+			{@render label('05', 'Agents')}
 			<h2 class="hk-h2" id="agents-h">
 				The agents you use, and the tools they need, on first boot
 			</h2>
@@ -236,9 +335,9 @@
 		</div>
 	</section>
 
-	<section class="band" aria-labelledby="install-h">
+	<section class="band field-stage band--dark" aria-labelledby="install-h">
 		<div class="head">
-			{@render label('04', 'Install')}
+			{@render label('06', 'Install')}
 			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
@@ -253,7 +352,7 @@
 			{#each steps as step, i (step.title)}
 				<li>
 					<h3 class="item-title step-title">
-						<span class="label" aria-hidden="true">4.{i + 1}</span>{step.title}
+						<span class="label" aria-hidden="true">6.{i + 1}</span>{step.title}
 					</h3>
 					<CodeCopy command={step.command} what={step.what} labelFrom={1200} />
 				</li>
@@ -263,7 +362,7 @@
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head">
-			{@render label('05', 'Pricing')}
+			{@render label('07', 'Pricing')}
 			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
 			<div class="cta-row side">
 				<!-- Signing up here comes back to Billing, where the plans are. -->
@@ -285,7 +384,7 @@
 
 	<section class="band faq-band" aria-labelledby="faq-h">
 		<div class="head">
-			{@render label('06', 'Questions')}
+			{@render label('08', 'Questions')}
 			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>
@@ -294,47 +393,54 @@
 		</div>
 		<div class="ruled faq">
 			<details>
-				<summary class="item-title">Why not skip permissions on my laptop?{@render plus()}</summary>
+				<summary class="item-title">What can I build with it?{@render plus()}</summary>
 				<p class="copy">
-					There the agent can read whatever you can, from your SSH keys to the sessions in your
-					browser. On repose it gets a machine holding one project and the logins you chose to copy.
-					The machine can't open a connection to your laptop, and your other projects are separate
-					machines it can't reach.
+					You can build any agent you'd keep running. A responder wakes on your alerts, reads your
+					metrics and logs, and asks before it changes anything.
 				</p>
 			</details>
 			<details>
 				<summary class="item-title"
-					>Can I close my laptop while the agent works?{@render plus()}</summary
+					>How is this different from a server with an agent on it?{@render plus()}</summary
 				>
 				<p class="copy">
-					Yes. Detach and close it; the agent keeps working on the machine, and you attach again to
-					see where it got to.
+					On your own server you set it all up again for each agent. Here the machine freezes when
+					nobody uses it and wakes for the next webhook, and when the server under it restarts, its
+					programs and agents carry on where they were.
 				</p>
 			</details>
 			<details>
-				<summary class="item-title">How long are snapshots kept?{@render plus()}</summary>
+				<summary class="item-title">Can I close my laptop while it works?{@render plus()}</summary>
 				<p class="copy">
-					Seven days, and the newest one always. repose takes one each night the machine runs and at
-					every stop, and <code>repose snapshots create</code> takes one before something risky.
+					The agent keeps working on its machine, and you hear by email or on your phone when it's
+					done or needs you. Attach again, or open the machine in your editor, to see where it got
+					to.
 				</p>
 			</details>
 			<details>
-				<summary class="item-title"
-					>Can three agents try three approaches at once?{@render plus()}</summary
-				>
+				<summary class="item-title">What can the agent reach?{@render plus()}</summary>
 				<p class="copy">
-					<code>repose run --worktree -p "..."</code> three times puts each agent in its own working
-					tree on its own branch, on the one machine. Fetch the branch that won with git, and delete
-					the rest.
+					It runs as <code>dev</code> with sudo on its own machine, with the logins you copied and the
+					secrets you set. Your other projects are separate machines it can't reach, and it connects to
+					your laptop only through a port or a Chrome you lend it.
 				</p>
 			</details>
 			<details>
-				<summary class="item-title"
-					>Why not rent a server and set it up myself?{@render plus()}</summary
+				<summary class="item-title">What happens when it breaks something?{@render plus()}</summary>
+				<p class="copy">
+					You restore a snapshot and the whole disk comes back: the checkout, the tools and the
+					logins made on the machine, Claude Code's aside. repose takes one each night and at every
+					stop, or you run <code>repose snapshots create</code> first; they're kept seven days, and the
+					newest stays.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title">What does an agent cost while it waits?{@render plus()}</summary
 				>
 				<p class="copy">
-					You can, and you redo that setup for each project. The nightly snapshots and the port
-					forwards are then yours to build as well.
+					A machine nobody is using freezes after about 15 minutes of quiet, and a webhook, a
+					scheduled job or your next command wakes it in a second or two. You pay for the memory
+					your plan runs at once, so a waiting agent costs nothing on top.
 				</p>
 			</details>
 		</div>

@@ -43,7 +43,6 @@
 	import { onMount } from 'svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture, watchWidth } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 
 	let { animated = false }: { animated?: boolean } = $props();
@@ -588,7 +587,6 @@
 {/snippet}
 
 <div class="oc" use:picture.frame>
-	<PauseButton {picture} name="setup" />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="pic" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
 		<div class="side" aria-hidden="true">{@render panel('laptop')}</div>

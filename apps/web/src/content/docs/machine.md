@@ -240,7 +240,7 @@ For a job that needs your logged-in browser, [lend the agents your laptop's Chro
 
 ## Network
 
-The machine can reach the internet over TCP and UDP, within [the network limits](/docs/limits#network). Nothing on the internet can reach the machine; the only way in is SSH through repose, with your certificate.
+The machine can reach the internet over TCP and UDP, within [the network limits](/docs/limits#network). Nothing on the internet can reach the machine; the only ways in are SSH through repose, with your certificate, and its [webhook routes](/docs/webhooks).
 
 npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. For npm, repose adds two lines to `~/.npmrc`; delete them to go direct and they stay deleted. An `~/.npmrc` that already names a registry or holds an npmjs token is left alone.
 

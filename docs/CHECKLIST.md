@@ -260,10 +260,11 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] One scheme mechanism. Evidence: `rg -ln 'prefers-color-scheme' $W`
       prints only `app.html`, `lib/app-html.test.ts`, `lib/hk/tokens.css`,
       `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts`,
-      `routes/layout.css`, and the pictures `landing/Hero.svelte`,
-      `landing/Browser.svelte`, `landing/Localhost.svelte` and
-      `landing/pictures.css`, which pair each OS rule with the switch's
-      `data-theme` rule (I-843), 11 files; `rg -n
+      `routes/layout.css`, and the pictures `landing/Wreck.svelte`,
+      `landing/Browser.svelte`, `landing/Localhost.svelte`,
+      `landing/Stack.svelte` and `landing/pictures.css`, which pair each
+      OS rule with the switch's `data-theme` rule (I-843, I-1169), 12
+      files; `rg -n
       'class="dark|classList\.(add|toggle)\(.dark' $W` and `rg -n
       'theme="system"|richColors' $W --glob '*.svelte'` print 0 lines.
 - [ ] The inline script's hash is in the CSP, and the first paint matches the
@@ -309,17 +310,19 @@ entry and this list with it. Counts as of 2026-10-21.
       `/projects` and a project page (design.spec, landing-motion.spec).
 - [ ] Every picture stops on its final frame when reduced motion turns on
       mid-session. Evidence: `rg --files-without-match watchReducedMotion
-      apps/web/src/lib/components/landing/{Hero,OneCommand,ComesBack,Browser,Localhost}.svelte`
+      apps/web/src/lib/components/landing/{HeroOrbitV1,Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
       prints 0 lines. The suites above read the setting at load; this is
-      the five drawn pictures answering a change made while the page is
+      the six drawn pictures answering a change made while the page is
       open (I-397, and the pictures restored by I-843).
 - [ ] Sizes come from the scale. Evidence: `rg -n
       'text-\[[0-9.]+(px|rem|em)\]' $W --glob '*.svelte'` and `rg -n
       '![pm][xytrbl]?-' $W --glob '*.svelte'` print 0 lines.
 - [ ] The legacy classes are gone. Evidence: `rg -nP
       'class="[^"]*(?<![\w-])(btn|btn-quiet|btn-ghost|btn-danger|badge|dot|card|banner|field|stat-row|codeblock|check-row|frost-band|table)(?![\w-])'
-      $W --glob '*.svelte'` prints 0 lines (the lookarounds keep `hk-btn`
-      and its kin from matching).
+      $W --glob '*.svelte' --glob '!**/components/landing/**'` prints 0
+      lines (the lookarounds keep `hk-btn` and its kin from matching; the
+      landing's drawn pictures name their own parts, `dot` among them, as
+      every other rule here already lets them, I-1210).
 - [ ] Every shared class and custom property is namespaced and documented.
       Evidence: `rg -no '\.hk-[a-z0-9-]+' apps/web/src/lib/hk/repose.css |
       sed 's/.*:\.//' | sort -u | while read c; do rg -qP
