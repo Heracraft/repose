@@ -21,6 +21,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ca"
 	"github.com/heracraft/repose/internal/api/clirelease"
 	"github.com/heracraft/repose/internal/api/config"
+	"github.com/heracraft/repose/internal/api/edge"
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	httpapi "github.com/heracraft/repose/internal/api/http"
@@ -287,12 +288,32 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	if u := cfg.CLIReleasesURL; u != "off" && (u != "" || !cfg.Dev) {
 		a.cliLatest = clirelease.New(u, log)
 	}
+	// The browser view's leg to the edge (DECISIONS I-1216). The api
+	// presents its own client certificate from the platform CA, named
+	// `api`, which is the only thing the relay admits; the relay's server
+	// certificate comes from that same CA. With no VIEW_RELAY_ADDR the
+	// client is nil and the view's mint route answers `unavailable`.
+	var viewRelay *edge.Client
+	if cfg.ViewRelayAddr != "" {
+		apiCert, err := a.ca.X509().ClientTLS(pki.APIClientName)
+		if err != nil {
+			return nil, fmt.Errorf("api client certificate for the view relay: %w", err)
+		}
+		viewRelay, err = edge.New(cfg.ViewRelayAddr, apiCert, a.ca.X509().Pool())
+		if err != nil {
+			return nil, err
+		}
+		log.Info("browser view enabled", "event", "listen", "listener", "view_relay")
+	}
 	a.server = httpapi.New(httpapi.Deps{
 		Pool: a.pool, Verifier: verifier, Users: users, CA: a.ca, Secrets: a.sec, Engine: a.engine, Logs: a.logs, Events: a.events, Outbox: a.outbox, Unsub: unsub, Questions: a.questions, Say: a.say,
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
 		Gateway: httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
 		Seats:   a.seats,
 		Resting: a.resting,
+		// The browser view's relay on the edge (DECISIONS I-1216); nil
+		// makes the view's mint route answer `unavailable`.
+		ViewRelay: viewRelay,
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),

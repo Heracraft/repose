@@ -42,6 +42,13 @@ type Config struct {
 	GRPCServerKey   string
 	GRPCServerNames []string
 	GatewayHost     string
+	// ViewRelayAddr is VIEW_RELAY_ADDR: the edge's browser-view relay on
+	// the WireGuard address (`10.255.0.1:6081`, DECISIONS I-1216). Empty
+	// switches the dashboard's view off, and its mint route then answers
+	// `unavailable`. There is no CA variable beside it: the relay's
+	// server certificate is issued by the api's own CA, which this
+	// process already holds.
+	ViewRelayAddr string
 	// WebhookHost is the one public name webhook routes answer on
 	// (DECISIONS I-1110). It is in the URLs tenants paste into providers'
 	// dashboards, so it is kept for good.
@@ -99,6 +106,7 @@ func FromEnv() (Config, error) {
 		GRPCServerCert:  os.Getenv("GRPC_SERVER_CERT"),
 		GRPCServerKey:   os.Getenv("GRPC_SERVER_KEY"),
 		GatewayHost:     env("GATEWAY_HOST", "ssh.repose.run"),
+		ViewRelayAddr:   os.Getenv("VIEW_RELAY_ADDR"),
 		WebhookHost:     env("WEBHOOK_HOST", webhooks.DefaultHostname),
 		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
 		NotifyFrom:      env("NOTIFY_FROM", "repose <notify@mailing.repose.run>"),

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -111,11 +112,22 @@ type Deps struct {
 	// nil makes the wake route answer 503 and keep_awake take effect at
 	// the next rest rule rather than at once.
 	Resting Waker
+	// ViewRelay dials the edge's browser-view relay (DECISIONS I-1216);
+	// nil makes POST /projects/{id}/browser/view answer `unavailable`,
+	// which is what an api with no VIEW_RELAY_ADDR does.
+	ViewRelay ViewDialer
 	// WebhookRoutes is a project's public webhook routes (DECISIONS
 	// I-1110): the `repose webhooks` routes and the table the edge syncs.
 	// nil makes every one of them answer 500, which is what a test that
 	// does not care gets.
 	WebhookRoutes *webhooks.Store
+}
+
+// ViewDialer is internal/api/edge's Dial, the one leg where the api dials
+// the edge. An interface here so the HTTP layer can be tested with a fake
+// relay, and so nothing but the stream handler depends on the transport.
+type ViewDialer interface {
+	Dial(ctx context.Context, projectID, login, guestIP string) (net.Conn, error)
 }
 
 // Waker is internal/api/resting's Wake, the api's only way to resume a
