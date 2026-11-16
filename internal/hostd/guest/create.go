@@ -710,6 +710,9 @@ type monitor struct {
 	lostAt  time.Time
 	lost    bool
 	stopCon func()
+	// wake is poked when the guest's resting mark is cleared, so the dial
+	// the rest held back goes at once rather than on the next retry.
+	wake chan struct{}
 
 	// notifyBucket limits the guest's notifications; only run() touches it.
 	notifyBucket bucket
@@ -725,7 +728,7 @@ func (m *Manager) startMonitor(g *state.Guest) *monitor {
 		return old
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
-	mon := &monitor{m: m, g: g, ctx: ctx, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{})}
+	mon := &monitor{m: m, g: g, ctx: ctx, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}), wake: make(chan struct{}, 1)}
 	m.monitors[g.GuestID] = mon
 	m.mu.Unlock()
 	if m.d.ConsoleStart != nil {
@@ -733,6 +736,21 @@ func (m *Manager) startMonitor(g *state.Guest) *monitor {
 	}
 	go mon.run()
 	return mon
+}
+
+// pokeMonitor makes a guest's monitor dial now if it has no session: the
+// resting mark its retries stood down for has been cleared by a wake.
+func (m *Manager) pokeMonitor(id string) {
+	m.mu.Lock()
+	mon := m.monitors[id]
+	m.mu.Unlock()
+	if mon == nil {
+		return
+	}
+	select {
+	case mon.wake <- struct{}{}:
+	default:
+	}
 }
 
 func (m *Manager) removeMonitor(id string) *monitor {
@@ -860,6 +878,22 @@ func (mon *monitor) run() {
 			if sess != nil {
 				continue
 			}
+			// No dial while the guest rests (DECISIONS I-1228). A paused
+			// VM does not refuse a connect: Cloud Hypervisor's vsock
+			// device is paused with the vCPUs, so the connect and its
+			// CONNECT line wait in vsock.sock's kernel backlog (4096 deep)
+			// and are all delivered to guestd at the resume, each new
+			// connection replacing the one before it. hostd restarted
+			// under three resting guests on 2026-11-16 and dialled each
+			// every 5 s for 2 h 22 min; at the wake guestd took about
+			// 1,650 dead connections in one second and every wake's Ping
+			// failed with EOF. The wake pokes the dial when it clears the
+			// mark; until then the timer just turns.
+			if m.restingMark(mon.g.GuestID) != nil {
+				mon.lostAt = m.d.Now()
+				retry.Reset(m.cfg.GuestdRetry)
+				continue
+			}
 			dctx, cancel := context.WithTimeout(mon.ctx, 5*time.Second)
 			s, err := m.d.Guestd.Dial(dctx, target)
 			cancel()
@@ -891,6 +925,10 @@ func (mon *monitor) run() {
 				continue
 			}
 			mon.handleNotify(n)
+		case <-mon.wake:
+			if sess == nil {
+				retry.Reset(0)
+			}
 		case <-sessDone:
 			mon.mu.Lock()
 			mon.sess = nil

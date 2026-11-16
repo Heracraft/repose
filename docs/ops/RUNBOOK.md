@@ -1180,7 +1180,16 @@ machine.
    - `guestd`: the guest resumed and guestd did not answer within
      `WakeGuestdWait`. See "Guest unresponsive"; the guest's own services
      are what to look at, and its memory is intact until something stops
-     the machine.
+     the machine. `vsockrpc: EOF` within a second of the resume, on a
+     guest that rested across a hostd restart (`guest is still resting`
+     with `reason` `reconciled` at hostd's start), is DECISIONS I-1228:
+     the restarted hostd's dials waited out the rest in the hypervisor's
+     socket backlog and all landed on guestd at the resume, each one
+     replacing the live connection; the guest's own journal shows a
+     burst of `replacing the previous hostd connection`. The guest is
+     fine and the next wake answers. hostd no longer dials a resting
+     guest; a host on an older build does this on every release while a
+     guest rests.
    - `state`: the guest is no longer one that can be woken (it stopped,
      or a park holds it). Read the state in `hostd guests --json`
      before anything else; `Guest park` covers the parked-image case,

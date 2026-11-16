@@ -114,6 +114,14 @@ unchanged.
   and the one caller that must not -- the sampler -- repeats what the
   guest last said. Nothing inside a paused guest produces a notification,
   so none is lost; one already in guestd's queue waits out the pause.
+  hostd does not dial a resting guest either (DECISIONS I-1228): a
+  connect to a paused VM is not refused, it waits in the hypervisor's
+  socket backlog and lands on guestd at the resume, each one replacing
+  the connection before it, so a hostd that restarted under a resting
+  guest and retried for the length of the rest would hand guestd one
+  dead connection per retry in the second the guest came back. A monitor
+  without a session dials once the wake clears the mark, and a wake whose
+  session ends under it takes the next session once before it fails.
 - A `Freeze` without a `Thaw` within 10 s thaws itself and returns a
   `Warning{kind:"freeze_timeout"}`.
 - `Switch` output is always returned, even on failure, and failure leaves

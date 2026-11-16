@@ -33798,3 +33798,68 @@ plus enhanced measurement turned off), and this entry is the record
 that it was a choice. No cookie banner was built (owner): consent for
 analytics cookies under UK and EU law is an open question for the owner
 and their lawyer, not something this branch settles.
+
+**I-1228. hostd does not dial a resting guest, and a wake whose session
+ends under it tries the next one (wake-backlog, 2026-11-16).** At 03:00
+on 2026-11-16 the scheduled snapshot woke the three resting guests on
+host-02 and all three wakes failed with `guestd did not answer after the
+resume: vsockrpc: EOF`, within a second of a `vm.resume` that worked;
+GuestWakeFailed fired, the three snapshots failed, and each guest's
+journal held a burst of about 1,650 `replacing the previous hostd
+connection` lines in that second, followed by `notification queue is
+full`. The guests were fine a moment later. The cause is in the
+monitor's dial loop. hostd had been restarted at 00:38:32 by the
+r20261115-2 deploy with the three guests already resting (reconcile
+logged `guest is still resting`), so each monitor started with no
+session and dialled: at `GuestdBootRetry`, 50 ms, since it had never
+connected, with a 5 s handshake deadline per dial. A connect to a paused
+VM is not refused. Cloud Hypervisor's `vm.pause` parks the vsock
+device's epoll thread with the vCPUs (`epoll_helper.rs`, `thread::park`
+until unpause), so the unix connect completes in the kernel and the
+`CONNECT 5000` line sits in `vsock.sock`'s backlog, which `ss -xl` shows
+as 4096 deep, while hostd's side times out and closes. 8,502 s at one
+dial every 5.05 s is about 1,680 queued connects, which is the count in
+the guest's journal. At the resume the device thread drained them in
+order: the muxer read each CONNECT line from its closed socket, opened a
+guest-side connection, and guestd's `serve` replaced the previous
+connection with it, then saw its EOF. hostd's live dial was the last in
+that queue, and the wake's Exec and Ping ran on a session guestd closed
+underneath it a moment later. I-818 built the monitor on the assumption
+that "a paused guest's session stays open, so nothing there needs
+suppressing" (18-idle-pause.md), which holds for a pause with hostd
+running through it and does not for a hostd restart, or any session loss,
+during the rest; `checkLost` had the suppression for the mark and the
+dial did not.
+
+Two changes in hostd, both in the guest manager. The monitor's retry
+does nothing while `restingMark` is set: the timer turns at
+`GuestdRetry` and `lostAt` moves forward, as `checkLost` already did.
+When the wake clears the mark it pokes the monitor, which dials at once
+when it has no session, so a wake after a hostd restart does not spend
+up to a retry of its 5 s `WakeGuestdWait` waiting for the timer; the
+poke is a buffered channel per monitor, taken under the manager's lock
+from the wake, never from the monitor, so Close's wait on the monitors
+cannot meet it. And the wake's guest side, the clock step and the Ping,
+is one function on one session; when it fails and that session's `Done`
+is closed, the wake logs `guestd session ended during the wake; trying
+the next` and takes the next session with `awaitSession` once, within
+another `WakeGuestdWait`, before it counts the failure. A timeout on a
+live session is still a failed wake. The guest side is left as it is:
+guestd's "one connection at a time, the new one replaces the old" is
+what a hostd restart needs, and a replacement that waits for the new
+connection's first frame would split the notification queue across two
+writers for the interval; the host is where the dead connections are
+made, so the host is where they stop. Reconcile records the mark before
+it starts the monitor, so a restarted hostd makes no first dial either.
+`TestNoDialWhileResting` restarts the manager under a resting guest with
+a counting dialer and sees no dial in 600 ms, then a wake that dials and
+answers inside 1.5 s with a 3 s `GuestdRetry`; it fails on the old code
+with `1 dials to a resting guest`. `TestWakeSurvivesAReplacedSession`
+has the fake guestd drop the connection on the clock step's Exec and
+expects the wake to succeed with no `guest_wake_failed_total`; on the
+old code it fails with the incident's own error string. `vsock-guestd.md`
+and the RUNBOOK's GuestWakeFailed entry carry the behaviour. What is not
+done: the user-facing side of a failed wake is unchanged (the gateway's
+"frozen and did not wake" and the api's retry), and a dial in flight at
+the instant of a pause can still leave one dead connect in the backlog,
+which the wake's second try covers.
