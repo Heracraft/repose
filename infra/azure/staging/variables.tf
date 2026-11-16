@@ -60,7 +60,7 @@ variable "hosts" {
 
 variable "dns_prefix" {
   type        = string
-  description = "Label under the DNS zone. Staging must not collide with prod's names."
+  description = "Label under the DNS zone. Staging stays nested under herakraft.co, where prod no longer is (DECISIONS I-1156)."
   default     = "repose-staging"
 }
 

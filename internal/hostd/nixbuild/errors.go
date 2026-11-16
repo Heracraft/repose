@@ -124,7 +124,7 @@ const optionHint = "; a fragment is a home-manager module: packages go in home.p
 var flakeOutputs = map[string]bool{"description": true, "inputs": true, "outputs": true, "nixConfig": true}
 
 // flakeHint is the whole summary for a flake.nix applied as a fragment.
-const flakeHint = "this file is a Nix flake; `repose config apply` takes a home-manager module such as repose.nix (https://repose.herakraft.co/docs/config#write-it-in-nix), and agents already load a flake's dev shell from the checkout"
+const flakeHint = "this file is a Nix flake; `repose config apply` takes a home-manager module such as repose.nix (https://repose.run/docs/config#write-it-in-nix), and agents already load a flake's dev shell from the checkout"
 
 // MapEvalError turns `nix eval` stderr into an eval_failed Error.
 func MapEvalError(stderr string) *Error {

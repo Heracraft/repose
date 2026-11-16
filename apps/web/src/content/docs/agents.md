@@ -43,7 +43,7 @@ To start in another mode, set `defaultMode` in `~/.claude/settings.json`, on you
 
 Claude Code also starts with its fullscreen renderer, which fills the tmux window and scrolls inside itself. Set `"tui": "default"` in `~/.claude/settings.json`, on your laptop or the machine, to draw it inline, or run `/tui default` in Claude Code.
 
-Codex CLI also starts without asking: `approval_policy = "never"` and `sandbox_mode = "danger-full-access"`, from the machine's system config. To start it otherwise, set those keys in `~/.codex/config.toml` on the machine. That file wins over the system config one key at a time, so setting only `approval_policy` leaves the sandbox as the machine set it. The file belongs to that one machine; your other machines keep what they had, and a fork gets a copy.
+Codex CLI also starts without asking: `approval_policy = "never"` and `sandbox_mode = "danger-full-access"`, from the machine's system config. To start it otherwise, set those keys in `~/.codex/config.toml` on the machine. That file wins over the system config one key at a time, so setting only `approval_policy` leaves the sandbox as the machine set it. The file belongs to that one machine; your other machines keep what they had, and a machine restored from its snapshot gets a copy.
 
 opencode, Gemini CLI and pi keep their own permission prompts unless you configure them. An agent waiting on a permission prompt sends a "needs input" notification (Claude Code and opencode) or waits until you attach.
 
@@ -88,9 +88,44 @@ A hookless agent's turn ends in `repose events` as `finished` with the summary `
 
 A window with another name counts as an agent's while the agent is its foreground program, `claude` typed in the `shell` window for example; Gemini CLI counts only in a window named `gemini`, because it runs as `node`.
 
+## Drive it from the Claude app
+
+Claude Code has its own [Remote Control](https://code.claude.com/docs/en/remote-control): a session on one machine shows up in the Claude app on your phone, on the desktop app and at claude.ai/code, where you can read it, prompt it and answer its permission prompts. repose can switch it on for a machine. It's off until you ask for it:
+
+```toml
+remote_control = true
+
+[projects.todo-app]
+remote_control = false
+```
+
+With it on, and once you've [logged in](#log-in) with a claude.ai subscription, the next `run` or `attach` sets it up. Each agent window registers itself, and a `remote-control` window on the machine runs `claude remote-control`, which is what lets you start a new session on the machine from the app. The first time, that window holds Claude Code's own `Enable Remote Control?` question; attach and answer it. Sessions you start from the app each get their own git worktree, so they don't write in the checkout an agent is already working in; `git fetch repose` brings their branches to your laptop.
+
+The `remote-control` window shows in `repose ps` as a `claude` agent, because that's what runs in it. While you drive a session from the app it reads `working`, like a prompt you typed.
+
+A session from the app runs with the machine's [permission mode](#permissions), which is `bypassPermissions` unless you set another one. Your claude.ai login is then a second way to run commands on the machine as `dev`, alongside your repose login and its SSH certificate. Turn on **Require trusted devices** in your Claude settings if you want phone access bound to an enrolled device.
+
+Claude Code's own settings win over repose's: `disableRemoteControl` or `remoteControlAtStartup: false` in your laptop's `~/.claude/settings.json`, which `run` [copies to the machine](#your-agent-setup-comes-along), stops all of this whatever `remote_control` says. Remote Control needs a claude.ai subscription: a `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` secret can't use it, and repose starts nothing when either is set. On a Team or Enterprise plan an Owner has to turn Remote Control on first.
+
+A [frozen machine](/docs/lifecycle#frozen-machines) is offline in the app, and nothing you do there wakes it.
+
+Decisions you want to make while you're away still go through `repose-ask`: a question asked inside Claude lets the machine freeze 15 minutes later, and your answer waits until something wakes it.
+
 ## Let it ask you
 
 Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
+
+`repose-presence` prints `attached` while you're at the machine and `away` while you aren't, by the same reading as the notification hold: a tmux client or an SSH connection, your editor and a herdr bridge included. The guide tells an agent to run it before it hands you a URL for a port on the machine, so it offers `http://localhost:PORT` while that port is on your laptop and names [`repose open PORT`](/docs/machine#ports) while it isn't. It exits 0 either way, and 1 when the machine's agent service doesn't answer.
+
+## Speak to it from your laptop
+
+`repose say "run the tests before you commit"` sends a message to the agent on a project. The machine types it into the agent's own terminal, so the agent reads it as your next prompt and answers in the session you attach to.
+
+An agent at its prompt, or waiting for your permission, gets the message at once. An agent in the middle of a turn gets it when the turn ends: the five agents don't all take input typed mid-turn, and a message half-swallowed is worse than one that lands five seconds later. One message waits per agent, so a second while one waits replaces it.
+
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
+
+A delivered message is an event, so `repose events` and the project page show that the agent got one and who sent it. The message itself is never in an event, a log line or a notification.
 
 ## Log in
 
@@ -139,7 +174,7 @@ Gemini CLI on the machine doesn't ask whether you trust a folder. Turning `secur
 
 ## What agents are told about the machine
 
-repose gives every agent on the machine a short guide to it: that the machine is its own and can't reach your laptop, how to install a missing tool and keep it (`repose config add`), where your secrets are and never to print them, and how to reach you. It also points the agent at [/llms.txt](https://repose.herakraft.co/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. Your own `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are never changed, and what they say comes on top of the guide, which changes only with a platform update. To read the guide, on the machine:
+repose gives every agent on the machine a short guide to it: that the machine is its own and can't reach your laptop, how to install a missing tool and keep it (`repose config add`), where your secrets are and never to print them, and how to reach you. It also points the agent at [/llms.txt](https://repose.run/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. Your own `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are never changed, and what they say comes on top of the guide, which changes only with a platform update. To read the guide, on the machine:
 
 ```
 cat /etc/claude-code/CLAUDE.md

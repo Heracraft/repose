@@ -739,13 +739,15 @@ func (e *WaitlistEntry) Holding(now time.Time) bool {
 }
 
 // waitlistSQL numbers the waiting users of live accounts oldest first;
-// everyone else, the lapsed included, gets position 0.
+// everyone else, the lapsed and the billing-exempt included, gets
+// position 0 (I-1090).
 const waitlistSQL = `select w.user_id, u.handle, w.joined_at, w.invited_at, w.invited_by, w.hold_until, w.converted_at, w.expired_invites, w.lapsed_at, w.cooldown_until,
 	coalesce(q.position, 0)::integer as position
 	from waitlist w join users u on u.id = w.user_id
 	left join (select w2.user_id, row_number() over (order by w2.joined_at, w2.user_id) as position
 	             from waitlist w2 join users u2 on u2.id = w2.user_id
-	            where w2.invited_at is null and w2.lapsed_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null) q
+	            where w2.invited_at is null and w2.lapsed_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null
+	              and u2.billing_status <> 'exempt') q
 	  on q.user_id = w.user_id`
 
 // GetWaitlistEntry returns the user's row, or db.ErrNotFound.
@@ -756,7 +758,8 @@ func GetWaitlistEntry(ctx context.Context, q Querier, userID uuid.UUID) (*Waitli
 // ListWaiting returns the candidates for a free seat, next first: the
 // users holding a place whose cooldown, if any, has passed at now. A
 // lapsed user holds none (I-1033), which is what stops a hold that ran
-// out from being offered again by itself.
+// out from being offered again by itself, and nor does a billing-exempt
+// one (I-1090), which has no plan to convert the seat with.
 func ListWaiting(ctx context.Context, q Querier, now time.Time) ([]WaitlistEntry, error) {
 	return many[WaitlistEntry](ctx, q, waitlistSQL+" where q.position is not null and (w.cooldown_until is null or w.cooldown_until <= $1) order by q.position", now)
 }

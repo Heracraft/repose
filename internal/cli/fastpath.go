@@ -288,11 +288,14 @@ func attachFast(ctx context.Context, e *Env, opts RunOptions) (done bool, err er
 // I-751). It takes the whole RunOptions so a bridge field cannot be
 // dropped here while the full path reads it.
 func fastAttachHelper(e *Env, guess *Project, target sshTarget, tz, explicit string, opts RunOptions) sessionOptions {
-	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout, OpenURLs: laptopOpensURLs()}
+	helper := sessionOptions{Slug: guess.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Carry: true, Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout, OpenURLs: laptopOpensURLs(), RemoteControl: e.Cfg.remoteControlFor(guess.Slug)}
 	if skip, _, _ := e.Cfg.loginSkip(guess.Slug); skip[mcpLogin] {
 		helper.MCPOff = true // I-556
 	}
 	helper.MCP = e.Cfg.mcpForward(guess.Slug) // I-557
+	if helper.Forward {
+		helper.Reverse = e.Cfg.forwardReverse(guess.Slug) // I-1104
+	}
 	if root := gitRepoRoot(e.Cwd); root != "" && explicit == "" {
 		// Guessed from this checkout's remote: the checkout is the
 		// project's own, whose git config the carry takes.

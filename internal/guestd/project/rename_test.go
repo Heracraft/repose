@@ -8,7 +8,7 @@ import (
 )
 
 // TestSetupUnderANewNameLinksTheOldCheckout is I-255: a volume restored
-// into a project with another slug (a fork, a restore --as-new) has its
+// into a project with another slug (a restore --as-new) has its
 // checkout at ~/<old slug>; SetupProject makes ~/<new slug> a relative
 // symlink to it instead of an empty git repository, on every start, and
 // never touches a directory that exists.
@@ -27,16 +27,16 @@ func TestSetupUnderANewNameLinksTheOldCheckout(t *testing.T) {
 	}
 	gitInits := len(run.Calls())
 
-	// The same volume starts as todo-app-fork-1.
-	fork := req()
-	fork.ProjectSlug, fork.RemoteUrl = "todo-app-fork-1", ""
-	if err := h.Setup(ctx, fork); err != nil {
-		t.Fatalf("setup as the fork: %v", err)
+	// The same volume starts as todo-app-old.
+	copyOf := req()
+	copyOf.ProjectSlug, copyOf.RemoteUrl = "todo-app-old", ""
+	if err := h.Setup(ctx, copyOf); err != nil {
+		t.Fatalf("setup under the new name: %v", err)
 	}
-	link := p.ProjectDir("todo-app-fork-1")
+	link := p.ProjectDir("todo-app-old")
 	target, err := os.Readlink(link)
 	if err != nil || target != "todo-app" {
-		t.Fatalf("~/todo-app-fork-1 = %q, %v; want a link to todo-app", target, err)
+		t.Fatalf("~/todo-app-old = %q, %v; want a link to todo-app", target, err)
 	}
 	if _, err := os.Stat(filepath.Join(link, "main.go")); err != nil {
 		t.Fatalf("the checkout is not reachable through the link: %v", err)
@@ -46,26 +46,26 @@ func TestSetupUnderANewNameLinksTheOldCheckout(t *testing.T) {
 			t.Fatalf("git init ran in the linked checkout: %v", c)
 		}
 	}
-	if h.Slug() != "todo-app-fork-1" {
+	if h.Slug() != "todo-app-old" {
 		t.Fatalf("Slug() = %q", h.Slug())
 	}
 
-	// A second start (project.json now says the fork) leaves the link.
-	if err := h.Setup(ctx, fork); err != nil {
+	// A second start (project.json now says the copy) leaves the link.
+	if err := h.Setup(ctx, copyOf); err != nil {
 		t.Fatalf("second setup: %v", err)
 	}
 	if target, err := os.Readlink(link); err != nil || target != "todo-app" {
 		t.Fatalf("after a second setup: %q, %v", target, err)
 	}
 
-	// A fork of the fork links to the real directory, not to a link.
+	// A copy of the copy links to the real directory, not to a link.
 	ff := req()
-	ff.ProjectSlug, ff.RemoteUrl = "todo-app-fork-1-fork-1", ""
+	ff.ProjectSlug, ff.RemoteUrl = "todo-app-older", ""
 	if err := h.Setup(ctx, ff); err != nil {
-		t.Fatalf("setup as the fork's fork: %v", err)
+		t.Fatalf("setup as the copy's copy: %v", err)
 	}
-	if target, err := os.Readlink(p.ProjectDir("todo-app-fork-1-fork-1")); err != nil || target != "todo-app" {
-		t.Fatalf("fork of a fork: %q, %v", target, err)
+	if target, err := os.Readlink(p.ProjectDir("todo-app-older")); err != nil || target != "todo-app" {
+		t.Fatalf("copy of a copy: %q, %v", target, err)
 	}
 
 	// The old checkout gone: the dangling link is removed, and nothing
@@ -73,7 +73,7 @@ func TestSetupUnderANewNameLinksTheOldCheckout(t *testing.T) {
 	if err := os.RemoveAll(p.ProjectDir("todo-app")); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.Setup(ctx, fork); err != nil {
+	if err := h.Setup(ctx, copyOf); err != nil {
 		t.Fatalf("setup over a dangling link: %v", err)
 	}
 	if _, err := os.Lstat(link); !os.IsNotExist(err) {

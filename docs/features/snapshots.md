@@ -78,9 +78,9 @@ Retention (DECISIONS R4-11):
   succeeds, never before. Manual snapshots count toward the seven, and
   so do a busy project's stop snapshots: the count is enforced as well
   as the seven-day window since I-900, which is what keeps a project
-  stopped ten times a day to seven images rather than seventy. A fork's
-  own snapshot is not one of the seven and expires on its own
-  `expires_at` (I-703).
+  stopped ten times a day to seven images rather than seventy. A
+  snapshot with an `expires_at` of its own is not one of the seven and
+  goes at that time (I-703; nothing writes one since I-1082).
 - After `destroy`, the last snapshot is kept 30 days and listed under
   "Recently destroyed" in the dashboard and in `repose ls
   --destroyed`; `repose restore <name>` (or the dashboard's Restore)
@@ -116,55 +116,21 @@ Restoring:
   lets go of the old guest and its address when that destroy finishes,
   shows `error`, and `start` refuses with `restore_unfinished` until a
   restore succeeds (I-461).
-- A held project (I-239) cannot be copied: a restore as a new project or
-  a fork of it is refused whether or not the copy would start (I-460).
+- A held project (I-239) cannot be copied: a restore as a new project is
+  refused whether or not the copy would start (I-460).
 
-Forking (DECISIONS I-254, I-255):
-
-- `repose fork [PROJECT] [-n N] [--name NAME] [--size S] [--snapshot ID]
-  [--prompt TEXT [--agent A]] [--no-start]` copies a live project
-  (running or stopped; the source keeps running) into N new projects
-  called `<slug>-fork-<k>` (or `NAME-<k>`), `k` the lowest numbers no live
-  project uses. Without `--snapshot`, `POST /projects/:id/fork` has no
-  `snapshot_id` and the copies are thin clones of one fork point of the
-  source's volume, on the source's host, with nothing sent through Blob
-  (I-701): the source is frozen once for all N, as for a snapshot. When
-  that host cannot take them (409 `snapshot_needed`), the CLI takes a
-  snapshot with reason `fork`, which expires a day later and never counts
-  as the project's newest (I-703), and forks from it: each copy is then
-  restored on the host with the most free memory. `--snapshot` names one
-  of the project's own snapshots to restore instead.
-- Each step of each copy (`Copying`/`Restoring`, `Starting`) ends in a
-  `✓` line with its time (I-702).
-- The N projects are created in one transaction under the user's row
-  lock: the account's project cap is checked for all N first, and past it
-  nothing is created (`invalid` with `detail.reason = project_limit`, as
-  for create; I-569). xl copies are the memory gate's to refuse (I-293).
-  A resent request with the same `request_id` answers with the projects
-  the first one made. Each copy's restore is its own op; one failing
-  leaves the others running, and the CLI lists which failed and exits 1.
-- A copy gets the source's volume size, configuration revision and named
-  secrets (ciphertext rows copied; not the guest's sshd material), and no
-  `remote_url`: the source keeps its checkout, so `repose run` there still
-  means the source. The copy's checkout is the source's, at the same
-  path, since `~/.repose/checkout` comes with the volume (I-368); for a
-  source set up before I-368 the copy's `~/<slug>` is a symlink to the
-  source's `~/<slug>`, made by guestd's `SetupProject` (I-255).
-- A copy (a fork, or `snapshots restore --as`) reopens none of the
-  source's agent windows: the records in `~/.repose` name the source's
-  project id, and the restore skips a record of another project (I-646).
-  An in-place restore keeps the project id and reopens them.
-- With `--prompt`, the CLI starts the agent with that prompt in each
-  running copy, without syncing the laptop into it, and does not attach.
-- Before anything is copied the CLI asks the plan's memory for all N copies
-  beside what runs now, the source included, from `/me` and the project
-  list, and refuses with exit 7 naming `--no-start` when they don't fit
-  (I-610). `--no-start` sends `start: false`: the copies are restored
-  and left `stopped`, and take no memory until started; with `--prompt`
-  it exits 2.
-- Each copy is a project: it counts toward the project limit and the
-  plan's disk, and toward the plan's memory while it runs (I-570). There is no fork lineage in the api, no "promote a copy", and no
-  dashboard action yet.
+`repose fork` was removed (I-1082, superseding I-254, I-701, I-702 and
+I-703). `repose snapshots restore ID --as NAME` is the one way left to
+copy a machine's disk; `repose run --worktree -p` runs another agent on
+its own branch on the same machine, and `repose run NAME` makes a second
+machine for the checkout. A copy made under another name reopens none of
+the source's agent windows: the records in `~/.repose` name the source's
+project id, and the restore skips a record of another project (I-646).
+An in-place restore keeps the project id and reopens them. The copy's
+checkout is the source's, at the same path, since `~/.repose/checkout`
+comes with the volume (I-368); for a source set up before I-368 the
+copy's `~/<slug>` is a symlink to the source's, made by guestd's
+`SetupProject` (I-255).
 
 Alerts:
 

@@ -45,7 +45,7 @@ without the trial.
 The api and web must run the code that has `billing polar-bootstrap`,
 `billing show`, `billing overage-now`, the plan page and the redirect to
 Polar's hosted checkout. `curl -s -o /dev/null -w '%{http_code}\n' -X POST
-https://api.repose.herakraft.co/v1/billing/webhook` answers `503` until
+https://api.repose.run/v1/billing/webhook` answers `503` until
 step 1 is done.
 
 ## 1. Polar objects and the api's environment (5 minutes)
@@ -70,12 +70,12 @@ them (`docs/ops/coolify.md` fact 16). Then `shred -u /tmp/polar.env`.
 Check:
 
 ```
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.repose.herakraft.co/v1/billing/webhook   # 400: signature required, billing is on
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.repose.run/v1/billing/webhook   # 400: signature required, billing is on
 ra billing show <your handle>     # "subscription  - (no plan chosen)", not "billing is not configured"
 ```
 
 In Polar's dashboard, Settings > Webhooks, the endpoint
-`https://api.repose.herakraft.co/v1/billing/webhook` is listed, format
+`https://api.repose.run/v1/billing/webhook` is listed, format
 raw, with the eight events of 09-billing.md §5.11. Products shows `repose
 Solo`, `repose Plus` and `repose Pro`, each with its monthly price, the
 metered "Egress overage" price and the seven-day trial. Settings >
@@ -98,9 +98,9 @@ Use a non-exempt account (a second GitHub login, or an email sign-in at
 `accounts.herakraft.co` with an inbox you can read: Logto sends a one-time
 code; exempt accounts pass the gate and never reach checkout, I-16).
 
-1. Sign in at `https://repose.herakraft.co`. `ra billing show <handle>`:
+1. Sign in at `https://repose.run`. `ra billing show <handle>`:
    `billing none`, `subscription - (no plan chosen)`. `repose run` in any
-   checkout prints `Choose a plan at https://repose.herakraft.co/billing
+   checkout prints `Choose a plan at https://repose.run/billing
    first.` and exits 7.
 2. `/billing` shows Solo, Plus and Pro with the seats left. Choose **Solo**.
    The browser goes to Polar's hosted checkout (`sandbox.polar.sh`). It
@@ -249,7 +249,7 @@ Announce it to the conductor first. Dev box, with the production token
 read the same way:
 
 ```
-POLAR_ENVIRONMENT=production ops/polar/bootstrap.sh --production --webhook-url https://api.repose.herakraft.co/v1/billing/webhook > /tmp/polar-live.env
+POLAR_ENVIRONMENT=production ops/polar/bootstrap.sh --production --webhook-url https://api.repose.run/v1/billing/webhook > /tmp/polar-live.env
 ```
 
 Replace the sandbox block in both `api` and `api-grpc` with it (the

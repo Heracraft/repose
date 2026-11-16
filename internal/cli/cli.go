@@ -32,6 +32,11 @@ func noticeAfter(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return true
 	}
+	// `repose version update` has just said which release this is; the
+	// notice after it would name the same one (DECISIONS I-1086).
+	if cmd.CommandPath() == "repose version update" {
+		return false
+	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Hidden || c.Name() == cobra.ShellCompRequestCmd || c.Name() == cobra.ShellCompNoDescRequestCmd {
 			return false
@@ -190,6 +195,7 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		g.command = hintCommand(cmd)
+		noteSkewCommand(cmd.Name())
 		if g.verbose {
 			setVerbose(os.Stderr)
 		}
@@ -215,12 +221,14 @@ func newRootCmd(version string) *cobra.Command {
 		newStatusCmd(envJSON, env, g),
 		newOpenCmd(env, g),
 		newSecretsCmd(env, g),
+		newWebhooksCmd(env, g),
+		newGithubCmd(env, g),
 		newConfigCmd(env, g),
 		newSnapshotsCmd(env, g),
 		newRmCmd(env, g),
 		newKeepCmd(env, g),
 		newRestoreCmd(env, g),
-		newForkCmd(envJSON, env, g),
+		newForkCmd(),
 		newLogsCmd(envJSON, env, g),
 		newLsCmd(envJSON),
 		newPsCmd(envJSON, env, g),
@@ -229,6 +237,7 @@ func newRootCmd(version string) *cobra.Command {
 		newEventsCmd(envJSON, env, g),
 		newQuestionsCmd(envJSON, env, g),
 		newReplyCmd(envJSON, g),
+		newSayCmd(envJSON, env, g),
 		newNotifyCmd(env, g),
 		newResizeCmd(env, g),
 		newVersionCmd(version),
@@ -276,7 +285,7 @@ func gotArgs(args []string) string {
 // back as exit 1 in its own words.
 func checkSizeFlag(size string) error {
 	if _, ok := classSpecs[size]; size != "" && !ok {
-		return cobraUsageError{fmt.Errorf("--size must be small, large or xl, got %q", size)}
+		return cobraUsageError{fmt.Errorf("--size must be tiny, small, large or xl, got %q", size)}
 	}
 	return nil
 }
@@ -536,7 +545,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "the agent `NAME` -p starts: claude, opencode, codex, gemini or pi (default: the project's agent, set at creation from config.toml's default_agent); without -p, NAME becomes the project's agent")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: tiny, small, large or xl (default: config.toml's default_size, else large)")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent on this prompt")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.
@@ -565,7 +574,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
+	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
@@ -628,8 +637,9 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Send this checkout's changes to its machine",
 		Long: "Copy your uncommitted changes and unpushed commits over the machine's checkout,\n" +
 			"creating or starting the machine if needed, without attaching. When the machine\n" +
-			"changed the same files, stop with exit 6 and name them; --stash-machine clears\n" +
-			"the way. Nothing comes back: git fetch repose does that.\n\n" +
+			"changed the same files, name them and ask which copy to keep, or exit 6 with no\n" +
+			"terminal to ask on; --stash-machine decides it in advance. Nothing comes back:\n" +
+			"git fetch repose does that.\n\n" +
 			"sync.exclude in config.toml leaves out files that .gitignore does not.",
 		Example:           "  repose sync\n  repose sync --stash-machine",
 		Args:              cobra.ArbitraryArgs,
@@ -671,7 +681,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: tiny, small, large or xl (default: config.toml's default_size, else large)")
 	// Before I-603 PROJECT had to exist and --name created; kept hidden
 	// for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose sync NAME)")
@@ -686,7 +696,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("stash-remote")
 	_ = cmd.Flags().MarkHidden("discard-remote")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
+	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
@@ -1640,7 +1650,7 @@ func newRmCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"With PROJECT:CHECKOUT, remove only that checkout, one repose run --on added,\n" +
 			"with its worktrees, from the running machine. The machine and its own checkout\n" +
 			"stay.",
-		Example:           "  repose rm todo-app-fork-1 todo-app-fork-2\n  repose rm -y tmp-k3f9\n  repose rm todo-app:api",
+		Example:           "  repose rm todo-app-2 todo-app-3\n  repose rm -y tmp-k3f9\n  repose rm todo-app:api",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1748,57 +1758,18 @@ func newRestoreCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
-	opts := ForkOptions{Count: 1}
-	cmd := &cobra.Command{
-		Use:   "fork [PROJECT]",
-		Short: "Copy a project into new projects, each on its own machine",
-		Long: "Copy PROJECT's disk (this checkout's project, by default) as it is now into\n" +
-			"--count new projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each\n" +
-			"running on its own machine with the same files, configuration and secrets.\n" +
-			"PROJECT keeps running. In its checkout, each fork gets a git remote of its\n" +
-			"name, so git fetch NAME-1 brings its commits back.\n\n" +
-			"Each fork counts toward your plan's disk by what it holds, and toward its memory\n" +
-			"while it runs; --no-start creates them stopped.",
-		Example: "  repose fork -n 3 --prompt \"try a different approach to the cache\"\n" +
-			"  git fetch todo-app-fork-2\n" +
-			"  repose rm todo-app-fork-1 todo-app-fork-3",
-		SuggestFor:        []string{"clone", "copy"},
-		Args:              projectArgs,
-		ValidArgsFunction: completeProject(env),
+func newForkCmd() *cobra.Command {
+	// Hidden for one release: an old script or a user's muscle memory
+	// reaches the line that says where to go instead of "unknown command"
+	// (I-1082). DisableFlagParsing lets any old flag through to it.
+	return &cobra.Command{
+		Use:                "fork",
+		Hidden:             true,
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			project, err := projectFrom(args, g)
-			if err != nil {
-				return err
-			}
-			if opts.Agent != "" && !isAgent(opts.Agent) {
-				return cobraUsageError{fmt.Errorf("--agent must be one of %s, got %q", strings.Join(agentNames, ", "), opts.Agent)}
-			}
-			if opts.Agent != "" && opts.Prompt == "" {
-				return cobraUsageError{fmt.Errorf("--agent goes with --prompt")}
-			}
-			if err := checkSizeFlag(opts.Size); err != nil {
-				return err
-			}
-			e, err := envJSON(cmd)
-			if err != nil {
-				return err
-			}
-			opts.ProjectArg = project
-			return ForkCmd(cmd.Context(), e, opts)
+			return ForkCmd()
 		},
 	}
-	cmd.Flags().IntVarP(&opts.Count, "count", "n", 1, "how many forks (1 to 10)")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "prefix for the forks' names (default: PROJECT-fork)")
-	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of the forks: small, large or xl (default: PROJECT's)")
-	cmd.Flags().StringVar(&opts.SnapshotID, "snapshot", "", "fork from this snapshot of PROJECT instead of its disk as it is now")
-	cmd.Flags().StringVar(&opts.Prompt, "prompt", "", "start the agent in every fork with this prompt")
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "with --prompt: claude|opencode|codex|gemini|pi (default: PROJECT's)")
-	cmd.Flags().BoolVar(&opts.NoStart, "no-start", false, "create the forks stopped; they take no plan memory until started")
-	cmd.Flags().Bool("json", false, "print the forks as JSON")
-	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
-	return cmd
 }
 
 func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
@@ -1808,10 +1779,10 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "resize [PROJECT] [DISK]",
 		Short: "Grow a project's disk, or change its size",
 		Long: "With DISK (80G, 1T), grow the project's disk; disks can't shrink. With --size,\n" +
-			"change the project's size: small, large or xl. A stopped project starts at the\n" +
-			"new size; a running one is stopped, changed and started again, which ends every\n" +
-			"process on it, after a question that -y skips. PROJECT defaults to this\n" +
-			"checkout's project; one argument that reads as a size is DISK.",
+			"change the project's size: tiny, small, large or xl. A stopped project starts\n" +
+			"at the new size; a running one is stopped, changed and started again, which\n" +
+			"ends every process on it, after a question that -y skips. PROJECT defaults to\n" +
+			"this checkout's project; one argument that reads as a size is DISK.",
 		Example:           "  repose resize 80G\n  repose resize todo-app --size xl\n  repose resize todo-app 160G --size xl -y",
 		Args:              resizeArgs,
 		ValidArgsFunction: completeResize(env),
@@ -1821,11 +1792,11 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return err
 			}
 			if bytes == 0 && size == "" {
-				return cobraUsageError{fmt.Errorf("resize needs a disk size (e.g. 80G), --size small|large|xl, or both")}
+				return cobraUsageError{fmt.Errorf("resize needs a disk size (e.g. 80G), --size tiny|small|large|xl, or both")}
 			}
 			if size != "" {
 				if _, ok := classSpecs[size]; !ok {
-					return cobraUsageError{fmt.Errorf("--size must be small, large or xl, got %q", size)}
+					return cobraUsageError{fmt.Errorf("--size must be tiny, small, large or xl, got %q", size)}
 				}
 			}
 			e, err := env()
@@ -1852,9 +1823,9 @@ func newResizeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	addProjectJSONFlag(cmd, g)
-	cmd.Flags().StringVar(&size, "size", "", "change the project's `SIZE`: small, large or xl")
+	cmd.Flags().StringVar(&size, "size", "", "change the project's `SIZE`: tiny, small, large or xl")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "with --size on a running project, restart it without asking")
-	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions([]string{"small", "large", "xl"}, cobra.ShellCompDirectiveNoFileComp))
+	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
@@ -2062,6 +2033,93 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 	return cmd
 }
 
+// newGithubCmd is `repose github`, whose one command stores the GitHub
+// token the machines use in place of the laptop's gh login (I-1064).
+func newSayCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, error), g *globalFlags) *cobra.Command {
+	var agent string
+	cmd := &cobra.Command{
+		Use:   "say [PROJECT] MESSAGE",
+		Short: "Send a message to the agent on a machine",
+		Long: "Send a message to the agent working on PROJECT. The machine types it into\n" +
+			"the agent's own terminal, so the agent reads it as if you had typed it there.\n" +
+			"An agent at its prompt gets it at once; one in the middle of a turn gets it\n" +
+			"when the turn ends, and a second message replaces the one still waiting.\n" +
+			"The message is one quoted argument. --agent WINDOW picks one agent when the\n" +
+			"machine runs more than one.",
+		Example: "  repose say \"run the tests before you commit\"\n  repose say todo-app \"use the staging database\"\n  repose say --agent codex-2 \"leave the migration alone\"",
+		Args: func(cmd *cobra.Command, args []string) error {
+			switch len(args) {
+			case 1, 2:
+				return nil
+			case 0:
+				return cobraUsageError{fmt.Errorf("%s takes a message and got no arguments: repose say [PROJECT] \"<message>\"", cmd.CommandPath())}
+			default:
+				return cobraUsageError{fmt.Errorf("%s takes one PROJECT and one message, quoted, got %s", cmd.CommandPath(), gotArgs(args))}
+			}
+		},
+		ValidArgsFunction: completeProject(env),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := envJSON(cmd)
+			if err != nil {
+				return err
+			}
+			project, text := g.project, args[0]
+			if len(args) == 2 {
+				if project != "" && project != args[0] {
+					return cobraUsageError{fmt.Errorf("%q and --project %q name two projects; pass one", args[0], project)}
+				}
+				project, text = args[0], args[1]
+			}
+			return SayCmd(cmd.Context(), e, project, agent, text)
+		},
+	}
+	cmd.Flags().Bool("json", false, "print the message as JSON")
+	cmd.Flags().StringVar(&agent, "agent", "", "the agent `WINDOW` to speak to, as repose ps names it")
+	return cmd
+}
+
+func newGithubCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "github",
+		Short: "Give the machines a GitHub token for only some repositories",
+		Long: "Give the machines a GitHub token of your own, for the repositories you pick,\n" +
+			"in place of the gh login repose copies, which reaches every repository you\n" +
+			"can.",
+		Example: "  repose github setup\n  repose github setup --owner acme",
+	}
+	var owner string
+	setup := &cobra.Command{
+		Use:   "setup",
+		Short: "Store a GitHub token for the machines, and stop copying your gh login",
+		Long: "Open GitHub's fine-grained token form, prefilled with everything but the\n" +
+			"repository list, and store what you paste as the GH_TOKEN secret of your\n" +
+			"account, or with --project of one project. git and gh on the machine then\n" +
+			"use that token. Your gh login stays on your laptop from then on, and the\n" +
+			"next repose run removes the copy an earlier one left while it still matches\n" +
+			"your laptop's.\n\n" +
+			"To widen or renew it, run this again and paste a new token; an agent that is\n" +
+			"refused a repository can ask you for one itself. Piped input is taken as the\n" +
+			"token and opens nothing.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			o := githubSetupOpts{Project: g.project, Owner: owner}
+			if !term.IsTerminal(int(os.Stdin.Fd())) {
+				if o.Token, err = readPipedSecret(os.Stdin, githubTokenSecret); err != nil {
+					return err
+				}
+			}
+			return GithubSetupCmd(cmd.Context(), e, o)
+		},
+	}
+	setup.Flags().StringVar(&owner, "owner", "", "the account or organisation that owns the repositories (`NAME`); the checkout's, else yours")
+	root.AddCommand(setup)
+	return root
+}
+
 func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var showJSON bool
 	root := &cobra.Command{
@@ -2132,15 +2190,38 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 // suffix lets a user tell this binary apart from Arch's unrelated
 // `repose` package on the same PATH).
 func newVersionCmd(version string) *cobra.Command {
-	return &cobra.Command{
+	root := &cobra.Command{
 		Use:   "version",
 		Short: "Print the CLI's version",
 		Args:  noArgs,
+		// `repose update` and `repose upgrade` land here, which is where
+		// the command that updates the CLI lives (DECISIONS I-1086).
+		SuggestFor: []string{"update", "upgrade", "self-update"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Printf("repose %s (herakraft)\n", version)
 			return nil
 		},
 	}
+	update := &cobra.Command{
+		Use:   "update [VERSION]",
+		Short: "Replace this binary with the latest release",
+		Long: `Replace this binary with the latest release of the CLI.
+
+VERSION is a release tag, such as v0.1.40, to go back to that one. Only
+releases from v0.1.28 on are accepted, the ones whose checksums are signed.
+The download is checked against the release signing key before anything is
+written, and a binary a package manager owns is never touched.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var target string
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return VersionUpdateCmd(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), target)
+		},
+	}
+	root.AddCommand(update)
+	return root
 }
 
 // newMCPCmd is `repose mcp`: the MCP servers of the agents on a machine.

@@ -34,6 +34,9 @@ func unknownCommand(root *cobra.Command, args []string, isProject func(string) b
 		// cobra's own unknown-command error at the top level; the word is
 		// the first positional argument.
 		if typed := firstPositional(cmd, rest); typed != "" {
+			if msg := projectFirstMessage(root, rest, typed, isProject); msg != "" {
+				return msg
+			}
 			return unknownCommandMessage(cmd, typed)
 		}
 		return ""
@@ -53,6 +56,77 @@ func unknownCommand(root *cobra.Command, args []string, isProject func(string) b
 		return fmt.Sprintf("%s is a project: `%s %s %s`.", typed, cmd.CommandPath(), sub, typed)
 	}
 	return unknownCommandMessage(cmd, typed)
+}
+
+// projectFirstMessage answers `repose PROJECT WORDS...`, the project
+// before the command (DECISIONS I-1046). The first word names one of the
+// account's projects, so it is not a mistyped command, and "unknown
+// command" sent the reader looking for a command of that name. The second
+// line is their own words rearranged, as suggestedLine reads them, and is
+// left out when nothing follows the project, because any command named
+// there would be invented. "" when the word is not a project, or when a
+// typo of a real command is the likelier reading.
+func projectFirstMessage(root *cobra.Command, args []string, typed string, isProject func(string) bool) string {
+	if isProject == nil || len(suggestCommands(root, typed)) > 0 || !isProject(typed) {
+		return ""
+	}
+	msg := fmt.Sprintf("%s is a project, not a command.", typed)
+	if line := suggestedLine(root, args, typed); line != "" {
+		msg += fmt.Sprintf("\nDid you mean `%s`?", line)
+	}
+	return msg + fmt.Sprintf("\n`%s --help` shows its usage.", root.CommandPath())
+}
+
+// alsoShellWords are commands whose name is the everyday shell command
+// for the same words, so `repose PROJECT rm out/x` is a command for the
+// machine and not `repose rm` (which would destroy the project) with its
+// arguments the wrong way round. Their line is the exec form.
+var alsoShellWords = map[string]bool{"ls": true, "rm": true, "cp": true}
+
+// suggestedLine is the line to type instead of `repose PROJECT WORDS...`:
+// the two words swapped when the next one names a command that takes
+// PROJECT first (`repose status job`), and otherwise the words run on the
+// machine (`repose exec job cat out/x`), which is what every other tool
+// with the noun first means by them. "" when no word follows the project.
+func suggestedLine(root *cobra.Command, args []string, typed string) string {
+	i := slices.Index(args, typed)
+	if i < 0 || i+1 >= len(args) {
+		return ""
+	}
+	rest := args[i+1:]
+	words := []string{root.Name(), "exec", typed}
+	if sub := commandNamed(root, rest[0]); sub != nil && takesProjectFirst(sub) && !alsoShellWords[sub.Name()] {
+		words, rest = []string{root.Name(), sub.Name(), typed}, rest[1:]
+	}
+	words = append(words, rest...)
+	for j, w := range words {
+		// A ~ the reader quoted is quoted again: unquoted their shell
+		// would expand it to this computer's home (I-1048).
+		if w == "" || w == "~" || strings.HasPrefix(w, "~/") || strings.ContainsAny(w, " \t'\"") {
+			words[j] = shQuote(w)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// commandNamed is root's visible subcommand of that name or alias.
+func commandNamed(root *cobra.Command, name string) *cobra.Command {
+	for _, c := range root.Commands() {
+		if c.IsAvailableCommand() && (c.Name() == name || slices.Contains(c.Aliases, name)) {
+			return c
+		}
+	}
+	return nil
+}
+
+// takesProjectFirst reads the usage line: `exec [PROJECT[:CHECKOUT]] ...`
+// and `stop [PROJECT...]` do, `ls` and `cp [-r] SRC... DST` do not.
+func takesProjectFirst(cmd *cobra.Command) bool {
+	f := strings.Fields(cmd.Use)
+	if len(f) < 2 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimPrefix(f[1], "["), "PROJECT")
 }
 
 // slugShape is what a project's slug can be; any other word is not

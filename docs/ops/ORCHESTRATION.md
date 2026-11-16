@@ -107,6 +107,15 @@ from the wave cycle, it wins.
   PATH.** The dev box has `claude`; the runner does not, so a tmux window
   running it exits at once. Fix the fixture (remain-on-exit, a stub) and
   leave the assertion alone; reproduce first with an exiting shim on PATH.
+- **Or the runner's version of what the test drives.** The dev shell's
+  tmux, git and ssh are pinned by `nix/flake.nix`; `ubuntu-latest` is
+  Ubuntu 24.04, whose tmux is 3.4 and crashes on the grouped session
+  every `repose attach` makes, which failed `internal/cli`'s attach
+  tests on about half of CI's runs (I-1166). Reproduce by putting
+  `/usr/bin` first on PATH and loading the box (`while :; do :; done`
+  per core): both of those failures came back in under a minute. The
+  fix is to give the runner the version a guest has, and to say so in
+  the test rather than skip, which in CI reads as a pass (I-1036).
 
 ## Rounds (since 2026-09-23)
 
@@ -116,7 +125,10 @@ from the wave cycle, it wins.
   STATUS (`round 3`, `16-guest-tooling (conductor-run)`); it has no
   workstream doc.
 - **Workers are Agent-tool subagents with `isolation: worktree`**, each on
-  its own `worktree-agent-*` branch, all Opus 5.5. The launch prompt names
+  its own `worktree-agent-*` branch, all Opus 5.5 (`model: "opus"`; the
+  owner's rule of 2026-11-11: never the conductor's own model for workers).
+  A worker that must outlive the conductor's context, or that the owner
+  wants to watch, is a `claude` session in a tmux window instead (below). The launch prompt names
   the files the worker may touch, its pre-assigned decision numbers, and
   what to report. Workers commit on their branch, never push, never deploy
   and never touch live machines unless the prompt says so.
@@ -129,15 +141,20 @@ from the wave cycle, it wins.
   touches on the merge itself as well as on the branch.
 - **Then it deploys and tests live**: push (Coolify redeploys api and web),
   publish a base or tag a CLI release when the round needs one, and try the
-  change end to end on throwaway `e2e-*` projects on host-01, never on the
-  owner's projects. At most two test projects alive at once per item.
-- **Applies and switches go to the owner.** The conductor's permission
-  classifier refuses `tofu apply` and `nixos-rebuild switch` to a host with
-  tenant guests on it. The conductor writes the exact command into a tmux
-  buffer (`apply`, `switch`) and asks the owner to run it. Announce anything
+  change end to end on throwaway `e2e-*` projects on host-02 (host-01 is
+  retired), never on the owner's projects. At most two test projects alive
+  at once per item.
+- **Applies and switches go with the owner's word for them.** The owner
+  says it per release ("apply everything", "you can run tofu apply", on
+  2026-11-11) or per switch; with that word they run from woker-1 (RUNBOOK
+  "Switch a host to main", "Switch the edge"). Without it the conductor
+  writes the exact command into a tmux buffer (`apply`, `switch`) and asks.
+  The permission classifier in `auto` mode refuses these when the owner has
+  not said so and holds the conductor to a freeze it announced; bypass mode
+  does not, so the owner's word is the only gate there. Announce anything
   that drops live sessions (an edge reboot or `systemctl restart gateway`
-  does; an edge switch does not since I-471, except the first one onto
-  it).
+  does; an edge switch does not since I-471, except the first one onto a
+  unit that gained a `StateDirectory`).
 - **Workers and integration sessions never** force-unlock state, use the
   Coolify UI, or put anything about the owner's personal server in a file.
 
@@ -180,6 +197,37 @@ the questions the conductor was answering by hand:
   `band 1/2` on kanali, so a number taken on one can never be handed out
   by the other. Without a band the reservations file is invisible across
   machines, which is how six ids were taken twice.
+
+## Sessions in tmux windows (since 2026-11-12)
+
+For work that has to survive the conductor's context, or that the owner
+wants to watch and talk to (a landing redesign, a class decision with VM
+measurements, a deck), the worker is a Claude session in its own tmux
+window, on this box or on kanali, briefed by a file.
+
+- **The brief is a file**, kept in the conductor's scratchpad and copied to
+  the worker's machine (`~/briefs/` on kanali): what to read first (always
+  `CLAUDE.md`, `docs/README.md`, then the docs for what it touches), what to
+  do in order, what evidence to bring, and the machine's rules: work only in
+  the named worktree, never `tmux kill-server` on the default socket (it
+  took the owner's session down on 2026-11-11), the nix build lock, no
+  touching live hosts or the owner's projects, and how to report
+  (`ListAgents`, then `SendMessage` to the conductor session by name;
+  `factory-1f` was the 2026-11-11 conductor; the name changes per session).
+- **Launching**: `tmux new-window -t <session> -n <name> -c <worktree>`,
+  then `claude --permission-mode bypassPermissions --model opus` (the dev
+  box's `claude`; on kanali `ssh` in first). The folder-trust dialog comes
+  first: `send-keys Down Enter`. Then the prompt as one `send-keys` with the
+  text, and `C-m` as a second call: an Enter sent in the same call as the
+  text is eaten. Check the pane (`capture-pane -p`) before walking away; a
+  session that stopped on a dialog looks idle in every other way.
+- **A branch finished on kanali** stays there (its queue is frozen, I-763):
+  the worker reports its branch name; the conductor fetches it
+  (`RELEASE.md` "integrating") and queues it from here. Pitch work (`~/pitch`
+  on kanali) is not a repo branch; its report is a preview URL on the
+  Tailscale address.
+- **Sub-agents inside such a session** keep the same rules; the one that
+  ran `tmux kill-server` was a sub-agent's experiment.
 
 ## When a worker stalls
 

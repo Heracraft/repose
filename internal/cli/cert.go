@@ -331,7 +331,7 @@ func aliasResolves(slug, handle string) (ok bool, got string) {
 	return false, fmt.Sprintf("host %q, user %q", host, user)
 }
 
-const gatewayHost = "ssh.repose.herakraft.co"
+const gatewayHost = "ssh.repose.run"
 
 // renderSSHConfig builds ~/.ssh/repose/hosts: one Host block per project,
 // in slug order for a stable diff (docs/interfaces/ssh-gateway.md "CLI

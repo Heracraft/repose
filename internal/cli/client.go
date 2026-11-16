@@ -148,7 +148,7 @@ func (c *Client) doHeader(ctx context.Context, method, path string, body any, ou
 		if err != nil {
 			return &unreachableError{host: req.URL.Host, cause: err}
 		}
-		noteLatestCLI(resp.Header)
+		noteCLIVersions(resp.Header)
 		apiErr, decodeErr := readResponse(resp, out)
 		if apiErr != nil && apiErr.Raw && method == http.MethodGet && !gatewayRetried && isGatewayStatus(apiErr.Status) {
 			gatewayRetried = true
@@ -377,7 +377,7 @@ func (c *Client) getNDJSON(ctx context.Context, path string, decodeLine func(dec
 		if err != nil {
 			return &unreachableError{host: req.URL.Host, cause: err}
 		}
-		noteLatestCLI(resp.Header)
+		noteCLIVersions(resp.Header)
 		if resp.StatusCode >= 400 {
 			apiErr, decodeErr := readResponse(resp, nil)
 			if decodeErr != nil {

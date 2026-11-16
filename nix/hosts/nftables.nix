@@ -17,11 +17,17 @@
 #              mining-pool ports dropped through stratum_drop (I-239), new
 #              flows past the per-guest tracked-connection cap (I-453) or
 #              over the per-guest rate (I-240) dropped through flows_drop;
-#              then through guest_dyn (hostd's counters)
-#              and then to the internet only: IMDS, the Azure wire server,
+#              then to the internet only: IMDS, the Azure wire server,
 #              every private range (10.64.0.0/12 is other guests, the rest
 #              is the VNet, the WireGuard mesh, link-local) all dropped,
 #              except the edge's hook-ingest and noVNC relay ports.
+#   guest_meter
+#              after guest_fwd on the same hook, so it sees only what
+#              guest_fwd accepted, established packets included: what a
+#              guest sends out on the provider NIC goes through guest_dyn.
+#              That is egress (DECISIONS I-1063). What a guest sends the
+#              edge over wg0 (SSH, port forwards, hooks, the browser view)
+#              or the host (the caches) never reaches it.
 #   guest_dyn  empty at boot; hostd adds `ip saddr <ip> counter name
 #              egress-<guest_id>` rules and owns them. Reloading this
 #              ruleset flushes the chains declared here and never touches
@@ -65,6 +71,7 @@ let
     input = "type filter hook input priority filter; policy drop;";
     output = "type filter hook output priority filter; policy accept;";
     guest_fwd = "type filter hook forward priority filter; policy drop;";
+    guest_meter = "type filter hook forward priority filter + 10; policy accept;";
     nat = "type nat hook postrouting priority srcnat; policy accept;";
     guest_in = "";
     smtp_drop = "";
@@ -254,8 +261,8 @@ in
           iifname "br-guests" meta nfproto ipv6 counter drop
           # Mail straight to port 25 is how a rented machine sends spam; a
           # provider's authenticated submission on 465 and 587 stays open
-          # (DECISIONS I-238). Before guest_dyn, so blocked attempts are
-          # never counted as egress.
+          # (DECISIONS I-238). A dropped packet never reaches guest_meter,
+          # so blocked attempts are never counted as egress.
           iifname "br-guests" tcp dport 25 goto smtp_drop
           # Mining pools' default stratum ports (I-239).
           iifname "br-guests" tcp dport { ${ports egress.blockedTcpPorts} } goto stratum_drop
@@ -265,7 +272,6 @@ in
           # over the limit are dropped; established ones are untouched.
           iifname "br-guests" ct state new add @guest_conns { ip saddr ct count over ${toString egress.maxConnections} } goto flows_drop
           iifname "br-guests" ct state new update @guest_flow_rate { ip saddr limit rate over ${toString egress.flowRate}/second burst ${toString egress.flowBurst} packets } goto flows_drop
-          iifname "br-guests" jump guest_dyn
 
           # Azure instance metadata (managed-identity tokens) and the wire
           # server (extension secrets): never from a guest.
@@ -278,6 +284,15 @@ in
           iifname "br-guests" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } counter drop
           iifname "br-guests" oifname "${uplink}" counter accept
           counter drop
+        }
+
+        # Egress is what guest_fwd accepted out of the provider NIC, every
+        # packet of the flow and not only its first (DECISIONS I-1063). An
+        # accept in guest_fwd ends that chain, not the hook, so this later
+        # chain sees it; a drop there is final and never reaches here.
+        chain guest_meter {
+          type filter hook forward priority filter + 10; policy accept;
+          iifname "br-guests" oifname "${uplink}" jump guest_dyn
         }
 
         chain nat {

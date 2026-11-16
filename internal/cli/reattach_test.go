@@ -48,7 +48,7 @@ func dropped(stderr string) error {
 // attaches again once the machine answers.
 func TestReattachWaitsForTheMachine(t *testing.T) {
 	p := &fakeProbe{errs: []error{
-		dropped("ssh: connect to host ssh.repose.herakraft.co port 22: Connection refused"),
+		dropped("ssh: connect to host ssh.repose.run port 22: Connection refused"),
 		dropped("repose gateway: gateway busy"),
 	}}
 	out := &syncBuffer{}

@@ -191,3 +191,44 @@ select kind, state, count(*) as n,
        round(extract(epoch from now() - min(created_at)) / 60.0, 1) as oldest_minutes
   from ops where state in ('pending','running')
  group by 1, 2 order by oldest_minutes desc;
+
+-- Q13. Running but not frozen: where the warm minutes went (I-1152).
+-- The owner's question of 2026-11-10 -- not attached, the agent idle,
+-- the machine still running and not frozen -- after the fact. Every row
+-- of `rest_verdicts` is one running machine at one tick with the one
+-- condition that kept it awake; `blocked_by = 'resting'` is a machine
+-- that was frozen and is left out here. A row stands for five minutes
+-- (internal/api/resting.VerdictEvery), which is the cadence the rule
+-- writes them at.
+-- `top_processes` is the three processes that spent the most CPU across
+-- the minutes those verdicts read, as `name seconds`, from proc_samples
+-- (names only; never an argument, a path or anything typed). It is the
+-- answer to a `cpu` row and noise under the others, and it is the same
+-- shape as the proposal's table of CPU hours in idle minutes
+-- (proposals/2026-10-11-pause-idle-machines.md section 5).
+with v as (
+  select project_id, blocked_by, sample_ts
+    from rest_verdicts
+   where ts >= now() - interval '14 days' and blocked_by <> 'resting'
+), warm as (
+  select project_id, blocked_by, count(*) as ticks from v group by 1, 2
+), proc as (
+  select v.project_id, v.blocked_by, p.comm, sum(p.cpu_ns) as cpu_ns,
+         row_number() over (partition by v.project_id, v.blocked_by
+                            order by sum(p.cpu_ns) desc) as rn
+    from v join proc_samples p
+      on p.project_id = v.project_id and p.ts = v.sample_ts
+   group by 1, 2, 3
+), top as (
+  select project_id, blocked_by,
+         string_agg(comm || ' ' || round(cpu_ns / 1e9)::text || 's', ', ' order by rn) as top_processes
+    from proc where rn <= 3 group by 1, 2
+)
+select pr.slug, w.blocked_by,
+       w.ticks * 5                        as warm_minutes,
+       round(w.ticks * 5 / 60.0, 1)       as warm_hours,
+       t.top_processes
+  from warm w
+  join projects pr on pr.id = w.project_id
+  left join top t on t.project_id = w.project_id and t.blocked_by = w.blocked_by
+ order by warm_minutes desc limit 60;

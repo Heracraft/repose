@@ -50,11 +50,34 @@ func TestStopWindowScripts(t *testing.T) {
 	if code != 0 || w == nil || w.Dir != wt || w.Branch != "worktree-1" || w.Dirty != 0 || len(w.Others) != 0 || len(w.Tip) != 40 {
 		t.Fatalf("probe: %d %q -> %+v", code, out, w)
 	}
-	if out, _ := sh(stopWindowProbeScript("app", "codex")); parseStopWindowProbe(out) != nil {
+	// The main checkout is no worktree, and the probe says which test it
+	// gave up on: every one of those paths exits 0 having printed
+	// nothing, so without a reason a reader cannot tell "not a worktree"
+	// from a probe that read the wrong folder (I-1060).
+	out, _ = sh(stopWindowProbeScript("app", "codex"))
+	if parseStopWindowProbe(out) != nil {
 		t.Fatalf("the checkout is no worktree: %q", out)
+	}
+	if !strings.Contains(out, "#why main-checkout ") {
+		t.Fatalf("the probe gave up without saying which test failed: %q", out)
 	}
 	if _, code := sh(stopWindowProbeScript("app", "claude-9")); code != typeExitNoWindow {
 		t.Fatalf("missing window exit %d", code)
+	}
+	// Why the probe reads the pane with list-panes and not with
+	// display-message (I-1060). For a window that is not there,
+	// display-message prints the *active* pane's path and exits 0, so the
+	// probe would read a folder belonging to some other window and hand
+	// it to `git worktree remove`; list-panes fails. If a tmux release
+	// ever makes display-message fail too this test says so, and the
+	// extra work in the probe can go.
+	if out, code := sh("tmux display-message -p -t '=app:=claude-9' '#{pane_current_path}'"); code != 0 || strings.TrimSpace(out) == "" {
+		t.Errorf("display-message on a missing window: %d %q, want 0 and the active pane's path", code, out)
+	} else if strings.TrimSpace(out) != app {
+		t.Errorf("display-message fell back to %q, want the active pane %q", strings.TrimSpace(out), app)
+	}
+	if _, code := sh("tmux list-panes -t '=app:=claude-9' -F '#{pane_current_path}'"); code == 0 {
+		t.Error("list-panes on a missing window exited 0; the probe relies on it failing")
 	}
 	// Another window in the worktree, and an uncommitted file.
 	sh("tmux new-window -d -t =app: -n claude-3 -c " + wt + " && echo x > " + wt + "/new.txt")

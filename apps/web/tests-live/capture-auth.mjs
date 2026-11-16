@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from '@playwright/test';
 
-const LIVE_URL = (process.env.REPOSE_LIVE_URL ?? 'https://repose.herakraft.co').replace(/\/$/, '');
+const LIVE_URL = (process.env.REPOSE_LIVE_URL ?? 'https://repose.run').replace(/\/$/, '');
 const AUTH_DIR = path.resolve(import.meta.dirname, '.auth');
 const AUTH_STATE = path.join(AUTH_DIR, 'state.json');
 const TIMEOUT_MS = Number(process.env.REPOSE_LIVE_AUTH_TIMEOUT_MS ?? 5 * 60 * 1000);

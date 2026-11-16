@@ -3,7 +3,7 @@ import { LIVE_URL, AUTH_STATE, haveAuthState } from './tests-live/live';
 
 // The live suite. Unlike playwright.config.ts it starts nothing: the site
 // under test is already deployed, and REPOSE_LIVE_URL points at it
-// (https://repose.herakraft.co by default, a staging deploy otherwise).
+// (https://repose.run by default, a staging deploy otherwise).
 //
 // Two projects, because one half needs a real GitHub sign-in and the other
 // does not:

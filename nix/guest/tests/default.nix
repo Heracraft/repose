@@ -76,6 +76,41 @@ let
 
   gcLowerProbe = pkgs.writeText "repose-gc-lower-probe" "in the host store only\n";
 
+  # A stand-in for Playwright's `chrome-headless-shell`, whose name the
+  # kernel cuts to `chrome-headless` (DECISIONS I-1124). Compiled rather
+  # than a shell script, because a script's comm is its interpreter's,
+  # and named exactly, because the rule reads the name. It listens on the
+  # port it is given and never accepts: the kernel completes the
+  # handshake, so a client reads as established without the program
+  # doing anything.
+  fakeHeadlessBrowser = pkgs.runCommand "fake-chrome-headless" { nativeBuildInputs = [ pkgs.stdenv.cc ]; } ''
+    mkdir -p $out/bin
+    cat > b.c <<'SRC'
+    #include <netinet/in.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <sys/socket.h>
+    #include <unistd.h>
+    int main(int argc, char **argv) {
+      if (argc > 1) {
+        int s = socket(AF_INET, SOCK_STREAM, 0), one = 1;
+        struct sockaddr_in a;
+        if (s < 0) return 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+        memset(&a, 0, sizeof a);
+        a.sin_family = AF_INET;
+        a.sin_port = htons((unsigned short)atoi(argv[1]));
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (bind(s, (struct sockaddr *)&a, sizeof a) != 0) return 1;
+        if (listen(s, 8) != 0) return 1;
+      }
+      for (;;) sleep(60);
+      return 0;
+    }
+SRC
+    $CC -O0 -o $out/bin/chrome-headless b.c
+  '';
+
   helloImage = pkgs.dockerTools.buildImage {
     name = "repose-hello";
     tag = "test";
@@ -306,6 +341,104 @@ let
   '';
 in
 {
+  # A `tiny` guest's worth of memory (2 GB, DECISIONS I-1168) with a page
+  # that allocates until something gives. What it holds to is I-1170: the
+  # kill lands inside the browser's own slice, so the tab goes and the
+  # agent, the tmux server, dev's user manager and the browser itself do
+  # not. This is the smallest class, which is where the rule binds; the
+  # ceiling is a share of guest memory, so passing here is the hardest
+  # case of it.
+  guest-tiny-oom = mkTest "guest-tiny-oom" {
+    nodes.guest = { ... }: {
+      imports = [ node ];
+      repose.class = "tiny";
+      virtualisation.memorySize = lib.mkForce 2048;
+      virtualisation.cores = lib.mkForce 1;
+    };
+    testScript = ''
+      import json, shlex
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+      guest.wait_for_unit("repose-browser.socket")
+
+      # 37.5 percent of the guest's memory, which systemd resolves at boot,
+      # so one closure serves every class (I-34, I-43, I-246).
+      ceiling = int(guest.succeed("systemctl show -P MemoryMax repose-browser.slice").strip())
+      assert 700 * 1024 * 1024 < ceiling < 790 * 1024 * 1024, ceiling
+
+      guest.succeed("install -d -o dev -g dev /home/dev/site")
+      guest.succeed("""cat > /home/dev/site/hog.html <<'EOF'
+      <html><head><title>hog</title></head><body><script>
+      var keep = [];
+      function eat() {
+        for (var i = 0; i < 8; i++) {
+          var a = new Uint8Array(8 * 1024 * 1024);
+          for (var j = 0; j < a.length; j += 4096) { a[j] = 1; }
+          keep.push(a);
+        }
+        setTimeout(eat, 50);
+      }
+      eat();
+      </script></body></html>
+      EOF""")
+      guest.succeed("systemd-run --unit site -p User=dev python3 -m http.server 8123 "
+                    "--bind 127.0.0.1 --directory /home/dev/site")
+      guest.wait_for_open_port(8123)
+
+      # A stand-in agent in a pane, protected the way guestd protects a real
+      # one (I-200, I-576): this node runs fake-guestd, so the -800 is
+      # written here rather than by the refresh, and what the test is about
+      # is who the kernel takes, not who writes the value.
+      guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
+      guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"UTC","class":"tiny"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+      guest.wait_until_succeeds("sudo -u dev tmux ls | grep -q '^todo-app:'", timeout=180)
+      guest.succeed("sudo -u dev tmux new-window -d -t todo-app -n agent 'sleep 3600'")
+      agent = guest.succeed("sudo -u dev tmux display -p -t todo-app:agent '#{pane_pid}'").strip()
+      guest.succeed(f"echo -800 > /proc/{agent}/oom_score_adj")
+
+      manager = guest.succeed("systemctl show -p MainPID --value user@1000.service").strip()
+      server = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
+
+      reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+
+      def navigate(url):
+          e = reg["playwright"]
+          argv = [e["command"]] + e["args"] + ["--", "browser_navigate", json.dumps({"url": url})]
+          cmd = "cd /home/dev && python3 ${./mcp-client.py} " + " ".join(shlex.quote(a) for a in argv)
+          for _ in range(4):
+              status, out = guest.execute(f"sudo -u dev bash -lc {shlex.quote(cmd)}", timeout=900)
+              if status == 0:
+                  return out
+          return ""
+
+      # The framework panics the VM on an OOM; a real guest does not.
+      guest.succeed("sysctl -w vm.panic_on_oom=0")
+      guest.succeed("dmesg -C")
+      navigate("http://127.0.0.1:8123/hog.html")
+      guest.wait_until_succeeds("dmesg | grep -q 'Memory cgroup out of memory'", timeout=240)
+      kill = guest.succeed("dmesg | grep 'Memory cgroup out of memory'")
+      print(kill)
+
+      # The slice's ceiling is what killed, not the machine running out:
+      # that is the whole of the rule, because a machine-wide kill would
+      # have ranked the agent and the receiver against the browser.
+      assert "repose-browser.slice" in guest.succeed("dmesg | grep oom-kill"), guest.succeed("dmesg | grep oom-kill")
+      assert "CONSTRAINT_MEMCG" in guest.succeed("dmesg | grep oom-kill")
+      assert "(chromium)" in kill, kill
+
+      # And nothing else moved.
+      assert guest.succeed("systemctl show -p MainPID --value user@1000.service").strip() == manager
+      assert guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip() == server
+      assert guest.succeed("sudo -u dev tmux display -p -t todo-app:agent '#{pane_pid}'").strip() == agent
+      guest.succeed("systemctl is-active repose-browser.service")
+      guest.succeed("curl -s -m 60 -o /dev/null http://127.0.0.1:9224/json/version")
+      guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal|sleep)\\)'")
+      guest.succeed("sysctl -w vm.panic_on_oom=2")
+    '';
+  };
+
   guest-base = mkTest "guest-base" {
     nodes.guest = node;
     testScript = ''
@@ -618,6 +751,10 @@ in
           user("herdr server stop")
           guest.wait_until_succeeds("! pgrep -u dev -fx 'sleep 4242'", timeout=20)
           guest.wait_until_succeeds("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 herdr workspace list | grep -q checkout", timeout=40)
+          # The restarted server answers its socket before systemd marks the
+          # unit active, so a single read here saw `activating` (2026-11-11,
+          # twice). Wait on the unit, not on the socket (I-1038's rule).
+          guest.wait_until_succeeds("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active repose-herdr-server.service", timeout=30)
           assert unit_state("repose-herdr-server.service") == "active"
           # Back to tmux for the subtests below.
           user("systemctl --user stop repose-herdr-server.service")
@@ -686,6 +823,22 @@ in
           assert s["tui"] == "fullscreen" and fresh["tui"] == "fullscreen" and plan["tui"] == "fullscreen", (s, fresh, plan)
           guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/tui/.claude && echo {\\\"tui\\\":\\\"default\\\"} > /tmp/tui/.claude/settings.json && HOME=/tmp/tui repose-agent-setup claude'")
           assert json.loads(guest.succeed("cat /tmp/tui/.claude/settings.json"))["tui"] == "default"
+          # I-1132, I-1134, I-1136: remoteControlAtStartup follows the
+          # switch the carry writes, and is absent while it is off.
+          assert "remoteControlAtStartup" not in s and "remoteControlAtStartup" not in fresh, (s, fresh)
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/rc/.repose && echo on > /tmp/rc/.repose/remote-control && HOME=/tmp/rc repose-agent-setup claude'")
+          assert json.loads(guest.succeed("cat /tmp/rc/.claude/settings.json"))["remoteControlAtStartup"] is True
+          guest.succeed("test -e /tmp/rc/.local/state/repose/remote-control-startup")
+          guest.succeed("sudo -u dev sh -c 'echo off > /tmp/rc/.repose/remote-control && HOME=/tmp/rc repose-agent-setup claude'")
+          assert "remoteControlAtStartup" not in json.loads(guest.succeed("cat /tmp/rc/.claude/settings.json"))
+          guest.fail("test -e /tmp/rc/.local/state/repose/remote-control-startup")
+          # A key the user set is theirs, and disableRemoteControl stops
+          # it whatever the switch says (I-196).
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/rcu/.claude /tmp/rcu/.repose && jq -n \"{remoteControlAtStartup:false}\" > /tmp/rcu/.claude/settings.json && echo on > /tmp/rcu/.repose/remote-control && HOME=/tmp/rcu repose-agent-setup claude'")
+          assert json.loads(guest.succeed("cat /tmp/rcu/.claude/settings.json"))["remoteControlAtStartup"] is False
+          guest.fail("test -e /tmp/rcu/.local/state/repose/remote-control-startup")
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/rcd/.claude /tmp/rcd/.repose && jq -n \"{disableRemoteControl:true}\" > /tmp/rcd/.claude/settings.json && echo on > /tmp/rcd/.repose/remote-control && HOME=/tmp/rcd repose-agent-setup claude'")
+          assert "remoteControlAtStartup" not in json.loads(guest.succeed("cat /tmp/rcd/.claude/settings.json"))
           mcp = json.loads(guest.succeed("cat /home/dev/.claude.json"))
           assert set(mcp["mcpServers"]) >= {"playwright", "chrome-devtools"}, mcp
           # I-283: no auto-mode offer to catch a sent prompt under bypass;
@@ -1001,7 +1154,8 @@ in
           for f in ["xterm-ghostty:RGB", "xterm-kitty:RGB", "alacritty:RGB", "wezterm:RGB", "foot*:RGB", "*-direct:RGB"]:
               assert f in features, features
           assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles").strip() == "on"
-          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles-string").strip() == "#h: #S"
+          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles-string").strip() == "#h: #{?session_grouped,#{session_group},#S}"
+          assert guest.succeed("sudo -H -u dev tmux show-options -gwv aggressive-resize").strip() == "on"
 
       with subtest("I-513, I-514: login shells read ~/.bashrc last; ls, vi, history and fzf"):
           guest.succeed("cat > /home/dev/.bashrc <<'EOF'\nexport REPOSE_RC_MARK=read\nalias rcprobe='echo alias-ok'\nalias ll='echo user-ll'\nEOF\nchown dev:dev /home/dev/.bashrc")
@@ -1339,7 +1493,7 @@ in
           guest.succeed("sleep 2")
           assert windows() == ["shell"], windows()
 
-      with subtest("I-646: a record of another project (a fork's copy) reopens nothing"):
+      with subtest("I-646: a record of another project (a restore under another name) reopens nothing"):
           guest.succeed("rm -f /home/dev/w1/opencode.args /home/dev/w2/pi.args")
           user("systemctl --user stop repose-tmux-session.service")
           guest.succeed("printf '#boot 0000-other-boot 0192e4b0-0000-7000-8000-0000000000ff\\nopencode\\037opencode\\037/home/dev/w1\\037\\037working\\n' | sudo -u dev tee /home/dev/.repose/agent-windows.live > /dev/null")
@@ -1720,6 +1874,17 @@ in
           left = dev("git config --global --get-regexp '^credential' || true")
           assert left.strip() == "credential.https://example.com.helper store", left
           dev("if [ -f /tmp/gitconfig.keep ]; then cp /tmp/gitconfig.keep ~/.gitconfig; else git config --global --unset credential.https://example.com.helper; fi")
+
+      with subtest("I-1064: GH_TOKEN alone is the GitHub credential, with no gh login"):
+          # What `repose github setup` leaves the machine with: the token as
+          # a secret, no hosts.yml. gh answers the system credential helper
+          # from the environment, so git pushes with that token and nothing
+          # else; the SSH rewrites the CLI writes (guest-conventions.md) put
+          # a git@github.com: remote on this path too.
+          assert dev("ls ~/.config/gh/hosts.yml 2>&1 || true").find("No such file") >= 0
+          out = dev("printf 'url=https://github.com/me/skills.git\\n\\n' | GH_TOKEN=github_pat_FAKEVALUE git credential fill")
+          assert "username=x-access-token" in out, out
+          assert "password=github_pat_FAKEVALUE" in out, out
 
       with subtest("I-527: git defaults for a fresh HOME"):
           assert dev("git config --system init.defaultBranch").strip() == "main"
@@ -2320,7 +2485,7 @@ in
       environment.systemPackages = [ pkgs.imagemagick pkgs.python3 pkgs.xdotool pkgs.xorg.xdpyinfo pkgs.xorg.xrandr ];
     };
     testScript = ''
-      import json, shlex
+      import json, shlex, time
 
       guest.start()
       guest.wait_for_unit("multi-user.target")
@@ -2658,7 +2823,7 @@ in
           assert disp == "", disp
 
       with subtest("a stale profile lock and root's stamps do not stop the browser (I-727)"):
-          # What a fork, or a restore under another name, finds after the
+          # What a restore under another name finds after the
           # browser was killed, beside stamps root made before dev did.
           prof = "/home/dev/.local/share/repose/browser"
           guest.succeed(f"sudo -u dev ln -sfn other-machine-4242 {prof}/SingletonLock")
@@ -2746,6 +2911,103 @@ in
           guest.wait_until_succeeds("test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -ge 1")
           guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.succeed("systemctl is-active repose-browser.service")
+          guest.succeed("systemctl stop repose-browser.service")
+          guest.wait_until_fails("systemctl is-active repose-xvnc.service")
+
+      # DECISIONS I-1122. guestd writes last-agent-working; this VM runs
+      # the fake guestd, so the test writes it in guestd's place.
+      def idle_check():
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service"
+                        " && systemctl start repose-desktop-idle-check.service")
+
+      def stamp_age(name):
+          return int(guest.succeed(
+              f"echo $(( $(date +%s) - $(stat -c %Y /run/repose/desktop/{name}) ))").strip())
+
+      def start_browser():
+          """A browser up, its proxy gone, and the CDP byte total recorded."""
+          guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl is-active repose-browser.service")
+          # The proxy exits ten seconds after its last connection closes,
+          # so the next short request starts it again and stamps.
+          guest.wait_until_fails("systemctl is-active repose-browser-proxy.service", timeout=120)
+          idle_check()
+
+      def age_stamps(age, *names):
+          paths = " ".join(f"/run/repose/desktop/{n}" for n in names)
+          guest.succeed(f"touch -d '{age}' {paths}")
+
+      with subtest("while an agent works the browser keeps its 30 minutes (I-1122)"):
+          start_browser()
+          guest.succeed("install -o dev -g dev -m 644 /dev/null /run/repose/desktop/last-agent-working")
+          age_stamps("-11 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.succeed("systemctl is-active repose-browser.service")
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+
+      with subtest("with every agent idle or waiting the browser stops after 10 minutes (I-1122)"):
+          start_browser()
+          age_stamps("-11 minutes", "last-agent-working", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+
+      with subtest("a machine whose agents never worked has no stamp and the same 10 minutes"):
+          start_browser()
+          guest.succeed("rm -f /run/repose/desktop/last-agent-working")
+          age_stamps("-11 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+          # The check never makes that stamp: making it would read as work.
+          guest.fail("test -e /run/repose/desktop/last-agent-working")
+
+      with subtest("a short DevTools request stamps the clock (I-948's gap, closed by I-1122)"):
+          start_browser()
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          # One request that opens and closes between two checks. The check
+          # reads bytes off established sockets and cannot see it; the
+          # proxy's own start is what stamps.
+          guest.succeed("curl -s -m 60 -o /dev/null http://127.0.0.1:9224/json/version")
+          assert stamp_age("last-cdp") < 60, stamp_age("last-cdp")
+          idle_check()
+          guest.succeed("systemctl is-active repose-browser.service")
+
+      with subtest("the browser comes back with the tabs it had, with no warming request (I-1122)"):
+          out = mcp("playwright", ("browser_navigate", {"url": page + "?restored"}))
+          assert "?restored" in out, out
+          # Chromium writes its session a couple of seconds after the
+          # navigation commits, so a browser stopped in the same breath
+          # comes back on the page before this one (measured: with no
+          # wait this subtest restored the tab from the subtest before).
+          guest.sleep(10)
+          # The MCP client has gone; wait for its CDP socket to go with
+          # it, or the check reads its bytes as a command just arrived.
+          guest.wait_until_succeeds(
+              "test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -eq 0")
+          idle_check()
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+          t0 = time.monotonic()
+          out = mcp("chrome-devtools", ("list_pages", {}))
+          print(f"MEASURE cold start after an idle stop, no warming request: {time.monotonic() - t0:.1f} s")
+          assert "?restored" in out, out
+
+      with subtest("a viewer keeps the browser although nothing drives it (I-1122)"):
+          guest.succeed("sudo -u dev repose-guest-profile desktop start")
+          guest.succeed("systemctl is-active repose-browser.service repose-novnc.service")
+          guest.succeed(
+              "systemd-run --unit viewerhold python3 -c "
+              "'import socket,time; s=socket.create_connection((\"127.0.0.1\",5900)); time.sleep(600)'"
+          )
+          guest.wait_until_succeeds("test \"$(ss -Htn state established '( sport = :5900 )' | wc -l)\" -ge 1")
+          age_stamps("-31 minutes", "last-client", "last-cdp")
+          idle_check()
+          guest.succeed("systemctl is-active repose-browser.service")
+          assert stamp_age("last-client") < 60, stamp_age("last-client")
+          guest.succeed("systemctl stop viewerhold.service || true")
+          guest.succeed("sudo -u dev repose-guest-profile desktop stop")
           guest.succeed("systemctl stop repose-browser.service")
           guest.wait_until_fails("systemctl is-active repose-xvnc.service")
 
@@ -2892,7 +3154,15 @@ in
               "claude": ("USER-CLAUDE-MARK", "ANTHROPIC_BASE_URL=http://127.0.0.1:18777 ANTHROPIC_API_KEY=sk-x CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "claude -p hi --max-turns 1"),
               "codex": ("USER-CODEX-MARK", "FAKE_KEY=x", "codex exec --skip-git-repo-check hi"),
               "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "opencode run hi"),
-              "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini -p hi"),
+              # --approval-mode=yolo: Gemini CLI's policy denies, and
+              # leaves out of the request, every tool that would need a
+              # confirmation when it cannot ask -- the MCP tools and its
+              # own write_file, replace and run_shell_command alike
+              # (defaultDecision is DENY when nonInteractive). An agent
+              # window on a machine is a terminal, where the default is
+              # ASK_USER and the browser tools are declared; `-p` is not
+              # that configuration, so the run says so (DECISIONS I-1148).
+              "gemini": ("USER-GEMINI-MARK", "GEMINI_CLI_TRUST_WORKSPACE=true GEMINI_API_KEY=x GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:18777", "gemini --approval-mode=yolo -p hi"),
               "pi": ("USER-PI-MARK", "PI_OFFLINE=1", "env PATH=/tmp/pishim:$PATH pi --provider fake --model m -p hi"),
           }
           # I-554: pi starts both platform servers, seen by wrappers on its
@@ -2913,7 +3183,7 @@ in
               # Codex (code mode) names no MCP tool in the request; its
               # registration is checked with codex mcp list above
               # (DECISIONS I-553).
-              tool = {"opencode": "browser_navigate", "gemini": "browser_navigate", "pi": "mcp__playwright"}.get(agent)
+              tool = {"opencode": "browser_navigate", "gemini": "mcp_playwright_browser_navigate", "pi": "mcp__playwright"}.get(agent)
               if tool:
                   assert tool in bodies, f"{agent}: {tool} is not in what it sent"
               if agent == "pi":
@@ -3228,6 +3498,105 @@ in
   # build's whole store, most of it unknown to the VM's database: a GC
   # deletes those (they are not this guest's), and the next start brings
   # them back.
+  # The Remote Control window (DECISIONS I-1132, I-1134, I-1136): the
+  # conditions that open it, the argv it starts, the restart loop, and
+  # the switch and Claude Code's own keys closing it again. `claude` here
+  # is a stub in dev's ~/.local/bin, first on the login PATH (I-227),
+  # which records its argv; the real one would ask Anthropic for a login.
+  guest-remote-control = mkTest "guest-remote-control" {
+    nodes.guest = { ... }: { imports = [ node ]; };
+    testScript = ''
+      import shlex
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+
+      def dev(cmd):
+          return guest.succeed(f"sudo -H -u dev sh -c {shlex.quote(cmd)}")
+
+      def windows():
+          code, out = guest.execute("sudo -H -u dev tmux list-windows -t '=todo-app' -F '#{window_name}'")
+          return out.split() if code == 0 else []
+
+      def argv():
+          code, out = guest.execute("cat /home/dev/claude-argv")
+          return [l for l in out.splitlines() if l] if code == 0 else []
+
+      with subtest("a machine with a checkout, a session and a stub claude"):
+          dev("mkdir -p ~/.repose ~/.local/bin ~/todo-app ~/.claude")
+          dev("printf '%s\\n' '{\"project_id\":\"p1\",\"slug\":\"todo-app\",\"multiplexer\":\"tmux\"}' > ~/.repose/project.json")
+          dev("printf 'todo-app\\n' > ~/.repose/checkout")
+          dev("cd ~/todo-app && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init")
+          guest.succeed("""cat > /home/dev/.local/bin/claude <<'STUB'
+      #!/bin/sh
+      printf '%s\\n' "$*" >> "$HOME/claude-argv"
+      sleep 3600
+      STUB
+      chmod 755 /home/dev/.local/bin/claude && chown dev:dev /home/dev/.local/bin/claude""")
+          dev("tmux new-session -d -s todo-app -n shell -c ~/todo-app")
+          assert windows() == ["shell"], windows()
+
+      with subtest("off by default, and off until the login share holds a login (I-1134, I-278)"):
+          dev("repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("printf 'on\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("printf '{}\\n' > ~/.claude/.credentials.json")
+
+      with subtest("the window opens with the proposal's argv, once"):
+          dev("repose-remote-control")
+          guest.wait_until_succeeds("test -s /home/dev/claude-argv", timeout=30)
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+          assert argv() == ["remote-control --spawn worktree --name todo-app --no-chrome"], argv()
+          dev("repose-remote-control")
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+          assert len(argv()) == 1, argv()
+
+      with subtest("a setup token closes it again: Remote Control refuses one"):
+          dev("mkdir -p /tmp/sec && : > /tmp/sec/CLAUDE_CODE_OAUTH_TOKEN")
+          dev("REPOSE_SECRETS_DIR=/tmp/sec repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("rm /tmp/sec/CLAUDE_CODE_OAUTH_TOKEN")
+
+      with subtest("the stub's exit brings the window's claude back (the restart loop)"):
+          dev("repose-remote-control")
+          guest.wait_until_succeeds("test $(wc -l < /home/dev/claude-argv) -eq 2", timeout=30)
+          guest.succeed("pkill -f 'sleep 3600'")
+          guest.wait_until_succeeds("test $(wc -l < /home/dev/claude-argv) -eq 3", timeout=180)
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+
+      with subtest("the switch off closes the window repose opened (I-1136)"):
+          dev("printf 'off\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert windows() == ["shell"], windows()
+
+      with subtest("Claude Code's own key wins over the switch (I-196)"):
+          dev("printf 'on\\n' > ~/.repose/remote-control")
+          dev("jq -n \"{remoteControlAtStartup:false}\" > ~/.claude/settings.json && repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("jq -n \"{disableRemoteControl:true}\" > ~/.claude/settings.json && repose-remote-control")
+          assert windows() == ["shell"], windows()
+          dev("rm ~/.claude/settings.json")
+
+      with subtest("a window of that name the user made is left alone"):
+          dev("tmux new-window -d -t '=todo-app' -n remote-control -c ~/todo-app 'sleep 3600'")
+          dev("printf 'off\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert sorted(windows()) == ["remote-control", "shell"], windows()
+          dev("tmux kill-window -t '=todo-app:remote-control'")
+
+      with subtest("a checkout that is no git repository gets --spawn same-dir (I-1065)"):
+          dev("rm -rf ~/todo-app/.git && : > ~/claude-argv")
+          dev("printf 'on\\n' > ~/.repose/remote-control && repose-remote-control")
+          guest.wait_until_succeeds("test -s /home/dev/claude-argv", timeout=30)
+          assert argv()[0] == "remote-control --spawn same-dir --name todo-app --no-chrome", argv()
+
+      with subtest("a herdr project builds no window"):
+          dev("printf 'off\\n' > ~/.repose/remote-control && repose-remote-control")
+          dev("printf '%s\\n' '{\"project_id\":\"p1\",\"slug\":\"todo-app\",\"multiplexer\":\"herdr\"}' > ~/.repose/project.json")
+          dev("printf 'on\\n' > ~/.repose/remote-control && repose-remote-control")
+          assert windows() == ["shell"], windows()
+    '';
+  };
+
   guest-store-whiteouts = mkTest "guest-store-whiteouts" {
     nodes.guest = { lib, ... }: {
       imports = [ node ];
@@ -3338,6 +3707,134 @@ in
           else:
               repaired("repose: store overlay: 0 whiteouts removed")
           guest.succeed(f"test -z \"$(find {upper} -mindepth 1 -maxdepth 1 -type c)\"")
+    '';
+  };
+
+  # DECISIONS I-1124: guestd stops a headless browser whose launching
+  # process has exited, that nobody is connected to, on a machine that has
+  # been quiet for ten minutes, and leaves every other browser alone. The
+  # real guestd, because the rule is its own and the fake one has no /proc
+  # pass. The window is ten one-minute passes, so every case runs in the
+  # same quiet twelve minutes rather than one after another.
+  #
+  # Four of the five browsers are a stand-in: a compiled program named
+  # `chrome-headless`, which is what the kernel's 15-character cut makes
+  # of Playwright's `chrome-headless-shell`, listening on a port and
+  # doing nothing else. That is the whole of what the rule reads -- a
+  # name, a parent, a uid, a cgroup and a listening socket -- and unlike
+  # Chromium it stays in the cgroup it is put in. The fifth is a real
+  # `chromium --headless=new`, which moves itself into
+  # `app-org.chromium.Chromium-<pid>.scope` and is stopped there.
+  guest-stray-browser = mkTest "guest-stray-browser" {
+    nodes.guest = { lib, pkgs, ... }: {
+      imports = [ node ];
+      environment.systemPackages = [ pkgs.python3 fakeHeadlessBrowser ];
+      # mkOverride 10 beats the node's own mkForce back to the fake one.
+      # This VM has no host and no vsock; everything the rule reads is
+      # the guest's own.
+      systemd.services.guestd.serviceConfig.ExecStart = lib.mkOverride 10
+        "${guestd}/bin/guestd --dev-socket /run/repose/guestd.sock --log-level debug";
+    };
+    testScript = ''
+      import shlex, time
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+      guest.wait_for_unit("guestd.service")
+      guest.wait_for_file("/run/repose/guestd.sock")
+
+      uid = int(guest.succeed("id -u dev").strip())
+
+      def dev(cmd):
+          # dev lingers (base/users.nix), so its user manager is up and
+          # systemd-run --user works once the runtime directory is named.
+          return guest.succeed(
+              f"sudo -u dev -H XDG_RUNTIME_DIR=/run/user/{uid} bash -lc {shlex.quote(cmd)}")
+
+      def in_a_scope(cmd):
+          """Run cmd in a transient scope of dev's, which is the shape of a
+          tmux pane (tmux-spawn-*.scope) and of the browser wrapper's own
+          run scope. The shell exits; what it started stays in the scope.
+
+          The whole thing is backgrounded with its output closed: the test
+          driver reads a command's output to end of file, so a browser
+          left holding the pipe keeps `succeed` waiting -- here for the
+          ten minutes until the rule stopped it, which is a test that
+          watches itself pass and calls it a failure."""
+          return dev("systemd-run --user --scope --quiet --collect bash -c "
+                     + shlex.quote(cmd) + " </dev/null >/dev/null 2>&1 &")
+
+      def pid_on(port):
+          return guest.succeed(
+              f"ss -Hltnp 'sport = :{port}' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true").strip()
+
+      def cgroup_of(port):
+          pid = pid_on(port)
+          assert pid, f"nothing listens on {port}"
+          return pid, guest.succeed(f"cat /proc/{pid}/cgroup").strip()
+
+      with subtest("five browsers, two of them strays"):
+          # A: the stray. Its launcher exited, nobody is connected.
+          in_a_scope("chrome-headless 9333 &")
+          guest.wait_for_open_port(9333)
+
+          # B: the same, with a client on its port.
+          in_a_scope("chrome-headless 9334 &")
+          guest.wait_for_open_port(9334)
+          guest.succeed(
+              "systemd-run --unit holdb python3 -c "
+              "'import socket,time; s=socket.create_connection((\"127.0.0.1\",9334)); time.sleep(1800)'"
+          )
+          guest.wait_until_succeeds(
+              "test \"$(ss -Htn state established '( sport = :9334 )' | wc -l)\" -ge 1")
+
+          # C: a unit of the user's own.
+          dev("systemd-run --user --unit keepc chrome-headless 9335")
+          guest.wait_for_open_port(9335)
+
+          # D: a launcher that is still running.
+          in_a_scope("chrome-headless 9336 & sleep 1800")
+          guest.wait_for_open_port(9336)
+
+          # E: a real Chromium with no launcher, which moves itself into a
+          # scope of its own (I-1124) and is a stray there all the same.
+          in_a_scope("chromium --headless=new --no-first-run --disable-gpu"
+                     " --user-data-dir=/tmp/stray-chromium --remote-debugging-port=9337"
+                     " about:blank >/tmp/stray-chromium.log 2>&1 &")
+          # systemd-run returns before the scope has the browser in it.
+          guest.wait_for_open_port(9337)
+
+          for port in (9333, 9334, 9335, 9336, 9337):
+              pid, cg = cgroup_of(port)
+              print(f"browser on {port}: pid {pid}, cgroup {cg}")
+          assert cgroup_of(9335)[1].endswith("keepc.service"), cgroup_of(9335)
+          assert cgroup_of(9333)[1].endswith(".scope"), cgroup_of(9333)
+          # The finding the docs' escape hatch rests on, recorded here so
+          # a Chromium that stops moving itself shows up as a change.
+          print("MEASURE real chromium cgroup:", cgroup_of(9337)[1])
+
+      with subtest("nothing is stopped in the first five quiet minutes"):
+          time.sleep(300)
+          for port in (9333, 9334, 9335, 9336, 9337):
+              assert pid_on(port), f"the browser on {port} is gone after five minutes"
+
+      with subtest("ten quiet minutes later the two strays are gone and the three others are not"):
+          deadline = time.time() + 600
+          while time.time() < deadline and (pid_on(9333) or pid_on(9337)):
+              time.sleep(15)
+          assert not pid_on(9333), "the stray is still listening after thirteen quiet minutes"
+          assert not pid_on(9337), "the real chromium stray is still listening"
+          for port in (9334, 9335, 9336):
+              assert pid_on(port), (
+                  f"the browser on {port} was stopped; only an orphan nobody is connected to may be")
+          lines = guest.succeed("journalctl -u guestd --no-pager | grep 'stray browser'")
+          print(lines)
+          assert "chrome-headless" in lines and "chromium" in lines, lines
+
+      with subtest("the journal lines carry a name and numbers, and nothing of the tenant's"):
+          lines = guest.succeed("journalctl -u guestd --no-pager | grep 'stray browser'")
+          for secret in ["about:blank", "user-data-dir", "/tmp/stray-chromium", "9333", "9337"]:
+              assert secret not in lines, (secret, lines)
     '';
   };
 }

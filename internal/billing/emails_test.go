@@ -36,7 +36,7 @@ func accountEmail(t *testing.T, pool *db.Pool, a account, kind string, wants ...
 // render renders one account event and checks the wants.
 func render(t *testing.T, kind, summary string, wants ...string) notify.Rendered {
 	t.Helper()
-	r, err := notify.Render(notify.Message{Kind: kind, Summary: summary, Dashboard: "https://repose.herakraft.co"})
+	r, err := notify.Render(notify.Message{Kind: kind, Summary: summary, Dashboard: "https://repose.run"})
 	if err != nil {
 		t.Fatalf("render %s: %v", kind, err)
 	}
@@ -63,7 +63,7 @@ func TestAccountPayloadsRender(t *testing.T) {
 		wants   []string
 	}{
 		{billing.KindTrialEnding, billing.TrialEndingPayload{Plan: "plus", AmountCents: 5900, ChargeAt: at}, []string{"Plus", "$59.00", "8 October 2026 at 14:00 UTC"}},
-		{billing.KindPaymentFailed, billing.PaymentFailedPayload{Plan: "solo", AmountCents: 2900}, []string{"Solo", "$29.00", "https://repose.herakraft.co/billing"}},
+		{billing.KindPaymentFailed, billing.PaymentFailedPayload{Plan: "solo", AmountCents: 2900}, []string{"Solo", "$29.00", "https://repose.run/billing"}},
 		{billing.KindPaymentFailed, billing.PaymentFailedPayload{Plan: "solo", AmountCents: 2900, PortalURL: "https://polar.sh/repose/portal"}, []string{"Solo", "$29.00", "https://polar.sh/repose/portal"}},
 		{billing.KindSubscriptionCancelled, billing.SubscriptionCancelledPayload{Plan: "plus", EndsAt: at}, []string{"Plus", "8 October 2026 at 14:00 UTC"}},
 		{billing.KindSubscriptionEnded, billing.SubscriptionEndedPayload{Plan: "solo", EndedAt: at, RetentionUntil: at.Add(30 * 24 * time.Hour)}, []string{"Solo", "8 October 2026 at 14:00 UTC", "7 November 2026 at 14:00 UTC"}},

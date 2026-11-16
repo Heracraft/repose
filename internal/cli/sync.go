@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -69,6 +70,74 @@ type SyncOptions struct {
 	// I-422). None is written, and a guest copy an earlier carry wrote is
 	// removed while it is byte for byte the laptop's file.
 	EnvOff bool
+	// Choose, when set, is asked on the overlap refusal and returns the
+	// key the user pressed at the menu (DECISIONS I-1100). nil is every
+	// run that has nobody to ask: no terminal, --json, a flag that
+	// already decided, or `repose run`'s first-only sync.
+	Choose func(*dirtyTreeError) (overlapChoice, error)
+	// KeepLaptop and KeepMachine are the overlapping paths the user chose
+	// at the menu, as the refusal listed them. The apply stashes the
+	// machine's copy of exactly these, under its own name, and for
+	// KeepMachine puts it back once the sync has written everything. The
+	// guard still refuses an overlap that is in neither list, so nothing
+	// the user did not see is stashed (DECISIONS I-1100).
+	KeepLaptop  []string
+	KeepMachine []string
+}
+
+// reusable makes the callbacks `run` builds safe to call a second time,
+// which the overlap menu does when the user picks a key and the sync
+// runs again (DECISIONS I-1100). Each of them reads a channel the
+// laptop's work was sent down once (the .env walk, the git and Claude
+// carry), so a second call would wait forever. The answer is the same
+// either way: the first attempt refused before the carry ran, so the
+// second has to send exactly what the first built. The markers of a
+// later call are the probe's again, which is cached with it.
+func (o SyncOptions) reusable() SyncOptions {
+	if f := o.Probe; f != nil {
+		var once sync.Once
+		var b []byte
+		var err error
+		o.Probe = func() ([]byte, error) {
+			once.Do(func() { b, err = f() })
+			return b, err
+		}
+	}
+	if f := o.EnvLater; f != nil {
+		var once sync.Once
+		var envs []envFile
+		o.EnvLater = func() []envFile {
+			once.Do(func() { envs = f() })
+			return envs
+		}
+	}
+	if f := o.BeforeApply; f != nil {
+		var once sync.Once
+		var err error
+		o.BeforeApply = func(m map[string]string) error {
+			once.Do(func() { err = f(m) })
+			return err
+		}
+	}
+	if f := o.Carry; f != nil {
+		var once sync.Once
+		var c *credCarry
+		var err error
+		o.Carry = func(m map[string]string) (*credCarry, error) {
+			once.Do(func() { c, err = f(m) })
+			return c, err
+		}
+	}
+	return o
+}
+
+// pick is the overlapping paths this apply may stash for the user's
+// choice, and whether the machine's copy goes back afterwards.
+func (o SyncOptions) pick() (paths []string, keepMachine bool) {
+	if len(o.KeepMachine) > 0 {
+		return o.KeepMachine, true
+	}
+	return o.KeepLaptop, false
 }
 
 func (o SyncOptions) envFiles() []envFile {
@@ -101,9 +170,17 @@ type SyncSummary struct {
 	// stash commit StashRef (DECISIONS I-618).
 	StashedFiles int
 	StashRef     string
-	Branch       string
-	Head         string
-	SkippedBig   []string
+	// StashedCopy and CopyStashRef: the overlap menu's `l` moved the
+	// machine's copy of that many of the overlapping files to its git
+	// stash, as the stash commit CopyStashRef (DECISIONS I-1100).
+	StashedCopy  int
+	CopyStashRef string
+	// KeptCopy: the menu's `m` kept the machine's copy of that many
+	// overlapping files and synced the rest (DECISIONS I-1100).
+	KeptCopy   int
+	Branch     string
+	Head       string
+	SkippedBig []string
 	// SkippedDirs are dependency and cache directories left behind
 	// (defaultSkipDirs); SkippedCap counts files past maxUntrackedBytes.
 	SkippedDirs []string
@@ -252,14 +329,21 @@ repose-herdr-workspace >/dev/null 2>&1 || true
 
 // dirtyTreeError is 07-cli.md §6's exit 6: the guest changed files that
 // this sync would write (I-573), named here. Guest changes at other paths
-// never refuse; they are kept.
-type dirtyTreeError struct{ files []string }
+// never refuse; they are kept. subs are the overlapping paths that are
+// checked-out submodules, which the menu's `m` cannot put back (I-1100).
+type dirtyTreeError struct {
+	files []string
+	subs  []string
+}
 
 // dirtyListMax is how many of the overlapping files the refusal names;
 // the rest are counted.
 const dirtyListMax = 8
 
-func (e *dirtyTreeError) Error() string {
+// list is the refusal's first part: the sentence and the names. The
+// flag line follows it off a terminal; the menu follows it on one
+// (I-1100).
+func (e *dirtyTreeError) list() string {
 	var b strings.Builder
 	files := "1 file"
 	if len(e.files) != 1 {
@@ -273,8 +357,15 @@ func (e *dirtyTreeError) Error() string {
 		}
 		_, _ = fmt.Fprintf(&b, "  %s\n", f)
 	}
-	b.WriteString("`repose sync --stash-machine` moves the machine's changes to its git stash first.")
 	return b.String()
+}
+
+// hasSubmodule reports whether one of the overlapping paths is a
+// checked-out submodule on the machine.
+func (e *dirtyTreeError) hasSubmodule() bool { return len(e.subs) > 0 }
+
+func (e *dirtyTreeError) Error() string {
+	return e.list() + "`repose sync --stash-machine` moves the machine's changes to its git stash first."
 }
 
 // guestProbe is what the first round trip learns about the guest's
@@ -567,12 +658,69 @@ func errNoCommits(offerNoSync bool) error {
 // ssh round trips: a probe, then one payload (bundle, diff, untracked
 // tar) and one script that applies it.
 func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts SyncOptions) (*SyncSummary, error) {
-	started := time.Now()
-	s, err := syncGuestSteps(ctx, t, localRepoDir, slug, opts)
-	if s != nil {
-		s.Took = time.Since(started)
+	if opts.Choose != nil {
+		opts = opts.reusable()
 	}
-	return s, err
+	var took time.Duration
+	for {
+		started := time.Now()
+		s, err := syncGuestSteps(ctx, t, localRepoDir, slug, opts)
+		took += time.Since(started)
+		if s != nil {
+			s.Took = took
+		}
+		next, stop, stopErr := overlapAnswer(opts, err)
+		if stop {
+			if stopErr != nil {
+				return nil, stopErr
+			}
+			return s, err
+		}
+		opts = next
+	}
+}
+
+// overlapAnswer puts the menu under an overlap refusal and turns the key
+// into the options for one more try (DECISIONS I-1100). stop says the
+// sync is over, with stopErr in place of err when the menu itself ended
+// it: nothing to ask about, nobody to ask, or Enter, which exits 6 and
+// prints nothing more, the refusal and the menu being on the screen
+// already. A key that chooses runs the whole sync again, guard included:
+// if the agent changed another overlapping file meanwhile, the guard
+// refuses again with the longer list and the menu comes back, so no file
+// the user did not see is stashed.
+func overlapAnswer(opts SyncOptions, err error) (next SyncOptions, stop bool, stopErr error) {
+	var d *dirtyTreeError
+	if opts.Choose == nil || err == nil || !errors.As(err, &d) {
+		return opts, true, nil
+	}
+	ch, cerr := opts.Choose(d)
+	switch {
+	case errors.Is(cerr, errNoOverlapMenu):
+		// No raw terminal after all: the refusal stands, flag line and
+		// all.
+		return opts, true, nil
+	case cerr != nil:
+		return opts, true, cerr
+	}
+	opts.KeepLaptop, opts.KeepMachine = nil, nil
+	switch ch {
+	case overlapLaptop:
+		opts.KeepLaptop = d.files
+	case overlapMachine:
+		if d.hasSubmodule() {
+			// The menu does not offer `m` here; a Choose that returns it
+			// anyway stops rather than restoring a submodule from a
+			// stash, which cannot be done without a commit of its own.
+			return opts, true, silent(ExitDirtyRemoteTree)
+		}
+		opts.KeepMachine = d.files
+	case overlapStash:
+		opts.StashRemote, opts.Choose = true, nil
+	default:
+		return opts, true, silent(ExitDirtyRemoteTree)
+	}
+	return opts, false, nil
 }
 
 func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string, opts SyncOptions) (*SyncSummary, error) {
@@ -1006,7 +1154,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 			// The key is cleared before the checkout is touched and written
 			// once the apply has finished, so a sync that stopped half way
 			// never matches.
-			script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScript + applyMark("record") + applyCarryJoinHere + freshShellScript(slug, probe) +
+			script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScriptFor(len(opts.KeepMachine) > 0) + applyMark("record") + applyCarryJoinHere + freshShellScript(slug, probe) +
 				fmt.Sprintf("printf '%%s\\n' %s > \"$repose_synced-key\"\n", syncedKeyLines(syncKey, head, track, subs))
 			// After the overlap check, before anything touches the checkout:
 			// the stash and the merge below need the identity the git part
@@ -1039,8 +1187,11 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 			}
 			if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncOverlap) {
 				// The guest changed paths this sync writes: nothing was
-				// touched, and the refusal names only those (I-573).
-				return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: overlapFiles(se.Stderr)}).Error()}
+				// touched, and the refusal names only those (I-573). The
+				// list travels as the error's cause so syncGuest can put
+				// the menu under it (I-1100).
+				d := &dirtyTreeError{files: overlapFiles(se.Stderr, "#overlap "), subs: overlapFiles(se.Stderr, "#overlapsub ")}
+				return nil, &exitError{code: ExitDirtyRemoteTree, msg: d.Error(), cause: d}
 			}
 			if se, ok := err.(*sshError); ok && (strings.Contains(se.Stderr, "patch does not apply") || strings.Contains(se.Stderr, "patch failed")) {
 				return nil, stepFailed("apply your uncommitted changes on the machine", err, "Commit or stash them on the laptop and run again.")
@@ -1079,6 +1230,14 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 			}
 			if rest, ok := strings.CutPrefix(l, "#stashed "); ok {
 				_, _ = fmt.Sscanf(rest, "%d %s", &summary.StashedFiles, &summary.StashRef)
+			}
+			if rest, ok := strings.CutPrefix(l, "#stashedcopy "); ok {
+				// The same line for both keys: `m` put the copy back
+				// and dropped the stash, so it names no commit (I-1100).
+				_, _ = fmt.Sscanf(rest, "%d %s", &summary.StashedCopy, &summary.CopyStashRef)
+				if len(opts.KeepMachine) > 0 {
+					summary.KeptCopy, summary.StashedCopy, summary.CopyStashRef = summary.StashedCopy, 0, ""
+				}
 			}
 			if rest, ok := strings.CutPrefix(l, "#guestkept "); ok {
 				_, _ = fmt.Sscanf(rest, "%d", &summary.GuestKept)
@@ -1391,7 +1550,18 @@ fi
 	// tree is still exactly as that sync left it (its fingerprint, which
 	// a guest synced by an older CLI has without the per-path record),
 	// all of it goes to the stash and there is nothing to check.
-	whole := len(probe.dirty) > 0 && probe.syncedOnly && !opts.StashRemote && !opts.DiscardRemote
+	pick, keepMachine := opts.pick()
+	if len(pick) > 0 {
+		// The paths the user chose at the menu, as the refusal listed
+		// them: the guard lets an overlap through only when it is one of
+		// these (DECISIONS I-1100).
+		b.WriteString("printf '%s\\0'")
+		for _, p := range pick {
+			b.WriteString(" " + shQuote(p))
+		}
+		b.WriteString(" > \"$t/chosen\"\n")
+	}
+	whole := len(probe.dirty) > 0 && probe.syncedOnly && !opts.StashRemote && !opts.DiscardRemote && len(pick) == 0
 	if whole {
 		b.WriteString("repose_whole=\nif [ \"$(repose_fp)\" = \"$(cat \"$repose_synced\" 2>/dev/null)\" ]; then repose_whole=yes; fi\n")
 	}
@@ -1431,6 +1601,17 @@ fi
 		b.WriteString("else\nrepose_stash_own\nfi\n")
 	default:
 		b.WriteString("repose_stash_own\n")
+	}
+	if len(pick) > 0 {
+		// The machine's copy of the overlapping files goes to a stash of
+		// its own, named for what the user chose, so `l` can be undone
+		// with `git stash apply <commit>` and `m` has somewhere to put
+		// the copy back from (DECISIONS I-1100).
+		msg := stashCopyMsg
+		if keepMachine {
+			msg = stashKeepMsg
+		}
+		b.WriteString("repose_stash_pick " + shQuote(msg) + "\n")
 	}
 	if track != "" {
 		ref := shQuote("refs/remotes/origin/" + branch)
@@ -1488,6 +1669,11 @@ fi
 const (
 	stashRemoteMsg  = "repose sync --stash-machine"
 	stashDiscardMsg = "repose sync --discard-machine"
+	// stashCopyMsg and stashKeepMsg name the stash the overlap menu
+	// makes of the machine's copy of the overlapping files: `l` leaves
+	// it there, `m` puts it back and drops it (DECISIONS I-1100).
+	stashCopyMsg = "repose sync: the machine's copy"
+	stashKeepMsg = "repose sync: kept for the machine"
 )
 
 // stashAllScript stashes every change in the checkout, untracked files
@@ -1548,11 +1734,13 @@ func busyError(stderr string, opts SyncOptions) error {
 // sync writes; each such path follows on its own line after "#overlap ".
 const syncOverlap = "repose: the machine changed files this sync writes"
 
-// overlapFiles reads the paths the apply named after syncOverlap.
-func overlapFiles(stderr string) []string {
+// overlapFiles reads the paths the apply named after syncOverlap with
+// this prefix: "#overlap " for every overlapping path, "#overlapsub "
+// for the ones that are checked-out submodules (I-1100).
+func overlapFiles(stderr, prefix string) []string {
 	var files []string
 	for _, l := range strings.Split(stderr, "\n") {
-		if f, ok := strings.CutPrefix(l, "#overlap "); ok && f != "" {
+		if f, ok := strings.CutPrefix(l, prefix); ok && f != "" {
 			files = append(files, f)
 		}
 	}
@@ -1683,13 +1871,75 @@ repose_guard() {
       hit = (p in w) || (p in wd)
       n = split(p, a, "/"); d = a[1]
       for (i = 2; i <= n && !hit; i++) { if (d in w) hit = 1; d = d "/" a[i] }
-      if (hit) printf "%s\n", p > overlap; else printf "%s\n", p > kept
+      if (hit) printf "%s%c", p, 0 > overlap; else printf "%s\n", p > kept
     }' "$t/w" "$t/own" "$t/st"
   if [ -s "$t/overlap" ]; then
-    { echo '` + syncOverlap + `'; sed 's/^/#overlap /' "$t/overlap"; } >&2
-    exit 3
+    : > "$t/pick"; : > "$t/left"
+    if [ -s "$t/chosen" ]; then
+      repose_awk -v RS='\0' -v pick="$t/pick" -v left="$t/left" '
+        FILENAME == ARGV[1] { if ($0 != "") c[$0] = 1; next }
+        { if ($0 == "") next; if ($0 in c) printf "%s%c", $0, 0 > pick; else printf "%s%c", $0, 0 > left }
+      ' "$t/chosen" "$t/overlap"
+    else
+      cp "$t/overlap" "$t/left"
+    fi
+    if [ -s "$t/left" ]; then
+      {
+        echo '` + syncOverlap + `'
+        while IFS= read -r -d '' repose_p; do
+          if [ -e "$repose_p/.git" ]; then printf '#overlapsub %s\n' "$repose_p"; fi
+        done < "$t/overlap"
+        tr '\0' '\n' < "$t/overlap" | sed 's/^/#overlap /'
+      } >&2
+      exit 3
+    fi
   fi
   if [ -s "$t/kept" ]; then printf '#guestkept %s\n' "$(grep -c '' "$t/kept")"; fi
+}
+repose_stash_pick() {
+  [ -s "$t/pick" ] || return 0
+  repose_was=$(git rev-parse -q --verify 'stash@{0}' || true)
+  while IFS= read -r -d '' repose_p; do
+    if [ -e "$repose_p/.git" ]; then (cd "./$repose_p" && repose_git stash push -q -u -m "$1") || exit 1; fi
+  done < "$t/pick"
+  GIT_LITERAL_PATHSPECS=1 git $repose_c stash push -q -u -m "$1" --pathspec-from-file="$t/pick" --pathspec-file-nul
+  repose_pick_stash=$(git rev-parse -q --verify 'stash@{0}' || true)
+  if [ -z "$repose_pick_stash" ] || [ "$repose_pick_stash" = "$repose_was" ]; then
+    repose_pick_stash=
+    return 0
+  fi
+  repose_sh=$(git rev-parse --short "$repose_pick_stash")
+  case $repose_sh in *[a-f]*) ;; *) repose_sh=$repose_pick_stash ;; esac
+  printf '#stashedcopy %s %s\n' "$(repose_awk -v RS='\0' '$0 != "" { n++ } END { print n + 0 }' "$t/pick")" "$repose_sh"
+}
+repose_drop_pick_paths() {
+  [ -s "$t/pick" ] || return 0
+  [ -f "$t/paths" ] || return 0
+  repose_awk -v RS='\0' '
+    FILENAME == ARGV[1] { if ($0 != "") pick[$0] = 1; next }
+    { if ($0 == "" || ($0 in pick)) next; printf "%s%c", $0, 0 }' "$t/pick" "$t/paths" > "$t/paths.keep"
+  mv "$t/paths.keep" "$t/paths"
+}
+repose_restore_pick() {
+  [ -n "${repose_pick_stash:-}" ] || return 0
+  repose_u=
+  if git rev-parse -q --verify "$repose_pick_stash^3" >/dev/null 2>&1; then repose_u=yes; fi
+  while IFS= read -r -d '' repose_p; do
+    if [ -n "$repose_u" ] && git cat-file -e "$repose_pick_stash^3:$repose_p" 2>/dev/null; then
+      GIT_LITERAL_PATHSPECS=1 git restore --source="$repose_pick_stash^3" --worktree --ignore-unmerged -- "$repose_p"
+    elif git cat-file -e "$repose_pick_stash:$repose_p" 2>/dev/null; then
+      GIT_LITERAL_PATHSPECS=1 git restore --source="$repose_pick_stash" --worktree --ignore-unmerged -- "$repose_p"
+    else
+      rm -rf -- "./$repose_p"
+    fi
+  done < "$t/pick"
+  repose_drop=
+  while IFS=' ' read -r repose_ref repose_sha; do
+    if [ "$repose_sha" = "$repose_pick_stash" ]; then repose_drop=$repose_ref; fi
+  done <<EOF
+$(git stash list --format='%gd %H')
+EOF
+  if [ -n "$repose_drop" ]; then git stash drop -q "$repose_drop"; fi
 }
 repose_stash_own() {
   [ -s "$t/ownd" ] || return 0
@@ -1760,7 +2010,22 @@ done
 // next probe (I-210); a clean tree needs none, and neither does one where
 // the guest's own changes were kept, which are not the sync's (I-573).
 // The per-path record (syncGuardFns) is written either way.
-const recordSyncedScript = `if [ -s "$t/kept" ]; then
+//
+// keepMachine is the overlap menu's `m` (DECISIONS I-1100): the machine's
+// copy of the picked paths goes back over the sync's right after this,
+// so those paths leave the record. If they stayed, their hash would
+// match the machine's copy and the next sync would take the agent's work
+// for the last sync's own and stash it without asking. The whole-tree
+// fingerprint goes for the same reason: the tree this apply leaves is
+// not the one it wrote.
+func recordSyncedScriptFor(keepMachine bool) string {
+	if !keepMachine {
+		return recordSyncedScript
+	}
+	return "repose_drop_pick_paths\nrepose_keptcopy=yes\n" + recordSyncedScript + "repose_restore_pick\n"
+}
+
+const recordSyncedScript = `if [ -s "$t/kept" ] || [ -n "${repose_keptcopy:-}" ]; then
   rm -f "$repose_synced"
 elif [ -n "$(repose_dirty | head -n 1)" ]; then
   fp=$(repose_fp)
@@ -2077,6 +2342,12 @@ func (s *SyncSummary) String() string {
 		line += "; kept the machine's changes to 1 file"
 	case s.GuestKept > 1:
 		line += fmt.Sprintf("; kept the machine's changes to %d files", s.GuestKept)
+	}
+	if s.KeptCopy > 0 {
+		line += fmt.Sprintf("; kept the machine's copy of %s", plural(s.KeptCopy, "1 file", fmt.Sprintf("%d files", s.KeptCopy)))
+	}
+	if s.StashedCopy > 0 {
+		line += fmt.Sprintf("; stashed the machine's copy of %s (git stash %s)", plural(s.StashedCopy, "1 file", fmt.Sprintf("%d files", s.StashedCopy)), s.CopyStashRef)
 	}
 	if s.StashedFiles > 0 {
 		line += fmt.Sprintf("; stashed the machine's changes to %s (git stash %s)", plural(s.StashedFiles, "1 file", fmt.Sprintf("%d files", s.StashedFiles)), s.StashRef)

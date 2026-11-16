@@ -93,7 +93,7 @@ func env(name, def string) string {
 
 // ConfigFromEnv reads the billing configuration; enabled is Enabled().
 func ConfigFromEnv() (cfg Config, enabled bool) {
-	dash := env("DASHBOARD_URL", "https://repose.herakraft.co")
+	dash := env("DASHBOARD_URL", "https://repose.run")
 	cfg = Config{
 		AccessToken:     strings.TrimSpace(os.Getenv("POLAR_ACCESS_TOKEN")),
 		Env:             strings.TrimSpace(os.Getenv("POLAR_ENVIRONMENT")),
@@ -164,7 +164,7 @@ func (c Config) Validate() error {
 func (c Config) BillingURL() string {
 	dash := c.DashboardURL
 	if dash == "" {
-		dash = "https://repose.herakraft.co"
+		dash = "https://repose.run"
 	}
 	return strings.TrimRight(dash, "/") + "/billing"
 }

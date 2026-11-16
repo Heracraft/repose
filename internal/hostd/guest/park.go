@@ -1604,6 +1604,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 	if err := m.d.Net.AddGuestRules(ctx, g.GuestID, g.IP, g.MAC, g.Tap); err != nil {
 		return fmt.Errorf("guest rules: %w", err)
 	}
+	m.baselineEgress(ctx, g.GuestID)
 	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit, m.cfg.DownloadMbit); err != nil {
 		return fmt.Errorf("shape: %w", err)
 	}

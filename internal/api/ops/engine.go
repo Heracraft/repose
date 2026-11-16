@@ -341,8 +341,8 @@ func phaseTimeout(phase string) time.Duration {
 }
 
 // hostPauses reports whether a host's Hello named the pause feature
-// (DECISIONS I-818). Read as raw SQL, the way the scheduler reads
-// local_clone: store.Host carries no features field.
+// (DECISIONS I-818). Read as raw SQL: store.Host carries no features
+// field.
 func (e *Engine) hostPauses(ctx context.Context, hostID uuid.UUID) (bool, error) {
 	var ok bool
 	err := e.pool.QueryRow(ctx, "select 'pause' = any(features) from hosts where id = $1", hostID).Scan(&ok)

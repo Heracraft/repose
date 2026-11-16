@@ -83,15 +83,33 @@ const (
 // and write together, so one guest cannot take the shared data disk from
 // the others (DECISIONS I-450).
 type Class struct {
-	VCPUs    uint32
-	MemMiB   uint64
-	DiskIOPS uint64
-	DiskMBps uint64
+	// VCPUs is the vCPU count the hypervisor boots the guest with, and
+	// the base of the cgroup's CPU budget on a host that does not burst.
+	// It is a whole number because Cloud Hypervisor takes one; what the
+	// class *sells* is MilliVCPUs, which is a half on `tiny`.
+	VCPUs uint32
+	// MilliVCPUs is the guest CPU the class sells, in thousandths of a
+	// vCPU (DECISIONS I-1168): tiny 500, small 1000, large 2000, xl 4000,
+	// which is 4 GB of the class's memory per vCPU for all four. This is
+	// the number placement (I-736), the seat count (I-739), the 1.5 ratio
+	// (I-734), the cgroup quota and the cgroup weight (I-737) read.
+	// Thousandths, because I-784's ratio has no whole answer below 4 GB.
+	MilliVCPUs uint32
+	// CeilingVCPUs is the most cores a guest of this class may use when
+	// the host has them idle, and the vCPU count it boots with on a host
+	// that names the `burst` feature (DECISIONS I-1126). VCPUs stays what
+	// the class sells and what placement, the seat count and the cgroup
+	// weight count; nothing above it is sold, promised or kept.
+	CeilingVCPUs uint32
+	MemMiB       uint64
+	DiskIOPS     uint64
+	DiskMBps     uint64
 }
 
-// Classes are the three size classes from DESIGN.md §5: 4 GB of memory
-// per guest vCPU, uniformly across the three (DECISIONS I-784 amending
-// R3-2). The disk caps are each at most a quarter of a host data disk's
+// Classes are the four size classes from DESIGN.md §5: 4 GB of memory
+// per guest vCPU, uniformly across the four (DECISIONS I-784 amending
+// R3-2, I-1168 adding `tiny`). `tiny` sells half a core for its 2 GB,
+// so it boots one vCPU and its cgroup holds it to 50 percent of it. The disk caps are each at most a quarter of a host data disk's
 // 16,000 IOPS and 600 MB/s. A running guest keeps the vCPUs it was
 // started with: VCPUs reaches the hypervisor only through create.go's
 // ch.Spec (--cpus boot=), and a park/restore does not carry it --
@@ -99,10 +117,19 @@ type Class struct {
 // state -- so after a host restart a guest kept from before I-784 runs
 // its old vCPU threads inside the new, halved CPUQuota until its first
 // cold start. MemMiB and the disk caps are unchanged by I-784.
+//
+// CeilingVCPUs is the burst ceiling of each class (owner, 2026-11-04;
+// DECISIONS I-1126): tiny 2, small 4, large 6, xl 8. A guest boots with that many
+// vCPUs only on a host that has the `burst` feature; its cgroup still
+// starts at the base quota, and the controller is the only thing that
+// raises it. Memory does not burst, so the ceiling is also the worst case
+// for memory per `nproc`: 1.0 GB on a tiny, 1.0 on a small, 1.33 on a
+// large, 2.0 on an xl, against 4.0 today.
 var Classes = map[string]Class{
-	"small": {VCPUs: 1, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
-	"large": {VCPUs: 2, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
-	"xl":    {VCPUs: 4, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
+	"tiny":  {VCPUs: 1, MilliVCPUs: 500, CeilingVCPUs: 2, MemMiB: 2048, DiskIOPS: 1000, DiskMBps: 40},
+	"small": {VCPUs: 1, MilliVCPUs: 1000, CeilingVCPUs: 4, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
+	"large": {VCPUs: 2, MilliVCPUs: 2000, CeilingVCPUs: 6, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
+	"xl":    {VCPUs: 4, MilliVCPUs: 4000, CeilingVCPUs: 8, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
 }
 
 // OverheadMiB is what guest@<id> may hold beyond the guest's RAM. The RAM
@@ -125,8 +152,10 @@ const HighMarginMiB = 128
 
 // CPUWeightPerVCPU sets each guest's cgroup v2 cpu.weight from its class,
 // so that under contention the host's cycles divide in proportion to the
-// vCPUs the tenant paid for instead of equally (DECISIONS I-737): small
-// 50, large 100, xl 200. The anchor is the default class: large keeps the
+// vCPUs the tenant paid for instead of equally (DECISIONS I-737): tiny
+// 25, small 50, large 100, xl 200. It multiplies MilliVCPUs and is then
+// divided by a thousand, so the three old weights are unchanged and a
+// `tiny` sits at half a `small` (I-1168). The anchor is the default class: large keeps the
 // 100 every guest had, which is also what virtiofsd@<id> and
 // virtiofsd-auth@<id> have — they are this guest's siblings in
 // guests.slice and sit on its store-read path, so no guest is given more
@@ -253,6 +282,19 @@ type Config struct {
 	// *snapshotted* VM must not be resumed at all, its virtio-fs stops
 	// answering -- so a host opts in the way it opts into the park.
 	PauseIdle bool
+	// Burst boots each guest at its class ceiling and runs the cpu.max
+	// controller, and is what puts `burst` in Hello.features (DECISIONS
+	// I-1126). Off by default: the latency curve that sets the gate
+	// (proposal §6.2) has not been measured on any host, so a host opts
+	// in the way it opts into the pause and the park.
+	Burst bool
+	// BurstGate is the share of this host's physical cores that may be
+	// busy before burst stops; 0 takes BurstGateDefault (0.75).
+	BurstGate float64
+	// Cores is the host's physical cores, the denominator the gate is in
+	// (hostinfo.PhysicalCores, I-735). 0 leaves the gate shut, so a host
+	// that cannot read its own topology hands out no burst.
+	Cores uint32
 }
 
 // Defaults fills documented values into zero fields.
@@ -391,6 +433,13 @@ type Deps struct {
 	// microseconds, of a cgroup named as systemd's ControlGroup property
 	// names it. Nil leaves the host CPU wait at zero (tests).
 	CgroupCPUPressure func(cgroup string) (uint64, error)
+	// CgroupCPUUsage returns a cgroup's cpu.stat usage_usec, and
+	// SetCgroupCPUMax writes its cap in thousandths of a core. The burst
+	// controller is the only caller; nil in either leaves it doing
+	// nothing, which is the state of a host without the feature
+	// (DECISIONS I-1126).
+	CgroupCPUUsage  func(cgroup string) (uint64, error)
+	SetCgroupCPUMax func(cgroup string, millicores uint64) error
 	// StoreStat returns the host store filesystem's size and used bytes.
 	StoreStat func() (total, used uint64, err error)
 	// ConsoleStart begins console capture for a guest dir; the returned
@@ -527,6 +576,12 @@ type Manager struct {
 	// lets one ParkAll, UnparkAll or SyncClocks run at a time (park.go,
 	// I-652).
 	parkMu chan struct{}
+	// burst is the burst controller's state between ticks (burst.go,
+	// DECISIONS I-1126): nil on a host without the `burst` feature, which
+	// is every host until the conductor turns it on, and then nothing
+	// this file's caps touch runs at all.
+	burst *burstState
+
 	// tallyOnce publishes the host's park and unpark totals at the first
 	// unpark of this process, which is hostd's start: adding them again at
 	// a later `hostd unpark` would count what this process has already
@@ -564,6 +619,9 @@ func New(cfg Config, d Deps) (*Manager, error) {
 		ops:       make(chan struct{}, cfg.MaxOps),
 		buildCh:   make(chan job, cfg.MaxBuildQueue),
 		cidr:      ipn, base: ipn.IP.To4(), maxIndex: size - 4,
+	}
+	if cfg.Burst {
+		m.burst = newBurstState()
 	}
 	m.ctx, m.stop = context.WithCancel(context.Background())
 	return m, nil
@@ -897,7 +955,7 @@ func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features(m.cfg.PauseIdle)}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features(m.cfg.PauseIdle, m.cfg.Burst)}
 	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
@@ -910,6 +968,10 @@ func (m *Manager) Hello() *hostdv1.Hello {
 		if g.Resting != nil {
 			gst.RestingAt = g.Resting.Since.Unix()
 		}
+		// The api's burst permission, back from bbolt, so a hostd restart
+		// does not hand an account past its allowance its cores again
+		// (DECISIONS I-1128).
+		gst.BurstDenied = g.BurstDenied
 		h.Guests = append(h.Guests, gst)
 	}
 	return h
@@ -1078,10 +1140,14 @@ func Kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_SayToAgent:
+		return "SayToAgent"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
 		return "WakeGuest"
+	case *hostdv1.Command_SetBurst:
+		return "SetBurst"
 	}
 	return ""
 }
@@ -1113,10 +1179,14 @@ func Target(cmd *hostdv1.Command) string {
 		return c.Exec.GuestId
 	case *hostdv1.Command_AnswerQuestion:
 		return c.AnswerQuestion.GuestId
+	case *hostdv1.Command_SayToAgent:
+		return c.SayToAgent.GuestId
 	case *hostdv1.Command_PauseGuest:
 		return c.PauseGuest.GuestId
 	case *hostdv1.Command_WakeGuest:
 		return c.WakeGuest.GuestId
+	case *hostdv1.Command_SetBurst:
+		return c.SetBurst.GuestId
 	}
 	return ""
 }
@@ -1159,8 +1229,11 @@ func (m *Manager) Dispatch(cmd *hostdv1.Command) {
 	}
 	// A wake is milliseconds and is what a user is waiting for, so it
 	// takes no op slot: with every slot held by builds it would otherwise
-	// wait for one (I-818).
-	m.enqueue(key, job{cmd: cmd, noSlot: kind == "WakeGuest"})
+	// wait for one (I-818). A SetBurst is a state write and a cgroup
+	// write, microseconds, and it is how the api holds an account to the
+	// cores it paid for: behind a build's slot it would leave the host
+	// handing out burst for the length of that build (I-1128).
+	m.enqueue(key, job{cmd: cmd, noSlot: kind == "WakeGuest" || kind == "SetBurst"})
 }
 
 // admit records the command. It returns a stored result for a repeat, or
@@ -1423,12 +1496,17 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 	case *hostdv1.Command_AnswerQuestion:
 		err := m.answerQuestion(ctx, c.AnswerQuestion)
 		return payloadOrErr(id, err, nil)
+	case *hostdv1.Command_SayToAgent:
+		r, err := m.sayToAgent(ctx, c.SayToAgent)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Say{Say: r} })
 	case *hostdv1.Command_PauseGuest:
 		r, err := m.pause(ctx, id, c.PauseGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Pause{Pause: r} })
 	case *hostdv1.Command_WakeGuest:
 		r, err := m.wake(ctx, c.WakeGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Wake{Wake: r} })
+	case *hostdv1.Command_SetBurst:
+		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
 	}
 	return errResult(id, errf(CodeInvalidArgument, "unknown command"))
 }

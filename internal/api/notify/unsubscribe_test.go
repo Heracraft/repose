@@ -113,8 +113,8 @@ func TestUnsubscriberURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := uuid.New()
-	url := u.URL("https://api.repose.herakraft.co/", id, time.Now())
-	if !strings.HasPrefix(url, "https://api.repose.herakraft.co/v1/notify/unsubscribe?token=") {
+	url := u.URL("https://api.repose.run/", id, time.Now())
+	if !strings.HasPrefix(url, "https://api.repose.run/v1/notify/unsubscribe?token=") {
 		t.Fatalf("url %q", url)
 	}
 }

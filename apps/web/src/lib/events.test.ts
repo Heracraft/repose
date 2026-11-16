@@ -91,7 +91,15 @@ describe('EVENT_FILTERS', () => {
 	});
 	it('lists the agent kinds', () => {
 		expect([...EVENT_FILTERS.agents].sort()).toEqual(
-			['agent_done', 'agent_message', 'agent_question', 'completed', 'error', 'needs_input'].sort()
+			[
+				'agent_done',
+				'agent_message',
+				'agent_prompted',
+				'agent_question',
+				'completed',
+				'error',
+				'needs_input'
+			].sort()
 		);
 	});
 });

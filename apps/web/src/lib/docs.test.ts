@@ -217,7 +217,7 @@ describe('user docs', () => {
 	// The rail lists h2s and h3s; a command heading shows as its command.
 	it('gives each section a label for the rail', () => {
 		const cli = docBySlug('cli')!.headings;
-		expect(cli.filter((h) => h.depth === 3).length).toBeGreaterThanOrEqual(30);
+		expect(cli.filter((h) => h.depth === 3).length).toBeGreaterThanOrEqual(29);
 		const label = (id: string) => cli.find((h) => h.id === id)?.label;
 		expect(label('repose-run-project')).toBe('repose run');
 		expect(label('repose-mcp-forward-name')).toBe('repose mcp forward');

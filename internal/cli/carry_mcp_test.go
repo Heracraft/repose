@@ -91,8 +91,11 @@ func TestClassifyMCPServer(t *testing.T) {
 			want: `{"args":["-y","tok-mcp","--token=${TOK_TOKEN}"]}`, secrets: []string{"TOK_TOKEN"}},
 		{desc: "flag value", name: "k2", server: `{"command":"npx","args":["-y","k2-mcp","--api-key","NEVER-FLAG-SPACE"]}`,
 			want: `{"args":["-y","k2-mcp","--api-key","${K2_API_KEY}"]}`, secrets: []string{"K2_API_KEY"}},
+		// I-1064: GH_TOKEN is the machine's GitHub credential, so a server
+		// whose own name asks for it keeps the prefix instead; a project
+		// secret of that name would replace the scoped token.
 		{desc: "secretIn arg", name: "gh", server: `{"command":"npx","args":["-y","gh-mcp","ghp_NEVERsecret0123456789"]}`,
-			want: `{"args":["-y","gh-mcp","${GH_TOKEN}"]}`, secrets: []string{"GH_TOKEN"}},
+			want: `{"args":["-y","gh-mcp","${MCP_GH_TOKEN}"]}`, secrets: []string{"MCP_GH_TOKEN"}},
 		{desc: "env secret own name", name: "lin", server: `{"command":"npx","args":["-y","linear-mcp"],"env":{"LINEAR_API_KEY":"NEVER-ENV-LINEAR","DEBUG":"1"}}`,
 			want: `{"env":{"LINEAR_API_KEY":"${LINEAR_API_KEY}","DEBUG":"1"}}`, secrets: []string{"LINEAR_API_KEY"}},
 		{desc: "env agent login name", name: "ai", server: `{"command":"npx","args":["-y","ai-mcp"],"env":{"ANTHROPIC_API_KEY":"NEVER-ENV-ANTHROPIC","GITHUB_TOKEN":"NEVER-ENV-GH"}}`,

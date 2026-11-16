@@ -59,7 +59,7 @@ func runFlow(t *testing.T, f *Fake, verifier, challenge, redirectURI string) map
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"nonce":                 {"n-0S6_WzA2Mj"},
-		"resource":              {"https://api.repose.herakraft.co"},
+		"resource":              {"https://api.repose.run"},
 	}.Encode()
 
 	res, err := client.Get(authURL)
@@ -80,7 +80,7 @@ func runFlow(t *testing.T, f *Fake, verifier, challenge, redirectURI string) map
 		"state":          {"xyz"},
 		"code_challenge": {challenge},
 		"nonce":          {"n-0S6_WzA2Mj"},
-		"resource":       {"https://api.repose.herakraft.co"},
+		"resource":       {"https://api.repose.run"},
 	}
 	res2, err := client.PostForm(f.Issuer()+"/oidc/auth/approve", form)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	}
 
 	accessClaims := verifyAndParse(t, f, access)
-	if accessClaims["aud"] != "https://api.repose.herakraft.co" {
+	if accessClaims["aud"] != "https://api.repose.run" {
 		t.Errorf("access token aud = %v", accessClaims["aud"])
 	}
 }

@@ -58,6 +58,9 @@ type Guest struct {
 	// RestingAt, the sample carries the flag, and WakeGuest clears both.
 	Resting   bool
 	RestingAt time.Time
+	// BurstDenied is the api's withdrawal of this guest's burst, which
+	// hostd keeps and reports in Hello (DECISIONS I-1128).
+	BurstDenied bool
 }
 
 // Options tune the fake.
@@ -82,6 +85,12 @@ type Options struct {
 	// I-818 does: the api then sends it no PauseGuest and no WakeGuest,
 	// and this fake answers either invalid_argument, as that hostd would.
 	NoPause bool
+	// Burst puts `burst` in Hello's features and makes this fake take
+	// SetBurst, as a host with `repose.host.burst.enable` does
+	// (DECISIONS I-1126). Off by default, which is every host: without
+	// it the fake answers SetBurst invalid_argument, as a hostd that
+	// does not burst does.
+	Burst bool
 }
 
 // Fake is one fake host.
@@ -92,6 +101,7 @@ type Fake struct {
 	guests   map[string]*Guest
 	results  map[string]*hostdv1.Result
 	failMsg  map[string]string
+	refuse   string
 	draining bool
 	nextIP   int
 	send     func(*hostdv1.HostMessage) error
@@ -108,6 +118,14 @@ type Fake struct {
 	// bootID and bootAt are the host's boot, which Hello carries (I-645).
 	bootID string
 	bootAt time.Time
+	// says are the SayToAgent commands the guests took, and the rest
+	// what the fake answers with (DECISIONS I-1144).
+	says        []*hostdv1.SayToAgent
+	sayState    string
+	sayWindow   string
+	sayReplaced bool
+	sayFailCode string
+	sayFailMsg  string
 }
 
 // Reboot models a host restart under hostd (DECISIONS I-645): the boot id
@@ -352,6 +370,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	if !f.opts.NoPause {
 		h.Features = append(h.Features, "pause")
 	}
+	if f.opts.Burst {
+		h.Features = append(h.Features, "burst")
+	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
 	}
@@ -364,6 +385,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 			// Reconciled from bbolt and the hypervisor's vm.info, so the
 			// marker survives a hostd or api restart (I-818).
 			gs.RestingAt = g.RestingAt.Unix()
+		}
+		if g.BurstDenied {
+			gs.BurstDenied = true
 		}
 		if g.InterruptedBoot != "" {
 			gs.InterruptedBootId, gs.InterruptedAt = g.InterruptedBoot, g.InterruptedAt.Unix()
@@ -529,10 +553,14 @@ func kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_SayToAgent:
+		return "SayToAgent"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
 		return "WakeGuest"
+	case *hostdv1.Command_SetBurst:
+		return "SetBurst"
 	}
 	return ""
 }
@@ -884,6 +912,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		why := ""
 		switch {
+		case f.refuse != "":
+			why = f.refuse
 		case g.State != "running":
 			why = "not_running"
 		case g.Resting:
@@ -925,6 +955,21 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: true, WakeMs: 40}}
 		})
+	case *hostdv1.Command_SetBurst:
+		// A state the api owns, not an event: the same value twice
+		// changes nothing (DECISIONS I-1128). A host that does not
+		// burst refuses it, as a hostd before I-1126 would.
+		if !f.opts.Burst {
+			return errResult(id, "invalid_argument", "this host does not burst")
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		g, e := get(c.SetBurst.GuestId)
+		if e != nil {
+			return e
+		}
+		g.BurstDenied = !c.SetBurst.Allowed
+		return ok(nil)
 	case *hostdv1.Command_Drain:
 		f.mu.Lock()
 		f.draining = true
@@ -949,8 +994,76 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			return e
 		}
 		return ok(nil)
+	case *hostdv1.Command_SayToAgent:
+		// The fake guest runs one agent window, `claude`, idle at its
+		// prompt, so a message is delivered (DECISIONS I-1144). Says
+		// records what arrived; SetSayAnswer, SetSayReplaced and
+		// SetSayFailure steer what comes back.
+		m := c.SayToAgent
+		f.mu.Lock()
+		g, e := get(m.GuestId)
+		if e == nil && g.State != "running" {
+			e = errResult(id, "not_found", "guest is "+g.State)
+		}
+		state, window, replaced := f.sayState, f.sayWindow, f.sayReplaced
+		failCode, failMsg := f.sayFailCode, f.sayFailMsg
+		if e == nil {
+			f.says = append(f.says, m)
+		}
+		f.mu.Unlock()
+		if e != nil {
+			return e
+		}
+		if failCode != "" {
+			return errResult(id, failCode, failMsg)
+		}
+		if state == "" {
+			state = "delivered"
+		}
+		if window == "" {
+			window = m.Window
+			if window == "" {
+				window = "claude"
+			}
+		}
+		return ok(func(r *hostdv1.Result) {
+			r.Payload = &hostdv1.Result_Say{Say: &hostdv1.SayResult{State: state, Window: window, Replaced: replaced}}
+		})
 	}
 	return errResult(id, "invalid_argument", "unknown command")
+}
+
+// Says are the SayToAgent commands the fake's guests took (I-1144).
+func (f *Fake) Says() []*hostdv1.SayToAgent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*hostdv1.SayToAgent(nil), f.says...)
+}
+
+// SetSayAnswer steers what the fake answers a SayToAgent with: the state
+// (delivered or waiting) and the window it names. Empty is the default,
+// delivered in the command's window or `claude`.
+func (f *Fake) SetSayAnswer(state, window string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayState, f.sayWindow = state, window
+}
+
+// SetSayReplaced makes the fake report that the message replaced one
+// that was still waiting in that window.
+func (f *Fake) SetSayReplaced(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayReplaced = v
+}
+
+// SetSayFailure makes the fake refuse a SayToAgent with that code and
+// message, the way guestd refuses one it has no agent for. An empty
+// code clears it.
+func (f *Fake) SetSayFailure(code, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayFailCode, f.sayFailMsg = code, message
 }
 
 // fakeBoot is the BootTimings a real hostd reports with a create or start
@@ -961,4 +1074,14 @@ func fakeBoot(create bool) *hostdv1.BootTimings {
 		b.VolumeMs, b.TotalMs = 200, 15500
 	}
 	return b
+}
+
+// RefusePause makes every later PauseGuest answer the way hostd answers
+// a pause it must not take: `ok` with paused=false and this lower_snake
+// why_not (`timer_due`, `command_in_flight`, `host_stopping`), which is
+// a refusal and not a failure (DECISIONS I-818). "" turns it off.
+func (f *Fake) RefusePause(why string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refuse = why
 }

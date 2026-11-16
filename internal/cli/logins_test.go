@@ -104,7 +104,7 @@ func TestLoginsOnOffWritesConfig(t *testing.T) {
 	if info, _ := os.Stat(configPath(dir)); info.Mode().Perm() != 0o640 {
 		t.Fatalf("mode = %v, want the file's own 0640", info.Mode().Perm())
 	}
-	if !strings.Contains(out.String(), "gh, env stay on your laptop") || !strings.Contains(out.String(), "gh auth login") {
+	if !strings.Contains(out.String(), "gh, env stay on your laptop") || !strings.Contains(out.String(), "repose github setup") {
 		t.Fatalf("output = %q", out.String())
 	}
 	reload()

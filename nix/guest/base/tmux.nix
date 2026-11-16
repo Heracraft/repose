@@ -23,9 +23,10 @@ let
   checkout = import ./checkout.nix { inherit pkgs; };
   multiplexerIs = import ./multiplexer-is.nix { inherit pkgs; };
   loginPath = import ./login-path.nix { inherit pkgs; };
+  remoteControl = import ./remote-control.nix { inherit pkgs; };
   tmuxSession = pkgs.writeShellApplication {
     name = "repose-tmux-session";
-    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash pkgs.util-linux checkout loginPath ];
+    runtimeInputs = [ pkgs.tmux pkgs.jq pkgs.coreutils pkgs.gnused pkgs.bash pkgs.util-linux checkout loginPath remoteControl ];
     text = ''
       project="$HOME/.repose/project.json"
       # Exit 3: nothing for the unit to keep running. A failed start is
@@ -220,6 +221,11 @@ let
         flock -u 9 || true
         exec 9>&-
       fi
+      # The Remote Control window, where the laptop's config.toml turned
+      # it on (DECISIONS I-1132, I-1136). It exits 0 on every path and
+      # opens nothing unless every condition holds, so the session is
+      # never held up by it.
+      repose-remote-control || true
     '';
   };
   # repose-tmux-save records the session's agent windows (DECISIONS
@@ -383,6 +389,10 @@ in
     secureSocket = false;
     # Written to /etc/tmux.conf; guest-conventions.md "tmux" lists these.
     historyLimit = 50000;
+    # Each attach is a session grouped with the project's (DECISIONS
+    # I-1067), so a window takes the size of the terminals showing it,
+    # not of every terminal attached.
+    aggressiveResize = true;
     escapeTime = 10;
     terminal = "tmux-256color";
     extraConfig = ''
@@ -429,9 +439,12 @@ in
       # status bar's own colours rather than tmux's yellow, which read as
       # a warning each time a dev server started.
       set -g message-style "bg=green,fg=black"
+      # The title and the status line name the project's session, not
+      # the grouped one each attach makes (DECISIONS I-1067).
+      set -g status-left "[#{?session_grouped,#{session_group},#S}] "
       # The laptop's tab or window title names the machine and session.
       set -g set-titles on
-      set -g set-titles-string "#h: #S"
+      set -g set-titles-string "#h: #{?session_grouped,#{session_group},#S}"
       # A window whose agent waits for input (guestd's @repose-state,
       # DECISIONS I-606) shows `?` after its name, so an attached user
       # sees which other agent needs them. tmux's default formats

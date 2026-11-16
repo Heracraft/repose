@@ -52,8 +52,8 @@ func TestEveryCommandKindIsHandled(t *testing.T) {
 		}
 		seen++
 	}
-	if seen != 16 {
-		t.Fatalf("expected 16 commands in the contract, saw %d", seen)
+	if seen != 18 {
+		t.Fatalf("expected 18 commands in the contract, saw %d", seen)
 	}
 }
 
@@ -317,7 +317,6 @@ func TestStopStartDestroy(t *testing.T) {
 	}
 	// Destroy from running, with a final egress sample (from the tap,
 	// I-448) and nothing left.
-	h.net.Counters[gid1] = 12345
 	h.net.Send(h.guest(gid1).Tap, 0, 12345)
 	h.mustOK(cmd(&hostdv1.DestroyGuest{GuestId: gid1}))
 	if _, err := h.st.GetGuest(gid1); err == nil {
@@ -380,7 +379,7 @@ func TestStartAppliesChangedClass(t *testing.T) {
 	h.create(gid1) // large
 	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
 	res := h.mustFail(cmd(&hostdv1.StartGuest{GuestId: gid1, Class: "huge"}), CodeInvalidArgument)
-	if !strings.Contains(res.Error.Message, "small, large or xl") {
+	if !strings.Contains(res.Error.Message, "tiny, small, large or xl") {
 		t.Fatalf("message %s", res.Error.Message)
 	}
 	if g := h.guest(gid1); g.Class != "large" || g.State != StateStopped {
@@ -825,6 +824,7 @@ func TestSamplesMergeHostAndGuestd(t *testing.T) {
 	}
 	h.sd.Set("guest@"+gid1, 3_000_000_000, 600<<20)
 	h.net.Stats[h.guest(gid1).Tap] = [2]uint64{1500, 2600}
+	h.net.Counters[gid1] = 2600
 	s = h.m.CollectSamples(ctx)
 	gs := s.Guests[0]
 	if gs.CpuNsDelta != 2_000_000_000 || gs.NetRxBytesDelta != 500 || gs.NetTxBytesDelta != 600 || gs.MemRssBytes != 600<<20 || gs.DiskUsedBytes != 3<<30 || gs.DiskAllocBytes != 40<<30 {

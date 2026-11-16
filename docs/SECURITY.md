@@ -196,6 +196,43 @@ they stop an actor the component map does not draw.
     in the user's own guest copying out a login it could only use while
     the user lends it, or a laptop file the user did not mean to send.
 
+    A reverse forward the user lists in `config.toml` (`[forward]
+    reverse`, DECISIONS I-1104) is the one path the CLI does not
+    inspect: a TCP pipe to that port on the laptop. It listens on the
+    guest's loopback only (`GatewayPorts no`, plus an explicit
+    `127.0.0.1` and `::1` bind), only while that laptop is attached, and
+    refuses ports below 1024, the guest's own ports and 9222, 9229,
+    2375 and 2376, whose raw form goes round a repose control or runs
+    code by design. Everything in the guest, every agent included,
+    reaches a lent port as a local program on the laptop would, which
+    is what the docs say where the user sets it. Stops: a port the user
+    did not list, a port reachable from off the guest's loopback, and a
+    lent port outliving the attach.
+
+14. **The webhook edge between the internet and a guest** (DECISIONS
+    I-1110). A webhook route is the one public path into a machine and
+    the only place an unauthenticated sender reaches tenant code. What
+    bounds it: the URL holds a 128-bit token the api mints, checked
+    against an in-memory table of `sha256(token)` on the edge, so a
+    wrong token is a 404 with no api call, no wake and no dial, and the
+    edge never holds a token in plain text; 20 unknown tokens a second
+    per source /24, which is the scan case; 1 MiB of request, refused
+    before any wake; 10 deliveries a second per route and 30 per
+    project, with 8 at a time, which are per route and per project and
+    never per source, because providers send from a few shared
+    addresses; and the connection into the guest is the gateway's own
+    SSH with a per-project certificate and a single `direct-tcpip`
+    channel, so the guest opens no inbound port and the host's nftables
+    do not change. What bounds the reply: no 3xx (it becomes 502 with no
+    `Location`, so the hostname is no open redirect), no `Set-Cookie`,
+    64 KiB, and a body only for JSON, XML, plain text or form data, with
+    `Content-Security-Policy: sandbox; default-src 'none'` and
+    `nosniff` on every answer. Stops: a scan finding a route; a sender
+    waking or starting a machine it cannot name; a tenant serving a
+    page, setting a cookie on a `herakraft.co` name, or redirecting a
+    visitor from a repose URL. The edge stores no request, so a takedown
+    has no content to remove and the operator removes the route.
+
 ## Non-negotiables
 
 Rules that hold regardless of convenience. Each names its failure.
@@ -398,7 +435,7 @@ Applied at each workstream's PR, recorded as a comment line in
   cryptocurrency miner (by process name) is stopped with a snapshot, and
   three such stops in 24 hours hold the project until an operator runs
   `repose-admin abuse clear` (DECISIONS I-239). The hold covers copies:
-  a held project cannot be restored as a new project or forked, started
+  a held project cannot be restored as a new project, started
   or not (I-460). Outbound tcp 25 and the
   mining pools' default ports are blocked (I-238, I-239), and new outbound
   flows are rate-limited per guest (I-240). Anything else (a miner under
@@ -408,9 +445,15 @@ Applied at each workstream's PR, recorded as a comment line in
   user. The gateway bounds connections still in the handshake per source
   and in all, separately from authenticated relays, and the edge's
   nftables caps open and new connections per source on 22 (I-435), so one
-  address cannot fill the gateway. A distributed flood can still fill the
-  512 handshake slots and delay logins; there is no upstream DDoS
-  protection beyond what Azure gives a public IP.
+  address cannot fill the gateway. Since I-1110 the public :443 has the
+  same shape of cap at a size sized for providers, which send every
+  tenant's deliveries from a few shared addresses: 256 open connections
+  and 100 new a second per source in nftables, with the real rates per
+  route and per project inside the gateway. A distributed flood can
+  still fill the 512 handshake slots and delay logins; there is no
+  upstream DDoS protection beyond what Azure gives a public IP, and one
+  edge VM carries SSH and webhooks alike, so a flood on :443 also slows
+  logins.
 - **Supply chain of the agent overlay.** Agents are repackaged from
   upstream binary releases with pinned hashes; there is no independent
   verification of upstream builds. The hash is what upstream served when
@@ -448,7 +491,7 @@ Applied at each workstream's PR, recorded as a comment line in
 
 ## Reporting
 
-Security reports go to the owner's email listed on `repose.herakraft.co`.
+Security reports go to the owner's email listed on `repose.run`.
 Incident handling is in `ops/RUNBOOK.md` under "Suspected cross-tenant
 access": who is told, what is captured, how a tenant is notified within
 72 hours, and the isolation-suite invocation that confirms or refutes.

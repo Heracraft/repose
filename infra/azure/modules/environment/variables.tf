@@ -393,14 +393,20 @@ variable "cloudflare_zone_id" {
 
 variable "dns_zone" {
   type        = string
-  description = "DNS zone the names live in."
-  default     = "herakraft.co"
+  description = "DNS zone the names live in. Production is repose.run (DECISIONS R4-12, I-15, I-1156)."
+  default     = "repose.run"
 }
 
 variable "dns_prefix" {
   type        = string
-  description = "Label under the zone: repose.herakraft.co, api.repose.herakraft.co, and so on (DECISIONS R4-12, I-15)."
-  default     = "repose"
+  description = <<-EOT
+    Label between the names and the zone. Empty in production, where the
+    zone is the product's own domain and the names are repose.run,
+    api.repose.run and ssh.repose.run (DECISIONS I-1156). A non-empty value
+    nests them, which is what staging does: repose-staging.herakraft.co,
+    api.repose-staging.herakraft.co.
+  EOT
+  default     = ""
 }
 
 variable "proxy_web_records" {

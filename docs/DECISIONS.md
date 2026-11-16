@@ -23047,6 +23047,9 @@ The owner's audit struck step 6 of the quickstart ("Get a notification when it's
 - This is a docs-placement decision and nothing else. No command, flag or channel is removed; a retreat from the feature itself would be its own decision and its own workstream.
 
 **I-749. `install.md` says "Update command coming soon".** (docs-prose, 2026-10-15)
+*Amended by I-1086 (2026-11-11): the command shipped as `repose version
+update`, so the line became its documentation and the exception ended,
+which is what this entry said would happen.*
 
 I-242 and the no-ghost-features rule say the docs carry nothing that has not shipped: there is no `repose update`, so the line is a doc for an unshipped command. The owner kept it anyway, in his words because it "gives the thing a soul", and reaffirmed it after the conflict was named. Recorded here so the next session does not quietly delete it as a stray, and so the exception stays an exception: it is one line, it names a debt rather than promising a date, and it sits beside what to do today (run the install command again, which replaces the binary and leaves your login alone). Nothing else in the docs gets this. When `repose update` ships, this line becomes its documentation and the exception ends.
 
@@ -29654,6 +29657,52 @@ Grafana evaluating what main says" a check rather than a memory. A
 `--verify` that exits non-zero on drift, run wherever the token lives, is
 the shape. It is not built tonight because the token is the owner's and a
 check nobody can run is another guard in the wrong place.
+
+- *Addendum (balloon-doc, 2026-11-04).* Added after this entry was
+  released, so it is marked rather than folded into the body above:
+  what the two days settled about when a guard of this kind earns its
+  place, and the second clause that the worst instance forced.
+
+**The test for whether it is worth building, which is the reusable part:
+a guard earns its place when the thing it checks is invisible between
+pushes.** Not "guards are good". This gap was a day wide and nothing in
+the repository could see into it, which is exactly that shape.
+
+The argument is about latency, not care. 2026-11-03 produced thirteen
+wrong readings across two sessions and not one was caught by its own
+author in the moment -- the rate did not fall as the day went on. What
+fell was the cost, by three mechanisms with three latencies: the `P4D 0`
+misreading took hours, because only its author was looking; reading
+`/proc/cmdline` as evidence about `boot.kernelParams` took minutes,
+because a second lane was; and `release-queue`'s orphan check refused a
+branch in seconds, because it is a program. The cheapest was the one that
+needed no human at all. So the case for `--verify` is not that the next
+person will be more careful; it is that a guard's latency is zero and a
+reviewer's is however long until somebody looks. (The formulation is the
+conductor session's, 2026-11-04.)
+
+**And the test needs a second clause, from the worst instance of the two
+days: a guard must run in the configuration the thing runs in.** The
+conductor's pre-release race suite was not absent, not skipped and not a
+proxy -- it ran on every batch and passed, against a different system.
+CI's `go` job sets `DATABASE_URL` to a Postgres service, so every package
+shares one database server; a local run with no `DATABASE_URL` has
+`internal/db/testdb` start a throwaway cluster per test process, so every
+package is isolated. Three consecutive CI runs failed on three different
+test names, none reproduced locally, and they were one untested
+condition surfacing wherever the contention landed. `r20261103-1` through
+`r20261104-2` were certified by a check that could not see the class CI
+tests in.
+
+That is worse than a missing guard, because a missing guard is silent and
+this one produced a green. "Invisible between pushes" does not catch it:
+the thing *was* checked, every batch. What was invisible was the
+difference between the checker's configuration and the target's. It was
+found by asking what three differently-named failures had in common
+instead of fixing them one at a time -- which is the only move that finds
+this shape, and it is not available to someone being careful about each
+failure in turn.
+
 **I-1042. The mitigation lived in debugfs, so it was one reboot from
 gone with nothing to say so.** (fault-around, 2026-11-04.)
 
@@ -30024,6 +30073,90 @@ it), and a version 1 `auth.json` holding an Anthropic API key left
 only mean that providers and integrations are different lists in version
 2. If a copied login does not reach it, `/docs/secrets` and `/docs/agents`
 say to log in on the machine instead, as they already do for Gemini.
+**I-1046. A project's name before the command is answered as the words the
+other way round, not as an unknown command.** (exec-paths, 2026-11-04.)
+
+`repose job exec rm out/resume.pdf` answered `unknown command "job" for
+"repose"`, which sends the reader looking for a command called `job`. The
+CLI already knew better: `projectWord` (I-633) looks a word up in
+`projects.json` and then in the account's list, and the group hint
+("`todo-app` is a project: `repose snapshots list todo-app`") has used it
+since 2026-10-18. Only the top level, where the mistake actually happens,
+never asked. Decided: the root-level unknown word goes through the same
+lookup, and a word that names one of the account's projects is answered
+`job is a project, not a command.`, with a second line that is the reader's
+own words rearranged, to copy.
+
+Which rearrangement depends on the word after the project. One that names
+a command taking PROJECT first -- read off its usage line, so `status
+[PROJECT]` and `stop [PROJECT...]` qualify and `ls` and `cp [-r] SRC...
+DST` do not -- is the two words swapped: ``repose status job``. Anything
+else is the words run on the machine: ``repose exec job cat out/x``, which
+is what a reader coming from `docker exec <container> CMD` or `kubectl
+exec <pod>` means by the noun-first order, and the only reading left when
+the word is no command of repose's at all.
+
+`ls`, `rm` and `cp` take the second reading although they are commands,
+because each is also the everyday shell word for what the reader typed.
+`repose job rm out/resume.pdf` is a file on the machine, never
+`repose rm job out/resume.pdf`, which destroys the project; offering that
+line would be worse than offering none. A `~` in the words is quoted in
+the suggested line, or the reader's shell eats it again (I-1048).
+
+With nothing after the project the message says what the word is and
+stops, because any command named there would be invented. A typo of a real
+command is still read as a typo and the lookup is not asked for it, so
+`repose exce ls` keeps naming `repose exec` and costs no API call.
+
+The project-first order is a guess worth answering rather than a user
+error to list: every other tool the reader has in that terminal takes the
+noun first (`docker exec <container> CMD`, `kubectl exec <pod>`,
+`gh repo view <repo>`), and repose takes the verb first.
+
+*Checked:* `TestProjectBeforeTheCommand` (internal/cli) over both
+rearrangements, the three shell words, a quoted `~`, a bare project, a
+word that is no project (the old answer), and a typo asked with an
+`isProject` that fails the test if it is called. On the built binary with
+a `projects.json` naming one project: `repose job exec rm out/resume.pdf`,
+`repose job rm out/resume.pdf`, `repose job status`, `repose job cat file`
+and `repose job` each printed the line above and exited 2.
+
+**I-1048. `repose exec` reads a quoted `~` as the machine's home, and says
+so when the laptop's shell ate an unquoted one.** (exec-paths, 2026-11-04.)
+
+Every word of `repose exec`'s command was shell-quoted on the way to the
+machine (I-275, "the words pass through as they are"), so `~` could not
+reach the machine's shell by any spelling: unquoted, the laptop expanded
+it first; quoted, it arrived as a literal tilde. `--workdir ~/PATH`
+(I-608) and `repose cp todo-app:~/PATH` both expand `~` on the machine, so
+`repose exec` was the one command of the three where the reader's `~` went
+nowhere. The observed cost, on the owner's laptop 2026-11-04: seven
+commands in a row against a machine whose home is `/home/dev`, each
+answered `ls: cannot access '/home/agustus/job/out/'`, a path that exists
+on neither side.
+
+Decided, two halves of one change. (1) A word that is `~` or starts with
+`~/` becomes `"$HOME"` on the machine, the same reading `--workdir` and
+`repose cp` give it; every other word is still quoted and reaches the
+command unchanged. (2) Before the command runs, a word that is this
+computer's home directory or under it gets one line on stderr naming the
+machine's home and the quoted spelling. That word is the shell's work, not
+the reader's -- repose never sees the `~` -- so the note is the only place
+the mistake can be caught, and it is the half that unblocks; without (1)
+the note would advise a spelling that does not work either.
+
+The note stays quiet where it would be wrong: a laptop whose own home is
+`/home/dev` (a user called `dev`) and a home of `/` get nothing, since the
+word is as good on the machine as here. The cost of (1) is a word meant as
+a literal tilde, `repose exec grep '~' file`; it now expands, and the docs
+and `--help` say to run a shell for that. A literal `~` as a whole
+argument is rare, a `~/...` argument meant literally rarer still, and the
+alternative -- leaving all three commands disagreeing -- is how the reader
+learns the rule three times.
+
+*Checked:* `TestExecWordReadsTheMachinesHome` and
+`TestLaptopHomePathFindsTheExpandedTilde` (internal/cli), the second with
+`HOME` set to a laptop home and to `/home/dev`.
 **I-1052. A test that starts a server and does not wait for it to stop
 fails in `TempDir` cleanup, after passing.** (hostdev-wait,
 2026-11-04.)
@@ -30064,3 +30197,3835 @@ up.
 
 *Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
 passes 8 of 8 here, as it did before the change; `go vet` clean.
+
+**I-1054. The pre-release suite and CI's suite are different tests, and
+the one that found that out was wrong about why it mattered.**
+(ci-shape, 2026-11-04.)
+
+`docs/ops/RELEASE.md` told the conductor to run `go test -race ./...`
+"with a real Postgres for the api packages". `internal/db/testdb` starts
+a throwaway cluster **per test process** when `DATABASE_URL` is unset,
+which is also a real Postgres, so the instruction was satisfied by the
+isolated configuration. CI sets `DATABASE_URL` at one service and every
+package contends for one server. Two different tests, one instruction,
+and four releases verified with the one CI does not run. The line now
+names the variable.
+
+*That much is worth fixing on its own terms.* A gate should run what it
+gates. What follows is why it is not the story it looked like, recorded
+because the story was already written down before it was checked.
+
+Three consecutive CI runs failed on three different tests, none
+reproducible here:
+
+    41691706591  66b03b96  TestStopWindowScripts            internal/cli
+    41859472806  301adebc  TestEndToEnd                     internal/hostdev
+    41867038782  3d42fceb  TestHelloRefusedClosesTheStream  internal/api/hostmgr
+
+The third had already failed once on this box, in a log written that
+morning for an unrelated reason, in a whole-suite run **with**
+`DATABASE_URL`. One configuration difference, one matching failure, three
+rotating reds: the explanation assembled itself, and it went into
+`RELEASE.md` and `docs/CHECKLIST.md` before the confirming run finished.
+
+**The confirming run passed. 94 packages, zero failures, `DATABASE_URL`
+set, same commit.** So a shared database is not sufficient to reproduce
+any of the three, and nothing here explains them. What is true is
+narrower and duller than what was written an hour earlier: the two
+configurations differ, CI's is the one that counts, and the conductor was
+running the other one. Whether that blindness has ever hidden a real
+failure is unknown.
+
+The one failing run remains unexplained and is now the oldest open
+thread: it differed from the passing one in load — VM tests and a
+Playwright suite were running beside it — which is the same untested
+condition that `TestStopWindowScripts` and `TestEndToEnd` keep pointing
+at and that nothing has yet produced on demand.
+
+*Evidence:* `DATABASE_URL=... go test -race ./...` on `3d42fceb`,
+94 ok, exit 0. The earlier failing run is
+`internal/api/hostmgr` and `internal/api/resume` in one log, same
+variable, different load.
+
+*The method note, which is the part that generalises.* The finding came
+from asking what three differently-named failures had in common instead
+of fixing each in turn — care applied per-failure cannot reach a shared
+cause. The error came from the same move: a shared cause is a satisfying
+shape, and it was committed to two instruction files before the
+measurement that was already running came back. `docs/CHECKLIST.md`
+warns against exactly this in the entry above it, written the same day.
+**I-1056. The base closure limit is 7 GiB, and the margin is the point.**
+(closure-limit, 2026-11-04; amends the 6 GB number in
+docs/workstreams/02-guest-base.md §7.)
+
+`main` at 3d42fce measures 6,438,214,952 bytes, which is 4.04 MiB under
+the 6 GiB the check fails above. A limit with 0.07% of headroom is not a
+limit, it is a trap: `scripts/bump-agents.sh` builds each package and runs
+`--version`, nothing measures the closure, and the first bump of any agent
+over about 4 MB turns the base build red. claude-code alone publishes most
+days. The next failure was going to be whichever agent moved first, and
+the reader of that CI failure would have had no idea the number had been
+touching the ceiling for weeks.
+
+Decided: 7 GiB. That is about 964 MiB above the closure with opencode 2
+(I-1050), so one large agent can land without a second decision, and it is
+still a number a review notices. The owner raised it on 2026-11-04 rather
+than cut the guest, after both options were measured.
+
+What the limit protects is unchanged: every host's store grows by the base
+and every first boot registers its metadata. Both scale with the closure
+and neither is close to a cliff at 7 GiB -- a host's store is on its own
+2048 GB data disk (DESIGN §4).
+
+*The alternative, measured and not taken.* The guest carries two
+Chromiums: `chromium-unwrapped` (701.7 MB) for the desktop browser, and
+`playwright-chromium` (390.8 MB) plus `playwright-chromium-headless-shell`
+(260.2 MB) for playwright-mcp, which pins its own build (I-246 already
+overrides that browser set). Making them one recovers about 650 MB, ten
+times what opencode 2 needs. It stays available, and it is the right move
+when the next ceiling arrives, but it is a workstream rather than a line
+in a flake, and it would have held a correctness fix behind a size
+refactor.
+
+*Still open, and the cause rather than the symptom:* nothing warns before
+CI. A closure measurement belongs in `scripts/bump-agents.sh` or the
+pull request its companion opens, so the number appears in the diff that
+moves it instead of in a red build two commits later. Not built here: this
+entry raises the ceiling, and whoever next touches the bump script should
+make it report the closure.
+
+*Checked:* `nix build ./nix#checks.x86_64-linux.guest-closure-size` on
+this branch prints `guest system closure: 6438215064 bytes (limit
+7516192768)` and exits 0.
+**I-1058. `Connected` is true before the first Hello is read, so a test
+that waits on it can assert the Hello that has not arrived.** (hello-wait,
+2026-11-06.)
+
+`TestHelloRefusedClosesTheStream` failed on the runner as `1 Hellos, want
+2` (CI 41867038782, `3d42fce`) and reproduced nowhere. It waited for
+`h.srv.Connected(hostID)` and then asserted `hellos == 2`. Those are two
+different facts. `Server.Session` registers the stream --
+`s.sessions[hostID] = sess` -- before its first `stream.Recv()`, so
+`Connected` is true from the moment the stream opens and says nothing
+about whether a Hello has been read off it. The window between them is
+`onHello`'s `update hosts ... from (select ... for update) prev` round
+trip, which runs before `s.handlers.Hello` increments the counter.
+
+That is why the failure follows the configuration rather than the code.
+With no `DATABASE_URL`, `internal/db/testdb` gives each test process its
+own cluster and the statement is sub-millisecond, far inside `waitFor`'s
+20 ms poll. CI points every package at one Postgres service, so the
+row lock contends with the rest of the suite and the statement can
+outlast a poll. The run's own log shows the gap: `stream_connect` at
+16:28:34.142 and `hello` at 16:28:34.149.
+
+This closes one of the three reds of 2026-11-04 and **only** one.
+I-1054's retraction stands: a shared database is not the explanation for
+`TestStopWindowScripts` or `TestEndToEnd`, and the confirming 94-package
+shared-database run passed. What a shared database does here is widen an
+existing hole in this one test, which was always wrong and always
+passing.
+
+Fixed by waiting for the thing asserted, which is DECISIONS I-1038's
+rule applied to a proxy rather than to a clock: `waitFor` now polls
+`hellos >= 2`. The `Connected` check stays as an assertion after it --
+once a Hello has been accepted the stream is certainly up -- so the test
+still fails rather than hangs if an extra Hello ever arrives.
+
+*Evidence, as a deterministic A/B rather than a count of green runs.* The
+window was made real by inserting `time.Sleep(120 * time.Millisecond)`
+into `onHello` immediately before `s.handlers.Hello`, which is where the
+contended statement's latency lands:
+
+    unfixed test, delay injected:  FAIL 5 of 5, "1 Hellos, want 2"
+    fixed test,   delay injected:  ok  10 of 10
+    fixed test,   no delay:        ok, and the package green
+
+The delay is scratch and is not in the branch; `git diff main...hello-wait`
+touches `hostmgr_test.go` only.
+
+*A trap found on the way, and not fixed here.* Outside `nix develop`
+this test does not run: `testdb` skips with "no DATABASE_URL and no
+initdb on PATH", and `go test` prints `ok`. Every api package behaves
+the same way, so a conductor who runs the suite outside the dev shell
+gets a green that tested none of them. I-1036 made exactly this skip
+fail when `CI` is set, for strace; the same argument applies to `testdb`
+and nobody has made it. Left as a branch of its own rather than widened
+into this one.
+**I-1060. `display-message -t` answers about the wrong window rather
+than failing, and `repose stop` handed that answer to `git worktree
+remove`.** (stop-probe, 2026-11-06.)
+
+`stopWindowProbeScript` read the window's folder with
+
+    d=$(tmux display-message -p -t '=SLUG:=WINDOW' '#{pane_current_path}')
+
+and `display-message -t` does not fail on a target that does not
+resolve: it prints the **active** pane's path and exits 0. Measured on
+tmux 3.7c, against a session whose only window is `shell`:
+
+    $ tmux display-message -p -t '=app:=nosuchwindow' '#{pane_current_path}'
+    /tmp/rt
+    $ echo $?
+    0
+    $ tmux list-panes -t '=app:=nosuchwindow' -F '#{pane_current_path}'
+    can't find window: nosuchwindow
+    $ echo $?
+    1
+
+So whenever the target stopped resolving, `$d` silently became some
+other window's folder. `StopWindow` passes the probe's `Dir` to
+`worktreeRemoveScript` (`stop_window.go`), guarded only by that same
+probe's `Dirty` and `Others` -- which describe the folder it read, not
+the one the user named. A developer running two agents has
+`app-worktree-1` and `app-worktree-2`; `repose stop app:claude-2` could
+read worktree-2's pane, find it clean and fetched, and remove
+**worktree-2**. `cli.md` already says a stop removes "the window's
+worktree", so this is the code disagreeing with the doc and the doc being
+right (CLAUDE.md).
+
+The pane now comes from `list-panes`, which fails, and an unresolvable
+window exits `typeExitNoWindow` -- the answer `repose stop` already has
+a message for -- instead of being read as "not a worktree". `me`, the
+window id that excludes the named window from `#other`, came from the
+same call and had the same hole; it comes out of the same `list-panes`
+line now.
+
+**Every giving-up path now says which one it was**, as `#why <reason>`
+on stderr. There were six paths that exited 0 having printed nothing, so
+"this folder is not a worktree" and "the probe read a folder it should
+not have" were the same observation. That is the I-1032 family: a check
+that matched nothing reads exactly like a satisfied one. `#why` is not
+parsed -- `parseStopWindowProbe` reads only `#wt ` and `#other `.
+
+*What this does NOT claim.* It is **not** established that this fixes
+`TestStopWindowScripts`, whose runner failure is `probe: 0 "" -> <nil>`
+(CI 41691706591). That symptom is what this bug produces -- the fallback
+lands on the main checkout, `gd == cm`, and the probe exits 0 silent --
+but the trigger, why the target stopped resolving ~20 ms after
+`new-window -d` returned, is unknown and was not reproduced here:
+
+    300 runs, 16 CPU spinners on 8 cores:   0 failures
+    300 runs, 8 fork/exec load generators:  0 failures
+
+`automatic-rename` was ruled out (the window keeps the `-n` name at
++0 ms, +300 ms and +2.3 s, and `window_automatic_rename` is off), and so
+was a shared tmux server (`testguest.TmuxTmpdir` is a fresh
+`MkdirTemp` per call). What the change does is make the next occurrence
+legible: it will exit `typeExitNoWindow`, or print `#why` naming the
+test it failed, and the test prints the probe's output on failure.
+
+*Evidence.* `go test -race -count=3 -run TestStopWindowScripts
+./internal/cli/` ok 3 of 3; `go vet` clean. The new assertions fail
+against main's probe -- restoring `git show main:internal/cli/
+stop_window.go` makes the test FAIL in 0.08 s -- so they can fail. They
+check the reason is printed for the main-checkout path, and they pin the
+tmux asymmetry itself in both directions, so a tmux release that makes
+`display-message` fail will say so and the extra work can come out.
+
+**I-1062. The released main is stored when it is known, not grepped for
+afterwards.** (record-main, 2026-11-06.)
+
+`release-queue record` found a release's main with
+
+    rmain=$(git rev-list -1 --grep="($rel)\$" main)
+
+which matches every merge `cut` writes and nothing else. But a conductor
+who fixes something in the batch worktree commits on top of those merges,
+and *that* commit is the one main is fast-forwarded to and the one the
+push ships. The grep cannot see it, so the record named the commit before
+the one that shipped.
+
+Found on r20261106-1, where the batch carried one such commit ("Batch
+fixes for r20261106-1", which repaired a sentence ci-shape had split and
+marked balloon-doc's append to the released I-1044 as an addendum).
+`record` offered `main 3f7de7e32`; the commit pushed was `0230ae22c`.
+
+This is I-992's fault class a second time: a record that names a commit
+with confidence and nothing that says the number is a guess. I-992 fixed
+the version of it where the guess was "whatever main is now"; it replaced
+that with a better guess rather than with the answer. The answer is
+available at exactly one moment -- `done` has just checked that main holds
+the release -- so `done` now writes `main=<sha>` beside the
+`integrated=<date>` it already stored, and `record` reads it.
+
+The two guesses stay as fallbacks, in order: the grep for releases
+integrated before this change, then today's main for a release still
+mid-flight. A release recorded late is the case the whole mechanism
+exists for, so losing the old path would have traded one wrong number for
+another.
+
+*Evidence.* `ops/dev/release-queue-test`: 52 passed, 0 failed.
+`t_record_names_the_commit_that_shipped_not_the_last_merge` commits a
+"Batch fixes for <rel>" on top of the cut's merges, fast-forwards main,
+runs `done`, and asserts both that the release file holds `main=<that
+sha>` and that the record names it and **not** the last merge. It FAILS
+against `git show main:ops/dev/release-queue` (51 passed, 1 failed), so it
+can fail. `t_record_falls_back_to_the_merge_subject_without_a_stored_main`
+strips the new field to stand in for an older release and passes against
+both copies, which is the backward-compatible half.
+
+*Not changed:* r20261106-1's own release file, which `done` had already
+written before this existed. Its `main=` was added by hand to the queue
+state so its record names `0230ae22c`; every release after this one gets
+it from `done`.
+**I-1064. `repose github setup` gives the machines a GitHub token of the
+user's own, for the repositories they picked, and stops copying the gh
+login.** (gh-scope, 2026-11-08.)
+
+The gh login the laptop copies is, in the CLI's own words, "every repo you
+can reach". On a machine where Claude Code runs in `bypassPermissions`
+(I-250) and egress is open, that is the widest credential repose hands an
+agent, and the one whose misuse is irreversible: code read out cannot be
+unread. This gives a user a way to hand over less, without repose holding
+any GitHub authority of its own.
+
+- **The mechanism is one named secret.** gh reads `GH_TOKEN` before
+  `~/.config/gh/hosts.yml`, and `gh auth git-credential` -- the helper the
+  guest's `/etc/gitconfig` names by command (I-526) -- answers with the
+  environment's token even when the machine has no gh login at all
+  (source: cli/go-gh `tokenForHost` reads `GH_TOKEN` before any config).
+  So git and gh on the machine use that token and nothing else, through
+  machinery that already shipped: ciphertext in Postgres, a 0400 file on
+  the guest's tmpfs, `BASH_ENV` into every command (R3-10, I-475). No
+  fourth home, and the api holds no GitHub credential: it holds a value
+  the user typed, as it does for `STRIPE_KEY`.
+- **The form is prefilled; the repository list is not.** GitHub documents
+  query parameters for a fine-grained token's `name`, `description`,
+  `target_name`, `expires_in` and one per permission. `repose github
+  setup` sends the user to it with Contents and Pull requests write, 366
+  days, the checkout's owner, and nothing else: not Administration (which
+  deletes repositories and flips their visibility), not Repository
+  creation, not Secrets, not Workflows. There is no parameter for the
+  repository selection, which is as well: that choice is the user's, and
+  it is the only one they have to make.
+- **Why not a GitHub App.** I-204 stands: nothing on GitHub may name the
+  platform, and an installation token acts as `repose[bot]`. Its revisit
+  condition ("a way to get per-repo scope without platform branding is
+  found") is met by this, not by an app. The prefilled display name is
+  "coding machines", not the platform's: a token whose owner is an
+  organisation is listed by name on that organisation's token review
+  screen, which its owners read, so I-204 holds there too (found in
+  review). The form lets the user rename it.
+- **Widening is another paste, never an edit.** GitHub documents no way to
+  edit a token's repository list, and the edit form is reported to start
+  from "All repositories" whatever the token holds, so repose never sends
+  anyone there. `repose github setup` again replaces the secret. An agent
+  that is refused a repository asks for a wider token with `repose-ask
+  --secret GH_TOKEN` (I-929) and the user pastes it from their phone, so
+  the ask, the approval and the storing are all shipped behaviour. The
+  machine guide tells the agent that a 404 on a repository it knows exists
+  is this, and that `gh auth login`, a token of its own and a push to a
+  fork are not the answer.
+- **Setup turns the gh row off.** A broad token beside a narrow one
+  protects nothing, so `setup` writes `skip` for the scope it stored the
+  token for (I-422's table, in the laptop's `config.toml`; the api never
+  holds the choice) and says so once. The next `run` then removes the
+  machine's copy of `hosts.yml` while it is still byte for byte the
+  laptop's, by I-422's existing rule.
+- **The SSH rewrites stop depending on the copy.** `run` wrote
+  `url.https://github.com/.insteadOf` only when gh travelled, so a machine
+  on a token alone could not push to a `git@github.com:` remote -- the
+  shape most checkouts have. Those four git keys now go when the row is
+  off as well. A machine with neither a login nor a token then meets the
+  username git asks for when no helper answers: an error for a
+  non-interactive command, a wait in an attached pane, where before an SSH
+  remote failed on a key it never had (I-247). That prompt is not new --
+  an HTTPS remote on such a machine has always reached it, since
+  `/etc/gitconfig` names the helper whether or not gh travelled (I-526) --
+  and making it fail fast everywhere (`GIT_TERMINAL_PROMPT=0` in the
+  guest, or an askpass that refuses) is left for its own change, because
+  it reaches every host and not only github. A laptop that never had a gh login and never turned the row off
+  is unchanged, so a `gh auth login` made in the guest still covers HTTPS
+  URLs alone.
+- **The account is the default scope.** The token is about the user's
+  GitHub, not about one project, so `setup` stores an account secret and
+  `--project NAME` narrows it. That is the opposite default from `repose
+  secrets set`, where the project is the unit.
+
+*Rejected.* A credential scoped per repository inside the machine: `gh
+auth git-credential` is keyed by host, so one token serves every
+repository a machine reaches, and a per-repository scheme would need
+repose's own helper and a token per repository, each of them another
+paste. *Rejected:* read on everything and write on a few, which the owner
+asked for first. GitHub cannot express it in one credential (an
+installation's and a fine-grained token's permissions are uniform across
+its repositories), so it costs two credentials, and the half it would add
+is the irreversible one. A named list the user picks is the same
+convenience with a bounded loss. *Rejected:* minting tokens for the user
+(no API creates a fine-grained token) and a token with Repository
+creation, which on a personal account can create a public repository and
+push private code into it; repository creation stays a thing the user
+does. *Rejected:* storing the token's own settings URL so an ask could
+link to it, since the edit form cannot be trusted to keep the selection.
+
+*Evidence.* The mechanism itself, checked rather than reasoned about: with
+an empty `HOME` (no `hosts.yml` anywhere) and `GH_TOKEN=github_pat_FAKEVALUE`
+in the environment, `gh auth git-credential get` (gh 2.100.0, the guest's
+version) answers `username=x-access-token` and `password=github_pat_FAKEVALUE`,
+and `git credential fill` for `https://github.com/heracraft/skills.git`
+with the guest's helper config answers the same, so git has a password to
+send with no gh login at all. `git ls-remote --get-url origin` with the
+rewrite turns `git@github.com:heracraft/skills.git` into
+`https://github.com/heracraft/skills.git`, which is the path that makes an
+SSH remote reach it. The `guest-devtools` VM test's new I-1064 subtest
+asserts the same `git credential fill` on a real guest, beside the I-526
+helper subtest, and passed there (0.20 s, named in that run's `nix log`).
+Two subtests later the run fails on its own: I-531's offline `nix flake
+lock` tries to resolve github.com and times out. It fails the same way on
+main on this box, so that is this machine's sandbox and not this change.
+
+`go test ./internal/cli/` passes, including
+`TestGithubTokenURL` (every query parameter pinned to GitHub's documented
+names, and Administration, Repository creation, Secrets, Workflows and
+Actions asserted absent), `TestGithubSetupStoresTokenAndLeavesGhLogin`
+(the account secret is set, `config.toml` gains `[logins] skip = ["gh"]`
+with the rest of the file byte for byte, the second run says nothing about
+the login again, a classic `ghp_` token is stored with one line saying it
+is not limited, an empty paste exits 2 before anything is stored) and
+`TestSyncCredentialsGhHelpersWithoutLogin` (against the sync fixture's
+guest: with the row off, `url.https://github.com/.insteadOf` holds both
+SSH forms and the helper is set, and `hosts.yml` did not travel).
+
+**I-1068. A host repairs its own one-way tunnel by rebinding the socket,
+because twice now nothing else has.** (wg-selfheal, 2026-11-10.)
+*Made during implementation.*
+
+On 2026-11-10 Azure live-migrated host-02 and its WireGuard tunnel to the
+edge came back one way. The host's handshake initiations reached the edge
+and authenticated — the edge re-learned its endpoint from them, which it
+only does for a packet that authenticates — and the edge's answers never
+arrived. Both ends then retried the same dead five-tuple every few
+seconds for 42 minutes, which is as long as it took a person to notice
+and ask.
+
+Everything an operator and a tenant need from a host rides that tunnel:
+the gateway relays `ssh`, `run`, `attach` and `open` to guests over it,
+Prometheus scrapes node_exporter and hostd through it, Fluent Bit ships
+logs through it, and the host's sshd binds the WireGuard address and
+nothing else (`network.nix`, `write_sshd`). The heartbeat does not: that
+is gRPC over the provider NIC. So the api held host-02 `ready` and
+correct throughout, with three of the owner's machines running and
+unreachable, and no shell into the host to run the one command that would
+have fixed it. The repair needed a VM restart.
+
+This is the second occurrence. The control VM on 2026-10-26 (I-866) sent
+a 148-byte initiation every 5.6 s for nine hours and received nothing,
+and was fixed by rebinding its socket to a new port. That incident file
+closed on exactly this gap: "neither end rebinds its socket when it has
+sent for minutes and received nothing."
+
+`repose-wg-watchdog`, a timer on every host, samples each peer's
+handshake age and byte counters once a minute. When the handshake is
+older than `staleAfter` (180 s), the host has sent since the previous
+sample and received nothing in that window, it runs `wg set <iface>
+listen-port 0`. That is the whole repair. It changes the five-tuple,
+which is what a stale NAT mapping or a blackholed flow is keyed on, and
+it keeps the interface, its keys, its peers and its routes. The host's
+`wg0.conf` carries no `ListenPort`, so a random port is what it already
+had and nothing has to agree with the choice.
+
+**What it does not do, deliberately.** It never restarts `wg-quick`:
+that tears down routes a guest's traffic is on for a repair that does not
+need them touched. It does nothing on its first sample after a boot,
+having no counters to compare. It does nothing on a quiet tunnel: "no
+handshake" is also true of a host whose edge is genuinely down and of a
+tunnel nobody is using, and without `tx` rising while `rx` is flat there
+is no evidence of one-wayness. And it cannot fix a break that is not
+keyed on the five-tuple — wrong keys, a firewall or routing change, an
+edge that is down — so it is rate-limited to one rebind per
+`minInterval` (600 s) and `HostWgDown` (I-1070) still pages.
+`repose_host_wg_rebinds_total` climbing with the tunnel still down is the
+signal that the cause is not this one.
+
+**One coupling, found by the test rather than by reading.** Detection
+needs `tx` to have moved *between two samples*, so it depends on the
+host's peer carrying `PersistentKeepalive = 25` (`network.nix`): that is
+what makes a dead tunnel keep sending. Take the keepalive away and a
+one-way tunnel with no traffic on it becomes invisible here. The sampling
+interval must therefore stay comfortably longer than the keepalive and
+`staleAfter` longer again. The first version of the VM test asserted
+re-detection a fraction of a second after a rebind and failed, correctly:
+no keepalive had gone out, so there was no new sending to see and the
+watchdog concluded nothing.
+
+**What it publishes, and the freshness trap.** `repose_host_wg_one_way`,
+`repose_host_wg_handshake_age_seconds`, `repose_host_wg_rebinds_total`,
+`repose_host_wg_rebound`, `repose_host_wg_rebind_failed` and
+`repose_host_wg_watchdog_run_seconds`. The failure gauge is separate
+because "one-way and not rebound" is otherwise the same reading as
+"one-way and rate-limited", and those call for different next steps. The
+run timestamp is there because node_exporter serves whatever is on disk:
+a stopped timer keeps publishing its last numbers for ever, and a
+watchdog that is not running reads exactly like a healthy tunnel. That is
+the trap I-1010 names, and it applies to this writer as much as to any
+other.
+
+**Known gaps, none of them closed here.** (1) The watchdog is on hosts
+only. The 2026-10-26 occurrence was the control VM, whose wg-quick is not
+managed by `nix/hosts`, and the edge's interface is
+`networking.wireguard`; both still need a person. (2) A rebind drops
+in-flight tunnel traffic for the moment it takes to handshake again, so a
+tenant's session blips — against an hour down, that is the trade accepted
+here, and on a healthy tunnel the detector never fires. (3) It treats a
+peer that has never handshaked as stale, so a host whose tunnel never
+came up rebinds every 10 minutes until someone looks; harmless, visible
+in the counter, and better than the alternative of never acting on a
+tunnel that is dead from birth. (4) If `ListenPort` is ever pinned on
+hosts (the I-866 direction for the control VM), it conflicts with this
+and the pin has to win, since a pinned port and a rebinding one cannot
+both be the contract.
+
+**The deeper cause is not fixed here and is the owner's call.** The
+tunnel leaves the VNet at all only because the endpoint hosts dial is the
+edge's *public* address, so host-02's packets hairpinned through
+`natgw-hosts` and back to reach a machine 2 ms away in the same VNet. A
+private endpoint removes the NAT gateway, and with it this failure, but
+the endpoint is one global setting (`SettingEdgeWGEndpoint`), WireGuard
+holds one endpoint per peer with no failover, and a host outside the
+edge's VNet — the BYO and Hetzner directions — would then never connect
+at all. It is also written only at registration, so it would not repair
+the running fleet. That needs a per-host endpoint or a fallback, and a
+decision, not a flipped string.
+
+*Evidence.* `nix/hosts/tests/wg-watchdog.nix`, VM test
+`host-wg-watchdog`: the one-way condition is produced rather than faked,
+with the peer's endpoint at `127.0.0.1:51821` and nothing bound, so the
+sends really happen and `tx` really climbs while `rx` stays put and no
+handshake completes. A blackholed public address reads the same to
+WireGuard but not to the kernel: with no route or no ARP reply the send
+fails and `tx` never moves, which is the one thing the test needs true.
+It asserts the timer is `is-enabled` and not merely present, that a host
+with no interface publishes no metric file rather than a zero that reads
+as a healthy tunnel, that the first sample does not act, that the second
+rebinds to a different port, and that a third inside `minInterval` does
+not.
+
+**I-1070. RUNBOOK had a HostWgDown section for an alert that was never
+written, so the one failure it describes pages as something else.**
+(wg-selfheal, 2026-11-10.)
+*Made during implementation.*
+
+`docs/ops/RUNBOOK.md` has carried a "HostWgDown" section since the alert
+was specified, naming an alert `host_wg_down`, and `ops/alerts.yaml` has
+never had a rule behind it. `HostScrapeDown`'s own `runbook:` annotation
+already links to that section. So on 2026-11-10, with host-02 alive and
+heartbeating and its tunnel dead, what fired was `HostdDown` and
+`HostScrapeDown` — both of which name hostd, which was healthy
+throughout, and the first of which sends a reader to check whether the
+host, its network or hostd is down.
+
+`HostWgDown` is now a rule. The signal that separates it from a host that
+is simply down was already published and unused: the api's own view of
+the host. Prometheus scrapes hostd through the edge over WireGuard and
+the heartbeat travels the provider NIC, so
+
+    up{job="hostd"} == 0
+      and on (host_id) (max by (host_id) (repose_api_host_state{state="unreachable"}) == 0)
+
+is "the api can reach this host and nothing through the edge can", which
+is the tunnel and nothing else. Reading `state="unreachable" == 0` rather
+than `state="ready" == 1` is deliberate: a draining host with a dead
+tunnel is the same incident and should page the same way.
+
+`HostdDown` is left exactly as it was. It is the catch-all page and the
+only alert that saw 2026-10-10, and gating it on the api's view would
+have broken the case it exists for. So both fire together and this one
+names the cause; Grafana has no inhibitions (I-942), and
+`docs/ops/OBSERVABILITY.md`'s table is where which-causes-which is
+written down. With api-grpc down the gauge has no series and this cannot
+fire at all, which is `ApiHostsAbsent`'s job rather than this rule's.
+
+**The expression is a product, not the obvious `and`, and `ops/check.sh`
+is why.** Written the natural way —
+`up{job="hostd"} == 0 and on (host_id) (… == 0)` — it fires with the value
+**zero**, because a Prometheus comparison returns the left side's value.
+Prometheus does not mind; `alerts-gen.py` cannot split a boolean top
+level, so the Grafana copy would have taken the whole expression with a
+condition of "above 0" and could never have fired. That is I-1012's trap
+exactly, and the generator refused the rule rather than emitting it,
+which is the check earning itself. The shipped form multiplies
+`1 - up` by `… == bool 0`, so its firing value is 1 and the condition
+splits.
+
+**`for` is 8m, and the number is the watchdog's.** A break at T is
+detected by `repose-wg-watchdog` between T+180 s and T+240 s and a rebind
+that works is scraped as recovered within another half minute, so 8
+minutes means this pages only once self-repair has been tried and has had
+five minutes to prove it worked. A page that races its own fix is worse
+than a slower one, and nothing is silent in the meantime: `HostdDown`
+still pages at 3m. On a host with the watchdog off or absent this simply
+pages five minutes later than it otherwise would.
+
+*Evidence.* `promtool check rules ops/alerts.yaml`: SUCCESS, 60 rules.
+`promtool test rules ops/alerts_test.yaml`: SUCCESS. Two cases in
+`ops/alerts_test.yaml`: a host the api holds reachable with a dead hostd
+scrape pages after 3 minutes and not before, a host the api also holds
+unreachable does not page here at all (that one is `HostdDown` and
+`HostUnreachable`, and a rebind would fix nothing), and a fleet where
+api-grpc publishes no host states stays silent.
+
+**I-1074. A runbook heading that reads as an alert name has to be one, or
+say why not.** (wg-selfheal, 2026-11-10.)
+*Made during implementation.*
+
+`ops/check.sh` has checked that every alert has a runbook heading since
+I-648, and that every alert's anchor resolves since I-800. Neither runs in
+the other direction, which is how `## HostWgDown` sat in the runbook for
+months, said "alert `host_wg_down`", and had no rule behind it. The cost
+is not a missing page. It is that a heading written as a bare CamelCase
+word *reads* as an alert name, so an agent that finds the section for the
+failure in front of it concludes the section must be about some other,
+alerted condition, and keeps looking. On 2026-11-10 that is what happened
+for 42 minutes.
+
+The check is now both ways: a `## ` heading matching a bare CamelCase word
+must be an alert in `ops/alerts.yaml` or `ops/alerts-loki.yaml`, or be
+named in `allowed_non_alerts` with its reason. One name is on that list
+today — `StoreHigh`, which is a hostd `host_warning` kind
+(`kind="store_high"`) and not a Prometheus rule; the Prometheus alert for
+the root filesystem is `StoreFull` at 85 percent, and the section says so.
+The list is the same device as `alerts-gen.py`'s `BOOLEAN_EXPRS`: the only
+thing between a new phantom and a reader who trusts the name.
+
+The second copy of the phantom, `docs/workstreams/01-host-nixos.md`'s host
+failure table, is corrected in the same commit. Nothing checks prose in
+workstream docs for alert names that do not exist, so that one was found
+by reading rather than by a tool, and a doc outside `docs/ops/` can still
+name an alert that is not there.
+
+*Evidence.* `ops/check.sh` prints "no phantom alerts" on this branch,
+where `HostWgDown` is a real rule (I-1070). Against `main`, where it is
+not, the same check fails with "runbook headings that read as alert names
+with no such alert: HostWgDown" — so it can fail, and it fails on exactly
+the thing that cost the time. The guard ships in this branch and not in
+`runbook-triage` for that reason: the check and the alert that satisfies
+it have to land together, or `main` goes red on a merge order nobody
+chose.
+
+**I-1072. The runbook is entered by symptom, because an alert name is not
+one and 101 of its 159 sections are reachable no other way.** (runbook-triage,
+2026-11-10.)
+*Made during implementation.*
+
+On 2026-11-10 a host's WireGuard tunnel went one way. The runbook has a
+section for that failure, and 42 minutes of diagnosis never reached it.
+The post-mortem of *why* is the useful part, because none of it was bad
+luck:
+
+1. **The starting symptom led nowhere.** "gateway might be down" greps to
+   89 lines across 21 sections. Nothing in the file carries the words a
+   person actually uses: `cannot ssh`, `can't connect`, `no logs`,
+   `not responding`, `offline`, `no metrics` and `my machine` return zero
+   hits between them.
+2. **Two sections actively routed the diagnosis away.** `HostUnreachable`
+   step 1 pings the host over the edge's WireGuard and `HostdDown` step 3
+   sshes to it through the same tunnel. Both probes fail when the tunnel
+   is the fault, and both sections concluded "Host network dead after a
+   live migration" from that failure. The discriminator — hostd's
+   heartbeat travels the VNet, so a host that is still `ready` to the api
+   has a working NIC and only a dead tunnel — was stated once, inside the
+   section you could not reach. Both now branch on the api's view before
+   naming the live-migration section.
+3. **The one working symptom path had no inbound link.** The table in
+   "Gateway relay failures" maps each refusal the CLI prints to a cause,
+   and it routes `cannot reach environment: no route to host` to the right
+   section. Nothing anywhere pointed at that table. `GatewayDown`,
+   `GatewayDialFailing` and "CLI: SSH timeout after running" all should
+   have, and none did.
+4. **`GatewayDialFailing` is the page whose text is this symptom** —
+   "A host whose tunnel dropped takes all of its guests with it" — and it
+   named no section, so the alert that fires closest to the truth was a
+   dead end. Its expression is also a fleet-wide `sum()` with no
+   `host_id`, so it cannot say which host; the section now says so and
+   gives the way to find out.
+
+So: a symptom table at the top, keyed on what a person has before they
+know the cause, with one section per row. It costs about 40 lines and
+needs no reorganisation of the 4289 behind it. The header's claim to be
+"Symptom-titled" was false for 58 of its sections and is now accurate
+about both doors.
+
+**Also fixed, all of the same class.** A dangling pointer to
+"HostHeartbeatMissing", an alert and a section that exist nowhere in the
+repository, reached from a message a tenant can read verbatim
+(`MsgUnreachableHostFmt`). Two directional words that sent a reader the
+wrong way through 600 lines, now dropped, since every reference in this
+file is findable by its quoted title alone. Three headings whose
+parenthetical suffix restated their first line and broke title lookup
+(`HostUnregistered`, `StoreHigh`, the Claude login share), with the one
+anchor that depended on the old form. Three sections for "it never became
+ready" that named no other, now entered from one. Two sections owning the
+same user-visible SSH-timeout string with different first steps and no
+discriminator between them, now with the cheap one first — the shape
+`GuestdLost` step 1 already had and the rest of the file should copy.
+`KernelOops` opened with 79 lines of prose before its first step in a
+section whose own framing is "this host is leaving the fleet today"; its
+two known signatures, one of which calls for no action, are now checks at
+the top with the reasoning left below.
+
+**Conflicting remedies for one signature, where the doc was wrong.**
+`HostUnreachable` step 3 and "hostd: api unreachable" both cover a
+`stream_disconnect` loop with a TLS error naming the client certificate.
+The latter said "rotation needs the stream, so … re-register with a new
+token", conflating hostd's own `Rotate` RPC, which does need the stream,
+with `repose-admin hosts rotate-cert`, which does not: it issues from the
+CA, stores the serial and prints the PEMs for the operator to place
+(`internal/admin/cmds.go`). An agent following it took the heavier path
+for no reason. It now points at the lighter one and keeps re-registration
+for the case `rotate-cert` itself refuses.
+
+**The alert count is no longer written down anywhere.** It was stated in
+eleven places, disagreed with itself (53, 54, 56 and 57) and was wrong in
+all of them against an actual 59. Updating the number would have made my
+own branch stale it again, so the numbers are gone and `ops/check.sh`
+prints what it finds. One instance stays: a record of a past measurement,
+where the number is evidence rather than a claim about now.
+
+**Not done.** About 30 sections still have no inbound reference from
+anywhere; the symptom table reaches most of the operationally relevant
+ones, and the long tail of `hostd:`-prefixed sections is unaddressed. The
+`GatewayDialFailing` expression still carries no `host_id` — the section
+says so rather than the metric being fixed, which needs the gateway's
+dial-fail counter to grow a label and is its own change.
+
+**One more misdirection, and the guard for it.** `HostScrapeDown`'s
+`runbook:` annotation resolved to `#hostwgdown` — so the alert that fires
+for a dead tunnel delivered the operator into a different section, whose
+step 3 (before I-1070 corrected it) would have finished the tunnel off.
+It was the only alert in either rules file whose anchor did not match its
+own name, and `ops/check.sh` passed it, because the anchor resolved: the
+existing check asks whether an anchor goes *somewhere*, never whether it
+goes to the right place. An anchor pointing at a real but wrong section is
+worse than one pointing nowhere, since nothing about the page looks
+broken. The annotation now points at its own section and names
+`HostWgDown` as its step 2, and a new check refuses any alert whose
+anchor is not its own slug.
+
+*Evidence.* Every section title quoted in the new table resolves to a
+heading in the same file, checked by script over the table's 41 rows and
+48 titles. `ops/check.sh` ok, with "all anchors resolve" after the
+`HostUnregistered` heading change and its anchor in `ops/alerts.yaml` and
+`ops/alerts_test.yaml`. The claims above about zero-hit symptom words,
+the 89-lines-across-21-sections fan-out, and the two probes that traverse
+the tunnel they are diagnosing were each measured against the file rather
+than assumed.
+
+**I-1076. Nineteen operational claims the code contradicted, five of them
+commands that cannot run.** (docs-drift, 2026-11-10.)
+*Made during implementation.*
+
+An audit of `docs/ops/`, `docs/interfaces/` and `docs/features/` against
+the code, prompted by the 2026-11-10 outage, where the step the runbook
+offered for a dead tunnel (`hosts rotate-wg`) would have made it
+permanently dead. That one is corrected with the alert in I-1070; this
+entry is the rest, and the worst of it is not wrong numbers but **steps an
+operator reaches mid-incident and cannot run, or runs and is misled by**.
+
+Acting on these made things worse:
+
+- **`projects restart` does not snapshot.** It passes `snapshot: false`
+  (`internal/admin/cmds.go`). Two places said it did, and one of them was
+  the step for a project whose snapshots keep timing out — the project
+  most in need of one — so the operator walked away believing a snapshot
+  existed. A third place in the same file said "stop without snapshot"
+  and was right.
+- **`guestd call ping` through `repose-admin exec` cannot work.** Inside
+  a guest that call defaults to `/run/repose/guestd.sock`, which
+  production guests do not have (guestd serves vsock only, and
+  `guest-conventions.md` calls the socket "absent in real guests"). It
+  fails on a healthy guest, and it was the *health check* after a
+  snapshot freeze — where the next move is a stop that ends every
+  process the tenant had. The second instance was worse still: `exec`
+  reaches the guest *through* guestd, the thing that section presumes is
+  down, and is refused unless the project is `running`, which there it is
+  not.
+- **`hosts drain --all` does not exist**, as step 1 of "Suspected
+  cross-tenant access". `drain` resolves its argument with `findHost`, so
+  `--all` is a host name and the command fails, while placements keep
+  landing on the host under investigation.
+- **`hosts mark-lost` sends no notification.** Two lines promised tenants
+  an email. It writes the `host_moved` row into `events` with raw SQL
+  rather than through `events.Insert`, so nothing reaches `events_outbox`,
+  and nothing scans `events` for rows that have none. During a host loss
+  the operator believed the tenants had been told. **This is a code bug
+  and is recorded, not fixed**: the promise lived in the runbook, the
+  delivery path is a behaviour change in an incident path with no test
+  for it, and it wants its own branch. The runbook now says to tell them
+  yourself.
+- **`hosts reconcile` does none of the three things it was documented to
+  do.** It never contacts hostd, it recomputes nothing, and without
+  `--fix` it changes nothing at all: it reads the newest `meter_samples`
+  row per project, prints a table, and with `--fix` corrects a project's
+  state when the sample is under 3 minutes old. "reserved memory
+  recomputed" is a `select` against `host_reservations`, a view derived
+  live from `projects` — so that number never drifts, and the entry
+  titled "Reservation drift" described a fix for a thing that cannot
+  happen. The placement-mismatch section had it fixing `projects.host_id`
+  from a Hello; nothing in the api ever writes that from a Hello, so the
+  guest stayed unreachable.
+- **`hosts list` prints no address of either kind.** Its columns are name,
+  state, SKU, memory, free, reserved, guests, pool free, heartbeat and
+  guest CIDR. Two places said to read a WireGuard or VNet address from it,
+  and one was step 3 of a recovery that kills your session by design — so
+  the operator was sent to a column that is not there, mid-recovery, on a
+  host not yet in the fleet. A third place in the same file already said
+  where the address really is.
+- **`HostKeyAlias` on a VNet address**, which this same runbook forbids at
+  I-916 ("a VNet address is the wrong thing to pin an identity to") after
+  host-01 answered with keys the alias did not know. Removed here and from
+  `ops/dev/operator-cert.sh`'s comment.
+- **The join token does not arrive through cloud-init.** `grpc-hostd.md`
+  said it did. It arrives over SSH after the install, because
+  `custom_data` is readable through IMDS (I-20) — and the cloud-init
+  template says so in its own comments. An agent "fixing" the code to
+  match that sentence would have put a single-use credential where every
+  process on the VM can read it.
+- **`users suspend --retain` does nothing.** It is written into the audit
+  row and never read, and nothing deletes a suspended account's data on a
+  schedule keyed to the suspension. An operator placing a hold for a
+  dispute got no hold, and there was no clock to hold off either.
+
+Wrong values, each of which is arithmetic someone plans with:
+
+- **The park's shutdown ceiling is 390 s, not 550.** `TimeoutStopSec =
+  deadline + 150` with a default deadline of 240; 400 is `writeRateMBs`,
+  a different number that had been read as the deadline. An operator
+  budgeting a restart window from 550 s has systemd cut the park 160 s
+  early, and every guest not yet written loses what it was running. The
+  deadline's 300 s cap makes 450 s the real ceiling; no configuration
+  reaches 550.
+- **`pool_high` fires at 70 percent**, not 80 (`PoolWarnPct = 70`). The
+  two interface docs disagreed with each other.
+- **The `guests.slice` reserve is one eighth of memory**, floored at 2 GiB
+  and capped at 16, not "8 GiB below 128 GiB, 16 GiB above" — which is
+  right only at exactly 64 GiB and at or above 128. Capacity arithmetic
+  from the old wording is wrong on a 16 or 96 GiB host.
+- **`repose_kernel_check` has four checks, not three**; `fault_around_off`
+  (I-1042) was missing, so an alert written from the list would not cover
+  it.
+- **The api's `hosts` row is frozen at registration** in more columns than
+  anyone had written down. `Register` runs once, the join token being
+  single use; `Rotate` refreshes only `vcpus` and `cores`; `Hello` and
+  `Heartbeat` only the free/pool/load fields. So `sku`, `hostname`,
+  `mem_bytes`, `nixos_system` and `ch_version` are never refreshed. I hit
+  this myself on 2026-11-10: I confirmed a host's park configuration from
+  `nixos_system` and got the system from install day, eight days stale,
+  from a column sitting in the same annotation as fields that are live.
+  `mem_bytes` is the one with teeth — it is the numerator of the seat
+  ceiling and of placement, so after a resize the fleet keeps selling the
+  old host's seats, and the runbook's "move to a larger SKU" said nothing
+  about it. `hosts add --reissue` and a re-register are what update them.
+
+Also corrected: `ops list --kind` in three places (`ops list` takes
+`--project`, `--host`, `--state`, and the flag parser exits 1);
+`projects rebuild` and `hosts show`, neither of which exists, and `hosts`
+as a host-side command, which is `hostd status`; a quoted CLI message that
+differs from what the CLI prints, while the same file quotes it correctly
+elsewhere; `HostMemory80` step 1 asking `hosts list` for a count of
+stopped guests, which `host_reservations` excludes by construction; a
+`repose.host.park.UnwrapTimeout` setting that is a Go constant with no
+option or flag; a vsock dev-socket path that is `guestd call`'s default
+and not what hostd dials; and a cross-reference to a DECISIONS title
+rather than the section holding the procedure.
+
+**Not fixed, and left as found.** `hosts mark-lost`'s missing
+notification (above). `docs/interfaces/vsock-guestd.md`'s version
+negotiation, which the file describes as a gate hostd applies and which
+does not exist — both `Ping` callers discard the result and nothing reads
+`GetVersion()`; the same file already admits it two lines later, so an
+agent adding a vsock request would assume a gate that is not there.
+`guest_resting_stale`, a `host_warning` kind hostd raises that is in no
+doc and in no `notifyKinds`, so it collapses to `other` and cannot be
+alerted on. hostd's exec audit line, documented as carrying `argv` and
+deliberately carrying `argv_len` (the argv is in the api's `audit_log`,
+which is the right place and is not what the doc says). The tap-device
+block in `host-conventions.md`, presented as "exactly these settings" and
+missing `vnet_hdr`, with `bridge fdb add` where the golden file says
+`replace`.
+
+*Evidence.* Each correction was verified against the named file and line
+in the code before it was written, not taken from the audit that found
+them: `snapshot: false` in `cmds.go`'s restart case, `drain`'s
+`findHost(args[1])`, the raw `insert into events` in `mark-lost`,
+`reconcile`'s `ListProjectsOnHost` and `meter.LatestSample` with no hostd
+call, `hosts list`'s own column list, `PoolWarnPct = 70`,
+`TimeoutStopSec = pk.deadline + 150` against `deadline`'s default of 240,
+and `Register` versus `Rotate` versus `Hello` in `hostmgr.go`. One claim
+from the audit was checked and rejected: that `HostdDown` step 4's
+pointer to "HostScrapeDown" step 3 was off by one. Step 4 is reached only
+when the host *is* ssh-reachable, so the tunnel step is irrelevant and
+step 3 is correct; it was left alone.
+
+**I-1078. `ops/check.sh` refuses a documented `repose-admin` command that
+does not exist.** (docs-drift, 2026-11-10.)
+*Made during implementation.*
+
+Five invocations in the runbook could not run, and nothing noticed: `hosts
+drain --all`, `projects rebuild` twice, `hosts show`, and `ops list
+--kind` three times. Every one of them is a step an operator or an agent
+reaches with an incident in front of them, and each fails as "host not
+found" or an exit 1 from the flag parser — which reads, in the moment,
+like the system being broken rather than the instruction being wrong.
+
+The check reads the command set from `internal/admin/admin.go`'s usage
+block, which is the surface a reader is sent to anyway, and compares it
+against every `repose-admin <group> <sub>` in `docs/ops/`,
+`docs/interfaces/` and `docs/features/`.
+
+Three things it deliberately does not do, each found by it failing on
+something correct while it was being written:
+
+- It skips a group whose usage lists no subcommands (`exec ID -- ARGV`,
+  `audit`, `seats`), because the word after the group there is an
+  argument, and reading an argument as a subcommand flagged
+  `repose-admin exec over` out of a sentence.
+- It strips bracketed optionals before splitting alternatives, so
+  `[--class small|large|xl]` cannot donate "large" as a subcommand.
+- It does not read `docs/workstreams/` or its archives. Those are records
+  of what was true when they were written — `STATUS.md` names
+  `billing stripe-bootstrap` correctly, from before Polar — and editing
+  history to satisfy a checker would be the wrong fix.
+
+It also constrains prose: a sentence about a subcommand that does *not*
+exist must not write the invocation out, or it trips the check. Saying
+"`projects` has no `rebuild` subcommand" is both shorter and checkable,
+and two of this branch's own corrections were rewritten that way after
+the guard caught them.
+
+Flags are not checked. `ops list --kind` and `hosts drain --all` were
+found by hand, and a flag check needs the `flag.FlagSet` definitions
+rather than the usage line; it is worth doing and is not done here.
+
+*Evidence.* `ops/check.sh` prints "every documented repose-admin command
+exists" on this branch and fails against `main` naming all three
+subcommand offenders with their file and line, so it can fail on exactly
+what it was written for.
+
+**I-1063. Egress is what a guest sends the internet, counted by nft, not
+by its tap.** (run-sync-fixes, 2026-11-10.)
+
+The plan's egress, its overage and the 4x stop were all read from the
+guest's tap: every byte the guest sent, wherever it went. A guest's
+sshd answers the edge gateway over WireGuard, so terminal output, port
+forwards, `git fetch repose`, `repose cp`, the hooks to the edge and the
+browser view were all billed as egress. `billing.md` promised the
+opposite ("Incoming data and your own SSH traffic, port forwards
+included, don't count") and nothing in the code kept that promise. A
+user with an agent printing in an attached terminal all day paid for it.
+
+The per-guest `egress-<guest_id>` counter in `guest_dyn` already existed
+and was never read after I-448, and it could not have been: `guest_fwd`
+accepts established packets before the jump to `guest_dyn`, so the
+counter saw each flow's first packet only. Now `guest_dyn` is jumped
+from a new base chain, `guest_meter`, on the forward hook at priority
+`filter + 10` and only for `iifname "br-guests" oifname <uplink>`. An
+accept in `guest_fwd` ends that chain and not the hook, so `guest_meter`
+sees every packet `guest_fwd` accepted on its way to the internet; a
+drop is final, so blocked attempts (25, the stratum ports, the flow
+limits) still never count. Traffic to the edge or to the host's caches
+never leaves on the uplink, so it is not counted.
+
+The counter goes up as a new field, `GuestSample.net_egress_bytes_delta`
+(optional), into a new column, `meter_samples.net_egress` (migration
+0035), and the rollup bills `coalesce(net_egress, net_tx)`: a sample from
+a hostd older than this has no field and bills the tap as before.
+`net_tx` stays the tap's figure. A first version of this change put the
+counter in `net_tx` itself; the review that followed found two readers
+for which the tap is the right figure. The idle rule's `net_rx + net_tx`
+threshold counts the browser view's frames to the edge as use, and
+nothing else marks a machine as watched through `repose browser`; the
+abuse rule and `EgressHigh` (`sum(net_tx) > 1e12`) should see a tenant
+moving terabytes to a laptop over SSH, which the edge pays for.
+
+hostd reads every guest's counter with one `nft list counters` per tick,
+under the sample cursors' lock, so a stop's final reading and a boot's
+baseline cannot interleave with it. Without that lock a tick that read
+the counters before a restart and applied them after the new baseline
+took the reading as a counter reset and counted it in full, which is
+the guest's whole lifetime, since the counter lives until destroy. The
+counter outlives a stop, so a boot takes its value as the baseline
+instead of zeroing the cursor as the tap's is (I-448). A tick that
+cannot read the counters, or finds a guest without one, sends 0 for it,
+logs `samples: egress counters unread` or `samples: guest has no egress
+counter`, and keeps the cursor, so the next reading counts those bytes
+once. The stop's final sample reads the counter after the hypervisor
+has stopped, as it reads the tap; if that read fails it sends no
+egress, and the api bills the tap for that last minute.
+
+Not done:
+- Public preview URLs (`ports-and-previews.md`, not built) will reach a
+  guest over wg0, and their responses must count. When they are built,
+  `guest_meter` gains a rule for what the guest sends the edge from a
+  preview port.
+- The npm cache proxies every method upstream from the host's own
+  address, so an `npm publish` through it is not counted. It reaches
+  only registry.npmjs.org; limiting the proxy to GET and HEAD would also
+  break `npm audit`, which POSTs.
+- A host-level run on a real host; the VM tests do not boot on kanali.
+
+*Evidence.* In network namespaces (guest, host, internet, edge) with
+`guest_fwd` and `guest_meter` as the host has them: 300,000 bytes from
+the guest's port 22 to the edge counted 0 bytes; a 200 KB POST to the
+internet counted 11 packets (the old placement counts 1 per flow); a
+connection to port 25 counted nothing. The host's rendered ruleset
+(`nix eval .#nixosConfigurations.host.config.networking.nftables`)
+passes `nft -c` and loads twice in a row, as a reload does.
+`internal/hostd/guest`: `TestEgressExcludesTrafficToTheEdge` (90 KB to
+the edge, 1200 bytes to the internet: egress 1200, tx 91,200, rx from
+the tap), `TestEgressUnreadTickCountsLater`, and I-448's three metering
+tests summing the billed figure. `internal/hostd/net`: `EgressBytes`
+parses the counters and skips the blocked ones.
+`internal/api/meter`: `TestRollupBillsNetEgressAndFallsBackToNetTx`
+bills 600 for an hour with the field and 60,000 for one without; with
+the rollup reading `sum(net_tx)` it fails (`[60000 60000]`). The host VM
+test now expects every packet of five connections (10 to 30) where it
+expected first packets (under 10).
+
+**I-1065. A folder that is not a git repository is offered one.**
+(run-sync-fixes, 2026-11-10.)
+
+At a demo on 2026-11-07 a user ran `repose run` in their project folder,
+which had no `.git`. The run started an empty machine and printed `Not a
+git repository, so nothing was synced.` (I-358), the agent saw none of
+their files, and the fix was to stop and run `git init` by hand. The
+sync works through git, so the fix belongs there and not in a second,
+file-copying sync.
+
+`repose run` and `repose sync` in such a folder, from a terminal, ask
+`~/todo-app isn't a git repository. Make it one and sync it? [Y/n]`,
+naming the folder, since a run from `~/proj/src` makes `src` the
+repository. Yes runs `git init`, writes a starter `.gitignore` only when
+the folder has none, `git add -A`, and one commit, `Initial commit`, then
+says `Committed N files to a new git repository.` and syncs as usual.
+
+- The starter `.gitignore` leaves out `.env` and `.env.*` (but not
+  `.env.example`), key and credential files (`*.pem`, `*.key`, `*.p12`,
+  `*.pfx`, `*.keystore`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`,
+  `.netrc`, `credentials.json`), `.DS_Store` and the `defaultSkipDirs`.
+  An untracked key in a repository only travels to the machine; a
+  committed one is history, which gets pushed. The `.env` files still
+  reach the machine as I-197 sends them.
+- A folder inside that is a repository of its own goes in
+  `.git/info/exclude` and the run says `Left out vendor/lib: it is a git
+  repository of its own.` Committed, it is a bare commit pointer with no
+  `.gitmodules`, which the sync leaves empty on the machine, and the
+  count of files said one file for it.
+- A step that fails removes the `.git` and the `.gitignore` it wrote and
+  stops with git's line. Git's own "Author identity unknown" is followed
+  by the two commands that fix it, which a one-line error drops, so that
+  case says `Git has no name and email to commit with. Set them with git
+  config --global user.name "Your Name" and git config --global
+  user.email you@example.com, then run again.`
+
+Not offered, and today's behaviour kept: no terminal (scripts), `--temp`
+(a scratch machine from `~/Downloads` is no reason to commit
+`~/Downloads`), a folder holding more than `maxUntrackedBytes` (500 MB)
+or 100,000 files outside what the starter `.gitignore` skips, which
+would be copied into `.git` and then sent, and whose walk would stall the
+run before the question (the line says why), a `.git` git cannot read,
+and no git. A no from `run` makes the empty machine with no further
+line; from `sync` it exits 1 with `Nothing was synced.`. The size check
+does not read a `.gitignore` the folder already has, so such a folder can
+be called too big when its commit would not be.
+
+*Evidence.* `internal/cli/makerepo_test.go`: a yes commits `main.py`,
+`lib/util.py` and `.gitignore` and not `.env` or `node_modules`; keys,
+`.netrc`, `credentials.json` and `.env.local` stay out and
+`.env.example` goes in; a nested repository is excluded and named; an
+existing `.gitignore` is kept; no, no terminal, a sparse 500 MB + 1 file
+and three files against a limit of two leave no `.git` (the size cases
+never ask); a commit refused by a failing signer, and one with
+`user.useConfigOnly` and no identity, leave only the original file, the
+second with the two commands; `--temp` never asks;
+`TestRunInAPlainFolderOffersARepository` runs `runRun` against the fake
+api and an ssh guest: the sync answered no exits 1 and creates nothing,
+and the run answered yes puts `main.py` and the `.gitignore` in
+`~/plainapp` on the machine.
+
+**I-1067. Each attach is its own tmux session, grouped with the
+project's.** (run-sync-fixes, 2026-11-10.)
+
+At the same demo two people shared one account and attached to one
+machine from two laptops with different window sizes. Every attach was
+`tmux attach -t <slug>`, so both terminals were clients of one session:
+when one switched windows the other was moved too, and the window took
+the size of whichever had been active last, which left the other one
+clipped or bordered with dots.
+
+The attach is now `tmux new-session -t =<slug> -s <slug>~<pid>` with
+`destroy-unattached on`: a session in the project's group, sharing its
+windows, with its own current window, gone when its terminal detaches.
+The guest base sets `aggressive-resize on`, so a window is sized for the
+terminals showing it rather than every terminal attached. When both show
+the same window, tmux 3.7's `window-size latest` gives it the size of the
+one typed in last; nothing better exists for one grid shown on two
+screens. A `session-window-changed` hook on the grouped session selects
+the same window in `<slug>`, so the next attach, the reattach after a
+dropped connection (I-469) and `repose attach` with no window open the
+window last chosen, as one shared session did. The title and the status
+line show the group's name, not `<slug>~<pid>`.
+
+What looked for clients of `<slug>` by name now matches `session_name` or
+`session_group`: guestd's `tmux_clients` (which the idle rule reads, so
+an attached terminal kept counting as use), the CLI's status-line
+messages (`display-message -c` per client, since `-t <slug>:` finds no
+client on the project's session any more), the Claude-plugin note, and
+the port-forward indicator, set on every session of the group (a session
+made after it gets it on the next 20 s heartbeat). Session options are
+not shared in a group; nothing else sets one.
+
+Old bases: the CLI's attach works on any tmux with grouped sessions; on
+a base without this change `aggressive-resize` is off, so a window in
+one terminal's session may still be sized by the other, and guestd counts
+only clients of `<slug>`, so an attached terminal shows in
+`ssh_sessions` but not in `tmux_clients`. Both are fixed by the base.
+
+*Evidence.* `TestTwoAttachesKeepTheirOwnWindowAndSize` attaches an 80x24
+and a 200x60 terminal to a real tmux on the test guest: each client is on
+its own window (`editor`, `logs`), the windows are 80x23 and 200x59, both
+are listed as the project's clients, the project's session follows to
+`logs`, and after both detach only `<slug>` is left. The two existing
+attach tests (I-304, I-606) pass with the grouped attach. guestd's
+sampler counts `todo-app` and `todo-app~812` and not `other`.
+
+**I-1110. Webhooks: a project's named routes on one public hostname,
+routed by path, owned by the api.** (webhooks, 2026-11-11.)
+
+A Stripe, GitHub, Clerk or Twilio integration needs a public HTTPS URL
+the provider can POST to. A repose machine had none, and `machine.md`
+sent the user to `cloudflared`. A project now has named webhook routes
+at `https://hooks.repose.herakraft.co/<project_id>/<route>/<token>`,
+each forwarding to a port and path inside the machine, with the body
+bytes and the signature headers unchanged. The design, with the
+alternatives that lost and the provider facts it rests on, is
+`docs/proposals/2026-11-10-webhooks.md`; the behaviour is
+`docs/features/webhooks.md`. Built as proposed, on the conductor's
+ruling under the owner's standing approval of 2026-11-11.
+
+*One hostname, routed by path*, not a subdomain per project. A path
+needs one certificate, which TLS-ALPN-01 gets on the edge's own :443,
+and one A record; a wildcard needs DNS-01 and the Cloudflare token that
+has blocked the preview certificate since 2026-09-20, and per-name
+certificates hit Let's Encrypt's 50 per registered domain per 7 days on
+a domain the dashboard shares. Path segments also split cleanly, so
+I-438's "a slug and a handle joined by a dash cannot be split back" does
+not arise. Origin isolation is the subdomain's one real gain and it
+protects browsers, which a webhook route does not serve (I-1116). The
+URL carries the project's UUIDv7 and not its slug and handle, which
+makes it about 110 characters: a handle can change and a destroyed
+project's slug can be reused, and a URL pasted into a provider's
+dashboard has to outlive both. The name is kept for good even if the
+product moves domains, which amends R4-12 for this one name.
+
+*In the api*, with the CLI and (later) the dashboard writing it, not in
+a repo file. I-820's reasons for `keep_awake` apply in full: a route is
+per-project server state, the edge must know it whether or not a laptop
+is open, and the api never reads a file from a checkout. A `[webhooks]`
+table in `repose.toml` or `repose.nix` also loses on its own terms: the
+token cannot live in the repo, so the file would hold half a route, and
+two laptops on different branches would flip the routes back and forth
+at each `repose run`.
+
+*The token has no new home.* The api mints 128 random bits and stores
+them twice: `sha256(token)` for the edge's lookup, and the token as
+ciphertext under the account's data key, with the same envelope as a
+named secret, so `repose webhooks url` can print it again. The edge
+receives the hash and never the token, so a copy of its memory gives no
+working URL. That is the two homes CLAUDE.md allows, and no third.
+`secrets.SealValue`/`OpenValue` are the envelope lifted out for a caller
+with its own table.
+
+*The dashboard* has the same list under Webhooks on a project's Config
+tab, beside Secrets, with Copy, Rotate and Remove. It never prints a
+URL: the token is in it, a dashboard is a screen somebody may be
+sharing, and Copy puts the characters on the clipboard for the user who
+needs them. Below 640 the row becomes a block -- the name, the target
+under it, the three actions on their own line -- because three buttons
+and a target do not fit a 390 row side by side, and squeezing them broke
+the target mid-word and pushed Remove past the frame.
+
+*The CLI noun is `webhooks`.* `hooks` is taken by agent hooks
+(`cmd/repose-hook`, the edge's `/hooks`, Claude Code's `hooks` key), and
+a second name for the same word is how a grep misses half the uses.
+`open` is a foreground forward that dies with the CLI; `config` is the
+Nix environment; `secrets` is for values the user types. The verbs are
+the ones the CLI already uses: `add`, `rm`, `list`/`ls` and the bare
+noun through `bareRuns`, with `url` and `rotate`. `add`, `url` and
+`rotate` print the URL and nothing else, so `| pbcopy` works.
+
+*Deviations from the proposal, both forced by the code.* Header order
+across different field names is not kept: Go's `http.Server` parses a
+request into a map, so the order it arrived in is gone before the
+handler runs. RFC 9110 §5.3 makes that order insignificant and no
+provider in the proposal's table signs it; duplicates of one name keep
+their order and their exact bytes, which is what a signature over a
+header needs, and the test asserts that rather than the proposal's
+`TestHeadersKeptInOrder`. And the metric's label is `result`, not
+`outcome`: `internal/obs/metrics` refuses a label outside its
+low-cardinality list at registration, so `outcome` would stop the
+binary at start.
+
+*Evidence.* `go test ./internal/api/http -run
+'TestWebhook|TestInternalRouteByProjectID'` against a real Postgres: the
+URL's 22-character token, add-again keeping the token, rotate leaving a
+tombstone, the route limit, the bad-name and bad-target refusals, the
+delivery batch bounded at 20 a route, and the table version moving only
+on a change. `go test ./internal/cli -run
+'TestWebhooks|TestStatusWebhooksRow'` for the output a user reads.
+`go test ./internal/gateway/webhook` for the edge.
+
+**I-1112. The edge's :443 serves the webhook hostname with an autocert
+certificate from TLS-ALPN-01, beside the preview stub.** (webhooks,
+2026-11-11. Amends I-479.)
+
+I-479 opens the :443 listener only once a certificate file loads,
+because a port open with nothing serving it holds clients until they
+time out where a closed one refuses at once. The file is the preview
+wildcard, which was never issued: that needs DNS-01 and the Cloudflare
+token, and STATUS has said so since 2026-10-04. A certificate the
+listener gets from its own handshake has no such file, so the rule now
+reads: the listener opens when either name can be served, and the
+webhook name's certificate comes from Go's `autocert` over TLS-ALPN-01
+on that same port.
+
+The handshake picks by SNI — the `autocert` certificate for
+`WEBHOOK_HOST` or an `acme-tls/1` challenge, the preview key pair for
+every other name — and the handler routes by the `Host` header the same
+way, so the preview stub is untouched and keeps answering what it
+answered. With neither certificate the listener stays shut, which is
+I-479's rule unchanged.
+
+One failure mode changes shape. Today no wildcard exists, so :443 did
+not open at all and the preview names were refused at connect. With the
+hooks name configured the port is open, so those names now fail at the
+handshake instead ("no certificate for <name>"). Both are failures and
+neither reaches the stub; the stub's page comes back the moment a
+preview certificate exists, and nothing else about it changed.
+
+The ACME cache needs somewhere to write. The gateway unit has
+`ReadOnlyPaths = [ stateDir ]`, so the cache is a `StateDirectory`,
+`/var/lib/repose-gateway/acme`: without it every restart would ask
+Let's Encrypt for the certificate again and hit its rate limits.
+
+The DNS record is the owner's: `hooks.repose` as an A record with the
+proxy **off**, pointing at `edge_public_ip`, while `manage_dns` is false
+(`infra/README.md`). The proxy has to be off twice over — a proxied
+record terminates TLS, so the ALPN challenge never reaches the edge, and
+Cloudflare would see every tenant's request body, which the privacy
+policy would then have to name. The edge serves the name as soon as the
+record exists; nothing else has to change.
+
+:443 also gains the per-source caps :22 has had since I-435, at a size
+sized for providers: 256 open connections and 100 new a second per
+source, against :22's 64 and 20. Stripe's fifteen addresses carry every
+tenant's deliveries, so :22's figures would throttle one tenant's events
+with another's.
+
+`autocert` lives in `golang.org/x/crypto`, which `go.mod` already
+required, so adding it changed no dependency — and it still moved
+`nix/packages.nix`'s `vendorHash`, because that hash is over the
+*vendored module set* and `acme/autocert` pulls `x/net/idna` and
+`x/text` into it. `guest-closure-size` is what caught it: `go build`,
+`go vet` and every Go test passed against a tree whose guest base could
+not be built. A new import of a package inside a module `go.mod`
+already names is therefore a `vendorHash` bump, and the comment above
+the hash now says so.
+
+*Evidence.* `nix eval ./nix#nixosConfigurations.edge.config.system.build.toplevel.drvPath`
+builds the edge with the new unit environment, the `StateDirectory` and
+the nftables sets. The live check — `openssl s_client -servername
+hooks.repose.herakraft.co -connect <edge>:443` showing a Let's Encrypt
+chain, and the preview name still getting the stub — waits on the DNS
+record and a switch of the edge.
+
+**I-1114. A delivery wakes a frozen machine, gets 503 from a stopped
+one, and 410 from a URL that is gone.** (webhooks, 2026-11-11. Amends
+I-818, I-822.)
+
+A frozen machine is woken by `POST /internal/wake` with a new reason,
+`webhook`, and then gets the delivery; the outcome is recorded as `woke`
+rather than `delivered`, so a user can see which deliveries paid for a
+resume. The I-822 recovery is not repeated on this path: a delivery dials
+through the gateway's connection cache, and a stale "awake" flag costs
+one failed dial and a 502 the provider retries, where an SSH user would
+be left staring at a prompt.
+
+A delivery is **not** a gateway session. Nothing is posted to
+`/internal/sessions`, so however many deliveries a project takes, none
+of them holds its machine awake past the 24 h session window; the
+structure carries the rule, because `webhook.API` has no method that
+could report one. A woken machine still stays up about 15 minutes,
+because the samples taken while it rested are not quiet, and deliveries
+are not use for I-262's unused notice either.
+
+A stopped machine answers 503 with `Retry-After: 3600`. A route added
+with `--start` also asks the api to start it, at most once per project
+per 10 minutes, and still answers 503: a start takes 12 to 14 s, longer
+than GitHub's 10 s timeout and far beyond Slack's 3 s, so a held request
+would fail at the provider anyway and tie up an edge connection. The
+provider's retry finds the machine running. `--start` is off by default
+because `repose stop` is a deliberate act that frees plan memory, and a
+route that undid it on every delivery would surprise a user who stopped
+one machine to start another on a full plan; the docs name the four
+providers that cost the most (GitHub, Slack, Shopify, Polar). The start
+runs the owner's own `lifecycle.Start`, so plan memory and an abuse hold
+refuse it exactly as they would refuse `repose start`, and a refusal is
+the outcome `start_refused`, not an error. The "once per 10 minutes" is
+a row in `webhook_starts` and not a counter in memory, because the rule
+has to survive an api restart.
+
+A rotated or removed token, and every token of a destroyed project,
+stays a tombstone for 30 days and answers 410; after that it is a 404
+like any token that never existed. The destroy tombstones the project's
+routes in the destroy's own transaction, so `repose restore` does not
+bring a URL back: a sender that obeyed the 410 has already let it go,
+and new tokens mean new URLs either way.
+
+*Evidence.* `go test ./internal/gateway/webhook`:
+`TestFrozenWakesThenDelivers` (one wake, and the probe that a running
+machine makes none), `TestWakeFailureIs503`, `TestStoppedAnswers503`
+(with and without `--start`), `TestStartRefusedIsRecorded`,
+`TestTransitionalStatesAnswer503`, `TestTombstoneAnswers410` with the
+probe that the same token is a 404 once the window drops it, and
+`TestDeliveryIsNotASession`, which walks `webhook.API`'s method set
+rather than reading a counter nothing increments. `go test
+./internal/api/http -run 'TestWebhookStartOncePerWindow|TestWebhookRemoveAndDestroyTombstone'`
+for the api's half.
+
+**I-1116. A webhook route may answer a provider and may not serve a
+page, which is why it does not reopen the preview question.** (webhooks,
+2026-11-11. Amends R2-6.)
+
+Public previews were not approved on 2026-09-25 and all four council
+members kept the public half shut, because a preview serves pages:
+phishing kits, malware downloads and live products under repose's name,
+paid for in repose's egress. A webhook route is a public URL too, so the
+reason it is allowed has to be written down rather than assumed.
+
+A route serves no page. The reply passes only `application/json`,
+`text/plain`, `application/xml`, `text/xml` or
+`application/x-www-form-urlencoded`, up to 64 KiB; anything else has its
+body dropped with `Repose-Body-Dropped: type`. A 3xx becomes a 502 with
+no `Location`, so the hostname is no open redirect — and every provider
+counts a 3xx as a failure anyway. `Set-Cookie` is removed, so no tenant
+can set a cookie on a `herakraft.co` name the dashboard would then
+receive. Every answer carries `Content-Security-Policy: sandbox;
+default-src 'none'`, `X-Content-Type-Options: nosniff` and
+`Cache-Control: no-store`. The URLs are unguessable and a scan is capped
+at 20 unknown tokens a second per source /24. The rates (10 a second a
+route, 30 a project) serve Stripe's month-start bursts and are too slow
+for a site with real traffic, and the reply bytes are counted against
+the plan.
+
+This is narrower than what repose already allows: `cloudflared` is a
+menu entry (I-251) and gives any guest a full public URL with HTML,
+files and no rate limit. The one use a route makes easier is a live
+service with real users, such as a Telegram bot, and I-257's terms line
+already covers that; the webhooks page points at acceptable use once and
+stops, so no new terms sentence was added.
+
+Store-and-forward was evaluated and is not built. Stripe's, Slack's and
+Svix's libraries reject a delivery whose timestamp is more than five
+minutes old, so a stored body arrives with a signature the app refuses;
+a queue on the edge would hold a Clerk `user.created`'s names and
+emails, which is exactly what the logging rule says never to keep; a
+payload can carry a token, which would be a fourth home for a secret;
+and Stripe, Svix and Polar already store and retry. It would help
+GitHub alone, which has its own Redeliver button.
+
+`Repose-Signature` is not in this version either. The edge would need a
+per-project secret in plain text to sign with, making it a third holder
+of a tenant-scoped secret, which "Secrets have three homes" forbids; and
+what it would prove is only that the request passed the edge's token
+check, while the provider's own signature still has to be verified. The
+compliant shape, if the owner asks for it, is one Ed25519 platform key
+held on the edge as its TLS and SSH host keys are, with the public half
+at `/etc/repose/webhook.pub` in the guest. This is the conductor's
+ruling of 2026-11-11 under the owner's standing approval.
+
+*Evidence.* `go test ./internal/gateway/webhook -run TestReplyRules`:
+an HTML body dropped with the header that says so, `Set-Cookie` gone, a
+302 answered 502 with no `Location`, a 100 KiB JSON reply cut at 64 KiB,
+and Slack's `url_verification` challenge coming back whole.
+
+**I-1118. A webhook delivery's log line and record carry ids and
+counts, and never the URL.** (webhooks, 2026-11-11.)
+
+The path of a webhook URL holds its token, which is a credential. So the
+edge's one line per delivery (`event=webhook_delivery`) carries
+`project_id`, `route_id`, `status`, `outcome`, `ms`, `bytes_in`,
+`bytes_out` and `source_prefix` (the /24, as the SSH gateway logs), and
+no handler or error path may log `r.URL`. The same goes for the record
+the api keeps: 20 deliveries a route, with those fields and no others.
+`outcome` is a closed set of lower_snake words the api refuses anything
+outside, so nothing a sender chose reaches a row or a log line.
+`docs/ops/OBSERVABILITY.md`'s never-log list gains the URL's path and
+query for this reason.
+
+*Evidence.* `TestNoTokenHeaderOrBodyInLogs` plants a distinct marker in
+the token, the query, a header value and the body, runs a delivery and
+an unknown-token 404, and greps both the captured logs and the delivery
+batch for each of the four: 0 hits. Its probe is the other half, because
+an empty log would also pass: the same logs must contain
+`"event":"webhook_delivery"`, `"route_id":"route-1"`, `"status":200`,
+`"outcome":"delivered"` and `"source_prefix":"54.187.174.0/24"`.
+
+**I-1120. A webhook reply's bytes are the project's egress, counted at
+the edge and banked by the hour.** (webhooks, 2026-11-11. Amends
+I-1063.)
+
+I-1063 bills what a guest sends out of the host's uplink, counted by nft
+in the `guest_meter` chain, and its "Not done" note said a preview's
+replies "must count" and would need a rule for the preview port. That
+plan assumed the reply leaves the guest on its own port. A webhook reply
+leaves the guest on port 22, to the edge, where nft cannot tell it from
+a terminal's output; so the rule that was planned cannot be written, and
+the count has to be taken where the bytes become public, which is the
+edge.
+
+The edge counts the reply bytes it streams back and sends them with each
+delivery record. The api banks them in `webhook_egress (project_id,
+hour, bytes)`, and the billing rollup adds the hour's row to the samples'
+`coalesce(net_egress, net_tx)`. The bank is a table of its own and not a
+sum over `webhook_deliveries`, because that keeps only the newest 20 a
+route for the user to look at: an hour with a thousand deliveries would
+bill twenty of them. A project with replies and no samples still gets
+its bytes, which is why the rollup reads it in its own scan rather than
+joining.
+
+At the caps one project can send at most 30 x 64 KiB a second, about
+160 GB a day, so the count matters for abuse even though a real reply is
+a few hundred bytes.
+
+*Evidence.* `go test ./internal/billing -run
+TestRollupAddsWebhookReplyBytesToEgress`: the hour reads the samples'
+10 MiB alone first, which is the probe, then 10 MiB plus 4,096 with a
+`webhook_egress` row, and an hour with replies and no samples bills its
+900 bytes. `go test ./internal/api/http -run
+TestWebhookDeliveriesBankEgress`: a 30-delivery batch leaves 20 records
+and 210 banked bytes, so the prune did not eat the count.
+**I-1126. Burst cores: a guest boots at its class ceiling and a
+controller in hostd raises its `cpu.max` while the host stays under a
+gate. Shipped off on every host.** (burst-cores, 2026-11-11. Amends
+R3-2 and I-784's class table by adding a ceiling to each class, and
+amends I-737, which rejected setting a guest's CPU property at run
+time.)
+
+The owner's decision of 2026-11-04 was that a machine uses more cores
+than its class sells when the host has idle ones, and that the user
+never asks for them (`reports/2026-11-04-product-value-council.md`,
+"Owner decision: automatic burst by class"). The design is
+`proposals/2026-11-10-burst-cores.md`, which this entry makes real as
+far as its stage 3.
+
+*What a class is now.* small 1 base core up to 4, large 2 up to 6, xl 4
+up to 8. `Class.VCPUs` is unchanged and is still the only number
+placement (I-736), the seat count (I-739), the 1.5 ratio (I-734) and the
+cgroup weight (I-737) read, so this sells nothing new and changes no
+host's capacity. `Class.CeilingVCPUs` is a hostd figure beside it.
+
+*Boot at the ceiling, gate with `cpu.max`; not hotplug.* Cloud
+Hypervisor takes one vCPU count and a running guest cannot gain one, so
+the ceiling has to be there from the first boot. The alternative, `--cpus
+boot=base,max=ceiling` with `vm.resize`, still needs the same `cpu.max`
+gate (added vCPUs can fill a host until hostd takes them away), needs a
+guest change to bring new CPUs online, and has an untested restore after
+a resize. It buys a more truthful `nproc` for a tool started while the
+count is high, which it then cannot take back. One kernel knob a test
+can read beats two moving parts.
+
+*The controller.* A loop in hostd, once a second: read the root cgroup's
+`cpu.stat usage_usec` and each `guests.slice/guest@<id>.service`'s;
+headroom is `gate x physical cores` less the host's use with the burst
+already running given back; if there is none, every cap goes to its base
+in this tick; otherwise the guests that used 90 percent of their current
+cap share the headroom in proportion to their I-737 weight, each rising
+at most one core a tick and never past its ceiling. **No cap is ever
+below the base the class sold.** Cut at once and raise slowly, because
+the failure that matters is a host above the line and one tick bounds it
+at about a second. The weights give the council's direction 2 for free:
+an `xl`'s burst outranks a `large`'s and a `large`'s a `small`'s, while
+no guest's base loses to another's burst.
+
+*The cap is written to the cgroup, not set over D-Bus.* A runtime
+`CPUQuota` is a property systemd keeps, so a hostd that dies with caps
+raised leaves the host oversubscribed until something notices. A direct
+write of `cpu.max` is undone by a daemon reload, which re-asserts the
+unit's own `CPUQuota` -- the base. Both fail; only one of them fails
+towards the host staying under the gate. hostd also writes every running
+guest's base at its start, before the first tick.
+
+*A frozen guest is at its base, and its idle cores are the stock.* A
+resting guest (I-818, I-844) is paused, uses nothing and is held at its
+base by name rather than by accident. A host restart restores a guest
+with the vCPU count its image holds (I-652, I-686, I-784) and
+`GuestUnitProps` gives it the base quota again, which is the safe order:
+the controller raises it at its first tick or never.
+
+*Why it ships off.* `repose.host.burst.enable`, default false, the way
+`pauseIdle` is (I-818) and `park` is (I-652); it is what puts `burst` in
+`Hello.features`, and a host that says nothing boots every guest at its
+base, runs no controller and takes no `SetBurst`. The gate's value,
+0.75 of physical cores, is **unmeasured**: I-738 measured 0.5 busy guest
+vCPUs per core at 2.7 ms p50 and 1.2 per core at 42 ms p90, and nothing
+in between, and I-784 left open whether the boundary follows vCPU
+threads, which this multiplies by three to four. The release gate the
+owner named is the latency curve of proposal §6.2 on a host; staging was
+down on 2026-11-11 and it has not been run. The conductor turns the flag
+on per host after that measurement, and §6 stays owed.
+
+*What a user would see if it were on, and does not see now.* `nproc`
+would say the ceiling at all times, so `make -j$(nproc)` on a small
+would run 4 jobs in 4 GB where it runs 1 job in 4 GB today, and a guest
+at the shut gate would stall for up to 75 ms of each 100 ms period. Both
+are real costs of this design (proposal §4) and both are reasons the
+public docs say nothing yet: with the flag off nowhere, no user can see
+either. `/docs/machine`'s "`nproc` says the same number" and "Nothing is
+capped" stay true until the first host is switched, and the commit that
+switches one carries their rewrite.
+
+*Rejected:* a per-plan exclusion for `small` on Solo (the gate is the
+protection, not the plan: a small's burst is the same stock as anyone
+else's); hotplug for the main path; `CPUQuotaPeriodSec=10ms` now, which
+is one of the things §6.2 c measures and not a thing to guess.
+
+*Evidence.* `internal/hostd/guest/burst_test.go`: a large reaches 6
+cores one core a tick on a quiet 32-core host and stops there; 7 cores
+of host work on an 8-core host puts every cap back at its base in one
+tick and never below it; a host without the flag writes no `cpu.max`,
+boots a large at `--cpus boot=2`, meters nothing and names no feature;
+with the flag a small, large and xl boot at 4, 6 and 8 and the unit
+still carries `CPUQuota=200%` and `CPUWeight=100`; the caps reset to
+base at hostd's start; an unreadable root `cpu.stat` cuts to base; the
+xl's burst outranks the small's for one core of headroom.
+`internal/hostd/hostinfo/cpu_test.go` parses `usage_usec` and writes
+`600000 100000` for six cores. `nix eval` of host-01, host-02 and
+host-stg-01 toplevels builds with the option present and false.
+
+**I-1128. Burst is metered, and a plan includes some of it; past the
+allowance a machine runs on its base cores. No overage, no charge.**
+(burst-cores, 2026-11-11. Follows I-1063's shape for the meter; amends
+I-289 and I-604 in what a plan includes, and nothing in what Polar is
+told.)
+
+Item 12 of the owner's 2026-11-04 decisions is that hostd measures the
+CPU time above each machine's base cores, each plan includes some of it,
+and usage above the allowance is billed only when the user turns overage
+on, with a dollar cap. This entry builds the measuring and the
+allowance. **The overage switch, its cap, its Polar meter and its price
+are not built** and no code here charges anybody.
+
+*Counting.* The controller already reads each guest's `usage_usec` every
+second, so it adds `max(0, used - base x dt)` per tick and the sampler
+sends the minute's total as `GuestSample.burst_cpu_ns_delta` (optional,
+field 19). Per second, not from the minute's average: a guest that uses
+three cores for thirty seconds and none for thirty averages 1.5, which
+would bill a small for half of what it used. hostd bounds a sample at
+`(ceiling - base) x 66 s` and the api clamps it again, the way I-446
+bounds every figure that crosses that line. A migration (0037) adds
+`meter_samples.burst_cpu_ns`, null from a hostd that sends none, and
+`usage_hours.burst_cpu_ns`, which the hourly rollup sums beside
+`egress_bytes`.
+
+*The allowance.* `Plan.BurstCoreHours`: Solo 20, Plus 50, Pro 120, the
+council's numbers and **starting points**. Nobody can size this
+correctly yet, because the quota hides burst demand: a guest at its base
+cap reads as using its base whether one thread wanted a core or six
+wanted six, so the only honest figures are the bounds in proposal §6.1
+and the two weeks of real `burst_cpu_ns` that stage 2 collects. The
+numbers are in `plans.go` and `PRICING.md`, where `TestPlansMatchPricingDoc`
+keeps them equal, so moving them is one commit.
+
+*Stopping.* An hourly job beside the egress overage reads each live
+subscription's `PeriodBurst` from `usage_hours` and sends every guest of
+the account a `SetBurst{allowed}`. It reconciles rather than reacts: the
+desired value is a function of the period's usage, so a missed, repeated
+or second-replica tick reaches the same answer, hostd takes the same
+value twice without doing anything, and an api restart simply re-asserts
+every guest's state at the next tick. hostd stores the flag in bbolt and
+reports it as `GuestStatus.burst_denied`, so a hostd restart does not
+hand an account past its allowance its cores back. A host that does not
+name `burst` is never sent the command.
+
+*Nothing stops and nothing is charged.* Egress has a 4x hard stop
+because egress at 4x is a stolen card; burst past the allowance cannot
+happen, because the allowance is enforced by withholding the cores. So
+there is no stop, no email and no line. What the user loses is the cores
+above their base, until the period ends. With no host bursting, every
+account's figure is 0 and this binds on nobody.
+
+*What is owed, named plainly.* The overage switch and its cap on the
+Billing page, the `burst_overage` Polar meter and the $0.04 a core-hour
+price, the two notifications at 80 and 100 percent, the `repose status`
+cores row and plan line, the `/run/repose/cores` file and the agent
+guide's line, and every public docs change, are proposal stages 4 and 5
+and are not in this change. The public docs therefore say nothing about
+burst, which is correct while no user can see it.
+
+*Unverified, and it blocks stage 4:* whether a metered price added to an
+existing Polar product reaches subscriptions that started before it. If
+it does not, every current subscription needs a product update before
+its overage can bill. `TestPolarSandbox` on the sandbox organization
+answers it.
+
+*Evidence.* `internal/api/meter/burst_test.go`: an hour of a large held
+at its 6-core ceiling writes exactly 4 core-hours into `usage_hours`,
+the next hour from a hostd that sends no figure writes 0, a re-run of
+the hour writes the same figure, and a sample claiming 2^62 ns is
+clamped to four core-hours. `internal/billing/burst_test.go`: Solo at 14
+of 20 core-hours is told `allowed=true` once and not again; at 22 it is
+told `allowed=false` once and not again; no machine is stopped and
+`overage_charges` is empty; the next period hands the cores back; a host
+without the feature is sent nothing; a send that failed is retried at
+the next tick. `internal/hostd/guest/burst_test.go`
+`TestBurstStopsForAGuestPastItsAllowance`: `SetBurst allowed=false` puts
+the guest at its base in that call, holds it there on a quiet host,
+survives in bbolt and rides in Hello.
+
+**I-1122. The agents' browser stops after 10 minutes with no DevTools
+command and nobody watching once every agent is idle, keeps 30 minutes
+while one works, and comes back with its tabs.** (idle-browser,
+2026-11-11. Answers I-930's open question; closes I-948's gap.
+Conductor's ruling, owner's standing approval of 2026-11-11, on the
+choices `docs/proposals/2026-11-10-idle-browser.md` left open: two
+tiers, no config key, tabs restored.)
+
+I-930 made the 30-minute stop fire at all. What it left: a Chromium
+nobody is driving still has 30 minutes to burn about 15 s of CPU a
+minute against the rest rule's 6 s, so the earliest freeze is about 46
+minutes after the last browser call. The council's measurement put the
+shared browser and stray headless browsers second among idle CPU sinks
+(`reports/2026-11-04-product-value-council.md`).
+
+- **Two thresholds, 600 and 1800 seconds.** The freeze cannot start
+  while an agent works, so a browser stopped mid-turn saves nothing and
+  costs the agent its page; an agent that edits code for 15 minutes
+  between two looks at its page is ordinary. Once every agent is `idle`
+  or `needs_input` -- the freeze's own test, `internal/api/idle.UsedSQL`
+  -- the browser is the only thing between the machine and its freeze,
+  and that is where 10 minutes pays: the earliest freeze moves from
+  about 46 to about 26 minutes. guestd stamps
+  `/run/repose/desktop/last-agent-working` on each refresh that sees an
+  agent working and the idle check reads its age; no stamp means no
+  agent has worked since the boot, which is the short threshold, and the
+  check never creates it, because creating it would read as work. The
+  viewer keeps its own 30 minutes, so `idle_minutes` on the viewer page,
+  `cli.md` and `tutorial-watch-browser.md` do not change. *Rejected:* a
+  flat 10 minutes (it takes an agent's page away mid-turn for a freeze
+  that cannot happen).
+- **A command, not traffic.** The check counted `bytes_sent` on the
+  browser's side of the CDP sockets. That is the browser's replies *and*
+  its events: a tool that enabled the Network or Runtime domain gets an
+  event for every request a polling page makes, so a page with a
+  live-reload socket could hold the browser up with no tool call at all.
+  It now counts `bytes_received`, which is what the tool sent. The rest
+  of I-930 stands: a changed total, not a greater one, so a browser
+  restart reads as traffic.
+- **The proxy stamps its own start, which closes I-948's gap.** A
+  DevTools request that opens and closes between two checks takes its
+  bytes with it, so a machine reached only by short requests had its
+  browser stopped while it was in use. `repose-browser-proxy.service`
+  now runs `repose-desktop-stamp last-cdp` from `ExecStartPre` and
+  `systemd-socket-proxyd --exit-idle-time=10s`, so it exits ten seconds
+  after its last connection closes and the next request starts it and
+  stamps again. *Rejected:* the proposal's `Accept=yes` with one proxy
+  instance per connection. `systemd-socket-proxyd` supports `Accept=no`
+  alone -- its man page says so, in the sentence that names the
+  difference from socat -- so a per-connection proxy would mean
+  a relay of our own -- a bash `/dev/tcp` pair of `cat`s, or socat in
+  the closure -- on the agents' browser path. What is left uncovered is
+  narrow and written down: a short request that arrives while another
+  connection is held open is unseen, and that connection's own bytes
+  answer for it.
+- **The tabs come back.** `repose-browser-start` sets the profile's
+  `session.restore_on_startup` to 1 with `jq`, beside the crashed-flag
+  reset, so the start after an idle stop opens the pages the agent had.
+  Each page reloads, so form input and in-page state are lost and the
+  profile's logins are not; Chromium does not resend a POST on restore.
+  A profile that has never run has no `Preferences` and is started on
+  `about:blank`; a profile that has is started with no URL at all,
+  because a URL on the command line is opened *beside* the restored tabs
+  and would leave one more `about:blank` at every start.
+- **No config key.** With the tabs restored a stop costs a cold start
+  and the state of the page, and the agent sees the same URL. A key
+  would carry a docs entry, a `repose config` row and a test for a value
+  almost nobody changes; a user who wants a browser that never stops
+  starts their own on 9222, which is kept free for exactly that.
+  `keep_awake` (I-820) keeps a machine from freezing and does not change
+  this rule: a browser nobody uses still burns that machine's cores.
+
+*Evidence.* `guest-desktop`: the browser survives 11 idle minutes with
+`last-agent-working` fresh and stops at 31; it stops at 11 with the
+stamp 11 minutes old, and with no stamp at all, and the check leaves no
+stamp behind; one short `curl http://127.0.0.1:9224/json/version`
+against a running browser stamps `last-cdp` and keeps it; after an idle
+stop a `chrome-devtools-mcp` call with no warming request lands on the
+page the agent had, with `MEASURE cold start`; a socket held open to
+5900 keeps the browser up with nothing driving it.
+`guest-browser-starts-after-a-kill` reads the unit texts: `bytes_received`
+and no `bytes_sent`, both thresholds, `last-agent-working`, the proxy's
+`ExecStartPre` stamp and its `--exit-idle-time`, and `restore_on_startup`
+in the start script.
+
+
+**I-1124. guestd stops a headless browser whose launcher has exited,
+that nobody is connected to, on a machine that has been quiet for ten
+minutes. This amends I-200.** (idle-browser, 2026-11-11. Conductor's
+ruling, owner's standing approval of 2026-11-11.)
+
+I-200 rejected idle reaping, because "it eventually kills the one server
+someone needed", and `internal/guestd/sample/oom.go` said nothing is
+ever killed or stopped by guestd. The measured cost of holding that line
+everywhere: 7.4 CPU hours of `chrome-headless` in 14 days across 3
+accounts (the 2026-10-11 sample, `2026-10-11-pause-idle-machines.md`
+§5), untouched by any fix since, and a stray that burns more than about
+4 s a minute blocks the freeze until the machine is stopped by hand.
+`keystroke-path.nix:91-104` records a 1.4 GB headless Chromium a
+Playwright test left in a pane.
+
+The amendment is for browsers and for one shape of browser only. A
+process is a stray when all five hold:
+
+1. it runs as `dev`, its name is `chrome-headless`, `chromium`, `chrome`
+   or `headless_shell`, and its parent's name is none of those, so it is
+   the top of a browser tree and its renderers go with it;
+2. its cgroup is a `.scope` under dev's `user-<uid>.slice` (a tmux
+   pane, an SSH session, the browser wrapper's run scope) or
+   `repose-herdr-server.service`, whose panes share the unit. Any other
+   `.service` is how a person runs a browser on purpose; the agents'
+   shared browser is the system unit `repose-browser.service` and a
+   container is outside dev's slice, so neither can match;
+3. its parent is pid 1 or dev's user manager, which is where the kernel
+   moves a child whose parent died: the launcher has exited;
+4. no TCP connection is established to a port it listens on. Its own
+   outgoing connections do not count -- a page fetching the internet is
+   the stray at work, not somebody using it. A process listening on 9225
+   is never a stray whatever its cgroup says: that is the agents'
+   browser, and condition 2 answers for it only while Chromium stays in
+   its unit (below);
+5. 1 to 4 have held for ten one-minute passes in a row, and in each of
+   those minutes the machine had no SSH session of dev's, no tmux client
+   and every agent `idle` or `needs_input`. That is the guest-side half
+   of the rest rule (`internal/api/idle.UsedSQL`, negated) less the CPU
+   term, which the stray is the cause of. A herdr client arrives over
+   SSH and is in the SSH count, so there is no third term for it.
+
+guestd then opens a pidfd, checks that the start time is still the one
+it first saw, sends SIGTERM, and SIGKILL ten seconds later. The pidfd is
+what makes this safe: it refers to that process for as long as it is
+held, so neither signal can reach a pid the kernel handed out again. One
+log line, `comm`, `pid`, `ran_s`, `cpu_s`, and nothing else: no URL, no
+title, no argument (R5-3). No `Warning` kind and no notification -- a
+stray is by definition a process nobody is using.
+
+**Why CPU is not one of the conditions.** CPU does not tell use from
+waste: I-930's idle page took 13.4 s a minute, and a test waiting on a
+server takes almost none. The launcher being gone is a fact about the
+process, and the quiet machine is the moment the stray starts to cost
+the user a freeze. I-930's "presence is not activity" applies to
+absence too.
+
+**A unit of your own is not how you keep a Chromium, and the docs do
+not say it is.** The proposal's escape hatch was
+`systemd-run --user --unit NAME chromium ...`, on the reading that
+condition 2 would then spare it. The VM test says otherwise, and this is
+the finding worth keeping: a `chromium --headless=new` started by
+`systemd-run --user --unit keepc` was measured in
+`app-org.chromium.Chromium-4967.scope` under
+`user@1000.service/app.slice`. Chromium moves its own process group into
+a transient scope of its own as soon as it can reach dev's user bus,
+whatever unit or scope it was started in, so its cgroup says nothing
+about where the user put it. (The first draft of this entry also had
+`repose-browser-scope` skip its scope for a program already in a user
+`.service`, to make that hatch work; it is dropped, because the hatch
+does not work anyway and the change took every browser started from any
+`.service` out of the memory cap I-733 sets. The wrapper is unchanged.)
+
+Condition 2 stays, because Playwright's `chrome-headless-shell` -- the
+7.4 hours this rule is for -- has no such integration and does stay in
+the unit it is given. What changed is what the docs promise: a browser
+is kept by its launcher still running, or by something connected to it,
+and those two hold for every browser.
+
+*Rejected:* the api deciding from its samples and sending an `Exec`
+through hostd. It would add an `Exec` use to `vsock-guestd.md`, a minute
+of lag, and no answer at all for a host a user brings under I-647; the
+guest-side rule works everywhere. *Rejected:* a `Warning` kind for the
+operator. *Rejected:* reading `/proc/<pid>/fdinfo` for socket inodes
+instead of the fd links; the links are read and everything that is not
+`socket:[...]` is dropped without being looked at, so no path is kept,
+and matching an inode that an fdinfo gives no type for would match a
+regular file's by number.
+
+*Evidence.* `internal/guestd/sample/stray_test.go` on a fixture `/proc`:
+an orphan is stopped at the tenth pass and not the ninth; ten passes are
+ten minutes whatever the watcher's 5 s refresh does; each of a node
+process, a renderer, a browser in a unit of its own, the agents' shared
+browser, a browser in a container, a browser whose launcher still runs,
+a browser with a client, a machine someone is on, and another user's
+browser is left alone through twenty passes; a minute of use starts the
+ten over; a pid reused between two passes starts the count over; and the
+real signal path refuses a start time that has moved on, proved against
+a live child process. The `guest-stray-browser` VM test runs the real
+guestd against four browsers in one twelve-minute quiet window: the
+orphan is gone with its journal line, and the three others -- one with a
+client, one in `keepc.service`, one whose launcher is alive -- are not.
+**I-1132. repose starts Claude Code Remote Control on a machine: the
+`remoteControlAtStartup` setting and a `remote-control` tmux window.**
+(remote-control-host, 2026-11-11. Amends DESIGN §13 and
+`docs/workstreams/13-notifications.md`, both of which said the platform
+does nothing to Remote Control.)
+
+The proposal is `docs/proposals/2026-11-10-remote-control-host.md`;
+this entry decides its Claude half. The reason the Claude login is a
+real `/login` and not a copied token was partly that it keeps Remote
+Control (I-278, `docs/features/agents.md` "Claude login and the policy
+behind it"). Until now nothing used it: a user who wanted the machine in
+the Claude app had to type `claude remote-control` in a window
+themselves and open it again after every freeze.
+
+Two parts, both the user's to ask for (I-1134):
+
+1. `repose-agent-setup claude` adds `remoteControlAtStartup: true` to
+   `~/.claude/settings.json` where the user's file has no such key, the
+   same rule the platform `defaultMode` follows (I-250). Every `claude`
+   the machine starts then registers one remote session, so the app
+   lists the agent windows. The key is *not* in
+   `/etc/repose/claude-settings.json`, because that file is the base's
+   and the same for every machine, and this one follows a per-machine
+   switch.
+2. `repose-remote-control` opens the tmux window `remote-control`, in
+   which `claude remote-control --spawn worktree --name <slug>
+   --no-chrome` runs in a restart loop, which is what lets the app start
+   a *new* session on the machine.
+
+A tmux window and not a systemd user unit: server mode asks its one-time
+`Enable Remote Control? (y/n)` on a terminal, and repose must not answer
+that for the user, the same reason `/login` is theirs (I-278). In a
+window the user meets the question at their next attach. The window is
+reconciled, not only opened: a run that finds the switch off closes it
+again, and only one repose opened (the window option
+`@repose-remote-control`).
+
+`--spawn worktree` keeps a session the phone starts out of the checkout
+an agent is already working in; its branches reach the laptop with `git
+fetch repose` (I-272). Claude Code 2.1.283 refuses worktree mode outside
+a git repository, and a machine made from a plain folder has none
+(I-1065), so that one gets `--spawn same-dir`. `--no-chrome` so a
+session started from a phone does not drive Claude in Chrome on the
+machine unless the user asks for it.
+
+The restart loop waits 5 s after a run that lasted a minute (server mode
+exits after about 10 minutes without network, which is what a freeze and
+a thaw look like from inside) and 60 s after a shorter one, so a refusal
+that will not pass — an organization policy, a login that went — does
+not spin.
+
+It runs at the claude wrapper's start, at the end of
+`repose-tmux-session` (so a boot brings the window back) and at the
+carry. Not on a herdr project: that has no tmux session, and a herdr tab
+of the same name is a later step.
+
+Conditions, every one of them by a file test and never by reading a
+credential: the switch is on, `~/.claude/settings.json` has neither
+`disableRemoteControl: true` nor `remoteControlAtStartup: false`,
+`~/.claude/.credentials.json` is not empty (`test -s`, R2-8, I-278), and
+none of `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN` is a named secret, since Remote Control refuses
+all three ("Remote Control requires a full-scope login token").
+
+The freeze rule does not change (I-930: presence is not activity; I-822
+keeps the wake list). A frozen machine is offline in the app and nothing
+from the app wakes it; the docs say so in one line. A session the phone
+drives runs the hooks, so its turns report `working` and hold the
+machine awake as a laptop prompt does. Every session the server spawns
+inherits the server's `TMUX_PANE`, so they all report under the
+`remote-control` window, which `repose ps` shows as a `claude` agent
+because its foreground program is one (I-421). Keying a server session
+by `session_id` instead is a change to the hook payload contract and is
+not done here.
+
+Security: a signed-in claude.ai session becomes a second way to run
+commands as `dev`. The public agents page says so, says which permission
+mode those sessions run in, and recommends Claude's **Require trusted
+devices**. repose proxies nothing, reads no transcript, opens no port,
+and no log line, event or sample carries a session URL, a session name,
+a QR code or the window's contents.
+
+*Evidence.* `claude remote-control --help` on the base's pinned Claude
+Code 2.1.283 (`nix/overlay/agents/versions.json`) refuses without a
+login, and the usage block in the binary names every flag used here:
+`--spawn <mode>` (same-dir, worktree, session), `--name`, `--capacity`,
+`--permission-mode`, `--[no-]chrome`. The VM check
+`guest-remote-control` boots a guest with a stub `claude` that records
+its argv.
+
+**I-1134. Remote Control is off until the user asks for it, because its
+idle cost could not be measured.** (remote-control-host, 2026-11-11.)
+
+The freeze rule (I-844, `internal/api/resting/resting.go:43-66`) wants
+every quiet minute under 6 s of CPU and 64 KiB in and out. An idle
+Remote Control server polls Anthropic and sends presence heartbeats, and
+each auto-connected agent window holds its own connection. The proposal
+made the default conditional on that measurement: on for Claude if an
+idle Remote Control machine still freezes, off otherwise.
+
+**The measurement could not be taken.** `claude remote-control` refuses
+to start without a claude.ai subscription login, and the builder must
+not sign in with the owner's account:
+
+```
+$ HOME=<throwaway> claude remote-control --spawn worktree --name test
+Error: You must be logged in to use Remote Control.
+Remote Control is only available with claude.ai subscriptions.
+Run `claude auth login` to sign in with your claude.ai account.
+```
+
+The process exits in 0.09 s, so there is no idle process to sample. What
+was measured instead, on the dev box, is the base's Claude Code 2.1.283
+idle in a throwaway `HOME` under `tmux -L rc` for ten minutes, sampled
+once a minute the way `resting.go` samples a guest: 0.03 to 0.09 s of
+CPU a minute, against the 6 s the rule allows. That bounds the process
+itself and says nothing about the poll and the heartbeats, which are the
+part that matters.
+
+So the default is off, and stays off until somebody measures a real
+Remote Control machine (step 1 of the proposal's section 9: a large
+machine on a host with a subscription login, one server and three
+auto-connected windows, 30 idle minutes of `meter_samples`, and `repose
+ls` showing it `frozen`). Off is also the answer that costs nothing if
+the measurement goes the wrong way: on by default would take the freeze
+away from every Claude user's machine, which is what I-818 was built to
+save.
+
+**I-1136. The switch is `remote_control` in `config.toml`, global and
+per project, and Claude Code's own keys win over it.**
+(remote-control-host, 2026-11-11.)
+
+```toml
+remote_control = true
+
+[projects.todo-app]
+remote_control = false
+```
+
+Two layers. Claude Code's own `disableRemoteControl` or
+`remoteControlAtStartup: false`, in the laptop's `~/.claude/settings.json`
+(carried by I-196) or the machine's, always win: with either set repose
+opens no window and adds no key. Under them, `remote_control`, absent
+meaning off.
+
+No new command. `repose config on|off` already means the project's
+`machine.nix` on or off, so `repose config remote on|off` would make the
+same verbs under one noun mean two things; and "remote" in repose means
+the git remote (I-272, `sync`'s remote flags), so `repose remote ...` is
+a name already taken. A dashboard checkbox would need an api column, a
+contract field and a guestd path for something the laptop already
+carries; it is the alternative if the owner later wants the switch
+reachable from a phone. The name is Claude Code's own term, so a user who
+knows the feature finds the key.
+
+The value travels with the carry, as `on` or `off` in
+`/home/dev/.repose/remote-control` (marker `remote-control`), and the
+part then runs `repose-remote-control`, which opens the window or closes
+the one repose opened. A machine with no marker and a switch that is off
+is sent nothing: that is what it already holds. Turning the switch off
+removes the `remoteControlAtStartup: true` that `repose-agent-setup`
+wrote, tracked by `~/.local/state/repose/remote-control-startup`, and
+never a value the user set.
+
+**I-1138. Cursor's self-hosted worker is not built.**
+(remote-control-host, 2026-11-11. Conductor's ruling, owner's standing
+approval of 2026-11-11.)
+
+Section 6 of the proposal would run `agent worker start` as a systemd
+user unit so Cursor's web and iOS app can pick the machine for a run. It
+needs the Cursor CLI in the guest base, and the guest closure sits 4 MiB
+under its 6 GiB limit (I-1056), so the package alone would break the base
+build. It also needs a new login flow (`agent login` on the machine, or a
+`CURSOR_API_KEY` secret) and an unfree-allowlist entry, where Claude's
+half needs none of these. Few users have **My Machines** turned on.
+
+Recorded as not done, for later: it ships with the Cursor CLI, if that
+ever earns its place in the base, and the same 6 s and 64 KiB test
+applies to its worker.
+**I-1090. A billing-exempt account cannot join the waitlist, and the
+queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
+ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends
+I-290 and I-294.)
+*Made during implementation* (`docs/proposals/2026-11-10-waitlist-billing-get.md`
+§2.1 and §2.2, decision 1, the recommended option).
+
+I-1033 stopped `GET /billing` from joining the waitlist. It left the two
+routes that join on purpose open to an account that has nothing to join
+for. An exempt account needs no plan: the gate lets every start through
+on `billing_status = 'exempt'` alone, so a place in the queue buys it
+nothing — and an invitation for it holds one of the fleet's seats for 72
+hours, which no checkout will ever convert, while the account behind it
+waits. That is the shape of the one real occurrence: the exempt account
+the 2026-10-17 review found on the list, whose hold the owner deleted on
+prod on 2026-10-18.
+
+So `POST /billing/checkout` and `POST /billing/waitlist` answer such an
+account `409 conflict`, `detail.reason = exempt`, with "This account is
+billing-exempt, so it has no plan to choose and no place to wait for."
+The dashboard already shows an exempt account no plan cards and no Join
+button, so nothing a user does reaches this; it is the api refusing to be
+driven into a state the UI cannot produce.
+
+The row, if one exists, keeps its data and takes no place: the three
+queries that rank the queue — `store.waitlistSQL`, `Count`'s `Waiting`
+and `billing.WaitlistPlace` — all add `billing_status <> 'exempt'` beside
+the suspended, cancelled and deleted filters they already carry. All
+three, not one: they must agree, or `GET /me` reports a position that
+`repose-admin waitlist list` does not show and the inviter does not
+honour. A status back to `none` puts the user in line at the same
+`joined_at`, since nothing is deleted.
+
+*Rejected:* leaving the api open and relying on the dashboard. The
+dashboard is one client; the refusal is the contract, and the cost of the
+open version is a held seat nobody can use.
+
+*Not changed:* `repose-admin waitlist admit HANDLE` still invites an
+exempt account if an operator names one. An operator asking by hand is a
+choice, and `admit --next N` reads `ListWaiting`, so the queue walk skips
+them anyway.
+
+**I-1092. The waitlist rows a page view made are cleared by an operator
+command, not a migration.** (waitlist-choice, 2026-11-11; conductor's
+ruling, owner's standing approval of 2026-11-11.)
+*Made during implementation* (`docs/proposals/2026-11-10-waitlist-billing-get.md`
+§2.3, decision 2).
+
+Between 2026-09-27 (I-289) and 2026-11-04 (I-1033, in v0.1.44) every
+visit to `/billing` by a plan-less account while the fleet was full put
+the visitor on the waitlist. Those rows are indistinguishable in the
+schema from a row a person made by choosing. Each costs a seat for three
+days when its turn comes, and counts toward the "N waiting" the landing
+page prints, until it lapses on its own.
+
+A migration cannot tell the two apart, and a migration that lapses a row
+a person really chose loses their place with no way back for the operator
+who ran it. What separates them is outside the database: the api's
+request log has `route` and `user_id`, so a `POST /v1/billing/checkout`
+or `POST /v1/billing/waitlist` at the row's `joined_at` means a choice
+and only a `GET /v1/billing` means the bug. A human with Loki open has to
+judge that.
+
+So `repose-admin waitlist stale` lists the candidates and writes nothing:
+the rows still waiting that joined before `--before`, which defaults to
+`2026-11-06T02:00:00Z`, when v0.1.44 reached prod. It prints each
+account's handle, join time, billing status and whether it ever
+subscribed, and the count. `--lapse` then sets `lapsed_at` on exactly the
+rows it listed, under the waitlist advisory lock and insisting each row
+is still waiting, so a row the tick invited in between keeps its
+invitation. It is audited `waitlist_lapse` per account and sends nothing:
+the lapse goes in with a plain update rather than through
+`Inviter.expire`, whose job is to send `waitlist_expired`, which here
+would tell a person they missed an invitation they never had.
+
+A row lapsed by mistake is one click on `/billing` away from the back of
+the list (I-1033), which is why the read-only listing plus a flag is
+enough and a per-row confirmation is not.
+
+*Rejected:* a migration (cannot read the logs, runs on every deploy, and
+is the wrong unit for a judgement call); leaving the rows to lapse by
+themselves (each still costs a seat for 72 hours and an email that reads
+as an invitation the user never asked for).
+**I-1086. `repose version update` replaces the CLI, with install.sh's
+checks; amends I-749.** (cli, 2026-11-11.)
+*Made during implementation.*
+
+The product value council asked for an update command
+(`reports/2026-11-04-product-value-council.md`), and `install.md` has
+carried "Update command coming soon" since I-749 waiting for it. Until
+now updating meant pasting 55 characters of `curl | sh` that the
+once-per-release notice printed in full.
+
+It is `repose version update [VERSION]`, under the noun that already
+answers "which CLI do I have", not a top-level `repose update`
+(the proposal's decision 1; conductor's ruling, owner's standing approval
+of 2026-11-11). "Update" already means the machine's **base updates** to
+a repose user (`config.md`, the `base updated` notification, the `base
+updates held` setup line), and a 36th top-level command reading "update
+my machine" is the collision that causes. `repose version` gets
+`SuggestFor: update, upgrade, self-update`, so `repose update` answers
+with `repose version`, and `repose version` alone still prints `repose
+0.1.44 (herakraft)` byte for byte, because scripts read it.
+
+The command makes exactly the checks `install.sh` makes, in the same
+order, because a second way to install must not be a weaker way: resolve
+`latest` through the releases/latest redirect (not the api's
+`X-Repose-CLI-Latest`, which is a hint and carries no signature);
+download the archive, `checksums.txt` and `checksums.txt.sig`; verify the
+signature against the release key with `crypto/ecdsa` (so no `openssl` is
+needed); then the archive's SHA-256 against its line in `checksums.txt`.
+Nothing is written unless both pass. The new binary is written beside the
+running one, chmod 755, run with `version` to see that it starts and
+names the release, and then renamed over the old path. A rename leaves
+the running process alone, and the old file's bytes are never rewritten
+in place, which is what keeps a signed macOS binary runnable after an
+update.
+
+The key now has two copies, `install.sh` and
+`internal/cli/versionupdate.go`.
+`test/supplychain.TestReleaseKeyIsTheSameInInstallShAndTheCLI` fails
+while they differ, as `release.yml` already reads the one in `install.sh`
+to check the signature it just made. A rotation that changes one and not
+the other would otherwise ship a CLI that refuses every release.
+
+It refuses, touching no network, on a machine (`REPOSE=1`, exit 2: the
+guest's repose comes with its base), on a build whose version does not
+parse (exit 2), on Windows (exit 1: no Windows release exists), and when
+`os.Executable()` with symlinks resolved is under `/nix/store/`, a
+`Cellar/` directory, `/opt/homebrew/`, `/home/linuxbrew/`, `/snap/`,
+`/usr/bin/repose` or `/bin/repose` — a write there breaks a store hash or
+is undone at the next upgrade, so the command names the owner and exits
+1. A directory the user cannot write is not that case: it says `Can't
+write /usr/local/bin. Run it as root: sudo repose version update`, which
+is the `install.sh --system` user's answer. Releases before v0.1.28 have
+no signature (I-430 pins theirs by hash in `install.sh` instead) and are
+refused with the `install.sh --version` line.
+
+Two things the proposal left open and the docs' rules decided. The
+optional `[VERSION]` stays (its decision 2): a rollback is the answer to
+a bad release and the alternative is telling the user to go back to
+`curl | sh`, which this command exists to replace. An explicit VERSION
+equal to the running one answers `repose 0.1.40 is already installed.`
+rather than "is the latest release", which would be false for a
+rollback; a VERSION that is not `vX.Y.Z` is exit 2 naming the shape.
+`repose_api_cli_requests_total{version}` (its decision 5) is **not**
+added: nothing reads it until the owner plans to raise `Oldest`, and the
+counter can ship with that.
+
+*Evidence.* `TestVersionUpdateReplacesTheBinary`,
+`TestVersionUpdateAlreadyTheLatest`, `TestVersionUpdateRollsBack`,
+`TestVersionUpdateRefusesAndKeepsTheBinary` (no signature, bad
+signature, archive mismatch, a binary that will not start, one that
+names another release, no such release, before signing, not a tag — each
+asserting the old file's SHA-256 is unchanged and no temporary file is
+left behind), `TestVersionUpdateRefusesBeforeTheNetwork` (machine, dev
+build, nix store, Windows, with the fake release server asserting it was
+never called), `TestVersionUpdateNamesAnotherReposeFirstOnPATH`,
+`TestBinaryOwner`, all against an `httptest` release server signed with
+its own key. One mutation, `verifyChecksums` short-circuited, fails
+`bad_signature` with "the binary changed".
+
+**I-1088. `X-Repose-CLI-Oldest`, and a skew line that repeats while it
+matters.** (api, cli, 2026-11-11.)
+*Made during implementation.*
+
+I-626's line prints once per newer release. That is right for "a newer
+one exists" and wrong for "this one is no longer answered the way the
+docs describe": the second is a reason the user's next command may do
+something other than its page says, and once, months ago, is not a
+warning.
+
+The api sends a second header, `X-Repose-CLI-Oldest: vX.Y.Z`, the oldest
+CLI release it still answers as `docs/interfaces/api.md` describes.
+`clirelease.Oldest` is a constant beside `DefaultURL`, `""` today, so the
+header is absent and this prints for nobody; the repository keeps an old
+request or answer shape for one release after a contract change
+(`CLAUDE.md`), and the commit that removes such a shape raises the
+constant to the first release that no longer carries it. Shipping the
+header unset now means that commit is a one-line change instead of a
+protocol change. It never refuses anything: I-626's reason for no
+refusal (the api has no version it cannot serve at all) still holds.
+
+A CLI below `Oldest` prints, on stderr, at the end of every `run`,
+`attach` and `sync`, and before an attach hands over to ssh:
+
+```
+repose 0.1.30 is too old for some of repose's answers. `repose version update` updates it.
+```
+
+Those three commands and no others: they are the ones that move the
+user's work between laptop and machine, where a wrong answer costs
+something, and `ls` and `status` staying quiet is what keeps the line
+worth reading.
+
+The once-per-release line stays, with new text naming the new command
+(conductor's ruling on the proposal's decision 3, owner's standing
+approval of 2026-11-11), and when both would apply only the stronger one
+prints, with the newer release recorded so the weaker line does not
+arrive afterwards saying less about the same version. Two lines in one
+run, both telling the user to update, is the pile-up "Trust the reader"
+(I-484, I-485) is about.
+
+For a binary a package manager owns (I-1086's table) both lines end
+"Update it with Homebrew." instead of naming a command that would refuse
+to run.
+
+The `v` bug is fixed. A release build carries `0.1.43`
+(`.goreleaser.yaml` sets `main.version={{ .Version }}`) and the header
+carries `v0.1.44`, so the real line read "repose 0.1.43 is older than
+v0.1.44" while its test used `v0.1.20` on both sides and saw nothing.
+Both are now printed through `release()`, which drops the `v`;
+`TestNewerCLINoticeOncePerRelease` uses `0.1.20` and `v0.1.24`, the real
+shapes.
+
+The machine guide's line (`nix/guest/base/agent-guide.md`) now tells an
+agent to say `repose version update` rather than "run the install command
+again"; it reaches machines with the next base.
+
+*Evidence.* `TestTooOldCLIWarnsOnEveryRun` (three runs below `Oldest`
+print three lines, `ls` prints none, above `Oldest` only the
+once-per-release line, no header prints nothing),
+`TestNewerCLINoticeOncePerRelease`,
+`TestNewerCLINoticeNamesThePackageManager`,
+`TestAnswersNameTheOldestCLI` (header present with a value, absent
+without), `TestOldestCLIIsUnsetUntilAShapeIsRemoved`.
+**I-1100. On a terminal the sync's overlap refusal is a one-key choice,
+not a flag to type the command again with.** (sync-conflict-choice,
+2026-11-11; amends I-573, I-618; proposal
+`docs/proposals/2026-11-10-sync-conflict-choice.md`.)
+
+I-573 narrowed `repose sync`'s exit 6 to the files the machine changed
+that the laptop changed too, and named them. Acting on that list still
+meant reading it, deciding, and running the command again with
+`--stash-machine`, which takes *every* change the machine has, the ones
+the refusal did not name included. There was no way to say "mine" for
+those files, and no way to say "the machine's, send the rest". The
+product value council of 2026-11-04 asked for the choice at the point
+the user is already looking at the list.
+
+From a terminal (stdin and stderr both terminals, as I-1065's question
+asks), with no `--json` and no `--stash-machine` or `--discard-machine`,
+the refusal's last line is replaced by a menu, read in raw mode, one key,
+no Enter:
+
+```
+Not synced: the machine changed 2 files that your laptop changed too:
+  src/session.ts
+  notes.md
+  l  use the laptop's copy; the machine's goes to its git stash
+  m  keep the machine's copy; sync the rest
+  s  move all of the machine's changes to its git stash, then sync
+Choose l, m or s, or Enter to stop:
+```
+
+- `l` syncs the laptop's copy over the machine's and stashes the
+  machine's copy of the overlapping files, and only those, under
+  `repose sync: the machine's copy`. The summary names the stash commit
+  (`git stash apply <commit>`, never `pop`: one stash stack per machine,
+  and a bare `pop` takes whatever is on top, which is how another
+  session's work landed in the wrong tree here on 2026-10-17).
+- `m` keeps the machine's copy of those files and syncs everything else.
+- `s` is `--stash-machine` (I-618), unchanged.
+- Enter, `q`, Esc and the input ending stop: exit 6 with nothing more
+  printed, the refusal being on the screen already. Ctrl-C exits 130.
+  Any other key is ignored.
+
+Mechanically, a key runs the whole sync again with the paths the refusal
+listed. The apply writes them to `$t/chosen`, and `repose_guard` lets an
+overlap through only when it is one of them: a file the agent changed
+while the user was deciding refuses again, with the longer list, and the
+menu comes back. Nothing is stashed that the user did not see. The stash
+itself is `repose_stash_own`'s `git stash push -u -m <name>
+--pathspec-from-file`, in each overlapping submodule first.
+
+`m` has two details that are not obvious. The record
+(`.git/repose-synced-paths`) leaves those paths out: with their hash in
+it, the next sync would read the agent's work as the last sync's own and
+stash it without asking, which is exactly the loss `m` was pressed to
+avoid; the whole-tree fingerprint goes for the same reason. And the
+laptop still has its own version, so the next sync finds the same
+overlap and asks again until the laptop commits, reverts or stashes it.
+That recurrence is the true state of the two copies, not a bug; reverse
+sync (`repose sync --pull`) is the thing that would end it, and it stays
+a separate proposal. `m` is not offered when one of the overlapping
+paths is a checked-out submodule on the machine (the apply reports those
+as `#overlapsub`): a submodule's copy cannot be restored from a stash
+without a commit of its own.
+
+What was considered and not done. Flags `--keep-laptop` and
+`--keep-machine` for scripts: a script has `--stash-machine`, and a
+second pair of flags for a question only a person answers is two more
+names for `docs/interfaces/README.md` to carry (decision 1 of the
+proposal, conductor's ruling, owner's standing approval of 2026-11-11).
+Listing every overlapping file on a terminal rather than eight and a
+count: the keys act on all of them either way and the summary says how
+many, so a 40-line list buys nothing (decision 2). Offering `d`
+(`--discard-machine`) at the mid-merge refusal: that refusal is about
+state a stash cannot hold, and discarding is not a key to press by
+accident (decision 3). Keys `1`, `2`, `3`: `l` and `m` say which side
+they mean (decision 4).
+
+*Evidence.* `internal/cli/sync_choice_test.go`, against the real git
+checkouts on both sides of `newSyncFixture` over the in-process sshd:
+`l` leaves the laptop's bytes, a stash holding only the machine's copy
+of the overlapping file, and the machine's change to a file the laptop
+did not touch untouched; `m` leaves the machine's bytes, brings the rest
+of the laptop's work, leaves no stash behind, keeps the file untracked
+when it was untracked, lands the laptop's commit under the machine's
+copy, and asks again on the next sync -- with the probe that the record
+is what decides, a mutation writing the path back into the record, after
+which the second sync stops asking and stashes the agent's copy as the
+last sync's own; a second overlapping file appearing between the refusal
+and the key refuses again, naming both, and stashes nothing; `s` equals
+`--stash-machine`; Enter exits 6 with nothing moved and nothing
+reprinted; without a `Choose` the message is byte for byte what it was;
+the keys, the submodule case and the menu's text are read as a user
+reads them.
+
+**I-1102. The guest's apply reports the overlapping paths that are
+submodules, and the stash of a chosen copy is found by its commit, never
+by its index.** (sync-conflict-choice, 2026-11-11.)
+
+Two small shapes I-1100 needed, written down because the next person
+changing `syncGuardFns` will meet them.
+
+The overlap list on the apply's stderr gains `#overlapsub <path>` beside
+`#overlap <path>` for each overlapping path that is a checked-out
+submodule on the machine. The CLI cannot work this out from the laptop's
+side: a submodule the machine has and the laptop does not would be
+missed, and the menu would offer `m` for a path it cannot restore. The
+`$t/overlap` file became NUL-separated at the same time so one gawk pass
+can intersect it with the chosen list; the stderr lines are still one
+path each, so `overlapFiles` reads both prefixes the same way.
+
+A key runs the sync again, which means `run`'s callbacks are called
+again, and three of them read a channel the laptop's work was sent down
+once (the `.env` walk, the git and Claude carry, the early probe). The
+second call waited forever: the command hung after the key, with the
+menu still on the screen. `SyncOptions.reusable` memoises them for a
+sync that may ask, which is right as well as necessary -- the refused
+attempt stopped before the carry ran, so the second has to send exactly
+what the first built. Found by the pty end-to-end test
+(`TestSyncOverlapMenuEndToEndOnATerminal`), not by the integration
+tests, which pass bare options with no callbacks: an in-process test of
+a function is not a test of the command that calls it.
+
+`m`'s restore drops the stash it made. It finds it by matching the
+commit it recorded against `git stash list --format='%gd %H'`, and drops
+that ref, never `stash@{0}`: an agent pushing a stash of its own between
+the sync's stash and its restore shifts every index, and a drop by
+position would then throw away the agent's work. `pruneSyncStashes`
+already works this way for the same reason (I-210). `repose_stash_pick`
+also compares `stash@{0}` before and after its push: a push that stashed
+nothing leaves the previous stash on top, and taking that for ours would
+restore a stranger's files over the sync's.
+**I-1082. `repose fork` is removed: the command, the api route's work and
+the api's half of hostd's clone.** (remove-fork, 2026-11-11.)
+*Made during implementation*, on the owner's decision of 2026-11-10 and
+the plan in `docs/proposals/2026-11-10-remove-fork.md`. Conductor's
+ruling on every choice the proposal left open: as proposed, owner's
+standing approval of 2026-11-11.
+
+**Supersedes I-254** (the command), **I-701** (clones on the source's
+host), **I-702** (the per-copy timed lines) and **I-703** (the fork
+snapshot). **Amends** I-255 (the fork half; a restore under another name
+keeps its checkout rule), I-610 (drops the fork half and `fork
+--no-start`), I-622 and I-631 (the fork remotes; `rm` keeps removing a
+second machine's remote, and `forgetForkRemote` is now
+`forgetMachineRemote`), I-633 (the fork interrupt lines), I-730 (the
+fork's wait on a background stop), I-736 (the fork term in placement:
+`scheduler.FitsOn` is gone, so `cpuRoomSQL` no longer takes a `single`
+argument — every placement it is asked about adds one guest), I-433 and
+I-474 (`Secrets.CopyNamed`, which nothing else called), I-549 and I-646
+(restore as new only), I-569 and I-585 (no N-copy check), I-460 (a held
+project cannot be restored as new), I-630 (`clone` and `copy` as typed
+words) and I-293 and I-300 where they name fork.
+
+Why: the product value council voted fork a gimmick, 4 of 4, score 3.9
+(`reports/2026-11-04-product-value-council.md`). Three 8 GB copies fill a
+Solo plan right after the demo, the owner does not use it, and worktrees
+give parallel attempts inside one machine's memory. What it did is
+covered: `repose run --worktree -p "..."` for N agents on N approaches in
+one machine's plan memory, `repose run NAME` for a second machine with
+the laptop's checkout, and `repose snapshots restore ID --as NAME` for a
+copy of a machine's own disk, which stays and is now the only way to
+copy one.
+
+**The reading of "one release" for something removed.** CLAUDE.md says
+the old shape stays accepted for one release. A removed endpoint and a
+removed command have no new shape to move to, so the rule is read as:
+for one release the old request still reaches something that answers it
+deliberately.
+
+- `repose fork` stays as a hidden command with `DisableFlagParsing`, so
+  any old flag reaches it. It prints where to go and exits 2 (usage).
+  `docs_test.go`'s `hiddenCommands` carries it with its reason, so
+  `cli.md` does not have to name a command nobody should type.
+  **v0.1.46 deletes it**, with its line in `hiddenCommands`. Naming the
+  release is the point: I-603's "for one release" form was still there
+  eight releases later (I-888).
+- `POST /projects/:id/fork` stays as a route and answers `400 invalid`
+  with `detail.reason: "fork_removed"`. The code behind it is gone. The
+  shape of the refusal is fixed by two released CLIs (v0.1.43, v0.1.44):
+  one prints an `invalid` as "Could not fork X: <message>. Nothing was
+  created." and exits 1, so the message reads as a clause after a colon
+  and ends without a full stop; and one falls back to taking a fork
+  snapshot on `409 snapshot_needed` or on an `invalid` whose message
+  contains "snapshot_id is required", so the refusal matches neither and
+  no old `repose fork` takes a snapshot for nothing. `gone` (410) was
+  considered: `api.md` keeps one list of codes, and an old CLI prints an
+  unknown code through its generic path with no message of its own.
+  The route goes one release after v0.1.45.
+- hostd keeps `Restore.clone`, `guest/clone.go`, `lvm.Clone` and the
+  `local_clone` feature for this release: the api has stopped sending
+  the field, and a host that is switched later than the api is deployed
+  must still answer an api that predates the removal. Reserving proto
+  field 19 and deleting that code is the release after v0.1.45, named in
+  `docs/interfaces/grpc-hostd.md` in this commit.
+
+**Owed, named here so it is not lost.** No migration ships with this
+entry. `fork` snapshots expire a day after they are taken (I-703), so a
+day after this deploys none is live; the next release's migration sets
+any `reason = 'fork'` row to `manual` and narrows
+`snapshots_reason_check` to `scheduled, stop, manual`, and takes with it
+the `fork` branches in `internal/api/snapshots/expiry.go`,
+`internal/api/ops/phases.go` and the `{reason: "fork"}` body of `POST
+/projects/:id/snapshots`. `hosts.features` stays: the idle pause reads
+`pause` from it (I-818). Fork copies users already have are ordinary
+projects named `X-fork-N`; they keep working and `repose rm` removes
+each one and its remote. Nothing migrates them.
+
+A failed clone copy that is still in `error` used to be told to remove
+it and fork the source again; it now reads the ordinary unfinished
+restore line, which already offers `repose rm`.
+
+*Evidence.* `go test ./internal/cli/...`, `./internal/api/...`,
+`./internal/hostd/...`, `./internal/billing/...` and `./internal/fakes/...`
+pass. `TestForkRouteRefuses` posts three bodies to the route against a
+real test server and holds the 400, the `fork_removed` reason, the exact
+message, and that the message neither ends in a full stop nor names
+`snapshot_id`. `go run ./cmd/repose fork todo-app -n 3` prints the
+pointer and exits 2, and `repose --help` no longer lists fork. The
+section-7 greps of the proposal print nothing outside `docs/DECISIONS.md`,
+`docs/proposals/`, `docs/workstreams/` and the stub with its test.
+
+**I-1148. A headless `gemini -p` is not the configuration an agent on a
+machine runs in, and the browser check was reading it as one.**
+(red-checks, 2026-11-11; amends I-553.)
+
+`guest-agent-guide`'s capture run gives each agent a stand-in model API
+that writes every request to a file and answers 400, and asserts that the
+platform browser tools reach the model: `browser_navigate` in what
+opencode and Gemini CLI sent, `mcp__playwright` in what pi sent. The
+Gemini arm has been red since it was written. I-553 says why it was never
+seen: "the VM subtests in guest-base, guest-agent-guide and guest-desktop
+need the dev box", and the branch's own evidence came from the real
+binaries on kanali, not from the VM.
+
+The cause is one line of Gemini CLI 0.61.0's policy engine:
+
+    defaultDecision: interactive ? ASK_USER : DENY,
+    nonInteractive: !interactive,
+
+and `getExcludedTools`, which drops from the request every tool that no
+rule allows once the default decision is DENY. `gemini -p` is not
+interactive, so it cannot ask, so it declares to the model only the tools
+that would never need a confirmation. Captured here against the same
+stand-in API, `gemini -p hi` sent `list_directory`, `read_file`,
+`grep_search`, `glob`, `google_web_search`, `enter_plan_mode`,
+`invoke_agent` and `update_topic` -- no MCP tool, and no `write_file`,
+`replace`, `run_shell_command` or `web_fetch` either. `gemini
+--approval-mode=yolo -p hi`, everything else equal, sent all of those
+plus the playwright server's 25 tools, `mcp_playwright_browser_navigate`
+among them. `gemini mcp list` reported `playwright ... Connected` in both
+runs: the server was registered and discovered; its tools were withheld.
+
+So nothing about the machine is broken, and the assertion is right about
+the product: an agent window is a terminal, Gemini's default there is
+ASK_USER, and the browser tools are declared and confirmed. The check was
+running the agent in the one shape where that is false. The fix is the
+check: the capture run passes `--approval-mode=yolo`, which is what an
+agent on a machine has (no prompts), and the comment beside it names the
+difference, as `docs/CHECKLIST.md` asks of a check that cannot run in the
+real configuration.
+
+Rejected: weakening the assertion to Gemini alone, or dropping it. It is
+the only thing that would notice the browser tools going missing from
+Gemini, and they are there.
+
+Rejected: making the machine set Gemini's approval mode, or `mcp.allowed`
+/ `mcpServers.*.trust` / `mcp.autoAllowInHeadless` in
+`/etc/gemini-cli/system-defaults.json`. Any of those would turn the
+check green in its own configuration, and each removes a confirmation the
+user gets today in an interactive session, or auto-allows the user's own
+MCP servers along with ours. I-250 left Gemini's prompts alone on
+purpose, and a headless Gemini still could not write a file or run a
+command, so handing it the browser alone buys nothing. It is the owner's
+call, not a side effect of fixing a test.
+
+The Gemini arm now matches the fully qualified name
+`mcp_playwright_browser_navigate` rather than the bare substring: that is
+what Gemini puts in the request, and the bare one is true of a body that
+merely quotes the guide.
+
+*Evidence.* The cause reproduced outside the VM, with gemini-cli 0.61.0
+from the pinned overlay, `nix/guest/tests/capture-llm.py`, the pinned
+`playwright-mcp`, and a temporary HOME: default `-p` run, 8 function
+declarations, 0 matching `mcp_`; `--approval-mode=yolo`, same files, 40
+declarations including `mcp_playwright_browser_navigate`. `nix build
+./nix#checks.x86_64-linux.guest-agent-guide` green, with the subtest's
+output in the commit message.
+
+**I-1150. A test clock read before the fixture exists is a proxy for the
+database's clock, and it fails in the direction that reads as a bug.**
+(red-checks, 2026-11-11; the class of I-1038, I-1054, I-1058.)
+
+`TestNoticeAtTenMinutesListsWaiting` failed in 2 of 3 full `go test -race
+./...` runs on 2026-11-11 with `DATABASE_URL` at one shared server, always
+`notice []`, and passed every time on its own.
+
+The resumer sends a user's notice when `r.Now().Sub(first) >= NoticeAfter`,
+where `first` is `min(guest_resumes.created_at)` -- a timestamp Postgres
+wrote. The test's clock is a `time.Time` that `newEnv` reads from
+`time.Now()` before the harness has made a user, two projects, a host
+restart and the Hello that writes those rows. `e.advance(resume.NoticeAfter
++ time.Second)` then adds ten minutes and one second to a clock that is
+already behind the rows by however long the setup took. One second of
+slack. Alone, setup takes tenths of a second and the test passes; beside
+the rest of a shared-database run, where this package takes two minutes,
+it takes one to two seconds and the test fails.
+
+The probe, printed between the advance and the tick: "clock
+2026-11-11 03:09:08.373, oldest row created_at 2026-11-11 02:59:10.162,
+clock-first 9m58.210454177s (needs >= 10m0s)". Three such runs read
+9m58.2s, 9m59.4s and 9m59.5s and failed; two read 10m0.4s and passed.
+Nothing about the resumer is wrong in either.
+
+`advance` now reads `select now()` and moves the clock to d past the later
+of that and its own value, so the gap to any row written before the call
+is at least d by construction, whatever the setup cost. It is the same
+move as I-1038: wait on the thing, which here is the database's clock,
+because that is the clock the subject compares against.
+
+Rejected: advancing by `NoticeAfter + time.Minute`. A bigger constant is
+the rejected move of I-1038 -- it is still a proxy, it is still sized
+against a machine, and the next busy runner moves the number again.
+Rejected: freezing `created_at` by passing the test's clock into the
+insert. `OnHello` runs inside the api under the harness, and a column the
+production path fills with `now()` would then be filled by a test seam
+that nothing else uses.
+
+*Evidence.* Before the fix, `go test -race -count=5 -run
+TestNoticeAtTenMinutesListsWaiting ./internal/api/resume` beside `go test
+-race ./internal/cli`, both on one `DATABASE_URL`: 4 of 5 failed,
+`resume_test.go:741: notice []` each time. After, the same load: 10 of 10
+green (30.0 s), and the whole package twice, 91.9 s, green.
+**I-1144. The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11).**
+
+An agent could already reach the owner (`repose-notify`, `repose-ask`,
+I-244) and the owner could answer a question (I-245, I-690). What was
+missing was the owner starting a sentence: "also squash the fixup
+commits" with the laptop closed meant attaching, finding the window and
+typing. `repose say [PROJECT] "<text>"` and `POST /projects/:id/say` do
+that from anywhere.
+
+- **The path is the agent's own terminal.** The api stores a `says` row
+  (0039), sends `SayToAgent` down the host's channel, and hostd relays
+  it to guestd, which types it into the agent's tmux window with
+  `internal/agentprompt` — the same generator, screen check and Enter
+  retries `repose run -w -p` uses (I-752). Not a headless mode and not
+  an agent's own API: R3-14 and I-780 stand, and a message that arrived
+  anywhere else would not be in the session the owner attaches to.
+- **It waits for an idle agent rather than landing mid-turn.** Delivery
+  happens only while the window's hook state is `idle` or `needs_input`
+  (I-694's states). Otherwise the message waits and goes in at the end
+  of the turn, which the agent watcher's 5-second refresh delivers at,
+  in the same pass that announces the state change. Claude Code queues
+  input typed mid-turn, but opencode, codex, gemini and pi do not all
+  behave the same, and a message half-swallowed is worse than one that
+  lands five seconds later. `needs_input` is in, not out: typing is how
+  the owner answers a permission dialog.
+- **One message waits per window, and a newer one replaces it.** The
+  result carries `replaced`, the CLI says so, and the row it replaced
+  moves to `replaced`. This is deliberately *not* the council's "prompt
+  queue per agent": nothing drains a backlog, so nobody can queue five
+  messages and have the agent work through them unattended.
+- **The api does not queue either.** `Send` waits up to 20 seconds for
+  the machine's answer, as `resting.Wake` waits for a wake, and a host
+  that is not connected is a refusal the sender reads
+  (`detail.reason = machine_unreachable`). A `repose say` that said
+  nothing and delivered later is the failure this avoids; the owner
+  types the message, so the owner should hear what became of it. The
+  machine is woken first when it rests (I-818), as an answer wakes it.
+- **The window.** Empty means the guest's one agent window. More than
+  one is `invalid_argument` naming them, so the CLI prints the machine's
+  own sentence and the owner picks with `--agent`. The resolution is
+  guestd's, not the api's: the api's sample is up to a minute old and
+  the windows are the guest's own fact.
+- **The row follows the machine.** A `says` row (0039) is stored
+  `waiting` or `delivered` as the command answered, and a `waiting` one
+  becomes `delivered` on the machine's own `agent_prompted` event, which
+  is the only thing that knows a mid-turn message went in at the end of
+  the turn. The events ingest calls `say.Delivered` through the
+  `SetSays` hook, the shape `SetQuestions` and `SetResting` already
+  have, so `events` does not import `say`.
+- **`agent_prompted`.** A delivery emits an AgentEvent of that kind,
+  added to `events.GuestKinds` and hostd's `guestAgentKinds`. It is not
+  in `notifyKinds`, so it notifies nobody; its summary is the sender's
+  name and never a word of the message, and its verb is "got a message".
+  The guest could forge one, as it could forge any agent event: a
+  forged one notifies nobody, carries no text and counts against the
+  guest's event rate, so the cost of widening the list is nil.
+- **The sender.** The api sends the account's handle and `from_owner`.
+  The agent is shown `[from <name>] ` in front of the text only when
+  the sender is not the project's owner, which is nobody today; the
+  field is built now because adding it later would change what a
+  running agent reads mid-conversation.
+- **The submit script moved to `internal/agentprompt`**, a leaf package,
+  because the CLI and guestd both need it and neither may import the
+  other (the shape of I-729). `internal/cli/prompt_submit.go` is now
+  names for it, so every CLI call site is unchanged, and I-752's
+  measured constants live in one place.
+- *What it does not do.* A herdr agent: guestd reads herdr's panes over
+  herdr's socket and has no write method there, so a message for one is
+  refused by name rather than silently dropped. A message the terminal
+  took and the agent did not submit (I-752's exit 5) is dropped with a
+  log line and no event: typing it again would stack a second copy on
+  the first, and on the waiting path there is nobody to tell. I-752's
+  own measurement does not apply to this path — its 1-in-10 was a
+  *fresh* agent that satisfied a readiness gate without accepting a
+  submission, and a `say` is typed into an agent whose own hook says it
+  is at its prompt — but no live rate has been measured here either.
+- *Rejected.* Delivering through an agent's own HTTP or socket API (five
+  of them, none in the session the owner attaches to). Queueing in the
+  api and answering 202 (the sender learns nothing). A backlog per
+  window (the council's prompt queue, not picked). Resolving the window
+  in the api from the last sample (up to a minute stale).
+
+**I-1146. A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11).**
+
+The brief asked for a plain reply in a Chat card's thread to become a
+`repose say`, and, when it did, for the agent's last line to go back to
+that thread. Neither is built. The missing piece is not an inbound route
+on the api; it is that repose is not a Google Chat app at all.
+
+- **What the channel is today.** One outgoing *incoming webhook* per
+  user (I-692): a URL the owner pastes, which the api POSTs cards to.
+  Every answer travels out, as a signed `openLink` to
+  `/questions/reply` (I-692, `internal/api/notify/reply.go`). There is
+  no Chat app, no Google Cloud project, no service account, no
+  `CARD_CLICKED` or `MESSAGE` endpoint, and `gchatOnClick` has one
+  field, `openLink`.
+- **Why an endpoint alone would not do it.** A message posted by an
+  incoming webhook is not posted by an app, and in a space a Chat app is
+  delivered `MESSAGE` events only for messages that @-mention it; the
+  only unmentioned messages it hears are those in a direct message
+  space with the app itself (Google's "Receive and respond to user
+  interactions", read 2026-11-11:
+  https://developers.google.com/workspace/chat/receive-respond-interactions).
+  So
+  "the owner types a reply in the thread" reaches nothing until repose
+  *is* an app in that space and the cards are posted *as that app*
+  through the Chat REST API with a service account. That replaces the
+  webhook the owner pastes with an app the owner installs, changes the
+  identity every existing card is posted under, and needs a published
+  Chat app configuration (a Google Cloud project with the Chat API on,
+  an app name, an avatar, an HTTP endpoint, a verification audience).
+  It is a second integration, not an extension of this one.
+- **What is owed before anyone builds it.** Confirm against a live space
+  whether a thread started by an incoming webhook can be joined by an
+  app at all (the thread's `threadKey` is set by the poster), since the
+  mapping from a reply back to its event depends on it. Nothing here can
+  be checked from the build box: I-692 and I-695 already record that no
+  message has ever been sent to a real Chat webhook from this codebase.
+- **The last line back is not built either**, and on purpose rather than
+  for lack of time. Its trigger is "a turn ends on a message that came
+  in through a channel", and with no inbound channel no message ever
+  has. Building the column, the thread key and the post-back would be
+  code no input can reach and docs for a thing nobody can do, which is
+  what "no ghost features" forbids. `repose say` from the CLI is
+  explicitly out of it: the owner is in a terminal and reads the answer
+  there.
+**I-1094. `base_updated` notifies nobody; it stays an event.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: users do not need to know a base was published. A
+platform base reaching a machine is repose's own housekeeping. It asks
+the owner for nothing, and the one case where it needs them, a kernel
+change that waits for a stop and start, is still waiting the next time
+they look. A notification per published base, on every project an
+account holds, is the shape I-688 took turn ends off for.
+
+- `base_updated` leaves `notifyKinds` (`internal/api/events/events.go`).
+  It is still inserted by `basebump.OnOpFinished` and still shows in
+  `repose events`, in the dashboard's event stream and in the project's
+  history, with the summary that says whether the new base is running or
+  waits for a stop and start.
+- `base_update_failed` keeps notifying: the machine stayed on the base
+  it had, with the user's configuration unbuilt, which is theirs to fix.
+- The email and Google Chat golden files for `base_updated` stay. The
+  renderer can still render the kind, as it can `completed`, which left
+  the notifying kinds at I-688 and kept its goldens; a kind's rendering
+  and whether a row is queued for it are two things.
+- Rejected: deleting the event. The dashboard's event stream answers
+  "what happened to my machine", and a base that changed the machine
+  under the user belongs in that answer.
+- *Evidence.* `TestBaseUpdatedNotifiesNobodyAndFailureDoes`
+  (`internal/api/events/events_test.go`): one `base_updated` row in
+  `events`, zero rows in `events_outbox`; one `base_update_failed`
+  queues two, one per channel. `TestHeldWhilePresentThenSent` used
+  `base_updated` as its stand-in platform kind and now uses
+  `snapshot_failed`.
+
+**I-1096. A notification carries a way into the dashboard only where the dashboard has an act.** (notify-presence, 2026-11-11)
+
+The owner, 2026-11-10: "unless there's something they can do on the
+dashboard, why leave them there?" Every Google Chat card ended with
+"Open project" and most emails with "Open todo-app". For a done report,
+a message, a permission prompt, a failed snapshot or a restarted server,
+that button leads to a page that says what the notification already
+said. CLAUDE.md "Trust the reader": a line that gives the reader nothing
+on their fiftieth notification is cut, and each of these looked helpful
+in its own diff.
+
+- Kept, because the dashboard has the act: a question (its options'
+  reply links, else one link to where it is answered), a failed payment
+  or a stopped plan (`billing_stopped` to `/billing`, and the account
+  kinds `payment_failed`, `trial_ending`, `subscription_cancelled`,
+  `subscription_ended`, `plan_changed`, `egress_stopped`,
+  `disk_over_plan` to the billing page), a waitlist seat
+  (`waitlist_joined`, `waitlist_invited`, `waitlist_expired`,
+  `welcome` to the plan page), and a broken channel
+  (`notify_channel_broken`, `test` to the notification settings).
+- Dropped: `agent_done`, `agent_message`, `needs_input`, `error`,
+  `completed`, `idle_running`, `temp_expiring`, `temp_destroyed`,
+  `machines_restarted`, `host_moved`, `base_update_failed`,
+  `snapshot_failed`, `destroy_failed`, `stop_failed`, `personal_failed`,
+  `boot_failed`, `abuse_stopped`, `notifications_paused`. On Google
+  Chat their cards now carry no button; the `agent` and `agent_done`
+  email partials, `abuse_stopped` and `machines_restarted` lost their
+  `link_label`/`link_url` blocks, and `agent_question` its "Open
+  <project>" quiet link beside the answer buttons.
+- `abuse_stopped` is in the dropped list although the machine can be
+  started again: the notification tells the owner to look at the
+  machine, not to press a button, and a third stop in 24 hours refuses
+  the start anyway. It is not the "suspended plan" the owner named,
+  which is `billing_stopped`.
+- Where a link stays on a question, it points at the page with the act:
+  `Message.AnswerURL` is now the dashboard's Questions page
+  (`/questions`), which lists every waiting question and answers it in
+  place (I-693). A question that asks for a secret (I-929) keeps the
+  project page and its `?answer=<id>` query: that page holds the secret
+  dialog, and `apps/web/src/lib/signin.ts` allows only that shape as a
+  signed-out return path. ntfy's `Click` header is the notification's
+  tap target rather than a button and follows the same rule: the
+  Questions page for a question, the project's page otherwise.
+- The agent's own `--link` (I-931) is untouched and is now the only
+  button a message or a done report carries, which is what I-931 wanted
+  it to be.
+- Not changed: the grey "Open the dashboard" line in every email's
+  footer. It is the message's provenance, not an action, it sits beside
+  the unsubscribe link where nobody mistakes it for a next step, and it
+  is on account mail too, which this entry does not touch.
+- Rejected: one shared table of acts for the two channels. The email
+  partials have always named their own act, per kind, in the template
+  that renders them; a second source would have to agree with them kind
+  by kind. `TestGChatCardsOnlyLeadToAnAct` enumerates the project kinds
+  instead, which fails when a new kind arrives with a button nobody
+  justified.
+- *Evidence.* `TestGChatCardsOnlyLeadToAnAct`: nineteen project and
+  notice kinds render with no `openLink` at all, `billing_stopped` with
+  one "Your plan" to `/billing`, a question without reply links with one
+  to `/questions`. `TestAgentLinkOnEveryChannel`: the done report's card
+  holds exactly one button, the agent's link. `TestEmailTemplate` and
+  `TestEmailQuestionHasReplyLinks` now assert the project URL is
+  absent. 38 golden files regenerated; `go test ./internal/api/...` ok.
+
+**I-1098. `repose-presence`: the guest asks whether the owner is at the machine.** (notify-presence, 2026-11-11)
+
+An agent that finishes a dev server has to hand the user an address, and
+it cannot know which one works. While the user is attached, every port
+1024 and up is on their laptop's `localhost` at the same number, so
+`http://localhost:5173` opens. While they are away, that address is
+their own laptop's port and opens nothing: the port is on the machine
+and needs `repose open PORT` or an attach. Agents guessed, and guessed
+`localhost` because the guide's ports line says so first.
+
+- `repose-presence` prints `attached` or `away` and exits 0 either way;
+  exit 1 only when guestd does not answer, so an agent can tell `away`
+  from "I could not ask". It takes no arguments.
+- It is `repose-hook` under a third name beside `repose-notify` and
+  `repose-ask` (I-244), a symlink from the same package, so the guest
+  base gains no binary and `repose` stays the only prefix.
+  `repose-hook presence` is the same command.
+- guestd serves `GET /presence` on the hook socket, which is already
+  0660 root:dev, so only the guest's own user can ask. It carries no
+  payload in either direction beyond one word, and logs nothing: two
+  numbers the sample already counts decide it.
+- Present means what the presence hold means (I-689): a tmux client or
+  an SSH session, a laptop herdr bridge counting as an SSH session
+  (I-511). It is read live from the guest (`sample.Handler.Attached`)
+  rather than from the api's latest sample, so it has no 2 minute
+  staleness window; a session opened a moment ago is already present.
+  The tmux client count comes from the watcher's 5 second cache, and a
+  cache too old to be `fresh` still answers, because a stale count of
+  clients beats no answer and the SSH count beside it is read now.
+- The guide (`nix/guest/base/agent-guide.md`) gains one line in "Servers
+  and ports", and loses the separate `repose open PORT` line and the
+  "Tell them open http://localhost:PORT" clause that line now owns, so
+  the rule is stated once.
+- Rejected: having the agent read presence itself (`tmux list-clients`,
+  `who`). It would be a second definition of "at the machine" that
+  drifts from the one the hold uses, and agents would each write their
+  own.
+- Rejected: a new binary. The guest closure has 4 MiB of headroom under
+  its limit (`guest-closure-size`); a third symlink costs nothing.
+- *Evidence.* `TestPresenceBothStates`
+  (`internal/guestd/hooks/presence_test.go`): the route answers
+  `attached`/`away` with the source set and refuses without one.
+  `TestPresencePrintsAttachedAndAway` (`cmd/repose-hook`): both words on
+  stdout with exit 0 over a real hook socket, exit 1 and nothing on
+  stdout with no guestd, exit 2 for an argument. The `guestd` VM test's
+  "repose-presence says attached with a tmux client and away without"
+  subtest runs the installed command on a booted guest: `away`, then
+  `attached` once a real tmux client is attached on a pty, then `away`
+  again after `detach-client`, and `repose-hook presence` the same.
+**I-1104. The laptop lends ports to the machine: `[forward] reverse` in
+config.toml, held by the session helper for the length of an attach.**
+(forwards-both-ways, 2026-11-11. Adds to SECURITY.md boundary 13.)
+
+Every member of the 2026-11-04 product value council named the same gap:
+the agents cannot reach the laptop's Android emulator, its Ollama or its
+local database. `docs/proposals/2026-11-10-forwards-both-ways.md` turned
+it into behaviour; this entry is the part that was built, with the
+conductor's ruling of 2026-11-11 (the owner's standing approval) on the
+one question the proposal left open.
+
+**Decision 1 of the proposal is accepted.** The CLI passes a laptop port
+through without inspecting what goes over it. Every other path from the
+guest to the laptop is one the CLI reads: the browser bridge polices CDP
+message by message (I-311) and `repose mcp forward` runs one named
+server. A reverse forward decides only the port. What bounds it instead
+is the user's own file, a deny list and the words where they set it.
+
+- `[forward] reverse` and `[projects.NAME.forward] reverse` list laptop
+  ports, merged for a project as `[mcp] forward` is (I-557), each machine
+  port once. A number is the same port on both sides; `"MACHINE:LAPTOP"`
+  puts the laptop's port on another one on the machine, the listening
+  port first, as `repose open LOCAL:PORT` (I-619) and ssh's `-L` and `-R`
+  spell it. `REPOSE_NO_FORWARD=1` stays the one knob and now turns off
+  both directions.
+- A refused entry fails the config load, so every command names the file
+  and the key, as an unknown `default_multiplexer` does: below 1024,
+  above 65535, a port in `forwardPlatformPorts`, 9222, 9229, 2375 or 2376
+  on the laptop side, more than 16 ports, or a value that is neither a
+  number nor `"MACHINE:LAPTOP"`. A forward dropped in silence would read
+  as a broken forward, which is the reason the Windows line for `[mcp]
+  forward` exists. The refusal exits 2, and so does every other
+  config.toml refusal from now on: `cli.md` has said since I-922 that an
+  unknown `default_size` "makes every command exit 2 naming the file",
+  and the code exited 1, because `loadConfig` returned a plain error and
+  `exitCodeFor` has no case for one. CLAUDE.md says to fix the code when
+  it and a doc disagree, so `loadConfig`'s three refusals and a file that
+  is not TOML are now `exitf(ExitUsage, ...)`, with their messages
+  unchanged. A bad config file is wrong usage, which is what 2 means.
+- The deny list is kept (proposal decision 3). 9222 has the bridge, and
+  Node's inspector, Docker's API and Docker's TLS API run code on the
+  laptop by design.
+- The forwards live inside an attach, on a connection of the helper's
+  own with `ExitOnForwardFailure=yes`, not on the ControlMaster: a `-R`
+  there would outlive the detach by ControlPersist's ten minutes
+  (I-149), and a laptop port must not stay open on the machine after the
+  user walks away. The remote command is `exec cat >/dev/null`, so the
+  helper's exit, however it comes, closes the pipe and takes the
+  listeners with it. The guest needs no change, so machines running now
+  get it from the CLI alone.
+- Two `-R` per port, `127.0.0.1` and `::1`. The proposal asked for both
+  and this was measured rather than assumed: against OpenSSH 9.6 sshd
+  with `GatewayPorts no`, `-R 127.0.0.1:P` binds 127.0.0.1 and leaves
+  `::1:P` free, and the two requests together bind both and neither
+  fails. Some clients on the machine try `::1` first for `localhost`.
+- The loop the design must prevent: the reverse listener is a listener
+  like any other, so auto-forward would see `sshd-session` on
+  `127.0.0.1:5037`, find 5037 taken on the laptop and forward the
+  machine's 5037 to the laptop's 5038 — the laptop's own adb, round a
+  loop. The forwarder skips every port it lends and every port another
+  laptop's registry entry marks `in:` (I-1106), as it skips 9226 today.
+- A port the machine already holds is left out before the connection
+  starts and said once, with the remap to use. The laptop's process name
+  comes from the laptop's own tools (`lsof` on macOS, `ss` on Linux) and
+  is left out when they do not answer. On Windows no helper runs and a
+  set key prints a line saying so.
+- The freeze is untouched. A reverse forward exists only while an attach
+  does, and an attach already fails I-818's rest rule twice. The hold
+  must never outlive its attach, or it would be the gateway session with
+  no bytes on it that I-930 forbids; the `cat` hold, the helper's
+  parent check and the test below are what keep it from happening.
+
+*What a lent port gives.* `SECURITY.md` boundary 13 and
+`/docs/machine#your-laptops-ports-on-the-machine` say it once, in the
+same words: everything on the machine, agents included, reaches a lent
+port as a local program on the laptop would. adb serves every device the
+laptop has, a phone on USB included; Ollama has no authentication; a
+Homebrew Postgres with `trust` on localhost and a superuser default role
+turns `COPY ... FROM PROGRAM` into commands on the laptop. That line
+prevents a loss the user cannot undo, so I-485 keeps it.
+
+*Evidence.* `TestForwardReverseConfig` parses the numbers, the remap and
+the project merge and prints each refusal with its file. `TestReverseSSHArgs`
+holds the ssh line. `TestReverseMessages` holds the text.
+`TestForwarderDoesNotForwardALentPortBack` gives the forwarder an `ss`
+with `sshd-session` on 5037 and 11434 and a registry line `in:11434:...`
+from another id, and only 5173 is forwarded.
+`TestReverseForwardReachesTheLaptopAndEndsWithTheAttach` runs the real
+ssh against the test guest: a listener on the laptop, bytes read back
+through the machine's `127.0.0.1:P` and `[::1]:P`, and the listener gone
+within a second of the attach ending. The rest rule is unchanged code;
+`TestRestRuleHoldsEveryTerm`'s "a tmux client" case is what proves an
+attach holds a machine awake.
+
+**I-1106. The forward messages name the laptop, the registry says which
+way each forward goes, and `repose status` shows both.** (forwards-both-ways,
+2026-11-11. Amends I-199, I-324, I-616.)
+
+The payoff of auto-forward was hard to see. `⇄ localhost:5173 → :5173`
+names two ports and no place, so a user who had not read the docs could
+not tell which side was the laptop, and nothing outside tmux listed a
+forward at all.
+
+- The messages become `⇄ localhost:5173 → your laptop`, `⇄ localhost:3000,
+  3001, 5173 → your laptop` for up to eight ports, `⇄ 12 ports → your
+  laptop: 3000, …` beyond that, and `⇄ :3000 → your laptop's
+  localhost:3001 (3000 is taken there)` for a moved one. Portless keeps
+  its own line. The status bar is unchanged.
+- `~/.repose/forwards/<id>` keeps its first line, the guest ports as bare
+  numbers, because every reader since I-199 takes that line through `grep
+  -E '^[0-9]+$'` and nothing else. Lines after it name one forward each,
+  colon-joined so that reader steps over them: `out:MACHINE:LAPTOP` and
+  `in:MACHINE:LAPTOP[:PROCESS]`. Both shapes are read for one release, as
+  CLAUDE.md asks of a contract change; `interfaces/guest-conventions.md`
+  has the format.
+- `repose status` reads the registry in the SSH call it already makes.
+  A listening row gains `, on your laptop`, and `at :3001` when the
+  laptop holds it elsewhere; a `laptop` row lists the ports a laptop
+  lends, with the laptop's process; `--json` gains `forwards` with
+  `port`, `laptop_port`, `direction` and `process`. The reverse
+  listeners leave the `listening` rows: `sshd-session :5037 up 2h` under
+  `listening` is a row nobody acts on, and the `laptop` row says what it
+  is. The extra SSH session the hold makes is counted in `attached`,
+  because it is one (proposal decision 7, as recommended).
+
+*Evidence.* `TestStatusMarksTheForwardedPortsAndTheLaptopsOwn` holds the
+rows and the JSON. `TestOldRegistryReadersSeeTheSameUnion` writes an
+entry with the new lines, takes the union the publish script takes, then
+rewrites the file as a pre-I-1106 CLI would and takes it again: `3000
+5173` both times, with no lent port in it. The three existing message
+tests (I-199, I-324, I-469) hold the new text.
+
+**I-1108. A `localhost` link the machine opens goes to the laptop port
+its forward uses, or nowhere.** (forwards-both-ways, 2026-11-11. Amends
+I-634, which amends I-541.)
+
+I-634 opens an `https` link the machine hands to `$BROWSER` in the
+laptop's browser. It had a hole and a gap. The hole: `https://localhost:8443/`
+passed `openableURL` and opened on the laptop as written, so the laptop
+opened its own 8443, or nothing. The gap: a dev server's `--open` hands
+over `http://localhost:5173/`, which was never recorded at all, so the
+most common link on a dev machine was the one that did not travel.
+
+`repose-print-url` now records an `http` or `https` link whose host is
+the machine's own loopback, beside the `https` ones. The laptop never
+opens such a link as written: it waits up to 5 s for a forward of that
+port, because a dev server hands over its URL a moment before it
+listens, opens the laptop end of that forward (`http://localhost:3001/`
+for the machine's 3000), and with no forward opens nothing and says `A
+program on the machine opened localhost:3000, and no forward reaches
+it.` The same link opens at most once a minute, so a dev server
+restarting with `--open` in a loop does not fill the laptop with tabs.
+With `REPOSE_NO_FORWARD=1` nothing reaches a loopback port, so the line
+is said once per port and no tab opens.
+
+This is a base change: a machine on an older base records `https` links
+only, and the laptop's new rule then applies to the `https://localhost`
+ones it does record, which is the hole closed.
+
+*Evidence.* `TestLoopbackLinksOpenOnTheForwardedPort` covers each case:
+the rewrite onto a moved forward, the once-a-minute cap, the forward
+that appears two seconds late, nothing opened with no forward and the
+line said once, `https://localhost:8443` under the same rule, and
+`http://example.com` never opened. `TestOpenURLsTakenOnce` (I-634) still
+passes.
+
+**I-1152. The rest rule writes down why each machine did not freeze.**
+(idle-metrics, 2026-11-11. Extends I-818, I-844; the data for
+`../proposals/2026-10-11-pause-idle-machines.md` section 5.)
+
+The owner, 2026-11-10: "I'm not attached, the agent is idle, but the
+machine is still running and not frozen. We need data." Nothing could
+answer it. I-844 publishes two counters a tick -- machines paused, and
+machines the rule would have paused -- and the rule throws away which of
+its fourteen terms said no. Afterwards `meter_samples` is still there and
+the verdict is not, so answering means writing the rule a second time in
+SQL over the samples and hoping the two agree. I-930 named the same gap
+from the user's end ("`repose status` can see every term of this rule but
+prints none of them") and left it open.
+
+So the rule records its own verdict, from its own tick, in a new
+`rest_verdicts` table (migration `0038_rest_verdicts`).
+`internal/api/resting/verdict.go` reads every term for every *running*
+project -- not only the candidates -- and writes one row per machine per
+`VerdictEvery`, five minutes. `blocked_by` is the column the owner reads:
+the one condition that kept the machine awake, lower_snake, `''` when
+nothing did. `would_rest` is the rule's own yes or no beside it, so "the
+rule said no" and "the rule said yes and nothing happened" are different
+rows rather than the same silence.
+
+*What was already there, and is therefore not copied.* The signals the
+brief asks for are all in `meter_samples` already, one row a minute since
+day one: `ssh_sessions` and `tmux_clients` (a herdr client counts in
+`ssh_sessions`, I-511), each agent's state in `agents`, `guestd_ok`,
+`cpu_ns`, `net_rx`/`net_tx`, `docker_containers` and `resting`. The
+process names with their CPU are in `proc_samples`, also a row a minute,
+names only. A held forward and a browser viewer are not a third signal:
+both reach the machine over a gateway session, so `gateway_sessions` --
+which the rule already reads -- is what says one exists, and the verdict
+keeps it as `sessions_open`. The reverse forward's held connection of
+I-1106 is counted in `ssh_sessions` too, so it shows twice and is missed
+in neither. So the row holds only what exists nowhere
+else: the verdict, the terms that live only in Postgres (`keep_awake`,
+`ops_open`, `sessions_open`, `questions_open`, `host_pauses`), the shape
+of the quiet window (`samples_seen`, `samples_quiet`, `attached_max`,
+`agents_working`, `guestd_down`, `cpu_ns_max`, `net_bytes_max`) and
+hostd's own refusal word. `sample_ts` is the newest sample the verdict
+read, which is the join key back to both sample tables.
+`TestAVerdictCarriesNothingATenantTyped` pins the column list, so a
+fifteenth column needs a reviewer rather than a default.
+
+*One rule, read twice, and the way that stays true.* The verdict's
+sample term is `quietSQL` itself, the same text the rule reads, and its
+agent term is a substring of `idle.UsedSQL`;
+`TestTheQuietTermIsTheRulesOwn` and `TestTheAgentTermIsIdleUsedSQLsOwn`
+fail when either stops being so, and `TestAVerdictAgreesWithTheRule`
+asserts that a machine `Candidates` picks is a row with `would_rest` true
+and nothing blocking it. Two spellings of one rule that drift apart would
+make the column a lie about what the rule saw, which is worse than no
+column.
+
+*The cadence is the rule's own tick, not a second timer.* The rule runs
+every minute; a verdict is written on the first tick of each five-minute
+bucket, keyed `(project_id, ts)` with the bucket truncated, upserted. A
+tick that runs twice, an api that restarts inside a bucket or a second
+replica that briefly holds the lock rewrite the same row rather than
+doubling the minutes the launch query counts. Five minutes and not one:
+a machine that stays warm for an hour leaves twelve rows saying so, which
+is enough to see a condition change and a fifth of the rows of a
+per-minute table nobody reads on a request path.
+
+*Retention is `proc_samples`'s thirty days, not `meter_samples`'s
+ninety,* and partitioned by month like both. A verdict whose process
+names have aged out is half an answer: `cpu` as the condition and nothing
+to say what spent it. `rest_verdicts` is therefore the third entry in
+`internal/db.partitionedTables` and in `ops/sql/partitions.sql`;
+`TestPartitions` now asserts a dropped partition for each of the three,
+because a table added to the create list and left out of the drop grows
+for ever and nothing else breaks.
+
+*The reading is `ops/sql/launch.sql` Q13,* not a dashboard panel. For the
+last 14 days it lists the running-but-not-frozen minutes per machine by
+`blocked_by`, with the three processes that spent the most CPU in exactly
+those minutes -- the same shape as the proposal's table of CPU hours in
+idle minutes. `blocked_by = 'resting'` is a machine that *was* frozen and
+is left out of the warm count. A panel was considered and dropped: the
+figures are per project, Prometheus refuses `project_id` as a label, and
+a Postgres panel reads "no data" on any Grafana without the
+`repose-postgres` datasource, which is 21 of the 83 panels today.
+
+*Nothing a user sees changes,* so no page under `apps/web/src/content/docs/`
+moves. The privacy policy's two paragraphs already cover every field
+this reads -- the signals it lists by name, and "we sample the processes
+running in your environment once a minute and record their names, CPU
+time, memory use and network bytes" -- and the row adds no new kind of
+reading, only a note of what the rule concluded from the readings it
+already had. `TestAProcessArgumentNeverReachesTheSample` gives a process
+a secret in its command line and another in its environment and asserts
+the sample carries the name alone, so the sentence the policy promises
+stays true where the analysis reads it; the system-call half of that
+promise is `internal/guestd/strace_test.go`.
+
+hostd's `why_not` is bounded to 32 lower_snake
+characters before it reaches the row and anything else becomes `other`:
+it is an enum in the contract, and a host is still a thing that sends us
+bytes, so an unbounded string would become a group-by key of the launch
+query (`TestAHostsRefusalWordIsBounded`).
+
+*Rejected.* A second table for the signals (they exist; `sample_ts` is a
+join). A column per agent state (`agents` is jsonb and already holds
+them). A row a minute (five times the rows for a question nobody asks
+per minute). Deriving the verdict at read time from `meter_samples` (it
+is the rule written twice, and the second copy is the one that is wrong).
+A `repose status` line naming the terms -- I-930 asks for it and it is a
+user-visible change with its own docs, not this.
+
+*Conductor's ruling, owner's standing approval of 2026-11-11:* this is
+observability, not a user feature; OBSERVABILITY.md carries the fields
+and no public docs page changes.
+
+**I-1156. repose answers on `repose.run`; the Logto API resource and the
+host-to-api gRPC name keep the old name.** (domain, 2026-11-11.)
+
+The product moved off the `repose.herakraft.co` subdomain onto its own
+domain, `repose.run` (owner, 2026-11-11: "we are moving away from the
+subdomain to an actual domain"). The dashboard, the docs and
+`/install.sh` are `repose.run`, with `www.repose.run` redirected to it;
+the api is `api.repose.run`, the SSH gateway `ssh.repose.run`, the
+webhook host `hooks.repose.run`, and notifications come from `repose
+<notify@mailing.repose.run>` (the Resend domain is `mailing.repose.run`,
+verified by the owner). This branch changes the defaults in the CLI and
+the api, the nix options, the infra variables and every user-facing URL
+in the docs and the copy; the deployed values are environment variables
+Coolify holds, and the DNS records and the Coolify domains are the
+conductor's and the owner's to change.
+
+*Both domains answer through the overlap.* Coolify serves the old FQDNs
+beside the new ones and the herakraft.co records stay, because an
+installed CLI keeps its `api_url` until its user updates and a bookmark
+keeps its host for longer. Nothing written here assumes the old names
+are gone, and no redirect for them is added in code: Coolify does that.
+The old records are deleted only when the owner says the last installed
+CLI has moved.
+
+*Two names did not move.* The **Logto API resource** stays
+`https://api.repose.herakraft.co`. It is the opaque audience Logto issues
+tokens for, not an address: every installed CLI asks for it
+(`internal/cli/config.go` `apiResource`), every token already issued
+carries it in `aud`, and the api checks it (`API_RESOURCE`). Changing it
+would need a new resource in Logto, a reissue of every token, and would
+lock out every release before this one in the window between. The
+**host-to-api gRPC name** stays `api.repose.herakraft.co` too
+(`nix/hosts/default.nix` `apiAddr`, `nix/hosts/prod.nix`
+`apiServerName`, `GRPC_SERVER_NAMES`, `cmd/hostd/main.go`). It is
+internal, it is never resolved through public DNS from a host in the
+VNet, and it is the name on the certificate the api issues from its own
+CA: moving it reissues that certificate and needs a switch of every host
+and of the edge inside one window, which is its own change, not this
+one. The `/metrics` Traefik router matches the same internal name,
+resolved by one `/etc/hosts` line on the monitoring peer
+(`ops/prometheus/wireguard-peer.conf`), and stays with it.
+
+*Nothing else under `herakraft.co` moves.* `accounts.herakraft.co` is
+the owner's Logto, shared with another product (I-84);
+`cache.repose.herakraft.co`, `edge.repose.herakraft.co` and the
+observability names are internal; `support@herakraft.co` is the support
+address (I-767) and is not a repose name.
+
+*The old name cannot creep back,* because `test/domain` greps every
+tracked file for `repose.herakraft.co` and fails on any line its
+allow-list does not name, with one line of reason per entry. Dated
+records -- `docs/releases/`, `docs/reviews/`, `docs/security/`,
+`docs/proposals/`, `DECISIONS.md` itself and the status log -- are
+allow-listed as a whole: a record says what was true on its date. The
+old name still answers, so a stray one works and nothing else would
+catch it.
+
+*Infra.* `dns_zone` is `repose.run` in prod and `dns_prefix` is empty,
+which the environment module now joins without producing `.repose.run`;
+staging stays nested at `repose-staging.herakraft.co`, where its own
+prefix puts it. `manage_dns` stays false, so the records are still made
+by hand from the table in `infra/README.md`, which now lists the
+`repose.run` names and says to leave the herakraft.co ones alone.
+Nothing is applied by this branch.
+
+**I-1158. The dashboard reads the api's audience from
+`PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL`.** (domain,
+2026-11-11.)
+
+`apps/web/src/lib/api/resource.ts` derived the resource an access token
+is asked for by stripping `/v1` off `PUBLIC_API_URL` (I-878). That held
+while the api's address and its Logto resource were the same string. The
+move to `api.repose.run` (I-1156) separates them: the address is
+`https://api.repose.run/v1` and the resource stays
+`https://api.repose.herakraft.co`. Without a second variable, pointing
+the dashboard at the new api would ask Logto for a resource that does
+not exist and every sign-in would fail.
+
+So `PUBLIC_API_RESOURCE` names it outright and production sets it.
+Unset, it falls back to `PUBLIC_API_URL` without its `/v1`, exactly as
+before, so a fork, a staging deploy or a local run still needs one value
+and not two, and nothing that already works breaks on the upgrade. The
+value is public: it is an audience string in a browser's token request,
+not a secret.
+
+*Rejected:* hardcoding the resource in the dashboard, which is the one
+value a fork must be able to change; and moving the Logto resource to
+the new name, which I-1156 explains would lock out every installed CLI.
+
+**I-1160. What a switch does to a unit's directories, and what a domain
+move does to the gateway's host certificate, are runbook entries; the
+live suite asserts the words the site has.** (release-followups,
+2026-11-11.)
+
+Three things the 2026-11-11 release taught, each the same shape: a check
+that looked conclusive and was not.
+
+*A handover does not start the unit.* The first edge switch carrying
+`StateDirectory=repose-gateway` (I-1110) reported success and left the
+webhook listener with no certificate cache: systemd makes a state
+directory when a unit starts, and a reload of `gateway` is a handover
+into the old process's sandbox, which has no mount for the new path. At
+07:18:57Z the handed-over process logged `webhook certificate cache
+unusable ... mkdir /var/lib/repose-gateway: file exists` -- under
+`DynamicUser` the path is a symlink into `/var/lib/private/` that the
+old sandbox cannot enter -- and `hooks.repose.run` answered without a
+certificate until a restart at 07:20. "Switch the edge" already listed
+the sandbox and socket cases that need sessions to end; a directory
+added to the unit is the same case and is now a bullet beside them, with
+the check that catches it (`journalctl -u gateway | grep acme_cache`
+empty, `ls /var/lib/private/repose-gateway/acme`).
+
+*A name the certificate does not list is a name nobody can reach.* With
+`GATEWAY_HOST=ssh.repose.run` live (I-1156) and the gateway's SSH host
+certificate still naming only `ssh.repose.herakraft.co`, every CLI
+connection failed at 07:22Z with `Certificate invalid: name is not a
+listed principal`. The new section "Move the gateway to another name"
+records the order and the two things that stop the obvious commands
+working: `ssh-keygen -y` refuses the 0640 key the edge holds, so the
+public key comes from a 0600 copy, and the api image has no shell, so
+the key is fed to `repose-admin ca sign-host` as `--pubkey /dev/stdin`
+through `docker exec -i`. Users then delete
+`~/.ssh/repose/known_hosts` once, which the CLI already tells them and
+which the public troubleshooting page now carries too, because the CLI
+rewrites that file only when it fetches a certificate and a laptop with
+an unexpired one keeps the old name.
+
+*A test whose locator matches nothing passes.* `landing pricing matches
+PRICING.md` in `apps/web/tests-live/public.spec.ts` selected the pricing
+band as the `section` containing a heading named "Pricing". Since the
+ui-revamp the band's heading is "Launch prices" and `05 PRICING` is a
+label, so the filter matched no section and every assertion under it --
+the three plans, their prices, their specs, the absence of "per hour" --
+ran against an empty locator and passed. Only the lede assertion failed,
+which is what drew attention to it. The locator is now `section#pricing`
+and the lede assertions are the two the landing spec names (the heading
+says the launch prices, the button says the free week, I-961,
+`docs/LANDING.md` §6). Fixing the locator exposed two further staleness
+bugs it had been hiding: the seats line needs `useInnerText`, because a
+regex is matched against the text as it is and the count and the word
+sit on two lines of the template; and the privacy policy's second
+pinned sentence is the one legal wrote, "We never copy your existing
+Claude Code credentials from your computer" (I-278, I-283), not the
+paraphrase the test carried.
+
+The rule the three share: a doc records the step that the successful-
+looking output does not cover, and a test asserts the source's words.
+Each sentence pinned in the live suite is now a named constant quoted
+from `apps/web/src/`, so a reworded page fails the test instead of the
+test quietly asserting nothing.
+**I-1162. The `says` row is the hand-off between the api's two
+processes, because only one of them can reach a host (say-replicas,
+2026-11-11). Amends I-1144.**
+
+Found on production the morning `repose say` shipped: every message
+answered "The machine did not take the message.", with
+`POST /v1/projects/{id}/say -> 409 in 7 ms`, `machine_unreachable`, and
+hostd never seeing a command. I-1144 had `say.Send` put the SayToAgent
+on the hostd stream *of its own process*. In production the api is two
+Coolify applications (I-87, I-163): `API_MODE=http` serves the CLI and
+`API_MODE=grpc` holds every host's stream. The http process has no
+stream for any host, so `hostmgr.Send` there is always
+`ErrHostNotConnected` and `say` could never be delivered. The tests
+passed because `API_MODE=all` runs both halves in one process, which is
+the one shape production does not have.
+
+- **The row is the hand-off, as it already is for an answer (I-244,
+  I-245).** The process the owner called stores the `says` row
+  `pending` and waits on it. A worker in the process holding the
+  streams claims the row (`sending`, one statement with `for update
+  skip locked`, so nothing is held under a lock for the 20 seconds a
+  delivery can take), sends the command, and writes the machine's
+  answer back into the row: `delivered` or `waiting` with the window
+  and `replaced`, or `failed` with the short reason. The waiter reads
+  it and answers exactly what it answered before. Nothing a user reads
+  changes, and neither does the response shape.
+- **Why not route the command to the replica that holds the stream.**
+  `host_sessions` already records which replica has a host, but there
+  is no path between the two api processes to carry a command over —
+  building one (a second gRPC service, or a NOTIFY-carried command with
+  its result coming back the same way) is a new inter-process protocol
+  for one message type, where the row is a hand-off the schema already
+  had.
+- **The wake moved with the delivery.** `resting.Wake` (I-818) is also
+  a command down the host's stream, so it has to happen in the process
+  that has one. It is now the worker's first step, as it is in the
+  questions worker, and a wake that fails is still a failed message the
+  sender is told about.
+- **A row nobody delivers is failed where it stands, not left.** The
+  waiter fails its own row when its 20 seconds run out and the row is
+  still `pending`, and the worker fails anything still `pending` or
+  `sending` after 40 seconds. Without that, a worker that came back a
+  minute later would type a message into the agent's terminal long
+  after the owner was told it had not arrived — which is the one
+  failure I-1144's "the api does not queue" exists to prevent.
+- **The machine's refusal is stored, because the waiter did not hear
+  it.** The sentence naming the agent windows ("2 agents are running:
+  claude, codex. Name one with --agent") is the whole value of that
+  refusal, and the process that answers the owner no longer receives
+  the command's result. It goes in a `refusal` column beside the
+  message it belongs to, only for `not_found` and `invalid_argument`,
+  and it reaches no log line, as the text never does.
+- **One worker, by advisory lock 1016**, started in the grpc branch of
+  `app.go` beside the questions worker. A new row wakes it through
+  `pg_notify('repose_says')`, with a one-second tick behind it, so the
+  owner's 20 seconds are not spent waiting on a poll interval.
+- *The general lesson, and the test that holds it.* A control-plane
+  test on one `app` proves nothing about a two-process deployment.
+  `TestSayIsDeliveredByTheReplicaHoldingTheStream` builds a second
+  `say.Service` on the same database whose sender holds no stream, and
+  asserts the message still reaches the machine; it fails on the commit
+  before this one with the exact production error. Every other api path
+  that sends a host command does so from the grpc process already —
+  the ops engine, the questions worker, `resting` — and `say` was the
+  one that did it from an HTTP handler.
+
+**I-1166. The attach tests need a tmux newer than the runner's, because
+tmux 3.4 crashes on the session every attach makes (attach-window-ci,
+2026-11-11).**
+
+`internal/cli/attach_window_test.go` failed twice on main a9056ba7's CI
+(run 42985983675), on a different test each time:
+`TestAttachFallsBackToTheSessionWhenTheWindowIsGone` ("no sessions")
+and `TestTwoAttachesKeepTheirOwnWindowAndSize` ("server exited
+unexpectedly"). Both say the same thing: the fake guest's tmux server
+is gone, the project's session with it. `ORCHESTRATION.md` named the
+likely class -- a test that passes here and fails on CI is usually the
+runner's PATH, where the dev box has `claude` and the runner does not,
+so a window running it exits at once -- and that class is wrong for
+this one. Neither test starts an agent; their windows run `exec cat`,
+which is on every runner and does not exit.
+
+What it is: Ubuntu 24.04 ships tmux 3.4, and `ubuntu-latest` is
+Ubuntu 24.04. Since I-1067 every attach is a session of its own,
+grouped with the project's, destroyed when its terminal detaches
+(`destroy-unattached on`, `tmuxAttachSession`). tmux 3.4 segfaults in
+that destruction when the machine is loaded: the server dies with
+`segfault at 10` in the kernel log, which takes the project's session
+and every window in it, so whatever the test runs next finds no
+session. tmux's own CHANGES for 3.4 to 3.5 has the fix -- "Pick newest
+session (as documented) when looking for next session for
+detach-on-destroy" -- the client being moved off the session that is
+going reads one that has already been freed.
+
+- **Reproduced before anything was changed.** With Ubuntu's
+  `/usr/bin/tmux` first on PATH and eight busy loops on this box, both
+  tests failed on all three runs of `go test -race -count=3`, with
+  CI's two messages word for word; without the load they pass, and
+  with the dev shell's tmux 3.7c under the same load they pass. A
+  shell reproduction without Go (one project session, one grouped
+  attach over `script`, a detach) crashes 3.4 and not 3.5a or 3.7c.
+  That is why main went red on half its runs and never here: the dev
+  shell has 3.7c, and CI's runner is four cores running the whole
+  suite.
+- **Not a repose bug, and not a fixture that waits on the wrong
+  thing.** A guest runs nixpkgs' tmux, 3.7c today, from the same pin
+  as the dev shell (`nix/flake.nix`), so no tenant can meet this
+  crash; what repose sends the guest is the same before and after this
+  entry. Nothing in `run.go` changes.
+- **So the runner gets a tmux that does not crash.** `ci.yml`'s go job
+  builds the release `nix/guest` has (3.7c) from upstream's tarball
+  into `/usr/local` before the tests: `libevent-dev libncurses-dev
+  bison pkg-config` from apt, `./configure && make`, about 25 seconds
+  on four cores. Pinned by version in the step, so the build is the
+  same until someone changes it.
+- **Why not a skip, and why not relax the assertion.** A skip on an
+  old tmux in the one place these tests have to run reads as a pass
+  (I-1036, I-1032), and the assertions are I-1067's contract: two
+  laptops keep their own window and size, and a detach leaves the
+  project's session alone. `requireAttachTmux` therefore skips on a
+  laptop and *fails* when `CI` is set, naming the ci.yml step, so the
+  next person to drop that step gets a sentence instead of a flake.
+- **Why not pin tmux in a container for the whole job.** The job's
+  other steps (Postgres service, Go toolchain, golangci-lint) are the
+  runner's, and one build of one dependency is smaller than moving a
+  job into an image nobody else uses.
+- *The general lesson.* A test that fails on CI and not here has a
+  third class beside PATH and timing: a version of a program the test
+  drives. `tmux -V`, `git --version`, `ssh -V` on the runner differ
+  from the dev shell's, and the dev shell is pinned while
+  `ubuntu-latest` is a distribution release behind. The cheap first
+  move is to put the runner's binary first on PATH here and load the
+  box, which reproduced this in under a minute.
+
+**I-1167. The landing sells a framework for running always-on agents,
+with any agent and any model (tensions-landing, 2026-11-12). Amends
+I-477's "What we sell" and the hero of I-843 and I-961.**
+
+The owner moved the pitch from "your dev environment, replicated in the
+cloud" to "a framework for running always-on agents" between 2026-11-09
+and 2026-11-11 (the summit deck v3 and its canon, kept in `~/pitch` on
+kanali), and the landing kept I-477's words and its ban on "always-on",
+phones and notifications. One of the two had to give, and the product
+is now closer to the deck: webhooks (I-1110) and `repose say` (I-1144)
+shipped on 2026-11-11, beside questions answered from ntfy, email or
+the dashboard (I-245) and scheduled jobs on a systemd timer (I-518).
+The owner's words, the reason for this entry:
+
+- "It's a framework for running always-on agents. It takes your
+  favorite agent. It doesn't give opinions on which agent." (practice
+  pitch, 2026-11-09)
+- "You can use your sovereign AI, you can bring in Claude Code, Codex,
+  your subscription ... and you get primitives for building an
+  always-on agent." (2026-11-10)
+- "The premise is already there: receiving a webhook, sending a
+  message, a browser inside. It can be an always-on agent for
+  anything." (2026-11-10, on the job-application agent)
+- "I don't want repose to be one of those things that give you a web
+  UI for codex and claude. It should give you primitives to run shit
+  persistently." (2026-10-05)
+
+- **What the page leads with.** The h1 names it, in the owner's words:
+  "A framework for running always-on agents". The eyebrow is "Any agent,
+  any model". The lead is one sentence on what you get: a Linux machine
+  of its own, set up from your laptop in one command, that keeps running
+  with the laptop shut and wakes for a webhook or a timer. Under the
+  hero a band of three columns, the parts a user can use today: wake-ups
+  (`repose webhooks`, a systemd timer, `repose say`), secrets by name,
+  and a line to you (`repose-ask`, by email, ntfy or Google Chat). Then
+  one block on the first use that is not a developer's: the
+  job-application agent, told as what it does (a `role.created` delivery
+  through `hooks.repose.run`, which a small server the agent runs turns
+  into a session that applies in the machine's browser, `repose-ask` at
+  a captcha or a login, the person clearing it with `repose browser`),
+  on a `large`, with no company named and no count of runs. - **What it
+  may mention.** Always-on, any agent and any model, webhooks, `repose
+  say`, scheduled jobs by systemd timer, secrets, the browser,
+  snapshots, notifications by email, phone (ntfy) or Google Chat and
+  answering a question from the dashboard. Each only as far as the
+  public docs say a user can do it today. - **What it still may not
+  claim.** The trigger layer that binds an event to a session (approach
+  A of the 2026-11-12 proposal), per-event machines, a `tiny` class,
+  burst cores (I-1126 shipped off on every host), bare metal or your own
+  hardware: none of these is something a visitor can do. No user or
+  customer counts. No rival named (I-477's rejection stands).
+  Collaboration and "a software factory" stay out. - **The wreck
+  stays.** The wreck-and-restore picture (Hero.svelte) is the demo the
+  summit script points at ("It is the demo on repose.run"), so it moves
+  from the hero to its own band, on the same dark field; the ComesBack
+  cell keeps how a restore runs. - **The hero's picture.** A drawn
+  object on the page's own tone, after voidzero.dev's grammar (one
+  central object under a centred headline; `LANDING.md` "The
+  centrepiece"): the machine, with the agent slot, the secrets and the
+  browser inside it, the wake-ups wired into its left wall and the line
+  to you out of its right. It is flat, in the pictures' existing kit
+  (windows, chips, hairline wires ending on terminal dots), and it does
+  not move. The anatomy skill was the brief's tool; its craft rules
+  apply (solid parts, one lit part, every line ending on an object,
+  every string true) and its isometric projection does not, since the
+  owner killed isometric on the landing (2026-10-04) and the
+  shelf-of-equipment flat version (2026-10-19, I-795 never landed). The
+  deck's flat stack (deck2 DECISIONS 25, "Everything under your agent")
+  is the closest thing the owner kept. - *Rejected:* keeping I-477 and
+  telling the deck it is a promise (the deck now describes what
+  shipped); leading with the job agent (it is one use, and a developer
+  is still the buyer); a motion loop for the new picture (`LANDING.md`
+  "Motion" lists every move, and a wiring diagram that draws itself
+  reads as line-art in motion).
+**I-1169. The landing sells a platform for running your own always-on
+agents, composed in layers, and its centrepiece is a 3D stack that
+composes three of them (tensions-landing, 2026-11-12). Amends I-1167.**
+
+The owner read I-1167's page and asked for more (2026-11-12, voice):
+"this is a framework for composing all [your] own agents ... how much
+memory, how much cores ... they don't need to know [the classes], and
+then you can put layers on top of it. Bring your own agent, bring
+triggers such as schedules and webhooks. This is in progress, don't
+worry, just write it." And: "a platform for running all [your] own
+agents that is isolated from your machine, that can handle secrets,
+that can replicate your existing dev environment, that can trigger on
+schedules and take in webhooks securely, that is isolated from the
+internet unless your agent actually asks for something and gets a
+response." On machine size: "You guys can have tiny machines. These are
+coming actually. It's just half of the small." On the picture: "I like
+the 2D, but perhaps we can consider a 3D animation ... let's do
+animation", pointing at voidzero.dev's stack.
+
+- **The page leads with** "A platform for running your own always-on
+  agents", and the lead names the layers: pick a machine, bring any
+  agent, stack your dev environment, secrets, schedules and webhooks on
+  top; it runs walled off from your laptop and the internet. Band 01
+  ("Build it in layers") has six cells in the stack's order: machine,
+  walls, your setup, secrets, triggers, agent.
+- **Written ahead of shipping, on the owner's word.** Two claims are
+  not yet something a visitor can do, and the owner told us to write
+  them anyway: a schedule or a webhook starting a session with a prompt
+  (the trigger layer, approach A of the 2026-11-12 proposal), and a
+  tiny machine of 2 GB (half a `small`). This overrides I-1167's "may
+  not claim" for those two only, and it bends CLAUDE.md "Trust the
+  reader", which the owner may do. Nothing names a command or a class
+  that does not exist (no `repose trigger`, no `--size tiny`). When the
+  trigger layer or the tiny class ships, its user docs must match these
+  lines, or the lines change; until then this entry is why they are
+  there. Burst cores, bare metal, your own hardware, user counts and
+  rivals stay out.
+- **The 3D ban lifts for the centrepiece.** The owner killed isometric
+  (2026-10-04) and the equipment shelf (2026-10-19), and asked for this
+  one himself. `landing/Stack.svelte` draws plates at 30 degrees in
+  the pictures' four flat tones and one blue, no gradient, gloss or
+  glow; it loops through three agents (a dev environment, a shopping
+  agent, an agent that applies for jobs) on one base that stays (the
+  machine and its walls), dropping in only the layers each agent needs,
+  so each is a stack of its own shape, with the agent's mark facing you
+  on the top plate. Every move is in LANDING.md "Motion". The ban
+  stands for every other picture.
+- **Review.** A design critic and a copy audit ran on the first build.
+  The critic's verdict was that it read as "a layered box with a logo":
+  every agent the same shape, marks laid flat and unreadable, an empty
+  beat between agents, plates see-through mid-fade, 2.8s holds. The base
+  now stays, left-out layers close up, the marks face you, opacity
+  changes in 120ms, holds are 4.2s. The audit's fixes: the internet line
+  says only webhook routes reach a machine (SSH through repose is the
+  owner's own way in, and a lent port reaches the laptop), "any model"
+  stays only in the owner's eyebrow, a store login is not a secret (an
+  API key is), and an agent "asks" only when told to.
+- **The 2D drawing is kept.** The owner liked I-1167's Parts drawing
+  and asked to keep it to compare: `landing/Parts.svelte` stays in the
+  tree, unused, and branch `landing-centrepiece-2d` (ee1c6c5a) has the
+  page with it in place.
+- *Rejected:* a WebGL scene (a second rendering stack on the page for
+  one picture, and no still frame without a script); the plates
+  carrying the use's text on their faces (skewed text reads badly at
+  13px); a dashed ghost for a left-out layer (hidden under the plates
+  above it, so every agent kept one shape); the machine's thickness
+  following its memory (every plate above would move with it); naming
+  `tiny` (the owner: "they don't need to know").
+**I-1168. A `tiny` class below `small`: 2 GB of memory and half a guest
+vCPU, four to a seat (tiny-class, 2026-11-12).** Amends R3-2, I-784,
+I-736, I-739, I-737 and I-1126's class table by adding a fourth class,
+and changes the unit the sold CPU of a class is counted in from whole
+guest vCPUs to thousandths, because the ratio I-784 fixed has no whole
+answer below `small`.
+
+`proposals/2026-11-12-always-on-framework.md` §4 asked for the class and
+left three things to decide: the memory line, whether `tiny` may run a
+second agent, and the price.
+
+*The naming rule, first, because it is what the class is* (owner,
+2026-11-12). **Every class runs always-on agents; `tiny` is not "the
+class for agents".** The classes are described by what they are big
+enough for: `tiny` drives a browser, calls APIs and makes documents;
+`small` runs an agent on a codebase; `large` and `xl` are for the hardest
+work, builds, test suites and several agents at once. No class is "for
+agents"; all of them are.
+
+*The shape.* 0.5 base cores up to a ceiling of 2, 2 GB of memory, a
+10 GB default volume, `cpu.weight` 25, `CPUQuota=50%`, 1,000 disk
+operations a second and 40 MB/s. The hypervisor boots it with 1 vCPU
+(2 on a host that bursts, as I-1126 boots every class at its ceiling),
+and the cgroup is what holds it to the half core its class sells.
+
+*Why half a core, and why that is not a fudge.* I-784 made every class
+4 GB of memory per guest vCPU **uniformly**, and said why: "a seat count
+that is right only for one mix of classes is not a seat count". There is
+no whole number of vCPUs that gives a class under 4 GB, so a `tiny` either
+sells a fraction of a core or breaks the invariant. Breaking it is the
+failure I-784 had just removed: a 2 GB class with a whole vCPU commits
+4 guest vCPUs against the 2 that an 8 GB seat stands for, so the fleet's
+seat count -- derived per host from memory, for any mix -- would overstate
+a tiny-heavy host by twice, and placement (I-736) would then refuse the
+memory the plan had sold. At 2 GB and 0.5 the arithmetic closes exactly
+instead: **four `tiny` are one seat's 8 GB and one seat's 2 guest vCPUs.**
+`plans.test.ts`'s "are 4 GB of memory per vCPU, uniformly" passes
+unchanged, because it divides; the Go copies of the figure asserted whole
+division, and that is what moves to thousandths.
+
+*Half a core costs nothing for the work the class is for, measured.* In
+the `guest-base` VM shape at 2048 MiB, a Playwright MCP navigation of the
+shared Chromium took **1.4 s with the browser on a whole core and 1.3 s
+with its slice capped at `CPUQuota=50%`**. That is one local page and not
+a month of real use, so what it refutes is the fear that half a core
+cannot drive a browser at all, not every CPU question about the class.
+A guest's own `CPUQuota` cannot be set from inside this test shape, so
+the half-core figure is the browser's slice, which is the conservative
+half of it: the browser alone gets half a core while everything else
+keeps the rest.
+
+*Why 2 GB and not 3 GB.* Measured in the same shape, at 2048 and 3072 MiB:
+
+| | 2048 | 3072 |
+|---|---|---|
+| `free -m` total | 1970 | 2910 |
+| boot floor, nothing asked for | 305 used, 1664 available | 385 used, 2525 available |
+| display, window manager, cold browser | 464 used | 543 used |
+| one page open, playwright MCP running | 614 used, 1356 available | 699 used, 2211 available |
+| `repose-browser.slice` ceiling (37.5%) | 739 MiB | 1091 MiB |
+| the browser's own anon, one page | 149 MiB | 150 MiB |
+| zram swap | 985 MiB | 1455 MiB |
+
+The browser costs the same wherever it runs: about 150 MiB of anonymous
+memory and about 310 MiB of `used`, at 2 GB and at 3 GB alike. So the
+extra gigabyte buys headroom, not capability. An agent is about 300 MB
+(I-576's task dump has a 319 MB `claude`; the `job` machine has two at
+0.6 GB), which puts the floor plus a browser with a page plus one MCP
+server plus one agent at about **915 MiB of 1970**. And 3 GB divides an
+8 GB seat into two with 2 GB stranded, which is what two `small` already
+give: the only reason to add a fourth class is the thing 3 GB cannot
+deliver. It is 2 GB or no class.
+
+*`tiny` may run a second agent; nothing stops it and nothing should.*
+The measurement leaves about a gigabyte, which is three more agents at
+I-576's size, and a machine that refused to start a process the user
+asked for would be a new kind of limit this product does not have. What
+the docs say instead is what the class is big enough for.
+
+*Do not reason about this from RSS.* The same shared Chromium reads
+**1022 MiB summed over 11 processes against 149 MiB of anon**, because
+every process counts the shared binary. §4's case against 2 GB rests on
+a 1.5 GB RSS sum from `job`, and the comparable figure is several times
+smaller. The same correction applies to `research/guest-freeze.md`'s
+"an idle guest is 0.8 to 1.2 GB whatever its class", which is the size
+of the guest's memory **image on the host**, not memory in use in the
+guest: in the guest the floor is 305 MiB.
+
+*What this costs the fleet, stated plainly.* `OverheadMiB` (512) is
+reserved per guest by hostd's admission (`create.go`), its accounting
+(`manager.go`) and the unit's `MemoryMax` (`unit.go`). So a seat sold as
+four `tiny` reserves **10,240 MiB** of host memory where one `large`
+reserves 8,704 and two `small` reserve 9,216: **18 percent more host
+memory for the same $49**, and four copies of a 305 MiB guest floor
+instead of one. The api's placement counts only the class RAM, so the api
+and hostd already disagree by 6 percent on two `small`; `tiny` widens an
+existing gap rather than opening a new one. That is the trade: a plan that
+can run four always-on machines instead of one, against a host that
+carries 18 percent more to serve it.
+
+*I-711 said no to this question in 2026-10 and is answered, not
+overruled.* It refused making `small` the default on production data: 11
+real `small` projects peaked at 1.8 GiB over 14 days, which is 91 percent
+of a 2 GB machine. Those are `small` users running an agent on a
+codebase, which is the thing this entry's naming rule says `tiny` is not
+for, and `small` stays the default for exactly that reason -- I-711 is
+unchanged. Its revisit condition ("a guest image that idles much
+smaller") has not happened either; what has changed is that a class
+nobody had measured turns out to idle at 305 MiB, and that the class is
+being added beside `small` rather than in front of it.
+
+*The price is the owner's and nothing here sets one.* A plan sells memory
+that may run at once, not machines (I-289), so `tiny` needs no price of
+its own: it takes 2 GB of the plan's memory as every class takes its own.
+`PRICING.md`'s plan table gains "or four `tiny`" on Solo and is marked
+*proposed* until the owner says. The thing for the owner to weigh is the
+paragraph above: Solo's revenue per running machine falls to a quarter
+while the host carries 18 percent more. If that is to be protected, the
+levers are a count of `tiny` machines per account or counting `tiny` as
+more memory than it has, and neither is proposed here, because there is
+no data on who buys it yet.
+
+*Three fallthroughs had to move together, and that is the trap a reviewer
+should check.* An unmigrated class is counted three different ways in one
+placement: migration 0028's `host_reservations` view falls through to
+**xl** (16 GB, 4 vCPU), `scheduler.ClassRAM`/`ClassVCPU`/`ClassVCPUSQL`
+fall through to **large**, and `billing.ClassMemoryGB` falls through to
+**large**. A new migration (0041) replaces the view, renaming its column
+`vcpus` to `vcpu_milli` so that a reader of the old name cannot take
+thousandths for cores, and the class is added to every one of those
+copies in this commit.
+
+*And a fifth copy nobody had pinned, found by adding the class.*
+`nix/guest/microvm.nix`'s `classDefaults` still held R3-2's 2 GB per vCPU
+(small 2, large 4, xl 8) fourteen classes-worth of entries after I-784
+halved them: it is an attribute set indexed by the class, so `tiny` threw
+rather than fell through, which is how it was found. It is the runner's
+default for a runner built without an explicit vcpu and mem -- hostdev
+and a hand-built runner on a dev box; hostd always passes both from
+`guest.Classes` -- so nothing a tenant runs was wrong, and it is
+corrected to I-784's figures here. `TestClassSpecsMatchBillingAndHost`
+cannot reach a Nix file, so this copy is still unpinned; what found it
+was adding a class, and what would find it next is the same.
+
+*Rejected:*
+- **2 GB with a whole vCPU.** Two paragraphs above: it oversells the
+  fleet's seat count by twice for anyone running tinies, which is I-784's
+  entire subject.
+- **3 GB with 0.75 of a core.** Keeps the ratio and buys no buyer: two to
+  a Solo seat is what two `small` already are, with 2 GB stranded.
+- **A bigger share of memory for the browser on `tiny`.** 37.5 percent of
+  2 GB is 739 MiB, five times the browser's own anon with a page open, and
+  the pressure test below shows it contains a runaway tab. A per-class
+  share would be a change with no measurement behind it, and it would end
+  one closure serving every class (I-43).
+- **Fractions on the other three classes.** They are whole numbers and
+  stay whole; thousandths are the unit, not a new shape for `small`.
+
+**I-1170. On every class, the browser's tab is what memory pressure
+takes; the agent is spared and a webhook receiver is not yet (tiny-class,
+2026-11-12).** The rule is not `tiny`'s, but `tiny` is where it was
+measured and where it binds.
+
+The brief for I-1168 asked what dies first on a 2 GB machine: a browser
+tab, the browser, never the agent or a webhook receiver. Two thirds of
+that already held and the third did not.
+
+*The tab goes first, and the mechanism is already there.* Under a page
+that allocated until something gave, on a guest of 1970 MiB, the kernel
+killed inside the browser's own memcg and nothing else moved:
+
+    chromium invoked oom-killer ... oom_score_adj=300
+    oom-kill: constraint=CONSTRAINT_MEMCG, oom_memcg=/repose.slice/repose-browser.slice,
+      task_memcg=.../repose-browser.service, task=chromium, pid=4775,
+      anon-rss:725208kB, oom_score_adj:300
+
+`CONSTRAINT_MEMCG` is the whole result: this was the slice's ceiling
+(I-246's 37.5 percent) reclaiming a renderer that held 725 MB, not the
+machine running out. Afterwards dev's user manager, the tmux server, the
+browser itself and the receiver were all the same pids, the browser still
+answered on 9224, the receiver still answered, no user unit had failed,
+and the guest's `used` had **fallen** from 536 to 421 MiB as the tab's
+memory came back. One thing in that line is worth knowing: the renderer
+ran at `oom_score_adj=300` because **Chromium sets that on its own
+renderers**, so "the tab before the browser" is Chromium's ordering and
+not something repose configures. Renderer scopes running with
+`OOMPolicy=continue` (I-733) are what keeps the kill from stopping the
+unit above them.
+
+*The agent was already spared.* guestd writes `oom_score_adj = -800`
+(`OOMProtected`) to each agent window's agent process on every refresh
+(I-200, I-576), and re-applies it, because the value is inherited on fork
+and `dev` can raise its own but never lower it.
+
+*The receiver was not, and on a small machine that is not a theoretical
+gap.* Measured on the 2 GB guest with both at `oom_score_adj` 0: the
+browser's main process scored `oom_score` **717** and a 19 MiB webhook
+receiver **670**. Within 7 percent of each other, so a machine-wide
+decision between them is close to a coin flip, and the receiver survived
+the test above only because the kill never became machine-wide -- it
+stayed inside the browser's memcg. A receiver is the one process in an
+always-on machine whose death is silent and total: the agent is idle by
+definition when nothing has arrived, so a killed receiver looks exactly
+like a quiet week.
+
+**The receiver's protection is specified here and is not built.** The
+rule it should have is the same fact-based identification I-1124 uses
+rather than a name: a process of dev's that **listens on a port a webhook
+route delivers to** runs at `OOMProtected` (-800, not -1000, for the
+reason I-200 gives: a runaway receiver can still be stopped by the kernel
+rather than hang the guest). What stops it being written today is that
+guestd has no way to know which port that is. There is no `webhook`
+anywhere in `internal/guestd`: the api holds the route's port
+(`internal/api/webhooks/webhooks.go`), the edge delivers to it over the
+gateway, and the guest "learns of the route only from the user"
+(`proposals/2026-11-12-always-on-framework.md` §2). Closing it is a proto
+field, a hostd relay, an api send on every route change and a guestd
+store -- four components and a change to `interfaces/vsock-guestd.md` --
+and it is the next piece of work, not this entry's. It is recorded rather
+than built because a half-delivered port list would protect some
+receivers and not others with nothing to say which.
+
+Two rules that were considered instead, and are not it, because each
+protects the wrong things:
+
+- *A process of dev's listening on any port, in a `.service` under dev's
+  user manager.* It needs no plumbing and it is wrong: a `vite` a user
+  puts in a unit would outrank the build it serves, which inverts I-200
+  for anything a user declares.
+- *A listener the gateway has an established connection to.* Also needs
+  no plumbing, and it is true only of a receiver that has already taken a
+  delivery, so a new route's receiver is unprotected until the first
+  event -- which is exactly the event it must not miss.
+
+*Rejected:*
+- **`systemd-oomd` on the receiver's slice.** I-576 rejected oomd on
+  `app.slice` and the reason stands: oomd kills a whole cgroup and does
+  not read `oom_score_adj`. Confirmed still inert here -- oomd is
+  `active` on a guest and watching nothing.
+- **A `MemoryLow` budget for the receiver.** I-576's budgets are a fixed
+  304 MB for cgroups whose size does not grow with the machine. A
+  receiver is the tenant's program and has no such bound.
+
+**I-1210. The landing's drawn pictures are exempt from the legacy-class
+grep, as they are from every other look rule (conductor, r20261115-1,
+2026-11-15).** `docs/CHECKLIST.md`'s "legacy classes are gone" grep
+forbids a bare `dot`, `card`, `badge` and the other names the old global
+stylesheet used, so that no page reaches for a class the kit no longer
+defines. Every other rule in that section (`colours`, `radii`,
+`elevation`, `motion`, `font-weight`, `JetBrains Mono`) already excludes
+`components/landing/**`, because the pictures there draw captured
+applications and keep their own palette and vocabulary (I-843). The
+hero-loop branch brought fourteen hero pictures whose scoped styles name
+a `.dot` (the agents' presence marks) and one `win card`, 17 hits, all
+Svelte-scoped and none reaching a global class. The grep now excludes
+the same directory as its neighbours. Rejected: renaming the classes in
+fourteen files (a mechanical edit across pictures the owner judged by
+eye, for no change the rule was written to catch), and leaving the hits
+(a red grep on main that the next reader has to re-derive).
+
+**I-1212. The landing's hero is the Orbit, with its copy centred over it
+(hero-loop, 2026-11-15).** Amends I-1169's centrepiece and the hero
+layout of I-961 and I-1167. The hero loop judged nineteen rounds of
+whole pages against voidzero.dev's landing at 1440 and 390. What ships
+is `landing/HeroOrbitV1.svelte`: repose on a tile in the middle, the
+five agents as bubbles on a ring around it, what wakes it on the left
+and what it carries on the right in plain words, and the phone it asks
+you on, on the hero's dark field. The copy above it stands centred from
+1024px (owner, 2026-11-15: no asymmetry over a centred picture), with
+no eyebrow; below 1024px it starts on the text line, under the logo.
+I-1169's stack of plates (`landing/Stack.svelte`) and the three lanes of
+rounds 1 to 8 (`landing/Compose.svelte`) are off the page and stay in
+the tree, loadable with `?hero=<name>` (`landing/heroes.ts`), as the
+other candidates are. Three more changes the rounds made and this entry
+records: the job-application agent has no band of its own, so the bands
+are 01 Layers to 08 Questions and the grid's cells 4.1 to 4.4; a grid
+cell reads its words first and its picture under them, so the stage's
+one hairline is at its top; and the page has one motion control in the
+hero field in place of a pause button per picture (owner, 2026-11-12),
+which `PauseButton.svelte` already shipped. `docs/LANDING.md` is
+rewritten to this page, and the landing suites assert it: the copy's one
+centre line (landing-grid, landing), the Orbit named for a screen reader
+with its five bubbles and its still frame under reduced motion
+(landing), and a loop that starts only once the page has been still
+(landing-motion, landing-hero). The pictures' `<b>` elements became
+spans in the same commit: `docs/CHECKLIST.md`'s weight rule forbids
+`<b>`, main had none, and the rounds added 22; each already sat under a
+rule setting 600 or less, so nothing on the page moved. Rejected:
+leaving LANDING.md describing the centrepiece while the page drew the
+Orbit (two agents then build against different pages, and the next
+round's reviewer reads the wrong spec); keeping the fifteen stale tests
+as skips (DECISIONS I-1036: a skip reads as a pass); and widening the
+weight rule to let the pictures keep `<b>`, as I-1210 widened the
+legacy-class rule (that rule is about a class the kit no longer defines;
+this one is about weight, and the fix was mechanical and visible in a
+capture).
+
+**I-1214. Google Tag Manager on repose.run, gated on the hostname, and
+the privacy policy says so (analytics, 2026-11-15).** The owner asked
+for Google Analytics on the website; their container is `GTM-W463L575`.
+What ships is `apps/web/src/lib/analytics.ts`, called from the root
+layout's `afterNavigate`: it initialises `dataLayer`, pushes
+`{'gtm.start', event: 'gtm.js'}` and appends the async `gtm.js` script
+once, then pushes a `page_view` on every navigation, because the app is
+one page that never reloads and the container would otherwise see the
+first URL only. `script-src` in `svelte.config.js` names
+`https://www.googletagmanager.com`; `img-src` and `connect-src` already
+allow `https:`, which is what GA4's beacons need, and the app sets no
+`strict-dynamic`, so the host allowlist is read rather than ignored.
+The snippet the owner pasted is Google's current async form; it was not
+pasted verbatim, because the app's CSP allows exactly one inline script
+by hash (app.html's first paint, I-398) and a second one would need its
+hash recomputed on every edit. A module needs none. The noscript
+`<iframe>` is left out: it would make `frame-src` name
+googletagmanager.com, and a visitor with scripts off fires no tags
+anyway.
+
+The gate is the hostname, not an environment variable (conductor,
+2026-11-15): nobody on this machine holds a Coolify API token, so a
+`PUBLIC_GTM_ID` would have to be set by hand after the push and the site
+would run without analytics until somebody did. The container id is a
+constant in the module and it loads only when `location.hostname` is
+`repose.run` or `www.repose.run`, and never under `dev`. That keeps it
+off `vite dev`, the Playwright fixtures on 127.0.0.1, a preview on the
+Tailscale address and a local `node build`, which is what a
+`PUBLIC_*`-less build gave us for free before.
+
+**The user-visible change is the privacy policy**, which listed every
+third party that receives anything and did not mention analytics or
+cookies at all. A paragraph under "What we record" now names Google Tag
+Manager and Google Analytics, what Google receives (the page address,
+the referrer, the IP address and an approximate location from it, the
+browser and device), that it sets cookies, and the part the owner should
+read twice: the tag is in the root layout, so it runs on the signed-in
+pages too and the address Google receives for a project page carries
+that project's id. Nothing else about a project reaches Google. The two
+alternatives were to load the tag only on the public paths, which
+leaks anyway once a visitor who has loaded it opens the dashboard,
+because GA4's enhanced measurement reports history changes from the
+container's own configuration, which this repository does not control;
+and to send a scrubbed path, which for the same reason would be a
+comfort rather than a boundary. If the owner wants dashboard addresses
+out of Analytics, the fix is in the container (or in a path gate here
+plus enhanced measurement turned off), and this entry is the record
+that it was a choice. No cookie banner was built (owner): consent for
+analytics cookies under UK and EU law is an open question for the owner
+and their lawyer, not something this branch settles.

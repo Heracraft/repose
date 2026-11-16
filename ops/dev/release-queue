@@ -698,14 +698,17 @@ cmd_record() {
   # offered to stamp it `main b55d17dd` -- a commit from a fortnight later
   # (DECISIONS I-992).
   #
-  # The date is stored: `integrated=` is written by `done`. The release's
-  # main is not, but it is in git -- `cut` names the release in every merge
-  # commit it writes, so the newest such commit on main is that release's
-  # tip. Both fall back to the old behaviour when they cannot be found, so a
-  # release mid-flight still records something.
+  # Both are stored by `done`: `integrated=` the date, `main=` the commit
+  # (I-1062). Older releases have no `main=`, and fall back to the grep over
+  # `cut`'s merge subjects that this used to rely on, then to today's main,
+  # so a release mid-flight still records something.
   local rdate rmain
   rdate=$(sed -n 's/^integrated=\(....-..-..\).*/\1/p' "$rf")
-  rmain=$(git rev-list -1 --grep="($rel)\$" main 2>/dev/null)
+  # Stored by `done` since I-1062. The grep is the fallback for releases
+  # integrated before that, and today's main the last resort for one still
+  # mid-flight; both are guesses, which is why the stored value wins.
+  rmain=$(field "$rf" main)
+  [ -n "$rmain" ] || rmain=$(git rev-list -1 --grep="($rel)\$" main 2>/dev/null)
   [ -n "$rmain" ] || rmain=$(git rev-parse main)
   printf '%s | release %s | conductor, %s | released | %s branches: %s shipped as %s. Evidence and what is not done: docs/releases/%s.md\n' \
     "${rdate:-$(date -u +%Y-%m-%d)}" "$rel" "$(hostname)" "$n" "${branches%, }" "${targets:-nothing to deploy}" "$rel"
@@ -947,6 +950,13 @@ cmd_done() {
     [ "$(field "$f" state)" = "cut:$rel" ] && setfield "$f" state "merged:$rel"
   done < <(entries)
   echo "integrated=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$state/releases/$rel"
+  # The released main, stored rather than guessed later (DECISIONS I-1062).
+  # main holds the release -- checked just above -- so this is the commit the
+  # push ships. `record` used to find it by grepping main for a merge whose
+  # subject ends "($rel)", which is every merge `cut` writes and nothing
+  # else; a fix the conductor commits in the batch worktree on top of those
+  # merges is the commit that actually ships and is not one of them.
+  echo "main=$(git rev-parse main)" >> "$state/releases/$rel"
   wt=$(field "$state/releases/$rel" worktree)
   git worktree remove "$wt" && git branch -q -d "release/$rel" || echo "release-queue: left $wt in place (it has changes)" >&2
   echo "release $rel is on main; it is released when main is pushed (docs/ops/RELEASE.md)"

@@ -81,6 +81,32 @@ if bad:
 print("all anchors resolve")
 ANCHORS
 
+say "every alert's runbook anchor is its own section"
+# The anchor check above only asks whether the anchor resolves somewhere.
+# HostScrapeDown's resolved to #hostwgdown, so the alert that fires for a
+# dead tunnel delivered the operator into a different section -- one whose
+# step 3, before I-1070, would have finished the tunnel off. An anchor that
+# points at a real but wrong section is worse than one that goes nowhere,
+# because nothing about the page looks broken (DECISIONS I-1072).
+python3 - <<'OWNANCHOR' || fail=1
+import re, sys
+rules = open("ops/alerts.yaml").read() + open("ops/alerts-loki.yaml").read()
+def slug(h):
+    return re.sub(r"[^a-z0-9 -]", "", h.lower()).replace(" ", "-")
+bad, cur = [], None
+for line in rules.splitlines():
+    m = re.match(r"\s*- alert: (\w+)", line)
+    if m:
+        cur = m.group(1)
+    m = re.search(r'runbook: "docs/ops/RUNBOOK\.md#([^"]+)"', line)
+    if m and cur and m.group(1) != slug(cur):
+        bad.append(f"{cur} -> #{m.group(1)} (its own section is #{slug(cur)})")
+if bad:
+    print("alert points at another section's entry:\n  " + "\n  ".join(bad), file=sys.stderr)
+    sys.exit(1)
+print("every alert points at its own section")
+OWNANCHOR
+
 say "every alert has a runbook heading"
 # docs/CHECKLIST.md: an alert with no runbook entry is a notification nobody
 # knows what to do with. The heading is the alert name, lowercased by
@@ -94,6 +120,36 @@ if [ -n "$missing" ]; then
   fail=1
 else
   echo "all alerts have one"
+fi
+
+say "every alert-shaped runbook heading is a real alert"
+# The reverse of the check above, and the one that was missing. A heading
+# written as a bare CamelCase word reads as an alert name, so an operator
+# or an agent who finds it believes an alert exists for that failure. On
+# 2026-11-10 "## HostWgDown" had been in the runbook for months, said
+# "alert `host_wg_down`", and no such rule existed: the section for the
+# failure in front of the diagnosing agent looked like it was for some
+# other, alerted condition, and 42 minutes went elsewhere (I-1074).
+#
+# Sections deliberately named after something other than a Prometheus
+# alert go in this list with the reason. Keep it honest: it is the only
+# thing between a new phantom alert and a reader who trusts the name.
+allowed_non_alerts="StoreHigh"
+# StoreHigh: a hostd host_warning kind (`kind="store_high"`), not a
+# Prometheus rule. The Prometheus alert for the root filesystem is
+# StoreFull, at 85 percent, and that section names it.
+phantom=""
+for name in $(grep -oE "^## [A-Z][A-Za-z0-9]+$" docs/ops/RUNBOOK.md | awk '{print $2}'); do
+  case " $allowed_non_alerts " in *" $name "*) continue ;; esac
+  grep -qE "^[[:space:]]+- alert: $name$" "$ops/alerts.yaml" "$ops/alerts-loki.yaml" ||
+    phantom="$phantom $name"
+done
+if [ -n "$phantom" ]; then
+  echo "runbook headings that read as alert names with no such alert:$phantom" >&2
+  echo "add the alert, rename the heading to a symptom, or name it in allowed_non_alerts with the reason" >&2
+  fail=1
+else
+  echo "no phantom alerts"
 fi
 
 say "grafana alert rules are what the generator produces"
@@ -113,6 +169,67 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 python3 "$ops/dashboards/validate.py" --emit-rules >"$tmp/dashboard-rules.yaml"
 promtool check rules "$tmp/dashboard-rules.yaml" || fail=1
+
+say "every repose-admin command the docs name exists"
+# Nothing checked this, and five invocations in the runbook did not exist:
+# `hosts drain --all` as step 1 of a breach response, `projects rebuild`
+# twice, `hosts show`, and `ops list --kind` three times. Each is a step an
+# operator or an agent reaches mid-incident and gets "host not found" or an
+# exit 1 from the flag parser (DECISIONS I-1078).
+#
+# The command set comes from internal/admin/admin.go's usage block, which
+# is the documented surface and the thing a reader is sent to. Prose about
+# a subcommand that does *not* exist must not write the invocation out, or
+# it trips this: say "`projects` has no `rebuild` subcommand" instead.
+python3 - <<'ADMINCMDS' || fail=1
+import glob, pathlib, re, sys
+block = re.search(r'repose-admin <command> \[args\]\n(.*?)\n\s*`',
+                  pathlib.Path("internal/admin/admin.go").read_text(), re.S)
+if not block:
+    print("cannot find repose-admin's usage block in internal/admin/admin.go", file=sys.stderr)
+    sys.exit(1)
+groups, cur = {}, None
+for line in block.group(1).splitlines():
+    m = re.match(r"\s{2}(\w[\w-]*)\s{2,}(.*)$", line)
+    if m:
+        cur = m.group(1); groups.setdefault(cur, []).append(m.group(2))
+    elif cur and line.strip():
+        groups[cur].append(line.strip())
+subs = {}
+for g, lines in groups.items():
+    s = set()
+    for line in lines:
+        # Bracketed optionals are stripped first so a value list such as
+        # `--class small|large|xl` cannot donate "large" as a subcommand;
+        # both `|` and the start of a continuation line separate alternatives.
+        for alt in re.sub(r"\[[^\]]*\]", " ", line).split("|"):
+            toks = alt.strip().split()
+            if toks and re.fullmatch(r"[a-z][a-z-]*", toks[0]):
+                s.add(toks[0])
+    subs[g] = s
+bad = []
+# The docs an operator acts from. docs/workstreams/ and its archives are
+# records of what was true when they were written -- STATUS.md names
+# `billing stripe-bootstrap` correctly, from before Polar -- and rewriting
+# history to satisfy a checker would be the wrong fix.
+targets = sorted(glob.glob("docs/ops/*.md") + glob.glob("docs/interfaces/*.md")
+                 + glob.glob("docs/features/*.md"))
+for f in targets:
+    t = pathlib.Path(f).read_text()
+    for m in re.finditer(r"repose-admin\s+([a-z][a-z-]*)\s+([a-z][a-z-]*)", t):
+        g, s = m.group(1), m.group(2)
+        # A group with no subcommands at all (`exec ID -- ARGV`, `audit`,
+        # `seats`) takes an argument in that position, not a name, so there
+        # is nothing to check: skip it rather than read the argument as one.
+        if g in subs and subs[g] and s not in subs[g]:
+            bad.append(f"{f}:{t[:m.start()].count(chr(10))+1} repose-admin {g} {s}")
+if bad:
+    print("documented repose-admin commands that do not exist:", file=sys.stderr)
+    for b in bad:
+        print("  " + b, file=sys.stderr)
+    sys.exit(1)
+print("every documented repose-admin command exists")
+ADMINCMDS
 
 if [ "${1:-}" = "--grafana" ]; then
   say "dashboards load in Grafana"

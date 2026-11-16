@@ -42,9 +42,9 @@ $ repose stop                      # snapshot, then deallocate; a stopped projec
 ```
 
 Everything else (`secrets`, `config`, `snapshots`, `logs`, `destroy`, `start`)
-is a variation on that loop. The dashboard at `repose.herakraft.co` shows the
-same projects, their cost, secrets, and a config menu for people who do not
-write Nix.
+is a variation on that loop. The dashboard at `repose.run` shows the same
+projects, their cost, secrets, and a config menu for people who do not write
+Nix.
 
 ## 3. Tenancy model
 
@@ -133,7 +133,7 @@ next host.
 writes of every guest on it, so it is watched by what it holds, data or
 metadata whichever is fuller, and never by the volumes' sizes. hostd
 reports the pool's size and free bytes in every heartbeat. At 70 percent
-the scheduler places no new project there (a create, a restore or fork as
+the scheduler places no new project there (a create, or a restore as
 a new project) and hostd sends `pool_high`, which is the `PoolHigh`
 warning: the remaining 30 percent is room for the guests already on the
 host to grow into while a human grows the data disk (an online Premium SSD
@@ -177,14 +177,36 @@ result.
 
 | Class | vCPU | RAM | Default volume | Monthly cap (see PRICING) |
 |---|---|---|---|---|
+| tiny | 0.5 | 2 GB | 10 GB | $49 |
 | small | 1 | 4 GB | 20 GB | $49 |
 | large | 2 | 8 GB | 40 GB | $99 |
 | xl | 4 | 16 GB | 80 GB | $199 |
 
 Every class is 4 GB of memory per guest vCPU, uniformly (DECISIONS I-784,
-amending R3-2's 2 GB). The ratio is uniform so that a host's placeable
-memory fixes its guest-vCPU count whatever mix of classes is sold: two
-`small` commit the vCPUs of one `large`, as they already took its memory.
+amending R3-2's 2 GB; I-1168 adding `tiny`). The ratio is uniform so that
+a host's placeable memory fixes its guest-vCPU count whatever mix of
+classes is sold: two `small`, or four `tiny`, commit the vCPUs of one
+`large`, as they already took its memory. `tiny` is why the sold CPU is
+counted in thousandths of a vCPU wherever it is counted (500, 1000, 2000,
+4000): the ratio has no whole answer below 4 GB, and a 2 GB class with a
+whole vCPU would make the seat count overstate a host that sells them by
+twice. A `tiny` boots one vCPU and its cgroup holds it to half of one.
+
+The classes are described by what they are big enough for, and every one
+of them runs always-on agents: `tiny` drives a browser, calls APIs and
+makes documents; `small` runs an agent on a codebase; `large` and `xl`
+are for the hardest work, builds, test suites and several agents at once.
+No class is "the class for agents" (DECISIONS I-1168).
+
+**Burst ceilings**, on a host with `repose.host.burst.enable` (DECISIONS
+I-1126; off on every host at the time of writing): tiny 2, small 4,
+large 6, xl 8. A guest cold-started there boots with that many vCPUs and its
+cgroup still starts at the base quota its class sells; hostd raises the
+quota toward the ceiling while the host's busy CPU stays under a gate,
+and cuts every guest to its base in one tick when it does not. The vCPU
+column above is what the class sells, and it is the only number
+placement, the seat count and the cgroup weight read. Memory does not
+burst.
 
 Volumes are thin-provisioned, resizable upward from the CLI. The plan's
 disk counts the bytes a volume holds (the thin volume's allocated blocks),
@@ -294,7 +316,7 @@ laptop ──ssh──▶ edge (public IP)  ──wireguard──▶ host br-gue
                  gateway :22                        10.64.x.y
                  wg hub  :51820/udp
 laptop ──https─▶ Coolify VM (public IP) : api, web, logto
-host ──grpc/mtls (outbound)──▶ api.repose.herakraft.co
+host ──grpc/mtls (outbound)──▶ api.repose.herakraft.co (internal, I-1156)
 host ──wireguard (outbound)──▶ edge
 guest ──NAT──▶ internet (shaped)
 guest ──vsock──▶ hostd
@@ -307,9 +329,9 @@ guest ──vsock──▶ hostd
   WireGuard peers. The gateway dials `10.64.x.y:22` for a guest.
 - Guests reach the edge's WireGuard address only on the hook-ingest port and
   the noVNC relay; everything else is egress to the internet.
-- Preview URLs (`3000-todo-app-heracraft.repose.herakraft.co`; the hostname
-  carries the handle because slugs are unique per user, not globally) are
-  not built in the first release. The design: the edge terminates TLS with a wildcard cert,
+- Preview URLs (`3000-todo-app-heracraft.repose.run`; the hostname carries
+  the handle because slugs are unique per user, not globally) are not built
+  in the first release. The design: the edge terminates TLS with a wildcard cert,
   authenticates with a cookie from Logto, and proxies to the guest port over
   WireGuard. It is documented in `features/ports-and-previews.md` so the
   gateway is written with that path in mind.
@@ -322,7 +344,9 @@ guest ──vsock──▶ hostd
   since v1.38). The CLI stores the refresh token in the OS keychain where one
   exists, else `~/.config/repose/credentials.json` mode 0600.
 - **API auth.** JWT access tokens for the `https://api.repose.herakraft.co`
-  resource, verified by the API against Logto's JWKS.
+  resource, verified by the API against Logto's JWKS. The resource is an
+  opaque audience, not an address: it kept its name when the api moved to
+  `api.repose.run` (DECISIONS I-1156).
 - **SSH.** The API holds an SSH CA (ed25519, key in the secrets store). On
   `run` and `attach` the CLI sends the public half of its own key
   (`~/.ssh/repose/id_ed25519`, generated without a passphrase and used for
@@ -499,8 +523,13 @@ error}, summary)` and delivers by the user's configured channels: email
 (Resend) and ntfy (any ntfy-compatible endpoint the user sets, so phone apps
 work). Telegram and Discord webhooks are next. Events also show in `repose
 status` and the dashboard. Claude Code Remote Control and channels remain
-available to users who log in with a subscription; the platform does nothing
-to them.
+available to users who log in with a subscription; the platform proxies
+neither, reads no transcript and opens no port for them. It does start
+Remote Control, where the user asked for it with `remote_control = true` in
+`config.toml`: `remoteControlAtStartup` in the machine's Claude settings and
+a `remote-control` tmux window running `claude remote-control`, so the
+Claude app can read, prompt and start sessions on the machine (DECISIONS
+I-1132, amends this paragraph). Off unless asked for (I-1134).
 
 ## 14. Billing and metering
 

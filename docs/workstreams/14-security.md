@@ -195,10 +195,10 @@ lines of 2026-09-20), `docs/security/review-2026-09-20.md` and the tree;
       `TestPolicyTextContainsTheRequiredPassages` pins both passages in
       `apps/web/src/content/legal/{privacy,terms}.md` and the same
       sentence in `docs/SECURITY.md`; the live URLs
-      (`https://repose.herakraft.co/privacy`, `/terms`) are the m3-web
+      (`https://repose.run/privacy`, `/terms`) are the m3-web
       session's text row. Closed: STATUS 2026-09-20 m3-web progress line
       ("14 text rows": both passages live at
-      https://repose.herakraft.co/privacy and /terms) and
+      https://repose.run/privacy and /terms) and
       apps/web/tests-live/public.spec.ts against the served pages.
 - [x] `rg 'credentials.json'` shows only the exclusion. Evidence
       (2026-09-20, `rg -n 'credentials.json' cmd internal`, non-test):

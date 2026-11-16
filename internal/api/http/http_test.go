@@ -30,6 +30,7 @@ import (
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/db"
@@ -40,7 +41,7 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
-const aud = "https://api.repose.herakraft.co"
+const aud = "https://api.repose.run"
 
 type env struct {
 	h        *apitest.Harness
@@ -90,8 +91,12 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		Outbox:    notify.New(h.Pool, map[string]notify.Sender{"email": sender, "ntfy": sender, "gchat": sender}, h.Metrics, log),
 		Unsub:     unsub,
 		Questions: h.Questions,
+		Say:       h.Say,
 		Resting:   h.Resting,
-		Gateway:   httpapi.Gateway{Host: "ssh.test", Port: 22}, Limits: limits, BillingEnforce: true,
+		// hooks.test keeps the URLs in these tests short and names the
+		// host the assertions check (DECISIONS I-1110).
+		WebhookRoutes: webhooks.New(h.Pool, h.Secrets, "hooks.test"),
+		Gateway:       httpapi.Gateway{Host: "ssh.test", Port: 22}, Limits: limits, BillingEnforce: true,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, h.Pool)
 			return len(st.Pending), err
@@ -105,7 +110,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		// logic is what the tests exercise; without a key every start is
 		// subscription_required (TestBillingDisabledRoutes covers the
 		// routes' 503). BillingEnforce=false still lets everything through.
-		deps.Gate = billing.NewGate(h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.herakraft.co", Enforce: deps.BillingEnforce}, h.Metrics, log)
+		deps.Gate = billing.NewGate(h.Pool, billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, DashboardURL: "https://repose.run", Enforce: deps.BillingEnforce}, h.Metrics, log)
 	}
 	e.srv = httpapi.New(deps)
 	e.srv.SetReady(true)
@@ -584,7 +589,7 @@ func TestSignInAndProjectsLifecycle(t *testing.T) {
 	if r.status != 402 || errCode(r) != "payment_required" || errDetail(r, "reason") != "subscription_required" {
 		t.Fatalf("no plan: %d %s", r.status, r.raw)
 	}
-	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != "Choose a plan at https://repose.herakraft.co/billing first." {
+	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != "Choose a plan at https://repose.run/billing first." {
 		t.Fatalf("message %q", msg)
 	}
 	e.subscribe(t, "sub-alice", "plus")

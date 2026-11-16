@@ -10,7 +10,7 @@ import (
 
 // `repose ls` and `repose status` say so while the projects hold more
 // than the plan's disk, and only then (DECISIONS I-585): creating,
-// restoring, forking and growing a disk are refused until they hold less.
+// restoring and growing a disk are refused until they hold less.
 func TestDiskOverPlanLine(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -23,7 +23,7 @@ func TestDiskOverPlanLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake.SetState(p.ID, "stopped")
-	const line = "disk: your projects hold 112.4 GB of the plan's 100 GB; creating, restoring, forking and growing a disk are refused until they hold less"
+	const line = "disk: your projects hold 112.4 GB of the plan's 100 GB; creating, restoring and growing a disk are refused until they hold less"
 	held := func(gb float64) {
 		t.Helper()
 		if err := fake.SetBillingState(fakeapi.BillingState{DiskHeldGB: &gb}); err != nil {
@@ -55,7 +55,7 @@ func TestDiskOverPlanLine(t *testing.T) {
 	// ls has the figures in its plan line, so its line says only what
 	// happens; status has no plan line and says both (I-631).
 	ls, status, _ := strings.Cut(got, "\n--\n")
-	if !strings.Contains(ls, "112.4 of 100 GB disk") || !strings.Contains(ls, "disk past the plan: creating, restoring, forking and growing a disk are refused until your projects hold less\n") || strings.Contains(ls, line) {
+	if !strings.Contains(ls, "112.4 of 100 GB disk") || !strings.Contains(ls, "disk past the plan: creating, restoring and growing a disk are refused until your projects hold less\n") || strings.Contains(ls, line) {
 		t.Fatalf("over the plan, ls:\n%s", ls)
 	}
 	if !strings.Contains(status, line) {

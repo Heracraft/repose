@@ -19,7 +19,7 @@ checks_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 : "${check:=check}"
 : "${REPOSE:=repose}"
-: "${API_URL:=https://api.repose.herakraft.co/v1}"
+: "${API_URL:=https://api.repose.run/v1}"
 : "${EDGE:?set EDGE (the edge public address) in ops/checks/m3.env}"
 : "${EDGE_SSH_PORT:=2222}"
 : "${HOST_WG_IP:?set HOST_WG_IP (host-01 WireGuard address, repose-admin hosts list) in ops/checks/m3.env}"

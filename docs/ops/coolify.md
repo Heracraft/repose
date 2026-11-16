@@ -54,7 +54,7 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    the network: `tailscale status` on the VM, or the NSG if using the
    fallback.
 3. **Names and proxy.** The proxy on this server serves
-   `repose.herakraft.co` and `api.repose.herakraft.co`; both A records point
+   `repose.run` and `api.repose.run`; both A records point
    at the VM's public IP (`infra/README.md`, "DNS"). 80 and 443 are open to
    the internet (`control_web_cidrs = ["0.0.0.0/0"]`, owner's call
    2026-09-20), so Let's Encrypt HTTP-01 works as it does everywhere.
@@ -71,10 +71,11 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    own concern (fact 15, `DECISIONS.md` I-112).
 5. **Logto** is the owner's existing instance, `https://accounts.herakraft.co`
    (`DECISIONS.md` I-84); nothing is deployed for it. In that Logto: the API
-   resource `https://api.repose.herakraft.co`, two applications,
+   resource `https://api.repose.herakraft.co` (an audience, which did not
+   move with the api, I-1156), two applications,
    `repose-cli` (Native, device flow on, redirect
    `http://127.0.0.1:*/callback`) and `repose-web` (SPA, redirect
-   `https://repose.herakraft.co/callback`), and the M2M application
+   `https://repose.run/callback`), and the M2M application
    `repose-api` with a role granting the Management API, whose id and
    secret are `LOGTO_M2M_CLIENT_ID/SECRET`. The api and CLI take the
    endpoint without `/oidc` and append it.
@@ -82,8 +83,8 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    repository (`cmd/api/Dockerfile` twice, `apps/web/Dockerfile`), base
    directory `/`, each with its env file from `ops/coolify/` pasted in.
    Domains
-   `https://api.repose.herakraft.co:8080` and
-   `https://repose.herakraft.co:3000`; port mappings and health-check
+   `https://api.repose.run:8080` and
+   `https://repose.run:3000`; port mappings and health-check
    settings are in `ops/coolify/README.md`. Secrets (Logto M2M, the Entra
    client, later Polar and Resend) go in each app's Environment tab,
    nowhere else. Billing (I-604) is `POLAR_ACCESS_TOKEN` (an organization
@@ -172,10 +173,10 @@ the live instance, not taken from the docs. Each one changed a file here.
 10. **DNS validation compares a domain with the server's address as
    entered, not with where the proxy listens.** The server is registered by
    its tailnet IP (I-86), so Coolify refused `api.repose.herakraft.co`
-   because the record points at the public IP (2026-09-20). The check has
-   no notion of a management address distinct from a served one; turn it
-   off under Settings -> Advanced, "DNS validation". The records stay as
-   `infra/README.md` "DNS" lists them.
+   because the record points at the public IP (2026-09-20, before the move
+   to repose.run). The check has no notion of a management address distinct
+   from a served one; turn it off under Settings -> Advanced, "DNS
+   validation". The records stay as `infra/README.md` "DNS" lists them.
 11. **"Connect to predefined network" registers only the container name.**
    The toggle does not add `coolify` to the generated compose (its
    `networks:` lists only the per-resource network,

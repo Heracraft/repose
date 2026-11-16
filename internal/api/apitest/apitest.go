@@ -29,6 +29,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
 	"github.com/heracraft/repose/internal/api/resting"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
@@ -60,8 +61,13 @@ type Harness struct {
 	// Resting decides what rests and serves the wakes (DECISIONS I-818).
 	// Its tick is not running unless a test drives it (Resting.Once).
 	Resting *resting.Service
+	// Say carries `repose say` to the machine (DECISIONS I-1144). Its
+	// delivery worker runs here, as it does in the grpc process
+	// (I-1162).
+	Say *say.Service
 
 	engine       atomic.Pointer[ops.Engine]
+	saysCancel   context.CancelFunc
 	helloHook    atomic.Pointer[func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error]
 	grpcAddr     string
 	cancel       context.CancelFunc
@@ -111,6 +117,9 @@ func New(t *testing.T, o Options) *Harness {
 	h.Resting = resting.New(pool, h.HostMgr, log)
 	h.Events.SetResting(h.Resting)
 	h.Questions.Waker = h.Resting
+	h.Say = say.New(pool, h.HostMgr, log)
+	h.Events.SetSays(h.Say)
+	h.Say.Waker = h.Resting
 	h.HostMgr.SetHandlers(hostmgr.Handlers{
 		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
 			if f := h.helloHook.Load(); f != nil {
@@ -129,6 +138,9 @@ func New(t *testing.T, o Options) *Harness {
 				return
 			}
 			if h.Questions.OnResult(ctx, hostID, r) {
+				return
+			}
+			if h.Say.OnResult(ctx, hostID, r) {
 				return
 			}
 			if e := h.engine.Load(); e != nil {
@@ -155,6 +167,10 @@ func New(t *testing.T, o Options) *Harness {
 	go func() { _ = gs.Serve(ln) }()
 	h.grpcAddr = ln.Addr().String()
 	go h.Logs.Run(ctx)
+	// `API_MODE=all`: this one process both serves the route and holds
+	// the host streams, so it runs the say delivery worker too
+	// (DECISIONS I-1162).
+	h.StartSays()
 	h.StartEngine(ops.Config{BaseRef: "deadbeef"})
 	t.Cleanup(func() {
 		cancel()
@@ -186,6 +202,26 @@ func (h *Harness) StartEngine(cfg ops.Config) *ops.Engine {
 	h.Engine = e
 	go e.Run(ectx)
 	return e
+}
+
+// StartSays runs the say delivery worker, as the grpc process does
+// (DECISIONS I-1162).
+func (h *Harness) StartSays() {
+	h.StopSays()
+	sctx, scancel := context.WithCancel(h.Ctx)
+	h.saysCancel = scancel
+	go h.Say.Run(sctx)
+}
+
+// StopSays halts the say delivery worker, which is what the grpc
+// process being down looks like to the one serving the route.
+func (h *Harness) StopSays() {
+	if h.saysCancel != nil {
+		h.saysCancel()
+		h.saysCancel = nil
+		// The advisory lock is released when the loop's connection returns.
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // SetHelloHook runs f on every Hello before the engine's own handling, as

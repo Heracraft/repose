@@ -23,7 +23,7 @@ export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
  * The one line that installs the CLI, shown on the landing, the empty
  * projects list and Settings. Named once so the three cannot drift.
  */
-export const INSTALL_COMMAND = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
+export const INSTALL_COMMAND = 'curl -fsSL https://repose.run/install.sh | sh';
 
 /** The landing's pricing section, from any page. */
 export function pricingHref(): string {

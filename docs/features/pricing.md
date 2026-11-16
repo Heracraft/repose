@@ -11,13 +11,13 @@ rules are in [`../PRICING.md`](../PRICING.md); the implementation is
 
 ```
 $ repose run
-Choose a plan at https://repose.herakraft.co/billing first.
+Choose a plan at https://repose.run/billing first.
 ```
 
 The CLI prints the api's sentence for every `payment_required` and exits
 7 (`internal/cli/payment.go`). A new account has no plan
 (`billing.status = none`): `repose run`, `repose start`, creating,
-restoring and forking a project all answer `payment_required` with
+and restoring a project all answer `payment_required` with
 `detail.reason = subscription_required` until one is chosen.
 
 The dashboard's billing page shows the three plans, Solo at $49 (shown as
@@ -49,13 +49,15 @@ ignore it (I-1033, replacing I-902's 24-hour cooldown). Asking again
 (`POST /billing/waitlist`, or a checkout that does not fit) puts them at
 the back of the list, and so does an operator's `repose-admin waitlist
 admit HANDLE`, which invites them at once. `GET /billing` only reads: it
-joins nobody and ends no lapse.
+joins nobody and ends no lapse. A billing-exempt account has no plan to
+choose and no place to wait for: both routes refuse it and the queue
+passes its row over (I-1090).
 
 ## What the plan buys
 
 | Plan | Running at once | Disk | Egress a month |
 |---|---|---|---|
-| Solo | 8 GB: one `large`, or two `small` | 100 GB | 250 GB |
+| Solo | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB |
 | Plus | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB |
 | Pro | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB |
 
@@ -67,8 +69,8 @@ much runs, and nothing is metered by the hour. The other reasons
 
 | `detail.reason` | When | What the user reads |
 |---|---|---|
-| `plan_limit` | the running memory plus this machine's class would pass the plan's | `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` (an `xl` on Solo: `an xl machine needs 16 GB. Upgrade to Plus`) |
-| `disk_limit` | what the projects hold plus about what this adds (a create's first 1 GB, a restore's or fork's source figure per copy; nothing for growing a disk) would pass the plan's disk, or one disk would be larger than the plan's whole disk (I-585) | `Your projects hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at …` |
+| `plan_limit` | the running memory plus this machine's class would pass the plan's | `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.run/billing.` (an `xl` on Solo: `an xl machine needs 16 GB. Upgrade to Plus`) |
+| `disk_limit` | what the projects hold plus about what this adds (a create's first 1 GB, a restore's source figure; nothing for growing a disk) would pass the plan's disk, or one disk would be larger than the plan's whole disk (I-585) | `Your projects hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at …` |
 | `egress_limit` | this period's egress passed four times the allowance | `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at …, or wait for the period to end.` |
 | `past_due` | the last payment failed | `Your last payment failed. Update your card at … to start machines again.` |
 | `suspended` | three days past due, or an operator suspension | `Your account is suspended. Pay at … to lift it, or email support.` |

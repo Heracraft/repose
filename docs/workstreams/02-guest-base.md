@@ -329,10 +329,12 @@ dev box, the flake stays.
   so the overlay logic is tested without CH.
 - On a real host with 03: create a guest with the base and no fragment,
   run every command in the checklist from inside it.
-- Size: the base closure must be under 6 GB (checked in CI with `nix
+- Size: the base closure must be under 7 GiB (checked in CI with `nix
   path-info -S`); a bigger base means every host's store grows and every
   first-boot copy of the closure metadata takes longer. Fail the check
-  above 6 GB and record the offender.
+  above 7 GiB and record the offender. The number was 6 GiB until
+  DECISIONS I-1056, which raised it because the base had grown to 4 MiB
+  under it and the next agent bump of any size failed the build.
 
 ## 8. Rollback
 
@@ -349,7 +351,7 @@ A bad base version is rolled back by re-applying the previous
       Open: ci.yml runs `nix flake check --no-build` and builds no
       guest VM test (guest-base, guest-docker, guest-desktop, guestd); add a
       KVM-capable CI job that builds them and link its run.
-- [ ] Base closure size under 6 GB. Evidence: `nix path-info -S` output.
+- [ ] Base closure size under 7 GiB. Evidence: `nix path-info -S` output.
       Open: no `nix path-info -S` output recorded; RESEARCH §11 gives
       "base closure 6.35 GB" (units unstated) and `checks.guest-closure-size`
       is not built in CI. Paste `nix path-info -S ./nix#guest-system`.

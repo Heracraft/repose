@@ -3,7 +3,7 @@ import type { AgentLink } from '$lib/agent-link';
 // client's contract; a field added there without a matching field here is a
 // bug in this file, not a reason to read the response as `any`.
 
-export type SizeClass = 'small' | 'large' | 'xl';
+export type SizeClass = 'tiny' | 'small' | 'large' | 'xl';
 
 export type GuestState =
 	| 'creating'
@@ -347,6 +347,30 @@ export interface CatalogItem {
 	kind: 'service' | 'package' | 'agent' | 'runtime';
 	description: string;
 	options?: CatalogOption[];
+}
+
+/** One delivery a provider made to a webhook route (DECISIONS I-1110). */
+export interface WebhookDelivery {
+	at: string;
+	status: number;
+	outcome: string;
+	duration_ms: number;
+	bytes_in: number;
+	bytes_out: number;
+}
+
+/** A project's public webhook route. `url` carries the route's token. */
+export interface WebhookRoute {
+	route_id: string;
+	name: string;
+	port: number;
+	path: string;
+	allow_start: boolean;
+	url: string;
+	created_at: string;
+	updated_at: string;
+	last_delivery?: WebhookDelivery;
+	deliveries?: WebhookDelivery[];
 }
 
 export interface SecretMeta {

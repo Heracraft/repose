@@ -1,6 +1,6 @@
--- Monthly partitions for meter_samples and proc_samples, and the drop that
--- makes the retention in docs/ops/OBSERVABILITY.md real: meter_samples 90
--- days, proc_samples 30 days.
+-- Monthly partitions for meter_samples, proc_samples and rest_verdicts, and
+-- the drop that makes the retention in docs/ops/OBSERVABILITY.md real:
+-- meter_samples 90 days, proc_samples and rest_verdicts 30 days.
 --
 -- Why partitions and not `delete from ... where ts < ...`: these two tables
 -- are the only ones that grow with time rather than with users. At 60-second
@@ -26,6 +26,7 @@
 --
 --   create table meter_samples (...) partition by range (ts);
 --   create table proc_samples  (...) partition by range (ts);
+--   create table rest_verdicts (...) partition by range (ts);
 
 create or replace function repose_partition_name(base text, month date)
 returns text language sql immutable as $$
@@ -97,6 +98,7 @@ begin
   ] loop
     action := 'create'; partition_name := repose_partition_create('meter_samples', m); return next;
     action := 'create'; partition_name := repose_partition_create('proc_samples', m); return next;
+    action := 'create'; partition_name := repose_partition_create('rest_verdicts', m); return next;
   end loop;
 
   -- docs/ops/OBSERVABILITY.md: 90 days and 30 days. A partition is only
@@ -107,6 +109,13 @@ begin
     action := 'drop'; partition_name := dropped; return next;
   end loop;
   for dropped in select * from repose_partition_drop_old('proc_samples', interval '30 days') loop
+    action := 'drop'; partition_name := dropped; return next;
+  end loop;
+  -- rest_verdicts is kept as long as proc_samples and not as long as
+  -- meter_samples, because a verdict whose process names have aged out is
+  -- half an answer: `cpu` as the condition and nothing to say what spent it
+  -- (DECISIONS I-1152).
+  for dropped in select * from repose_partition_drop_old('rest_verdicts', interval '30 days') loop
     action := 'drop'; partition_name := dropped; return next;
   end loop;
 end;
@@ -124,6 +133,7 @@ begin
   while m <= (date_trunc('month', now()) + interval '1 month')::date loop
     return next repose_partition_create('meter_samples', m);
     return next repose_partition_create('proc_samples', m);
+    return next repose_partition_create('rest_verdicts', m);
     m := (m + interval '1 month')::date;
   end loop;
 end;

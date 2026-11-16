@@ -99,16 +99,19 @@ channel is on, 5 cancelled (dismissed, withdrawn, the machine stopped, or
 lost), 6 the user answered in the terminal, 130 interrupted
 `
 
-// isSub reports whether this binary is running as notify or ask, from its
-// name or its first argument, and returns the arguments that follow.
+// isSub reports whether this binary is running as notify, ask or
+// presence, from its name or its first argument, and returns the
+// arguments that follow.
 func isSub(argv []string) (string, []string) {
 	switch filepath.Base(argv[0]) {
 	case "repose-notify":
 		return "notify", argv[1:]
 	case "repose-ask":
 		return "ask", argv[1:]
+	case "repose-presence":
+		return "presence", argv[1:]
 	}
-	if len(argv) > 1 && (argv[1] == "notify" || argv[1] == "ask") {
+	if len(argv) > 1 && (argv[1] == "notify" || argv[1] == "ask" || argv[1] == "presence") {
 		return argv[1], argv[2:]
 	}
 	return "", nil
@@ -646,10 +649,14 @@ func runCancel(o subOpts, stdout, stderr io.Writer) int {
 	return ExitOK
 }
 
-// runSub runs notify or ask with the process's real stdio and signals.
+// runSub runs notify, ask or presence with the process's real stdio and
+// signals.
 func runSub(name string, args []string) int {
-	if name == "notify" {
+	switch name {
+	case "notify":
 		return runNotify(args, os.Stdin, os.Stdout, os.Stderr)
+	case "presence":
+		return runPresence(args, os.Stdout, os.Stderr)
 	}
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

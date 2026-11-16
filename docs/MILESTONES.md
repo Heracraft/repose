@@ -97,7 +97,7 @@ production runs on.*
 Workstreams: `14-security` (final review), `ops` docs, launch checklist in
 `CHECKLIST.md`.
 
-Gate: `CHECKLIST.md` closed. Landing page at `repose.herakraft.co`.
+Gate: `CHECKLIST.md` closed. Landing page at `repose.run`.
 
 *Where it stands, 2026-09-26: the deployed-state review
 (`security/review-2026-09-21.md`), tenant isolation on host-01, dashboards,

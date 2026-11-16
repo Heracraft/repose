@@ -126,7 +126,7 @@ func (id *Identity) ShouldRotate(now time.Time) bool {
 type Config struct {
 	Dir        string // /var/lib/repose/hostd
 	TokenPath  string // /run/repose/join-token
-	APIAddr    string // api.repose.herakraft.co:443
+	APIAddr    string // api.repose.herakraft.co:443 (internal, I-1156)
 	ServerName string
 	Roots      *x509.CertPool // nil: system roots
 	Info       *hostdv1.HostInfo

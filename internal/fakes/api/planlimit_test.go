@@ -10,7 +10,7 @@ import (
 // rewrites the gate's words (namePlanFix), and a fake that said it
 // another way kept every test against it from seeing that (I-633).
 func TestPlanLimitMessageIsTheGates(t *testing.T) {
-	const url = "https://repose.herakraft.co/billing"
+	const url = "https://repose.run/billing"
 	for _, c := range []struct {
 		plan  string
 		class string

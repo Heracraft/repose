@@ -61,7 +61,7 @@ describe('turns', () => {
 		vi.stubGlobal('IntersectionObserver', FakeIO);
 		vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => setTimeout(() => f(0), 0));
 		vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
-		const { Picture } = await import('./motion.svelte');
+		const { Picture, QUIET_MS } = await import('./motion.svelte');
 		const row = document.createElement('div');
 		const a = document.createElement('div');
 		const b = document.createElement('div');
@@ -77,7 +77,12 @@ describe('turns', () => {
 		seen.get(a)!([{ isIntersecting: true, intersectionRatio: 1 }]);
 		seen.get(b)!([{ isIntersecting: true, intersectionRatio: 1 }]);
 		await new Promise((r) => setTimeout(r, 5));
-		expect(log).toEqual(['a play still', 'b rest still']);
+		// The leader holds its still frame until the page has been still.
+		expect(log).toEqual(['a hold still', 'b rest still']);
+		await new Promise((r) => setTimeout(r, QUIET_MS + 20));
+		log.splice(0, 1);
+		expect(log).toEqual(['b rest still', 'a play still']);
+		log.splice(0, 2, 'a play still', 'b rest still');
 
 		// b reporting its seam changes nothing: it is not the leader.
 		pb.looped();

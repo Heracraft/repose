@@ -65,3 +65,41 @@ func TestEditDistanceCountsASwapAsOne(t *testing.T) {
 		}
 	}
 }
+
+// I-1046: `repose PROJECT COMMAND ...` is the two words the other way
+// round, not a mistyped command. The answer names the project and, when
+// the next word is a command, the line to type instead.
+func TestProjectBeforeTheCommand(t *testing.T) {
+	isProject := func(w string) bool { return w == "job" }
+	const head = "job is a project, not a command.\n"
+	const tail = "\n`repose --help` shows its usage."
+	for _, tc := range []struct{ args, want string }{
+		{"job exec rm out/resume.pdf", head + "Did you mean `repose exec job rm out/resume.pdf`?" + tail},
+		{"job status", head + "Did you mean `repose status job`?" + tail},
+		{"job stop", head + "Did you mean `repose stop job`?" + tail},
+		// A word that is no command of repose's is one for the machine.
+		{"job cat out/x", head + "Did you mean `repose exec job cat out/x`?" + tail},
+		{"job zzzz", head + "Did you mean `repose exec job zzzz`?" + tail},
+		// ls, rm and cp are the shell's words here, not repose's: the line
+		// must never offer `repose rm job`, which destroys the project.
+		{"job rm out/resume.pdf", head + "Did you mean `repose exec job rm out/resume.pdf`?" + tail},
+		{"job ls out", head + "Did you mean `repose exec job ls out`?" + tail},
+		{"job cp a b", head + "Did you mean `repose exec job cp a b`?" + tail},
+		// A ~ the reader quoted is quoted again, or their shell eats it.
+		{"job ls ~/job/out", head + "Did you mean `repose exec job ls '~/job/out'`?" + tail},
+		// Nothing after the project: what the word is, and nothing invented.
+		{"job", "job is a project, not a command." + tail},
+	} {
+		if got := unknownCommand(newRootCmd("dev"), strings.Fields(tc.args), isProject); got != tc.want {
+			t.Errorf("repose %s:\n got %q\nwant %q", tc.args, got, tc.want)
+		}
+	}
+	// A word that is no project of the account's keeps the old answer, and
+	// a typo of a command is read as a typo without a lookup.
+	if got := unknownCommand(newRootCmd("dev"), []string{"other", "exec", "ls"}, isProject); !strings.Contains(got, `unknown command "other"`) {
+		t.Errorf("repose other exec ls: %q", got)
+	}
+	if got := unknownCommand(newRootCmd("dev"), []string{"exce", "ls"}, func(string) bool { t.Error("asked about a typo"); return true }); !strings.Contains(got, "repose exec") {
+		t.Errorf("repose exce ls: %q", got)
+	}
+}

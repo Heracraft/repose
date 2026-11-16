@@ -52,7 +52,7 @@ const Usage = `repose-admin <command> [args]
 
   db        migrate | status | rollback --to NNNN | down [n] | verify
   hosts     add --name N [--provider p --sku s --region r] [--reissue] | list | drain N | undrain N | retire N | mark-lost N | reconcile N [--fix] | rotate-cert N | rotate-wg N | smoke N
-  projects  create --user HANDLE --name N [--class small|large|xl] [--host N] [--create-user] [--wait] | destroy ID|SLUG (I-113)
+  projects  create --user HANDLE --name N [--class tiny|small|large|xl] [--host N] [--create-user] [--wait] | destroy ID|SLUG (I-113)
             list [--host N] [--sort disk|closure] | show ID|SLUG | start ID | stop ID [--no-snapshot] | restart ID | snapshot ID | resize ID --bytes B
             move ID --to N | restore ID [--snapshot SID | --latest] [--to N] | destroy ID [--wait=false] | exec ID -- ARGV...
   exec      ID -- ARGV...
@@ -69,7 +69,7 @@ const Usage = `repose-admin <command> [args]
   edge      init --endpoint HOST:PORT --pubkey WGPUB [--out DIR] | loki [URL]
   audit     [--user HANDLE] [--since 24h] [--action A]
   abuse     list [--all] | clear ID|SLUG   (automatic miner stops, I-239; suspending the user is users suspend)
-  waitlist  list | admit HANDLE | admit --next N   (seats waitlist, I-269/I-290; admit invites: a 72 h seat hold and the email; the api invites by itself as seats free up)
+  waitlist  list | stale [--before TIME] [--lapse] | admit HANDLE | admit --next N   (seats waitlist, I-269/I-290; admit invites: a 72 h seat hold and the email; the api invites by itself as seats free up; stale lists the rows that joined before the GET bug was fixed and --lapse takes them out of the queue with no email, I-1092)
   seats     (total, held, free, waiting, and whether the total is SEATS_TOTAL or the hosts', I-290)
   ops       list [--project ID] [--host N] [--state S] | log OPID
   version

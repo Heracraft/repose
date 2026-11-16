@@ -2,7 +2,7 @@
 
 ## Names
 
-- Gateway address: `ssh.repose.herakraft.co:22`.
+- Gateway address: `ssh.repose.run:22`.
 - Login name: `<project-slug>.<user-handle>`, e.g. `todo-app.heracraft`.
   The gateway splits on the last `.`.
 - Inside the guest the Unix user is always `dev`.
@@ -24,7 +24,7 @@ Two CAs, both ed25519, private keys in the api's secret store:
   boot and the guest's address as a second principal once the api has
   seen it in the create result (I-42); the gateway verifies a guest's host
   key against `<slug>.<handle>`, which it knows from the login name. The
-  CLI writes `@cert-authority ssh.repose.herakraft.co,10.64.* <host ca>`
+  CLI writes `@cert-authority ssh.repose.run,10.64.* <host ca>`
   to `~/.ssh/repose/known_hosts`, so there is never a host-key prompt.
 
 ## Gateway behaviour
@@ -127,6 +127,20 @@ Two CAs, both ed25519, private keys in the api's secret store:
    change; its relay keeps the old gateway's code until it reconnects.
    Only a restart of the unit or of the edge ends open relays at once.
 
+9. A webhook delivery (DECISIONS I-1110) opens a connection of the
+   gateway's own, with no client behind it: the same five-minute
+   gateway certificate for the project, the same check of the guest's
+   host certificate against the Host CA for `<slug>.<handle>`, the user
+   `dev`, and one `direct-tcpip` channel to `127.0.0.1:<port>` (or
+   `::1:<port>`). It opens no session channel and requests no agent
+   forwarding. It is **not** reported to `POST /internal/sessions`, so a
+   run of deliveries never holds a machine awake past the session
+   window; the gateway keeps one such connection per project for 30
+   seconds after its last use and closes it after that. The login name
+   comes from `GET /internal/route?project_id=`, which carries it for
+   exactly this reason: a delivery has no login of its own and still
+   has to check the host certificate's principal.
+
 ## Guest sshd
 
 ```
@@ -154,7 +168,7 @@ and `~/.ssh/repose/hosts`, one block per project:
 ```
 Host todo-app.repose
   # project 01a0cfac-8500-75e2-b8ee-2a60cce7b7aa
-  HostName ssh.repose.herakraft.co
+  HostName ssh.repose.run
   User todo-app.heracraft
   IdentityFile ~/.ssh/repose/id_ed25519
   CertificateFile ~/.ssh/repose/id_ed25519-cert.pub

@@ -3,7 +3,7 @@
 repose is a service where a developer runs `repose run` in a project directory
 and gets a persistent remote environment where coding agents keep working after
 the laptop closes. Multi-tenant from the first release, billed from the first
-hour, hosted at `repose.herakraft.co` until it graduates to its own domain.
+hour, hosted at `repose.run`.
 
 These docs are the source of truth. When code and docs disagree, the doc is
 wrong only if a `DECISIONS.md` entry says so.

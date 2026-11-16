@@ -86,7 +86,7 @@ func (o *Overage) Run(ctx context.Context) (charges []Charge, stopped []uuid.UUI
 // DiskOverPlan writes a disk_over_plan email for every user whose
 // projects hold more than the plan's disk, once per period (DECISIONS
 // I-585). Nothing is stopped: the gate refuses what would add bytes
-// (create, restore, fork, growing a disk) until they hold less. It
+// (create, restore, growing a disk) until they hold less. It
 // returns the users it wrote to.
 func (o *Overage) DiskOverPlan(ctx context.Context) ([]uuid.UUID, error) {
 	now := o.Now().UTC()

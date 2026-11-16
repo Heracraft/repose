@@ -49,15 +49,24 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/secrets", a(s.listSecrets))
 	s.route(m, "PUT /v1/projects/{id}/secrets/{name}", a(s.putSecret))
 	s.route(m, "DELETE /v1/projects/{id}/secrets/{name}", a(s.deleteSecret))
+	// Webhook routes: a public URL into the project's machine
+	// (DECISIONS I-1110)
+	s.route(m, "GET /v1/projects/{id}/webhooks", a(s.listWebhooks))
+	s.route(m, "POST /v1/projects/{id}/webhooks", a(s.putWebhook))
+	s.route(m, "GET /v1/projects/{id}/webhooks/{name}", a(s.getWebhook))
+	s.route(m, "DELETE /v1/projects/{id}/webhooks/{name}", a(s.deleteWebhook))
+	s.route(m, "POST /v1/projects/{id}/webhooks/{name}/rotate", a(s.rotateWebhook))
 	// Snapshots
 	s.route(m, "GET /v1/snapshots", a(s.listAllSnapshots))
 	s.route(m, "GET /v1/projects/{id}/snapshots", a(s.listSnapshots))
 	s.route(m, "POST /v1/projects/{id}/snapshots", a(s.createSnapshot))
 	s.route(m, "POST /v1/projects/{id}/snapshots/{sid}/restore", a(s.restoreSnapshot))
-	s.route(m, "POST /v1/projects/{id}/fork", a(s.forkProject))
+	s.route(m, "POST /v1/projects/{id}/fork", a(s.forkRemoved))
 	// Events and logs
 	s.route(m, "GET /v1/projects/{id}/events", a(s.listEvents))
 	s.route(m, "GET /v1/projects/{id}/logs", a(s.projectLogs))
+	// A message for the project's agent, `repose say` (DECISIONS I-1144)
+	s.route(m, "POST /v1/projects/{id}/say", a(s.sayToAgent))
 	// Questions from repose-ask (DECISIONS I-245)
 	s.route(m, "GET /v1/questions", a(s.listQuestions))
 	s.route(m, "GET /v1/projects/{id}/questions", a(s.listProjectQuestions))
@@ -94,5 +103,11 @@ func (s *Server) registerInternalRoutes() {
 	s.route(m, "GET /v1/internal/hosts", s.internalHosts)
 	s.route(m, "POST /v1/internal/gateway-certs", s.internalGatewayCerts)
 	s.route(m, "POST /v1/internal/events", s.internalEvents)
+	// The edge's webhook side (DECISIONS I-1110): the route table it
+	// holds in memory, the state a delivery reads by project id, the
+	// start a --start route asks for, and the delivery batches.
+	s.route(m, "GET /v1/internal/webhook-routes", s.internalWebhookRoutes)
+	s.route(m, "POST /v1/internal/webhook-start", s.internalWebhookStart)
+	s.route(m, "POST /v1/internal/webhook-deliveries", s.internalWebhookDeliveries)
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { s.healthz(w, r) })
 }

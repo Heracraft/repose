@@ -11,7 +11,7 @@ Your plan buys memory for running machines, disk for what your projects hold, an
 
 | Plan | A month                     | Running at once                        | Disk   | Egress a month |
 | ---- | --------------------------- | -------------------------------------- | ------ | -------------- |
-| Solo | $39 for 12 months, then $49 | 8 GB: one `large`, or two `small`      | 100 GB | 250 GB         |
+| Solo | $39 for 12 months, then $49 | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB         |
 | Plus | $89                         | 16 GB: one `xl`, two `large`, any mix  | 250 GB | 500 GB         |
 | Pro  | $169                        | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1 TB           |
 
@@ -25,7 +25,7 @@ Your plan's memory is how much runs at once, around the clock: the month costs t
 
 ## What a plan means
 
-- **Memory.** Starting a machine that would put your running machines past the plan is refused: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` From a terminal, `repose run`, `start` and `attach` ask instead: `Stop todo-app to start api? [y/N]`. A yes stops it, fetching its commits first, and starts yours; a no, or no terminal, exits 7 with that refusal.
+- **Memory.** Starting a machine that would put your running machines past the plan is refused: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.run/billing.` From a terminal, `repose run`, `start` and `attach` ask instead: `Stop todo-app to start api? [y/N]`. A yes stops it, fetching its commits first, and starts yours; a no, or no terminal, exits 7 with that refusal.
 - **Disk.** Counts the data your projects hold, running or stopped. A new `large` has a 40 GB disk and counts the gigabyte or so it holds at first; a disk's size is only how far that project can grow, and one project's disk can be at most the plan's whole disk. Past the plan's disk, [anything that would add data is refused](/docs/limits#projects). You get one email about it. A file you delete stops counting within a day, or when its machine stops. Snapshots are free.
 - **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice. At four times the allowance (1 TB on Solo, 2 TB on Plus, 4 TB on Pro) your machines stop until the period ends, and you get an email. The total is rolled up a few minutes past each hour, so it can trail by up to an hour.
 

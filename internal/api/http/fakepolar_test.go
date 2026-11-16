@@ -40,7 +40,7 @@ func newFakePolar(t *testing.T) *fakePolar {
 	t.Cleanup(f.srv.Close)
 	f.cfg = billing.Config{AccessToken: "polar_oat_route_test", Env: billing.EnvSandbox, WebhookSecret: f.secret,
 		ProductSolo: "prod_solo_test", ProductPlus: "prod_plus_test", ProductPro: "prod_pro_test",
-		DashboardURL: "https://repose.herakraft.co", BaseURL: f.srv.URL, Enforce: true}
+		DashboardURL: "https://repose.run", BaseURL: f.srv.URL, Enforce: true}
 	return f
 }
 

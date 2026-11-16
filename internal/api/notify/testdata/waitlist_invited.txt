@@ -2,7 +2,7 @@ A seat is yours
 
 A seat on repose is held for you until 30 September 2026 at 14:00 UTC. Choose a plan before then and it is yours. Seven days are free, with a card at checkout.
 
-Choose a plan: https://repose.herakraft.co/billing
+Choose a plan: https://repose.run/billing
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
+repose. Open the dashboard: https://repose.run

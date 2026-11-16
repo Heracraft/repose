@@ -1,5 +1,5 @@
 output "edge_public_ip" {
-  description = "ssh.repose.herakraft.co and every host's WireGuard endpoint."
+  description = "ssh.repose.run and every host's WireGuard endpoint."
   value       = module.environment.edge_public_ip
 }
 
@@ -9,7 +9,7 @@ output "edge_ssh_jump" {
 }
 
 output "control_public_ip" {
-  description = "Where repose.herakraft.co and api.repose.herakraft.co resolve."
+  description = "Where repose.run and api.repose.run resolve."
   value       = module.environment.control_public_ip
 }
 

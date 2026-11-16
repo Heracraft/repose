@@ -110,4 +110,4 @@ On your laptop, `git branch -rd repose/worktree-1` drops the fetched copy. Workt
 - **Agents commit.** Put it in the prompt: "commit as you go" or "commit when the tests pass". An uncommitted change on the machine is what gets in the way of a sync.
 - **Nobody works on the machine's `main`.** Then `repose sync` never stops on a file the machine changed, and a branch is always a clean diff against something you know.
 - **Review on the laptop.** There `git diff main...branch` reads a copy the agent can't touch.
-- **Risky experiments get a fork.** `repose fork` [copies the machine's disk](/docs/lifecycle#fork-a-project), worktrees, database and all, so an agent can try something destructive on the copy.
+- **Risky experiments get their own tree, or a snapshot first.** `repose run --worktree -p "..."` puts the agent on its own branch in its own tree. For something that would damage the machine itself, `repose snapshots create` first, or copy the disk into another machine with `repose snapshots restore ID --as NAME`.

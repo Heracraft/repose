@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -68,4 +69,47 @@ func TestAnswerQuestionUnknownToGuestdIsNotFound(t *testing.T) {
 	h.gopts.Fail = map[string]*guestdv1.Error{"AnswerQuestion": {Code: "not_found", Message: "no question"}}
 	h.create(gid1)
 	h.mustFail(cmd(&hostdv1.AnswerQuestion{GuestId: gid1, QuestionId: "q", Status: "answered"}), CodeNotFound)
+}
+
+// TestSayToAgentReachesGuestd (DECISIONS I-1144): the command is relayed
+// as the guestd request of the same name with every field, its
+// SayResult comes back on the result, and a stopped guest, which runs no
+// agent, is not_found.
+func TestSayToAgentReachesGuestd(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	m := &hostdv1.SayToAgent{GuestId: gid1, SayId: "0199aaaa-0000-7000-8000-00000000001c",
+		Window: "claude", Text: "run the tests before you commit", Sender: "heracraft", FromOwner: true}
+	res := h.mustOK(cmd(m))
+	if sr := res.GetSay(); sr == nil || sr.GetState() != "delivered" || sr.GetWindow() != "claude" {
+		t.Fatalf("result payload = %+v, want the guest's SayResult", res.GetSay())
+	}
+	var got *guestdv1.SayToAgent
+	for _, c := range h.guestd(gid1).Calls() {
+		if r := c.Req.GetSayToAgent(); r != nil {
+			got = r
+		}
+	}
+	if got == nil || got.SayId != m.SayId || got.Window != "claude" || got.Text != m.Text || got.Sender != "heracraft" || !got.FromOwner {
+		t.Fatalf("guestd got %+v", got)
+	}
+
+	h.mustFail(cmd(&hostdv1.SayToAgent{GuestId: gid1, SayId: m.SayId}), CodeInvalidArgument)
+	h.mustFail(cmd(&hostdv1.SayToAgent{GuestId: gid1, Text: "hello"}), CodeInvalidArgument)
+
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	h.mustFail(cmd(m), CodeNotFound)
+}
+
+// TestSayToAgentRefusalKeepsItsCode (DECISIONS I-1144): guestd's
+// invalid_argument, which is how it names the windows when several
+// agents run, reaches the api as invalid_argument and not internal.
+func TestSayToAgentRefusalKeepsItsCode(t *testing.T) {
+	h := newHarness(t, nil)
+	h.gopts.Fail = map[string]*guestdv1.Error{"SayToAgent": {Code: "invalid_argument", Message: "2 agents are running: claude, codex. Name one with --agent"}}
+	h.create(gid1)
+	res := h.mustFail(cmd(&hostdv1.SayToAgent{GuestId: gid1, SayId: "s", Text: "hi"}), CodeInvalidArgument)
+	if !strings.Contains(res.GetError().GetMessage(), "claude, codex") {
+		t.Fatalf("the refusal lost the windows: %q", res.GetError().GetMessage())
+	}
 }

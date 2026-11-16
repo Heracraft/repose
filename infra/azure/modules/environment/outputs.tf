@@ -1,5 +1,5 @@
 output "edge_public_ip" {
-  description = "Static address of the edge; ssh.repose.herakraft.co and every host's WireGuard endpoint."
+  description = "Static address of the edge; ssh.repose.run and every host's WireGuard endpoint."
   value       = module.edge.public_ip
 }
 

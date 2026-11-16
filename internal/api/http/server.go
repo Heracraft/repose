@@ -33,10 +33,12 @@ import (
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/ratelimit"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/waitlist"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -66,7 +68,10 @@ type Deps struct {
 	// Questions is repose-ask's store (DECISIONS I-245); nil answers the
 	// question routes with 500.
 	Questions *questions.Service
-	Parser    *config.Parser
+	// Say carries `repose say` to the machine (DECISIONS I-1144); nil
+	// answers POST /projects/:id/say with 500.
+	Say    *say.Service
+	Parser *config.Parser
 	Metrics   *metrics.M
 	Registry  *prometheus.Registry
 	Log       *slog.Logger
@@ -97,11 +102,20 @@ type Deps struct {
 	// answer's X-Repose-CLI-Latest header (DECISIONS I-626); nil or ""
 	// sends no header.
 	CLILatest func() string
+	// CLIOldest is the oldest CLI release this api still answers as
+	// documented ("v0.1.30"), named in every answer's X-Repose-CLI-Oldest
+	// header (DECISIONS I-1088); "" sends no header.
+	CLIOldest string
 	// Resting wakes a machine that rests (DECISIONS I-818): the gateway's
 	// POST /internal/wake and a keep_awake the user has just turned on.
 	// nil makes the wake route answer 503 and keep_awake take effect at
 	// the next rest rule rather than at once.
 	Resting Waker
+	// WebhookRoutes is a project's public webhook routes (DECISIONS
+	// I-1110): the `repose webhooks` routes and the table the edge syncs.
+	// nil makes every one of them answer 500, which is what a test that
+	// does not care gets.
+	WebhookRoutes *webhooks.Store
 }
 
 // Waker is internal/api/resting's Wake, the api's only way to resume a
@@ -159,7 +173,7 @@ func New(d Deps) *Server {
 		d.Gate = billing.NewGate(d.Pool, billing.Config{Enforce: d.BillingEnforce}, d.Metrics, d.Log)
 	}
 	if d.Gateway.Host == "" {
-		d.Gateway = Gateway{Host: "ssh.repose.herakraft.co", Port: 22}
+		d.Gateway = Gateway{Host: "ssh.repose.run", Port: 22}
 	}
 	lim := DefaultRateLimits
 	if d.Limits != nil {
@@ -348,12 +362,14 @@ const corsExposedHeaders = "Repose-Event-Count, X-Request-Id"
 func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if component == "http" {
-			// The dashboard (repose.herakraft.co) and the api
-			// (api.repose.herakraft.co) are different origins, and every
-			// route here is authenticated by a bearer token, never a
-			// cookie, so a wildcard origin leaks no ambient credential
-			// (I-79). /internal is never called from a browser and gets
-			// no CORS headers at all.
+			// The dashboard (repose.run) and the api (api.repose.run)
+			// are different origins, and every route here is
+			// authenticated by a bearer token, never a cookie, so a
+			// wildcard origin leaks no ambient credential (I-79). The
+			// wildcard is also what lets the old repose.herakraft.co
+			// dashboard keep calling the api while both names answer
+			// (I-1156). /internal is never called from a browser and
+			// gets no CORS headers at all.
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", corsAllowedMethods)
 			w.Header().Set("Access-Control-Allow-Headers", corsAllowedHeaders)
@@ -373,6 +389,9 @@ func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 			if v := s.d.CLILatest(); v != "" {
 				w.Header().Set("X-Repose-CLI-Latest", v)
 			}
+		}
+		if s.d.CLIOldest != "" {
+			w.Header().Set("X-Repose-CLI-Oldest", s.d.CLIOldest)
 		}
 		log := s.d.Log.With("request_id", rid)
 		// info is filled in by authed further down; the request the mux

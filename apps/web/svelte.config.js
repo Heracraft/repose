@@ -10,8 +10,9 @@ const config = {
 		adapter: adapter(),
 		// The one Content-Security-Policy the app has, set here because no
 		// layer in front of it (Coolify's Traefik, the edge) sets one. Its
-		// point is script-src: the only scripts are the app's own, and the
-		// app has no frame, so default-src covers frames. The checkout is
+		// point is script-src: the only scripts are the app's own and the
+		// tag manager's, and the app has no frame, so default-src covers
+		// frames. The checkout is
 		// Polar's hosted page, reached by navigation (DECISIONS I-604).
 		// SvelteKit nonces its own inline start script (mode auto; hashes
 		// on the prerendered legal pages). connect-src cannot name the api
@@ -27,7 +28,16 @@ const config = {
 				// The hash is app.html's one inline script, which sets html.js
 				// and the stored theme before the first paint (DECISIONS I-398,
 				// I-837); editing that script changes it (app-html.test).
-				'script-src': ['self', 'sha256-UsDo7j5S5AvoyFy9kU7vNq7d7jzVYI7KYhbawKMguC8='],
+				// googletagmanager.com serves gtm.js and the tags the
+				// container fires from it (lib/analytics.ts, I-1214); the app
+				// sets no nonce-plus-strict-dynamic, so this host allowlist is
+				// read. GA4's beacons need no directive of their own: img-src
+				// and connect-src already allow https.
+				'script-src': [
+					'self',
+					'sha256-UsDo7j5S5AvoyFy9kU7vNq7d7jzVYI7KYhbawKMguC8=',
+					'https://www.googletagmanager.com'
+				],
 				'style-src': ['self', 'unsafe-inline'],
 				'font-src': ['self'],
 				'img-src': ['self', 'data:', 'https:'],

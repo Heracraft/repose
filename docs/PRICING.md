@@ -15,9 +15,24 @@ I-77, I-179 to I-185 and I-205; the hourly design is kept in
 
 | Plan | Price | Memory for running machines | Disk | Egress a month | Seats |
 |---|---|---|---|---|---|
-| Solo | $49 a month | 8 GB: one `large`, or two `small` | 100 GB | 250 GB | 1 |
+| Solo | $49 a month | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB | 1 |
 | Plus | $89 a month | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB | 2 |
 | Pro | $169 a month | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB | 4 |
+
+**The `tiny` line is *proposed*, not the owner's yet (DECISIONS I-1168).**
+A plan sells memory that may run at once and no machine count, so `tiny`
+needs no price of its own: it takes its 2 GB as every class takes its
+own, and four of them fit a Solo seat exactly, in memory and in guest
+vCPUs alike. What the owner is being asked to accept is the sentence
+after next. A seat sold as four `tiny` reserves 10,240 MiB of host
+memory where one `large` reserves 8,704 and two `small` reserve 9,216 --
+18 percent more, because `OverheadMiB` is charged per guest and a guest
+floor of about 305 MiB is paid four times instead of once. So Solo's
+revenue per running machine falls to a quarter while the host carries 18
+percent more. If that is to be protected the levers are a count of
+`tiny` machines per account, or counting a `tiny` as more memory than it
+has; neither is proposed here, because nothing is known yet about who
+buys it.
 
 The prices are ladder C of `proposals/2026-10-11-price-level.md`,
 chosen for launch (DECISIONS I-672, superseding I-362's $29, $59 and $99).
@@ -46,10 +61,13 @@ the change, since the offer is Solo's only and Polar would otherwise
 carry the $10 onto Plus or Pro (DECISIONS I-497, I-604). The founding
 price keeps Solo's 250 GB of egress.
 
-Three plans because one agent needs a `large`: a harness with its
-language servers, builds and browser fills 8 GB, and a smaller machine
-gets its session OOM-killed partway through. So Solo is one agent working,
-Plus two, Pro four. Pro is for the user who runs several agents at once
+Three plans because one agent on a codebase needs a `large`: a harness
+with its language servers, builds and browser fills 8 GB, and a smaller
+machine gets its session OOM-killed partway through. So Solo is one such
+agent working, Plus two, Pro four. That is about the work, not about
+agents: a `tiny` runs an always-on agent perfectly well when the work is
+a browser, some API calls and a document, which is measured in
+DECISIONS I-1168 and is why four of them fit a Solo seat. Pro is for the user who runs several agents at once
 across repositories, who already pays Anthropic $100 to $200 a month, and
 who is the product's best source of feedback; it is not capped beyond the
 seat count (DECISIONS I-362).
@@ -58,8 +76,8 @@ Prices are in USD and exclude tax; Polar adds and remits the tax for the
 buyer's country as merchant of record, which is why billing goes through a
 merchant of record (DECISIONS I-289, I-604). Size classes keep their memory
 and disk; their vCPUs halved with I-784, to 4 GB of memory per guest vCPU
-(`small` 1 vCPU 4 GB, `large` 2 vCPU 8 GB, `xl` 4 vCPU 16 GB, `DESIGN.md`
-§5). No price moved with them. A plan says how much of them may run at the
+(`tiny` 0.5 vCPU 2 GB, `small` 1 vCPU 4 GB, `large` 2 vCPU 8 GB, `xl`
+4 vCPU 16 GB, `DESIGN.md` §5). No price moved with them. A plan says how much of them may run at the
 same time.
 
 A plan's rules:
@@ -73,12 +91,12 @@ A plan's rules:
   stopped, against the plan's disk (DECISIONS I-585). A volume's figure
   is its thin volume's allocated blocks, which is what the host's disk
   pays for; the guest trims its free blocks daily and at every stop, so a
-  deleted file stops counting within a day. A volume's size (20, 40, 80 GB
-  by class, or what a resize set) is only the ceiling one project can grow
+  deleted file stops counting within a day. A volume's size (10, 20, 40,
+  80 GB by class, or what a resize set) is only the ceiling one project can grow
   to, and may be at most the plan's whole disk. While the projects hold
-  more than the plan's disk, a create, a restore or fork as a new project,
+  more than the plan's disk, a create, a restore as a new project,
   and growing a volume are refused with `detail.reason = disk_limit`; a
-  create counts a new volume's first 1 GB, a restore or fork its source's
+  create counts a new volume's first 1 GB, a restore its source's
   figure per copy. Nothing stops: running machines keep running, stopped
   ones start (starting one is how its files are deleted), and one
   `disk_over_plan` email a period says so. It is a cap, with no overage
@@ -101,6 +119,20 @@ A plan's rules:
   in the Limits doc, not on the pricing page or the plan cards, and an
   operator can raise it for one account (DECISIONS I-569). Destroyed
   projects and their 30-day snapshots are free.
+
+- **Burst cores.** A plan includes burst core-hours: Solo 20, Plus 50,
+  Pro 120 (DECISIONS I-1128; starting numbers, to be set from the first
+  two weeks of real data, because the cgroup quota hides burst demand
+  today). A burst core-hour is an hour of CPU time a machine used above
+  the base cores its class sells, on a host where burst is on. Past the
+  allowance the account's machines run on their base cores until the
+  period ends: nothing stops, nothing is charged, and every build and
+  agent keeps running. **Nothing here is live.** No host has burst
+  switched on, so every account's burst is 0 and the allowance binds on
+  nobody; the overage switch, its cap and its price are not built, and
+  the public docs say nothing about burst until they are. The gate that
+  decides when a host hands out idle cores is unmeasured
+  (`proposals/2026-11-10-burst-cores.md` §6.2).
 
 Example: a Solo user with a `large` running all month, a 40 GB disk, and
 20 GB of egress pays $49, or $39 in the founding months. The same user
@@ -128,7 +160,7 @@ needs that changed first.
 
 A seat is 8 GB of memory that may run at once on the fleet: Solo holds one,
 Plus two, Pro four. A seat is also 2 guest vCPUs, since every class is 4 GB
-per vCPU (I-784), so a host delivers the smaller of two ceilings: the usable
+per vCPU (I-784, I-1168), so a host delivers the smaller of two ceilings: the usable
 8 GB blocks its memory divides into (RAM minus the host reserve) and the
 seats its physical cores can serve while typing still feels immediate. The
 fleet has as many seats as its `ready`, undrained hosts deliver, counted per
@@ -251,6 +283,9 @@ founding one), $4.95 of a Plus one, $8.95 of a Pro one.
 - Snapshots: included. They are small (used blocks, compressed) and the
   retention is fixed.
 - Builds: included, capped by time and cores instead.
+- Burst cores above a plan's allowance: not charged. Overage is off and
+  unbuilt (I-1128); past the allowance a machine simply uses the base
+  cores its class sells.
 - Notifications, the gateway, the browser view, the dashboard: included.
 - Support: email only.
 - Teams, seats for other people, annual plans, currencies other than USD:

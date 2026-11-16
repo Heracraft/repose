@@ -1,5 +1,5 @@
 output "public_ip" {
-  description = "Static address ssh.repose.herakraft.co points at and every host dials for WireGuard."
+  description = "Static address ssh.repose.run points at and every host dials for WireGuard."
   value       = azurerm_public_ip.main.ip_address
 }
 

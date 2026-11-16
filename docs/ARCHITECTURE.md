@@ -17,7 +17,7 @@ a content hash.
 | `api` | Coolify VM | Go | Postgres, Logto JWKS, Polar, Key Vault, hostd (gRPC server side), Resend, ntfy |
 | dashboard | Coolify VM | SvelteKit | api |
 | Logto | Coolify VM | (upstream) | GitHub |
-| `gateway` | edge VM | Go | api (project lookup, revocation), guests over WireGuard |
+| `gateway` | edge VM | Go | api (project lookup, revocation, webhook routes), guests over WireGuard, webhook senders on :443 (DECISIONS I-1110) |
 | WireGuard hub | edge VM | kernel | hosts |
 | `hostd` | each host | Go | api (gRPC client), Cloud Hypervisor (REST over unix socket), LVM, nftables, nix, guestd (vsock) |
 | `guestd` | each guest | Go | hostd (vsock), tmux, systemd, agent hooks (unix socket) |
@@ -37,7 +37,7 @@ CLI ─POST /projects─▶ api ─scheduler picks host─▶ hostd.Create (gRPC
                                                    ├─ start virtiofsd, tap, systemd-run cloud-hypervisor
                                                    └─ guestd ready over vsock ─▶ hostd ─▶ api ─▶ CLI
 CLI ─POST /certs─▶ api (SSH CA) ─▶ cert for ~/.ssh/repose/id_ed25519
-CLI ─ssh todo-app.user@ssh.repose.herakraft.co─▶ gateway ─verify cert, GET /internal/route─▶ api
+CLI ─ssh todo-app.user@ssh.repose.run─▶ gateway ─verify cert, GET /internal/route─▶ api
         gateway ─tcp over wireguard─▶ guest:22 ─▶ sshd (trusts CA, principal = project id)
 CLI ─over that ssh (one multiplexed connection)─▶ credential files, git bundle of the commits + diff + untracked tar, tmux attach or send-keys
 ```
@@ -87,6 +87,7 @@ agent hook ─unix socket─▶ guestd ─vsock Event─▶ hostd ─gRPC Event�
    Ubuntu, public  public IP              10.64.0.0/12 guest space
    :443 api, web   :22  gateway  ◀──wg──  host A  br-guests 10.64.0.0/22
    :443 logto      :51820 wg hub ◀──wg──  host B  br-guests 10.64.4.0/22
+                   :443 webhooks
         ▲               │                      │
         │ grpc/mtls     │ tcp over wg          │ vsock
         └───────────────┼──── hostd ───────────┤

@@ -46,6 +46,23 @@ message Shutdown { uint32 timeout_s = 1; }
 // the user's answer when answered. Answering an already-closed question
 // with the same status is a no-op; an unknown question_id is not_found.
 message AnswerQuestion { string question_id = 1; string status = 2; string answer = 3; }
+// SayToAgent is a message the owner typed for one of this guest's agents
+// (DECISIONS I-1144). text is tenant content, capped at 4 KB, and is
+// never logged. window is the tmux window or herdr agent key; empty means
+// the guest's single agent window, and more than one is invalid_argument
+// naming them. sender is who typed it, and from_owner says whether it was
+// the project's owner; a message from anyone else reaches the agent
+// prefixed `[from <sender>]`. guestd types it into the agent's own
+// terminal the moment the agent's hook state is idle or needs_input, and
+// holds it until the turn ends otherwise. One message waits per window:
+// a second replaces the first, and the result says so.
+message SayToAgent {
+  string say_id = 1;
+  string window = 2;
+  string text = 3;
+  string sender = 4;
+  bool from_owner = 5;
+}
 
 message Request {
   oneof req {
@@ -62,6 +79,7 @@ message Request {
     Shutdown shutdown = 11;
     RegisterPaths register_paths = 12;
     AnswerQuestion answer_question = 13;
+    SayToAgent say_to_agent = 14;
   }
 }
 
@@ -90,6 +108,11 @@ message SampleResult {
   uint64 root_size_bytes = 7;
 }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
+// SayResult says what became of a SayToAgent: state delivered (it is in
+// the agent's terminal now) or waiting (the agent is mid-turn and it goes
+// in at the end of the turn), the window it went to or waits in, and
+// whether it replaced a message that was still waiting there.
+message SayResult { string state = 1; string window = 2; bool replaced = 3; }
 
 message Response {
   bool ok = 1;
@@ -100,6 +123,7 @@ message Response {
     GrowFsResult grow_fs = 12;
     SampleResult sample = 13;
     ExecResult exec = 14;
+    SayResult say = 15;
   }
 }
 

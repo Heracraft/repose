@@ -9,13 +9,20 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 | Size    | Cores | Memory | Disk  |
 | ------- | ----- | ------ | ----- |
+| `tiny`  | 0.5   | 2 GB   | 10 GB |
 | `small` | 1     | 4 GB   | 20 GB |
 | `large` | 2     | 8 GB   | 40 GB |
 | `xl`    | 4     | 16 GB  | 80 GB |
 
 A core is a physical core, not a hyperthread. `nproc` says the same
 number, and a machine running since before 18 October 2026 keeps the
-count it started with until its next stop.
+count it started with until its next stop. A `tiny` gets half a core and
+`nproc` says 1.
+
+Sizes by what they are big enough for: `tiny` drives a browser, calls
+APIs and writes documents; `small` runs an agent on a codebase; `large`
+and `xl` are for builds, test suites and several agents at once. Agents
+run on all of them.
 
 ## What's installed
 
@@ -154,14 +161,14 @@ systemctl --user enable --now backup.timer
 As long as you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. tmux shows each new forward:
 
 ```text
-⇄ localhost:5173 → :5173
+⇄ localhost:5173 → your laptop
 ```
 
-Ports that open together, such as the servers a test suite starts, get one message between them, like `⇄ 6 ports on localhost: 3000, 3001, 3002, 3003, 3004, 3005`, and tmux's status bar lists every forwarded port. A herdr machine has no such list and shows the messages as [herdr notifications](/docs/run-and-attach#herdr-instead-of-tmux).
+Ports that open together, such as the servers a test suite starts, get one message between them, like `⇄ localhost:3000, 3001, 3002 → your laptop`, and tmux's status bar lists every forwarded port. A herdr machine has no such list and shows the messages as [herdr notifications](/docs/run-and-attach#herdr-instead-of-tmux).
 
-Because it's `localhost`, cookies and OAuth redirects behave as they do locally. If the port is taken on your laptop, the next free one within 20 of it is used and the message says which.
+Because it's `localhost`, cookies and OAuth redirects behave as they do locally. If the port is taken on your laptop, the next free one within 20 of it is used and the message says which: `⇄ :3000 → your laptop's localhost:3001 (3000 is taken there)`.
 
-A forward needs a listener on `127.0.0.1` or `0.0.0.0`, or on `::1` alone (as Vite does on some setups), on port 1024 or above. A server on another address, a Docker network say, doesn't get one; a container port published with `-p 8080:80` does. The machine keeps 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 for itself. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off.
+A forward needs a listener on `127.0.0.1` or `0.0.0.0`, or on `::1` alone (as Vite does on some setups), on port 1024 or above. A server on another address, a Docker network say, doesn't get one; a container port published with `-p 8080:80` does. The machine keeps 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 for itself. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off, in both directions. [`repose status`](/docs/cli#repose-status-project) marks which listening ports a laptop reaches.
 
 To forward one port without attaching, [`repose open`](/docs/cli#repose-open-local-port) runs one forward in your terminal until `Ctrl-C` and points your browser at it:
 
@@ -169,13 +176,37 @@ To forward one port without attaching, [`repose open`](/docs/cli#repose-open-loc
 repose open 3000
 ```
 
-There are no public URLs for a project's ports. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in [the menu](/docs/config#the-menu): `repose config add cloudflared` on your laptop. Then, on the machine:
+The one public path into a machine is a [webhook route](/docs/webhooks): a URL a provider can POST to, forwarded to a port inside the machine. It passes a provider's event through and will not serve a page. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in [the menu](/docs/config#the-menu): `repose config add cloudflared` on your laptop. Then, on the machine:
 
 ```
 cloudflared tunnel --url http://localhost:3000
 ```
 
 This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. It's for testing: at most 200 requests at a time, and no server-sent events. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
+
+### Your laptop's ports on the machine
+
+The other direction is off until you ask for it. List the laptop ports you want the machine to reach in `~/.config/repose/config.toml`:
+
+```toml
+[forward]
+reverse = [5037, 11434]
+
+[projects.todo-app.forward]
+reverse = ["15432:5432"]
+```
+
+`5037` is the same port on both sides: while you're attached, `localhost:5037` on the machine is your laptop's adb, so `adb devices` there lists your emulator, and `localhost:11434` is your Ollama. `"15432:5432"` puts your laptop's 5432 on the machine's 15432, listening port first, for when the machine already runs something on 5432. A `[projects.NAME.forward]` table adds to the global one for that project.
+
+tmux says what you lent:
+
+```text
+⇄ localhost:5037 on the machine → adb on your laptop
+```
+
+**Everything on the machine, agents included, reaches a lent port as a program on your laptop would.** Lend a database only with a password, and adb only with no phone plugged in: adb serves every device your laptop has, and a Postgres with `trust` on localhost gives the machine commands on your laptop.
+
+The ports live only inside the attach, on the machine's `localhost`, and go when you detach or your laptop sleeps. They must be 1024 or above, at most 16 of them, not a port the machine keeps for itself, and not 9222, 9229, 2375 or 2376: a raw pipe to Chrome's DevTools port goes round what [`repose browser bridge`](/docs/your-chrome) allows, and Node's inspector and Docker's API run code on your laptop by design. A port the machine already listens on can't be lent, and the message says to move it. Two laptops attached at once: the first to lend a port holds it. On Windows the key does nothing, and `repose run` says so.
 
 ## Browser
 
@@ -193,11 +224,13 @@ Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
 
 Your browser reads the password after the link's `#` and never sends it anywhere. The agent's browser tools use whatever you log into there. Text you copy on the machine lands on your clipboard, and `Ctrl+V` (`Cmd+V` on a Mac) in the page, or its paste button, pastes your clipboard on the machine. If no agent has used the browser yet, the command starts it.
 
-`repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it. An agent that has a browser tool open but isn't using it doesn't count: the machine watches for DevTools traffic, not an open connection, so a browser nobody is driving stops and the machine can [freeze](/docs/lifecycle#frozen-machines) as usual. A base update doesn't restart it; the new Chromium runs from its next start.
+`repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser stops after 10 minutes with no browser call and nobody watching, once every agent is finished or waiting on you, or after 30 minutes while an agent is working. The next call starts it again with the same tabs and logins; each page reloads. An agent that has a browser tool open but isn't using it doesn't count: the machine watches for browser calls, not an open connection, so a browser nobody is driving stops and the machine can [freeze](/docs/lifecycle#frozen-machines) as usual. A base update doesn't restart it; the new Chromium runs from its next start.
+
+A headless browser that a script or test started is stopped when the program that started it has exited, nothing is connected to it, and the machine has been quiet for 10 minutes: no SSH session, no terminal attached, every agent finished or waiting on you. A browser whose program still runs is never stopped, and neither is one something is connected to, so to keep one alive keep its launcher alive. `journalctl -u guestd --grep 'stray browser'` lists each one that was stopped.
 
 Text on the page is drawn at your tab's size in the machine's pixels; on a Retina display that is 1x, so it is sharp but not as sharp as a native page.
 
-Commands that open a page in a browser, such as `gh browse` or `gh pr create --web`, print the URL instead: `Open in your browser: https://...`. Setting `BROWSER` yourself overrides that.
+Commands that open a page in a browser, such as `gh browse` or `gh pr create --web`, print the URL instead: `Open in your browser: https://...`. Setting `BROWSER` yourself overrides that. While you're attached, [the link opens on your laptop](/docs/run-and-attach#links-the-machine-opens), a `localhost` one on the laptop port its forward uses.
 
 Playwright test suites (`pnpm exec playwright test` and the like) still run headless unless your config asks for headed browsers. While the agent's browser is up, new shells have `DISPLAY=:99`, so a headed browser you start yourself also appears in the view.
 
@@ -207,7 +240,7 @@ For a job that needs your logged-in browser, [lend the agents your laptop's Chro
 
 ## Network
 
-The machine can reach the internet over TCP and UDP, within [the network limits](/docs/limits#network). Nothing on the internet can reach the machine; the only way in is SSH through repose, with your certificate.
+The machine can reach the internet over TCP and UDP, within [the network limits](/docs/limits#network). Nothing on the internet can reach the machine; the only ways in are SSH through repose, with your certificate, and its [webhook routes](/docs/webhooks).
 
 npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. For npm, repose adds two lines to `~/.npmrc`; delete them to go direct and they stay deleted. An `~/.npmrc` that already names a registry or holds an npmjs token is left alone.
 
@@ -215,7 +248,7 @@ npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. Fo
 
 On a machine out of memory, the kernel kills a process rather than let the machine stall. Your agents, the tmux or herdr server and your SSH connection are kept to the last, so the largest of the rest goes first, usually a runaway test or dev server. `sudo dmesg | grep -i killed` shows what went. The kill takes that process and nothing else: the pane it died in stays open, and the agent that started it keeps working. If it keeps happening, give the machine more memory with [`repose resize --size large`](#changing-the-size) (or `xl`).
 
-The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5 GB on `small`, 3 GB on `large` and 6 GB on `xl`. A tab past that crashes and the browser stays up. A browser a Playwright test launches has no ceiling of its own.
+The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 739 MB on `tiny`, 1.5 GB on `small`, 3 GB on `large` and 6 GB on `xl`. A tab past that crashes and the browser stays up. A browser a Playwright test launches has no ceiling of its own.
 
 A deleted file's blocks go back to the server at the daily `fstrim`, and at once when the machine stops. Until then the file still counts toward your [plan's disk](/docs/billing#what-a-plan-means), though `df /` on the machine has already forgotten it. `sudo fstrim /` closes the gap now.
 
@@ -240,7 +273,7 @@ Your SSH sessions and the tmux or herdr server get the CPU before the programs i
 
 ## Changing the size
 
-`repose resize --size small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size tiny|small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 

@@ -20,6 +20,8 @@
 #                  thin pool with autoextend, a thin volume, the pool monitor
 #   host-park    the guest park's shutdown ordering and hostd's park
 #                  and unpark commands, with the real hostd (park.nix)
+#   host-wg-watchdog  the tunnel watchdog on a real WireGuard interface
+#                  that sends and hears nothing (I-1068, wg-watchdog.nix)
 #   host-services  the real hostd, guests.slice, transient guest survives a
 #                  hostd restart and kill, store export with .links masked,
 #                  registration against a `hostdev` in a second node
@@ -202,7 +204,7 @@ in
       with subtest("the repose tables have the documented chains"):
           print(host.succeed("nft list table inet repose"))
           print(host.succeed("nft list table bridge repose"))
-          for chain in ["input", "guest_in", "guest_fwd", "guest_dyn", "nat"]:
+          for chain in ["input", "guest_in", "guest_fwd", "guest_meter", "guest_dyn", "nat"]:
               host.succeed(f"nft list chain inet repose {chain}")
           host.succeed("nft list chain inet repose guest_fwd | grep -q '169.254.169.254'")
           host.succeed("nft list chain inet repose guest_fwd | grep -q '10.64.0.0/12'")
@@ -311,6 +313,12 @@ in
           before = host.succeed("nft list counter inet repose egress-ga")
           print(before)
           assert "packets 0 " not in before
+          # Every packet of the flow, not only its first (DECISIONS I-1063):
+          # a GET is at least the SYN, the request and the FIN.
+          import re
+          m = re.search(r"packets (\d+)", before)
+          assert m, before
+          assert int(m.group(1)) >= 3, before
           host.succeed("systemctl reload nftables.service")
           host.succeed("nft list chain inet repose guest_dyn | grep -q 'counter name \"egress-ga\"'")
           host.succeed("nft list set bridge repose guests | grep -q 'tap-ga'")
@@ -354,12 +362,13 @@ in
           print(f"smtp-ga {smtp} packets, stratum-ga {stratum} packets")
           assert smtp >= 1, "the port 25 attempt was not counted for the guest"
           assert stratum >= 4, "the stratum attempts were not counted for the guest"
-          # Blocked before guest_dyn: a blocked SYN is not egress. guest_dyn
-          # sees a flow's first packet (established ones are accepted above
-          # it), so the five open connections are five packets and the
-          # dozen blocked SYNs none.
+          # A blocked SYN is dropped in guest_fwd and never reaches
+          # guest_meter, so it is not egress. guest_meter sees every packet
+          # of an accepted flow (DECISIONS I-1063): the five open
+          # connections are a SYN, an ACK, a FIN and an ACK or so each,
+          # about 20, where the first-packet count before I-1063 was 5.
           egress = packets("egress-ga") - egress_before
-          assert egress < 10, f"{egress} egress packets for five connections and the blocked attempts"
+          assert 10 <= egress <= 30, f"{egress} egress packets for five connections and the blocked attempts"
           # Another guest's counters are its own.
           host.succeed("ip netns exec gb nc -z -w3 203.0.113.9 587")
           host.fail("ip netns exec gb nc -z -w3 203.0.113.9 25")
@@ -513,10 +522,10 @@ in
           free = mbit("ip netns exec gb sh -c 'head -c 30M /dev/zero | nc -N -w10 203.0.113.9 9000'", 30)
           assert free > cap * 2, f"unshaped guest -> internet at {free:.0f} Mbit/s; the link is too slow to test the cap"
           inet_sink()
-          out = mbit(f"{ga} sh -c 'head -c 20M /dev/zero | nc -N -w30 203.0.113.9 9000'", 20)
+          out = mbit(f"{ga} sh -c '${pkgs.coreutils}/bin/head -c 20M /dev/zero | nc -N -w30 203.0.113.9 9000'", 20)
           assert cap * 0.6 < out < cap * 1.3, f"shaped guest -> internet at {out:.0f} Mbit/s, cap {cap}"
           # internet -> guest, a download the guest opened: capped (I-451)
-          inet.succeed(f"systemd-run --unit inet-src-{next(sinks)} --collect ${pkgs.bash}/bin/sh -c 'head -c 20M /dev/zero | ${pkgs.netcat-openbsd}/bin/nc -N -l 9002'")
+          inet.succeed(f"systemd-run --unit inet-src-{next(sinks)} --collect ${pkgs.bash}/bin/sh -c '${pkgs.coreutils}/bin/head -c 20M /dev/zero | ${pkgs.netcat-openbsd}/bin/nc -N -l 9002'")
           inet.wait_until_succeeds("ss -tlnH | grep -c ':9002 ' >/dev/null")
           dl = mbit(f"{ga} sh -c 'nc -d -w30 203.0.113.9 9002 > /dev/null'", 20)
           assert cap * 0.6 < dl < cap * 1.3, f"internet -> shaped guest at {dl:.0f} Mbit/s, cap {cap}"
@@ -909,6 +918,9 @@ in
   # The guest park's host side (DECISIONS I-652): park.nix.
   host-park = import ./park.nix { inherit pkgs lib hostNode apiNode hostdevDir lanIP hostdevCA; };
 
+  # The tunnel watchdog (DECISIONS I-1068): wg-watchdog.nix.
+  host-wg-watchdog = import ./wg-watchdog.nix { inherit pkgs hostNode; };
+
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";
     nodes.host = { ... }: {
@@ -1173,6 +1185,44 @@ in
           reserve = min(max(total // 8, 2 * 1024**3), 16 * 1024**3)
           assert int(mm) == total - reserve, (mm, total, reserve)
           host.succeed("systemctl stop guest@test.service")
+
+      with subtest("the burst controller's three cgroup operations work on a real kernel"):
+          # What hostd's controller does every second (DECISIONS I-1126),
+          # against a real cgroup v2 hierarchy rather than the directory
+          # tree its unit tests use: read the root's and one guest unit's
+          # cpu.stat usage_usec, and write that unit's cpu.max. The guest
+          # unit here is a transient unit in guests.slice shaped the way
+          # hostd shapes one: CPUQuota=100%, a small's base.
+          cg = "/sys/fs/cgroup/guests.slice/guest@burst.service"
+          host.succeed(
+              "systemd-run --unit guest@burst --slice guests.slice -p CPUQuota=100% -p CPUWeight=50"
+              " -- ${pkgs.bash}/bin/bash -c 'while :; do :; done'"
+          )
+          host.wait_until_succeeds(f"test -f {cg}/cpu.stat")
+
+          def usage(path):
+              return int(host.succeed(f"awk '/^usage_usec/ {{ print $2 }}' {path}/cpu.stat").strip())
+
+          first_guest, first_host = usage(cg), usage("/sys/fs/cgroup")
+          host.sleep(2)
+          assert usage(cg) > first_guest, "the guest unit's usage_usec did not advance"
+          assert usage("/sys/fs/cgroup") > first_host, "the root cgroup's usage_usec did not advance"
+          # systemd's CPUQuota=100% is one core over the 100 ms period,
+          # which is the shape hostinfo.SetCgroupCPUMax writes.
+          assert host.succeed(f"cat {cg}/cpu.max").strip() == "100000 100000"
+          # The controller raising a small to two cores, and cutting it
+          # back to its base. A direct write, because a runtime CPUQuota
+          # over D-Bus is a property systemd keeps and a hostd that dies
+          # with it raised leaves the host oversubscribed (I-1126).
+          host.succeed(f"echo '200000 100000' > {cg}/cpu.max")
+          assert host.succeed(f"cat {cg}/cpu.max").strip() == "200000 100000"
+          throttled = int(host.succeed(f"awk '/^nr_throttled/ {{ print $2 }}' {cg}/cpu.stat").strip())
+          host.succeed(f"echo '10000 100000' > {cg}/cpu.max")
+          host.sleep(2)
+          after = int(host.succeed(f"awk '/^nr_throttled/ {{ print $2 }}' {cg}/cpu.stat").strip())
+          assert after > throttled, f"a tightened cpu.max did not throttle the unit ({throttled} -> {after})"
+          print(host.succeed(f"cat {cg}/cpu.max {cg}/cpu.stat"))
+          host.succeed("systemctl stop guest@burst.service")
 
       with subtest("guest@ units run as hostd inside the I-51 sandbox"):
           # The property list is internal/hostd/guest/testdata/unit.golden with

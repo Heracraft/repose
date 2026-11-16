@@ -58,7 +58,7 @@ provider module for hosts is an addition, not a rewrite.
   - `edge`: one VM at `edge_size` (`Standard_D2s_v7`; DECISIONS I-23 chose
     the non-burstable shape, I-39 the v7 family), static public IP with
     `prevent_destroy`, DNS A record
-    `ssh.repose.herakraft.co`, Ubuntu image, nixos-anywhere provisioner
+    `ssh.repose.run`, Ubuntu image, nixos-anywhere provisioner
     with `.#edge`. Its subnet NSG opens 22 (user gateway), 443 (preview
     stub) and 51820/udp (WireGuard hub) to the internet, and the operator
     sshd port 2222 to the operator address list and the VNet, which is the
@@ -68,8 +68,8 @@ provider module for hosts is an addition, not a rewrite.
   - `coolify`: `coolify_count` of them; the module default is **0** so a new
     environment costs nothing, and production runs **1** from 2026-09-20
     (DECISIONS I-24, I-71). One `Standard_D4s_v7`, Ubuntu 24.04 LTS, static
-    public IP, DNS A records `repose.herakraft.co` and
-    `api.repose.herakraft.co` (Logto is the owner's `accounts.herakraft.co`,
+    public IP, DNS A records `repose.run` and
+    `api.repose.run` (Logto is the owner's `accounts.herakraft.co`,
     DECISIONS I-84), 256 GB Premium SSD
     OS disk. It is a server of the owner's existing Coolify instance, not a
     Coolify install of its own (DECISIONS I-83): cloud-init installs Docker
@@ -104,15 +104,16 @@ provider module for hosts is an addition, not a rewrite.
     store, since the control VM is not an Azure identity target for
     containers; the app registration and that certificate are a human step
     (DECISIONS I-21).
-- `infra/dns/`: Cloudflare zone records for `herakraft.co` subdomains used
-  above, so DNS is in the same apply as the addresses it points at.
-  `manage_dns` defaults to **false**, because the records need a
-  `CLOUDFLARE_API_TOKEN` and a zone id that do not exist yet (DECISIONS
-  I-72). While it is false the names are not merely absent: `herakraft.co`
-  answers every name under it from a proxied wildcard, so
-  `ssh.repose.herakraft.co` resolves to Cloudflare's proxy, which carries
-  neither SSH nor WireGuard. A plan-time `check` warns, and `infra/README.md`
-  carries the four records to create by hand until the token exists.
+- `infra/dns/`: Cloudflare records for the names used above, in the
+  environment's own zone (prod: `repose.run`, DECISIONS I-1156), so DNS is
+  in the same apply as the addresses it points at. `manage_dns` defaults to
+  **false**, because the records need a `CLOUDFLARE_API_TOKEN` and a zone id
+  that do not exist yet (DECISIONS I-72). While it is false a name can still
+  answer without a record: `herakraft.co` serves every name under it from a
+  proxied wildcard, so `ssh.repose.herakraft.co` resolved to Cloudflare's
+  proxy, which carries neither SSH nor WireGuard. A plan-time `check` warns,
+  and `infra/README.md` carries the records to create by hand until the
+  token exists.
 - State backend: the Azure Storage container `tfstate` in `repose-prod`,
   created by hand on 2026-09-19 and read but never managed by the
   environment roots (DECISIONS I-19). `infra/bootstrap/` is the tiny root
@@ -179,7 +180,8 @@ you mean host-01?`.
 
 Without a `host_flake_attrs` entry the host installs the generic `host`
 attribute, whose `apiAddr` is not absent but wrong and plausible: it defaults
-to `api.repose.herakraft.co:443`, where nothing gRPC answers, because
+to `api.repose.herakraft.co:443` (the internal name, I-1156), where nothing
+gRPC answers, because
 api-grpc's mTLS listeners are 8443 and 8444 and `manage_dns = false` makes
 that name Cloudflare's proxied wildcard. The apply succeeds and the VM is
 healthy; it simply never registers (`docs/ops/RUNBOOK.md`
@@ -626,17 +628,19 @@ row says otherwise. Commands were run from the dev box, which is in
       left to verify.
 - [ ] Edge and Coolify DNS names resolve to their static IPs. **Not closed,
       and worse than absent.** On 2026-09-20 `dig +short
-      ssh.repose.herakraft.co` returns `172.67.175.123` and `104.21.31.82`,
+      ssh.repose.herakraft.co` returned `172.67.175.123` and `104.21.31.82`,
       Cloudflare's proxy, not the edge's `20.102.98.254`: `herakraft.co`
       answers every name under it from a proxied wildcard, and the proxy
       carries neither SSH nor WireGuard (DECISIONS I-72). The plan now warns,
-      `infra/README.md` has the four records to create by hand, and
+      `infra/README.md` has the records to create by hand, and
       `ops/RUNBOOK.md` has the symptom entry. Closes with a Cloudflare token
       and `manage_dns = true`, or with the records made by hand. Open:
       no `dig +short` for the edge and control-plane names answering their
       static IPs is pasted since this note (the M2 gate reached the gateway
       as `ssh.repose.herakraft.co`, "Real-edge evidence" in 06 §9, so the
-      edge record appears to exist)
+      edge record appears to exist). The names are `repose.run` since
+      I-1156, and the row wants the same `dig` for both while the old ones
+      still answer
 - [ ] `infra/README.md` covers bootstrap, add host, rotate token, drain and
       destroy host, force-unlock, and someone followed it end to end.
       **Partly:** the control-plane and DNS sections were written by

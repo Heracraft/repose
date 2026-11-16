@@ -18,7 +18,7 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
-const aud = "https://api.repose.herakraft.co"
+const aud = "https://api.repose.run"
 
 func TestVerify(t *testing.T) {
 	f := logto.New(aud)

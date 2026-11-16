@@ -34,6 +34,10 @@ func TestGatewayMetricsExposed(t *testing.T) {
 		"repose_gateway_wgsync_peers",
 		"repose_gateway_wgsync_errors_total",
 		"repose_gateway_hook_events_total",
+		"repose_gateway_webhook_requests_total",
+		"repose_gateway_webhook_wake_seconds",
+		"repose_gateway_webhook_inflight",
+		"repose_gateway_webhook_routes",
 	}
 	var missing []string
 	for _, w := range want {

@@ -31,10 +31,10 @@ func paymentRequiredMessage(e *APIError) string {
 	return "Choose a plan at " + billingURL + " first."
 }
 
-// projectLimitMessage is what every command prints when a create,
-// restore or fork would pass the account's project cap, running or
-// stopped (DECISIONS I-569): fork's own check before it snapshots and the
-// api's 400 for run, restore and the rest say it in these words.
+// projectLimitMessage is what every command prints when a create or a
+// restore would pass the account's project cap, running or stopped
+// (DECISIONS I-569): the api's 400 for run, restore and the rest says it
+// in these words.
 func projectLimitMessage(have, limit, requested int) string {
 	if requested <= 1 {
 		return fmt.Sprintf("You have %d of the %d projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.", have, limit)

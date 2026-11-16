@@ -1,6 +1,6 @@
 variable "zone_id" {
   type        = string
-  description = "Cloudflare zone id for herakraft.co."
+  description = "Cloudflare zone id for the environment's DNS zone."
 
   # This module is only instantiated when manage_dns is true, so a null or
   # placeholder zone id here means somebody turned DNS on without the two
@@ -14,10 +14,10 @@ variable "zone_id" {
 
 variable "records" {
   description = <<-EOT
-    Fully qualified name to address. `proxied` must stay false for
-    ssh.repose.herakraft.co: Cloudflare's proxy does not carry SSH, and a
-    proxied record would hide the edge's real address from every host's
-    WireGuard endpoint as well.
+    Fully qualified name to address. `proxied` must stay false for the
+    `ssh.` name: Cloudflare's proxy does not carry SSH, and a proxied
+    record would hide the edge's real address from every host's WireGuard
+    endpoint as well.
   EOT
   type = map(object({
     address = string

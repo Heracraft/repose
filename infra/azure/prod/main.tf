@@ -50,7 +50,7 @@ provider "azurerm" {
 }
 
 # Token from the CLOUDFLARE_API_TOKEN environment variable. It is scoped to
-# DNS edit on herakraft.co and is never written to a file in this repository.
+# DNS edit on repose.run and is never written to a file in this repository.
 provider "cloudflare" {}
 
 module "environment" {
@@ -123,7 +123,9 @@ module "environment" {
   manage_dns         = var.manage_dns
   cloudflare_zone_id = var.cloudflare_zone_id
   dns_zone           = var.dns_zone
-  dns_prefix         = "repose"
+  # Empty: the zone is repose.run itself, so the dashboard is the apex
+  # (DECISIONS I-1156).
+  dns_prefix = ""
 
   alerts_enabled = var.alerts_enabled
   alert_email    = var.alert_email

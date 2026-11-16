@@ -219,10 +219,12 @@ func (t tmuxClient) listPanes(ctx context.Context, session string) ([]tmuxPane, 
 	return out, nil
 }
 
-// listClients counts attached tmux clients for the session.
+// listClients counts attached tmux clients for the session: those on it
+// and those on a session grouped with it, which is where each attach puts
+// its terminal (DECISIONS I-1067).
 func (t tmuxClient) listClients(ctx context.Context, session string) (uint32, bool, error) {
 	res, err := t.run.Run(ctx, sysdep.RunSpec{
-		Argv:      []string{"tmux", "list-clients", "-t", session, "-F", "#{client_tty}"},
+		Argv:      []string{"tmux", "list-clients", "-F", "#{session_name}\t#{session_group}"},
 		User:      "dev",
 		Env:       sysdep.DevEnv(t.paths, "dev"),
 		MaxOutput: 8 << 10,
@@ -243,7 +245,8 @@ func (t tmuxClient) listClients(ctx context.Context, session string) (uint32, bo
 	}
 	var n uint32
 	for _, line := range strings.Split(strings.TrimRight(string(res.Stdout), "\n"), "\n") {
-		if line != "" {
+		name, group, _ := strings.Cut(line, "\t")
+		if name == session || group == session {
 			n++
 		}
 	}

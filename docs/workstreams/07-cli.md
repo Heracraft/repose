@@ -119,7 +119,6 @@ repose restore [NAME] [--as NEW-NAME] [--snapshot ID]   # no NAME: the checkout'
 repose logs [PROJECT] [--kind console|build|ops] [--since 1h] [--follow|-f]
 repose events [PROJECT] [--since 24h] [--follow|-f]
 repose ls [--destroyed [--all]] [-q|--quiet]  # list all, ignores cwd; --destroyed: what can be restored; alias projects, the old name (I-273)
-repose fork [PROJECT] [-n N] [--name NAME] [--size S] [--snapshot ID] [--prompt TEXT [--agent A]] [--json]   # I-254
 repose resize [PROJECT] [DISK] [--size small|large|xl] [--yes|-y]   # grow the disk (e.g. 80G); --size changes the class (I-260); PROJECT positional (I-268)
 repose scan [DIR] [--json]     # dry run of what run installs (I-222)
 repose questions [PROJECT] [--json]            # I-245
@@ -128,6 +127,7 @@ repose notify [--json]                            # I-622: the settings
 repose notify set [--email on|off] [--ntfy URL|off]   # none is the old off (I-619)
 repose notify test
 repose version
+repose version update [VERSION]   # replace this binary with a release (I-1086)
 repose completion bash|zsh|fish
 repose mcp forward ...           # reserved, prints not-available message
 repose browser bridge [PROJECT] [--cdp URL] [--user-data-dir DIR] [--no-browser]   # I-296
@@ -166,7 +166,7 @@ account's slugs for PROJECT and `--project`.
    unset, `DISPLAY` or macOS, not inside a guest (`REPOSE=1`)): start a
    listener on `127.0.0.1:0`, build the authorization URL with
    `code_challenge` (S256), `scope=openid offline_access profile email`,
-   `resource=https://api.repose.herakraft.co`, open the browser, wait up to
+   `resource=https://api.repose.herakraft.co` (the audience, I-1156), open the browser, wait up to
    5 minutes for the callback, exchange the code. Print `Logged in as
    <handle> (<email>)`.
 3. Otherwise, and by default, device code: `POST /oidc/device/auth`, print
@@ -186,7 +186,7 @@ account's slugs for PROJECT and `--project`.
 5. Call `GET /me`. If `billing.has_card` is false, print
 
    ```
-   No card on file. Add one at https://repose.herakraft.co/billing before
+   No card on file. Add one at https://repose.run/billing before
    the first `repose run`.
    ```
 
@@ -268,7 +268,7 @@ created; `repose ls` shows it.``
   certificate 0600. Nothing is `ssh-add`ed: the config names the key and
   certificate, and the key has no passphrase to cache.
 - Write `~/.ssh/repose/known_hosts` with `@cert-authority
-  ssh.repose.herakraft.co,10.64.* <host_ca_pub>` from the response.
+  ssh.repose.run,10.64.* <host_ca_pub>` from the response.
 - Rewrite `~/.ssh/repose/hosts` with one `Host <slug>.repose` block per
   project (the block in `interfaces/ssh-gateway.md`, with `ControlMaster
   auto`, `ControlPath ~/.ssh/repose/cm-%C`, `ControlPersist 10m` except on
@@ -347,6 +347,13 @@ $ repose run
       d decides: exit 6 with the refusal in `features/sync-at-launch.md`
       only when the guest changed a path the sync writes (DECISIONS
       I-573).
+
+      On a terminal, that refusal is a menu: `l` uses the laptop's copy
+      and stashes the machine's copy of the overlapping files under
+      `repose sync: the machine's copy`, `m` keeps the machine's copy
+      and syncs the rest, `s` is `--stash-machine`, Enter stops with
+      exit 6. One key. Off a terminal and under `--json` nothing
+      changes (DECISIONS I-1100).
 
       `--stash-machine` runs `git stash push -u -m "repose sync
       --stash-machine"`, `--discard-machine` ends a git operation in progress
@@ -657,15 +664,42 @@ under its old name, hidden from help, with one stderr line saying so.
   `--as-new` requires the project stopped and asks for confirmation.
 - `logs`: `GET /logs`, `--follow` polls every 2 s with `since`.
 
-### 5.11 Install and release
+### 5.11 Install, update and release
 
-`install.sh` at `https://repose.herakraft.co/install.sh`: detects
+`install.sh` at `https://repose.run/install.sh`: detects
 `uname -sm`, downloads `repose_<version>_<os>_<arch>.tar.gz` from the
 GitHub release, verifies the sha256 from `checksums.txt`, installs to
 `~/.local/bin` (or `/usr/local/bin` with sudo when `--system`), prints the
 PATH hint if needed. GoReleaser config in `.goreleaser.yaml`, CGO off, `-s
 -w`, version from the tag into `internal/version`. `nix run
 github:heracraft/repose#repose` works via the flake's `packages.repose`.
+
+`repose version update [VERSION]` (DECISIONS I-1086,
+`internal/cli/versionupdate.go`) is the same install from the laptop,
+without curl. It resolves `latest` through the releases/latest redirect
+install.sh follows, downloads the archive, `checksums.txt` and
+`checksums.txt.sig`, checks the signature against the release key the CLI
+carries (`crypto/ecdsa`, no openssl) and then the archive against
+`checksums.txt`, writes the new binary beside the running one, runs it
+with `version` to see that it starts and says the right release, and
+renames it over the old path. Nothing is written unless both checks pass,
+and the old bytes are never overwritten in place, which is what keeps a
+signed macOS binary runnable. The key has two copies, `install.sh` and
+`internal/cli/versionupdate.go`; `test/supplychain` fails while they
+differ.
+
+It refuses before any network call on a machine (`REPOSE=1`, exit 2), on a
+development build (exit 2), on Windows (exit 1) and when the binary's path
+belongs to Nix, Homebrew, snap or the system's package manager (exit 1,
+naming the owner). A directory the user cannot write is not a refusal to
+update but a refusal to write: "Can't write /usr/local/bin. Run it as
+root: sudo repose version update" (exit 1). Releases before v0.1.28 carry
+no signature and are refused with the `install.sh --version` line (exit
+2).
+
+The version-skew lines (DECISIONS I-626, I-1088) name this command, or
+the package manager that owns the binary. Both versions are printed
+without the tag's `v`.
 
 ### 5.12 Output rules
 
@@ -693,7 +727,7 @@ command line, a guest id, or the host's own wording (that is the op's
 | Situation | Outcome |
 |---|---|
 | Not logged in or refresh failed | exit 3, `Not logged in. Run \`repose login\`.` |
-| No card on file on create/start | exit 7, `Add a card at https://repose.herakraft.co/billing first.` |
+| No card on file on create/start | exit 7, `Add a card at https://repose.run/billing first.` |
 | `capacity` from create/start | exit 8, `repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.` (run.go, env.go; I-623 removed the "(We have been alerted.)" this row used to quote) |
 | `insufficient_capacity` from a failed op | exit 8, `Could not start <slug>: <the api's sentence> (insufficient_capacity).` The api names the cause and what works for it, one sentence per hostd producer, and the CLI adds nothing of its own (I-771, closing I-756 and amending I-724): free memory says stopping one frees room, the thin pool says the operator must grow it, the build queue says it starts when one finishes, the store says only the operator clears it, a draining host says nothing starts on it |
 | Guest not running on `attach`/`open` | exit 5, the true state and its fix, e.g. `todo-app is stopped. Start it with \`repose start todo-app\`, or \`repose run\` in its checkout to start, sync and attach.` or `todo-app is in an error state: <reason>. …` (I-153) |
@@ -704,7 +738,7 @@ command line, a guest id, or the host's own wording (that is the op's
 | Gateway rejects certificate | re-issue once; if still rejected exit 1 with the gateway banner verbatim |
 | `~/.ssh/config` unwritable, a read-only link, or its Include not effective | warning naming the file and the exact line to add (for a link, where); the command goes on with `ssh -F ~/.ssh/repose/config`; nothing partial written (write temp + rename), a link never replaced (I-151) |
 | Browser cannot open | print the URL and continue |
-| API unreachable | exit 1, `Cannot reach api.repose.herakraft.co: <err>`; never retried more than 3 times with backoff |
+| API unreachable | exit 1, `Cannot reach api.repose.run: <err>`; never retried more than 3 times with backoff |
 | Rate limited on `/certs` | reuse existing cert if valid, warn on stderr |
 | Prompt given but agent not installed in guest | exit 1, `Agent 'pi' is not in this guest's config. Add it with \`repose config edit\`.` |
 | Second prompt while agent window exists | new window `<agent>-2` (then `-3`, ..., the lowest free, I-253), stderr warning `Another claude window is open in the same working tree.` (no warning with `--worktree`); the flag it used to name went with I-894 |
@@ -895,6 +929,21 @@ removes all of them including the `Include` line.
       "cli GoReleaser matrix build" (asserts the four dist binaries),
       "install.sh (ubuntu-latest)", "install.sh (macos-latest)" (`repose
       version` greps the tag)
+- [x] `repose version update` replaces the binary and only a release
+      that verifies (I-1086). Evidence: a real run of a build stamped
+      0.1.43 against the GitHub release. Closed, 2026-11-11: `Downloading
+      repose_v0.1.44_linux_amd64.tar.gz...` / `Updated
+      /tmp/rt/realrun/bin/repose from 0.1.43 to 0.1.44.`, the file's
+      sha256 c62b7d95…281f → 7bb1ca96…3e33 and `repose version` printing
+      `repose 0.1.44 (herakraft)`; `repose version update v0.1.42` rolls
+      back; a second run says `repose 0.1.44 is the latest release.`; the
+      same binary under `…/Cellar/repose/0.1.43/bin/repose` answers
+      `belongs to Homebrew. Update it with Homebrew.` and exits 1;
+      `v0.1.20` exits 2 naming `install.sh --version`; `REPOSE=1` exits 2.
+      `go test ./internal/cli -run TestVersionUpdate` covers the signature
+      and checksum refusals against a signed fake release server, and one
+      mutation (the signature check short-circuited) turns `bad_signature`
+      red with "the binary changed"
 - [x] `nix run .#repose` works. Evidence: CI job. Closed: CI run
       35875626476 on 264e6c2
       (https://github.com/Heracraft/factory/actions/runs/35875626476) job

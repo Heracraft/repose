@@ -58,7 +58,7 @@ func TestCheckout(t *testing.T) {
 	body := f.Bodies["POST /checkouts/"][0]
 	if body["products"].([]any)[0] != "prod_solo_test" || body["external_customer_id"] != a.UserID.String() || body["metadata"].(map[string]any)["user_id"] != a.UserID.String() ||
 		body["customer_email"] != a.Email || body["allow_discount_codes"] != false || body["customer_ip_address"] != "203.0.113.9" ||
-		body["success_url"] != "https://repose.herakraft.co/billing?checkout=done" || body["return_url"] != "https://repose.herakraft.co/billing" {
+		body["success_url"] != "https://repose.run/billing?checkout=done" || body["return_url"] != "https://repose.run/billing" {
 		t.Fatalf("checkout body: %v", body)
 	}
 	if body["discount_id"] != "dsc_intro_test" {
@@ -415,7 +415,7 @@ func TestPortalAndInvoices(t *testing.T) {
 	if err != nil || !strings.Contains(url, "/portal?customer_session_token=") {
 		t.Fatalf("portal: %s %v", url, err)
 	}
-	if b := f.Bodies["POST /customer-sessions/"][0]; b["external_customer_id"] != a.UserID.String() || b["return_url"] != "https://repose.herakraft.co/billing" {
+	if b := f.Bodies["POST /customer-sessions/"][0]; b["external_customer_id"] != a.UserID.String() || b["return_url"] != "https://repose.run/billing" {
 		t.Fatalf("customer session body: %v", b)
 	}
 	// Polar has no payment-method deep link: the same portal.

@@ -20,7 +20,7 @@ func TestSampleCombinesCachedSignalsAndAFreshProcWalk(t *testing.T) {
 	}
 	w, run, _, clk, _ := newWatcherFixture(t, procs)
 	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
-	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n/dev/pts/1\n")}
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("todo-app\t\ntodo-app~812\ttodo-app\nother\t\n")}
 	ctx := context.Background()
 	w.Refresh(ctx)
 
@@ -104,7 +104,7 @@ func TestSamplePastItsBudgetStillCountsSSHSessions(t *testing.T) {
 		{pid: 103, ppid: 102, comm: "tmux: client", uid: 1000},
 	})
 	run.Match["list-windows"] = tmuxOutput()
-	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("todo-app~812\ttodo-app\n")}
 	w.Refresh(context.Background())
 
 	ctx, cancel := context.WithCancel(context.Background())

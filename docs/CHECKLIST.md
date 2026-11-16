@@ -157,6 +157,19 @@ written so none of them goes unnoticed again.
       `skuid "nixbuild"` or `skuid 997`. Evidence: the test reads the
       literal out of the other file rather than restating it, and reverting
       the quoted side fails it in seconds without a VM.
+- [ ] A check runs in the configuration the thing runs in, and the
+      difference is named where the check is written down. A guard that
+      runs and passes in the wrong configuration is worse than a missing
+      one: a missing guard is silent, and this one returns a green. The
+      conductor's pre-release `go test -race ./...` ran with `testdb`'s
+      per-process clusters while CI ran every package against one shared
+      `DATABASE_URL`, so four releases were certified by a check blind to
+      the class CI tests in (DECISIONS I-1054 — which also records that
+      the shared-database run then passed 94 of 94, so the configuration
+      gap is real and is *not* the explanation for those failures).
+      Evidence: the command in
+      `docs/ops/RELEASE.md` names the variable, not "a real Postgres" —
+      the throwaway cluster is also a real Postgres.
 - [ ] A test is named for the property it asserts, not for the subject it
       touches. `TestBuildInfo` passed on every run while
       `repose_build_info{component="hostd"}` read `version="dev"` on every
@@ -247,10 +260,11 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] One scheme mechanism. Evidence: `rg -ln 'prefers-color-scheme' $W`
       prints only `app.html`, `lib/app-html.test.ts`, `lib/hk/tokens.css`,
       `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts`,
-      `routes/layout.css`, and the pictures `landing/Hero.svelte`,
-      `landing/Browser.svelte`, `landing/Localhost.svelte` and
-      `landing/pictures.css`, which pair each OS rule with the switch's
-      `data-theme` rule (I-843), 11 files; `rg -n
+      `routes/layout.css`, and the pictures `landing/Wreck.svelte`,
+      `landing/Browser.svelte`, `landing/Localhost.svelte`,
+      `landing/Stack.svelte` and `landing/pictures.css`, which pair each
+      OS rule with the switch's `data-theme` rule (I-843, I-1169), 12
+      files; `rg -n
       'class="dark|classList\.(add|toggle)\(.dark' $W` and `rg -n
       'theme="system"|richColors' $W --glob '*.svelte'` print 0 lines.
 - [ ] The inline script's hash is in the CSP, and the first paint matches the
@@ -270,7 +284,9 @@ entry and this list with it. Counts as of 2026-10-21.
       'JetBrains Mono' apps/web/src apps/web/static --glob
       '!**/lib/hk/tokens.css' --glob '!**/components/landing/**'` prints 0
       lines; a page load's network panel
-      shows only the site's host.
+      shows only the site's host, and on repose.run
+      `www.googletagmanager.com`, which serves the tag manager and nothing
+      else the page draws (I-1214).
 - [ ] Radii are the kit's. Evidence: `rg -n
       'rounded-(sm|md|lg|xl|2xl|3xl)\b|rounded-\[' $W --glob '*.svelte'`
       prints 0 lines; `rg -nP
@@ -296,17 +312,19 @@ entry and this list with it. Counts as of 2026-10-21.
       `/projects` and a project page (design.spec, landing-motion.spec).
 - [ ] Every picture stops on its final frame when reduced motion turns on
       mid-session. Evidence: `rg --files-without-match watchReducedMotion
-      apps/web/src/lib/components/landing/{Hero,OneCommand,ComesBack,Browser,Localhost}.svelte`
+      apps/web/src/lib/components/landing/{HeroOrbitV1,Wreck,OneCommand,ComesBack,Browser,Localhost}.svelte`
       prints 0 lines. The suites above read the setting at load; this is
-      the five drawn pictures answering a change made while the page is
+      the six drawn pictures answering a change made while the page is
       open (I-397, and the pictures restored by I-843).
 - [ ] Sizes come from the scale. Evidence: `rg -n
       'text-\[[0-9.]+(px|rem|em)\]' $W --glob '*.svelte'` and `rg -n
       '![pm][xytrbl]?-' $W --glob '*.svelte'` print 0 lines.
 - [ ] The legacy classes are gone. Evidence: `rg -nP
       'class="[^"]*(?<![\w-])(btn|btn-quiet|btn-ghost|btn-danger|badge|dot|card|banner|field|stat-row|codeblock|check-row|frost-band|table)(?![\w-])'
-      $W --glob '*.svelte'` prints 0 lines (the lookarounds keep `hk-btn`
-      and its kin from matching).
+      $W --glob '*.svelte' --glob '!**/components/landing/**'` prints 0
+      lines (the lookarounds keep `hk-btn` and its kin from matching; the
+      landing's drawn pictures name their own parts, `dot` among them, as
+      every other rule here already lets them, I-1210).
 - [ ] Every shared class and custom property is namespaced and documented.
       Evidence: `rg -no '\.hk-[a-z0-9-]+' apps/web/src/lib/hk/repose.css |
       sed 's/.*:\.//' | sort -u | while read c; do rg -qP
@@ -392,7 +410,7 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
 - [ ] **Paging reaches a human.** One contact point in the owner's Grafana,
-      set as the default, and the 53 alert rules pushed in
+      set as the default, and the alert rules pushed in
       (`ops/README.md` step 3). Evidence: **Test** on that contact point
       arrives; and `GRAFANA_URL=... GRAFANA_TOKEN=... python3
       ops/grafana/verify.py --wait 120` exits 0, which means a rule for every
@@ -424,20 +442,33 @@ entry and this list with it. Counts as of 2026-10-21.
       `api-grpc` (DECISIONS I-800, I-802). Evidence: `up{job="api"}` is 1
       in Prometheus, and `curl` of
       `https://api.repose.herakraft.co/metrics` from outside the tunnel
-      answers 403.
+      answers 403. That name, not `api.repose.run`: the Traefik router for
+      `/metrics` matches it, and the monitoring peer resolves it with its
+      own `/etc/hosts` line (I-1156, `ops/coolify/README.md`).
 - [ ] **The Azure alert path is proven**, not just created. Evidence: the
       portal's **Test** on action group `repose-prod` delivers to
       `alert_email`. `az monitor action-group test-notifications create`
       refuses with "no valid receivers", so the portal is the way
       (I-648).
-- [ ] **A console login exists on host-01 and the edge.** Both are built
-      with root locked, so the Azure serial console shows output but cannot
-      log in, and a host that will not boot cannot be rescued. Evidence: a
-      yescrypt hash in `/var/lib/repose/root-console.hash` on each machine
-      (made by the owner, never in the repo), a switch after it, and one
-      login on the portal's serial console. SSH stays key-only; the boot
-      menu waits 10 s so an older generation can be chosen (I-649, I-654).
-- [ ] **A planned host-01 restart has been ridden out.** It is the only
+- [ ] **A console login exists on every host and the edge.** Each is
+      built with root locked, so the Azure serial console shows output but
+      cannot log in, and a host that will not boot — or whose tunnel is
+      down, which is the same thing for access — cannot be rescued.
+      Evidence: a yescrypt hash in `/var/lib/repose/root-console.hash` on
+      each machine (made by the owner, never in the repo), a switch after
+      it, and one login on the portal's serial console. SSH stays
+      key-only; the boot menu waits 10 s so an older generation can be
+      chosen (I-649, I-654).
+      **This row names every machine, not two, because it was written
+      when the fleet was host-01 and the edge and was never widened.**
+      host-02 was provisioned on 2026-11-02 and never had a hash; its
+      journal logged `password file '/var/lib/repose/root-console.hash'
+      does not exist` at every boot and every switch for eight days and
+      nothing read it. On 2026-11-10 that is what reduced a one-command
+      tunnel repair to a VM restart (I-1068). Until a check publishes the
+      file's absence as a metric, adding a host means adding its hash in
+      the same sitting.
+- [ ] **A planned host restart has been ridden out.** It is the only
       proof of the new initrd pool activation (I-643), the restart of
       machines that were running (I-645) and the guest park on prod
       (I-652, I-685, I-686), none of which a switch exercises. Evidence:
@@ -447,6 +478,18 @@ entry and this list with it. Counts as of 2026-10-21.
       unit logged `pool_activated`. `hostd park` is all-or-nothing, so
       this cannot be rehearsed on one guest while others must keep
       running (I-696).
+      **Two of the three are now done, on host-02 and unplanned.** The
+      2026-11-10 restart (`docs/incidents/2026-11-10-host-02-tunnel-one-way.md`)
+      parked all three running guests and restored all three: `parked`
+      for each at 42.8 s, 56.0 s and 80.4 s for images of 7.4, 13.0 and
+      15.1 GiB, the park holding the shutdown 96 s against its 240 s
+      deadline, then `parked guests restored restored=3 images=3
+      duration_ms=60263`, each guest's `uptime` spanning the restart (3
+      days, 7 days, 23 h) and its agents back. The pool came back on a
+      real boot with every unit active. **I-645 is still unproven**: the
+      park pre-empted it, so no guest was ever marked interrupted and the
+      api's resume path did not run. A restart with the park off, or one
+      where a guest does not fit the budget, is what exercises that.
 - [ ] **The herdr laptop checks** from release r20261008-1 have been run on
       the owner's laptop. Evidence: the five steps in commit `7bd8807c`'s
       message, with their output (I-596, I-597, I-598).
@@ -510,7 +553,7 @@ entry and this list with it. Counts as of 2026-10-21.
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       delivery needs the WireGuard peer that `10-observability.md` §9 still
-      has open. There are 57 alerts, 56 of them generated into Grafana's own
+      has open. Every alert but `Watchdog` is generated into Grafana's own
       alerting by `ops/grafana/alerts-gen.py` and pushed in by
       `ops/grafana/push.py` over the API; `ops/check.sh --grafana` proves
       every one of them against a running Grafana, twice, and the drift
@@ -521,12 +564,12 @@ entry and this list with it. Counts as of 2026-10-21.
 - [x] Privacy policy and terms published, containing the process-sample
       boundary verbatim and the Anthropic hosted-use statement (users
       authenticate with their own credentials; the platform stores none).
-      Evidence: `https://repose.herakraft.co/privacy` and `/terms` (the
-      m3-web live Playwright suite asserts both passages in a real browser,
+      Evidence: `https://repose.run/privacy` and `/terms` (the m3-web live
+      Playwright suite asserts both passages in a real browser,
       11/11 green 2026-09-20); `test/isolation` `TestPolicyTextContainsThe
       RequiredPassages` pins the source; since the M5 review both routes
       are prerendered so the passages are in the served HTML (`curl -s
-      https://repose.herakraft.co/privacy | tr -s '[:space:]' ' ' | grep -c
+      https://repose.run/privacy | tr -s '[:space:]' ' ' | grep -c
       'We sample the processes'` is 1, verified live at 2026-09-21 02:47Z
       after the web roll, and the terms phrase likewise).
 - [x] The Anthropic API key leaked in commit `b1a5915` has been rotated
@@ -534,7 +577,7 @@ entry and this list with it. Counts as of 2026-10-21.
       private before it is shared with contributors. Closed by DECISIONS
       I-193: the key was rotated and stays in history.
 - [ ] `repose --version` prints a version, and `curl -fsSL
-      https://repose.herakraft.co/install.sh | sh` installs it on macOS
+      https://repose.run/install.sh | sh` installs it on macOS
       arm64, macOS x86_64, Linux x86_64, Linux arm64. Partial (M5 session,
       2026-09-21 02:16Z): the served `install.sh` (200 from the dashboard)
       run in a fresh `$HOME` on Linux x86_64 downloaded

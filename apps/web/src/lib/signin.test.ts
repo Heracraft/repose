@@ -32,7 +32,7 @@ describe('safeReturnPath', () => {
 			'javascript:alert(1)',
 			'data:text/html,<script>',
 			'ftp://evil.example/',
-			'//evil.example\\@repose.herakraft.co',
+			'//evil.example\\@repose.run',
 			'/billing/../../evil',
 			'/billing?x=1',
 			'/billing ',

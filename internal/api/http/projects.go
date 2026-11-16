@@ -21,6 +21,7 @@ import (
 	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -205,8 +206,8 @@ func (s *Server) userProject(r *http.Request) (*store.Project, error) {
 	return store.GetUserProject(r.Context(), s.d.Pool, userFrom(r.Context()).ID, id)
 }
 
-// projectLimitError is the 400 a create, restore or fork past the
-// account's project cap answers (api.md POST /projects/:id/fork, I-569).
+// projectLimitError is the 400 a create or a restore past the account's
+// project cap answers (api.md POST /projects, I-569).
 // detail.reason lets the CLI say it in its own words; the message is the
 // whole sentence for a client that prints it as it is.
 func projectLimitError(have, limit, requested int) error {
@@ -278,7 +279,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		body.Class = "large"
 	}
 	if !scheduler.ValidClass(body.Class) {
-		return errf("invalid", "class must be small, large or xl")
+		return errf("invalid", "class must be tiny, small, large or xl")
 	}
 	slug := Slug(body.Name)
 	if slug == "" {
@@ -478,7 +479,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	if body.Class != nil {
 		if !scheduler.ValidClass(*body.Class) {
-			return errf("invalid", "class must be small, large or xl")
+			return errf("invalid", "class must be tiny, small, large or xl")
 		}
 		if p.State != "stopped" {
 			return errf("conflict", "changing the class requires the project to be stopped")
@@ -621,6 +622,13 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
 		var err error
 		if id, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(p)}, false); err != nil {
+			return err
+		}
+		// The project's webhook routes go with it, and each token
+		// becomes a tombstone: the URL answers 410 for 30 days and 404
+		// after, and `repose restore` does not bring it back, because a
+		// sender that obeyed the 410 has already let it go (I-1114).
+		if err := webhooks.TombstoneProject(ctx, tx, pid); err != nil {
 			return err
 		}
 		return store.SetProjectState(ctx, tx, pid, "destroying")

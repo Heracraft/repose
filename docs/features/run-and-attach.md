@@ -163,8 +163,11 @@ Session and windows (see `interfaces/guest-conventions.md`):
   does; guestd recreates a lost session at boot
   (`guest-conventions.md`), and the CLI does not.
 - Two `repose run` invocations on the same project from two terminals both
-  attach; tmux handles the multi-client case and the smaller terminal
-  constrains the size, as tmux always does. The user docs say so.
+  attach, each to a session grouped with the project's (DECISIONS
+  I-1067): each terminal picks its own window, and with
+  `aggressive-resize` a window takes the size of the terminals showing it.
+  On one window both show, the terminal typed in last sets the size (tmux
+  3.7's `window-size latest`). The user docs say so.
 
 The laptop's clock (I-198):
 
@@ -189,7 +192,13 @@ not delay the attach and reports only through `tmux display-message`,
 never over the pane, and it ends when the SSH session it was started
 beside ends. Windows has no helper. While it runs it also keeps the
 guest's listening ports forwarded to the laptop (ports-and-previews.md,
-I-199), shown in the session's status bar.
+I-199), shown in the session's status bar; lends the guest the laptop
+ports `[forward] reverse` names, on a second connection of its own that
+ends with it (I-1104); and opens the links the guest hands to `$BROWSER`
+in the laptop's browser, a `localhost` one on the laptop end of the
+forward that reaches it (I-634, I-1108). On Windows a set `[forward]
+reverse`, like `[mcp] forward`, prints a line saying it does nothing
+there.
 
 Agent picker:
 
@@ -242,7 +251,7 @@ Failure output:
 
 - Not logged in: exit 3, `Not logged in. Run \`repose login\`.`
 - No plan, or the plan's memory or disk is used up: exit 7 and the api's
-  sentence, e.g. `Choose a plan at https://repose.herakraft.co/billing
+  sentence, e.g. `Choose a plan at https://repose.run/billing
   first.` (the reasons are api.md's `payment_required` table, I-289)
 - Host capacity exhausted on a create: exit 8, `repose has no room for
   this machine. A machine holds its memory while it runs, so stopping one
@@ -312,7 +321,7 @@ On the input-proxy path (macOS and Linux with a terminal), an attach whose
 ssh ends with 255 does not end the command:
 
 ```
-Connection to ssh.repose.herakraft.co closed by remote host.
+Connection to ssh.repose.run closed by remote host.
 
 repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.
 ```

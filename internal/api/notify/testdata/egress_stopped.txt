@@ -4,7 +4,7 @@ Your machines sent 1002.4 GB this period. Solo includes 250 GB a month, and at f
 
 They stay stopped until 27 October 2026 at 14:00 UTC. Upgrading the plan lifts the limit now.
 
-Upgrade the plan: https://repose.herakraft.co/billing
+Upgrade the plan: https://repose.run/billing
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
+repose. Open the dashboard: https://repose.run

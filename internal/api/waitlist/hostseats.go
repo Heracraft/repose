@@ -43,8 +43,11 @@ import (
 
 const (
 	// SeatVCPUs is a seat's guest vCPUs: 8 GB at 4 GB per vCPU, which is
-	// scheduler.ClassVCPU("large"), the class a seat is one of
-	// (SeatBytes). TestSeatVCPUsIsALarge pins the two together.
+	// scheduler.ClassMilliVCPU("large") as cores, the class a seat is one
+	// of (SeatBytes). TestSeatVCPUsIsALarge pins the two together. The
+	// ratio is uniform across every class (I-784, I-1168), so four `tiny`
+	// commit exactly these 2 vCPUs for exactly this 8 GB and the count
+	// below is right for any mix of classes.
 	SeatVCPUs = 2
 
 	// DutyCycle is the share of its running time a seat is actually

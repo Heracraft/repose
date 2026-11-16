@@ -92,7 +92,7 @@
 		pointer-events: none;
 	}
 	.landing .band + .band::after,
-	.landing .fig--hero::after,
+	.landing .fig--field::after,
 	:root:has(main.landing) .site-footer > .frame::after,
 	:root:has(main.landing) .site-footer .bottom::before {
 		content: '';
@@ -111,7 +111,7 @@
 	}
 	/* The field's top edge: the figure is the sheet, so the cross sits
 	   on its own edges. */
-	.landing .fig--hero::after {
+	.landing .fig--field::after {
 		left: -5px;
 		right: -5px;
 	}
@@ -207,11 +207,10 @@
 	color: var(--hk-text);
 }
 /* The page's one label: 12px Geist Mono, upper case and tracked, in the
-   third grey. The eyebrow, the bands' and cells' numbered labels and the
-   step numbers take it; a number stands in the second grey at a fixed
-   width, so the names after it start on one line. The eyebrow, the
-   page's title line with no number, is in the second grey whole, so it
-   does not read as a label missing its number. */
+   third grey. The bands' and cells' numbered labels and the step
+   numbers take it; a number stands in the second grey at a fixed width,
+   so the names after it start on one line. The hero has no label: its
+   headline opens the page (I-1212). */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
@@ -225,7 +224,12 @@
 .landing .label .n {
 	display: inline-block;
 	min-width: 2.75em;
-	color: var(--hk-text-2);
+	color: var(--pic-accent);
+}
+/* The page's numbers (bands, cells, steps) take the pictures' muted slate
+   blue, the one accent the page's own type carries (owner, 2026-11-12). */
+.landing span.label {
+	color: var(--pic-accent);
 }
 .landing .copy {
 	margin: 0;
@@ -307,10 +311,6 @@
 	grid-template-columns: minmax(0, 1fr);
 	padding-bottom: var(--head-gap);
 }
-.landing .hero .eyebrow {
-	margin-bottom: 1.5rem;
-	color: var(--hk-text-2);
-}
 .landing .hero .hk-lead {
 	max-width: 34rem;
 	margin: 2rem 0 0;
@@ -328,46 +328,35 @@
 	flex-wrap: wrap;
 	gap: 0.75rem;
 }
-/* From 1024px the buttons and the install line share one row under the
-   headline and the lead, at every width: never beside the lead (owner,
-   2026-11-02). 1024 to 1199px: the headline across, the lead on the
-   left half under it. */
+/* From 1024px the hero's copy stands centred over the centred picture
+   (owner, 2026-11-15, I-1212: no asymmetry): the headline in two
+   balanced lines, the lead under it on its measure, and the buttons
+   with the install line on one centred row under both, never beside
+   the lead (owner, 2026-11-02). The I-961 twelve-column hero, the
+   headline and lead side by side from 1200px, went with it. */
 @media (min-width: 1024px) {
 	.landing .hero-copy {
-		grid-template-columns: repeat(12, minmax(0, 1fr));
-		column-gap: var(--col-gap);
-		align-items: last baseline;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
 	}
-	.landing .hero-copy > * {
-		grid-column: 1 / -1;
+	.landing .hero h1 {
+		max-width: 26ch;
+		text-wrap: balance;
 	}
 	.landing .hero .hk-lead {
-		grid-column: 1 / 8;
+		max-width: 36rem;
+		margin: 1.5rem 0 0;
 	}
 	.landing .hero-act {
 		display: flex;
 		align-items: center;
-		grid-column: 1 / -1;
-		margin-top: 2.5rem;
+		justify-content: center;
+		margin-top: 2.25rem;
 	}
 	.landing .hero-act > .ctas {
 		flex: none;
-	}
-}
-/* From 1200px the headline (seven columns) and the lead (five) stand side
-   by side on one baseline, the row of buttons under both: the first
-   screen has no empty quarter. */
-@media (min-width: 1200px) {
-	.landing .hero h1 {
-		grid-column: 1 / 8;
-	}
-	.landing .hero .hk-lead {
-		grid-column: 8 / -1;
-		grid-row: 2;
-		margin: 0;
-	}
-	.landing .hero-act {
-		grid-row: 3;
 	}
 }
 /* On a phone the hero's two buttons take the column's width, one above
@@ -440,9 +429,111 @@
 .landing .band > .fig > .stage {
 	padding: var(--field-y) var(--edge);
 }
-/* The setup's field opens on an inner rule under its head. */
-.landing .band > .fig:not(.fig--hero) {
+/* The setup's field opens on an inner rule under its head; the wreck
+   picture's dark field opens on its own edge. */
+.landing .band > .fig:not(.fig--field) {
 	border-top: 1px solid var(--rule-in);
+}
+
+/* The wreck picture's flights and trail are measured against its
+   windows; while the window narrows with the picture on screen they keep
+   the old width for a frame or two, so its frame clips them at the sides
+   and they never widen the page (its pause button is placed from the
+   figure, outside the clip). */
+.landing .fig--wreck .hero-frame {
+	overflow-x: clip;
+}
+
+/* ---------- The dark plates ----------
+
+   The page has two dark moments, a rhythm in place of one slab (judges,
+   2026-11-12): the hero's field, where you see what it runs, and the
+   install band, where you start. Each is the wreck's old plate
+   (pictures.css, .field-stage): its dark tokens, run to the window's
+   edges by a spread fill that adds no scroll width. */
+/* The dark plate's colours and spread fill: pictures.css, "The two dark
+   moments" (the landing's own palette lives there, I-843). */
+
+/* ---------- The hero's picture ----------
+
+   The Orbit (HeroOrbitV1.svelte) stands on the hero's field: the
+   stage's tone across the sheet, from under the buttons to the next
+   band's rule, carrying the 16px dot grid the wreck's field carried,
+   with its parts on the text lines and the page's one motion control
+   in the field's top right corner, as a band picture's. */
+/* The hero's dot grid and its colours: pictures.css, "The hero's field". */
+
+/* ---------- The layers: six cells on the thirds (I-1167, I-1169) ------
+
+   Six cells on the thirds of the sheet in two rows, split by inner
+   rules with no gap, as the plans are: each its numbered label, its
+   serif title, one paragraph and the command it names, set as the
+   feature grid's are. Below 1024px they stack, each under its own
+   rule. */
+.landing .cols {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	margin: 0 calc(-1 * var(--edge));
+	padding: 0;
+	list-style: none;
+	border-top: 1px solid var(--rule-in);
+}
+.landing .cols > li {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 1.5rem var(--edge) 2rem;
+}
+.landing .cols > li + li {
+	border-top: 1px solid var(--rule-in);
+}
+.landing .cols > li > .num {
+	margin-bottom: 0.5rem;
+}
+.landing .cols .copy {
+	margin-top: 0.5rem;
+}
+.landing .cols .cmd {
+	margin-top: auto;
+	padding-top: 1rem;
+}
+.landing .cols .item-title {
+	text-wrap: balance;
+}
+/* From 1024px the cells stand on the thirds lines as the plans do: the
+   middle cell is a third of the content plus a gap, so the two inner
+   rules stand half a gap before the fifth and ninth column lines. */
+@media (min-width: 1024px) {
+	.landing .cols {
+		grid-template-columns:
+			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
+			minmax(0, 1fr);
+	}
+	/* The cells of a row share its tracks (label, title, paragraph,
+	   command), so the paragraphs start on one line whatever the
+	   titles' lengths. */
+	.landing .cols > li {
+		display: grid;
+		grid-row: span 4;
+		grid-template-rows: subgrid;
+		align-content: start;
+		padding: 2rem var(--in) 2.5rem calc(var(--in) - 1px);
+	}
+	.landing .cols > li:nth-child(3n + 1) {
+		padding-left: var(--edge);
+	}
+	.landing .cols > li:nth-child(3n) {
+		padding-right: var(--edge);
+	}
+	.landing .cols > li + li {
+		border-top: 0;
+	}
+	.landing .cols > li:not(:nth-child(3n + 1)) {
+		border-left: 1px solid var(--rule-in);
+	}
+	.landing .cols > li:nth-child(n + 4) {
+		border-top: 1px solid var(--rule-in);
+	}
 }
 
 /* ---------- The feature grid ----------
@@ -467,8 +558,11 @@
 	--cell-pt: 1.5rem;
 	border-top: 1px solid var(--rule-in);
 }
+/* A cell reads top down: its label, title, paragraph and command, then
+   its picture, which ends on the cell's foot, so the pictures of a row
+   stand level and each sits under its own words. */
 .landing .cells > li {
-	--pause-y: calc(var(--shot-h) + 1px + var(--cell-pt) + 1rem + 0.5rem + (1.75rem - 28px) / 2);
+	--pause-y: calc(var(--cell-pt) + 1rem + 0.5rem + (1.75rem - 28px) / 2);
 	--shot-l: var(--edge);
 	--shot-r: var(--edge);
 	position: relative;
@@ -481,9 +575,10 @@
 }
 .landing .cells > li > .shot {
 	flex: none;
-	border-bottom: 1px solid var(--rule-in);
+	border-top: 1px solid var(--rule-in);
 }
 .landing .cell-copy {
+	order: -1;
 	flex: 1;
 	display: flex;
 	flex-direction: column;
@@ -664,6 +759,47 @@
 .landing .steps .code-copy wbr {
 	display: none;
 }
+/* The job agent's rows (I-1167) take the steps' layout, with what each
+   step runs on in place of a command to copy: the reference treatment,
+   on the stage's tone, one line scrolling under a fade where the cell is
+   narrower, and no Copy. */
+.landing .refs .ref {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	min-height: 3rem;
+	margin: 0;
+	padding: 0.375rem var(--edge);
+	border-top: 1px solid var(--rule-in);
+	background: var(--stage);
+	font-family: var(--hk-font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-2);
+}
+.landing .refs .ref > span {
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	white-space: pre;
+}
+.landing .refs .ref > span[data-scrolls='true'] {
+	mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
+}
+@media (min-width: 1024px) {
+	.landing .refs .ref {
+		min-height: 100%;
+		padding-left: calc(var(--in) - 1px);
+		border-top: 0;
+		border-left: 1px solid var(--rule-in);
+	}
+}
+@media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {
+	.landing .refs .ref {
+		font-size: 0.75rem;
+	}
+}
+
 /* Between 1024 and 1199px the install line fits its half at 12px, with
    Copy as its icon (labelFrom in +page.svelte). */
 @media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {

@@ -126,7 +126,7 @@ question on its own, which is what to run before a switch or a base
 publish when the diff looks like it changes nothing:
 
 ```
-ops/dev/closure-equiv.py nixosConfigurations.host-01.config.system.build.toplevel main origin/main
+ops/dev/closure-equiv.py nixosConfigurations.host-02.config.system.build.toplevel main origin/main
 ```
 
 A plain `drvPath` comparison cannot answer it: `self.shortRev` is stamped
@@ -171,13 +171,25 @@ Integrate whenever branches are queued; it needs no owner approval.
    everything the batch ships as:
    - always: `python3 ops/dev/decisions-index.py --check`; `go build ./...`,
      `go vet ./...`, `golangci-lint run ./...`; `go test -race -timeout 30m ./...`
-     with a real Postgres for the api packages (on a repose guest, unset
+     **with `DATABASE_URL` set** (on a repose guest, unset
      `REPOSE_PROJECT REPOSE REPOSE_HOOK_AGENT` first, and keep `TMPDIR`
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
      -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
-     `docs/CHECKLIST.md` greps. **A batch that changes a VM test, a flake
+     `docs/CHECKLIST.md` greps.
+     `DATABASE_URL` is not a detail of convenience and "a real Postgres"
+     was the wrong way to say it: `internal/db/testdb` starts a throwaway
+     cluster **per test process** when the variable is unset, which is
+     also a real Postgres and is a *different test*. CI sets
+     `DATABASE_URL` at one service, so every package contends for one
+     server; run it the way the thing you are gating runs (DECISIONS
+     I-1054). Set it, and point it at a server nothing else is using.
+     Of the three CI failures of 2026-11-04 this explains none on its
+     own: `TestHelloRefusedClosesTheStream` was a test waiting on a proxy
+     that a contended shared database widened (I-1058),
+     `TestEndToEnd` was a `TempDir` cleanup race (I-1052), and
+     `TestStopWindowScripts` is still open (I-1054, I-1060). **A batch that changes a VM test, a flake
      check or `nix/guest/checks.nix`: run that check, whatever the batch
      ships as** — those paths install nothing, so they no longer put
      `base`, `host` or `edge` in a branch's targets (DECISIONS I-759), and
@@ -200,8 +212,40 @@ Integrate whenever branches are queued; it needs no owner approval.
      `dry-activate` on the target before any switch.
    A failure is fixed in the batch worktree when it comes from the merge,
    or sent back to the branch's agent when it is the branch's own.
-5. **Move main, locally.** `git -C <the conductor checkout> merge --ff-only
-   release/<batch>` (the main checkout must be clean), then
+   **On woker-1, the always set means** (2026-11-11): a throwaway Postgres
+   with `--network host` (`DEV-BOX.md`), `CGO_ENABLED=1` for `-race`,
+   `TMPDIR=/tmp/rt` set inside the dev shell (`nix develop ./nix -c sh -c
+   'TMPDIR=/tmp/rt go test ...'`; the shell replaces one set outside,
+   `DEV-BOX.md`), playwright with `PLAYWRIGHT_CHROMIUM_PATH` from
+   nixpkgs, the a11y suite skipped (no lighthouse here), and the VM checks
+   run after the Go and playwright runs, one at a time, or the harness kills
+   them for memory. Three checks that are red for reasons that are not the
+   batch's, each seen on 2026-11-11: `TestNoticeAtTenMinutesListsWaiting` under
+   full-suite load (fixed, I-1150), `guest-base`'s herdr subtest reading a
+   restarting unit once (fixed in r20261111-5), and a fixture clock pinned to a
+   date (I-1162's neighbour, fixed in r20261111-11). Two more on
+   2026-11-12: `guest-keystroke-path`, which cannot pass on this box's
+   single-user nix (`DEV-BOX.md`; CI is its gate), and `guest-base`'s
+   I-264 keys probe writing nothing while another VM check or a test run
+   loads the box (green alone). A red that is not in the
+   batch's diff is reproduced on main before it is called a flake.
+
+   **Migration numbers.** Four branches queued on one day each added
+   `0036_*.sql`. Before a cut with several branches: `for b in <queued>; do git
+   ls-tree -r --name-only $b | grep migrations/; done` and renumber in the
+   branch (with every reference: the down file's comment, `db-schema.md`,
+   the decision entry), then `add` again.
+
+   **A branch finished on kanali** (its queue is frozen, I-763): `git fetch
+   kanali.repose:kanali '+refs/heads/<b>:refs/remotes/kanali/<b>'`, `git branch
+   <b> kanali/<b>`, a worktree, then `ops/dev/release-queue add` from it.
+
+5. **Move main, locally.** Read every result first. Never chain the
+   fast-forward onto a check (`grep ... && git merge --ff-only ...`): a grep
+   that prints nothing is not a pass, and r20261111-4 and r20261111-10 both
+   moved main onto a red result that way on 2026-11-11. Then `git -C <the
+   conductor checkout> merge --ff-only release/<batch>` (the main checkout
+   must be clean), then
    `ops/dev/release-queue done <batch>`, which removes the batch
    worktree and pushes main to `origin integrated` (and nothing else). Do
    not push `main`. `ls` now lists those branches as `on-main` and
@@ -225,19 +269,40 @@ else integrated with it.
 2. **Push main.** Watch CI on the pushed commit; a push redeploys `api` and
    `web` whether CI passes or not, so a red run is fixed at once (as its
    own small batch, integrated and pushed).
-3. **Ship the rest**, in this order when present: `base` publish (the rev
+3. **Write the notes before the sign job runs.** `release.yml`'s sign job
+   refuses a draft with under 400 bytes of notes (I-798). The tag creates the
+   draft; `gh release edit v0.1.N --title "repose v0.1.N" --notes-file
+   notes.md` on it; if the job already failed, `gh run rerun <id> --failed`.
+   Notes: highlights first, plain, no AI tells (`release-notes` memory).
+
+   **Coolify facts that cost time on 2026-11-11** (4.7.5): a second domain on
+   an app gets Traefik's default port 3000 unless the domain carries its port
+   (`https://api.repose.run:8080`), which answered 502 for four minutes; the
+   api app's `fqdn` is a comma list; envs are `PATCH /applications/<uuid>/envs`
+   with `{key,value,is_preview:false}` (404 → `POST`); a manual redeploy is
+   `POST /deploy?uuid=<uuid>`; `GET /deployments` is a dict keyed by index and
+   finished deployments drop out of it. Base publish: `docker exec <api
+   container> repose-admin base publish --rev <40-hex sha on origin/main>
+   --changelog "..."` on the control VM.
+
+4. **Ship the rest**, in this order when present: `base` publish (the rev
    is the pushed main commit), `cli` tag (the next `v0.1.N`), `host`
-   switches (RUNBOOK "Switch a host to main") and the `edge` switch.
+   switches (RUNBOOK "Switch a host to main"; host-01 is retired since
+   2026-11-02, so that is host-02) and the `edge` switch (its first switch
+   onto a unit that gained a `StateDirectory` needs a restart; the gateway's
+   host certificate must name every SSH hostname users use: RUNBOOK "Switch
+   the edge" and "Move the gateway to another name"; both were lived through
+   on 2026-11-11 when repose.run went live).
    When the base sends a guest kind or field the running hostd refuses
    (`agent_done`, I-688), switch the hosts first and publish the base
    after them.
    A `cli` tag pushed before the owner has set up the `release`
    environment and its signing key stays an unpublished draft ("The
    release signing key" below).
-4. **Check it live.** Run each released branch's `--live` check on
+5. **Check it live.** Run each released branch's `--live` check on
    throwaway `e2e-*` projects, never on the owner's projects, at most two
    alive at once. Paste the output into the release record.
-5. **Record.** `ops/dev/release-queue record <release>` prints the line for
+6. **Record.** `ops/dev/release-queue record <release>` prints the line for
    `docs/workstreams/STATUS.md` and the detail that does not fit in it,
    from what the queue already holds — the branches with the decision ids
    they add, the targets, the base and main commits, and each `--live`

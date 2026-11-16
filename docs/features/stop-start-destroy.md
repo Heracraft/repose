@@ -210,13 +210,13 @@ Stop:
   `stopping <slug> failed: <why>`, then "`repose stop <slug>` tries again", and
   records `stop_failed`, which notifies. `start`, `attach`, `run`, `ssh`
   and `code` on a `stopping` project wait for the stop, then start it.
-  `rm`, `fork`, `resize` (disk and `--size`), `run --size`, `snapshots
+  `rm`, `resize` (disk and `--size`), `run --size`, `snapshots
   create`, an in-place `snapshots restore` and the config commands that
   send a change (`config add`, `remove`, `edit`, `apply`) wait for it,
   then do their work: the api answers any other op `409` until the stop
   ends, and a config change `409` "<slug> is stopping". The
-  stops `resize --size`, `fork` and run's plan question make themselves
-  still wait: they need the stopped volume or the freed memory.
+  stops `resize --size` and run's plan question make themselves still
+  wait: they need the stopped volume or the freed memory.
 - `--wait` waits for the whole stop. Its line is `Stopped <slug> in
   <time> with a <size> snapshot.`, or `Stopped <slug> in <time>.` without
   one, then `Ended claude (working).`; a stop whose snapshot failed says
@@ -361,7 +361,7 @@ Failure handling:
   ordinary stop, snapshot first (DECISIONS I-239). `repose status`,
   `repose ls` and the dashboard then say `stopped: a cryptocurrency
   miner (xmrig) was running; mining is not allowed on repose, see the
-  terms at https://repose.herakraft.co/terms`, and an `abuse_stopped`
+  terms at https://repose.run/terms`, and an `abuse_stopped`
   notification goes out. `repose start` works as usual, and a guest that
   runs it again is stopped again; the third such stop within 24 hours
   holds the project: `repose start` and a restore answer "hashy is on

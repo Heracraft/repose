@@ -224,6 +224,8 @@ func kindOf(req *guestdv1.Request) string {
 		return "RegisterPaths"
 	case *guestdv1.Request_AnswerQuestion:
 		return "AnswerQuestion"
+	case *guestdv1.Request_SayToAgent:
+		return "SayToAgent"
 	case *guestdv1.Request_GrowFs:
 		return "GrowFs"
 	case *guestdv1.Request_WriteSecrets:
@@ -373,6 +375,16 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 		if r.AnswerQuestion.QuestionId == "" {
 			return fail("invalid_argument", "question_id required")
 		}
+	case *guestdv1.Request_SayToAgent:
+		if r.SayToAgent.Text == "" {
+			return fail("invalid_argument", "text required")
+		}
+		// The fake guest's one agent window is claude, idle.
+		window := r.SayToAgent.Window
+		if window == "" {
+			window = "claude"
+		}
+		ok.Result = &guestdv1.Response_Say{Say: &guestdv1.SayResult{State: "delivered", Window: window}}
 	default:
 		return fail("invalid_argument", "unknown request")
 	}

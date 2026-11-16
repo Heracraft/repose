@@ -30,10 +30,10 @@ type Target struct {
 	Label string
 }
 
-// hostRe matches `<port>-<label>.repose.herakraft.co`: the port is 1-5
+// hostRe matches `<port>-<label>.repose.run`: the port is 1-5
 // digits, the label one [a-z0-9-] run that starts and ends with a letter
 // or digit.
-var hostRe = regexp.MustCompile(`^([0-9]{1,5})-([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.repose\.herakraft\.co$`)
+var hostRe = regexp.MustCompile(`^([0-9]{1,5})-([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.repose\.run$`)
 
 // Route parses a preview hostname into its port and label. Port 0 and
 // ports above 65535 are rejected.
@@ -44,7 +44,7 @@ func Route(host string) (Target, error) {
 	}
 	m := hostRe.FindStringSubmatch(host)
 	if m == nil {
-		return Target{}, fmt.Errorf("preview host %q is not <port>-<name>.repose.herakraft.co", host)
+		return Target{}, fmt.Errorf("preview host %q is not <port>-<name>.repose.run", host)
 	}
 	port, err := strconv.Atoi(m[1])
 	if err != nil || port < 1 || port > 65535 {

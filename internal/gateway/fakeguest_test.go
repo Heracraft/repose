@@ -461,3 +461,11 @@ func (g *fakeGuest) snapshot() (envs map[string]string, agentReq bool, ptys, win
 	}
 	return envs, g.agentReq, g.ptyReqs, g.windowChanges
 }
+
+// connCount is how many SSH connections the guest has accepted, which is
+// how a test tells a reused connection from a new handshake.
+func (g *fakeGuest) connCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.conns
+}

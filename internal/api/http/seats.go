@@ -17,6 +17,12 @@ func (s *Server) billingWaitlist(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("seats not configured")
 	}
 	u := userFrom(r.Context())
+	// Before Join: an exempt account has no plan to choose, so a place
+	// in the queue buys it nothing and its invitation would hold a seat
+	// nobody converts (I-1090).
+	if u.BillingStatus == "exempt" {
+		return withDetail(errf("conflict", "%s", msgExempt), map[string]any{"reason": "exempt"})
+	}
 	p, err := s.d.Seats.Join(r.Context(), u.ID)
 	if err != nil {
 		return err

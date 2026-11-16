@@ -1,10 +1,10 @@
 #!/bin/sh
 # install.sh: installs the repose CLI (docs/workstreams/07-cli.md §5.11).
-# Served at https://repose.herakraft.co/install.sh.
+# Served at https://repose.run/install.sh.
 #
-#   curl -fsSL https://repose.herakraft.co/install.sh | sh
-#   curl -fsSL https://repose.herakraft.co/install.sh | sh -s -- --system
-#   curl -fsSL https://repose.herakraft.co/install.sh | sh -s -- --version v1.2.3
+#   curl -fsSL https://repose.run/install.sh | sh
+#   curl -fsSL https://repose.run/install.sh | sh -s -- --system
+#   curl -fsSL https://repose.run/install.sh | sh -s -- --version v1.2.3
 set -eu
 
 # The GitHub repository the releases live in (DECISIONS I-98, I-286).

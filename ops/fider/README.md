@@ -11,7 +11,7 @@ Admin, Authentication, OAuth Providers, `repose account`:
 | Field | Value |
 | --- | --- |
 | Display name | `repose account` (the button reads "Continue with repose account") |
-| Logo | the r-mark, `https://repose.herakraft.co/favicon.png` (128 px) |
+| Logo | the r-mark, `https://repose.run/favicon.png` (128 px) |
 | Client ID | `wc2np1n3r9z4acp2wutev` (Logto app `repose feedback`) |
 | Client secret | Logto, the app, App secrets, Default secret. Not stored anywhere else |
 | Authorize URL | `https://accounts.herakraft.co/oidc/auth` |

@@ -51,6 +51,10 @@ type Options struct {
 	// CLILatest, when set, is sent as every answer's X-Repose-CLI-Latest
 	// header, the newest CLI release (DECISIONS I-626).
 	CLILatest string
+	// CLIOldest, when set, is sent as every answer's X-Repose-CLI-Oldest
+	// header, the oldest CLI release the api answers as documented
+	// (DECISIONS I-1088).
+	CLIOldest string
 	// StartDelay makes POST /projects/:id/start on a stopped project leave
 	// the project "starting" and its op "running" (phase start_guest) for
 	// the delay, then running and done. Zero keeps the instant start.
@@ -69,12 +73,6 @@ type Options struct {
 	// long after the stop is accepted: the real api reads "stopping" only
 	// once its engine has picked the op up.
 	StopPickup time.Duration
-	// ForkStepDelay makes each fork copy's restore op run its steps the
-	// way the engine does: phase restore (project "restoring") for the
-	// delay, then, when the copy starts, phase start_guest (project
-	// "starting") for the delay times the copy's number, then done. Zero
-	// keeps the instant fork.
-	ForkStepDelay time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.
@@ -99,7 +97,7 @@ var CannedUser = User{
 }
 
 const (
-	gatewayHost = "ssh.repose.herakraft.co"
+	gatewayHost = "ssh.repose.run"
 	hostCAPub   = "ssh-ed25519 AAAA...fakeca"
 	userCAPub   = "ssh-ed25519 AAAA...fakeuserca"
 	baseVersion = "2026.09.15"
@@ -139,19 +137,16 @@ type Fake struct {
 	users    map[string]*userRec
 	projects map[string]*project
 	ops      map[string]*op
-	forks    map[string][]forkRec // by user id and request_id (I-254)
-	// forkNoClone makes a fork without snapshot_id answer 409
-	// snapshot_needed, as the api does when the source's host cannot hold
-	// the copies (I-701); oldFork answers it, and a snapshot's reason, as
-	// an api before I-701 and I-703 did.
-	forkNoClone, oldFork bool
-	certs                map[uint64]*cert
-	revoked              []revocation
-	failOnce             []failRule
-	failAlways           map[string]string
-	hits                 map[string][]time.Time
-	hosts                []Host // nil means the one canned host
-	gatewayCerts         int    // POST /internal/gateway-certs calls, for cache tests
+	// webhookTombstones are the hex sha256 of tokens rotated or removed
+	// (DECISIONS I-1110); the edge answers 410 for them.
+	webhookTombstones []string
+	certs             map[uint64]*cert
+	revoked           []revocation
+	failOnce          []failRule
+	failAlways        map[string]string
+	hits              map[string][]time.Time
+	hosts             []Host // nil means the one canned host
+	gatewayCerts      int    // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
@@ -159,6 +154,13 @@ type Fake struct {
 	wakes         int
 	sessions      []SessionReport
 	questions     []*Question       // newest last (DECISIONS I-245)
+	// says are the `repose say` messages the fake took, and sayAgents /
+	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
+	says         []Say
+	sayAgents    []string
+	sayAgentsSet bool
+	sayState     string
+	sayReplaced  bool
 	secretAnswers map[string][]byte // question id -> the value its secret answer stored (I-929)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
@@ -185,7 +187,6 @@ func New(opts Options) *Fake {
 		users:      map[string]*userRec{},
 		projects:   map[string]*project{},
 		ops:        map[string]*op{},
-		forks:      map[string][]forkRec{},
 		certs:      map[uint64]*cert{},
 		failAlways: map[string]string{},
 		hits:       map[string][]time.Time{},
@@ -503,6 +504,9 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.opts.CLILatest != "" {
 		w.Header().Set("X-Repose-CLI-Latest", f.opts.CLILatest)
 	}
+	if f.opts.CLIOldest != "" {
+		w.Header().Set("X-Repose-CLI-Oldest", f.opts.CLIOldest)
+	}
 	_, pattern := f.mux.Handler(r)
 	if pattern == "" {
 		f.mu.Unlock()
@@ -650,6 +654,15 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/secrets", f.listSecrets)
 	f.handle("PUT /v1/projects/{id}/secrets/{name}", f.putSecret)
 	f.handle("DELETE /v1/projects/{id}/secrets/{name}", f.deleteSecret)
+	// Webhook routes (DECISIONS I-1110)
+	f.handle("GET /v1/projects/{id}/webhooks", f.listWebhooks)
+	f.handle("POST /v1/projects/{id}/webhooks", f.putWebhook)
+	f.handle("GET /v1/projects/{id}/webhooks/{name}", f.getWebhook)
+	f.handle("DELETE /v1/projects/{id}/webhooks/{name}", f.deleteWebhook)
+	f.handle("POST /v1/projects/{id}/webhooks/{name}/rotate", f.rotateWebhook)
+	f.handle("GET /v1/internal/webhook-routes", f.internalWebhookRoutes)
+	f.handle("POST /v1/internal/webhook-start", f.internalWebhookStart)
+	f.handle("POST /v1/internal/webhook-deliveries", f.internalWebhookDeliveries)
 	f.handle("GET /v1/me/secrets", f.listAccountSecrets)
 	f.handle("PUT /v1/me/secrets/{name}", f.putAccountSecret)
 	f.handle("DELETE /v1/me/secrets/{name}", f.deleteAccountSecret)
@@ -658,7 +671,7 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/snapshots", f.listSnapshots)
 	f.handle("POST /v1/projects/{id}/snapshots", f.createSnapshot)
 	f.handle("POST /v1/projects/{id}/snapshots/{sid}/restore", f.restoreSnapshot)
-	f.handle("POST /v1/projects/{id}/fork", f.forkProject)
+	f.handle("POST /v1/projects/{id}/fork", f.forkRemoved)
 	// Events and logs.
 	f.handle("GET /v1/projects/{id}/events", f.listEvents)
 	f.handle("GET /v1/projects/{id}/logs", f.projectLogs)
@@ -667,6 +680,8 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/questions", f.listProjectQuestions)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/answer", f.answerQuestion)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/cancel", f.cancelQuestion)
+	// A message for the project's agent (DECISIONS I-1144).
+	f.handle("POST /v1/projects/{id}/say", f.sayToAgent)
 	f.handle("GET /v1/questions/reply", f.replyQuestion)
 	f.handle("POST /v1/questions/reply", f.replyQuestion)
 	// Usage and billing.
@@ -758,16 +773,6 @@ func busyStopping(p *project) *apiError {
 type startOutcome struct {
 	failCode, failMsg string
 	warnCode, warnMsg string
-}
-
-// SetForkClone sets what a fork without snapshot_id gets: clones (the
-// default), 409 snapshot_needed (noClone), or an api before I-701's
-// "snapshot_id is required" (old, which also records every snapshot a
-// user asks for as manual, as an api before I-703 did).
-func (f *Fake) SetForkClone(noClone, old bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.forkNoClone, f.oldFork = noClone, old
 }
 
 // SetStartFailure makes the next start op of the project end in error

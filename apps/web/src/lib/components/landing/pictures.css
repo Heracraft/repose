@@ -122,7 +122,7 @@
 }
 :root[data-theme='dark'] .landing,
 :root.dark .landing,
-.landing .hero-stage {
+.landing .field-stage {
 	--stage: #0e0e10;
 	--stage-edge: rgb(255 255 255 / 0.08);
 	--stage-sheen: rgb(147 167 208 / 0.07);
@@ -154,12 +154,12 @@
 	--t-bar: #1e1e22;
 	--t-bar-fg: #a1a1aa;
 }
-/* The hero's field is one dark plate in both schemes, the page's one
-   moment of contrast: under the picture's dark palette (above) it takes
-   the kit's dark text, state and code colours, so the hero picture draws
-   as it does on the dark page. In the dark scheme the plate stands a
+/* The wreck picture's field (the hero's until I-1167) is one dark
+   plate in both schemes, the page's one moment of contrast: under the
+   picture's dark palette (above) it takes the kit's dark text, state
+   and code colours, so the picture draws as it does on the dark page. In the dark scheme the plate stands a
    step lighter than the page, with a lit edge. */
-.landing .hero-stage {
+.landing .field-stage {
 	color-scheme: dark;
 	--hk-text: #f4f4f5;
 	--hk-text-2: #a1a1aa;
@@ -185,18 +185,18 @@
 	--stage-sheen: rgb(147 167 208 / 0.1);
 	color: var(--hk-text);
 }
-.landing .hero-stage .hero-pic {
+.landing .field-stage .hero-pic {
 	--rogue: #ff4b3e;
 }
 @media (prefers-color-scheme: dark) {
-	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
+	:root:not(.light):not([data-theme='light']) .landing .field-stage {
 		--stage-hero: #131316;
 		--stage-hero-edge: #2a2a2f;
 		--stage-dot: #2c2c31;
 	}
 }
-:root[data-theme='dark'] .landing .hero-stage,
-:root.dark .landing .hero-stage {
+:root[data-theme='dark'] .landing .field-stage,
+:root.dark .landing .field-stage {
 	--stage-hero: #131316;
 	--stage-hero-edge: #2a2a2f;
 	--stage-dot: #2c2c31;
@@ -235,7 +235,7 @@
 		transition: none;
 	}
 }
-/* The hero's field alone runs past the sheet to the window's edges: the
+/* The wreck picture's field alone runs past the sheet to the window's edges: the
    page's one moment of contrast, the dark plate carrying a 16px dot
    grid, under its top edge, the windows still on the frame.
    The fill past the frame is a spread shadow and the edge a border-image
@@ -243,7 +243,7 @@
    the sheen and the dots fade out before the frame's edges, so the flat
    fill past them meets them without a seam. The spread covers the rails
    (landing.css), which stop at the field's top edge. */
-.landing .stage.hero-stage {
+.landing .stage.field-stage {
 	border-top: 1px solid;
 	border-image: linear-gradient(var(--stage-hero-edge), var(--stage-hero-edge)) 1 / 1px 0 0 / 0
 		100vw;
@@ -302,4 +302,43 @@
 .landing .pic-chip.fire {
 	background: var(--pic-accent);
 	color: var(--surface);
+}
+
+/* ---------- The two dark moments (landing.css, "band--dark") ----------
+
+   The hero's field and the install band: the wreck's old plate, its dark
+   tokens run to the window's edges by a spread fill that adds no scroll
+   width. The colours live here with the rest of the landing's palette
+   (I-843); the layout that uses them is in routes/landing.css. */
+.landing .band.band--dark {
+	background: var(--stage-hero);
+	box-shadow: 0 0 0 100vmax var(--stage-hero);
+	clip-path: inset(0 -100vmax);
+	--rule-band: #2a2a2f;
+	--rule-in: #1f1f23;
+	color: var(--hk-text);
+	padding-bottom: var(--field-y);
+}
+.landing .band--dark .steps .code-copy {
+	background: #18181b;
+}
+
+/* ---------- The hero's field ----------
+
+   The stage's tone across the sheet with the 16px dot grid the wreck's
+   field carried; the dot's colour pairs the OS rule with the switch's. */
+.landing .hero-stage {
+	background:
+		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
+		var(--stage);
+	--hero-dot: #dcdce0;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
+		--hero-dot: #232327;
+	}
+}
+:root[data-theme='dark'] .landing .hero-stage,
+:root.dark .landing .hero-stage {
+	--hero-dot: #232327;
 }

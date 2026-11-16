@@ -270,8 +270,8 @@ func gchatFixtures() map[string]notify.Message {
 	q.EventID = uuid.MustParse("01a0c14a-0000-7000-8000-0000000000ab")
 	q.TZ = "Europe/Berlin"
 	q.Question.Replies = []string{
-		"https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=gchat",
-		"https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=gchat",
+		"https://api.repose.run/v1/questions/reply?token=aaa.bbb&via=gchat",
+		"https://api.repose.run/v1/questions/reply?token=ccc.ddd&via=gchat",
 	}
 	out["agent_question"] = q
 	free := q
@@ -321,6 +321,50 @@ func TestGChatGolden(t *testing.T) {
 		if string(want) != got {
 			t.Errorf("%s.gchat differs from the golden file (run with -update and read the diff)\n--- got ---\n%s", kind, got)
 		}
+	}
+}
+
+// TestGChatCardsOnlyLeadToAnAct (DECISIONS I-1096): a card carries a way
+// into the dashboard only where the dashboard has something for the
+// owner to do. A done report, a message, a permission prompt, a failure
+// and the rest carry no button at all; a failed payment leads to the
+// plan; a question leads to where it is answered.
+func TestGChatCardsOnlyLeadToAnAct(t *testing.T) {
+	for _, kind := range []string{
+		"completed", "needs_input", "error", "agent_message", "agent_done",
+		"idle_running", "temp_expiring", "temp_destroyed", "machines_restarted",
+		"host_moved", "base_updated", "base_update_failed", "snapshot_failed",
+		"destroy_failed", "stop_failed", "personal_failed", "boot_failed",
+		"abuse_stopped", "notifications_paused",
+	} {
+		m := gchatMsg()
+		m.Kind = kind
+		if kind == "machines_restarted" {
+			m.Project, m.ProjectID, m.Agent = "", uuid.Nil, ""
+		}
+		b, err := json.Marshal(notify.RenderGChat(m))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), "openLink") {
+			t.Errorf("%s: the card has a button and the dashboard has nothing to do about it: %s", kind, b)
+		}
+	}
+	pay := gchatMsg()
+	pay.Kind = "billing_stopped"
+	b, _ := json.Marshal(notify.RenderGChat(pay))
+	if !strings.Contains(string(b), `"text": "Your plan"`) && !strings.Contains(string(b), `"text":"Your plan"`) {
+		t.Errorf("a failed payment has no way to the plan: %s", b)
+	}
+	if !strings.Contains(string(b), dash+"/billing") {
+		t.Errorf("the plan button does not lead to the billing page: %s", b)
+	}
+	q := gchatMsg()
+	q.Kind = "agent_question"
+	q.Question = &notify.QuestionLinks{ID: uuid.MustParse("01a0c14a-0000-7000-8000-0000000000a2"), Expires: time.Now().Add(time.Hour)}
+	b, _ = json.Marshal(notify.RenderGChat(q))
+	if !strings.Contains(string(b), dash+"/questions") {
+		t.Errorf("a question without reply links does not lead to the Questions page: %s", b)
 	}
 }
 

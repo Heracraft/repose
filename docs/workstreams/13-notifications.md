@@ -34,7 +34,10 @@ every agent, so `repose status` and the dashboard show one timeline.
 - Telegram and Discord webhooks (DESIGN §18; the delivery interface is
   designed so they are one file each later).
 - Anything with Claude Code Remote Control or channels: those belong to the
-  user's own Claude login and the platform does not touch them.
+  user's own Claude login and the platform proxies none of it. Starting
+  Remote Control on a machine, where the user asked for it, is the guest
+  base's and the CLI's (DECISIONS I-1132, amends this line); no event, no
+  channel and nothing in this workstream changes for it.
 - Email for auth or receipts (Logto and Polar send their own; the account emails of I-291 are ours).
 
 ## 4. Interfaces
@@ -165,7 +168,7 @@ see the dashboard" message is sent.
 ### 5.6 Channels
 
 - **email** (Resend, `internal/api/notify/notify.go`'s `Email`): from
-  `repose <notify@repose.herakraft.co>`, subject `todo-app: claude
+  `repose <notify@mailing.repose.run>`, subject `todo-app: claude
   finished`, with nothing before it (I-934). The body is rendered by `notify.Render` (DECISIONS
   I-291): one HTML layout (`templates/layout.html`, Go `html/template`, a
   600 px table, inline styles, system fonts, the landing's paper and ink

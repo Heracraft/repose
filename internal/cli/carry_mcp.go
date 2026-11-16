@@ -555,6 +555,14 @@ func mcpSecretName(server, suffix string) string {
 	if s == "" || s[0] < 'A' || s[0] > 'Z' {
 		s = "MCP_" + s
 	}
+	// A server's own name can land on a name an agent or the platform
+	// reads: one called `gh` whose argument holds a token asks for
+	// GH_TOKEN, which since I-1064 is the machine's GitHub credential, and
+	// a project secret of that name would replace the token `repose github
+	// setup` stored. Those names keep the prefix instead (I-1064).
+	if mcpAgentSecret(s) {
+		s = "MCP_" + s
+	}
 	if len(s) > 64 {
 		// Cut on a rune boundary: a cut inside one leaves invalid UTF-8.
 		n := 64
@@ -948,6 +956,11 @@ func (c *mcpClassifier) assign(server, suffix, want, value string) string {
 	}
 	cands := []string{want, mcpSecretName(server, suffix)}
 	for _, n := range cands {
+		// Belt and braces: `want` is checked above and mcpSecretName
+		// prefixes its own, so neither candidate is a name an agent reads.
+		if mcpAgentSecret(n) {
+			continue
+		}
 		if old, ok := c.values[n]; !ok || old == value {
 			c.values[n] = value
 			return n

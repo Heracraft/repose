@@ -53,7 +53,6 @@
 	import { onMount } from 'svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 
 	const ROWS = [
@@ -392,7 +391,6 @@
 </script>
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} name="browser" />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="bstage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
 		<div class="shot-win bw" aria-hidden="true">

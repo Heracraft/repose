@@ -3,7 +3,7 @@
 # next to the key so plain `ssh` offers it with no flag (DECISIONS I-177):
 #
 #   ops/dev/operator-cert.sh [--if-stale] [control-ip] [key]   # defaults below
-#   ssh -o HostKeyAlias=10.200.1.4 -J root@20.102.98.254:2222 root@10.255.0.2
+#   ssh -J root@20.102.98.254:2222 root@10.255.0.2   (no HostKeyAlias, I-916)
 #
 # The key never leaves this machine: its public half goes to
 # `repose-admin operator-cert --pubkey -` inside the api container over the

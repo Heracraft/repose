@@ -177,7 +177,8 @@ func count(ctx context.Context, q store.Querier, total int, now time.Time) (Coun
 		+ (select count(*) from waitlist where invited_at is not null and converted_at is null and hold_until > $1)::integer,
 		(select count(*) from waitlist w join users u on u.id = w.user_id
 		  where w.invited_at is null and w.lapsed_at is null and (w.cooldown_until is null or w.cooldown_until <= $1)
-		    and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null)::integer`, now).Scan(&c.Held, &c.Waiting)
+		    and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null
+		    and u.billing_status <> 'exempt')::integer`, now).Scan(&c.Held, &c.Waiting)
 	if err != nil {
 		return c, d, err
 	}

@@ -10,7 +10,7 @@ The CLI runs on Linux and macOS, x86-64 or ARM64. On Windows, install it inside 
 ## Install
 
 ```
-curl -fsSL https://repose.herakraft.co/install.sh | sh
+curl -fsSL https://repose.run/install.sh | sh
 ```
 
 The script downloads the latest release, checks it and installs `~/.local/bin/repose`. If `~/.local/bin` isn't on your `PATH`, the script adds it to your shell's startup file and says so; when that file can't be written, home-manager's read-only `~/.bashrc` for instance, it prints the line to add instead. Open a new terminal afterwards.
@@ -21,10 +21,10 @@ Other options:
 
 ```
 # for every user, in /usr/local/bin
-curl -fsSL https://repose.herakraft.co/install.sh | sh -s -- --system
+curl -fsSL https://repose.run/install.sh | sh -s -- --system
 
 # a particular release
-curl -fsSL https://repose.herakraft.co/install.sh \
+curl -fsSL https://repose.run/install.sh \
   | sh -s -- --version v0.1.11
 ```
 
@@ -68,7 +68,21 @@ repose completion fish > ~/.config/fish/completions/repose.fish
 
 ## Update
 
-Run the install command again. It replaces the binary and leaves your login and settings alone. A CLI older than the latest release says so on stderr, once per release, with this same command. Update command coming soon.
+```
+repose version update
+```
+
+It downloads the latest release, checks it the way the install script does, and replaces the binary. Your login and settings stay. A version goes back to that release: `repose version update v0.1.40`. Releases before v0.1.28 came out unsigned and it refuses them.
+
+A CLI older than the latest release says so on stderr, once per release. One the server no longer answers as these docs describe says so at the end of every `repose run`, `repose attach` and `repose sync`.
+
+If a package manager installed the binary (Nix, Homebrew, snap, your distribution), the command names that manager and changes nothing; update it there. If the binary is somewhere you can't write, `/usr/local/bin` after `install.sh --system` for instance, run `sudo repose version update`.
+
+A CLI too old to have the command updates the old way. Run the install command again:
+
+```
+curl -fsSL https://repose.run/install.sh | sh
+```
 
 ## Uninstall
 

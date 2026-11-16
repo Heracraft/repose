@@ -8,6 +8,8 @@
 // Run as repose-notify or repose-ask (or `repose-hook notify|ask`) it is
 // instead the command an agent calls to message the user or ask them
 // something (ask.go, DECISIONS I-244); those exit non-zero on failure.
+// Run as repose-presence (or `repose-hook presence`) it prints whether
+// the owner is at the machine (presence.go, DECISIONS I-1098).
 // Run as repose-mcp (or `repose-hook mcp`) it is the guest's MCP registry
 // command (mcp.go, DECISIONS I-555).
 //

@@ -17,14 +17,15 @@ import (
 // accountCommands act on the account or the laptop, never on a project,
 // so --project there is a mistake that would otherwise be ignored.
 var accountCommands = map[string]bool{
-	"repose ls":          true,
-	"repose login":       true,
-	"repose logout":      true,
-	"repose version":     true,
-	"repose completion":  true,
-	"repose notify":      true,
-	"repose notify set":  true,
-	"repose notify test": true,
+	"repose ls":             true,
+	"repose login":          true,
+	"repose logout":         true,
+	"repose version":        true,
+	"repose version update": true,
+	"repose completion":     true,
+	"repose notify":         true,
+	"repose notify set":     true,
+	"repose notify test":    true,
 }
 
 // refuseProjectFlag is a usage error for --project on a command that acts

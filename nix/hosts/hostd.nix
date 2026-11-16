@@ -25,6 +25,11 @@ let
   # The idle pause (DECISIONS I-818); nothing when it is off, and then
   # this host reports no `pause` feature and rests nothing.
   pauseFlags = lib.optionalString cfg.pauseIdle "--pause-idle";
+  # Burst cores (DECISIONS I-1126); nothing when it is off, and then this
+  # host reports no `burst` feature, boots every guest at its class's base
+  # vCPUs and runs no controller.
+  burstFlags = lib.optionalString cfg.burst.enable
+    "--burst --burst-gate ${toString cfg.burst.gate}";
   # The guest park (park.nix, DECISIONS I-652); nothing when it is off.
   parkFlags = lib.optionalString cfg.park.enable (
     "--park --park-deadline ${toString cfg.park.deadline}s --park-write-rate ${toString cfg.park.writeRateMBs}"
@@ -185,7 +190,7 @@ in
       coreutils
     ];
     serviceConfig = {
-      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags}";
+      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags}";
       Restart = "always";
       RestartSec = 2;
       # A join token that has been used is not retried (03-hostd §6).

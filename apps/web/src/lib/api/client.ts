@@ -32,7 +32,8 @@ import type {
 	Samples,
 	SampleWindow,
 	Snapshot,
-	UsageRow
+	UsageRow,
+	WebhookRoute
 } from './types';
 
 function baseUrl(): string {
@@ -224,6 +225,20 @@ export const putSecret = (id: string, name: string, valueBase64: string) =>
 	});
 export const deleteSecret = (id: string, name: string) =>
 	request<void>(`/projects/${id}/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// Webhook routes: a public URL into the machine (DECISIONS I-1110).
+export const listWebhooks = (id: string) => request<WebhookRoute[]>(`/projects/${id}/webhooks`);
+export const putWebhook = (id: string, name: string, target: string, allowStart: boolean) =>
+	request<WebhookRoute>(`/projects/${id}/webhooks`, {
+		method: 'POST',
+		body: { name, target, allow_start: allowStart }
+	});
+export const rotateWebhook = (id: string, name: string) =>
+	request<WebhookRoute>(`/projects/${id}/webhooks/${encodeURIComponent(name)}/rotate`, {
+		method: 'POST'
+	});
+export const deleteWebhook = (id: string, name: string) =>
+	request<void>(`/projects/${id}/webhooks/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 // Account secrets, for every project (DECISIONS I-697).
 export const listAccountSecrets = () => request<SecretMeta[]>('/me/secrets');

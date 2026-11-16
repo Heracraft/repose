@@ -26,10 +26,17 @@ const FeatureLocalClone = "local_clone"
 // Features is what this hostd reports in Hello. pauseIdle adds
 // FeaturePause: a host that has not been switched on never reports it,
 // so the api sends it no PauseGuest and no WakeGuest (DECISIONS I-818).
-func Features(pauseIdle bool) []string {
+// burst adds FeatureBurst the same way: without it this host boots every
+// guest at its class's base vCPUs, runs no controller and takes no
+// SetBurst, which is what a host does until the conductor turns burst on
+// for it (DECISIONS I-1126).
+func Features(pauseIdle, burst bool) []string {
 	f := []string{FeatureLocalClone}
 	if pauseIdle {
 		f = append(f, FeaturePause)
+	}
+	if burst {
+		f = append(f, FeatureBurst)
 	}
 	return f
 }

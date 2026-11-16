@@ -34,20 +34,39 @@ type windowWorktree struct {
 // window's folder is in a `-worktree-N` linked worktree, then "#other
 // NAME" for each other window working in it; it exits typeExitNoWindow
 // when the window is not there.
+//
+// The window's pane comes from `list-panes`, which fails when the target
+// does not resolve, and never from `display-message -t`, which does not:
+// given a window that is not there it prints the *active* pane's path and
+// exits 0 (measured on tmux 3.7c; `list-panes` answers "can't find
+// window" and 1). Since the folder it prints is handed to `git worktree
+// remove`, a silent fall back to whatever pane happens to be current is
+// how `repose stop` removes a worktree nobody asked about
+// (DECISIONS I-1060).
+//
+// Every giving-up path says which one it was on stderr. They all exit 0
+// and printed nothing, so a failure that reaches a reader -- in CI, or in
+// `repose stop` -- could not be told apart from a window whose folder is
+// simply not a worktree. The `#why` lines are not parsed
+// (parseStopWindowProbe reads only "#wt " and "#other ").
 func stopWindowProbeScript(slug, window string) string {
 	t := shQuote(tmuxWindowTarget(slug, window))
-	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exit %[3]d
-d=$(tmux display-message -p -t %[1]s '#{pane_current_path}')
-top=$(git -C "$d" rev-parse --show-toplevel 2>/dev/null) || exit 0
-gd=$(git -C "$top" rev-parse --absolute-git-dir) || exit 0
-cm=$(cd "$(git -C "$top" rev-parse --path-format=absolute --git-common-dir)" && pwd -P) || exit 0
-[ "$gd" != "$cm" ] || exit 0
-case "${top##*/}" in *-worktree-[0-9]*) ;; *) exit 0 ;; esac
+	return fmt.Sprintf(`no() { echo "#why $1" >&2; exit 0; }
+tmux has-session -t %[1]s 2>/dev/null || exit %[3]d
+pane=$(tmux list-panes -t %[1]s -F '#{pane_active} #{window_id} #{pane_current_path}' 2>/dev/null) || exit %[3]d
+active=$(printf '%%s\n' "$pane" | sed -n 's/^1 //p' | sed -n 1p)
+[ -n "$active" ] || exit %[3]d
+me=${active%%%% *}
+d=${active#* }
+top=$(git -C "$d" rev-parse --show-toplevel 2>/dev/null) || no "not-a-repo $d"
+gd=$(git -C "$top" rev-parse --absolute-git-dir) || no "no-git-dir $top"
+cm=$(cd "$(git -C "$top" rev-parse --path-format=absolute --git-common-dir)" && pwd -P) || no "no-common-dir $top"
+[ "$gd" != "$cm" ] || no "main-checkout $top"
+case "${top##*/}" in *-worktree-[0-9]*) ;; *) no "not-worktree-named $top" ;; esac
 b=$(git -C "$top" symbolic-ref --short -q HEAD || true)
-h=$(git -C "$top" rev-parse HEAD) || exit 0
+h=$(git -C "$top" rev-parse HEAD) || no "no-head $top"
 n=$(git -C "$top" status --porcelain | wc -l | tr -d ' ')
 printf '#wt %%s\t%%s\t%%s\t%%s\n' "$top" "$b" "$h" "$n"
-me=$(tmux display-message -p -t %[1]s '#{window_id}')
 tmux list-panes -s -t %[2]s -F '#{window_id}	#{window_name}	#{pane_current_path}' | while IFS='	' read -r id name p; do
   [ "$id" != "$me" ] || continue
   case "$p/" in "$top"/*) printf '#other %%s\n' "$name" ;; esac

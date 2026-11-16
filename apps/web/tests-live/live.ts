@@ -1,5 +1,5 @@
 // Shared configuration for the live suite: the tests that run against a
-// deployed dashboard (https://repose.herakraft.co) rather than against
+// deployed dashboard (https://repose.run) rather than against
 // internal/fakes/api. `tests/` is the fake-backed suite and stays the one CI
 // runs; this one closes the rows of docs/workstreams/08-dashboard.md §9 that
 // say "the real Logto" or need production, which a fake cannot close by
@@ -7,10 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const LIVE_URL = (process.env.REPOSE_LIVE_URL ?? 'https://repose.herakraft.co').replace(
-	/\/$/,
-	''
-);
+export const LIVE_URL = (process.env.REPOSE_LIVE_URL ?? 'https://repose.run').replace(/\/$/, '');
 
 /**
  * Where `pnpm run live:auth` writes the signed-in browser state. It holds a

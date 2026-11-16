@@ -11,10 +11,10 @@ other end of those.
 
 | Path | What it is |
 |---|---|
-| `alerts.yaml` | The 54 alert rules, as Prometheus rules. The source of truth for both Prometheus and Grafana. Every name is a heading in `docs/ops/RUNBOOK.md`. |
+| `alerts.yaml` | The alert rules, as Prometheus rules. **No count is written down here or anywhere else**: the figure was stated in eleven places, went stale three times and disagreed with itself (53, 54, 56, 57 against an actual 59) before I-1072 removed them all. `ops/check.sh` prints the number it finds. The source of truth for both Prometheus and Grafana. Every name is a heading in `docs/ops/RUNBOOK.md`. |
 | `alerts_test.yaml` | `promtool test rules` cases: each alert fires on the series it was written for and stays quiet just below it. |
 | `grafana/alerts-gen.py` | Turns `alerts.yaml` into Grafana's own alert rules. `--check` fails if the YAML is stale (DECISIONS I-942). |
-| `grafana/provisioning/alerting/repose-rules.yaml` | The 53 rules as Grafana holds them (54 alerts less `Watchdog`). Generated: edit `alerts.yaml` and re-run the generator. Not mounted anywhere. |
+| `grafana/provisioning/alerting/repose-rules.yaml` | The rules as Grafana holds them (every alert less `Watchdog`). Generated: edit `alerts.yaml` and re-run the generator. Not mounted anywhere. |
 | `grafana/push.py` | The one command that puts the alert rules and the dashboards into a running Grafana over the HTTP API, pointed at the datasources that Grafana already has. Creates no datasource. `--dry-run` says what would change (DECISIONS I-944). |
 | `grafana/verify.py` | The drift check: what a Grafana holds against what the generator produces, rule by rule, plus Grafana's own test of the datasource the rules query. Nothing reconciles at boot, so this is the only thing that notices. |
 | `alloy/` | Grafana Alloy as a Coolify compose Service on the **control VM**, not here: it scrapes the HTTP `api` over the Docker network and remote-writes to this server, because that application publishes no port and cannot (DECISIONS I-960). `config.alloy` and the compose file, with the socket mount and the `coolify` network explained. |
@@ -58,7 +58,7 @@ other end of those.
    sends the notifications. There is no Alertmanager on this server and this
    adds none.
 
-   Nothing is mounted. `grafana/push.py` puts the 53 alert rules and the
+   Nothing is mounted. `grafana/push.py` puts the alert rules and the
    eight dashboards into a running Grafana over its HTTP API, and is safe to
    re-run:
 
@@ -83,7 +83,7 @@ other end of those.
    Coolify service names on the Docker network, and
    `grafana/provisioning/datasources/repose.yaml` says `127.0.0.1:9090`,
    which inside the Grafana container is Grafana itself. A datasource
-   created from that file would answer nothing and all 53 rules would read
+   created from that file would answer nothing and every rule would read
    OK while querying it (I-944).
 
    If that Grafana has more than one Prometheus datasource the push stops and
@@ -108,7 +108,7 @@ other end of those.
    own `[smtp]` settings (`GF_SMTP_*` on the service) are the owner's.
 
    Then check it: **Test** on the contact point arrives; Alerting -> Alert
-   rules lists 53 rules in a `repose alerts` folder; and
+   rules lists them in a `repose alerts` folder; and
    `python3 ops/grafana/verify.py --wait 120` exits 0. `verify.py` is the
    thing to re-run later to ask whether that Grafana still holds what this
    repository says: it compares rule by rule, asks Grafana to test the
@@ -263,7 +263,7 @@ panel has a title, a description, a provisioned datasource and a query; no
 Prometheus query selects on `project_id`, `guest_id` or `user_id`; every SQL
 query names tables and columns that `db-schema.md` has; every Prometheus
 expression parses. With `--grafana`, that Grafana loads all eight
-dashboards, that `grafana/push.py` puts all 53 rules into a real Grafana
+dashboards, that `grafana/push.py` puts every rule into a real Grafana
 pointed at that Grafana's own datasource, that a second push changes nothing,
 and that `grafana/verify.py` finds no difference and no rule the engine
 cannot evaluate.

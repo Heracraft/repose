@@ -17,6 +17,8 @@ import (
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/db/testdb"
+	"google.golang.org/protobuf/proto"
+
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
@@ -313,5 +315,55 @@ func TestIngestRecordsDiskHeld(t *testing.T) {
 	send(now.Add(3*time.Minute), 2<<30, 40<<30)
 	if b, _ := heldOf(); *b != 2<<30 {
 		t.Fatalf("a trim's lower figure was not taken: %d", *b)
+	}
+}
+
+// Egress bills the host's count of what a guest sent the internet when
+// the sample has one, and the tap's figure from a hostd that sends none
+// (DECISIONS I-1063). net_tx keeps the tap's figure either way.
+func TestRollupBillsNetEgressAndFallsBackToNetTx(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	m := metrics.NewNop()
+	day := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
+	pid, gid := seed(t, pool, "large", day.Add(-time.Hour))
+	ing := meter.New(pool, m, log)
+	ing.SetNow(func() time.Time { return day })
+	for minute := 0; minute < 120; minute++ {
+		g := &hostdv1.GuestSample{GuestId: gid.String(), State: "running", Class: "large", DiskAllocBytes: 40 << 30, NetTxBytesDelta: 1000,
+			Signals: &hostdv1.GuestSignals{GuestdOk: true}}
+		if minute < 60 {
+			// The first hour from a new hostd: most of what went through
+			// the tap was a terminal's output to the edge.
+			g.NetEgressBytesDelta = proto.Uint64(10)
+		}
+		ing.OnSamples(ctx, testHost, &hostdv1.Samples{Ts: day.Add(time.Duration(minute) * time.Minute).Unix(), Guests: []*hostdv1.GuestSample{g}})
+	}
+	var tx, withEgress int64
+	_ = pool.QueryRow(ctx, "select sum(net_tx), count(net_egress) from meter_samples where project_id = $1", pid).Scan(&tx, &withEgress)
+	if tx != 120*1000 || withEgress != 60 {
+		t.Fatalf("net_tx %d, samples with net_egress %d", tx, withEgress)
+	}
+	r := billing.NewRollup(pool, m, log)
+	r.Now = func() time.Time { return day.Add(3 * time.Hour) }
+	for h := 0; h < 2; h++ {
+		if _, err := r.Hour(ctx, day.Add(time.Duration(h)*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := pool.Query(ctx, "select egress_bytes from usage_hours where project_id = $1 order by hour", pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []int64
+	for rows.Next() {
+		var b int64
+		_ = rows.Scan(&b)
+		got = append(got, b)
+	}
+	rows.Close()
+	if len(got) != 2 || got[0] != 60*10 || got[1] != 60*1000 {
+		t.Fatalf("egress by hour %v, want [600 60000]", got)
 	}
 }

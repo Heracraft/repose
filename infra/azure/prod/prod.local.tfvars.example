@@ -45,7 +45,7 @@ flake_path = "/home/azureuser/projects/repose/nix"
 #   host-02 = "<the token hosts add printed>"
 # }
 
-# Cloudflare zone id for herakraft.co. The API token comes from the
+# Cloudflare zone id for repose.run. The API token comes from the
 # CLOUDFLARE_API_TOKEN environment variable, never from a file here.
 cloudflare_zone_id = "0123456789abcdef0123456789abcdef"
 

@@ -84,6 +84,12 @@ type Options struct {
 	// is what puts `pause` in Hello.features, so an api asks this host
 	// for no pause and no wake without it.
 	PauseIdle bool
+	// Burst boots guests at their class ceiling and runs the cpu.max
+	// controller, and is what puts `burst` in Hello.features (DECISIONS
+	// I-1126). BurstGate is the share of physical cores that may be busy
+	// before burst stops; 0 takes guest.BurstGateDefault.
+	Burst     bool
+	BurstGate float64
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -271,6 +277,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		NoAuthShare:        !o.ClaudeLoginShare,
 		FreePageReporting:  o.Park.FreePageReporting,
 		PauseIdle:          o.PauseIdle,
+		Burst:              o.Burst,
+		BurstGate:          o.BurstGate,
+		Cores:              hostinfo.PhysicalCores(),
 	}
 	fcfg, fdeps := parkSetup(o, r, l, log)
 	cfg.Park = fcfg
@@ -286,6 +295,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		State: st, LVM: l, Mount: &mount.Real{R: r}, View: &storeview.Real{SD: sdr}, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
+		CgroupCPUUsage: hostinfo.CgroupCPUUsage, SetCgroupCPUMax: hostinfo.SetCgroupCPUMax,
 		SystemStopping: systemStopping(r),
 		BootID:         hostinfo.BootID, BootTime: hostinfo.BootTime,
 		Park: fdeps,
@@ -321,6 +331,12 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("metrics", func() { d.serveMetrics(ctx) })
 	if fdeps.Sealer != nil && fcfg.Enabled {
 		run("park-key", func() { parkKeyLoop(ctx, fdeps.Sealer, log) })
+	}
+	if o.Burst {
+		// Only on a host with the feature: without it nothing writes a
+		// cpu.max and every guest stays on the base quota its unit
+		// started with (DECISIONS I-1126).
+		run("burst", func() { mgr.BurstLoop(ctx) })
 	}
 	if se := scheduledEvents(o, mgr, log); se != nil {
 		run("scheduled-events", func() { se.Run(ctx) })

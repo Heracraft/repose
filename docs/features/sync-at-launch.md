@@ -79,6 +79,20 @@ Not synced: the machine changed 11 files that your laptop changed too:
 `repose sync --stash-machine` moves the machine's changes to its git stash first.
 ```
 
+From a terminal the menu replaces that last line (DECISIONS I-1100):
+
+```
+$ repose sync
+Not synced: the machine changed 2 files that your laptop changed too:
+  src/session.ts
+  notes.md
+  l  use the laptop's copy; the machine's goes to its git stash
+  m  keep the machine's copy; sync the rest
+  s  move all of the machine's changes to its git stash, then sync
+Choose l, m or s, or Enter to stop: l
+Synced: 3 modified, 0 untracked; stashed the machine's copy of 2 files (git stash 1a2b3c4)  1.4s
+```
+
 The guest's checkout has a git operation of its own in progress
 (DECISIONS I-573):
 
@@ -136,7 +150,8 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   changes with `git status --porcelain=v1 -z -uall`: every dirty or
   untracked file (both paths of a rename), leaving out the last sync's own
   (below). A guest path that equals a written path, sits under one, or
-  holds one below it is an overlap: the apply exits 3 naming each, and the
+  holds one below it is an overlap: the apply exits 3 naming each (and
+  each that is a checked-out submodule, as `#overlapsub`), and the
   CLI prints the refusal above (eight names, then a count) and exits 6.
   With no overlap the sync goes on, the guest's other changes stay as
   they are (git's checkout and merge carry unrelated edits), and the
@@ -152,6 +167,30 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   check, and the summary ends "stashed the machine's changes to N files
   (git stash <commit>)". Neither asks for confirmation; the
   flag itself is the confirmation.
+- On a terminal, the overlap refusal is a menu of three keys instead of
+  the `--stash-machine` line (DECISIONS I-1100). `l`, `m` or `s` runs the
+  whole sync again, probe and guard included, with the paths the refusal
+  listed: the apply writes them to `$t/chosen` and the guard lets an
+  overlap through only when it is one of them, so a file the agent
+  changed while the user was deciding refuses again, with the longer
+  list, and the menu comes back. `repose_stash_pick` then stashes the
+  machine's copy of exactly those paths (`git stash push -u
+  --pathspec-from-file`, as `repose_stash_own` does), under
+  `repose sync: the machine's copy` for `l` and `repose sync: kept for
+  the machine` for `m`, and reports `#stashedcopy <n> <commit>`; the
+  summary ends "stashed the machine's copy of N files (git stash
+  <commit>)" or "kept the machine's copy of N files". `m` then drops
+  those paths from the per-path record and the whole-tree fingerprint,
+  and after the apply has written everything puts the machine's copy
+  back (`git restore --source=<stash>` for a tracked path,
+  `<stash>^3` for an untracked one, `rm` for one the machine deleted)
+  and drops that stash entry by its commit id. The record has to lose
+  them: with their hash in it the next sync would take the agent's work
+  for the last sync's own and stash it without asking. `m` is not
+  offered when one of the overlaps is a submodule, which cannot be put
+  back without a commit of its own. Off a terminal and under `--json`
+  there is no menu: the text and exit 6 are as they were, and a script
+  still uses `--stash-machine`. `s` is `--stash-machine`.
 - A run with nothing new applies nothing (DECISIONS I-224): when the
   laptop would send exactly what the last completed sync sent (the same
   commit, branch, diff and untracked files) and the guest's tree is still

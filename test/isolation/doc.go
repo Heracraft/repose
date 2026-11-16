@@ -27,10 +27,10 @@
 //	A_SLUG           guest A's project slug (its tmux session name)
 //	HOST_IP          the bridge address (.1 of the host's /22)
 //	OTHER_GUEST_IP   an address in another host's guest /22
-//	GATEWAY          ssh.repose.herakraft.co:22 or a test gateway
+//	GATEWAY          ssh.repose.run:22 or a test gateway
 //	KEY_A, CERT_A    user A's private key and certificate files
 //	LOGIN_A, LOGIN_B <slug>.<handle> login names for A's and B's projects
-//	API_URL          https://api.repose.herakraft.co/v1 or a fake
+//	API_URL          https://api.repose.run/v1 or a fake
 //	TOKEN_A          a Logto access token for user A
 //	PROJECT_A,       project ids
 //	PROJECT_B

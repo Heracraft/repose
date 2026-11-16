@@ -285,6 +285,10 @@ func TestProjectsTable(t *testing.T) {
 func TestPositionalProject(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
+	// `stop` reads the machine's checkout first, and this one, through
+	// the real command tree, has no TargetFor: the read would go to the
+	// real ssh with the "izma.repose" alias (noSSHOnPath).
+	noSSHOnPath(t)
 	cfg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfg)
 	t.Setenv("REPOSE_API_URL", fake.URL()+"/v1")
@@ -391,6 +395,7 @@ func TestPositionalProject(t *testing.T) {
 func TestProjectArgumentOnSubcommands(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
+	noSSHOnPath(t) // as TestPositionalProject: its stops read the checkout
 	cfg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfg)
 	t.Setenv("REPOSE_API_URL", fake.URL()+"/v1")

@@ -98,6 +98,19 @@ type M struct {
 	GuestPause       *prometheus.CounterVec
 	GuestWakeSeconds prometheus.Histogram
 	GuestWakeFailed  *prometheus.CounterVec
+	// Burst cores (DECISIONS I-1126). BurstGateOpen is 1 while the host
+	// has headroom under the gate and guests may hold caps above their
+	// base, 0 while every cap is at its base; BurstCapMillicores is the
+	// cap the controller last wrote, in thousandths of a core, so a host
+	// where the controller has stalled shows a flat line while the gate
+	// says it should be moving. Neither carries a guest id: which guest
+	// is in the burst log line, and guest_id is not an allowed label
+	// (OBSERVABILITY.md).
+	BurstGateOpen      prometheus.Gauge
+	BurstCapMillicores prometheus.Gauge
+	// BurstCPUSecondsTotal is the host's burst time, the quantity the
+	// plan's allowance is in, summed by class.
+	BurstCPUSecondsTotal *prometheus.CounterVec
 }
 
 // BlockedReasons is the `reason` enum of repose_host_egress_blocked_total
@@ -200,6 +213,9 @@ func NewVersion(version string) *M {
 		GuestPause:            f.counterVec("guest_pause_total", "PauseGuest commands by the reason asked for and the result: paused, refused (a why_not, not a failure), failed (I-818).", "reason", "result"),
 		GuestWakeSeconds:      f.hist("guest_wake_seconds", "Wake of a resting guest, from vm.resume to guestd's answer (I-818).", []float64{.05, .1, .25, .5, 1, 2, 5, 10, 30}),
 		GuestWakeFailed:       f.counterVec("guest_wake_failed_total", "Wakes that did not bring a resting guest back, by reason: resume, guestd, state (I-818).", "reason"),
+		BurstGateOpen:         f.gauge("burst_gate_open", "1 while the host is under the burst gate and guests may hold caps above their base cores; 0 while every cap is at its base (I-1126)."),
+		BurstCapMillicores:    f.gauge("burst_cap_millicores", "The CPU cap the burst controller last wrote, in thousandths of a core (I-1126)."),
+		BurstCPUSecondsTotal:  f.counterVec("burst_cpu_seconds_total", "Guest CPU time above the base cores the class sells, summed by class (I-1126).", "class"),
 	}
 	// Every reason exists from startup, so the alert reads 0 rather than
 	// nothing on a host where no guest was ever blocked.

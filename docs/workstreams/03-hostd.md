@@ -106,7 +106,9 @@ At first start `/var/lib/repose/hostd/cert.pem` does not exist. hostd reads
 `/run/repose/join-token`, collects `HostInfo` (hostname, `sku` from IMDS
 `compute/vmSize` when IMDS is reachable from the host, `mem_bytes` from
 `/proc/meminfo`, `vcpus` from `nproc`, `nixos_system` from
-`/run/current-system`, `ch_version` from `cloud-hypervisor --version`,
+`/run/current-system` (read at registration and never refreshed
+afterwards, so the stored value is the system from install day, not the
+running one — I-1076), `ch_version` from `cloud-hypervisor --version`,
 `pool_bytes` from `lvs --units b vg-guests/thin`) and calls `Register` over
 TLS with server verification only. It writes the returned certificate, key,
 `host.json` (`host_id`, `guest_cidr`, `wg_private_key`, edge peer) with mode
@@ -128,7 +130,8 @@ and reconnect the stream.
 
 ### 5.3 The stream
 
-`stream.Run` dials `api.repose.herakraft.co:443` with the client
+`stream.Run` dials `api.repose.herakraft.co:443` (the internal name, which
+did not move to repose.run, I-1156) with the client
 certificate, opens `Session`, and sends `Hello` built from bbolt: every
 guest id, its stored state, `free_mem_bytes`, `pool_free_bytes`. The api
 replies with any commands it considers unfinished; hostd looks each
@@ -386,6 +389,11 @@ Every 60 seconds, for each guest in bbolt:
 - `net_tx/rx_bytes_delta`: `/sys/class/net/tap-<8hex>/statistics/` (tx on
   the tap is rx for the guest and vice versa; hostd reports from the
   guest's point of view).
+- `net_egress_bytes_delta`: the guest's nft counter `egress-<guest_id>`,
+  what it sent out of the provider NIC, read for every guest with one
+  `nft list counters` under the sample cursor's lock. This is the billed
+  egress; the tap's tx also holds SSH and the rest sent to the edge
+  (DECISIONS I-1063).
 - `disk_alloc_bytes`: from bbolt; `disk_used_bytes`: `lvs --units b -o
   data_percent` times size.
 - `signals` and `procs`: from `guestd Sample`, with `guestd_ok=false` and

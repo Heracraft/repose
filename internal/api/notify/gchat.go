@@ -406,11 +406,13 @@ func gchatVerb(kind string) string {
 
 // gchatButtons are the card's openLink buttons: one per option of a
 // question, each to its signed reply link (whose GET shows a confirm page,
-// so a link preview answers nothing); "Answer" to the project for a
-// question without reply links; "Dashboard" for a notice with no project;
-// else "Open project". The agent's link (I-931) comes before "Open
-// project", or after a question's own buttons. A close reply has none: its
-// thread holds the card.
+// so a link preview answers nothing); "Answer" to where the question is
+// answered for one without reply links; the kind's act on the dashboard where it
+// has one (gchatAct); and the agent's link (I-931), before the act or
+// after a question's own buttons. Every other card carries no button at
+// all (DECISIONS I-1096): a card that only leads back to a page with
+// nothing to do on it is a step the reader takes for nothing. A close
+// reply has none either: its thread holds the card.
 func gchatButtons(m Message) []gchatButton {
 	if m.Kind == QuestionClosedKind {
 		return nil
@@ -422,10 +424,19 @@ func gchatButtons(m Message) []gchatButton {
 	if m.Question != nil {
 		return append(gchatAnswerButtons(m), link...)
 	}
-	if events.UserNoticeKinds[m.Kind] || m.ProjectID == uuid.Nil {
-		return append(link, button("Dashboard", "OUTLINED", strings.TrimRight(m.Dashboard, "/")+"/projects"))
+	return append(link, gchatAct(m)...)
+}
+
+// gchatAct is the one thing the owner can do on the dashboard about this
+// kind, or nothing (DECISIONS I-1096). The email partials name the same
+// act in their `link_label` and `link_url` blocks, and the kinds are the
+// same: a payment to put right. A question's act is answering it, which
+// gchatAnswerButtons carries, and the account kinds are email only.
+func gchatAct(m Message) []gchatButton {
+	if m.Kind == "billing_stopped" {
+		return []gchatButton{button("Your plan", "OUTLINED", strings.TrimRight(m.Dashboard, "/")+"/billing")}
 	}
-	return append(link, button("Open project", "OUTLINED", m.ProjectURL()))
+	return nil
 }
 
 // gchatAnswerButtons are a question's own buttons.
@@ -442,5 +453,5 @@ func gchatAnswerButtons(m Message) []gchatButton {
 	case m.Question != nil && m.Question.Secret != "":
 		return []gchatButton{button(gchatPlain("Enter "+m.Question.Secret, 64), "OUTLINED", m.AnswerURL())}
 	}
-	return []gchatButton{button("Answer", "OUTLINED", m.ProjectURL())}
+	return []gchatButton{button("Answer", "OUTLINED", m.AnswerURL())}
 }

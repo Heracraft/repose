@@ -14,8 +14,11 @@ Two jobs; `$ARGUMENTS` says which (`integrate`, the default, or `ship`).
    branch in flight whether it is about to queue.
 2. `ops/dev/release-queue cut`, and `resume` after resolving any conflict.
 3. Run every check RELEASE.md "integrating" step 4 names for the batch's
-   targets, in the batch worktree. "Tests pass" closes nothing.
-4. `git -C ~/kanali merge --ff-only release/<batch>`, then
+   targets, in the batch worktree; `docs/ops/DEV-BOX.md` says how each one
+   runs on this box (Postgres, memory, disk, no lighthouse). "Tests pass"
+   closes nothing.
+4. Read every check's result before this step; never chain the merge onto
+   an unread check. `git -C ~/kanali merge --ff-only release/<batch>`, then
    `ops/dev/release-queue done <batch>`, which also pushes main to the non-deploying `integrated` branch (I-651). Do not push `main`. Tell each agent.
 
 **ship** (only when the owner asked for a release):
@@ -27,3 +30,7 @@ Two jobs; `$ARGUMENTS` says which (`integrate`, the default, or `ship`).
 3. Run each released branch's `--live` check on throwaway `e2e-*`
    projects, record the release in STATUS (it lands with the next batch),
    and tell each agent.
+
+Before either job: `df -h /` under 85 % and `free -g` (DEV-BOX.md "Things
+the 2026-11-11 conductor had to find out"); the harness kills long runs
+when the disk is nearly full and calls it memory.

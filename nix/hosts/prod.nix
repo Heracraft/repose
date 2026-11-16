@@ -38,7 +38,9 @@
     # The api's gRPC listener on the control VM's VNet address (infra output
     # control_private_ip): a host registers before it has a WireGuard tunnel
     # (DECISIONS I-92). The certificate is issued from the platform CA for
-    # api.repose.herakraft.co and this address (GRPC_SERVER_NAMES).
+    # api.repose.herakraft.co and this address (GRPC_SERVER_NAMES). That
+    # name keeps the old domain after the move to repose.run: it is
+    # internal, and moving it is a host and edge switch (DECISIONS I-1156).
     #
     # This is also the wall a host outside the home VNet runs into: the
     # address is private and Register comes before the tunnel exists, so

@@ -14,7 +14,7 @@ edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki
                        api :9103 /metrics ◀─ Alloy on the Docker network ─▶ remote_write to Prometheus (I-960)
                        alloy :12345 /metrics, node_exporter :9100  ◀─ Prometheus scrape over WireGuard
-Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (read with psql, or a Grafana datasource the owner adds by hand)
+Postgres               meter_samples, proc_samples, rest_verdicts, usage_hours, events, audit_log (read with psql, or a Grafana datasource the owner adds by hand)
 personal server        Loki, Prometheus, Grafana (evaluates the alerts and notifies the owner)
 ```
 
@@ -44,6 +44,7 @@ ship goes over the edge's WireGuard.
    - the guest's console: `{component="console", guest_id="<guest id>"}`
    - api requests: `{component="api"} | json | project_id="<id>"`
    - gateway sessions: `{component="gateway"} | json | event=~"session_.*" | project_id="<id>"`
+   - webhook deliveries: `{component="gateway"} | json | event="webhook_delivery" | project_id="<id>"` (DECISIONS I-1110). The line carries `route_id`, `status`, `outcome`, `ms`, `bytes_in`, `bytes_out` and `source_prefix` (the /24), and never the path, which holds the token, nor the query, a header value or a body byte
 4. Builds: `repose-admin ops list --project <id>` then `ops log <op id>`
    for the full Nix output (stored in `build_logs`, not Loki).
 5. Events the user saw: `select ts, kind, agent, summary, delivered from
@@ -63,6 +64,18 @@ its SMT threads, because busy guest vCPUs per physical core is what
 `sum(rate(repose_host_guest_cpu_seconds_total[5m]))` is the numerator.
 `load1` is the same number the heartbeat puts in the `hosts.load1` column,
 exported because Prometheus scrapes exporters, not the database.
+
+Burst cores (DECISIONS I-1126), on a host with `repose.host.burst.enable`
+and nowhere else: `repose_host_burst_gate_open` is 1 while the host is
+under the gate and guests may hold caps above their base cores, and 0
+while every cap is at its base, so a host whose gate never opens is
+visible without reading a cgroup. `repose_host_burst_cap_millicores` is
+the cap the controller last wrote, in thousandths of a core: a flat line
+while the gate says open is a controller that has stopped.
+`repose_host_burst_cpu_seconds_total{class}` is the CPU time guests took
+above their base, which is the quantity a plan's allowance is in
+(I-1128). None of the three carries a guest id; which guest is in the
+`burst` log line.
 
 Is the kernel one you can trust (DECISIONS I-1010)?
 `repose_host_kernel_tainted{reason}` is the kernel's own latched verdict:
@@ -164,6 +177,44 @@ for `repose.host.pauseIdle` on a host that carries anyone. Loki
 `{component="api"} | json | event="resting_rule"` writes one line each
 time the picture changes.
 
+Why one machine stayed warm (DECISIONS I-1152). The two counters above
+say how much of a fleet would rest; they do not say what held any
+machine back, and the rule kept no record of it, so "I'm not attached,
+the agent is idle, but the machine is still running and not frozen" had
+no answer after the fact. The rule now writes its verdict down. One row
+in `rest_verdicts` per running machine per five minutes, from the rule's
+own tick (no second timer): `blocked_by` is the column to read, the one
+condition that kept the machine awake, and `would_rest` is the rule's own
+yes or no beside it.
+
+`blocked_by` is lower_snake and bounded. The rule's own terms are
+`resting` (the machine IS frozen; the launch query leaves it out of the
+warm minutes), `host_unreachable`, `host_not_ready`, `keep_awake`, `op`,
+`question`, `session` (a gateway session, which is what an attach, a held
+forward and a browser viewer all are), `too_young`, `samples_missing`
+(the sampler, not the machine), `attached`, `agent_working`,
+`guestd_down`, `cpu`, `net` and the catch-all `not_quiet`. Past the rule
+there are two more: `host_no_pause`, the rule saying yes on a host that
+does not take pauses (I-844's dry run), and `host_<why_not>`, the rule
+saying yes and hostd refusing the pause with its own word
+(`host_timer_due`, `host_command_in_flight`). Several terms can be true
+at once; `blocked_by` names the first in that order and the counts beside
+it say what else was true -- `samples_seen`, `samples_quiet`,
+`attached_max`, `agents_working`, `guestd_down`, `cpu_ns_max`,
+`net_bytes_max`, `ops_open`, `sessions_open`, `questions_open`,
+`host_pauses`, `keep_awake`, `why_not`.
+
+The row copies nothing from inside a guest. The signals stay in
+`meter_samples` and the process names in `proc_samples`; `sample_ts` is
+the newest sample the verdict read, so a join on `(project_id,
+sample_ts)` gives both. `ops/sql/launch.sql` Q13 is that join: for the
+last 14 days, the running-but-not-frozen minutes per machine by
+`blocked_by`, with the three processes that spent the most CPU in those
+minutes. A failure to read or write a verdict logs `resting_verdict_fail`
+at Error and never delays a pause; no dashboard panel reads the table,
+because the question it answers is per-project and Prometheus may not
+carry `project_id`.
+
 ## The launch numbers
 
 Liveness was instrumented and margin was not: before I-800 no dashboard
@@ -176,14 +227,16 @@ anywhere. Three places answer the money questions now.
    even) and seat **use** (the memory actually running over the memory the
    sold seats may run, which is capacity bought and idle); and the three
    seat lines, delivered, sold and running.
-2. `ops/sql/launch.sql` (I-804). Twelve queries for what cannot be a
+2. `ops/sql/launch.sql` (I-804). Thirteen queries for what cannot be a
    Prometheus series because it is per-account: signups and how many ever
    ran a machine, the trial funnel by plan, activation in the product's own
    terms, the subscribers who have gone quiet, cohort retention, the
    founding offer's burn, the plan mix with its waiting downgrades, MRR
    that left, the dunning list, the waitlist's throughput and what it
-   wasted, disk against the plan, and the ops still open. Run them with
-   `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as `grafana_ro`.
+   wasted, disk against the plan, the ops still open, and the
+   running-but-not-frozen minutes by what kept each machine awake (I-1152).
+   Run them with `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as
+   `grafana_ro`.
 3. The daily digest (I-810): `ops/digest/digest.py`, a timer on the
    personal server, one email at 08:00 with the eight numbers worth
    reading every day in the launch window. It sends through the same SMTP
@@ -298,6 +351,8 @@ line stored by us:**
 - user IP addresses and user agents (the gateway may keep a per-IP
   counter in memory for rate limiting; it does not log the address)
 - card details of any kind, including last four (Polar holds the card; the api never sees it)
+- a webhook URL's path or query: the path holds the route's token, which
+  is a credential (I-1110). Log `route_id`
 
 `internal/obs` enforces the rules in code (in three packages, so that guestd links a logger and not an exporter:
 DECISIONS I-59):
@@ -332,15 +387,20 @@ stays in the logs after the incident is fixed.
 | Prometheus | 90 days |
 | `meter_samples` | 90 days (monthly partitions) |
 | `proc_samples` | 30 days |
+| `rest_verdicts` | 30 days (monthly partitions) |
 | `usage_hours`, `events`, `audit_log`, `build_logs` | indefinite (`build_logs` trimmed to the last 20 ops per project) |
 
 Loki's retention is `ops/loki/retention.yaml` and does nothing unless the
 compactor runs with `retention_enabled`. Prometheus's is the flag
-`--storage.tsdb.retention.time=90d`, not a config key. The two Postgres
+`--storage.tsdb.retention.time=90d`, not a config key. The three Postgres
 sample tables are partitioned by month and dropped by
 `repose_partitions_maintain()` (`ops/sql/partitions.sql`), which the api
 calls hourly and logs `partition_drop_fail` when it fails; because a whole
-month has to age out, the real retention is 90 or 30 days plus up to a month.
+month has to age out, the real retention is 90 or 30 days plus up to a
+month. `rest_verdicts` is kept as long as `proc_samples` and not as long
+as `meter_samples`, because a verdict whose process names have aged out
+is half an answer: `cpu` as the condition and nothing to say what spent
+it.
 
 ## Alerts
 
@@ -418,7 +478,7 @@ the panels (`ops/README.md` step 3).
 **A rule whose query fails reads OK, and one rule is the exception.** Every
 rule is `execErrState: OK`, measured to mean that a datasource answering
 nothing leaves all of them green with health "ok" -- there is no signal in
-Grafana to distinguish that from a quiet fleet. `Error` on all 53 would send
+Grafana to distinguish that from a quiet fleet. `Error` on all of them would send
 53 notifications per Prometheus restart, so exactly one carries it:
 `MonitoringPathDown`, which was already the single alert for a broken
 monitoring path. That is the whole of what notices a dead query path, and it
@@ -450,6 +510,7 @@ arrive at once, read them in this order:
 |---|---|---|
 | `MonitoringPathDown` | `GatewayDown`, `HostdDown`, `ApiDown`, `ApiHostsAbsent` | every scrape goes through the edge's WireGuard, so a dead edge or tunnel fails them together; this one fires a minute earlier |
 | `HostScrapeDown` | every other `warn` and `page` of that host, except `HostdDown` and `HostUnreachable` | a host Prometheus cannot reach produces all of its alerts at once as the series go stale |
+| `HostWgDown` | `HostdDown`, `HostScrapeDown`, `FluentBitLogShipperDown` of that host | the host is alive and only its tunnel to the edge is down, so every alert that reads the host *through* the edge fires while hostd and the host are healthy. This one names the cause; `HostdDown` says the opposite of what is true, and did on 2026-11-10 (I-1070) |
 | `HostdDown` | `HostUnreachable`, and every `warn` of that host | `HostdDown` names the host; `HostUnreachable` is the api's count and names none |
 | `PoolUnavailable` | `PoolHigh`, `PoolFull`, `PoolMetadataHigh`, `PoolUnmonitored` | a pool that is down sets off every pool alert it has (I-644) |
 | `HostUnreachable` | `GuestdLost` | the same loss seen from the api rather than the host |

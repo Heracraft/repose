@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 )
 
@@ -225,5 +227,68 @@ func TestWatchListIsNotEmpty(t *testing.T) {
 		if !Watched(comm) {
 			t.Errorf("Watched(%q) = false", comm)
 		}
+	}
+}
+
+// TestAProcessArgumentNeverReachesTheSample: the idle analysis
+// (DECISIONS I-1152) reads `proc_samples` to say what was burning a
+// machine's CPU while it would not freeze, so the whole of its usefulness
+// rests on the sample carrying the process NAME and nothing else. A
+// process here is given a secret in its command line and another in its
+// environment; the reader must produce a row that holds neither, and
+// must not have read either file.
+//
+// The probe that proves this would fail without the boundary: delete the
+// `exe`/`stat` reads' comm and read `cmdline` instead, and the secret
+// turns up in the ProcSample. The system-call half -- that the files are
+// never even opened -- is internal/guestd/strace_test.go; this is the
+// half that can run anywhere.
+func TestAProcessArgumentNeverReachesTheSample(t *testing.T) {
+	const argSecret = "sk-live-7f3a9c21deadbeef"
+	const envSecret = "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI"
+	r, p := newProcFixture(t, []fakeProc{
+		{pid: 1, ppid: 0, comm: "systemd", ticks: 10, rssPages: 100},
+		{pid: 7, ppid: 1, comm: "node", ticks: 900, rssPages: 4000},
+	})
+	dir := p.ProcPID("7")
+	for name, body := range map[string]string{
+		"cmdline": "node\x00--api-key=" + argSecret + "\x00/home/dev/todo-app/src/secret.ts\x00",
+		"environ": envSecret + "\x00",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two reads, so the row carries a real CPU delta and not only a name.
+	if _, _, err := r.read(1000); err != nil {
+		t.Fatal(err)
+	}
+	writeProc(t, p, []fakeProc{{pid: 7, ppid: 1, comm: "node", ticks: 1800, rssPages: 4000}})
+	procs, _, err := r.read(1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var node *hostdv1.ProcSample
+	for _, s := range procs {
+		if s.GetComm() == "node" {
+			node = s
+		}
+		text := fmt.Sprintf("%+v", s)
+		for _, bad := range []string{argSecret, envSecret, "--api-key", "/home/dev", "secret.ts"} {
+			if strings.Contains(text, bad) {
+				t.Fatalf("the sample carries %q from a process's command line or environment: %s", bad, text)
+			}
+		}
+	}
+	if node == nil {
+		t.Fatal("the process is not in the sample at all; the name is what the sample is for")
+	}
+	if node.GetCpuNsDelta() == 0 {
+		t.Fatal("no CPU delta, so the row says nothing about what spent the machine's CPU")
+	}
+	// The row's whole content: a name, a CPU delta and an RSS. Anything
+	// else would be a fourth field to argue about.
+	if node.GetComm() != "node" {
+		t.Fatalf("comm = %q, want the name alone", node.GetComm())
 	}
 }

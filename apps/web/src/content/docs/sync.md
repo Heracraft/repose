@@ -94,7 +94,40 @@ Synced: 2 modified, 1 untracked (6 new commits); kept the machine's
 changes to 3 files  1.6s
 ```
 
-If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing, names them and exits with code 6:
+If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing and names them. From a terminal it asks which copy to keep:
+
+```text
+Not synced: the machine changed 2 files that your laptop changed
+too:
+  src/session.ts
+  notes.md
+  l  use the laptop's copy; the machine's goes to its git stash
+  m  keep the machine's copy; sync the rest
+  s  move all of the machine's changes to its git stash, then sync
+Choose l, m or s, or Enter to stop:
+```
+
+One key, no Enter needed. Enter stops the sync, with exit code 6.
+
+`l` syncs your copy over the machine's and puts the machine's copy of those files, and only those, in a stash named "repose sync: the machine's copy". The summary names its commit, and `git stash apply 1a2b3c4` on the machine brings that copy back:
+
+```text
+Synced: 3 modified, 0 untracked; stashed the machine's copy of 2
+files (git stash 1a2b3c4)  1.4s
+```
+
+`m` keeps the machine's copy of those files and syncs everything else, your new commits included:
+
+```text
+Synced: 3 modified, 0 untracked; kept the machine's copy of 2
+files  1.3s
+```
+
+Your laptop still has its own version, so the next sync finds the same files and asks again, until you commit, revert or stash your change. `m` isn't offered when one of the files is a submodule: a submodule's copy can't be put back without a commit of its own.
+
+`s` is `--stash-machine` below.
+
+If the agent changes another of the files while you're deciding, the sync asks again with the longer list: nothing is stashed that you didn't see. Without a terminal, and with `--json`, the sync prints the names and the `--stash-machine` line instead and exits with code 6:
 
 ```text
 Not synced: the machine changed 2 files that your laptop changed
@@ -174,6 +207,17 @@ The checkout has to be a git repository with at least one commit and its whole h
 
 On a `repose run` both refusals end with `, or pass --no-sync`, which makes the machine with no checkout.
 
-Outside a git repository `repose run` refuses nothing: it creates the machine, copies nothing and says `Not a git repository, so nothing was synced.` The machine is [named after the folder](/docs/lifecycle#a-second-machine-for-the-same-repository). `repose sync` there exits 2 with `This folder is not a git checkout, so there is nothing to sync.`
+Outside a git repository, `repose run` and `repose sync` ask from a terminal:
+
+```
+~/app isn't a git repository. Make it one and sync it? [Y/n]
+Committed 12 files to a new git repository.
+```
+
+Yes runs `git init` in the folder, writes a `.gitignore` if it has none, commits the rest as `Initial commit`, and syncs. That `.gitignore` leaves out `.env` files, which [still reach the machine](#what-travels), key and credential files such as `id_rsa`, `*.pem` and `credentials.json`, and the folders a sync always skips, such as `node_modules`. A folder inside it that is a git repository of its own is left out by name. If git can't make the commit, the folder is left as it was and the run stops with git's reason.
+
+The offer isn't made without a terminal, with `--temp`, or for a folder holding over 500 MB or 100,000 files. `repose run` then makes the machine with no checkout and says `Not a git repository, so nothing was synced.`, or for the large folder, `Nothing was synced: this folder isn't a git repository, and it holds over 500 MB or 100,000 files, more than one sync sends.` A no makes the same machine and prints nothing more. The machine is [named after the folder](/docs/lifecycle#a-second-machine-for-the-same-repository).
+
+`repose sync` in such a folder exits 1 with `Nothing was synced.` on a no, and 2 without a terminal (`This folder is not a git checkout, so there is nothing to sync.`) or for the large folder.
 
 A repository on github.com with at least 4 MiB of history is cloned by the machine itself on the first sync, over its own network, and your laptop sends only the commits GitHub doesn't have; the summary says `history cloned from github.com`. Submodules on github.com go the same way. A public repository arrives with the files of the commit you're on, and the machine fetches older versions in the background, so `git remote` on the machine lists `repose-backfill` until it's whole. If a fetch fails, the CLI sends that history itself and says so.

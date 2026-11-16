@@ -16,7 +16,7 @@
     };
 
     class = lib.mkOption {
-      type = lib.types.enum [ "small" "large" "xl" ];
+      type = lib.types.enum [ "tiny" "small" "large" "xl" ];
       default = "large";
       description = ''
         The guest's size class, for the runner's vcpu and memory defaults

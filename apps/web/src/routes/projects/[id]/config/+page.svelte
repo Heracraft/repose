@@ -1,8 +1,9 @@
 <script lang="ts">
 	// A project's Config tab (DECISIONS I-841): the base and machine.nix
-	// switches, the project's secrets, the packages (the menu or the Nix
-	// fragment) with Apply in a bar at the window's foot, then the
-	// revisions. The layout above holds the project and the header.
+	// switches, the project's secrets, its webhook routes (I-1110), the
+	// packages (the menu or the Nix fragment) with Apply in a bar at the
+	// window's foot, then the revisions. The layout above holds the
+	// project and the header.
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { leaveAnyway, leavingAnyway } from '$lib/leave';
@@ -29,6 +30,7 @@
 		menuEditable
 	} from '$lib/menuSelection';
 	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
+	import ProjectWebhooks from '$lib/components/project/ProjectWebhooks.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
 	import NixEditor from '$lib/components/NixEditor.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -390,6 +392,7 @@
 	</div>
 
 	<ProjectSecrets projectId={id} projectName={project?.slug} />
+	<ProjectWebhooks projectId={id} />
 {/if}
 
 <section class="hk-section packages" aria-labelledby="packages-title">

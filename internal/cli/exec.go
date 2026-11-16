@@ -80,7 +80,7 @@ func execScript(slug, extra string, argv []string) string {
 func execScriptIn(slug, extra, dir string, argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, a := range argv {
-		quoted[i] = shQuote(a)
+		quoted[i] = execWord(a)
 	}
 	name := argv[0]
 	if i := strings.LastIndex(name, "/"); i >= 0 {
@@ -96,6 +96,40 @@ func execScriptIn(slug, extra, dir string, argv []string) string {
 if [ -r %[2]s ]; then . %[2]s; REPOSE_DEVSHELL_QUIET=1 _repose_devshell %[3]s; unset -f _repose_devshell _repose_devshell_done
 elif command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
 exec %[4]s`, checkoutVar(slug, extra), execDevshell, shQuote(name), strings.Join(quoted, " "), cd)
+}
+
+// execWord is one word of the command as the machine's shell reads it:
+// quoted, so it reaches the command unchanged, except a leading ~ or ~/,
+// which is the machine's home, as --workdir and `repose cp` already read
+// it (DECISIONS I-1048). The laptop's shell expands an unquoted ~ before
+// repose sees it; a quoted one arrives here.
+func execWord(a string) string {
+	if a == "~" {
+		return `"$HOME"`
+	}
+	if rest, ok := strings.CutPrefix(a, "~/"); ok {
+		return `"$HOME"/` + shQuote(rest)
+	}
+	return shQuote(a)
+}
+
+// laptopHomePath is the first word of the command that is a path under
+// this computer's home, with that home: almost always an unquoted ~ the
+// laptop's shell expanded before repose saw it, and a path that means
+// nothing on the machine, whose home is /home/dev (DECISIONS I-1048).
+// "", "" when there is no such word, or when the two homes are the same
+// path and the word is as good on the machine as here.
+func laptopHomePath(argv []string) (word, home string) {
+	h, err := os.UserHomeDir()
+	if err != nil || h == "" || h == "/" || h == guestHome {
+		return "", ""
+	}
+	for _, a := range argv {
+		if a == h || strings.HasPrefix(a, h+"/") {
+			return a, h
+		}
+	}
+	return "", ""
 }
 
 // execSSHArgs are ssh's arguments for opts on target.
@@ -165,9 +199,11 @@ func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"as they are; for a pipeline, use sh -c '...'. A first word that names one of\n" +
 			"your projects is PROJECT; put -- before a command that has a project's name.\n" +
 			"exec's own flags go before COMMAND.\n\n" +
+			"A word that is ~ or starts with ~/ is the machine's home, /home/dev. Quote it:\n" +
+			"unquoted, your own shell expands it to this computer's home first.\n\n" +
 			"Without -i the command gets no input, and without -t no terminal; -it gives\n" +
 			"both, for something interactive such as a REPL.",
-		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql\n  repose exec --workdir worktree-1 npm test",
+		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql\n  repose exec todo-app ls '~/out'\n  repose exec --workdir worktree-1 npm test",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 || cmd.ArgsLenAtDash() == len(args) {
 				return cobraUsageError{fmt.Errorf("no command: repose exec [PROJECT] [--] COMMAND")}
@@ -248,6 +284,9 @@ func ExecCmd(ctx context.Context, e *Env, opts ExecOptions, stdin io.Reader) err
 	project, target, err := connectRunning(ctx, e, opts.ProjectArg)
 	if err != nil {
 		return err
+	}
+	if word, home := laptopHomePath(opts.Command); word != "" {
+		e.warn("%s is a path on this computer. The machine's home is %s: write '~%s', quoted, and the machine expands it.", word, guestHome, strings.TrimPrefix(word, home))
 	}
 	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScriptIn(project.Slug, target.Checkout, opts.Workdir, opts.Command))...)
 	c.Stdout, c.Stderr = e.Out, e.ErrOut

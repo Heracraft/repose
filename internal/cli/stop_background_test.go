@@ -174,9 +174,6 @@ func TestCommandsAfterABackgroundStopWaitForIt(t *testing.T) {
 		{"rm without --wait", func(e *Env, p *Project) error {
 			return DestroyProjectsCmd(ctx, e, []string{p.ID}, true, false, nil)
 		}, "gone"},
-		{"fork", func(e *Env, p *Project) error {
-			return ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1, NoStart: true})
-		}, "stopped"},
 		{"resize --size", func(e *Env, p *Project) error {
 			return ResizeClassCmd(ctx, e, p.ID, "large", nil)
 		}, "stopped"},
@@ -292,75 +289,6 @@ func TestBackgroundStopJSON(t *testing.T) {
 	var got Project
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.Slug != "job" || got.State != "stopping" {
 		t.Fatalf("json %q (%v)", out.String(), err)
-	}
-}
-
-// A fork right after a background stop waits the stop out and then
-// forks, whichever way the copies are made: cloned on the project's
-// server (I-701), restored from a fork snapshot when the server cannot
-// hold them, or from a snapshot an api before clones needs (I-703). The
-// api refuses both a clone and a snapshot while the stop is open.
-func TestForkWaitsOutABackgroundStop(t *testing.T) {
-	ctx := context.Background()
-	window := opConflictRetryWindow
-	opConflictRetryWindow = 300 * time.Millisecond
-	defer func() { opConflictRetryWindow = window }()
-	for _, c := range []struct {
-		name         string
-		noClone, old bool
-	}{
-		{name: "clone"},
-		{name: "snapshot fallback", noClone: true},
-		{name: "api before clones", old: true},
-	} {
-		for _, noStart := range []bool{true, false} {
-			name := c.name
-			if noStart {
-				name += " --no-start"
-			}
-			t.Run(name, func(t *testing.T) {
-				fake := fakeapi.New(fakeapi.Options{StopDelay: 1500 * time.Millisecond, StopPickup: 200 * time.Millisecond})
-				defer fake.Close()
-				fake.SetForkClone(c.noClone, c.old)
-				e := newLifecycleEnv(t, fake)
-				p := runningProject(t, fake, e, "job")
-				if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
-					t.Fatal(err)
-				}
-				if s := stateOf(t, e, p.ID); s != "stopping" {
-					t.Fatalf("state after the stop: %s", s)
-				}
-				errOut := &syncWriter{}
-				e.ErrOut = errOut
-				if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "job", Count: 1, NoStart: noStart}); err != nil {
-					t.Fatalf("fork right after a background stop: %v; stderr %q", err, errOut.String())
-				}
-				if s := stateOf(t, e, p.ID); s != "stopped" {
-					t.Fatalf("source after the fork: %s", s)
-				}
-				projects, err := e.Client.ListProjects(ctx)
-				if err != nil {
-					t.Fatal(err)
-				}
-				want := "running"
-				if noStart {
-					want = "stopped"
-				}
-				forks := 0
-				for _, q := range projects {
-					if q.ID == p.ID {
-						continue
-					}
-					forks++
-					if q.State != want {
-						t.Fatalf("fork %s is %s, want %s", q.Slug, q.State, want)
-					}
-				}
-				if forks != 1 {
-					t.Fatalf("%d forks; stderr %q", forks, errOut.String())
-				}
-			})
-		}
 	}
 }
 

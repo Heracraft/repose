@@ -17,6 +17,10 @@ var Verbs = map[string]string{
 	"agent_message":        "says",
 	"agent_question":       "asks",
 	"agent_done":           "is done",
+	// `repose say` reached the agent's terminal (DECISIONS I-1144). It
+	// notifies nobody, so this word is only ever read in `repose events`
+	// and the dashboard's event stream.
+	"agent_prompted": "got a message",
 	"idle_running":         "unused for 24h, holding plan memory",
 	"temp_expiring":        "destroyed in an hour",
 	"temp_destroyed":       "temporary machine destroyed",

@@ -85,7 +85,7 @@ test('when full, the line says so with the number waiting', async ({ page }) => 
 test('the run step shows and copies repose run alone', async ({ page, context }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/');
-	const step = page.locator('.steps li', { hasText: 'Run in any checkout' });
+	const step = page.locator('.steps:not(.refs) li', { hasText: 'Run in any checkout' });
 	await expect(step.locator('.code-copy')).toContainText('repose run');
 	await expect(step).not.toContainText('cd ~/code/your-project');
 	await step.getByRole('button', { name: 'Copy repose run' }).click();
@@ -102,9 +102,11 @@ test('the install command shows in the hero and the first step, and its button c
 }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/');
-	const install = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
+	const install = 'curl -fsSL https://repose.run/install.sh | sh';
 	await expect(page.locator('.hero .install')).toHaveText(install);
-	await expect(page.locator('.steps li').first().locator('.code-copy')).toContainText(install);
+	await expect(page.locator('.steps:not(.refs) li').first().locator('.code-copy')).toContainText(
+		install
+	);
 	expect(
 		await page.locator('main').evaluate((m, i) => m.textContent!.split(i).length - 1, install)
 	).toBe(2);
@@ -131,18 +133,31 @@ test('the install command shows in the hero and the first step, and its button c
 	expect(gaps.off).toBeLessThan(1);
 });
 
-test('the headline starts under the logo', async ({ page }) => {
-	for (const width of [1440, 390]) {
+// Below 1024px the headline starts under the logo, on the frame's text
+// line. From 1024px the hero's copy stands centred over the Orbit (owner,
+// 2026-11-15), so the headline stands on the picture's centre line
+// instead, clear of the logo's.
+test('the headline starts under the logo, and stands centred over the picture from 1024px', async ({
+	page
+}) => {
+	for (const width of [390, 768, 1024, 1440]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
-		const logo = await page
+		const logo = (await page
 			.getByRole('link', { name: 'repose, home' })
 			.locator('svg')
 			.filter({ visible: true })
 			.first()
-			.boundingBox();
-		const headline = await page.locator('h1').boundingBox();
-		expect(Math.abs(logo!.x - headline!.x), `at ${width}`).toBeLessThanOrEqual(1);
+			.boundingBox())!;
+		const headline = (await page.locator('h1').boundingBox())!;
+		if (width < 1024) {
+			expect(Math.abs(logo.x - headline.x), `at ${width}`).toBeLessThanOrEqual(1);
+			continue;
+		}
+		const orb = (await page.locator('.hero .orb').boundingBox())!;
+		const mid = (b: { x: number; width: number }) => b.x + b.width / 2;
+		expect(Math.abs(mid(headline) - mid(orb)), `at ${width}`).toBeLessThanOrEqual(1);
+		expect(headline.x, `at ${width}`).toBeGreaterThan(logo.x);
 	}
 });
 
@@ -192,19 +207,20 @@ test("each picture band's stage ends on the next band's rule", async ({ page }) 
 				return Math.round(next.top - fig.bottom);
 			})
 		);
-		expect(gaps.length, `at ${width}`).toBe(3);
+		// The centrepiece, the wreck, the setup and the agents (I-1167).
+		expect(gaps.length, `at ${width}`).toBe(4);
 		for (const g of gaps) expect(g, `at ${width}`).toBe(0);
 	}
 });
 
 // I-961 (option D, the owner's pick): the page has one numbering, the
 // mono labels over each band's h2 and each cell's title, and the pictures
-// no figure bars. Each of the five pause buttons shows at rest and is the
-// element under its own centre (a clip on the hero's field once cut the
-// hero's away while its box and opacity said it was there). A band
-// picture's button stands in its field's top right corner, its chip's
-// right edge on the text line; a cell's on its title's line.
-test('every pause button shows, takes the pointer, and stands where it belongs', async ({
+// no figure bars. The page's one motion control (owner, 2026-11-12) shows
+// at rest and is the element under its own centre (a clip on a field once
+// cut a button away while its box and opacity said it was there); it
+// stands in the hero field's top right corner, its right edge on the
+// text line.
+test('the motion control shows, takes the pointer, and stands in the hero field', async ({
 	page
 }) => {
 	for (const width of [1440, 1024, 390]) {
@@ -212,8 +228,9 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 		await page.goto('/');
 		await expect(page.locator('main .fig-bar')).toHaveCount(0);
 		const buttons = page.locator('main .fig .pic-pause');
-		await expect(buttons).toHaveCount(5);
-		for (let i = 0; i < 5; i++) {
+		await expect(buttons).toHaveCount(1);
+		await expect(page.locator('.hero .fig .pic-pause')).toHaveCount(1);
+		for (let i = 0; i < 1; i++) {
 			const b = buttons.nth(i);
 			await b.scrollIntoViewIfNeeded();
 			const m = await b.evaluate((el) => {
@@ -246,29 +263,46 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 });
 
 // I-961, the owner's pick (alternative C's labels in D): one numbering
-// on the page. Each band after the hero opens on its number and name over
-// its h2, each cell on 2.1 to 2.4 over its title, and the steps count
-// 4.1 to 4.3 under 04; the label sits on the text line, and its name
-// starts at the number's fixed width, where a step's name does too.
+// on the page. Each band after the hero opens on its number and name
+// over its h2, each cell on its band's number over its title (1.1 to
+// 1.6 and 4.1 to 4.4), and the install rows count under theirs (6.1 to
+// 6.3); the label sits on the text line, and its name starts at the
+// number's fixed width, where a step's name does too. I-1167 put the
+// layers and the wreck before the setup, and I-1212's bands run 01 to
+// 08, the job agent's band folded away.
 test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	const heads = page.locator('main .band > .head');
 	await expect(heads.locator(':scope > .num')).toHaveText([
-		'01 Setup',
-		'02 Machine',
-		'03 Agents',
-		'04 Install',
-		'05 Pricing',
-		'06 Questions'
+		'01 Layers',
+		'02 Permissions',
+		'03 Setup',
+		'04 Machine',
+		'05 Agents',
+		'06 Install',
+		'07 Pricing',
+		'08 Questions'
+	]);
+	await expect(page.locator('#parts .cols > li > .num')).toHaveText([
+		'1.1 Machine',
+		'1.2 Walls',
+		'1.3 Your setup',
+		'1.4 Secrets',
+		'1.5 Triggers',
+		'1.6 Agent'
 	]);
 	await expect(page.locator('#features .cell-copy > .num')).toHaveText([
-		'2.1 Snapshots',
-		'2.2 Ports',
-		'2.3 Browser',
-		'2.4 Editor'
+		'4.1 Snapshots',
+		'4.2 Ports',
+		'4.3 Browser',
+		'4.4 Editor'
 	]);
-	await expect(page.locator('.steps .step-title .label')).toHaveText(['4.1', '4.2', '4.3']);
+	await expect(page.locator('.steps:not(.refs) .step-title .label')).toHaveText([
+		'6.1',
+		'6.2',
+		'6.3'
+	]);
 	const m = await page.evaluate(() => {
 		const box = (e: Element) => e.getBoundingClientRect();
 		const head = document.querySelector('#install-h')!.closest('.head')!;
@@ -276,7 +310,7 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 		const n = num.querySelector('.n')!;
 		const name = document.createRange();
 		name.selectNodeContents(num.lastChild!);
-		const step = document.querySelector('.steps .step-title')!;
+		const step = document.querySelector('.steps:not(.refs) .step-title')!;
 		const stepName = document.createRange();
 		stepName.selectNodeContents(step.lastChild!);
 		return {
@@ -317,4 +351,110 @@ test('the footer links to the refund policy', async ({ page }) => {
 	await expect(
 		page.getByRole('contentinfo').getByRole('link', { name: 'Refunds' })
 	).toHaveAttribute('href', '/refunds');
+});
+
+// DECISIONS I-1169: the page sells a platform for running your own
+// always-on agents, built in layers. The h1 names it, the lead names the
+// machine and what you add to it, and six cells build it bottom to top.
+// Nothing names a command or a class that does not exist, and the
+// earlier headlines are gone. The job-application agent lost its band
+// in the hero loop's round 8 (I-1212): it is a trigger in the Orbit and
+// the triggers cell now.
+test('the hero and the layers say what repose is now', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	await expect(page).toHaveTitle('repose: a platform for running your own always-on agents');
+	await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+		'content',
+		/^Run your own always-on agents: pick a machine, bring any agent/
+	);
+	// The eyebrow is gone (owner, 2026-11-15).
+	await expect(page.locator('.hero .eyebrow')).toHaveCount(0);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+		'A platform for running your own always-on agents'
+	);
+	await expect(page.locator('.hero .hk-lead')).toHaveText(
+		'Give your agent a machine of its own, then add what it needs: your dev environment, secrets, a schedule or a webhook that wakes it. It keeps working with your laptop shut.'
+	);
+	await expect(page.locator('#parts .cols .item-title')).toHaveText([
+		'Size it to the job',
+		'Wall it off from your laptop',
+		'Bring your dev environment',
+		'Give it the keys you choose',
+		'Start it on a schedule or a webhook',
+		'Bring any agent'
+	]);
+	await expect(page.locator('#parts .cols .cmd')).toHaveText([
+		'repose resize --size large',
+		'repose run',
+		'repose secrets set NAME',
+		'repose notify set --ntfy URL'
+	]);
+	const text = (await page.locator('main').textContent())!;
+	for (const gone of ['replicated in the cloud', 'For solo founders', 'A framework for running'])
+		expect(text).not.toContain(gone);
+	// Never on the page, and no command or class that does not exist.
+	for (const claim of [
+		/burst/i,
+		/bare metal/i,
+		/your own hardware/i,
+		/repose trigger/i,
+		/--size tiny/i,
+		/\btiny class\b/i
+	])
+		expect(text).not.toMatch(claim);
+});
+
+// The hero's picture (LANDING.md "The hero's picture") is the Orbit:
+// repose in the middle, the five agents as bubbles on a ring around it,
+// and in plain words what wakes it and what it carries. Named for a
+// screen reader, with no command or variable name in it (owner,
+// 2026-11-12), and whole in the first screen at 1440. Under reduced
+// motion it holds on its still frame: nothing is animating, and the
+// controller has let it go. The three lanes it replaced (Compose, the
+// hero of rounds 1 to 8) are not on the page.
+test('the hero picture is the Orbit, named in plain words, and holds under reduced motion', async ({
+	browser
+}) => {
+	const context = await browser.newContext({
+		reducedMotion: 'reduce',
+		viewport: { width: 1440, height: 900 }
+	});
+	const page = await context.newPage();
+	await page.goto('/');
+	const orb = page.locator('.hero .orb');
+	await expect(orb).toHaveAttribute('role', 'img');
+	await expect(orb).toHaveAttribute('aria-label', /^repose in the middle: one always-on machine\./);
+	await expect(orb).toHaveAttribute('aria-label', /Claude Code, Codex, opencode, Gemini CLI and pi/);
+	// The five agents, each its bubble and its name; one of them lit, the
+	// one the loop's alert wakes.
+	await expect(orb.locator('.ag .nm')).toHaveText([
+		'Claude Code',
+		'Codex',
+		'opencode',
+		'Gemini CLI',
+		'pi'
+	]);
+	await expect(orb.locator('.ag .bub svg')).toHaveCount(5);
+	await expect(orb.locator('.ag.active')).toHaveCount(1);
+	await expect(orb.locator('.wake .chip')).toHaveText([
+		'every night at 2',
+		'an alert goes off',
+		'a webhook arrives'
+	]);
+	await expect(orb.locator('.carry .chip')).toHaveText(['your code, tools, logins', 'your secrets']);
+	// It asks you on your phone, in the words notifications.md uses.
+	await expect(orb.locator('.phone .q')).toHaveText('Roll back the last deploy?');
+	const text = (await orb.textContent())!;
+	for (const jargon of [/repose run/, /[A-Z]+_[A-Z]+/]) expect(text).not.toMatch(jargon);
+	// Whole in the first screen, under the copy, and nothing of the three
+	// lanes left on the page.
+	const box = (await orb.boundingBox())!;
+	expect(box.height).toBeLessThanOrEqual(900 - 64);
+	await expect(page.locator('.cmp')).toHaveCount(0);
+	// Reduced motion: the still frame, with no loop behind it.
+	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+	await expect(page.locator('.orb-frame')).not.toHaveAttribute('data-motion', 'play');
+	await expect(page.locator('button.pic-pause')).toHaveCount(0);
+	await context.close();
 });

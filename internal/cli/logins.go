@@ -324,7 +324,7 @@ func (e *Env) saveLoginSkip(scope loginsScope, off []string) error {
 	_, _ = fmt.Fprintf(e.Out, "Saved: %s %s on your laptop, for %s.\n", strings.Join(off, ", "), verb, where)
 	for _, n := range off {
 		if n == "gh" && !before["gh"] {
-			_, _ = fmt.Fprintln(e.Out, "Without gh, git on the machine cannot push to GitHub until you run `gh auth login` there or store a token as a secret (see /docs/secrets).")
+			_, _ = fmt.Fprintln(e.Out, "Without gh, git on the machine needs a token: `repose github setup` stores one for the repositories you pick (see /docs/secrets).")
 		}
 	}
 	return nil

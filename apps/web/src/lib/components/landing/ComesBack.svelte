@@ -63,7 +63,6 @@
 	import { agentMarks, toolMarks } from '$lib/components/illustrations/marks';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
-	import PauseButton from './PauseButton.svelte';
 	import SnapshotTile from './SnapshotTile.svelte';
 	import WinHead from './WinHead.svelte';
 
@@ -566,8 +565,8 @@
 {#snippet thumb(r: Row)}
 	<li class="fr">
 		{@render icon(r.k)}
-		<i class="bar" style:width="{r.name.length * 7}px"></i>
-		<i class="bar vb" style:width="{r.val.length * 7}px"></i>
+		<span class="nm">{r.name}</span>
+		<span class="tv">{r.val}</span>
 	</li>
 {/snippet}
 
@@ -582,7 +581,6 @@
 
 <p id={descId} class="sr-only">{story}</p>
 <div class="shot" use:picture.frame>
-	<PauseButton {picture} name="snapshot restore" />
 	<div
 		class="pic"
 		bind:this={pic}
@@ -875,16 +873,11 @@
 	.mini ul {
 		transform-origin: 0 0;
 	}
-	.bar {
-		display: block;
-		flex: none;
-		height: 8px;
-		border-radius: 2px;
-		background: var(--pic-faint);
-	}
-	.bar.vb {
+	/* The miniature's rows are the machine's own, scaled with the list. */
+	.tv {
 		margin-left: auto;
-		opacity: 0.6;
+		color: var(--pic-dim);
+		white-space: nowrap;
 	}
 
 	/* The rows in flight: copies, tinted like the working-state section's.

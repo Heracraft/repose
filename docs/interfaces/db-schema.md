@@ -35,6 +35,14 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
                                                              -- every Heartbeat; nothing is placed here (0021, I-644)
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
               nixos_system text, ch_version text,
+                                                            -- FROZEN AT REGISTRATION, with sku, hostname and mem_bytes:
+                                                            -- Register runs once (single-use token), Rotate refreshes only
+                                                            -- vcpus and cores, Hello and Heartbeat only the free/pool/load
+                                                            -- fields. A switch does not update nixos_system, so it reports
+                                                            -- the system from install day; mem_bytes keeps the old SKU's
+                                                            -- memory after a resize, and it is the numerator of the seat
+                                                            -- ceiling and of placement. `hosts add --reissue` and a
+                                                            -- re-register are what refresh them (I-1076)
               features text[] not null default '{}',  -- Hello.features: local_clone (0025, I-701)
               join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
 
@@ -61,7 +69,7 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
                 -- what the volume holds, which the plan's disk counts (0019, I-585):
                 -- the newest sample's thin volume allocated blocks, or, with
                 -- disk_held_at null, the estimate a new project starts with
-                -- (1 GB; a restore's or fork's source figure); both null
+                -- (1 GB; a restore's source figure); both null
                 -- counts volume_bytes
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null,
@@ -100,13 +108,44 @@ secrets      (id pk, project_id fk, name text, ciphertext bytea,
               -- the three reserved names of I-10 hold the guest's sshd material (I-42);
               -- the platform pseudo-project 00000000-0000-7000-8000-000000000000 holds the CA keys
 
+webhook_routes (id pk, project_id fk on delete cascade, name text, port int, path text,
+              allow_start bool not null default false,
+              token_sha256 bytea not null unique,   -- the edge's lookup form
+              ciphertext bytea, dek_wrapped bytea, kv_key_version text,
+              unique (project_id, name))            -- 0036, DECISIONS I-1110
+              -- a public webhook URL into the machine. The token lives twice: as its
+              -- sha256 here for the edge's in-memory table, and as ciphertext under the
+              -- account's data key with the secrets envelope, so `repose webhooks url`
+              -- can print it again. 20 rows per project
+
+webhook_tombstones (token_sha256 bytea pk, project_id uuid, at timestamptz)
+              -- a token rotated, removed or destroyed with its project. The edge answers
+              -- 410 for 30 days from `at` and 404 after, so a sender that obeys the 410
+              -- lets go of a URL repose can no longer route
+
+webhook_deliveries (id pk, route_id fk on delete cascade, at timestamptz,
+              status int, outcome text, duration_ms int, bytes_in bigint, bytes_out bigint)
+              -- the newest 20 per route, pruned on insert. Never the path (it holds the
+              -- token), the query, a header or a body byte
+
+webhook_egress (project_id fk on delete cascade, hour timestamptz, bytes bigint,
+              primary key (project_id, hour))
+              -- reply bytes the edge sent for this project in the hour, which the
+              -- billing rollup adds to egress (I-1120). Not read off
+              -- webhook_deliveries: that keeps the newest 20 a route for the user to
+              -- look at, so an hour with a thousand deliveries would bill twenty
+
+webhook_starts (project_id pk fk on delete cascade, at timestamptz)
+              -- when a delivery last started this project's stopped machine; the
+              -- once-per-10-minutes rule of `--start` has to survive an api restart
+
 certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp text,
               key_id text, kind text,  -- user|gateway|host
               issued_at, expires_at, revoked_at)
 
 snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes bigint,
-              reason text,  -- scheduled|stop|manual|fork (fork: a fork's own, expires_at a day on, never
-                            -- the project's newest for retention; 0025, I-703)
+              reason text,  -- scheduled|stop|manual|fork (fork: 0025, I-703; no longer written since
+                            -- I-1082 removed repose fork, and a later migration narrows the check)
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
               sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
 
@@ -133,10 +172,35 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
                 -- state stays 'running' and guestd_ok stays true (guestd is paused with
                 -- its guest, not lost); false for every row written before 0030 and for
                 -- a guest on a hostd older than I-818
+              net_egress bigint,  -- 0035, I-1063: what the guest sent the internet, from the
+                -- host's nft counter, which is what the plan bills. net_tx stays the tap's
+                -- figure (SSH, port forwards, hooks, the browser view included), which the
+                -- idle rule and the abuse checks read. Null from a hostd older than I-1063,
+                -- where billing reads net_tx
+              burst_cpu_ns bigint,  -- 0037, I-1126: nanoseconds the guest used above the base
+                -- cores its class sells, counted per second by the host's controller. Null
+                -- from a hostd older than I-1126 and from every host without the `burst`
+                -- feature, which billing reads as no burst
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
               primary key (project_id, ts, comm))  -- partitioned by month, 30-day retention
+
+rest_verdicts (ts, project_id, host_id, sample_ts timestamptz,  -- 0038, I-1152
+              would_rest bool,          -- every term of the rest rule (I-818) passed
+              blocked_by text,          -- the one condition that kept the machine awake, lower_snake, '' when none:
+                                        -- resting|host_unreachable|host_not_ready|keep_awake|op|question|session|
+                                        -- too_young|samples_missing|attached|agent_working|guestd_down|cpu|net|
+                                        -- not_quiet, plus host_no_pause and host_<why_not> past the rule
+              host_pauses bool, keep_awake bool,
+              ops_open int, sessions_open int, questions_open int,
+              samples_seen int, samples_quiet int, attached_max int,
+              agents_working int, guestd_down int, cpu_ns_max bigint, net_bytes_max bigint,
+              why_not text,             -- hostd's own refusal word for the most recent pause, '' when none recent
+              primary key (project_id, ts))  -- partitioned by month, 30-day retention
+              -- One row per running machine per five minutes (resting.VerdictEvery), written by the
+              -- rest rule's own tick. It copies nothing from inside a guest: sample_ts is the newest
+              -- meter_samples row the verdict read, and the join key to meter_samples and proc_samples.
 
 usage_hours  (project_id fk, hour timestamptz, class text, running_seconds int,
               gb_alloc bigint, egress_bytes bigint, cost_cents bigint,
@@ -147,6 +211,10 @@ usage_hours  (project_id fk, hour timestamptz, class text, running_seconds int,
               stripe_usage_record_id text null,  -- 'usage:<project_id>:<hour>', or 'exempt' (I-16)
               attended_seconds int,         -- seconds of the hour with an SSH session or a tmux client (0029, I-806)
               unattended_agent_seconds int, -- seconds with an agent working and nobody attached: the product's claim
+              burst_cpu_ns bigint not null default 0,  -- 0037, I-1126: the hour's CPU time above
+                -- the base cores, summed from the samples. A plan includes some of it per
+                -- period (I-1128); past that the account's machines run on their base cores
+                -- until the period ends. 0 on every host that does not burst
               gap bool, primary key (project_id, hour))
 
 credit_ledger (id pk, user_id fk, cents bigint, reason text, ref text, created_at)
@@ -247,6 +315,22 @@ host_sessions (host_id pk, replica_id text, since)          -- which api replica
 gateway_sessions (project_id fk, cert_serial bigint, session_id text default '', opened_at,
               primary key (project_id, cert_serial, session_id))   -- one row per gateway relay (0004, I-176)
 settings     (key text pk, value text)                       -- edge_wg_pubkey, edge_wg_endpoint (repose-admin edge init)
+says         (id pk, project_id fk, user_id fk,   -- `repose say` (0039, I-1144)
+              tmux_window text, text text, sender text, from_owner bool,
+              state text,          -- pending|sending|delivered|waiting|replaced|failed;
+                                   -- pending and sending are the hand-off between the api's
+                                   -- two processes (0040, I-1162): the http one stores the row
+                                   -- and waits on it, the grpc one claims it (sending),
+                                   -- delivers it and writes the machine's answer back.
+                                   -- A waiting row becomes delivered on the machine's
+                                   -- agent_prompted event
+              replaced bool,       -- a message was still waiting in that window (0040)
+              error text null,     -- a few words on failed, never the machine's message
+              refusal text null,   -- the machine's own sentence naming the agent windows,
+                                   -- on not_found and invalid_argument only (0040)
+              command_id uuid,     -- the SayToAgent command (idempotency)
+              created_at, updated_at)
+
 schema_migrations (version int pk, name text, applied_at)
 ```
 
@@ -257,7 +341,9 @@ desc)`, `certificates(user_id) where revoked_at is null`, `usage_hours(hour)`,
 `usage_hours(project_id, period_start)`, `abuse_events(project_id, ts desc)`,
 `questions(project_id, created_at desc)`, `questions(expires_at) where state
 = 'pending'`, `questions(deliver_next_at) where state <> 'pending' and
-delivered_at is null`, `questions(deliver_command_id)`, `usage_hours(hour) where
+delivered_at is null`, `questions(deliver_command_id)`, `says(project_id, created_at desc)`,
+`says(project_id, tmux_window) where state = 'waiting'` (0039),
+`says(created_at) where state in ('pending', 'sending')` (0040), `usage_hours(hour) where
 stripe_usage_record_id is null` (unused since I-289), `credit_ledger(user_id, created_at)`,
 `subscriptions(user_id) where status in (live) unique`, `subscriptions(user_id,
 created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
@@ -269,7 +355,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0030_resting`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0039_says`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 
@@ -284,19 +370,26 @@ Rules:
   already narrows. A frozen machine changes nothing about placement:
   `host_reservations` counts its class memory and cores while its state is
   `running`, which is what "the memory stays resident" means.
-- `meter_samples` and `proc_samples` are append-only and never joined to
-  from request paths; the hourly rollup reads them once. The one request
+- `meter_samples`, `proc_samples` and `rest_verdicts` are append-only and
+  never joined to
+  from request paths; the hourly rollup reads the first two once. The one request
   path that reads them is `GET /projects/:id/samples` (I-492): one
-  project, at most seven days, a range scan on each primary key. Both are partitioned
+  project, at most seven days, a range scan on each primary key. `rest_verdicts`
+  is read by no request path at all: it is the analysis table of I-1152, read
+  with psql through `ops/sql/launch.sql` Q13. All three are partitioned
   by month: the api creates the current and next month's partitions at start
   and in its daily job, which also drops the ones past retention and logs
   `partition_drop_fail` with `repose_api_partition_drop_fail_total` when it
   cannot. `ops/sql/partitions.sql` is the same maintenance as SQL functions,
   for an operator with psql and for the dashboard tests; either way a
   partition is dropped only once its whole month is past the retention period,
-  so the effective retention is 90 or 30 days plus up to a month.
+  so the effective retention is 90 or 30 days plus up to a month. A table added
+  to `internal/db.partitionedTables` and left out of `DropExpiredPartitions`
+  grows for ever and nothing else breaks, which is what
+  `TestPartitions` now reads for all three.
 - Secrets values never appear in `audit_log.detail` or anywhere but
-  `secrets.ciphertext`.
+  `secrets.ciphertext` and `webhook_routes.ciphertext`. A webhook row's
+  `audit_log.detail` carries the route's name and never its token.
 - `credit_ledger` is append-only. A usage debit that has to change is
   corrected by an `adjustment` row referring to the same `ref`, never by
   updating or deleting the original; `usage_hours` is the ledger of record

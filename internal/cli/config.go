@@ -2,9 +2,9 @@ package cli
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,18 +13,23 @@ import (
 	"github.com/heracraft/repose/internal/multiplexer"
 )
 
-const defaultAPIURL = "https://api.repose.herakraft.co/v1"
+const defaultAPIURL = "https://api.repose.run/v1"
 const defaultLogtoIssuer = "https://accounts.herakraft.co" // the owner's Logto (DECISIONS I-84); /oidc is appended
 // defaultLogtoClientID is the App ID Logto assigned to the `repose-cli`
 // Native application. Logto identifies applications by this opaque id, not
 // by name; "repose-cli" as client_id answered oidc.invalid_client at the
 // M2 gate (DECISIONS I-99). Public, like the dashboard's PUBLIC_LOGTO_APP_ID.
 const defaultLogtoClientID = "jccig5bb3i4d78bq4farv"
+// apiResource is the audience an access token is asked for, and it keeps
+// the old name on purpose. Logto identifies an API resource by this opaque
+// string, not by where the api answers; every installed CLI sends it and
+// every token already issued carries it, so changing it would lock out
+// every release before this one until its user updated (DECISIONS I-1156).
 const apiResource = "https://api.repose.herakraft.co"
 
 // billingURL is where a plan is chosen or changed; the api's gate names
 // the same page. Every line that names it uses this.
-const billingURL = "https://repose.herakraft.co/billing"
+const billingURL = "https://repose.run/billing"
 
 // Config is config.toml (docs/interfaces/cli-config.md).
 type Config struct {
@@ -61,15 +66,34 @@ type Config struct {
 	// forwarded whenever you're attached (`repose mcp forward`, DECISIONS
 	// I-557).
 	MCP MCPConfig `toml:"mcp"`
+	// Forward is the [forward] table: reverse lists the laptop's ports
+	// lent to the machine's localhost whenever you're attached
+	// (DECISIONS I-1104).
+	Forward ForwardConfig `toml:"forward"`
+	// RemoteControl is remote_control: whether repose offers this
+	// machine's Claude Code to the Claude app through Claude Code's own
+	// Remote Control (DECISIONS I-1132). nil is unset, which is off
+	// (I-1134), so a project's `remote_control = false` beats a global
+	// true and the other way round.
+	RemoteControl *bool `toml:"remote_control"`
 	// Projects holds per-project tables, keyed by the project's name:
 	// [projects.NAME.logins] replaces [logins] for that project, and
-	// [projects.NAME.mcp] forward adds to [mcp] forward.
+	// [projects.NAME.mcp] forward and [projects.NAME.forward] reverse
+	// add to [mcp] forward and [forward] reverse.
 	Projects map[string]ProjectConfig `toml:"projects"`
 }
 
 // MCPConfig is an [mcp] table.
 type MCPConfig struct {
 	Forward []string `toml:"forward"`
+}
+
+// ForwardConfig is a [forward] table. Reverse is read as written, a
+// list of numbers and "MACHINE:LAPTOP" strings mixed; loadConfig refuses
+// the file when an entry is not one of those or not a port that may be
+// lent (reverse.go).
+type ForwardConfig struct {
+	Reverse []any `toml:"reverse"`
 }
 
 // LoginsConfig is a [logins] table. Skip is nil when the table does not
@@ -81,8 +105,24 @@ type LoginsConfig struct {
 
 // ProjectConfig is one [projects.NAME] table.
 type ProjectConfig struct {
-	Logins LoginsConfig `toml:"logins"`
-	MCP    MCPConfig    `toml:"mcp"`
+	Logins  LoginsConfig  `toml:"logins"`
+	MCP     MCPConfig     `toml:"mcp"`
+	Forward ForwardConfig `toml:"forward"`
+	// RemoteControl is this project's remote_control (I-1136).
+	RemoteControl *bool `toml:"remote_control"`
+}
+
+// remoteControlFor is the machine's Remote Control switch for the
+// project named slug: [projects.NAME] remote_control, else the
+// top-level remote_control, else off (DECISIONS I-1134, I-1136).
+func (c Config) remoteControlFor(slug string) bool {
+	if p, ok := c.Projects[slug]; ok && p.RemoteControl != nil {
+		return *p.RemoteControl
+	}
+	if c.RemoteControl != nil {
+		return *c.RemoteControl
+	}
+	return false
 }
 
 // mcpForward is what the session helper forwards for the project named
@@ -97,6 +137,16 @@ func (c Config) mcpForward(slug string) []string {
 		}
 	}
 	return out
+}
+
+// forwardReverse is what the session helper lends for the project named
+// slug: [forward] reverse, then [projects.NAME.forward] reverse, each
+// machine port once, as mcpForward merges the MCP lists. The entries
+// are known good: loadConfig refused the file otherwise.
+func (c Config) forwardReverse(slug string) []reverseForward {
+	raw := append(append([]any{}, c.Forward.Reverse...), c.Projects[slug].Forward.Reverse...)
+	rs, _ := parseReverseList("forward.reverse", raw)
+	return rs
 }
 
 func defaultConfig() Config {
@@ -121,7 +171,7 @@ func loadConfig(dir string) (Config, error) {
 		return cfg, err
 	}
 	if _, err := toml.Decode(string(b), &cfg); err != nil {
-		return cfg, err
+		return cfg, exitf(ExitUsage, "%s: %v", configPath(dir), err)
 	}
 	if cfg.APIURL == "" {
 		cfg.APIURL = defaultAPIURL
@@ -146,11 +196,32 @@ func loadConfig(dir string) (Config, error) {
 			if cfg.DefaultSize == "" {
 				key = "default_class"
 			}
-			return cfg, fmt.Errorf("%s: %s is %q; it takes small, large or xl", configPath(dir), key, cfg.DefaultClass)
+			return cfg, exitf(ExitUsage, "%s: %s is %q; it takes small, large or xl", configPath(dir), key, cfg.DefaultClass)
 		}
 	}
 	if cfg.DefaultMultiplexer != "" && !multiplexer.Valid(cfg.DefaultMultiplexer) {
-		return cfg, fmt.Errorf("%s: default_multiplexer is %q; it takes %s", configPath(dir), cfg.DefaultMultiplexer, strings.Join(multiplexer.Names, " or "))
+		return cfg, exitf(ExitUsage, "%s: default_multiplexer is %q; it takes %s", configPath(dir), cfg.DefaultMultiplexer, strings.Join(multiplexer.Names, " or "))
+	}
+	// A refused reverse forward fails the load, so every command exits 2
+	// naming the file: one dropped in silence would read as a broken
+	// forward, which is why the Windows line exists (I-1104).
+	if _, msg := parseReverseList("forward.reverse", cfg.Forward.Reverse); msg != "" {
+		return cfg, exitf(ExitUsage, "%s: %s", configPath(dir), msg)
+	}
+	names := make([]string, 0, len(cfg.Projects))
+	for name := range cfg.Projects {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		key := "projects." + name + ".forward.reverse"
+		if _, msg := parseReverseList(key, cfg.Projects[name].Forward.Reverse); msg != "" {
+			return cfg, exitf(ExitUsage, "%s: %s", configPath(dir), msg)
+		}
+		merged := append(append([]any{}, cfg.Forward.Reverse...), cfg.Projects[name].Forward.Reverse...)
+		if _, msg := parseReverseList(key, merged); msg != "" {
+			return cfg, exitf(ExitUsage, "%s: %s", configPath(dir), msg)
+		}
 	}
 	return cfg, nil
 }

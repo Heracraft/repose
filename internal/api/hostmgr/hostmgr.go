@@ -648,10 +648,14 @@ func Kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_SayToAgent:
+		return "SayToAgent"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
 		return "WakeGuest"
+	case *hostdv1.Command_SetBurst:
+		return "SetBurst"
 	}
 	return "unknown"
 }

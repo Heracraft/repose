@@ -40,10 +40,18 @@
 }:
 let
   lib = nixpkgs.lib;
+  # The runner's own defaults, for a runner built without explicit vcpu and
+  # mem (hostdev, and a hand-built runner on a dev box); hostd always passes
+  # both from internal/hostd/guest.Classes, which is the table that counts.
+  # These were left at R3-2's 2 GB per vCPU when I-784 halved every class,
+  # so they are corrected here with `tiny` (DECISIONS I-784, I-1168). A
+  # `tiny` boots one vCPU and the host's cgroup holds it to half of one;
+  # a runner has no cgroup, so one vCPU is what it gets.
   classDefaults = {
-    small = { vcpu = 2; mem = 4096; };
-    large = { vcpu = 4; mem = 8192; };
-    xl = { vcpu = 8; mem = 16384; };
+    tiny = { vcpu = 1; mem = 2048; };
+    small = { vcpu = 1; mem = 4096; };
+    large = { vcpu = 2; mem = 8192; };
+    xl = { vcpu = 4; mem = 16384; };
   }.${class};
   defaultVcpu = if vcpu != null then vcpu else classDefaults.vcpu;
   defaultMem = if mem != null then mem else classDefaults.mem;

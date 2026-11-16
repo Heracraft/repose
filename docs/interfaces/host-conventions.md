@@ -22,7 +22,7 @@ change to either happens in the same commit.
 | `/nix/var/nix/gcroots/repose/<guest_id>` | GC root for the guest's system closure; removed on destroy. `rev-<project_id>-<revision_id>` roots keep the last 3 built revisions per project and are all removed when the project's guest is destroyed (DECISIONS I-115; a later restore rebuilds). `good-<guest_id>` keeps the guest's last good closure, the one a boot that never reaches Ready falls back to; removed on destroy (I-590). |
 | `/dev/vg-guests/thin` | thin pool (95 percent of the data disk, autoextend at 80 percent by 5 percent of the pool (I-643), discards passdown, zeroing on); volumes `/dev/vg-guests/g-<guest_id>`, snapshots `snap-<guest_id>-<ts>`, login shares `auth-<user_id>` (16 MiB each, I-464), parked guests' memory images `frz-<guest_id>` (class RAM + 1536 MiB, dm-crypt plain aes-xts-plain64 as `/dev/mapper/repose-frz-<guest_id>`, btrfs with `compress-force=zstd:1` above the dm-crypt so the disk still sees ciphertext and holds about a fifth of the guest's memory, mounted on `<guest dir>/freeze` only while written or read; an image written before I-685 is ext4 and its record says so; DECISIONS I-653, I-685). The pool is overcommitted by design: the plan's disk counts what volumes hold, not their sizes (DECISIONS I-585), so I-449's bound on the sum of the sizes is gone. Guarded by real use, data or metadata whichever is fuller (I-586): at 70 percent the api places no new project there and hostd sends `pool_high`; lvm autoextends at 80; hostd refuses (`insufficient_capacity`) a create, restore or resize at 85 and a start at 95; `PoolFull` pages at 90 and `PoolMetadataHigh` at 80 percent metadata. A running guest is never stopped for the pool. Only `repose-guest-pool.service` activates it (DECISIONS I-643): the initrd has no LVM, lvm.conf has `auto_activation_volume_list = [ ]` and the VG's autoactivation flag is off, so udev's event activation activates nothing. While the pool is inactive, missing, `failed` or `metadata_read_only`, hostd answers `volume_unavailable`, reports `pool_unavailable` and exports `repose_host_pool_available 0` (I-644) |
 | `/var/log/repose/` | hostd log (journald is primary), build logs per op |
-| `/var/lib/node_exporter/textfile/` | node_exporter textfile collector; `repose_lvm.prom` is written every 5 minutes by `repose-pool-monitor.timer` (`repose_lvm_pool_present`, `repose_lvm_pool_active`, `repose_lvm_pool_monitored`, `repose_lvm_pool_size_bytes`, `repose_lvm_pool_data_percent`, `repose_lvm_pool_metadata_percent`, `repose_lvm_volumes`, `repose_lvm_volumes_inactive`; a metric with no value, as an inactive pool's percentages, is left out, I-643), and again by `repose-guest-pool` when it ends. `repose_kernel.prom` is written every minute by `repose-kernel-check.timer` (`repose_kernel_check{check}` for `large_hash_linear`, `cmdline_recognised` and `large_hash_vmalloc_absent`, I-1010); its own file, not `repose_lvm.prom`, because node_exporter rejects a whole file for one bad line |
+| `/var/lib/node_exporter/textfile/` | node_exporter textfile collector; `repose_lvm.prom` is written every 5 minutes by `repose-pool-monitor.timer` (`repose_lvm_pool_present`, `repose_lvm_pool_active`, `repose_lvm_pool_monitored`, `repose_lvm_pool_size_bytes`, `repose_lvm_pool_data_percent`, `repose_lvm_pool_metadata_percent`, `repose_lvm_volumes`, `repose_lvm_volumes_inactive`; a metric with no value, as an inactive pool's percentages, is left out, I-643), and again by `repose-guest-pool` when it ends. `repose_kernel.prom` is written every minute by `repose-kernel-check.timer` (`repose_kernel_check{check}` for `large_hash_linear`, `cmdline_recognised`, `large_hash_vmalloc_absent` (I-1010) and `fault_around_off` (I-1042) -- four checks, so an alert written from a list of three misses the last); its own file, not `repose_lvm.prom`, because node_exporter rejects a whole file for one bad line |
 | `/var/lib/repose/root-console.hash` | root's password hash for the serial console, placed by hand (`install -m 0400`), never in the repo; read at each activation. Absent, root is locked. Hosts and the edge (DECISIONS I-654) |
 
 ### `host.json`
@@ -124,13 +124,15 @@ rotates keys does the same restart itself.
     `flows_drop` (I-453), `ct
     state new` over the per-guest bucket in set `guest_flow_rate`
     (`limit rate over 200/second burst 2000 packets`, I-240) to
-    `flows_drop`, jump `guest_dyn`, then drop
+    `flows_drop`, then drop
     `169.254.169.254` and `168.63.129.16`, drop `10.64.0.0/12`, allow the
     edge WireGuard address on tcp 8443 and 6081, drop every private range
     (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `169.254/16`), accept
     to the provider NIC), `smtp_drop`/`stratum_drop`/`flows_drop` (jump
     the hostd-owned `guest_smtp`/`guest_stratum`/`guest_flows`, then
-    drop), `guest_dyn`, `guest_smtp`, `guest_stratum`, `guest_flows`
+    drop), `guest_meter` (forward hook at `filter + 10`, policy accept:
+    from `br-guests` out of the provider NIC, jump `guest_dyn`; I-1063),
+    `guest_dyn`, `guest_smtp`, `guest_stratum`, `guest_flows`
     (empty at boot, hostd-owned), `nat`
     (masquerade `10.64.0.0/12` out of the provider NIC), `output` (policy
     accept; sockets of the `nixbld` group and of the build user jump to
@@ -146,7 +148,14 @@ rotates keys does the same restart itself.
   - Per-guest egress metering: `nft add counter inet repose
     egress-<guest_id>` and `nft add rule inet repose guest_dyn ip saddr
     <ip> counter name egress-<guest_id>`; read with `nft list counter`,
-    removed on destroy. Blocked attempts likewise, one counter and rule per
+    removed on destroy. `guest_dyn` is jumped from `guest_meter`, a
+    forward chain after `guest_fwd` that sees only what `guest_fwd`
+    accepted, for packets from `br-guests` out of the provider NIC. So the
+    counter holds every byte the guest sent the internet and nothing it
+    sent the edge (SSH, port forwards, hooks, the browser view) or the
+    host (the caches); `GuestSample.net_egress_bytes_delta` is its delta,
+    and `net_tx_bytes_delta` and `net_rx_bytes_delta` are still the tap's
+    (DECISIONS I-1063). Blocked attempts likewise, one counter and rule per
     kind (I-238..I-240): `nft add counter inet repose <kind>-<guest_id>`
     and `nft add rule inet repose guest_<kind> ip saddr <ip> counter name
     <kind>-<guest_id>` for `kind` in `smtp`, `stratum`, `flows`; hostd reads
@@ -228,7 +237,7 @@ I-643; hostd and the cache volume are ordered after it, hostd only
 `Wants` it), `repose-nvme-timeout.service` (writes the NVMe
 `io_timeout`, I-649),
 `repose-guests-slice.service` (sets `guests.slice` `MemoryMax` to RAM minus
-the reserve: 8 GiB below 128 GiB, 16 GiB above), `hostd.service`,
+the reserve: one eighth of total memory, at least 2 GiB and at most 16 GiB), `hostd.service`,
 `fluent-bit.service` (ships journald and every guest's console log to Loki,
 through two outputs with a disk buffer each, so consoles cannot evict
 host lines (DECISIONS I-452),
@@ -247,13 +256,37 @@ stops until the park is done (DECISIONS I-652).
 
 `guests.slice` has `CPUWeight=100`; `nix-daemon.service` (tenant builds)
 has `CPUWeight=50`. Inside the slice each `guest@<id>` carries
-`CPUWeight=<vcpus*50>` (50, 100, 200 by class, DECISIONS I-737; the
+`CPUWeight=<milli_vcpus*50/1000>` (25, 50, 100, 200 by class, DECISIONS
+I-737 and I-1168; the
 multiplier doubled with I-784, which halved the classes' vCPUs, so the
 three weights are unchanged), so contention between guests divides in
 proportion to the class;
 `virtiofsd@<id>` and `virtiofsd-auth@<id>` stay at the default 100. Nix:
 `max-jobs 2`, `cores 8`, `min-free 50G`, `max-free 100G`, sandboxed,
 `trusted-users root` only.
+
+**Burst cores** (`repose.host.burst.enable`, DECISIONS I-1126; off on
+every host at the time of writing). On a host that names the `burst`
+feature, a guest cold-started there boots with its class *ceiling* of
+vCPUs -- tiny 2, small 4, large 6, xl 8 -- and its unit still starts at the
+`CPUQuota` its class sells. A loop in hostd, once a second, reads the
+root cgroup's `cpu.stat usage_usec` and each `guests.slice/guest@<id>.service`'s,
+and writes `cpu.max` straight into each guest's cgroup: its base when the
+host's busy CPU is at or above `repose.host.burst.gate` (0.75 of physical
+cores, UNMEASURED) and up to its ceiling, one core a tick, when it is
+below. **No cap is ever below the base the class sold.** The headroom is
+shared among the guests that used 90 percent of their current cap, in
+proportion to their `CPUWeight`, so an `xl`'s burst outranks a `small`'s
+and no guest's base loses to another's burst. A resting guest (I-818) and
+a guest the api has sent `SetBurst allowed=false` (I-1128) are held at
+their base. hostd writes every running guest's base at its start, before
+the first tick, so a hostd that died with caps raised does not leave the
+host oversubscribed. The cap is written to the cgroup and not set as a
+runtime `CPUQuota` over D-Bus, because a daemon reload then undoes it by
+re-asserting the unit's own property, which is the base: the failure is a
+guest that loses its burst, never a host above the gate. Placement, the
+seat count and `CPUWeight` all keep counting the base vCPUs (I-734,
+I-736, I-737, I-739).
 
 ## Caches (DECISIONS I-202, I-208; `nix/hosts/caches.nix`)
 
@@ -288,13 +321,18 @@ so publish a guest base without the settings first (see I-208).
 
 hostd renders the `cloud-hypervisor` argv from the guest's system closure
 (`kernel`, `initrd`, `init`, `kernel-params`) and its record (DECISIONS
-I-27) and runs it with `systemd-run --unit guest@<id> --property
+I-27). `--cpus boot=<class vCPUs>`, or `boot=<class ceiling>` on a host
+with `repose.host.burst.enable` (I-1126): the hypervisor takes one number
+and a running guest cannot gain a vCPU, so the ceiling is there from the
+first boot and the cgroup holds the guest to its base. hostd runs it with
+`systemd-run --unit guest@<id> --property
 MemoryMax=<class RAM + 512M> --property MemoryHigh=<class RAM + 384M>
---property CPUQuota=<vcpus*100>% --property CPUWeight=<vcpus*50>
+--property CPUQuota=<milli_vcpus/10>% --property CPUWeight=<milli_vcpus*50/1000>
 --property Slice=guests.slice --property User=hostd` (MemoryHigh since
 I-230; a unit started earlier has only MemoryMax until its next start.
 CPUWeight since I-737; a unit started earlier keeps `cpu.weight=100`
-until its next start) and the sandbox of DECISIONS
+until its next start. `CPUQuota` stays the base whatever the host's burst
+flag says; the controller writes `cpu.max` at run time, I-1126) and the sandbox of DECISIONS
 I-51, pinned verbatim by `internal/hostd/guest/testdata/unit.golden`:
 `NoNewPrivileges=yes`, `CapabilityBoundingSet=` (empty), `UMask=0077`,
 `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
@@ -314,7 +352,7 @@ device nodes. The devices: `--disk path=/dev/vg-guests/g-<id>,image_type=raw,dir
 disk I/O never lands in host page cache charged to the unit, whose RAM part
 is unreclaimable shmem; the guest sees the volume's own 4096-byte logical
 blocks either way; the rate limiter since I-450, reads and writes together,
-per class: `small` 2000 IOPS and 80 MB/s, `large` 3000 and 120, `xl` 4000
+per class: `tiny` 1000 IOPS and 40 MB/s, `small` 2000 and 80, `large` 3000 and 120, `xl` 4000
 and 150, taken at the guest's next start),
 `--net tap=tap-<8hex>,mac=52:54:<4 bytes of the id's sha256>`, `--fs tag=ro-store,socket=
 virtiofsd/virtiofsd.sock`, `--vsock cid=<1000+index>,socket=vsock.sock`,

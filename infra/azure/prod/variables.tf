@@ -236,14 +236,14 @@ variable "manage_dns" {
 
 variable "cloudflare_zone_id" {
   type        = string
-  description = "Cloudflare zone id for herakraft.co."
+  description = "Cloudflare zone id for dns_zone, repose.run in production (DECISIONS I-1156)."
   default     = null
 }
 
 variable "dns_zone" {
   type        = string
-  description = "DNS zone the repose names live in."
-  default     = "herakraft.co"
+  description = "DNS zone the repose names live in. repose.run since DECISIONS I-1156; the old repose.herakraft.co names keep answering beside them for the overlap, created by hand (infra/README.md)."
+  default     = "repose.run"
 }
 
 variable "operator_object_id" {

@@ -18,6 +18,16 @@ $ repose secrets rm GEMINI_API_KEY
 Removed GEMINI_API_KEY
 ```
 
+```
+$ repose github setup
+Make a token at
+https://github.com/settings/personal-access-tokens/new?...
+Pick the repositories; it needs Contents and Pull requests write.
+Paste the token: ********
+Set GH_TOKEN for every project; 1 running machine has it now.
+Your gh login stays on your laptop, for every project.
+```
+
 On a stopped guest `set` prints `Set NAME (will be delivered at next
 start)`. `--from-file PATH` and `--from-env` read the value without a
 prompt. `list` prints name and last update, tab-separated, no header.
@@ -53,6 +63,19 @@ token the laptop keeps in its keyring is written into the copy of
 the checkout is synced. The platform never sees these; they travel laptop
 to guest inside SSH.
 
+Those four git keys also go when the gh row is turned off (I-1064), so a
+machine whose GitHub reach is the `GH_TOKEN` secret of kind 3 can push to
+an SSH remote too: `gh auth git-credential` answers with the
+environment's token even with no login of its own, and the helper is
+keyed by host, so one token serves every repository the machine reaches.
+A machine with neither a login nor a token then meets the username git
+asks for when no helper answers, which a non-interactive command fails on
+and an attached pane waits at; that prompt is not new, since an HTTPS
+remote on such a machine has always reached it. The rewrites are
+not written for a laptop that never had a gh login and never turned the
+row off, so a `gh auth login` made in the guest still covers HTTPS URLs
+alone.
+
 Why copy rather than store: the user already has them, they rotate on the
 laptop, and holding a copy of a GitHub token for every user in a database is
 a liability with no benefit. Why copy at all: the agent must push while the
@@ -63,6 +86,21 @@ laptop's keys while the user is attached, which is the exposure the
 machine exists to remove. The generated `~/.ssh/repose/hosts` says
 `ForwardAgent no` and the gateway refuses agent forwarding from any
 client.
+
+`repose github setup` (I-1064) is how a user gives the machines less than
+the gh login's reach: it names GitHub's fine-grained token form with
+`name`, `target_name`, `expires_in` and one query parameter per
+permission filled in (Contents and Pull requests write, nothing else),
+takes the token the user pastes, stores it as the account's `GH_TOKEN`
+(or one project's, with `--project`), and turns the gh row off in the
+same breath, since a broad token beside a narrow one protects nothing.
+The repository list is the one thing the form cannot prefill, and it is
+the one choice that is the user's. Widening is another `setup`, never an
+edit: GitHub documents no way to edit a token's repository list, and that
+form starts from every repository whatever the token holds now. An agent
+refused a repository asks with `repose-ask --secret GH_TOKEN` (I-929), so
+the ask, the paste and the storing are all machinery that already
+shipped.
 
 Other git hosts (GitLab, Bitbucket, self-hosted) have no copied login.
 Two options, both in the public docs' secrets page ("Other git hosts"):
@@ -253,11 +291,10 @@ Rules that must hold:
   the name alone; each api process rewrites them in the bound form in the
   background at start, retrying while Key Vault is unreachable, and the
   api reads the old form for one more release.
-  `repose fork` copies the source's values into
-  each copy in the same transaction that creates it, opened and sealed
-  again for the copy under the same user key and wrapped key, which is the
-  same home (DECISIONS I-254); a later change in one project does not
-  reach the others. Copying between arbitrary projects is a later feature.
+  Nothing copies a row between projects: `repose fork` was the only
+  caller and is gone (I-1082, which drops the fork halves of I-433 and
+  I-474). A project restored under another name gets the account's rows
+  and the named rows it is given.
 - Secrets appear in no log, no build log, no event summary, no error
   message. Build logs are scanned for every current secret value of that
   project before storage and matching substrings are replaced with
@@ -306,9 +343,7 @@ tmpfs files and environment above. Nothing new holds a value.
 - `GET /projects/:id/secrets` lists the project's rows alone (its shape is
   unchanged); `GET /me/secrets` lists the account's. The CLI shows both
   on a terminal and marks a name the project overrides.
-- `repose fork` copies the project's rows; the copy gets the account's
-  rows as every project does. Rewrap covers both tables, and one data key
-  serves both.
+- Rewrap covers both tables, and one data key serves both.
 
 ## Where secrets are not
 
@@ -334,6 +369,12 @@ login sync), 08 (dashboard page), 12 (fragment scan, build log redaction).
 
 ## Deferred
 
+Warning before the GitHub token expires (I-1064): the machine would have
+to read GitHub's `GitHub-Authentication-Token-Expiration` header, which is
+documented for classic tokens alone and is reported to answer the current
+time for fine-grained ones, so until that is checked on a live token an
+expired token is a 401 the agent asks about. A `repose github status` that
+says which GitHub credential a machine has.
 Per-project LUKS so an operator with root on a host cannot read a stopped
 tenant's disk (R3-10 revisit). Keeping one account secret off one project
 without a value of its own there (I-697). Copy between projects. Secret versions and rollback.

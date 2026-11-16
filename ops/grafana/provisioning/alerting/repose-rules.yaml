@@ -1040,6 +1040,78 @@ groups:
                   reducer:
                     type: last
                     params: []
+      - uid: repose-hostwgdown
+        title: HostWgDown
+        condition: C
+        for: 8m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "{{ $labels.host_id }} is heartbeating but its tunnel to the edge is down"
+          description: "The api can reach this host and Prometheus cannot scrape it through the edge, so the WireGuard tunnel is down or one-way. Its guests keep running and no `repose ssh`, `run`, `attach` or `open` reaches them; its logs and metrics stop; operator ssh to the host stops with them. repose_host_wg_rebinds_total says whether the host's own watchdog is already trying."
+          runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) ( (1 - up{job=\"hostd\"}) * on (host_id) group_left() (max by (host_id) (repose_api_host_state{state=\"unreachable\"}) == bool 0) )"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
       - uid: repose-hostservicedown
         title: HostServiceDown
         condition: C
@@ -1124,8 +1196,8 @@ groups:
           stack: repose
         annotations:
           summary: "Prometheus cannot scrape {{ $labels.job }} on {{ $labels.host_id }}"
-          description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not."
-          runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+          description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not. Its own section's step 2 is the tunnel, which is HostWgDown."
+          runbook: "docs/ops/RUNBOOK.md#hostscrapedown"
         data:
           - refId: A
             relativeTimeRange:
@@ -1994,7 +2066,7 @@ groups:
         annotations:
           summary: "{{ $labels.host_id }} has not registered"
           description: "The api has had this host in registering for 30 minutes: no hostd has presented its join token, so nothing is placed on it. For a new host that is a machine that was created and never arrived; for one already running it is a reissued token nothing has used."
-          runbook: "docs/ops/RUNBOOK.md#hostunregistered-host-never-registered"
+          runbook: "docs/ops/RUNBOOK.md#hostunregistered"
         data:
           - refId: A
             relativeTimeRange:

@@ -158,6 +158,14 @@ func TestGuestRulesReconcileAcrossRestart(t *testing.T) {
 	if got["g1"]["smtp"] != 12 || got["g1"]["flows"] != 3 || got["g1"]["stratum"] != 0 || len(got) != 1 {
 		t.Fatalf("BlockedPackets = %v", got)
 	}
+	nft.counters["egress-g1"] = 10
+	eg, err := n.EgressBytes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eg) != 1 || eg["g1"] != 600 {
+		t.Fatalf("EgressBytes = %v; want g1's bytes and no blocked counter", eg)
+	}
 	if err := n.DelGuestRules(ctx, "g1", "10.64.4.2", "52:54:01:92:ab:cd", "tap-1"); err != nil {
 		t.Fatal(err)
 	}

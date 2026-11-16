@@ -12,24 +12,30 @@
   scripts.
 -->
 <script lang="ts">
-	import type { Picture } from './motion.svelte';
+	import { motion, toggleMotion, type Picture } from './motion.svelte';
 
 	// `name` says which picture the button pauses, so five buttons in a
 	// screen reader's list or the tab order are told apart:
 	// "Pause the ports picture". aria-pressed carries the state.
-	let { picture, name }: { picture: Picture; name: string } = $props();
+	// Without a picture it is the page's one motion control: it holds every
+	// picture, names itself "Pause motion" on the screen, and shows while
+	// any loop runs.
+	let { picture, name }: { picture?: Picture; name?: string } = $props();
+	const shown = $derived(picture ? picture.moving : motion.live > 0);
+	const pressed = $derived(picture ? picture.paused : motion.paused);
 </script>
 
-{#if picture.moving}
+{#if shown}
 	<button
 		type="button"
 		class="pic-pause"
-		aria-label="Pause the {name} picture"
-		aria-pressed={picture.paused}
-		onclick={() => picture.toggle()}
+		class:all={!picture}
+		aria-label={picture ? `Pause the ${name} picture` : undefined}
+		aria-pressed={pressed}
+		onclick={() => (picture ? picture.toggle() : toggleMotion())}
 	>
 		<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-			{#if picture.paused}
+			{#if pressed}
 				<path
 					d="M5 3.5v9l7.5-4.5z"
 					fill="currentColor"
@@ -41,6 +47,7 @@
 				<path d="M5.5 3.5v9M10.5 3.5v9" fill="none" stroke="currentColor" stroke-width="2" />
 			{/if}
 		</svg>
+		{#if !picture}<span>Pause motion</span>{/if}
 	</button>
 {/if}
 
@@ -71,6 +78,18 @@
 		transition:
 			color 0.15s,
 			border-color 0.15s;
+	}
+	/* The page's one control carries its name: the icon, then "Pause
+	   motion" in the pictures' 12px. */
+	.pic-pause.all {
+		grid-auto-flow: column;
+		gap: 6px;
+		width: auto;
+		padding: 0 10px 0 8px;
+		font-family: var(--font-sans);
+		font-size: 12px;
+		font-weight: 500;
+		line-height: 1;
 	}
 	/* 44px to a finger or a pointer, drawn nowhere; positioned, so it
 	   moves nothing. */
@@ -107,6 +126,9 @@
 		}
 		.pic-pause::after {
 			inset: 0;
+		}
+		.pic-pause.all {
+			padding: 0 18px 0 16px;
 		}
 		.pic-pause:hover::before {
 			border-color: var(--pic-dim);

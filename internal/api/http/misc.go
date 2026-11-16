@@ -282,7 +282,7 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) error {
 		if err := rows.Scan(&pid, &slug, &day, &class, &running, &gb, &egress, &cost, &credit); err != nil {
 			return err
 		}
-		hours := map[string]float64{"small": 0, "large": 0, "xl": 0}
+		hours := map[string]float64{"tiny": 0, "small": 0, "large": 0, "xl": 0}
 		hours[class] = float64(running) / 3600
 		// cost_cents is the egress overage share and credit_cents 0 from
 		// price_version plan-v1; both stay one release (api.md).
@@ -317,7 +317,7 @@ func sinceParamNamed(r *http.Request, name string) time.Time {
 // have a console and none stands in for one (I-769).
 func bootsGuest(kind string) bool {
 	switch kind {
-	case "create", "start", "restart", "restore", "resize", "fork":
+	case "create", "start", "restart", "restore", "resize":
 		return true
 	}
 	return false

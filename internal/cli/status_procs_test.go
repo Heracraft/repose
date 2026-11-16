@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -183,5 +184,73 @@ func TestAgentStateCountsEveryAgent(t *testing.T) {
 	p.State = "stopped"
 	if got := agentState(p); got != "" {
 		t.Errorf("stopped: %q", got)
+	}
+}
+
+// `repose status` says which listening ports an attached laptop can
+// open and, in a `laptop` row, which of the laptop's ports the machine
+// can open; the reverse listeners leave the `listening` rows, since the
+// `laptop` row says what they are (DECISIONS I-1106).
+func TestStatusMarksTheForwardedPortsAndTheLaptopsOwn(t *testing.T) {
+	out := `LISTEN 0 511 0.0.0.0:5173 0.0.0.0:* users:(("node",pid=4242,fd=20))
+LISTEN 0 511 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=77,fd=3))
+LISTEN 0 4096 127.0.0.1:5432 0.0.0.0:* users:(("postgres",pid=90,fd=5))
+LISTEN 0 128 127.0.0.1:5037 0.0.0.0:* users:(("sshd-session",pid=900,fd=9))
+LISTEN 0 128 [::1]:11434 [::]:* users:(("sshd-session",pid=901,fd=10))
+#ps
+   4242  259200 419840 node
+     77    7200 123289 node
+     90  259200  41062 postgres
+    900    8000   3000 sshd-session
+    901    8000   3000 sshd-session
+#df
+10240000 7000000 4096
+#fwd
+3000 5173
+out:3000:3001
+out:5173:5173
+in:5037:5037:adb
+in:11434:11434:ollama
+#mux
+`
+	rows := parseStatusForwards(out)
+	procs := markForwarded(parseStatusProcs(out), rows)
+	var b bytes.Buffer
+	writeListening(&b, procs)
+	if cell := laptopPortsCell(rows); cell != "" {
+		statusRow(&b, "laptop", cell)
+	}
+	want := `  listening  node :3000 up 2h 120.4 MB, on your laptop at :3001
+             node :5173 up 3d 410.0 MB, on your laptop
+             postgres :5432 up 3d 40.1 MB
+  laptop     :5037 adb, :11434 ollama
+`
+	if b.String() != want {
+		t.Errorf("got:\n%s\nwant:\n%s", b.String(), want)
+	}
+	t.Logf("\n%s", b.String())
+
+	j, err := json.Marshal(statusForwardsJSON(rows, procs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON := `[{"port":3000,"laptop_port":3001,"direction":"to_laptop","process":"node"},` +
+		`{"port":5037,"laptop_port":5037,"direction":"from_laptop","process":"adb"},` +
+		`{"port":5173,"laptop_port":5173,"direction":"to_laptop","process":"node"},` +
+		`{"port":11434,"laptop_port":11434,"direction":"from_laptop","process":"ollama"}]`
+	if string(j) != wantJSON {
+		t.Errorf("--json forwards:\n%s\nwant\n%s", j, wantJSON)
+	}
+	t.Logf("--json forwards: %s", j)
+
+	// Nothing attached: no mark, no row, no key in --json.
+	plain := markForwarded(parseStatusProcs(out), nil)
+	b.Reset()
+	writeListening(&b, plain)
+	if strings.Contains(b.String(), "on your laptop") || laptopPortsCell(nil) != "" || statusForwardsJSON(nil, plain) != nil {
+		t.Errorf("with nobody attached:\n%s", b.String())
+	}
+	if len(plain) != 5 {
+		t.Errorf("with nobody attached the reverse listeners are ordinary rows: %d, want 5", len(plain))
 	}
 }

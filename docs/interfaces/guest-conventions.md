@@ -28,7 +28,7 @@ non-empty directory or not a directory; it writes the name to
 checkout the rule finds. The sync that made the checkout replaces the
 session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
-to `tmux attach`, so new windows open there. On a herdr machine the sync runs
+to the session it makes, so new windows open there. On a herdr machine the sync runs
 `repose-herdr-workspace` instead (see "herdr"), only when the command
 exists and `repose-herdr-server` is active, activating or reloading, and
 herdr's tabs open in the workspace's directory. The same step, and every
@@ -66,16 +66,18 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 
 | Path | What |
 |---|---|
-| `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a fork, a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
+| `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
 | `/home/dev/.repose/checkout` | one line, the checkout's directory name under `/home/dev` (`[A-Za-z0-9._-]`, no leading dot, no `/`), written by the CLI's first sync (I-368); absent on a machine with no checkout and on one set up before I-368 |
 | `/home/dev/<checkout>-worktree-<N>` | a git worktree of the checkout on branch `worktree-<N>`, made by `repose run --worktree` (DECISIONS I-253, I-342); see "tmux". Worktrees made before I-342 are `/home/dev/<slug>-<window>` on `repose/<window>` and stay as they are |
+| `/home/dev/.repose/remote-control` | one line, `on` or `off`: `config.toml`'s `remote_control` for this project, written by the carry (DECISIONS I-1136). Absent is off (I-1134). `repose-remote-control` and `repose-agent-setup claude` read it |
+| `/home/dev/.local/state/repose/remote-control-startup` | present while `remoteControlAtStartup: true` in `~/.claude/settings.json` is one `repose-agent-setup claude` wrote, so that turning the switch off removes that one and never a value the user set (I-1132) |
 | `/home/dev/.repose/mcp/` | the MCP registry, `laptop.json`, `forward/NAME.json`, `agents/<agent>.json`, `rendered.json` (DECISIONS I-555); see "MCP registry" |
 | `/home/dev/.repose/project.json` | `{project_id, slug, name, remote_url, user_handle, class, tz, multiplexer}` written by guestd at SetupProject. `multiplexer` (`tmux` or `herdr`, DECISIONS I-502) is added by the api from migration 0017 on; an absent key, or any value other than `herdr`, means tmux to guestd, both session units and the CLI, which is how a file from an older api is read |
 | `/home/dev/.config/herdr/config.toml` | herdr's config, seeded by the base when absent (see "herdr"); the user's from then on |
 | `/home/dev/.config/herdr/herdr.sock` | herdr's API socket, dev's, made by `herdr server`; guestd connects to it (see "herdr") |
 | `/etc/repose/env` | `TZ=` and `REPOSE_PROJECT=` lines written by guestd at SetupProject, sourced by every shell; the CLI replaces the `TZ=` line (through `sudo`, root 0644, by rename) on `run` and `attach` when the laptop's zone differs (I-198) |
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
-| `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425) |
+| `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425). `remoteControlAtStartup: true` is not in this file: `repose-agent-setup claude` adds it to `~/.claude/settings.json` by the same rule, and only while `~/.repose/remote-control` holds `on` (I-1132) |
 | `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them; the source for Claude Code and Codex (through `repose-mcp sync`, or `repose-agent-setup` on a base without it) and for the VM tests. The other agents get the same servers in their own system layer, rows below (DECISIONS I-553) |
 | `/etc/opencode/opencode.json` `mcp.servers` | the platform MCP servers as `{type: "local", command: [CMD, ARGS...]}`, never `disabled`, so a user's `disabled: true` in `~/.config/opencode/opencode.json` turns one off (I-553, I-1050; opencode 2 ignores a name directly under `mcp`, which version 1 took, and spells the switch `disabled`) |
 | `/etc/gemini-cli/system-defaults.json` | Gemini CLI's system defaults: `mcpServers` with the platform servers (`command` and `args` only) and `security.folderTrust.enabled: false`, since Gemini disables every MCP server in a folder it was not told to trust (I-553). A copied file, root 0644, in a root 0755 directory: Gemini skips a system file whose resolved directory is not root-owned or is group-writable, which a store symlink is |
@@ -100,7 +102,8 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
 | `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
-| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
+| `/run/repose/desktop/last-cdp` | mtime of the last DevTools **command** to the agents' browser (I-246): stamped when `bytes_received` on the browser's CDP sockets moves, and by `repose-browser-proxy.service` when it starts, which is how a request that opens and closes between two checks is seen (I-930, I-948, I-1122). The idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
+| `/run/repose/desktop/last-agent-working` | mtime of the last guestd refresh that saw an agent in any state but `idle` or `needs_input`; the idle stop reads its age to pick the browser's threshold, 10 minutes or 30 (I-1122). Written by guestd as root and left dev's, as `repose-desktop-stamp` does for the others (I-727). Absent means no agent has worked since the boot, which is the short threshold; nothing else creates it |
 | `/run/repose/mcp/` | tmpfiles `d 0700 dev dev`: one socket per forwarded MCP server, `NAME.sock` (0600 dev), bound by `repose-mcp hold` while a laptop forwards NAME and removed when the hold ends, and `NAME.alive` (0600 dev), touched at each keepalive from the laptop; a missing socket, or a keepalive file more than 30 s old, is how `status` says `laptop not connected` (DECISIONS I-557). A CLI that sends no keepalive leaves no `NAME.alive`, and the socket alone decides |
 | `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246). Before each start, `repose-browser-unlock` removes its `SingletonLock`, `SingletonSocket` and `SingletonCookie` unless the process the lock names runs with this profile (I-727) |
 | `/nix/.ro-store` | read-only virtio-fs mount of the host store (tag `ro-store`) |
@@ -115,6 +118,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `fstrim.timer` | daily (NixOS's default is weekly): discards the root filesystem's free blocks, so a deleted file's blocks leave the host's thin volume, whose allocated blocks are what the plan's disk counts (DECISIONS I-585) |
 | `repose-tmux-save.timer` | every minute from 60 s after boot: `repose-tmux-save --periodic` as dev writes `~/.repose/agent-windows.live` on a tmux project (DECISIONS I-646; see "tmux") |
 | `/home/dev/.repose/agent-windows`, `agent-windows.live`, `stopped`, `agent-windows.lock` | the stop's record of the agent windows, the minute record, the boot id of the last stop begun, and the lock the scripts share (I-636, I-646; see "tmux") |
+| `repose-remote-control` | in the system path, run as dev by the claude wrapper, by `repose-tmux-session` at the end of its start and by the carry: reconciles the project's `remote-control` tmux window, in which `claude remote-control --spawn worktree --name <slug> --no-chrome` runs in a restart loop (5 s after a run that lasted a minute, 60 s after a shorter one). It opens the window when `~/.repose/remote-control` holds `on`, `~/.claude/settings.json` has neither `disableRemoteControl: true` nor `remoteControlAtStartup: false`, `~/.claude/.credentials.json` is not empty (its size only, never its contents), none of `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` is a named secret, the project is a tmux one and no window of that name exists; otherwise it closes the window again, and only one it opened itself (the window option `@repose-remote-control` is `1`). `--spawn same-dir` where the checkout is no git repository, which Claude Code's worktree mode refuses. Silent and 0 on every path (DECISIONS I-1132, I-1134, I-1136) |
 | `repose-trim-on-stop.service` | active from boot; its stop runs `fstrim /` at shutdown (at most 20 s), so a stopped project is counted at what it holds (DECISIONS I-585) |
 | `/var/log/repose/console.log` | not used; console goes to the serial device and hostd captures it |
 
@@ -189,7 +193,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   minute save and the restore hold `flock ~/.repose/agent-windows.lock`.
 - When `repose-tmux-session` creates the session, it reopens the windows
   of one record, unless the record names another project id than
-  project.json (a fork's or a `snapshots restore --as` copy), which it
+  project.json (a `snapshots restore --as` copy), which it
   removes and reopens nothing: `agent-windows` if present (and removes
   `agent-windows.live`); otherwise `agent-windows.live` when its boot is
   not this one, whether or not `stopped` names that boot (a stop whose
@@ -225,7 +229,11 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   A window with any other name counts as an agent window while an agent's
   program is its foreground process (`sample.AgentByCommand`, I-421:
   `claude` typed in the `shell` window), except gemini, whose process is
-  `node`; hooks from it carry that window's name.
+  `node`; hooks from it carry that window's name. The `remote-control`
+  window (`repose-remote-control`, I-1132) is one of those: its
+  foreground process is `claude`, so it counts as a claude window, and
+  every session Remote Control spawns reports under it, since they
+  inherit the server's `TMUX_PANE`.
 - `repose run --worktree -p "prompt"` (I-253, I-342) first runs `git -C
   /home/dev/<checkout> worktree add -b worktree-<N>
   /home/dev/<checkout>-worktree-<N> <HEAD>`, copies the checkout's
@@ -239,7 +247,15 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   `repose/worktree-<N>`. Worktrees live beside the checkout, never in
   it, so the sync's status, stash, fingerprint and tar never see them;
   nothing removes them but the user (`git worktree remove`).
-- `repose attach` = `tmux attach -t <slug> -c <checkout>`; `repose run
+- `repose attach` = `tmux new-session -t =<slug> -s <slug>~<pid> -c
+  <checkout>`, a session grouped with the project's that ends when its
+  terminal detaches (`destroy-unattached on`), with a
+  `session-window-changed` hook that selects the same window in `<slug>`,
+  so the next attach opens the window last used (DECISIONS I-1067).
+  Before I-1067 it was `tmux attach -t <slug> -c <checkout>`, and two
+  attached terminals shared one current window. Whatever counts or
+  messages the attached terminals reads every client whose session is
+  `<slug>` or whose `session_group` is. `repose run
   "prompt"` = `tmux new-window -t <slug> -n <agent> -c <checkout> -d
   '<agent> <the prompt's argument form>'`, the agent's own initial-prompt
   argument, which its startup takes (DECISIONS I-780), so nothing is typed
@@ -281,7 +297,12 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   (no `*:Tc`: 24-bit colour goes to those TERMs and to a client whose
   `COLORTERM` is `truecolor` or `24bit`; the CLI's attach unsets the
   guest's `COLORTERM` when the laptop's says neither, I-515), `set -g
-  set-titles on`, `set -g set-titles-string "#h: #S"`, `set -s escape-time 10`, `set -g
+  set-titles on`, `set -g set-titles-string "#h:
+  #{?session_grouped,#{session_group},#S}"` and `set -g status-left
+  "[#{?session_grouped,#{session_group},#S}] "` (the project's session,
+  not the attach's grouped one), `setw -g aggressive-resize on` (each
+  attach is a session grouped with the project's, and a window is sized
+  for the terminals showing it, I-1067), `set -s escape-time 10`, `set -g
   focus-events on`, `set -g update-environment "DISPLAY SSH_AUTH_SOCK
   SSH_CONNECTION LANG COLORTERM"` (no `TZ`: an attach from a terminal
   without one would clear the session's zone), and since DECISIONS I-264
@@ -891,7 +912,7 @@ repose-ask --cancel [ID | --all]
 | `~/.codex/auth.json` | `/home/dev/.codex/auth.json` | dev 0600 |
 | `~/.local/share/opencode/auth.json` | `/home/dev/.local/share/opencode/auth.json` | dev 0600 |
 | `git config user.name/email` | inside the carried git config below (DECISIONS I-195). The old shape, the two keys written straight into `/home/dev/.gitconfig` with `git config --global`, is what a CLI before I-195 still does, and stays accepted: the first carry removes them from `~/.gitconfig` when they equal the carried values, so they cannot shadow later changes | dev 0644 |
-| (when gh travelled, whatever the project's remote) | `/home/dev/.gitconfig`: `url.https://github.com/.insteadOf` with the values `git@github.com:` and `ssh://git@github.com/` (each set by value with `--replace-all`, so other values under the key stay), and `credential.https://github.com.helper` and `credential.https://gist.github.com.helper` = `!gh auth git-credential`, so the SSH `origin` guestd sets, and any other github SSH URL, is pushed and fetched over HTTPS with gh's login: the laptop's agent is not forwarded (DECISIONS I-150, I-247). The old shape, only `git@github.com:` and only for a github.com remote, is what a CLI before I-247 writes and stays valid; so is the github.com helper alone, before I-526. The base's `/etc/gitconfig` sets both helpers too, by command name, whether or not gh travelled, with `init.defaultBranch=main`, `push.autoSetupRemote=true`, `pull.rebase=false` and git-lfs's `filter.lfs` (DECISIONS I-525..I-527); system scope, so the carried config and `~/.gitconfig` override any of it. At login and at each base switch, dev's user activation runs `repose-gh-helper-cleanup`, which removes from `~/.gitconfig` the helpers for those two hosts whose value is a `/nix/store` path to gh (what `gh auth setup-git` writes), with the empty `helper =` before them | dev 0644 |
+| (when gh travelled or its row is off, whatever the project's remote) | `/home/dev/.gitconfig`: `url.https://github.com/.insteadOf` with the values `git@github.com:` and `ssh://git@github.com/` (each set by value with `--replace-all`, so other values under the key stay), and `credential.https://github.com.helper` and `credential.https://gist.github.com.helper` = `!gh auth git-credential`, so the SSH `origin` guestd sets, and any other github SSH URL, is pushed and fetched over HTTPS with gh's login: the laptop's agent is not forwarded (DECISIONS I-150, I-247). The old shape, only `git@github.com:` and only for a github.com remote, is what a CLI before I-247 writes and stays valid; so is the github.com helper alone, before I-526. Since I-1064 these four keys also go when the gh row is off (`[logins] skip`), whether or not the laptop has a gh login at all, so a machine whose GitHub credential is the `GH_TOKEN` secret reaches an SSH remote too; a CLI before I-1064 writes them only when gh travelled, which leaves such a machine failing on an SSH key it has not got. The base's `/etc/gitconfig` sets both helpers too, by command name, whether or not gh travelled, with `init.defaultBranch=main`, `push.autoSetupRemote=true`, `pull.rebase=false` and git-lfs's `filter.lfs` (DECISIONS I-525..I-527); system scope, so the carried config and `~/.gitconfig` override any of it. At login and at each base switch, dev's user activation runs `repose-gh-helper-cleanup`, which removes from `~/.gitconfig` the helpers for those two hosts whose value is a `/nix/store` path to gh (what `gh auth setup-git` writes), with the empty `helper =` before them | dev 0644 |
 
 When the laptop's gh keeps its token in the system keyring (gh 2.40+),
 the `hosts.yml` that travels carries that token as `oauth_token` under
@@ -939,6 +960,7 @@ state and is named once.
 | the laptop's `git config --global --list --includes`, run in the checkout, minus the I-195 denylist and the keys that hold a secret (I-211), plus the checkout's own `user.name`/`user.email` | `/home/dev/.config/git/repose-carried` (dev 0644, replaced whole by rename) | `/home/dev/.gitconfig` starts with `[include] path = ~/.config/git/repose-carried`, added once, so the guest's own keys after it win. Path values missing in the guest and a command not on PATH are removed from the file and named once. The commands checked: `core.pager`, `core.editor`, `sequence.editor`, `interactive.diffFilter`, `diff.external`, `diff.<driver>.textconv`/`.command`, `merge.<driver>.driver`, and `pager.<cmd>` when it is not a boolean (I-195 as amended 2026-10-05). `filter.<x>.*` is not checked: a missing filter fails closed. When `~/.gitconfig` is a symlink (home-manager) nothing is added and the CLI says what to add |
 | `core.excludesFile`'s contents | `/home/dev/.config/git/ignore` | git's default excludes file |
 | the laptop's zone | `TZ=` in `/etc/repose/env`, tmux global and per-session `TZ` | see "tmux"; on a herdr machine `/etc/repose/env` only (I-508) |
+| `config.toml`'s `remote_control` for this project (DECISIONS I-1136) | `/home/dev/.repose/remote-control`, one line, `on` or `off`; then `repose-remote-control`, which opens or closes the `remote-control` window | marker `remote-control`; not sent to a machine with no marker when the switch is off, since that is what such a machine already holds |
 | the laptop CLI's version (DECISIONS I-412) | `/home/dev/.repose/cli-version`, one line, as `repose --version` names it | marker `cli-version`; the machine guide tells agents to read it; absent until a CLI with I-412 has run or attached |
 | `~/.claude/CLAUDE.md`, `keybindings.json`, `skills/`, `agents/`, `commands/`, `output-styles/`, and the scripts under `~/.claude` that `settings.json` runs (DECISIONS I-196) | the same paths under `/home/dev/.claude/`, copied onto what is there (`cp -R`, modes kept) | one marker per file or directory (`claude-claude-md`, `claude-skills`, `claude-scripts`, ...) |
 | `~/.claude/settings.json` | `/home/dev/.claude/settings.json`, merged by `internal/cli/claude_merge.jq` with the base's `jq`: guest file as the base, laptop's on top (without `env`, `apiKeyHelper`, `aws*`/`gcp*`, `otelHeadersHelper`, `forceLoginMethod`, removed on the laptop, I-211) with its home rewritten to `/home/dev`, `permissions.allow/deny/ask` unioned, `repose-hook` entries stripped from both and `/etc/repose/claude-settings.json`'s appended, hooks and `statusLine` whose command does not resolve dropped. Written as `settings.json.tmp`, checked with `jq empty`, the old file kept as `settings.json.repose-prev`, renamed into place. An invalid guest file is left alone | marker `claude-settings` |
@@ -949,7 +971,7 @@ state and is named once.
 | markers | `/home/dev/.repose/carry/<item>` | the hash of the laptop input last applied; the probe prints them as `#marker <item> <hash>`, and `#marker tools-notices waiting` while `~/.repose/tools-notices` is non-empty |
 | the tool logins' files (DECISIONS I-224) | `/home/dev/.repose/creds-paths`, one expanded path per line | written with marker `creds` after the logins; the probe prints `#credsmissing` when one of them is gone, and the logins are sent again |
 | the last completed sync's key (DECISIONS I-224) | `.git/repose-synced-key` in the checkout | hex sha256 of what the laptop sent; emptied before the apply touches the checkout, written at its end; the probe prints `#synckey`, `#head` and `#headref` |
-| what the last apply left, per path (DECISIONS I-573) | `.git/repose-synced-paths` in the checkout | NUL-separated: the `HEAD` the apply left, then `<hash>` and `<path>` for each path the laptop's work wrote (a blob hash, `l:<target>` for a symlink, a submodule's `<HEAD> <tree>`, `-` for none, `?` for anything else); rewritten at the end of every apply. A path whose content still matches, under the same `HEAD`, is the last sync's own: the next apply stashes it rather than treating it as the guest's work. Read and written only by the sync's own scripts; a missing file means none of the guest's changes is the last sync's |
+| what the last apply left, per path (DECISIONS I-573) | `.git/repose-synced-paths` in the checkout | NUL-separated: the `HEAD` the apply left, then `<hash>` and `<path>` for each path the laptop's work wrote (a blob hash, `l:<target>` for a symlink, a submodule's `<HEAD> <tree>`, `-` for none, `?` for anything else); rewritten at the end of every apply. A path whose content still matches, under the same `HEAD`, is the last sync's own: the next apply stashes it rather than treating it as the guest's work. A path whose copy the sync kept for the machine (the overlap menu's `m`, DECISIONS I-1100) is left out, so the next sync asks about it again rather than stashing the agent's work as the last sync's own. Read and written only by the sync's own scripts; a missing file means none of the guest's changes is the last sync's |
 
 ### Tools carry (DECISIONS I-221, I-222)
 
@@ -1043,9 +1065,26 @@ root pid, I-535), -800 for the keystroke path (I-576: `dev`'s
 other `dev` process holding a negative value (it inherited the agent's,
 the tmux server's or the SSH session's on fork: a dev server an agent
 started, a pane's shell, a `repose exec` command). A positive value the
-user set is left alone, and nothing is ever killed or stopped by guestd.
-`dev` cannot lower its own value, which is why root owns this. When the
-kernel kills something, guestd's `oom` warning names it.
+user set is left alone. `dev` cannot lower its own value, which is why
+root owns this. When the kernel kills something, guestd's `oom` warning
+names it.
+
+One thing guestd does stop, and nothing else (I-1124, which amends
+I-200): a **stray browser**. Each minute, a process of dev's named
+`chrome-headless`, `chromium`, `chrome` or `headless_shell` whose parent
+is none of those, whose cgroup is a `.scope` under dev's
+`user-<uid>.slice` or is `repose-herdr-server.service`, whose parent is
+pid 1 or dev's user manager, and to whose listening ports no TCP
+connection is established, counts as a stray. A process listening on
+9225 never does, whatever its cgroup says: that is the agents' browser,
+whose own rule is I-1122's. Ten such minutes in a row,
+each of them with no SSH session of dev's, no tmux client and every agent
+`idle` or `needs_input`, and guestd opens a pidfd, checks the start time
+again, sends SIGTERM and SIGKILL ten seconds later. It logs
+`stopped a stray browser, whose launcher had exited` with `comm`, `pid`,
+`ran_s` and `cpu_s`, and sends no warning: a stray is by definition a
+process nobody is using. It reads the fd links only to collect socket
+inodes, and keeps no path from them (R5-3).
 
 The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
 `user@.service` `OOMScoreAdjust=-900`, the user manager's
@@ -1187,9 +1226,37 @@ Anything the user binds on `0.0.0.0` or `127.0.0.1` (or `::`, `::1`)
 inside the guest is reachable through `repose open <port>` (SSH `-L`), and
 is forwarded automatically while a CLI is attached (DECISIONS I-199), read
 with `ss -Hltn` (iproute2, in the base). Platform-owned ports, never
-auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296). Each attached CLI records its forwarded
+auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), and
+5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
+holds (I-1104). Each attached CLI records its forwarded
 ports in `/home/dev/.repose/forwards/<id>`; the project session's
 `status-right` is set from their union and unset when none is left.
+
+That file's format (I-199, extended by I-1106): line 1 is the guest
+ports that CLI forwards to its laptop, space-separated bare numbers,
+which is all any reader before I-1106 takes (`tr ' ' '\n' | grep -E
+'^[0-9]+$'`). Lines after it name one forward each, fields joined by
+colons so that reader steps over them:
+
+```
+3000 5173
+out:3000:3001
+out:5173:5173
+in:5037:5037:adb
+```
+
+`out:MACHINE:LAPTOP` is a guest port on that laptop. `in:MACHINE:LAPTOP`
+is a laptop port lent to the guest (I-1104), with the laptop's process
+name after it when its own tools said, cut to `[A-Za-z0-9._-]`. An entry
+is re-stamped every 20 s and ignored after 60 s. Both shapes are read
+for one release. `repose status` reads the same file for its `on your
+laptop` marks and its `laptop` row.
+
+A reverse forward's listener is the guest's sshd, on `127.0.0.1` and
+`::1` only: `GatewayPorts no` (`nix/guest/base/ssh.nix`) keeps it off
+every other address whatever the client asks for, and the client asks
+for one address per request, so both loopbacks take two requests.
+
 Nothing is exposed otherwise. The desktop listens only on `127.0.0.1`: the viewer on 6080 (the
 socket-activated entry point), websockify on 6081, Xvnc's VNC on 5900 (up
 whenever the display is); the agents' browser's DevTools on 9224
@@ -1219,10 +1286,13 @@ The agents' browser: `repose-browser.service`, headed Chromium on `:99` as
 dev, profile `/home/dev/.local/share/repose/browser`, DevTools on
 127.0.0.1:9225, in the system slice `repose-browser.slice`, `OOMPolicy=continue`.
 `repose-browser.socket` on 127.0.0.1:9224 starts `repose-browser-proxy.service`
-(systemd-socket-proxyd to 9225), which pulls in the browser and the display
-on the first connection. Both platform MCP servers attach there. A browser
-that exits or is killed takes the proxy with it (`BindsTo`); the socket
-starts both again on the next connection.
+(systemd-socket-proxyd to 9225, `--exit-idle-time=10s`), which pulls in the
+browser and the display on the first connection and stamps `last-cdp` from
+its `ExecStartPre`. It exits ten seconds after its last connection closes,
+so the next request starts it and stamps again (I-1122). Both platform MCP
+servers attach there. A browser that exits or is killed takes the proxy with
+it (`BindsTo`); the socket starts both again on the next connection, with
+the tabs the profile's `session.restore_on_startup` names.
 
 The viewer: `repose-novnc.service` (websockify on 127.0.0.1:6081 to 5900,
 `--web /run/repose/desktop/web --file-only`, serving the page repose ships
@@ -1237,9 +1307,16 @@ viewer page; stock noVNC's `vnc.html` is not served.
 `repose-desktop-idle-check.timer` runs every minute. After 30 minutes
 without a client on 6081 or 5900 it starts `repose-desktop-idle.service`,
 which stops the viewer (`systemctl start repose-desktop-idle` stops it
-now); after 30 minutes with no client on 9225 either, it stops the browser.
+now). It stops the browser once `last-client` and `last-cdp` are both older
+than the browser's threshold: 600 seconds when `last-agent-working` is 600
+seconds old or older or absent, 1800 otherwise (I-1122).
 The MCP servers and any Chromium the user starts run in the user slice
-`repose-browser.slice`. Both slices have `MemoryMax` 1.5 GB small, 3 GB
+`repose-browser.slice`: `repose-browser-scope`, the wrapper on `PATH`,
+re-execs them in a transient scope there. Chromium does not stay in it:
+as soon as it can reach dev's user bus it moves its own process group
+into `app-org.chromium.Chromium-<pid>.scope` under
+`user@<uid>.service/app.slice`, whatever unit or scope it was started in
+(measured, I-1124). Both slices have `MemoryMax` 1.5 GB small, 3 GB
 large, 6 GB xl.
 
 ## `repose-guest-profile`

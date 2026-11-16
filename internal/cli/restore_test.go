@@ -193,14 +193,14 @@ func TestRestoreWithoutANameInACheckout(t *testing.T) {
 		t.Fatalf("restore said %q", out.String())
 	}
 
-	// Two destroyed names with this remote: the restored izma and a fork.
+	// Two destroyed names with this remote: the restored izma and a second machine.
 	back, _ := findByIDOrSlug(ctx, e.Client, "izma")
 	if err := DestroyCmd(ctx, e, back.ID, true, false, nil); err != nil {
 		t.Fatal(err)
 	}
-	destroy("izma-fork", "github.com/owner/izma")
+	destroy("izma-2", "github.com/owner/izma")
 	err = RestoreCmd(ctx, e, "", "", "", nil)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "izma-fork") || !strings.Contains(ee.msg, "izma,") && !strings.Contains(ee.msg, ": izma") {
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "izma-2") || !strings.Contains(ee.msg, "izma,") && !strings.Contains(ee.msg, ": izma") {
 		t.Fatalf("ambiguous without a terminal: %v", err)
 	}
 	var asked []string

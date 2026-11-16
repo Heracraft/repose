@@ -4,7 +4,7 @@ On 4 October 2026 at 14:00 UTC we charge $29.00 for Solo, and the plan continues
 
 To cancel before then, open your plan page. The plan then ends with the free week: your machines stop and their snapshots are kept 30 days.
 
-Your plan: https://repose.herakraft.co/billing
+Your plan: https://repose.run/billing
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
+repose. Open the dashboard: https://repose.run

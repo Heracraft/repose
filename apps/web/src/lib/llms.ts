@@ -4,7 +4,7 @@
 // it suggests matches the docs instead of its memory.
 import { DOCS, docsBySection, type Doc } from './docs';
 
-export const ORIGIN = 'https://repose.herakraft.co';
+export const ORIGIN = 'https://repose.run';
 
 /** A docs link, /docs/sync#where, as the .md page an agent can fetch. */
 export function absoluteLinks(body: string): string {

@@ -571,3 +571,101 @@ func TestACoolingRowGetsOneMoreTurnThenLapses(t *testing.T) {
 		t.Fatalf("I-902's columns on a lapse: %+v", w)
 	}
 }
+
+// A billing-exempt account has no plan to choose and no place to wait
+// for, so neither POST route puts it on the waitlist, and a row an
+// older release left behind takes no place in the queue (I-1090). The
+// dashboard shows such an account no plan cards and no Join button, so
+// what this guards is the api; the inviter case is what the bug cost
+// before the fix -- a 72-hour hold on a seat nobody could convert.
+func TestAnExemptAccountCannotJoin(t *testing.T) {
+	clock := time.Now().Truncate(time.Second)
+	f := newFakePolar(t)
+	var svc *waitlist.Service
+	e := newEnvWith(t, &httpapi.RateLimits{General: 10000, Certs: 10000, Config: 10000}, func(d *httpapi.Deps) {
+		svc = &waitlist.Service{Pool: d.Pool, Total: 1, M: d.Metrics, Log: d.Log, Now: func() time.Time { return clock }}
+		d.Seats = svc
+		d.Billing = billing.NewService(d.Pool, billing.NewPolar(f.cfg, d.Log), f.cfg, svc, billing.NewOverage(d.Pool, billing.NewPolar(f.cfg, d.Log), f.cfg, d.Engine, d.Metrics, d.Log), d.Log)
+		d.Gate = billing.NewGate(d.Pool, f.cfg, d.Metrics, d.Log)
+	})
+	ctx := e.h.Ctx
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.h.Pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(sql string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	user := func(handle string) (string, uuid.UUID) {
+		t.Helper()
+		tok := e.signIn(t, "sub-"+handle, handle)
+		e.subscribe(t, "sub-"+handle, "")
+		return tok, uuid.MustParse(e.do(t, tok, "GET", "/me", nil).body["id"].(string))
+	}
+
+	// The fleet's one seat is held, so a checkout would waitlist anyone
+	// who is not refused first.
+	holder := e.h.NewUser("exempt-holder")
+	exec("insert into subscriptions (id, user_id, customer_id, plan, status, seats) values ('sub_exempt_holder', $1, 'ctm_eh', 'solo', 'active', 1)", holder.ID)
+	tokX, idX := user("exempt-x")
+	exec("update users set billing_status = 'exempt' where id = $1", idX)
+
+	for _, c := range []struct {
+		path string
+		body map[string]any
+	}{
+		{"/billing/checkout", map[string]any{"plan": "solo"}},
+		{"/billing/waitlist", nil},
+	} {
+		r := e.do(t, tokX, "POST", c.path, c.body)
+		if r.status != 409 || errCode(r) != "conflict" {
+			t.Fatalf("%s as an exempt account: %d %s", c.path, r.status, r.raw)
+		}
+		d := r.body["error"].(map[string]any)["detail"].(map[string]any)
+		if d["reason"] != "exempt" {
+			t.Fatalf("%s detail: %v", c.path, d)
+		}
+		if msg := r.body["error"].(map[string]any)["message"]; msg != "This account is billing-exempt, so it has no plan to choose and no place to wait for." {
+			t.Fatalf("%s message: %v", c.path, msg)
+		}
+	}
+	if n := count("select count(*) from waitlist"); n != 0 {
+		t.Fatalf("waitlist rows after two refusals: %d", n)
+	}
+
+	// A row from before the refusal existed: it is in front by time and
+	// takes no place, is not counted as waiting, and the tick passes it
+	// over for the account behind it.
+	exec("insert into waitlist (user_id, joined_at) values ($1, $2)", idX, clock.Add(-time.Hour))
+	if c, err := svc.Count(ctx); err != nil || c.Waiting != 0 {
+		t.Fatalf("waiting with one exempt row: %+v %v", c, err)
+	}
+	if w, err := store.GetWaitlistEntry(ctx, e.h.Pool, idX); err != nil || w.Position != 0 {
+		t.Fatalf("the exempt row's position: %+v %v", w, err)
+	}
+	if r := e.do(t, tokX, "GET", "/me", nil); r.body["waitlist"] != nil {
+		t.Fatalf("an exempt account's /me carries a place: %s", r.raw)
+	}
+	tokP, idP := user("exempt-plain")
+	if r := e.do(t, tokP, "POST", "/billing/waitlist", nil); r.status != 200 || r.body["position"] != float64(1) {
+		t.Fatalf("the plain account joins behind the exempt row: %d %s", r.status, r.raw)
+	}
+	exec("update subscriptions set status = 'canceled' where id = 'sub_exempt_holder'")
+	inv := &waitlist.Inviter{Pool: e.h.Pool, Total: 1}
+	if n, x, err := inv.Run(ctx, clock); err != nil || n != 1 || x != 0 {
+		t.Fatalf("one tick with one free seat: invited %d expired %d %v", n, x, err)
+	}
+	if w, _ := store.GetWaitlistEntry(ctx, e.h.Pool, idX); w.InvitedAt != nil {
+		t.Fatalf("the tick invited the exempt account: %+v", w)
+	}
+	if w, _ := store.GetWaitlistEntry(ctx, e.h.Pool, idP); w.InvitedAt == nil {
+		t.Fatalf("the tick skipped the account behind it: %+v", w)
+	}
+}

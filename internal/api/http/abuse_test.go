@@ -122,7 +122,6 @@ func TestMinerStopsGuestAndThirdStrikeHoldsStarts(t *testing.T) {
 			{"/projects/restore", map[string]any{"slug": "hashy", "name": "hashy-3", "start": false}},
 			{"/projects/restore", map[string]any{"snapshot_id": sid.String(), "name": "hashy-4", "start": false}},
 			{"/projects/" + pid.String() + "/snapshots/" + sid.String() + "/restore", map[string]any{"as_new_project": "hashy-5", "start": false}},
-			{"/projects/" + pid.String() + "/fork", map[string]any{"snapshot_id": sid.String(), "start": false}},
 		} {
 			rs := e.do(t, tok, "POST", c.path, c.body)
 			errObj, _ := rs.body["error"].(map[string]any)
@@ -209,10 +208,10 @@ func TestBusyUnattendedGauge(t *testing.T) {
 		}
 	}
 	// 98 percent of every vCPU the class has, which is what the signal
-	// divides by (scheduler.ClassVCPUSQL): written from the class rather
+	// divides by (scheduler.ClassMilliVCPUSQL): written from the class rather
 	// than as a figure, so the vCPUs can move without the fixture
 	// claiming a busy machine is a tenth busy (DECISIONS I-784).
-	full := func(class string) int64 { return int64(scheduler.ClassVCPU(class)) * 60e9 * 98 / 100 }
+	full := func(class string) int64 { return int64(scheduler.ClassMilliVCPU(class)) * 60e9 / 1000 * 98 / 100 }
 	fill("miner-like", "small", 370, full("small"), "[]", 0)
 	fill("agent-at-work", "large", 370, full("large"), `[{"agent":"claude","window":"0","state":"working"}]`, 0)
 	fill("someone-attached", "xl", 370, full("xl"), "[]", 1)

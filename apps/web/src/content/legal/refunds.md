@@ -41,7 +41,7 @@ in full once we have looked at it, whenever it happened.
 
 Refunds are made through Polar to the card that paid, and appear on the
 same statement, usually within five to ten business days. Ask by email at
-the contact address published on repose.herakraft.co, with the email
+the contact address published on repose.run, with the email
 address of your repose account; a refund cancels the plan it was for.
 
 Polar may also refund a charge on its own, within 60 days of it, to

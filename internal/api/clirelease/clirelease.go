@@ -23,6 +23,18 @@ import (
 // DefaultURL is the redirect install.sh follows for "latest".
 const DefaultURL = "https://github.com/heracraft/repose/releases/latest"
 
+// Oldest is the oldest CLI release this api still answers as
+// docs/interfaces/api.md describes it, named in every answer's
+// X-Repose-CLI-Oldest header (DECISIONS I-1088). A CLI older than this
+// says so on every run, attach and sync.
+//
+// "" while every release is still answered as documented, and then no
+// header is sent. The repository keeps an old request or answer shape
+// for one release after a contract change (CLAUDE.md, "Docs are the
+// spec"); the commit that removes such a shape raises this to the first
+// release that no longer carries it.
+const Oldest = ""
+
 // Every is how often the release is read again.
 var Every = time.Hour
 

@@ -24,6 +24,13 @@ type Plan struct {
 	MemoryGB   int // may run at once
 	DiskGB     int // may be allocated
 	EgressGB   int // a period
+	// BurstCoreHours is the CPU time above a machine's base cores that
+	// the plan includes in a period (DECISIONS I-1128). Past it, with
+	// overage off, the account's machines run on their base cores until
+	// the period ends; nothing stops. STARTING NUMBERS: 20, 50 and 120
+	// are the council's, to be set from the first two weeks of real
+	// burst data, because the quota hides burst demand today.
+	BurstCoreHours int
 	// IntroCents and IntroMonths are the introductory price: a first
 	// subscription pays IntroCents for its first IntroMonths charges after
 	// the trial, then PriceCents. Zero is no introductory price. Polar
@@ -42,9 +49,9 @@ type Plan struct {
 // The three plans (DECISIONS I-362) at ladder C's prices, and Solo's
 // founding price for the first 30 subscribers (DECISIONS I-672).
 var (
-	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
-	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500}
-	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000}
+	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, BurstCoreHours: 20, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
+	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, BurstCoreHours: 50}
+	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, BurstCoreHours: 120}
 )
 
 // Plans lists the plans in the order the dashboard shows them.
@@ -119,6 +126,10 @@ func IntroPlan() (Plan, bool) {
 	return Plan{}, false
 }
 
+// BurstAllowanceNs is the plan's burst allowance in nanoseconds of CPU
+// time above a machine's base cores.
+func (p Plan) BurstAllowanceNs() int64 { return int64(p.BurstCoreHours) * 3600 * 1_000_000_000 }
+
 // EgressAllowanceBytes is the plan's egress allowance in bytes.
 func (p Plan) EgressAllowanceBytes() int64 { return int64(p.EgressGB) << 30 }
 
@@ -132,12 +143,19 @@ func (p Plan) EgressHardStopBytes() int64 {
 func (p Plan) AllowsXL() bool { return p.MemoryGB >= ClassMemoryGB("xl") }
 
 // ClassMemoryGB is the memory a size class takes while it runs
-// (docs/DESIGN.md §5: small 1 vCPU 4 GB, large 2 vCPU 8 GB, xl 4 vCPU
-// 16 GB). An unknown class counts as large. The memory is what a plan
-// sells and what I-784 left alone; the vCPUs are
-// scheduler.ClassVCPU's.
+// (docs/DESIGN.md §5: tiny 0.5 vCPU 2 GB, small 1 vCPU 4 GB, large 2 vCPU
+// 8 GB, xl 4 vCPU 16 GB). An unknown class counts as large. The memory is
+// what a plan sells and what I-784 left alone; the CPU is
+// scheduler.ClassMilliVCPU's.
+//
+// A plan sells memory that may run at once and no machine count (I-289),
+// so `tiny` needs no plan rule of its own: it takes its 2 GB as every
+// class takes its own, and Solo's 8 GB therefore runs four of them
+// (DECISIONS I-1168).
 func ClassMemoryGB(class string) int {
 	switch class {
+	case "tiny":
+		return 2
 	case "small":
 		return 4
 	case "xl":

@@ -14,7 +14,7 @@ Did you mean `repose ls`?
 `repose --help` shows its usage.
 ```
 
-Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
+Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `copy` to `cp`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
 
 ## Which project
 
@@ -30,9 +30,9 @@ Global flags: `--project NAME`, `-v`/`--verbose` and `--version`. `-v` writes a 
 
 ### `repose run [PROJECT]`
 
-Create or start this checkout's machine and [attach](/docs/run-and-attach). PROJECT is the machine of that name, created if there is none: [a second machine for this checkout](/docs/lifecycle#a-second-machine-for-the-same-repository), or one for a folder with no git remote. A new machine gets a copy of your checkout. One that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. A changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent there can tell when your CLI is older than these docs.
+Create or start this checkout's machine and [attach](/docs/run-and-attach). PROJECT is the machine of that name, created if there is none: [a second machine for this checkout](/docs/lifecycle#a-second-machine-for-the-same-repository), or one for a folder with no git remote. A new machine gets a copy of your checkout; in a folder that isn't a git repository, `run` [offers to make one](/docs/sync#repositories-the-sync-cant-handle). One that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. A changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent there can tell when your CLI is older than these docs.
 
-Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the billing page, prints `Waiting for a plan at https://repose.herakraft.co/billing...` and waits up to 30 minutes for you to choose. Off a terminal it exits 7 with `Choose a plan at https://repose.herakraft.co/billing first.`
+Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the billing page, prints `Waiting for a plan at https://repose.run/billing...` and waits up to 30 minutes for you to choose. Off a terminal it exits 7 with `Choose a plan at https://repose.run/billing first.`
 
 | Flag                      | What it does                                                                                                                                                                                                                                                      |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -42,7 +42,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 | `-w`, `--window WINDOW`   | Type PROMPT and Enter into that agent's window instead of starting an agent: an answer to a permission prompt (`-p 1`) or a follow-up. WINDOW is a name or number as `repose ps` shows it, or on herdr an agent's name; one the session doesn't have exits 2. The attach opens on it. Not with `--worktree` or `--agent`. |
 | `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                              |
 | `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                              |
-| `--size small\|large\|xl` | Size of a new project, or of a stopped one this command starts. Default: [`default_size`](#config-toml). A machine of another size exits 2 and names `repose resize`, unless it's stopped; a stopping one is waited out first.                                                              |
+| `--size tiny\|small\|large\|xl` | Size of a new project, or of a stopped one this command starts. Default: [`default_size`](#config-toml). A machine of another size exits 2 and names `repose resize`, unless it's stopped; a stopping one is waited out first.                                                              |
 | `--on PROJECT`            | Add this folder to PROJECT's machine as [another checkout](/docs/run-and-attach#several-repositories-on-one-machine), beside its own.                                                                                                                               |
 | `--temp [DURATION]`       | A new [temporary machine](/docs/lifecycle#temporary-machines), destroyed with no snapshot after DURATION (`10m` to `24h`, or `1d`; default `24h`). `--temp 3h` works anywhere among the arguments; a duration spelled with a word, such as `3hr`, exits 2.                                                                  |
 | `--bridge`                | Also [bridge your Chrome](#repose-browser-bridge-project) to the machine while attached.                                                                                                                                                                           |
@@ -64,7 +64,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
 
-It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder, and in a folder that isn't a git checkout, it exits 2.
+It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. From a terminal it asks which copy to keep before it stops. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
@@ -99,14 +99,17 @@ With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines ins
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
-Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it; for a pipeline, run a shell yourself. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
+Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it, apart from a leading `~` (below); for a pipeline, run a shell yourself. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
 
 ```
 $ repose exec npm test
 $ repose exec todo-app git log --oneline -3
 $ repose exec -it psql
 $ repose exec sh -c "npm run build && npm test"
+$ repose exec todo-app ls '~/out'
 ```
+
+A word that is `~` or starts with `~/` is the machine's home, `/home/dev`, as in `--workdir` and [`repose cp`](#repose-cp-r-src-dst). Quote it: unquoted, your own shell expands it to your laptop's home first, and that path isn't on the machine. repose says so when it sees one. For a literal tilde, run a shell yourself.
 
 `-i`/`--interactive` passes your input to the command; `-t`/`--tty` gives it a terminal. Without either, the command reads nothing. Pass both for anything interactive.
 
@@ -273,23 +276,27 @@ todo-app  running 2h14m  large
   agents     claude-2 needs input 4h, claude working
   checkout   main: 3 commits not on this laptop, 2 files not committed
              worktree-1: nothing new
-  attached   nobody
-  listening  node :5173 up 3d 410.0 MB
+  attached   2 SSH sessions, 1 tmux client
+  listening  node :5173 up 3d 410.0 MB, on your laptop
+             node :3000 up 2h 120.4 MB, on your laptop at :3001
+             postgres :5432 up 3d 40.1 MB
+  laptop     :5037 adb, :11434 ollama
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
   last event 14m ago, claude finished "Added auth flow"
+  webhooks   stripe 200 2m ago, github 503 stopped 1h04m ago
 ```
 
 A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen` after the state in the header, before the size. `status` reads the machine itself for the checkout and the listening ports, so it wakes a frozen one; `repose ls` reads none of that and leaves it frozen.
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
-`listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address.
+`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
 
 Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. |
+| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. `forwards` lists what the attached laptops forward: `port`, `laptop_port`, `direction` (`to_laptop` or `from_laptop`) and `process`. |
 | `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A read that fails because the server is unreachable or busy prints `Could not read the status at 21:38:02:` and the reason, and the loop goes on; any other failure ends it. `--watch`, the old name, still works. |
 | `--wait STATE`       | Wait until the machine is in STATE, any [project state](/docs/lifecycle#states), then print the status. Exits 1 if it lands in `error` or is destroyed instead, or if the wait runs out. Not with `-f`. |
 | `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`). Only with `--wait`.                                                                            |
@@ -331,30 +338,11 @@ Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one, no 
 
 Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` names the snapshot. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
 
-### `repose fork [PROJECT]`
-
-Copy the project's disk as it is now into [new projects](/docs/lifecycle#fork-a-project), each on its own machine. The project itself keeps running. Without `--snapshot` it has to be running or stopped: a stopping one is waited out, and any other state exits 5.
-
-| Flag                      | What it does                                                                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-n`, `--count N`         | How many copies: 1 to 10, default 1. Another number exits 2.                                                                                         |
-| `--name NAME`             | Name them `NAME-1`, `NAME-2` and so on, in place of `PROJECT-fork-1`. Numbers a live project of yours already has are skipped.                        |
-| `--size small\|large\|xl` | Size of the copies. Default: the project's.                                                                                                          |
-| `--snapshot ID`           | Copy one of the project's [snapshots](#snapshots) instead of its disk as it is now.                                                                  |
-| `--prompt TEXT`           | Start the agent in every copy with that prompt. Your checkout isn't synced into them.                                                                |
-| `--agent NAME`            | Which agent `--prompt` starts: `claude`, `codex`, `opencode`, `gemini` or `pi`. Default: the project's. Needs `--prompt`.                             |
-| `--no-start`              | Create the copies stopped, so they take none of your plan's memory until `repose start`. Not with `--prompt`.                                        |
-| `--json`                  | Print the copies as JSON.                                                                                                                            |
-
-In a checkout whose `repose` remote is the project's machine, each copy gets a git remote of its own name; `repose rm` of a copy removes that remote again.
-
-Each copy is a project, and counts toward [the 100 an account can have](/docs/limits#projects) and toward your plan's disk and memory. A fork that would pass any of those is refused before anything is copied and exits 7; the memory refusal names `--no-start`.
-
 ### `repose resize [PROJECT] [DISK]`
 
 Grow the project's disk: `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. DISK needs a unit, `M`, `G` or `T`, all binary (`80G`, `80GB` and `80GiB` are one size); a bare number exits 2. Disks can't shrink: a smaller size exits 2 and names the disk's size, and a size it already has changes nothing. A grow ends with `Resized todo-app's disk to 120G.` One argument that reads as a size is DISK; anything else is PROJECT. A disk past your [plan's ceiling for one project](/docs/billing#what-a-plan-means) exits 7.
 
-`--size small|large|xl` [changes the project's size](/docs/machine#changing-the-size), for example `repose resize --size xl` when the machine keeps running out of memory. A running project has to be stopped for the change, so it asks first: `todo-app is running. Changing it from large to xl stops it, which ends every process on it, agents included, then starts it again. Go ahead? [y/N]`. `-y`/`--yes` skips the question and is required without a terminal. A size your plan can't run beside what runs now exits 7 before the question, and nothing is stopped. The change ends with `Changed todo-app from large to xl: 4 cores, 16 GB memory; needs the Plus plan. Running again in 43s.`; a stopped project's line ends `It starts at the new size.` instead of the time.
+`--size tiny|small|large|xl` [changes the project's size](/docs/machine#changing-the-size), for example `repose resize --size xl` when the machine keeps running out of memory. A running project has to be stopped for the change, so it asks first: `todo-app is running. Changing it from large to xl stops it, which ends every process on it, agents included, then starts it again. Go ahead? [y/N]`. `-y`/`--yes` skips the question and is required without a terminal. A size your plan can't run beside what runs now exits 7 before the question, and nothing is stopped. The change ends with `Changed todo-app from large to xl: 4 cores, 16 GB memory; needs the Plus plan. Running again in 43s.`; a stopped project's line ends `It starts at the new size.` instead of the time.
 
 DISK and `--size` go in one command, the disk first: `repose resize todo-app 160G --size xl`. With neither, it exits 2. `--json` prints the project as JSON when done.
 
@@ -404,6 +392,24 @@ Answer a [waiting question](/docs/notifications#agents-can-message-you-and-ask-q
 
 `repose reply --dismiss [PROJECT]` cancels the waiting question without an answer, chosen the same way. With no question waiting it exits 1, as `reply` does. One that closed before the dismiss landed exits 1 with `Not dismissed: answered in the terminal.`
 
+### `repose say [PROJECT] MESSAGE`
+
+Send a message to the agent working on a project, from your laptop. The machine types it into the agent's own terminal, so the agent reads it as if you had typed it there and answers in the session you attach to.
+
+```text
+$ repose say todo-app "run the tests before you commit"
+Sent to claude.
+
+$ repose say todo-app "and squash the fixup commits"
+claude is working. Your message goes in at the end of the turn.
+```
+
+The message is one quoted argument; several words unquoted exit 2. An agent at its prompt, or waiting at a permission prompt, gets it at once. An agent in the middle of a turn gets it when the turn ends, because the five agents do not all take input typed mid-turn. One message waits per agent: a second while one waits replaces it, and the line says so.
+
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several agents exits 1 and names their windows, as `repose ps` does. A machine that is not running, or that runs no agent, exits 1. `--json` prints the message with the window it went to and its state, `delivered` or `waiting`.
+
+A delivered message is an event, so `repose events` and the project page show that the agent got one, with who sent it and which window. The message itself is never in an event, a log line or a notification.
+
 ## Snapshots
 
 | Command                                          | What it does |
@@ -423,8 +429,21 @@ SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only
 | `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`, and `repose secrets` alone. On a terminal your account's secrets follow, marked where the project's own wins, then the logins your laptop copies at each run; piped, each line is `NAME`, a tab and the date. `--json` for JSON. `--global` lists your account's. |
 | `repose secrets rm NAME`        | Delete it. Alias `remove`. `--global` deletes your account's. |
 | `repose secrets choose`         | Choose which of your laptop's [logins and files](/docs/secrets#choose-what-is-copied) `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files) and `mcp` (your Claude Code MCP servers). In a terminal, a list to toggle; otherwise it prints what is on and off. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again. `--project` sets one project's list; without it the list for every project changes, whatever folder you're in. `--reset` drops the list it would set: a project goes back to the shared one, and the shared one back to copying every login. |
+| `repose github setup`           | Prints GitHub's fine-grained token form prefilled with Contents and Pull requests write and a year's expiry, opens it unless `REPOSE_NO_BROWSER=1`, and stores what you paste as the `GH_TOKEN` secret of your account, or with `--project` of one project (which then keeps its own copied-logins list). Your `gh` login stays on your laptop from then on, and the next `repose run` removes the copy an earlier one left while it still matches your laptop's. `--owner NAME` sets the account or organisation that owns the repositories, for the link; without it, the checkout's, else yours. Piped input is taken as the token, and nothing is printed or opened. To widen or renew the token, run it again with a new one ([a token for only some repositories](/docs/secrets#a-token-for-only-some-repositories)). |
 
 An account secret is for every project, so `--global` beside a project exits 2.
+
+## Webhooks
+
+| Command                            | What it does |
+| ---------------------------------- | ------------ |
+| `repose webhooks add NAME TARGET`  | Add a [webhook route](/docs/webhooks) and print its URL, and nothing else, so it pipes. TARGET is `PORT` or `PORT/PATH` inside the machine (`3000/api/webhooks/stripe`). Adding a name that exists changes its target and keeps its token. `--start` lets a delivery start the machine while it is stopped, at most once every 10 minutes; `--no-start` is the default. `--json` prints the route. |
+| `repose webhooks list [PROJECT]`   | The routes with their targets, whether `--start` is on, and the last delivery. Alias `ls`, and `repose webhooks` alone, which takes no flags of its own. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose webhooks url NAME`         | Print one route's URL, and the last 20 deliveries with `--json`. |
+| `repose webhooks rotate NAME`      | Replace the token and print the new URL. The old one answers 410 for 30 days. `--json` prints the route. |
+| `repose webhooks rm NAME...`       | Remove routes. Alias `remove`. Each URL answers 410 for 30 days. |
+
+A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
 
 ## Configuration
 
@@ -453,6 +472,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook). |
 | `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason the server gave (`failed: the server answered 403`). Six tests a minute. Exits 1 when a channel failed or none is on. |
 | `repose version`                                | Print the version, as `repose 0.1.36 (herakraft)`. |
+| `repose version update [VERSION]`               | Replace this binary with the latest release, or with VERSION (`v0.1.40`) to go back to it. It checks the release signature and the archive's checksum before it writes anything, and leaves your login and settings alone. A binary a package manager owns is never touched: the command names the manager and exits 1. Releases before v0.1.28 are unsigned and exit 2. [Update](/docs/install#update). |
 | `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. [Install](/docs/install#shell-completion) has the line that loads it for each shell. |
 | `repose help [COMMAND]`                         | Print help for a command. `repose help environment`, `repose help exit-codes` and `repose help config-file` print the tables below. A name that is neither exits 2. |
 
@@ -465,6 +485,7 @@ default_size = "small"
 default_agent = "codex"
 editor = "cursor"
 default_multiplexer = "herdr"
+remote_control = true
 
 [sync]
 exclude = ["dist", "*.mp4"]
@@ -480,18 +501,26 @@ forward = ["apple-notes"]
 
 [projects.todo-app.mcp]
 forward = ["figma"]
+
+[forward]
+reverse = [5037, 11434]
+
+[projects.todo-app.forward]
+reverse = ["15432:5432"]
 ```
 
 | Key                   | Default  | What it does                                                                                                                                                                                                |
 | --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default_size`        | `large`  | Size of new projects: `small`, `large` or `xl`; anything else makes every command exit 2 naming the file. `default_class` is its old name and still works; `default_size` wins when a file has both.                                                                                            |
+| `default_size`        | `large`  | Size of new projects: `tiny`, `small`, `large` or `xl`; anything else makes every command exit 2 naming the file. `default_class` is its old name and still works; `default_size` wins when a file has both.                                                                                            |
 | `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                     |
 | `editor`              | none     | What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                            |
 | `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
+| `remote_control`      | `false`  | Offer the machine's Claude Code to the Claude app, so you can read and drive its agents from your phone. See [Drive it from the Claude app](/docs/agents#drive-it-from-the-claude-app).                      |
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
 | `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends.                                                      |
-| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
+| `forward.reverse`     | none     | Ports of your laptop that the machine's `localhost` reaches while you're attached: `5037` for the same port on both sides, `"15432:5432"` to listen on another one, at most 16, 1024 and above, not 9222, 9229, 2375 or 2376. Everything on the machine, agents included, reaches a lent port as a program on your laptop would: see [Your laptop's ports on the machine](/docs/machine#your-laptops-ports-on-the-machine). |
+| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project, and `[projects.NAME.forward]` with `reverse` adds ports. `[projects.NAME]` with `remote_control` replaces `remote_control` for that project. |
 | `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
 | `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |
@@ -501,7 +530,7 @@ forward = ["figma"]
 | Variable                     | What it sets                                                                                                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `REPOSE_PROJECT`             | The project to act on, like `--project`.                                                                                                                                                    |
-| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached.                                                                                                                                           |
+| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached, in either direction.                                                                                                                      |
 | `REPOSE_TIMING=1`            | Print how long each step of `run` and `attach` took.                                                                                                                                        |
 | `REPOSE_NO_SPINNER=1`        | One line per step instead of a progress line. `TERM=dumb` does the same. Questions are still asked.                                                                                         |
 | `REPOSE_NO_FASTPATH=1`       | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                                                                 |
@@ -520,7 +549,7 @@ forward = ["figma"]
 
 ## Other servers
 
-The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.herakraft.co/v1` does. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
+The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
 
 `repose login --browser` logs in through a browser on this computer instead of a code, and needs a login application that registers a loopback redirect URI. The hosted one registers none, so `--browser` there, where a browser can be opened, waits 5 minutes and exits 3 with `Login failed: timed out waiting for the browser login (5 minutes).`
 
@@ -539,6 +568,8 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 
 Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` print local RFC 3339; `--json` prints UTC. Progress lines go to stderr. Without a terminal each step prints a line when it starts, that line with its time every 30 seconds while it runs, and a `✓` line with its time when it ends, unless the command prints the step's result itself. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
 
+Two lines on stderr are about the CLI itself. One release behind the latest, it prints `repose 0.1.43 is older than 0.1.44, the latest release.` once for that release. Older than the oldest release the server still answers as these docs describe, it prints `repose 0.1.30 is too old for some of repose's answers.` at the end of every `run`, `attach` and `sync`. Both name [`repose version update`](#account), or the package manager that owns the binary. Neither changes an exit code, and neither prints on a machine.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -549,7 +580,7 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 | 3 | Not logged in, or the login expired. |
 | 4 | No such project. |
 | 5 | The machine isn't running. |
-| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
+| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
 | 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10 | The configuration build failed. |

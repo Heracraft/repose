@@ -4,7 +4,7 @@
 # the archives against checksums.txt, signs checksums.txt with the release
 # key (checksums.txt.sig), attests the archives' build provenance and
 # publishes the draft (DECISIONS I-430). A draft is not "latest", so
-# install.sh (served at https://repose.herakraft.co/install.sh) never sees
+# install.sh (served at https://repose.run/install.sh) never sees
 # a release before it is signed, and it refuses one whose signature does
 # not verify against the public key it embeds.
 # The matrix build itself is exercised on every push by ci.yml's

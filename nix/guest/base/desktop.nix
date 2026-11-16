@@ -18,8 +18,12 @@
 #
 # A per-minute check stops the viewer after 30 minutes without a client
 # (`systemctl start repose-desktop-idle` stops it now), and the browser
-# after 30 minutes with neither a DevTools client (an MCP server holds its
-# connection for the agent's whole session) nor a viewer.
+# after 10 minutes with no DevTools command and no viewer while every
+# agent is idle or waiting on the user, 30 minutes while an agent works
+# (DECISIONS I-1122). An MCP server holds its CDP connection for the
+# agent's whole session and sends nothing between calls, so a command is
+# counted as bytes the browser *received*, never as a socket that exists
+# (I-930).
 #
 # The password is generated once per boot into
 # /run/repose/desktop/vnc-password (0600 dev), the first time the display
@@ -53,7 +57,15 @@ let
     cp -r ${pkgs.novnc}/share/webapps/novnc/core $out/core
     cp -r ${pkgs.novnc}/share/webapps/novnc/vendor $out/vendor
   '';
+  # The viewer's stop, unchanged, and the number the viewer page shows.
   idleSeconds = 1800;
+  # The browser's two thresholds (DECISIONS I-1122). The freeze cannot
+  # start while an agent works, so a browser stopped mid-turn saves
+  # nothing and costs the agent its page; once every agent is idle or
+  # needs_input the browser is the only thing between the machine and its
+  # freeze, and ten minutes is where that gain lies.
+  browserIdleSeconds = 600;
+  browserWorkingSeconds = 1800;
   # Every write of an idle stamp, as root, leaving it dev's (I-727).
   stamp = pkgs.callPackage ./desktop-stamp.nix { };
 
@@ -138,18 +150,25 @@ let
       }
       viewers=$(ss -Htn state established '( sport = :6081 or sport = :5900 )' | wc -l)
       [ "$viewers" -eq 0 ] || repose-desktop-stamp last-client
-      # CDP counts as use when bytes MOVE on it, not when a socket is
-      # merely open (I-930). A browser MCP server -- chrome-devtools-mcp,
-      # playwright-mcp -- holds one CDP connection for its whole life and
-      # sends nothing between calls, so counting established sockets
-      # stamped last-cdp every minute for ever: the 30-minute stop below
-      # never fired, Chromium kept burning about 15 s of CPU a minute
-      # against the rest rule's 6 s, and the machine could never freeze.
-      # Measured on a tenant's guest with no viewer for 10.8 hours and
-      # bytes_sent flat at 0 over 15 s.
+      # CDP counts as use when a COMMAND arrives, not when a socket is
+      # merely open (I-930) and not when the browser talks (I-1122). A
+      # browser MCP server -- chrome-devtools-mcp, playwright-mcp --
+      # holds one CDP connection for its whole life and sends nothing
+      # between calls, so counting established sockets stamped last-cdp
+      # every minute for ever: the 30-minute stop below never fired,
+      # Chromium kept burning about 15 s of CPU a minute against the rest
+      # rule's 6 s, and the machine could never freeze. Measured on a
+      # tenant's guest with no viewer for 10.8 hours and bytes_sent flat
+      # at 0 over 15 s.
+      #
+      # bytes_received on the 9225 side is what the tool sent: a command.
+      # bytes_sent is the browser's replies AND its events, and a page
+      # with a live-reload socket or a poll gives an event per request to
+      # a tool that enabled the Network or Runtime domain, which would
+      # hold the browser up with no tool call at all (I-1122).
       cdp_now=$(ss -Htni state established '( sport = :9225 )' | awk '
-        { while (match($0, /bytes_sent:[0-9]+/)) {
-            s += substr($0, RSTART + 11, RLENGTH - 11)
+        { while (match($0, /bytes_received:[0-9]+/)) {
+            s += substr($0, RSTART + 15, RLENGTH - 15)
             $0 = substr($0, RSTART + RLENGTH) } }
         END { printf "%d", s + 0 }')
       cdp_was=0
@@ -162,11 +181,24 @@ let
       printf '%s' "''${cdp_now:-0}" > ${dir}/cdp-bytes
       viewer_idle=$(age last-client)
       cdp_idle=$(age last-cdp)
+      # last-agent-working is guestd's: the mtime of the last refresh
+      # that saw an agent in any state but idle or needs_input, which is
+      # the freeze's own test (internal/api/idle). No file means no agent
+      # has worked since this boot, so the short threshold applies; it is
+      # never created here, because creating it would read as work.
+      work_idle=$((${toString browserWorkingSeconds} + 1))
+      if [ -e ${dir}/last-agent-working ]; then
+        work_idle=$((now - $(stat -c %Y ${dir}/last-agent-working)))
+      fi
+      browser_limit=${toString browserWorkingSeconds}
+      if [ "$work_idle" -ge ${toString browserIdleSeconds} ]; then
+        browser_limit=${toString browserIdleSeconds}
+      fi
       if [ "$viewer" = true ] && [ "$viewer_idle" -ge ${toString idleSeconds} ]; then
         systemctl start repose-desktop-idle.service
       fi
-      if [ "$browser" = true ] && [ "$viewer_idle" -ge ${toString idleSeconds} ] \
-         && [ "$cdp_idle" -ge ${toString idleSeconds} ]; then
+      if [ "$browser" = true ] && [ "$viewer_idle" -ge "$browser_limit" ] \
+         && [ "$cdp_idle" -ge "$browser_limit" ]; then
         systemctl stop repose-browser-proxy.service repose-browser.service
       fi
     '';
@@ -300,7 +332,7 @@ in
   };
 
   systemd.services.repose-desktop-idle-check = {
-    description = "repose desktop: stop the viewer and the browser after ${toString (idleSeconds / 60)} minutes unused";
+    description = "repose desktop: stop the viewer after ${toString (idleSeconds / 60)} minutes unused, the browser after ${toString (browserIdleSeconds / 60)}";
     # repose-browser-bridge (browser.nix) for the bridge guard above.
     path = [ "/run/current-system/sw" ];
     serviceConfig = {

@@ -21,8 +21,11 @@ HostInfo { string hostname; string sku; uint64 mem_bytes; uint32 vcpus;
            uint64 pool_bytes; }
 ```
 
-`repose-admin hosts add` mints the join token, and cloud-init places it in
-the host's `/run/repose/join-token`. hostd calls Register once, stores the
+`repose-admin hosts add` mints the join token, and it reaches the host's
+`/run/repose/join-token` **over SSH after the install**, by the `file`
+provisioner in `infra/azure/modules/host`. Not through cloud-init:
+`custom_data` stays in the Azure VM model and is readable through IMDS,
+so nothing secret goes in it (DECISIONS I-20). hostd calls Register once, stores the
 certificate at `/var/lib/repose/hostd/{cert,key}.pem` and rotates it with
 `Rotate` (unary, same shape) every 30 days.
 
@@ -129,11 +132,24 @@ The idle pause (DECISIONS I-818), additive:
   anything that needs the machine. 0 means not resting, which is also
   what a hostd older than I-818 sends.
 
+Burst cores (DECISIONS I-1126, I-1128), additive:
+
+- `GuestStatus.burst_denied` (field 9, bool) is the api's standing
+  withdrawal of this guest's burst: the account used the period's burst
+  core-hours and overage is off, so the guest runs on the base cores its
+  class sells until the period ends. hostd keeps it in bbolt and sends it
+  in every Hello, so an api restart reconciles instead of resending.
+  False is "may burst", which is also what a hostd older than I-1126
+  sends.
+
 `Hello.features` (field 9, DECISIONS I-701) lists what this hostd takes
 beyond the commands every hostd takes: `local_clone`, a `Restore` with
-`clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`. The api keeps it
+`clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`; `burst` (I-1126),
+`SetBurst`, and with it a host that boots guests at their class ceiling
+and runs the `cpu.max` controller. The api keeps it
 in `hosts.features` and sends a shape only to a host that names it, so a
-host without `pause` is never asked to rest a machine. A hostd older than
+host without `pause` is never asked to rest a machine and a host without
+`burst` is never sent a `SetBurst`. A hostd older than
 I-701 sends none.
 
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
@@ -170,7 +186,9 @@ command_id returns the stored result) and one of:
 | `Exec` | guest_id, argv, timeout_s, audit_id (required, I-26; operator use only, audited: hostd logs `{audit_id, guest_id, argv}` at notice) | exit_code, stdout, stderr (each capped 64 KB) |
 | `Drain` | (host) | |
 | `AnswerQuestion` | guest_id, question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | none. Relayed to guestd's request of the same name (DECISIONS I-244). `not_found` when the guest is not running or guestd does not know the question, which the api takes as final; any other error is retried by the api with a new command_id. The answer is tenant text and is never logged |
+| `SayToAgent` | guest_id, say_id, window, text, sender, from_owner | `SayResult {state, window, replaced}` (DECISIONS I-1144). Relayed to guestd's request of the same name, which types the message into the agent's own tmux window. `state` is `delivered` (it is in the terminal now) or `waiting` (the agent is mid-turn and it goes in at the end of the turn); `window` is the window guestd resolved it to; `replaced` is true when a message was still waiting there. `window` empty means the guest's single agent window. hostd wakes a resting guest first, as it does for `AnswerQuestion`. `not_found`: the guest is not running, or no agent is in that window. `invalid_argument`: no text, a text over 4 KB, more than one agent and no window named (the message names them), or an agent under herdr, which this does not reach. The text is tenant content and is never logged |
 | `PauseGuest` | guest_id, reason (lower_snake, `idle\|operator`) | `PauseResult {paused, why_not, at}` (DECISIONS I-818; only to a host whose Hello names `pause`). Stops the guest's vCPUs and leaves its memory resident: the hypervisor, virtiofsd, the tap and vsock stay up and nothing is written anywhere. Before it pauses, hostd asks the guest to `sync` (and to drop its page cache when the guest has the balloon) and reads the next elapse of a systemd timer inside it, in the system manager and in `dev`'s. `paused=false` with a `why_not` is a **refusal, not a failure**, and is answered `ok`: `not_running`, `already_resting`, `command_in_flight` (the api has a command for this guest in flight or queued), `host_stopping`, `parked` (the guest has a park record; `frozen` until I-1002, and the api only logs this word, so both read the same to it), `timer_due` (a user timer elapses within 15 minutes), `in_use` (a session or tmux client appeared between the api's newest sample and this pause) or `guest_unreachable`. Every refusal is decided before hostd does anything to the guest, so a guest refused at every tick is never asked to sync or drop its cache. `at` is when it paused, unix seconds. Error codes: `not_found`, `invalid_argument`, `internal` (the hypervisor refused `vm.pause`; the guest keeps running) |
+| `SetBurst` | guest_id, allowed (bool) | no payload (DECISIONS I-1128; only to a host whose Hello names `burst`). Says whether this guest may use cores above the base its class sells. It is a **state the api owns, not an event**: the api sends `allowed=false` when the account has used the period's burst core-hours with overage off, and `allowed=true` at the next period. The same value twice changes nothing, so a resend is harmless, and a guest hostd has heard nothing about may burst. `allowed=false` puts the guest at its base in that call, not at the next controller tick. hostd stores it and reports it as `GuestStatus.burst_denied`. Error codes: `not_found`, `invalid_argument` (no guest_id, or this host does not burst) |
 | `WakeGuest` | guest_id, reason (lower_snake) | `WakeResult {was_resting, wake_ms}` (DECISIONS I-818). Resumes a resting guest, sets its clock to the host's and waits for guestd to answer. **Idempotent**: a guest with no resting marker is answered `ok` with `was_resting=false`, whatever its state, so the api may ask for a wake it does not know it needs. `wake_ms` is from `vm.resume` to guestd's answer. A wake takes no op slot and runs on the guest's own queue, so it never waits behind the host's builds. Error codes: `not_found`, `invalid_argument` (the guest is not running), `guest_unresponsive` (the hypervisor did not resume, or the guest did not answer after it: the one part of this feature a user sees fail, and hostd raises `guest_wake_failed` with it) |
 
 **Result**: `command_id`, `ok`, `error {code, message}`, payload. Snapshot
@@ -197,10 +215,17 @@ and leaves the guest `error`, so nothing starts it. Empty means
 unchecked: a snapshot from before I-462, or an api older than it. A
 value that is not 64 hex digits is `invalid_argument`.
 
-`clone` (field 19, I-701) is set instead of `blob_path` for a fork's copy
-on its source's host, only to a host whose Hello names `local_clone`:
-`{source_guest_id, point_id, sibling_guest_ids}`. The first copy of a
-fork to arrive freezes the source on its own worker, snapshots its volume
+`clone` (field 19, I-701) is **no longer sent**: `repose fork` was its
+only caller and is gone (I-1082). hostd still accepts it for one
+release, so a host that has not been switched yet keeps working with an
+api that predates the removal; the field and `local_clone` become
+`reserved` in the release after v0.1.45, and the description below is
+what hostd still does with a clone that arrives.
+
+`clone` is set instead of `blob_path` for a copy on its source's host,
+only to a host whose Hello names `local_clone`:
+`{source_guest_id, point_id, sibling_guest_ids}`. The first copy to
+arrive freezes the source on its own worker, snapshots its volume
 into `fp-<point_id>` and thaws; every copy (`sibling_guest_ids`, this one
 included) becomes a thin clone of that point, grown to `volume_bytes`
 when the source's is smaller (smaller is `invalid_argument`), with no
@@ -258,7 +283,10 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               uint64 cpu_pressure_us_delta; uint64 host_cpu_wait_us_delta;
               uint64 guest_mem_used_bytes;     // the three before: I-493
               uint64 root_used_bytes; uint64 root_size_bytes;      // I-567
-              bool resting; }                                      // I-818
+              bool resting;                                        // I-818
+              optional uint64 net_egress_bytes_delta;              // I-1063
+              optional uint64 burst_cpu_ns_delta;                  // I-1126
+              uint32 burst_cap_millicores; }                       // I-1126
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
@@ -270,13 +298,22 @@ ProcSample { string comm; uint64 cpu_ns_delta; uint64 rss_bytes; }  // comm only
 // TRUE, because guestd is paused with its guest and not lost; `procs` and the pressure
 // delta are empty, and cpu_ns_delta and the net deltas are the host's own counters and
 // read about zero. False from a hostd older than I-818.
+// burst_cpu_ns_delta (I-1126): nanoseconds this guest used above the base share its
+// class sells, since the last sample, summed per second by the host's controller --
+// not from the minute's average, which undercounts a guest that bursts in spurts.
+// hostd bounds it at (ceiling - base) x 66 s and the api clamps it again. Absent from
+// a hostd older than I-1126 and from every host without the `burst` feature, which
+// billing reads as no burst. burst_cap_millicores is the cap the controller has the
+// guest at now, in thousandths of a core; 0 on a host that runs no controller.
 HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_running; }
 ```
 
 **Event** (host-originated, at most once each, api acks by `event_id`):
 `guest_state_changed {guest_id, state, reason}`, `agent_event {guest_id,
-agent, kind (completed|needs_input|error|agent_message|agent_done; agent_done
-from `repose-notify --done`, I-688), summary (capped 1 KB),
+agent, kind (completed|needs_input|error|agent_message|agent_done|agent_prompted;
+agent_done from `repose-notify --done`, I-688; agent_prompted is a
+`repose say` that reached the agent's terminal, whose summary is the
+sender's name and never the message, I-1144), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
 I-121; a tmux window name or a herdr agent key since I-504), link_url and
 link_label (fields 6 and 7, I-931: a `repose-notify --link`, which hostd
@@ -301,7 +338,7 @@ was paused or woken, so the api shows the marker within seconds rather than
 at the next minute's sample. It is **not** a `guest_state_changed`: the
 guest's state does not change, and the api must not route it through its
 state-change path, which cancels the project's open questions),
-`snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (80
+`snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (70
 percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
 `guestd_lost` (no vsock for 60 s), `freeze_timeout`, `guest_wake_failed`
@@ -322,7 +359,7 @@ event id however often the event is re-sent.
 **Guest-raised events** (DECISIONS I-445). `agent_event`, `agent_question`
 and a relayed `host_warning` start as a guest's `Notify`, which root in the
 guest can write, so hostd bounds them before sending: `agent_event.kind` is
-one of the five above (another is dropped; a hostd before I-688 drops
+one of the six above (another is dropped; a hostd before I-688 drops
 `agent_done` too, so hostd ships before a base whose `repose-notify` sends it); `agent` is at most 32 bytes of
 `[a-z0-9_-]`, anything else `unknown`; `tmux_window` at most 64 bytes and
 `summary` and `text` at most 1 KB, valid UTF-8 without control characters

@@ -77,7 +77,7 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 	}
 	c, ok := Classes[class]
 	if !ok {
-		return errf(CodeInvalidArgument, "class %q must be small, large or xl", class)
+		return errf(CodeInvalidArgument, "class %q must be tiny, small, large or xl", class)
 	}
 	if volumeBytes < m.cfg.MinVolumeBytes || volumeBytes > m.cfg.MaxVolumeBytes {
 		return errf(CodeInvalidArgument, "volume_bytes %d outside %d..%d", volumeBytes, m.cfg.MinVolumeBytes, m.cfg.MaxVolumeBytes)
@@ -265,7 +265,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	spec := ch.Spec{
 		GuestDir: dir, Kernel: info.Kernel, Initrd: info.Initrd, Init: info.Init, KernelParams: info.KernelParams,
 		IP: g.IP, Gateway: m.gateway(), Netmask: m.netmask(), Tap: g.Tap, MAC: g.MAC, CID: g.CID,
-		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: class.VCPUs, MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
+		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: m.bootVCPUs(class), MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
 		FreePageReporting: m.cfg.FreePageReporting,
@@ -287,6 +287,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	if err := m.d.Net.AddGuestRules(ctx, g.GuestID, g.IP, g.MAC, g.Tap); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
+	m.baselineEgress(ctx, g.GuestID)
 	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit, m.cfg.DownloadMbit); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
@@ -634,7 +635,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	// boot's first state change; a start refused below leaves it as it was.
 	if c.Class != "" && c.Class != g.Class {
 		if _, ok := Classes[c.Class]; !ok {
-			return nil, errf(CodeInvalidArgument, "class %q must be small, large or xl", c.Class)
+			return nil, errf(CodeInvalidArgument, "class %q must be tiny, small, large or xl", c.Class)
 		}
 		m.log(g).Info("guest class changed", "event", "guest_start", "class", c.Class, "prev", g.Class)
 		g.Class = c.Class

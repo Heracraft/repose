@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -12,8 +14,42 @@ import (
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
+// noSSHOnPath puts an `ssh` on PATH that answers nothing, for the tests
+// that drive run, attach, start and status against the fake api: those
+// have no guest, and the alias their connect builds ("<slug>.repose") is
+// a name only a real laptop's ssh config holds. Without it the tests
+// reach the real OpenSSH client, which resolves the name through DNS and
+// dials whatever answers -- the production gateway, when the generated
+// config is in the test home -- and the package is then as slow as the
+// resolver and the network are. On 2026-11-12 the resolver stalled and
+// `go test -race ./internal/cli` hung 29 minutes in
+// TestAttachToAnErroredGuestRestartsIt until go's timeout killed it;
+// exec.CommandContext in runSSH is bounded by context.Background() there,
+// so nothing cut it short.
+//
+// The stub's stderr is the line ssh prints for a name it cannot resolve,
+// which is what the real client prints on a laptop whose ssh config has
+// no *.repose names: laptopSSHFault (I-625) ends the wait on it at once,
+// so the fixture keeps the timing and the control flow these tests
+// already pass with, hermetically. It is a POSIX sh script; on Windows,
+// where PATHEXT makes an extensionless file unexecutable, it is simply
+// not found and nothing changes.
+func noSSHOnPath(t *testing.T) {
+	t.Helper()
+	bin := t.TempDir()
+	const script = `#!/bin/sh
+echo "ssh: Could not resolve hostname stub.invalid: internal/cli's tests put this stub ssh on PATH" >&2
+exit 255
+`
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func newLifecycleEnv(t *testing.T, fake *fakeapi.Fake) *Env {
 	t.Helper()
+	noSSHOnPath(t)
 	dir := t.TempDir()
 	return &Env{
 		Dir: dir, Cfg: defaultConfig(), Cache: newProjectsCache(), Cwd: t.TempDir(),

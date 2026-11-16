@@ -1,10 +1,8 @@
-{{/* repose-notify --done (DECISIONS I-688): the agent's report on a sunken block, then the way in. */}}
+{{/* repose-notify --done (DECISIONS I-688): the agent's report on a sunken block, then the way in from the laptop. The agent's own --link (I-931) is the only button; reading the report asks nothing of the dashboard (I-1096). */}}
 {{define "preheader"}}{{.M.Summary}}{{end}}
 {{define "heading"}}{{.Title}}{{end}}
 {{define "meta"}}{{.Meta}}{{end}}
 {{define "quote"}}{{.M.Summary}}{{end}}
 {{define "command_label"}}Attach from your laptop{{end}}
 {{define "command"}}{{if .M.Project}}repose attach --project {{.M.Project}}{{end}}{{end}}
-{{define "link_label"}}Open {{if .M.Project}}{{.M.Project}}{{else}}your projects{{end}}{{end}}
-{{define "link_url"}}{{.ProjectURL}}{{end}}
 {{define "why"}}About agents on your machines.{{end}}
