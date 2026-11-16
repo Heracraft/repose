@@ -255,6 +255,40 @@
       # (nix/guest/tests). They need KVM on the builder: `system-features =
       # kvm` in nix.conf.
       checks.${system} = hostChecks // guestTests // fragmentChecks // {
+        # The browser view's port (DECISIONS I-1216). 6081 carries the
+        # view relay, which the api dials; it was admitted from every
+        # source on wg0 before, for a listener that did not exist, and a
+        # release that opened the listener without narrowing the rule
+        # would hand every tenant guest a fresh relay. Reads the rendered
+        # rulesets' text, so it builds no system.
+        edge-view-firewall =
+          let
+            edgeRules = builtins.unsafeDiscardStringContext
+              self.nixosConfigurations.edge.config.networking.nftables.ruleset;
+            hostRules = builtins.unsafeDiscardStringContext
+              self.nixosConfigurations.host-02.config.networking.nftables.ruleset;
+          in
+          pkgs.runCommand "edge-view-firewall"
+            {
+              edge = pkgs.writeText "edge-nftables.conf" edgeRules;
+              host = pkgs.writeText "host-nftables.conf" hostRules;
+            } ''
+            fail() { echo "$1" >&2; exit 1; }
+            # Rules only: a comment that names the port is not one.
+            grep -v '^[[:space:]]*#' "$edge" > edge.rules
+            grep -v '^[[:space:]]*#' "$host" > host.rules
+            # The edge admits 6081 from the control plane's address and
+            # from nothing else.
+            grep -q 'iifname "wg0" ip saddr 10.255.255.1 tcp dport 6081 accept' edge.rules || fail "the edge has no control-plane-only rule for 6081"
+            if grep -n '6081' edge.rules | grep -v 'ip saddr'; then fail "the edge admits 6081 without a source restriction"; fi
+            # Hook ingest keeps its own rule, from any guest.
+            grep -q 'iifname "wg0" tcp dport 8443 accept' edge.rules || fail "the edge lost the hook-ingest rule for 8443"
+            # A host lets a guest reach the edge's 8443 and nothing else:
+            # the relay dials the guest now.
+            grep -q 'tcp dport 8443 accept' host.rules || fail "the host lost the guest's hook-ingest rule"
+            if grep -n '6081' host.rules; then fail "a guest may still reach the edge on 6081"; fi
+            echo ok > $out
+          '';
         # The base closure must stay under 7 GiB (02 §7, raised from 6 by
         # DECISIONS I-1056): every host's store grows by it, and every
         # first boot registers its metadata. The margin is the point --

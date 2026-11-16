@@ -20,7 +20,7 @@
 #              then to the internet only: IMDS, the Azure wire server,
 #              every private range (10.64.0.0/12 is other guests, the rest
 #              is the VNet, the WireGuard mesh, link-local) all dropped,
-#              except the edge's hook-ingest and noVNC relay ports.
+#              except the edge's hook-ingest port.
 #   guest_meter
 #              after guest_fwd on the same hook, so it sees only what
 #              guest_fwd accepted, established packets included: what a
@@ -278,8 +278,12 @@ in
           iifname "br-guests" ip daddr { 169.254.169.254, 168.63.129.16 } counter drop
           # Other guests, on this host or any other.
           iifname "br-guests" ip daddr 10.64.0.0/12 counter drop
-          # The edge: hook ingest and the noVNC relay, nothing else on the mesh.
-          iifname "br-guests" oifname "wg0" ip daddr ${edge} tcp dport { 8443, 6081 } accept
+          # The edge: hook ingest, and nothing else on the mesh. 6081 went
+          # with DECISIONS I-1216: the browser view's relay lives there
+          # now, the relay dials the guest rather than the other way
+          # round, and the edge admits only the control plane on that
+          # port.
+          iifname "br-guests" oifname "wg0" ip daddr ${edge} tcp dport 8443 accept
           # Everything private: the VNet, the WireGuard mesh, link-local.
           iifname "br-guests" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } counter drop
           iifname "br-guests" oifname "${uplink}" counter accept

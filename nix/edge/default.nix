@@ -317,8 +317,16 @@ in
             (c: ''ip saddr ${c} tcp dport ${toString cfg.operatorSSHPort} accept'')
             cfg.operatorCIDRs}
 
-          # Guests reach the hook-ingest and noVNC-relay ports over WireGuard.
-          iifname "wg0" tcp dport { 8443, 6081 } accept
+          # Hook ingest, from any guest over WireGuard.
+          iifname "wg0" tcp dport 8443 accept
+          # The browser view's relay: the control plane only, never a
+          # guest (DECISIONS I-1216). Until then 6081 was admitted from
+          # every source on wg0 -- every guest on every host, the
+          # monitoring peer and kanali -- for a listener that did not
+          # exist. The credential on that leg is the api's own client
+          # certificate (VIEW_LISTEN below); this is the filter in front
+          # of it.
+          iifname "wg0" ip saddr ${cfg.controlWgAddress} tcp dport 6081 accept
 
           # Scrapes over WireGuard only: node_exporter and the gateway's own
           # metrics.
