@@ -293,7 +293,10 @@ func serveView(ctx context.Context, log *slog.Logger, vr *gateway.ViewRelay, ln 
 		_ = ln.Close()
 	}()
 	log.Info("listener up", "event", "listen", "listener", lnView, "addr", ln.Addr().String())
-	if err := vr.Serve(ln); err != nil && ctx.Err() == nil {
+	// Serve only ever returns the accept error that ended it, which after
+	// a shutdown is the listener this function closed.
+	err := vr.Serve(ln)
+	if ctx.Err() == nil {
 		log.Error("listener stopped", "event", "route_fail", "reason", lnView, "err", err.Error())
 	}
 }

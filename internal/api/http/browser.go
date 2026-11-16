@@ -192,6 +192,10 @@ func (s *Server) browserStream(w http.ResponseWriter, r *http.Request) error {
 	if s.d.ViewRelay == nil {
 		return errf("unavailable", "the browser view is not configured on this api")
 	}
+	// The upgrade headers first: a plain GET must not start a desktop.
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return errf("invalid", "this route takes a websocket upgrade")
+	}
 	ctx := r.Context()
 	prefix := sourcePrefix(r)
 	switch code := s.viewConns.begin(prefix); code {
@@ -358,15 +362,36 @@ type viewStream struct {
 	out      atomic.Int64
 	lastSeen atomic.Int64 // unix nanoseconds
 
+	// wmu keeps a frame whole when two goroutines write at once.
+	wmu     sync.Mutex
 	once    sync.Once
 	outcome string
 }
 
-// end records the first outcome and closes both sides, which is what ends
-// every copy goroutine.
+// write sends one frame. Both goroutines write to the socket -- the
+// reader answers a ping, the copier sends the guest's bytes, and end
+// sends the close frame -- and a frame has to reach the page whole.
+func (v *viewStream) write(frame []byte) error {
+	v.wmu.Lock()
+	defer v.wmu.Unlock()
+	_, err := v.ws.Write(frame)
+	return err
+}
+
+// end records the first outcome, tells the page why in a close frame, and
+// closes both sides, which is what ends every copy goroutine.
+//
+// The close frame is what lets the page tell an idle or budget close --
+// which it must not reconnect after, or it would mint again and wake
+// again -- from a transport error, which it may retry. Without it every
+// close looks the same from a browser.
 func (v *viewStream) end(outcome string) {
 	v.once.Do(func() {
 		v.outcome = outcome
+		// 1000 is a normal closure; the reason is one of the closed set
+		// of outcome words and never anything a tenant typed.
+		reason := append([]byte{0x03, 0xe8}, outcome...)
+		_ = v.write(wsframe.Encode(wsframe.OpClose, reason, false))
 		_ = v.guest.Close()
 		_ = v.ws.Close()
 	})
@@ -390,8 +415,7 @@ func (v *viewStream) run(ctx context.Context) {
 			op, payload, _, err := wsframe.ReadMessage(v.br, viewMessageMax, func(f wsframe.Frame) error {
 				switch f.Op {
 				case wsframe.OpPing:
-					_, err := v.ws.Write(wsframe.Encode(wsframe.OpPong, f.Payload, false))
-					return err
+					return v.write(wsframe.Encode(wsframe.OpPong, f.Payload, false))
 				case wsframe.OpClose:
 					return io.EOF
 				}
@@ -428,7 +452,7 @@ func (v *viewStream) run(ctx context.Context) {
 				v.touch()
 				v.out.Add(int64(n))
 				sinceFlush += int64(n)
-				if _, werr := v.ws.Write(wsframe.Encode(wsframe.OpBinary, buf[:n], false)); werr != nil {
+				if werr := v.write(wsframe.Encode(wsframe.OpBinary, buf[:n], false)); werr != nil {
 					v.end("closed")
 					return
 				}

@@ -47,12 +47,23 @@ func TestStreamBudgetSurvivesAReconnect(t *testing.T) {
 	if res.status != http.StatusSwitchingProtocols {
 		t.Fatalf("upgrade: %d %s", res.status, res.code)
 	}
-	// Read until the api closes the stream on the budget.
+	// Read until the api closes the stream on the budget, and keep the
+	// close frame: the page tells an idle or budget close from a
+	// transport error by its reason, and must not reconnect after one.
 	_ = res.conn.SetDeadline(time.Now().Add(30 * time.Second))
+	closeReason := ""
 	for {
-		if _, _, _, err := wsframe.ReadMessage(res.br, 4<<20, func(wsframe.Frame) error { return nil }); err != nil {
+		if _, _, _, err := wsframe.ReadMessage(res.br, 4<<20, func(f wsframe.Frame) error {
+			if f.Op == wsframe.OpClose && len(f.Payload) > 2 {
+				closeReason = string(f.Payload[2:])
+			}
+			return nil
+		}); err != nil {
 			break
 		}
+	}
+	if closeReason != "budget" {
+		t.Fatalf("the close frame said %q, want budget", closeReason)
 	}
 	e.waitForLog(t, `"outcome":"budget"`)
 
@@ -96,8 +107,17 @@ func TestStreamClosesWhenIdle(t *testing.T) {
 		t.Fatalf("upgrade: %d %s", res.status, res.code)
 	}
 	_ = res.conn.SetDeadline(time.Now().Add(30 * time.Second))
-	if _, _, _, err := wsframe.ReadMessage(res.br, 4<<20, func(wsframe.Frame) error { return nil }); err == nil {
+	closeReason := ""
+	if _, _, _, err := wsframe.ReadMessage(res.br, 4<<20, func(f wsframe.Frame) error {
+		if f.Op == wsframe.OpClose && len(f.Payload) > 2 {
+			closeReason = string(f.Payload[2:])
+		}
+		return nil
+	}); err == nil {
 		t.Fatal("the idle stream stayed open")
+	}
+	if closeReason != "idle" {
+		t.Fatalf("the close frame said %q, want idle", closeReason)
 	}
 	e.waitForLog(t, `"outcome":"idle"`)
 }

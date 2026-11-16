@@ -38,8 +38,6 @@ const wsMaxMessage = 256 << 20
 
 type wsFrame = wsframe.Frame
 
-func readWSFrame(r *bufio.Reader) (wsFrame, error) { return wsframe.ReadFrame(r, wsMaxMessage) }
-
 // encodeWSFrame is one final frame; masked is the client's side.
 func encodeWSFrame(op byte, payload []byte, masked bool) []byte {
 	return wsframe.Encode(op, payload, masked)

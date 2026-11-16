@@ -285,7 +285,11 @@ accepting. `docs/features/browser.md` is the behaviour.
 
 The stream closes when the machine's desktop does, after 120 s with no
 frame in either direction, after 4 h, or when the ticket has carried
-2 GiB. The page mints again on every connect and reconnect, so expiry is
+2 GiB. The close frame says which: status 1000 and a reason from the
+closed set `closed`, `idle`, `cap`, `budget`, `too_large`, `error`. A page
+that reconnects does so on `closed` or on a transport error and never
+after `idle`, `cap` or `budget`, because a reconnect mints again and a
+mint is where a wake can happen. The page mints again on every connect and reconnect, so expiry is
 this credential's revocation: nothing has to be revoked by hand when a
 machine stops, and a ticket cannot outlive its 15 minutes. The view's
 bytes do not count against the project's egress allowance (they never
