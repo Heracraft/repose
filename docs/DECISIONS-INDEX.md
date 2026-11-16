@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-967 entries.
+968 entries.
 
 ## Scope
 
@@ -836,7 +836,7 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24950
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24969
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25006
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; L25011
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; amended by I-1230; L25011
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25141
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; amended by I-1114; L25169
 - **I-824** The pause must never cost a machine its memory — L25212
@@ -999,3 +999,4 @@ pointer, not a summary.
 - **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33697
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33751
+- **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L33802

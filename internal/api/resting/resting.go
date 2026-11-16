@@ -56,10 +56,17 @@ const (
 	// minutes in a quarter of an hour.
 	Window = (Samples + 5) * time.Minute
 	// CPUNsPerSample is the host-measured CPU a quiet minute may use,
-	// 6 s: 0.10 of a core. `.claude-wrapped` at its prompt burns about
-	// 2 s a minute, so the threshold leaves room for a machine doing
-	// nothing and none for one doing work.
-	CPUNsPerSample = 6_000_000_000
+	// 15 s: a quarter of a core (DECISIONS I-1230). It was 6 s, the
+	// proposal's line for one `.claude-wrapped` at its prompt on a small
+	// guest (about 2 s a minute). Host-side, a `large` with one idle
+	// Claude and one container reads about 9 s and an `xl` with one idle
+	// Claude 10 to 14 s, because the hypervisor's own exits (virtiofs
+	// completions, timer interrupts, IPIs) count against the guest's
+	// cgroup and scale with its vCPUs; at 6 s half of the fleet's idle
+	// minutes stayed awake. 15 s rests those and still holds anything
+	// above a quarter of a core -- a build, a test run, a transcode --
+	// awake.
+	CPUNsPerSample = 15_000_000_000
 	// NetBytesPerSample is the network a quiet minute may move, in and
 	// out together: 64 KiB covers keepalives and leaves a bot polling an
 	// API out of the rest.
