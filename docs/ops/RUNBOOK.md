@@ -2962,8 +2962,8 @@ own word (DECISIONS I-1216; the codes are in `interfaces/api.md`).
    with `reason=view_relay` when the dial itself failed, and the relay's
    own word (`view_busy`, `view_capacity`, `view_desktop_failed`,
    `view_dial_failed`, `view_auth_failed`) when the relay refused. On
-   the edge: `systemctl status repose-gateway` and
-   `journalctl -u repose-gateway --grep view_`. The listener is
+   the edge: `systemctl status gateway` and
+   `journalctl -u gateway --grep view_`. The listener is
    `VIEW_LISTEN=10.255.0.1:6081` with `VIEW_TLS_CERT`/`VIEW_TLS_KEY`
    (edge-internal) and `API_CA`; it admits one client name, `api`, so a
    certificate from another CA or with another name is refused before

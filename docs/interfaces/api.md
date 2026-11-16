@@ -309,11 +309,14 @@ Refusals, beside the usual envelope codes:
 | `rate_limited` | 429 | The 11th mint in an hour, or too many connects from one source prefix at once |
 | `forbidden` | 403 | An `Origin` that is not the dashboard's, or a source prefix refused for 10 minutes after 20 refused tickets |
 
-The mint's answer is the one place the api sets a cookie, so it is also
-the one place `Access-Control-Allow-Origin` names the dashboard's origin
-with `Access-Control-Allow-Credentials: true` instead of `*` (I-79): a
-browser drops a `Set-Cookie` from a cross-origin fetch that was not
-credentialed, and refuses a credentialed answer that says `*`.
+The mint's answer is the one place the api sets a cookie, and that is why
+`Access-Control-Allow-Origin` can name an origin instead of answering `*`
+(I-79): a browser drops a `Set-Cookie` from a cross-origin fetch that was
+not credentialed, and refuses a credentialed answer that says `*`. The
+rule is read off the request's `Origin` and not off the route, so every
+route answers the dashboard's own origin by name with
+`Access-Control-Allow-Credentials: true`, and every other origin gets the
+wildcard as before. Only `DASHBOARD_URL`'s own origin is ever echoed.
 
 ## Snapshots
 

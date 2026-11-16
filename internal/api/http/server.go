@@ -427,15 +427,20 @@ func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 			// (I-1156). /internal is never called from a browser and
 			// gets no CORS headers at all.
 			//
-			// The one exception is the browser view's mint, whose answer
-			// sets the view cookie (I-1216): a browser drops a
-			// `Set-Cookie` on a cross-origin fetch unless the request was
-			// credentialed, and refuses a credentialed answer that says
-			// `*`. So an origin on the view's own allow list is echoed
-			// back by name with Allow-Credentials, and every other origin
-			// still gets the wildcard. Echoing a named origin grants that
-			// origin nothing it did not already have: the list holds the
-			// dashboard's own name and nothing else.
+			// The exception is the dashboard's own origin, because the
+			// browser view's mint sets the view cookie (I-1216): a browser
+			// drops a `Set-Cookie` on a cross-origin fetch unless the
+			// request was credentialed, and refuses a credentialed answer
+			// that says `*`. The test is the request's `Origin`, not the
+			// route, so EVERY route on this mux answers the dashboard's
+			// own origin by name with Allow-Credentials, and every other
+			// origin still gets the wildcard. That is wider than the mint
+			// and deliberately so: one rule is easier to hold true than a
+			// per-route one. It grants that origin nothing it did not
+			// already have -- the list holds the dashboard's own name and
+			// nothing else, the api authenticates with a bearer token and
+			// not a cookie, and the view cookie is Path-scoped to
+			// /v1/browser/stream.
 			origin := r.Header.Get("Origin")
 			if origin != "" && len(s.d.ViewOrigins) > 0 && s.viewOriginAllowed(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
