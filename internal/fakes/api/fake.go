@@ -481,8 +481,22 @@ func (f *Fake) handle(pattern string, h handler) {
 // mux (which has no registered OPTIONS handlers): the dashboard fetches
 // this fake cross-origin in the Playwright suite exactly like it fetches
 // the real api cross-origin in production (I-79).
+//
+// A request that carries an Origin gets that origin back by name with
+// Allow-Credentials, as the real api does for the dashboard's own origin
+// (I-1216): the browser view's mint answers with a `Set-Cookie`, which a
+// browser drops from an uncredentialed cross-origin fetch and refuses
+// from a credentialed answer that says `*`. The real api echoes only the
+// origins on its view list; this fixture serves one dashboard and has no
+// list.
 func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Add("Vary", "Origin")
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Expose-Headers", "Repose-Event-Count, X-Request-Id")

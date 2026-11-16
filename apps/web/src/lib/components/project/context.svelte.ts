@@ -1,5 +1,5 @@
-// One project's state, shared by its layout and its five tabs (DECISIONS
-// I-841). projects/[id]/+layout.svelte creates it, reads the project and
+// One project's state, shared by its layout and its six tabs (DECISIONS
+// I-841, I-1216). projects/[id]/+layout.svelte creates it, reads the project and
 // polls it (10s in view, 60s hidden), and draws the header, the tabs,
 // Start and Stop. Each tab reads the project here and fetches only its
 // own data, so switching tabs keeps the header, the poll and an op under

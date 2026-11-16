@@ -21,7 +21,9 @@ The first `playwright` call starts the browser on the machine.
 
 ## Open the view
 
-From another terminal on your laptop, or the same one after the agent has started:
+On the dashboard, open the project and go to **Browser**. The machine's screen is there, live.
+
+From a terminal on your laptop:
 
 ```
 $ repose browser
@@ -30,6 +32,8 @@ Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
 ```
 
 The command returns at once and keeps its forward running in the background; run it again for the same link.
+
+The two views show the same screen and either can drive it. The dashboard's stops after two minutes with a still screen, after four hours, or after 2 GB of frames, with **Resume view** to start it again; the one on your laptop bridges your clipboard, which the dashboard's does not.
 
 ## Take over
 
@@ -42,7 +46,7 @@ The agents' guide to the machine tells them to ask you for `repose browser` when
 
 ## Close it
 
-Closing the tab leaves the view running until it sleeps; [`repose browser stop`](/docs/cli#repose-browser-stop-project) ends it and the forward now.
+Closing the dashboard tab ends that view. Closing a tab on the forward leaves the view running until it sleeps; [`repose browser stop`](/docs/cli#repose-browser-stop-project) ends it and the forward now.
 
 ## Things worth knowing
 

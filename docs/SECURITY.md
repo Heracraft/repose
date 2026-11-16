@@ -29,6 +29,13 @@ mitigate. `workstreams/14-security.md` is the work that verifies this doc.
   to read volumes.
 - **A stolen laptop**: holds a refresh token and an SSH certificate.
 
+The dashboard's browser view (DECISIONS I-1216) adds no actor to this
+list: a project has exactly one owner, so the person watching a desktop
+and the person whose agents can root that guest are the same person. The
+guest it streams from is still "a malicious or compromised agent inside
+a tenant's own guest", and what that guest can now reach is one more
+parser in that person's own browser tab, which is row 15 below.
+
 ## Boundaries
 
 From `ARCHITECTURE.md`, with the mechanism and the actor it stops. Its
@@ -233,6 +240,36 @@ they stop an actor the component map does not draw.
     visitor from a repose URL. The edge stores no request, so a takedown
     has no content to remove and the operator removes the route.
 
+15. **The browser view between a tenant's desktop and their dashboard
+    tab** (DECISIONS I-1216). Three legs, each with its own credential:
+    the browser to the api is an ordinary authenticated route plus a
+    256-bit ticket in an `HttpOnly; Secure; SameSite=Strict` cookie
+    scoped to the stream path, minted for one connect and good for 15
+    minutes, held as `sha256` alone and re-checked against the project,
+    the owner and suspension on every use; the api to the edge's relay
+    on `:6081` is mTLS with the client name `api` pinned against
+    `API_CA`, on a listener that refuses an address binding every
+    interface, with the WireGuard source address a filter and never the
+    credential; the edge to the guest is the gateway's own SSH with a
+    per-project certificate and one `direct-tcpip` channel, dialled by
+    the login and not by the address, so a certificate that names only a
+    recycled guest IP is refused. The guest's per-boot VNC password is
+    read by the relay for one handshake and goes nowhere else: not to
+    the api, not into a response body, not to the browser. What bounds
+    it: one view per project and 64 at a time at the relay, 10 mints per
+    user an hour, a slot and a 20-failure ban per source /24 before any
+    ticket is read, 1 MiB per message, 120 s idle, 4 hours, and 2 GiB
+    per ticket spent on the row so a reconnect cannot start it again.
+    Stops: a ticket pointed at another tenant's machine (the stream
+    route has no project id to point), anything on the control VM that
+    is not the api reaching the relay, a scan costing a dial, a rooted
+    guest using the view as free bandwidth, and the guest's password
+    reaching a browser. Does not stop: an operator with root on the edge
+    reading a live stream out of the relay's memory, as with volumes
+    above; or a bug in the page's noVNC, which is a parser in the
+    dashboard's own origin and is bounded by one project having one
+    owner, not by isolation (I-1216 says what reopens it).
+
 ## Non-negotiables
 
 Rules that hold regardless of convenience. Each names its failure.
@@ -328,6 +365,13 @@ Rules that hold regardless of convenience. Each names its failure.
   refuses a missing or failing signature, and pins the checksums of the
   releases cut before signing (I-430). A checksum fetched from the same
   place as the archive proves only that the download finished.
+- **A new way to watch a guest adds no inbound to a host and no fourth
+  home for a secret.** The browser view (I-1216) reaches the guest
+  through the edge's existing SSH, so no host port opens and the host's
+  nftables gain nothing; the guest's VNC password keeps its two homes
+  and is borrowed by the relay for one handshake. A view that wanted a
+  port on a host, or a copy of a credential somewhere a third process
+  could read, would be a different feature and needs its own decision.
 - **`security_type = Standard` and Intel hosts.** Not security in itself,
   but a Trusted Launch host silently has no `/dev/kvm`, and a fallback to
   containers "just for now" would collapse boundary 1.

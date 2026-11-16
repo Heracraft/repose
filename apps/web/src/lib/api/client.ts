@@ -3,6 +3,7 @@
 // a function when a route is added there, not before.
 import { env } from '$env/dynamic/public';
 import { getAccessToken } from '$lib/auth.svelte';
+import { viewStreamUrl as wsUrl } from '$lib/browserView';
 import { ApiError, NetworkError, isOutage } from './errors';
 import { reachability } from './reachability.svelte';
 import type {
@@ -33,6 +34,7 @@ import type {
 	SampleWindow,
 	Snapshot,
 	UsageRow,
+	ViewTicket,
 	WebhookRoute
 } from './types';
 
@@ -46,6 +48,9 @@ interface RequestOptions {
 	body?: unknown;
 	/** Internal: set on the one retry rate_limited gets (5.5). */
 	_retried?: boolean;
+	/** The one route whose answer sets a cookie and whose request must
+	 * carry it: the browser view's mint (I-1216). */
+	credentials?: RequestCredentials;
 	/** A background read (the header's question count): its failure can
 	 * raise the outage bar, but its success never clears it, so it cannot
 	 * hide an outage the page's own call just reported. */
@@ -75,6 +80,7 @@ async function requestWithHeaders<T>(
 		res = await fetch(`${baseUrl()}${path}`, {
 			method: opts.method ?? 'GET',
 			headers,
+			credentials: opts.credentials,
 			body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
 		});
 	} catch (err) {
@@ -239,6 +245,21 @@ export const rotateWebhook = (id: string, name: string) =>
 	});
 export const deleteWebhook = (id: string, name: string) =>
 	request<void>(`/projects/${id}/webhooks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// The machine's browser view (DECISIONS I-1216).
+/**
+ * Mints a ticket for one connect to the machine's desktop. The ticket is
+ * the cookie the answer sets, never the body, so this is the one call
+ * that sends and stores credentials; the WebSocket then carries the
+ * cookie on its upgrade. Every connect and reconnect mints again.
+ */
+export const mintBrowserView = (id: string) =>
+	request<ViewTicket>(`/projects/${id}/browser/view`, {
+		method: 'POST',
+		credentials: 'include'
+	});
+/** The stream's WebSocket URL, from the path the mint answered with. */
+export const viewStreamUrl = (streamPath: string) => wsUrl(baseUrl(), streamPath);
 
 // Account secrets, for every project (DECISIONS I-697).
 export const listAccountSecrets = () => request<SecretMeta[]>('/me/secrets');

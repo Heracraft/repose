@@ -15,7 +15,10 @@ Agents use it:
 $ repose run -p "log into the staging site and screenshot the dashboard"
 ```
 
-Watching or taking over is one command:
+Watching or taking over is a project's **Browser** tab on the dashboard,
+or one command on a laptop with the CLI (DECISIONS I-292, I-1216). The
+tab needs no forward, no password and nothing installed: open it and the
+machine's screen is there.
 
 ```
 $ repose browser
@@ -156,6 +159,48 @@ its password field; a new CLI against an older base opens stock noVNC's
 `vnc.html`, which asks for the password the CLI did not print (run
 `repose open --desktop` on that base, or wait for its update).
 
+## The dashboard's view (DECISIONS I-1216)
+
+- The same desktop, over a different path: the dashboard page draws
+  noVNC itself on the dashboard's own origin, over a WebSocket to the
+  api, which pipes it to a relay on the edge (`:6081`, mTLS with the
+  client name `api`), which holds the SSH connection to the guest. No
+  forward, so nothing has to exist on the watcher's machine first.
+- **The password never leaves the edge on this path.** The relay reads
+  the guest's per-boot password over the SSH connection it already has,
+  does the VncAuth handshake itself, and offers the page security type
+  None. The CLI's view is the other arrangement: there the password
+  rides in the link's fragment, which the browser never sends with a
+  request, and the page authenticates. Both keep it out of a log and off
+  the wire to repose; the dashboard's also keeps it out of the browser.
+- Each connect is one mint: `POST /v1/projects/{id}/browser/view` sets a
+  15-minute `HttpOnly; Secure; SameSite=Strict` cookie scoped to
+  `/v1/browser/stream`, and the stream route reads the project from the
+  ticket's row and not from any path. The page mints again on every
+  reconnect, so an expired ticket is a mint and not an error the reader
+  sees.
+- An open view holds the machine out of its freeze while the screen is
+  moving, and the frames are not the project's egress: they never cross
+  a guest's uplink, so nothing meters them (I-1218). They are capped
+  instead: 2 GiB per ticket, 120 s with no frame, 4 hours, one view per
+  project.
+- A close says why, and the page acts on it: `closed` and a transport
+  error are reconnected to, three times at 1, 2 and 4 seconds, each with
+  a fresh mint; `idle`, `cap` and `budget` stop and show **Resume view**,
+  because a reconnect mints and a mint is where a frozen machine wakes.
+- **No clipboard bridge, in either direction**, which is the one place
+  the two viewers differ in what they can do. The guest's own viewer
+  page bridges both ways for a person at their own laptop; on the
+  dashboard that would let a guest the tenant has root on choose what
+  their next paste says and read what they last copied. `repose browser`
+  is the view that bridges.
+- The two viewers share no code. The guest's page uses the `core/` and
+  `vendor/` modules copied out of `pkgs.novnc` at build time; the
+  dashboard's uses `@novnc/novnc` pinned to the exact version nixpkgs
+  gives the guest (1.7.0 on both today, an exact pin in
+  `apps/web/package.json` rather than a range, so an update is an edit a
+  reviewer sees).
+
 ## Behaviour that must hold
 
 - A fresh guest can run a Playwright script that opens a page and takes a
@@ -289,6 +334,20 @@ its password field; a new CLI against an older base opens stock noVNC's
 - `golang.org/x/sys/unix` pidfds make the stray's signal safe against a
   reused pid; `internal/guestd/sample/stray_test.go` drives each of the
   five conditions on a fixture `/proc`.
+- A dashboard ticket reaches only its own project's machine, whatever
+  else is asked for: `TestStreamReachesOnlyTheTicketsProject` registers
+  no route with a project id and proves A's ticket reaches A's login and
+  address. A guest answering the relay's dial with a host certificate
+  that names only the address is refused:
+  `internal/gateway/view_crosstenant_test.go`.
+- No byte of a dashboard view's stream, and no ticket, reaches a log:
+  `TestBrowserViewLogs` plants markers in a framebuffer rectangle, in a
+  cut-text message and in the ticket, and finds none of them in the
+  captured logs, while the same logs carry `browser_view_close`, its
+  outcome, `bytes_out` and an unredacted `ticket_id`.
+- The dashboard's view bridges no clipboard: the word appears in neither
+  the component nor its tab, which `BrowserView.test.ts` asserts, and
+  the view listens for `connect` and `disconnect` only.
 
 ## Why Claude in Chrome cannot work here
 
@@ -396,13 +455,17 @@ Behaviour that must hold (guest-desktop VM test, `TestBridgeEndToEnd`):
 
 Workstreams 02 (packages, MCP registration, units, slice limits, the
 viewer page), 07 (`repose browser`, the background forward, `browser
-bridge`), 04 (start/stop units, DISPLAY export via guestd Exec).
+bridge`), 04 (start/stop units, DISPLAY export via guestd Exec), 06 (the
+edge's view relay on `:6081`) and 08 (the dashboard's Browser tab).
 
 ## Deferred
 
 A 2x desktop for Retina tabs (needs Chromium's scale factor to follow the
-viewer, which means a restart). A link from the dashboard or the attached
-session (both would need the forward to exist before the click; the
-command is the forward). Browserbase or another hosted browser as an
+viewer, which means a restart). A link from the attached session to a
+view (it would need the forward to exist before the click; the command
+is the forward; the dashboard's own view, I-1216, needs no forward and
+shipped instead). Cut text between the dashboard's view and the
+watcher's own machine (I-1216 says why it is not a feature to add
+later). Browserbase or another hosted browser as an
 option. GPU-accelerated rendering (no GPU guests). Bridging Claude in
 Chrome itself (the extension speaks to Anthropic's relay, not to a port).
