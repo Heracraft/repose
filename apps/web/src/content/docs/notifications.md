@@ -174,7 +174,7 @@ Messages and questions are capped at 1 KB and count toward the [hourly cap](#lim
 
 ### Speaking first
 
-The other direction is [`repose say`](/docs/cli#repose-say-project-message): a message you send the agent from your laptop, typed into its own terminal. It is not a notification and goes to no channel; [Speak to it from your laptop](/docs/agents#speak-to-it-from-your-laptop) has it.
+The other direction is [`repose say`](/docs/cli#repose-say-project-message): a message you send the agent from your laptop, typed into its own terminal. It is not a notification and goes to no channel; [Send it a message](/docs/agents#send-it-a-message) has it.
 
 ## Limits
 

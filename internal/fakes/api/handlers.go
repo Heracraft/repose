@@ -1341,7 +1341,9 @@ func (f *Fake) revokeCerts(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		revoke(c)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"revoked": revoked})
+	// The count, as the api answers it (internal/api/http/certs.go,
+	// api.md "Certificates"); the serials are in GET /internal/revoked.
+	writeJSON(w, http.StatusOK, map[string]any{"revoked": len(revoked)})
 	return nil
 }
 

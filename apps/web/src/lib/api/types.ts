@@ -471,6 +471,28 @@ export interface Question {
 	link?: AgentLink;
 }
 
+/**
+ * A message the owner typed for a project's agent (docs/interfaces/api.md
+ * "Messages for an agent", DECISIONS I-1144). `text` is tenant content:
+ * shown to the owner, typed into the agent's terminal, never logged.
+ * `window` is the agent window the machine resolved it to, as `repose ps`
+ * names it. `delivered` means the text is in the agent's terminal now;
+ * `waiting` means the agent was mid-turn and the machine types it in at
+ * the end of the turn. One message waits per window, so a second while
+ * one waits answers `replaced: true` and the earlier row moves to
+ * `replaced`.
+ */
+export interface Say {
+	id: string;
+	project_id: string;
+	window: string;
+	text: string;
+	sender?: string;
+	state: 'delivered' | 'waiting' | 'replaced' | 'failed';
+	replaced?: boolean;
+	created_at: string;
+}
+
 export interface UsageRow {
 	guest_hours: Partial<Record<SizeClass, number>>;
 	gb_months: number;

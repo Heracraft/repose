@@ -189,6 +189,38 @@ export async function addEvents(
 	if (!res.ok) throw new Error(`/events: ${res.status} ${await res.text()}`);
 }
 
+/**
+ * The fake's `repose say` knobs (internal/fakes/api/say.go, cmd/fakeapi
+ * POST /say): the agent windows its machines run, the state it answers a
+ * message with, and whether the answer replaced one that was waiting.
+ * These are the say handler's own windows, separate from the signals
+ * setAgents writes, so a test that moves the agents moves both.
+ * Defaults: one window `claude`, state `delivered`.
+ */
+export async function setSay(
+	opts: { agents?: string[]; state?: string; replaced?: boolean } = {}
+): Promise<void> {
+	const res = await fetch(`${adminURL()}/say`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			agents: opts.agents,
+			state: opts.state ?? '',
+			replaced: opts.replaced ?? false
+		})
+	});
+	if (!res.ok) throw new Error(`/say: ${res.status} ${await res.text()}`);
+}
+
+/** The messages the fake took, oldest first (cmd/fakeapi GET /say). */
+export async function says(): Promise<
+	{ project_id: string; window: string; text: string; state: string }[]
+> {
+	const res = await fetch(`${adminURL()}/say`);
+	if (!res.ok) throw new Error(`GET /say: ${res.status}`);
+	return res.json();
+}
+
 /** Sets the agents a running project's signals report, and its sessions (cmd/fakeapi POST /agents). */
 export async function setAgents(
 	projectId: string,

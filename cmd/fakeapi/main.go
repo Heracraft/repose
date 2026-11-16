@@ -230,6 +230,12 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		f.LinkLast(body.ProjectID, "", body.Link, body.LinkLabel)
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// The messages the fake took, oldest first: a test asserts the window
+	// the dashboard sent to, not only the line it printed.
+	mux.HandleFunc("GET /say", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(f.Says())
+	})
 	// `repose say` (DECISIONS I-1144): which agent windows the fake's
 	// machines run, and what it answers a message with.
 	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
