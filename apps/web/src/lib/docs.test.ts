@@ -221,7 +221,7 @@ describe('user docs', () => {
 		const label = (id: string) => cli.find((h) => h.id === id)?.label;
 		expect(label('repose-run-project')).toBe('repose run');
 		expect(label('repose-mcp-forward-name')).toBe('repose mcp forward');
-		expect(label('repose-cp-r-src-dst')).toBe('repose cp');
+		expect(label('repose-cp-src-dst')).toBe('repose cp');
 		expect(label('which-project')).toBe('Which project');
 		expect(cli.find((h) => h.text === 'config.toml')?.label).toBe('config.toml');
 	});

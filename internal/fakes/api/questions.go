@@ -317,6 +317,38 @@ func (f *Fake) answerSecret(q *Question, encoded, via string) *apiError {
 	return nil
 }
 
+// holdQuestion is POST /projects/:id/questions/:qid/hold (I-1242): the
+// owner is answering, so expires_at moves to now + 5 minutes when that is
+// later, at most once per 30 s, never past created_at + 24 h + 5 min. The
+// fake records each hold the dashboard sent (Holds).
+func (f *Fake) holdQuestion(w http.ResponseWriter, r *http.Request) *apiError {
+	q, e := f.findQuestion(userFrom(r), r.PathValue("id"), r.PathValue("qid"))
+	if e != nil {
+		return e
+	}
+	if !f.pendingNow(q) {
+		return errf("conflict", "%s", describe(q)).withDetail(map[string]any{"question": *q})
+	}
+	now := f.now()
+	until := now.Add(5 * time.Minute)
+	if capAt := q.CreatedAt.Add(24*time.Hour + 5*time.Minute); until.After(capAt) {
+		until = capAt
+	}
+	if !q.ExpiresAt.After(until.Add(-30 * time.Second)) {
+		q.ExpiresAt = until
+	}
+	f.holds = append(f.holds, q.ID)
+	writeJSON(w, http.StatusOK, *q)
+	return nil
+}
+
+// Holds lists the question ids the dashboard held, in order, repeats kept.
+func (f *Fake) Holds() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.holds...)
+}
+
 func (f *Fake) cancelQuestion(w http.ResponseWriter, r *http.Request) *apiError {
 	q, e := f.findQuestion(userFrom(r), r.PathValue("id"), r.PathValue("qid"))
 	if e != nil {

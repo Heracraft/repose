@@ -60,9 +60,10 @@ func (m *Manager) setPrincipals(ctx context.Context, c *hostdv1.SetPrincipals) *
 }
 
 // answerQuestion relays the user's reply to the guest whose repose-ask is
-// waiting (DECISIONS I-244). The answer is tenant text and is not logged; a
-// guest that is not running, or no longer knows the question, is not_found,
-// which the api takes as final.
+// waiting (DECISIONS I-244), or, with status extended, the new deadline
+// of a question the owner is answering (DECISIONS I-1242). The answer is
+// tenant text and is not logged; a guest that is not running, or no
+// longer knows the question, is not_found, which the api takes as final.
 func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion) *Error {
 	if c.QuestionId == "" || c.Status == "" {
 		return errf(CodeInvalidArgument, "question_id and status required")
@@ -80,7 +81,7 @@ func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion)
 	if serr != nil {
 		return serr
 	}
-	err := sess.AnswerQuestion(ctx, &guestdv1.AnswerQuestion{QuestionId: c.QuestionId, Status: c.Status, Answer: c.Answer})
+	err := sess.AnswerQuestion(ctx, &guestdv1.AnswerQuestion{QuestionId: c.QuestionId, Status: c.Status, Answer: c.Answer, ExpiresUnix: c.ExpiresUnix})
 	if err != nil {
 		if re, ok := vsockclient.IsRemote(err); ok {
 			if re.Code == CodeNotFound || re.Code == CodeInvalidArgument {
@@ -89,6 +90,10 @@ func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion)
 			return errf(CodeInternal, "guestd AnswerQuestion: %s: %s", re.Code, re.Message)
 		}
 		return errf(CodeGuestUnresponsive, "guestd AnswerQuestion: %v", err)
+	}
+	if c.Status == "extended" {
+		m.log(g).Info("question held open", "event", "agent_question", "question_id", c.QuestionId, "status", c.Status)
+		return nil
 	}
 	m.log(g).Info("question answered", "event", "agent_question", "question_id", c.QuestionId, "status", c.Status)
 	return nil

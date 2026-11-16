@@ -147,10 +147,20 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 	}
 }
 
-// answerQuestion closes a question a repose-ask is waiting on. The answer
-// is tenant text; the log line carries the id and the status only.
+// answerQuestion closes a question a repose-ask is waiting on, or, with
+// status extended (DECISIONS I-1242), moves its deadline to expires_unix
+// while the owner answers on the dashboard. The answer is tenant text; the
+// log line carries the id and the status only.
 func (s *Server) answerQuestion(a *guestdv1.AnswerQuestion) error {
-	err := s.asks.Answer(a.GetQuestionId(), a.GetStatus(), a.GetAnswer())
+	var err error
+	if a.GetStatus() == questions.StatusExtended {
+		if a.GetExpiresUnix() <= 0 {
+			return sysdep.Invalid("status extended needs expires_unix")
+		}
+		err = s.asks.Extend(a.GetQuestionId(), time.Unix(a.GetExpiresUnix(), 0))
+	} else {
+		err = s.asks.Answer(a.GetQuestionId(), a.GetStatus(), a.GetAnswer())
+	}
 	switch {
 	case errors.Is(err, questions.ErrNotFound):
 		return sysdep.NotFound("no question %s in this guest", a.GetQuestionId())
@@ -158,6 +168,10 @@ func (s *Server) answerQuestion(a *guestdv1.AnswerQuestion) error {
 		return sysdep.Invalid("%v", err)
 	case err != nil:
 		return err
+	}
+	if a.GetStatus() == questions.StatusExtended {
+		s.log.Info("agent question held open", "event", "agent_question", "question_id", a.GetQuestionId(), "status", a.GetStatus())
+		return nil
 	}
 	s.log.Info("agent question closed", "event", "agent_question", "question_id", a.GetQuestionId(), "status", a.GetStatus())
 	return nil

@@ -762,7 +762,11 @@ sends a test.
 
 ## SnapshotStale
 
-A running project's newest snapshot is older than 36 hours.
+A running project has run 36 hours past the later of its newest snapshot
+and its last start. The gauge refreshes hourly (I-1244); before that it
+counted from the snapshot alone and refreshed daily, so two machines
+stopped for days and started the same morning kept it firing for a day
+(2026-11-07) with nothing to fix.
 
 1. `repose-admin projects show <id>`: last snapshot, last error.
 2. `journalctl -u hostd | grep snapshot_fail` on the host. Common causes:
@@ -2240,7 +2244,7 @@ on the volume, and a destroy after it loses the work.
    code. `repose-admin ops list --project <id>` has the op the api asked
    for.
 2. `SnapshotStale` is the slow half of the same signal and reads the api's
-   backstop gauge, which is refreshed on a 24-hour ticker; this rule reads
+   backstop gauge, which is refreshed hourly; this rule reads
    the histogram the failing path observes, so it fires first. Both firing
    is one incident.
 3. Blob upload failures leave the thin snapshot on the host: `lvs

@@ -289,7 +289,17 @@ message Drain {}
 // guest whose `repose-ask` is waiting (DECISIONS I-244). hostd forwards it
 // to guestd as the request of the same name; not_found means the guest no
 // longer knows the question (it rebooted, or the ask was never there).
-message AnswerQuestion { string guest_id = 1; string question_id = 2; string status = 3; string answer = 4; }
+// status `extended` (DECISIONS I-1242) closes nothing: the owner is
+// answering on the dashboard, and expires_unix (unix seconds) is the new
+// deadline, which only moves the question's forward. A guestd from before
+// it answers invalid_argument, which hostd passes on.
+message AnswerQuestion {
+  string guest_id = 1;
+  string question_id = 2;
+  string status = 3;
+  string answer = 4;
+  int64 expires_unix = 5;
+}
 // SayToAgent carries a message the owner typed for one of the guest's
 // agents (DECISIONS I-1144). hostd relays it to guestd as the request of
 // the same name and passes its SayResult back. text is tenant content and

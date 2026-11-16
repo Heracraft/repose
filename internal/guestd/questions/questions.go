@@ -81,6 +81,11 @@ const (
 	StateNoChannel = "no_channel"
 )
 
+// StatusExtended is the one AnswerQuestion status that closes nothing
+// (DECISIONS I-1242): the owner is answering on the dashboard, and the
+// request carries the question's new deadline. It is never a state.
+const StatusExtended = "extended"
+
 // PushFailed is the only answer a secret question keeps (I-929): the
 // owner set the secret, and the push that carries it to this machine
 // failed.
@@ -351,6 +356,27 @@ func (s *Store) Answer(id, status, answer string) error {
 	defer s.mu.Unlock()
 	_, err := s.closeLocked(id, status, Clean(answer, AnswerCap), "", false)
 	return err
+}
+
+// Extend moves an open question's deadline to until, from hostd's
+// AnswerQuestion with status extended (DECISIONS I-1242): the owner is
+// typing an answer on the dashboard, so the ask's --timeout stops being a
+// wall. The deadline only moves forward; an until before the one it has,
+// or a question already closed, changes nothing. The repose-ask waiting
+// on it needs no telling: it polls until the question closes.
+func (s *Store) Extend(id string, until time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.qs[id]
+	if e == nil {
+		return ErrNotFound
+	}
+	if !e.q.Open() || !until.After(e.q.Expires) {
+		return nil
+	}
+	e.q.Expires = until.UTC()
+	s.persist(e.q)
+	return nil
 }
 
 // Cancel closes a question from the guest side (the asker gave up or took

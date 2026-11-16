@@ -231,8 +231,13 @@ its password field; a new CLI against an older base opens stock noVNC's
   `ServerAliveCountMax 3`, off the ControlMaster (I-149), recorded as port
   and pid in `~/.config/repose/browser-forwards/<slug>.json`; it outlives
   the CLI. A second run probes the recorded port for the viewer's
-  `/healthz` (`repose desktop viewer ok`) and reuses it; a dead or hijacked
-  one is replaced. The command prints one line with the URL, whose
+  `/healthz` (`repose desktop viewer ok`) and its `/project.json`, whose
+  `name` the guest writes at every viewer start, and reuses it only when
+  that name is this project's (I-1238): every viewer answers `/healthz`
+  the same way, and a port another project's forward took meanwhile
+  showed that machine's page, which refused this one's password. That
+  forward is left running and this project gets a port of its own; a
+  dead or hijacked one is replaced. The command prints one line with the URL, whose
   fragment carries the password; the password is never printed on its
   own and never logged. `--stop` runs `desktop stop` in the guest (when the
   project runs) and ends the forward (the pid is killed only while the

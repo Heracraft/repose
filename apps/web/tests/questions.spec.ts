@@ -80,7 +80,8 @@ test('a free-text question takes a typed answer; Dismiss dismisses', async ({ pa
 	});
 	const q1 = await addQuestion(p.id, {
 		agent: 'codex',
-		text: 'Which port should the dev server use?'
+		text: 'Which port should the dev server use?',
+		timeout_s: 120
 	});
 	const q2 = await addQuestion(p.id, { agent: 'pi', text: 'Anything else before I push?' });
 	await page.goto(`/projects/${p.id}`);
@@ -90,8 +91,13 @@ test('a free-text question takes a typed answer; Dismiss dismisses', async ({ pa
 	const first = card.locator(`[data-qid="${q1.id}"]`);
 	const field = first.getByLabel('Your answer');
 	await expect(first.getByRole('button', { name: 'Send' })).toBeDisabled();
+	// Two minutes left: the row says so. Typing holds the question open
+	// (I-1242): the api moves its expiry five minutes out, and the row
+	// follows the api's answer.
+	await expect(first).toContainText(/expires in [12]m/);
 	// Shift+Enter breaks a line; Enter sends.
 	await field.fill('4173');
+	await expect(first).toContainText(/expires in [45]m/);
 	await field.press('Shift+Enter');
 	await expect(field).toHaveValue('4173\n');
 	await field.press('Backspace');

@@ -197,6 +197,22 @@ func (s *Server) answerSecret(w http.ResponseWriter, r *http.Request, qid uuid.U
 	return nil
 }
 
+// holdQuestion is POST /projects/:id/questions/:qid/hold (DECISIONS
+// I-1242): the dashboard says the owner is answering, and the question
+// stays open five more minutes from now, as Questions.Hold says.
+func (s *Server) holdQuestion(w http.ResponseWriter, r *http.Request) error {
+	qid, err := s.projectQuestion(r)
+	if err != nil {
+		return err
+	}
+	q, err := s.d.Questions.Hold(r.Context(), userFrom(r.Context()).ID, qid)
+	if err != nil {
+		return questionErr(q, err)
+	}
+	writeJSON(w, http.StatusOK, q)
+	return nil
+}
+
 // cancelQuestion is POST /projects/:id/questions/:qid/cancel: the owner
 // dismisses a question; the waiting repose-ask exits cancelled. The body
 // {via} is optional: a client that sends none is the dashboard.

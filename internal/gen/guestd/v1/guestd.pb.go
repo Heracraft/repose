@@ -757,11 +757,15 @@ func (x *Shutdown) GetTimeoutS() uint32 {
 // on (DECISIONS I-244): status answered|cancelled|expired|no_channel, and
 // the user's answer when answered. Answering an already-closed question
 // with the same status is a no-op; an unknown question_id is not_found.
+// status `extended` (DECISIONS I-1242) closes nothing: expires_unix (unix
+// seconds) is the question's new deadline, applied only when it is later
+// than the one it has.
 type AnswerQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	QuestionId    string                 `protobuf:"bytes,1,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
 	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	Answer        string                 `protobuf:"bytes,3,opt,name=answer,proto3" json:"answer,omitempty"`
+	ExpiresUnix   int64                  `protobuf:"varint,4,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -815,6 +819,13 @@ func (x *AnswerQuestion) GetAnswer() string {
 		return x.Answer
 	}
 	return ""
+}
+
+func (x *AnswerQuestion) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
 }
 
 // SayToAgent is a message the owner typed for one of this guest's agents
@@ -2338,12 +2349,13 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\ttimeout_s\x18\x02 \x01(\rR\btimeoutS\x12\x17\n" +
 	"\aas_user\x18\x03 \x01(\tR\x06asUser\"'\n" +
 	"\bShutdown\x12\x1b\n" +
-	"\ttimeout_s\x18\x01 \x01(\rR\btimeoutS\"a\n" +
+	"\ttimeout_s\x18\x01 \x01(\rR\btimeoutS\"\x84\x01\n" +
 	"\x0eAnswerQuestion\x12\x1f\n" +
 	"\vquestion_id\x18\x01 \x01(\tR\n" +
 	"questionId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
-	"\x06answer\x18\x03 \x01(\tR\x06answer\"\x86\x01\n" +
+	"\x06answer\x18\x03 \x01(\tR\x06answer\x12!\n" +
+	"\fexpires_unix\x18\x04 \x01(\x03R\vexpiresUnix\"\x86\x01\n" +
 	"\n" +
 	"SayToAgent\x12\x15\n" +
 	"\x06say_id\x18\x01 \x01(\tR\x05sayId\x12\x16\n" +

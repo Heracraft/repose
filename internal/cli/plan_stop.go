@@ -13,8 +13,8 @@ import (
 // starts, in one command (DECISIONS I-637). On Solo every second large
 // machine hits it, and the refusal named `repose stop api`, after which
 // the run was typed again. The question is stop's own, with stop's
-// busy-agent clause, and a yes runs stop's path: the fetch first, the
-// stop lines. Without a terminal, or with --json, the refusal exits 7 as
+// busy-agent clause, and a yes runs stop's path and prints the stop
+// lines. Without a terminal, or with --json, the refusal exits 7 as
 // before.
 
 // planStopAsk asks prompt and says whether it could ask at all; tests

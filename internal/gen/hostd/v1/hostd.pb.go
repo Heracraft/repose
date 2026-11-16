@@ -2407,12 +2407,17 @@ func (*Drain) Descriptor() ([]byte, []int) {
 // guest whose `repose-ask` is waiting (DECISIONS I-244). hostd forwards it
 // to guestd as the request of the same name; not_found means the guest no
 // longer knows the question (it rebooted, or the ask was never there).
+// status `extended` (DECISIONS I-1242) closes nothing: the owner is
+// answering on the dashboard, and expires_unix (unix seconds) is the new
+// deadline, which only moves the question's forward. A guestd from before
+// it answers invalid_argument, which hostd passes on.
 type AnswerQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GuestId       string                 `protobuf:"bytes,1,opt,name=guest_id,json=guestId,proto3" json:"guest_id,omitempty"`
 	QuestionId    string                 `protobuf:"bytes,2,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
 	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	Answer        string                 `protobuf:"bytes,4,opt,name=answer,proto3" json:"answer,omitempty"`
+	ExpiresUnix   int64                  `protobuf:"varint,5,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2473,6 +2478,13 @@ func (x *AnswerQuestion) GetAnswer() string {
 		return x.Answer
 	}
 	return ""
+}
+
+func (x *AnswerQuestion) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
 }
 
 // SayToAgent carries a message the owner typed for one of the guest's
@@ -5562,13 +5574,14 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04argv\x18\x02 \x03(\tR\x04argv\x12\x1b\n" +
 	"\ttimeout_s\x18\x03 \x01(\rR\btimeoutS\x12\x19\n" +
 	"\baudit_id\x18\x04 \x01(\tR\aauditId\"\a\n" +
-	"\x05Drain\"|\n" +
+	"\x05Drain\"\x9f\x01\n" +
 	"\x0eAnswerQuestion\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vquestion_id\x18\x02 \x01(\tR\n" +
 	"questionId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x16\n" +
-	"\x06answer\x18\x04 \x01(\tR\x06answer\"\xa1\x01\n" +
+	"\x06answer\x18\x04 \x01(\tR\x06answer\x12!\n" +
+	"\fexpires_unix\x18\x05 \x01(\x03R\vexpiresUnix\"\xa1\x01\n" +
 	"\n" +
 	"SayToAgent\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x15\n" +

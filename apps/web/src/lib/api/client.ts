@@ -355,6 +355,9 @@ export const answerSecretQuestion = (id: string, qid: string, valueBase64: strin
 	});
 export const cancelQuestion = (id: string, qid: string) =>
 	request<Question>(`/projects/${id}/questions/${qid}/cancel`, { method: 'POST' });
+/** Keeps a question open while the owner answers it (I-1242): its `expires_at` moves to five minutes from now when that is later. */
+export const holdQuestion = (id: string, qid: string) =>
+	request<Question>(`/projects/${id}/questions/${qid}/hold`, { method: 'POST' });
 
 // Usage and billing.
 export const getUsage = (from: string, to: string) =>

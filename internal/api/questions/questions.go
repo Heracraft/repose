@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,6 +38,26 @@ const (
 	StateCancelled = "cancelled"
 	StateExpired   = "expired"
 	StateNoChannel = "no_channel"
+)
+
+// StatusExtended is the one AnswerQuestion status that closes nothing
+// (DECISIONS I-1242): a hold, carrying the question's new expiry to the
+// guest. It is never a question's state.
+const StatusExtended = "extended"
+
+// A hold (DECISIONS I-1242): the owner is at the dashboard's answer field,
+// so the question is kept open past the ask's --timeout.
+const (
+	// HoldFor is how far past now a hold moves expires_at: the page holds
+	// every 60 s while the owner is at the field, so a tab that is gone
+	// stops holding within this.
+	HoldFor = 5 * time.Minute
+	// HoldEvery is the least a hold must move expires_at to count: a
+	// second hold inside it is a no-op, so a page that holds often
+	// changes nothing and sends the guest nothing.
+	HoldEvery = 30 * time.Second
+	// HoldCap is the longest a held question lives past created_at.
+	HoldCap = MaxTimeout + HoldFor
 )
 
 // Reasons a guest gives for a close (DECISIONS I-690), and the
@@ -151,11 +172,22 @@ type Service struct {
 	Interval time.Duration
 	// Waker wakes a resting machine before a delivery; set in app.go.
 	Waker Waker
+
+	// holds are the AnswerQuestion commands Hold sent and has heard no
+	// result of yet, command id to question id and send time, so the
+	// result's code reaches a log line (I-1242).
+	mu    sync.Mutex
+	holds map[uuid.UUID]holdSent
+}
+
+type holdSent struct {
+	question uuid.UUID
+	at       time.Time
 }
 
 // New builds the service.
 func New(pool *db.Pool, ev *events.Ingest, send Sender, log *slog.Logger) *Service {
-	return &Service{pool: pool, events: ev, send: send, log: log.With("component", "api"), Now: time.Now, Interval: 2 * time.Second}
+	return &Service{pool: pool, events: ev, send: send, log: log.With("component", "api"), Now: time.Now, Interval: 2 * time.Second, holds: map[uuid.UUID]holdSent{}}
 }
 
 // clean trims s and makes it storable (no NUL or other control character
@@ -542,6 +574,109 @@ func (s *Service) AnswerSecret(ctx context.Context, userID uuid.UUID, id uuid.UU
 	return s.Get(ctx, &userID, id)
 }
 
+// Hold keeps a pending question open while the owner answers it on the
+// dashboard (DECISIONS I-1242): expires_at becomes now + HoldFor when that
+// is later than it is, never past created_at + HoldCap. A hold that would
+// move it by less than HoldEvery is a no-op that still returns the
+// question, so the page's every-60-s hold sends the guest at most one
+// command per 30 s. A question no longer pending is ErrClosed with the
+// question as it stands, as Answer is. A hold that took is carried to
+// the guest at once as AnswerQuestion status extended, so repose-ask's
+// own deadline moves too; that delivery is best effort, logged by reason
+// and never retried, since the next hold carries the newer deadline.
+func (s *Service) Hold(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*Question, error) {
+	q, err := s.Get(ctx, &userID, id)
+	if err != nil {
+		return nil, err
+	}
+	now := s.Now()
+	if q.State == StatePending && !q.ExpiresAt.After(now) {
+		q.State = StateExpired // the worker writes it at its next pass
+	}
+	if q.State != StatePending {
+		return q, ErrClosed
+	}
+	until := now.Add(HoldFor)
+	if capAt := q.CreatedAt.Add(HoldCap); until.After(capAt) {
+		until = capAt
+	}
+	tag, err := s.pool.Exec(ctx, `update questions set expires_at = $2 where id = $1 and state = 'pending' and expires_at > $3 and expires_at <= $4`,
+		id, until, now, until.Add(-HoldEvery))
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		// Held less than HoldEvery ago, past the cap, or closed meanwhile.
+		q, err = s.Get(ctx, &userID, id)
+		if err != nil {
+			return nil, err
+		}
+		if q.State != StatePending || !q.ExpiresAt.After(now) {
+			if q.State == StatePending {
+				q.State = StateExpired
+			}
+			return q, ErrClosed
+		}
+		return q, nil
+	}
+	s.log.Info("question held", "event", "agent_question", "question_id", id.String())
+	s.tellGuest(ctx, id, until)
+	return s.Get(ctx, &userID, id)
+}
+
+// tellGuest sends a hold's new deadline to the guest as AnswerQuestion
+// status extended, through the host's stream, waking a resting machine
+// first as a delivery does (I-818): the owner is answering. Every failure
+// is logged by reason and left there; a guestd from before I-1242 answers
+// invalid_argument, which OnResult logs the same way, and the question
+// then expires on the guest at the ask's own timeout as before.
+func (s *Service) tellGuest(ctx context.Context, id uuid.UUID, until time.Time) {
+	var guestID uuid.UUID
+	var projectID uuid.UUID
+	var hostID *uuid.UUID
+	var paused bool
+	err := s.pool.QueryRow(ctx, `select q.guest_id, p.id, p.host_id, p.resting_since is not null from questions q join projects p on p.id = q.project_id and p.guest_id = q.guest_id
+		where q.id = $1`, id).Scan(&guestID, &projectID, &hostID, &paused)
+	reason := ""
+	switch {
+	case db.IsNoRows(err):
+		reason = "guest_gone"
+	case err != nil:
+		reason = "lookup_failed"
+	case hostID == nil:
+		reason = "no_host"
+	case s.send == nil:
+		reason = "no_sender" // the admin CLI's service sends nothing
+	}
+	if reason == "" && paused && s.Waker != nil {
+		if _, err := s.Waker.Wake(ctx, projectID, resting.ReasonAnswer); err != nil {
+			reason = "wake_failed"
+		}
+	}
+	if reason != "" {
+		s.log.Info("question hold not delivered", "event", "agent_question", "question_id", id.String(), "reason", reason)
+		return
+	}
+	cmdID := store.NewID()
+	s.mu.Lock()
+	for k, h := range s.holds {
+		if s.Now().Sub(h.at) > 2*time.Minute {
+			delete(s.holds, k) // a result that never came
+		}
+	}
+	s.holds[cmdID] = holdSent{question: id, at: s.Now()}
+	s.mu.Unlock()
+	cmd := &hostdv1.Command{CommandId: cmdID.String(), Cmd: &hostdv1.Command_AnswerQuestion{AnswerQuestion: &hostdv1.AnswerQuestion{
+		GuestId: guestID.String(), QuestionId: id.String(), Status: StatusExtended, ExpiresUnix: until.Unix(),
+	}}}
+	if err := s.send.Send(ctx, *hostID, cmd); err != nil {
+		s.mu.Lock()
+		delete(s.holds, cmdID)
+		s.mu.Unlock()
+		s.log.Info("question hold not delivered", "event", "agent_question", "question_id", id.String(), "reason", "host_not_connected")
+	}
+}
+
 // Cancel dismisses a pending question; the waiting ask exits cancelled.
 // via is where the owner dismissed it: cli or dashboard.
 func (s *Service) Cancel(ctx context.Context, userID uuid.UUID, id uuid.UUID, via string) (*Question, error) {
@@ -707,6 +842,19 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 	cmdID, err := uuid.Parse(r.CommandId)
 	if err != nil {
 		return false
+	}
+	s.mu.Lock()
+	h, held := s.holds[cmdID]
+	delete(s.holds, cmdID)
+	s.mu.Unlock()
+	if held {
+		// A hold's result (I-1242): nothing to store, the code to log.
+		code := r.GetError().GetCode()
+		if r.Ok {
+			code = "ok"
+		}
+		s.log.Info("question hold result", "event", "command_result", "command_id", r.CommandId, "question_id", h.question.String(), "host_id", hostID.String(), "result", code)
+		return true
 	}
 	var qid uuid.UUID
 	err = s.pool.QueryRow(ctx, "select id from questions where deliver_command_id = $1", cmdID).Scan(&qid)

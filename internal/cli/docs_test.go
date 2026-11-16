@@ -57,9 +57,12 @@ var undocumentedFlags = map[string]string{
 	"repose open --desktop": "old name of repose browser",
 	"repose open --stop":    "old name of repose browser stop",
 	// One spelling per idea (I-619): the old names, hidden for a release.
-	"repose open --local-port":           "old form of repose open LOCAL:PORT",
-	"repose browser --stop":              "old name of repose browser stop",
-	"repose browser --no-open":           "old name of repose browser --no-browser",
+	"repose open --local-port": "old form of repose open LOCAL:PORT",
+	"repose browser --stop":    "old name of repose browser stop",
+	"repose browser --no-open": "old name of repose browser --no-browser",
+	// Always on since I-1234: a directory copies without it. Hidden for
+	// a release for the hands that type it.
+	"repose cp --recursive":              "always on (I-1234)",
 	"repose browser bridge --no-browser": "old name of --no-inspect",
 	"repose snapshots restore --as-new":  "old name of --as",
 	"repose mcp forward --remove":        "old name of repose mcp rm",

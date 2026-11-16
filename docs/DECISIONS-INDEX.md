@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-969 entries.
+976 entries.
 
 ## Scope
 
@@ -284,7 +284,7 @@ pointer, not a summary.
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4408
 - **I-199** Ports are auto-forwarded while a CLI session is attached — amended by I-1106; L4413
 - **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; amended by I-1124; L4426
-- **I-201** `repose cp` — L4438
+- **I-201** `repose cp` — amended by I-1234; L4438
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4443
 - **I-203** The first sync of a large GitHub repository clones in the guest — amended by I-713; amended by I-714; L4451
 - **I-204** Nothing on GitHub may name the platform — L4461
@@ -329,7 +329,7 @@ pointer, not a summary.
 - **I-247** The laptop's ssh-agent is never forwarded; GitHub pushes go over HTTPS with the carried gh login — 2026-09-24; L5990
 - **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; amended by I-618; amended by I-753; L6029
 - **I-249** The command-not-found hint is the plain bash line plus two aligned commands — 2026-09-24; L6061
-- **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; amended by I-688; amended by I-690; L6078
+- **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; amended by I-688; amended by I-690; amended by I-1242; L6078
 - **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; amended by I-690; L6126
 - **I-246** The agents' browser is one headed Chromium on the desktop's display, shared by both MCP servers over CDP, and the desktop only views it — 2026-09-24; amended by I-555; L6167
 - **I-256** Vercel and portless stay menu entries, voice mode is not a repose feature, and a quick path to production stays deferred — 2026-09-25; L6239
@@ -355,7 +355,7 @@ pointer, not a summary.
 - **I-269** A capacity waitlist holds a new user's first project when the fleet is near full — 2026-09-26; amended by I-290; L7025
 - **I-273** `repose ls` and `repose rm` are the names; `projects` and `destroy` are aliases — 2026-09-26; L7080
 - **I-274** `repose ps` lists the tmux windows — 2026-09-26; amended by I-509; amended by I-606; L7107
-- **I-275** `repose exec` runs one command in the checkout; `repose ssh` opens a shell there — 2026-09-26; L7125
+- **I-275** `repose exec` runs one command in the checkout; `repose ssh` opens a shell there — 2026-09-26; amended by I-1232; L7125
 - **I-276** Did-you-mean for commands, `-q` on listings — 2026-09-26; amended by I-630; amended by I-635; L7173
 - **I-277** `repose secrets import` sets every NAME=VALUE of a .env file — 2026-09-26; L7193
 - **I-281** Every ssh to `<project>.repose` first runs `repose ssh-prepare`, so plain ssh, scp, rsync, git and editors reach every project — 2026-09-26; L7220
@@ -373,7 +373,7 @@ pointer, not a summary.
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7754
 - **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; amended by I-902; amended by I-1033; amended by I-1090; L7811
 - **I-295** The dashboard under plans: the fake's default is exempt, the Paddle stub, one site-wide CSP, and what the pages stop showing — 2026-09-27; L7879
-- **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; amended by I-1216; L7924
+- **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; amended by I-1216; amended by I-1238; L7924
 - **I-296** `repose browser bridge` lends the guest's browser tools the laptop's own Chrome, through Chrome's DevTools switch, a front that answers `/json/version`, and a reverse tunnel whose remote command holds the guest's endpoint switched — 2026-09-27; L8016
 - **I-297** The user docs have a Tutorials section: one job per page, in the order a new user meets them — 2026-09-27; partly amended by I-316; L8075
 - **I-298** The Vercel CLI's login stays on the laptop — 2026-09-27; L8095
@@ -677,7 +677,7 @@ pointer, not a summary.
 - **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17507
 - **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17564
 - **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17584
-- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; L17603
+- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; amended by I-1236; L17603
 - **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17662
 - **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17695
 - **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; amended by I-750; amended by I-888; L17794
@@ -745,7 +745,7 @@ pointer, not a summary.
 - **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; amended by I-1168; L20939
 - **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L21012
 - **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L21039
-- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L21052
+- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — amended by I-1242; L21052
 - **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L21062
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21078
 - **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21092
@@ -938,7 +938,7 @@ pointer, not a summary.
 - **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29699
 - **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29754
 - **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L29845
-- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L29893
+- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; amended by I-1232; L29893
 - **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29929
 - **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L29970
 - **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30026
@@ -1000,4 +1000,11 @@ pointer, not a summary.
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33751
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L33802
-- **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L33967
+- **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L33983
+- **I-1232** `repose exec` runs one quoted word with spaces in the machine's shell, and the laptop-path note shows the command to type — 2026-11-16; L34020
+- **I-1234** `repose cp` copies a directory without `-r` — 2026-11-16; L34056
+- **I-1236** `repose config --global add` puts the package list in when machine.nix has none — 2026-11-16; L34072
+- **I-1238** `repose browser` tells one machine's viewer from another's — 2026-11-16; L34094
+- **I-1240** `repose stop` and `repose rm` fetch nothing first — 2026-11-16; L34123
+- **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; L34158
+- **I-1244** SnapshotStale counts from the later of the newest snapshot and the machine's start, and the gauge refreshes hourly — 2026-11-16; L34205

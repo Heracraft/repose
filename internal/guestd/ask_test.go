@@ -355,3 +355,36 @@ func TestNotifyAndAskCarryTheLink(t *testing.T) {
 		t.Fatalf("question = %+v", q)
 	}
 }
+
+// TestAskHeldOverTheWire (DECISIONS I-1242): an AnswerQuestion with status
+// extended moves the open question's deadline, which the asker's poll
+// shows, closes nothing, and needs expires_unix.
+func TestAskHeldOverTheWire(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	code, body := hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Agent: "claude", Window: "claude", Text: "Name?", TimeoutS: 60})
+	if code != http.StatusCreated {
+		t.Fatalf("POST /ask = %d %s", code, body)
+	}
+	var st hooks.AskState
+	if err := json.Unmarshal(body, &st); err != nil || st.ID == "" {
+		t.Fatalf("ask state = %s (%v)", body, err)
+	}
+	until := time.Now().Add(5 * time.Minute).Truncate(time.Second)
+	hold := &guestdv1.Request{Req: &guestdv1.Request_AnswerQuestion{AnswerQuestion: &guestdv1.AnswerQuestion{QuestionId: st.ID, Status: "extended", ExpiresUnix: until.Unix()}}}
+	if resp := h.do(t, hold); !resp.GetOk() {
+		t.Fatalf("AnswerQuestion extended: %+v", resp.GetError())
+	}
+	code, body = hookDo(t, c, http.MethodGet, "/ask/"+st.ID+"?wait=0", nil)
+	var s hooks.AskState
+	if err := json.Unmarshal(body, &s); err != nil || code != http.StatusOK {
+		t.Fatalf("poll = %d %s", code, body)
+	}
+	if s.State != questions.StateOpen || !s.Expires.Equal(until) {
+		t.Fatalf("after the hold: state %s, expires %v, want open at %v", s.State, s.Expires, until)
+	}
+	bare := &guestdv1.Request{Req: &guestdv1.Request_AnswerQuestion{AnswerQuestion: &guestdv1.AnswerQuestion{QuestionId: st.ID, Status: "extended"}}}
+	if resp := h.do(t, bare); resp.GetOk() || resp.GetError().GetCode() != "invalid_argument" {
+		t.Fatalf("extended without expires_unix = %+v, want invalid_argument", resp)
+	}
+}

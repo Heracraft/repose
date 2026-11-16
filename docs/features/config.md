@@ -267,7 +267,9 @@ Base bumps (DECISIONS R4-5):
 - The CLI keeps `~/.config/repose/machine.nix` and pushes it on `run`
   when it changed since its last push, refusing when the account's copy
   changed since too; `repose config --global` shows, edits, adds,
-  removes and applies; `repose run --no-personal` and the Config page's
+  removes and applies (`add` puts a `home.packages = with pkgs; [ ];`
+  list into a module that has none, and the template into an emptied
+  file, I-1236); `repose run --no-personal` and the Config page's
   switch opt a machine out.
 - With a machine.nix on the account the tool carry skips the laptop's
   global tools; with a `repose.nix` at the checkout root it skips the
