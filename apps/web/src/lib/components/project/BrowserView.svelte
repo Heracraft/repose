@@ -11,13 +11,21 @@
   `credentialsrequired` and `securityfailure` handlers, which the guest's
   own viewer page has, are therefore not ported.
 
-  Neither direction of the RFB cut-text channel is bridged to the
-  watcher's own machine. The guest's viewer page bridges both
-  (nix/guest/base/desktop/viewer/viewer.js), and a guest the tenant has
-  root on is the one thing on this path repose does not trust: it would
-  choose what a watcher pastes next, and read what they copied. The word
-  for that channel appears nowhere in this file on purpose, so a grep
-  over apps/web/src finds nothing here (I-1216, docs/features/browser.md).
+  The RFB cut-text channel is carried in both directions, but only on a
+  click, and it never touches the watcher's own clipboard on its own
+  (I-1216). The guest's viewer page bridges it automatically both ways
+  (nix/guest/base/desktop/viewer/viewer.js): it writes guest cut-text
+  straight into the watcher's clipboard, and pushes the watcher's
+  clipboard into the guest on `focus` and `visibilitychange`. That is
+  defensible over an SSH forward the user started themselves, and not
+  here, because a guest the tenant has root on is the one thing on this
+  path repose does not trust: automatic, it would read whatever was on
+  the watcher's clipboard the moment the tab was focused, and choose what
+  their next paste anywhere else would be. So this page is the panel
+  instead: text reaches the machine when Send is pressed, and what the
+  machine copied sits in the page until the watcher presses Copy. Both
+  are tenant text, so neither is ever logged
+  (docs/features/browser.md, docs/ops/OBSERVABILITY.md).
 
   Every connect, including a reconnect, goes through the authenticated
   mint, because the mint is the only place a frozen machine wakes. So a
@@ -26,6 +34,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import CopyButton from '$lib/hk/CopyButton.svelte';
+	import type RFBClass from '@novnc/novnc';
 	import { mintBrowserView, viewStreamUrl } from '$lib/api/client';
 	import { errorText } from '$lib/api/errors';
 	import { VIEW_RETRIES, viewEnded } from '$lib/browserView';
@@ -46,7 +56,7 @@
 	let note = $state<string | undefined>(undefined);
 
 	let screen: HTMLDivElement | undefined;
-	let rfb: { disconnect(): void; focus(): void } | undefined;
+	let rfb: RFBClass | undefined;
 	let sock: WebSocket | undefined;
 	/** The close frame's reason word, read before noVNC sees the close. */
 	let reason: string | undefined;
@@ -55,6 +65,13 @@
 	let dropped = false;
 	/** A stream is up, so its end is still to be answered, once. */
 	let live = false;
+	/** The panel's halves: what Send gives the machine, and what the
+	    machine's last copy left in the page. Neither is logged, and
+	    `copied` is only ever filled by the machine's own cut-text. */
+	let toSend = $state('');
+	let copied = $state('');
+	let sent = $state(false);
+	let sentTimer: ReturnType<typeof setTimeout> | undefined;
 
 	/**
 	 * Drops the stream and the socket; both are replaced by a reconnect.
@@ -65,9 +82,25 @@
 		clearTimeout(timer);
 		timer = undefined;
 		live = false;
+		clearTimeout(sentTimer);
+		sent = false;
 		rfb?.disconnect();
 		rfb = undefined;
 		sock = undefined;
+	}
+
+	/**
+	 * Hands the machine's clipboard what is in the field. A gesture only:
+	 * nothing reads the watcher's own clipboard, here or anywhere in this
+	 * file. The face says Sent for a moment, because a remote paste shows
+	 * nothing on screen until the machine is asked to paste it.
+	 */
+	function send() {
+		if (!toSend || !rfb) return;
+		rfb.clipboardPasteFrom(toSend);
+		sent = true;
+		clearTimeout(sentTimer);
+		sentTimer = setTimeout(() => (sent = false), 1200);
 	}
 
 	/** Stops with a line, and the Resume view button beside it. */
@@ -180,6 +213,12 @@
 			phase = 'watching';
 			note = undefined;
 		});
+		// The machine copied something: it goes in the page and no further.
+		// navigator.clipboard is reached only by the Copy button below.
+		r.addEventListener('clipboard', (e: CustomEvent<{ text: string }>) => {
+			if (dropped || r !== rfb) return;
+			copied = e.detail.text;
+		});
 		r.addEventListener('disconnect', () => {
 			if (dropped || r !== rfb) return;
 			// This instance is gone: teardown must not disconnect it again.
@@ -212,6 +251,41 @@
 			</div>
 		{/if}
 	</div>
+	{#if phase === 'watching'}
+		<div class="clip">
+			<div class="half">
+				<label class="hk-field-label" for="view-paste">Paste into the machine</label>
+				<div class="row">
+					<textarea
+						id="view-paste"
+						class="hk-textarea clipfield"
+						rows="2"
+						bind:value={toSend}
+						data-testid="view-paste"
+					></textarea>
+					<button
+						type="button"
+						class="hk-btn-secondary hk-btn-sm"
+						aria-disabled={toSend ? undefined : 'true'}
+						onclick={send}>{sent ? 'Sent' : 'Send'}</button
+					>
+				</div>
+			</div>
+			{#if copied}
+				<div class="half">
+					<span class="hk-field-label" id="view-copied-label">Copied in the machine</span>
+					<div class="row">
+						<output
+							class="clipout"
+							aria-labelledby="view-copied-label"
+							data-testid="view-copied">{copied}</output
+						>
+						<CopyButton text={() => copied} size="sm" ariaLabel="Copy what the machine copied" />
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
 </section>
 
 <style>
@@ -277,6 +351,56 @@
 		.resume {
 			height: 2.75rem;
 			padding: 0 0.875rem;
+		}
+	}
+	/* The clipboard panel under the screen: one column on a phone, two
+	   from 768px. Both halves are controls a thumb hits, so the field and
+	   the output keep 44px on a coarse pointer, as .resume above does. */
+	.clip {
+		display: grid;
+		gap: 0.75rem;
+		margin-top: 0.75rem;
+	}
+	.half {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		min-width: 0;
+	}
+	.row {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+	.clipfield {
+		flex: 1 1 auto;
+		min-width: 0;
+		resize: vertical;
+	}
+	.clipout {
+		flex: 1 1 auto;
+		min-width: 0;
+		min-height: 2.75rem;
+		padding: 0.5rem 0.625rem;
+		border: 1px solid var(--hk-code-border);
+		border-radius: var(--hk-radius-sm);
+		background: var(--hk-code-bg);
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		max-height: 7rem;
+		overflow-y: auto;
+	}
+	@media (min-width: 768px) {
+		.clip {
+			grid-template-columns: 1fr 1fr;
+		}
+	}
+	@media (pointer: coarse) {
+		.clipfield {
+			min-height: 2.75rem;
 		}
 	}
 </style>

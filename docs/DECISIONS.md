@@ -33898,14 +33898,28 @@ does not use. No CSP change was needed: `connect-src` already allows
 `wss:`, noVNC loads no worker, no wasm and no eval, and the chunk is
 served from `self`.
 
-**No clipboard bridge, in either direction.** The guest's viewer page
+**The clipboard is a panel, not a bridge.** The guest's viewer page
 writes RFB cut text to the watcher's clipboard and reads theirs back on
-every window focus. On the dashboard that would hand a guest the tenant
-has root on the operator's own clipboard: it chooses what the next paste
-into a terminal says, and it reads what was copied out of a password
-manager. Neither handler is ported, the word appears nowhere in the
-component, and `BrowserView.test.ts` greps for it. `repose browser`
-keeps its bridge; the docs say which view bridges and which does not.
+every window focus. Automatic, on the dashboard, that would hand a guest
+the tenant has root on the watcher's own clipboard: it chooses what the
+next paste into a terminal says, and it reads what was copied out of a
+password manager. So the automatic half is refused and the explicit half
+is built, which is what noVNC's own demo page offers: under the screen,
+a field and **Send** hand `clipboardPasteFrom` the text on a click, and
+the `clipboard` event puts what the machine copied in the page, where
+the site's own `CopyButton` copies it on another click. The component
+reaches `navigator.clipboard` nowhere itself, ports neither the `focus`
+nor the `visibilitychange` listener, and calls `clipboardPasteFrom` once,
+from the button; `browserView.test.ts` pins all of that against the
+source, and against the guest page's opposite choice, because the panel
+needs frames and frames need a guest. Both directions carry a tenant's
+own text, so neither is logged.
+
+*Rejected:* the automatic bridge, for the reason above; and a view with
+no clipboard at all, which was built first and is half a view -- a
+watcher who cannot paste a URL or a login into the machine's browser has
+to fall back to `repose browser`, which is the laptop command the tab
+exists to spare them (owner, 2026-11-16).
 
 *A sixth tab* (amending I-841's five): **Browser**, second, after
 Overview. Watching the machine is the other thing done from a project's
@@ -33931,8 +33945,10 @@ origin, where the Logto refresh token lives: a parser bug there is an
 XSS that reaches the account's own actions. It is bounded by the
 single-owner project model (a project has exactly one owner, so the
 guest and the page belong to the same person) and contained by a
-dedicated route, a pinned noVNC and no clipboard bridge. **If project
-sharing ever ships, reopen this entry.** The guest host certificate's
+dedicated route, a pinned noVNC and a clipboard that moves only on a
+click. **If project sharing ever ships, reopen this entry**, the
+clipboard panel first: it is bounded by the single-owner model, and
+sharing is what breaks that bound. The guest host certificate's
 IP principal and its ten-year life are untouched here; on this path the
 impersonation they allow is closed by reusing the dial that passes the
 *login* as the address, with `view_crosstenant_test.go` holding it

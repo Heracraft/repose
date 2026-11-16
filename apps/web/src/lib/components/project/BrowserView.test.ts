@@ -49,10 +49,15 @@ class FakeRFB extends EventTarget {
 		this.listening.push(type);
 		super.addEventListener(type, cb);
 	}
+	/** What the panel's Send handed the machine, in order. */
+	readonly pasted: string[] = [];
 	disconnect() {
 		this.disconnected = true;
 	}
 	focus() {}
+	clipboardPasteFrom(text: string) {
+		this.pasted.push(text);
+	}
 }
 
 vi.mock('@novnc/novnc', () => ({ default: FakeRFB }));
@@ -198,17 +203,87 @@ describe('BrowserView', () => {
 		expect(line()).toBe('todo-app already has a view open.');
 	});
 
-	// No clipboard bridge in either direction (I-1216): the guest's own
-	// viewer page has one, and a guest the tenant has root on is what this
-	// path does not trust.
-	it('bridges no clipboard', async () => {
-		await open();
-		expect(views[0].listening).toEqual(['connect', 'disconnect']);
-		// The grep docs/CHECKLIST.md's shape asks for: the word appears
-		// nowhere in the view or its tab.
-		const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
-		for (const p of ['BrowserView.svelte', '../../../routes/projects/[id]/browser/+page.svelte']) {
-			expect(/clipboard/i.test(read(p)), p).toBe(false);
+	// The clipboard is a panel and not a bridge (I-1216): the guest's own
+	// viewer page moves both directions automatically, and a guest the
+	// tenant has root on is what this path does not trust, so nothing here
+	// moves without a click.
+	describe('the clipboard panel', () => {
+		/** Reaches frames, which is the only state the panel is drawn in. */
+		async function watching() {
+			await open();
+			views[0].dispatchEvent(new Event('connect'));
+			flushSync();
 		}
+
+		const field = () => target.querySelector<HTMLTextAreaElement>('[data-testid="view-paste"]');
+		const out = () => target.querySelector('[data-testid="view-copied"]')?.textContent ?? '';
+		const button = (name: string) =>
+			[...target.querySelectorAll<HTMLButtonElement>('button')].find(
+				(b) => b.textContent?.trim() === name
+			);
+
+		it('is drawn only once frames are coming', async () => {
+			await open();
+			expect(field()).toBe(null);
+			views[0].dispatchEvent(new Event('connect'));
+			flushSync();
+			expect(field()).not.toBe(null);
+		});
+
+		it('hands the machine the field text on Send, and nothing before', async () => {
+			await watching();
+			const ta = field()!;
+			ta.value = 'https://example.test/login';
+			ta.dispatchEvent(new Event('input'));
+			flushSync();
+			// Typing alone moves nothing: the gesture is the whole rule.
+			expect(views[0].pasted).toEqual([]);
+			button('Send')!.click();
+			flushSync();
+			expect(views[0].pasted).toEqual(['https://example.test/login']);
+		});
+
+		it('an empty field sends nothing', async () => {
+			await watching();
+			expect(button('Send')!.getAttribute('aria-disabled')).toBe('true');
+			button('Send')!.click();
+			flushSync();
+			expect(views[0].pasted).toEqual([]);
+		});
+
+		it('what the machine copied lands in the page and not in the watcher clipboard', async () => {
+			const writeText = vi.fn().mockResolvedValue(undefined);
+			Object.defineProperty(navigator, 'clipboard', {
+				configurable: true,
+				value: { writeText }
+			});
+			await watching();
+			expect(out()).toBe('');
+			views[0].dispatchEvent(new CustomEvent('clipboard', { detail: { text: 'sk-secret' } }));
+			flushSync();
+			expect(out()).toBe('sk-secret');
+			// The guest's own page would have written it by now; this one
+			// waits for the Copy beside it (CopyButton, its own suite).
+			expect(writeText).not.toHaveBeenCalled();
+		});
+
+		it('listens for the three events it handles, and no focus or visibility', async () => {
+			await watching();
+			expect(views[0].listening).toEqual(['connect', 'clipboard', 'disconnect']);
+			// The two listeners the guest's page has and this one refuses,
+			// pinned against the source: automatic either way is the attack.
+			const code = readFileSync(join(__dirname, 'BrowserView.svelte'), 'utf8')
+				.replace(/<!--[\s\S]*?-->/g, '')
+				.replace(/^\s*\/\/.*$/gm, '');
+			expect(code).not.toContain('visibilitychange');
+			expect(code).not.toContain("addEventListener('focus'");
+			// The page never reaches the watcher's clipboard itself: the one
+			// Copy on screen is the site's CopyButton, on a click.
+			expect(code).not.toContain('navigator.clipboard');
+			expect(code).toContain('CopyButton');
+			// One paste call, reached from the button and nowhere else.
+			expect(code.match(/clipboardPasteFrom/g)).toHaveLength(1);
+			expect(code).toContain('onclick={send}');
+		});
 	});
 });

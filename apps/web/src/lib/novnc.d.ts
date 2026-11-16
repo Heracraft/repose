@@ -22,5 +22,21 @@ declare module '@novnc/novnc' {
 		viewOnly: boolean;
 		disconnect(): void;
 		focus(): void;
+		/** Hands the server's clipboard this text (docs/API.md). */
+		clipboardPasteFrom(text: string): void;
+		/**
+		 * The server sent clipboard data (docs/API.md "clipboard"). Named
+		 * here so the Browser tab's handler is typed; the second signature
+		 * keeps the one EventTarget declares.
+		 */
+		addEventListener(
+			type: 'clipboard',
+			listener: (e: CustomEvent<{ text: string }>) => void
+		): void;
+		addEventListener(
+			type: string,
+			listener: EventListenerOrEventListenerObject | null,
+			options?: boolean | AddEventListenerOptions
+		): void;
 	}
 }

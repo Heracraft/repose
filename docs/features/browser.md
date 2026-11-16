@@ -188,12 +188,27 @@ its password field; a new CLI against an older base opens stock noVNC's
   error are reconnected to, three times at 1, 2 and 4 seconds, each with
   a fresh mint; `idle`, `cap` and `budget` stop and show **Resume view**,
   because a reconnect mints and a mint is where a frozen machine wakes.
-- **No clipboard bridge, in either direction**, which is the one place
-  the two viewers differ in what they can do. The guest's own viewer
-  page bridges both ways for a person at their own laptop; on the
-  dashboard that would let a guest the tenant has root on choose what
-  their next paste says and read what they last copied. `repose browser`
-  is the view that bridges.
+- **The clipboard is a panel, not a bridge**, which is the one place the
+  two viewers differ in how they work. Under the screen, "Paste into the
+  machine" is a field and a **Send**: the text reaches the machine's
+  clipboard when Send is pressed. "Copied in the machine" appears when
+  the machine copies something and holds it in the page, with the site's
+  own Copy beside it. Nothing moves on its own in either direction, and
+  the page never reads or writes the watcher's own clipboard except
+  through that Copy.
+
+  The guest's own viewer page does bridge both ways automatically
+  (`viewer.js`): it writes the machine's cut-text straight into the
+  watcher's clipboard, and pushes the watcher's clipboard into the
+  machine on `focus` and `visibilitychange`. That is right for a person
+  at their own laptop behind their own SSH forward, and wrong here: a
+  guest the tenant has root on would read whatever was on the watcher's
+  clipboard the moment the tab was focused, and choose what their next
+  paste anywhere else said. The panel's text is a tenant's own text in
+  both directions, so neither half is ever logged
+  (`docs/ops/OBSERVABILITY.md`). `apps/web/src/lib/browserView.test.ts`
+  pins both rules against the source, because the panel needs frames and
+  frames need a guest.
 - The two viewers share no code. The guest's page uses the `core/` and
   `vendor/` modules copied out of `pkgs.novnc` at build time; the
   dashboard's uses `@novnc/novnc` pinned to the exact version nixpkgs
@@ -345,9 +360,15 @@ its password field; a new CLI against an older base opens stock noVNC's
   cut-text message and in the ticket, and finds none of them in the
   captured logs, while the same logs carry `browser_view_close`, its
   outcome, `bytes_out` and an unredacted `ticket_id`.
-- The dashboard's view bridges no clipboard: the word appears in neither
-  the component nor its tab, which `BrowserView.test.ts` asserts, and
-  the view listens for `connect` and `disconnect` only.
+- The dashboard's view moves the clipboard only on a click:
+  `BrowserView.test.ts` drives the panel against a stub RFB -- typing in
+  the field hands the machine nothing, **Send** hands it the text once,
+  the machine's own cut-text lands in the page with
+  `navigator.clipboard.writeText` never called -- and pins against the
+  source that the component reaches `navigator.clipboard` nowhere itself
+  and ports neither the `focus` nor the `visibilitychange` listener the
+  guest's page has. The view listens for `connect`, `clipboard` and
+  `disconnect`, and nothing else.
 
 ## Why Claude in Chrome cannot work here
 

@@ -370,9 +370,11 @@ line stored by us:**
 - any byte of the view's RFB stream. A framebuffer rectangle is the
   contents of a tenant's screen: no hexdump on an error path, no first-N
   bytes in a parse failure, no frame in a trace attribute
-- clipboard text. The dashboard view bridges no clipboard (I-1216), and
-  RFB cut-text messages are literally what a tenant typed or copied, so
-  they are never logged, buffered to disk, or counted by content
+- clipboard text. The dashboard view moves it only on a click, through
+  its panel (I-1216), and RFB cut-text messages are literally what a
+  tenant typed or copied, so they are never logged, buffered to disk, or
+  counted by content -- in either direction, the watcher's paste
+  included, which crosses the relay like any other frame
 
 `internal/obs` enforces the rules in code (in three packages, so that guestd links a logger and not an exporter:
 DECISIONS I-59):
