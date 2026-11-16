@@ -25,12 +25,19 @@ ports and the kernel's WireGuard, so it is a NixOS appliance deployed with
   (`gateway wgsync`) that reads the host list from the api
   (`/internal/hosts`, added to `api.md` by this workstream as I-4) and
   applies peers with `wg set` without restarting the interface.
-- The hook ingest and noVNC relay listeners that guests reach over
-  WireGuard (`:8443` and `:6081` on the edge's wg address). Hook ingest is
-  a thin HTTPS forwarder to the api's `/internal/events` (I-4 adds it);
-  noVNC relay is a TCP proxy that the CLI's `repose browser` reaches through
-  an SSH forward, so it is a plain port relay to `guest_ip:6080` keyed by
-  the SSH session's project.
+- The hook ingest listener that guests reach over WireGuard (`:8443` on
+  the edge's wg address): a thin HTTPS forwarder to the api's
+  `/internal/events` (I-4 adds it).
+- The browser view's relay on `:6081` of the edge's wg address, which the
+  **api** dials and no guest can reach (I-1216, amending I-292 and this
+  section's own "do not add it" below). It is not the noVNC port relay
+  this workstream once planned: the api terminates the dashboard's
+  WebSocket and does the authentication, and the relay does the SSH dial
+  to the guest, `repose-guest-profile desktop start`, and the RFB VncAuth
+  whose password therefore never leaves the edge. The api authenticates
+  with its own client certificate from the api CA, pinned to the name
+  `api`; the nftables rule narrowing 6081 to the control plane's address
+  is a filter on top of that, never the credential.
 - A stub for the HTTPS preview proxy: the listener on 443 exists, serves a
   static "previews are not enabled yet" page, and the code path that would
   route `<port>-<slug>.repose.run` is laid out with the
@@ -256,10 +263,14 @@ example by a hook fired during a guestd restart). Both land in the same
 `events` table with the same dedupe key (`project_id, agent, kind, ts
 rounded to the second`).
 
-`:6081` is not a general relay; `repose browser` uses a normal SSH
-`-L 6080:localhost:6080` through the gateway relay, so no separate noVNC
-listener is needed. The port is reserved and the listener is not built;
-do not add it.
+`:6081` is not a general relay, and `repose browser` still uses a normal
+SSH `-L 6080:localhost:6080` through the gateway relay, which needs no
+listener here. Since I-1216 the port does carry one thing: the browser
+view's relay, which the api dials over WireGuard (§5.10). It is reachable
+from the control plane's address only -- the rule it used to share with
+hook ingest admitted every guest on wg0 -- and a client certificate named
+`api`, from the api's CA, is what authenticates the caller. Nothing a
+guest sends can reach it.
 
 ### 5.8 Preview proxy stub
 
@@ -295,6 +306,46 @@ gateway's own SSH connection to the guest and a `direct-tcpip` channel
 to `127.0.0.1:<port>`, keeping one connection per project for 30 s.
 
 `docs/features/webhooks.md` is the behaviour, the limits and the states.
+
+### 5.10 The browser view's relay on wg0 :6081 (DECISIONS I-1216)
+
+The dashboard draws a project's machine browser, and this is the leg that
+reaches the guest. The api terminates the browser's WebSocket, checks the
+ticket and holds the byte budget, the idle close and the session cap; the
+edge has the two things the api cannot reach -- a network path to a
+guest's sshd and the Host CA -- and does the RFB handshake.
+
+`internal/gateway/viewrelay.go` is the listener's protocol: one line of
+JSON in (`project_id`, `login`, `guest_ip`, every field derived by the api
+from the ticket's row), one line of JSON out (`{"ok":true}` or
+`{"code":"view_busy"}` from the closed set `view_busy`,
+`view_capacity`, `view_bad_request`, `view_dial_failed`,
+`view_desktop_failed`, `view_auth_failed`), and then the RFB stream in
+both directions. Between the two lines it takes one of 64 global slots and
+the project's single slot, dials the guest with `dialGuestSSH` -- not the
+webhook path's connection cache, which closes a client 30 s after its last
+use and would cut an open view mid-frame -- runs `repose-guest-profile
+desktop start`, reads the boot's VNC password from a bounded read of that
+output, and opens `127.0.0.1:5900` over the same SSH connection.
+
+`internal/gateway/viewrfb.go` is both halves of RFB. Towards the guest it
+performs VncAuth with that password (`crypto/des`, which is what the
+protocol names), so the password stays in this process's memory for one
+handshake and reaches neither the api nor the browser. Towards the page it
+performs the same version exchange with security type `None` and a zero
+`SecurityResult`, because noVNC starts its own state machine at the
+version string and has no entry point for a stream that is already
+authenticated. The page therefore speaks an ordinary RFB session that
+needs no credential, and the relay is a byte pipe from `ClientInit` on:
+nothing a rooted guest sends is parsed on the platform.
+
+The listener is `VIEW_LISTEN` on the edge's wg address, with the edge's
+internal certificate and `pki.RequireClientName(cfg, pki.APIClientName)`
+against `API_CA` -- the mirror of the api's `/internal` listener, which
+admits the gateway's certificate and no other identity from the same CA
+(I-431). The nftables rule narrowing 6081 to the control plane's address
+is a filter on top of that, never the credential: the control VM is a
+shared Docker host.
 
 ## 6. Failure modes
 
@@ -511,7 +562,9 @@ listed here keep the local evidence of the 06 session.
 - nftables exactly §5.1: `nft list ruleset` on the edge (22, 443,
   51820/udp public; 2222 from the tunnel and the operator /32; 8443, 6081,
   9100, 9102 from wg0 only); external scan of 20.102.98.254: 22, 443 open,
-  2222 open from the operator address, 997 ports filtered.
+  2222 open from the operator address, 997 ports filtered. Since I-1216
+  6081 is narrower still: the control plane's /32 over wg0, not every
+  guest on it.
 - Plain keys refused: `ssh probe.nobody@ssh.repose.run` answers
   `permission denied (certificate required)`; wrong principal at the real
   gateway and at a real guest's sshd: m3's isolation suite, two accounts.

@@ -29,6 +29,14 @@ const HostCertValidity = 30 * 24 * time.Hour
 // certificates carry a host id there and are refused.
 const GatewayClientName = "gateway"
 
+// APIClientName is the CN of the api's own client certificate, the one
+// identity the edge's browser-view relay admits (DECISIONS I-1216). It is
+// the reverse of GatewayClientName: on that leg the gateway is the client
+// and the api pins it; on this one the api is the client and the edge
+// pins it. A host's certificate comes from the same CA and is refused by
+// both.
+const APIClientName = "api"
+
 // CA is the authority.
 type CA struct {
 	Cert    *x509.Certificate

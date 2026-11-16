@@ -8,8 +8,10 @@
 #     whose certificate Let's Encrypt issues over TLS-ALPN-01 on that same
 #     listener, and the preview-proxy stub on every other name (a static
 #     page until the feature exists);
-#   * the hook-ingest forwarder and the metrics endpoint on the WireGuard
-#     address only;
+#   * the hook-ingest forwarder, the browser view's relay and the metrics
+#     endpoint on the WireGuard address only. Hook ingest is reachable from
+#     any guest; the view relay only from the control plane, which dials it
+#     with the api's own client certificate (DECISIONS I-1216);
 #   * an operator sshd on 2222, key-only, restricted to the operator address
 #     list and the WireGuard network.
 #
@@ -408,6 +410,14 @@ in
         HOOK_LISTEN = "${cfg.wgAddress}:8443";
         HOOK_TLS_CERT = "${tlsDir}/edge-internal.crt";
         HOOK_TLS_KEY = "${tlsDir}/edge-internal.key";
+        # The browser view's relay (DECISIONS I-1216): the api dials it
+        # over WireGuard and authenticates with its own client
+        # certificate from the api CA, pinned to the name `api`. The
+        # nftables rule narrowing 6081 to the control plane's address is
+        # a filter on top of that, never the credential.
+        VIEW_LISTEN = "${cfg.wgAddress}:6081";
+        VIEW_TLS_CERT = "${tlsDir}/edge-internal.crt";
+        VIEW_TLS_KEY = "${tlsDir}/edge-internal.key";
         PREVIEW_LISTEN = ":443";
         PREVIEW_TLS_CERT = "${tlsDir}/wildcard.crt";
         PREVIEW_TLS_KEY = "${tlsDir}/wildcard.key";

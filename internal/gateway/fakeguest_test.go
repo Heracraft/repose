@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -37,11 +38,32 @@ type fakeGuest struct {
 	lastRows      uint32
 	conns         int
 	listeners     map[string]net.Listener
+	// redirect sends a direct-tcpip channel for a port somewhere else, so
+	// a test can stand its own server in for the guest's Xvnc on 5900
+	// without binding that port on the machine running the tests.
+	redirect map[uint32]string
+	// desktop is what `repose-guest-profile desktop start` prints and how
+	// it behaves: the view relay reads the password from its last line.
+	desktop desktopBehaviour
+}
+
+// desktopBehaviour is the guest half of the browser view the tests drive.
+type desktopBehaviour struct {
+	// password is printed as the last line, as the real helper does
+	// (nix/guest/base/profile.nix).
+	password string
+	// garbage prints something that is not a password instead.
+	garbage bool
+	// hang never answers, so the relay's handshake deadline is what ends
+	// the attempt.
+	hang bool
+	// flood prints for ever, which the relay's bounded read must stop.
+	flood bool
 }
 
 func newFakeGuest(t *testing.T, ca *testca.CA, projectID, hostPrincipal string) *fakeGuest {
 	t.Helper()
-	g := &fakeGuest{t: t, projectID: projectID, envs: map[string]string{}, listeners: map[string]net.Listener{}}
+	g := &fakeGuest{t: t, projectID: projectID, envs: map[string]string{}, listeners: map[string]net.Listener{}, redirect: map[uint32]string{}}
 	checker := &ssh.CertChecker{
 		IsUserAuthority: func(auth ssh.PublicKey) bool { return keysEqual(auth, ca.User.Signer.PublicKey()) },
 	}
@@ -149,7 +171,13 @@ func (g *fakeGuest) handle(c net.Conn) {
 				_ = nc.Reject(ssh.ConnectionFailed, "bad direct-tcpip payload")
 				continue
 			}
-			target, err := net.Dial("tcp", net.JoinHostPort(d.Host, strconv.Itoa(int(d.Port))))
+			addr := net.JoinHostPort(d.Host, strconv.Itoa(int(d.Port)))
+			g.mu.Lock()
+			if to, ok := g.redirect[d.Port]; ok {
+				addr = to
+			}
+			g.mu.Unlock()
+			target, err := net.Dial("tcp", addr)
 			if err != nil {
 				_ = nc.Reject(ssh.ConnectionFailed, "connect failed: "+err.Error())
 				continue
@@ -420,6 +448,31 @@ func (g *fakeGuest) exec(sconn *ssh.ServerConn, ch ssh.Channel, command string, 
 			}
 			n -= w
 		}
+		return 0
+	case "repose-guest-profile":
+		// The desktop helper of nix/guest/base/profile.nix: it starts the
+		// socket-activated chain and prints the boot's password.
+		if rest != "desktop start" {
+			return 127
+		}
+		g.mu.Lock()
+		d := g.desktop
+		g.mu.Unlock()
+		switch {
+		case d.hang:
+			time.Sleep(30 * time.Second)
+			return 1
+		case d.flood:
+			for {
+				if _, err := ch.Write(bytes.Repeat([]byte("x"), 4096)); err != nil {
+					return 1
+				}
+			}
+		case d.garbage:
+			_, _ = fmt.Fprintf(ch, "sudo: a password is required\n")
+			return 1
+		}
+		_, _ = fmt.Fprintf(ch, "%s\n", d.password)
 		return 0
 	case "agent":
 		ach, areqs, err := sconn.OpenChannel("auth-agent@openssh.com", nil)
