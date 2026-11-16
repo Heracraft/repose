@@ -198,3 +198,24 @@ test('a machine with no agent has no Agents card and no field', async ({ page })
 	await expect(card(page)).toHaveCount(0);
 	await expect(page.getByTestId('say-field')).toHaveCount(0);
 });
+
+// The field is a control a thumb hits, so at 390 on a touch screen it
+// measures 44px like every other one (Guide B 1.7). Its one-line height
+// cancels the kit's coarse-pointer minimum, so the narrow width restores
+// it; design.spec's sweep cannot catch this one, because the field does
+// not exist until Say is pressed.
+test.describe('the field at 390 on a touch screen', () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+	test('the field a thumb types into is 44px tall', async ({ page }) => {
+		const p = await withAgents('say-touch', [
+			{ agent: 'claude', window: 'claude', state: 'needs_input' }
+		]);
+		await page.goto(`/projects/${p.id}`);
+		await card(page).getByRole('button', { name: /Say something to claude/ }).click();
+		const field = card(page).getByTestId('say-field').locator('textarea');
+		await expect(field).toBeVisible();
+		const h = await field.evaluate((el) => el.getBoundingClientRect().height);
+		expect(h).toBeGreaterThanOrEqual(43.5);
+	});
+});

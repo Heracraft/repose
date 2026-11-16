@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '$lib/api/errors';
-import type { Project, Say } from '$lib/api/types';
-import { TEXT_CAP, sayRefusal, sayState, sayWindows } from './say';
+import type { Say } from '$lib/api/types';
+import { TEXT_CAP, sayRefusal, sayState } from './say';
 
 const repo = join(__dirname, '..', '..', '..', '..');
 const guestSource = readFileSync(join(repo, 'internal', 'guestd', 'sample', 'say.go'), 'utf8');
@@ -19,10 +19,6 @@ const REASONS = [
 	'several_agents'
 ] as const;
 
-function p(state: Project['state'], agents: { agent: string; window: string; state: string }[]) {
-	return { state, signals: { agents } } as unknown as Project;
-}
-
 function refusal(reason: string, code = 'conflict'): ApiError {
 	return new ApiError(
 		{ code: code as ApiError['code'], message: 'the api said something else', detail: { reason } },
@@ -33,31 +29,6 @@ function refusal(reason: string, code = 'conflict'): ApiError {
 
 const say = (s: Partial<Say>): Pick<Say, 'state' | 'window' | 'replaced'> =>
 	({ state: 'delivered', window: 'claude', ...s }) as Say;
-
-describe('sayWindows', () => {
-	it('names every agent on a running machine, by its window', () => {
-		expect(
-			sayWindows(
-				p('running', [
-					{ agent: 'claude', window: '', state: 'needs_input' },
-					{ agent: 'codex', window: 'codex-2', state: 'working' },
-					{ agent: 'claude', window: 'claude', state: 'idle' }
-				])
-			)
-		).toEqual(['claude', 'codex-2', 'claude']);
-	});
-
-	it('is empty for a machine that is not running and for one with no agent', () => {
-		expect(sayWindows(p('stopped', [{ agent: 'claude', window: '', state: 'working' }]))).toEqual(
-			[]
-		);
-		expect(sayWindows(p('starting', [{ agent: 'claude', window: '', state: 'working' }]))).toEqual(
-			[]
-		);
-		expect(sayWindows(p('running', []))).toEqual([]);
-		expect(sayWindows(undefined)).toEqual([]);
-	});
-});
 
 describe('sayRefusal', () => {
 	it('owns a sentence for every reason the api can send', () => {

@@ -10,28 +10,10 @@
 // A browser must never read that, so every refusal this feature can get
 // has a sentence of its own here.
 import { ApiError } from '$lib/api/errors';
-import type { Project, Say } from '$lib/api/types';
+import type { Say } from '$lib/api/types';
 
 /** The longest message, internal/api/say/say.go's TextCap. */
 export const TEXT_CAP = 4 << 10;
-
-/**
- * The agent windows on a running machine, named by the window and falling
- * back to the agent, as busyAgents() does. Empty for a machine that is not
- * running and for one with no agent: nothing to speak to.
- *
- * The dashboard knows the windows, so it always sends one and the api's
- * `several_agents` refusal is unreachable from here.
- */
-export function sayWindows(p: Pick<Project, 'state' | 'signals'> | undefined): string[] {
-	if (!p || p.state !== 'running' || !p.signals) return [];
-	const out: string[] = [];
-	for (const a of p.signals.agents ?? []) {
-		const name = a.window || a.agent;
-		if (name) out.push(name);
-	}
-	return out;
-}
 
 /**
  * The dashboard's sentence for a refusal of POST /projects/:id/say, by

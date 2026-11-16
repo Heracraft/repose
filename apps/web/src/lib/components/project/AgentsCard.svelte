@@ -15,7 +15,7 @@
 	import { agentTone } from '$lib/components/projects/agentTone';
 	import { sayToAgent } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
-	import { sayRefusal, sayState } from '$lib/say';
+	import { sayRefusal, sayState, TEXT_CAP } from '$lib/say';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { Question, Signals } from '$lib/api/types';
 
@@ -55,7 +55,7 @@
 	function close(key: string) {
 		openRow = undefined;
 		draft = '';
-		void focusAfterRender(`say-open-${key}`);
+		void focusAfterRender(`say-open-${key}`, 'main');
 	}
 
 	async function send(key: string, target: string) {
@@ -108,7 +108,7 @@
 	<ul class="agents">
 		{#each agents as a, i (`${a.agent}-${a.window}-${i}`)}
 			{@const label = agentStateLabel(a.state)}
-			{@const key = `${a.agent}-${a.window}-${i}`}
+			{@const key = `${a.agent}-${a.window}`}
 			{@const target = a.window || a.agent}
 			<li class="agent">
 				<div class="line">
@@ -136,7 +136,8 @@
 						<label class="hk-sr" for={`say-${key}`}>Message for {target}</label>
 						<textarea
 							id={`say-${key}`}
-							class="hk-textarea field"
+							class="hk-textarea say-field"
+							maxlength={TEXT_CAP}
 							rows="1"
 							placeholder="Message"
 							bind:value={draft}
@@ -215,7 +216,7 @@
 		gap: 0.5rem;
 		margin-top: 0.5rem;
 	}
-	.field {
+	.say-field {
 		flex: 1 1 100%;
 		min-width: 0;
 		min-height: 0;
@@ -271,5 +272,14 @@
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
 		font-variant-numeric: tabular-nums;
+	}
+	/* The narrow width gives the field the touch target the kit asks for,
+	   as QuestionRow's own field does (:447-460): .say-field's one-line
+	   height cancels the kit's coarse-pointer minimum. */
+	@media (max-width: 639.98px) {
+		.say-field {
+			height: 2.75rem;
+			padding-block: 0.625rem;
+		}
 	}
 </style>
