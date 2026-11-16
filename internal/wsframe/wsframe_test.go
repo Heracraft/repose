@@ -3,6 +3,7 @@ package wsframe
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,8 +65,8 @@ func TestReservedBitIsAnError(t *testing.T) {
 // declares a 16 EiB payload from being allocated for.
 func TestOverTheCapIsRefused(t *testing.T) {
 	raw := Encode(OpBinary, bytes.Repeat([]byte("x"), 1001), false)
-	if _, err := ReadFrame(bufio.NewReader(bytes.NewReader(raw)), 1000); err == nil {
-		t.Fatal("a frame one byte over the cap was accepted")
+	if _, err := ReadFrame(bufio.NewReader(bytes.NewReader(raw)), 1000); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("a frame one byte over the cap: %v", err)
 	}
 	if _, err := ReadFrame(bufio.NewReader(bytes.NewReader(Encode(OpBinary, bytes.Repeat([]byte("x"), 1000), false))), 1000); err != nil {
 		t.Fatalf("a frame at the cap was refused: %v", err)
@@ -73,8 +74,8 @@ func TestOverTheCapIsRefused(t *testing.T) {
 	var buf bytes.Buffer
 	buf.Write(append([]byte{0x02, 0x64}, bytes.Repeat([]byte("x"), 100)...))
 	buf.Write(append([]byte{0x80, 0x64}, bytes.Repeat([]byte("x"), 100)...))
-	if _, _, _, err := ReadMessage(bufio.NewReader(&buf), 150, func(Frame) error { return nil }); err == nil {
-		t.Fatal("fragments summing over the cap were accepted")
+	if _, _, _, err := ReadMessage(bufio.NewReader(&buf), 150, func(Frame) error { return nil }); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("fragments summing over the cap: %v", err)
 	}
 }
 

@@ -37,6 +37,12 @@ const (
 	OpPong   = 0xA
 )
 
+// ErrTooLarge is a frame or a message over the caller's cap. A caller
+// that must tell this apart from a peer that simply went away -- the
+// browser view's stream closes with a different outcome -- tests for it
+// with errors.Is.
+var ErrTooLarge = errors.New("wsframe: over the message cap")
+
 // Frame is one frame as it was read.
 type Frame struct {
 	Fin     bool
@@ -74,7 +80,7 @@ func ReadFrame(r *bufio.Reader, max int64) (Frame, error) {
 		n = binary.BigEndian.Uint64(b[:])
 	}
 	if max > 0 && n > uint64(max) {
-		return Frame{}, fmt.Errorf("websocket frame of %d bytes", n)
+		return Frame{}, fmt.Errorf("%w: a frame of %d bytes", ErrTooLarge, n)
 	}
 	var key [4]byte
 	if masked {
@@ -157,7 +163,7 @@ func ReadMessage(r *bufio.Reader, max int64, onControl func(Frame) error) (op by
 		payload = append(payload, f.Payload...)
 		raw = append(raw, f.Raw...)
 		if max > 0 && int64(len(payload)) > max {
-			return 0, nil, nil, fmt.Errorf("websocket message over %d bytes", max)
+			return 0, nil, nil, fmt.Errorf("%w: over %d bytes", ErrTooLarge, max)
 		}
 		if f.Fin {
 			return op, payload, raw, nil

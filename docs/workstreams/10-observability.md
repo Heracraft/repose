@@ -126,8 +126,15 @@ component must emit:
   (a failed boot's console not stored; never its text, I-592),
   `guest_wake_fail` (a frozen machine the api could not wake, I-818:
   `project_id` and the `reason` the wake was asked for, never the
-  caller's own words beyond a lower_snake enum).
-- gateway: `session_open`, `session_close`, `auth_fail` (reason enum:
+  caller's own words beyond a lower_snake enum),
+  `browser_view_open` and `browser_view_close` (one pair per connect of
+  the dashboard's browser view, I-1216: `project_id`, `user_id`,
+  `ticket_id` (the row's opaque id), `source_prefix` (the /24), `wake` on
+  the open line when that mint woke the machine, and `outcome`, `ms`,
+  `bytes_in`, `bytes_out` on the close line. Never the ticket, the
+  guest's VNC password, a byte of the stream or clipboard text).
+- gateway: `session_open`, `session_close`, `view_relay` refusals through
+  `route_fail`, `auth_fail` (reason enum:
   `bad_cert|expired|revoked|wrong_principal|stopped|not_found`; since
   I-599 also `counted` and, when it counts towards the source's ban,
   `failures`; at most 2 a second with 60 at once, the dropped ones counted

@@ -520,7 +520,9 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The unsubscribe and reply links carry their own signed token; the
 	// public seats count (I-290) has none.
-	if !strings.HasPrefix(r.URL.Path, "/v1/internal/") && !strings.HasPrefix(r.URL.Path, "/v1/public/") && r.URL.Path != "/v1/notify/unsubscribe" && r.URL.Path != "/v1/questions/reply" {
+	// The view's stream route is authenticated by its cookie ticket and
+	// not by a bearer token (I-1216), like the signed-token links above.
+	if !strings.HasPrefix(r.URL.Path, "/v1/internal/") && !strings.HasPrefix(r.URL.Path, "/v1/public/") && r.URL.Path != "/v1/notify/unsubscribe" && r.URL.Path != "/v1/questions/reply" && r.URL.Path != "/v1/browser/stream" {
 		u, tok, ok := f.authenticate(r, pattern)
 		if !ok {
 			f.mu.Unlock()
@@ -660,6 +662,10 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/webhooks/{name}", f.getWebhook)
 	f.handle("DELETE /v1/projects/{id}/webhooks/{name}", f.deleteWebhook)
 	f.handle("POST /v1/projects/{id}/webhooks/{name}/rotate", f.rotateWebhook)
+	// The dashboard's browser view (DECISIONS I-1216). The stream route
+	// carries no project id: the ticket names the project.
+	f.handle("POST /v1/projects/{id}/browser/view", f.mintBrowserView)
+	f.handle("GET /v1/browser/stream", f.browserStream)
 	f.handle("GET /v1/internal/webhook-routes", f.internalWebhookRoutes)
 	f.handle("POST /v1/internal/webhook-start", f.internalWebhookStart)
 	f.handle("POST /v1/internal/webhook-deliveries", f.internalWebhookDeliveries)

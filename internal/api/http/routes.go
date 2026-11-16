@@ -56,6 +56,11 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/webhooks/{name}", a(s.getWebhook))
 	s.route(m, "DELETE /v1/projects/{id}/webhooks/{name}", a(s.deleteWebhook))
 	s.route(m, "POST /v1/projects/{id}/webhooks/{name}/rotate", a(s.rotateWebhook))
+	// The dashboard's view of the machine browser (DECISIONS I-1216).
+	// The stream route carries no project id on purpose: the ticket names
+	// the project, and the handler resolves nothing a caller chose.
+	s.route(m, "POST /v1/projects/{id}/browser/view", a(s.limited(s.views, s.mintBrowserView)))
+	s.route(m, "GET /v1/browser/stream", s.browserStream)
 	// Snapshots
 	s.route(m, "GET /v1/snapshots", a(s.listAllSnapshots))
 	s.route(m, "GET /v1/projects/{id}/snapshots", a(s.listSnapshots))

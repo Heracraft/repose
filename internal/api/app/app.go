@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -312,8 +313,10 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		Seats:   a.seats,
 		Resting: a.resting,
 		// The browser view's relay on the edge (DECISIONS I-1216); nil
-		// makes the view's mint route answer `unavailable`.
-		ViewRelay: viewRelay,
+		// makes the view's mint route answer `unavailable`. The dashboard
+		// is the one origin its stream route accepts an upgrade from.
+		ViewRelay:   viewRelay,
+		ViewOrigins: viewOrigins(cfg.DashboardURL),
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),
@@ -325,6 +328,20 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		},
 	})
 	return a, nil
+}
+
+// viewOrigins is the browser origin of the dashboard URL, which is the
+// one origin the view's stream route accepts an upgrade from: the ticket
+// rides a cookie, so it is ambient, and the Origin check is what stops
+// another site from opening a stream with it (DECISIONS I-1216). An
+// unparsable or empty DASHBOARD_URL leaves the list empty and the check
+// off, which is the behaviour of an api configured without a dashboard.
+func viewOrigins(dashboardURL string) []string {
+	u, err := url.Parse(dashboardURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil
+	}
+	return []string{u.Scheme + "://" + u.Host}
 }
 
 // initCA creates the platform CA on the first start against an empty

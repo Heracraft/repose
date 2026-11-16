@@ -50,8 +50,20 @@ type env struct {
 	api      *httptest.Server
 	internal *httptest.Server
 	logs     *bytes.Buffer
-	sent     *sync.Map
-	unsub    *notify.Unsubscriber
+	// logw is the lock the logger writes through. A test that polls the
+	// log while the server is still writing to it -- the browser view's
+	// close line is written as the stream's goroutines unwind -- reads it
+	// through logText() rather than logs.String().
+	logw  *syncWriter
+	sent  *sync.Map
+	unsub *notify.Unsubscriber
+}
+
+// logText is the captured log, read under the logger's own lock.
+func (e *env) logText() string {
+	e.logw.mu.Lock()
+	defer e.logw.mu.Unlock()
+	return e.logs.String()
 }
 
 func newEnv(t *testing.T) *env {
@@ -84,7 +96,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{h: h, logto: lf, logs: logs, sent: sent, unsub: unsub}
+	e := &env{h: h, logto: lf, logs: logs, logw: syncw, sent: sent, unsub: unsub}
 	deps := httpapi.Deps{
 		Pool: h.Pool, Verifier: auth.NewVerifier(lf.Issuer(), aud, nil), Users: auth.NewProvisioner(h.Pool, auth.NewLogtoManagement(lf.Issuer(), "m2m", "s", nil)),
 		CA: h.CA, Secrets: h.Secrets, Engine: h.Engine, Logs: h.Logs, Events: h.Events, Parser: parser, Metrics: h.Metrics, Registry: reg, Log: log,

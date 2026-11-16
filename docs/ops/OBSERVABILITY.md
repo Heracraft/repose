@@ -263,6 +263,16 @@ cents, gb), `gate_refused` (user_id, reason, plan) and `disk_over_plan`
 (user_id, plan; once a period, with its email, I-585): never the body of a
 webhook, an email, a card or an amount a tenant typed.
 
+The dashboard's browser view (DECISIONS I-1216):
+`repose_api_browser_views_total{result}` counts the streams the api
+carried by the outcome they closed with (`closed`, `idle`, `cap`,
+`budget`, `too_large`, `error`, `refused`) and
+`repose_gateway_view_requests_total{result}` the edge relay's answers
+(`relayed`, or one of the `view_*` refusals). Neither carries a
+`project_id`: this registry refuses that label at registration, so the
+per-project figures live in the `browser_view_open` and
+`browser_view_close` log lines and nowhere else.
+
 `repose_api_subscriptions{plan,status}` is the live subscriptions and
 `repose_api_mrr_cents{status}` the plan revenue a month they stand for
 (I-802). Both are set from the minute tick, which runs in `api-grpc` alone (the

@@ -272,6 +272,45 @@ The token is minted by the api and stored twice: `sha256(token)` for the
 edge's lookup, and the token as ciphertext under the account's data key
 with the same envelope as a named secret, so it can be printed again.
 
+## The machine's browser view (DECISIONS I-1216)
+
+The dashboard's view of the machine browser the agents drive. Two routes,
+and both are new with I-1216, so there is no older shape to keep
+accepting. `docs/features/browser.md` is the behaviour.
+
+| Method | Path | Body / result |
+|---|---|---|
+| POST | `/projects/:id/browser/view` | `{}` (no body) → `{expires_at, stream_path, resting}`. Mints a ticket for one connect and sets it as a cookie: `repose_view=<43 characters of base64url>; HttpOnly; Secure; SameSite=Strict; Path=/v1/browser/stream; Max-Age=900`. **The body carries no ticket and no password**: the ticket is in the cookie so no script, extension or devtools export can read it, and the guest's VNC password never leaves the edge. `resting: true` means the machine's vCPUs are stopped and this mint did not wake it, because one was woken for it inside the last 10 minutes; the page shows the desktop-off state instead of billing a resume. 10 mints per user per hour |
+| GET | `/browser/stream` | A WebSocket (RFC 6455, version 13, no extensions, no subprotocol) carrying the already-authenticated RFB stream, binary frames in both directions, 1 MiB per message. The ticket comes from the cookie; **the route carries no project id** -- the ticket names the project, and the handler resolves nothing a caller chose |
+
+The stream closes when the machine's desktop does, after 120 s with no
+frame in either direction, after 4 h, or when the ticket has carried
+2 GiB. The page mints again on every connect and reconnect, so expiry is
+this credential's revocation: nothing has to be revoked by hand when a
+machine stops, and a ticket cannot outlive its 15 minutes. The view's
+bytes do not count against the project's egress allowance (they never
+cross a guest's uplink, so nothing could meter them), and an open view
+holds the machine awake at the running rate.
+
+Refusals, beside the usual envelope codes:
+
+| Code | Status | When |
+|---|---|---|
+| `view_expired` | 401 | No cookie, or a ticket that has expired, was never minted, or whose project or account has changed under it. The page mints another |
+| `view_busy` | 409 | That project already has a view open. Xvnc is `-AlwaysShared`, so a second viewer would work and double the frame cost for nothing |
+| `view_budget` | 409 | The ticket has carried its 2 GiB. The page mints another |
+| `view_capacity` | 503 | This api or the edge's relay is at its concurrent-view cap |
+| `unavailable` | 503 | No view relay is configured on this api, or the edge did not answer |
+| `conflict` | 409 | The machine is not running (`detail.state`), has no address, or its desktop did not answer (`detail.reason` is the relay's code) |
+| `rate_limited` | 429 | The 11th mint in an hour, or too many connects from one source prefix at once |
+| `forbidden` | 403 | An `Origin` that is not the dashboard's, or a source prefix refused for 10 minutes after 20 refused tickets |
+
+The mint's answer is the one place the api sets a cookie, so it is also
+the one place `Access-Control-Allow-Origin` names the dashboard's origin
+with `Access-Control-Allow-Credentials: true` instead of `*` (I-79): a
+browser drops a `Set-Cookie` from a cross-origin fetch that was not
+credentialed, and refuses a credentialed answer that says `*`.
+
 ## Snapshots
 
 | Method | Path | Body / result |
@@ -450,8 +489,10 @@ payment_required` with `detail.reason: suspended` and the same sentence
 ## Rate limits
 
 Per user: 600 GET requests/min, 60/min for every other method, 10/min on
-`POST /certs`, 5/min on `PUT /config` (I-187: a waiting CLI polls twice a
-second and shares the budget with the user's dashboard). A refusal is
+`POST /certs`, 5/min on `PUT /config`, 10 an **hour** on
+`POST /projects/:id/browser/view` (I-187: a waiting CLI polls twice a
+second and shares the budget with the user's dashboard; the view's mint is
+where a wake can be asked for, so it is counted by the hour, I-1216). A refusal is
 `429 rate_limited` with `Retry-After` in seconds; nothing ran, so the
 client may send the same request again after it. A held op read (`?wait`) is
 one GET however long it is held. Per gateway: unlimited on

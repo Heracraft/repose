@@ -7,6 +7,7 @@
 package httpapi
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -112,6 +113,14 @@ type Deps struct {
 	// nil makes the wake route answer 503 and keep_awake take effect at
 	// the next rest rule rather than at once.
 	Resting Waker
+	// ViewOrigins are the browser origins the view's stream route accepts
+	// an upgrade from (the dashboard's own, DASHBOARD_URL). The ticket is
+	// a cookie, so it is ambient; empty switches the check off, which is
+	// what a test api gets.
+	ViewOrigins []string
+	// ViewIdle overrides the view stream's idle close (tests); zero is
+	// the documented 120 s.
+	ViewIdle time.Duration
 	// ViewRelay dials the edge's browser-view relay (DECISIONS I-1216);
 	// nil makes POST /projects/{id}/browser/view answer `unavailable`,
 	// which is what an api with no VIEW_RELAY_ADDR does.
@@ -171,6 +180,11 @@ type Server struct {
 	cfg      *ratelimit.Limiter
 	replies  *ratelimit.Limiter // per question, on the public reply links
 	tests    *ratelimit.Limiter // POST /me/notify-test, per user
+	views    *ratelimit.Limiter // POST /projects/{id}/browser/view, per user per hour
+	// viewConns bounds the stream route, which is the one route a cookie
+	// authenticates: `authed`'s per-user buckets never run there
+	// (viewlimit.go).
+	viewConns *viewLimiter
 	sessions *sessionTracker
 	seats    seatsCache // GET /public/seats, a minute old at most
 	ready    bool
@@ -195,7 +209,9 @@ func New(d Deps) *Server {
 		lim.Reads = 10 * lim.General
 	}
 	s := &Server{d: d, user: http.NewServeMux(), internal: http.NewServeMux(),
-		general: ratelimit.New(lim.General), reads: ratelimit.New(lim.Reads), certs: ratelimit.New(lim.Certs), cfg: ratelimit.New(lim.Config), replies: ratelimit.New(ReplyLinkRate), tests: ratelimit.New(NotifyTestRate), sessions: newSessionTracker(d.Pool)}
+		general: ratelimit.New(lim.General), reads: ratelimit.New(lim.Reads), certs: ratelimit.New(lim.Certs), cfg: ratelimit.New(lim.Config), replies: ratelimit.New(ReplyLinkRate), tests: ratelimit.New(NotifyTestRate), views: ratelimit.NewPerHour(ViewMintRate),
+		viewConns: newViewLimiter(viewMaxPerSource, viewMaxStreams, nil),
+		sessions:  newSessionTracker(d.Pool)}
 	s.registerUserRoutes()
 	s.registerInternalRoutes()
 	s.route(s.user, "GET /v1/notify/unsubscribe", s.unsubscribeGet)
@@ -287,6 +303,17 @@ func statusOf(code string) int {
 		return http.StatusPaymentRequired
 	case "capacity", "waitlisted", "billing_disabled":
 		return http.StatusServiceUnavailable
+	// The browser view's own refusals (DECISIONS I-1216). view_expired is
+	// 401 because the ticket is a credential that ran out, and the page
+	// answers it by minting another; view_busy and view_budget are 409
+	// because nothing the user can resend fixes them now; view_capacity
+	// and unavailable are 503, the api's word for "not now".
+	case "view_expired":
+		return http.StatusUnauthorized
+	case "view_busy", "view_budget":
+		return http.StatusConflict
+	case "view_capacity", "unavailable":
+		return http.StatusServiceUnavailable
 	case "rate_limited":
 		return http.StatusTooManyRequests
 	}
@@ -353,6 +380,23 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Hijack lets a route take the connection over, which the browser view's
+// WebSocket needs (DECISIONS I-1216). Without it the assertion in
+// wsframe.Accept fails on this wrapper and the upgrade is refused: an
+// embedded ResponseWriter promotes only that interface's own methods. The
+// status is recorded as 101 so the request line says what happened.
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("the response cannot be hijacked")
+	}
+	c, brw, err := hj.Hijack()
+	if err == nil {
+		w.status = http.StatusSwitchingProtocols
+	}
+	return c, brw, err
+}
+
 func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
@@ -375,14 +419,31 @@ func (s *Server) wrap(mux *http.ServeMux, component string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if component == "http" {
 			// The dashboard (repose.run) and the api (api.repose.run)
-			// are different origins, and every route here is
+			// are different origins, and almost every route here is
 			// authenticated by a bearer token, never a cookie, so a
 			// wildcard origin leaks no ambient credential (I-79). The
 			// wildcard is also what lets the old repose.herakraft.co
 			// dashboard keep calling the api while both names answer
 			// (I-1156). /internal is never called from a browser and
 			// gets no CORS headers at all.
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			//
+			// The one exception is the browser view's mint, whose answer
+			// sets the view cookie (I-1216): a browser drops a
+			// `Set-Cookie` on a cross-origin fetch unless the request was
+			// credentialed, and refuses a credentialed answer that says
+			// `*`. So an origin on the view's own allow list is echoed
+			// back by name with Allow-Credentials, and every other origin
+			// still gets the wildcard. Echoing a named origin grants that
+			// origin nothing it did not already have: the list holds the
+			// dashboard's own name and nothing else.
+			origin := r.Header.Get("Origin")
+			if origin != "" && len(s.d.ViewOrigins) > 0 && s.viewOriginAllowed(origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Add("Vary", "Origin")
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
 			w.Header().Set("Access-Control-Allow-Methods", corsAllowedMethods)
 			w.Header().Set("Access-Control-Allow-Headers", corsAllowedHeaders)
 			w.Header().Set("Access-Control-Expose-Headers", corsExposedHeaders)
@@ -545,6 +606,8 @@ func (s *Server) SweepLimiters() {
 	s.cfg.Sweep(10 * time.Minute)
 	s.replies.Sweep(10 * time.Minute)
 	s.tests.Sweep(10 * time.Minute)
+	s.views.Sweep(2 * time.Hour) // the bucket refills over an hour
+	s.viewConns.sweep()
 }
 
 // --- health -------------------------------------------------------------
