@@ -353,6 +353,16 @@ line stored by us:**
 - card details of any kind, including last four (Polar holds the card; the api never sees it)
 - a webhook URL's path or query: the path holds the route's token, which
   is a credential (I-1110). Log `route_id`
+- a browser view's ticket, or its sha256: it is a bearer credential for a
+  live desktop (I-1216). Log `ticket_id`, the row's opaque id
+- the guest's per-boot VNC password, in any form, on any leg of the view.
+  It exists in the edge relay's memory for one handshake and nowhere else
+- any byte of the view's RFB stream. A framebuffer rectangle is the
+  contents of a tenant's screen: no hexdump on an error path, no first-N
+  bytes in a parse failure, no frame in a trace attribute
+- clipboard text. The dashboard view bridges no clipboard (I-1216), and
+  RFB cut-text messages are literally what a tenant typed or copied, so
+  they are never logged, buffered to disk, or counted by content
 
 `internal/obs` enforces the rules in code (in three packages, so that guestd links a logger and not an exporter:
 DECISIONS I-59):
@@ -361,8 +371,14 @@ DECISIONS I-59):
   itself, so a call site cannot omit it, and replaces the value of any field
   named `token`, `secret`, `password`, `authorization`, `cert`, `key`,
   `email`, `handle`, `remote_url`, `prompt`, `args`, `argv`, `env`,
-  `cmdline`, `command_line` or `user_agent` with `[redacted]`. Matching is on
-  the exact name, so `cert_serial`, `key_id` and `token_used` still read.
+  `cmdline`, `command_line`, `user_agent` or `ticket` with `[redacted]`.
+  Matching is on a *substring* of the field name, so `access_token` and
+  `user_email` are caught without being listed; an exact-name allow list
+  beside it keeps the bounded ids readable, which is why `cert_serial`,
+  `key_id`, `token_used` and `ticket_id` still read. (This paragraph said
+  "the exact name" until I-1216, where the difference mattered: adding
+  `ticket` to the list redacts `ticket_id` too unless the allow list
+  carries it.)
 - Every metric comes from a registry `internal/obs/metrics` built, which
   refuses a name outside `repose_` and any label outside the low-cardinality
   list, at registration: a series labelled by `project_id` stops the binary

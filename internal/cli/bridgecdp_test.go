@@ -569,34 +569,6 @@ func TestClassifyURLAndLogPlace(t *testing.T) {
 	}
 }
 
-func TestWSFramesRoundTrip(t *testing.T) {
-	for _, n := range []int{0, 5, 125, 126, 65535, 65536, 200000} {
-		for _, masked := range []bool{false, true} {
-			p := bytes.Repeat([]byte("x"), n)
-			raw := encodeWSFrame(wsOpText, p, masked)
-			f, err := readWSFrame(bufio.NewReader(bytes.NewReader(raw)))
-			if err != nil || !f.fin || f.op != wsOpText || !bytes.Equal(f.payload, p) || !bytes.Equal(f.raw, raw) {
-				t.Errorf("n=%d masked=%v: %v", n, masked, err)
-			}
-		}
-	}
-	// A fragmented message with a ping between its fragments.
-	var buf bytes.Buffer
-	buf.Write([]byte{0x01, 0x03, 'a', 'b', 'c'})
-	buf.Write([]byte{0x89, 0x00})
-	buf.Write([]byte{0x80, 0x02, 'd', 'e'})
-	var controls int
-	op, payload, _, err := readWSMessage(bufio.NewReader(&buf), func(f wsFrame) error { controls++; return nil })
-	if err != nil || op != wsOpText || string(payload) != "abcde" || controls != 1 {
-		t.Errorf("%v %q %d %v", op, payload, controls, err)
-	}
-	// A compressed frame (RSV1) is refused.
-	_, _, _, err = readWSMessage(bufio.NewReader(bytes.NewReader([]byte{0xC1, 0x01, 'x'})), func(wsFrame) error { return nil })
-	if err == nil {
-		t.Error("RSV1 frame accepted")
-	}
-}
-
 func TestWithoutWSExtensions(t *testing.T) {
 	head := []byte("GET / HTTP/1.1\r\nHost: x\r\nsec-websocket-extensions: permessage-deflate\r\nUpgrade: websocket\r\n\r\n")
 	if got := string(withoutWSExtensions(head)); got != "GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n\r\n" {

@@ -34,6 +34,7 @@ var forbidden = []string{
 	"token", "secret", "password", "authorization", "cert", "key",
 	"email", "handle", "remote_url", "argv", "args", "environ", "env",
 	"prompt", "summary", "fragment", "ntfy_url", "gchat_url", "webhook", "github_login",
+	"ticket",
 	"public_key", "ciphertext", "cmdline", "command_line", "user_agent",
 	"transcript",
 }
@@ -57,6 +58,10 @@ var allowed = map[string]bool{
 	// business; a path inside a guest is not, and cannot be told apart by
 	// name, so `store_path` is allowed and `path` is refused by obslint.
 	"store_path": true, "unit_path": true,
+	// A browser-view ticket is a bearer credential for a live desktop
+	// (DECISIONS I-1216); `ticket_id` is the row's opaque id, which is what
+	// the two view lines carry instead.
+	"ticket_id": true,
 }
 
 // IsForbidden reports whether a field name must be redacted.

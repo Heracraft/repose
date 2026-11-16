@@ -174,6 +174,28 @@ func TestBoundedIdsStayReadable(t *testing.T) {
 	}
 }
 
+// TestViewTicketRedactsAndItsRowIdDoesNot: the browser view's ticket is a
+// bearer credential for a live desktop and never reaches a log, while the
+// two view lines' `ticket_id` -- the row's opaque id -- must stay readable,
+// or the feature's own closing evidence comes out as "[redacted]"
+// (DECISIONS I-1216).
+func TestViewTicketRedactsAndItsRowIdDoesNot(t *testing.T) {
+	var buf bytes.Buffer
+	log := NewLogger(LogOptions{Component: ComponentAPI, Writer: &buf})
+	const planted = "TICKET-VALUE-4c1a"
+	log.Info("m", "event", "browser_view_open", "ticket", planted, "ticket_id", "7")
+	if strings.Contains(buf.String(), planted) {
+		t.Fatalf("the ticket was logged: %s", buf.String())
+	}
+	m := line(t, &buf)
+	if m["ticket"] != Redacted {
+		t.Errorf("ticket = %v, want %q", m["ticket"], Redacted)
+	}
+	if m["ticket_id"] != "7" {
+		t.Errorf("ticket_id = %v, want 7", m["ticket_id"])
+	}
+}
+
 // TestRedactionInsideGroup: a group is not a way around the floor.
 func TestRedactionInsideGroup(t *testing.T) {
 	var buf bytes.Buffer

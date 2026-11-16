@@ -80,6 +80,7 @@ var forbiddenFields = []string{
 	"transcript", "output", "stdout", "stderr", "terminal", "pane",
 	"path", "file", "filename", "dir", "cwd", "jwt", "refresh_token",
 	"private_key", "public_key", "csr", "certificate", "join_token",
+	"ticket",
 }
 
 // fieldExceptions are names that contain a forbidden word but are bounded
@@ -98,6 +99,9 @@ var fieldExceptions = map[string]bool{
 	// one the never-log list forbids, and it cannot be told apart by name,
 	// so `store_path` is allowed and `path` is not.
 	"store_path": true, "unit_path": true,
+	// The browser view's two lines carry the ticket row's opaque id, never
+	// the ticket (DECISIONS I-1216).
+	"ticket_id": true,
 }
 
 // cliOutputFiles may call fmt.Print*: they write to a human at a terminal,

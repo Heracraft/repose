@@ -906,7 +906,7 @@ func (c *cdpConn) proxy(cbr, ubr readerFunc) {
 	go func() {
 		defer func() { done <- struct{}{} }()
 		for {
-			op, payload, _, err := cbr(func(f wsFrame) error { return c.toChrome.write(f.raw) })
+			op, payload, _, err := cbr(func(f wsFrame) error { return c.toChrome.write(f.Raw) })
 			if err != nil {
 				return
 			}
@@ -928,7 +928,7 @@ func (c *cdpConn) proxy(cbr, ubr readerFunc) {
 	go func() {
 		defer func() { done <- struct{}{} }()
 		for {
-			op, payload, raw, err := ubr(func(f wsFrame) error { return c.toClient.write(f.raw) })
+			op, payload, raw, err := ubr(func(f wsFrame) error { return c.toClient.write(f.Raw) })
 			if err != nil {
 				return
 			}
