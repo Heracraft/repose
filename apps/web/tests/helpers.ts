@@ -54,6 +54,28 @@ async function adminCall(route: string, body: { method: string; path: string; co
 	if (!res.ok) throw new Error(`${route}: ${res.status}`);
 }
 
+/**
+ * The fake's static desktop behind the browser view's stream route
+ * (DECISIONS I-1216). On, the view reaches its watching state and its
+ * clipboard panel; `copy` is handed to the page as the machine's own
+ * cut-text. Off is the default, which the reconnect cases need.
+ */
+export async function setDesktop(on: boolean, copy = ''): Promise<void> {
+	const res = await fetch(`${adminURL()}/desktop`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ on, copy })
+	});
+	if (!res.ok) throw new Error(`/desktop: ${res.status}`);
+}
+
+/** What the panel's Send put on the wire, as ClientCutText, in order. */
+export async function desktopPastes(): Promise<string[]> {
+	const res = await fetch(`${adminURL()}/desktop`);
+	if (!res.ok) throw new Error(`/desktop: ${res.status}`);
+	return (await res.json()) as string[];
+}
+
 export const failNext = (method: string, path: string, code: string) =>
 	adminCall('/fail-next', { method, path, code });
 export const fail = (method: string, path: string, code: string) =>

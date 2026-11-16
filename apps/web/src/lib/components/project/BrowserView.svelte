@@ -377,14 +377,18 @@
 		min-width: 0;
 		resize: vertical;
 	}
+	/* The page's own surface, not --hk-code-bg: that pane is dark in both
+	   themes, and this text is not code on a pane, it is what the machine
+	   copied. On the dark pane in light mode it was dark on dark. */
 	.clipout {
 		flex: 1 1 auto;
 		min-width: 0;
-		min-height: 2.75rem;
+		min-height: 3.5rem;
 		padding: 0.5rem 0.625rem;
-		border: 1px solid var(--hk-code-border);
+		border: 1px solid var(--hk-border);
 		border-radius: var(--hk-radius-sm);
-		background: var(--hk-code-bg);
+		background: var(--hk-surface-2);
+		color: var(--hk-text);
 		font-family: var(--hk-font-mono);
 		font-size: 0.8125rem;
 		line-height: 1.25rem;

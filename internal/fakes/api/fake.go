@@ -103,11 +103,12 @@ const (
 	baseVersion = "2026.09.15"
 	hostID      = "host-01"
 	// FakeHostName is the name GET /projects/:id/route reports for hostID.
-	FakeHostName = "fake-host-01"
-	logPattern   = "GET /v1/projects/{id}/ops/{op_id}/log"
-	opPattern    = "GET /v1/projects/{id}/ops/{op_id}"
-	rateWindow   = time.Minute
-	rateBurst    = 60
+	FakeHostName  = "fake-host-01"
+	logPattern    = "GET /v1/projects/{id}/ops/{op_id}/log"
+	streamPattern = "GET /v1/browser/stream"
+	opPattern     = "GET /v1/projects/{id}/ops/{op_id}"
+	rateWindow    = time.Minute
+	rateBurst     = 60
 )
 
 // Fake is the running fake api.
@@ -140,27 +141,32 @@ type Fake struct {
 	// webhookTombstones are the hex sha256 of tokens rotated or removed
 	// (DECISIONS I-1110); the edge answers 410 for them.
 	webhookTombstones []string
-	certs             map[uint64]*cert
-	revoked           []revocation
-	failOnce          []failRule
-	failAlways        map[string]string
-	hits              map[string][]time.Time
-	hosts             []Host // nil means the one canned host
-	gatewayCerts      int    // POST /internal/gateway-certs calls, for cache tests
+	// The browser view's fake desktop (DECISIONS I-1216), off unless a
+	// test turns it on: see desktop.go.
+	desktopOn     bool
+	desktopCopy   string
+	desktopPastes []string
+	certs         map[uint64]*cert
+	revoked       []revocation
+	failOnce      []failRule
+	failAlways    map[string]string
+	hits          map[string][]time.Time
+	hosts         []Host // nil means the one canned host
+	gatewayCerts  int    // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests.
-	wakes         int
-	sessions      []SessionReport
-	questions     []*Question       // newest last (DECISIONS I-245)
+	wakes     int
+	sessions  []SessionReport
+	questions []*Question // newest last (DECISIONS I-245)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
-	says         []Say
-	sayAgents    []string
-	sayAgentsSet bool
-	sayState     string
-	sayReplaced  bool
+	says          []Say
+	sayAgents     []string
+	sayAgentsSet  bool
+	sayState      string
+	sayReplaced   bool
 	secretAnswers map[string][]byte // question id -> the value its secret answer stored (I-929)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
@@ -551,9 +557,10 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		r = r.WithContext(context.WithValue(r.Context(), ctxUser, u))
 	}
-	if pattern == logPattern || (pattern == opPattern && r.URL.Query().Get("wait") != "") {
-		// The log streams and a long-poll of an op waits: both take mu
-		// themselves, for their reads only.
+	if pattern == logPattern || pattern == streamPattern || (pattern == opPattern && r.URL.Query().Get("wait") != "") {
+		// The log streams, the view's stream stays open for as long as
+		// someone watches, and a long-poll of an op waits: all three take
+		// mu themselves, for their reads only.
 		f.mu.Unlock()
 		f.mux.ServeHTTP(w, r)
 		return

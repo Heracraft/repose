@@ -360,6 +360,13 @@ its password field; a new CLI against an older base opens stock noVNC's
   cut-text message and in the ticket, and finds none of them in the
   captured logs, while the same logs carry `browser_view_close`, its
   outcome, `bytes_out` and an unredacted `ticket_id`.
+- The panel's look is reviewed at real size: the fake api's static
+  desktop (`internal/fakes/api/desktop.go`, the server half of RFB 3.8 as
+  far as ServerInit, off unless a test turns it on) puts the real noVNC
+  in its watching state against a real server, so `browser-view.spec.ts`
+  captures the panel at 1x at 1440 and 390 in both schemes. Frames from a
+  real guest are still the release's live check; the panel's layout is
+  not.
 - The dashboard's view moves the clipboard only on a click:
   `BrowserView.test.ts` drives the panel against a stub RFB -- typing in
   the field hands the machine nothing, **Send** hands it the text once,

@@ -6,7 +6,14 @@
 // real browser. A view with frames in it needs a guest and is the
 // release's live check.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, destroyProject } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	destroyProject,
+	setDesktop,
+	desktopPastes
+} from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -83,4 +90,48 @@ test('the tab row holds six tabs, and scrolls on a phone', async ({ page }) => {
 		await expect(nav.getByRole('link', { name: 'Browser' })).toBeInViewport();
 	}
 	await destroyProject(apiURLFromEnv(), p.id);
+});
+
+// With frames coming, which the fake's static desktop gives (its RFB
+// handshake is internal/fakes/api/desktop.go), the view reaches the one
+// state the rest of this suite cannot: a picture, and the clipboard
+// panel under it (DECISIONS I-1216). A real guest's frames are still the
+// release's live check; this is the panel, drawn by the real noVNC
+// against a real server, at the sizes a visitor sees.
+test.describe('with frames coming', () => {
+	test.afterEach(async () => {
+		await setDesktop(false);
+	});
+
+	test('the panel sends on Send only, and holds what the machine copied', async ({ page }) => {
+		await setDesktop(true, 'sk-live-not-a-real-key');
+		const p = await project('view-frames');
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto(`/projects/${p.id}/browser`);
+
+		// The panel is drawn only once frames are coming, so its presence
+		// is the proof the handshake finished and noVNC connected.
+		const field = page.getByTestId('view-paste');
+		await expect(field).toBeVisible({ timeout: 20_000 });
+		await expect(page.getByText('Connecting…')).toBeHidden();
+
+		// The machine copied something before the page did anything: it is
+		// in the page, and the page has not touched the watcher's clipboard
+		// (BrowserView.test.ts holds that part against the source).
+		await expect(page.getByTestId('view-copied')).toHaveText('sk-live-not-a-real-key');
+
+		// Typing crosses nothing; Send crosses it once.
+		await field.fill('https://admin.example.test/login');
+		expect(await desktopPastes()).toEqual([]);
+		await page.getByRole('button', { name: 'Send' }).click();
+		await expect(page.getByRole('button', { name: 'Sent' })).toBeVisible();
+		await expect
+			.poll(async () => await desktopPastes(), { timeout: 10_000 })
+			.toEqual(['https://admin.example.test/login']);
+
+		// The look, at 1x, at both widths and in both schemes: the review
+		// CLAUDE.md asks for, on the state that has the panel in it.
+		await shots(page, 'browser-watching');
+		await destroyProject(apiURLFromEnv(), p.id);
+	});
 });

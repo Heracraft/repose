@@ -74,6 +74,10 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 summaries are cycled when given; by default every event is an agent_message with no
 //	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
 //	                 moves to before the first of them (f.BackdateCreation), so it stays the oldest event
+//	POST /desktop    {"on": bool, "copy": "text"} -> f.SetDesktop: the browser view's stream route
+//	                 serves a static grey screen over RFB instead of refusing, so a test can reach
+//	                 the watching state and its clipboard panel; "copy" is handed to the page as the
+//	                 machine's own cut-text. GET /desktop -> f.DesktopPastes, what Send sent (I-1216)
 //	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool}
 //	                 -> f.SetSayAgents and f.SetSayState: which agents the machines run and what a
 //	                 `repose say` is answered with (I-1144)
@@ -232,6 +236,25 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	})
 	// `repose say` (DECISIONS I-1144): which agent windows the fake's
 	// machines run, and what it answers a message with.
+	// The browser view's fake desktop (DECISIONS I-1216): off unless a
+	// test asks, because the view's reconnect cases need a stream that
+	// refuses.
+	mux.HandleFunc("GET /desktop", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(f.DesktopPastes())
+	})
+	mux.HandleFunc("POST /desktop", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			On   bool   `json:"on"`
+			Copy string `json:"copy"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		f.SetDesktop(body.On, body.Copy)
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Agents   *[]string `json:"agents"`
