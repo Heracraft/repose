@@ -938,65 +938,65 @@ pointer, not a summary.
 - **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29706
 - **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29761
 - **I-1050** opencode on the machine is version 2, and version 1 is gone — 2026-11-04; L29852
-- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L30076
-- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L30124
-- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L30160
-- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L30201
-- **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30257
-- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30300
-- **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30355
-- **I-1062** The released main is stored when it is known, not grepped for afterwards — 2026-11-06; L30426
-- **I-1064** `repose github setup` gives the machines a GitHub token of the user's own, for the repositories they picked, and stops copying the gh login — 2026-11-08; L30472
-- **I-1068** A host repairs its own one-way tunnel by rebinding the socket, because twice now nothing else has — 2026-11-10; L30590
-- **I-1070** RUNBOOK had a HostWgDown section for an alert that was never written, so the one failure it describes pages as something else — 2026-11-10; L30704
-- **I-1074** A runbook heading that reads as an alert name has to be one, or say why not — 2026-11-10; L30768
-- **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30806
-- **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30914
-- **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L31060
-- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L31105
-- **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L31185
-- **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31246
-- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31292
-- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31378
-- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31442
-- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31496
-- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31552
-- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31574
-- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31608
-- **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31706
-- **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31786
-- **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31872
-- **I-1132** repose starts Claude Code Remote Control on a machine: the `remoteControlAtStartup` setting and a `remote-control` tmux window — 2026-11-11; L31974
-- **I-1134** Remote Control is off until the user asks for it, because its idle cost could not be measured — 2026-11-11; L32064
-- **I-1136** The switch is `remote_control` in `config.toml`, global and per project, and Claude Code's own keys win over it — 2026-11-11; L32102
-- **I-1138** Cursor's self-hosted worker is not built — 2026-11-11; L32138
-- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L32153
-- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L32195
-- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L32236
-- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L32315
-- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L32379
-- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L32472
-- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L32509
-- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32599
-- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32666
-- **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — amended by I-1162; L32710
-- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L32792
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32836
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32866
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32930
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32979
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L33073
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L33111
-- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L33145
-- **I-1156** repose answers on `repose.run`; the Logto API resource and the host-to-api gRPC name keep the old name — 2026-11-11; L33259
-- **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33324
-- **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33348
-- **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33409
-- **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33475
-- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — amended by I-1169; L33543
-- **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — partly amended by I-1212; L33617
-- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33685
-- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33843
-- **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33928
-- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33945
-- **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33982
+- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L30130
+- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L30178
+- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L30214
+- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L30255
+- **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30311
+- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30354
+- **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30409
+- **I-1062** The released main is stored when it is known, not grepped for afterwards — 2026-11-06; L30480
+- **I-1064** `repose github setup` gives the machines a GitHub token of the user's own, for the repositories they picked, and stops copying the gh login — 2026-11-08; L30526
+- **I-1068** A host repairs its own one-way tunnel by rebinding the socket, because twice now nothing else has — 2026-11-10; L30644
+- **I-1070** RUNBOOK had a HostWgDown section for an alert that was never written, so the one failure it describes pages as something else — 2026-11-10; L30758
+- **I-1074** A runbook heading that reads as an alert name has to be one, or say why not — 2026-11-10; L30822
+- **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30860
+- **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30968
+- **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L31114
+- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L31159
+- **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L31239
+- **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31300
+- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31346
+- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31432
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31496
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31550
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31606
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31628
+- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31662
+- **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31760
+- **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31840
+- **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31926
+- **I-1132** repose starts Claude Code Remote Control on a machine: the `remoteControlAtStartup` setting and a `remote-control` tmux window — 2026-11-11; L32028
+- **I-1134** Remote Control is off until the user asks for it, because its idle cost could not be measured — 2026-11-11; L32118
+- **I-1136** The switch is `remote_control` in `config.toml`, global and per project, and Claude Code's own keys win over it — 2026-11-11; L32156
+- **I-1138** Cursor's self-hosted worker is not built — 2026-11-11; L32192
+- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L32207
+- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L32249
+- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L32290
+- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L32369
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L32433
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L32526
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L32563
+- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32653
+- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32720
+- **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — amended by I-1162; L32764
+- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L32846
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32890
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32920
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32984
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L33033
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L33127
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L33165
+- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L33199
+- **I-1156** repose answers on `repose.run`; the Logto API resource and the host-to-api gRPC name keep the old name — 2026-11-11; L33313
+- **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33378
+- **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33402
+- **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33463
+- **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33529
+- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — amended by I-1169; L33597
+- **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — partly amended by I-1212; L33671
+- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33739
+- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33897
+- **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33982
+- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33999
+- **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34036

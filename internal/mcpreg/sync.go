@@ -1,6 +1,7 @@
 package mcpreg
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -64,7 +65,11 @@ func Sync(p Paths, agents []string, stderr io.Writer) {
 		case "gemini":
 			rec = applyGemini(p, want, prev, warn)
 		case "opencode":
+			before, _, _ := readFile(opencodeConfig(p.Home))
 			rec = applyOpencode(p, want, prev, warn)
+			if after, _, _ := readFile(opencodeConfig(p.Home)); !bytes.Equal(before, after) {
+				restartOpencode(warn)
+			}
 		case "pi":
 			rec = applyPi(p, want, prev, warn)
 		}

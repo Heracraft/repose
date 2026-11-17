@@ -29955,12 +29955,27 @@ not a project config, and macOS managed preferences are the only thing
 above the system directory.
 
 That is a user-visible promise (`/docs/agents`, "its own switch turns one
-off") that version 2 takes away, and the fix is a choice this entry does
+off") that version 2 takes away, and the fix was a choice this entry did
 not get to make: either the platform's MCP servers move out of
 `/etc/opencode` into the reader's own file, the way Codex's already do for
 the same reason, or the switch goes and the docs say the platform's
-servers cannot be turned off on opencode. The `guest-base` subtest for it
-fails today, and should: it asserts a property version 2 no longer has.
+servers cannot be turned off on opencode.
+
+*Resolved 2026-11-16, the first way.* The platform servers go in the
+reader's `~/.config/opencode/opencode.json` `mcp.servers`, written by
+`repose-mcp sync opencode` beside the laptop's and the forwarded ones,
+and `/etc/opencode/opencode.json` carries `instructions` only. The sync
+tells its entries apart by the record (`rendered.json`), as it does for
+Codex's `~/.codex/config.toml`: an entry equal to what repose rendered is
+repose's and follows the registry; one the reader changed in any way,
+`"disabled": true` included, is the reader's and is never rewritten.
+That is the off switch version 2 actually has, and the `guest-base`
+subtest asserts it: setup writes both platform servers into a fresh home,
+the reader marks `playwright` disabled, the next setup leaves the file
+byte for byte, opencode's own server reports `playwright` `disabled` and
+`chrome-devtools` `connected`, and `repose-mcp status` no longer counts
+opencode among `playwright`'s agents. `/etc/opencode` is gone from
+`repose-mcp status`'s opencode layers too.
 
 **And the probe the test used is gone too.** `opencode mcp list` on 2.2.5
 answers "No MCP servers configured" for every server configured by hand --
@@ -29969,12 +29984,29 @@ and without `--standalone`, on this box and on the guest -- while
 `opencode debug config` and `GET /api/config` on the same home show the
 file loaded and `GET /api/mcp` returns `data: []`. So the server parses
 the config and instantiates nothing outside a session, and `opencode mcp
-add` (which writes the entry itself) is how the docs reach it. I-555's
-proof that a forwarded secret arrives needs the mechanism-level probe the
-test already uses for Codex and pi instead: take the entry from opencode's
-resolved config and run it through `mcp-client.py`. That is a small change
-and it is left with the layering decision above, because where the entry
-comes from is what that decision settles.
+add` (which writes the entry itself) is how the docs reach it.
+
+*Resolved 2026-11-16.* Found on the built 2.2.5 here: its server's MCP
+subsystem starts on the first `POST /api/experimental/mcp/NAME/connect`
+(which answers "MCP server not found" that first time), after which `GET
+/api/mcp` lists every configured server with a status -- `connected`,
+`failed` with the process's exit, or `disabled` -- while `mcp list` on the
+same server still says "No MCP servers configured". So the tests' probe
+is opencode's own server: `opencode serve --port 4097` under the home in
+question with `OPENCODE_SERVER_PASSWORD` set (without it the server
+prints a random password and `/api/*` answers 401), one connect call,
+then `/api/mcp`. `oc_mcp()` in `guest-base` does that for the off switch,
+the laptop's `probe` with its secret (`connected` means the launcher
+filled it) and the forwarded `fwprobe`, present and away.
+
+Two more facts about version 2's MCP, from `guest-agent-guide` with the
+servers in the reader's file: the background service starts its MCP
+servers lazily, so the first request of a fresh service goes to the model
+before the browser servers have connected (the test runs the agent against
+a service a first run has started, which is a machine's normal state);
+and the tools reach the model in code mode, as
+`tools.playwright.browser_navigate({...})` in the `execute` tool's text,
+not as tools of their own as version 1 sent them.
 
 **Web search changed hands.** `OPENCODE_ENABLE_EXA`, which version 1 took
 and `/docs/agents` told the reader to set as a secret, does not exist in
@@ -30008,13 +30040,31 @@ round it, confirmed here). The second of those is a fact about the guest,
 not the test: one service per machine, and it holds the config it started
 with, so a `repose sync` that renders new MCP servers does not reach a
 running opencode until `opencode service restart`. Whether
-`repose-agent-setup` should restart it when it changed something is open:
-a restart is cheap for sessions, which live in `opencode.db`, but it is
-still a thing done to a running agent.
+to restart it when something changed was left open: a restart is cheap
+for sessions, which live in `opencode.db`, but it is still a thing done
+to a running agent.
 
-**Blocked: the base closure has no room for it.** `nix build
-./nix#checks.x86_64-linux.guest-closure-size` fails on this branch.
-Measured on this box today, both from a full `guest-system` build:
+*Resolved 2026-11-16: restart, from the sync.* Without it a forwarded
+server, or one the laptop added, reaches no opencode at all -- not the
+running one, and not a new `opencode` either, since every TUI on the
+machine attaches to the one service and the service keeps the config it
+started with -- until the user learns `opencode service restart`. So
+`repose-mcp sync opencode` runs `opencode service restart` when, and
+only when, it changed `~/.config/opencode/opencode.json` and `opencode
+service status` reports a service (anything but `stopped`); a machine
+without opencode on PATH is left alone. It lives in the sync and not in
+`repose-agent-setup` because both paths that render a new server go
+through the sync: the setup before an agent start, and `repose-mcp hold`
+when a forward arrives or `--remove` takes one away. Checked here on the
+built 2.2.5: the restart takes 0.3 s and replaces the server process,
+and a TUI started before it is still there afterwards, prompt and all.
+What a running agent loses is the turn in flight, which a changed server
+set is a fair reason to lose.
+
+**The base closure had no room for it, until I-1056.** `nix build
+./nix#checks.x86_64-linux.guest-closure-size` failed on this branch on
+2026-11-04. Measured on this box that day, both from a full
+`guest-system` build:
 
 | | bytes | against the 6 GiB limit |
 |---|---|---|
@@ -30043,6 +30093,10 @@ numbers from the same build:
   pins its own build (I-246 overrides the browser set already). About
   650 MB if they can be made one, which is ten times what this entry
   needs and a workstream of its own.
+
+The owner took the first (I-1056, 7 GiB, released). With `main` of
+2026-11-16 merged in, the check passes here: `guest system closure:
+6505399688 bytes (limit 7516192768)`, 964 MiB under.
 
 **The finding is bigger than this branch.** `main` sits 4 MiB under a
 limit the base build fails above, so the next bump of any agent breaks it:

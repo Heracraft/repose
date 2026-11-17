@@ -896,11 +896,12 @@ in
           assert "links to a file repose cannot write" in first, first
           assert "links to a file repose cannot write" not in second, second
           assert guest.succeed("cat /tmp/cxlink3/ro/real.toml") == 'model = "o3"\n'
-          # opencode: the managed layer, type local. Version 2's `debug
-          # config` prints the sources it loaded rather than the merged
-          # config, and normalises `mcp.NAME` into `mcp.servers.NAME`
-          # (I-1050), so the documents are merged in the order it lists
-          # them, which is lowest precedence first.
+          # opencode: the reader's own file, written by the setup above,
+          # since version 2 reads /etc/opencode above it (I-1050). Version
+          # 2's `debug config` prints the sources it loaded rather than the
+          # merged config, and normalises `mcp.NAME` into `mcp.servers.NAME`,
+          # so the documents are merged in the order it lists them, which
+          # is lowest precedence first.
           def oc_servers(out):
               merged = {}
               for src in json.loads(out):
@@ -913,6 +914,29 @@ in
           for n, e in reg.items():
               assert oc[n]["type"] == "local", (n, oc)
               assert oc[n]["command"] == [e["command"]] + e["args"], (n, oc)
+          assert "mcp" not in json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
+          # opencode 2 starts its MCP servers inside a session, and `mcp
+          # list` answers "No MCP servers configured" whatever the config
+          # holds (I-1050), so the probe is its own server: one `opencode
+          # serve` under home, a connect call, which is what makes it read
+          # the servers, and /api/mcp, which then reports each one
+          # connected, failed or disabled.
+          def oc_mcp(names, home="/home/dev"):
+              import time
+              curl = "curl -s -u opencode:probe http://127.0.0.1:4097"
+              guest.execute("pkill -f 'opencode serve --port 4097'")
+              guest.succeed(f"sudo -u dev nohup setsid -f sh -c 'cd {home} && HOME={home} OPENCODE_SERVER_PASSWORD=probe exec opencode serve --port 4097 --hostname 127.0.0.1' > /tmp/oc-serve.log 2>&1")
+              guest.wait_until_succeeds(f"{curl}/api/mcp | grep -q location", timeout=90)
+              got = {}
+              for _ in range(45):
+                  guest.execute(f"{curl}/api/experimental/mcp/{names[0]}/connect -X POST")
+                  got = {e["name"]: e["status"]["status"] for e in json.loads(guest.succeed(f"{curl}/api/mcp"))["data"]}
+                  if set(names) <= set(got) and not any(got[n] in ("pending", "connecting") for n in names):
+                      break
+                  time.sleep(2)
+              guest.execute("pkill -f 'opencode serve --port 4097'")
+              print("opencode mcp", got)
+              return got
           # Gemini: a copied root file in a root 0755 directory, folder
           # trust off, so a folder it was never told about connects both.
           guest.succeed("test -f /etc/gemini-cli/system-defaults.json && ! test -L /etc/gemini-cli/system-defaults.json")
@@ -930,13 +954,20 @@ in
           cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && HOME=/tmp/cxoff codex mcp list --json", err=False))}
           assert cx["playwright"]["enabled"] is False and cx["chrome-devtools"]["enabled"] is True, cx
           assert "enabled = false" in guest.succeed("cat /tmp/cxoff/.codex/config.toml")
-          put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"servers": {"playwright": {"disabled": true}}}}')
-          # opencode colours its list; the driver's log shows it without.
-          # --standalone: version 2's managed service binds 127.0.0.1:49374
-          # for the whole machine, so an opencode under another HOME cannot
-          # start one of its own (I-1050).
-          out = re.sub(r"\x1b\[[0-9;]*m", "", dev_out("cd /tmp && HOME=/tmp/ocoff opencode --standalone mcp list"))
-          assert re.search(r"playwright\s+disabled", out), out
+          # opencode 2: the reader's `disabled: true` on the entry repose
+          # wrote, which the next setup leaves as theirs (I-1050).
+          dev_out("HOME=/tmp/ocoff repose-agent-setup opencode")
+          ocoff = json.loads(guest.succeed("cat /tmp/ocoff/.config/opencode/opencode.json"))
+          assert set(ocoff["mcp"]["servers"]) == set(reg), ocoff
+          ocoff["mcp"]["servers"]["playwright"]["disabled"] = True
+          put("/tmp/ocoff/.config/opencode/opencode.json", json.dumps(ocoff))
+          dev_out("HOME=/tmp/ocoff repose-agent-setup opencode")
+          assert json.loads(guest.succeed("cat /tmp/ocoff/.config/opencode/opencode.json")) == ocoff
+          st = oc_mcp(sorted(reg), home="/tmp/ocoff")
+          assert st["playwright"] == "disabled" and st["chrome-devtools"] == "connected", st
+          st = json.loads(dev_out("HOME=/tmp/ocoff repose-mcp status --json", err=False))
+          agents_of = lambda name: {a for r in st["servers"] if r["name"] == name for a in r["agents"]}
+          assert "opencode" not in agents_of("playwright") and "opencode" in agents_of("chrome-devtools"), st
           put("/tmp/gmoff/.gemini/settings.json", '{"mcp": {"excluded": ["playwright"]}}')
           out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && HOME=/tmp/gmoff gemini mcp list")
           assert re.search(r"playwright:.*Blocked", out), out
@@ -970,7 +1001,7 @@ in
           ext = json.loads(guest.succeed("cat /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json"))
           assert ext["mcpServers"]["probe"]["command"] == "repose-mcp", ext  # a reference in args needs the launcher
           oc = json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))
-          assert oc["mcp"]["probe"]["command"] == ["repose-mcp", "run", "probe"], oc
+          assert oc["mcp"]["servers"]["probe"]["command"] == ["repose-mcp", "run", "probe"], oc
           assert "probe" in json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]
           # Each agent lists it from its own config.
           cl = json.loads(guest.succeed("sudo -u dev bash -lc 'codex mcp list --json'"))
@@ -978,7 +1009,8 @@ in
           assert any(e.get("name") == "probe" and "repose-mcp" in json.dumps(e) for e in cl), cl
           # Claude Code, Gemini CLI and opencode start the server through
           # the launcher while listing it; it connects only with the secret.
-          for cmd in ["claude mcp list", "gemini mcp list", "opencode --standalone mcp list"]:
+          assert oc_mcp(["probe"])["probe"] == "connected"
+          for cmd in ["claude mcp list", "gemini mcp list"]:
               status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 150 {cmd}' 2>&1")
               print(f"{cmd} ({status}):\n{out}")
               bad = ["disconnected", "failed", "error", "needs auth"]
@@ -1020,7 +1052,7 @@ in
           codex = guest.succeed("cat /home/dev/.codex/config.toml")
           assert "mcp_servers.probe" not in codex and "[mcp_servers.mine]" in codex, codex
           guest.fail("test -e /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json")
-          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))["mcp"]
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))["mcp"]["servers"]
           guest.fail("test -e /home/dev/.claude.json.lock")
 
       with subtest("the carry's own payload reaches claude and codex through repose-agent-setup (I-556, design 3.2.5)"):
@@ -1090,8 +1122,10 @@ in
           # hold synced the agents it had rendered for already.
           assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]["fwprobe"] == {"type": "stdio", "command": "repose-mcp", "args": ["fwprobe"]}
           assert '[mcp_servers.fwprobe]\ncommand = "repose-mcp"\nargs = ["fwprobe"]' in guest.succeed("cat /home/dev/.codex/config.toml")
+          assert json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))["mcp"]["servers"]["fwprobe"] == {"type": "local", "command": ["repose-mcp", "fwprobe"]}
           def listed(connected_word):
-              for cmd in ["claude mcp list", "gemini mcp list", "opencode --standalone mcp list"]:
+              assert oc_mcp(["fwprobe"])["fwprobe"] == "connected"
+              for cmd in ["claude mcp list", "gemini mcp list"]:
                   status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 150 {cmd}' 2>&1")
                   print(f"{cmd} ({status}):\n{out}")
                   rows = [l.lower() for l in out.splitlines() if "fwprobe" in l]
@@ -1115,6 +1149,7 @@ in
           assert guest.succeed("sudo -u dev repose-mcp hold --remove fwprobe") == ""
           assert "fwprobe" not in json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]
           assert "fwprobe" not in guest.succeed("cat /home/dev/.codex/config.toml")
+          assert "fwprobe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))["mcp"]["servers"]
 
       with subtest("repose-hook posts to the socket"):
           guest.succeed("""cat > /tmp/transcript.jsonl <<'EOF'
@@ -3111,15 +3146,11 @@ in
               "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "repose-hook --agent codex"}]}]},
           }, codex
           oc = json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
-          assert oc["instructions"] == ["/etc/repose/agent-guide.md"], oc
-          # I-553: the platform MCP servers beside it; Codex gets them in
-          # the user file instead, so /etc/codex holds no mcp_servers.
+          # I-1050: the guide and nothing else; opencode 2 reads this file
+          # above the user's, so the platform MCP servers go in the user
+          # file, as Codex's do (/etc/codex holds no mcp_servers either).
+          assert oc == {"$schema": "https://opencode.ai/config.json", "instructions": ["/etc/repose/agent-guide.md"]}, oc
           reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
-          # I-1050: opencode 2 reads mcp.servers, and its off switch is
-          # `disabled`, so the platform layer sets neither key.
-          ocs = oc["mcp"]["servers"]
-          assert set(ocs) == set(reg), oc
-          assert not any("enabled" in v or "disabled" in v for v in ocs.values()), oc
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
           hooks = json.loads(guest.succeed("cat /etc/repose/gemini-extension/hooks/hooks.json"))["hooks"]
@@ -3153,7 +3184,13 @@ in
           runs = {
               "claude": ("USER-CLAUDE-MARK", "ANTHROPIC_BASE_URL=http://127.0.0.1:18777 ANTHROPIC_API_KEY=sk-x CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "claude -p hi --max-turns 1"),
               "codex": ("USER-CODEX-MARK", "FAKE_KEY=x", "codex exec --skip-git-repo-check hi"),
-              "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "opencode run hi"),
+              # opencode 2's `run` goes through the machine's one background
+              # service, which starts its MCP servers lazily: the first
+              # request of a fresh service goes out before the browser
+              # servers have connected. On a machine the service is long
+              # since up when an agent runs, so the run here is against a
+              # service a first run has started (I-1050).
+              "opencode": ("USER-OPENCODE-MARK", "OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_AUTOUPDATE=1", "sh -c 'opencode run hi; sleep 10; rm -rf /tmp/caps/*; opencode run hi'"),
               # --approval-mode=yolo: Gemini CLI's policy denies, and
               # leaves out of the request, every tool that would need a
               # confirmation when it cannot ask -- the MCP tools and its
@@ -3180,6 +3217,9 @@ in
               assert mark in bodies, f"{agent}: the user's own instructions are not in what it sent"
               # I-553, I-554: the platform browser tools reach the model.
               # pi lists codemode servers by name instead of their tools.
+              # opencode 2 declares them in code mode too, as
+              # `tools.playwright.browser_navigate({...})` in its `execute`
+              # tool's text, not as tools of their own (I-1050).
               # Codex (code mode) names no MCP tool in the request; its
               # registration is checked with codex mcp list above
               # (DECISIONS I-553).

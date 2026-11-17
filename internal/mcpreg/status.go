@@ -431,17 +431,13 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 	case "opencode":
 		final := map[string]found{}
 		off := map[string]bool{}
-		// Both spellings: this base writes mcp.servers (I-1050), a base
-		// before it wrote mcp.NAME.
-		for n, v := range opencodeServers(p.etc("etc/opencode/opencode.json")) {
-			final[n] = found{n, FromRepose, ""}
-			off[n] = off[n] || disabled(v)
-		}
 		dir := filepath.Join(home, ".config", "opencode")
 		// opencode 2 loads both of the reader's global files and no longer
 		// the config.json an earlier base wrote (I-1050). repose merges
-		// into the .json, so an entry there is told apart by what repose
-		// rendered, as for codex; the .jsonc is the reader's alone.
+		// into the .json, the platform servers included (/etc/opencode
+		// would outrank the reader's `disabled`), so an entry there is
+		// told apart by what repose rendered, as for codex; the .jsonc is
+		// the reader's alone.
 		for n, v := range opencodeServers(filepath.Join(dir, "opencode.json")) {
 			if disabled(v) {
 				off[n] = true

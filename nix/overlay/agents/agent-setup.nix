@@ -56,7 +56,10 @@
 #          stops Codex.
 # every agent ends with `repose-mcp sync <agent>` where repose-mcp exists,
 #          which renders ~/.repose/mcp into that agent's own config
-#          (DECISIONS I-555) and exits 0 on every path.
+#          (DECISIONS I-555) and exits 0 on every path. For opencode the
+#          sync also restarts the background service when it changed
+#          ~/.config/opencode/opencode.json and one is running, since the
+#          service holds the config it started with (I-1050).
 # opencode ~/.config/opencode/plugins/repose.js is installed if absent, and
 #          replaced while it is byte for byte one an earlier base installed
 #          (I-481). The machine's opencode is version 2 (I-1050) and the

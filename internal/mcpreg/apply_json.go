@@ -39,7 +39,9 @@ func applyGemini(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 }
 
 // applyOpencode merges want into ~/.config/opencode/opencode.json
-// `mcp.servers` (DECISIONS I-1050). opencode 2 loads opencode.json and
+// `mcp.servers` (DECISIONS I-1050), the platform servers included: version
+// 2 puts /etc/opencode above the reader's file, so a platform layer there
+// would take the reader's `disabled: true` away. opencode 2 loads opencode.json and
 // opencode.jsonc and no longer reads the config.json an earlier base
 // wrote beneath them, and it takes servers under `mcp.servers` only, not
 // a name directly under `mcp` as version 1 did. repose merges into the
@@ -49,7 +51,7 @@ func applyGemini(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 // repose wrote.
 func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
 	dir := filepath.Join(p.Home, ".config", "opencode")
-	path := filepath.Join(dir, "opencode.json")
+	path := opencodeConfig(p.Home)
 	theirs := map[string]bool{}
 	for n := range opencodeServers(filepath.Join(dir, "opencode.jsonc")) {
 		theirs[n] = true
