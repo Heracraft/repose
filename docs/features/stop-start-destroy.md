@@ -106,8 +106,8 @@ project rests when its host's Hello named the `pause` feature, its
 `keep_awake` is false, no op and no gateway session are open for it, no
 user timer in the guest is due within 15 minutes, and each of its last 15
 one-minute samples shows `guestd_ok`, no SSH session, no tmux or herdr
-client, every agent `idle` or `needs_input`, CPU under 6 s (0.10 of a
-core) and under 64 KiB of network. Its vCPUs are then paused through
+client, every agent `idle` or `needs_input`, CPU under 15 s (a quarter
+of a core, I-1230) and under 64 KiB of network. Its vCPUs are then paused through
 Cloud Hypervisor. A container does not hold a machine awake on its own:
 CPU and network already cover a container doing work, and a port it
 serves is reached over a forward, which wakes the machine. Nothing is

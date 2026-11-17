@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-971 entries.
+972 entries.
 
 ## Scope
 
@@ -836,7 +836,7 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24950
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24969
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25006
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; L25011
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; amended by I-1230; L25011
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25141
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; amended by I-1114; L25169
 - **I-824** The pause must never cost a machine its memory — L25212
@@ -1003,3 +1003,4 @@ pointer, not a summary.
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L33846
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34027
 - **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34063
+- **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34127

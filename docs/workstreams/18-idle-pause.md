@@ -104,7 +104,8 @@ A running project may rest when all of these hold:
 - each of its last 15 one-minute samples has `guestd_ok`,
   `ssh_sessions = 0`, `tmux_clients = 0`, every agent in `idle` or
   `needs_input` (anything else, `unknown` included, counts as working),
-  `cpu_ns` under 6 s (0.10 of a core), and `net_rx + net_tx` under 64 KiB;
+  `cpu_ns` under 15 s (a quarter of a core; 6 s until I-1230), and
+  `net_rx + net_tx` under 64 KiB;
 - no user timer inside the guest is due within the next 15 minutes
   (hostd reads the next *realtime* elapse before it pauses, §4; a
   monotonic timer counts the guest's own uptime, which stops with its

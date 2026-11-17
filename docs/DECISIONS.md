@@ -34124,3 +34124,73 @@ done: the user-facing side of a failed wake is unchanged (the gateway's
 "frozen and did not wake" and the api's retry), and a dial in flight at
 the instant of a pause can still leave one dead connect in the backlog,
 which the wake's second try covers.
+**I-1230. The rest rule's CPU line is 15 s a minute, a quarter of a
+core.** (rest-cpu-15, 2026-11-16. Amends I-818.)
+
+I-818 took the proposal's 6 s line (0.10 of a core) because 3 s failed as
+soon as one `.claude-wrapped` sat at its prompt on a small guest. The
+live fleet is not that machine. Fourteen days of `meter_samples` to
+2026-11-11 (70,680 running minutes with `guestd_ok`, 23 projects, all of
+them the owner's accounts and the workshop guests) read, for the minutes
+every other term called idle:
+
+| class | idle minutes | under 6 s | under 15 s | under 30 s | p50 |
+|---|---|---|---|---|---|
+| small | 1,439 | 100% | 100% | 100% | 0.0 s |
+| large | 21,788 | 69% | 93% | 98% | 0.0 s |
+| xl | 20,584 | 18% | 52% | 92% | 14.2 s |
+
+Half of all idle minutes sat between 6 and 30 s, and 63 percent of those
+had a container running. A `large` with one idle Claude and one
+container read 8.6 s at p50; an `xl` with one idle Claude and nothing
+else 10.4 s. The share of running minutes that could rest was 25.9% at
+6 s, 35.7% at 15 s, 47.2% at 30 s and 49.3% with no CPU term at all;
+the proposal had predicted 47.7% at 6 s from a sample of bare machines.
+`verista`, an `xl`, had never had one quiet minute since it started on
+2026-11-02.
+
+What the 6 s line held awake was overhead, not work. On the three `xl`
+guests that never froze (`verista`, `kanali`, `shule-id`): five orphaned
+Claude Code shell loops seven days old running `pgrep` then `sleep` for
+ever, docker healthchecks every 2 s each exec'ing runc over virtiofs,
+two to nine Claude sessions idle at their prompts, and a bash loop
+calling `ss` 1.6 times a second. Under all of it the hypervisor's own
+exits -- virtiofs completions at 250 a second, timer interrupts at 300 a
+second per vCPU, IPIs at 500 to 800 a second, on a guest doing nothing
+-- make the host-measured `cpu_ns` 1.4 to 1.9 times what the guest's own
+`/proc/stat` accounts for (verista 30 s against 13.5 s, kanali 18
+against 13, shule-id 59 against 35). That overhead scales with vCPUs,
+and 6 s did not.
+
+**The line is 15 s** (`resting.CPUNsPerSample`). A `large` with a Claude
+and a container rests, an `xl` with a Claude rests, and anything above a
+quarter of a core -- a build, a test run, a transcode, a browser being
+driven -- stays awake, which is the term's job: the ssh, tmux and agent
+terms carry the rule (20% of minutes with a human attached were under
+6 s and 66% under 30 s, so CPU never told who was there), and CPU is
+only there to catch work the signals miss.
+
+**Not 30 s**, which would have doubled the share, because a half-core
+job would then be paused mid-flight with the `frozen` marker as its only
+notice, the data that says the band holds nothing but overhead is all
+the owner's own machines, and the saving today is CPU alone: memory is
+not reclaimed (the proposal's swap step is still future work, I-818) and
+host-02 ran at load 2.3 on 64 threads with 5 guests, so freezing verista
+freed half a thread. Revisit 30 s when memory reclaim ships and there is
+tenant data that is not the owner's.
+
+**Not a guest-side measure.** Reading the guest's own CPU through guestd
+would strip the exit overhead, but I-818 already ruled out a new guestd
+request for the rule (version negotiation the code does not have, and a
+base rebuild on every machine before the rule reaches it).
+
+**The burners are a separate fix**, the I-930 way (Chromium at 15 s a
+minute was fixed at source, not by moving the line): guestd's own
+polling (about 250 `stat` and `open` calls a second), the healthcheck
+exec path through virtiofs, the guest kernel at `HZ=1000`, and Claude
+Code's background-task waiters outliving their session. None of them is
+in this branch.
+
+Nothing a user reads changes: `lifecycle.md` says "next to no CPU or
+network" and never carried the figure. `docs/features/stop-start-destroy.md`
+and `docs/workstreams/18-idle-pause.md` carry the new one.
