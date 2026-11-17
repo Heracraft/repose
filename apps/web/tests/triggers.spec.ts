@@ -1,10 +1,10 @@
-// A project's Triggers tab (DECISIONS I-1248..I-1262): the list with
-// each trigger's door, its last run and the next fire; Run, On/Off, Copy
-// and Remove in the row; the runs under it; and the empty state that
-// names the command, because making a trigger means writing a prompt
-// into the machine and a browser cannot do that (I-1258).
+// A project's Triggers tab (DECISIONS I-1248..I-1262, I-1266): the list
+// with each trigger's door, its last run and the next fire; Run, Edit,
+// On/Off and Remove in the row; the runs and the dry run under it; and
+// the form that makes a trigger, including the prompt, which I-1266 let
+// a browser write into the machine.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addTriggerRun } from './helpers';
+import { signIn, createProject, apiURLFromEnv, addTriggerRun, triggerPrompt } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -77,7 +77,7 @@ async function seeded(name: string) {
 	return p;
 }
 
-test('a project with no triggers names the command that makes one', async ({ page }) => {
+test('a project with no triggers offers to make one', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'trig-empty',
 		remote_url: 'github.com/heracraft/trig-empty'
@@ -86,11 +86,129 @@ test('a project with no triggers names the command that makes one', async ({ pag
 	const section = page.locator('#triggers');
 	await expect(section.getByRole('heading', { name: 'Triggers', exact: true })).toBeVisible();
 	await expect(section.getByText('No triggers yet')).toBeVisible();
-	// The tab cannot write a prompt into the machine, so it does not
-	// offer to make one (I-1258).
-	await expect(section.getByText('repose triggers add')).toBeVisible();
-	await expect(section.getByRole('button', { name: /add/i })).toHaveCount(0);
+	// I-1266: the tab makes a trigger, so the empty state no longer
+	// sends the reader to a terminal.
+	await expect(section.getByRole('button', { name: 'Add trigger' })).toBeVisible();
+	await expect(section.getByText('repose triggers add')).toHaveCount(0);
 	await shots(page, 'triggers-empty');
+});
+
+test('the form makes a route trigger and the URL is a copy away', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'trig-new-route',
+		remote_url: 'github.com/heracraft/trig-new-route'
+	});
+	await page.goto(`/projects/${p.id}/triggers`);
+	const section = page.locator('#triggers');
+	await section.getByRole('button', { name: 'Add trigger' }).click();
+	const form = section.getByTestId('trigger-form');
+	await form.getByLabel('Name').fill('apply');
+	await form.getByRole('button', { name: 'A webhook' }).click();
+	await form.getByLabel('Route').fill('recruiting');
+	await form
+		.getByPlaceholder('Triage the new issues')
+		.fill('Read $REPOSE_PAYLOAD and apply if it fits');
+	await shots(page, 'triggers-form');
+	await form.getByRole('button', { name: 'More settings' }).click();
+	await expect(form.getByTestId('trigger-more')).toBeVisible();
+	await shots(page, 'triggers-form-more');
+	await form.getByRole('button', { name: 'More settings' }).click();
+	await form.getByRole('button', { name: 'Add trigger' }).click();
+
+	await expect(section.getByRole('heading', { name: '1 trigger' })).toBeVisible();
+	await expect(
+		section.getByRole('cell', { name: 'recruiting (route)', exact: true })
+	).toBeVisible();
+	// The prompt reached the machine and the api kept none of it: the
+	// row holds a path, and no page ever draws the text (I-1266).
+	expect(await triggerPrompt(p.id, 'apply')).toBe('Read $REPOSE_PAYLOAD and apply if it fits');
+	const row = await fetch(`${apiURLFromEnv()}/projects/${p.id}/triggers`, {
+		headers: { Authorization: 'Bearer playwright' }
+	}).then((r) => r.json());
+	expect(row[0].prompt_path).toBe('.repose/triggers/apply.md');
+	expect(JSON.stringify(row)).not.toContain('REPOSE_PAYLOAD');
+	// The URL is on the clipboard and never on the page, as a route's is.
+	await expect(section.getByRole('button', { name: 'Copy the URL of apply' })).toBeVisible();
+	await expect(page.locator('body')).not.toContainText('hooks.repose');
+	await shots(page, 'triggers-new-route');
+});
+
+test('the form builds a schedule from the six shapes and says when it fires', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'trig-new-sched',
+		remote_url: 'github.com/heracraft/trig-new-sched'
+	});
+	await page.goto(`/projects/${p.id}/triggers`);
+	const section = page.locator('#triggers');
+	await section.getByRole('button', { name: 'Add trigger' }).click();
+	const form = section.getByTestId('trigger-form');
+	await form.getByLabel('Name').fill('triage');
+	await form.getByRole('button', { name: 'A schedule' }).click();
+	await form.getByLabel('When').selectOption('weekdays');
+	await form.getByLabel('At').fill('07:00');
+	await form.getByLabel('Time zone').fill('Europe/Berlin');
+	// The spec and the zone are shown before it is made, because 07:00
+	// means nothing without the zone it is read in (I-1252).
+	await expect(form.getByTestId('trigger-spec')).toHaveText(
+		'It fires weekdays 07:00 Europe/Berlin.'
+	);
+	await form.getByPlaceholder('Triage the new issues').fill('Triage the new issues');
+	await form.getByRole('button', { name: 'Add trigger' }).click();
+
+	await expect(section.getByRole('cell', { name: /^weekdays 07:00/ })).toBeVisible();
+	expect(await triggerPrompt(p.id, 'triage')).toBe('Triage the new issues');
+	await shots(page, 'triggers-new-schedule');
+});
+
+test("a prompt is refused while the machine is stopped, in the api's words", async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'trig-stopped',
+		remote_url: 'github.com/heracraft/trig-stopped'
+	});
+	await fetch(`${api}/projects/${p.id}/stop`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright' }
+	});
+	await page.goto(`/projects/${p.id}/triggers`);
+	const section = page.locator('#triggers');
+	await section.getByRole('button', { name: 'Add trigger' }).click();
+	const form = section.getByTestId('trigger-form');
+	await form.getByLabel('Name').fill('apply');
+	await form.getByLabel('Route').fill('recruiting');
+	await form.getByPlaceholder('Triage the new issues').fill('do the thing');
+	await form.getByRole('button', { name: 'Add trigger' }).click();
+	await expect(form.getByTestId('trigger-form-error')).toContainText(
+		'a prompt is written into the machine'
+	);
+	// The other half of the field works on a stopped machine, as
+	// `--prompt-file` does: the file is not read until the first fire.
+	await form.getByRole('button', { name: 'A file in the machine' }).click();
+	await form.getByPlaceholder('.repose/triggers/apply.md').fill('apply.md');
+	await form.getByRole('button', { name: 'Add trigger' }).click();
+	await expect(section.getByRole('heading', { name: '1 trigger' })).toBeVisible();
+});
+
+test('Edit opens on what the trigger is and changes the fields it names', async ({ page }) => {
+	const p = await seeded('trig-edit');
+	await page.goto(`/projects/${p.id}/triggers`);
+	const section = page.locator('#triggers');
+	await section.getByRole('button', { name: 'Change triage' }).click();
+	const form = section.getByTestId('trigger-form');
+	// The schedule opens in the fields that made it, not as raw text.
+	await expect(form.getByLabel('When')).toHaveValue('weekdays');
+	await expect(form.getByLabel('At')).toHaveValue('07:00');
+	await shots(page, 'triggers-edit');
+	await expect(form.getByLabel('Name')).toBeDisabled();
+	await form.getByLabel('At').fill('08:30');
+	await form.getByRole('button', { name: 'More settings' }).click();
+	await form.getByLabel('Timeout, minutes').fill('30');
+	await form.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(section.getByRole('cell', { name: /^weekdays 08:30/ })).toBeVisible();
+	const rows = await fetch(`${apiURLFromEnv()}/projects/${p.id}/triggers`, {
+		headers: { Authorization: 'Bearer playwright' }
+	}).then((r) => r.json());
+	expect(rows.find((t: { name: string }) => t.name === 'triage').timeout_s).toBe(1800);
 });
 
 test('the list shows each door, its last run and the next fire', async ({ page }) => {
@@ -115,7 +233,8 @@ test('the list shows each door, its last run and the next fire', async ({ page }
 	// A trigger that is off says so and offers On.
 	await expect(section.getByRole('button', { name: 'Turn sweep on' })).toBeVisible();
 	await expect(section.getByRole('button', { name: 'Turn apply off' })).toBeVisible();
-	// Every row offers the same three: Run, On/Off and Remove.
+	// Every row offers the same four: Run, Edit, On/Off and Remove.
+	await expect(section.getByRole('button', { name: 'Change apply' })).toBeVisible();
 	await expect(section.getByRole('button', { name: 'Remove apply' })).toBeVisible();
 	await expect(section.getByRole('button', { name: 'Remove sweep' })).toBeVisible();
 	// At phone width the On column is not drawn, so the door moves under
@@ -143,8 +262,10 @@ test('a row opens into its runs, with the agent’s own words', async ({ page })
 		section.getByRole('link', { name: 'The application · jobs.example.com' })
 	).toHaveAttribute('href', 'https://jobs.example.com/a/1829');
 	await expect(section.getByText('route', { exact: true })).toBeVisible();
-	// A route trigger's URL lives here, as a button and not as text.
+	// A route trigger's URL lives here, as a button and not as text, and
+	// so does the dry run that writes a gate (I-1254).
 	await expect(section.getByRole('button', { name: 'Copy the URL of apply' })).toBeVisible();
+	await expect(section.getByRole('button', { name: 'Dry run apply' })).toBeVisible();
 	await expect(page.locator('body')).not.toContainText('hooks.repose');
 	await shots(page, 'triggers-runs');
 });

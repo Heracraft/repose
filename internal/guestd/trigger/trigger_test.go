@@ -903,3 +903,78 @@ func TestEveryDirectoryUnderTheHomeIsDevs(t *testing.T) {
 		t.Errorf("EnsureDirs did not make the trigger folder: %v", err)
 	}
 }
+
+// A prompt written through the api is the file the next fire opens
+// (DECISIONS I-1266). `repose triggers add -p` writes it over SSH as
+// dev; a browser has none, so the api carries the text and guestd
+// writes it here, under the trigger's own working directory and owned
+// by dev through the same path a payload takes.
+func TestAPromptWrittenThroughTheApiIsTheFileTheRunReads(t *testing.T) {
+	h := newHarness(t)
+	var mu sync.Mutex
+	owned := map[string]bool{}
+	h.r.SetChownForTest(func(name string, uid, gid int) error {
+		mu.Lock()
+		defer mu.Unlock()
+		owned[name] = true
+		return nil
+	})
+	h.set(basic("apply"))
+
+	const text = "Read $REPOSE_PAYLOAD and apply if it fits"
+	if err := h.r.WritePrompt("apply", "checkout", ".repose/triggers/apply.md", []byte(text)); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(h.root, "home/dev/todo-app/.repose/triggers/apply.md")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the prompt was not written: %v", err)
+	}
+	if string(b) != text {
+		t.Errorf("the file holds %q", b)
+	}
+	// Every directory it made is dev's: guestd is root, and a root-owned
+	// folder is what the first live run found (2026-11-17).
+	mu.Lock()
+	gotDir := owned[filepath.Join(h.root, "home/dev/todo-app/.repose/triggers")]
+	mu.Unlock()
+	if !gotDir {
+		t.Error("the prompt's folder was left to root, so dev cannot write through it")
+	}
+
+	// And the run reads exactly that file, with no prompt file put there
+	// by the test.
+	if _, err := h.r.Start(context.Background(), trigger.Request{
+		Trigger: "apply", RunID: "r1", Source: triggerrun.SourceRoute,
+		Payload: []byte(`{"id":"evt_1"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := strings.Join(h.runner.Calls()[len(h.runner.Calls())-1].Argv, " ")
+	if !strings.Contains(cmd, text) {
+		t.Errorf("the agent did not start on the written prompt: %s", cmd)
+	}
+
+	// A worktree's prompt goes under that worktree, as the runner reads
+	// it; and the refusals are the runner's own caps.
+	if err := h.r.WritePrompt("apply", "worktree-2", "notes.md", []byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "home/dev/todo-app-worktree-2/notes.md")); err != nil {
+		t.Errorf("a worktree's prompt is not under the worktree: %v", err)
+	}
+	for _, bad := range []struct {
+		why                 string
+		name, workdir, path string
+		text                []byte
+	}{
+		{"no name", "", "checkout", "p.md", []byte("x")},
+		{"no path", "apply", "checkout", "", []byte("x")},
+		{"nothing to write", "apply", "checkout", "p.md", nil},
+		{"over the cap", "apply", "checkout", "p.md", []byte(strings.Repeat("x", trigger.PromptCap+1))},
+	} {
+		if err := h.r.WritePrompt(bad.name, bad.workdir, bad.path, bad.text); err == nil {
+			t.Errorf("%s was accepted", bad.why)
+		}
+	}
+}

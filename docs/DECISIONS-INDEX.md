@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-990 entries.
+993 entries.
 
 ## Scope
 
@@ -1022,3 +1022,6 @@ pointer, not a summary.
 - **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L35049
 - **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L35111
 - **I-1264** A wake reads the call's error, not only Done, before it tries the next session; the RPC client closes Done before it answers the calls a failure ended (wake-retry, 2026-11-17) — L35155
+- **I-1266** A user-visible feature is not shipped until the dashboard can make, change, run and remove it (triggers-dashboard, 2026-11-17) — L35186
+- **I-1268** The api carries a trigger's prompt to the machine and stores none of it, over a hand-off row that is deleted the moment the guest has it (triggers-dashboard, 2026-11-17) — L35221
+- **I-1270** The Triggers tab makes and changes a trigger in a form, and the row grows a fourth button (triggers-dashboard, 2026-11-17) — L35281

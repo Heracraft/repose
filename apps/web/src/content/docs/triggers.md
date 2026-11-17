@@ -15,6 +15,14 @@ weekdays 07:00 Europe/Berlin, next 07:00 tomorrow
 
 That is the whole of it for a schedule. At 07:00 your machine opens a window called `t-triage`, starts your agent with that prompt, and writes down what happened. You can attach to it (`repose attach todo-app t-triage`), it can ask you something with [`repose-ask`](/docs/notifications#agents-can-message-you-and-ask-questions), and you read the outcome with `repose triggers runs`.
 
+## Or in the browser
+
+The project's **Triggers** tab does the same thing. **Add trigger** asks for a name, a webhook or a schedule, and the prompt; a schedule is picked from the six shapes below with a time and a zone, and the tab shows the spec it will store before you make it. The prompt goes in a box, and repose writes it into the machine, under `.repose/triggers`, which is where `-p` writes it. **More settings** holds the agent, the working directory, the timeout, how many runs may work at once, the gate, the dedupe key and the four switches.
+
+Each row has **Run**, **Edit**, **On**/**Off** and **Remove**. Opening a row shows its runs, the **Copy URL** for a webhook trigger, and **Dry run**, which runs the gate and starts no agent. Edit opens on what the trigger is now, and changes only what you change, the same as `repose triggers add` on a name that exists.
+
+Your prompt isn't kept by repose. It is carried to your machine and forgotten, so the tab can write a prompt and can't show you the one that's there; the box says so. A machine that is stopped has nothing to write into, so either start it or point the trigger at a file that's already there.
+
 ## An event from a provider
 
 ```
@@ -147,7 +155,7 @@ run`. A run's window is `t-<name>`, which `repose attach` takes, and
 | `mon,thu 18:30` | those days |
 | `monthly 1 09:00` | that day of the month (1 to 28) |
 
-A zone may end any of them (`daily 03:00 UTC`, `weekdays 07:00 Europe/Berlin`). Without one it takes your laptop's zone, and `add` prints which, so `07:00` is your 07:00 in July as well as January. On the two days a year the clock moves, a fire keeps its wall-clock time; a time the clock skips fires at the next real minute, and a time the clock repeats fires once.
+A zone may end any of them (`daily 03:00 UTC`, `weekdays 07:00 Europe/Berlin`). Without one it takes your laptop's zone, or your browser's on the dashboard, and `add` prints which, so `07:00` is your 07:00 in July as well as January. On the two days a year the clock moves, a fire keeps its wall-clock time; a time the clock skips fires at the next real minute, and a time the clock repeats fires once.
 
 ## The rest of the surface
 

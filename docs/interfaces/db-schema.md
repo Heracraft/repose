@@ -364,6 +364,20 @@ triggers     (id pk, project_id fk, name text,     -- `repose triggers` (0043, I
               check (kind = 'schedule' and spec is not null and zone is not null
                      or kind = 'route' and spec is null))
 
+trigger_prompts                                  -- a prompt typed in a browser,
+             (project_id fk, trigger_name text,  -- in flight (0044, I-1266)
+              workdir text, prompt_path text,    -- where in the machine it goes
+              body text,           -- the prompt's TEXT, at most 64 KB. UNLOGGED: the
+                                   -- table takes no WAL, so the text reaches no replica
+                                   -- and no physical backup. The http process cannot
+                                   -- reach a host (I-1162), so this row is the hand-off
+                                   -- to the grpc one, which sends WriteTriggerPrompt and
+                                   -- deletes the row; a row no machine took is swept
+                                   -- after 10 minutes, delivered or not. `triggers` goes
+                                   -- on holding a path and never the text
+              created_at,
+              primary key (project_id, trigger_name))
+
 trigger_runs (id pk, project_id fk,              -- one run (0043, I-1256)
               trigger_id fk null,  -- null once the trigger is removed: a run outlives it,
                                    -- so `repose triggers runs` after an `rm` still shows
@@ -428,7 +442,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0043_triggers`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0044_trigger_prompts`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

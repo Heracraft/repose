@@ -178,6 +178,42 @@ func (m *Manager) setTriggers(ctx context.Context, c *hostdv1.SetTriggers) *Erro
 	return nil
 }
 
+// writeTriggerPrompt relays a prompt's text to guestd, which writes it
+// into the machine as dev (DECISIONS I-1266). `repose triggers add -p`
+// writes the same file over SSH; the dashboard has no SSH, so the api
+// carries the text and stores none of it. The text is the user's prompt
+// and the name is the user's word, so neither is a log field: the line
+// carries the size.
+func (m *Manager) writeTriggerPrompt(ctx context.Context, c *hostdv1.WriteTriggerPrompt) *Error {
+	if c.Trigger == "" || c.PromptPath == "" || len(c.Text) == 0 {
+		return errf(CodeInvalidArgument, "trigger, prompt_path and text required")
+	}
+	g, gerr := m.getGuest(c.GuestId)
+	if gerr != nil {
+		return gerr
+	}
+	if g.State != StateRunning {
+		return errf(CodeNotFound, "guest is %s; it holds no files to write", g.State)
+	}
+	sess, serr := m.session(g.GuestID)
+	if serr != nil {
+		return serr
+	}
+	if err := sess.WriteTriggerPrompt(ctx, &guestdv1.WriteTriggerPrompt{
+		Trigger: c.Trigger, Workdir: c.Workdir, PromptPath: c.PromptPath, Text: c.Text,
+	}); err != nil {
+		if re, ok := vsockclient.IsRemote(err); ok {
+			if re.Code == CodeInvalidArgument {
+				return errf(re.Code, "guestd WriteTriggerPrompt: %s", re.Message)
+			}
+			return errf(CodeInternal, "guestd WriteTriggerPrompt: %s: %s", re.Code, re.Message)
+		}
+		return errf(CodeGuestUnresponsive, "guestd WriteTriggerPrompt: %v", err)
+	}
+	m.log(g).Info("trigger prompt written", "event", "trigger_run", "bytes", len(c.Text))
+	return nil
+}
+
 // runTrigger relays a fire to guestd (DECISIONS I-1252, I-1256). The
 // run's id is the command's id, so a re-send after a reconnect is
 // answered with that run's state and starts no second agent. A trigger's

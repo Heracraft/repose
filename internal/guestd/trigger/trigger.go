@@ -317,6 +317,41 @@ func (r *Runner) EnsureDirs() {
 	}
 }
 
+// WritePrompt writes one trigger's prompt into the machine as dev
+// (DECISIONS I-1266). `repose triggers add -p` writes the same file over
+// SSH; a browser has no SSH, so the api carries the text here and keeps
+// none of it. The path is read as the runner reads it — relative to the
+// workdir, or absolute — so a prompt written here is the file the next
+// fire opens.
+//
+// The directories are dev's, through the same mkdirDev a payload goes
+// through: guestd runs as root, and a root-owned `.repose/triggers` is
+// what the first live run found (2026-11-17).
+func (r *Runner) WritePrompt(name, workdir, promptPath string, text []byte) error {
+	switch {
+	case name == "":
+		return sysdep.Invalid("a trigger name is required")
+	case promptPath == "":
+		return sysdep.Invalid("a prompt path is required")
+	case len(text) == 0:
+		return sysdep.Invalid("the prompt is empty")
+	case len(text) > PromptCap:
+		return sysdep.Invalid("the prompt is %d bytes; at most %d", len(text), PromptCap)
+	}
+	path := r.resolve(Trigger{PromptPath: promptPath}, r.workdir(Trigger{Workdir: workdir}))
+	if err := r.mkdirDev(filepath.Dir(path)); err != nil {
+		return err
+	}
+	uid, gid := sysdep.DevIdentity()
+	if err := sysdep.WriteFileAtomic(path, text, 0o600, uid, gid); err != nil {
+		return err
+	}
+	// The name is the user's word and the text is the user's prompt, so
+	// neither is a log field (OBSERVABILITY.md); the bytes are a size.
+	r.log.Info("trigger prompt written", "event", "trigger_run", "bytes", len(text))
+	return nil
+}
+
 // Load reads the kept set at start, which is what makes a guestd restart
 // invisible to a provider: without it every delivery after a restart was
 // a 404 the edge reports as `route_gone`, "the route was removed", about

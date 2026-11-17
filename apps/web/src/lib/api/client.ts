@@ -266,15 +266,24 @@ export const getTrigger = (id: string, name: string) =>
  * Creates a trigger or changes the fields given on one that exists. A
  * body with only `name` and `enabled` is how the on/off column reaches
  * it: the door is left as it is (api.md's "Triggers").
+ *
+ * `prompt` is the prompt's text, which the dashboard has no SSH to
+ * write with: the api carries it into the machine and keeps none of it,
+ * and no answer ever holds it (I-1266).
  */
 export const putTrigger = (id: string, body: Record<string, unknown>) =>
 	request<Trigger>(`/projects/${id}/triggers`, { method: 'POST', body });
 export const deleteTrigger = (id: string, name: string) =>
 	request<void>(`/projects/${id}/triggers/${encodeURIComponent(name)}`, { method: 'DELETE' });
-/** Runs it now. The run is the hand-off row, so this answers `queued`. */
-export const fireTrigger = (id: string, name: string) =>
+/**
+ * Runs it now. The run is the hand-off row, so this answers `queued`.
+ * `dryRun` takes the admission decision and runs the gate and starts no
+ * agent, which is how a gate is written (I-1254).
+ */
+export const fireTrigger = (id: string, name: string, dryRun = false) =>
 	request<TriggerRun>(`/projects/${id}/triggers/${encodeURIComponent(name)}/fire`, {
-		method: 'POST'
+		method: 'POST',
+		body: dryRun ? { dry_run: true } : {}
 	});
 export const listTriggerRuns = (id: string, trigger?: string, limit?: number) => {
 	const q = new URLSearchParams();

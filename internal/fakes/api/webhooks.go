@@ -38,12 +38,17 @@ type WebhookDelivery struct {
 
 // WebhookRoute is one route as the api returns it.
 type WebhookRoute struct {
-	RouteID    string            `json:"route_id"`
-	Name       string            `json:"name"`
-	Port       int               `json:"port"`
-	Path       string            `json:"path"`
-	AllowStart bool              `json:"allow_start"`
-	URL        string            `json:"url"`
+	RouteID    string `json:"route_id"`
+	Name       string `json:"name"`
+	Port       int    `json:"port"`
+	Path       string `json:"path"`
+	AllowStart bool   `json:"allow_start"`
+	URL        string `json:"url"`
+	// Trigger is the trigger this route fires, where one owns it: the
+	// surface draws `trigger apply` and not a port, because the target
+	// is the machine's own receiver and not a port the user picks
+	// (I-1250).
+	Trigger    string            `json:"trigger,omitempty"`
 	CreatedAt  time.Time         `json:"created_at"`
 	UpdatedAt  time.Time         `json:"updated_at"`
 	Last       *WebhookDelivery  `json:"last_delivery,omitempty"`

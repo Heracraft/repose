@@ -805,6 +805,45 @@ func (a *App) pushTriggers(ctx context.Context, projectID uuid.UUID) {
 		// The set is state the api owns, not an event: the next start
 		// carries it, so a host that is away costs nothing but latency.
 		a.log.Warn("trigger set not pushed", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	a.writeTriggerPrompts(ctx, projectID, *guestID, *hostID)
+}
+
+// writeTriggerPrompts gives the machine every prompt a browser typed and
+// the api has not delivered yet, then forgets each one (DECISIONS
+// I-1266). The http process cannot reach a host (I-1162), so the text
+// waits on a row between the two processes; this is the end of that
+// hand-off, and the api holds no prompt once the machine has it. A text
+// that never arrives is swept after PromptHandoff and the trigger's
+// first fire says the prompt file is missing, which the user reads in
+// the runs list.
+//
+// The prompt is the user's own words: no log line carries it, or its
+// trigger's name, or the path it went to. The size is a number and is
+// allowed (OBSERVABILITY.md).
+func (a *App) writeTriggerPrompts(ctx context.Context, projectID, guestID, hostID uuid.UUID) {
+	pending, err := a.triggers.PendingPrompts(ctx, projectID)
+	if err != nil {
+		a.log.Error("trigger prompts", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	for _, p := range pending {
+		cmd := &hostdv1.Command{
+			CommandId: store.NewID().String(),
+			Cmd: &hostdv1.Command_WriteTriggerPrompt{WriteTriggerPrompt: &hostdv1.WriteTriggerPrompt{
+				GuestId: guestID.String(), Trigger: p.Trigger,
+				Workdir: p.Workdir, PromptPath: p.PromptPath, Text: []byte(p.Body),
+			}},
+		}
+		if err := a.hostMgr.Send(ctx, hostID, cmd); err != nil {
+			a.log.Warn("trigger prompt not written", "event", "trigger_run", "err", err.Error())
+			return
+		}
+		if err := a.triggers.ClearPrompt(ctx, projectID, p.Trigger); err != nil {
+			a.log.Error("trigger prompt not forgotten", "event", "trigger_run", "err", err.Error())
+		}
+		a.log.Info("trigger prompt sent", "event", "trigger_run", "bytes", len(p.Body))
 	}
 }
 

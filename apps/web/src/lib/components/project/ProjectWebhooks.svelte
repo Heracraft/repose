@@ -326,7 +326,7 @@
 				</label>
 				{#if addError}<p class="hk-field-error">{addError}</p>{/if}
 				<div class="hk-confirm-actions">
-					<button type="submit" class="hk-btn-primary hk-btn-sm" disabled={saving}
+					<button type="submit" class="hk-btn hk-btn-sm" disabled={saving}
 						>{saving ? 'Adding…' : 'Add route'}</button
 					>
 					<button

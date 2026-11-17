@@ -18,14 +18,21 @@ import (
 // `queued` for the hand-off states -- so a test sees what the api would
 // send.
 //
-// The prompt's text and a payload's bytes never arrive here, as they
-// never arrive at the real api: both are files in the machine and the
-// row holds a path.
+// A payload's bytes never arrive here, as they never arrive at the real
+// api: it is a file in the machine and the row holds a path. A prompt's
+// text does arrive, on `prompt`, because a browser has no SSH to write
+// the file with (I-1266); the real api carries it to the machine and
+// forgets it, and the fake keeps it where a test can read what the
+// machine would hold. It is never on a trigger the fake answers with.
 
 var triggerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// maxFakeTriggers mirrors triggers.MaxTriggers.
-const maxFakeTriggers = 20
+// maxFakeTriggers mirrors triggers.MaxTriggers, maxFakePrompt
+// triggers.PromptCap.
+const (
+	maxFakeTriggers = 20
+	maxFakePrompt   = 64 << 10
+)
 
 // FakeTriggerRun is one run as the api returns it. `project` is set by
 // the cross-project listing alone, where a row has to say which machine
@@ -144,6 +151,7 @@ func (f *Fake) putTrigger(w http.ResponseWriter, r *http.Request) *apiError {
 		AllowStart  *bool   `json:"allow_start"`
 		StopAfter   *bool   `json:"stop_after"`
 		CatchUp     *bool   `json:"catch_up"`
+		Prompt      *string `json:"prompt"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -154,6 +162,16 @@ func (f *Fake) putTrigger(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if !triggerNameRe.MatchString(body.Name) {
 		return invalid("name: a trigger name matches [a-z0-9-]{1,32}")
+	}
+	if body.Prompt != nil && len(*body.Prompt) > maxFakePrompt {
+		return invalid("a prompt is at most %d bytes", maxFakePrompt).
+			withDetail(map[string]any{"reason": "prompt_too_large"})
+	}
+	// The prompt is written into the machine, so there has to be one.
+	if body.Prompt != nil && *body.Prompt != "" && p.State != "running" {
+		return errf("conflict",
+			"%s is %s, and a prompt is written into the machine. Start it, or name a file that is already there.",
+			p.Slug, p.State).withDetail(map[string]any{"reason": "machine_not_running"})
 	}
 	now := f.now()
 	var spec triggerspec.Spec
@@ -169,7 +187,10 @@ func (f *Fake) putTrigger(w http.ResponseWriter, r *http.Request) *apiError {
 			continue
 		}
 		// Only the fields the caller named change, and turning a
-		// schedule on re-arms its clock from now (I-1252).
+		// schedule on re-arms its clock from now (I-1252). Every field
+		// `add` takes is here: the dashboard's edit is the same call,
+		// and the fake answering an unchanged trigger for a changed
+		// timeout is a test that passes over a route that does not work.
 		if body.Enabled != nil {
 			if *body.Enabled && !t.Enabled && t.Kind == "schedule" && t.Spec != "" {
 				if s, err := triggerspec.Parse(t.Spec, t.Zone); err == nil {
@@ -179,15 +200,50 @@ func (f *Fake) putTrigger(w http.ResponseWriter, r *http.Request) *apiError {
 			}
 			t.Enabled = *body.Enabled
 		}
-		if body.PromptPath != nil {
-			t.PromptPath = *body.PromptPath
+		for _, f := range []struct {
+			v   *string
+			set func(string)
+		}{
+			{body.PromptPath, func(s string) { t.PromptPath = s }},
+			{body.Workdir, func(s string) { t.Workdir = s }},
+			{body.Agent, func(s string) { t.Agent = s }},
+			{body.Gate, func(s string) { t.Gate = s }},
+			{body.Dedupe, func(s string) { t.Dedupe = s }},
+			{body.Notify, func(s string) { t.Notify = s }},
+		} {
+			if f.v != nil {
+				f.set(*f.v)
+			}
 		}
-		if body.Notify != nil {
-			t.Notify = *body.Notify
+		if body.TimeoutS != nil {
+			t.TimeoutS = *body.TimeoutS
+		}
+		if body.Concurrency != nil {
+			t.Concurrency = *body.Concurrency
+		}
+		for _, b := range []struct {
+			v   *bool
+			set func(bool)
+		}{
+			{body.AllowStart, func(v bool) { t.AllowStart = v }},
+			{body.StopAfter, func(v bool) { t.StopAfter = v }},
+			{body.CatchUp, func(v bool) { t.CatchUp = v }},
+		} {
+			if b.v != nil {
+				b.set(*b.v)
+			}
 		}
 		if body.Spec != "" {
 			next := spec.Next(now, now)
 			t.Kind, t.Spec, t.Zone, t.NextAt = "schedule", spec.Text, spec.Zone, &next
+			t.Route = nil
+		}
+		if body.Route != "" {
+			t.Kind, t.Spec, t.Zone, t.NextAt = "route", "", "", nil
+			t.Route = p.triggerRoute(f, body.Route, body.Name, now)
+		}
+		if body.Prompt != nil && *body.Prompt != "" {
+			p.writePrompt(body.Name, *body.Prompt)
 		}
 		t.UpdatedAt = now
 		writeJSON(w, http.StatusOK, t)
@@ -242,19 +298,59 @@ func (f *Fake) putTrigger(w http.ResponseWriter, r *http.Request) *apiError {
 	switch {
 	case body.Route != "":
 		t.Kind = "route"
-		token := fakeWebhookToken()
-		route := &WebhookRoute{RouteID: f.nextID(), Name: body.Route, Port: 9227,
-			Path: "/t/" + body.Name, URL: webhookURL(p.ID, body.Route, token),
-			CreatedAt: now, UpdatedAt: now, token: token}
-		p.webhooks = append(p.webhooks, route)
-		t.Route = &FakeTriggerRoute{Name: body.Route, URL: route.URL}
+		t.Route = p.triggerRoute(f, body.Route, body.Name, now)
 	case body.Spec != "":
 		next := spec.Next(now, now)
 		t.Kind, t.Spec, t.Zone, t.NextAt = "schedule", spec.Text, spec.Zone, &next
 	}
+	if body.Prompt != nil && *body.Prompt != "" {
+		p.writePrompt(body.Name, *body.Prompt)
+	}
 	p.triggers = append(p.triggers, t)
 	writeJSON(w, http.StatusCreated, t)
 	return nil
+}
+
+// triggerRoute points a webhook route at the machine's own receiver,
+// making it if the project does not have it: `add --route` on a route
+// that exists keeps its token, so a URL already in a provider's
+// dashboard goes on working.
+func (p *project) triggerRoute(f *Fake, route, trigger string, now time.Time) *FakeTriggerRoute {
+	for _, r := range p.webhooks {
+		if r.Name == route {
+			r.Port, r.Path, r.UpdatedAt = 9227, "/t/"+trigger, now
+			r.Trigger = trigger
+			return &FakeTriggerRoute{Name: r.Name, URL: r.URL}
+		}
+	}
+	token := fakeWebhookToken()
+	r := &WebhookRoute{RouteID: f.nextID(), Name: route, Port: 9227,
+		Path: "/t/" + trigger, URL: webhookURL(p.ID, route, token),
+		Trigger: trigger, CreatedAt: now, UpdatedAt: now, token: token}
+	p.webhooks = append(p.webhooks, r)
+	return &FakeTriggerRoute{Name: route, URL: r.URL}
+}
+
+// writePrompt is the machine's file, as the real api's hand-off leaves
+// it: the fake keeps it so a test can read what the guest would hold,
+// and no route ever answers with it.
+func (p *project) writePrompt(trigger, text string) {
+	if p.triggerPrompts == nil {
+		p.triggerPrompts = map[string]string{}
+	}
+	p.triggerPrompts[trigger] = text
+}
+
+// TriggerPrompt is the prompt text the machine was given for a trigger,
+// which is what `repose triggers add -p` would have written over SSH.
+func (f *Fake) TriggerPrompt(projectID, trigger string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return ""
+	}
+	return p.triggerPrompts[trigger]
 }
 
 func (f *Fake) getTrigger(w http.ResponseWriter, r *http.Request) *apiError {

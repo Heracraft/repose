@@ -8,12 +8,19 @@
   The button's label changes and it disables; there is no spinner, which
   is the house rule.
 
-  The three inline buttons are Run, On/Off and Remove, the same on every
-  row: three is what fits a 390 row (ProjectWebhooks measured it), and
-  the one destructive action must not move about. A route trigger's Copy
-  URL is in the row's own expansion, beside its runs, and draws none of
-  the URL: it holds the route's token, and the reason is in
-  ProjectWebhooks.svelte in better words.
+  The four inline buttons are Run, Edit, On/Off and Remove, the same on
+  every row, and the one destructive action is last so it never moves.
+  Four short ghost buttons measure 236px at 390, where the row is a
+  block and they have a line to themselves; I-1258 said three because
+  the fourth it weighed was Copy, in a row that also drew the target.
+  A route trigger's Copy URL is in the row's own expansion, beside its
+  runs, and draws none of the URL: it holds the route's token, and the
+  reason is in ProjectWebhooks.svelte in better words.
+
+  Add and Edit open the same form (TriggerForm.svelte). I-1258 said the
+  tab would have no Add, because making a trigger means writing a prompt
+  into the machine and a browser cannot reach one; I-1266 gave the api a
+  `prompt` it carries to the machine and forgets, so it can.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -25,6 +32,7 @@
 		deleteTrigger,
 		fireTrigger
 	} from '$lib/api/client';
+	import TriggerForm from './TriggerForm.svelte';
 	import { toastApiError, PollFailure, PollGroup } from '$lib/api/toast';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -33,9 +41,10 @@
 	import { pollWhileVisible } from '$lib/poll';
 	import { ageShort, dateTime } from '$lib/format';
 	import { reasonSentence } from '$lib/triggers';
-	import type { Trigger, TriggerRun } from '$lib/api/types';
+	import type { Project, Trigger, TriggerRun } from '$lib/api/types';
 
-	let { projectId }: { projectId: string } = $props();
+	let { project }: { project: Project } = $props();
+	const projectId = $derived(project.id);
 
 	let triggers = $state<Trigger[] | undefined>(undefined);
 	let loadFailed = $state(false);
@@ -47,6 +56,8 @@
 	let confirming = $state<string | undefined>(undefined);
 	/** The trigger whose Run or on/off is in flight. */
 	let busy = $state<string | undefined>(undefined);
+	/** The form that is open: a new trigger, or the one being changed. */
+	let form = $state<{ trigger?: Trigger } | undefined>(undefined);
 
 	const pollFailures = new PollGroup();
 	const failure = new PollFailure('Could not load the triggers.', pollFailures);
@@ -93,10 +104,10 @@
 		}
 	}
 
-	async function onFire(name: string) {
+	async function onFire(name: string, dryRun = false) {
 		busy = name;
 		try {
-			const run = await fireTrigger(projectId, name);
+			const run = await fireTrigger(projectId, name, dryRun);
 			if (run.state === 'skipped') {
 				toast.message(`${name}: ${reasonSentence(run.reason)}`);
 			}
@@ -107,6 +118,32 @@
 		} finally {
 			busy = undefined;
 		}
+	}
+
+	/** Add and Edit open the same form; Edit opens the row it is on. */
+	function openForm(t?: Trigger) {
+		form = { trigger: t };
+	}
+
+	async function onSaved(t: Trigger, created: boolean) {
+		form = undefined;
+		await load();
+		if (created) {
+			// What `repose triggers add` prints: a route's URL is its
+			// own line in the row's expansion, and a schedule says the
+			// zone it stored and the next fire, because a user has to
+			// see that 07:00 is their 07:00 (I-1252).
+			if (t.kind === 'schedule') {
+				toast.success(`${t.name}: ${t.spec} ${t.zone}, next ${next(t) || 'when it is on'}`);
+			} else {
+				toast.success(`${t.name} fires on ${t.route?.name}.`);
+			}
+			open = t.name;
+			runs = await listTriggerRuns(projectId, t.name).catch(() => []);
+		} else {
+			toast.success(`${t.name} saved.`);
+		}
+		void focusAfterRender('trigger-add-open', `open-${t.name}`);
 	}
 
 	async function onToggle(t: Trigger) {
@@ -244,6 +281,14 @@
 				? `${triggers.length} ${triggers.length === 1 ? 'trigger' : 'triggers'}`
 				: 'Triggers'}
 		</h2>
+		{#if triggers && !form}
+			<button
+				type="button"
+				id="trigger-add-open"
+				class="hk-btn-secondary hk-btn-sm"
+				onclick={() => openForm()}>Add trigger</button
+			>
+		{/if}
 	</div>
 
 	<LoadState
@@ -252,14 +297,10 @@
 		error={loadError}
 		shape="rows"
 	>
-		{#if triggers && triggers.length === 0}
+		{#if triggers && triggers.length === 0 && !form}
 			<div class="hk-empty-row tempty">
 				<h3 class="hk-empty-title">No triggers yet</h3>
-				<span
-					>A trigger starts an agent when a webhook arrives or at a time you choose. <code
-						class="hk-mono">repose triggers add</code
-					> makes one.</span
-				>
+				<span>A trigger starts an agent when a webhook arrives or at a time you choose.</span>
 			</div>
 		{:else if triggers && triggers.length > 0}
 			<div class="hk-table-wrap">
@@ -322,6 +363,13 @@
 											>
 											<button
 												type="button"
+												id={`edit-${t.name}`}
+												class="hk-btn-ghost hk-btn-sm"
+												aria-label={`Change ${t.name}`}
+												onclick={() => openForm(t)}>Edit</button
+											>
+											<button
+												type="button"
 												id={`toggle-${t.name}`}
 												class="hk-btn-ghost hk-btn-sm"
 												aria-label={t.enabled ? `Turn ${t.name} off` : `Turn ${t.name} on`}
@@ -375,6 +423,17 @@
 												<span class="md:hidden">next {next(t)}</span>
 											{/if}
 											<span class="2xl:hidden">{t.prompt_path}</span>
+											<!-- A dry run takes the admission decision and runs the
+											     gate and starts no agent, which is how a gate is
+											     written (I-1254). -->
+											<button
+												type="button"
+												id={`dry-${t.name}`}
+												class="hk-btn-ghost hk-btn-sm"
+												aria-label={`Dry run ${t.name}`}
+												disabled={busy === t.name}
+												onclick={() => onFire(t.name, true)}>Dry run</button
+											>
 										</p>
 										{#if t.route}
 											<p class="turl">
@@ -429,6 +488,15 @@
 					</tbody>
 				</table>
 			</div>
+		{/if}
+
+		{#if form}
+			<TriggerForm
+				{project}
+				trigger={form.trigger}
+				onsaved={onSaved}
+				oncancel={() => (form = undefined)}
+			/>
 		{/if}
 	</LoadState>
 </section>

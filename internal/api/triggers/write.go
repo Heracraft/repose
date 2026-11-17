@@ -247,12 +247,85 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 			return Trigger{}, false, err
 		}
 	}
+	// A prompt typed in a browser rides the hand-off: the text is a row
+	// until the process that holds the host's stream has given it to the
+	// machine, and the `triggers` row goes on holding a path and never
+	// the text (I-1266).
+	if in.Prompt != nil && *in.Prompt != "" {
+		wd, pp := cur.Workdir, cur.PromptPath
+		if in.Workdir != nil {
+			wd = *in.Workdir
+		}
+		if wd == "" {
+			wd = "checkout"
+		}
+		if created {
+			pp = DefaultPromptPath(in.Name)
+		}
+		if in.PromptPath != nil && *in.PromptPath != "" {
+			pp = *in.PromptPath
+		}
+		if _, err := tx.Exec(ctx, `insert into trigger_prompts
+			(project_id, trigger_name, workdir, prompt_path, body, created_at)
+			values ($1,$2,$3,$4,$5,$6)
+			on conflict (project_id, trigger_name) do update
+			set workdir = excluded.workdir, prompt_path = excluded.prompt_path,
+			    body = excluded.body, created_at = excluded.created_at`,
+			projectID, in.Name, wd, pp, *in.Prompt, now); err != nil {
+			return Trigger{}, false, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Trigger{}, false, err
 	}
 	s.notifySet(ctx, projectID)
 	t, err = s.Get(ctx, projectID, in.Name)
 	return t, created, err
+}
+
+// PendingPrompt is one prompt waiting to reach its machine (I-1266).
+type PendingPrompt struct {
+	Trigger    string
+	Workdir    string
+	PromptPath string
+	Body       string
+}
+
+// PendingPrompts are the prompts this project's machine has not been
+// given yet. The grpc process reads them when it pushes the set.
+func (s *Store) PendingPrompts(ctx context.Context, projectID uuid.UUID) ([]PendingPrompt, error) {
+	rows, err := s.pool.Query(ctx, `select trigger_name, workdir, prompt_path, body
+		from trigger_prompts where project_id = $1 order by created_at`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PendingPrompt
+	for rows.Next() {
+		var p PendingPrompt
+		if err := rows.Scan(&p.Trigger, &p.Workdir, &p.PromptPath, &p.Body); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ClearPrompt forgets a prompt the machine now holds. The text is gone
+// from the api the moment the guest has it.
+func (s *Store) ClearPrompt(ctx context.Context, projectID uuid.UUID, name string) error {
+	_, err := s.pool.Exec(ctx,
+		`delete from trigger_prompts where project_id = $1 and trigger_name = $2`, projectID, name)
+	return err
+}
+
+// SweepPrompts forgets every prompt older than PromptHandoff, delivered
+// or not: a machine that never came back must not leave a user's prompt
+// in the api for a week. It answers how many it forgot.
+func (s *Store) SweepPrompts(ctx context.Context) (int, error) {
+	tag, err := s.pool.Exec(ctx, `delete from trigger_prompts where created_at < $1`,
+		s.now().UTC().Add(-PromptHandoff))
+	return int(tag.RowsAffected()), err
 }
 
 // notifySet tells the process that holds the host's stream that this

@@ -190,6 +190,14 @@ func (c *Clock) Once(ctx context.Context) error {
 	} else if n > 0 {
 		c.log.Warn("trigger runs past their timeout", "event", "trigger_run", "count", n)
 	}
+	// A prompt a browser typed waits on a row between the api's two
+	// processes; one the machine never took is forgotten, so a user's
+	// words do not sit in the api for a week (I-1266).
+	if n, err := c.store.SweepPrompts(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		c.log.Warn("trigger prompts no machine took", "event", "trigger_run", "count", n)
+	}
 	runs, err := c.store.TakePending(ctx, c.Batch)
 	if err != nil {
 		return err

@@ -347,6 +347,16 @@ message SetTriggers {
   string guest_id = 1;
   repeated Trigger triggers = 2;
 }
+// WriteTriggerPrompt writes one trigger's prompt into the machine as dev
+// (DECISIONS I-1266), relayed to guestd's request of the same name. The
+// dashboard has no SSH; the api carries the text and stores it nowhere.
+message WriteTriggerPrompt {
+  string guest_id = 1;
+  string trigger = 2;
+  string workdir = 3;
+  string prompt_path = 4;
+  bytes text = 5;            // at most 64 KB
+}
 // RunTrigger runs one now (DECISIONS I-1252, I-1256). The api sends it
 // with the run's id as the command_id, so a re-send after a reconnect
 // returns the stored result and starts no second agent.
@@ -383,6 +393,7 @@ message Command {
     SayToAgent say_to_agent = 27;
     SetTriggers set_triggers = 28;   // DECISIONS I-1248
     RunTrigger run_trigger = 29;     // DECISIONS I-1252
+    WriteTriggerPrompt write_trigger_prompt = 30; // DECISIONS I-1266
   }
 }
 

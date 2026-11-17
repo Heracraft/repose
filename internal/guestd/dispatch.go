@@ -138,6 +138,9 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 		s.setTriggers(r.SetTriggers)
 		return empty(nil)
 
+	case *guestdv1.Request_WriteTriggerPrompt:
+		return empty(s.writeTriggerPrompt(r.WriteTriggerPrompt))
+
 	case *guestdv1.Request_RunTrigger:
 		res, err := s.runTrigger(ctx, r.RunTrigger)
 		if err != nil {
@@ -223,6 +226,15 @@ func (s *Server) setTriggers(m *guestdv1.SetTriggers) {
 		})
 	}
 	s.triggers.SetTriggers(set)
+}
+
+// writeTriggerPrompt writes a trigger's prompt into the machine as dev
+// (DECISIONS I-1266). It is what the dashboard's own form does in place
+// of the SSH `repose triggers add -p` writes over: the api carries the
+// text and keeps none of it, and the file is dev's, under the trigger's
+// own workdir.
+func (s *Server) writeTriggerPrompt(m *guestdv1.WriteTriggerPrompt) error {
+	return s.triggers.WritePrompt(m.GetTrigger(), m.GetWorkdir(), m.GetPromptPath(), m.GetText())
 }
 
 // runTrigger fires one now (DECISIONS I-1252, I-1256). A repeat for a
