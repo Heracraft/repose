@@ -547,6 +547,7 @@ func (s *Store) raise(ctx context.Context, ids ...uuid.UUID) {
 		if !Terminal(e.run.State) {
 			continue
 		}
+		s.counted(e.run)
 		kind := "trigger_run"
 		if e.run.State == StateFailed || e.run.State == StateTimeout {
 			kind = "trigger_failed"
@@ -777,6 +778,42 @@ func (s *Store) Apply(ctx context.Context, rep Report) (Run, bool, error) {
 		return Run{}, false, err
 	}
 
+	// A skip the guest reported coalesces exactly as an edge-side one
+	// does: one row per trigger, reason and hour, with the count. A
+	// provider retrying 600 times is the case `--dedupe` exists for,
+	// and a row each would evict every run that ran (I-1254, I-1262).
+	if rep.State == StateSkipped && triggerID != nil {
+		hour := s.now().UTC().Truncate(time.Hour)
+		reason := rep.Reason
+		if !triggerrun.Reason(reason) {
+			reason = triggerrun.ReasonGated // a gate's line is one reason, not many
+		}
+		var id uuid.UUID
+		err := tx.QueryRow(ctx, `insert into trigger_runs
+			(id, project_id, trigger_id, trigger_name, source, state, reason,
+			 dedupe_key, skip_hour, created_at, finished_at)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
+			on conflict (trigger_id, reason, skip_hour) where skip_hour is not null
+			do update set skips = trigger_runs.skips + 1,
+				finished_at = excluded.finished_at,
+				dedupe_key = coalesce(excluded.dedupe_key, trigger_runs.dedupe_key)
+			returning id`,
+			rep.RunID, rep.ProjectID, *triggerID, rep.Trigger, source, StateSkipped, reason,
+			nilStr(rep.DedupeKey), hour, s.now().UTC()).Scan(&id)
+		if err != nil {
+			return Run{}, false, err
+		}
+		if err := pruneRuns(ctx, tx, *triggerID); err != nil {
+			return Run{}, false, err
+		}
+		run, err := s.runTx(ctx, tx, id)
+		if err != nil {
+			return Run{}, false, err
+		}
+		s.counted(run)
+		return run, true, tx.Commit(ctx)
+	}
+
 	var was string
 	err = tx.QueryRow(ctx, `select state from trigger_runs where id = $1 for update`, rep.RunID).Scan(&was)
 	switch {
@@ -831,6 +868,9 @@ func (s *Store) Apply(ctx context.Context, rep Report) (Run, bool, error) {
 	run, err := s.runTx(ctx, tx, rep.RunID)
 	if err != nil {
 		return Run{}, false, err
+	}
+	if Terminal(rep.State) {
+		s.counted(run)
 	}
 	return run, Terminal(rep.State), tx.Commit(ctx)
 }

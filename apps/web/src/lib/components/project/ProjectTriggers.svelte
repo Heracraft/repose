@@ -139,22 +139,37 @@
 		return t.kind === 'route' ? `${t.route?.name ?? ''} (route)` : (t.spec ?? '');
 	}
 
-	/** The next fire, in the reader's own zone, which is the clock they
-	 *  are looking at. A trigger that is off has no next fire. */
+	/**
+	 * The next fire, in the trigger's own zone. `add` prints the zone it
+	 * stored so a user sees that 07:00 is their 07:00 (I-1252), and a
+	 * dashboard drawing the same fire in the reader's browser zone undid
+	 * that: a `weekdays 07:00 Europe/Berlin` trigger read `06:00
+	 * tomorrow` in London. A trigger that is off has no next fire.
+	 */
 	function next(t: Trigger): string {
 		if (t.kind !== 'schedule' || !t.enabled || !t.next_at) return '';
+		const zone = t.zone || 'UTC';
 		const at = new Date(t.next_at);
-		const hhmm = at.toLocaleTimeString(undefined, {
+		const hhmm = at.toLocaleTimeString('en-GB', {
 			hour: '2-digit',
 			minute: '2-digit',
-			hourCycle: 'h23'
+			hourCycle: 'h23',
+			timeZone: zone
 		});
-		const days = Math.round(
-			(at.setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000
-		);
-		if (days <= 0) return `${hhmm} today`;
-		if (days === 1) return `${hhmm} tomorrow`;
-		return `${hhmm} ${new Date(t.next_at).toLocaleDateString(undefined, { weekday: 'short' })}`;
+		const day = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: zone });
+		if (day(at) === day(new Date())) return `${hhmm} today`;
+		if (day(at) === day(new Date(Date.now() + 86_400_000))) return `${hhmm} tomorrow`;
+		return `${hhmm} ${at.toLocaleDateString('en-GB', { weekday: 'short', timeZone: zone })}`;
+	}
+
+	/**
+	 * The zone a schedule's times are in, shown beside the spec where it
+	 * is not the reader's own: `07:00` means nothing without it.
+	 */
+	function zoneNote(t: Trigger): string {
+		if (t.kind !== 'schedule' || !t.zone) return '';
+		const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+		return t.zone === here ? '' : t.zone;
 	}
 
 	function lastRun(t: Trigger): string {
@@ -231,7 +246,7 @@
 						<tr>
 							<th scope="col">Name</th>
 							<th scope="col" class="hidden whitespace-nowrap sm:table-cell">On</th>
-							<th scope="col" class="hidden whitespace-nowrap lg:table-cell">Prompt</th>
+							<th scope="col" class="hidden whitespace-nowrap 2xl:table-cell">Prompt</th>
 							<th scope="col" class="w-px whitespace-nowrap">Last run</th>
 							<th scope="col" class="hidden w-px whitespace-nowrap md:table-cell">Next</th>
 							<th scope="col" class="w-px"><span class="hk-sr">Actions</span></th>
@@ -249,9 +264,11 @@
 										>{t.name}{#if !t.enabled}<span class="toff">off</span>{/if}</button
 									>
 								</td>
-								<td class="hidden whitespace-nowrap sm:table-cell">{door(t)}</td>
+								<td class="hidden whitespace-nowrap sm:table-cell"
+									>{door(t)}{#if zoneNote(t)}<span class="tzone">{zoneNote(t)}</span>{/if}</td
+								>
 								<td
-									class="tprompt hk-mono hidden whitespace-nowrap lg:table-cell"
+									class="tprompt hk-mono hidden whitespace-nowrap 2xl:table-cell"
 									title={t.prompt_path}>{t.prompt_path}</td
 								>
 								<td class="tlast whitespace-nowrap">
@@ -328,7 +345,7 @@
 											{#if t.kind === 'schedule' && t.enabled && t.next_at}
 												<span class="md:hidden">next {next(t)}</span>
 											{/if}
-											<span class="lg:hidden">{t.prompt_path}</span>
+											<span class="2xl:hidden">{t.prompt_path}</span>
 										</p>
 										{#if t.route}
 											<p class="turl">
@@ -402,9 +419,13 @@
 	tr.off .tname {
 		color: var(--hk-muted);
 	}
-	.twhen {
+	.twhen,
+	.tzone {
 		font-size: 0.75rem;
 		color: var(--hk-muted);
+	}
+	.tzone {
+		margin-inline-start: 0.5rem;
 	}
 	.twhen {
 		margin-inline-start: 0.5rem;

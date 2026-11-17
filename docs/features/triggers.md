@@ -67,13 +67,13 @@ deploy   github (route)      deploy.md               on      never
 sweep    daily 03:00         sweep.md                off     failed 3h ago
 
 $ repose triggers runs
-TRIGGER  SOURCE  STARTED     TOOK    STATE    WHY
-apply    route   12m ago     1m52s   done     applied to Senior Go at Intel
-apply    route   1h04m ago   0s      skipped  gated: exit 1
-triage   clock   7h ago      4m11s   done     12 issues triaged, 2 need you
-apply    hand    2h ago      1h00m   timeout  killed at the timeout
-sweep    clock   3h ago      14s     failed   claude is not logged in
-triage   clock   yesterday   0s      skipped  the machine was stopped (612 events)
+RUN       TRIGGER  SOURCE  STARTED     TOOK    STATE    WHY
+7c0a1b94  apply    route   12m ago     1m52s   done     applied to Senior Go at Intel
+41d8e2aa  apply    route   1h04m ago   0s      skipped  the gate refused it: exit 1
+9b3f0c17  triage   clock   7h ago      4m11s   done     12 issues triaged, 2 need you
+0ea77d31  apply    hand    2h ago      1h00m   timeout  killed at the timeout
+5512bb08  sweep    clock   3h ago      14s     failed   claude is not logged in
+c93a4f60  triage   clock   yesterday   0s      skipped  the machine was stopped (612 events)
 
 $ repose triggers fire apply
 t-apply, run 019b2c71
@@ -86,8 +86,8 @@ sweep is off
 |---|---|
 | `repose triggers add NAME (--route ROUTE \| --every SPEC)` | Create it, or change the flags given on one that exists. Prints the route's URL for `--route`, and nothing else, so it pipes; prints the spec, its zone and the next fire for `--every`. `--json` prints the trigger. |
 | `repose triggers list [PROJECT]` | Alias `ls`, and `repose triggers` alone, which takes no flags of its own. `--json`, `-q`/`--quiet` for names. |
-| `repose triggers runs [NAME]` | The last runs, newest first. `-n`/`--tail N` (1..200, default 20), `--json`, `-q` for run ids. A run whose payload is still kept is marked, since those are the ones `fire --run` can replay. |
-| `repose triggers fire NAME` | Run it now; the run's `source` is `hand`. `--payload FILE` hands that file to the session (`-` for stdin), `--run RUN_ID` replays an earlier run's payload, `--wait` waits for the outcome and prints it, for 20 seconds at a time until the run ends or `--wait-for` runs out (default 5 minutes; a run may take an hour, and a command that hangs that long is not a wait), `--dry-run` takes the admission decision and runs the gate and starts no agent. `--json` prints the run. |
+| `repose triggers runs [NAME]` | The last runs, newest first, each with the last 8 characters of its id, which is what `fire --run` takes. `-n`/`--tail N` (1..200, default 20), `--json`, `-q` for whole run ids. |
+| `repose triggers fire NAME` | Run it now; the run's `source` is `hand`. `--payload FILE` hands that file to the session (`-` for stdin), `--run RUN` replays an earlier run's payload (a whole id, or the 8 characters the table prints), `--wait` waits for the outcome and prints it, for 20 seconds at a time until the run ends or `--wait-for` runs out (default 5 minutes; a run may take an hour, and a command that hangs that long is not a wait), `--dry-run` takes the admission decision and runs the gate and starts no agent. `--json` prints the run. |
 | `repose triggers on NAME` / `off NAME` | Let it fire, or keep it from firing. `off` leaves the row, the route and the prompt file alone, which is the one other place the CLI has a two-command boolean that is not a delete (`repose config on`/`off`). `on` re-arms a schedule from now, so a trigger that was off for a week does not fire the moment it comes back. |
 | `repose triggers rm NAME...` | Remove them. Alias `remove`. A route the trigger made is removed with it, unless the user made that route first or another trigger uses it. |
 
@@ -164,9 +164,10 @@ a field you fill in once belongs in Config.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- Three inline ghost buttons a row — Run, Copy, Remove… — and Edit in the
-  row's own expansion, not a fourth button and not a menu (`apps/web` has
-  no menu pattern, and this is not the tab to invent one on).
+- Three inline ghost buttons a row — Run, On/Off, Remove… — the same on
+  every row, and no menu (`apps/web` has none, and this is not the tab to
+  invent one on). A route trigger's Copy URL is in the row's expansion
+  with a line saying what it copies.
 - **Below 640 px the row is a block**, as `ProjectWebhooks` makes its
   own: the name and the state on one line, the prompt and the door under
   them, the actions on their own line. Three buttons and a target side by
@@ -186,8 +187,9 @@ a field you fill in once belongs in Config.
   and its retry, as every list on these tabs does.
 - A row opens into its runs, in the `<ul>` grid the Events tab uses:
   state, when, how long, the summary the agent sent, its link as a button
-  where there is one (I-931), and the window's name. A working run offers
-  Stop.
+  where there is one (I-931), and the window's name. A run that is
+  working shows as working; stopping one is attaching to that window, or
+  its own timeout.
 - `Copy` puts a route trigger's URL on the clipboard and draws none of
   it. The reason is in `ProjectWebhooks.svelte`, in better words than
   this doc would repeat.
@@ -202,7 +204,10 @@ a field you fill in once belongs in Config.
   look right, and fail at 03:00 with `the prompt file is missing`. The
   empty state names the command instead, and the tab does everything
   that needs no file: run, on, off, copy the URL, remove, and read the
-  runs.
+  runs. Changing a trigger's schedule, gate or timeout is
+  `repose triggers add` on the name that exists, for the same reason:
+  the command that edits a trigger is the one that can also write its
+  prompt.
 
 ## 4. Where a trigger lives, and where its prompt does not
 
@@ -530,9 +535,10 @@ window name is for the user, who attaches to it; the id is what the
 machine and the api agree on.
 
 `t-` is a reserved window prefix, named in `guest-conventions.md` beside
-the reserved ports. A window the user opens as `t-x` is their own and no
-trigger's: guestd knows its runs from its own registry, and §8.5's two
-exceptions are read off that, not off the name.
+the reserved ports. guestd knows its own runs from the registry; the two
+surfaces in §8.5 read the prefix, so a window a user names `t-notes` is
+treated as a trigger's by both. That is what reserving a prefix means,
+and it is the reason to reserve one.
 
 A window, not a headless `claude -p`, because a window keeps
 `repose-ask`, `repose say` and `repose attach` working: the user can
@@ -643,10 +649,10 @@ is not the user's:
   than one agent runs. A trigger run must not break the user's ordinary
   `repose say`, so `t-*` windows are left out of that resolution; naming
   one with `--agent t-apply` reaches it, which is how you talk to a run.
-- `repose ls`'s AGENTS cell and `repose ps` mark a trigger's window as
-  such, so a machine nobody is attached to does not read as `claude:
-  working` because a 03:00 sweep is running. Both read guestd's run
-  registry, so a window a user named `t-anything` is still their own.
+- `repose ls`'s AGENTS cell counts a trigger's runs on their own
+  (`claude: working, 1 trigger run`), so a machine nobody is attached to
+  does not read as the user's agent working because a 03:00 sweep is
+  running.
 
 ## 9. Machine states
 

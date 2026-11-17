@@ -482,3 +482,57 @@ func TestEveryCallerRefusalIsAnInputError(t *testing.T) {
 }
 
 func intp(n int) *int { return &n }
+
+// A provider retrying the same event, which is the case `--dedupe`
+// exists for, must not evict the runs that ran: a skip the guest
+// reports coalesces exactly as an edge-side one does (I-1254, I-1262).
+func TestGuestSkipsCoalesceAndKeepTheRunsThatRan(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "apply", Kind: triggers.KindRoute, Route: "r", PromptPath: strp("a.md"),
+		Dedupe: strp("header:X-Delivery"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Apply(ctx, triggers.Report{
+		RunID: uuid.Must(uuid.NewV7()), ProjectID: pid, Trigger: "apply",
+		State: triggerrun.StateDone, Summary: "applied at Intel", Source: triggerrun.SourceRoute,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for range 50 {
+		if _, _, err := s.Apply(ctx, triggers.Report{
+			RunID: uuid.Must(uuid.NewV7()), ProjectID: pid, Trigger: "apply",
+			State: triggerrun.StateSkipped, Reason: triggerrun.ReasonDuplicate,
+			DedupeKey: "d1", Source: triggerrun.SourceRoute,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, err := s.Runs(ctx, pid, "apply", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var done, skipped, counted int
+	for _, r := range runs {
+		switch r.State {
+		case triggerrun.StateDone:
+			done++
+		case triggerrun.StateSkipped:
+			skipped++
+			counted = r.Skips
+		}
+	}
+	if done != 1 {
+		t.Errorf("the run that ran was evicted by %d retries", 50)
+	}
+	if skipped != 1 {
+		t.Errorf("%d skipped rows for 50 retries of one delivery, want 1", skipped)
+	}
+	if counted != 50 {
+		t.Errorf("the coalesced row counted %d, want 50", counted)
+	}
+}

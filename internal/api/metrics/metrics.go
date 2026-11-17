@@ -62,6 +62,13 @@ type M struct {
 	NotifyDeliveryLatencySeconds prometheus.Histogram
 	OutboxDepth                  prometheus.Gauge
 	OutboxLagSeconds             prometheus.Gauge
+	// TriggerRuns counts every run the api records, by the door it came
+	// in and how it ended, and TriggerRunSeconds is how long a finished
+	// run took (DECISIONS I-1256). A trigger's name is not a label: it
+	// is the user's own word, and a label value outside a fixed set is a
+	// new series per value (I-445).
+	TriggerRuns       *prometheus.CounterVec
+	TriggerRunSeconds prometheus.Histogram
 	// BillingWebhookTotal counts Polar webhook deliveries by event kind and
 	// result; BillingWebhookRejected reads the bad_signature series.
 	BillingWebhookTotal *prometheus.CounterVec
@@ -192,6 +199,8 @@ func New(reg prometheus.Registerer) *M {
 		NotifyDeliveryLatencySeconds: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "repose_api_notify_delivery_latency_seconds", Help: "Event timestamp to delivered timestamp, successful deliveries only.", Buckets: prometheus.ExponentialBuckets(1, 2, 12)}),
 		OutboxDepth:                  prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_depth", Help: "Undelivered outbox rows."}),
 		OutboxLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_lag_seconds", Help: "How long the oldest due outbox row has waited past its next_at."}),
+		TriggerRuns:                  prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_trigger_runs_total", Help: "Trigger runs the api recorded, by source (route, clock, hand) and state."}, []string{"source", "state"}),
+		TriggerRunSeconds:            prometheus.NewHistogram(prometheus.HistogramOpts{Name: "repose_trigger_run_seconds", Help: "How long a finished trigger run took.", Buckets: []float64{1, 5, 15, 60, 300, 900, 3600, 14400}}),
 		BillingWebhookTotal:          prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_webhook_total", Help: "Polar webhook deliveries by event kind and result."}, []string{"kind", "result"}),
 		BillingOverageChargesTotal:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_overage_charges_total", Help: "Egress overage lines sent to Polar by result."}, []string{"result"}),
 		BillingGateRefusedTotal:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_gate_refused_total", Help: "Compute refused with payment_required, by reason and plan."}, []string{"reason", "plan"}),
@@ -249,7 +258,7 @@ func New(reg prometheus.Registerer) *M {
 		m.BrowserViewsTotal.WithLabelValues(o)
 	}
 	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.Hosts, m.HostState, m.Projects, m.ScheduleTotal, m.CertsIssuedTotal, m.CertsRevokedTotal,
-		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.Subscriptions, m.MRRCents, m.BillingStopsTotal, m.SnapshotAgeSeconds,
+		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.TriggerRuns, m.TriggerRunSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.Subscriptions, m.MRRCents, m.BillingStopsTotal, m.SnapshotAgeSeconds,
 		m.SnapshotExpiryFailTotal, m.BlobConfigured,
 		m.GRPCStreams, m.OpsTotal, m.OpsOpen, m.BuildDuration, m.SecretsOpsTotal, m.CommandsTotal, m.SamplesTotal, m.EventsTotal,
 		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,

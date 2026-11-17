@@ -67,7 +67,8 @@ $ repose triggers add deploy --route github \
 
 Stripe signs `t=<time>,v1=<mac>` over `<time>.<body>`; the same four lines with that string are on the [webhooks](/docs/webhooks) page. A gate is a command, so `jq -e '.action == "opened"'` is also a gate, and so is a script of your own that does both.
 
-Write one with `--dry-run`, which runs the gate and starts no agent:
+Write one with `--dry-run`, which runs the gate, starts no agent, and
+prints the gate's own last line when it refuses:
 
 ```
 $ repose triggers fire deploy --payload ev.json --dry-run
@@ -85,13 +86,13 @@ Every event that gets in costs a whole agent run, which costs you money at your 
 
 ```
 $ repose triggers runs
-TRIGGER  SOURCE  STARTED    TOOK   STATE    WHY
-apply    route   12m ago    1m52s  done     applied at Intel
-apply    route   1h04m ago  0s     skipped  gated: exit 1
-triage   clock   7h ago     4m11s  done     12 issues, 2 for you
-apply    hand    2h ago     1h00m  timeout  killed at the timeout
-sweep    clock   3h ago     14s    failed   claude is not logged in
-triage   clock   yesterday  0s     skipped  stopped (612 events)
+RUN       TRIGGER  STARTED    TOOK   STATE    WHY
+7c0a1b94  apply    12m ago    1m52s  done     applied at Intel
+41d8e2aa  apply    1h04m ago  0s     skipped  the gate said no
+9b3f0c17  triage   7h ago     4m11s  done     12 issues, 2 for you
+0ea77d31  apply    2h ago     1h00m  timeout  killed at the timeout
+5512bb08  sweep    3h ago     14s    failed   claude is not logged in
+c93a4f60  triage   yesterday  0s     skipped  stopped (612 events)
 ```
 
 `done` carries whatever the agent said with `repose-notify --done`; a run that said nothing is still `done`. A run that **failed** emails you (and reaches your other [channels](/docs/notifications)), because a trigger that quietly stops working is the thing worth telling you about; `--no-notify` turns that off for one trigger. A run that ended well tells you only what the agent chose to tell you.
@@ -149,7 +150,7 @@ repose triggers            # the list, with the next fire
 repose triggers off sweep  # stop it firing; the row stays
 repose triggers on sweep   # and arm its schedule from now
 repose triggers fire apply # run it now, even when it is off
-repose triggers fire apply --run 019b2c71   # that payload
+repose triggers fire apply --run 7c0a1b94   # that payload
 repose triggers rm apply   # and the route it made
 ```
 

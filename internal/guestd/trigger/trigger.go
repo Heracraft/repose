@@ -72,6 +72,10 @@ const (
 	// when a turn ended, so this is the clock for the timeout and for a
 	// window that went away, not a poll for the outcome.
 	SuperviseEvery = 5 * time.Second
+	// EndedKept is how long an ended run stays in the registry: long
+	// enough that a command resent after a reconnect is answered from
+	// it, and not so long that the registry grows for ever.
+	EndedKept = 30 * time.Minute
 	// StartGrace is how long a run may sit with no agent in its window
 	// before it is failed: the wrapper loads the dev shell first, which
 	// on a first run builds it.
@@ -157,6 +161,10 @@ type run struct {
 	// SawAgent is set once an agent was seen in the window, so a window
 	// that never got one is told apart from one whose agent exited.
 	SawAgent bool
+	// State and Reason are an ended run's, so a resent command is
+	// answered with what happened rather than run again.
+	State  string
+	Reason string
 }
 
 // New builds a runner. agents and project may not be nil; emit is how a
@@ -235,13 +243,15 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 	// a re-send after a reconnect lands here (I-1252).
 	r.mu.Lock()
 	if existing, ok := r.runs[req.RunID]; ok {
-		state := triggerrun.StateWorking
+		res := Result{State: triggerrun.StateWorking, Window: existing.Window}
 		if existing.Ended {
-			state = triggerrun.StateDone
+			res.State, res.Reason = existing.State, existing.Reason
+			if res.State == "" {
+				res.State = triggerrun.StateDone
+			}
 		}
-		window := existing.Window
 		r.mu.Unlock()
-		return Result{State: state, Window: window}, nil
+		return res, nil
 	}
 	r.mu.Unlock()
 
@@ -419,15 +429,26 @@ func freeWindow(base string, taken map[string]bool) string {
 // skip and fail report a run that never started. Both are terminal, so
 // the api writes one row and the user reads one line.
 func (r *Runner) skip(req Request, reason string) Result {
-	r.report(&run{ID: req.RunID, Trigger: req.Trigger, Source: req.Source, Started: r.now()},
-		triggerrun.StateSkipped, reason)
-	return Result{State: triggerrun.StateSkipped, Reason: reason}
+	return r.ended(req, triggerrun.StateSkipped, reason)
 }
 
 func (r *Runner) fail(req Request, reason string) Result {
-	r.report(&run{ID: req.RunID, Trigger: req.Trigger, Source: req.Source, Started: r.now()},
-		triggerrun.StateFailed, reason)
-	return Result{State: triggerrun.StateFailed, Reason: reason}
+	return r.ended(req, triggerrun.StateFailed, reason)
+}
+
+// ended reports a run that never started and remembers it, so a command
+// the api resends after a reconnect is answered from the stored result
+// rather than put through admission again (CLAUDE.md's idempotency).
+func (r *Runner) ended(req Request, state, reason string) Result {
+	rn := &run{ID: req.RunID, Trigger: req.Trigger, Source: req.Source,
+		Started: r.now(), LastSeen: r.now(), Ended: true, State: state, Reason: reason}
+	if rn.ID != "" {
+		r.mu.Lock()
+		r.runs[rn.ID] = rn
+		r.mu.Unlock()
+	}
+	r.report(rn, state, reason)
+	return Result{State: state, Reason: reason}
 }
 
 // report sends one TriggerRun up. The summary and a gate's line are
@@ -481,6 +502,15 @@ func (r *Runner) workdir(t Trigger) string {
 	default:
 		return t.Workdir
 	}
+}
+
+// expandHome replaces a leading `~` and nothing else: a `~` in the
+// middle of a path is a character, not a home.
+func expandHome(p sysdep.Paths, path string) string {
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(p.Home(), strings.TrimPrefix(path, "~/"))
+	}
+	return path
 }
 
 // dirPath turns the workdir's shell form into the path this process and
@@ -545,7 +575,7 @@ func (r *Runner) writePayload(t Trigger, req Request) (payload []byte, headers m
 	payload = req.Payload
 	switch {
 	case req.PayloadPath != "":
-		b, rerr := os.ReadFile(strings.Replace(req.PayloadPath, "~", r.paths.Home(), 1))
+		b, rerr := os.ReadFile(expandHome(r.paths, req.PayloadPath))
 		if rerr != nil {
 			return nil, nil, 0, rerr
 		}
@@ -932,12 +962,24 @@ func (r *Runner) sweep(ctx context.Context) {
 		rn.LastSeen = now
 		// The timeout counts time working, so an hour spent waiting for
 		// an answer to `repose-ask` is not an hour of the run (I-1256).
-		if rn.TimeoutS > 0 && rn.Worked > time.Duration(rn.TimeoutS)*time.Second {
+		// Only for a run this pass has not already ended: a run that
+		// finished past its timeout would otherwise be killed and
+		// reported done in the same pass.
+		ended := len(end) > 0 && end[len(end)-1].rn == rn
+		if !ended && rn.TimeoutS > 0 && rn.Worked > time.Duration(rn.TimeoutS)*time.Second {
 			end = append(end, ending{rn, triggerrun.StateTimeout, triggerrun.ReasonTimeout})
 		}
 	}
 	for _, e := range end {
-		e.rn.Ended = true
+		e.rn.Ended, e.rn.State, e.rn.Reason = true, e.state, e.reason
+	}
+	// An ended run stays only long enough for a resent command to be
+	// answered from it; after that the registry would grow for ever and
+	// every pass would walk it.
+	for id, rn := range r.runs {
+		if rn.Ended && now.Sub(rn.LastSeen) > EndedKept {
+			delete(r.runs, id)
+		}
 	}
 	r.mu.Unlock()
 
@@ -972,9 +1014,15 @@ func (r *Runner) Serve(ctx context.Context) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(ReceiverPort))
+	// Both loopbacks: the edge opens its channel to 127.0.0.1 or ::1
+	// depending on what the guest's sshd resolves, and the convention
+	// doc names both (guest-conventions.md "Ports").
+	ln, err := net.Listen("tcp", "localhost:"+strconv.Itoa(ReceiverPort))
 	if err != nil {
-		return err
+		ln, err = net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(ReceiverPort))
+		if err != nil {
+			return err
+		}
 	}
 	go func() {
 		<-ctx.Done()

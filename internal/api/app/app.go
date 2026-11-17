@@ -182,6 +182,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.triggers = triggers.New(a.pool, a.routes)
 	a.triggerClock = triggers.NewClock(a.triggers, a.hostMgr, log)
 	a.triggers.SetEvents(a.events)
+	a.triggers.SetMetrics(a.m)
 	a.events.SetTriggers(a.triggers)
 	// Every create, start and restore carries the set, which is what
 	// makes a guest that lost it come back with it (I-1248).

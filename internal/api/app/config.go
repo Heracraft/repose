@@ -86,15 +86,15 @@ func env(name, def string) string {
 // FromEnv reads the configuration.
 func FromEnv() (Config, error) {
 	c := Config{
-		Mode:            env("API_MODE", "all"),
-		Listen:          env("API_LISTEN", ":8080"),
-		GRPCListen:      env("API_GRPC_LISTEN", ":8443"),
-		InternalListen:  env("API_INTERNAL_LISTEN", ":8444"),
-		MetricsListen:   env("API_METRICS_LISTEN", ":9103"),
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		LogtoIssuer:     strings.TrimRight(os.Getenv("LOGTO_ISSUER"), "/"),
-		LogtoM2MID:      os.Getenv("LOGTO_M2M_CLIENT_ID"),
-		LogtoM2MSecret:  os.Getenv("LOGTO_M2M_CLIENT_SECRET"),
+		Mode:           env("API_MODE", "all"),
+		Listen:         env("API_LISTEN", ":8080"),
+		GRPCListen:     env("API_GRPC_LISTEN", ":8443"),
+		InternalListen: env("API_INTERNAL_LISTEN", ":8444"),
+		MetricsListen:  env("API_METRICS_LISTEN", ":9103"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		LogtoIssuer:    strings.TrimRight(os.Getenv("LOGTO_ISSUER"), "/"),
+		LogtoM2MID:     os.Getenv("LOGTO_M2M_CLIENT_ID"),
+		LogtoM2MSecret: os.Getenv("LOGTO_M2M_CLIENT_SECRET"),
 		// API_RESOURCE keeps the old name after the move to repose.run: it
 		// is the opaque audience Logto issues tokens for, not an address,
 		// and every installed CLI asks for it (DECISIONS I-1156).

@@ -942,9 +942,12 @@ A run's window is `t-<trigger>` in the project's session, and
 `t-<trigger>.2` for a second concurrent run: a dot, because a trigger may
 be named `apply-2` and `t-apply-2` would otherwise be both that
 trigger's window and the second run of `apply`. **`t-` is a reserved
-window prefix**, as 9227 is a reserved port: a window the user opens as
-`t-anything` is their own, and guestd knows its runs from its registry
-and not from a name.
+window prefix**, as 9227 is a reserved port. guestd knows its own runs
+from the registry, but the two surfaces that must not read a run as the
+user's read the prefix instead: `repose say` without `--agent` skips a
+`t-*` window, and `repose ls` counts them on their own. So a window a
+user names `t-notes` is treated as a trigger's by both, which is what
+reserving the prefix means.
 
 Its agent is started with the prompt as the agent's own argument (I-780),
 and these variables are in its environment beside the project's named

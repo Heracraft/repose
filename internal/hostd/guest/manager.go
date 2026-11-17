@@ -508,7 +508,7 @@ type Manager struct {
 	// delivered it (DECISIONS I-1248). In memory only, as the secrets
 	// are: hostd keeps none of it on disk.
 	triggers map[string][]*guestdv1.Trigger
-	monitors       map[string]*monitor
+	monitors map[string]*monitor
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
 	boots    map[string]*hostdv1.BootTimings

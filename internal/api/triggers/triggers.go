@@ -34,6 +34,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/heracraft/repose/internal/api/events"
+	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/triggerrun"
@@ -407,6 +408,8 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 type Store struct {
 	pool  *db.Pool
 	hooks *webhooks.Store
+	// m counts a run when it ends (DECISIONS I-1256); nil counts none.
+	m *metrics.M
 	// events raises the endings the api writes itself, as
 	// internal/api/questions raises a question's (I-1256). nil raises
 	// none, which is a store in a test that is not watching for them.
@@ -415,8 +418,21 @@ type Store struct {
 }
 
 // SetEvents gives the store the ingest, which app.go installs after New
-// because the ingest is built first.
+// because the ingest is built first; SetMetrics gives it the registry.
 func (s *Store) SetEvents(e *events.Ingest) { s.events = e }
+func (s *Store) SetMetrics(m *metrics.M)    { s.m = m }
+
+// counted records a run that ended: the door it came in and how it
+// went, and how long it took when it worked.
+func (s *Store) counted(r Run) {
+	if s.m == nil || !Terminal(r.State) {
+		return
+	}
+	s.m.TriggerRuns.WithLabelValues(r.Source, r.State).Inc()
+	if r.StartedAt != nil && r.FinishedAt != nil {
+		s.m.TriggerRunSeconds.Observe(r.FinishedAt.Sub(*r.StartedAt).Seconds())
+	}
+}
 
 // New builds a store. hooks may be nil on an api with no webhook routes
 // configured, and a route trigger is then refused rather than half made.

@@ -13,6 +13,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/heracraft/repose/internal/triggerrun"
 	"github.com/heracraft/repose/internal/triggerspec"
 )
@@ -384,10 +386,10 @@ func TriggersRunsCmd(ctx context.Context, e *Env, projectArg, name string, limit
 		return nil
 	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "TRIGGER\tSOURCE\tSTARTED\tTOOK\tSTATE\tWHY")
+	_, _ = fmt.Fprintln(tw, "RUN\tTRIGGER\tSOURCE\tSTARTED\tTOOK\tSTATE\tWHY")
 	for _, r := range runs {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Trigger, r.Source, humanAge(r.CreatedAt), triggerTook(r), r.State, triggerWhy(r))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			shortID(r.RunID), r.Trigger, r.Source, humanAge(r.CreatedAt), triggerTook(r), r.State, triggerWhy(r))
 	}
 	return tw.Flush()
 }
@@ -448,7 +450,14 @@ func TriggersFireCmd(ctx context.Context, e *Env, projectArg, name string, o Tri
 	if err != nil {
 		return err
 	}
-	opts := FireTriggerOptions{PayloadRun: o.Run, DryRun: o.DryRun}
+	opts := FireTriggerOptions{DryRun: o.DryRun}
+	if o.Run != "" {
+		id, err := resolveRunID(ctx, e, project.ID, o.Run)
+		if err != nil {
+			return err
+		}
+		opts.PayloadRun = id
+	}
 	if o.Payload != "" {
 		if project.State != "running" {
 			return exitf(ExitGeneric, "%s is %s, and --payload writes the file into the machine.", project.Slug, project.State)
@@ -475,10 +484,10 @@ func TriggersFireCmd(ctx context.Context, e *Env, projectArg, name string, o Tri
 	switch {
 	case run.State == "queued" || run.State == "working":
 		if run.Window != "" {
-			_, _ = fmt.Fprintf(e.Out, "%s, run %s\n", run.Window, shortRunID(run.RunID))
+			_, _ = fmt.Fprintf(e.Out, "%s, run %s\n", run.Window, shortID(run.RunID))
 			return nil
 		}
-		_, _ = fmt.Fprintf(e.Out, "run %s %s\n", shortRunID(run.RunID), run.State)
+		_, _ = fmt.Fprintf(e.Out, "run %s %s\n", shortID(run.RunID), run.State)
 	default:
 		why := triggerWhy(*run)
 		if why == "" {
@@ -523,11 +532,35 @@ func triggerRunEnded(state string) bool {
 	return false
 }
 
-func shortRunID(id string) string {
-	if len(id) >= 8 {
-		return id[:8]
+// resolveRunID turns what the CLI printed back into the id the api
+// takes: the last or first characters of a run's uuid, 4 or more, when
+// one of this project's runs has them — the rule `repose snapshots
+// restore` already uses for a snapshot id.
+func resolveRunID(ctx context.Context, e *Env, projectID, want string) (string, error) {
+	if _, err := uuid.Parse(want); err == nil {
+		return want, nil
 	}
-	return id
+	if len(want) < 4 {
+		return "", exitf(ExitUsage, "--run takes a run id, or 4 or more characters of one; got %q", want)
+	}
+	runs, err := e.Client.TriggerRuns(ctx, projectID, "", 200)
+	if err != nil {
+		return "", err
+	}
+	var hits []string
+	for _, r := range runs {
+		if strings.HasSuffix(r.RunID, want) || strings.HasPrefix(r.RunID, want) {
+			hits = append(hits, r.RunID)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return "", exitf(ExitGeneric, "no run of this project has the id %s.", want)
+	case 1:
+		return hits[0], nil
+	default:
+		return "", exitf(ExitUsage, "%d runs have the id %s; give more of it", len(hits), want)
+	}
 }
 
 // triggerWritePayload puts a local file at the one path the api accepts

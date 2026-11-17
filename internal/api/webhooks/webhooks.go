@@ -147,6 +147,12 @@ type EdgeRoute struct {
 	Path       string `json:"path"`
 	AllowStart bool   `json:"allow_start"`
 	TokenHash  string `json:"token_sha256"`
+	// Trigger and TriggerID are set when a trigger owns the route
+	// (DECISIONS I-1250): the edge reports a refused delivery against
+	// them, and the api turns that into the `skipped` run the user
+	// reads. Absent on a route of the user's own.
+	Trigger   string `json:"trigger,omitempty"`
+	TriggerID string `json:"trigger_id,omitempty"`
 }
 
 // EdgeTable is GET /internal/webhook-routes.
@@ -493,15 +499,20 @@ func (s *Store) EdgeTable(ctx context.Context, since string) (*EdgeTable, error)
 		return &EdgeTable{Version: version, Routes: []EdgeRoute{}, Tombstones: []string{}, Unchanged: true}, nil
 	}
 	out := &EdgeTable{Version: version, Routes: []EdgeRoute{}, Tombstones: []string{}}
-	rows, err := s.pool.Query(ctx, `select r.id, r.project_id, r.name, r.port, r.path, r.allow_start, r.token_sha256
-		from webhook_routes r join projects p on p.id = r.project_id where p.destroyed_at is null`)
+	rows, err := s.pool.Query(ctx, `select r.id, r.project_id, r.name, r.port, r.path, r.allow_start, r.token_sha256,
+			coalesce(t.name, ''), coalesce(t.id::text, '')
+		from webhook_routes r
+		join projects p on p.id = r.project_id
+		left join triggers t on t.route_id = r.id
+		where p.destroyed_at is null`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var e EdgeRoute
 		var hash []byte
-		if err := rows.Scan(&e.RouteID, &e.ProjectID, &e.Name, &e.Port, &e.Path, &e.AllowStart, &hash); err != nil {
+		if err := rows.Scan(&e.RouteID, &e.ProjectID, &e.Name, &e.Port, &e.Path, &e.AllowStart, &hash,
+			&e.Trigger, &e.TriggerID); err != nil {
 			rows.Close()
 			return nil, err
 		}
