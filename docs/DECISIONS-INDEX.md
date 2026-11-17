@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-968 entries.
+970 entries.
 
 ## Scope
 
@@ -119,7 +119,7 @@ pointer, not a summary.
 - **I-30** `WriteSecrets` carries the whole set, and validates before it writes — L618
 - **I-31** `Sample` serves the tmux and Docker signals from a 5 s cache, and carries a `partial` flag — amended by I-504; L628
 - **I-32** `guestd call` is the client side of the vsock contract, in the same binary — L643
-- **I-33** The on-demand desktop is display `:99`, socket-activated, with a per-start password file — L652
+- **I-33** The on-demand desktop is display `:99`, socket-activated, with a per-start password file — amended by I-1216; L652
 - **I-34** `mkGuestRunner` takes every per-guest value at run time; the system closure is guest-independent — L667
 - **I-35** sshd material: reserved secrets at `/run/repose/`, symlinked into `/etc/ssh/`, a throwaway key until delivery, reload re-reads — L685
 - **I-37** Two vsock RPC implementations exist for one release — 2026-09-19; L700
@@ -373,7 +373,7 @@ pointer, not a summary.
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7754
 - **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; amended by I-902; amended by I-1033; amended by I-1090; L7811
 - **I-295** The dashboard under plans: the fake's default is exempt, the Paddle stub, one site-wide CSP, and what the pages stop showing — 2026-09-27; L7879
-- **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; L7924
+- **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; amended by I-1216; L7924
 - **I-296** `repose browser bridge` lends the guest's browser tools the laptop's own Chrome, through Chrome's DevTools switch, a front that answers `/json/version`, and a reverse tunnel whose remote command holds the guest's endpoint switched — 2026-09-27; L8016
 - **I-297** The user docs have a Tutorials section: one job per page, in the order a new user meets them — 2026-09-27; partly amended by I-316; L8075
 - **I-298** The Vercel CLI's login stays on the laptop — 2026-09-27; L8095
@@ -826,7 +826,7 @@ pointer, not a summary.
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23982
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24213
 - **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24245
-- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; L24372
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; L24372
 - **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24721
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24784
 - **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24839
@@ -959,7 +959,7 @@ pointer, not a summary.
 - **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31147
 - **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31211
 - **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31265
-- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31321
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; amended by I-1216; L31321
 - **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31343
 - **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31377
 - **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31475
@@ -1000,3 +1000,5 @@ pointer, not a summary.
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33751
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L33802
+- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L33846
+- **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34027

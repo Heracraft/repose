@@ -42,6 +42,11 @@ type M struct {
 	// `result="would_rest"` is the dry run -- the rule's own judgement on
 	// machines whose host does not take pauses, which nothing will touch.
 	RestingCandidates *prometheus.GaugeVec
+	// BrowserViewsTotal counts the dashboard's browser-view streams by
+	// the outcome they closed with (DECISIONS I-1216). By result only:
+	// this registry refuses a project_id label at registration, so the
+	// per-project figures stay in the two log lines.
+	BrowserViewsTotal *prometheus.CounterVec
 	// RestingCandidateMinutesTotal adds each tick's candidates, so the
 	// counter integrates into the machine-hours a fleet would have
 	// rested. That figure is what the proposal estimated from three
@@ -178,6 +183,7 @@ func New(reg prometheus.Registerer) *M {
 		RestingWakeTotal:             prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_wake_total", Help: "Wakes of a frozen machine the api asked for, by reason and result: woken, awake, failed (I-818)."}, []string{"reason", "result"}),
 		RestingCandidates:            prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_resting_candidates", Help: "Machines the rest rule picked at the last tick, by result: paused, would_rest (I-844)."}, []string{"result"}),
 		RestingCandidateMinutesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_candidate_minutes_total", Help: "Candidate-minutes the rest rule picked, by result: integrates into the machine-hours a fleet would rest (I-844)."}, []string{"result"}),
+		BrowserViewsTotal:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_browser_views_total", Help: "Browser-view streams by the outcome they closed with: closed, idle, cap, budget, too_large, error, refused (I-1216)."}, []string{"result"}),
 		CertsIssuedTotal:             prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_issued_total", Help: "User certificates issued."}),
 		CertsRevokedTotal:            prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_revoked_total", Help: "Certificates revoked."}),
 		RollupLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_rollup_lag_seconds", Help: "Age of the newest rolled-up hour."}),
@@ -239,6 +245,9 @@ func New(reg prometheus.Registerer) *M {
 	for _, r := range []string{"guest_fields", "insert"} {
 		m.SamplesFailed.WithLabelValues(r)
 	}
+	for _, o := range BrowserViewOutcomes {
+		m.BrowserViewsTotal.WithLabelValues(o)
+	}
 	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.Hosts, m.HostState, m.Projects, m.ScheduleTotal, m.CertsIssuedTotal, m.CertsRevokedTotal,
 		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.Subscriptions, m.MRRCents, m.BillingStopsTotal, m.SnapshotAgeSeconds,
 		m.SnapshotExpiryFailTotal, m.BlobConfigured,
@@ -247,9 +256,15 @@ func New(reg prometheus.Registerer) *M {
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
 		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
 		m.GuestResumesPending, m.GuestResumesTotal, m.RestingWakeTotal,
-		m.RestingCandidates, m.RestingCandidateMinutesTotal)
+		m.RestingCandidates, m.RestingCandidateMinutesTotal, m.BrowserViewsTotal)
 	return m
 }
+
+// BrowserViewOutcomes is the closed set of words a browser-view stream
+// ends with, which is both the `result` label of
+// repose_api_browser_views_total and the `outcome` field of the
+// browser_view_close log line (I-1216). The api refuses any other.
+var BrowserViewOutcomes = []string{"closed", "idle", "cap", "budget", "too_large", "error", "refused"}
 
 // RefusedReasons is the reason enum of repose_api_host_reports_refused_total.
 var RefusedReasons = []string{"foreign_guest", "project_cap", "bad_snapshot"}

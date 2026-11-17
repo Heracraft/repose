@@ -1,5 +1,5 @@
 <script lang="ts">
-	// A project's five tabs share one frame (DECISIONS I-841): the header,
+	// A project's six tabs share one frame (DECISIONS I-841, I-1216): the header,
 	// Start and Stop, the tabs and the project's poll stay mounted while
 	// the tabs switch. Keyed on the id, so moving to another project from
 	// the rail starts its own frame and polls instead of reusing this one's.

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"sync"
+
+	"github.com/heracraft/repose/internal/wsframe"
 )
 
 // cdpWarden is --allow's backstop (DECISIONS I-311): a CDP connection of
@@ -125,8 +127,8 @@ func (w *cdpWarden) read(br *bufio.Reader) {
 	defer close(w.done)
 	for {
 		op, payload, _, err := readWSMessage(br, func(f wsFrame) error {
-			if f.op == 0x9 { // ping
-				return w.w.write(encodeWSFrame(0xA, f.payload, true))
+			if f.Op == wsframe.OpPing {
+				return w.w.write(encodeWSFrame(wsframe.OpPong, f.Payload, true))
 			}
 			return nil
 		})

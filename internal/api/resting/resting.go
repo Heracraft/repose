@@ -102,6 +102,11 @@ const (
 	// ReasonSay is a `repose say`: the agent has to be awake to be typed
 	// into (DECISIONS I-1144).
 	ReasonSay = "say"
+	// ReasonView is a browser-view mint: the desktop cannot draw a frame
+	// with its vCPUs stopped (DECISIONS I-1216). Only the mint route
+	// reaches it, at most once per project per 10 minutes, and a
+	// reconnect mints again rather than waking again.
+	ReasonView = "view"
 )
 
 // Sender is hostmgr's Send.

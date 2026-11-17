@@ -143,6 +143,14 @@ const PAGES: Target[] = [
 		ready: (page) =>
 			expect(page.getByRole('heading', { level: 1, name: 'Questions' })).toBeVisible()
 	},
+	// The Browser tab's pane is the dark one in both schemes (I-1216); its
+	// state line and Resume view are audited on it.
+	{
+		name: '/projects/[id]/browser',
+		signedIn: true,
+		url: () => `/projects/${projectId}/browser`,
+		ready: (page) => expect(page.getByTestId('view-screen')).toBeVisible()
+	},
 	...(['events', 'usage', 'snapshots'] as const).map(
 		(tab): Target => ({
 			name: `/projects/[id]/${tab}`,

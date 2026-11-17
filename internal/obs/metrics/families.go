@@ -56,7 +56,16 @@ type GatewayMetrics struct {
 	WebhookWakeSeconds   prometheus.Histogram
 	WebhookInflight      prometheus.Gauge
 	WebhookRoutes        prometheus.Gauge
+	// The dashboard browser view's relay (DECISIONS I-1216). By result
+	// only: this registry refuses a project_id label at registration.
+	ViewRequestsTotal *prometheus.CounterVec // result: relayed, or a view_* refusal
 }
+
+// ViewResults are every result the browser view's relay answers with
+// (internal/gateway's view_* codes, plus `relayed`), initialised at zero
+// so a refusal that has never happened is still a series.
+var ViewResults = []string{"relayed", "view_busy", "view_capacity", "view_bad_request",
+	"view_dial_failed", "view_desktop_failed", "view_auth_failed"}
 
 // WebhookOutcomes are the words a delivery ends with
 // (docs/features/webhooks.md); the api refuses any other.
@@ -87,6 +96,8 @@ func NewGatewayMetrics(m *Metrics) *GatewayMetrics {
 		WebhookWakeSeconds:   f.histogram("webhook_wake_seconds", "Time to wake a frozen machine for a delivery.", gatewayRouteBuckets),
 		WebhookInflight:      f.gauge("webhook_inflight", "Webhook deliveries being forwarded right now."),
 		WebhookRoutes:        f.gauge("webhook_routes", "Webhook routes in the edge's table."),
+
+		ViewRequestsTotal: f.counterVec("view_requests_total", "Browser-view relay requests, by result.", "result"),
 	}
 	for _, o := range WebhookOutcomes {
 		g.WebhookRequestsTotal.WithLabelValues(o)
@@ -99,6 +110,9 @@ func NewGatewayMetrics(m *Metrics) *GatewayMetrics {
 	}
 	for _, r := range []string{"forwarded", "rejected", "rate_limited", "api_error", "not_found"} {
 		g.HookEventsTotal.WithLabelValues(r)
+	}
+	for _, r := range ViewResults {
+		g.ViewRequestsTotal.WithLabelValues(r)
 	}
 	return g
 }

@@ -33843,3 +33843,220 @@ your-laptop` named the device rather than the act, which stopped being
 true the moment the dashboard could send one; it is now
 `agents#send-it-a-message`, and `internal/cli/agent_guide_test.go`'s
 skip map and `notifications.md`'s link move with it.
+**I-1216. The dashboard watches the machine's browser: a relay on the
+edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and
+the page draws noVNC itself (browser-view, 2026-11-16).** Amends I-292,
+I-33, I-1118 and I-841. The owner asked for the agents' browser on the
+dashboard, "secure in every way possible", which overrules two clauses
+of I-292's *Rejected:* list: "a relay on the edge (`:6081` in
+06-gateway-edge) or a public URL" and "a dashboard embed". Both were
+rejected in I-292 because the SSH forward already served the one user
+the feature had, a person at a laptop with the CLI. The dashboard has no
+forward and cannot make one, so the alternative there is no view at all.
+
+*The three legs.* The browser opens `GET /v1/browser/stream` at the api,
+a WebSocket on the api's existing 443. The api dials the edge's new
+relay on `:6081`, the port 06-gateway-edge reserved for exactly this and
+that nothing has ever listened on. The relay dials the guest with the
+gateway's own `dialGuestSSH` and a single `direct-tcpip` channel to the
+desktop, after one bounded `repose-guest-profile desktop start` on the
+same connection. No new hostname, no new certificate, no DNS change, no
+new port, no inbound to a host, and no new Go dependency: the RFC 6455
+framing the CLI already had is lifted into `internal/wsframe` with a
+caller-supplied message cap.
+
+*The password never leaves the edge, which is why the relay exists.*
+The guest's per-boot VNC password (I-33) is read by the relay over the
+SSH connection it already holds, used for one VncAuth handshake with
+`crypto/des`, and kept nowhere: not in a response body, not in the api,
+not in the browser. The relay then offers the page security type None
+and becomes a byte pipe. That is a second reader of the password for one
+handshake, in one process's memory; it is not a third home for a secret,
+and "Secrets have three homes" is untouched.
+
+*The page-facing RFB handshake is at the relay too*, which the approved
+spec did not foresee: noVNC's `RFB` starts its state machine at the
+version string and has no entry point for a stream that is already past
+SecurityResult. So the relay speaks both halves (VncAuth to the guest,
+version exchange and None to the page) and the api stays a pipe. All RFB
+knowledge is in one file, `internal/gateway/viewrfb.go`.
+
+*The ticket.* 256 random bits, base64url, in an `HttpOnly; Secure;
+SameSite=Strict` cookie scoped to `/v1/browser/stream`, with only
+`sha256(ticket)` in `browser_view_tickets`. It authenticates a
+**connect**, not a session: 15 minutes, and the page mints again through
+the authenticated POST on every connect and reconnect. Expiry is this
+credential's revocation, so the six independent writers of `stopped` and
+`destroyed` need no hook, and a copy of the table gives no working
+ticket. The spec's 12-hour reusable ticket is not built: it would have
+been a bearer credential for a live desktop sitting in a browser for
+half a day, with revocation plumbing that nothing proved would hold.
+
+*Three things the spec left for the implementation, settled here.*
+(a) The ticket is checked at the api and not at the relay, because the
+edge has no database; (b) the api→edge leg is therefore authenticated by
+mTLS with the client name `api` pinned against `API_CA`
+(`pki.RequireClientName`, the mirror of what the api's own `/internal`
+listener does to the gateway), and the WireGuard source address is a
+filter and never the credential; (c) the api is on the byte path, so the
+api owns the byte budget, the idle close and the session cap, and the
+edge owns the handshake deadline and the concurrency counters.
+
+*The stream route carries no project id.* `GET /v1/browser/stream` takes
+the cookie and nothing else; the handler reads project, login and guest
+address from the ticket's row. A route with a path id and a ticket is a
+route where someone eventually resolves the path id, and the api's only
+no-owner lookup (`GetProject`) is right there; with no id in the path
+there is nothing to point at another tenant's machine.
+`TestStreamReachesOnlyTheTicketsProject` holds the route to it.
+
+*The bounds, all of them.* One view per project and 64 in flight at the
+relay; 10 mints per user per hour; 120 s with no frame; 4 hours; 2 GiB
+per ticket, spent on the ticket row (not in relay memory) so a reconnect
+cannot start the budget again; 1 MiB per WebSocket message; and, before
+any ticket is read, a slot per source /24 and a 10-minute ban after 20
+refused tickets, which is the pre-auth shape the SSH gateway already
+had and the api had nowhere. The close frame carries the outcome word
+(`closed`, `idle`, `cap`, `budget`, `too_large`, `error`), which is what
+lets the page tell a transport error from a bound that fired.
+
+*Waking.* The mint is the only place a frozen machine wakes, at most
+once per project per 10 minutes, from a row rather than a counter so the
+rule survives an api restart. Inside that window the mint answers
+`resting: true` with no wake and the page shows the desktop-off state.
+A reconnect is a mint, so the page never reconnects after `idle`, `cap`
+or `budget`: those offer **Resume view**, one click, one mint. That is
+also the honest answer to a machine that freezes under a still screen:
+the view stops, and the button brings both back.
+
+*The page.* `apps/web/src/lib/components/project/BrowserView.svelte`,
+drawn on the dashboard's own origin with `@novnc/novnc` pinned to
+**1.7.0**, the exact version `pkgs.novnc` gives the guest's own viewer
+page today. The two viewers share no code and no build: the guest's
+`core/` and `vendor/` are copied out of nixpkgs at build time, the
+dashboard's is an exact (not a range) npm pin that `pnpm update` cannot
+move, and neither can drift without an edit a reviewer sees.
+No iframe: no repose page is framed (`frame-ancestors: none`), and
+I-292's own reason against an embed was the forward, which this path
+does not use. No CSP change was needed: `connect-src` already allows
+`wss:`, noVNC loads no worker, no wasm and no eval, and the chunk is
+served from `self`.
+
+**The clipboard is a panel, not a bridge.** The guest's viewer page
+writes RFB cut text to the watcher's clipboard and reads theirs back on
+every window focus. Automatic, on the dashboard, that would hand a guest
+the tenant has root on the watcher's own clipboard: it chooses what the
+next paste into a terminal says, and it reads what was copied out of a
+password manager. So the automatic half is refused and the explicit half
+is built, which is what noVNC's own demo page offers: under the screen,
+a field and **Send** hand `clipboardPasteFrom` the text on a click, and
+the `clipboard` event puts what the machine copied in the page, where
+the site's own `CopyButton` copies it on another click. The component
+reaches `navigator.clipboard` nowhere itself, ports neither the `focus`
+nor the `visibilitychange` listener, and calls `clipboardPasteFrom` once,
+from the button; `browserView.test.ts` pins all of that against the
+source, and against the guest page's opposite choice, because the panel
+needs frames and frames need a guest. Both directions carry a tenant's
+own text, so neither is logged.
+
+*Rejected:* the automatic bridge, for the reason above; and a view with
+no clipboard at all, which was built first and is half a view -- a
+watcher who cannot paste a URL or a login into the machine's browser has
+to fall back to `repose browser`, which is the laptop command the tab
+exists to spare them (owner, 2026-11-16).
+
+*A sixth tab* (amending I-841's five): **Browser**, second, after
+Overview. Watching the machine is the other thing done from a project's
+page, not the last of five reports. Five tabs fitted a 360-wide screen
+without scrolling; six do not, so on a phone the row scrolls sideways,
+which `.hk-tabs` was built for and which `project-layout.spec.ts` now
+asserts instead (no page scroll, no vertical scroll in the row, every
+tab reachable).
+
+*Logging* (amending I-1118). One line at the mint and one at the close:
+`browser_view_open` / `browser_view_close` with `project_id`, `user_id`,
+`ticket_id` (an opaque row id), `outcome`, `ms`, `bytes_in`,
+`bytes_out`, `wake` and `source_prefix`, the source /24. Never the
+ticket or its hash, never the VNC password, never a byte of the RFB
+stream, never cut text, never an address. `ticket` is in `obs`'s
+forbidden list and `ticket_id` in its allowed one, because redaction
+matches on a **substring**, which `OBSERVABILITY.md` said was an exact
+name and now says correctly.
+
+*What is not mitigated, recorded rather than implied.* Everything after
+SecurityResult is guest-chosen RFB parsed by noVNC in the dashboard's
+origin, where the Logto refresh token lives: a parser bug there is an
+XSS that reaches the account's own actions. It is bounded by the
+single-owner project model (a project has exactly one owner, so the
+guest and the page belong to the same person) and contained by a
+dedicated route, a pinned noVNC and a clipboard that moves only on a
+click. **If project sharing ever ships, reopen this entry**, the
+clipboard panel first: it is bounded by the single-owner model, and
+sharing is what breaks that bound. The guest host certificate's
+IP principal and its ten-year life are untouched here; on this path the
+impersonation they allow is closed by reusing the dial that passes the
+*login* as the address, with `view_crosstenant_test.go` holding it
+there. An operator with root on the edge can read a live stream out of
+the relay's memory, as `SECURITY.md` already says of guest volumes;
+whether the edge could write one to a core dump or swap is unverified,
+so the claim of no stored copy is made only for the code repose writes.
+Billing and the limits page get no edit: see I-1218.
+
+*Rejected:* the password in the authenticated mint response, held in
+page memory only (it saves about sixty lines in the relay and in
+exchange puts a live credential for a live desktop in a response body
+and a browser heap, where an extension, a devtools export or a crash
+reporter picks it up; `crypto/des` is in the standard library);
+a 12-hour reusable ticket (above); a relay on the api (the api has no
+network path to a guest's `:22`; a host's only WireGuard peer is the
+edge); an iframe of the guest's own viewer page (`frame-ancestors:
+none`, and it is I-292's own reason); a new public hostname or wildcard
+preview name (a new name needs DNS-01 and the Cloudflare token that has
+blocked the preview certificate since 2026-09-20, I-1110); the view's
+WebSocket on the webhook hostname's 443 (I-1116's whole argument is that
+a webhook route serves no browser, and the handler strips `Upgrade` on
+purpose); sharing the webhook path's SSH connection cache (it closes a
+client 30 s after its last use, which would cut a view mid-frame); a new
+WebSocket dependency (the framing was already in the tree); a ticket in
+the URL or a WebSocket subprotocol (a URL lands in access logs and
+`Referer`, and a cookie is the one credential a script and an extension
+cannot read); a per-user concurrent-view cap (one per project plus a
+global 64 bounds the same thing with less machinery); and a new port
+(6081 at the edge was reserved for this).
+
+**I-1218. `:6081` at the edge stops being a port every guest can reach,
+and the view's bytes are an operator metric, not the tenant's egress
+(browser-view, 2026-11-16).** The firewall half and the metering half of
+I-1216, kept separate because each stands on its own.
+
+*The firewall.* The edge's wg0 rule admitted 8443 and 6081 from the
+whole of `10.255.0.0/16`, which is every guest on the mesh, for a port
+nothing listened on. The rule is split: 8443 keeps its range, and 6081
+admits only `repose.edge.controlWgAddress`, the control plane. On the
+host side 6081 is dropped from the guest's outbound rule. The listener
+and the two nftables edits **ship in the same release**, or the window
+between them is a fresh relay reachable by every guest on wg0.
+`nix/flake.nix` gains `checks.edge-view-firewall`, which reads the
+rendered rulesets rather than the module's source, and which fails when
+the control-plane clause is removed (checked by removing it). The
+existing option is reused rather than adding a `controlPlaneIP` beside
+it: a second name for one address is how a grep misses half the uses.
+
+*The metering call: capped, counted, not billed.* The frames never cross
+a guest's uplink, so `guest_meter` cannot see them, and nothing in the
+rollup could. They are bounded instead, by the 2 GiB on the ticket row
+and the concurrency caps, and counted as operator metrics by result
+only (`repose_api_browser_views_total`,
+`repose_gateway_view_requests_total`; no project label, which the metric
+registry refuses anyway). I-1120's hourly `webhook_egress` bank is not
+touched, `billing.md` and `limits.md` get no edit, and the user docs say
+plainly that watching does not count against the egress allowance and
+does keep the machine out of its freeze while the screen is moving. A
+person watching their own agent should not get a bill surprise; if the
+view ever becomes a cost worth billing, the figures to argue from are
+these counters.
+
+*Rejected:* metering the view as the tenant's egress (nothing can
+measure it, and it would bill a user for watching their own machine); an
+hourly per-user byte bank in the shape of `webhook_egress` (machinery
+for a stream that is already capped per ticket and per connection).

@@ -73,7 +73,15 @@ export function projectLimitText(err: unknown): string | undefined {
  * the outage bar over /billing whenever billing was off (I-390) and over a
  * refused Start next to its capacity banner (I-393).
  */
-export const ANSWER_503: readonly ErrorCode[] = ['capacity', 'waitlisted', 'billing_disabled'];
+export const ANSWER_503: readonly ErrorCode[] = [
+	'capacity',
+	'waitlisted',
+	'billing_disabled',
+	// The browser view at its cap, or an api with no relay (I-1216): the
+	// Browser tab says so where it would have drawn, and the api is well.
+	'view_capacity',
+	'unavailable'
+];
 
 /**
  * Whether a response means the api is in trouble, for the persistent bar

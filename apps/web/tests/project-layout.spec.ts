@@ -1,4 +1,4 @@
-// A project is one frame and five tabs (DECISIONS I-841): the layout
+// A project is one frame and six tabs (DECISIONS I-841, I-1216): the layout
 // draws the name, the status line, Start or Stop and the tabs once, and
 // keeps them mounted while the tabs switch. The Overview leads with what
 // waits on you and Connect, then what runs now beside the newest events,
@@ -328,9 +328,9 @@ test('on a phone the header action sits under the status line, above the tabs', 
 	}
 });
 
-const TABS = ['Overview', 'Events', 'Usage', 'Snapshots', 'Config'];
+const TABS = ['Overview', 'Browser', 'Events', 'Usage', 'Snapshots', 'Config'];
 
-// One frame for the five tabs: the strip does not move under the
+// One frame for the six tabs: the strip does not move under the
 // pointer, the state shows on each, and Stop is the same element after
 // every switch (the header and an op under way stay mounted).
 test('the tabs switch under one header that stays mounted', async ({ page }) => {
@@ -360,15 +360,23 @@ test('the tabs switch under one header that stays mounted', async ({ page }) => 
 	await destroyProject(apiURLFromEnv(), p.id);
 });
 
+// Five tabs fitted a 360 screen; the sixth (I-1216) does not, so the row
+// scrolls there, which .hk-tabs is built for. What must hold at every
+// width: the whole row is there, the page itself does not scroll
+// sideways under it, and the row's own scroll is sideways only, so the
+// current tab's 1px edge stays on the title rule. Reaching a tab by
+// scrolling the row is browser-view.spec.ts.
 for (const width of [360, 390]) {
-	test(`all five tabs fit at ${width} without sideways scroll`, async ({ page }) => {
+	test(`the tab row holds the six at ${width} without moving the page`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 800 });
 		const p = await project(`tabs-fit-${width}`, 0);
 		await page.goto(`/projects/${p.id}/config`);
 		const nav = page.getByRole('navigation', { name: 'Project' });
 		await expect(nav.getByRole('link')).toHaveText(TABS);
-		expect(await nav.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
-		for (const tab of TABS) await expect(nav.getByRole('link', { name: tab })).toBeInViewport();
+		expect(await nav.evaluate((n) => n.scrollHeight <= n.clientHeight)).toBe(true);
+		expect(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+		).toBe(true);
 	});
 }
 

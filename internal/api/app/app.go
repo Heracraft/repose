@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ca"
 	"github.com/heracraft/repose/internal/api/clirelease"
 	"github.com/heracraft/repose/internal/api/config"
+	"github.com/heracraft/repose/internal/api/edge"
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	httpapi "github.com/heracraft/repose/internal/api/http"
@@ -287,12 +289,34 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	if u := cfg.CLIReleasesURL; u != "off" && (u != "" || !cfg.Dev) {
 		a.cliLatest = clirelease.New(u, log)
 	}
+	// The browser view's leg to the edge (DECISIONS I-1216). The api
+	// presents its own client certificate from the platform CA, named
+	// `api`, which is the only thing the relay admits; the relay's server
+	// certificate comes from that same CA. With no VIEW_RELAY_ADDR the
+	// client is nil and the view's mint route answers `unavailable`.
+	var viewRelay *edge.Client
+	if cfg.ViewRelayAddr != "" {
+		apiCert, err := a.ca.X509().ClientTLS(pki.APIClientName)
+		if err != nil {
+			return nil, fmt.Errorf("api client certificate for the view relay: %w", err)
+		}
+		viewRelay, err = edge.New(cfg.ViewRelayAddr, apiCert, a.ca.X509().Pool())
+		if err != nil {
+			return nil, err
+		}
+		log.Info("browser view enabled", "event", "listen", "listener", "view_relay")
+	}
 	a.server = httpapi.New(httpapi.Deps{
 		Pool: a.pool, Verifier: verifier, Users: users, CA: a.ca, Secrets: a.sec, Engine: a.engine, Logs: a.logs, Events: a.events, Outbox: a.outbox, Unsub: unsub, Questions: a.questions, Say: a.say,
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
 		Gateway: httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
 		Seats:   a.seats,
 		Resting: a.resting,
+		// The browser view's relay on the edge (DECISIONS I-1216); nil
+		// makes the view's mint route answer `unavailable`. The dashboard
+		// is the one origin its stream route accepts an upgrade from.
+		ViewRelay:   viewRelay,
+		ViewOrigins: viewOrigins(cfg.DashboardURL),
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),
@@ -304,6 +328,20 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		},
 	})
 	return a, nil
+}
+
+// viewOrigins is the browser origin of the dashboard URL, which is the
+// one origin the view's stream route accepts an upgrade from: the ticket
+// rides a cookie, so it is ambient, and the Origin check is what stops
+// another site from opening a stream with it (DECISIONS I-1216). An
+// unparsable or empty DASHBOARD_URL leaves the list empty and the check
+// off, which is the behaviour of an api configured without a dashboard.
+func viewOrigins(dashboardURL string) []string {
+	u, err := url.Parse(dashboardURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil
+	}
+	return []string{u.Scheme + "://" + u.Host}
 }
 
 // initCA creates the platform CA on the first start against an empty

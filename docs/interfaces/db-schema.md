@@ -139,6 +139,21 @@ webhook_starts (project_id pk fk on delete cascade, at timestamptz)
               -- when a delivery last started this project's stopped machine; the
               -- once-per-10-minutes rule of `--start` has to survive an api restart
 
+browser_view_tickets (id pk, hash bytea not null unique, project_id fk on delete cascade,
+              user_id fk on delete cascade, created_at, expires_at timestamptz,
+              last_used_at timestamptz null, bytes bigint not null default 0)
+              -- 0042, DECISIONS I-1216. One ticket authenticates one connect to the
+              -- dashboard's browser view and lives 15 minutes; the page mints a fresh
+              -- one through the authenticated POST on every reconnect, so expiry is the
+              -- revocation. Only sha256 is held -- unlike a webhook token the user never
+              -- needs it printed again -- so a dump gives no working ticket. `id` is the
+              -- `ticket_id` of the two log lines; the ticket and its hash are never-log.
+              -- `bytes` is the session budget, on the row so a reconnect cannot reset it
+
+browser_view_wakes (project_id pk fk on delete cascade, at timestamptz)
+              -- when a view mint last woke this project's resting machine; the
+              -- once-per-10-minutes rule has to survive an api restart (I-1216)
+
 certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp text,
               key_id text, kind text,  -- user|gateway|host
               issued_at, expires_at, revoked_at)

@@ -90,6 +90,13 @@ const (
 	// proc_samples partition drop did not run, so disk grows and nothing
 	// else breaks.
 	EventPartitionDropFail = "partition_drop_fail"
+	// The dashboard's browser view (DECISIONS I-1216). One pair per
+	// connect: open is written where the wake is known (the mint route),
+	// close where the bytes are (the stream). Both carry `ticket_id`, the
+	// row's opaque id -- never the ticket, the VNC password, a stream
+	// byte or clipboard text.
+	EventBrowserViewOpen  = "browser_view_open"
+	EventBrowserViewClose = "browser_view_close"
 
 	// gateway
 	EventSessionOpen  = "session_open"
@@ -120,6 +127,7 @@ var RequiredEvents = map[Component][]string{
 		EventRequest, EventCertIssue, EventCertRevoke, EventSchedule,
 		EventScheduleFail, EventScheduleWait, EventCommandSend, EventCommandResult, EventRollupDone,
 		EventBillingWebhook, EventNotifySend, EventNotifyFail, EventPartitionDropFail,
+		EventBrowserViewOpen, EventBrowserViewClose,
 	},
 	ComponentGateway: {
 		EventSessionOpen, EventSessionClose, EventAuthFail, EventRouteFail,

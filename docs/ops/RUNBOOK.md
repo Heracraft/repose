@@ -36,6 +36,7 @@ Where a row names two sections, the first is the common cause.
 | No tmux session, or the agent windows are gone | "No session on a machine (tmux or herdr)" |
 | Browser tools refuse every connection | "Browser tools on a machine refuse every connection" |
 | A browser stopped that somebody wanted | "A browser on a machine keeps stopping, or one a tenant started is gone" |
+| The dashboard's Browser tab will not connect | "A browser view will not connect", then "Desktop not starting" |
 | A tool that is on the laptop is missing in the machine | "CLI: a laptop tool is missing in the guest" |
 | Claude asks to log in again in every project | "Claude asks for a login in every project" |
 | Slow to start | "BootSlow", or "GuestWakeSlow" if it was resting |
@@ -2934,6 +2935,56 @@ desktop is off.
 6. A headed browser shows nothing on the desktop: the shell that launched
    it had no `DISPLAY` because it started before Xvnc. New shells export
    `DISPLAY=:99` while the X socket exists; open a new tmux window.
+
+## A browser view will not connect
+
+The dashboard's **Browser** tab says "The view could not be reached", or
+a refusal of its own. The view has three legs, and each fails with its
+own word (DECISIONS I-1216; the codes are in `interfaces/api.md`).
+
+1. **Browser to api.** Loki:
+   `{component="api"} | json | event="browser_view_open"` for the mint
+   and `event="browser_view_close"` for the stream's end, with
+   `project_id`, `ticket_id`, `outcome`, `ms`, `bytes_in`, `bytes_out`
+   and `source_prefix` (a /24; no address, no ticket, no frame).
+   A mint that answers `unavailable` means the api has no
+   `VIEW_RELAY_ADDR`: check the `api` app's environment in Coolify
+   (`ops/coolify/api.env.example` has the line, `10.255.0.1:6081`).
+   `conflict` with `detail.state` is a machine that is not running.
+   `rate_limited` on the mint is the 11th in an hour for that user.
+   A page stuck on "Connecting…" with no close line and no open line is
+   the browser never reaching the api at all: the dashboard's own
+   "Cannot reach the API" bar, or a `Set-Cookie` dropped because the
+   answer did not name the dashboard's origin (the mint is the one route
+   that echoes `Origin` with `Access-Control-Allow-Credentials`, which
+   needs `DASHBOARD_URL` set on the api).
+2. **api to the edge's relay, on 6081.** The api logs `event=route_fail`
+   with `reason=view_relay` when the dial itself failed, and the relay's
+   own word (`view_busy`, `view_capacity`, `view_desktop_failed`,
+   `view_dial_failed`, `view_auth_failed`) when the relay refused. On
+   the edge: `systemctl status gateway` and
+   `journalctl -u gateway --grep view_`. The listener is
+   `VIEW_LISTEN=10.255.0.1:6081` with `VIEW_TLS_CERT`/`VIEW_TLS_KEY`
+   (edge-internal) and `API_CA`; it admits one client name, `api`, so a
+   certificate from another CA or with another name is refused before
+   anything is dialled. `nft list ruleset | grep 6081` on the edge must
+   show the control-plane address alone, and on a host must show no
+   guest rule for it at all: 6081 is reachable from the control plane
+   and from nowhere else (I-1218).
+3. **Edge to the guest.** `view_dial_failed` is the SSH leg: the guest's
+   host certificate, the gateway's per-project certificate, or the
+   machine being gone. `view_desktop_failed` is
+   `repose-guest-profile desktop start` not answering inside the
+   handshake deadline, which is "Desktop not starting" above, in the
+   guest.
+
+What the caps look like from the outside, so a working view is not read
+as a fault: a close with `outcome=idle` after 120 s with no frame, with
+`cap` after 4 hours, with `budget` after 2 GiB on one ticket, and
+`view_busy` for a second view of one project. The page shows **Resume
+view** for each of those, and one click is one mint. Metrics:
+`repose_api_browser_views_total{result}` and
+`repose_gateway_view_requests_total{result}`, both by result only.
 
 ## No session on a machine (tmux or herdr)
 

@@ -8,8 +8,10 @@
 #     whose certificate Let's Encrypt issues over TLS-ALPN-01 on that same
 #     listener, and the preview-proxy stub on every other name (a static
 #     page until the feature exists);
-#   * the hook-ingest forwarder and the metrics endpoint on the WireGuard
-#     address only;
+#   * the hook-ingest forwarder, the browser view's relay and the metrics
+#     endpoint on the WireGuard address only. Hook ingest is reachable from
+#     any guest; the view relay only from the control plane, which dials it
+#     with the api's own client certificate (DECISIONS I-1216);
 #   * an operator sshd on 2222, key-only, restricted to the operator address
 #     list and the WireGuard network.
 #
@@ -315,8 +317,16 @@ in
             (c: ''ip saddr ${c} tcp dport ${toString cfg.operatorSSHPort} accept'')
             cfg.operatorCIDRs}
 
-          # Guests reach the hook-ingest and noVNC-relay ports over WireGuard.
-          iifname "wg0" tcp dport { 8443, 6081 } accept
+          # Hook ingest, from any guest over WireGuard.
+          iifname "wg0" tcp dport 8443 accept
+          # The browser view's relay: the control plane only, never a
+          # guest (DECISIONS I-1216). Until then 6081 was admitted from
+          # every source on wg0 -- every guest on every host, the
+          # monitoring peer and kanali -- for a listener that did not
+          # exist. The credential on that leg is the api's own client
+          # certificate (VIEW_LISTEN below); this is the filter in front
+          # of it.
+          iifname "wg0" ip saddr ${cfg.controlWgAddress} tcp dport 6081 accept
 
           # Scrapes over WireGuard only: node_exporter and the gateway's own
           # metrics.
@@ -408,6 +418,14 @@ in
         HOOK_LISTEN = "${cfg.wgAddress}:8443";
         HOOK_TLS_CERT = "${tlsDir}/edge-internal.crt";
         HOOK_TLS_KEY = "${tlsDir}/edge-internal.key";
+        # The browser view's relay (DECISIONS I-1216): the api dials it
+        # over WireGuard and authenticates with its own client
+        # certificate from the api CA, pinned to the name `api`. The
+        # nftables rule narrowing 6081 to the control plane's address is
+        # a filter on top of that, never the credential.
+        VIEW_LISTEN = "${cfg.wgAddress}:6081";
+        VIEW_TLS_CERT = "${tlsDir}/edge-internal.crt";
+        VIEW_TLS_KEY = "${tlsDir}/edge-internal.key";
         PREVIEW_LISTEN = ":443";
         PREVIEW_TLS_CERT = "${tlsDir}/wildcard.crt";
         PREVIEW_TLS_KEY = "${tlsDir}/wildcard.key";

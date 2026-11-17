@@ -16,6 +16,9 @@ const (
 	lnPreview = "preview"
 	lnHook    = "hook"
 	lnMetrics = "metrics"
+	// lnView is the browser view's relay, which the api dials over
+	// WireGuard (DECISIONS I-1216).
+	lnView = "view"
 )
 
 // inheritedListeners takes the listening sockets this process was started

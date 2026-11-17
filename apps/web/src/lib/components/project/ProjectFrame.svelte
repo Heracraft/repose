@@ -1,5 +1,5 @@
 <!--
-  A project's frame, shared by its five tabs (DECISIONS I-841): the crumb,
+  A project's frame, shared by its six tabs (DECISIONS I-841, I-1216): the crumb,
   the name, the remote and the status line, Start or Stop, the tabs, and
   under them what Start or Stop has to say (the stop question, a refusal).
   It reads the project and polls it; the tab under it reads the project

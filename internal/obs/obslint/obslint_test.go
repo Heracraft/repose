@@ -117,6 +117,18 @@ func TestRules(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "a view ticket",
+			rel:  "internal/thing/a.go",
+			src:  "package thing\nimport \"log/slog\"\nfunc f(log *slog.Logger) { log.Info(\"m\", \"event\", \"browser_view_open\", \"ticket\", \"3f9c\") }\n",
+			want: RuleField,
+		},
+		{
+			name: "a view ticket's row id is not the ticket",
+			rel:  "internal/thing/a.go",
+			src:  "package thing\nimport \"log/slog\"\nfunc f(log *slog.Logger) { log.Info(\"m\", \"event\", \"browser_view_open\", \"ticket_id\", \"7\") }\n",
+			want: "",
+		},
+		{
 			name: "guest path",
 			rel:  "internal/thing/a.go",
 			src:  "package thing\nimport \"log/slog\"\nfunc f(log *slog.Logger) { log.Info(\"m\", \"event\", \"exec\", \"path\", \"/home/dev/app/src/secret.ts\") }\n",

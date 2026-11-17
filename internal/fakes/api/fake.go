@@ -103,11 +103,12 @@ const (
 	baseVersion = "2026.09.15"
 	hostID      = "host-01"
 	// FakeHostName is the name GET /projects/:id/route reports for hostID.
-	FakeHostName = "fake-host-01"
-	logPattern   = "GET /v1/projects/{id}/ops/{op_id}/log"
-	opPattern    = "GET /v1/projects/{id}/ops/{op_id}"
-	rateWindow   = time.Minute
-	rateBurst    = 60
+	FakeHostName  = "fake-host-01"
+	logPattern    = "GET /v1/projects/{id}/ops/{op_id}/log"
+	streamPattern = "GET /v1/browser/stream"
+	opPattern     = "GET /v1/projects/{id}/ops/{op_id}"
+	rateWindow    = time.Minute
+	rateBurst     = 60
 )
 
 // Fake is the running fake api.
@@ -140,27 +141,32 @@ type Fake struct {
 	// webhookTombstones are the hex sha256 of tokens rotated or removed
 	// (DECISIONS I-1110); the edge answers 410 for them.
 	webhookTombstones []string
-	certs             map[uint64]*cert
-	revoked           []revocation
-	failOnce          []failRule
-	failAlways        map[string]string
-	hits              map[string][]time.Time
-	hosts             []Host // nil means the one canned host
-	gatewayCerts      int    // POST /internal/gateway-certs calls, for cache tests
+	// The browser view's fake desktop (DECISIONS I-1216), off unless a
+	// test turns it on: see desktop.go.
+	desktopOn     bool
+	desktopCopy   string
+	desktopPastes []string
+	certs         map[uint64]*cert
+	revoked       []revocation
+	failOnce      []failRule
+	failAlways    map[string]string
+	hits          map[string][]time.Time
+	hosts         []Host // nil means the one canned host
+	gatewayCerts  int    // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests.
-	wakes         int
-	sessions      []SessionReport
-	questions     []*Question       // newest last (DECISIONS I-245)
+	wakes     int
+	sessions  []SessionReport
+	questions []*Question // newest last (DECISIONS I-245)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
-	says         []Say
-	sayAgents    []string
-	sayAgentsSet bool
-	sayState     string
-	sayReplaced  bool
+	says          []Say
+	sayAgents     []string
+	sayAgentsSet  bool
+	sayState      string
+	sayReplaced   bool
 	secretAnswers map[string][]byte // question id -> the value its secret answer stored (I-929)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
@@ -481,8 +487,22 @@ func (f *Fake) handle(pattern string, h handler) {
 // mux (which has no registered OPTIONS handlers): the dashboard fetches
 // this fake cross-origin in the Playwright suite exactly like it fetches
 // the real api cross-origin in production (I-79).
+//
+// A request that carries an Origin gets that origin back by name with
+// Allow-Credentials, as the real api does for the dashboard's own origin
+// (I-1216): the browser view's mint answers with a `Set-Cookie`, which a
+// browser drops from an uncredentialed cross-origin fetch and refuses
+// from a credentialed answer that says `*`. The real api echoes only the
+// origins on its view list; this fixture serves one dashboard and has no
+// list.
 func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Add("Vary", "Origin")
+	} else {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Expose-Headers", "Repose-Event-Count, X-Request-Id")
@@ -520,7 +540,9 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The unsubscribe and reply links carry their own signed token; the
 	// public seats count (I-290) has none.
-	if !strings.HasPrefix(r.URL.Path, "/v1/internal/") && !strings.HasPrefix(r.URL.Path, "/v1/public/") && r.URL.Path != "/v1/notify/unsubscribe" && r.URL.Path != "/v1/questions/reply" {
+	// The view's stream route is authenticated by its cookie ticket and
+	// not by a bearer token (I-1216), like the signed-token links above.
+	if !strings.HasPrefix(r.URL.Path, "/v1/internal/") && !strings.HasPrefix(r.URL.Path, "/v1/public/") && r.URL.Path != "/v1/notify/unsubscribe" && r.URL.Path != "/v1/questions/reply" && r.URL.Path != "/v1/browser/stream" {
 		u, tok, ok := f.authenticate(r, pattern)
 		if !ok {
 			f.mu.Unlock()
@@ -535,9 +557,10 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		r = r.WithContext(context.WithValue(r.Context(), ctxUser, u))
 	}
-	if pattern == logPattern || (pattern == opPattern && r.URL.Query().Get("wait") != "") {
-		// The log streams and a long-poll of an op waits: both take mu
-		// themselves, for their reads only.
+	if pattern == logPattern || pattern == streamPattern || (pattern == opPattern && r.URL.Query().Get("wait") != "") {
+		// The log streams, the view's stream stays open for as long as
+		// someone watches, and a long-poll of an op waits: all three take
+		// mu themselves, for their reads only.
 		f.mu.Unlock()
 		f.mux.ServeHTTP(w, r)
 		return
@@ -660,6 +683,10 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/webhooks/{name}", f.getWebhook)
 	f.handle("DELETE /v1/projects/{id}/webhooks/{name}", f.deleteWebhook)
 	f.handle("POST /v1/projects/{id}/webhooks/{name}/rotate", f.rotateWebhook)
+	// The dashboard's browser view (DECISIONS I-1216). The stream route
+	// carries no project id: the ticket names the project.
+	f.handle("POST /v1/projects/{id}/browser/view", f.mintBrowserView)
+	f.handle("GET /v1/browser/stream", f.browserStream)
 	f.handle("GET /v1/internal/webhook-routes", f.internalWebhookRoutes)
 	f.handle("POST /v1/internal/webhook-start", f.internalWebhookStart)
 	f.handle("POST /v1/internal/webhook-deliveries", f.internalWebhookDeliveries)

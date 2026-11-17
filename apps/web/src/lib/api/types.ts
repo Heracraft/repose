@@ -46,7 +46,13 @@ export type ErrorCode =
 	| 'waitlisted'
 	| 'rate_limited'
 	| 'internal'
-	| 'billing_disabled';
+	| 'billing_disabled'
+	// The browser view's own refusals (DECISIONS I-1216, api.md).
+	| 'view_expired'
+	| 'view_busy'
+	| 'view_budget'
+	| 'view_capacity'
+	| 'unavailable';
 
 export interface ApiErrorBody {
 	code: ErrorCode;
@@ -251,6 +257,19 @@ export interface Project {
 	/** What runs the machine's terminals from its next start (I-502).
 	 * Absent from an older api, which means tmux. */
 	multiplexer?: 'tmux' | 'herdr';
+}
+
+/**
+ * POST /projects/:id/browser/view (DECISIONS I-1216): the answer to a
+ * mint. The ticket itself is in the cookie the answer sets, and there is
+ * no password in the body on this path: the guest's own never leaves the
+ * edge. `resting` is a machine whose cores are stopped that this mint did
+ * not wake, because one was woken for it inside the last ten minutes.
+ */
+export interface ViewTicket {
+	expires_at: string;
+	stream_path: string;
+	resting: boolean;
 }
 
 /** GET /projects/destroyed (I-167): a destroyed project that can still be restored. */

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/gateway"
 	"github.com/heracraft/repose/internal/gateway/webhook"
 	"github.com/heracraft/repose/internal/obs"
@@ -127,6 +129,22 @@ func serve(ctx context.Context) error {
 		}
 	}
 
+	// The browser view's relay on the WireGuard address :6081
+	// (DECISIONS I-1216). The api is the only caller, and its own client
+	// certificate from the api's CA is what admits it: the nftables rule
+	// that narrows the port to the control plane's /32 is a filter, not
+	// the credential.
+	if addr := os.Getenv("VIEW_LISTEN"); addr != "" {
+		raw, tlsCfg, err := viewListener(ls, addr, os.Getenv("VIEW_TLS_CERT"), os.Getenv("VIEW_TLS_KEY"), os.Getenv("API_CA"))
+		if err != nil {
+			log.Error("listener disabled", "event", "route_fail", "reason", lnView, "err", err.Error())
+		} else {
+			passOn = append(passOn, namedListener{lnView, raw})
+			vr := gateway.NewViewRelay(gw, log, m)
+			run("view-relay", func() { serveView(accepting, log, vr, tls.NewListener(raw, tlsCfg)) })
+		}
+	}
+
 	// The public :443: webhook deliveries on WEBHOOK_HOST, whose
 	// certificate autocert gets over TLS-ALPN-01 on this listener, and
 	// the preview stub on every other name (§5.8, §5.9; DECISIONS
@@ -218,6 +236,69 @@ func tlsListener(ls *listenerSet, log *slog.Logger, name, addr, certFile, keyFil
 		return nil, false
 	}
 	return ln, true
+}
+
+// viewListener binds the browser view's relay and returns the raw
+// listener (which a handover passes on) with the TLS configuration to
+// wrap it in: the edge's internal certificate, and a client certificate
+// from the api's CA whose name is `api` and nothing else. That pinning is
+// the mirror of the api's own /internal listener, which admits the
+// gateway's certificate alone (I-431), and it is what makes a source
+// address on wg0 a filter rather than a credential.
+//
+// Like the metrics listener, it refuses an address that binds every
+// interface: this port is reachable over WireGuard only.
+func viewListener(ls *listenerSet, addr, certFile, keyFile, caFile string) (net.Listener, *tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, nil, fmt.Errorf("VIEW_LISTEN is set without VIEW_TLS_CERT and VIEW_TLS_KEY")
+	}
+	if caFile == "" {
+		return nil, nil, fmt.Errorf("VIEW_LISTEN needs API_CA: the api's client certificate is what authenticates the view leg")
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("view address %q: %w", addr, err)
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return nil, nil, fmt.Errorf("view address %q binds every interface; bind the WireGuard address", addr)
+	}
+	pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("view certificate: %w", err)
+	}
+	caPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("API_CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, nil, fmt.Errorf("API_CA: no certificate in %s", caFile)
+	}
+	cfg := pki.RequireClientName(&tls.Config{
+		Certificates: []tls.Certificate{pair},
+		ClientCAs:    pool,
+		MinVersion:   tls.VersionTLS13,
+	}, pki.APIClientName)
+	ln, err := ls.listen(lnView, addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ln, cfg, nil
+}
+
+// serveView runs the view relay until ctx ends.
+func serveView(ctx context.Context, log *slog.Logger, vr *gateway.ViewRelay, ln net.Listener) {
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+	log.Info("listener up", "event", "listen", "listener", lnView, "addr", ln.Addr().String())
+	// Serve only ever returns the accept error that ended it, which after
+	// a shutdown is the listener this function closed.
+	err := vr.Serve(ln)
+	if ctx.Err() == nil {
+		log.Error("listener stopped", "event", "route_fail", "reason", lnView, "err", err.Error())
+	}
 }
 
 // metricsListener refuses an address that binds every interface, as

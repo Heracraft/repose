@@ -6,6 +6,7 @@ describe('tabOf', () => {
 	it('names each tab by its path', () => {
 		expect(tabOf(`/projects/${id}`, id)).toBe('Overview');
 		expect(tabOf(`/projects/${id}/`, id)).toBe('Overview');
+		expect(tabOf(`/projects/${id}/browser`, id)).toBe('Browser');
 		expect(tabOf(`/projects/${id}/events`, id)).toBe('Events');
 		expect(tabOf(`/projects/${id}/usage`, id)).toBe('Usage');
 		expect(tabOf(`/projects/${id}/snapshots`, id)).toBe('Snapshots');
@@ -18,9 +19,10 @@ describe('tabOf', () => {
 		expect(tabOf('/projects/other/config', id)).toBe('Overview');
 		expect(tabOf('/projects', id)).toBe('Overview');
 	});
-	it('keeps the five in order', () => {
+	it('keeps the six in order, Browser second', () => {
 		expect(PROJECT_TABS.map(([t]) => t)).toEqual([
 			'Overview',
+			'Browser',
 			'Events',
 			'Usage',
 			'Snapshots',

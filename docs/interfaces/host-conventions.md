@@ -126,7 +126,9 @@ rotates keys does the same restart itself.
     (`limit rate over 200/second burst 2000 packets`, I-240) to
     `flows_drop`, then drop
     `169.254.169.254` and `168.63.129.16`, drop `10.64.0.0/12`, allow the
-    edge WireGuard address on tcp 8443 and 6081, drop every private range
+    edge WireGuard address on tcp 8443 (hook ingest; 6081 went with
+    DECISIONS I-1216, where the browser view's relay took that port and
+    dials the guest rather than the other way round), drop every private range
     (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `169.254/16`), accept
     to the provider NIC), `smtp_drop`/`stratum_drop`/`flows_drop` (jump
     the hostd-owned `guest_smtp`/`guest_stratum`/`guest_flows`, then

@@ -29,6 +29,13 @@ func New(perMinute int) *Limiter {
 	return &Limiter{perMinute: float64(perMinute), burst: float64(perMinute), buckets: map[string]*bucket{}, now: time.Now}
 }
 
+// NewPerHour makes a limiter allowing perHour requests per key, with a
+// burst of the same size. The browser view's mint is 10 an hour
+// (DECISIONS I-1216), which is not a whole number of requests a minute.
+func NewPerHour(perHour int) *Limiter {
+	return &Limiter{perMinute: float64(perHour) / 60, burst: float64(perHour), buckets: map[string]*bucket{}, now: time.Now}
+}
+
 // Allow takes a token for key; when refused it returns how long until the
 // next token.
 func (l *Limiter) Allow(key string) (bool, time.Duration) {
