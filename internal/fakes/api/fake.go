@@ -678,6 +678,7 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/triggers/{name}", f.getTrigger)
 	f.handle("DELETE /v1/projects/{id}/triggers/{name}", f.deleteTrigger)
 	f.handle("POST /v1/projects/{id}/triggers/{name}/fire", f.fireTrigger)
+	f.handle("GET /v1/trigger-runs", f.listAllTriggerRuns)
 	f.handle("GET /v1/projects/{id}/trigger-runs", f.listTriggerRuns)
 	f.handle("GET /v1/projects/{id}/trigger-runs/{run_id}", f.getTriggerRun)
 	f.handle("GET /v1/projects/{id}/webhooks", f.listWebhooks)

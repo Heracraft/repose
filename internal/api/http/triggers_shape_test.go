@@ -60,12 +60,11 @@ func TestTheFakeApiSendsEveryRunKeyTheRealOneDoes(t *testing.T) {
 	}
 	real := runJSON(&run)
 	fake := tagKeys(fakeapi.FakeTriggerRun{})
-	// `project` is the cross-project listing's own key (GET
-	// /trigger-runs), which the fake has no route for; `link` is a
-	// nested object the fake does not model. Both are checked rather
-	// than assumed, so this test is known to be comparing something and
-	// the allowance is dropped when the fake grows the key.
-	for _, a := range []string{"project", "link"} {
+	// `link` is a nested object the fake does not model. The allowance
+	// is checked rather than assumed, so this test is known to be
+	// comparing something and the allowance is dropped when the fake
+	// grows the key — which is how `project` left this list.
+	for _, a := range []string{"link"} {
 		if _, ok := real[a]; !ok {
 			t.Errorf("%s is allowed for but the real api no longer sends it", a)
 		}
@@ -73,7 +72,7 @@ func TestTheFakeApiSendsEveryRunKeyTheRealOneDoes(t *testing.T) {
 			t.Errorf("the fake sends %s now: take it out of the allowed list", a)
 		}
 	}
-	if got := missing(real, fake, "project", "link"); len(got) > 0 {
+	if got := missing(real, fake, "link"); len(got) > 0 {
 		t.Errorf("the fake api cannot send %v, which the real api does", got)
 	}
 }

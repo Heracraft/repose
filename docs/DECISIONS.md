@@ -34601,6 +34601,50 @@ payload per kept run**, under
 cleared a stored flag. A run is at most 24 hours, a gate 10 seconds, a
 prompt file 64 KB, a spec 64 characters, a summary 1 KB, a gate's reason
 200 bytes and a dedupe key 128.
+
+*Made during implementation* (triggers, 2026-11-17), the contract
+changes an adversarial review's fifth round forced, all inside
+I-1248..I-1262:
+
+- **A herdr project takes no new trigger.** A run is an agent in its own
+  tmux window and a herdr machine has no tmux session, so `tmux
+  new-window` failed and the run read "the agent is not installed on
+  this machine". `triggers add` is `400 invalid` there, the machine
+  skips a fire with the reason `herdr`, and an existing trigger can
+  still be turned off or removed. `repose say` refuses herdr in the same
+  words (I-501); real herdr support is not this change's.
+- **`--timeout 0` is stored as 24 hours.** It meant three things: the
+  docs said 24h, the runner never killed the window, and the api's
+  backstop buried the run at two hours as `unreachable`.
+- **The trigger set is kept in the guest**, at
+  `/var/lib/repose/trigger-set.json` on the volume. It was memory only,
+  on the reasoning that the api sends it on every start; a guestd
+  restart between two starts then turned every delivery into
+  `route_gone` — "the route was removed" — about a route that was still
+  there. Guest state reconciles (CLAUDE.md), and the set is state.
+- **Every refusal coalesces, not only the edge's.** The api's own
+  refusals of a clock fire now fold into the hour's row too: `every 15m`
+  against a stopped machine wrote four rows an hour and evicted every
+  run that ran inside five hours, against this entry's own promise.
+- **The hand-off's stale window is three ticks, with a ten-minute
+  ceiling.** At 40 seconds against a 60-second tick, the pass that
+  requeued a `--start` fire failed that same fire `unreachable` on the
+  next pass and notified the owner. A machine on its way up is waited
+  for, not skipped `busy`.
+- **A run does not end on the first `idle`.** A prompt-hooked agent
+  reads `idle` until its first hook, so a run was reported `done` five
+  seconds in, with no summary, while its agent was still starting.
+- **`trigger_failed` is deduped like every other platform kind**, which
+  is what `features/notifications.md` already said; the code had it
+  exempt.
+- **`GET /v1/trigger-runs`** lists every project's runs, as questions
+  and snapshots are listed, for `repose triggers runs --all`: "what did
+  my agents do last night" has no per-project answer. **`repose triggers
+  url NAME`** reads a route trigger's URL back, as `webhooks url` does.
+- **The metric label is `kind`, not `source`.** `source` is not on
+  `internal/obs/metrics`' low-cardinality list, and `MustRegister`
+  panics by design, so the api did not start at all.
+
 **I-1246. cloudflared is in every machine's base, and an agent whose owner
 is away opens a quick tunnel for the port and sends the link.** (catchall,
 2026-11-17; reverses I-251's "not in the base" and amends I-1098.)

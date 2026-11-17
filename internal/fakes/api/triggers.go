@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"time"
 
@@ -26,8 +27,11 @@ var triggerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // maxFakeTriggers mirrors triggers.MaxTriggers.
 const maxFakeTriggers = 20
 
-// FakeTriggerRun is one run as the api returns it.
+// FakeTriggerRun is one run as the api returns it. `project` is set by
+// the cross-project listing alone, where a row has to say which machine
+// it ran on.
 type FakeTriggerRun struct {
+	Project        string     `json:"project,omitempty"`
 	RunID          string     `json:"run_id"`
 	TriggerID      string     `json:"trigger_id,omitempty"`
 	Trigger        string     `json:"trigger"`
@@ -345,6 +349,34 @@ func (f *Fake) listTriggerRuns(w http.ResponseWriter, r *http.Request) *apiError
 			break
 		}
 		out = append(out, run)
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// listAllTriggerRuns is GET /v1/trigger-runs: every project's runs,
+// newest first, each with its project's slug.
+func (f *Fake) listAllTriggerRuns(w http.ResponseWriter, r *http.Request) *apiError {
+	limit := 20
+	if q := r.URL.Query().Get("limit"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 || n > 200 {
+			return invalid("limit is 1 to 200")
+		}
+		limit = n
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []FakeTriggerRun{}
+	for _, p := range f.userProjects(userFrom(r)) {
+		for _, run := range p.triggerRuns {
+			run.Project = p.Slug
+			out = append(out, run)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

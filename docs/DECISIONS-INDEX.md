@@ -1016,4 +1016,4 @@ pointer, not a summary.
 - **I-1258** Triggers is a project's third tab, after Browser — 2026-11-17; L34521
 - **I-1260** A trigger run is use for the unused notice, counted from `trigger_runs` — 2026-11-17; L34567
 - **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L34586
-- **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L34604
+- **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L34648
