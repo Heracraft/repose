@@ -130,7 +130,11 @@ type viewHarness struct {
 	xvnc  *fakeXvnc
 }
 
-func newViewHarness(t *testing.T, x *fakeXvnc) *viewHarness {
+// newViewHarness builds the relay and starts its accept loop. A test that
+// needs a relay knob (the handshake budget, the global cap) sets it in an
+// option, before Serve: a write after it races the handler goroutines'
+// reads, which the race detector reports (r20261117-1).
+func newViewHarness(t *testing.T, x *fakeXvnc, opts ...func(*ViewRelay)) *viewHarness {
 	t.Helper()
 	h := newHarness(t, harnessOpts{})
 	xvnc := newFakeXvnc(t, x)
@@ -140,6 +144,9 @@ func newViewHarness(t *testing.T, x *fakeXvnc) *viewHarness {
 	h.guest.mu.Unlock()
 
 	relay := NewViewRelay(h.gw, slog.New(slog.NewJSONHandler(h.logs, nil)), h.metrics)
+	for _, o := range opts {
+		o(relay)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -285,8 +292,7 @@ func TestViewRelayRefusesASecondViewOfOneProject(t *testing.T) {
 // The global cap is the peer the per-project counter does not give: one
 // project each, past the cap, is refused.
 func TestViewRelayRefusesPastTheGlobalCap(t *testing.T) {
-	v := newViewHarness(t, &fakeXvnc{password: "pw123456", frame: []byte("F")})
-	v.relay.global = &connCounter{max: 1}
+	v := newViewHarness(t, &fakeXvnc{password: "pw123456", frame: []byte("F")}, func(r *ViewRelay) { r.global = &connCounter{max: 1} })
 	open, reply := v.request(t, v.ok())
 	if !reply.OK {
 		t.Fatalf("the first view: %+v", reply)
@@ -343,8 +349,7 @@ func TestViewRelayRefusesAGuestWithNoPassword(t *testing.T) {
 // budget and no more: the deadline ends the attempt and nothing is left
 // behind.
 func TestViewRelayDropsAStalledGuestAndLeaksNoGoroutine(t *testing.T) {
-	v := newViewHarness(t, &fakeXvnc{password: "pw123456"})
-	v.relay.handshake = 300 * time.Millisecond
+	v := newViewHarness(t, &fakeXvnc{password: "pw123456"}, func(r *ViewRelay) { r.handshake = 300 * time.Millisecond })
 	v.guest.mu.Lock()
 	v.guest.desktop = desktopBehaviour{hang: true}
 	v.guest.mu.Unlock()

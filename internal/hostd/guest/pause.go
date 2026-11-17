@@ -484,7 +484,7 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		// gets one more try before the wake is called failed.
 		m.log(g).Info("guestd session ended during the wake; trying the next", "event", "guest_resting")
 		if next, nerr := m.awaitSession(ctx, id, WakeGuestdWait, sess); nerr == nil {
-			sess, perr = next, m.settleGuestd(ctx, g, next)
+			perr = m.settleGuestd(ctx, g, next)
 		}
 	}
 	if perr != nil {

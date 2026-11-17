@@ -64,7 +64,7 @@ func (f *Fake) browserStream(w http.ResponseWriter, r *http.Request) *apiError {
 	if err != nil {
 		return errf("invalid", "%v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	f.serveFakeDesktop(conn, rw, copyText)
 	return nil
 }

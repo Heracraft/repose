@@ -444,9 +444,6 @@
 		font: inherit;
 		color: inherit;
 	}
-	.rname {
-		font-weight: 500;
-	}
 	.trunsbtn:focus-visible {
 		outline: 2px solid var(--hk-ring);
 		outline-offset: 2px;
@@ -546,7 +543,7 @@
 	/* A route trigger's own line in its expansion: the route's name and
 	   the button that puts the URL on the clipboard. The URL is never
 	   drawn; the reason is in ProjectWebhooks.svelte. */
-	.turl b {
+	.turl .rname {
 		font-weight: 500;
 		color: var(--hk-text);
 	}
