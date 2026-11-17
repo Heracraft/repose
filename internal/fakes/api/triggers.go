@@ -31,23 +31,25 @@ const maxFakeTriggers = 20
 // the cross-project listing alone, where a row has to say which machine
 // it ran on.
 type FakeTriggerRun struct {
-	Project        string     `json:"project,omitempty"`
-	RunID          string     `json:"run_id"`
-	TriggerID      string     `json:"trigger_id,omitempty"`
-	Trigger        string     `json:"trigger"`
-	Source         string     `json:"source"`
-	State          string     `json:"state"`
-	Reason         string     `json:"reason,omitempty"`
-	Summary        string     `json:"summary,omitempty"`
-	Window         string     `json:"window,omitempty"`
-	DedupeKey      string     `json:"dedupe_key,omitempty"`
-	PayloadBytes   int64      `json:"payload_bytes"`
-	PayloadKept    bool       `json:"payload_kept"`
-	Skips          int        `json:"skips,omitempty"`
-	StartedMachine bool       `json:"started_machine"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	FinishedAt     *time.Time `json:"finished_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	Project   string `json:"project,omitempty"`
+	RunID     string `json:"run_id"`
+	TriggerID string `json:"trigger_id,omitempty"`
+	Trigger   string `json:"trigger"`
+	Source    string `json:"source"`
+	State     string `json:"state"`
+	Reason    string `json:"reason,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	// Link is the agent's `--link` (I-931): {url, label}, as an event's.
+	Link           map[string]string `json:"link,omitempty"`
+	Window         string            `json:"window,omitempty"`
+	DedupeKey      string            `json:"dedupe_key,omitempty"`
+	PayloadBytes   int64             `json:"payload_bytes"`
+	PayloadKept    bool              `json:"payload_kept"`
+	Skips          int               `json:"skips,omitempty"`
+	StartedMachine bool              `json:"started_machine"`
+	StartedAt      *time.Time        `json:"started_at,omitempty"`
+	FinishedAt     *time.Time        `json:"finished_at,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
 }
 
 // FakeTriggerRoute is the route a route trigger fires on.

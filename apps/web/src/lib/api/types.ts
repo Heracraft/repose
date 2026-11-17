@@ -406,7 +406,8 @@ export interface TriggerRun {
 	state: 'queued' | 'working' | 'done' | 'failed' | 'timeout' | 'skipped';
 	reason?: string;
 	summary?: string;
-	link?: { url: string; label?: string };
+	/** The agent's `--link URL --label TEXT` (I-931), as an event's. */
+	link?: AgentLink;
 	window?: string;
 	dedupe_key?: string;
 	payload_bytes: number;

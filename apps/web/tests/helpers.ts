@@ -67,6 +67,8 @@ export async function addTriggerRun(body: {
 	skips?: number;
 	ago_minutes?: number;
 	took_seconds?: number;
+	link_url?: string;
+	link_label?: string;
 }) {
 	const adminURL = process.env.FAKEAPI_ADMIN_URL;
 	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');

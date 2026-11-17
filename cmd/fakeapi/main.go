@@ -247,6 +247,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Skips        int    `json:"skips"`
 			AgoMinutes   int    `json:"ago_minutes"`
 			TookSeconds  int    `json:"took_seconds"`
+			// The agent's own `--link URL --label TEXT` (I-931).
+			LinkURL   string `json:"link_url"`
+			LinkLabel string `json:"link_label"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -254,11 +257,18 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		started := time.Now().Add(-time.Duration(max(body.AgoMinutes, 1)) * time.Minute)
 		finished := started.Add(time.Duration(max(body.TookSeconds, 1)) * time.Second)
-		f.AddTriggerRun(body.ProjectID, body.Trigger, api.FakeTriggerRun{
+		run := api.FakeTriggerRun{
 			State: body.State, Reason: body.Reason, Summary: body.Summary,
 			Source: body.Source, Window: body.Window, PayloadBytes: body.PayloadBytes,
 			Skips: body.Skips, StartedAt: &started, FinishedAt: &finished, CreatedAt: started,
-		})
+		}
+		if body.LinkURL != "" {
+			run.Link = map[string]string{"url": body.LinkURL}
+			if body.LinkLabel != "" {
+				run.Link["label"] = body.LinkLabel
+			}
+		}
+		f.AddTriggerRun(body.ProjectID, body.Trigger, run)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {

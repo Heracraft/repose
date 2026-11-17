@@ -52,7 +52,9 @@ async function seeded(name: string) {
 		window: 't-apply',
 		payload_bytes: 412,
 		ago_minutes: 12,
-		took_seconds: 112
+		took_seconds: 112,
+		link_url: 'https://jobs.example.com/a/1829',
+		link_label: 'The application'
 	});
 	await addTriggerRun({
 		project_id: p.id,
@@ -134,6 +136,13 @@ test('a row opens into its runs, with the agent’s own words', async ({ page })
 	const section = page.locator('#triggers');
 	await section.getByRole('button', { name: 'apply', exact: true }).click();
 	await expect(section.getByText('applied to Senior Go at Intel')).toBeVisible();
+	// The agent's own link, with the host beside the label so the words
+	// the agent chose are not the only thing saying where it leads
+	// (I-931), and the door the run came in by.
+	await expect(
+		section.getByRole('link', { name: 'The application · jobs.example.com' })
+	).toHaveAttribute('href', 'https://jobs.example.com/a/1829');
+	await expect(section.getByText('route', { exact: true })).toBeVisible();
 	// A route trigger's URL lives here, as a button and not as text.
 	await expect(section.getByRole('button', { name: 'Copy the URL of apply' })).toBeVisible();
 	await expect(page.locator('body')).not.toContainText('hooks.repose');

@@ -29,6 +29,7 @@
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
+	import { agentLink } from '$lib/agent-link';
 	import { pollWhileVisible } from '$lib/poll';
 	import { ageShort, dateTime } from '$lib/format';
 	import { reasonSentence } from '$lib/triggers';
@@ -205,6 +206,16 @@
 		if (s < 60) return `${s}s`;
 		if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
 		return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
+	}
+
+	/**
+	 * A run's link, through the same check an agent event's goes
+	 * through (agent-link.ts): http or https, no credentials in it, and
+	 * the host shown beside the label, because the words come from the
+	 * agent and the host is what says where they lead (I-931).
+	 */
+	function runLink(r: TriggerRun) {
+		return agentLink(r.link ?? undefined);
 	}
 
 	/** The dot's class, so a state reads at a glance: a failure is the
@@ -395,10 +406,16 @@
 														>
 														<span class="trtook">{took(r)}</span>
 														<span class="trwhy">{why(r)}</span>
-														{#if r.link}
-															<a class="hk-btn-ghost hk-btn-sm" href={r.link.url}
-																>{r.link.label ?? 'Open'}</a
+														{#if runLink(r)}
+															{@const l = runLink(r)!}
+															<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
+															<a
+																class="hk-btn-ghost hk-btn-sm"
+																href={l.href}
+																target="_blank"
+																rel="noopener noreferrer">{l.text}</a
 															>
+															<!-- eslint-enable svelte/no-navigation-without-resolve -->
 														{/if}
 														{#if r.window}<span class="hk-mono trwin">{r.window}</span>{/if}
 													</li>
