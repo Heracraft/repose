@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -220,7 +222,7 @@ func (r *Runner) save(set []Trigger) {
 	path := r.paths.TriggerSet()
 	if len(set) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			r.log.Warn("trigger set not removed", "event", "trigger_run", "err", err.Error())
+			r.log.Warn("trigger set not removed", "event", "trigger_run", "reason", fileReason(err))
 		}
 		return
 	}
@@ -229,16 +231,16 @@ func (r *Runner) save(set []Trigger) {
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		r.log.Warn("trigger set not kept", "event", "trigger_run", "err", err.Error())
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
 		return
 	}
 	tmp := path + ".new"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		r.log.Warn("trigger set not kept", "event", "trigger_run", "err", err.Error())
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		r.log.Warn("trigger set not kept", "event", "trigger_run", "err", err.Error())
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
 	}
 }
 
@@ -251,7 +253,7 @@ func (r *Runner) Load() {
 	b, err := os.ReadFile(r.paths.TriggerSet())
 	if err != nil {
 		if !os.IsNotExist(err) {
-			r.log.Warn("kept trigger set unreadable", "event", "trigger_run", "err", err.Error())
+			r.log.Warn("kept trigger set unreadable", "event", "trigger_run", "reason", fileReason(err))
 		}
 		return
 	}
@@ -349,7 +351,7 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 	if key := r.dedupeKey(t, req); key != "" {
 		seen, err := r.seenRecently(t.Name, key)
 		if err != nil {
-			r.log.Warn("dedupe store unreadable", "event", "trigger_run", "err", err.Error())
+			r.log.Warn("dedupe store unreadable", "event", "trigger_run", "reason", fileReason(err))
 		}
 		if seen {
 			return r.skip(req, triggerrun.ReasonDuplicate), nil
@@ -375,7 +377,7 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 	dir := r.workdir(t)
 	payload, headers, bytes, err := r.writePayload(t, req)
 	if err != nil {
-		r.log.Warn("payload not written", "event", "trigger_run", "run_id", req.RunID, "err", err.Error())
+		r.log.Warn("payload not written", "event", "trigger_run", "run_id", req.RunID, "reason", fileReason(err))
 		return r.skip(req, triggerrun.ReasonError), nil
 	}
 
@@ -440,7 +442,7 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 		_ = r.remember(t.Name, key)
 	}
 	if err := r.writeMark(rn); err != nil {
-		r.log.Warn("run mark not written", "event", "trigger_run", "run_id", rn.ID, "err", err.Error())
+		r.log.Warn("run mark not written", "event", "trigger_run", "run_id", rn.ID, "reason", fileReason(err))
 	}
 	r.report(rn, triggerrun.StateWorking, "")
 	r.gcRuns(t.Name)
@@ -748,6 +750,27 @@ func (r *Runner) gate(ctx context.Context, t Trigger, runID, dir string, payload
 		return triggerrun.GateReason(lastLine(res.Stderr, ReasonCap))
 	}
 	return ""
+}
+
+// fileReason is the bounded word a file failure logs. The error's own
+// text carries the path, and a trigger's paths hold the trigger's name,
+// which is the user's word and never a log field (OBSERVABILITY.md, and
+// §4.1's rule for a gate's line).
+func fileReason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, fs.ErrPermission):
+		return "permission"
+	case errors.Is(err, fs.ErrNotExist):
+		return "missing"
+	case errors.Is(err, syscall.ENOSPC):
+		return "no_space"
+	case errors.Is(err, syscall.EROFS):
+		return "read_only"
+	default:
+		return "io"
+	}
 }
 
 // writeGateErr keeps the last GateErrKept bytes of a gate's stderr
