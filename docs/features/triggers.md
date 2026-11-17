@@ -197,8 +197,10 @@ a field you fill in once belongs in Config.
   The list draws `LoadState` for loading, empty, error and its retry, as
   every list on these tabs does.
 - A row opens into its runs, in the `<ul>` grid the Events tab uses:
-  state, when, how long, the summary the agent sent, its link as a button
-  where there is one (I-931), and the window's name. A run that is
+  state, the door it came in by (the CLI's `SOURCE` word, so a hand fire
+  and a schedule's fire are not the same row), when, how long, the
+  summary the agent sent, its link as a button where there is one
+  (I-931), and the window's name. A run that is
   working shows as working; stopping one is attaching to that window, or
   its own timeout.
 - `Copy` puts a route trigger's URL on the clipboard and draws none of

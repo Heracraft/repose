@@ -386,6 +386,10 @@
 													<li>
 														<span class={dot(r.state)}></span>
 														<span class="trstate">{r.state}</span>
+														<!-- The door this run came in by, the word the CLI's
+														     SOURCE column prints: a hand fire and a schedule's
+														     fire are otherwise the same row. -->
+														<span class="trsrc">{r.source}</span>
 														<span class="trwhen" title={dateTime(r.created_at)}
 															>{ageShort(r.created_at)}</span
 														>
@@ -507,10 +511,14 @@
 	.trstate {
 		min-width: 4.5rem;
 	}
+	.trsrc,
 	.trwhen,
 	.trtook,
 	.trwin {
 		color: var(--hk-muted);
+	}
+	.trsrc {
+		min-width: 2.75rem;
 	}
 	.trwhy {
 		flex: 1 1 12rem;
