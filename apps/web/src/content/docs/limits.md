@@ -54,7 +54,7 @@ Data your machines send to the internet, and what a [webhook route](/docs/webhoo
 - Your account can hold 32 SSH connections through the gateway at once, across all your projects.
 - One address can have 4 connections logging in at the same moment, 64 open, and 20 new a second in bursts of up to 40. Past that, a new connection is closed before it logs in.
 - A connection ends when the certificate it logged in with expires. The CLI keeps at least 12 hours of validity on the certificate it connects with, so a `repose` command or an `ssh` you start holds its connection that long.
-- `repose logout` revokes your certificates, and the connections they opened close within 30 seconds, on any device.
+- `repose logout`, or Revoke certificates in the dashboard's Settings, revokes your certificates, and the connections they opened close within 30 seconds, on any device.
 - An update to the SSH gateway leaves open connections running. A restart ends them all at once, and `run`, `attach` and `open` [come back on their own](/docs/run-and-attach#detach-and-come-back).
 
 ## Files you drop or paste

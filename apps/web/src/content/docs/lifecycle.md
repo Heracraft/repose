@@ -30,7 +30,7 @@ repose status todo-app
 repose status todo-app -f
 ```
 
-The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. It leads with the projects an agent is waiting on or that failed, then the running machines, then the stopped ones, most recently used first, and a stopped row says when it last ran. Past 8 projects the list opens on **Running**: the projects that want you or are up, then the 5 stopped ones used last and a link to all the stopped ones. **Stopped** lists the stopped ones and **All** every project, 25 at a time with **Show all**; a project that failed is listed under **Running**, not **Stopped**. A search box finds a project by name or remote in every state; the filter and the search live in the page's address, so a reload keeps them. The sidebar lists the same running projects and folds the stopped ones into one link. A project's page has six tabs: **Overview** with its questions, Connect, agents and machine; **Browser**, the machine's own browser, live; **Events**, which filter to agents, errors or the machine; **Usage**; **Snapshots**; and **Config** with its packages and secrets. It lists no listening ports.
+The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. It leads with the projects an agent is waiting on or that failed, then the running machines, then the stopped ones, most recently used first, and a stopped row says when it last ran. Past 8 projects the list opens on **Running**: the projects that want you or are up, then the 5 stopped ones used last and a link to all the stopped ones. **Stopped** lists the stopped ones and **All** every project, 25 at a time with **Show all**; a project that failed is listed under **Running**, not **Stopped**. A search box finds a project by name or remote in every state; the filter and the search live in the page's address, so a reload keeps them. The sidebar lists the same running projects and folds the stopped ones into one link. A project's page has seven tabs: **Overview** with its questions, Connect, agents and machine; **Browser**, the machine's own browser, live; **[Triggers](/docs/triggers)**, which start an agent on a webhook or a schedule and show what each run did; **Events**, which filter to agents, errors or the machine; **Usage**; **Snapshots**; and **Config** with its packages and secrets. It lists no listening ports.
 
 ## Stop and start
 
@@ -38,11 +38,10 @@ The dashboard's **Projects** page lists the same projects, with **Stop** on a ru
 $ repose stop todo-app
 todo-app has claude (working). Stopping ends it. Stop todo-app?
 [y/N] y
-Fetched 2 commits on repose/main.
-Stopping todo-app; 1 file not committed.
+Stopping todo-app; 2 commits on main not fetched.
 ```
 
-A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
+A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer. Nothing is fetched: the snapshot holds the commits, and `git fetch repose` brings them to your laptop when you want them. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
 
 The dashboard asks the same question, in the same words, before a Stop that would end an agent's turn, on the project's page and on a row of **Projects**, with **Stop anyway** and **Keep it running**. A machine with no agent mid-turn or waiting on an answer stops on one click.
 

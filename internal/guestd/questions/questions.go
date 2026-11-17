@@ -81,6 +81,11 @@ const (
 	StateNoChannel = "no_channel"
 )
 
+// StatusExtended is the one AnswerQuestion status that closes nothing
+// (DECISIONS I-1242): the owner is answering on the dashboard, and the
+// request carries the question's new deadline. It is never a state.
+const StatusExtended = "extended"
+
 // PushFailed is the only answer a secret question keeps (I-929): the
 // owner set the secret, and the push that carries it to this machine
 // failed.
@@ -353,6 +358,27 @@ func (s *Store) Answer(id, status, answer string) error {
 	return err
 }
 
+// Extend moves an open question's deadline to until, from hostd's
+// AnswerQuestion with status extended (DECISIONS I-1242): the owner is
+// typing an answer on the dashboard, so the ask's --timeout stops being a
+// wall. The deadline only moves forward; an until before the one it has,
+// or a question already closed, changes nothing. The repose-ask waiting
+// on it needs no telling: it polls until the question closes.
+func (s *Store) Extend(id string, until time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.qs[id]
+	if e == nil {
+		return ErrNotFound
+	}
+	if !e.q.Open() || !until.After(e.q.Expires) {
+		return nil
+	}
+	e.q.Expires = until.UTC()
+	s.persist(e.q)
+	return nil
+}
+
 // Cancel closes a question from the guest side (the asker gave up or took
 // it back, or the timeout passed) and tells hostd. reason is one of
 // Reasons, or "" (an expiry).
@@ -450,6 +476,25 @@ func (s *Store) Pending() []Question {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
 	return out
+}
+
+// OpenInWindow reports whether a question asked from that window is
+// still waiting for the owner. A trigger run's clock stops while one is:
+// a `repose-ask` at 02:00 waits for a person, and the run's timeout must
+// not kill the primitive that makes leaving an agent alone safe
+// (DECISIONS I-1256).
+func (s *Store) OpenInWindow(window string) bool {
+	if window == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.qs {
+		if e.q.Open() && e.q.Window == window {
+			return true
+		}
+	}
+	return false
 }
 
 // Sweep expires open questions past their deadline, closes those nobody

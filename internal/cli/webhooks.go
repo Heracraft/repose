@@ -157,8 +157,14 @@ func WebhooksListCmd(ctx context.Context, e *Env, projectArg string) error {
 	return tw.Flush()
 }
 
-// webhookTarget is the port and path as the user typed them.
+// webhookTarget is the port and path as the user typed them, or the
+// trigger that owns the route: a trigger's route is aimed at the
+// machine's own receiver, and printing that port would say a user could
+// change it (DECISIONS I-1250).
 func webhookTarget(r WebhookRoute) string {
+	if r.Trigger != "" {
+		return "trigger " + r.Trigger
+	}
 	if r.Path == "" || r.Path == "/" {
 		return ":" + strconv.Itoa(r.Port) + "/"
 	}

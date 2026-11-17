@@ -27,19 +27,21 @@ import (
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/idle"
+	"github.com/heracraft/repose/internal/api/lifecycle"
 	"github.com/heracraft/repose/internal/api/meter"
 	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/api/questions"
-	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/resume"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/snapshots"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
+	"github.com/heracraft/repose/internal/api/triggers"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
@@ -49,41 +51,45 @@ import (
 	"github.com/heracraft/repose/internal/obs"
 	"github.com/heracraft/repose/internal/obs/instrument"
 	obsmetrics "github.com/heracraft/repose/internal/obs/metrics"
+	"github.com/heracraft/repose/internal/triggerrun"
 
 	"github.com/google/uuid"
 )
 
 // App is the assembled process.
 type App struct {
-	cfg       Config
-	log       *slog.Logger
-	pool      *db.Pool
-	reg       *prometheus.Registry
-	m         *metrics.M
-	sec       *secrets.Store
-	ca        *ca.CA
-	hostMgr   *hostmgr.Server
-	cliLatest *clirelease.Latest // nil reads no release (I-626)
-	engine    *ops.Engine
-	logs      *buildlog.Store
-	events    *events.Ingest
-	meterIn   *meter.Ingest
-	abuse     *abuse.Guard
-	questions *questions.Service
-	say       *say.Service
-	resting   *resting.Service
-	resume    *resume.Resumer
-	outbox    *notify.Outbox
-	polar     *billing.Polar
-	billing   *billing.Service
-	overage   *billing.Overage
-	hooks     *billing.Webhooks
-	gate      *billing.Gate
-	seats     *waitlist.Service
-	bcfg      billing.Config
-	server    *httpapi.Server
-	version   string
-	otelOff   func(context.Context) error
+	cfg          Config
+	log          *slog.Logger
+	pool         *db.Pool
+	reg          *prometheus.Registry
+	m            *metrics.M
+	sec          *secrets.Store
+	ca           *ca.CA
+	hostMgr      *hostmgr.Server
+	cliLatest    *clirelease.Latest // nil reads no release (I-626)
+	engine       *ops.Engine
+	logs         *buildlog.Store
+	events       *events.Ingest
+	meterIn      *meter.Ingest
+	abuse        *abuse.Guard
+	questions    *questions.Service
+	say          *say.Service
+	routes       *webhooks.Store
+	triggers     *triggers.Store
+	triggerClock *triggers.Clock
+	resting      *resting.Service
+	resume       *resume.Resumer
+	outbox       *notify.Outbox
+	polar        *billing.Polar
+	billing      *billing.Service
+	overage      *billing.Overage
+	hooks        *billing.Webhooks
+	gate         *billing.Gate
+	seats        *waitlist.Service
+	bcfg         billing.Config
+	server       *httpapi.Server
+	version      string
+	otelOff      func(context.Context) error
 }
 
 // New wires the process. Nothing listens yet.
@@ -169,6 +175,20 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.events.SetQuestions(a.questions)
 	a.say = say.New(a.pool, a.hostMgr, log)
 	a.events.SetSays(a.say)
+	// Triggers (DECISIONS I-1248..I-1262). The store is shared with the
+	// http process through Deps; the clock and the worker run here, in
+	// the process that holds the host streams (I-1162).
+	a.routes = webhooks.New(a.pool, a.sec, cfg.WebhookHost)
+	a.triggers = triggers.New(a.pool, a.routes)
+	a.triggerClock = triggers.NewClock(a.triggers, a.hostMgr, log)
+	a.triggers.SetEvents(a.events)
+	a.triggers.SetMetrics(a.m)
+	a.triggers.SetDone(a.StopAfterRun)
+	a.events.SetTriggers(a.triggers)
+	// Every create, start and restore carries the set, which is what
+	// makes a guest that lost it come back with it (I-1248).
+	a.engine.SetTriggers(a.triggers)
+	a.events.SetTriggerDone(a.StopAfterRun)
 	// The rest rule and the wake (DECISIONS I-818). It sends straight to
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.
@@ -191,6 +211,12 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.events.SetResting(a.resting)
 	a.questions.Waker = a.resting
 	a.say.Waker = a.resting
+	a.triggerClock.Wake = a.resting
+	a.triggerClock.Start = a
+	// The push is this process's: only it holds a host's stream, so the
+	// http one notifies and the clock's listener does the sending
+	// (I-1162).
+	a.triggerClock.Push = a.pushTriggers
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -213,6 +239,9 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 				return
 			}
 			if a.say.OnResult(ctx, hostID, r) { // a `repose say` (I-1144)
+				return
+			}
+			if a.triggerClock.OnResult(ctx, r) { // a RunTrigger (I-1252)
 				return
 			}
 			a.engine.OnResult(ctx, hostID, r)
@@ -319,9 +348,17 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		ViewOrigins: viewOrigins(cfg.DashboardURL),
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
-		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),
-		CLILatest:     a.cliLatest.Version,
-		CLIOldest:     clirelease.Oldest,
+		WebhookRoutes: a.routes,
+		Triggers:      a.triggers,
+		// The http process cannot send a command (I-1162), so a changed
+		// set is pushed by the grpc one, which the store's own NOTIFY
+		// wakes. In API_MODE=all this is the same process and the push
+		// is a fast path; in API_MODE=http there is no stream to send
+		// on, and trying warned "host not connected" on every add about
+		// a set that had already arrived.
+		TriggerPush: triggerPush(a, cfg.Mode),
+		CLILatest:   a.cliLatest.Version,
+		CLIOldest:   clirelease.Oldest,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
 			return len(st.Pending), err
@@ -543,6 +580,7 @@ func (a *App) loops(ctx context.Context) {
 	}
 	expiry := snapshots.New(a.pool, blob, a.m, a.log)
 	go expiry.Run(ctx, 24*time.Hour)
+	go expiry.RunAgeGauge(ctx, time.Hour)
 	rollup := billing.NewRollup(a.pool, a.m, a.log)
 	// The burst allowance (DECISIONS I-1128). It reads usage_hours, so
 	// it runs beside the rollup that fills them and under the same lock.
@@ -567,6 +605,9 @@ func (a *App) loops(ctx context.Context) {
 	// The rest rule, every minute, on the replica that holds its own lock
 	// (I-818).
 	go a.resting.Run(ctx)
+	// The trigger clock: it claims the schedules that are due and sends
+	// every pending run, on the replica that holds its own lock (I-1252).
+	go a.triggerClock.Run(ctx)
 	// The abuse gauges (BusyUnattended, EgressHigh, held projects) are
 	// read-only aggregates; every replica exports them and the alerts take
 	// the max (DECISIONS I-239).
@@ -720,3 +761,198 @@ func (a *App) loops(ctx context.Context) {
 type markOnly struct{}
 
 func (markOnly) Delete(context.Context, string) error { return nil }
+
+// triggerPush is the fast path for a changed set, in the process that
+// holds the host's streams. In API_MODE=http there is none, and the
+// NOTIFY the store writes is the whole hand-off.
+func triggerPush(a *App, mode string) func(context.Context, uuid.UUID) {
+	if mode == "http" {
+		return nil
+	}
+	return func(ctx context.Context, projectID uuid.UUID) { a.pushTriggers(ctx, projectID) }
+}
+
+// pushTriggers sends the project's whole trigger set to its machine
+// (DECISIONS I-1248). A machine that is not running is not an error: the
+// api sends the set again at its next start, which is what makes a guest
+// that lost it come back with it.
+func (a *App) pushTriggers(ctx context.Context, projectID uuid.UUID) {
+	if a.triggers == nil {
+		return
+	}
+	var guestID, hostID *uuid.UUID
+	var state string
+	if err := a.pool.QueryRow(ctx,
+		`select state, guest_id, host_id from projects where id = $1`, projectID).
+		Scan(&state, &guestID, &hostID); err != nil {
+		return
+	}
+	if state != "running" || guestID == nil || hostID == nil {
+		return
+	}
+	set, err := a.triggers.ForGuest(ctx, projectID)
+	if err != nil {
+		a.log.Error("trigger set", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	cmd := &hostdv1.Command{
+		CommandId: store.NewID().String(),
+		Cmd: &hostdv1.Command_SetTriggers{SetTriggers: &hostdv1.SetTriggers{
+			GuestId: guestID.String(), Triggers: set,
+		}},
+	}
+	if err := a.hostMgr.Send(ctx, *hostID, cmd); err != nil {
+		// The set is state the api owns, not an event: the next start
+		// carries it, so a host that is away costs nothing but latency.
+		a.log.Warn("trigger set not pushed", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	a.writeTriggerPrompts(ctx, projectID, *guestID, *hostID)
+}
+
+// writeTriggerPrompts gives the machine every prompt a browser typed and
+// the api has not delivered yet, then forgets each one (DECISIONS
+// I-1266). The http process cannot reach a host (I-1162), so the text
+// waits on a row between the two processes; this is the end of that
+// hand-off, and the api holds no prompt once the machine has it. A text
+// that never arrives is swept after PromptHandoff and the trigger's
+// first fire says the prompt file is missing, which the user reads in
+// the runs list.
+//
+// The prompt is the user's own words: no log line carries it, or its
+// trigger's name, or the path it went to. The size is a number and is
+// allowed (OBSERVABILITY.md).
+func (a *App) writeTriggerPrompts(ctx context.Context, projectID, guestID, hostID uuid.UUID) {
+	pending, err := a.triggers.PendingPrompts(ctx, projectID)
+	if err != nil {
+		a.log.Error("trigger prompts", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	for _, p := range pending {
+		cmd := &hostdv1.Command{
+			CommandId: store.NewID().String(),
+			Cmd: &hostdv1.Command_WriteTriggerPrompt{WriteTriggerPrompt: &hostdv1.WriteTriggerPrompt{
+				GuestId: guestID.String(), Trigger: p.Trigger,
+				Workdir: p.Workdir, PromptPath: p.PromptPath, Text: []byte(p.Body),
+			}},
+		}
+		if err := a.hostMgr.Send(ctx, hostID, cmd); err != nil {
+			a.log.Warn("trigger prompt not written", "event", "trigger_run", "err", err.Error())
+			return
+		}
+		if err := a.triggers.ClearPrompt(ctx, projectID, p.Trigger); err != nil {
+			a.log.Error("trigger prompt not forgotten", "event", "trigger_run", "err", err.Error())
+		}
+		a.log.Info("trigger prompt sent", "event", "trigger_run", "bytes", len(p.Body))
+	}
+}
+
+// StartForTrigger starts a stopped machine for a fire on a trigger that
+// says --start (DECISIONS I-1252). It is the owner's own start path, so
+// the plan's memory, an abuse hold and billing refuse it exactly as they
+// refuse `repose start`, and the start is at most once per project per
+// webhooks.StartInterval, which is the rule a delivery already obeys
+// (I-1114). A refusal is not an error: the run's row records which.
+func (a *App) StartForTrigger(ctx context.Context, projectID uuid.UUID) (bool, string, error) {
+	p, err := store.GetProject(ctx, a.pool, projectID)
+	if err != nil {
+		return false, "", err
+	}
+	if p.DestroyedAt != nil || p.State != "stopped" {
+		return false, triggerrun.ReasonStopped, nil
+	}
+	claimed, err := a.routes.ClaimStart(ctx, projectID)
+	if err != nil {
+		return false, "", err
+	}
+	if !claimed {
+		// Another fire or a delivery started it within the window; the
+		// next pass of the clock sends the run.
+		return false, triggerrun.ReasonStopped, nil
+	}
+	u, err := store.GetUser(ctx, a.pool, p.UserID)
+	if err != nil {
+		return false, "", err
+	}
+	var res *lifecycle.Result
+	err = db.InTx(ctx, a.pool, func(tx db.Tx) error {
+		var ierr error
+		res, ierr = lifecycle.Start(ctx, tx, lifecycle.Deps{Pool: a.pool, Engine: a.engine, Gate: a.gate}, u, projectID, lifecycle.Options{})
+		return ierr
+	})
+	var ref *lifecycle.Refusal
+	if errors.As(err, &ref) {
+		reason := triggerrun.ReasonStopped
+		if ref.Code == "payment_required" || ref.Code == "plan_limit" {
+			reason = triggerrun.ReasonPlanLimit
+		}
+		a.log.Info("trigger start refused", "event", "trigger_run",
+			"project_id", projectID.String(), "reason", ref.Code)
+		return false, reason, nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	a.engine.Kick()
+	if _, err := store.Audit(ctx, a.pool, "api:trigger", "trigger_start", projectID.String(),
+		map[string]any{"op_id": res.OpID.String()}); err != nil {
+		return false, "", err
+	}
+	a.log.Info("a trigger started a machine", "event", "trigger_run",
+		"project_id", projectID.String(), "op_id", res.OpID.String())
+	return true, "", nil
+}
+
+// StopAfterRun stops the machine a finished run's own fire started, when
+// its trigger says --stop-after (DECISIONS I-1252). repose stops no
+// machine on its own; this is the flag the user set, so it is their
+// instruction. A machine somebody is attached to is left alone: a stop
+// under an SSH session or a tmux client would take the user's own work
+// with it.
+func (a *App) StopAfterRun(ctx context.Context, runID uuid.UUID) {
+	projectID, ok, err := a.triggers.StopAfter(ctx, runID)
+	if err != nil || !ok {
+		if err != nil {
+			a.log.Error("trigger stop-after", "event", "trigger_run", "err", err.Error())
+		}
+		return
+	}
+	busy, err := a.someoneAttached(ctx, projectID)
+	if err != nil || busy {
+		if busy {
+			a.log.Info("trigger stop-after held: somebody is attached", "event", "trigger_run",
+				"project_id", projectID.String())
+		}
+		return
+	}
+	p, err := store.GetProject(ctx, a.pool, projectID)
+	if err != nil || p.State != "running" {
+		return
+	}
+	// A stop is an op, as `repose stop` is: the engine owns it, and a
+	// project with an op already under way keeps that one.
+	if _, err := a.engine.Enqueue(ctx, a.pool, ops.NewOp{Kind: ops.KindStop, ProjectID: &projectID,
+		Params: map[string]any{"snapshot": true}, Phases: ops.PlanStop()}, false); err != nil {
+		a.log.Info("trigger stop-after did not stop the machine", "event", "trigger_run",
+			"project_id", projectID.String())
+		return
+	}
+	a.engine.Kick()
+	a.log.Info("a trigger stopped the machine it started", "event", "trigger_run",
+		"project_id", projectID.String())
+}
+
+// someoneAttached reports whether the project's latest sample saw an SSH
+// session or a tmux client, which is the same presence the notification
+// hold reads.
+func (a *App) someoneAttached(ctx context.Context, projectID uuid.UUID) (bool, error) {
+	var sessions, clients int
+	err := a.pool.QueryRow(ctx, `select coalesce(ssh_sessions, 0), coalesce(tmux_clients, 0)
+		from meter_samples where project_id = $1 order by ts desc limit 1`, projectID).Scan(&sessions, &clients)
+	if err != nil {
+		// No sample at all is nobody attached, which is the safe reading
+		// for a machine this fire started seconds ago.
+		return false, nil
+	}
+	return sessions > 0 || clients > 0, nil
+}

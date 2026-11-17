@@ -1,0 +1,18 @@
+{
+  "mcp": {
+    "servers": {
+      "linear": {
+        "command": [
+          "npx",
+          "-y",
+          "linear-mcp@1"
+        ],
+        "environment": {
+          "LINEAR_TOKEN": "{env:LINEAR_TOKEN}"
+        },
+        "type": "local"
+      }
+    }
+  },
+  "theme": "dark"
+}

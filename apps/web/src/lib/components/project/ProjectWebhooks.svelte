@@ -63,6 +63,10 @@
 	});
 
 	function target(r: WebhookRoute): string {
+		// A route a trigger owns reads as that trigger: it is aimed at the
+		// machine's own receiver, and a port here would say the user can
+		// change it (I-1250).
+		if (r.trigger) return `trigger ${r.trigger}`;
 		return `:${r.port}${r.path === '/' ? '/' : r.path}`;
 	}
 
@@ -322,7 +326,7 @@
 				</label>
 				{#if addError}<p class="hk-field-error">{addError}</p>{/if}
 				<div class="hk-confirm-actions">
-					<button type="submit" class="hk-btn-primary hk-btn-sm" disabled={saving}
+					<button type="submit" class="hk-btn hk-btn-sm" disabled={saving}
 						>{saving ? 'Adding…' : 'Add route'}</button
 					>
 					<button

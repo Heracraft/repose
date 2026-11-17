@@ -99,7 +99,7 @@ With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines ins
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
-Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it, apart from a leading `~` (below); for a pipeline, run a shell yourself. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
+Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it, apart from a leading `~` (below). One quoted word with spaces in it, `'cat ~/out/report.txt | head'`, is a command line and runs in the machine's shell, with its `~`, pipes and globs. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
 
 ```
 $ repose exec npm test
@@ -107,9 +107,10 @@ $ repose exec todo-app git log --oneline -3
 $ repose exec -it psql
 $ repose exec sh -c "npm run build && npm test"
 $ repose exec todo-app ls '~/out'
+$ repose exec todo-app 'cat ~/out/report.txt | head'
 ```
 
-A word that is `~` or starts with `~/` is the machine's home, `/home/dev`, as in `--workdir` and [`repose cp`](#repose-cp-r-src-dst). Quote it: unquoted, your own shell expands it to your laptop's home first, and that path isn't on the machine. repose says so when it sees one. For a literal tilde, run a shell yourself.
+A word that is `~` or starts with `~/` is the machine's home, `/home/dev`, as in `--workdir` and [`repose cp`](#repose-cp-src-dst). Quote it: unquoted, your own shell expands it to your laptop's home first, and that path isn't on the machine. repose says so when it sees one, with the command to type. For a literal tilde, run a shell yourself.
 
 `-i`/`--interactive` passes your input to the command; `-t`/`--tty` gives it a terminal. Without either, the command reads nothing. Pass both for anything interactive.
 
@@ -148,7 +149,7 @@ Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Need
 
 ### `repose browser [PROJECT]`
 
-Watch the agents' [browser](/docs/machine#browser) on the machine and take it over. It starts the machine's desktop view, forwards it in the background to laptop port 6080, or a free one when that's taken, and opens the link in your browser. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. Needs the machine running.
+Watch the agents' [browser](/docs/machine#browser) on the machine and take it over. It starts the machine's desktop view, forwards it in the background to laptop port 6080, or a free one when that's taken (each machine you watch gets its own port), and opens the link in your browser. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. Needs the machine running.
 
 | Flag           | What it does         |
 | -------------- | -------------------- |
@@ -229,9 +230,9 @@ FROM is `repose` for the [browser tools](/docs/machine#browser), `laptop` for a 
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--json` | The machine's answer as it sent it: a `servers` array with `name`, `from`, `agents` and `state`, the `checkout`, `needs`, `missing` and `skipped` behind STATE, and `problems` for the files left out. |
 
-### `repose cp [-r] SRC... DST`
+### `repose cp SRC... DST`
 
-Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` for this checkout's project. A relative path on the machine starts in its checkout, or in `/home/dev` on a machine with no checkout. `-r`/`--recursive` copies directories. Several sources go into the directory `DST`, so a shell glob works: `repose cp ./Fwd_* todo-app:/tmp/`. Sources sit on one side and name one project; anything else exits 2. Needs the machine running.
+Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` for this checkout's project. A relative path on the machine starts in its checkout, or in `/home/dev` on a machine with no checkout. A directory copies with its contents. Several sources go into the directory `DST`, so a shell glob works: `repose cp ./Fwd_* todo-app:/tmp/`. Sources sit on one side and name one project; anything else exits 2. Needs the machine running.
 
 ### `repose paste [PROJECT]`
 
@@ -318,13 +319,13 @@ Stop the machine and snapshot its disk, several projects at once with one line e
 | `-w`, `--window WINDOW` | Close one agent's window and leave the machine running. One PROJECT, and not with `--no-snapshot`, `--wait` or `--unused`.                                                               |
 | `--json`                | The project as JSON (`stopping`, or with `--wait` as the stop left it), an array for several projects or `--unused`; the text goes to stderr.                                                   |
 
-Before a machine goes it runs `git fetch repose` in every folder on this laptop whose `repose` remote is one of the machines being stopped, wherever you run it, and prints what came: `Fetched 3 commits on repose/main.`, or `Fetched 3 commits on repose/main in ~/code/api.` for a folder other than the one you're in. A fetch that fails is one line on stderr and the stop goes ahead. The stop line ends with what stays on the machine: `Stopping todo-app; 3 commits on main not fetched, 4 files not committed.` Commits are counted only where this laptop has a checkout of the project. The read of the machine gets 15 seconds, and the clause says when it didn't answer: `Stopping todo-app; checkout unknown (no ssh answer in 15 s).`, or `(ssh failed: Connection refused)`. A machine already stopping prints `todo-app is already stopping.`, a stopped one `todo-app is already stopped.`
+Nothing is fetched first: the stop's snapshot holds the machine's commits, and `git fetch repose` in a checkout brings them to your laptop whenever you want them. The stop line ends with what stays on the machine: `Stopping todo-app; 3 commits on main not fetched, 4 files not committed.` Commits are counted only where this laptop has a checkout of the project. The read of the machine gets 15 seconds, and the clause says when it didn't answer: `Stopping todo-app; checkout unknown (no ssh answer in 15 s).`, or `(ssh failed: Connection refused)`. A machine already stopping prints `todo-app is already stopping.`, a stopped one `todo-app is already stopped.`
 
 `-w WINDOW` closes that agent's window, a name or number as `repose ps` shows it, or on herdr an agent's name, where only its pane closes. It asks about a busy agent as a stop does. On tmux it also removes the window's [worktree](/docs/run-and-attach#several-agents-separate-trees) when nothing there would be lost, after the same fetch: `Closed claude-2 on todo-app and removed its worktree ~/todo-app-worktree-2.` The branch stays on the machine. Otherwise the worktree stays and the line names what kept it: `Closed claude-2 on todo-app; its worktree ~/todo-app-worktree-2 stays: worktree-2 is not fetched to this laptop.`
 
 ### `repose rm [PROJECT...]`
 
-Delete the machine and disk; a final snapshot is kept 30 days, and a [temporary machine](/docs/lifecycle#temporary-machines) keeps none. A running machine's commits are fetched first, as `stop` fetches them. Several projects get one question, which names any `working` or `needs input` agent. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits for the destroy. Run in the project's checkout, it removes the `repose` git remote.
+Delete the machine and disk; a final snapshot is kept 30 days, and a [temporary machine](/docs/lifecycle#temporary-machines) keeps none. Nothing is fetched first: run `git fetch repose` in your checkout before the `rm` if the machine has commits your laptop lacks (`repose status` counts them). Several projects get one question, which names any `working` or `needs input` agent. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits for the destroy. Run in the project's checkout, it removes the `repose` git remote.
 
 `repose rm PROJECT:CHECKOUT` removes only [a checkout `run --on` added](/docs/run-and-attach#several-repositories-on-one-machine): its folder and its worktrees on the machine, and the link from your laptop folder. Needs the machine running. Nothing is fetched first, and the question names what goes: `Remove ~/api from todo-app? It is deleted with its worktrees, uncommitted work and any commits you have not fetched or pushed. [y/N]` It exits 6 while a process works in one of those folders, and 2 for a `PROJECT:CHECKOUT` passed beside any other name.
 
@@ -444,6 +445,29 @@ An account secret is for every project, so `--global` beside a project exits 2.
 | `repose webhooks rm NAME...`       | Remove routes. Alias `remove`. Each URL answers 410 for 30 days. |
 
 A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
+
+## Triggers
+
+A [trigger](/docs/triggers) starts an agent when a webhook arrives or at a time you choose.
+
+| Command                            | What it does |
+| ---------------------------------- | ------------ |
+| `repose triggers add NAME`         | Add a trigger, or change the flags you pass on one that exists. `--route NAME` fires it on a delivery to that [webhook route](/docs/webhooks), which is created and aimed at the machine if it isn't there, and the command prints the URL and nothing else so it pipes. `--every SPEC` fires it on a schedule (the six shapes are below) and prints the spec, the zone it stored and the next fire. `-p`/`--prompt TEXT` is the prompt, written into the machine as `.repose/triggers/NAME.md`; `--prompt-file PATH` names a file that is already there, and `add` checks it is. `--workdir DIR` is the session's directory (`checkout`, `worktree-N`, `~/PATH`, `/PATH`), `--agent NAME` one of `claude`, `codex`, `opencode`, `gemini`, `pi`. `--timeout DURATION` kills the window when the run has worked that long (default `1h`, at most `24h`, and `0` means 24h; a run waiting for an answer to `repose-ask` is not working). `--concurrency N` is how many runs may work at once (1 to 3). `--gate CMD` runs CMD with the payload on stdin and skips the run on a non-zero exit, which is where a signature check goes. `--dedupe header:NAME` or `--dedupe json:FIELD` skips an event whose key was seen in 24 hours. `--no-notify` keeps a failed run from notifying you. `--start` lets a fire start a stopped machine, `--no-start` is the default, and `--stop-after` stops it again when the run ends if this trigger started it. `--catch-up` runs one missed fire when the machine comes back. `--json` prints the trigger. |
+| `repose triggers list [PROJECT]`   | The triggers with their door, their prompt, whether they're on, the last run and the next fire. Alias `ls`, and `repose triggers` alone. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose triggers runs [NAME]`      | What they did, newest first, each with the last 8 characters of its id, which is what `fire --run` takes: `done` with the agent's own summary, `failed`, `timeout`, or `skipped` with the reason. NAME keeps one trigger's runs, and `--all` is every project's runs in one listing with the machine each ran on: what your agents did last night. `-n`/`--tail N` is how many (1 to 200, default 20), `--json` for JSON, `-q`/`--quiet` for run ids. A machine that was stopped shows one row an hour with the number of events it turned away. |
+| `repose triggers fire NAME`        | Run it now, as a delivery or its schedule would; a trigger that is `off` still fires this way. `--payload FILE` hands the session that file as the event (`-` for stdin), `--run RUN` replays an earlier run's payload (a whole id, or the 8 characters `repose triggers runs` prints), `--wait` waits for the outcome and prints it, `--wait-for DURATION` is how long it follows the run (default 5m), `--dry-run` runs the gate alone and starts no agent. `--json` prints the run. |
+| `repose triggers url NAME`         | Print a route trigger's URL, and nothing else, so it pipes. A schedule has no URL. |
+| `repose triggers on NAME`          | Let it fire again, and arm its schedule from now, so a trigger that was off for a week fires at its next proper time. `--json` prints the trigger. |
+| `repose triggers off NAME`         | Keep it from firing. Its row, its route and its prompt file stay as they are. `--json` prints the trigger. |
+| `repose triggers rm NAME...`       | Remove them. Alias `remove`. A route the trigger made goes with it, unless you made that route yourself or another trigger uses it, and its URL then answers 410 for 30 days. The prompt file stays in the machine. |
+
+`repose status` gains a `triggers` row for a project that has one, with each trigger's last run and the next fire, and `repose ls`'s AGENTS cell counts a trigger's runs on their own (`claude: working, 1 trigger run`) so a machine you aren't using doesn't read as if you were.
+
+A schedule is one of `every 15m` (15m to 24h), `daily 03:00`, `weekdays 07:00`, `weekends 10:00`, `mon,thu 18:30` or `monthly 1 09:00`, with an optional zone at the end (`daily 03:00 UTC`, `weekdays 07:00 Europe/Berlin`). Without one it takes your laptop's zone and prints which, so `07:00` is your 07:00 all year.
+
+A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a bad spec, duration or dedupe key. A name the project does not have exits 1, and `-p` or `--payload` on a machine that is not running exits 5, since both write a file into it.
+
+A machine that runs [herdr](/docs/run-and-attach#herdr-instead-of-tmux) instead of tmux takes no triggers: a run is an agent in its own tmux window, so `triggers add` there exits 2 and says so.
 
 ## Configuration
 

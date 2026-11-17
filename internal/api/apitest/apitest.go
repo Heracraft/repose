@@ -32,6 +32,8 @@ import (
 	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/api/triggers"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/db/testdb"
 	fakehostd "github.com/heracraft/repose/internal/fakes/hostd"
@@ -65,6 +67,9 @@ type Harness struct {
 	// delivery worker runs here, as it does in the grpc process
 	// (I-1162).
 	Say *say.Service
+	// Triggers owns a project's triggers and their runs (I-1248). Its
+	// clock does not tick unless a test drives it.
+	Triggers *triggers.Store
 
 	engine       atomic.Pointer[ops.Engine]
 	saysCancel   context.CancelFunc
@@ -120,6 +125,11 @@ func New(t *testing.T, o Options) *Harness {
 	h.Say = say.New(pool, h.HostMgr, log)
 	h.Events.SetSays(h.Say)
 	h.Say.Waker = h.Resting
+	// Triggers, with the webhooks store a route trigger needs. Its
+	// clock is not running: a test that wants a fire drives the store
+	// itself, as it drives Questions.Once and Resting.Once.
+	h.Triggers = triggers.New(pool, webhooks.New(pool, h.Secrets, "hooks.test"))
+	h.Events.SetTriggers(h.Triggers)
 	h.HostMgr.SetHandlers(hostmgr.Handlers{
 		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
 			if f := h.helloHook.Load(); f != nil {

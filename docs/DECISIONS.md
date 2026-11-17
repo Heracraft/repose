@@ -12791,6 +12791,13 @@ and completed; `opencode2 run` through the service sent completed
 the guest's `opencode` moves to it and the version 1 half of the plugin
 stays for one release.
 
+*Amended by I-1050 (2026-11-04):* the guest's `opencode` is version 2 and
+version 1 is gone; `opencode2` is not shipped and a copy the reader
+installed under `~/.opencode` is removed once per home. The plugin keeps
+its version 1 half, and gains `session.execution.started` → `prompt`.
+repose's MCP layer moves to `~/.config/opencode/opencode.json`: version 2
+does not read the `config.json` this entry's design relied on.
+
 **I-482. herdr is documented, not packaged, and gets no boot unit.**
 (opencode-herdr, 2026-10-04; settles the herdr boot unit left open by
 the 2026-10-03 client report) The report proposed a guest user unit to
@@ -29842,6 +29849,284 @@ mutations fails it: lapsed rows numbered as waiting, `Overview` back on
 `Reserve`, `join` ignoring `lapsed_at`, and the expiry counted twice on
 rejoin.
 
+**I-1050. opencode on the machine is version 2, and version 1 is gone.**
+(opencode-2, 2026-11-04; amends I-481, whose *revisit when* said the
+guest's `opencode` moves to 2.x once upstream makes it the default
+channel.)
+
+The owner called it on 2026-11-04 after trying to move a guest forward by
+hand: `curl -fsSL https://opencode.ai/v2/install | bash` inside a guest
+installed 2.2.5 into `~/.opencode/bin` and `opencode --version` still
+answered `1.18.34`, because the machine's wrapped version 1 is on PATH and
+`~/.opencode/bin` is not. The platform pins the agent, so the only way to
+move it is to move the pin.
+
+Upstream has met half of I-481's condition. The CLI's `latest` channel is
+version 2 (`opencode.ai/update/api/latest/cli/npm` answers 2.2.5,
+published 2026-10-30, package `@opencode/cli`), and `opencode.ai/install`
+says in its own comment that it installs version 1 only; the GitHub
+"latest" release is still 1.19.5 (2026-10-28). Waiting for the other half
+keeps every guest on a line upstream has stopped adding to, so the pin
+moves now.
+
+**The package.** Version 2 ships as per-platform npm packages, not GitHub
+release assets: `@opencode/cli-linux-x64`, one bun-compiled, dynamically
+linked binary at `package/bin/opencode`. A guest is glibc on an Intel host
+(DESIGN §4), so the plain `linux-x64` package is the one it wants, not the
+`-baseline` (no avx2) or `-musl` variant its installer would pick
+elsewhere. `scripts/bump-agents.sh` reads the scope from the channel's own
+metadata, which has moved once already (`@opencode-ai` → `@opencode`).
+`opencode.nix` refuses a `versions.json` that leaves version 2's line, so
+a bump cannot quietly undo this entry. 242 MB in the closure, against
+about 200 MB for version 1.
+
+**No `opencode2`.** While version 1 was the machine's, `/docs/agents` told
+the reader to install version 2 beside it and link it as `opencode2`.
+Names are fixed (CLAUDE.md), and a second name for the machine's opencode
+is how half its uses stop being greppable, so `opencode2` is not shipped.
+`repose-agent-setup opencode` removes `~/.opencode/bin/opencode` once per
+home, with the `opencode2` shim beside it and the dangling
+`~/.local/bin/opencode2` link, and says so on stderr: it updates itself on
+its own channel, and its installer puts `~/.opencode/bin` on PATH ahead of
+the wrapper wherever a shell profile exists. Only opencode's own install
+directory is touched; its config, sessions and logins are elsewhere. This
+is `remove_npm_gemini`'s shape (I-543) for the same failure.
+
+**The prompt hook comes back.** I-690 left OpenCode 2 with no prompt
+event, so an opencode would have shown `running` for its whole life and a
+question it asked would have stayed open until answered from the laptop.
+Version 2 has `session.execution.started`, which the plugin now maps to
+`prompt` beside the `session.execution.succeeded`/`failed` mapping I-481
+added. It is a turn start, not a user message, so a turn a command or a
+plugin starts counts as a prompt too; marking the agent working and
+closing its open questions is right either way.
+
+**MCP moved file, and would have failed silently.** repose wrote the
+laptop's forwarded servers to `~/.config/opencode/config.json` `mcp`
+(I-555), chosen because version 1 loaded it *beneath* the reader's
+`opencode.json`, so the reader's entry won without repose having to reason
+about it. Version 2 does not read that file at all. Checked on the built
+2.2.5 with `opencode debug config`, which lists the sources it loaded:
+with both files present it reported `~/.config/opencode/opencode.json` and
+not `config.json`. Shipping version 2 without this would have taken every
+platform and forwarded MCP server away from opencode with no error
+anywhere -- the shape of 2026-11-03's findings again, and of
+`silent wrong answers`.
+
+So repose merges into `~/.config/opencode/opencode.json` and tells its own
+entries apart by the record, as it already does for Codex's
+`~/.codex/config.toml`. Version 2 loads both `opencode.json` and
+`opencode.jsonc` (checked), so a name the reader defines in the `.jsonc`,
+which a comment makes unsafe to rewrite, still wins and repose renders
+none of it. The `config.json` an earlier base wrote is left exactly where
+it is: nothing reads it, `repose mcp` no longer reports from it, and
+removing entries from a file the platform has no further reason to touch
+buys tidiness at the cost of writing in a reader's home.
+
+**The key moved too, and `debug config` nearly hid it.** This entry first
+said version 1's `mcp.NAME` spelling was still accepted, on the evidence
+that `opencode debug config` echoes such a file back with the name
+normalised under `mcp.servers`. That was the wrong reading of the right
+output. Version 2's own documentation says it plainly -- "give it a unique
+name under `mcp.servers`. V2 does not place server names directly under
+`mcp`" -- and the off switch is `disabled: true`, not version 1's
+`enabled: false`. `debug config` reports what the loader parsed, not what
+the MCP subsystem will connect, so believing it would have shipped a
+platform layer opencode reads and ignores: the same silent failure as the
+file move, found only because the guest VM test asked a second question of
+the same build. Every write has to move to `mcp.servers.NAME` with
+`disabled`, in repose's user layer and in the platform's
+`/etc/opencode/opencode.json` both, and `/docs/agents`'s off-switch
+example with them.
+
+**Version 2 inverted the precedence, which breaks I-553's off switch.**
+This is the second blocker and the deeper one. I-553 put the platform's
+MCP servers in `/etc/opencode/opencode.json` and left `enabled` out of
+them precisely so a reader's `enabled: false` in
+`~/.config/opencode/opencode.json` would turn one off: under version 1 the
+reader's file won. Version 2's documented order is the other way round --
+"OpenCode applies these files from lowest to highest precedence:
+`~/.config/opencode/opencode.json`, [project], [package],
+`/etc/opencode/opencode.json` ... The system config overrides all of
+them" -- and a higher layer "replaces the entire server object with the
+same name". So while the platform's servers live in `/etc/opencode`, a
+reader on version 2 has **no** way to turn one off: not the global config,
+not a project config, and macOS managed preferences are the only thing
+above the system directory.
+
+That is a user-visible promise (`/docs/agents`, "its own switch turns one
+off") that version 2 takes away, and the fix was a choice this entry did
+not get to make: either the platform's MCP servers move out of
+`/etc/opencode` into the reader's own file, the way Codex's already do for
+the same reason, or the switch goes and the docs say the platform's
+servers cannot be turned off on opencode.
+
+*Resolved 2026-11-16, the first way.* The platform servers go in the
+reader's `~/.config/opencode/opencode.json` `mcp.servers`, written by
+`repose-mcp sync opencode` beside the laptop's and the forwarded ones,
+and `/etc/opencode/opencode.json` carries `instructions` only. The sync
+tells its entries apart by the record (`rendered.json`), as it does for
+Codex's `~/.codex/config.toml`: an entry equal to what repose rendered is
+repose's and follows the registry; one the reader changed in any way,
+`"disabled": true` included, is the reader's and is never rewritten.
+That is the off switch version 2 actually has, and the `guest-base`
+subtest asserts it: setup writes both platform servers into a fresh home,
+the reader marks `playwright` disabled, the next setup leaves the file
+byte for byte, opencode's own server reports `playwright` `disabled` and
+`chrome-devtools` `connected`, and `repose-mcp status` no longer counts
+opencode among `playwright`'s agents. `/etc/opencode` is gone from
+`repose-mcp status`'s opencode layers too.
+
+**And the probe the test used is gone too.** `opencode mcp list` on 2.2.5
+answers "No MCP servers configured" for every server configured by hand --
+both spellings, global and project config, a real stdio MCP server, with
+and without `--standalone`, on this box and on the guest -- while
+`opencode debug config` and `GET /api/config` on the same home show the
+file loaded and `GET /api/mcp` returns `data: []`. So the server parses
+the config and instantiates nothing outside a session, and `opencode mcp
+add` (which writes the entry itself) is how the docs reach it.
+
+*Resolved 2026-11-16.* Found on the built 2.2.5 here: its server's MCP
+subsystem starts on the first `POST /api/experimental/mcp/NAME/connect`
+(which answers "MCP server not found" that first time), after which `GET
+/api/mcp` lists every configured server with a status -- `connected`,
+`failed` with the process's exit, or `disabled` -- while `mcp list` on the
+same server still says "No MCP servers configured". So the tests' probe
+is opencode's own server: `opencode serve --port 4097` under the home in
+question with `OPENCODE_SERVER_PASSWORD` set (without it the server
+prints a random password and `/api/*` answers 401), one connect call,
+then `/api/mcp`. `oc_mcp()` in `guest-base` does that for the off switch,
+the laptop's `probe` with its secret (`connected` means the launcher
+filled it) and the forwarded `fwprobe`, present and away.
+
+Two more facts about version 2's MCP, from `guest-agent-guide` with the
+servers in the reader's file: the background service starts its MCP
+servers lazily, so the first request of a fresh service goes to the model
+before the browser servers have connected (the test runs the agent against
+a service a first run has started, which is a machine's normal state);
+and the tools reach the model in code mode, as
+`tools.playwright.browser_navigate({...})` in the `execute` tool's text,
+not as tools of their own as version 1 sent them.
+
+**Web search changed hands.** `OPENCODE_ENABLE_EXA`, which version 1 took
+and `/docs/agents` told the reader to set as a secret, does not exist in
+version 2 (the string is absent from the binary). Version 2 searches
+through one of five providers on the reader's own key -- `EXA_API_KEY`,
+`FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`, `TAVILY_API_KEY`,
+`TINYFISH_API_KEY` -- each of which is a named secret like any other.
+`/docs/agents` and the machine guide say that instead; the free
+Exa-through-opencode's-endpoint search is gone and the docs no longer
+promise it.
+
+*Built and checked here:* `nix build ./nix#opencode.unwrapped`,
+`./nix#opencode` and `./nix#guest-system`, and `env -i HOME=$(mktemp -d)
+opencode --version` → `opencode v2.2.5`; the `opencode debug config` and
+`opencode mcp list` findings above, on that build; `go test
+./internal/mcpreg ./internal/guestd/... ./internal/mcpshim
+./test/supplychain` and `go test ./internal/cli` (473 s; one unrelated
+flake, `TestLaptopPortTakenOnAnyAddress`, which passes 5/5 in isolation on
+this branch and on `main`).
+
+*Run on a real guest, which found two of the breaks above:* the
+`guest-base` VM test booted a guest with 2.2.5. It proved the
+`~/.opencode` removal and its `opencode2` link, and then failed twice,
+each time on something no build could have told us: `opencode debug
+config` now prints the list of sources it loaded rather than the merged
+config (`TypeError: list indices must be integers or slices, not str`),
+and version 2's background service binds `127.0.0.1:49374` machine-wide,
+so a subtest running opencode under a second `HOME` got "Managed service
+port 49374 on 127.0.0.1 is already in use" (`--standalone` is the way
+round it, confirmed here). The second of those is a fact about the guest,
+not the test: one service per machine, and it holds the config it started
+with, so a `repose sync` that renders new MCP servers does not reach a
+running opencode until `opencode service restart`. Whether
+to restart it when something changed was left open: a restart is cheap
+for sessions, which live in `opencode.db`, but it is still a thing done
+to a running agent.
+
+*Resolved 2026-11-16: restart, from the sync.* Without it a forwarded
+server, or one the laptop added, reaches no opencode at all -- not the
+running one, and not a new `opencode` either, since every TUI on the
+machine attaches to the one service and the service keeps the config it
+started with -- until the user learns `opencode service restart`. So
+`repose-mcp sync opencode` runs `opencode service restart` when, and
+only when, it changed `~/.config/opencode/opencode.json` and `opencode
+service status` reports a service (anything but `stopped`); a machine
+without opencode on PATH is left alone. It lives in the sync and not in
+`repose-agent-setup` because both paths that render a new server go
+through the sync: the setup before an agent start, and `repose-mcp hold`
+when a forward arrives or `--remove` takes one away. Checked here on the
+built 2.2.5: the restart takes 0.3 s and replaces the server process,
+and a TUI started before it is still there afterwards, prompt and all.
+What a running agent loses is the turn in flight, which a changed server
+set is a fair reason to lose.
+
+**The base closure had no room for it, until I-1056.** `nix build
+./nix#checks.x86_64-linux.guest-closure-size` failed on this branch on
+2026-11-04. Measured on this box that day, both from a full
+`guest-system` build:
+
+| | bytes | against the 6 GiB limit |
+|---|---|---|
+| `main` (3d42fce) | 6,438,214,952 | 4.04 MiB **under** |
+| this branch | 6,505,297,072 | 59.94 MiB **over** |
+
+opencode is the whole difference: `nix path-info -S` is 243,040,536 for
+1.18.34 and 310,120,776 for 2.2.5, and the closure grew by 67,082,120 --
+the same number. Nothing in the packaging shaves it: `dontStrip` is set
+because the binary is a bun single-file executable with its payload
+appended, and stripping it by hand here saved 49,472 bytes of 252,713,136
+(0.02%), so the size is the embedded runtime and not symbols.
+
+The limit is 02 §7 ("a bigger base means every host's store grows and
+every first-boot copy of the closure metadata takes longer"), so raising
+it is the owner's call, not this branch's. Two ways out, with their
+numbers from the same build:
+
+- *Raise the limit.* What it protects is host store growth and first-boot
+  metadata time, and the hosts' store is on its own volume. 7 GiB would
+  give 500 MiB of headroom.
+- *Cut the browsers.* The guest carries two Chromiums:
+  `chromium-unwrapped` 701.7 MB for the desktop browser and
+  `playwright-chromium` 390.8 MB plus
+  `playwright-chromium-headless-shell` 260.2 MB for playwright-mcp, which
+  pins its own build (I-246 overrides the browser set already). About
+  650 MB if they can be made one, which is ten times what this entry
+  needs and a workstream of its own.
+
+The owner took the first (I-1056, 7 GiB, released). With `main` of
+2026-11-16 merged in, the check passes here: `guest system closure:
+6505399688 bytes (limit 7516192768)`, 964 MiB under.
+
+**The finding is bigger than this branch.** `main` sits 4 MiB under a
+limit the base build fails above, so the next bump of any agent breaks it:
+claude-code alone moves most days, and `scripts/bump-agents.sh` has no
+size check of its own -- it builds the package and runs `--version`, and
+the closure is only measured by `nix flake check`, which is where CI finds
+out. A 5 MB claude-code release would have done this to `main` with no
+opencode involved. Whichever way the limit goes, the bump script or its
+PR check should measure the closure, so the number appears in the pull
+request that causes it.
+
+*Not checked here, and the live note on the queue entry says so:* this box
+is an Azure AMD size and the nix work is for remote environments, so
+nothing below ran in a guest. After the base publish, on a real guest:
+`opencode --version` is 2.2.5 and `~/.opencode` is gone with its message;
+the plugin at `~/.config/opencode/plugins/repose.js` loads in version 2's
+background service and `session.execution.started` reaches guestd as a
+`prompt` (`repose ps` shows `working`, then `idle`); a permission ask
+still shows `needs_input`; `repose mcp list` reports the platform servers
+and a forwarded one, and the agent can call one; `repose run --agent
+opencode -p "..."` still submits the prompt, since the CLI passes it as
+`--prompt=PROMPT` and version 2's flag parser is not version 1's yargs
+(the flag is still in version 2's `--help`); and whether the laptop's
+`auth.json` reaches version 2 at all -- it keeps logins in
+`~/.local/share/opencode/opencode.db` (checked here: a first start creates
+it), and a version 1 `auth.json` holding an Anthropic API key left
+`opencode auth list` saying "No authenticated integrations", which may
+only mean that providers and integrations are different lists in version
+2. If a copied login does not reach it, `/docs/secrets` and `/docs/agents`
+say to log in on the machine instead, as they already do for Gemini.
 **I-1046. A project's name before the command is answered as the words the
 other way round, not as an unknown command.** (exec-paths, 2026-11-04.)
 
@@ -33799,6 +34084,50 @@ that it was a choice. No cookie banner was built (owner): consent for
 analytics cookies under UK and EU law is an open question for the owner
 and their lawyer, not something this branch settles.
 
+**I-1220. Two acts the dashboard was missing, and three the page already
+answered (dash-acts, 2026-11-16).** The owner named five acts whose api
+route exists and whose dashboard caller did not: say to an agent, a
+webhook route's deliveries, an op's build log, extend a temporary
+machine, revoke every SSH certificate. Two ship, three are cut because
+what the user wants from them is already on screen. **Shipped.** A
+message for an agent (`repose say`, I-1144) opens from each row of the
+Agents card on a project's Overview and sends to that row's window, so
+the api's "several agents are running" refusal is unreachable from the
+browser. The case that pays for it is an agent in `needs_input` without
+a `repose-ask` question, which until now had no door from the dashboard
+at all. The words live in `apps/web/src/lib/say.ts` rather than at the
+call site, because `internal/api/http/say.go` passes the machine's own
+refusal through on purpose where it names the agent windows, and the
+machine's sentence is `"%d agents are running: %s. Name one with
+--agent"` (`internal/guestd/sample/say.go`): a toast of `err.message`
+would show a browser user a CLI flag. `say.test.ts` pins that, and fails
+the day the api stops passing it through. `toastApiError` could not be
+used for the refusals this feature owns, because `errorText` prefers the
+api's own message for every code but `internal`; the call site asks
+`sayRefusal(err)` first and falls back to `toastApiError` for anything
+else. No confirm: I-765's rule is that the dashboard asks before it ends
+an agent's turn, which is Stop, and I-1144 admits a message mid-turn by
+design. **Revoke certificates** is a section of Settings · General,
+before the account delete so the irreversible act stays last, with the
+same typed-handle `ConfirmType` the delete uses. It is the one act here
+with no other door: `repose logout` does the same, and on a lost laptop
+the CLI went with the laptop. **Cut.** The webhook table on the Config
+tab already prints the last delivery's status and time from
+`last_delivery`, and a 20-row history is a debugging surface for a niche
+feature. The build log already streams on the Config tab through
+`opLogUrl` and `EventSource`; api.md scopes that route to a build op's
+Nix stderr, which is the apply the tab already covers. Keep already
+ships, and `PATCH expires_in_s` can only move an existing timer
+(`internal/api/http/projects.go` refuses it when `expires_at` is null),
+so "extend by a duration" would have been a select nobody opens on a
+phone with an hour left. **Two divergences found on the way.** The fake
+api answered `POST /certs/revoke` with the list of serials while the api
+answers `{revoked: n}`; the fake now answers the count and api.md states
+the result, which it never did. The heading `agents#speak-to-it-from-
+your-laptop` named the device rather than the act, which stopped being
+true the moment the dashboard could send one; it is now
+`agents#send-it-a-message`, and `internal/cli/agent_guide_test.go`'s
+skip map and `notifications.md`'s link move with it.
 **I-1216. The dashboard watches the machine's browser: a relay on the
 edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and
 the page draws noVNC itself (browser-view, 2026-11-16).** Amends I-292,
@@ -34016,3 +34345,979 @@ these counters.
 measure it, and it would bill a user for watching their own machine); an
 hourly per-user byte bank in the shape of `webhook_egress` (machinery
 for a stream that is already capped per ticket and per connection).
+**I-1228. hostd does not dial a resting guest, and a wake whose session
+ends under it tries the next one (wake-backlog, 2026-11-16).** At 03:00
+on 2026-11-16 the scheduled snapshot woke the three resting guests on
+host-02 and all three wakes failed with `guestd did not answer after the
+resume: vsockrpc: EOF`, within a second of a `vm.resume` that worked;
+GuestWakeFailed fired, the three snapshots failed, and each guest's
+journal held a burst of about 1,650 `replacing the previous hostd
+connection` lines in that second, followed by `notification queue is
+full`. The guests were fine a moment later. The cause is in the
+monitor's dial loop. hostd had been restarted at 00:38:32 by the
+r20261115-2 deploy with the three guests already resting (reconcile
+logged `guest is still resting`), so each monitor started with no
+session and dialled: at `GuestdBootRetry`, 50 ms, since it had never
+connected, with a 5 s handshake deadline per dial. A connect to a paused
+VM is not refused. Cloud Hypervisor's `vm.pause` parks the vsock
+device's epoll thread with the vCPUs (`epoll_helper.rs`, `thread::park`
+until unpause), so the unix connect completes in the kernel and the
+`CONNECT 5000` line sits in `vsock.sock`'s backlog, which `ss -xl` shows
+as 4096 deep, while hostd's side times out and closes. 8,502 s at one
+dial every 5.05 s is about 1,680 queued connects, which is the count in
+the guest's journal. At the resume the device thread drained them in
+order: the muxer read each CONNECT line from its closed socket, opened a
+guest-side connection, and guestd's `serve` replaced the previous
+connection with it, then saw its EOF. hostd's live dial was the last in
+that queue, and the wake's Exec and Ping ran on a session guestd closed
+underneath it a moment later. I-818 built the monitor on the assumption
+that "a paused guest's session stays open, so nothing there needs
+suppressing" (18-idle-pause.md), which holds for a pause with hostd
+running through it and does not for a hostd restart, or any session loss,
+during the rest; `checkLost` had the suppression for the mark and the
+dial did not.
+
+Two changes in hostd, both in the guest manager. The monitor's retry
+does nothing while `restingMark` is set: the timer turns at
+`GuestdRetry` and `lostAt` moves forward, as `checkLost` already did.
+When the wake clears the mark it pokes the monitor, which dials at once
+when it has no session, so a wake after a hostd restart does not spend
+up to a retry of its 5 s `WakeGuestdWait` waiting for the timer; the
+poke is a buffered channel per monitor, taken under the manager's lock
+from the wake, never from the monitor, so Close's wait on the monitors
+cannot meet it. And the wake's guest side, the clock step and the Ping,
+is one function on one session; when it fails and that session's `Done`
+is closed, the wake logs `guestd session ended during the wake; trying
+the next` and takes the next session with `awaitSession` once, within
+another `WakeGuestdWait`, before it counts the failure. A timeout on a
+live session is still a failed wake. The guest side is left as it is:
+guestd's "one connection at a time, the new one replaces the old" is
+what a hostd restart needs, and a replacement that waits for the new
+connection's first frame would split the notification queue across two
+writers for the interval; the host is where the dead connections are
+made, so the host is where they stop. Reconcile records the mark before
+it starts the monitor, so a restarted hostd makes no first dial either.
+`TestNoDialWhileResting` restarts the manager under a resting guest with
+a counting dialer and sees no dial in 600 ms, then a wake that dials and
+answers inside 1.5 s with a 3 s `GuestdRetry`; it fails on the old code
+with `1 dials to a resting guest`. `TestWakeSurvivesAReplacedSession`
+has the fake guestd drop the connection on the clock step's Exec and
+expects the wake to succeed with no `guest_wake_failed_total`; on the
+old code it fails with the incident's own error string. `vsock-guestd.md`
+and the RUNBOOK's GuestWakeFailed entry carry the behaviour. What is not
+done: the user-facing side of a failed wake is unchanged (the gateway's
+"frozen and did not wake" and the api's retry), and a dial in flight at
+the instant of a pause can still leave one dead connect in the backlog,
+which the wake's second try covers.
+**I-1230. The rest rule's CPU line is 15 s a minute, a quarter of a
+core.** (rest-cpu-15, 2026-11-16. Amends I-818.)
+
+I-818 took the proposal's 6 s line (0.10 of a core) because 3 s failed as
+soon as one `.claude-wrapped` sat at its prompt on a small guest. The
+live fleet is not that machine. Fourteen days of `meter_samples` to
+2026-11-11 (70,680 running minutes with `guestd_ok`, 23 projects, all of
+them the owner's accounts and the workshop guests) read, for the minutes
+every other term called idle:
+
+| class | idle minutes | under 6 s | under 15 s | under 30 s | p50 |
+|---|---|---|---|---|---|
+| small | 1,439 | 100% | 100% | 100% | 0.0 s |
+| large | 21,788 | 69% | 93% | 98% | 0.0 s |
+| xl | 20,584 | 18% | 52% | 92% | 14.2 s |
+
+Half of all idle minutes sat between 6 and 30 s, and 63 percent of those
+had a container running. A `large` with one idle Claude and one
+container read 8.6 s at p50; an `xl` with one idle Claude and nothing
+else 10.4 s. The share of running minutes that could rest was 25.9% at
+6 s, 35.7% at 15 s, 47.2% at 30 s and 49.3% with no CPU term at all;
+the proposal had predicted 47.7% at 6 s from a sample of bare machines.
+`verista`, an `xl`, had never had one quiet minute since it started on
+2026-11-02.
+
+What the 6 s line held awake was overhead, not work. On the three `xl`
+guests that never froze (`verista`, `kanali`, `shule-id`): five orphaned
+Claude Code shell loops seven days old running `pgrep` then `sleep` for
+ever, docker healthchecks every 2 s each exec'ing runc over virtiofs,
+two to nine Claude sessions idle at their prompts, and a bash loop
+calling `ss` 1.6 times a second. Under all of it the hypervisor's own
+exits -- virtiofs completions at 250 a second, timer interrupts at 300 a
+second per vCPU, IPIs at 500 to 800 a second, on a guest doing nothing
+-- make the host-measured `cpu_ns` 1.4 to 1.9 times what the guest's own
+`/proc/stat` accounts for (verista 30 s against 13.5 s, kanali 18
+against 13, shule-id 59 against 35). That overhead scales with vCPUs,
+and 6 s did not.
+
+**The line is 15 s** (`resting.CPUNsPerSample`). A `large` with a Claude
+and a container rests, an `xl` with a Claude rests, and anything above a
+quarter of a core -- a build, a test run, a transcode, a browser being
+driven -- stays awake, which is the term's job: the ssh, tmux and agent
+terms carry the rule (20% of minutes with a human attached were under
+6 s and 66% under 30 s, so CPU never told who was there), and CPU is
+only there to catch work the signals miss.
+
+**Not 30 s**, which would have doubled the share, because a half-core
+job would then be paused mid-flight with the `frozen` marker as its only
+notice, the data that says the band holds nothing but overhead is all
+the owner's own machines, and the saving today is CPU alone: memory is
+not reclaimed (the proposal's swap step is still future work, I-818) and
+host-02 ran at load 2.3 on 64 threads with 5 guests, so freezing verista
+freed half a thread. Revisit 30 s when memory reclaim ships and there is
+tenant data that is not the owner's.
+
+**Not a guest-side measure.** Reading the guest's own CPU through guestd
+would strip the exit overhead, but I-818 already ruled out a new guestd
+request for the rule (version negotiation the code does not have, and a
+base rebuild on every machine before the rule reaches it).
+
+**The burners are a separate fix**, the I-930 way (Chromium at 15 s a
+minute was fixed at source, not by moving the line): guestd's own
+polling (about 250 `stat` and `open` calls a second), the healthcheck
+exec path through virtiofs, the guest kernel at `HZ=1000`, and Claude
+Code's background-task waiters outliving their session. None of them is
+in this branch.
+
+Nothing a user reads changes: `lifecycle.md` says "next to no CPU or
+network" and never carried the figure. `docs/features/stop-start-destroy.md`
+and `docs/workstreams/18-idle-pause.md` carry the new one.
+
+**I-1232. `repose exec` runs one quoted word with spaces in the machine's
+shell, and the laptop-path note shows the command to type.** (catchall,
+2026-11-16; amends I-275 and I-1048.)
+
+The owner, 2026-11-16, against a machine whose home is `/home/dev`:
+`repose exec notebook cat ~/ritual/ritual-paper.txt` (the laptop's shell
+expanded the `~`; I-1048's note said "write '~/ritual/ritual-paper.txt',
+quoted"), then `cat " ~/ritual/ritual-paper.txt"` (a space inside the
+quotes, from the note's own spelling), then `"cat ~/ritual/ritual-paper.txt"`
+and `'cat ~/ritual/ritual-paper.txt'`, both answered `bash: line 11:
+/home/dev/cat ~/ritual/ritual-paper.txt: No such file or directory`:
+I-275 quotes every word, so the one word became a program name. Five
+commands, no file read.
+
+Decided:
+- A command of exactly one word that has a space, tab or newline in it is
+  run as `sh -c WORD` on the machine (`execShellWords`). The only way such
+  a word reaches repose is a reader quoting a command line, and docker
+  exec's answer to it, a program called "cat ~/x", is a program nobody
+  has. The machine's shell then expands the `~`, the pipe and the glob
+  the quotes were asking for. Every other shape is unchanged: several
+  words still pass as they are, a single word with no space is still the
+  program.
+- The note for a word under this computer's home shows the whole
+  command, with that word quoted: `repose exec notebook cat
+  '~/ritual/paper.txt'`. The rule alone was read three ways; the command
+  is read one way.
+
+Rejected: running every command through a shell. It would change what
+`repose exec grep 'a b' file` means, which I-275 and I-411 settled.
+
+*Checked:* `TestExecOneQuotedWordRunsInTheMachinesShell` (the script ends
+in `exec 'sh' '-c' 'cat ~/x | head'` for one word and in `exec 'ls'
+"$HOME"/'out'` for two) and `TestLaptopHomeNoteShowsTheCommandToType`
+(internal/cli). Docs: cli.md, features/run-and-attach.md.
+
+**I-1234. `repose cp` copies a directory without `-r`.** (catchall,
+2026-11-16; amends I-201.)
+
+The owner, 2026-11-16: `repose cp parth-event:/home/dev/posters/.../export
+.` answered `scp: download ...: not a regular file`; the retry with `/*`
+was refused by fish as a wildcard with no match; the third try quoted the
+glob and worked. "This pattern keeps happening." scp's default of
+refusing a directory serves nothing a reader of `repose cp` means by
+naming one, so scp always gets `-r`. A regular file copies as before.
+`-r`/`--recursive` is still accepted, hidden, and changes nothing; it
+leaves in a release (`hiddenCommands` in docs_test.go says so).
+
+*Checked:* `TestCpBothWays` copies `:export` with a nested file and no
+`-r`; without the `-r` CpCmd adds, scp answers "not a regular file" and
+nothing lands. Docs: cli.md.
+
+**I-1236. `repose config --global add` puts the package list in when
+machine.nix has none.** (catchall, 2026-11-16; amends I-622.)
+
+The owner, 2026-11-16: `repose config --global add litellm` answered
+`~/.config/repose/machine.nix has no \`home.packages = with pkgs; [ ...
+];\` list to add; change it with \`repose config --global edit\``. The
+docs tell a reader to empty the file to remove the module, and a file
+written by hand or on the dashboard need not carry the template's list;
+`add` is then the command that cannot do the one thing it is for.
+
+Decided: on an add with no list, an empty file gets the template with the
+names in it; a module of the `{ args }: { ... }` shape gets `home.packages
+= with pkgs; [ ... ];` as the first attribute of its body, with `pkgs`
+added to the arguments when they lack it (`{ config, ... }:` becomes `{
+pkgs, config, ... }:`). A file that is neither is refused as before.
+`remove` never invents a list.
+
+*Checked:* `TestGlobalConfigCommands` (internal/cli): a module without a
+list and without `pkgs` gets both; an emptied file gets the template; a
+bare attribute set is refused with the pointer to `edit`; `remove` on a
+file with no list exits 2. Docs: features/config.md, /docs/config.
+
+**I-1238. `repose browser` tells one machine's viewer from another's.**
+(catchall, 2026-11-16; amends I-292.)
+
+The owner, 2026-11-16: `repose browser job` printed
+`http://localhost:6080/#p=...` twice and the page, titled "recruiting ·
+the agent's browser", said "The password was refused". The CLI had a
+record for job at 6080 from an earlier forward that had died; recruiting's
+forward had since taken 6080; and the record's check was `/healthz`,
+which every guest's viewer answers with the same words, so the CLI reused
+recruiting's forward with job's password.
+
+Decided: the recorded port is reused only when its `/project.json`, the
+file the guest writes into the viewer's web root at every viewer start
+(I-198), names this project, or does not say (a guest from before that
+file). A port where another project's viewer answers is that project's
+forward: it keeps running, this project's record is forgotten, and the
+project gets a port of its own (6081 and up, with the "port 6080 is
+taken" line of I-199), so both tabs work.
+
+Rejected: killing the other forward and taking 6080, which the owner
+suggested. Two machines watched at once is the case that found this, and
+one tab going dark for the other is the bug in another coat.
+
+*Checked:* `TestBrowserCmdWatchesReusesAndStops` (internal/cli) now
+starts with a record pointing at a stand-in that names `recruiting`: the
+line names another port and the stand-in still answers. Without
+`viewerIsFor` the line names the stand-in's port. Docs: features/browser.md,
+cli.md.
+
+**I-1240. `repose stop` and `repose rm` fetch nothing first.** (catchall,
+2026-11-16; reverses the fetch clause of I-615 and I-638, I-641's rm
+fetch and I-890's tuning; the owner's call.)
+
+The owner, 2026-11-16: "Whenever I stop projects now, it does fetching
+from project name and that runs for min 3-4 seconds [...] I don't think we
+should be fetching every time we stop unless it actually adds something",
+then "lets completely remove fetching before stopping. Adds unnecessary
+lag, wait for 0 real value."
+
+What the fetch bought: a stopped machine cannot be fetched from, so the
+morning's `git fetch repose` cost a start and a stop (I-615). What it
+cost: a "Fetching from <slug>" phase on every stop, 3 to 4 seconds on the
+owner's laptop with nothing new to fetch (I-890 had already cut its budget
+from 60 s to 15 s for the same complaint and left "gate it on the probe"
+as the next step). Work is moving onto the machines: a stop is taken from
+~, the checkout is on the machine, and the commits are in the stop's
+snapshot either way.
+
+Decided: `stop` and `rm` fetch nothing. The stop line still says what the
+laptop lacks (`Stopping todo-app; 3 commits on main not fetched`), read
+from the machine by the probe (I-634), so the reader knows when to fetch.
+`stop -w WINDOW` keeps its fetch (I-639, I-1060): it removes a worktree only once
+the branch is on the laptop, and that fetch is what makes the removal
+safe. `repose status` keeps counting in the laptop folders (I-638).
+`fetchBeforeStop`, `fetchBefore` and `checkMasters` are gone;
+`fetchRepose` and the fetch jobs stay for `-w`.
+
+*Checked:* `TestStopDoesNotFetch`, `TestRecordedFolderCountsAndAStopDoesNotFetchThere`,
+`TestRmDoesNotFetch` (internal/cli): the stop or destroy line is the
+first line and `refs/remotes/repose/main` does not exist afterwards;
+with `fetchBeforeStop` back, the first line is `Fetched 3 commits on
+repose/main and 1 on repose/worktree-1.`. Docs: cli.md, lifecycle,
+features/stop-start-destroy, interfaces/cli-config.
+
+**I-1242. A question is never held, and a question being answered does
+not expire.** (catchall, 2026-11-16; amends I-689 and I-244.)
+
+The owner, 2026-11-16: "I was answering a question and it expired while I
+was answering it. This should never happen. And also there's not notify
+me when the question came in. [...] Questions should always notify, even
+if you're attached. You might be attaching in a window that's in another
+desktop." On secrets: "definitely let's make an exception for secrets,
+like asking for secrets." And the missing notification for an agent's
+secret ask the same day was this: the owner was attached, so the
+`agent_question` sat in the hold.
+
+Decided:
+- `agent_question` leaves `heldKinds`. A question, a `repose-ask --secret`
+  included, is sent the moment it is queued, present or not. The other
+  agent kinds (`agent_done`, `agent_message`, `needs_input`, `error`)
+  keep I-689's hold: a report can wait ten minutes, an agent blocked on
+  an answer cannot. The "is it over" drop (I-689) still applies to a
+  question: one answered in the terminal before its first send is
+  `dropped: resolved`, not sent with buttons that answer nothing.
+- The dashboard holds a question open while the owner answers it. A row
+  whose answer field is focused or has text, and the secret dialog while
+  it is open, call `POST /projects/:id/questions/:qid/hold` at once and
+  every 60 s; the api moves `expires_at` to at least 5 minutes from now
+  (a second hold inside 30 s changes nothing; nothing lives past
+  `created_at` + 24 h + 5 min) and carries the new deadline to the guest
+  as an `AnswerQuestion` of status `extended` with `expires_unix`, so
+  the `repose-ask` the agent is blocked on moves its own clock. An
+  abandoned tab stops holding within five minutes. A guestd from before
+  this refuses the status as invalid, which closes nothing. The agent's
+  `--timeout` is a floor while nobody is answering, not a wall while
+  someone is.
+
+Kept from I-689: the hold for the four other agent kinds, and the owner's
+own words that founded it ("only have them when the user is not
+attached") now read as the case the owner has reversed, with the reason
+above.
+
+*Checked:* `TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved`
+and `TestGChatQuestionPostsWhilePresent` (internal/api/notify): a
+question is sent on the first pass with a tmux client attached; with
+`agent_question` back in `heldKinds` it reads `held`. The hold route, the
+guest's `Extend` and the dashboard's heartbeat are checked by the tests
+named in their files (internal/api/http, internal/guestd/questions,
+apps/web). Docs: features/notifications.md, /docs/notifications,
+interfaces/api.md, grpc-hostd.md, vsock-guestd.md.
+
+**I-1244. SnapshotStale counts from the later of the newest snapshot and
+the machine's start, and the gauge refreshes hourly.** (catchall,
+2026-11-16; amends 10-observability §5's `repose_api_snapshot_age_seconds`.)
+
+SnapshotStale fired from 2026-11-07 02:22 UTC for four days. Two running
+projects had been stopped on 2026-11-03 and 2026-11-04 (each stop took
+its snapshot), sat stopped, and were started on 2026-11-06. `UpdateAgeGauge`
+measured each running project's newest snapshot alone, so a machine that
+had run for an hour read as four days stale. And the gauge was refreshed
+only when the daily expiry job ran, so the number stayed flat for a day
+after the nightly snapshots that would have cleared it, and a snapshot
+that really fails is invisible to this gauge for up to a day. No snapshot
+op had failed; the runbook's causes (freeze_timeout, Blob auth, pool
+metadata) were all wrong.
+
+Decided:
+- The gauge is, over running projects, the longest time since
+  `greatest(newest snapshot, started_at)`. A running project with no
+  snapshot at all now counts from its start, where before it was not
+  counted (`min` skips a null).
+- `RunAgeGauge` refreshes it at start and hourly, on its own ticker,
+  beside the expiry job's daily sweep.
+- The alert's expression and threshold are unchanged; its comment, the
+  runbook and features/snapshots.md say what the age is measured from.
+
+*Checked:* `TestSnapshotAgeCountsFromTheLaterOfSnapshotAndStart`
+(internal/api/snapshots): a project with a four-day-old snapshot started
+an hour ago reads about 3600 s; an unsnapshotted project running two
+hours reads about 7200 s; a snapshot newer than the start counts from the
+snapshot. With the old query the first reads about four days and the
+second 0.
+
+**I-1248. Triggers: an event or a time starts an agent session on the
+project's machine. The trigger is a row in the api; its prompt and every
+payload are files in the machine, and the api holds neither.**
+(triggers, 2026-11-17.)
+
+The pitch sells repose as a framework for running always-on agents
+(`proposals/2026-11-12-always-on-framework.md`), the landing has shipped
+that sentence since r20261115-1, and the layer it names did not exist:
+`repose webhooks` (I-1110) stops at a port, and the job agent on the
+`job` guest hand-rolled a receiver, a signature check, a dedupe, a gate,
+a queue, one session per event, a 10-second supervisor, timeouts, a
+ledger and an outcome. A trigger is that layer, and this entry is
+approach A of the proposal; approach B (a machine per event) and C (a
+workflow graph) stay unbuilt, and `--fresh` is not in this build.
+
+Decided:
+- A trigger binds one door (a webhook route, or a schedule) to one
+  prompt, one working directory and one agent, with admission, a
+  lifecycle, an outcome and a run list. `repose triggers` and a project's
+  Triggers tab reach it. `docs/features/triggers.md` is the behaviour.
+- The `triggers` and `trigger_runs` rows are the api's, as a route's are
+  (I-1110, and I-820's reasoning for `keep_awake`): the api must know a
+  trigger while the laptop is shut and the machine is stopped, which is
+  when a schedule fires; the dashboard lists triggers for a machine that
+  is not running; and the api never reads a file from the checkout.
+- **The prompt is a file in the machine and the row holds its path.**
+  `-p TEXT` writes `.repose/triggers/<name>.md` over SSH, as
+  `repose run -p` already puts a prompt in a machine, and stores that
+  path. The privacy policy's sentence — repose never records the prompts
+  you give an agent — therefore needs no change, and no prompt is stored
+  anywhere the api can read.
+- **A payload is a file in the machine too.** An event's body reaches the
+  guest through the edge's delivery path (I-1250) and never the api; a
+  `fire --payload` goes over SSH. What the api holds of a run is its
+  state, its bounded reason, and at most 1 KB of summary — the words the
+  agent sent with `repose-notify --done` — declared tenant content beside
+  `events.summary`.
+- A temporary machine (I-347) takes no trigger: it is destroyed within 24
+  hours, and a schedule on it is a promise that dies.
+
+The alternative was the api storing the prompt as a row, which is what
+option A of `proposals/2026-11-10-scheduled-prompts.md` costed. It needs
+a change to the privacy policy's words to store what a user typed for an
+agent, and it buys nothing: the machine is where the prompt is used, the
+user already edits it there with every other file of their project, and
+git versions it for them.
+
+**I-1250. The event door is the webhook route that exists, pointed at a
+receiver guestd owns on `127.0.0.1:9227`; what the edge refuses becomes a
+skipped run.** (triggers, 2026-11-17; extends I-1110, I-1112, I-1114.)
+
+Decided:
+- `repose triggers add NAME --route R` makes (or takes over) the route R
+  and sets its target to `127.0.0.1:9227/t/NAME`. The URL, the 128-bit
+  token, `rotate`, the 1 MiB cap, the rates, the 503 table, the wake and
+  `--start` are I-1110's and are not re-implemented. A trigger's route is
+  one of the project's twenty.
+- 9227 is platform-owned: it joins `guest-conventions.md` "Ports" and
+  `forwardPlatformPorts`, so it is never auto-forwarded to an attached
+  laptop and never read as the user's own listener. It listens on
+  loopback only, and the only way in is the edge's existing
+  `direct-tcpip` channel.
+- The receiver answers the edge and nothing else: `202` when the event is
+  admitted and its payload written, `200 {"skipped": reason}` when
+  admission dropped it, `503` when it cannot run one. It never waits for
+  the agent: a provider's timeout is 3 s (Slack) to 10 s (GitHub), and an
+  agent run is minutes.
+- `/internal/webhook-routes` carries the route's `trigger` and
+  `trigger_id`. Every outcome the edge already reports for a delivery it
+  refused — `stopped`, `start_refused`, `too_large`, a 503 for a busy or
+  errored machine — becomes a `skipped` run row with that reason when the
+  route belongs to a trigger. Without this the one failure a user must
+  see (a trigger that has dropped a week of events because the machine
+  was stopped) appears on no screen: the guest never hears those
+  deliveries, so nothing in the guest can write them down.
+- A user cannot aim a route at 9227 by hand, and `webhooks add` on a
+  route a trigger holds is refused and names the trigger. One way in.
+
+The alternative was the api relaying each event to the machine as a
+command. It carries a stranger's bytes through the control plane, needs
+its own rate limits and body cap beside the edge's, and gives the api a
+copy of every payload — against I-1248's second half. The edge path
+already has all of it.
+
+**I-1252. The schedule clock is the api's, a fire is a claimed row the
+grpc process sends, and the grammar is six shapes with a zone.**
+(triggers, 2026-11-17; the answer to
+`proposals/2026-11-10-scheduled-prompts.md` questions a, b, 7 and 8; cites
+I-518, I-818, I-104, I-1162, I-87, I-163.)
+
+Decided:
+- The api owns the clock. A systemd user timer in the guest (I-518, the
+  proposal's option B) was the cheaper build and lost: a stopped machine
+  runs nothing, a timer cannot be listed for a machine that is not
+  running, and `OnCalendar=Mon..Fri 07:00` with no zone fires at 07:00
+  UTC, which looks wrong to everyone who writes it. The freeze's armed
+  wake (I-818) is not needed for a trigger, because the api wakes the
+  machine itself with the wake the edge already asks for.
+- **A fire is a row, not a call.** The api is two processes and only
+  `API_MODE=grpc` holds a host's stream (I-87, I-163); I-1162 is the
+  morning `say` answered `machine_unreachable` for every message because
+  the http process sent the command. So: the clock ticks in the grpc
+  process, once a minute, under `db.LockTriggers`; it claims a due
+  trigger by writing its next fire in the same statement
+  (`where enabled and next_at <= now() ... returning`), which makes a
+  fire happen once across replicas and once across a restart; the claim
+  inserts a `pending` run row; a worker in the grpc process takes
+  `pending` rows `for update skip locked` and sends `RunTrigger` with the
+  run id as the `command_id`. `repose triggers fire` and the dashboard's
+  Run insert the same row from the http process. `pending` and `sending`
+  are the hand-off and are never shown: every surface draws them
+  `queued`, as `say`'s are.
+- **A fire time is built as a wall clock in its zone**, never as midnight
+  plus a duration: the first version did the latter and fired
+  `daily 07:00 Europe/Berlin` at 08:00 on 2026-03-29 and 06:00 on
+  2026-10-25, which is exactly what this entry promises it does not do.
+  `time.Date` normalising a time the clock skips is what gives the
+  documented 03:30 for a 02:30, and the test that holds it asserts the
+  wall-clock hour on both transition days — a monotonicity walk across
+  them saw nothing wrong.
+- A zone is `UTC` or an IANA `Region/City`. An abbreviation is refused
+  even where the host has it: `daily 07:00 EST` is a fixed offset that
+  ignores the summer the user lives in. The zone database is linked into
+  the binary (`time/tzdata`), because the CLI runs on a laptop and the
+  api in a scratch container, and a missing zone would silently become
+  UTC.
+- Turning a trigger `on`, and changing its spec or zone, re-arms the
+  clock from now. Without that a trigger off for a week has a fire a week
+  in the past and runs an agent the moment it is enabled, which is what
+  the catch-up rule exists to prevent.
+- The grammar is `every 15m`, `daily 03:00`, `weekdays 07:00`,
+  `weekends 10:00`, `mon,thu 18:30`, `monthly 1 09:00`, with an optional
+  IANA zone at the end. `internal/triggerspec` is the one parser, in the
+  CLI (a typo exits 2 with no round trip) and in the api (the clock). A
+  spec is accepted as typed and stored in one spelling. `hourly` was in
+  the first draft and is gone: `every 1h` says it, and one thing has one
+  name.
+- The minimum is 15 minutes. Five was the first draft, and it sat on the
+  hour's cap of 12 with no room for a catch-up, for an interval shorter
+  than most agent runs.
+- `every D` fires from an anchor the row stores, never from the last
+  fire, so the clock's one-minute spread of a fleet's 07:00 cannot drift
+  it a minute a fire into 96 minutes a day.
+- The zone is the one named in the spec, else the project's `tz`, else
+  the laptop's at `add` (I-104), else UTC; `add` prints what it stored in
+  every case. Daylight saving follows `systemd.time(7)`, which is the
+  user's prior: a time the clock skips fires at the next real minute, and
+  a time the clock repeats fires once.
+- Catch-up is **off** by default (the proposal left it open). A 07:00
+  standup summary run at 15:00 is work whose whole value was its time,
+  and it is the same argument I-1256 makes against an automatic retry.
+  `--catch-up` runs one missed fire, and only within the trigger's own
+  interval.
+- A machine a trigger started stays up until the user stops it (R1-5,
+  I-262 unchanged), and `add --start` prints that sentence once.
+  `--stop-after` stops the machine when the run ends **if that trigger
+  started it**: a flag the user set is the user's instruction, not repose
+  stopping a machine on its own.
+
+**I-1254. Admission is ordered, every drop is a run row, and the gate is
+a command; repose checks no provider's signature.** (triggers,
+2026-11-17.)
+
+Every admitted event costs a whole agent run, which costs the user money
+at their provider, so the cheap checks come first: the trigger is off,
+the machine cannot run it, the event is a duplicate, the gate refused it,
+the concurrency limit is reached, the plan's memory is in use. Each one
+writes a `trigger_runs` row in `skipped` with a bounded reason — a
+dropped queue entry and an edge-side refusal included — because an event
+that exists nowhere is the failure this feature is built to end.
+
+Decided:
+- `--dedupe header:NAME` or `json:FIELD` skips an event whose key was
+  seen in 24 hours. The keys live at
+  `/home/dev/.repose/triggers/<name>/seen`, on the volume and not a
+  tmpfs, so the window survives a stop, a reboot and a move to another
+  host; on a tmpfs a provider's retry after a restart would pay twice.
+- `--gate CMD` runs CMD through `bash -c` as `dev`, in the working
+  directory, with the project's named secrets in its environment, the
+  payload's bytes on stdin, and `REPOSE_PAYLOAD` and
+  `REPOSE_PAYLOAD_HEADERS` set, under 10 seconds and with no agent. Exit
+  0 admits. A gate is a command and not an expression language:
+  `jq -e '.action == "opened"'` is already a gate, and a user who needs
+  more writes a script in the repo they already have. `fire --dry-run`
+  runs the gate alone, records the run as `skipped: dry_run` and prints
+  the gate's own output, which is how one gets written.
+- **There is no queue.** The first draft held 20 payloads at the
+  concurrency limit. A queue inside the guest has no row in the api,
+  nothing reconciles it after a guestd restart, and no exporter can see
+  its depth — so an event in it could be lost in exactly the silence
+  this feature exists to end, and `--on-busy` was a flag that promised
+  otherwise. Concurrency is the primitive (1 to 3, 1 on a `tiny`); at
+  the limit the event is `skipped: a run is working`, with its dedupe key
+  on the row so the user can see which event it was.
+- **An edge-side refusal coalesces**: one `skipped` row per trigger,
+  reason and hour, with a count. A machine stopped for a week takes 600
+  refusals an hour, and a row each would have evicted every run that ran
+  from the 20 a trigger keeps — the fix for one silence would have made
+  another.
+- **repose does not verify a provider's signature, and the gate is where
+  the user does.** I-1110 works because the app's own check passes on
+  bytes and headers the edge did not touch; a trigger has no app, so the
+  check moves into the gate, which is why the gate gets the raw bytes and
+  the headers and not a parsed body. The public page carries a
+  four-line `openssl dgst -sha256 -hmac` script for GitHub and one for
+  Stripe, each reading a named secret from the environment, as files in
+  the user's own repository. **No `repose-verify` ships**: a helper that
+  knew five providers' schemes would be a sixth thing to keep up to date
+  with them, and the gate already takes any command. A route trigger with
+  no gate is told once, at `add`, that anyone with the URL can start an
+  agent run. Signing at the edge was refused by I-1110 and stays refused:
+  it would make repose a party to every provider's scheme.
+- **The receiver trusts loopback**, and the doc says so: it is a port
+  inside the user's own machine, so anything there can POST to it with
+  bytes of its own — as anything there can already run
+  `repose triggers fire`. The gate is what decides whether a payload is
+  real, wherever it came from.
+
+**I-1256. A run is one tmux window, started with the prompt on the
+agent's own command line, supervised by guestd, and reconciled from tmux;
+a failure notifies and a success says only what the agent said.**
+(triggers, 2026-11-17; cites I-780, I-752, I-688, I-689, I-931, I-1144.)
+
+Decided:
+- One window per run, `t-<trigger>`, and `t-<trigger>.2` for a second
+  concurrent run — a dot, because a trigger may be named `apply-2` and
+  `t-apply-2` would be both that trigger's window and the second run of
+  `apply`, which would have the timeout killing one and the reconcile
+  crediting the other. **A run is keyed by its id**, in
+  `/run/repose/triggers/<run_id>`, not by its window; `t-` is a reserved
+  window prefix, as 9227 is a reserved port, so a window a user names
+  `t-x` is their own. A window and not a headless `claude -p`,
+  because `repose-ask`, `repose say` and `repose attach` keep working in
+  it: an unattended agent that can ask a human is what makes leaving one
+  alone safe.
+- The prompt goes on the agent's own command line — I-780's cold path,
+  through the one leaf package the CLI and guestd share. I-752's typing
+  path submitted **1 prompt in 10** on a fresh window, and a trigger's
+  window is always fresh, so the typing path is never used here. I-780's
+  one refusal stands: a prompt beginning with `@` on `pi` is refused at
+  `add`, naming the pair, rather than silently taking a path that works
+  once in ten. A prompt file over 64 KB is refused for the same reason it
+  is a command-line argument.
+- The run's clock stops while a question that run asked is pending. A
+  `repose-ask` at 02:00 waits for the owner, and the one-hour default
+  would otherwise kill the primitive the design rests on. A question's
+  own ceiling is 24 hours and so is a run's.
+- At the timeout guestd kills that window and nothing else. Never the
+  server: `tmux kill-server` takes every agent on the machine.
+- **guestd reconciles.** A guestd restart does not touch tmux, so an
+  agent started by a trigger keeps working through one. guestd rebuilds
+  its runs from `tmux list-windows` at start, as hostd rebuilds guests
+  from `systemctl list-units 'guest@*'`: a run whose window lives stays
+  `working`; only a run with no window ends `failed`. Failing a live run
+  would let the next fire start a second agent on a checkout where the
+  first is mid-side-effect. Open runs are announced again on each new
+  hostd connection for ten minutes, as open questions are.
+- Every run that ends is one `trigger_run` event — lower_snake like
+  every other event kind, and one event per run rather than one per state
+  change.
+- A run's states are `done`, `failed`, `timeout` and `skipped`. `done`
+  carries the agent's own `--done` summary and is empty when the agent
+  sent none: the state is the machine's, the words are the agent's, and
+  I-688's rule that a finished turn notifies nobody holds. `failed`
+  notifies, kind `trigger_failed`, a platform kind that is never held
+  while the owner is attached (I-689 holds agent kinds) because a trigger
+  failing in silence is the failure this feature exists to surface;
+  `--no-notify` is the switch for a trigger that fails every quarter
+  hour. A `timeout` notifies as a `failed` does: a run killed at its
+  timeout did not do the work. The kind, its title and its payload are in
+  `features/notifications.md`'s own table, and the 60-second dedupe on
+  `(project, kind)` holds a trigger failing in a loop to one notification
+  a minute. Every run is also a `trigger.run` event.
+- **No automatic retry.** A failed agent run has already done part of its
+  work; running it again sends a second application, posts a second
+  comment, refunds a second payment. The dead letter is the run list, and
+  `fire --run RUN` replays a kept payload by hand. A payload no longer
+  kept says so and exits 1.
+- A trigger's window is not the user's: `t-*` windows are left out of
+  `say`'s single-agent resolution, so a run does not turn an ordinary
+  `repose say` into `several_agents`, and `repose ps` and `repose ls`
+  mark them, so a machine nobody is attached to does not read as the
+  user's agent working.
+
+**I-1258. Triggers is a project's third tab, after Browser.** (triggers,
+2026-11-17; amends I-1216's six tabs.)
+
+I-1216 made Browser second because watching the machine is the other
+thing done from a project's page, "not the last of five reports". Reading
+what ran without you is the next such thing, and it comes before the four
+reports: Overview, Browser, Triggers, Events, Usage, Snapshots, Config.
+I-1216 records that five tabs fit a 360-wide screen and six do not, so
+that strip already scrolls and a seventh joins one that scrolls.
+
+Decided, and each of these is a pattern `apps/web` already has:
+- Three inline ghost buttons a row — Run, Copy, Remove… — and Edit in
+  the row's expansion. The first draft had a kebab menu, which exists
+  nowhere in `apps/web`; this is not the tab to invent one on. **Below
+  640 px the row is a block**, which is what `ProjectWebhooks` does and
+  why: three buttons and a target side by side broke the target mid-word
+  there.
+- Webhooks is a section of the Config tab and triggers are a tab, which
+  needs saying because they are neighbours. A route is configuration, set
+  once and pasted elsewhere. A trigger has a history — every run, its
+  outcome, its summary — and an action that makes the machine work; a
+  list that grows and an action are a page.
+- The tab polls on the layout's own cadence (10 s in view, 60 s hidden,
+  the shared `PollGroup`), and the list draws `LoadState` as every list
+  on these tabs does.
+- **The tab has no Add, deliberately.** Making a trigger means writing a
+  prompt into the machine, which `repose triggers add -p` does over SSH
+  and a browser cannot; the api never reads a file in a guest, so a form
+  could only take a path and hope, and the trigger it made would look
+  right and fail at 03:00 with `prompt_missing`. The tab does everything
+  that needs no file — run, on, off, copy the URL, remove, read the runs
+  — and the empty state names the command. A form that creates a thing
+  which silently does not work is worse than no form.
+- `on`/`off` is a column with a dot and a lowercase word, as every other
+  row state is drawn. Not a badge: a badge on a project tab means
+  `temporary`.
+- A running fire swaps the button's label to `Running…` and disables it.
+  No spinner (`hk/tokens.css`).
+- **A fire is not an op.** It never takes `ctx.opBusy`, so Stop, Start,
+  a snapshot and a restore stay available while an agent runs, and the
+  tab polls the run itself every 2 s. `OpKind` is unchanged.
+- A row opens into its runs in the `<ul>` grid the Events tab uses, with
+  the agent's `--link` as a button (I-931) and the window's name.
+- `Copy` puts a route trigger's URL on the clipboard and draws none of
+  it, which is I-1110's rule for a screen.
+
+**I-1260. A trigger run is use for the unused notice, counted from
+`trigger_runs`.** (triggers, 2026-11-17; amends I-262 and I-1110's §6.)
+
+I-262 announces a machine nobody is using after 24 hours and never stops
+it. I-1110 settled that a webhook delivery is not use, so a machine that
+only receives deliveries is still announced. A trigger changes what the
+machine is: one that triages issues every morning is being used, by its
+owner, through the thing this product sells.
+
+Decided:
+- A trigger run in the window is use. A delivery that starts a run is
+  therefore use, and `features/webhooks.md` §6 is edited to say so; a
+  delivery that starts no run is still not use.
+- The notice cannot learn this from samples. I-262 decides idleness from
+  minute samples of agent state, and a run of 14 seconds — the length of
+  the sweep in `features/triggers.md` §2 — falls between two samples. So
+  the rule reads `trigger_runs` over its own window instead of inferring
+  it from the sampler.
+
+**I-1262. A trigger's limits are per trigger, and the retention is a
+route's twenty.** (triggers, 2026-11-17.)
+
+Twenty triggers a project; a trigger's route is one of the project's
+twenty routes, and the 21st route names the triggers that hold one.
+Concurrency 1 to 3, and 1 on a `tiny`, whose 2 GB hold one agent and one
+browser. **Twenty runs a trigger**, not a pool a project shares: the
+first draft kept 200 runs a project, and one route trigger at the hour's
+cap of 60 would have erased every other trigger's history in 3.3 hours,
+so `repose triggers runs triage` would print nothing by morning. A route
+keeps its last 20 deliveries (I-1110) and this is that number. **One
+payload per kept run**, under
+`/home/dev/.repose/triggers/<name>/runs/<run>/` on the volume, which is
+20 MiB a trigger at the body cap; `payload_kept` is read off
+`payload_bytes` rather than stored, because nothing in the guest ever
+cleared a stored flag. A run is at most 24 hours, a gate 10 seconds, a
+prompt file 64 KB, a spec 64 characters, a summary 1 KB, a gate's reason
+200 bytes and a dedupe key 128.
+
+*Made during implementation* (triggers, 2026-11-17), the contract
+changes an adversarial review's fifth round forced, all inside
+I-1248..I-1262:
+
+- **A herdr project takes no new trigger.** A run is an agent in its own
+  tmux window and a herdr machine has no tmux session, so `tmux
+  new-window` failed and the run read "the agent is not installed on
+  this machine". `triggers add` is `400 invalid` there, the machine
+  skips a fire with the reason `herdr`, and an existing trigger can
+  still be turned off or removed. `repose say` refuses herdr in the same
+  words (I-501); real herdr support is not this change's.
+- **`--timeout 0` is stored as 24 hours.** It meant three things: the
+  docs said 24h, the runner never killed the window, and the api's
+  backstop buried the run at two hours as `unreachable`.
+- **The trigger set is kept in the guest**, at
+  `/var/lib/repose/trigger-set.json` on the volume. It was memory only,
+  on the reasoning that the api sends it on every start; a guestd
+  restart between two starts then turned every delivery into
+  `route_gone` — "the route was removed" — about a route that was still
+  there. Guest state reconciles (CLAUDE.md), and the set is state.
+- **Every refusal coalesces, not only the edge's.** The api's own
+  refusals of a clock fire now fold into the hour's row too: `every 15m`
+  against a stopped machine wrote four rows an hour and evicted every
+  run that ran inside five hours, against this entry's own promise.
+- **The hand-off's stale window is three ticks, with a ten-minute
+  ceiling.** At 40 seconds against a 60-second tick, the pass that
+  requeued a `--start` fire failed that same fire `unreachable` on the
+  next pass and notified the owner. A machine on its way up is waited
+  for, not skipped `busy`.
+- **A run does not end on the first `idle`.** A prompt-hooked agent
+  reads `idle` until its first hook, so a run was reported `done` five
+  seconds in, with no summary, while its agent was still starting.
+- **`trigger_failed` is deduped like every other platform kind**, which
+  is what `features/notifications.md` already said; the code had it
+  exempt.
+- **`GET /v1/trigger-runs`** lists every project's runs, as questions
+  and snapshots are listed, for `repose triggers runs --all`: "what did
+  my agents do last night" has no per-project answer. **`repose triggers
+  url NAME`** reads a route trigger's URL back, as `webhooks url` does.
+- **The metric label is `kind`, not `source`.** `source` is not on
+  `internal/obs/metrics`' low-cardinality list, and `MustRegister`
+  panics by design, so the api did not start at all.
+
+**I-1246. cloudflared is in every machine's base, and an agent whose owner
+is away opens a quick tunnel for the port and sends the link.** (catchall,
+2026-11-17; reverses I-251's "not in the base" and amends I-1098.)
+
+The owner, 2026-11-16: the guide told an agent to run `repose-presence`
+and, on `away`, to name `repose open PORT`, which needs the laptop the
+owner is away from; "my plan was if the user is not attached, and they are
+on their phone for example, just use trycloudflare and give them a https
+url so they can see". And on 2026-11-17: "build it, no need for a wrapper,
+just tell the agent to run trycloudflare and its always in so they will be
+able to."
+
+Decided:
+- `cloudflared` joins `nix/guest/base/tool-list.nix`, so every machine
+  has it. I-251 kept it a menu entry because "most projects never need a
+  public URL"; the agent that needs one cannot add a menu entry, and a
+  URL the owner can open on a phone is now the point. Closure: 6465924664
+  bytes against the 7 GiB limit (1.0 GiB under). The menu entry stays,
+  described as already present, because a config that selected it still
+  names the id and an unknown id is refused.
+- The guide's `away` branch: run `cloudflared tunnel --url
+  http://localhost:PORT` with nohup, wait for the `trycloudflare.com` line,
+  send it with `repose-notify --link`, say it is public while it runs,
+  don't open one for a server that holds the owner's data unless asked,
+  and `pkill` it when the owner is done. The "no public URLs" line becomes
+  "that tunnel is the one public URL; don't open one for anything else".
+  No wrapper command: the owner's call, and cloudflared's own line is
+  the whole interface.
+- The quick tunnel's terms are Cloudflare's (I-251): no account, random
+  URL, 200 in-flight requests, no server-sent events, testing only. A
+  freeze ends it (`/docs/lifecycle#frozen-machines`).
+
+What this exposes: anyone with the URL reaches the server while the
+tunnel runs. The guide says so and limits it to servers the owner asked
+to see; that is the whole guard, and the owner accepted it.
+
+*Checked:* `nix build ./nix#guest-system` has
+`sw/bin/cloudflared` -> cloudflared-2026.9.1; `guest-closure-size` passes
+at the number above. `TestAgentGuideCommandsExist` names `cloudflared`,
+`nohup` and `pkill` in `guestCommands`; `TestAgentGuideCoversTheMachineDocs`
+passes. Not run on a guest: a tunnel opened by an agent (the live check
+names it). Docs: /docs/machine, /docs/agents, features/agents.md,
+features/config.md, features/webhooks.md, the menu catalog.
+
+**I-1264. A wake reads the call's error, not only Done, before it tries
+the next session; the RPC client closes Done before it answers the calls
+a failure ended (wake-retry, 2026-11-17).** I-1228's second try was
+gated on `sessionEnded`, a non-blocking read of the session's `Done`
+right after the clock step's Exec or the Ping failed. On the push after
+r20261117-1, CI (ubuntu-latest, 2 vCPU) failed
+`TestWakeSurvivesAReplacedSession` in 0.02 s with the incident's own
+error, `guestd did not answer after the resume: vsockrpc: EOF`, while it
+passed 60 of 60 here under `-race`. The two were never one event: the
+client's read loop, on a failed read, recorded the error and closed every
+waiting call's channel, and closed `Done` only by a defer on its way out,
+so a call could return `vsockrpc: EOF` while `Done` was still open for a
+few more instructions. The wake read the dead session as live, skipped
+the retry and counted the failure, which is what I-1228 was for, and
+production's guestd replacement has the same window. Two changes. The
+read loop closes `Done` under its lock before it releases any waiting
+call, so a caller that gets the failure and then asks `Done` sees the
+connection gone; `TestDoneClosedBeforeTheCallReturns` holds that order
+over 200 rounds on a `net.Pipe`, and on the old loop it fails in about 4
+runs of 60 across `-cpu 1,2,4` with the CI line, `the call returned
+vsockrpc: EOF with Done still open`, so the window is real and not a
+CI artefact. And the wake's gate, now
+`connectionGone(sess, err)`, reads the error as well: `io.EOF`,
+`vsockrpc.ErrClosed` or `net.ErrClosed` through the client's `%w`
+wrapping means the connection is gone whatever `Done` says, while a
+deadline or a guestd `RemoteError` on a live connection is still a
+failed wake; `TestConnectionGoneReadsTheErrorBeforeDone` covers the CI
+ordering (EOF, `Done` open) and the live cases. The lint fix the
+conductor made in the r20261117-1 batch (`perr = ...`, the retried
+session is not read after) stands.
+
+**I-1266. A user-visible feature is not shipped until the dashboard can
+make, change, run and remove it (triggers-dashboard, 2026-11-17).** The
+owner, on the morning triggers went out: "we're gaining a lot of
+features behind the CLI and we're not giving them usability within the
+dashboard. What if the user isn't comfortable in the terminal? What if
+they just want to do something quick in the browser? And even then why
+have it in the browser if you're not gonna let them actually use it."
+Triggers shipped the same day with seven CLI verbs and a tab that could
+list, run, turn off and remove, and could not make one (I-1258). That
+half is the case this entry closes: a tab that shows a thing a user
+cannot make is a tab that tells them to open a terminal, and the reader
+who cannot is out of the product.
+
+So `docs/CHECKLIST.md` gains a row under "For every change": anything a
+user can create, change, run or remove from the CLI can be created,
+changed, run and removed on the dashboard, or a decision says why not,
+and the evidence is a Playwright test that does each one against the
+fake api. The alternatives were a milestone ("a dashboard pass after the
+CLI lands"), which is what produced this gap and has no forcing
+function, and a per-feature judgement, which is the judgement that said
+a browser could not write a prompt and was wrong for one request's
+worth of work. The row sits beside "A feature without user docs is not
+done" (I-242) and reads the same way: it is not extra work at the end,
+it is part of the feature.
+
+What it does not demand: a dashboard screen for an operator command
+(`repose-admin`), for a thing whose whole value is a pipe
+(`repose triggers url`, which the tab answers with Copy URL), or for a
+flag that only means something in a terminal (`--json`, `-q`,
+`--wait`). Those are named in the decision that skips them.
+
+*Checked:* the row is in `docs/CHECKLIST.md`; `apps/web/tests/triggers.spec.ts`
+makes a route trigger, makes a schedule, changes one, fires one, dry-runs
+one, turns one off and removes one, 9 tests green.
+
+**I-1268. The api carries a trigger's prompt to the machine and stores
+none of it, over a hand-off row that is deleted the moment the guest has
+it (triggers-dashboard, 2026-11-17).** I-1248 put the prompt's text
+nowhere but the machine: `repose triggers add -p TEXT` writes
+`.repose/triggers/NAME.md` over SSH and sends the api a path, and the
+schema says so in its own comment. A browser has no SSH. I-1258 read
+that as "the dashboard cannot make a trigger"; the answer the owner
+wants is that the text passes *through* the api without stopping.
+
+`POST /projects/:id/triggers` takes `prompt`. The api never writes it to
+the `triggers` row, never answers with it, and never logs it; the row
+goes on holding `prompt_path`. Delivery is the problem I-1162 already
+solved for a fire: the api runs as two processes and only `API_MODE=grpc`
+holds a host's stream, so the http process that takes the POST cannot
+reach the machine, and anything it knows at request time has to be on a
+row. So the text is one row of `trigger_prompts` (migration 0044,
+**unlogged**, at most one row per trigger), the `repose_trigger_sets`
+NOTIFY the store already writes wakes the grpc process, and that process
+sends `WriteTriggerPrompt` down the host's stream, then deletes the row.
+A row no machine took is swept after ten minutes, delivered or not, in
+the clock's own pass. Unlogged is the point: the text never reaches the
+WAL, a replica or a physical backup, and it is gone in the time one
+command takes.
+
+The alternatives. **A `prompt` column on `triggers`** is one line of SQL
+and keeps the text for the life of the trigger, which would let the tab
+show a prompt back — and would make the api a place prompts live, which
+is the thing I-1248 refused and the privacy page's own sentence rests on.
+Refused; the cost is that the form can write a prompt and cannot show the
+one that is there, which the form says in as many words. **The text on
+the `SetTriggers` set** needs no new command, and a set is re-sent at
+every create, start and restore, so a prompt would be written over a
+file the user had since edited in the machine. Refused. **An internal
+HTTP hop from the http process to the grpc one** keeps the text out of
+Postgres entirely, and needs a new address, a new credential and a deploy
+change that fails silently in production if it is missed. Refused.
+
+Because the prompt needs a machine to be written into, the api refuses
+`prompt` on a project that is not `running`, with `409 conflict`,
+`detail.reason = machine_not_running`, and the sentence the CLI prints
+for the same refusal; `prompt_path` is still accepted there, exactly as
+`--prompt-file` is. Over 64 KB is `400 invalid`,
+`detail.reason = prompt_too_large`, the runner's own cap; an `@`-prompt
+on `pi` is the `prompt_at` I-780 named. The CLI is unchanged: it goes on
+writing over SSH, which works against any api.
+
+*Checked:* `internal/api/triggers`:
+`TestAPromptIsAHandOffAndNeverATriggersColumn` (the row holds no text,
+the hand-off holds one row a trigger, ClearPrompt forgets it),
+`TestAPromptNoMachineTookIsSweptAway`, `TestAPromptsRefusalsAreTheCLIs`.
+`internal/api/http`: `TestAPromptOnPostTriggers` over the real schema and
+the real routes — 201, no text in the answer or the listing, 400
+`prompt_too_large`, 409 `machine_not_running` with the CLI's sentence,
+and the same trigger taken with a path. `internal/guestd/trigger`:
+`TestAPromptWrittenThroughTheApiIsTheFileTheRunReads` (the file is dev's,
+under the trigger's workdir, and the next run starts the agent on it).
+Interfaces in the same commit: `api.md`, `grpc-hostd.md`,
+`vsock-guestd.md`, `db-schema.md`. Not run against a real guest: the
+live check names it.
+
+**I-1270. The Triggers tab makes and changes a trigger in a form, and
+the row grows a fourth button (triggers-dashboard, 2026-11-17).** This
+is I-1258 §3 amended: "There is no Add on the tab, and that is the
+design" is replaced by a form that takes everything `repose triggers
+add` takes, with its defaults and its refusals in the same words.
+
+The form is the one `Add trigger` in the section head opens and the one
+`Edit` on a row opens, as a secret's add form is (I-841). The door is a
+two-item segmented control; a schedule is built from the six shapes of
+I-1252 rather than typed, so nobody learns a grammar to say "every
+weekday at seven", and the spec and its zone are shown before it is
+made because 07:00 means nothing without the zone it is read in. The
+prompt is a textarea or a path, the second being `--prompt-file`. The
+twelve settings that have right defaults — agent, working directory,
+timeout, concurrency, gate, dedupe and the four switches — are behind
+`More settings`: a form of eighteen fields is a form nobody reads.
+`apps/web/src/lib/triggerspec.ts` builds and reads back the canonical
+spec, and `triggerspec.test.ts` holds it to `internal/triggerspec`'s own
+six kinds, so a spec made in the browser is one the api stores unchanged
+and `Edit` opens in the fields that made it.
+
+The row's buttons are `Run`, `Edit`, `On/Off`, `Remove…`. I-1258 said
+three fit a 390 row and a fourth did not; the fourth it weighed was
+`Copy`, in a row that also drew the target. Four short ghost buttons
+measure about 236px, and below 640 the row is a block where they have a
+line to themselves: the 390 capture shows them on one line with room.
+`Copy URL` and `Dry run` stay in the row's expansion, where the runs are.
+
+Remove keeps the two-step confirm in the row, not `ConfirmType`:
+`ConfirmType` is "the one pattern for an action that cannot be undone"
+(destroying a project, deleting an account, restoring over a disk), and
+removing a trigger leaves the prompt file and can be done again. That is
+what `webhooks` and `secrets` do for the same class of act.
+
+The empty state no longer names `repose triggers add`, because the
+button beside it does the thing.
+
+*Checked:* `apps/web/tests/triggers.spec.ts`, 9 tests green against the
+fake api, including the prompt reaching the machine's own copy and never
+appearing in any api answer. Viewport captures at 1x, 1440 and 390,
+light and dark, of the empty tab, the list, an opened row, the form, the
+form with More settings, and Edit. `pnpm exec svelte-check` 0 errors 0
+warnings; `docs/CHECKLIST.md`'s "look" greps at their stated counts.

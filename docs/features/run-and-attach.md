@@ -132,6 +132,12 @@ Session and windows (see `interfaces/guest-conventions.md`):
   has none; guest-conventions "The checkout"). `repose run` with no
   prompt attaches to the session's
   current window.
+- A trigger's run opens a window named `t-<trigger>`, and `t-<trigger>.2`
+  for a second concurrent run (I-1256). `t-` is reserved for them:
+  `repose attach PROJECT t-apply` reaches one, `repose say --agent
+  t-apply` talks to the agent in it, and `repose say` without `--agent`
+  does not resolve to one, so a 03:00 run cannot turn an owner's message
+  into `several_agents`.
 - A prompt opens a window named after the agent (`claude`, `opencode`,
   `codex`, `gemini`, `pi`). If that window already exists, the new one is
   the lowest free `<agent>-N` (`-2`, `-3`, ... with no limit, I-253). With
@@ -642,7 +648,11 @@ it (I-542). The api cannot tell an old CLI apart.
   checkout (the home directory when the machine has none, I-368), `/etc/profile.d/repose.sh`, then
   `/etc/repose/devshell.sh` (the agent wrappers' loader, I-259) or, on an
   older base, `direnv export bash`, then `exec` of the arguments, each
-  single-quoted. No stdin without `-i`, a remote tty only with `-t`
+  single-quoted; a single word with a space in it is `sh -c WORD`
+  (I-1232), so a quoted command line runs in the machine's shell. A
+  word that is this laptop's home or under it gets a stderr line with
+  the whole command to type, the word quoted as `'~/...'` (I-1048,
+  I-1232). No stdin without `-i`, a remote tty only with `-t`
   (`ssh -tt`). Once the command runs, repose exits with its status; repose's
   own codes only come before, with a message. The `--` is optional
   (I-411): flags stop at the first word, so the command's own flags pass

@@ -37,10 +37,10 @@
       default = { };
       description = ''
         The platform's MCP servers (browser.nix), rendered into each
-        agent's own layer: /etc/repose/mcp.json for Claude Code and Codex
-        (through repose-agent-setup), /etc/opencode/opencode.json,
+        agent's own layer: /etc/repose/mcp.json for Claude Code, Codex
+        and opencode (through repose-agent-setup),
         /etc/gemini-cli/system-defaults.json and the pi extension
-        (DECISIONS I-553).
+        (DECISIONS I-553, I-1050).
       '';
     };
   };

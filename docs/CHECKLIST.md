@@ -226,6 +226,16 @@ written so none of them goes unnoticed again.
       names is not in the guest), and for a new command the
       `guest-agent-guide` VM test output is pasted.
 
+- [ ] Anything a user can create, change, run or remove with the CLI can
+      be created, changed, run and removed on the dashboard, or a
+      `DECISIONS.md` entry says why that one cannot (an operator
+      command, a thing whose whole value is a pipe, a flag that only
+      means something in a terminal). Evidence: a Playwright test that
+      does each of the four against the fake api. The failure this
+      prevents is the feature that ships with seven CLI verbs and a tab
+      that only lists it, which is what triggers shipped as on
+      2026-11-17 (DECISIONS I-1266).
+
 ## For every change to the web app's look
 
 `docs/DESIGN-LANGUAGE.md` is the spec (DECISIONS I-837). Run these from the

@@ -10,8 +10,10 @@ import (
 
 	"github.com/google/uuid"
 
+	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/msglink"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // Everything a guest sends over vsock is written by whoever is root in that
@@ -144,6 +146,13 @@ func cleanComm(s string) string {
 	return s
 }
 
+// capTriggerName is a trigger's name, and capTriggerReason a gate's last
+// line of stderr (DECISIONS I-1262).
+const (
+	capTriggerName   = 32
+	capTriggerReason = 200
+)
+
 // cleanAgentEvent bounds a guest's AgentEvent; ok is false for a kind a
 // guest may not send.
 func cleanAgentEvent(guestID, agent, kind, summary, window string) (*hostdv1.AgentEvent, bool) {
@@ -154,6 +163,48 @@ func cleanAgentEvent(guestID, agent, kind, summary, window string) (*hostdv1.Age
 		GuestId: guestID, Agent: cleanToken(agent, capAgent), Kind: kind,
 		Summary: cleanText(summary, capSummary), TmuxWindow: cleanLine(window, capWindow),
 	}, true
+}
+
+// triggerRunStates and triggerReasons bound a guest's TriggerRun
+// (DECISIONS I-1256). A gate's own last line of stderr is the one reason
+// that is free text; it is tenant content, bounded like a summary and
+// never logged.
+// capDedupeKey bounds the provider's own event id a run was admitted on.
+const capDedupeKey = 128
+
+// cleanTriggerRun bounds a guest's TriggerRun; ok is false for a run id
+// that is not a uuid or a state a guest may not send.
+func cleanTriggerRun(guestID string, t *guestdv1.TriggerRun) (*hostdv1.TriggerRunEvent, bool) {
+	if _, err := uuid.Parse(t.GetRunId()); err != nil || !triggerrun.GuestStates[t.GetState()] {
+		return nil, false
+	}
+	reason := t.GetReason()
+	if reason != "" && !triggerrun.Reason(reason) {
+		// Anything that is not one of the enum words is read as a gate's
+		// line, which is tenant content and bounded as such.
+		reason = cleanText(reason, capTriggerReason)
+	}
+	source := t.GetSource()
+	if !triggerrun.Sources[source] {
+		source = ""
+	}
+	ev := &hostdv1.TriggerRunEvent{
+		GuestId: guestID, RunId: t.GetRunId(),
+		Trigger: cleanToken(t.GetTrigger(), capTriggerName),
+		State:   t.GetState(), Reason: reason,
+		Summary:      cleanText(t.GetSummary(), capSummary),
+		Window:       cleanLine(t.GetWindow(), capWindow),
+		DedupeKey:    cleanLine(t.GetDedupeKey(), capDedupeKey),
+		Source:       source,
+		PayloadBytes: t.GetPayloadBytes(),
+		StartedUnix:  t.GetStartedUnix(),
+		FinishedUnix: t.GetFinishedUnix(),
+	}
+	ev.LinkUrl, ev.LinkLabel = cleanLink(t.GetLinkUrl(), t.GetLinkLabel())
+	if ev.Trigger == "" {
+		return nil, false
+	}
+	return ev, true
 }
 
 // cleanQuestion bounds a guest's Question; ok is false for an id that is not

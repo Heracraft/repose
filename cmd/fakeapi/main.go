@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -74,6 +75,7 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 summaries are cycled when given; by default every event is an agent_message with no
 //	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
 //	                 moves to before the first of them (f.BackdateCreation), so it stays the oldest event
+//	GET  /say        -> f.Says: the messages the fake has taken, for a test to assert what was sent
 //	POST /desktop    {"on": bool, "copy": "text"} -> f.SetDesktop: the browser view's stream route
 //	                 serves a static grey screen over RFB instead of refusing, so a test can reach
 //	                 the watching state and its clipboard panel; "copy" is handed to the page as the
@@ -234,6 +236,12 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		f.LinkLast(body.ProjectID, "", body.Link, body.LinkLabel)
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// The messages the fake took, oldest first: a test asserts the window
+	// the dashboard sent to, not only the line it printed.
+	mux.HandleFunc("GET /say", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(f.Says())
+	})
 	// `repose say` (DECISIONS I-1144): which agent windows the fake's
 	// machines run, and what it answers a message with.
 	// The browser view's fake desktop (DECISIONS I-1216): off unless a
@@ -254,6 +262,53 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		f.SetDesktop(body.On, body.Copy)
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// A trigger's runs (DECISIONS I-1256): the dashboard's tab reads
+	// outcomes, and a test needs some without a machine.
+	mux.HandleFunc("POST /trigger-run", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID    string `json:"project_id"`
+			Trigger      string `json:"trigger"`
+			State        string `json:"state"`
+			Reason       string `json:"reason"`
+			Summary      string `json:"summary"`
+			Source       string `json:"source"`
+			Window       string `json:"window"`
+			PayloadBytes int64  `json:"payload_bytes"`
+			Skips        int    `json:"skips"`
+			AgoMinutes   int    `json:"ago_minutes"`
+			TookSeconds  int    `json:"took_seconds"`
+			// The agent's own `--link URL --label TEXT` (I-931).
+			LinkURL   string `json:"link_url"`
+			LinkLabel string `json:"link_label"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		started := time.Now().Add(-time.Duration(max(body.AgoMinutes, 1)) * time.Minute)
+		finished := started.Add(time.Duration(max(body.TookSeconds, 1)) * time.Second)
+		run := api.FakeTriggerRun{
+			State: body.State, Reason: body.Reason, Summary: body.Summary,
+			Source: body.Source, Window: body.Window, PayloadBytes: body.PayloadBytes,
+			Skips: body.Skips, StartedAt: &started, FinishedAt: &finished, CreatedAt: started,
+		}
+		if body.LinkURL != "" {
+			run.Link = map[string]string{"url": body.LinkURL}
+			if body.LinkLabel != "" {
+				run.Link["label"] = body.LinkLabel
+			}
+		}
+		f.AddTriggerRun(body.ProjectID, body.Trigger, run)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// What the machine was given as a trigger's prompt (I-1266): the
+	// api carries the text and keeps none of it, so this is the only
+	// place a test can read what the guest would hold.
+	mux.HandleFunc("GET /trigger-prompt", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, f.TriggerPrompt(q.Get("project_id"), q.Get("trigger")))
 	})
 	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

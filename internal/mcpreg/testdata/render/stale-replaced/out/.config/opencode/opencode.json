@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "servers": {
+      "linear": {
+        "command": [
+          "repose-mcp",
+          "run",
+          "linear"
+        ],
+        "type": "local"
+      }
+    }
+  },
+  "theme": "dark"
+}

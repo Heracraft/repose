@@ -757,11 +757,15 @@ func (x *Shutdown) GetTimeoutS() uint32 {
 // on (DECISIONS I-244): status answered|cancelled|expired|no_channel, and
 // the user's answer when answered. Answering an already-closed question
 // with the same status is a no-op; an unknown question_id is not_found.
+// status `extended` (DECISIONS I-1242) closes nothing: expires_unix (unix
+// seconds) is the question's new deadline, applied only when it is later
+// than the one it has.
 type AnswerQuestion struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	QuestionId    string                 `protobuf:"bytes,1,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
 	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	Answer        string                 `protobuf:"bytes,3,opt,name=answer,proto3" json:"answer,omitempty"`
+	ExpiresUnix   int64                  `protobuf:"varint,4,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -815,6 +819,13 @@ func (x *AnswerQuestion) GetAnswer() string {
 		return x.Answer
 	}
 	return ""
+}
+
+func (x *AnswerQuestion) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
 }
 
 // SayToAgent is a message the owner typed for one of this guest's agents
@@ -903,6 +914,339 @@ func (x *SayToAgent) GetFromOwner() bool {
 	return false
 }
 
+// Trigger is one of the project's triggers, as the api owns it
+// (DECISIONS I-1248). The prompt is a PATH in the machine and never its
+// text: the api has never held the text and cannot send it. guestd keeps
+// the set in memory only, and the api re-sends it on every start.
+type Trigger struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`                               // route|schedule
+	PromptPath    string                 `protobuf:"bytes,3,opt,name=prompt_path,json=promptPath,proto3" json:"prompt_path,omitempty"` // relative to workdir, or absolute
+	Workdir       string                 `protobuf:"bytes,4,opt,name=workdir,proto3" json:"workdir,omitempty"`                         // checkout|worktree-N|~/PATH|/PATH
+	Agent         string                 `protobuf:"bytes,5,opt,name=agent,proto3" json:"agent,omitempty"`                             // empty means the project's agent
+	TimeoutS      uint32                 `protobuf:"varint,6,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
+	Concurrency   uint32                 `protobuf:"varint,7,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
+	Gate          string                 `protobuf:"bytes,9,opt,name=gate,proto3" json:"gate,omitempty"`      // the admission command; empty means none
+	Dedupe        string                 `protobuf:"bytes,10,opt,name=dedupe,proto3" json:"dedupe,omitempty"` // header:NAME|json:FIELD; empty means none
+	Enabled       bool                   `protobuf:"varint,11,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Trigger) Reset() {
+	*x = Trigger{}
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Trigger) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Trigger) ProtoMessage() {}
+
+func (x *Trigger) ProtoReflect() protoreflect.Message {
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Trigger.ProtoReflect.Descriptor instead.
+func (*Trigger) Descriptor() ([]byte, []int) {
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *Trigger) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Trigger) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Trigger) GetPromptPath() string {
+	if x != nil {
+		return x.PromptPath
+	}
+	return ""
+}
+
+func (x *Trigger) GetWorkdir() string {
+	if x != nil {
+		return x.Workdir
+	}
+	return ""
+}
+
+func (x *Trigger) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *Trigger) GetTimeoutS() uint32 {
+	if x != nil {
+		return x.TimeoutS
+	}
+	return 0
+}
+
+func (x *Trigger) GetConcurrency() uint32 {
+	if x != nil {
+		return x.Concurrency
+	}
+	return 0
+}
+
+func (x *Trigger) GetGate() string {
+	if x != nil {
+		return x.Gate
+	}
+	return ""
+}
+
+func (x *Trigger) GetDedupe() string {
+	if x != nil {
+		return x.Dedupe
+	}
+	return ""
+}
+
+func (x *Trigger) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+// SetTriggers carries the project's whole set, as WriteSecrets carries the
+// whole named set (DECISIONS I-1248). An empty list removes every trigger.
+type SetTriggers struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Triggers      []*Trigger             `protobuf:"bytes,1,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTriggers) Reset() {
+	*x = SetTriggers{}
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTriggers) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTriggers) ProtoMessage() {}
+
+func (x *SetTriggers) ProtoReflect() protoreflect.Message {
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTriggers.ProtoReflect.Descriptor instead.
+func (*SetTriggers) Descriptor() ([]byte, []int) {
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SetTriggers) GetTriggers() []*Trigger {
+	if x != nil {
+		return x.Triggers
+	}
+	return nil
+}
+
+// WriteTriggerPrompt writes one trigger's prompt into the machine as dev
+// (DECISIONS I-1266). The dashboard has no SSH, so a prompt typed in the
+// browser reaches the machine this way; the api holds the text for the
+// length of the request and the hand-off that follows it and stores it
+// nowhere, so the row still keeps a path and never the text. The path is
+// read exactly as the runner reads it: relative to the workdir, or
+// absolute.
+type WriteTriggerPrompt struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Trigger       string                 `protobuf:"bytes,1,opt,name=trigger,proto3" json:"trigger,omitempty"`
+	Workdir       string                 `protobuf:"bytes,2,opt,name=workdir,proto3" json:"workdir,omitempty"`                         // checkout|worktree-N|~/PATH|/PATH
+	PromptPath    string                 `protobuf:"bytes,3,opt,name=prompt_path,json=promptPath,proto3" json:"prompt_path,omitempty"` // relative to workdir, or absolute
+	Text          []byte                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`                               // at most 64 KB, as the runner reads at most 64 KB
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteTriggerPrompt) Reset() {
+	*x = WriteTriggerPrompt{}
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteTriggerPrompt) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteTriggerPrompt) ProtoMessage() {}
+
+func (x *WriteTriggerPrompt) ProtoReflect() protoreflect.Message {
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteTriggerPrompt.ProtoReflect.Descriptor instead.
+func (*WriteTriggerPrompt) Descriptor() ([]byte, []int) {
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *WriteTriggerPrompt) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
+}
+
+func (x *WriteTriggerPrompt) GetWorkdir() string {
+	if x != nil {
+		return x.Workdir
+	}
+	return ""
+}
+
+func (x *WriteTriggerPrompt) GetPromptPath() string {
+	if x != nil {
+		return x.PromptPath
+	}
+	return ""
+}
+
+func (x *WriteTriggerPrompt) GetText() []byte {
+	if x != nil {
+		return x.Text
+	}
+	return nil
+}
+
+// RunTrigger runs one now (DECISIONS I-1252, I-1256). run_id is the api's
+// row and the command's idempotency key: a repeat is answered with that
+// run's state and starts no second agent. payload_run replays an earlier
+// run's kept payload; dry_run runs the gate alone and starts no agent.
+type RunTrigger struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Trigger    string                 `protobuf:"bytes,1,opt,name=trigger,proto3" json:"trigger,omitempty"`
+	RunId      string                 `protobuf:"bytes,2,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	Source     string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"` // clock|hand
+	PayloadRun string                 `protobuf:"bytes,4,opt,name=payload_run,json=payloadRun,proto3" json:"payload_run,omitempty"`
+	DryRun     bool                   `protobuf:"varint,5,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	// The file `repose triggers fire --payload FILE` wrote over SSH, which
+	// the runner copies into the run's own directory. It is always under
+	// the trigger's own folder; the api checks that, and the bytes never
+	// pass through the api (DECISIONS I-1248).
+	PayloadPath   string `protobuf:"bytes,6,opt,name=payload_path,json=payloadPath,proto3" json:"payload_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunTrigger) Reset() {
+	*x = RunTrigger{}
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunTrigger) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunTrigger) ProtoMessage() {}
+
+func (x *RunTrigger) ProtoReflect() protoreflect.Message {
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunTrigger.ProtoReflect.Descriptor instead.
+func (*RunTrigger) Descriptor() ([]byte, []int) {
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RunTrigger) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
+}
+
+func (x *RunTrigger) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *RunTrigger) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *RunTrigger) GetPayloadRun() string {
+	if x != nil {
+		return x.PayloadRun
+	}
+	return ""
+}
+
+func (x *RunTrigger) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
+func (x *RunTrigger) GetPayloadPath() string {
+	if x != nil {
+		return x.PayloadPath
+	}
+	return ""
+}
+
 type Request struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Req:
@@ -921,6 +1265,9 @@ type Request struct {
 	//	*Request_RegisterPaths
 	//	*Request_AnswerQuestion
 	//	*Request_SayToAgent
+	//	*Request_SetTriggers
+	//	*Request_RunTrigger
+	//	*Request_WriteTriggerPrompt
 	Req           isRequest_Req `protobuf_oneof:"req"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -928,7 +1275,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[16]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -940,7 +1287,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[16]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -953,7 +1300,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{16}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Request) GetReq() isRequest_Req {
@@ -1089,6 +1436,33 @@ func (x *Request) GetSayToAgent() *SayToAgent {
 	return nil
 }
 
+func (x *Request) GetSetTriggers() *SetTriggers {
+	if x != nil {
+		if x, ok := x.Req.(*Request_SetTriggers); ok {
+			return x.SetTriggers
+		}
+	}
+	return nil
+}
+
+func (x *Request) GetRunTrigger() *RunTrigger {
+	if x != nil {
+		if x, ok := x.Req.(*Request_RunTrigger); ok {
+			return x.RunTrigger
+		}
+	}
+	return nil
+}
+
+func (x *Request) GetWriteTriggerPrompt() *WriteTriggerPrompt {
+	if x != nil {
+		if x, ok := x.Req.(*Request_WriteTriggerPrompt); ok {
+			return x.WriteTriggerPrompt
+		}
+	}
+	return nil
+}
+
 type isRequest_Req interface {
 	isRequest_Req()
 }
@@ -1149,6 +1523,18 @@ type Request_SayToAgent struct {
 	SayToAgent *SayToAgent `protobuf:"bytes,14,opt,name=say_to_agent,json=sayToAgent,proto3,oneof"`
 }
 
+type Request_SetTriggers struct {
+	SetTriggers *SetTriggers `protobuf:"bytes,15,opt,name=set_triggers,json=setTriggers,proto3,oneof"`
+}
+
+type Request_RunTrigger struct {
+	RunTrigger *RunTrigger `protobuf:"bytes,16,opt,name=run_trigger,json=runTrigger,proto3,oneof"`
+}
+
+type Request_WriteTriggerPrompt struct {
+	WriteTriggerPrompt *WriteTriggerPrompt `protobuf:"bytes,17,opt,name=write_trigger_prompt,json=writeTriggerPrompt,proto3,oneof"`
+}
+
 func (*Request_Ping) isRequest_Req() {}
 
 func (*Request_Freeze) isRequest_Req() {}
@@ -1177,6 +1563,12 @@ func (*Request_AnswerQuestion) isRequest_Req() {}
 
 func (*Request_SayToAgent) isRequest_Req() {}
 
+func (*Request_SetTriggers) isRequest_Req() {}
+
+func (*Request_RunTrigger) isRequest_Req() {}
+
+func (*Request_WriteTriggerPrompt) isRequest_Req() {}
+
 type Error struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
@@ -1187,7 +1579,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[17]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1199,7 +1591,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[17]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1212,7 +1604,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{17}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Error) GetCode() string {
@@ -1240,7 +1632,7 @@ type PingResult struct {
 
 func (x *PingResult) Reset() {
 	*x = PingResult{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[18]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1252,7 +1644,7 @@ func (x *PingResult) String() string {
 func (*PingResult) ProtoMessage() {}
 
 func (x *PingResult) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[18]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1265,7 +1657,7 @@ func (x *PingResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResult.ProtoReflect.Descriptor instead.
 func (*PingResult) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{18}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PingResult) GetVersion() string {
@@ -1300,7 +1692,7 @@ type SwitchResult struct {
 
 func (x *SwitchResult) Reset() {
 	*x = SwitchResult{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[19]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1312,7 +1704,7 @@ func (x *SwitchResult) String() string {
 func (*SwitchResult) ProtoMessage() {}
 
 func (x *SwitchResult) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[19]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1325,7 +1717,7 @@ func (x *SwitchResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwitchResult.ProtoReflect.Descriptor instead.
 func (*SwitchResult) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{19}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SwitchResult) GetRebooted() bool {
@@ -1358,7 +1750,7 @@ type GrowFsResult struct {
 
 func (x *GrowFsResult) Reset() {
 	*x = GrowFsResult{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[20]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1370,7 +1762,7 @@ func (x *GrowFsResult) String() string {
 func (*GrowFsResult) ProtoMessage() {}
 
 func (x *GrowFsResult) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[20]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1383,7 +1775,7 @@ func (x *GrowFsResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrowFsResult.ProtoReflect.Descriptor instead.
 func (*GrowFsResult) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{20}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GrowFsResult) GetNewBytes() uint64 {
@@ -1418,7 +1810,7 @@ type SampleResult struct {
 
 func (x *SampleResult) Reset() {
 	*x = SampleResult{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[21]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1430,7 +1822,7 @@ func (x *SampleResult) String() string {
 func (*SampleResult) ProtoMessage() {}
 
 func (x *SampleResult) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[21]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1443,7 +1835,7 @@ func (x *SampleResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SampleResult.ProtoReflect.Descriptor instead.
 func (*SampleResult) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{21}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SampleResult) GetSignals() *v1.GuestSignals {
@@ -1506,7 +1898,7 @@ type ExecResult struct {
 
 func (x *ExecResult) Reset() {
 	*x = ExecResult{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[22]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1518,7 +1910,7 @@ func (x *ExecResult) String() string {
 func (*ExecResult) ProtoMessage() {}
 
 func (x *ExecResult) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[22]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1531,7 +1923,7 @@ func (x *ExecResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResult.ProtoReflect.Descriptor instead.
 func (*ExecResult) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{22}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ExecResult) GetExitCode() int32 {
@@ -1570,7 +1962,7 @@ type SayResult struct {
 
 func (x *SayResult) Reset() {
 	*x = SayResult{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[23]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1582,7 +1974,7 @@ func (x *SayResult) String() string {
 func (*SayResult) ProtoMessage() {}
 
 func (x *SayResult) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[23]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1595,7 +1987,7 @@ func (x *SayResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SayResult.ProtoReflect.Descriptor instead.
 func (*SayResult) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{23}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SayResult) GetState() string {
@@ -1619,6 +2011,70 @@ func (x *SayResult) GetReplaced() bool {
 	return false
 }
 
+// TriggerRunResult is guestd's answer to a RunTrigger: state working (the
+// window is open and the agent has its prompt), skipped (admission
+// refused it) or failed (the prompt file is gone, or no agent is
+// installed), with the window and the bounded reason.
+type TriggerRunResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Window        string                 `protobuf:"bytes,2,opt,name=window,proto3" json:"window,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerRunResult) Reset() {
+	*x = TriggerRunResult{}
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerRunResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerRunResult) ProtoMessage() {}
+
+func (x *TriggerRunResult) ProtoReflect() protoreflect.Message {
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerRunResult.ProtoReflect.Descriptor instead.
+func (*TriggerRunResult) Descriptor() ([]byte, []int) {
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *TriggerRunResult) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *TriggerRunResult) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+func (x *TriggerRunResult) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type Response struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -1631,6 +2087,7 @@ type Response struct {
 	//	*Response_Sample
 	//	*Response_Exec
 	//	*Response_Say
+	//	*Response_TriggerRun
 	Result        isResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1638,7 +2095,7 @@ type Response struct {
 
 func (x *Response) Reset() {
 	*x = Response{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[24]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1650,7 +2107,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[24]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1663,7 +2120,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{24}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Response) GetOk() bool {
@@ -1741,6 +2198,15 @@ func (x *Response) GetSay() *SayResult {
 	return nil
 }
 
+func (x *Response) GetTriggerRun() *TriggerRunResult {
+	if x != nil {
+		if x, ok := x.Result.(*Response_TriggerRun); ok {
+			return x.TriggerRun
+		}
+	}
+	return nil
+}
+
 type isResponse_Result interface {
 	isResponse_Result()
 }
@@ -1769,6 +2235,10 @@ type Response_Say struct {
 	Say *SayResult `protobuf:"bytes,15,opt,name=say,proto3,oneof"`
 }
 
+type Response_TriggerRun struct {
+	TriggerRun *TriggerRunResult `protobuf:"bytes,16,opt,name=trigger_run,json=triggerRun,proto3,oneof"`
+}
+
 func (*Response_Ping) isResponse_Result() {}
 
 func (*Response_Switch) isResponse_Result() {}
@@ -1781,6 +2251,8 @@ func (*Response_Exec) isResponse_Result() {}
 
 func (*Response_Say) isResponse_Result() {}
 
+func (*Response_TriggerRun) isResponse_Result() {}
+
 type Ready struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BootId        string                 `protobuf:"bytes,1,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
@@ -1790,7 +2262,7 @@ type Ready struct {
 
 func (x *Ready) Reset() {
 	*x = Ready{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[25]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1802,7 +2274,7 @@ func (x *Ready) String() string {
 func (*Ready) ProtoMessage() {}
 
 func (x *Ready) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[25]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1815,7 +2287,7 @@ func (x *Ready) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ready.ProtoReflect.Descriptor instead.
 func (*Ready) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{25}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Ready) GetBootId() string {
@@ -1844,7 +2316,7 @@ type AgentEvent struct {
 
 func (x *AgentEvent) Reset() {
 	*x = AgentEvent{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[26]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1856,7 +2328,7 @@ func (x *AgentEvent) String() string {
 func (*AgentEvent) ProtoMessage() {}
 
 func (x *AgentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[26]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1869,7 +2341,7 @@ func (x *AgentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentEvent.ProtoReflect.Descriptor instead.
 func (*AgentEvent) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{26}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentEvent) GetAgent() string {
@@ -1925,7 +2397,7 @@ type AgentState struct {
 
 func (x *AgentState) Reset() {
 	*x = AgentState{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[27]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1937,7 +2409,7 @@ func (x *AgentState) String() string {
 func (*AgentState) ProtoMessage() {}
 
 func (x *AgentState) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[27]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1950,7 +2422,7 @@ func (x *AgentState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentState.ProtoReflect.Descriptor instead.
 func (*AgentState) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{27}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AgentState) GetAgent() string {
@@ -1984,7 +2456,7 @@ type Warning struct {
 
 func (x *Warning) Reset() {
 	*x = Warning{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[28]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1996,7 +2468,7 @@ func (x *Warning) String() string {
 func (*Warning) ProtoMessage() {}
 
 func (x *Warning) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[28]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2009,7 +2481,7 @@ func (x *Warning) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Warning.ProtoReflect.Descriptor instead.
 func (*Warning) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{28}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Warning) GetKind() string {
@@ -2058,7 +2530,7 @@ type Question struct {
 
 func (x *Question) Reset() {
 	*x = Question{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[29]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2070,7 +2542,7 @@ func (x *Question) String() string {
 func (*Question) ProtoMessage() {}
 
 func (x *Question) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[29]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2083,7 +2555,7 @@ func (x *Question) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Question.ProtoReflect.Descriptor instead.
 func (*Question) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{29}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Question) GetQuestionId() string {
@@ -2163,6 +2635,158 @@ func (x *Question) GetLinkLabel() string {
 	return ""
 }
 
+// TriggerRun is a run's state as the runner changes it (DECISIONS
+// I-1256). A run a webhook delivery started is announced here with state
+// working, which is how the api learns of a run it did not ask for. Open
+// runs are announced again on each new hostd connection for ten minutes,
+// as open questions are. summary is the agent's own `--done` words, 1 KB,
+// tenant content; reason is the bounded enum of features/triggers.md §4,
+// except a gate's last stderr line, at most 200 bytes.
+type TriggerRun struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	RunId        string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	Trigger      string                 `protobuf:"bytes,2,opt,name=trigger,proto3" json:"trigger,omitempty"`
+	State        string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"` // working|done|failed|timeout|skipped
+	Reason       string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	Summary      string                 `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	LinkUrl      string                 `protobuf:"bytes,6,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
+	LinkLabel    string                 `protobuf:"bytes,7,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
+	Window       string                 `protobuf:"bytes,8,opt,name=window,proto3" json:"window,omitempty"`
+	StartedUnix  int64                  `protobuf:"varint,9,opt,name=started_unix,json=startedUnix,proto3" json:"started_unix,omitempty"`
+	FinishedUnix int64                  `protobuf:"varint,10,opt,name=finished_unix,json=finishedUnix,proto3" json:"finished_unix,omitempty"`
+	// The dedupe key the run was admitted or skipped on, at most 128 bytes
+	// (DECISIONS I-1254). It is the provider's own event id, which is why
+	// it is in the run row and in no log line.
+	DedupeKey    string `protobuf:"bytes,11,opt,name=dedupe_key,json=dedupeKey,proto3" json:"dedupe_key,omitempty"`
+	PayloadBytes uint64 `protobuf:"varint,12,opt,name=payload_bytes,json=payloadBytes,proto3" json:"payload_bytes,omitempty"`
+	// The source, for a run the api did not start: route (a delivery) or,
+	// after a guestd restart, the source the run was started with.
+	Source        string `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerRun) Reset() {
+	*x = TriggerRun{}
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerRun) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerRun) ProtoMessage() {}
+
+func (x *TriggerRun) ProtoReflect() protoreflect.Message {
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerRun.ProtoReflect.Descriptor instead.
+func (*TriggerRun) Descriptor() ([]byte, []int) {
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *TriggerRun) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetLinkUrl() string {
+	if x != nil {
+		return x.LinkUrl
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetLinkLabel() string {
+	if x != nil {
+		return x.LinkLabel
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetStartedUnix() int64 {
+	if x != nil {
+		return x.StartedUnix
+	}
+	return 0
+}
+
+func (x *TriggerRun) GetFinishedUnix() int64 {
+	if x != nil {
+		return x.FinishedUnix
+	}
+	return 0
+}
+
+func (x *TriggerRun) GetDedupeKey() string {
+	if x != nil {
+		return x.DedupeKey
+	}
+	return ""
+}
+
+func (x *TriggerRun) GetPayloadBytes() uint64 {
+	if x != nil {
+		return x.PayloadBytes
+	}
+	return 0
+}
+
+func (x *TriggerRun) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
 type Notify struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to N:
@@ -2172,6 +2796,7 @@ type Notify struct {
 	//	*Notify_AgentState
 	//	*Notify_Warning
 	//	*Notify_Question
+	//	*Notify_TriggerRun
 	N             isNotify_N `protobuf_oneof:"n"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2179,7 +2804,7 @@ type Notify struct {
 
 func (x *Notify) Reset() {
 	*x = Notify{}
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[30]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2191,7 +2816,7 @@ func (x *Notify) String() string {
 func (*Notify) ProtoMessage() {}
 
 func (x *Notify) ProtoReflect() protoreflect.Message {
-	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[30]
+	mi := &file_repose_guestd_v1_guestd_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2204,7 +2829,7 @@ func (x *Notify) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Notify.ProtoReflect.Descriptor instead.
 func (*Notify) Descriptor() ([]byte, []int) {
-	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{30}
+	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *Notify) GetN() isNotify_N {
@@ -2259,6 +2884,15 @@ func (x *Notify) GetQuestion() *Question {
 	return nil
 }
 
+func (x *Notify) GetTriggerRun() *TriggerRun {
+	if x != nil {
+		if x, ok := x.N.(*Notify_TriggerRun); ok {
+			return x.TriggerRun
+		}
+	}
+	return nil
+}
+
 type isNotify_N interface {
 	isNotify_N()
 }
@@ -2283,6 +2917,10 @@ type Notify_Question struct {
 	Question *Question `protobuf:"bytes,5,opt,name=question,proto3,oneof"`
 }
 
+type Notify_TriggerRun struct {
+	TriggerRun *TriggerRun `protobuf:"bytes,6,opt,name=trigger_run,json=triggerRun,proto3,oneof"`
+}
+
 func (*Notify_Ready) isNotify_N() {}
 
 func (*Notify_AgentEvent) isNotify_N() {}
@@ -2292,6 +2930,8 @@ func (*Notify_AgentState) isNotify_N() {}
 func (*Notify_Warning) isNotify_N() {}
 
 func (*Notify_Question) isNotify_N() {}
+
+func (*Notify_TriggerRun) isNotify_N() {}
 
 var File_repose_guestd_v1_guestd_proto protoreflect.FileDescriptor
 
@@ -2338,12 +2978,13 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\ttimeout_s\x18\x02 \x01(\rR\btimeoutS\x12\x17\n" +
 	"\aas_user\x18\x03 \x01(\tR\x06asUser\"'\n" +
 	"\bShutdown\x12\x1b\n" +
-	"\ttimeout_s\x18\x01 \x01(\rR\btimeoutS\"a\n" +
+	"\ttimeout_s\x18\x01 \x01(\rR\btimeoutS\"\x84\x01\n" +
 	"\x0eAnswerQuestion\x12\x1f\n" +
 	"\vquestion_id\x18\x01 \x01(\tR\n" +
 	"questionId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
-	"\x06answer\x18\x03 \x01(\tR\x06answer\"\x86\x01\n" +
+	"\x06answer\x18\x03 \x01(\tR\x06answer\x12!\n" +
+	"\fexpires_unix\x18\x04 \x01(\x03R\vexpiresUnix\"\x86\x01\n" +
 	"\n" +
 	"SayToAgent\x12\x15\n" +
 	"\x06say_id\x18\x01 \x01(\tR\x05sayId\x12\x16\n" +
@@ -2351,7 +2992,37 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12\x16\n" +
 	"\x06sender\x18\x04 \x01(\tR\x06sender\x12\x1d\n" +
 	"\n" +
-	"from_owner\x18\x05 \x01(\bR\tfromOwner\"\xd6\x06\n" +
+	"from_owner\x18\x05 \x01(\bR\tfromOwner\"\x87\x02\n" +
+	"\aTrigger\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1f\n" +
+	"\vprompt_path\x18\x03 \x01(\tR\n" +
+	"promptPath\x12\x18\n" +
+	"\aworkdir\x18\x04 \x01(\tR\aworkdir\x12\x14\n" +
+	"\x05agent\x18\x05 \x01(\tR\x05agent\x12\x1b\n" +
+	"\ttimeout_s\x18\x06 \x01(\rR\btimeoutS\x12 \n" +
+	"\vconcurrency\x18\a \x01(\rR\vconcurrency\x12\x12\n" +
+	"\x04gate\x18\t \x01(\tR\x04gate\x12\x16\n" +
+	"\x06dedupe\x18\n" +
+	" \x01(\tR\x06dedupe\x12\x18\n" +
+	"\aenabled\x18\v \x01(\bR\aenabled\"D\n" +
+	"\vSetTriggers\x125\n" +
+	"\btriggers\x18\x01 \x03(\v2\x19.repose.guestd.v1.TriggerR\btriggers\"}\n" +
+	"\x12WriteTriggerPrompt\x12\x18\n" +
+	"\atrigger\x18\x01 \x01(\tR\atrigger\x12\x18\n" +
+	"\aworkdir\x18\x02 \x01(\tR\aworkdir\x12\x1f\n" +
+	"\vprompt_path\x18\x03 \x01(\tR\n" +
+	"promptPath\x12\x12\n" +
+	"\x04text\x18\x04 \x01(\fR\x04text\"\xb2\x01\n" +
+	"\n" +
+	"RunTrigger\x12\x18\n" +
+	"\atrigger\x18\x01 \x01(\tR\atrigger\x12\x15\n" +
+	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x16\n" +
+	"\x06source\x18\x03 \x01(\tR\x06source\x12\x1f\n" +
+	"\vpayload_run\x18\x04 \x01(\tR\n" +
+	"payloadRun\x12\x17\n" +
+	"\adry_run\x18\x05 \x01(\bR\x06dryRun\x12!\n" +
+	"\fpayload_path\x18\x06 \x01(\tR\vpayloadPath\"\xb5\b\n" +
 	"\aRequest\x12,\n" +
 	"\x04ping\x18\x01 \x01(\v2\x16.repose.guestd.v1.PingH\x00R\x04ping\x122\n" +
 	"\x06freeze\x18\x02 \x01(\v2\x18.repose.guestd.v1.FreezeH\x00R\x06freeze\x12,\n" +
@@ -2368,7 +3039,11 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\x0eregister_paths\x18\f \x01(\v2\x1f.repose.guestd.v1.RegisterPathsH\x00R\rregisterPaths\x12K\n" +
 	"\x0fanswer_question\x18\r \x01(\v2 .repose.guestd.v1.AnswerQuestionH\x00R\x0eanswerQuestion\x12@\n" +
 	"\fsay_to_agent\x18\x0e \x01(\v2\x1c.repose.guestd.v1.SayToAgentH\x00R\n" +
-	"sayToAgentB\x05\n" +
+	"sayToAgent\x12B\n" +
+	"\fset_triggers\x18\x0f \x01(\v2\x1d.repose.guestd.v1.SetTriggersH\x00R\vsetTriggers\x12?\n" +
+	"\vrun_trigger\x18\x10 \x01(\v2\x1c.repose.guestd.v1.RunTriggerH\x00R\n" +
+	"runTrigger\x12X\n" +
+	"\x14write_trigger_prompt\x18\x11 \x01(\v2$.repose.guestd.v1.WriteTriggerPromptH\x00R\x12writeTriggerPromptB\x05\n" +
 	"\x03req\"5\n" +
 	"\x05Error\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
@@ -2400,7 +3075,11 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\tSayResult\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x16\n" +
 	"\x06window\x18\x02 \x01(\tR\x06window\x12\x1a\n" +
-	"\breplaced\x18\x03 \x01(\bR\breplaced\"\x9b\x03\n" +
+	"\breplaced\x18\x03 \x01(\bR\breplaced\"X\n" +
+	"\x10TriggerRunResult\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x16\n" +
+	"\x06window\x18\x02 \x01(\tR\x06window\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xe2\x03\n" +
 	"\bResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12-\n" +
 	"\x05error\x18\x02 \x01(\v2\x17.repose.guestd.v1.ErrorR\x05error\x122\n" +
@@ -2410,7 +3089,9 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\agrow_fs\x18\f \x01(\v2\x1e.repose.guestd.v1.GrowFsResultH\x00R\x06growFs\x128\n" +
 	"\x06sample\x18\r \x01(\v2\x1e.repose.guestd.v1.SampleResultH\x00R\x06sample\x122\n" +
 	"\x04exec\x18\x0e \x01(\v2\x1c.repose.guestd.v1.ExecResultH\x00R\x04exec\x12/\n" +
-	"\x03say\x18\x0f \x01(\v2\x1b.repose.guestd.v1.SayResultH\x00R\x03sayB\b\n" +
+	"\x03say\x18\x0f \x01(\v2\x1b.repose.guestd.v1.SayResultH\x00R\x03say\x12E\n" +
+	"\vtrigger_run\x18\x10 \x01(\v2\".repose.guestd.v1.TriggerRunResultH\x00R\n" +
+	"triggerRunB\b\n" +
 	"\x06result\" \n" +
 	"\x05Ready\x12\x17\n" +
 	"\aboot_id\x18\x01 \x01(\tR\x06bootId\"\xab\x01\n" +
@@ -2448,7 +3129,25 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\blink_url\x18\n" +
 	" \x01(\tR\alinkUrl\x12\x1d\n" +
 	"\n" +
-	"link_label\x18\v \x01(\tR\tlinkLabel\"\xb1\x02\n" +
+	"link_label\x18\v \x01(\tR\tlinkLabel\"\x81\x03\n" +
+	"\n" +
+	"TriggerRun\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x18\n" +
+	"\atrigger\x18\x02 \x01(\tR\atrigger\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x18\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\x12\x19\n" +
+	"\blink_url\x18\x06 \x01(\tR\alinkUrl\x12\x1d\n" +
+	"\n" +
+	"link_label\x18\a \x01(\tR\tlinkLabel\x12\x16\n" +
+	"\x06window\x18\b \x01(\tR\x06window\x12!\n" +
+	"\fstarted_unix\x18\t \x01(\x03R\vstartedUnix\x12#\n" +
+	"\rfinished_unix\x18\n" +
+	" \x01(\x03R\ffinishedUnix\x12\x1d\n" +
+	"\n" +
+	"dedupe_key\x18\v \x01(\tR\tdedupeKey\x12#\n" +
+	"\rpayload_bytes\x18\f \x01(\x04R\fpayloadBytes\x12\x16\n" +
+	"\x06source\x18\x0e \x01(\tR\x06sourceJ\x04\b\r\x10\x0e\"\xf2\x02\n" +
 	"\x06Notify\x12/\n" +
 	"\x05ready\x18\x01 \x01(\v2\x17.repose.guestd.v1.ReadyH\x00R\x05ready\x12?\n" +
 	"\vagent_event\x18\x02 \x01(\v2\x1c.repose.guestd.v1.AgentEventH\x00R\n" +
@@ -2456,7 +3155,9 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\vagent_state\x18\x03 \x01(\v2\x1c.repose.guestd.v1.AgentStateH\x00R\n" +
 	"agentState\x125\n" +
 	"\awarning\x18\x04 \x01(\v2\x19.repose.guestd.v1.WarningH\x00R\awarning\x128\n" +
-	"\bquestion\x18\x05 \x01(\v2\x1a.repose.guestd.v1.QuestionH\x00R\bquestionB\x03\n" +
+	"\bquestion\x18\x05 \x01(\v2\x1a.repose.guestd.v1.QuestionH\x00R\bquestion\x12?\n" +
+	"\vtrigger_run\x18\x06 \x01(\v2\x1c.repose.guestd.v1.TriggerRunH\x00R\n" +
+	"triggerRunB\x03\n" +
 	"\x01nB=Z;github.com/heracraft/repose/internal/gen/guestd/v1;guestdv1b\x06proto3"
 
 var (
@@ -2471,80 +3172,92 @@ func file_repose_guestd_v1_guestd_proto_rawDescGZIP() []byte {
 	return file_repose_guestd_v1_guestd_proto_rawDescData
 }
 
-var file_repose_guestd_v1_guestd_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_repose_guestd_v1_guestd_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_repose_guestd_v1_guestd_proto_goTypes = []any{
-	(*Envelope)(nil),        // 0: repose.guestd.v1.Envelope
-	(*Secret)(nil),          // 1: repose.guestd.v1.Secret
-	(*Ping)(nil),            // 2: repose.guestd.v1.Ping
-	(*Freeze)(nil),          // 3: repose.guestd.v1.Freeze
-	(*Thaw)(nil),            // 4: repose.guestd.v1.Thaw
-	(*Switch)(nil),          // 5: repose.guestd.v1.Switch
-	(*RegisterPaths)(nil),   // 6: repose.guestd.v1.RegisterPaths
-	(*GrowFs)(nil),          // 7: repose.guestd.v1.GrowFs
-	(*WriteSecrets)(nil),    // 8: repose.guestd.v1.WriteSecrets
-	(*SetPrincipals)(nil),   // 9: repose.guestd.v1.SetPrincipals
-	(*SetupProject)(nil),    // 10: repose.guestd.v1.SetupProject
-	(*Sample)(nil),          // 11: repose.guestd.v1.Sample
-	(*Exec)(nil),            // 12: repose.guestd.v1.Exec
-	(*Shutdown)(nil),        // 13: repose.guestd.v1.Shutdown
-	(*AnswerQuestion)(nil),  // 14: repose.guestd.v1.AnswerQuestion
-	(*SayToAgent)(nil),      // 15: repose.guestd.v1.SayToAgent
-	(*Request)(nil),         // 16: repose.guestd.v1.Request
-	(*Error)(nil),           // 17: repose.guestd.v1.Error
-	(*PingResult)(nil),      // 18: repose.guestd.v1.PingResult
-	(*SwitchResult)(nil),    // 19: repose.guestd.v1.SwitchResult
-	(*GrowFsResult)(nil),    // 20: repose.guestd.v1.GrowFsResult
-	(*SampleResult)(nil),    // 21: repose.guestd.v1.SampleResult
-	(*ExecResult)(nil),      // 22: repose.guestd.v1.ExecResult
-	(*SayResult)(nil),       // 23: repose.guestd.v1.SayResult
-	(*Response)(nil),        // 24: repose.guestd.v1.Response
-	(*Ready)(nil),           // 25: repose.guestd.v1.Ready
-	(*AgentEvent)(nil),      // 26: repose.guestd.v1.AgentEvent
-	(*AgentState)(nil),      // 27: repose.guestd.v1.AgentState
-	(*Warning)(nil),         // 28: repose.guestd.v1.Warning
-	(*Question)(nil),        // 29: repose.guestd.v1.Question
-	(*Notify)(nil),          // 30: repose.guestd.v1.Notify
-	(*v1.GuestSignals)(nil), // 31: repose.hostd.v1.GuestSignals
-	(*v1.ProcSample)(nil),   // 32: repose.hostd.v1.ProcSample
+	(*Envelope)(nil),           // 0: repose.guestd.v1.Envelope
+	(*Secret)(nil),             // 1: repose.guestd.v1.Secret
+	(*Ping)(nil),               // 2: repose.guestd.v1.Ping
+	(*Freeze)(nil),             // 3: repose.guestd.v1.Freeze
+	(*Thaw)(nil),               // 4: repose.guestd.v1.Thaw
+	(*Switch)(nil),             // 5: repose.guestd.v1.Switch
+	(*RegisterPaths)(nil),      // 6: repose.guestd.v1.RegisterPaths
+	(*GrowFs)(nil),             // 7: repose.guestd.v1.GrowFs
+	(*WriteSecrets)(nil),       // 8: repose.guestd.v1.WriteSecrets
+	(*SetPrincipals)(nil),      // 9: repose.guestd.v1.SetPrincipals
+	(*SetupProject)(nil),       // 10: repose.guestd.v1.SetupProject
+	(*Sample)(nil),             // 11: repose.guestd.v1.Sample
+	(*Exec)(nil),               // 12: repose.guestd.v1.Exec
+	(*Shutdown)(nil),           // 13: repose.guestd.v1.Shutdown
+	(*AnswerQuestion)(nil),     // 14: repose.guestd.v1.AnswerQuestion
+	(*SayToAgent)(nil),         // 15: repose.guestd.v1.SayToAgent
+	(*Trigger)(nil),            // 16: repose.guestd.v1.Trigger
+	(*SetTriggers)(nil),        // 17: repose.guestd.v1.SetTriggers
+	(*WriteTriggerPrompt)(nil), // 18: repose.guestd.v1.WriteTriggerPrompt
+	(*RunTrigger)(nil),         // 19: repose.guestd.v1.RunTrigger
+	(*Request)(nil),            // 20: repose.guestd.v1.Request
+	(*Error)(nil),              // 21: repose.guestd.v1.Error
+	(*PingResult)(nil),         // 22: repose.guestd.v1.PingResult
+	(*SwitchResult)(nil),       // 23: repose.guestd.v1.SwitchResult
+	(*GrowFsResult)(nil),       // 24: repose.guestd.v1.GrowFsResult
+	(*SampleResult)(nil),       // 25: repose.guestd.v1.SampleResult
+	(*ExecResult)(nil),         // 26: repose.guestd.v1.ExecResult
+	(*SayResult)(nil),          // 27: repose.guestd.v1.SayResult
+	(*TriggerRunResult)(nil),   // 28: repose.guestd.v1.TriggerRunResult
+	(*Response)(nil),           // 29: repose.guestd.v1.Response
+	(*Ready)(nil),              // 30: repose.guestd.v1.Ready
+	(*AgentEvent)(nil),         // 31: repose.guestd.v1.AgentEvent
+	(*AgentState)(nil),         // 32: repose.guestd.v1.AgentState
+	(*Warning)(nil),            // 33: repose.guestd.v1.Warning
+	(*Question)(nil),           // 34: repose.guestd.v1.Question
+	(*TriggerRun)(nil),         // 35: repose.guestd.v1.TriggerRun
+	(*Notify)(nil),             // 36: repose.guestd.v1.Notify
+	(*v1.GuestSignals)(nil),    // 37: repose.hostd.v1.GuestSignals
+	(*v1.ProcSample)(nil),      // 38: repose.hostd.v1.ProcSample
 }
 var file_repose_guestd_v1_guestd_proto_depIdxs = []int32{
-	16, // 0: repose.guestd.v1.Envelope.request:type_name -> repose.guestd.v1.Request
-	24, // 1: repose.guestd.v1.Envelope.response:type_name -> repose.guestd.v1.Response
-	30, // 2: repose.guestd.v1.Envelope.notify:type_name -> repose.guestd.v1.Notify
+	20, // 0: repose.guestd.v1.Envelope.request:type_name -> repose.guestd.v1.Request
+	29, // 1: repose.guestd.v1.Envelope.response:type_name -> repose.guestd.v1.Response
+	36, // 2: repose.guestd.v1.Envelope.notify:type_name -> repose.guestd.v1.Notify
 	1,  // 3: repose.guestd.v1.WriteSecrets.secrets:type_name -> repose.guestd.v1.Secret
-	2,  // 4: repose.guestd.v1.Request.ping:type_name -> repose.guestd.v1.Ping
-	3,  // 5: repose.guestd.v1.Request.freeze:type_name -> repose.guestd.v1.Freeze
-	4,  // 6: repose.guestd.v1.Request.thaw:type_name -> repose.guestd.v1.Thaw
-	5,  // 7: repose.guestd.v1.Request.switch:type_name -> repose.guestd.v1.Switch
-	7,  // 8: repose.guestd.v1.Request.grow_fs:type_name -> repose.guestd.v1.GrowFs
-	8,  // 9: repose.guestd.v1.Request.write_secrets:type_name -> repose.guestd.v1.WriteSecrets
-	9,  // 10: repose.guestd.v1.Request.set_principals:type_name -> repose.guestd.v1.SetPrincipals
-	10, // 11: repose.guestd.v1.Request.setup_project:type_name -> repose.guestd.v1.SetupProject
-	11, // 12: repose.guestd.v1.Request.sample:type_name -> repose.guestd.v1.Sample
-	12, // 13: repose.guestd.v1.Request.exec:type_name -> repose.guestd.v1.Exec
-	13, // 14: repose.guestd.v1.Request.shutdown:type_name -> repose.guestd.v1.Shutdown
-	6,  // 15: repose.guestd.v1.Request.register_paths:type_name -> repose.guestd.v1.RegisterPaths
-	14, // 16: repose.guestd.v1.Request.answer_question:type_name -> repose.guestd.v1.AnswerQuestion
-	15, // 17: repose.guestd.v1.Request.say_to_agent:type_name -> repose.guestd.v1.SayToAgent
-	31, // 18: repose.guestd.v1.SampleResult.signals:type_name -> repose.hostd.v1.GuestSignals
-	32, // 19: repose.guestd.v1.SampleResult.procs:type_name -> repose.hostd.v1.ProcSample
-	17, // 20: repose.guestd.v1.Response.error:type_name -> repose.guestd.v1.Error
-	18, // 21: repose.guestd.v1.Response.ping:type_name -> repose.guestd.v1.PingResult
-	19, // 22: repose.guestd.v1.Response.switch:type_name -> repose.guestd.v1.SwitchResult
-	20, // 23: repose.guestd.v1.Response.grow_fs:type_name -> repose.guestd.v1.GrowFsResult
-	21, // 24: repose.guestd.v1.Response.sample:type_name -> repose.guestd.v1.SampleResult
-	22, // 25: repose.guestd.v1.Response.exec:type_name -> repose.guestd.v1.ExecResult
-	23, // 26: repose.guestd.v1.Response.say:type_name -> repose.guestd.v1.SayResult
-	25, // 27: repose.guestd.v1.Notify.ready:type_name -> repose.guestd.v1.Ready
-	26, // 28: repose.guestd.v1.Notify.agent_event:type_name -> repose.guestd.v1.AgentEvent
-	27, // 29: repose.guestd.v1.Notify.agent_state:type_name -> repose.guestd.v1.AgentState
-	28, // 30: repose.guestd.v1.Notify.warning:type_name -> repose.guestd.v1.Warning
-	29, // 31: repose.guestd.v1.Notify.question:type_name -> repose.guestd.v1.Question
-	32, // [32:32] is the sub-list for method output_type
-	32, // [32:32] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	16, // 4: repose.guestd.v1.SetTriggers.triggers:type_name -> repose.guestd.v1.Trigger
+	2,  // 5: repose.guestd.v1.Request.ping:type_name -> repose.guestd.v1.Ping
+	3,  // 6: repose.guestd.v1.Request.freeze:type_name -> repose.guestd.v1.Freeze
+	4,  // 7: repose.guestd.v1.Request.thaw:type_name -> repose.guestd.v1.Thaw
+	5,  // 8: repose.guestd.v1.Request.switch:type_name -> repose.guestd.v1.Switch
+	7,  // 9: repose.guestd.v1.Request.grow_fs:type_name -> repose.guestd.v1.GrowFs
+	8,  // 10: repose.guestd.v1.Request.write_secrets:type_name -> repose.guestd.v1.WriteSecrets
+	9,  // 11: repose.guestd.v1.Request.set_principals:type_name -> repose.guestd.v1.SetPrincipals
+	10, // 12: repose.guestd.v1.Request.setup_project:type_name -> repose.guestd.v1.SetupProject
+	11, // 13: repose.guestd.v1.Request.sample:type_name -> repose.guestd.v1.Sample
+	12, // 14: repose.guestd.v1.Request.exec:type_name -> repose.guestd.v1.Exec
+	13, // 15: repose.guestd.v1.Request.shutdown:type_name -> repose.guestd.v1.Shutdown
+	6,  // 16: repose.guestd.v1.Request.register_paths:type_name -> repose.guestd.v1.RegisterPaths
+	14, // 17: repose.guestd.v1.Request.answer_question:type_name -> repose.guestd.v1.AnswerQuestion
+	15, // 18: repose.guestd.v1.Request.say_to_agent:type_name -> repose.guestd.v1.SayToAgent
+	17, // 19: repose.guestd.v1.Request.set_triggers:type_name -> repose.guestd.v1.SetTriggers
+	19, // 20: repose.guestd.v1.Request.run_trigger:type_name -> repose.guestd.v1.RunTrigger
+	18, // 21: repose.guestd.v1.Request.write_trigger_prompt:type_name -> repose.guestd.v1.WriteTriggerPrompt
+	37, // 22: repose.guestd.v1.SampleResult.signals:type_name -> repose.hostd.v1.GuestSignals
+	38, // 23: repose.guestd.v1.SampleResult.procs:type_name -> repose.hostd.v1.ProcSample
+	21, // 24: repose.guestd.v1.Response.error:type_name -> repose.guestd.v1.Error
+	22, // 25: repose.guestd.v1.Response.ping:type_name -> repose.guestd.v1.PingResult
+	23, // 26: repose.guestd.v1.Response.switch:type_name -> repose.guestd.v1.SwitchResult
+	24, // 27: repose.guestd.v1.Response.grow_fs:type_name -> repose.guestd.v1.GrowFsResult
+	25, // 28: repose.guestd.v1.Response.sample:type_name -> repose.guestd.v1.SampleResult
+	26, // 29: repose.guestd.v1.Response.exec:type_name -> repose.guestd.v1.ExecResult
+	27, // 30: repose.guestd.v1.Response.say:type_name -> repose.guestd.v1.SayResult
+	28, // 31: repose.guestd.v1.Response.trigger_run:type_name -> repose.guestd.v1.TriggerRunResult
+	30, // 32: repose.guestd.v1.Notify.ready:type_name -> repose.guestd.v1.Ready
+	31, // 33: repose.guestd.v1.Notify.agent_event:type_name -> repose.guestd.v1.AgentEvent
+	32, // 34: repose.guestd.v1.Notify.agent_state:type_name -> repose.guestd.v1.AgentState
+	33, // 35: repose.guestd.v1.Notify.warning:type_name -> repose.guestd.v1.Warning
+	34, // 36: repose.guestd.v1.Notify.question:type_name -> repose.guestd.v1.Question
+	35, // 37: repose.guestd.v1.Notify.trigger_run:type_name -> repose.guestd.v1.TriggerRun
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_repose_guestd_v1_guestd_proto_init() }
@@ -2557,7 +3270,7 @@ func file_repose_guestd_v1_guestd_proto_init() {
 		(*Envelope_Response)(nil),
 		(*Envelope_Notify)(nil),
 	}
-	file_repose_guestd_v1_guestd_proto_msgTypes[16].OneofWrappers = []any{
+	file_repose_guestd_v1_guestd_proto_msgTypes[20].OneofWrappers = []any{
 		(*Request_Ping)(nil),
 		(*Request_Freeze)(nil),
 		(*Request_Thaw)(nil),
@@ -2572,21 +3285,26 @@ func file_repose_guestd_v1_guestd_proto_init() {
 		(*Request_RegisterPaths)(nil),
 		(*Request_AnswerQuestion)(nil),
 		(*Request_SayToAgent)(nil),
+		(*Request_SetTriggers)(nil),
+		(*Request_RunTrigger)(nil),
+		(*Request_WriteTriggerPrompt)(nil),
 	}
-	file_repose_guestd_v1_guestd_proto_msgTypes[24].OneofWrappers = []any{
+	file_repose_guestd_v1_guestd_proto_msgTypes[29].OneofWrappers = []any{
 		(*Response_Ping)(nil),
 		(*Response_Switch)(nil),
 		(*Response_GrowFs)(nil),
 		(*Response_Sample)(nil),
 		(*Response_Exec)(nil),
 		(*Response_Say)(nil),
+		(*Response_TriggerRun)(nil),
 	}
-	file_repose_guestd_v1_guestd_proto_msgTypes[30].OneofWrappers = []any{
+	file_repose_guestd_v1_guestd_proto_msgTypes[36].OneofWrappers = []any{
 		(*Notify_Ready)(nil),
 		(*Notify_AgentEvent)(nil),
 		(*Notify_AgentState)(nil),
 		(*Notify_Warning)(nil),
 		(*Notify_Question)(nil),
+		(*Notify_TriggerRun)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2594,7 +3312,7 @@ func file_repose_guestd_v1_guestd_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_repose_guestd_v1_guestd_proto_rawDesc), len(file_repose_guestd_v1_guestd_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   31,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

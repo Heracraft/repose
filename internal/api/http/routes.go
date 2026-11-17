@@ -56,6 +56,17 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/webhooks/{name}", a(s.getWebhook))
 	s.route(m, "DELETE /v1/projects/{id}/webhooks/{name}", a(s.deleteWebhook))
 	s.route(m, "POST /v1/projects/{id}/webhooks/{name}/rotate", a(s.rotateWebhook))
+	// Triggers (DECISIONS I-1248..I-1262).
+	s.route(m, "GET /v1/projects/{id}/triggers", a(s.listTriggers))
+	s.route(m, "POST /v1/projects/{id}/triggers", a(s.putTrigger))
+	s.route(m, "GET /v1/projects/{id}/triggers/{name}", a(s.getTrigger))
+	s.route(m, "DELETE /v1/projects/{id}/triggers/{name}", a(s.deleteTrigger))
+	s.route(m, "POST /v1/projects/{id}/triggers/{name}/fire", a(s.fireTrigger))
+	// Every project's runs in one listing, which is what "what did my
+	// agents do last night" asks (I-1256), beside the per-project one.
+	s.route(m, "GET /v1/trigger-runs", a(s.listAllTriggerRuns))
+	s.route(m, "GET /v1/projects/{id}/trigger-runs", a(s.listTriggerRuns))
+	s.route(m, "GET /v1/projects/{id}/trigger-runs/{run_id}", a(s.getTriggerRun))
 	// The dashboard's view of the machine browser (DECISIONS I-1216).
 	// The stream route carries no project id on purpose: the ticket names
 	// the project, and the handler resolves nothing a caller chose.
@@ -77,6 +88,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/questions", a(s.listProjectQuestions))
 	s.route(m, "POST /v1/projects/{id}/questions/{qid}/answer", a(s.answerQuestion))
 	s.route(m, "POST /v1/projects/{id}/questions/{qid}/cancel", a(s.cancelQuestion))
+	s.route(m, "POST /v1/projects/{id}/questions/{qid}/hold", a(s.holdQuestion))
 	// Usage and billing (DECISIONS I-289). POST /v1/billing/waitlist and
 	// GET /v1/public/seats are the seats workstream's (I-290).
 	s.route(m, "GET /v1/usage", a(s.usage))

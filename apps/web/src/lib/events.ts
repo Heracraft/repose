@@ -32,6 +32,8 @@ const AGENT_KINDS = [
 /** Kinds that say something failed, beyond the *_failed ones. */
 const FAILED_KINDS = ['abuse_stopped'];
 
+
+
 /**
  * The pager's filters (I-662), as explicit kind lists so the api can
  * filter by them. An agent's error is in both Agents and Errors.
@@ -40,6 +42,7 @@ export const EVENT_FILTERS = {
 	agents: [...AGENT_KINDS],
 	errors: [
 		'error',
+		'trigger_failed',
 		'base_update_failed',
 		'snapshot_failed',
 		'destroy_failed',
@@ -51,6 +54,10 @@ export const EVENT_FILTERS = {
 	],
 	machine: [
 		'guest_state_changed',
+		// A trigger's run is the machine working without the user, which
+		// is what this filter is for; a failed one is under Errors too
+		// (I-1256).
+		'trigger_run',
 		'base_updated',
 		'snapshot_done',
 		'idle_running',
@@ -83,6 +90,11 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 	// day (I-617): eventverbs.go, `repose ls` and the projects list all
 	// say it, and this card said "idle", which is an agent's state
 	// (I-826).
+	// A trigger's run. The summary is the agent's own `--done` words
+	// where it sent any, else the reason in the words of
+	// features/triggers.md §4.1.
+	trigger_run: { label: 'trigger', tone: 'neutral' },
+	trigger_failed: { label: 'trigger failed', tone: 'error' },
 	idle_running: { label: 'unused', tone: 'attention' },
 	temp_expiring: { label: 'expiring', tone: 'attention' },
 	temp_destroyed: { label: 'destroyed', tone: 'neutral' },

@@ -397,7 +397,7 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	// A row whose news is over is dropped on every channel, held or not:
 	// a question card whose question closed while it waited would show
 	// buttons that answer nothing (I-689, I-692).
-	if heldKinds[r.kind] && r.projectID != uuid.Nil {
+	if agentKinds[r.kind] && r.projectID != uuid.Nil {
 		if over, err := o.resolved(ctx, r); err != nil {
 			o.log.Error("outbox resolved check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
 			return // the row's next_at already moved a minute on; it is tried again then
@@ -406,7 +406,7 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 			return
 		}
 		now := o.Now()
-		if until := r.eventTS.Add(MaxHold); now.Before(until) {
+		if until := r.eventTS.Add(MaxHold); heldKinds[r.kind] && now.Before(until) {
 			present, err := o.present(ctx, r.projectID, now)
 			if err != nil {
 				o.log.Error("outbox presence check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
@@ -531,10 +531,19 @@ func (o *Outbox) markBroken(ctx context.Context, userID uuid.UUID, gchatURL stri
 	o.log.Warn("notification channel refused", "event", "notify_fail", "channel", "gchat", "user_id", userID.String())
 }
 
-// heldKinds are what an agent reports to its owner: held while the owner
-// is at the machine (DECISIONS I-689). Platform and account kinds are
-// never held.
-var heldKinds = map[string]bool{"agent_question": true, "agent_done": true, "agent_message": true, "needs_input": true, "error": true}
+// agentKinds are what an agent reports to its owner (DECISIONS I-689): a
+// row of one of them is dropped when its news is over by the time it
+// would go. Platform and account kinds are never dropped or held.
+var agentKinds = map[string]bool{"agent_question": true, "agent_done": true, "agent_message": true, "needs_input": true, "error": true}
+
+// heldKinds are the agent kinds held while the owner is at the machine.
+// A question is not one of them (DECISIONS I-1242, amending I-689): the
+// owner at the machine may be in another tmux window or another desktop,
+// and a question held ten minutes is an agent stopped for ten minutes,
+// or a `repose-ask --secret` nobody saw. Its answer still ends the
+// agent's wait wherever it is given, so the question is sent at once and
+// the terminal keeps closing it (I-690).
+var heldKinds = map[string]bool{"agent_done": true, "agent_message": true, "needs_input": true, "error": true}
 
 // The hold (DECISIONS I-689): a row of a held kind waits HoldStep at a
 // time while the owner is present, for at most MaxHold from its event;
@@ -893,7 +902,7 @@ func ntfyPriority(kind string) string {
 	switch kind {
 	case "needs_input", "agent_question":
 		return "5"
-	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "stop_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted":
+	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "stop_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted", "trigger_failed":
 		return "4"
 	}
 	return "3"

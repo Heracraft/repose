@@ -40,7 +40,26 @@
       }
     },
     "gemini": {},
-    "opencode": {},
+    "opencode": {
+      "user": {
+        "chrome-devtools": {
+          "command": [
+            "chrome-devtools-mcp",
+            "--browserUrl",
+            "http://127.0.0.1:9224"
+          ],
+          "type": "local"
+        },
+        "playwright": {
+          "command": [
+            "playwright-mcp",
+            "--cdp-endpoint",
+            "http://127.0.0.1:9224"
+          ],
+          "type": "local"
+        }
+      }
+    },
     "pi": {}
   }
 }

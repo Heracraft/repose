@@ -7,6 +7,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 func (m *Manager) updateSecrets(ctx context.Context, c *hostdv1.UpdateSecrets) *Error {
@@ -60,9 +61,10 @@ func (m *Manager) setPrincipals(ctx context.Context, c *hostdv1.SetPrincipals) *
 }
 
 // answerQuestion relays the user's reply to the guest whose repose-ask is
-// waiting (DECISIONS I-244). The answer is tenant text and is not logged; a
-// guest that is not running, or no longer knows the question, is not_found,
-// which the api takes as final.
+// waiting (DECISIONS I-244), or, with status extended, the new deadline
+// of a question the owner is answering (DECISIONS I-1242). The answer is
+// tenant text and is not logged; a guest that is not running, or no
+// longer knows the question, is not_found, which the api takes as final.
 func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion) *Error {
 	if c.QuestionId == "" || c.Status == "" {
 		return errf(CodeInvalidArgument, "question_id and status required")
@@ -80,7 +82,7 @@ func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion)
 	if serr != nil {
 		return serr
 	}
-	err := sess.AnswerQuestion(ctx, &guestdv1.AnswerQuestion{QuestionId: c.QuestionId, Status: c.Status, Answer: c.Answer})
+	err := sess.AnswerQuestion(ctx, &guestdv1.AnswerQuestion{QuestionId: c.QuestionId, Status: c.Status, Answer: c.Answer, ExpiresUnix: c.ExpiresUnix})
 	if err != nil {
 		if re, ok := vsockclient.IsRemote(err); ok {
 			if re.Code == CodeNotFound || re.Code == CodeInvalidArgument {
@@ -89,6 +91,10 @@ func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion)
 			return errf(CodeInternal, "guestd AnswerQuestion: %s: %s", re.Code, re.Message)
 		}
 		return errf(CodeGuestUnresponsive, "guestd AnswerQuestion: %v", err)
+	}
+	if c.Status == "extended" {
+		m.log(g).Info("question held open", "event", "agent_question", "question_id", c.QuestionId, "status", c.Status)
+		return nil
 	}
 	m.log(g).Info("question answered", "event", "agent_question", "question_id", c.QuestionId, "status", c.Status)
 	return nil
@@ -134,6 +140,129 @@ func (m *Manager) sayToAgent(ctx context.Context, c *hostdv1.SayToAgent) (*hostd
 	}
 	m.log(g).Info("message for an agent", "event", "agent_prompted", "say_id", c.SayId, "state", res.GetState())
 	return &hostdv1.SayResult{State: res.GetState(), Window: res.GetWindow(), Replaced: res.GetReplaced()}, nil
+}
+
+// setTriggers relays the project's whole trigger set to guestd
+// (DECISIONS I-1248). It is a state the api owns: hostd keeps none of
+// it, and the api sends it again on every start, so a guest that lost it
+// comes back with it. A guest that is not running is not an error — the
+// set reaches it at its start.
+func (m *Manager) setTriggers(ctx context.Context, c *hostdv1.SetTriggers) *Error {
+	g, gerr := m.getGuest(c.GuestId)
+	if gerr != nil {
+		return gerr
+	}
+	if g.State != StateRunning {
+		return nil
+	}
+	sess, serr := m.session(g.GuestID)
+	if serr != nil {
+		return serr
+	}
+	set := make([]*guestdv1.Trigger, 0, len(c.Triggers))
+	for _, t := range c.Triggers {
+		set = append(set, &guestdv1.Trigger{
+			Name: t.GetName(), Kind: t.GetKind(), PromptPath: t.GetPromptPath(),
+			Workdir: t.GetWorkdir(), Agent: t.GetAgent(), TimeoutS: t.GetTimeoutS(),
+			Concurrency: t.GetConcurrency(), Gate: t.GetGate(),
+			Dedupe: t.GetDedupe(), Enabled: t.GetEnabled(),
+		})
+	}
+	if err := sess.SetTriggers(ctx, &guestdv1.SetTriggers{Triggers: set}); err != nil {
+		if re, ok := vsockclient.IsRemote(err); ok {
+			return errf(CodeInternal, "guestd SetTriggers: %s: %s", re.Code, re.Message)
+		}
+		return errf(CodeGuestUnresponsive, "guestd SetTriggers: %v", err)
+	}
+	m.log(g).Info("trigger set pushed", "event", "trigger_run", "count", len(set))
+	return nil
+}
+
+// writeTriggerPrompt relays a prompt's text to guestd, which writes it
+// into the machine as dev (DECISIONS I-1266). `repose triggers add -p`
+// writes the same file over SSH; the dashboard has no SSH, so the api
+// carries the text and stores none of it. The text is the user's prompt
+// and the name is the user's word, so neither is a log field: the line
+// carries the size.
+func (m *Manager) writeTriggerPrompt(ctx context.Context, c *hostdv1.WriteTriggerPrompt) *Error {
+	if c.Trigger == "" || c.PromptPath == "" || len(c.Text) == 0 {
+		return errf(CodeInvalidArgument, "trigger, prompt_path and text required")
+	}
+	g, gerr := m.getGuest(c.GuestId)
+	if gerr != nil {
+		return gerr
+	}
+	if g.State != StateRunning {
+		return errf(CodeNotFound, "guest is %s; it holds no files to write", g.State)
+	}
+	sess, serr := m.session(g.GuestID)
+	if serr != nil {
+		return serr
+	}
+	if err := sess.WriteTriggerPrompt(ctx, &guestdv1.WriteTriggerPrompt{
+		Trigger: c.Trigger, Workdir: c.Workdir, PromptPath: c.PromptPath, Text: c.Text,
+	}); err != nil {
+		if re, ok := vsockclient.IsRemote(err); ok {
+			if re.Code == CodeInvalidArgument {
+				return errf(re.Code, "guestd WriteTriggerPrompt: %s", re.Message)
+			}
+			return errf(CodeInternal, "guestd WriteTriggerPrompt: %s: %s", re.Code, re.Message)
+		}
+		return errf(CodeGuestUnresponsive, "guestd WriteTriggerPrompt: %v", err)
+	}
+	m.log(g).Info("trigger prompt written", "event", "trigger_run", "bytes", len(c.Text))
+	return nil
+}
+
+// runTrigger relays a fire to guestd (DECISIONS I-1252, I-1256). The
+// run's id is the command's id, so a re-send after a reconnect is
+// answered with that run's state and starts no second agent. A trigger's
+// name is the user's word and is not logged; the run id is.
+func (m *Manager) runTrigger(ctx context.Context, c *hostdv1.RunTrigger) (*hostdv1.TriggerRunResult, *Error) {
+	if c.Trigger == "" || c.RunId == "" {
+		return nil, errf(CodeInvalidArgument, "trigger and run_id required")
+	}
+	g, gerr := m.getGuest(c.GuestId)
+	if gerr != nil {
+		return nil, gerr
+	}
+	if g.State != StateRunning {
+		return nil, errf(CodeNotFound, "guest is %s; it runs no agent", g.State)
+	}
+	// A fire wakes a machine resting at its agent's prompt, as a message
+	// and an answer do (I-818).
+	sess, serr := m.sessionAwake(ctx, g)
+	if serr != nil {
+		return nil, serr
+	}
+	res, err := sess.RunTrigger(ctx, &guestdv1.RunTrigger{
+		Trigger: c.Trigger, RunId: c.RunId, Source: c.Source,
+		PayloadRun: c.PayloadRun, DryRun: c.DryRun, PayloadPath: c.PayloadPath,
+	})
+	if err != nil {
+		if re, ok := vsockclient.IsRemote(err); ok {
+			if re.Code == CodeNotFound || re.Code == CodeInvalidArgument {
+				return nil, errf(re.Code, "guestd RunTrigger: %s", re.Message)
+			}
+			return nil, errf(CodeInternal, "guestd RunTrigger: %s: %s", re.Code, re.Message)
+		}
+		return nil, errf(CodeGuestUnresponsive, "guestd RunTrigger: %v", err)
+	}
+	if res == nil {
+		res = &guestdv1.TriggerRunResult{}
+	}
+	// The result is a guest's words: the state is bounded to what a guest
+	// may say, and the reason's own free text (a gate's last line of
+	// stderr) is tenant content, so the log line carries the enum word
+	// alone and the api gets the rest.
+	state := res.GetState()
+	if !triggerrun.GuestStates[state] {
+		state = triggerrun.StateFailed
+	}
+	m.log(g).Info("trigger run", "event", "trigger_run", "run_id", c.RunId,
+		"source", c.Source, "state", state, "reason", triggerrun.LogReason(res.GetReason()))
+	return &hostdv1.TriggerRunResult{State: state, Window: cleanLine(res.GetWindow(), capWindow),
+		Reason: cleanText(res.GetReason(), capTriggerReason)}, nil
 }
 
 // SayTextCap is the longest message `repose say` may carry, four times

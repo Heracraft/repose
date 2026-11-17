@@ -132,9 +132,10 @@ func (r stopResult) endedWord() string {
 // the machine, so when the newest sample shows an agent in the middle of
 // a turn or waiting for an answer it asks first, and without a terminal
 // it refuses unless --yes (DECISIONS I-614, revising I-500). Several
-// projects, or --unused, stop in parallel after one question (I-615). In a
-// checkout whose `repose` remote is one of them, the agent's commits are
-// fetched before the machine stops (I-615).
+// projects, or --unused, stop in parallel after one question (I-615).
+// Nothing is fetched first: the stop's snapshot holds the commits, and
+// the stop line says what the laptop lacks (I-1240, reversing I-615's
+// fetch clause).
 func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	started := time.Now()
 	if !o.Idle && len(o.Projects) > 0 {
@@ -213,15 +214,6 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 			return err
 		}
 		asked = true
-	}
-	var up []*Project // a stopping machine has no checkout to fetch from
-	for _, p := range running {
-		if p.State != "stopping" {
-			up = append(up, p)
-		}
-	}
-	if err := fetchBeforeStop(ctx, e, up); err != nil {
-		return err
 	}
 	if len(running) == 1 {
 		p := running[0]
@@ -739,11 +731,6 @@ func DestroyProjectsCmd(ctx context.Context, e *Env, args []string, yes, wait bo
 		if err := confirmOr(confirm, destroyPrompt(projects), "Nothing destroyed."); err != nil {
 			return err
 		}
-	}
-	// A destroyed machine cannot be fetched from: its commits come to
-	// the laptop first, and the refs stay after its remote goes (I-641).
-	if err := fetchBefore(ctx, e, projects, "destroying it", "Interrupted. Nothing destroyed."); err != nil {
-		return err
 	}
 	// After a yes the question has said what is kept; with --yes the
 	// line says it, with the date (A8).

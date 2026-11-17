@@ -160,6 +160,7 @@ type Fake struct {
 	wakes     int
 	sessions  []SessionReport
 	questions []*Question // newest last (DECISIONS I-245)
+	holds     []string    // question ids the dashboard held (I-1242)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
 	says          []Say
@@ -678,6 +679,15 @@ func (f *Fake) register() {
 	f.handle("PUT /v1/projects/{id}/secrets/{name}", f.putSecret)
 	f.handle("DELETE /v1/projects/{id}/secrets/{name}", f.deleteSecret)
 	// Webhook routes (DECISIONS I-1110)
+	// Triggers (DECISIONS I-1248..I-1262).
+	f.handle("GET /v1/projects/{id}/triggers", f.listTriggers)
+	f.handle("POST /v1/projects/{id}/triggers", f.putTrigger)
+	f.handle("GET /v1/projects/{id}/triggers/{name}", f.getTrigger)
+	f.handle("DELETE /v1/projects/{id}/triggers/{name}", f.deleteTrigger)
+	f.handle("POST /v1/projects/{id}/triggers/{name}/fire", f.fireTrigger)
+	f.handle("GET /v1/trigger-runs", f.listAllTriggerRuns)
+	f.handle("GET /v1/projects/{id}/trigger-runs", f.listTriggerRuns)
+	f.handle("GET /v1/projects/{id}/trigger-runs/{run_id}", f.getTriggerRun)
 	f.handle("GET /v1/projects/{id}/webhooks", f.listWebhooks)
 	f.handle("POST /v1/projects/{id}/webhooks", f.putWebhook)
 	f.handle("GET /v1/projects/{id}/webhooks/{name}", f.getWebhook)
@@ -707,6 +717,7 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/questions", f.listProjectQuestions)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/answer", f.answerQuestion)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/cancel", f.cancelQuestion)
+	f.handle("POST /v1/projects/{id}/questions/{qid}/hold", f.holdQuestion)
 	// A message for the project's agent (DECISIONS I-1144).
 	f.handle("POST /v1/projects/{id}/say", f.sayToAgent)
 	f.handle("GET /v1/questions/reply", f.replyQuestion)

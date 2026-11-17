@@ -76,7 +76,7 @@ Google refuses a webhook that was deleted, or whose space removed it. repose the
 
 A notification goes to every channel you have on.
 
-While you're at the machine, nothing an agent sends reaches a channel. It waits until you leave, or 10 minutes, whichever comes first. Being at the machine means a tmux client or an SSH connection; your editor and a herdr bridge count as SSH connections. One that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
+While you're at the machine, nothing an agent sends reaches a channel, except a question: that goes out at once, wherever you are. Anything else waits until you leave, or 10 minutes, whichever comes first. Being at the machine means a tmux client or an SSH connection; your editor and a herdr bridge count as SSH connections. One that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
 
 On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page, or the Questions page for a question.
 
@@ -140,7 +140,7 @@ A question can be answered in five places:
 
 The value is stored as the project's secret NAME, as [`repose secrets set NAME`](/docs/secrets#store-an-api-key) stores it, and replaces a value the project already had. The agent never sees it in the answer. Its `repose-ask` waits 2 hours unless the agent asks for less, and returns once the machine has the secret; its next command reads `$NAME`.
 
-You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
+You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions.
 
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. The dashboard says where an answer came from, such as `Answered yes by email` or `Answered in the terminal`. **Dismiss** on the dashboard ends a question without answering.
 
@@ -148,14 +148,14 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 
 `repose-ask` options:
 
-| Option            | Default    |                                                                                                                                                       |
-| ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                    |
-| `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                   |
-| `--link URL`      | none       | A button to what the question is about. `--label TEXT` names it. As on `repose-notify`.                                                               |
-| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds.                                      |
-| `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                             |
-| `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many. |
+| Option            | Default    |                                                                                                                                                                                                    |
+| ----------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                                                                 |
+| `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                                                                |
+| `--link URL`      | none       | A button to what the question is about. `--label TEXT` names it. As on `repose-notify`.                                                                                                            |
+| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds. While you are typing an answer on the dashboard, the question stays open past it. |
+| `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                                                                          |
+| `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many.                                              |
 
 It exits with:
 
@@ -174,7 +174,7 @@ Messages and questions are capped at 1 KB and count toward the [hourly cap](#lim
 
 ### Speaking first
 
-The other direction is [`repose say`](/docs/cli#repose-say-project-message): a message you send the agent from your laptop, typed into its own terminal. It is not a notification and goes to no channel; [Speak to it from your laptop](/docs/agents#speak-to-it-from-your-laptop) has it.
+The other direction is [`repose say`](/docs/cli#repose-say-project-message): a message you send the agent from your laptop, typed into its own terminal. It is not a notification and goes to no channel; [Send it a message](/docs/agents#send-it-a-message) has it.
 
 ## Limits
 

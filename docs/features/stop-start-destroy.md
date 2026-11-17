@@ -106,8 +106,8 @@ project rests when its host's Hello named the `pause` feature, its
 `keep_awake` is false, no op and no gateway session are open for it, no
 user timer in the guest is due within 15 minutes, and each of its last 15
 one-minute samples shows `guestd_ok`, no SSH session, no tmux or herdr
-client, every agent `idle` or `needs_input`, CPU under 6 s (0.10 of a
-core) and under 64 KiB of network. Its vCPUs are then paused through
+client, every agent `idle` or `needs_input`, CPU under 15 s (a quarter
+of a core, I-1230) and under 64 KiB of network. Its vCPUs are then paused through
 Cloud Hypervisor. A container does not hold a machine awake on its own:
 CPU and network already cover a container doing work, and a port it
 serves is reached over a forward, which wakes the machine. Nothing is
@@ -184,13 +184,11 @@ Stop:
   memory away. The busy-agent question reads the newest sample, which on a
   frozen machine is the one taken before the pause, so an agent that was
   idle then is idle now (nothing runs while the cores are paused).
-- In every laptop folder whose `repose` remote is a machine being
-  stopped (the working directory's checkout, and the folders
-  `projects.json` links to the machine, I-638), the CLI runs `git fetch
-  repose` first and prints `Fetched 3 commits on repose/main.` when
-  commits came, with ` in ~/code/api` for a folder other than the
-  working directory's; a fetch that fails is one line on stderr and the
-  stop goes on (I-615). After 60 seconds without a
+- Nothing is fetched before the stop (I-1240, reversing the fetch of
+  I-615 and I-638): the snapshot holds the commits, and the owner's
+  stops spent 3 to 4 seconds on a "Fetching from <slug>" phase for
+  commits `git fetch repose` brings whenever they are wanted. The stop
+  line still counts what the laptop lacks. After 60 seconds without a
   clean shutdown, hostd shuts the VM down through Cloud Hypervisor. The
   guest's user manager, which holds every tmux pane and agent, gets 10
   seconds to stop before what is left of it is killed (I-572).
@@ -200,8 +198,8 @@ Stop:
   uses, read eight chunks at a time (I-571). `--no-snapshot` skips it.
 - `stop` returns once the api has taken the stop and the project reads
   `stopping` (it polls up to 10 s for the engine's pickup), so a `start`,
-  `attach`, `run` or `ls` right after sees the stop; before that it asks,
-  fetches and reads what the machine keeps (I-710). Its line is
+  `attach`, `run` or `ls` right after sees the stop; before that it asks
+  and reads what the machine keeps (I-710). Its line is
   `Stopping <slug>.`, with the I-634 clause (`Stopping job; 1 file not
   committed.`), and `-y` past busy agents adds `Ending claude (working).`
   A project already `stopping` prints `<slug> is already stopping.` and

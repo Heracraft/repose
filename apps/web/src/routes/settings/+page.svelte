@@ -1,10 +1,10 @@
 <script lang="ts">
 	// Settings, General (DECISIONS I-578, I-841): the account, its
-	// timezone, the install line and Delete account. Notifications,
-	// Secrets and machine.nix are the other tabs.
+	// timezone, the install line, Revoke certificates and Delete account.
+	// Notifications, Secrets and machine.nix are the other tabs.
 	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { getMe, patchMe, deleteMe } from '$lib/api/client';
+	import { getMe, patchMe, deleteMe, revokeAllCerts } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
 	import { signOut } from '$lib/auth.svelte';
 	import { billingStore } from '$lib/billing.svelte';
@@ -28,11 +28,15 @@
 	// The zone the account had when the page loaded.
 	let loadedTz = $state(seenTz);
 	let deleting = $state(false);
+	let revoking = $state(false);
 	let loadError = $state<string | undefined>(undefined);
 
 	// Delete account opens in place of its button (I-386): the typed
 	// handle, then the danger button; Keep it gives the focus back.
 	let confirmDelete = $state(false);
+	// Revoke certificates, the same way: the one act a lost laptop leaves
+	// no other door to, since the CLI went with it (I-1220).
+	let confirmRevoke = $state(false);
 
 	const supported =
 		typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
@@ -89,6 +93,20 @@
 		} catch (err) {
 			tz = savedTz;
 			toastApiError(err, 'Could not save the timezone.');
+		}
+	}
+
+	async function onRevoke() {
+		revoking = true;
+		try {
+			const { revoked } = await revokeAllCerts();
+			confirmRevoke = false;
+			toast.success(revoked === 1 ? '1 certificate revoked.' : `${revoked} certificates revoked.`);
+			void focusAfterRender('revoke-certs-open');
+		} catch (err) {
+			toastApiError(err, 'Could not revoke the certificates.');
+		} finally {
+			revoking = false;
 		}
 	}
 
@@ -181,6 +199,41 @@
 {/if}
 
 {#if me}
+	<section class="set-row" id="revoke-certs">
+		<div class="set-head">
+			<h2 id="revoke-h" class="hk-h2-app">Revoke certificates</h2>
+		</div>
+		<div class="set-body">
+			<p class="consequence">
+				The connections your certificates opened close within 30 seconds, on any device.
+			</p>
+			{#if confirmRevoke}
+				<div class="after">
+					<ConfirmType
+						word={me.handle}
+						label="Revoke certificates"
+						busy={revoking}
+						busyLabel="Revoking…"
+						onconfirm={onRevoke}
+						oncancel={() => {
+							confirmRevoke = false;
+							void focusAfterRender('revoke-certs-open');
+						}}
+						cancelLabel="Keep them"
+						autofocus
+					/>
+				</div>
+			{:else}
+				<button
+					type="button"
+					id="revoke-certs-open"
+					class="hk-btn-danger hk-btn-sm after"
+					onclick={() => (confirmRevoke = true)}>Revoke certificates…</button
+				>
+			{/if}
+		</div>
+	</section>
+
 	<!-- The one irreversible action, last on the page. -->
 	<section class="set-row" id="delete-account">
 		<div class="set-head">

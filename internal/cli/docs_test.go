@@ -57,9 +57,12 @@ var undocumentedFlags = map[string]string{
 	"repose open --desktop": "old name of repose browser",
 	"repose open --stop":    "old name of repose browser stop",
 	// One spelling per idea (I-619): the old names, hidden for a release.
-	"repose open --local-port":           "old form of repose open LOCAL:PORT",
-	"repose browser --stop":              "old name of repose browser stop",
-	"repose browser --no-open":           "old name of repose browser --no-browser",
+	"repose open --local-port": "old form of repose open LOCAL:PORT",
+	"repose browser --stop":    "old name of repose browser stop",
+	"repose browser --no-open": "old name of repose browser --no-browser",
+	// Always on since I-1234: a directory copies without it. Hidden for
+	// a release for the hands that type it.
+	"repose cp --recursive":              "always on (I-1234)",
 	"repose browser bridge --no-browser": "old name of --no-inspect",
 	"repose snapshots restore --as-new":  "old name of --as",
 	"repose mcp forward --remove":        "old name of repose mcp rm",
@@ -94,6 +97,7 @@ var internalEnvVars = map[string]string{
 	"REPOSE_ENV_GEN":         "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
 	"REPOSE_CARRY_EARLY":     "set in the guest by a first sync's apply for the carry it runs in the background, never read on the laptop (sync_prefetch.go, DECISIONS I-743)",
 	"REPOSE_CHECKOUT":        "never read: part of @@REPOSE_CHECKOUT@@, the placeholder the MCP carry's guest script replaces (carry_mcp.go, DECISIONS I-556)",
+	"REPOSE_PAYLOAD":         "never read: a variable the machine sets for a trigger's own session, named in `triggers add`'s example (triggerscmd.go, DECISIONS I-1256); the set is in /docs/triggers",
 }
 
 func readCLIDoc(t *testing.T) string {

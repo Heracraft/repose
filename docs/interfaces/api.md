@@ -227,7 +227,7 @@ options?}]` only, is the same array without `package` items and stays valid.
 | Method | Path | Body / result |
 |---|---|---|
 | POST | `/certs` | `{public_key (OpenSSH format), project_ids: [..]}` → `{certificate (OpenSSH cert), expires_at, gateway: {host, port, host_ca_pub}}`; one cert may carry several principals |
-| POST | `/certs/revoke` | `{serial}` or `{all: true}` |
+| POST | `/certs/revoke` | `{serial}` or `{all: true}` → `{revoked}`, how many certificates were revoked. The connections they opened close within 30 seconds |
 
 ## Secrets
 
@@ -317,6 +317,54 @@ rule is read off the request's `Origin` and not off the route, so every
 route answers the dashboard's own origin by name with
 `Access-Control-Allow-Credentials: true`, and every other origin gets the
 wildcard as before. Only `DASHBOARD_URL`'s own origin is ever echoed.
+
+## Triggers (DECISIONS I-1248..I-1262)
+
+A trigger binds a webhook route or a schedule to an agent session on the
+project's machine. `docs/features/triggers.md` is the behaviour.
+
+`Trigger = {trigger_id, name, kind: route|schedule, route?: {name, url},
+spec?, zone?, next_at?, prompt_path, workdir, agent?, timeout_s,
+concurrency, gate?, dedupe?, notify: failed|never, enabled, allow_start,
+stop_after, catch_up, created_at, updated_at, last_run?: TriggerRun}`.
+`url` carries the token, as a route's does: the caller owns the project.
+`prompt_path` is a path in the machine; **no answer ever carries the
+prompt's text and no row ever stores it** (I-1248), and nor is a payload.
+A prompt typed in a browser is sent on `prompt` and passes through: the
+api holds it for one request and the hand-off that follows it, writes it
+into the machine, and forgets it (I-1266).
+
+`TriggerRun = {run_id, trigger_id?, trigger, source: route|clock|hand,
+state: queued|working|done|failed|timeout|skipped, reason?, summary?,
+link?: {url, label?}, window?, dedupe_key?, payload_bytes, payload_kept,
+skips?, started_machine, started_at?, finished_at?, created_at}`.
+`reason` is the bounded enum of `features/triggers.md` §4.1, except
+`gated`, which carries a gate's own last line of stderr; that and
+`summary` (1 KB) are tenant content, shown to the owner and never
+logged. `payload_kept` is `payload_bytes > 0`, which is what
+`fire --run` can replay: a payload lives as long as its run row.
+`skips` is present and above 1 on a row that stands for several
+refusals: an edge-side refusal coalesces into one row per trigger,
+reason and hour (I-1254), so a machine stopped for a week cannot evict
+the runs that ran. `trigger_id` is absent once the trigger is removed,
+and `trigger` is the name it had. The hand-off states `pending` and
+`sending` are answered as `queued`, as a `say`'s are.
+
+| Method | Path | Body / result |
+|---|---|---|
+| GET | `/projects/:id/triggers` | `[Trigger]`, by name |
+| POST | `/projects/:id/triggers` | `{name, kind?, route?, spec?, zone?, prompt?, prompt_path?, workdir?, agent?, timeout_s?, concurrency?, gate?, dedupe?, notify?, enabled?, allow_start?, stop_after?, catch_up?}`. Creates (201) or, on a name that exists, changes the fields sent and keeps the rest and the route's token (200). `kind` absent with no `route` or `spec` leaves the door as it is, which is how `repose triggers on`, `off` and a flag-only `add` reach it; on a name the project does not have that is `404 not_found`. Setting `enabled` true, or changing `spec` or `zone`, re-arms the clock from now and re-anchors (I-1252): a trigger that was off for a week must not fire the moment it comes back. A bad name, spec, zone, dedupe key, workdir or agent, a `dedupe` on a schedule, or a 21st trigger, is `400 invalid` with `detail.reason`; `prompt_at` for the `@`-prompt that `pi` refuses (I-780); a trigger on a temporary machine is `409 conflict`, `detail.reason = temporary_machine` (I-347). A new trigger on a project whose multiplexer is `herdr` is `400 invalid`: a run is an agent in its own tmux window, and such a machine has no tmux session (I-501). A trigger that predates the switch can still be changed, turned off and removed. `prompt` is the prompt's TEXT, which the dashboard has no SSH to write with (I-1266): the api writes it into the machine at `prompt_path` under `workdir` and stores none of it, so the row still holds a path. It needs a machine to write into, so a project that is not `running` answers `409 conflict`, `detail.reason = machine_not_running`, in the words `repose triggers add -p` refuses the same thing with, while `prompt_path` alone is still accepted there; over 64 KB is `400 invalid`, `detail.reason = prompt_too_large`. A client that sends neither is the shape before I-1266 and is unchanged |
+| GET | `/projects/:id/triggers/:name` | The trigger, with `runs`: the newest 20 |
+| DELETE | `/projects/:id/triggers/:name` | 204. A route the trigger made goes with it unless another trigger uses it or the user made it first; the token is tombstoned as I-1114 tombstones every route. `404 not_found` for a name the project does not have |
+| POST | `/projects/:id/triggers/:name/fire` | `{payload_run?: run_id, dry_run?: bool, payload_path?}` → `TriggerRun` in `queued`, `source: hand`. The row is the hand-off and carries all three, because only the grpc process can send the `RunTrigger` and anything held in the asking process's memory would be lost between them (I-1162). `payload_path` is the file `repose triggers fire --payload FILE` wrote over SSH and must be `~/.repose/triggers/<name>/fire-payload`, else `400 invalid`; the bytes never come through the api. `payload_run` naming a run whose payload is gone is `400 invalid`, `detail.reason = payload_gone`. A fire runs a trigger that is `off`: `off` shuts the doors, and a fire is the owner asking |
+| GET | `/trigger-runs?limit=` | `[TriggerRun]` across the user's projects, newest first, `limit` 1..200 (default 20), each row with `project` (the slug). "What did my agents do last night" is the question the layer exists for, and a per-project listing cannot answer it; `repose triggers runs --all` and the dashboard read this, as they read the cross-project listings of questions and snapshots |
+| GET | `/projects/:id/trigger-runs?trigger=&limit=` | `[TriggerRun]`, newest first, `limit` 1..200 (default 20). 20 runs are kept per trigger (I-1262) |
+| GET | `/projects/:id/trigger-runs/:run_id?wait=20s` | The run. With `wait`, the long poll of the "Projects" section: it answers when the run reaches a terminal state or the wait runs out, and `Repose-Long-Poll: 1` marks a held read |
+
+The clock runs in the `API_MODE=grpc` process alone, once a minute,
+under `db.LockTriggers`, and claims a due trigger by writing its next
+fire in the claiming statement, so a fire happens once across replicas
+and once across a restart (I-1252).
 
 ## Snapshots
 
@@ -435,6 +483,7 @@ is answered with `state: answered`, `answer: null`, never with the value.
 | GET | `/projects/:id/questions?state=pending` | `{questions: [Question]}`, pending first, then the latest, at most 20 |
 | POST | `/projects/:id/questions/:qid/answer` | `{answer, via?: cli\|dashboard}` → `Question`. With options, `answer` must equal one of them (case does not matter; the stored answer uses the option's spelling), else `invalid` with `detail.options`. A question no longer pending (answered, expired, cancelled) is `conflict` with `detail.question`: the first answer wins. A question with `secret` takes `{value, via?}` instead (I-929): `value` is base64, 1 byte to 64 KB, stored as the project's secret, audited as `secret_put` with the question's id, and pushed to a running machine; the question closes when that push has finished. `answer` for such a question, or `value` for one without `secret`, is `invalid` (`detail.secret` names the secret). Two answers at once store one value: the second is `conflict` at once and stores nothing. Other pending questions of the project that ask for the same name close with it |
 | POST | `/projects/:id/questions/:qid/cancel` | `{via?: cli\|dashboard}` or no body → `Question` in state `cancelled`, `answered_via` the `via` sent (`dashboard` when there is no body: the dashboard's Dismiss sends none, `repose reply --dismiss` sends `cli`, I-692); the waiting `repose-ask` exits 5. `conflict` when it is no longer pending, with the `Describe` message (`answered in the terminal`, `withdrawn by the agent`, `already answered: yes`, ...) |
+| POST | `/projects/:id/questions/:qid/hold` | no body → `Question` (DECISIONS I-1242). The owner is answering on the dashboard: `expires_at` becomes now + 5 minutes when that is later than it is, never past `created_at` + 24 h + 5 min. A hold that would move it by less than 30 s is a no-op that still answers `200` with the question, so a page holding every 60 s keeps it alive and an abandoned tab stops holding within 5 minutes. A hold that took is carried to the guest at once as `AnswerQuestion` status `extended` with `expires_unix`, best effort: a failed delivery is logged by reason and the next hold carries the newer deadline. A question no longer pending is `conflict` with `detail.question`, as `answer` is |
 | GET | `/questions/reply?token=&via=` | no auth; the one-click link an email, ntfy or Google Chat notification carries for one option; `via` is `email`, `ntfy` or `gchat` (anything else is recorded as `ntfy`). The token is signed (the unsubscribe key, a separate domain) and names the question, the option and the question's expiry. Answers an HTML page showing the question and a button that POSTs; a GET never answers, because mail scanners open links. Expired → `410`, invalid → `400`, both HTML |
 | POST | `/questions/reply?token=&via=` | no auth; answers with the token's option (`token` and `via` may also be form fields). ntfy's `http` button calls it. `200` HTML on success; a question already answered or closed → `409` naming the answer it has; 20 tries per question per minute, then `429` |
 
@@ -488,9 +537,9 @@ payment_required` with `detail.reason: suspended` and the same sentence
 | POST | `/internal/sessions` | `{project_id, event: opened\|closed, cert_serial, session_id}` (gateway reports, feeds signals; `session_id` names the relay, up to 64 of `[A-Za-z0-9-]`, so two connections under one certificate are two sessions; absent from a gateway older than I-176, accepted for one release as one session per certificate) → `{open}` |
 | GET | `/internal/hosts` | `[{host_id, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync |
 | POST | `/internal/gateway-certs` | `{public_key, project_id}` → `{certificate}`: 5-minute user certificate for the gateway's own key, principal = project id, key_id suffixed `:via-gateway` |
-| GET | `/internal/webhook-routes?since=<version>` | `{version, routes: [{route_id, project_id, name, port, path, allow_start, token_sha256}], tombstones: [sha256], unchanged}` (DECISIONS I-1110): the table the edge holds in memory, with the hex sha256 of each token and never a token. `since` the caller's version answers `{version, unchanged: true}` and no rows, which is what makes the edge's 5 s poll cheap. `tombstones` are the hashes of tokens rotated or removed inside the 30-day window, which the edge answers 410 for |
+| GET | `/internal/webhook-routes?since=<version>` | `{version, routes: [{route_id, project_id, name, port, path, allow_start, token_sha256, trigger?, trigger_id?}], tombstones: [sha256], unchanged}` (DECISIONS I-1110; `trigger` and `trigger_id` since I-1250, set when the route is a trigger's, so the edge knows a refused delivery has a run row to write): the table the edge holds in memory, with the hex sha256 of each token and never a token. `since` the caller's version answers `{version, unchanged: true}` and no rows, which is what makes the edge's 5 s poll cheap. `tombstones` are the hashes of tokens rotated or removed inside the 30-day window, which the edge answers 410 for |
 | POST | `/internal/webhook-start` | `{project_id, route_id}` → `{started, reason}` (I-1114): start a stopped machine for a delivery on a route with `--start`, at most once per project per 10 minutes. The owner's own start path, so plan memory and an abuse hold refuse it as they would `repose start`; `started: false` with `reason` `too_soon`, `not_stopped` or `start_refused` is not an error. The edge answers 503 either way |
-| POST | `/internal/webhook-deliveries` | `{deliveries: [{route_id, at, status, outcome, duration_ms, bytes_in, bytes_out}]}` → 204 (I-1110): the edge's batch, every 10 s. `outcome` must be one of `delivered`, `woke`, `stopped`, `started`, `start_refused`, `wake_failed`, `no_listener`, `timeout`, `too_large`, `rate_limited`, `body_dropped`, `unavailable`, `not_found`, `gone`; any other word is `400 invalid`, so nothing a sender chose reaches a row. A route removed while its batch was in flight is skipped, not an error. The api keeps the newest 20 per route, and banks `bytes_out` in `webhook_egress` by the hour, where the prune cannot reach it (I-1120) |
+| POST | `/internal/webhook-deliveries` | `{deliveries: [{route_id, at, status, outcome, duration_ms, bytes_in, bytes_out}]}` → 204 (I-1110): the edge's batch, every 10 s. `outcome` must be one of `delivered`, `woke`, `stopped`, `started`, `start_refused`, `wake_failed`, `no_listener`, `timeout`, `too_large`, `rate_limited`, `body_dropped`, `unavailable`, `not_found`, `gone`; any other word is `400 invalid`, so nothing a sender chose reaches a row. For a route a trigger owns (I-1250), every outcome but `delivered`, `woke`, `started` and `body_dropped` also writes a `skipped` trigger run, with the reason `features/triggers.md` §4.1 maps that outcome to (`stopped`, `busy`, `error`, `route_gone`, `payload_too_large`, `too_many_fires`) and coalesced into one row per trigger, reason and hour. That is the only way a user sees a trigger whose machine has been stopped for a week, and the coalescing is why six hundred refusals do not evict the twenty runs that ran. A route removed while its batch was in flight is skipped, not an error. The api keeps the newest 20 per route, and banks `bytes_out` in `webhook_egress` by the hour, where the prune cannot reach it (I-1120) |
 | POST | `/internal/events` | `{source_ip, agent, kind, summary}`: hook events that reached the edge over HTTP because guestd was unavailable; the api maps `source_ip` to a project and dedupes on `(project_id, agent, kind, ts to the second)`. `kind` is one a guest may report (`completed`, `needs_input`, `error`, `agent_message`, `agent_done` since I-688); any other is `400 invalid` (DECISIONS I-441). An `agent` that is not one guestd sends (`claude`, `opencode`, `codex`, `gemini`, `pi`, `shell`) is stored as no agent |
 
 ## Rate limits

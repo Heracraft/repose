@@ -54,30 +54,24 @@ opencode, Gemini CLI and pi keep their own permission prompts unless you configu
 | Claude Code | Built in.                                            |
 | Codex CLI   | Built in, live (below).                              |
 | Gemini CLI  | Built in (Google Search).                            |
-| opencode    | Off unless you turn it on, below.                    |
+| opencode    | With a search provider's API key, below.             |
 | pi          | None built in. It can still fetch pages with `curl`. |
 
 **Codex** searches live, since it runs in `danger-full-access` on the machine. Set `web_search = "cached"` in `~/.codex/config.toml` to search a cache of pages instead, or `"disabled"` to turn it off.
 
-**opencode** offers its `websearch` tool only with its own Zen provider, or when `OPENCODE_ENABLE_EXA` is `1`. Set it once as a secret and every opencode on the machine can search, through Exa's public endpoint, with no key of yours:
+**opencode** searches through one of five providers, each with its own key: Exa (`EXA_API_KEY`), Firecrawl (`FIRECRAWL_API_KEY`), Parallel (`PARALLEL_API_KEY`), Tavily (`TAVILY_API_KEY`) or TinyFish (`TINYFISH_API_KEY`). Store the one you have as a secret and every opencode on the machine can search:
 
 ```
-repose secrets set OPENCODE_ENABLE_EXA
+repose secrets set TAVILY_API_KEY
 ```
 
-Type `1` as the value. Each search sends your query to Exa. An opencode that's already running needs a restart to pick it up.
+The first search asks which provider to use; set `"websearch": {"provider": "tavily"}` in `~/.config/opencode/opencode.jsonc` on the machine to skip the question, or `"websearch": false` to take the tool away. An opencode that's already running needs a restart to see a new secret.
 
-## OpenCode 2
+## opencode version
 
-The machine's `opencode` is version 1, the one opencode's installer still gives by default. OpenCode 2 comes from a separate channel, and you can install it on the machine next to version 1:
+The machine's `opencode` is version 2. The platform pins it, as it pins every agent, so `opencode upgrade` is off and a new version reaches you with the next machine update.
 
-```
-curl -fsSL https://opencode.ai/v2/install -o /tmp/oc2-install
-bash /tmp/oc2-install --no-modify-path
-ln -s ~/.opencode/bin/opencode ~/.local/bin/opencode2
-```
-
-You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode -p "..."` starts; without it a plain `opencode` in a new shell is OpenCode 2, started outside the project's dev environment. `opencode2 upgrade` updates it, a platform update leaves it as it is, and a restore brings it back with the rest of your home directory. Its notifications come from the same plugin as version 1, `~/.config/opencode/plugins/repose.js`; run `opencode2 service restart` if you edit it.
+If you installed version 2 yourself while the machine's `opencode` was version 1, the machine removes that copy from `~/.opencode` the next time you log in, along with the `opencode2` link, and says so. Your config, sessions and logins are elsewhere and stay. Version 1 is gone from the machine; a version 1 plugin of your own won't load, and `~/.config/opencode/plugins/repose.js`, which sends your notifications, serves both.
 
 ## Agent states
 
@@ -86,7 +80,7 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 - `working`: from your prompt to the end of the turn, including a pause while a background task it started runs. After 2 minutes with no output in its window it shows `idle`, which is also how a turn you interrupted ends.
 - `needs input`: waiting for your permission (Claude Code and opencode).
 - `idle`: at its prompt.
-- `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt. OpenCode 2 shows it throughout, since it doesn't report prompts, and so do Gemini CLI and pi if you replaced the machine's extension for them.
+- `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt, and Gemini CLI and pi throughout if you replaced the machine's extension for them.
 
 Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
 
@@ -121,15 +115,15 @@ Decisions you want to make while you're away still go through `repose-ask`: a qu
 
 Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
-`repose-presence` prints `attached` while you're at the machine and `away` while you aren't, by the same reading as the notification hold: a tmux client or an SSH connection, your editor and a herdr bridge included. The guide tells an agent to run it before it hands you a URL for a port on the machine, so it offers `http://localhost:PORT` while that port is on your laptop and names [`repose open PORT`](/docs/machine#ports) while it isn't. It exits 0 either way, and 1 when the machine's agent service doesn't answer.
+`repose-presence` prints `attached` while you're at the machine and `away` while you aren't, by the same reading as the notification hold: a tmux client or an SSH connection, your editor and a herdr bridge included. The guide tells an agent to run it before it hands you a URL for a port on the machine, so it offers `http://localhost:PORT` while that port is on your laptop, and while it isn't, opens a [quick tunnel](/docs/machine#ports) to the port and sends you the public link, which it closes when you're done. It exits 0 either way, and 1 when the machine's agent service doesn't answer.
 
-## Speak to it from your laptop
+## Send it a message
 
-`repose say "run the tests before you commit"` sends a message to the agent on a project. The machine types it into the agent's own terminal, so the agent reads it as your next prompt and answers in the session you attach to.
+`repose say "run the tests before you commit"` sends a message to the agent on a project. The machine types it into the agent's own terminal, so the agent reads it as your next prompt and answers in the session you attach to. The Agents card on a project's Overview takes a message for the agent beside it.
 
 An agent at its prompt, or waiting for your permission, gets the message at once. An agent in the middle of a turn gets it when the turn ends: the five agents don't all take input typed mid-turn, and a message half-swallowed is worse than one that lands five seconds later. One message waits per agent, so a second while one waits replaces it.
 
-`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. The dashboard sends to the agent whose row you typed under. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
 
 A delivered message is an event, so `repose events` and the project page show that the agent got one and who sent it. The message itself is never in an event, a log line or a notification.
 
@@ -168,7 +162,7 @@ Every agent on the machine has the [browser tools](/docs/machine#browser) `playw
 
 `run` and `attach` copy the MCP servers in your laptop's Claude Code config, `~/.claude.json`: the ones at user scope and the ones you added for this checkout. They reach all five agents on the machine. A server you added to another agent on your laptop stays there. `repose secrets choose --off mcp` stops the copy.
 
-Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. A server that starts with a command reads its secrets each time an agent starts it; one that reaches a URL is left out of every agent until its secrets are set. An agent that's already running sees a new server, or a secret you just set, after you restart it.
+Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. A server that starts with a command reads its secrets each time an agent starts it; one that reaches a URL is left out of every agent until its secrets are set. An agent that's already running sees a new server, or a secret you just set, after you restart it; opencode's background service, which holds the servers, is restarted for you.
 
 A server that signs in with OAuth needs a sign-in from `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on your machines on the same host can use it.
 

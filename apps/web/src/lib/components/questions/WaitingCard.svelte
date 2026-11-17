@@ -9,7 +9,10 @@
   seconds as one line saying how, then leaves. The head carries no count:
   the Questions place in the rail has the total, and each figure shows
   once a screen. Nothing is drawn while none waits, unless `empty` names
-  the row to draw instead.
+  the row to draw instead. A question the owner is answering (a row's
+  field in use, the secret dialog open for it) is held open: the card
+  calls the api's hold at once and every minute, and the row's expiry
+  follows what the api answers (I-1242).
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
@@ -20,6 +23,7 @@
 		answerQuestion,
 		answerSecretQuestion,
 		cancelQuestion,
+		holdQuestion,
 		listAccountSecrets,
 		listProjectQuestions,
 		listQuestions,
@@ -29,6 +33,7 @@
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
+	import { Holder } from '$lib/hold';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import { clock } from '$lib/clock.svelte';
 	import { CLOSED_LINE_MS, closedLine, layoutQuestions } from '$lib/question-view';
@@ -113,7 +118,12 @@
 
 	onMount(() => {
 		const stopClock = clock.use();
-		if (!projectId) return stopClock;
+		if (!projectId) {
+			return () => {
+				stopClock();
+				holder.stopAll();
+			};
+		}
 		// The first load already has them; the poll's first tick waits its turn.
 		let first = true;
 		const stopPoll = pollWhileVisible(() => {
@@ -126,7 +136,43 @@
 		return () => {
 			stopClock();
 			stopPoll();
+			holder.stopAll();
 		};
+	});
+
+	// Holding (I-1242): a question the owner is answering is held open,
+	// once at the start and then every minute, and the row's expiry
+	// follows the api's answer. A hold that fails is nothing to say: the
+	// next one is a minute away, and the answer itself still goes.
+	const holder = new Holder();
+	async function hold(q: Question) {
+		try {
+			const res = await holdQuestion(q.project_id, q.id);
+			questions = questions.map((c) =>
+				c.id === res.id && c.expires_at !== res.expires_at
+					? { ...c, expires_at: res.expires_at }
+					: c
+			);
+		} catch (err) {
+			if (err instanceof ApiError && err.code === 'conflict') {
+				// Closed elsewhere: nothing left to hold.
+				holder.stop(q.id);
+				const theirs = err.detail?.question as Question | undefined;
+				if (theirs) close(theirs);
+				void refresh();
+			}
+		}
+	}
+	function setHolding(q: Question, holding: boolean) {
+		if (holding) holder.start(q.id, () => hold(q));
+		else holder.stop(q.id);
+	}
+	// The secret dialog holds its question while it is open for a pending one.
+	$effect(() => {
+		const q = asking;
+		if (!q || orphaned) return;
+		untrack(() => setHolding(q, true));
+		return () => holder.stop(q.id);
 	});
 
 	// The question whose secret the dialog takes (I-929), and what that
@@ -315,6 +361,7 @@
 				answer === undefined
 					? await cancelQuestion(q.project_id, q.id)
 					: await answerQuestion(q.project_id, q.id, answer);
+			holder.stop(q.id);
 			void passFocus(q.id, hadFocus);
 			close(res);
 			await refresh();
@@ -323,6 +370,7 @@
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				// Closed elsewhere first: the row says how, from the api's copy.
+				holder.stop(q.id);
 				const theirs = err.detail?.question as Question | undefined;
 				void passFocus(q.id, hadFocus);
 				if (theirs) close(theirs);
@@ -375,6 +423,7 @@
 		onanswer={(a) => act(q, a)}
 		onsecret={() => openSecret(q)}
 		ondismiss={() => act(q)}
+		onhold={(h) => setHolding(q, h)}
 	/>
 {/snippet}
 

@@ -159,7 +159,7 @@ func TestRenderGolden(t *testing.T) {
 func TestUpgradeReplacesNativeEntries(t *testing.T) {
 	for _, c := range []string{"upgrade-native", "upgrade-native-no-record"} {
 		out := filepath.Join("testdata", "render", c, "out")
-		for _, f := range []string{".claude.json", ".config/opencode/config.json", ".gemini/extensions/repose-mcp/gemini-extension.json"} {
+		for _, f := range []string{".claude.json", ".config/opencode/opencode.json", ".gemini/extensions/repose-mcp/gemini-extension.json"} {
 			b, err := os.ReadFile(filepath.Join(out, f))
 			if err != nil {
 				t.Fatal(err)
@@ -286,14 +286,15 @@ func TestCodexInlineServersLeftAlone(t *testing.T) {
 }
 
 // TestOpencodeCommentedConfig: opencode reads comments and trailing
-// commas in its .json files. A commented config.json is left as written
-// with one warning, and a server the user's commented opencode.json
-// defines is not rendered beside it.
+// commas in its .json files. A commented opencode.json is left as written
+// with one warning, and a server the user's opencode.jsonc defines, or
+// names under opencode 2's own mcp.servers, is not rendered beside it
+// (I-1050).
 func TestOpencodeCommentedConfig(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
 	p := Paths{Home: home, Platform: filepath.Join(root, "none.json"), SecretsDir: filepath.Join(root, "secrets"), SocketDir: filepath.Join(root, "sock"), Etc: root}
 	const orig = "{\n  // mine\n  \"theme\": \"dark\",\n}\n"
-	cfg := filepath.Join(home, ".config/opencode/config.json")
+	cfg := filepath.Join(home, ".config/opencode/opencode.json")
 	writeFile(t, cfg, orig)
 	writeFile(t, filepath.Join(home, ".repose/mcp/laptop.json"), `{"version":1,"user":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}`)
 	var b bytes.Buffer
@@ -302,22 +303,42 @@ func TestOpencodeCommentedConfig(t *testing.T) {
 		t.Fatalf("first sync stderr: %q", b.String())
 	}
 	if got, _ := os.ReadFile(cfg); string(got) != orig {
-		t.Fatalf("config.json changed:\n%s", got)
+		t.Fatalf("opencode.json changed:\n%s", got)
 	}
 	b.Reset()
 	Sync(p, []string{"opencode"}, &b)
 	if b.String() != "" {
 		t.Fatalf("second sync stderr: %q", b.String())
 	}
-	wantSkipped(t, p, "linear", "opencode", "~/.config/opencode/config.json has comments, which a rewrite would lose")
+	wantSkipped(t, p, "linear", "opencode", "~/.config/opencode/opencode.json has comments, which a rewrite would lose")
 
-	// A plain config.json, and the user's own linear in a commented
-	// opencode.json: repose renders nothing under that name.
+	// A plain opencode.json, and the user's own linear in a commented
+	// opencode.jsonc: repose renders nothing under that name.
 	writeFile(t, cfg, "{}\n")
-	writeFile(t, filepath.Join(home, ".config/opencode/opencode.json"), "{\n  // mine\n  \"mcp\": {\"linear\": {\"type\": \"remote\", \"url\": \"https://x\"},},\n}\n")
+	jsonc := filepath.Join(home, ".config/opencode/opencode.jsonc")
+	writeFile(t, jsonc, "{\n  // mine\n  \"mcp\": {\"linear\": {\"type\": \"remote\", \"url\": \"https://x\"},},\n}\n")
 	b.Reset()
 	Sync(p, []string{"opencode"}, &b)
 	if got, _ := os.ReadFile(cfg); strings.Contains(string(got), "linear") || b.String() != "" {
-		t.Fatalf("config.json = %s, stderr %q", got, b.String())
+		t.Fatalf("opencode.json = %s, stderr %q", got, b.String())
+	}
+	// The same name under opencode 2's mcp.servers in the file repose
+	// writes is the reader's too.
+	writeFile(t, jsonc, "{}\n")
+	writeFile(t, cfg, `{"mcp":{"servers":{"linear":{"type":"remote","url":"https://x"}}}}`+"\n")
+	b.Reset()
+	Sync(p, []string{"opencode"}, &b)
+	got, _ := os.ReadFile(cfg)
+	if strings.Contains(string(got), "mcp.linear.app") || b.String() != "" {
+		t.Fatalf("opencode.json = %s, stderr %q", got, b.String())
+	}
+	// And a config.json an earlier base wrote is neither read nor
+	// written: opencode 2 does not load it.
+	stale := filepath.Join(home, ".config/opencode/config.json")
+	writeFile(t, stale, `{"mcp":{"linear":{"type":"local","command":["old"]}}}`+"\n")
+	b.Reset()
+	Sync(p, []string{"opencode"}, &b)
+	if got, _ := os.ReadFile(stale); !strings.Contains(string(got), `"old"`) {
+		t.Fatalf("config.json was touched: %s", got)
 	}
 }

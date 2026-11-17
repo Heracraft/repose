@@ -762,7 +762,11 @@ sends a test.
 
 ## SnapshotStale
 
-A running project's newest snapshot is older than 36 hours.
+A running project has run 36 hours past the later of its newest snapshot
+and its last start. The gauge refreshes hourly (I-1244); before that it
+counted from the snapshot alone and refreshed daily, so two machines
+stopped for days and started the same morning kept it firing for a day
+(2026-11-07) with nothing to fix.
 
 1. `repose-admin projects show <id>`: last snapshot, last error.
 2. `journalctl -u hostd | grep snapshot_fail` on the host. Common causes:
@@ -1181,7 +1185,16 @@ machine.
    - `guestd`: the guest resumed and guestd did not answer within
      `WakeGuestdWait`. See "Guest unresponsive"; the guest's own services
      are what to look at, and its memory is intact until something stops
-     the machine.
+     the machine. `vsockrpc: EOF` within a second of the resume, on a
+     guest that rested across a hostd restart (`guest is still resting`
+     with `reason` `reconciled` at hostd's start), is DECISIONS I-1228:
+     the restarted hostd's dials waited out the rest in the hypervisor's
+     socket backlog and all landed on guestd at the resume, each one
+     replacing the live connection; the guest's own journal shows a
+     burst of `replacing the previous hostd connection`. The guest is
+     fine and the next wake answers. hostd no longer dials a resting
+     guest; a host on an older build does this on every release while a
+     guest rests.
    - `state`: the guest is no longer one that can be woken (it stopped,
      or a park holds it). Read the state in `hostd guests --json`
      before anything else; `Guest park` covers the parked-image case,
@@ -2240,7 +2253,7 @@ on the volume, and a destroy after it loses the work.
    code. `repose-admin ops list --project <id>` has the op the api asked
    for.
 2. `SnapshotStale` is the slow half of the same signal and reads the api's
-   backstop gauge, which is refreshed on a 24-hour ticker; this rule reads
+   backstop gauge, which is refreshed hourly; this rule reads
    the histogram the failing path observes, so it fires first. Both firing
    is one incident.
 3. Blob upload failures leave the thin snapshot on the host: `lvs

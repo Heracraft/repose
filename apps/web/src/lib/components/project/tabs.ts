@@ -1,11 +1,14 @@
-// A project's six tabs (DECISIONS I-841, I-1216), in order, with the path
-// each adds to /projects/<id>. Pure, so the rule is tested without a
-// browser. Browser is second because watching the machine is the other
-// thing done from a project's page, not the last of five reports.
+// A project's seven tabs (DECISIONS I-841, I-1216, I-1258), in order,
+// with the path each adds to /projects/<id>. Pure, so the rule is tested
+// without a browser. Browser is second because watching the machine is
+// the other thing done from a project's page, not the last of five
+// reports; Triggers is third because reading what ran without you is the
+// next such thing, and it comes before the four reports (I-1258).
 
 export const PROJECT_TABS = [
 	['Overview', ''],
 	['Browser', '/browser'],
+	['Triggers', '/triggers'],
 	['Events', '/events'],
 	['Usage', '/usage'],
 	['Snapshots', '/snapshots'],

@@ -56,9 +56,12 @@ func (r *Registry) Render(agent string) *Rendered {
 	ls, taken := r.list(agent == "claude")
 	out.Skipped = append(out.Skipped, taken...)
 	for _, l := range ls {
-		if l.From == FromRepose && agent != "claude" && agent != "codex" {
-			// Gemini, opencode and pi get the platform servers from their
-			// own system layers (DECISIONS I-553).
+		if l.From == FromRepose && agent != "claude" && agent != "codex" && agent != "opencode" {
+			// Gemini and pi get the platform servers from their own system
+			// layers (DECISIONS I-553). opencode 2 puts /etc/opencode above
+			// the reader's file, so its platform servers go in the reader's
+			// file like Codex's, where a `disabled: true` turns one off
+			// (I-1050).
 			continue
 		}
 		v, reason := renderOne(agent, l, r.SecretsDir, false)

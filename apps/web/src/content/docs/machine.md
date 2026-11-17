@@ -168,7 +168,7 @@ Ports that open together, such as the servers a test suite starts, get one messa
 
 Because it's `localhost`, cookies and OAuth redirects behave as they do locally. If the port is taken on your laptop, the next free one within 20 of it is used and the message says which: `⇄ :3000 → your laptop's localhost:3001 (3000 is taken there)`.
 
-A forward needs a listener on `127.0.0.1` or `0.0.0.0`, or on `::1` alone (as Vite does on some setups), on port 1024 or above. A server on another address, a Docker network say, doesn't get one; a container port published with `-p 8080:80` does. The machine keeps 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 for itself. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off, in both directions. [`repose status`](/docs/cli#repose-status-project) marks which listening ports a laptop reaches.
+A forward needs a listener on `127.0.0.1` or `0.0.0.0`, or on `::1` alone (as Vite does on some setups), on port 1024 or above. A server on another address, a Docker network say, doesn't get one; a container port published with `-p 8080:80` does. The machine keeps 5353, 5355, 5900, 6080, 6081 and 9224 to 9227 for itself. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off, in both directions. [`repose status`](/docs/cli#repose-status-project) marks which listening ports a laptop reaches.
 
 To forward one port without attaching, [`repose open`](/docs/cli#repose-open-local-port) runs one forward in your terminal until `Ctrl-C` and points your browser at it:
 
@@ -176,13 +176,13 @@ To forward one port without attaching, [`repose open`](/docs/cli#repose-open-loc
 repose open 3000
 ```
 
-The one public path into a machine is a [webhook route](/docs/webhooks): a URL a provider can POST to, forwarded to a port inside the machine. It passes a provider's event through and will not serve a page. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in [the menu](/docs/config#the-menu): `repose config add cloudflared` on your laptop. Then, on the machine:
+The one public path into a machine is a [webhook route](/docs/webhooks): a URL a provider can POST to, forwarded to a port inside the machine. It passes a provider's event through and will not serve a page. To show someone a running app, deploy it or use a tunnel. `cloudflared` is on every machine:
 
 ```
 cloudflared tunnel --url http://localhost:3000
 ```
 
-This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. It's for testing: at most 200 requests at a time, and no server-sent events. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
+This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. Anyone with the URL reaches the server. It's for testing: at most 200 requests at a time, and no server-sent events. An agent opens one for you when you ask for a URL while you're away from the machine, and sends you the link; it stops the tunnel when you're done. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
 
 ### Your laptop's ports on the machine
 

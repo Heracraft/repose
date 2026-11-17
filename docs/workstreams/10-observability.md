@@ -290,8 +290,9 @@ Families:
   zero so a ratio over them does not go blank; MRR is right only while one
   list price per plan is live, because no price is stored per
   subscription),
-  `repose_api_snapshot_age_seconds` (max over running projects; the alert
-  input), `repose_api_snapshot_expiry_fail_total{reason}` and
+  `repose_api_snapshot_age_seconds` (over running projects, the longest
+  time since the later of the newest snapshot and the last start,
+  refreshed hourly, I-1244; the alert input), `repose_api_snapshot_expiry_fail_total{reason}` and
   `repose_api_blob_configured` (I-800: 0 is the mark-only stand-in, which
   marks rows deleted and deletes no bytes), `repose_api_abuse_stops_total{kind}`,
   `repose_api_abuse_held_projects`,

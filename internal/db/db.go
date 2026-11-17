@@ -92,6 +92,9 @@ const (
 	// the machines (DECISIONS I-1162). It is the grpc replica's worker:
 	// only the process holding a host's stream can send it a command.
 	LockSays int64 = 1016
+	// The trigger clock (DECISIONS I-1252): one replica claims the
+	// schedules whose fire has passed, every minute.
+	LockTriggers int64 = 1017
 )
 
 // TryLock takes a session-level advisory lock on a dedicated connection

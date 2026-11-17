@@ -52,6 +52,11 @@ github   :3000/api/webhooks/github   on     1h04m ago      503 stopped
 twilio   :4000/sms                   off    never
 ```
 
+A route a trigger owns (I-1250) prints `trigger <name>` where a target
+would be, and `add` on it is refused and names the trigger: a trigger's
+route is aimed at the machine's receiver and there is one way to change
+that. No route may be aimed at 9227 by hand for the same reason.
+
 `add` on a name that exists changes the target and `--start` and keeps
 the token, so a URL already in a provider's dashboard goes on working.
 `rotate` replaces the token at once; the old one is a tombstone. The
@@ -160,9 +165,9 @@ A route serves no page. No HTML, no script, no redirect, no cookie;
 sized for events; counted egress; and the edge stores nothing, so a
 takedown has no content to remove — the operator removes the route.
 
-What stays open is narrower than `cloudflared`, which is a menu entry
-(I-251) and gives any guest a full public URL with HTML, files and no
-rate limit.
+What stays open is narrower than `cloudflared`, which every machine has
+(I-251 as a menu entry, in the base since I-1246) and gives any guest a
+full public URL with HTML, files and no rate limit.
 
 ## 6. Machine states
 
@@ -186,7 +191,9 @@ past the 24 h session window. A woken machine still stays up 15 minutes,
 because the samples taken while it rested are not quiet.
 
 Deliveries are not use for the unused notice (I-262), so a machine that
-only receives webhooks is still announced as unused.
+only receives webhooks is still announced as unused. A delivery that
+starts a trigger's agent run **is** use, counted from `trigger_runs` and
+not from the sampler (I-1260, `features/triggers.md` §9).
 
 No store-and-forward. Most signature checks reject a delivery more than
 five minutes old, so a stored body is useless when it arrives late, and

@@ -8,7 +8,9 @@
   minutes) with the answer on the same line from 768px: the options, or a
   field that grows to 4 lines (Enter sends, Shift+Enter breaks a line)
   and Send, then Dismiss flush right. A closed question is one line saying
-  what closed it, for as long as the card keeps it.
+  what closed it, for as long as the card keeps it. While the field has
+  focus or holds a draft, the row says so (onhold) and the card keeps the
+  question open (I-1242).
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
@@ -25,7 +27,8 @@
 		note = '',
 		onanswer,
 		onsecret,
-		ondismiss
+		ondismiss,
+		onhold
 	}: {
 		question: Question;
 		/** The page's 30-second clock, in ms. */
@@ -40,6 +43,8 @@
 		/** A question for a secret (I-929): open the dialog its value is pasted into. */
 		onsecret?: () => void;
 		ondismiss: () => void;
+		/** The owner is at the field (focus, or a draft): true at the start, false at the end (I-1242). */
+		onhold?: (holding: boolean) => void;
 	} = $props();
 
 	let pending = $derived(q.state === 'pending');
@@ -95,6 +100,19 @@
 	// The free answer: one line, growing to four, then it scrolls.
 	let draft = $state('');
 	let field = $state<HTMLTextAreaElement | undefined>(undefined);
+	let focused = $state(false);
+	// The owner is answering while the field has focus or a draft, and
+	// the question is pending; the card hears each change once (I-1242).
+	let holding = $derived(pending && (focused || draft.trim() !== ''));
+	let saidHolding = false;
+	$effect(() => {
+		if (holding === saidHolding) return;
+		saidHolding = holding;
+		onhold?.(holding);
+	});
+	$effect(() => () => {
+		if (saidHolding) onhold?.(false);
+	});
 	function grow() {
 		if (!field) return;
 		field.style.height = 'auto';
@@ -250,6 +268,8 @@
 						bind:this={field}
 						bind:value={draft}
 						oninput={grow}
+						onfocus={() => (focused = true)}
+						onblur={() => (focused = false)}
 						{onkeydown}
 						disabled={busy}
 						aria-invalid={note ? 'true' : undefined}

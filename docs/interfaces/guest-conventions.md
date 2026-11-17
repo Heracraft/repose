@@ -79,7 +79,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/etc/repose/base-version` | the platform base version string (same as `nixos-version`'s label) |
 | `/etc/repose/claude-settings.json` | the platform hooks (`Notification`, `Stop` → `repose-hook`) the Claude wrapper merges into `~/.claude/settings.json`, and the default `permissions.defaultMode: "bypassPermissions"` with `skipDangerousModePermissionPrompt: true` it adds where the user's file has no `defaultMode` (I-250), and `tui: "fullscreen"` it adds where the user's file has no `tui` (I-425). `remoteControlAtStartup: true` is not in this file: `repose-agent-setup claude` adds it to `~/.claude/settings.json` by the same rule, and only while `~/.repose/remote-control` holds `on` (I-1132) |
 | `/etc/repose/mcp.json` | the platform MCP servers (`playwright --cdp-endpoint http://127.0.0.1:9224`, `chrome-devtools --browserUrl http://127.0.0.1:9224`, DECISIONS I-246) the Claude wrapper merges into `~/.claude.json` `mcpServers`, and `repose_retired`: the entries earlier bases registered (both `--headless`), which the merge replaces when a user's entry is exactly one of them; the source for Claude Code and Codex (through `repose-mcp sync`, or `repose-agent-setup` on a base without it) and for the VM tests. The other agents get the same servers in their own system layer, rows below (DECISIONS I-553) |
-| `/etc/opencode/opencode.json` `mcp` | the platform MCP servers as `{type: "local", command: [CMD, ARGS...]}`, never `enabled`, so a user's `enabled: false` in `~/.config/opencode/opencode.json` turns one off (I-553) |
+| `/etc/opencode/opencode.json` | `instructions` naming the guide, and no MCP servers: opencode 2 reads this file above the user's, so the platform servers go in `~/.config/opencode/opencode.json` through `repose-mcp sync`, where the user's `disabled: true` on an entry turns it off (I-553, I-1050; a base before I-1050 wrote `mcp.NAME` here, which opencode 2 ignores) |
 | `/etc/gemini-cli/system-defaults.json` | Gemini CLI's system defaults: `mcpServers` with the platform servers (`command` and `args` only) and `security.folderTrust.enabled: false`, since Gemini disables every MCP server in a folder it was not told to trust (I-553). A copied file, root 0644, in a root 0755 directory: Gemini skips a system file whose resolved directory is not root-owned or is group-writable, which a store symlink is |
 | `/etc/repose/pi-extension.js` | pi's machine guide extension (I-243), which also calls `pi.registerMcpServer` for each server in `/etc/repose/mcp.json` and, once present, `~/.repose/mcp/agents/pi.json`, each call guarded on its own (I-554) |
 | `/etc/repose/agent-guide.md` | the machine guide agents read, rendered from `nix/guest/base/agent-guide.md` (DECISIONS I-243); the same text is `/etc/claude-code/CLAUDE.md` (Claude Code's managed memory), `developer_instructions` in `/etc/codex/config.toml` (whose top-level keys before it are `approval_policy = "never"`, `sandbox_mode = "danger-full-access"` and `check_for_update_on_startup = false`, I-546; a key in `~/.codex/config.toml` wins), the file named by `instructions` in `/etc/opencode/opencode.json`, and `GEMINI.md` in `/etc/repose/gemini-extension/`; `/etc/repose/pi-extension.js` reads it at each pi run |
@@ -99,6 +99,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/run/repose/project-set-up` | written by guestd once `SetupProject` has started the session unit; the mark, in a boot record, that the project was set up (DECISIONS I-706) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
 | `/var/lib/repose/paths-loaded` | sha256 of the last registration `nix-store --load-db` took, on the volume; a `RegisterPaths` with the same bytes and `/nix/var/nix/db/db.sqlite` present only writes the stamp above (DECISIONS I-225) |
+| `/var/lib/repose/trigger-set.json` | the project's trigger set as the api last sent it, root 0600, on the volume. guestd reads it at start: the set is the api's state and the receiver answers 404 without it, so a guestd that restarted turned every delivery into "the route was removed" about a route that is still there (DECISIONS I-1248) |
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
 | `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
@@ -570,7 +571,10 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
      absent, and replaced only while its sha256 is one an earlier base
      installed (I-481); the `repose-agent-hooks` user unit also runs this
-     at login, for an OpenCode 2 started outside the wrapper.
+     at login, since version 2 loads the plugin in a background service
+     the wrapper does not start. An opencode the reader installed under
+     `~/.opencode/bin` while the machine's was version 1 is removed once
+     per home, with the dangling `~/.local/bin/opencode2` link (I-1050).
    - `gemini`, `pi`: the machine guide (I-243) and the turn hooks
      (I-690) are linked in as an extension: Gemini CLI runs the
      extension's `hooks/hooks.json` (`BeforeAgent`, `AfterAgent`, each
@@ -653,7 +657,7 @@ never blocks an agent. Mapping:
 | gemini | `hook_event_name=BeforeAgent` (I-690) | `prompt` | none |
 | gemini | `hook_event_name=AfterAgent` | `completed` | `prompt_response`, else `gemini finished` |
 | pi | the extension's `{agent, kind, summary}`: `input` → `prompt`, `agent_end` → `completed` (summary: the last assistant text, else `pi finished`) | | |
-| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input`. Version 1's `chat.message` hook → `prompt` (I-690; checked with 1.18.34) | | |
+| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 2, the machine's (I-1050): `session.execution.started` → `prompt`, `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input`. Version 1, for a reader who kept one (I-481): `chat.message` → `prompt` (I-690; checked with 1.18.34), `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input` | | |
 | any | a payload that already has `agent` and `kind` | passed through | |
 
 Anything else is dropped silently. The kinds `prompt` and `resume` never
@@ -708,7 +712,7 @@ Per agent, `sync` writes:
 | claude | `~/.claude.json` `mcpServers`, and `projects[<path>].mcpServers` for project servers | as in `mcp.json` | as carried; with a secret reference `{"type":"stdio","command":"repose-mcp","args":["run",NAME]}`, and `["run",NAME,PATH]` under `projects[PATH]` | as carried | `{"type":"stdio","command":"repose-mcp","args":[NAME]}` |
 | codex | `~/.codex/config.toml` `[mcp_servers.NAME]` tables | `command`, `args` | `command = "repose-mcp"`, `args = ["run", NAME]`, `startup_timeout_sec = 60` | `url`; `Authorization: Bearer ${X}` as `bearer_token_env_var = "X"`, a header that is all `${X}` in `env_http_headers`, a literal one in `http_headers`; sse, ws, a `${X}` in the URL or inside a longer header are skipped | `command = "repose-mcp"`, `args = [NAME]` |
 | gemini | `~/.gemini/extensions/repose-mcp/gemini-extension.json` | none (its system defaults) | `command`, `args`, `env` as carried; with a secret reference `command = "repose-mcp"`, `args = ["run", NAME]` | `type`, `url`, `headers` as carried; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
-| opencode | `~/.config/opencode/config.json` `mcp` | none (`/etc/opencode`) | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}`; with a secret reference `{type:"local", command:["repose-mcp", "run", NAME]}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
+| opencode | `~/.config/opencode/opencode.json` `mcp.servers` (a name the reader defines there or in `opencode.jsonc` is theirs, I-1050); when the file changed and the background service is running, `opencode service restart`, since the service holds the config it started with | `{type:"local", command:[command, args...]}` | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}`; with a secret reference `{type:"local", command:["repose-mcp", "run", NAME]}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
 | pi | `~/.repose/mcp/agents/pi.json` | none (its extension) | `command`, `args`, `env` as carried; with a secret reference `command = "repose-mcp"`, `args = ["run", NAME]` | `url`, `headers`; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
 
 A secret reference, in a carried stdio server, is a `${X:-default}`, or a
@@ -803,7 +807,7 @@ lacks the server to the reason: the renderer's (`needs the secret X` for
 a remote server whose secret is missing, which `state` leaves to its
 `needs X`), or a file sync leaves
 alone (`~/.codex/config.toml is a link, which repose does not write`, `...
-holds it in a form repose does not edit`, `~/.config/opencode/config.json
+holds it in a form repose does not edit`, `~/.config/opencode/opencode.json
 has comments, which a rewrite would lose`). `problems` (absent when none)
 are the registry files sync left out, one line each. `state` joins, with `; `, the carry's
 reason, `laptop not connected` for a forward whose
@@ -900,6 +904,88 @@ repose-ask --cancel [ID | --all]
 | 5 | cancelled: the owner dismissed it, the agent withdrew it, the guest stopped, or the question is gone (the guest rebooted) |
 | 6 | the user sent the asking agent a prompt, which closed the question (I-690) |
 | 130 | interrupted |
+
+## Triggers (DECISIONS I-1248..I-1262)
+
+A trigger's definitions come from the api: hostd sends the project's
+whole set as `SetTriggers` at create, start, restore and on every change,
+and guestd keeps them in memory alone, as it keeps secrets' values. A
+`RunTrigger` command, or a delivery to the receiver on 9227, starts one
+run.
+
+Everything a run keeps is under `/home/dev/.repose/triggers/<name>/`,
+dev's, on the volume and not a tmpfs, so a dedupe window and a payload
+survive a stop, a reboot and a move to another host:
+
+| Path | What |
+|---|---|
+| `seen` | one line per dedupe key admitted, `<unix> <key>`, keys older than 24 h dropped on write (I-1254) |
+| `fire-payload` | the file `repose triggers fire --payload` writes over SSH, which the runner copies into the run's directory. The one path the api will accept as a `payload_path` |
+| `runs/<run_id>/payload` | the event's bytes, at most the 1 MiB body cap |
+| `runs/<run_id>/headers.json` | the delivery's headers, a JSON object; never `Repose-Webhook-URL`, which carries the route's token |
+| `runs/<run_id>/gate.err` | the gate's last 200 bytes of stderr, when it wrote any. The run's row carries the last line only, so this is where a gate is debugged with `repose triggers fire --dry-run` |
+
+One payload is kept per run the api keeps, so 20 a trigger and 20 MiB at
+the body cap, oldest dropped first (I-1262). A snapshot holds them, so a
+restore brings a provider's old bodies and their signature headers back
+with the volume.
+
+The prompt is **not** here: it is the user's own file,
+`.repose/triggers/<name>.md` in the working directory by default, and
+`repose triggers add -p TEXT` writes it over SSH like any other file of
+theirs.
+
+**A run is keyed by its id.** guestd writes
+`/run/repose/triggers/<run_id>` for each run it started — the trigger,
+the window, the pid and the started time — the way it keeps its
+questions, and rebuilds that set from `tmux list-windows` at start
+(I-1256). The window's name is for the user to attach to; the id is what
+the machine and the api agree on.
+
+A run's window is `t-<trigger>` in the project's session, and
+`t-<trigger>.2` for a second concurrent run: a dot, because a trigger may
+be named `apply-2` and `t-apply-2` would otherwise be both that
+trigger's window and the second run of `apply`. **`t-` is a reserved
+window prefix**, as 9227 is a reserved port. guestd knows its own runs
+from the registry, but the two surfaces that must not read a run as the
+user's read the prefix instead: `repose say` without `--agent` skips a
+`t-*` window, and `repose ls` counts them on their own. So a window a
+user names `t-notes` is treated as a trigger's by both, which is what
+reserving the prefix means.
+
+Its agent is started with the prompt as the agent's own argument (I-780),
+and these variables are in its environment beside the project's named
+secrets:
+
+| Variable | Value |
+|---|---|
+| `REPOSE_TRIGGER` | the trigger's name |
+| `REPOSE_RUN` | the run's id (UUIDv7) |
+| `REPOSE_SOURCE` | `route`, `clock` or `hand` |
+| `REPOSE_PAYLOAD` | `runs/<run_id>/payload`, absent when the run has none |
+| `REPOSE_PAYLOAD_HEADERS` | `runs/<run_id>/headers.json`, absent for a run with no delivery |
+
+The runner sets these with `tmux new-window -e`, so they are the
+window's own: a tmux window inherits the server's environment, not the
+environment of the command that ran `tmux`. Every directory under
+`~/.repose/triggers` is `dev`-owned, including the folder itself, which
+guestd makes at start; guestd is root, so a directory it creates without
+chowning it is one `dev` cannot write in or read through.
+
+A gate (`--gate CMD`) runs through `bash -c` as `dev`, in the working
+directory, with the same variables, the payload's bytes on stdin, the
+project's secrets in its environment, a 10-second timeout and no agent. A
+shell is what makes `jq -e '.action == "opened"'` a gate rather than a
+quoting exercise.
+
+`t-*` windows are agent windows and are reported as such, with one
+exception each way: `repose say` without `--agent` does not resolve to
+one (a run must not turn an owner's `say` into `several_agents`), and
+`repose ls`'s AGENTS cell counts them on their own
+(`claude: working, 1 trigger run`), so a machine nobody is attached to
+does not read as the user's own agent working. Naming one with
+`--agent t-apply` still reaches it, which is how the owner talks to a
+run. Both read the prefix, which is why it is reserved.
 
 ## Credentials the CLI syncs into the guest
 
@@ -1223,8 +1309,8 @@ Anything the user binds on `0.0.0.0` or `127.0.0.1` (or `::`, `::1`)
 inside the guest is reachable through `repose open <port>` (SSH `-L`), and
 is forwarded automatically while a CLI is attached (DECISIONS I-199), read
 with `ss -Hltn` (iproute2, in the base). Platform-owned ports, never
-auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), and
-5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
+auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), 9227
+(I-1250), and 5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
 holds (I-1104). Each attached CLI records its forwarded
 ports in `/home/dev/.repose/forwards/<id>`; the project session's
 `status-right` is set from their union and unset when none is left.
@@ -1261,6 +1347,12 @@ whenever the display is); the agents' browser's DevTools on 9224
 9226 is where the guest's sshd listens for the reverse forward of `repose
 browser bridge` (I-296), and while that bridge is on, 9224 is
 `repose-browser-bridge.socket`, whose proxy goes to 9226 instead of 9225.
+9227 is guestd's trigger receiver (I-1250), on `127.0.0.1` and `::1`
+only. The edge's delivery for a trigger's route opens a `direct-tcpip`
+channel to it exactly as it does for a user's own port, and asks for
+`POST /t/<trigger>`; anything else on that port is 404. A payload's bytes
+are written to the run's directory below and never logged.
+
 `repose-prisma-engines.socket` listens on `127.0.0.1:850` (under 1024, so
 never forwarded) and answers every GET with a redirect to
 binaries.prisma.sh, a `linux-nixos` engine path rewritten to

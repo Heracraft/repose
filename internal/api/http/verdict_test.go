@@ -60,7 +60,7 @@ func TestAVerdictNamesTheConditionThatKeptTheMachineAwake(t *testing.T) {
 		{"an agent at work", resting.BlockedAgentWorking, sampleRow{agent: "working"}, nil},
 		{"an agent in an unknown state", resting.BlockedAgentWorking, sampleRow{agent: "unknown"}, nil},
 		{"guestd not answering", resting.BlockedGuestdDown, sampleRow{agent: "idle", noGuestd: true}, nil},
-		{"CPU over the 6 s line", resting.BlockedCPU, sampleRow{agent: "idle", cpuNs: resting.CPUNsPerSample}, nil},
+		{"CPU over the 15 s line", resting.BlockedCPU, sampleRow{agent: "idle", cpuNs: resting.CPUNsPerSample}, nil},
 		{"network over 64 KiB", resting.BlockedNet, sampleRow{agent: "idle", netRx: resting.NetBytesPerSample / 2, netTx: resting.NetBytesPerSample / 2}, nil},
 		{"the never-freeze switch", resting.BlockedKeepAwake, quiet, func(t *testing.T, r *restingEnv) {
 			if _, err := r.e.h.Pool.Exec(r.e.h.Ctx, "update projects set keep_awake = true where id = $1", r.p.ID); err != nil {

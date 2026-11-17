@@ -109,6 +109,9 @@ type Fake struct {
 	// asks are the questions the fake's guests "know" (DECISIONS I-244):
 	// question_id -> the AnswerQuestion that closed it, nil while open.
 	asks map[string]*hostdv1.AnswerQuestion
+	// holds are the last AnswerQuestion with status extended each known
+	// question took (DECISIONS I-1242); a hold closes nothing.
+	holds map[string]*hostdv1.AnswerQuestion
 	// bad are closures that never reach Ready, with what their boot
 	// prints (I-590, I-592).
 	bad map[string]string
@@ -193,7 +196,7 @@ func New(opts Options) *Fake {
 	if opts.Fail == nil {
 		opts.Fail = map[string]string{}
 	}
-	return &Fake{opts: opts, guests: map[string]*Guest{}, results: map[string]*hostdv1.Result{}, asks: map[string]*hostdv1.AnswerQuestion{}}
+	return &Fake{opts: opts, guests: map[string]*Guest{}, results: map[string]*hostdv1.Result{}, asks: map[string]*hostdv1.AnswerQuestion{}, holds: map[string]*hostdv1.AnswerQuestion{}}
 }
 
 // Ask emits an AgentQuestion as a guest's repose-ask would, and makes the
@@ -223,6 +226,14 @@ func (f *Fake) Answer(questionID string) *hostdv1.AnswerQuestion {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.asks[questionID]
+}
+
+// Held is the last hold (AnswerQuestion status extended, I-1242) a known
+// question took, nil when none has.
+func (f *Fake) Held(questionID string) *hostdv1.AnswerQuestion {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.holds[questionID]
 }
 
 // ForgetQuestion makes the fake's guest forget a question, as a guest
@@ -985,6 +996,13 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		if e == nil {
 			if _, known := f.asks[a.QuestionId]; !known {
 				e = errResult(id, "not_found", "no question "+a.QuestionId+" in this guest")
+			} else if a.Status == "extended" {
+				// A hold moves the deadline and closes nothing (I-1242).
+				if a.ExpiresUnix <= 0 {
+					e = errResult(id, "invalid_argument", "status extended needs expires_unix")
+				} else if f.asks[a.QuestionId] == nil {
+					f.holds[a.QuestionId] = a
+				}
 			} else if f.asks[a.QuestionId] == nil {
 				f.asks[a.QuestionId] = a
 			}

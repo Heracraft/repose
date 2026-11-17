@@ -358,14 +358,34 @@ func GlobalApplyCmd(ctx context.Context, e *Env, path string) error {
 // packagesRe finds the list `repose config --global add` edits.
 var packagesRe = regexp.MustCompile(`(?s)(home\.packages\s*=\s*with\s+pkgs\s*;\s*\[)(.*?)(\]\s*;)`)
 
+// moduleOpenRe is the start of a home-manager module whose body `add` can
+// put a list into: the argument set, `:`, and the body's opening brace.
+var moduleOpenRe = regexp.MustCompile(`(?s)^\s*\{([^{}]*)\}\s*:\s*\{`)
+
 var nixAttrRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_+-]*(\.[A-Za-z_][A-Za-z0-9_+-]*)*$`)
 
+// errNoPackagesList is editPackages's refusal: the file has no list and
+// no module body to put one into.
+var errNoPackagesList = errors.New("no `home.packages = with pkgs; [ ... ];` list")
+
 // editPackages adds or removes names in the file's
-// `home.packages = with pkgs; [ ... ];` list, one per line.
+// `home.packages = with pkgs; [ ... ];` list, one per line. A file with
+// no such list gets one on an add (DECISIONS I-1236): the template when
+// the file is empty (the docs say to empty it to remove the module, and
+// `add` is how it comes back), else a list at the top of the module's
+// body, with `pkgs` added to the arguments when they lack it. A file add
+// cannot read that way is still refused.
 func editPackages(text string, names []string, add bool) (string, []string, error) {
 	m := packagesRe.FindStringSubmatchIndex(text)
+	if m == nil && !add {
+		return "", nil, errNoPackagesList
+	}
 	if m == nil {
-		return "", nil, errors.New("no `home.packages = with pkgs; [ ... ];` list")
+		var ok bool
+		if text, ok = insertPackagesList(text); !ok {
+			return "", nil, errNoPackagesList
+		}
+		m = packagesRe.FindStringSubmatchIndex(text)
 	}
 	body := text[m[4]:m[5]]
 	have := map[string]bool{}
@@ -406,6 +426,34 @@ func editPackages(text string, names []string, add bool) (string, []string, erro
 		body = strings.Join(out, "\n")
 	}
 	return text[:m[4]] + body + text[m[5]:], changed, nil
+}
+
+// insertPackagesList gives text an empty `home.packages = with pkgs; [ ];`
+// list for editPackages to fill: the template for an empty file, else the
+// list as the first attribute of the module's body. false when the file
+// is not a module of the `{ args }: { ... }` shape.
+func insertPackagesList(text string) (string, bool) {
+	if strings.TrimSpace(text) == "" {
+		return machineNixTemplate, true
+	}
+	m := moduleOpenRe.FindStringSubmatchIndex(text)
+	if m == nil {
+		return "", false
+	}
+	args := text[m[2]:m[3]]
+	hasPkgs := false
+	for _, a := range strings.Split(args, ",") {
+		if strings.TrimSpace(a) == "pkgs" {
+			hasPkgs = true
+		}
+	}
+	if !hasPkgs {
+		// `{ config, ... }:` becomes `{ pkgs, config, ... }:`.
+		text = text[:m[2]] + " pkgs," + text[m[2]:]
+		m = moduleOpenRe.FindStringSubmatchIndex(text)
+	}
+	body := m[1] // just past the body's `{`
+	return text[:body] + "\n  home.packages = with pkgs; [\n  ];" + text[body:], true
 }
 
 // GlobalPackagesCmd is `repose config --global add|remove <package>...`.

@@ -128,8 +128,8 @@ type hookRecord struct {
 	Kind string    `json:"kind"`
 	At   time.Time `json:"at"`
 	// Prompted is set once the window's agent sent a prompt hook: from
-	// then on its state comes from hooks (I-694). OpenCode 2 and an older
-	// extension send turn ends only, and stay running.
+	// then on its state comes from hooks (I-694). An older extension, or
+	// an agent that reports turn ends only, stays running.
 	Prompted bool `json:"prompted,omitempty"`
 }
 
@@ -817,6 +817,20 @@ func (w *Watcher) RecordHook(window, kind string, at time.Time) {
 			ws.stateSince = at
 		}
 	}
+}
+
+// WindowAgent is the agent state in a window and whether an agent is
+// there at all, which is what a trigger's supervisor reads to tell a
+// turn that ended from a window whose agent went away (DECISIONS
+// I-1256).
+func (w *Watcher) WindowAgent(window string) (string, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ws, ok := w.windows[window]
+	if !ok || ws.agent == "" {
+		return "", false
+	}
+	return ws.state, true
 }
 
 // Signals returns the cached guest signals and whether the cache is fresh.

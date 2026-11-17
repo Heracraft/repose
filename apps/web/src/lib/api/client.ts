@@ -32,7 +32,10 @@ import type {
 	AccountSecretPut,
 	Samples,
 	SampleWindow,
+	Say,
 	Snapshot,
+	Trigger,
+	TriggerRun,
 	UsageRow,
 	ViewTicket,
 	WebhookRoute
@@ -141,6 +144,15 @@ export const patchMe = (body: {
 	notify?: { email?: boolean; ntfy_url?: string | null; gchat_url?: string | null };
 }) => request<Me>('/me', { method: 'PATCH', body });
 export const deleteMe = () => request<void>('/me', { method: 'DELETE' });
+
+// Certificates.
+/**
+ * Revokes every SSH certificate the account holds, as `repose logout`
+ * does (internal/api/http/certs.go, api.md "Certificates"), and answers
+ * how many were revoked.
+ */
+export const revokeAllCerts = () =>
+	request<{ revoked: number }>('/certs/revoke', { method: 'POST', body: { all: true } });
 /** Each channel that is on: ok or error, with why for ntfy and Google Chat. */
 export interface NotifyTestResult {
 	email?: 'ok' | 'error';
@@ -245,6 +257,43 @@ export const rotateWebhook = (id: string, name: string) =>
 	});
 export const deleteWebhook = (id: string, name: string) =>
 	request<void>(`/projects/${id}/webhooks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// Triggers (DECISIONS I-1248..I-1262).
+export const listTriggers = (id: string) => request<Trigger[]>(`/projects/${id}/triggers`);
+export const getTrigger = (id: string, name: string) =>
+	request<Trigger>(`/projects/${id}/triggers/${encodeURIComponent(name)}`);
+/**
+ * Creates a trigger or changes the fields given on one that exists. A
+ * body with only `name` and `enabled` is how the on/off column reaches
+ * it: the door is left as it is (api.md's "Triggers").
+ *
+ * `prompt` is the prompt's text, which the dashboard has no SSH to
+ * write with: the api carries it into the machine and keeps none of it,
+ * and no answer ever holds it (I-1266).
+ */
+export const putTrigger = (id: string, body: Record<string, unknown>) =>
+	request<Trigger>(`/projects/${id}/triggers`, { method: 'POST', body });
+export const deleteTrigger = (id: string, name: string) =>
+	request<void>(`/projects/${id}/triggers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+/**
+ * Runs it now. The run is the hand-off row, so this answers `queued`.
+ * `dryRun` takes the admission decision and runs the gate and starts no
+ * agent, which is how a gate is written (I-1254).
+ */
+export const fireTrigger = (id: string, name: string, dryRun = false) =>
+	request<TriggerRun>(`/projects/${id}/triggers/${encodeURIComponent(name)}/fire`, {
+		method: 'POST',
+		body: dryRun ? { dry_run: true } : {}
+	});
+export const listTriggerRuns = (id: string, trigger?: string, limit?: number) => {
+	const q = new URLSearchParams();
+	if (trigger) q.set('trigger', trigger);
+	if (limit) q.set('limit', String(limit));
+	const tail = q.size > 0 ? `?${q}` : '';
+	return request<TriggerRun[]>(`/projects/${id}/trigger-runs${tail}`);
+};
+export const getTriggerRun = (id: string, runId: string) =>
+	request<TriggerRun>(`/projects/${id}/trigger-runs/${encodeURIComponent(runId)}`);
 
 // The machine's browser view (DECISIONS I-1216).
 /**
@@ -355,6 +404,21 @@ export const answerSecretQuestion = (id: string, qid: string, valueBase64: strin
 	});
 export const cancelQuestion = (id: string, qid: string) =>
 	request<Question>(`/projects/${id}/questions/${qid}/cancel`, { method: 'POST' });
+/** Keeps a question open while the owner answers it (I-1242): its `expires_at` moves to five minutes from now when that is later. */
+export const holdQuestion = (id: string, qid: string) =>
+	request<Question>(`/projects/${id}/questions/${qid}/hold`, { method: 'POST' });
+
+// Messages for an agent (I-1144).
+/**
+ * Sends a message to the agent on a project; `agent` names the window
+ * when the machine runs more than one. The api waits for the machine's
+ * answer, so this call can take up to 20 seconds.
+ */
+export const sayToAgent = (id: string, text: string, agent?: string) =>
+	request<Say>(`/projects/${id}/say`, {
+		method: 'POST',
+		body: agent ? { text, agent } : { text }
+	});
 
 // Usage and billing.
 export const getUsage = (from: string, to: string) =>

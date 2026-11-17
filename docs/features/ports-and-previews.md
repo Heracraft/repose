@@ -53,7 +53,8 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   `internal/cli/forward.go`): 6080, 6081, 5900 (the desktop, which `repose
   browser` forwards), 9224, 9225 (the agents' browser's DevTools
   endpoint, I-246), 9226 (the bridge's tunnel end, which leads back to
-  the laptop, I-296) and 5353, 5355 (mDNS, LLMNR, I-215). A listener only on another address (a
+  the laptop, I-296), 9227 (the trigger receiver the edge delivers to,
+  I-1250) and 5353, 5355 (mDNS, LLMNR, I-215). A listener only on another address (a
   Docker bridge, the guest's own IP) is not forwarded, and nor is a port
   bound only inside a Docker network. Nor is the guest end of a reverse
   forward, this laptop's or another laptop's: forwarding it back would

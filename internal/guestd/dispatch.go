@@ -13,6 +13,7 @@ import (
 	"github.com/heracraft/repose/internal/guestd/sample"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/guestd/system"
+	"github.com/heracraft/repose/internal/guestd/trigger"
 	"github.com/heracraft/repose/internal/vsockrpc"
 )
 
@@ -133,6 +134,20 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 	case *guestdv1.Request_AnswerQuestion:
 		return empty(s.answerQuestion(r.AnswerQuestion))
 
+	case *guestdv1.Request_SetTriggers:
+		s.setTriggers(r.SetTriggers)
+		return empty(nil)
+
+	case *guestdv1.Request_WriteTriggerPrompt:
+		return empty(s.writeTriggerPrompt(r.WriteTriggerPrompt))
+
+	case *guestdv1.Request_RunTrigger:
+		res, err := s.runTrigger(ctx, r.RunTrigger)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(&guestdv1.Response_TriggerRun{TriggerRun: res})
+
 	case *guestdv1.Request_SayToAgent:
 		res, err := s.sayToAgent(ctx, r.SayToAgent)
 		if err != nil {
@@ -147,10 +162,20 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 	}
 }
 
-// answerQuestion closes a question a repose-ask is waiting on. The answer
-// is tenant text; the log line carries the id and the status only.
+// answerQuestion closes a question a repose-ask is waiting on, or, with
+// status extended (DECISIONS I-1242), moves its deadline to expires_unix
+// while the owner answers on the dashboard. The answer is tenant text; the
+// log line carries the id and the status only.
 func (s *Server) answerQuestion(a *guestdv1.AnswerQuestion) error {
-	err := s.asks.Answer(a.GetQuestionId(), a.GetStatus(), a.GetAnswer())
+	var err error
+	if a.GetStatus() == questions.StatusExtended {
+		if a.GetExpiresUnix() <= 0 {
+			return sysdep.Invalid("status extended needs expires_unix")
+		}
+		err = s.asks.Extend(a.GetQuestionId(), time.Unix(a.GetExpiresUnix(), 0))
+	} else {
+		err = s.asks.Answer(a.GetQuestionId(), a.GetStatus(), a.GetAnswer())
+	}
 	switch {
 	case errors.Is(err, questions.ErrNotFound):
 		return sysdep.NotFound("no question %s in this guest", a.GetQuestionId())
@@ -158,6 +183,10 @@ func (s *Server) answerQuestion(a *guestdv1.AnswerQuestion) error {
 		return sysdep.Invalid("%v", err)
 	case err != nil:
 		return err
+	}
+	if a.GetStatus() == questions.StatusExtended {
+		s.log.Info("agent question held open", "event", "agent_question", "question_id", a.GetQuestionId(), "status", a.GetStatus())
+		return nil
 	}
 	s.log.Info("agent question closed", "event", "agent_question", "question_id", a.GetQuestionId(), "status", a.GetStatus())
 	return nil
@@ -181,6 +210,48 @@ func (s *Server) sayToAgent(ctx context.Context, m *guestdv1.SayToAgent) (*guest
 	s.log.Info("message for an agent", "event", "agent_prompted",
 		"window", out.Window, "state", out.State, "replaced", out.Replaced)
 	return &guestdv1.SayResult{State: out.State, Window: out.Window, Replaced: out.Replaced}, nil
+}
+
+// setTriggers takes the project's whole trigger set (DECISIONS I-1248).
+// It is a state the api owns: kept in memory only, and sent again on
+// every start, so a guest that lost it comes back with it.
+func (s *Server) setTriggers(m *guestdv1.SetTriggers) {
+	set := make([]trigger.Trigger, 0, len(m.GetTriggers()))
+	for _, t := range m.GetTriggers() {
+		set = append(set, trigger.Trigger{
+			Name: t.GetName(), Kind: t.GetKind(), PromptPath: t.GetPromptPath(),
+			Workdir: t.GetWorkdir(), Agent: t.GetAgent(), TimeoutS: t.GetTimeoutS(),
+			Concurrency: t.GetConcurrency(), Gate: t.GetGate(), Dedupe: t.GetDedupe(),
+			Enabled: t.GetEnabled(),
+		})
+	}
+	s.triggers.SetTriggers(set)
+}
+
+// writeTriggerPrompt writes a trigger's prompt into the machine as dev
+// (DECISIONS I-1266). It is what the dashboard's own form does in place
+// of the SSH `repose triggers add -p` writes over: the api carries the
+// text and keeps none of it, and the file is dev's, under the trigger's
+// own workdir.
+func (s *Server) writeTriggerPrompt(m *guestdv1.WriteTriggerPrompt) error {
+	return s.triggers.WritePrompt(m.GetTrigger(), m.GetWorkdir(), m.GetPromptPath(), m.GetText())
+}
+
+// runTrigger fires one now (DECISIONS I-1252, I-1256). A repeat for a
+// run already started is answered with that run's state and starts no
+// second agent: the api sends the run's id as the command id.
+func (s *Server) runTrigger(ctx context.Context, m *guestdv1.RunTrigger) (*guestdv1.TriggerRunResult, error) {
+	res, err := s.triggers.Start(ctx, trigger.Request{
+		Trigger: m.GetTrigger(), RunID: m.GetRunId(), Source: m.GetSource(),
+		PayloadPath: m.GetPayloadPath(), PayloadRun: m.GetPayloadRun(), DryRun: m.GetDryRun(),
+	})
+	if errors.Is(err, trigger.ErrUnknown) {
+		return nil, sysdep.NotFound("no trigger %q on this machine", m.GetTrigger())
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &guestdv1.TriggerRunResult{State: res.State, Window: res.Window, Reason: res.Reason}, nil
 }
 
 // shutdown powers the guest off after the response has been flushed.

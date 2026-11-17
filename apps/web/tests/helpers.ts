@@ -76,6 +76,42 @@ export async function desktopPastes(): Promise<string[]> {
 	return (await res.json()) as string[];
 }
 
+/** A trigger's run, through the fake's control listener (I-1256). */
+export async function addTriggerRun(body: {
+	project_id: string;
+	trigger: string;
+	state: string;
+	reason?: string;
+	summary?: string;
+	source?: string;
+	window?: string;
+	payload_bytes?: number;
+	skips?: number;
+	ago_minutes?: number;
+	took_seconds?: number;
+	link_url?: string;
+	link_label?: string;
+}) {
+	const res = await fetch(`${adminURL()}/trigger-run`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	if (!res.ok) throw new Error(`/trigger-run: ${res.status}`);
+}
+
+/**
+ * The prompt text the machine was given for a trigger (I-1266). The api
+ * carries a prompt into the guest and keeps none of it, so the fake's
+ * own copy is the only place a test can read what the guest would hold.
+ */
+export async function triggerPrompt(projectId: string, trigger: string): Promise<string> {
+	const q = new URLSearchParams({ project_id: projectId, trigger });
+	const res = await fetch(`${adminURL()}/trigger-prompt?${q}`);
+	if (!res.ok) throw new Error(`/trigger-prompt: ${res.status}`);
+	return res.text();
+}
+
 export const failNext = (method: string, path: string, code: string) =>
 	adminCall('/fail-next', { method, path, code });
 export const fail = (method: string, path: string, code: string) =>
@@ -209,6 +245,38 @@ export async function addEvents(
 		})
 	});
 	if (!res.ok) throw new Error(`/events: ${res.status} ${await res.text()}`);
+}
+
+/**
+ * The fake's `repose say` knobs (internal/fakes/api/say.go, cmd/fakeapi
+ * POST /say): the agent windows its machines run, the state it answers a
+ * message with, and whether the answer replaced one that was waiting.
+ * These are the say handler's own windows, separate from the signals
+ * setAgents writes, so a test that moves the agents moves both.
+ * Defaults: one window `claude`, state `delivered`.
+ */
+export async function setSay(
+	opts: { agents?: string[]; state?: string; replaced?: boolean } = {}
+): Promise<void> {
+	const res = await fetch(`${adminURL()}/say`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			agents: opts.agents,
+			state: opts.state ?? '',
+			replaced: opts.replaced ?? false
+		})
+	});
+	if (!res.ok) throw new Error(`/say: ${res.status} ${await res.text()}`);
+}
+
+/** The messages the fake took, oldest first (cmd/fakeapi GET /say). */
+export async function says(): Promise<
+	{ project_id: string; window: string; text: string; state: string }[]
+> {
+	const res = await fetch(`${adminURL()}/say`);
+	if (!res.ok) throw new Error(`GET /say: ${res.status}`);
+	return res.json();
 }
 
 /** Sets the agents a running project's signals report, and its sessions (cmd/fakeapi POST /agents). */

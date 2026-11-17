@@ -371,7 +371,12 @@
 	<div class="ogrid">
 		<div class="oside">
 			{#if agents}
-				<AgentsCard signals={project.signals} {questions} updated={ctx.lastUpdated} />
+				<AgentsCard
+					projectId={project.id}
+					signals={project.signals}
+					{questions}
+					updated={ctx.lastUpdated}
+				/>
 			{/if}
 			<MachineCard
 				{project}

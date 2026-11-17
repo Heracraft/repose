@@ -113,3 +113,28 @@ func TestSayToAgentRefusalKeepsItsCode(t *testing.T) {
 		t.Fatalf("the refusal lost the windows: %q", res.GetError().GetMessage())
 	}
 }
+
+// TestAnswerQuestionExtendedRelaysTheDeadline (DECISIONS I-1242): a hold
+// reaches guestd as the same request with status extended and its
+// expires_unix, and a guestd from before it, which answers
+// invalid_argument, keeps that code so the api logs it and closes nothing.
+func TestAnswerQuestionExtendedRelaysTheDeadline(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	a := &hostdv1.AnswerQuestion{GuestId: gid1, QuestionId: "0199aaaa-0000-7000-8000-00000000000c", Status: "extended", ExpiresUnix: 1794800000}
+	h.mustOK(cmd(a))
+	var got *guestdv1.AnswerQuestion
+	for _, c := range h.guestd(gid1).Calls() {
+		if r := c.Req.GetAnswerQuestion(); r != nil {
+			got = r
+		}
+	}
+	if got == nil || got.QuestionId != a.QuestionId || got.Status != "extended" || got.ExpiresUnix != 1794800000 || got.Answer != "" {
+		t.Fatalf("guestd got %+v", got)
+	}
+
+	h2 := newHarness(t, nil)
+	h2.gopts.Fail = map[string]*guestdv1.Error{"AnswerQuestion": {Code: "invalid_argument", Message: "unknown status \"extended\""}}
+	h2.create(gid1)
+	h2.mustFail(cmd(a), CodeInvalidArgument)
+}

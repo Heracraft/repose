@@ -62,11 +62,16 @@ type Server struct {
 	opts Options
 	ln   net.Listener
 
-	mu       sync.Mutex
-	calls    []Call
-	dropped  map[string]bool
-	secrets  map[string][]byte
-	princ    []string
+	mu      sync.Mutex
+	calls   []Call
+	dropped map[string]bool
+	secrets map[string][]byte
+	princ   []string
+	// triggers is the last set SetTriggers carried (DECISIONS I-1248).
+	triggers []*guestdv1.Trigger
+	// prompts is what WriteTriggerPrompt wrote, by trigger name, which
+	// is the file a real guest would hold (DECISIONS I-1266).
+	prompts  map[string][]byte
 	frozen   bool
 	conn     *vsockrpc.ServerConn
 	closed   bool
@@ -99,6 +104,18 @@ func Listen(path string, opts Options) (*Server, error) {
 
 // Path is the socket path.
 func (s *Server) Path() string { return s.path }
+
+// DropNext makes the next request of that kind close the connection, as
+// DropOnce does from the start; it can be set once the fake is serving.
+func (s *Server) DropNext(kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.opts.DropOnce == nil {
+		s.opts.DropOnce = map[string]bool{}
+	}
+	s.opts.DropOnce[kind] = true
+	delete(s.dropped, kind)
+}
 
 func (s *Server) accept() {
 	defer s.wg.Done()
@@ -174,6 +191,24 @@ func (s *Server) Kinds() []string {
 // WriteSecrets without it does not remove.
 var reservedName = map[string]bool{"ssh_host_ed25519_key": true, "ssh_host_ed25519_key-cert.pub": true, "user_ca.pub": true}
 
+// Triggers is the set the last SetTriggers carried.
+func (s *Server) Triggers() []*guestdv1.Trigger {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*guestdv1.Trigger(nil), s.triggers...)
+}
+
+// Prompts returns what WriteTriggerPrompt wrote, by trigger name.
+func (s *Server) Prompts() map[string][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string][]byte, len(s.prompts))
+	for k, v := range s.prompts {
+		out[k] = append([]byte(nil), v...)
+	}
+	return out
+}
+
 // Secrets returns what WriteSecrets delivered.
 func (s *Server) Secrets() map[string][]byte {
 	s.mu.Lock()
@@ -226,6 +261,12 @@ func kindOf(req *guestdv1.Request) string {
 		return "AnswerQuestion"
 	case *guestdv1.Request_SayToAgent:
 		return "SayToAgent"
+	case *guestdv1.Request_SetTriggers:
+		return "SetTriggers"
+	case *guestdv1.Request_RunTrigger:
+		return "RunTrigger"
+	case *guestdv1.Request_WriteTriggerPrompt:
+		return "WriteTriggerPrompt"
 	case *guestdv1.Request_GrowFs:
 		return "GrowFs"
 	case *guestdv1.Request_WriteSecrets:
@@ -385,6 +426,41 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 			window = "claude"
 		}
 		ok.Result = &guestdv1.Response_Say{Say: &guestdv1.SayResult{State: "delivered", Window: window}}
+	case *guestdv1.Request_SetTriggers:
+		// The set is state the api owns; the fake keeps the last one so a
+		// test can read what hostd relayed (DECISIONS I-1248).
+		s.mu.Lock()
+		s.triggers = r.SetTriggers.GetTriggers()
+		s.mu.Unlock()
+	case *guestdv1.Request_WriteTriggerPrompt:
+		w := r.WriteTriggerPrompt
+		if w.GetTrigger() == "" || w.GetPromptPath() == "" || len(w.GetText()) == 0 {
+			return fail("invalid_argument", "trigger, prompt_path and text required")
+		}
+		s.mu.Lock()
+		if s.prompts == nil {
+			s.prompts = map[string][]byte{}
+		}
+		s.prompts[w.GetTrigger()] = w.GetText()
+		s.mu.Unlock()
+	case *guestdv1.Request_RunTrigger:
+		if r.RunTrigger.GetTrigger() == "" || r.RunTrigger.GetRunId() == "" {
+			return fail("invalid_argument", "trigger and run_id required")
+		}
+		s.mu.Lock()
+		known := false
+		for _, t := range s.triggers {
+			if t.GetName() == r.RunTrigger.GetTrigger() {
+				known = true
+			}
+		}
+		s.mu.Unlock()
+		if !known {
+			return fail("not_found", "no such trigger")
+		}
+		ok.Result = &guestdv1.Response_TriggerRun{TriggerRun: &guestdv1.TriggerRunResult{
+			State: "working", Window: "t-" + r.RunTrigger.GetTrigger(),
+		}}
 	default:
 		return fail("invalid_argument", "unknown request")
 	}

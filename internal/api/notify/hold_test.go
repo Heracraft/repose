@@ -153,43 +153,59 @@ func TestNotHeldWhenAwayOrStale(t *testing.T) {
 	}
 }
 
-// TestHeldRowDroppedWhenResolved: a held question answered meanwhile, and
-// a held needs_input followed by a later event of the same agent window,
-// are dropped with "dropped: resolved"; another agent's prompt in that
-// window is not resolved by it.
-func TestHeldRowDroppedWhenResolved(t *testing.T) {
+// TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved: a question
+// goes out at once with the owner attached (I-1242, amending I-689), a
+// question already answered in the terminal by its first send is dropped
+// with "dropped: resolved", and a held needs_input followed by a later
+// event of the same agent window is dropped too; another agent's prompt
+// in that window is not resolved by it. Probe: with "agent_question" back
+// in heldKinds, eid reads held after the first pass.
+func TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved(t *testing.T) {
 	h := newHoldEnv(t)
 	start := h.now
 	h.sample(start, 1, 0)
-	// A question row and its event, as the questions store writes them.
+	// Two question rows and their events, as the questions store writes
+	// them; the second is answered before the first pass.
 	qid, eid := store.NewID(), store.NewID()
-	if _, err := h.pool.Exec(h.ctx, `insert into questions (id, project_id, guest_id, event_id, agent, text, options, state, expires_at, created_at) values ($1, $2, $3, $4, 'claude', 'ok?', '{}', 'pending', $5, $6)`,
-		qid, h.pid, store.NewID(), eid, start.Add(time.Hour), start); err != nil {
-		t.Fatal(err)
+	answered, aeid := store.NewID(), store.NewID()
+	for _, q := range []struct{ q, e uuid.UUID }{{qid, eid}, {answered, aeid}} {
+		if _, err := h.pool.Exec(h.ctx, `insert into questions (id, project_id, guest_id, event_id, agent, text, options, state, expires_at, created_at) values ($1, $2, $3, $4, 'claude', 'ok?', '{}', 'pending', $5, $6)`,
+			q.q, h.pid, store.NewID(), q.e, start.Add(time.Hour), start); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := h.ing.Insert(h.ctx, events.Incoming{ID: q.e, ProjectID: h.pid, TS: start, Kind: "agent_question", Agent: "claude", Summary: "ok?"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, _, err := h.ing.Insert(h.ctx, events.Incoming{ID: eid, ProjectID: h.pid, TS: start, Kind: "agent_question", Agent: "claude", Summary: "ok?"}); err != nil {
+	if _, err := h.pool.Exec(h.ctx, "update questions set state = 'answered', answered_via = 'terminal' where id = $1", answered); err != nil {
 		t.Fatal(err)
 	}
 	prompt := h.insert("needs_input", "main")
 	other := h.insertAs("codex", "needs_input", "main")
 	h.pass(start.Add(time.Second))
-	for _, id := range []uuid.UUID{eid, prompt, other} {
+	if len(h.sent.sent) != 1 || h.sent.sent[0].EventID != eid {
+		t.Fatalf("sent %v, want the pending question alone, at once", h.sent.sent)
+	}
+	if got := h.delivered(eid); got == notify.DeliveredHeld || got == "" {
+		t.Fatalf("question delivered %q, want a send time", got)
+	}
+	if h.delivered(aeid) != notify.DeliveredDropped {
+		t.Fatalf("question answered before its send: %q, want dropped", h.delivered(aeid))
+	}
+	for _, id := range []uuid.UUID{prompt, other} {
 		if h.delivered(id) != notify.DeliveredHeld {
 			t.Fatalf("%s not held: %q", id, h.delivered(id))
 		}
-	}
-	if _, err := h.pool.Exec(h.ctx, "update questions set state = 'answered', answered_via = 'terminal' where id = $1", qid); err != nil {
-		t.Fatal(err)
 	}
 	h.now = start.Add(20 * time.Second)
 	h.insert("completed", "main")
 	h.sample(start.Add(time.Minute), 0, 0)
 	h.pass(start.Add(time.Minute + time.Second))
-	if h.delivered(eid) != notify.DeliveredDropped || h.delivered(prompt) != notify.DeliveredDropped {
-		t.Fatalf("question %q, prompt %q, want both dropped", h.delivered(eid), h.delivered(prompt))
+	if h.delivered(prompt) != notify.DeliveredDropped {
+		t.Fatalf("prompt %q, want dropped", h.delivered(prompt))
 	}
-	if len(h.sent.sent) != 1 || h.sent.sent[0].EventID != other {
-		t.Fatalf("sent %d, want only the other window's prompt", len(h.sent.sent))
+	if len(h.sent.sent) != 2 || h.sent.sent[1].EventID != other {
+		t.Fatalf("sent %d, want the question and then the other window's prompt", len(h.sent.sent))
 	}
 	var rows int
 	_ = h.pool.QueryRow(h.ctx, "select count(*) from events_outbox").Scan(&rows)

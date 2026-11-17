@@ -61,7 +61,8 @@ CLI command for it.
 
 The menu is a catalog (`GET /catalog`) of packages and services with labels
 and groups: languages, databases, browsers, tools, and deploy CLIs
-(wrangler, the Supabase CLI, flyctl and cloudflared from nixpkgs; the Vercel CLI and
+(wrangler, the Supabase CLI and flyctl from nixpkgs, and cloudflared, which
+every machine has since I-1246 and the entry now adds nothing; the Vercel CLI and
 portless, which nixpkgs does not carry, installed once with `npm i -g`
 into `~/.npm-global` by a user unit after the network is up). None of
 these needs the menu: `npm i -g <cli>` in the guest works and persists
@@ -267,7 +268,9 @@ Base bumps (DECISIONS R4-5):
 - The CLI keeps `~/.config/repose/machine.nix` and pushes it on `run`
   when it changed since its last push, refusing when the account's copy
   changed since too; `repose config --global` shows, edits, adds,
-  removes and applies; `repose run --no-personal` and the Config page's
+  removes and applies (`add` puts a `home.packages = with pkgs; [ ];`
+  list into a module that has none, and the template into an emptied
+  file, I-1236); `repose run --no-personal` and the Config page's
   switch opt a machine out.
 - With a machine.nix on the account the tool carry skips the laptop's
   global tools; with a `repose.nix` at the checkout root it skips the

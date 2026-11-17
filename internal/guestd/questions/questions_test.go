@@ -260,3 +260,60 @@ func TestOpenSecret(t *testing.T) {
 		t.Fatalf("after a restart: %+v", r)
 	}
 }
+
+// TestExtendMovesTheDeadlineForwardOnly (I-1242): a hold from the
+// dashboard moves an open question's deadline later, never earlier, does
+// nothing to a closed one, survives a restart, and the sweep then leaves
+// the question alone at its old deadline.
+func TestExtendMovesTheDeadlineForwardOnly(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{t: time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := New(dir, func(Question) {}, log, c.now)
+	q, _ := s.Open("claude", "claude", "", "name?", nil, time.Minute)
+	if err := s.Extend("nope", c.now().Add(time.Hour)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown id: %v", err)
+	}
+	// Backwards is nothing.
+	if err := s.Extend(q.ID, c.now().Add(30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(q.ID); !got.Expires.Equal(q.Expires) {
+		t.Fatalf("deadline moved back: %v -> %v", q.Expires, got.Expires)
+	}
+	until := c.now().Add(5 * time.Minute)
+	if err := s.Extend(q.ID, until); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(q.ID); !got.Expires.Equal(until) {
+		t.Fatalf("deadline = %v, want %v", got.Expires, until)
+	}
+	// Past the old deadline the question is still open.
+	c.add(61 * time.Second)
+	s.Sweep()
+	if got, _ := s.Get(q.ID); !got.Open() {
+		t.Fatalf("expired at the old deadline: %+v", got)
+	}
+	// The new deadline survives a guestd restart.
+	s2 := New(dir, func(Question) {}, log, c.now)
+	if got, _ := s2.Get(q.ID); !got.Expires.Equal(until) {
+		t.Fatalf("deadline after reload = %v, want %v", got.Expires, until)
+	}
+	// And is honoured.
+	c.add(4 * time.Minute)
+	s2.Sweep()
+	if got, _ := s2.Get(q.ID); got.State != StateExpired {
+		t.Fatalf("not expired at the new deadline: %+v", got)
+	}
+	// A closed question keeps its deadline and its state.
+	if err := s2.Extend(q.ID, c.now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s2.Get(q.ID); got.State != StateExpired || !got.Expires.Equal(until) {
+		t.Fatalf("closed question changed: %+v", got)
+	}
+	// The status is not a close.
+	if err := s2.Answer(q.ID, StatusExtended, ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Answer took extended as a close: %v", err)
+	}
+}

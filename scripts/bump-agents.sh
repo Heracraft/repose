@@ -45,8 +45,18 @@ latest() {
       local v; v=$(curl -fsSL https://downloads.claude.ai/claude-code-releases/latest)
       echo "$v https://downloads.claude.ai/claude-code-releases/$v/linux-x64/claude" ;;
     opencode)
-      curl_gh https://api.github.com/repos/anomalyco/opencode/releases/latest \
-        | jq -r '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == "opencode-linux-x64.tar.gz") | .browser_download_url)"' ;;
+      # Version 2 ships on npm, not as a GitHub release asset, and the
+      # GitHub "latest" release is still version 1 (DECISIONS I-1050). The
+      # channel's metadata names the scope, which has moved once already
+      # (@opencode-ai -> @opencode). A guest is glibc on an Intel host, so
+      # the plain linux-x64 package is the one it wants, not -baseline
+      # (no avx2) or -musl.
+      local m v scope
+      m=$(curl -fsSL https://opencode.ai/update/api/latest/cli/npm)
+      v=$(jq -r '.version // empty' <<<"$m")
+      scope=$(jq -r '.metadata.package // empty | sub("/cli$"; "")' <<<"$m")
+      [ -n "$v" ] && [ -n "$scope" ] || return 0
+      echo "$v https://registry.npmjs.org/$scope/cli-linux-x64/-/cli-linux-x64-$v.tgz" ;;
     codex)
       curl_gh https://api.github.com/repos/openai/codex/releases/latest \
         | jq -r '"\(.tag_name | ltrimstr("rust-v")) \(.assets[] | select(.name == "codex-x86_64-unknown-linux-musl.tar.gz") | .browser_download_url)"' ;;
