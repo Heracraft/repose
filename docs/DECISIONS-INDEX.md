@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-993 entries.
+999 entries.
 
 ## Scope
 
@@ -745,7 +745,7 @@ pointer, not a summary.
 - **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; amended by I-1168; L20946
 - **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L21019
 - **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L21046
-- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — amended by I-1242; L21059
+- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — amended by I-1242; amended by I-1272; amended by I-1274; amended by I-1276; amended by I-1278; L21059
 - **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L21069
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21085
 - **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21099
@@ -1010,7 +1010,7 @@ pointer, not a summary.
 - **I-1236** `repose config --global add` puts the package list in when machine.nix has none — 2026-11-16; L34535
 - **I-1238** `repose browser` tells one machine's viewer from another's — 2026-11-16; L34557
 - **I-1240** `repose stop` and `repose rm` fetch nothing first — 2026-11-16; L34586
-- **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; L34621
+- **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; amended by I-1276; L34621
 - **I-1244** SnapshotStale counts from the later of the newest snapshot and the machine's start, and the gauge refreshes hourly — 2026-11-16; L34668
 - **I-1248** Triggers: an event or a time starts an agent session on the project's machine. The trigger is a row in the api; its prompt and every payload are files in the machine, and the api holds neither — 2026-11-17; L34700
 - **I-1250** The event door is the webhook route that exists, pointed at a receiver guestd owns on `127.0.0.1:9227`; what the edge refuses becomes a skipped run — 2026-11-17; L34747
@@ -1025,3 +1025,9 @@ pointer, not a summary.
 - **I-1266** A user-visible feature is not shipped until the dashboard can make, change, run and remove it (triggers-dashboard, 2026-11-17) — L35186
 - **I-1268** The api carries a trigger's prompt to the machine and stores none of it, over a hand-off row that is deleted the moment the guest has it (triggers-dashboard, 2026-11-17) — L35221
 - **I-1270** The Triggers tab makes and changes a trigger in a form, and the row grows a fourth button (triggers-dashboard, 2026-11-17) — L35281
+- **I-1272** Being at the machine is having typed, not having a session open (notify-hold, 2026-11-17). Amends I-689 — L35325
+- **I-1274** The hold is 2 minutes, a step at a time of 30 seconds (notify-hold, 2026-11-17). Amends I-689 — L35372
+- **I-1276** A stopped agent is never held (notify-hold, 2026-11-17). Amends I-689 and I-1242 — L35385
+- **I-1278** Only the end of a turn resolves a permission prompt (notify-hold, 2026-11-17). Amends I-689 — L35396
+- **I-1280** An event says why its notification went nowhere, and only then (notify-hold, 2026-11-17) — L35417
+- **I-1282** The hold is the user's, in the CLI and on the dashboard (notify-hold, 2026-11-17) — L35431

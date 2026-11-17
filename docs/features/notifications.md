@@ -16,7 +16,7 @@ email: ok
 ntfy: ok
 ```
 
-`notify set` takes `--email on|off`, `--ntfy URL|off` (I-8; `none`, the first spelling, still works, I-619) and `--gchat URL|off` (I-692) and sends
+`notify set` takes `--email on|off`, `--ntfy URL|off` (I-8; `none`, the first spelling, still works, I-619), `--gchat URL|off` (I-692) and `--hold off|DURATION` (I-1282) and sends
 no test; `notify test` does, and exits 1 when a channel failed.
 
 ```
@@ -29,7 +29,12 @@ $ repose notify
 email: on
 ntfy: off
 gchat: broken since 2026-10-12 (Google refused the webhook)
+hold: 2m
 ```
+
+`notify set --hold off|DURATION` (I-1282) is how long a report waits
+while somebody is typing in the machine: `off` sends at once, an hour is
+the most. A question and a stopped agent are never held.
 
 On the phone (ntfy):
 
@@ -140,30 +145,51 @@ Events (see agents.md for how each agent produces them):
   ntfy's `Click`, which is the tap target of the notification rather
   than a button, stays the project's page, or the Questions page for a
   question.
-- Presence hold (DECISIONS I-689): while the owner is at the machine,
-  nothing an agent reports reaches their phone, except a question
-  (I-1242): `agent_question`, a secret ask included, goes out at once,
-  because the owner at the machine may be in another window or on
-  another desktop and an agent waits on nothing else. Present means the
-  project's latest guest sample, at most 2 minutes old, shows a tmux
-  client or an SSH session (`meter_samples.tmux_clients + ssh_sessions >
-  0`; a laptop herdr bridge is an SSH session, I-511). The outbox worker
-  checks it at send time for `agent_done`, `agent_message`,
-  `needs_input` and `error` (`repose-presence` in the guest answers the
-  same question from the machine, I-1098, agents.md):
-  while present it moves the
-  row's `next_at` on by 1 minute without counting an attempt and writes
-  `held` to `delivered[channel]`, for at most 10 minutes from the event,
-  then sends. Before sending such a row, the worker drops it and writes
+- Presence hold (DECISIONS I-689, I-1272, I-1274, I-1276, I-1282): while
+  the owner is at the machine, a report an agent makes waits before it
+  reaches their phone. Only the three reports wait: `agent_done`,
+  `agent_message` and `error`. A question (`agent_question`, a secret
+  ask included, I-1242) and a stopped agent (`needs_input`, I-1276) go
+  out at once, present or not: the owner at the machine may be in
+  another window or on another desktop, and an agent waiting on an
+  answer is not news that keeps. Platform and account kinds are never
+  held.
+- Present means the project's latest guest sample, at most 2 minutes
+  old, says somebody typed in the machine's tmux within the last 5
+  minutes (`meter_samples.last_input_at`, from the newest
+  `client_activity` of a tmux client, I-1272). An open session is not
+  presence: a laptop left attached answers "a session exists" all day
+  and said nothing about whether anyone was there, which held the
+  owner's pings for the whole window while they were away. A sample
+  with no `last_input_at` comes from a guest or a host from before
+  I-1272 and is read by the old rule, `tmux_clients + ssh_sessions >
+  0`, for one release. `repose-presence` in the guest (I-1098,
+  agents.md) still answers the other question, "is a session open", and
+  is unchanged: it decides whether `localhost:PORT` reaches the user's
+  laptop, which an idle session does.
+- The hold is the user's: `users.notify_hold_seconds`, 2 minutes by
+  default, 0 for off, an hour at most (I-1282, `repose notify set
+  --hold`, Settings → Notifications). While present the worker moves the
+  row's `next_at` on by 30 seconds without counting an attempt and
+  writes `held` to `delivered[channel]`, for at most that long from the
+  event, then sends.
+- Before sending a row of an agent kind, the worker drops it and writes
   `dropped: resolved` when what it reports is over (a question too,
   though never held): the question is no longer pending (answered
   anywhere, answered in the terminal, withdrawn, expired), or a
-  `needs_input` has a later event from the same agent and window.
-  Platform and account kinds are never held.
+  `needs_input` has a later `completed` or `agent_done` from the same
+  agent and window. A later `needs_input` or `agent_question` from that
+  window does not resolve it (I-1278): the agent is blocked again, not
+  freed.
 - Delivery runs on up to 8 workers. Each user's rows on one channel go in
   order on one lane, so a hanging ntfy server delays its owner's rows
   only (I-691). Resend gets `Idempotency-Key: <event id>/email`, so a
   retried send cannot mail twice.
+- `repose events` and the dashboard's event rows say why a notification
+  went nowhere, and only then (I-1280): `not sent yet: you are at the
+  machine` for a held row, `not sent: it was over by then` for a
+  dropped one. A row that reached a channel, or that queues no delivery,
+  says nothing.
 - `delivered[channel]` holds a send time, `held` while the presence hold
   waits, `dropped: resolved`, `error: <why>` while retrying or `failed:
   <why>` after the last try. The why is a few words

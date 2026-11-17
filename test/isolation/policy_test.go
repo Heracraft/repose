@@ -51,7 +51,9 @@ func assertFields(t *testing.T, m protoreflect.Message, want ...string) {
 // ProcSample carries a process name, CPU and memory. Nothing else, ever.
 func TestProcSampleCarriesOnlyNameCPUAndMemory(t *testing.T) {
 	assertFields(t, (&hostdv1.ProcSample{}).ProtoReflect(), "comm", "cpu_ns_delta", "rss_bytes")
-	assertFields(t, (&hostdv1.GuestSignals{}).ProtoReflect(), "ssh_sessions", "tmux_clients", "agents", "docker_containers", "guestd_ok")
+	// last_input_unix (I-1272) is a clock time, never what was typed; the
+	// privacy policy's metering paragraph and SECURITY.md name it.
+	assertFields(t, (&hostdv1.GuestSignals{}).ProtoReflect(), "ssh_sessions", "tmux_clients", "agents", "docker_containers", "guestd_ok", "last_input_unix")
 	assertFields(t, (&hostdv1.AgentProc{}).ProtoReflect(), "agent", "tmux_window", "state")
 }
 

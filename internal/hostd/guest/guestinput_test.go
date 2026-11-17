@@ -325,9 +325,30 @@ func TestAgentDoneAndRunningAreAccepted(t *testing.T) {
 	if _, ok := cleanAgentEvent(gid1, "claude", "agent_done", "PR is up", "claude"); !ok {
 		t.Fatal("agent_done refused")
 	}
-	out := cleanSignals(&hostdv1.GuestSignals{Agents: []*hostdv1.AgentProc{{Agent: "pi", TmuxWindow: "pi", State: "running"}}})
+	out := cleanSignals(&hostdv1.GuestSignals{Agents: []*hostdv1.AgentProc{{Agent: "pi", TmuxWindow: "pi", State: "running"}}}, time.Now())
 	if out.Agents[0].State != "running" {
 		t.Fatalf("running became %q", out.Agents[0].State)
+	}
+}
+
+// TestCleanSignalsCarriesTheInputTimeAndHoldsItToTheHostClock
+// (DECISIONS I-1272): hostd passes the guest's last input time on, which
+// is what the api's presence hold reads, and never past its own clock --
+// a guest is the tenant's, and one that dated its input in the future
+// would hold its own notifications back for as long as it liked.
+func TestCleanSignalsCarriesTheInputTimeAndHoldsItToTheHostClock(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	typed := uint64(now.Add(-90 * time.Second).Unix())
+	if got := cleanSignals(&hostdv1.GuestSignals{LastInputUnix: typed}, now).GetLastInputUnix(); got != typed {
+		t.Fatalf("last_input_unix %d, want %d: the hold never sees it otherwise", got, typed)
+	}
+	if got := cleanSignals(&hostdv1.GuestSignals{LastInputUnix: uint64(now.Add(time.Hour).Unix())}, now).GetLastInputUnix(); got != uint64(now.Unix()) {
+		t.Fatalf("a future input time became %d, want the host's clock %d", got, now.Unix())
+	}
+	// A guestd from before I-1272 sends nothing, and 0 is what the api
+	// reads as "fall back to the session counts".
+	if got := cleanSignals(&hostdv1.GuestSignals{TmuxClients: 1}, now).GetLastInputUnix(); got != 0 {
+		t.Fatalf("last_input_unix %d from a guestd without one, want 0", got)
 	}
 }
 

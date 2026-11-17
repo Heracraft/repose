@@ -70,7 +70,7 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 or f.AddSecretQuestion with "secret" (I-929)
 //	POST /question/close {"question_id","state","reason"} -> f.CloseQuestion: the guest closes it;
 //	                 reason terminal answers it in the terminal, withdrawn withdraws it (I-690)
-//	POST /events     {"project_id","count","kinds","agents","windows","summaries","spacing_minutes"}: count events
+//	POST /events     {"project_id","count","kinds","agents","windows","summaries","spacing_minutes","delivered"}: count events
 //	                 spacing_minutes apart (default 1) ending now, oldest first. kinds, agents, windows and
 //	                 summaries are cycled when given; by default every event is an agent_message with no
 //	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
@@ -211,9 +211,11 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Windows        []string `json:"windows"`
 			Summaries      []string `json:"summaries"`
 			SpacingMinutes int      `json:"spacing_minutes"`
-			// Link and LinkLabel go on the newest of them (I-931).
-			Link      string `json:"link"`
-			LinkLabel string `json:"link_label"`
+			// Link and LinkLabel go on the newest of them (I-931), and
+			// Delivered likewise (I-1280).
+			Link      string            `json:"link"`
+			LinkLabel string            `json:"link_label"`
+			Delivered map[string]string `json:"delivered"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -234,6 +236,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 				pick(body.Summaries, i, fmt.Sprintf("e%03d", i)))
 		}
 		f.LinkLast(body.ProjectID, "", body.Link, body.LinkLabel)
+		f.DeliveredLast(body.ProjectID, body.Delivered)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	// The messages the fake took, oldest first: a test asserts the window

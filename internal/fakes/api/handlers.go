@@ -104,6 +104,8 @@ type notifyView struct {
 	Email   bool       `json:"email"`
 	NtfyURL *string    `json:"ntfy_url"`
 	GChat   *gchatView `json:"gchat"`
+	// HoldSeconds is the presence hold, 0 off (I-1282).
+	HoldSeconds int `json:"hold_seconds"`
 }
 
 // gchatView is notify.gchat: the space, never the webhook URL (I-692).
@@ -116,7 +118,7 @@ func (f *Fake) meOf(u *userRec) meView {
 	v := meView{User: u.User, TZ: u.TZ, CreatedAt: u.CreatedAt,
 		Billing:  f.meBilling(),
 		Limits:   f.meLimits(),
-		Notify:   notifyView{Email: u.NotifyEmail},
+		Notify:   notifyView{Email: u.NotifyEmail, HoldSeconds: u.NotifyHoldSeconds},
 		Waitlist: f.bill.waitlist}
 	if u.NtfyURL != "" {
 		url := u.NtfyURL
@@ -137,9 +139,10 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
 		TZ     *string `json:"tz"`
 		Notify *struct {
-			Email    *bool           `json:"email"`
-			NtfyURL  json.RawMessage `json:"ntfy_url"`
-			GChatURL json.RawMessage `json:"gchat_url"`
+			Email       *bool           `json:"email"`
+			NtfyURL     json.RawMessage `json:"ntfy_url"`
+			GChatURL    json.RawMessage `json:"gchat_url"`
+			HoldSeconds *int            `json:"hold_seconds"`
 		} `json:"notify"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
@@ -155,6 +158,12 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 	if body.Notify != nil {
 		if body.Notify.Email != nil {
 			u.NotifyEmail = *body.Notify.Email
+		}
+		if body.Notify.HoldSeconds != nil {
+			if *body.Notify.HoldSeconds < 0 || *body.Notify.HoldSeconds > notify.MaxHoldSeconds {
+				return invalid("hold_seconds is 0 to %d", notify.MaxHoldSeconds)
+			}
+			u.NotifyHoldSeconds = *body.Notify.HoldSeconds
 		}
 		if len(body.Notify.NtfyURL) > 0 {
 			var url *string

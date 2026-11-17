@@ -433,11 +433,42 @@ func eventAgent(ev Event) string {
 // with the noun of a two-word verb says that noun once: `project
 // created as large`, not `project created  project created as large`
 // (I-631), the way `machine  stopped` reads.
+// notSent is why an event notified nobody, in a few words, or "" when it
+// went out, when it is still going out, or when the event queues no
+// delivery at all (DECISIONS I-1280). A row that reached every channel
+// says nothing: the answer is only wanted for the ping that never came.
+func notSent(d map[string]string) string {
+	if len(d) == 0 {
+		return ""
+	}
+	held, dropped := false, false
+	for _, v := range d {
+		switch {
+		case v == "held":
+			held = true
+		case strings.HasPrefix(v, "dropped"):
+			dropped = true
+		default:
+			return "" // at least one channel has a send time or a failure of its own
+		}
+	}
+	switch {
+	case held:
+		return "not sent yet: you are at the machine"
+	case dropped:
+		return "not sent: it was over by then"
+	}
+	return ""
+}
+
 func eventCells(ev Event) (verb, summary string) {
 	verb, summary = eventVerb(ev.Kind), flatSummary(ev.Summary)
 	// The agent's link ends the row (I-931): a terminal opens it.
 	if ev.Link != nil && ev.Link.URL != "" {
 		summary = strings.TrimSpace(summary + "  " + ev.Link.URL)
+	}
+	if why := notSent(ev.Delivered); why != "" {
+		summary = strings.TrimSpace(summary + "  (" + why + ")")
 	}
 	noun, _, two := strings.Cut(verb, " ")
 	if two && strings.HasPrefix(strings.ToLower(summary), strings.ToLower(noun)+" ") {

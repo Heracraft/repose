@@ -76,7 +76,19 @@ Google refuses a webhook that was deleted, or whose space removed it. repose the
 
 A notification goes to every channel you have on.
 
-While you're at the machine, nothing an agent sends reaches a channel, except a question: that goes out at once, wherever you are. Anything else waits until you leave, or 10 minutes, whichever comes first. Being at the machine means a tmux client or an SSH connection; your editor and a herdr bridge count as SSH connections. One that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
+## While you're at the machine
+
+A question and a permission prompt always go out at once, wherever you are: an agent is stopped until you answer. An agent's report (**is done**, a message, an error) waits 2 minutes while you're at the machine, then goes anyway.
+
+Being at the machine means somebody typed in the machine's tmux in the last 5 minutes. A session you left open doesn't count: a laptop that stays connected overnight isn't you.
+
+```
+repose notify set --hold off
+```
+
+`--hold off` sends reports the moment they happen. `--hold 5m` waits longer. An hour is the most, and **Settings → Notifications** has the same choice. Questions and permission prompts ignore it.
+
+A report that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt whose turn has since ended. `repose events` says so on the line (`not sent: it was over by then`), and so does the event on the project page. Notices from repose itself, such as a failed snapshot, are never held.
 
 On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page, or the Questions page for a question.
 

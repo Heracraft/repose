@@ -281,13 +281,20 @@ func cleanWarning(guestID, kind, detail string) *hostdv1.HostWarning {
 
 // cleanSignals bounds the guest-reported part of a sample. The counts are
 // numbers and pass as they are; the agent list is capped and its strings
-// cleaned.
-func cleanSignals(in *hostdv1.GuestSignals) *hostdv1.GuestSignals {
+// cleaned, and the last input time is held to the host's clock.
+func cleanSignals(in *hostdv1.GuestSignals, now time.Time) *hostdv1.GuestSignals {
 	out := &hostdv1.GuestSignals{}
 	if in == nil {
 		return out
 	}
 	out.SshSessions, out.TmuxClients, out.DockerContainers = in.SshSessions, in.TmuxClients, in.DockerContainers
+	// last_input_unix (I-1272) is a time the guest writes, and a guest is
+	// the tenant's: one in the future would make the api read the owner
+	// as present for as long as it liked, which is a tenant holding its
+	// own notifications back. The host's clock is the ceiling.
+	if u := in.GetLastInputUnix(); u > 0 {
+		out.LastInputUnix = min(u, uint64(now.Unix()))
+	}
 	for _, a := range in.Agents {
 		if len(out.Agents) == capAgentProcs {
 			break

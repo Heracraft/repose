@@ -32,6 +32,27 @@ const AGENT_KINDS = [
 /** Kinds that say something failed, beyond the *_failed ones. */
 const FAILED_KINDS = ['abuse_stopped'];
 
+/**
+ * Why an event notified nobody, in a few words, or undefined when it went
+ * out, when it is still going out, or when the kind queues no delivery
+ * (I-1280). An event that reached a channel says nothing: the answer is
+ * wanted for the ping that never came, not for every row.
+ */
+export function notSent(delivered?: Record<string, string>): string | undefined {
+	const outcomes = Object.values(delivered ?? {});
+	if (outcomes.length === 0) return undefined;
+	let held = false;
+	let dropped = false;
+	for (const v of outcomes) {
+		if (v === 'held') held = true;
+		else if (v.startsWith('dropped')) dropped = true;
+		else return undefined; // a send time, or a failure of its own
+	}
+	if (held) return 'not sent yet: you are at the machine';
+	if (dropped) return 'not sent: it was over by then';
+	return undefined;
+}
+
 
 
 /**

@@ -11,6 +11,9 @@ users        (id pk, logto_sub text unique, handle text unique, email text,
               github_login text, tz text, notify_email bool, ntfy_url text,
               gchat_url text,              -- Google Chat webhook, canonical; a credential (0023, I-692)
               gchat_broken_at timestamptz, -- when Google refused it; no gchat delivery while set
+              notify_hold_seconds int not null default 120,  -- 0045, I-1282: how long a report
+                                           -- waits while the owner is at the machine; 0 is off,
+                                           -- 3600 the most the CHECK and the api allow
               billing_customer_id text unique,  -- Polar's customer id; was stripe_customer_id (0008, I-289),
                                                -- then paddle_customer_id (0020, I-604)
               billing_anchor timestamptz,   -- signup; unused since I-289, the period is the subscription's
@@ -192,6 +195,12 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
                 -- figure (SSH, port forwards, hooks, the browser view included), which the
                 -- idle rule and the abuse checks read. Null from a hostd older than I-1063,
                 -- where billing reads net_tx
+              last_input_at timestamptz,  -- 0045, I-1272: when somebody last typed in the
+                -- guest's tmux, as the guest saw it (GuestSignals.last_input_unix). The
+                -- notification hold reads this and not the two counts below it, which an
+                -- attached-but-idle session satisfies all day. Null from a guest or a host
+                -- from before I-1272, and from a guest whose tmux has never been readable;
+                -- the hold falls back to tmux_clients + ssh_sessions > 0 for such a sample
               burst_cpu_ns bigint,  -- 0037, I-1126: nanoseconds the guest used above the base
                 -- cores its class sells, counted per second by the host's controller. Null
                 -- from a hostd older than I-1126 and from every host without the `burst`
@@ -442,7 +451,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0044_trigger_prompts`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0045_notify_hold`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

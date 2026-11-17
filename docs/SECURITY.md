@@ -319,7 +319,14 @@ Rules that hold regardless of convenience. Each names its failure.
   variables, file paths, file contents, terminal contents, or the prompts
   you give to any agent." `ProcSample` is `{comm, cpu_ns_delta,
   rss_bytes}` and `test/isolation/policy_test.go` fails if it, or
-  `GuestSignals`, gains a field. guestd reads `/proc/<pid>/stat` and
+  `GuestSignals`, gains a field. `GuestSignals.last_input_unix` (I-1272)
+  is the sixth and the newest: the newest `client_activity` tmux reports
+  for a client of the project's session, which is a clock time. tmux
+  keeps it per client and guestd asks for it in the same `list-clients`
+  call that counts them; no pane is read, no key is read, and the number
+  is a second-resolution timestamp whose only use is deciding whether
+  the owner is at the machine. The privacy policy's metering paragraph
+  names it and says it is a time and not what was typed. guestd reads `/proc/<pid>/stat` and
   `/proc/<pid>/status` and nothing else of a process: it never opens
   `/proc/<pid>/cmdline` and never opens `/proc/<pid>/environ`, with the single
   exception below. `TestStraceNeverOpensCmdlineOrEnviron` in

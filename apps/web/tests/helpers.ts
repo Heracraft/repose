@@ -227,6 +227,8 @@ export async function addEvents(
 		/** The newest event's `--link` (I-931). */
 		link?: string;
 		linkLabel?: string;
+		/** The newest event's per-channel delivery outcome (I-1280). */
+		delivered?: Record<string, string>;
 	} = {}
 ): Promise<void> {
 	const res = await fetch(`${adminURL()}/events`, {
@@ -241,7 +243,8 @@ export async function addEvents(
 			summaries: opts.summaries,
 			spacing_minutes: opts.spacingMinutes,
 			link: opts.link,
-			link_label: opts.linkLabel
+			link_label: opts.linkLabel,
+			delivered: opts.delivered
 		})
 	});
 	if (!res.ok) throw new Error(`/events: ${res.status} ${await res.text()}`);

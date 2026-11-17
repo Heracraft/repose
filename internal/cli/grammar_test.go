@@ -320,13 +320,13 @@ func TestNotifyShowAndTest(t *testing.T) {
 	if err := NotifyShowCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); got != "email: on, to dev@example.com\nntfy: off\ngchat: off\n" {
+	if got := out.buf.String(); got != "email: on, to dev@example.com\nntfy: off\ngchat: off\nhold: 2m0s\n" {
 		t.Fatalf("notify: %q", got)
 	}
 	// --ntfy off clears it, as none did.
 	off, url := "off", "https://ntfy.sh/fail-topic"
 	out.buf.Reset()
-	if err := NotifySetCmd(ctx, e, nil, &url, nil); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, &url, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := NotifyTestCmd(ctx, e); exitCode(err) != ExitGeneric {
@@ -336,13 +336,13 @@ func TestNotifyShowAndTest(t *testing.T) {
 		t.Fatalf("notify test: %q", got)
 	}
 	out.buf.Reset()
-	if err := NotifySetCmd(ctx, e, nil, &off, nil); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, &off, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := NotifyTestCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.HasSuffix(got, "ntfy: off\ngchat: off\nemail: sent\nntfy: off\ngchat: off\n") {
+	if got := out.buf.String(); !strings.HasSuffix(got, "ntfy: off\ngchat: off\nhold: 2m0s\nemail: sent\nntfy: off\ngchat: off\n") {
 		t.Fatalf("after --ntfy off: %q", got)
 	}
 }
@@ -358,23 +358,23 @@ func TestNotifyGChat(t *testing.T) {
 	e.Out = out
 	const key, token = "AIzaSyCliTestKey", "cliTestToken"
 	hook := "https://chat.googleapis.com/v1/spaces/AAAAcli1/messages?key=" + key + "&token=" + token
-	if err := NotifySetCmd(ctx, e, nil, nil, &hook); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, nil, &hook, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli1\n") {
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli1\nhold: 2m0s\n") {
 		t.Fatalf("set: %q", got)
 	}
 	out.buf.Reset()
 	// A URL copied from a thread, token first, is accepted as the api
 	// accepts it.
 	copied := "https://chat.googleapis.com/v1/spaces/AAAAcli2/messages?token=" + token + "&key=" + key + "&threadKey=t1"
-	if err := NotifySetCmd(ctx, e, nil, nil, &copied); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, nil, &copied, nil); err != nil {
 		t.Fatalf("set a copied thread URL: %v", err)
 	}
-	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli2\n") {
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli2\nhold: 2m0s\n") {
 		t.Fatalf("set copied: %q", got)
 	}
-	if err := NotifySetCmd(ctx, e, nil, nil, &hook); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, nil, &hook, nil); err != nil {
 		t.Fatal(err)
 	}
 	out.buf.Reset()
@@ -386,7 +386,7 @@ func TestNotifyGChat(t *testing.T) {
 	}
 	// A refused webhook: the test fails, and the settings say since when.
 	bad := strings.Replace(hook, token, "fail-"+token, 1)
-	if err := NotifySetCmd(ctx, e, nil, nil, &bad); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, nil, &bad, nil); err != nil {
 		t.Fatal(err)
 	}
 	out.buf.Reset()
@@ -405,16 +405,16 @@ func TestNotifyGChat(t *testing.T) {
 	}
 	// Invalid: refused, without the URL in the message.
 	nope := "https://evil.example/v1/spaces/A/messages?key=" + key + "&token=" + token
-	err := NotifySetCmd(ctx, e, nil, nil, &nope)
+	err := NotifySetCmd(ctx, e, nil, nil, &nope, nil)
 	if err == nil || strings.Contains(err.Error(), token) {
 		t.Fatalf("invalid: %v", err)
 	}
 	off := "off"
 	out.buf.Reset()
-	if err := NotifySetCmd(ctx, e, nil, nil, &off); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, nil, &off, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: off\n") {
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: off\nhold: 2m0s\n") {
 		t.Fatalf("off: %q", got)
 	}
 	e.JSON = true

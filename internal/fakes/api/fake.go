@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/ca/testca"
 )
 
@@ -229,7 +230,7 @@ func (f *Fake) addUser(u User) {
 	if _, ok := f.users[u.ID]; ok {
 		return
 	}
-	f.users[u.ID] = &userRec{User: u, TZ: "UTC", CreatedAt: f.now(), NotifyEmail: true}
+	f.users[u.ID] = &userRec{User: u, TZ: "UTC", CreatedAt: f.now(), NotifyEmail: true, NotifyHoldSeconds: int(notify.DefaultHold.Seconds())}
 }
 
 func (f *Fake) now() time.Time {
@@ -248,6 +249,18 @@ func (f *Fake) AddEventAs(projectID string, ts time.Time, kind, agent, window, s
 	if p, ok := f.projects[projectID]; ok {
 		p.events = append(p.events, &Event{ID: f.nextID(), TS: ts, Kind: kind, Agent: agent, Window: window, Summary: summary})
 	}
+}
+
+// DeliveredLast sets `delivered` on the project's newest event, which is
+// how a test reaches the hold's outcomes (I-1280).
+func (f *Fake) DeliveredLast(projectID string, delivered map[string]string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.projects[projectID]
+	if !ok || len(p.events) == 0 || len(delivered) == 0 {
+		return
+	}
+	p.events[len(p.events)-1].Delivered = delivered
 }
 
 // LinkLast gives the project's newest event the link a `--link URL

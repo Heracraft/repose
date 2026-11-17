@@ -33,6 +33,8 @@ type NotifyPatch struct {
 	NtfyURL **string `json:"ntfy_url,omitempty"`
 	// GChatURL is the Google Chat webhook, the same way (I-692).
 	GChatURL **string `json:"gchat_url,omitempty"`
+	// HoldSeconds is the presence hold in seconds, 0 off (I-1282).
+	HoldSeconds *int `json:"hold_seconds,omitempty"`
 }
 
 func (c *Client) PatchMe(ctx context.Context, req PatchMeRequest) (*Me, error) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EVENT_FILTERS, eventKind } from './events';
+import { EVENT_FILTERS, eventKind, notSent } from './events';
 
 describe('eventKind', () => {
 	it('names the agent kinds', () => {
@@ -100,6 +100,25 @@ describe('EVENT_FILTERS', () => {
 				'error',
 				'needs_input'
 			].sort()
+		);
+	});
+});
+
+describe('notSent (I-1280)', () => {
+	it('says nothing for a row that went out, failed on its own, or queued nothing', () => {
+		expect(notSent(undefined)).toBeUndefined();
+		expect(notSent({})).toBeUndefined();
+		expect(notSent({ gchat: '2026-11-17T13:40:22Z' })).toBeUndefined();
+		expect(notSent({ ntfy: 'failed: the server answered 403' })).toBeUndefined();
+		// One channel sent is enough: the ping did arrive somewhere.
+		expect(notSent({ gchat: '2026-11-17T13:40:22Z', email: 'held' })).toBeUndefined();
+	});
+	it('names the hold and the drop', () => {
+		expect(notSent({ gchat: 'held' })).toBe('not sent yet: you are at the machine');
+		expect(notSent({ gchat: 'dropped: resolved' })).toBe('not sent: it was over by then');
+		// Held on one channel and dropped on another is still waiting.
+		expect(notSent({ gchat: 'held', email: 'dropped: resolved' })).toBe(
+			'not sent yet: you are at the machine'
 		);
 	});
 });
