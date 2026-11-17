@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-989 entries.
+990 entries.
 
 ## Scope
 
@@ -1003,7 +1003,7 @@ pointer, not a summary.
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L34087
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; L34131
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34312
-- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16); amended by I-1264 — L34348
+- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34348
 - **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34412
 - **I-1232** `repose exec` runs one quoted word with spaces in the machine's shell, and the laptop-path note shows the command to type — 2026-11-16; L34483
 - **I-1234** `repose cp` copies a directory without `-r` — 2026-11-16; L34519
