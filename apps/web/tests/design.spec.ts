@@ -594,7 +594,7 @@ async function shortTargets(page: Page, scope: string): Promise<string[]> {
 		const out: string[] = [];
 		for (const root of roots) {
 			const els = root.querySelectorAll<HTMLElement>(
-				'button, a[role=button], input, select, [role=tab], label:has(input)'
+				'button, a[role=button], input, textarea, select, [role=tab], label:has(input)'
 			);
 			for (const el of els) {
 				const r = el.getBoundingClientRect();

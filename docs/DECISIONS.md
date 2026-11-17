@@ -33798,3 +33798,48 @@ plus enhanced measurement turned off), and this entry is the record
 that it was a choice. No cookie banner was built (owner): consent for
 analytics cookies under UK and EU law is an open question for the owner
 and their lawyer, not something this branch settles.
+
+**I-1220. Two acts the dashboard was missing, and three the page already
+answered (dash-acts, 2026-11-16).** The owner named five acts whose api
+route exists and whose dashboard caller did not: say to an agent, a
+webhook route's deliveries, an op's build log, extend a temporary
+machine, revoke every SSH certificate. Two ship, three are cut because
+what the user wants from them is already on screen. **Shipped.** A
+message for an agent (`repose say`, I-1144) opens from each row of the
+Agents card on a project's Overview and sends to that row's window, so
+the api's "several agents are running" refusal is unreachable from the
+browser. The case that pays for it is an agent in `needs_input` without
+a `repose-ask` question, which until now had no door from the dashboard
+at all. The words live in `apps/web/src/lib/say.ts` rather than at the
+call site, because `internal/api/http/say.go` passes the machine's own
+refusal through on purpose where it names the agent windows, and the
+machine's sentence is `"%d agents are running: %s. Name one with
+--agent"` (`internal/guestd/sample/say.go`): a toast of `err.message`
+would show a browser user a CLI flag. `say.test.ts` pins that, and fails
+the day the api stops passing it through. `toastApiError` could not be
+used for the refusals this feature owns, because `errorText` prefers the
+api's own message for every code but `internal`; the call site asks
+`sayRefusal(err)` first and falls back to `toastApiError` for anything
+else. No confirm: I-765's rule is that the dashboard asks before it ends
+an agent's turn, which is Stop, and I-1144 admits a message mid-turn by
+design. **Revoke certificates** is a section of Settings · General,
+before the account delete so the irreversible act stays last, with the
+same typed-handle `ConfirmType` the delete uses. It is the one act here
+with no other door: `repose logout` does the same, and on a lost laptop
+the CLI went with the laptop. **Cut.** The webhook table on the Config
+tab already prints the last delivery's status and time from
+`last_delivery`, and a 20-row history is a debugging surface for a niche
+feature. The build log already streams on the Config tab through
+`opLogUrl` and `EventSource`; api.md scopes that route to a build op's
+Nix stderr, which is the apply the tab already covers. Keep already
+ships, and `PATCH expires_in_s` can only move an existing timer
+(`internal/api/http/projects.go` refuses it when `expires_at` is null),
+so "extend by a duration" would have been a select nobody opens on a
+phone with an hour left. **Two divergences found on the way.** The fake
+api answered `POST /certs/revoke` with the list of serials while the api
+answers `{revoked: n}`; the fake now answers the count and api.md states
+the result, which it never did. The heading `agents#speak-to-it-from-
+your-laptop` named the device rather than the act, which stopped being
+true the moment the dashboard could send one; it is now
+`agents#send-it-a-message`, and `internal/cli/agent_guide_test.go`'s
+skip map and `notifications.md`'s link move with it.

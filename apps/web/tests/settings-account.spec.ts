@@ -181,7 +181,13 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 	await expect(account.getByText('GitHub')).toBeVisible();
 	await expect(page.getByRole('heading', { level: 2, name: 'Delete account' })).toBeVisible();
 	const h2 = () => page.locator('main h2').allInnerTexts();
-	expect(await h2()).toEqual(['Account', 'Timezone', 'Install', 'Delete account']);
+	expect(await h2()).toEqual([
+		'Account',
+		'Timezone',
+		'Install',
+		'Revoke certificates',
+		'Delete account'
+	]);
 	const tabs = page.getByRole('navigation', { name: 'Settings' }).getByRole('link');
 	await expect(tabs).toHaveText(['General', 'Notifications', 'Secrets', 'machine.nix']);
 	await expect(tab(page, 'General')).toHaveAttribute('aria-current', 'page');
@@ -251,6 +257,54 @@ test('account deletion requires typing the exact handle', async ({ page }) => {
 	await deleteBtn.click();
 
 	await expect(page).toHaveURL('/', { timeout: 10_000 });
+});
+
+// Revoking every SSH certificate (I-1220) is the same typed confirm, and
+// it sits before Delete account so the irreversible act stays last.
+test('revoking certificates requires typing the exact handle', async ({ page }) => {
+	await page.goto('/settings');
+	const panel = page.locator('#revoke-certs');
+	await expect(
+		panel.getByText(
+			'The connections your certificates opened close within 30 seconds, on any device.'
+		)
+	).toBeVisible();
+
+	const open = panel.getByRole('button', { name: 'Revoke certificates…', exact: true });
+	await open.click();
+	await expect(panel.getByLabel(/to confirm/)).toBeFocused();
+	await panel.getByRole('button', { name: 'Keep them' }).click();
+	await expect(open).toBeFocused();
+	await open.click();
+
+	const go = panel.getByRole('button', { name: 'Revoke certificates', exact: true });
+	await expect(go).toBeDisabled();
+	await panel.getByLabel(/to confirm/).fill('not-my-handle');
+	await expect(go).toBeDisabled();
+	await panel.getByLabel(/to confirm/).fill('heracraft');
+	await expect(go).toBeEnabled();
+	await go.click();
+
+	// The count is the api's answer; a fresh account holds none.
+	await expect(page.getByText(/^\d+ certificates? revoked\.$/)).toBeVisible();
+	await expect(open).toBeVisible();
+	await expect(page).toHaveURL('/settings');
+});
+
+test('a failed revoke is one toast and the panel stays open', async ({ page }) => {
+	await page.goto('/settings');
+	const panel = page.locator('#revoke-certs');
+	await panel.getByRole('button', { name: 'Revoke certificates…', exact: true }).click();
+	await panel.getByLabel(/to confirm/).fill('heracraft');
+	await fail('POST', '/certs/revoke', 'internal');
+	try {
+		await panel.getByRole('button', { name: 'Revoke certificates', exact: true }).click();
+		await expect(page.getByText('Could not revoke the certificates.')).toBeVisible();
+		await expect(page.getByText('Could not revoke the certificates.')).toHaveCount(1);
+		await expect(panel.getByLabel(/to confirm/)).toBeVisible();
+	} finally {
+		await unfail('POST', '/certs/revoke');
+	}
 });
 
 // I-841: every row is two tracks from a 640px column, the h2 in 12rem

@@ -74,6 +74,7 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 summaries are cycled when given; by default every event is an agent_message with no
 //	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
 //	                 moves to before the first of them (f.BackdateCreation), so it stays the oldest event
+//	GET  /say        -> f.Says: the messages the fake has taken, for a test to assert what was sent
 //	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool}
 //	                 -> f.SetSayAgents and f.SetSayState: which agents the machines run and what a
 //	                 `repose say` is answered with (I-1144)
@@ -229,6 +230,12 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		f.LinkLast(body.ProjectID, "", body.Link, body.LinkLabel)
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// The messages the fake took, oldest first: a test asserts the window
+	// the dashboard sent to, not only the line it printed.
+	mux.HandleFunc("GET /say", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(f.Says())
 	})
 	// `repose say` (DECISIONS I-1144): which agent windows the fake's
 	// machines run, and what it answers a message with.
