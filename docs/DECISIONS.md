@@ -34541,9 +34541,16 @@ Decided, and each of these is a pattern `apps/web` already has:
   outcome, its summary — and an action that makes the machine work; a
   list that grows and an action are a page.
 - The tab polls on the layout's own cadence (10 s in view, 60 s hidden,
-  the shared `PollGroup`), with `pollUntilDone` only while a fire of its
-  own is in flight, and the list draws `LoadState` as every list on these
-  tabs does.
+  the shared `PollGroup`), and the list draws `LoadState` as every list
+  on these tabs does.
+- **The tab has no Add, deliberately.** Making a trigger means writing a
+  prompt into the machine, which `repose triggers add -p` does over SSH
+  and a browser cannot; the api never reads a file in a guest, so a form
+  could only take a path and hope, and the trigger it made would look
+  right and fail at 03:00 with `prompt_missing`. The tab does everything
+  that needs no file — run, on, off, copy the URL, remove, read the runs
+  — and the empty state names the command. A form that creates a thing
+  which silently does not work is worse than no form.
 - `on`/`off` is a column with a dot and a lowercase word, as every other
   row state is drawn. Not a badge: a badge on a project tab means
   `temporary`.

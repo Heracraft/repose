@@ -8,8 +8,11 @@
   The button's label changes and it disables; there is no spinner, which
   is the house rule.
 
-  Copy puts a route trigger's URL on the clipboard and draws none of it:
-  the URL holds the route's token, and the reason is in
+  The three inline buttons are Run, On/Off and Remove, the same on every
+  row: three is what fits a 390 row (ProjectWebhooks measured it), and
+  the one destructive action must not move about. A route trigger's Copy
+  URL is in the row's own expansion, beside its runs, and draws none of
+  the URL: it holds the route's token, and the reason is in
   ProjectWebhooks.svelte in better words.
 -->
 <script lang="ts">
@@ -26,7 +29,7 @@
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { pollWhileVisible } from '$lib/poll';
-	import { dateTime } from '$lib/format';
+	import { ageShort, dateTime } from '$lib/format';
 	import type { Trigger, TriggerRun } from '$lib/api/types';
 
 	let { projectId }: { projectId: string } = $props();
@@ -139,7 +142,18 @@
 	 *  are looking at. A trigger that is off has no next fire. */
 	function next(t: Trigger): string {
 		if (t.kind !== 'schedule' || !t.enabled || !t.next_at) return '';
-		return dateTime(t.next_at);
+		const at = new Date(t.next_at);
+		const hhmm = at.toLocaleTimeString(undefined, {
+			hour: '2-digit',
+			minute: '2-digit',
+			hourCycle: 'h23'
+		});
+		const days = Math.round(
+			(at.setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000
+		);
+		if (days <= 0) return `${hhmm} today`;
+		if (days === 1) return `${hhmm} tomorrow`;
+		return `${hhmm} ${new Date(t.next_at).toLocaleDateString(undefined, { weekday: 'short' })}`;
 	}
 
 	function lastRun(t: Trigger): string {
@@ -209,10 +223,11 @@
 				return 'hk-dot hk-dot--ok';
 			case 'failed':
 			case 'timeout':
-				return 'hk-dot hk-dot--bad';
+				return 'hk-dot hk-dot--err';
+			case 'skipped':
+				return 'hk-dot hk-dot--warn';
 			case 'working':
-			case 'queued':
-				return 'hk-dot hk-dot--busy';
+				return 'hk-dot hk-dot--live';
 			default:
 				return 'hk-dot';
 		}
@@ -267,13 +282,17 @@
 										onclick={() => toggleRuns(t.name)}
 										>{t.name}{#if !t.enabled}<span class="toff">off</span>{/if}</button
 									>
-									<span class="tsub block sm:hidden">{door(t)}</span>
 								</td>
 								<td class="hidden whitespace-nowrap sm:table-cell">{door(t)}</td>
-								<td class="hk-mono hidden whitespace-nowrap lg:table-cell">{t.prompt_path}</td>
-								<td class="whitespace-nowrap">
+								<td
+									class="tprompt hk-mono hidden whitespace-nowrap lg:table-cell"
+									title={t.prompt_path}>{t.prompt_path}</td
+								>
+								<td class="tlast whitespace-nowrap">
 									<span class={dot(t.last_run?.state)}></span>{lastRun(t)}
-									{#if t.last_run}<span class="twhen">{dateTime(t.last_run.created_at)}</span>{/if}
+									{#if t.last_run}<span class="twhen" title={dateTime(t.last_run.created_at)}
+											>{ageShort(t.last_run.created_at)}</span
+										>{/if}
 								</td>
 								<td class="hidden whitespace-nowrap md:table-cell">{next(t)}</td>
 								<td class="tact">
@@ -297,22 +316,13 @@
 												disabled={busy === t.name}
 												onclick={() => onToggle(t)}>{t.enabled ? 'Off' : 'On'}</button
 											>
-											{#if t.route}
-												<CopyButton
-													text={t.route.url}
-													label="Copy"
-													ariaLabel={`Copy the URL of ${t.name}`}
-													size="sm"
-												/>
-											{:else}
-												<button
-													type="button"
-													id={`remove-${t.name}`}
-													class="hk-btn-ghost hk-btn-sm"
-													aria-label={`Remove ${t.name}`}
-													onclick={() => (confirming = t.name)}>Remove…</button
-												>
-											{/if}
+											<button
+												type="button"
+												id={`remove-${t.name}`}
+												class="hk-btn-ghost hk-btn-sm"
+												aria-label={`Remove ${t.name}`}
+												onclick={() => (confirming = t.name)}>Remove…</button
+											>
 										</div>
 									{/if}
 								</td>
@@ -347,6 +357,24 @@
 							{#if open === t.name}
 								<tr class="runs-row">
 									<td colspan="6">
+										<p class="turl">
+											{#if t.kind === 'schedule'}<span class="sm:hidden">{door(t)}</span>{/if}
+											{#if t.kind === 'schedule' && t.enabled && t.next_at}
+												<span class="md:hidden">next {next(t)}</span>
+											{/if}
+											<span class="lg:hidden">{t.prompt_path}</span>
+										</p>
+										{#if t.route}
+											<p class="turl">
+												<span>Route <b>{t.route.name}</b>, into this machine</span>
+												<CopyButton
+													text={t.route.url}
+													label="Copy URL"
+													ariaLabel={`Copy the URL of ${t.name}`}
+													size="sm"
+												/>
+											</p>
+										{/if}
 										{#if runs === undefined}
 											<p class="tnone">Loading…</p>
 										{:else if runs.length === 0}
@@ -357,7 +385,9 @@
 													<li>
 														<span class={dot(r.state)}></span>
 														<span class="trstate">{r.state}</span>
-														<span class="trwhen">{dateTime(r.created_at)}</span>
+														<span class="trwhen" title={dateTime(r.created_at)}
+															>{ageShort(r.created_at)}</span
+														>
 														<span class="trtook">{took(r)}</span>
 														<span class="trwhy">{why(r)}</span>
 														{#if r.link}
@@ -406,9 +436,6 @@
 	tr.off .tname {
 		color: var(--hk-muted);
 	}
-	/* Under the name on a narrow screen, where the On column is hidden:
-	   three buttons and a door side by side broke a 390 row. */
-	.tsub,
 	.twhen {
 		font-size: 0.75rem;
 		color: var(--hk-muted);
@@ -416,10 +443,20 @@
 	.twhen {
 		margin-inline-start: 0.5rem;
 	}
+	.tact {
+		white-space: nowrap;
+	}
 	.tact-row {
 		display: flex;
 		gap: 0.25rem;
 		justify-content: flex-end;
+	}
+	/* The prompt is the one cell that may be long, so it is the one that
+	   truncates; its whole value is in the row's expansion. */
+	.tprompt {
+		max-width: 18rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.tempty span {
 		color: var(--hk-muted);
@@ -440,6 +477,7 @@
 		align-items: baseline;
 		gap: 0.5rem;
 		font-size: 0.8125rem;
+		overflow-wrap: anywhere;
 	}
 	.trstate {
 		min-width: 4.5rem;
@@ -452,6 +490,64 @@
 	.trwhy {
 		flex: 1 1 12rem;
 	}
+	/* A route trigger's own line in its expansion: the route's name and
+	   the button that puts the URL on the clipboard. The URL is never
+	   drawn; the reason is in ProjectWebhooks.svelte. */
+	.turl b {
+		font-weight: 500;
+		color: var(--hk-text);
+	}
+	.turl {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 0.75rem;
+		margin: 0 0 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--hk-muted);
+	}
+	@media (max-width: 639.98px) {
+		.ttable thead {
+			display: none;
+		}
+		.ttable tbody tr {
+			display: block;
+			padding-block: 0.625rem;
+			border-top: 1px solid var(--hk-hairline);
+		}
+		.ttable tbody tr:first-child {
+			border-top: 0;
+		}
+		.ttable tbody td {
+			padding: 0;
+			border-top: 0;
+		}
+		/* Only these three: the door, the prompt and the next fire carry
+		   Tailwind's `hidden`, and a `display` here would outrank it. */
+		.ttable tbody td.tname,
+		.ttable tbody td.tlast,
+		.ttable tbody td.tact {
+			display: block;
+		}
+		.ttable td.tname {
+			overflow-wrap: break-word;
+		}
+		.ttable td.tlast {
+			margin-top: 0.125rem;
+		}
+		.ttable td.tact {
+			margin-top: 0.5rem;
+			padding-block: 0;
+		}
+		.tact-row {
+			justify-content: flex-start;
+		}
+		.runs-row > td,
+		.confirm-row td {
+			padding-top: 0.5rem;
+		}
+	}
+
 	.tnone {
 		margin: 0;
 		font-size: 0.8125rem;

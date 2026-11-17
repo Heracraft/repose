@@ -193,11 +193,16 @@ a field you fill in once belongs in Config.
   this doc would repeat.
 - Empty: the `hk-empty-title` `No triggers yet` and one sentence,
   `A trigger starts an agent when a webhook arrives or at a time you
-  choose.`, then Add trigger.
-- Add asks for the name, the door (Webhook, with the project's routes and
-  "a new route"; or Schedule, with the spec and the next fire under the
-  field as it is typed), and the prompt (a path, or text that becomes the
-  file). Every other flag of §2 is under Advanced, closed.
+  choose.`, with `repose triggers add` named as what makes one.
+- **There is no Add on the tab, and that is the design.** Making a
+  trigger means writing a prompt into the machine, which is what
+  `repose triggers add -p` does over SSH and what a browser cannot do: a
+  form here could only name a path and hope, and the api never reads a
+  file in a guest, so nothing would check it. The trigger would be made,
+  look right, and fail at 03:00 with `the prompt file is missing`. The
+  empty state names the command instead, and the tab does everything
+  that needs no file: run, on, off, copy the URL, remove, and read the
+  runs.
 
 ## 4. Where a trigger lives, and where its prompt does not
 

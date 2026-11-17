@@ -232,6 +232,35 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	})
 	// `repose say` (DECISIONS I-1144): which agent windows the fake's
 	// machines run, and what it answers a message with.
+	// A trigger's runs (DECISIONS I-1256): the dashboard's tab reads
+	// outcomes, and a test needs some without a machine.
+	mux.HandleFunc("POST /trigger-run", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID    string `json:"project_id"`
+			Trigger      string `json:"trigger"`
+			State        string `json:"state"`
+			Reason       string `json:"reason"`
+			Summary      string `json:"summary"`
+			Source       string `json:"source"`
+			Window       string `json:"window"`
+			PayloadBytes int64  `json:"payload_bytes"`
+			Skips        int    `json:"skips"`
+			AgoMinutes   int    `json:"ago_minutes"`
+			TookSeconds  int    `json:"took_seconds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		started := time.Now().Add(-time.Duration(max(body.AgoMinutes, 1)) * time.Minute)
+		finished := started.Add(time.Duration(max(body.TookSeconds, 1)) * time.Second)
+		f.AddTriggerRun(body.ProjectID, body.Trigger, api.FakeTriggerRun{
+			State: body.State, Reason: body.Reason, Summary: body.Summary,
+			Source: body.Source, Window: body.Window, PayloadBytes: body.PayloadBytes,
+			Skips: body.Skips, StartedAt: &started, FinishedAt: &finished, CreatedAt: started,
+		})
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Agents   *[]string `json:"agents"`

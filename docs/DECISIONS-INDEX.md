@@ -1014,5 +1014,5 @@ pointer, not a summary.
 - **I-1254** Admission is ordered, every drop is a run row, and the gate is a command; repose checks no provider's signature — 2026-11-17; L34396
 - **I-1256** A run is one tmux window, started with the prompt on the agent's own command line, supervised by guestd, and reconciled from tmux; a failure notifies and a success says only what the agent said — 2026-11-17; L34455
 - **I-1258** Triggers is a project's third tab, after Browser — 2026-11-17; L34521
-- **I-1260** A trigger run is use for the unused notice, counted from `trigger_runs` — 2026-11-17; L34560
-- **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L34579
+- **I-1260** A trigger run is use for the unused notice, counted from `trigger_runs` — 2026-11-17; L34567
+- **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L34586
