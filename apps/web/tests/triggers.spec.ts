@@ -97,9 +97,16 @@ test('the list shows each door, its last run and the next fire', async ({ page }
 	const section = page.locator('#triggers');
 	await expect(section.getByRole('heading', { name: '3 triggers' })).toBeVisible();
 
-	// The door: a route trigger reads as its route, a schedule as its spec.
-	await expect(section.getByRole('cell', { name: 'recruiting (route)' })).toBeVisible();
-	await expect(section.getByRole('cell', { name: 'weekdays 07:00' })).toBeVisible();
+	// The door: a route trigger reads as its route, a schedule as its
+	// spec. It is in its own column at 1440 and under the name at phone
+	// width, so both cells carry it and the exact one is the column's.
+	await expect(
+		section.getByRole('cell', { name: 'recruiting (route)', exact: true })
+	).toBeVisible();
+	// The schedule's cell carries its zone beside the spec, so this is
+	// anchored rather than exact; the name cell's copy reads
+	// "triage weekdays 07:00…" and does not match.
+	await expect(section.getByRole('cell', { name: /^weekdays 07:00/ })).toBeVisible();
 	// The state word is the one the CLI prints.
 	await expect(section.getByRole('cell', { name: /done/ }).first()).toBeVisible();
 	await expect(section.getByRole('cell', { name: /failed/ }).first()).toBeVisible();
@@ -109,6 +116,12 @@ test('the list shows each door, its last run and the next fire', async ({ page }
 	// Every row offers the same three: Run, On/Off and Remove.
 	await expect(section.getByRole('button', { name: 'Remove apply' })).toBeVisible();
 	await expect(section.getByRole('button', { name: 'Remove sweep' })).toBeVisible();
+	// At phone width the On column is not drawn, so the door moves under
+	// the name: a list of names alone does not say which trigger fires
+	// on a webhook and which on a clock.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(section.getByRole('cell', { name: 'apply recruiting (route)' })).toBeVisible();
+	await page.setViewportSize({ width: 1280, height: 720 });
 	// A route trigger's URL is in its expansion, on the clipboard, and
 	// never on the page.
 	await expect(page.locator('body')).not.toContainText('hooks.repose');

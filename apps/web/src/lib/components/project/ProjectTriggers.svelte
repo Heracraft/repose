@@ -278,9 +278,8 @@
 									<!-- The door, where the On column is not shown: a list of
 									     names alone does not say which is a webhook and which
 									     is a schedule, which is the first thing to know. -->
-									<span class="tdoor sm:hidden"
-										>{door(t)}{#if zoneNote(t)}
-											{zoneNote(t)}{/if}</span
+									<span class="tdoor"
+										>{door(t)}{#if zoneNote(t)}<span class="tzone">{zoneNote(t)}</span>{/if}</span
 									>
 								</td>
 								<td class="hidden whitespace-nowrap sm:table-cell"
@@ -429,13 +428,21 @@
 		outline-offset: 2px;
 		border-radius: 2px;
 	}
-	/* The door under the name, at the widths where the On column is
-	   not drawn. */
+	/* The door under the name, at the widths where the On column is not
+	   drawn. The media query is the component's own, as EventRow's and
+	   ProjectWebhooks' are: a scoped rule outranks Tailwind's `sm:hidden`
+	   (the scoping class makes it one class more specific), so the
+	   utility drew the door twice at 1440. */
 	.tdoor {
 		display: block;
 		font-size: 0.75rem;
 		font-weight: 400;
 		color: var(--hk-muted);
+	}
+	@media (min-width: 640px) {
+		.tdoor {
+			display: none;
+		}
 	}
 	.toff {
 		margin-inline-start: 0.5rem;
@@ -448,14 +455,18 @@
 	}
 	.twhen,
 	.tzone {
+		margin-inline-start: 0.5rem;
 		font-size: 0.75rem;
 		color: var(--hk-muted);
 	}
-	.tzone {
-		margin-inline-start: 0.5rem;
-	}
 	.twhen {
 		margin-inline-start: 0.5rem;
+	}
+	/* The dot and its word, with the gap every other dotted line on
+	   these tabs has (MachineCard's disk-full, EventRow's kind). */
+	.tlast :global(.hk-dot),
+	.truns :global(.hk-dot) {
+		margin-inline-end: 0.375rem;
 	}
 	.tact {
 		white-space: nowrap;
