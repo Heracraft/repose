@@ -355,7 +355,7 @@
 		style:--docs-nav-h={navHeight === undefined ? undefined : `${navHeight}px`}
 		class="sidebar fixed top-[101px] bottom-0 left-0 z-20 w-[min(20rem,85vw)] overflow-y-auto overscroll-contain px-5 pt-2 pb-10 outline-none {menuOpen
 			? 'is-open visible translate-x-0'
-			: 'invisible -translate-x-full'} md:visible md:sticky md:top-[57px] md:bottom-auto md:z-auto md:h-[var(--docs-nav-h,calc(100dvh-57px))] md:w-[220px] md:translate-x-0 md:pt-8 md:pr-2 md:pb-8 md:pl-0 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden"
+			: 'invisible -translate-x-full'} md:visible md:sticky md:top-[57px] md:bottom-auto md:z-auto md:h-[var(--docs-nav-h,calc(100dvh-57px))] md:w-[220px] md:translate-x-0 md:pt-6 md:pr-2 md:pb-2 md:pl-0 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden"
 	>
 		<!-- The search trigger sticks to the top of the sidebar, so a list
 		     taller than the window scrolls under it and search stays in

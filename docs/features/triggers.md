@@ -729,33 +729,33 @@ never "tests pass".
 
 **Contracts and docs, in the same commit as the code**
 
-- [ ] `docs/DECISIONS.md` entries I-1248 to I-1262, each with its
+- [x] `docs/DECISIONS.md` entries I-1248 to I-1262, each with its
       alternatives, and the amendments named in them: I-262 (the unused
       notice), I-1216 (a seventh tab), `webhooks.md` §6 (a delivery that
       starts a run is use).
-- [ ] `docs/interfaces/api.md`: the `triggers` and `trigger-runs`
+- [x] `docs/interfaces/api.md`: the `triggers` and `trigger-runs`
       routes, the long poll on a run, and `trigger`/`trigger_id` on
       `/internal/webhook-routes` and the delivery batch's outcomes.
-- [ ] `docs/interfaces/db-schema.md`: `triggers`, `trigger_runs`, the
+- [x] `docs/interfaces/db-schema.md`: `triggers`, `trigger_runs`, the
       tenant-content fields, and migration `0043_triggers` (the next
       after `0042_browser_view`), with `docs/CHECKLIST.md`'s migration
       greps clean.
-- [ ] `docs/interfaces/grpc-hostd.md`: `SetTriggers` and `RunTrigger`
+- [x] `docs/interfaces/grpc-hostd.md`: `SetTriggers` and `RunTrigger`
       with their fields, results, `command_id` idempotency and the
       `TriggerRun` notification; `docs/interfaces/vsock-guestd.md`: the
       same two requests and the notification.
-- [ ] `docs/interfaces/guest-conventions.md`: 9227 in "Ports", the run
+- [x] `docs/interfaces/guest-conventions.md`: 9227 in "Ports", the run
       directory, the `seen` file and the session's environment; 9227 in
       `forwardPlatformPorts`, `ports-and-previews.md` and
       `DOCS-AUDIT.md`'s "9224 to 9226".
-- [ ] `docs/features/README.md` lists `triggers.md`;
+- [x] `docs/features/README.md` lists `triggers.md`;
       `apps/web/src/content/docs/triggers.md` and `cli.md` ship with the
       code and `internal/cli/docs_test.go` is green.
-- [ ] `docs/features/notifications.md`: the `trigger_failed` row, its
+- [x] `docs/features/notifications.md`: the `trigger_failed` row, its
       title and its payload, and that it is a platform kind.
-- [ ] `docs/features/agents.md` and `run-and-attach.md`: a `t-*` window
+- [x] `docs/features/agents.md` and `run-and-attach.md`: a `t-*` window
       is an agent window `say` does not resolve to and `ps` marks.
-- [ ] `docs/features/status-and-logs.md` and `cli.md`: the `triggers`
+- [x] `docs/features/status-and-logs.md` and `cli.md`: the `triggers`
       row of `repose status`, and `ps`/`ls` marking a trigger's window.
 
 **The two doors**
@@ -768,20 +768,20 @@ never "tests pass".
 - [ ] A time-of-day spec keeps its wall clock on both daylight-saving
       days (`internal/triggerspec`: the test fails on the old
       midnight-plus-a-duration form with 08:00 and 06:00).
-- [ ] Two api replicas tick together and the fire happens once; the api
+- [x] Two api replicas tick together and the fire happens once; the api
       restarts mid-tick and the fire happens once.
 - [ ] A fire from the http process reaches the machine (I-1162's bug:
       the test is `say_replicas_test.go`'s shape).
-- [ ] An edge-side refusal on a trigger route (stopped, busy, 413,
+- [x] An edge-side refusal on a trigger route (stopped, busy, 413,
       `start_refused`) becomes a `skipped` run with that reason.
 
 **Admission**
 
-- [ ] `--dedupe` admits one of a provider's two identical deliveries, and
+- [x] `--dedupe` admits one of a provider's two identical deliveries, and
       still does after a guest reboot.
-- [ ] `--gate` with the documented HMAC line admits a signed payload and
+- [x] `--gate` with the documented HMAC line admits a signed payload and
       skips a tampered one; `--dry-run` prints the gate's own output.
-- [ ] `--concurrency 1` with two deliveries at once runs one and skips
+- [x] `--concurrency 1` with two deliveries at once runs one and skips
       the other; `--on-busy queue` runs the second after the first; a
       21st queued event writes `skipped: the queue was full`.
 - [ ] A missing prompt file is caught at `add` and, when it is deleted
@@ -791,15 +791,15 @@ never "tests pass".
 
 - [ ] A real agent takes the prompt from its own argv on a fresh trigger
       window, for Claude Code at minimum, with the transcript pasted.
-- [ ] `--timeout 30s` kills the window and only that window; the tmux
+- [x] `--timeout 30s` kills the window and only that window; the tmux
       server and every other agent live.
-- [ ] A run whose agent asks `repose-ask` is not killed by its timeout
+- [x] A run whose agent asks `repose-ask` is not killed by its timeout
       while the question is pending.
 - [ ] `--dedupe` on a schedule is refused at `add`, and `webhooks add`
       and `webhooks rm` on a trigger's route are refused and name it.
 - [ ] A trigger turned `off` for a week and then `on` fires at its next
       proper time, not at once.
-- [ ] guestd restarts mid-run: the run stays `working`, its window and
+- [x] guestd restarts mid-run: the run stays `working`, its window and
       agent untouched, and no second run starts.
 - [ ] A failed run notifies once; a run that ends with no `--done`
       notifies nobody.
@@ -809,11 +809,29 @@ never "tests pass".
 
 **Privacy and the screens**
 
-- [ ] No log line holds a prompt, a prompt path, a payload, a gate
+- [x] No log line holds a prompt, a prompt path, a payload, a gate
       command, a summary or a trigger's name; `docs/CHECKLIST.md`'s greps
       are clean and the three metrics are registered.
-- [ ] The Triggers tab at 1440 and 390, light and dark, viewport
+- [x] The Triggers tab at 1440 and 390, light and dark, viewport
       captures at 1x, with 0, 1 and 20 triggers, a working run and a
       failed one; the tab strip at 390 with seven tabs.
 - [ ] `repose status` shows the `triggers` row for a project with one and
       no such row for a project without.
+
+**What closed the ticked items** (the commits carry the full output):
+
+| Item | Evidence |
+|---|---|
+| the decisions and the six contracts | written in the same commits as the code; the migration dedupe grep prints nothing |
+| the public docs | `/docs/triggers`, the `repose triggers` section of `/docs/cli`, and `go test ./internal/cli -run TestDocs` green |
+| dedupe, gate, dry run, concurrency | `internal/guestd/trigger`: `TestDedupeSkipsARetryAndSurvivesARestart`, `TestAGateRefusesAnEventAndSaysWhy`, `TestADryRunRunsTheGateAndStartsNoAgent`, `TestAdmissionRefusals` |
+| one fire per tick, the edge's refusals | `internal/api/triggers`: `TestOneFirePerTickAcrossTwoClocks`, `TestADeliveryTheEdgeRefusedBecomesOneRowAnHour` (32 refusals, 3 rows, the run that ran still listed) |
+| the timeout, the question, the restart | `TestATimeoutKillsThatWindowAndNoOther`, `TestTheSupervisorEndsARunAndWaitsForAQuestion`, `TestReconcileKeepsALiveRunAndEndsALostOne` |
+| the daylight-saving rule | `internal/triggerspec`: `TestTheWallClockHoldsOnBothTransitionDays`, which fails on the first version's form with `fired at 08:00` and `fired at 06:00` |
+| the tab at 1440 and 390 | viewport shots at 1x, light and dark, with 0 and 3 triggers and a failed run |
+
+**What is still open, and why**: every unticked item above needs a
+machine. Nothing here has run against a real guest: no delivery has
+reached `hooks.repose.run`, no clock fire has woken a frozen machine, no
+real agent has taken a trigger's prompt off its own command line, and no
+`--start` has started anything. Those are this change's live checks.
