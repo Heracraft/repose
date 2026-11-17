@@ -2,6 +2,7 @@ package triggers_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -805,7 +806,7 @@ func TestTheJoinedColumnListIsTheOtherOne(t *testing.T) {
 }
 
 // splitCols is a select list's columns, splitting on the commas between
-// them and not on the ones inside a call like coalesce(x, '').
+// them and not on the ones inside a call like coalesce(x, ”).
 func splitCols(list string) []string {
 	var out []string
 	depth, start := 0, 0
@@ -823,4 +824,147 @@ func splitCols(list string) []string {
 		}
 	}
 	return append(out, strings.Join(strings.Fields(list[start:]), " "))
+}
+
+// A prompt typed in a browser is a hand-off and not a column of the
+// trigger (I-1266). The http process cannot reach a host (I-1162), so
+// the text waits on its own row until the process that holds the stream
+// has given it to the machine; the `triggers` row keeps a path and never
+// the text, which is what the privacy promise rests on.
+func TestAPromptIsAHandOffAndNeverATriggersColumn(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+
+	const text = "Triage the new issues; tell me what needs me"
+	got, created, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "triage", Kind: triggers.KindSchedule, Spec: "weekdays 07:00", Zone: "Europe/Berlin",
+		Prompt: strp(text),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("the first Put did not create the trigger")
+	}
+	// The row holds the default path and nothing of the text.
+	if got.PromptPath != triggers.DefaultPromptPath("triage") {
+		t.Errorf("prompt_path is %q, want %q", got.PromptPath, triggers.DefaultPromptPath("triage"))
+	}
+	var row string
+	if err := pool.QueryRow(ctx, "select triggers::text from triggers where project_id = $1", pid).Scan(&row); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(row, "Triage the new issues") {
+		t.Fatalf("the trigger row holds the prompt's text: %s", row)
+	}
+
+	pending, err := s.PendingPrompts(ctx, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("%d prompts waiting, want 1", len(pending))
+	}
+	if pending[0].Trigger != "triage" || pending[0].Body != text {
+		t.Errorf("waiting prompt is %+v", pending[0])
+	}
+	if pending[0].PromptPath != triggers.DefaultPromptPath("triage") || pending[0].Workdir != "checkout" {
+		t.Errorf("the hand-off does not say where it goes: %+v", pending[0])
+	}
+
+	// A second prompt replaces the first: one row a trigger, so a user
+	// who types twice does not leave the first text behind.
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "triage", Prompt: strp("second"), Workdir: strp("worktree-2"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = s.PendingPrompts(ctx, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Body != "second" || pending[0].Workdir != "worktree-2" {
+		t.Fatalf("after a second prompt the hand-off is %+v", pending)
+	}
+
+	// The machine has it: the api forgets it.
+	if err := s.ClearPrompt(ctx, pid, "triage"); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err = s.PendingPrompts(ctx, pid); err != nil || len(pending) != 0 {
+		t.Fatalf("after the machine took it: %d waiting, err %v", len(pending), err)
+	}
+}
+
+// A prompt no machine ever took is forgotten, so a user's words do not
+// sit in the api for a week (I-1266). The sweeper runs in the clock's
+// own pass.
+func TestAPromptNoMachineTookIsSweptAway(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+
+	old := time.Now().UTC().Add(-triggers.PromptHandoff - time.Minute)
+	s.SetNow(func() time.Time { return old })
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "triage", Kind: triggers.KindSchedule, Spec: "daily 03:00", Zone: "UTC",
+		Prompt: strp("never delivered"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.SetNow(time.Now().UTC)
+	n, err := s.SweepPrompts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("the sweep forgot %d prompts, want 1", n)
+	}
+	pending, err := s.PendingPrompts(ctx, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("%d prompts still waiting after the sweep", len(pending))
+	}
+	// And a prompt inside the window is left alone.
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "triage", Prompt: strp("fresh"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.SweepPrompts(ctx); err != nil || n != 0 {
+		t.Fatalf("the sweep forgot %d fresh prompts (err %v)", n, err)
+	}
+}
+
+// Every refusal the CLI makes on `-p`, the api makes on `prompt`: the
+// same size and the same pair pi cannot take (I-780, I-1266).
+func TestAPromptsRefusalsAreTheCLIs(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+
+	_, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "big", Kind: triggers.KindSchedule, Spec: "daily 03:00", Zone: "UTC",
+		Prompt: strp(strings.Repeat("x", triggers.PromptCap+1)),
+	})
+	if !errors.Is(err, triggers.ErrPromptTooLarge) {
+		t.Errorf("a prompt over the cap answered %v, want ErrPromptTooLarge", err)
+	}
+	_, _, err = s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "at", Kind: triggers.KindSchedule, Spec: "daily 03:00", Zone: "UTC",
+		Agent: strp("pi"), Prompt: strp("@notes.md read this"),
+	})
+	if !errors.Is(err, triggers.ErrAtPromptOnPi) {
+		t.Errorf("an @-prompt on pi answered %v, want ErrAtPromptOnPi", err)
+	}
+	// Both are the caller's fault, so both are `invalid` and not a 500.
+	if !triggers.IsInputError(triggers.ErrPromptTooLarge) {
+		t.Error("ErrPromptTooLarge is not an input error, so a long prompt would answer 500")
+	}
 }

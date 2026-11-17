@@ -187,12 +187,16 @@ func (s *Server) getTrigger(w http.ResponseWriter, r *http.Request) error {
 }
 
 type triggerBody struct {
-	Name        string  `json:"name"`
-	Kind        string  `json:"kind"`
-	Route       string  `json:"route"`
-	Spec        string  `json:"spec"`
-	Zone        string  `json:"zone"`
-	PromptPath  *string `json:"prompt_path"`
+	Name       string  `json:"name"`
+	Kind       string  `json:"kind"`
+	Route      string  `json:"route"`
+	Spec       string  `json:"spec"`
+	Zone       string  `json:"zone"`
+	PromptPath *string `json:"prompt_path"`
+	// Prompt is the prompt's text, which the dashboard types and has no
+	// SSH to write with (I-1266). It is never stored on the trigger row,
+	// never answered back and never logged.
+	Prompt      *string `json:"prompt"`
 	Workdir     *string `json:"workdir"`
 	Agent       *string `json:"agent"`
 	TimeoutS    *int    `json:"timeout_s"`
@@ -225,6 +229,14 @@ func (s *Server) putTrigger(w http.ResponseWriter, r *http.Request) error {
 		return withDetail(errf("conflict", "a temporary machine takes no trigger: it is destroyed within 24 hours"),
 			map[string]any{"reason": "temporary_machine"})
 	}
+	// The prompt is a file in the machine, so there has to be a machine
+	// to write it into. The CLI refuses `-p` on a stopped machine in
+	// these words, and the dashboard says the same thing (I-1266).
+	if body.Prompt != nil && *body.Prompt != "" && p.State != "running" {
+		return withDetail(errf("conflict",
+			"%s is %s, and a prompt is written into the machine. Start it, or name a file that is already there.",
+			p.Slug, p.State), map[string]any{"reason": "machine_not_running"})
+	}
 	// The zone order of I-1252: the spec's own, then the project's, then
 	// the laptop's (which the CLI sends as `zone`), then UTC.
 	zone := body.Zone
@@ -233,7 +245,7 @@ func (s *Server) putTrigger(w http.ResponseWriter, r *http.Request) error {
 	}
 	in := triggers.Input{
 		Name: body.Name, Kind: body.Kind, Route: body.Route, Spec: body.Spec, Zone: zone,
-		PromptPath: body.PromptPath, Workdir: body.Workdir, Agent: body.Agent,
+		PromptPath: body.PromptPath, Prompt: body.Prompt, Workdir: body.Workdir, Agent: body.Agent,
 		TimeoutS: body.TimeoutS, Concurrency: body.Concurrency,
 		Gate: body.Gate, Dedupe: body.Dedupe, Notify: body.Notify, Enabled: body.Enabled,
 		AllowStart: body.AllowStart, StopAfter: body.StopAfter, CatchUp: body.CatchUp,
@@ -446,6 +458,8 @@ func triggerErr(err error) error {
 		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "too_many"})
 	case errors.Is(err, triggerspec.ErrSpec):
 		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "spec"})
+	case errors.Is(err, triggers.ErrPromptTooLarge):
+		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "prompt_too_large"})
 	case errors.Is(err, triggers.ErrAtPromptOnPi):
 		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "prompt_at"})
 	case errors.Is(err, triggers.ErrDedupeOnSchedule):

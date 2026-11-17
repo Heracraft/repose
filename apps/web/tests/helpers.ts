@@ -100,6 +100,18 @@ export async function addTriggerRun(body: {
 	if (!res.ok) throw new Error(`/trigger-run: ${res.status}`);
 }
 
+/**
+ * The prompt text the machine was given for a trigger (I-1266). The api
+ * carries a prompt into the guest and keeps none of it, so the fake's
+ * own copy is the only place a test can read what the guest would hold.
+ */
+export async function triggerPrompt(projectId: string, trigger: string): Promise<string> {
+	const q = new URLSearchParams({ project_id: projectId, trigger });
+	const res = await fetch(`${adminURL()}/trigger-prompt?${q}`);
+	if (!res.ok) throw new Error(`/trigger-prompt: ${res.status}`);
+	return res.text();
+}
+
 export const failNext = (method: string, path: string, code: string) =>
 	adminCall('/fail-next', { method, path, code });
 export const fail = (method: string, path: string, code: string) =>

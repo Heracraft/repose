@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -300,6 +301,14 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		f.AddTriggerRun(body.ProjectID, body.Trigger, run)
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// What the machine was given as a trigger's prompt (I-1266): the
+	// api carries the text and keeps none of it, so this is the only
+	// place a test can read what the guest would hold.
+	mux.HandleFunc("GET /trigger-prompt", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, f.TriggerPrompt(q.Get("project_id"), q.Get("trigger")))
 	})
 	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

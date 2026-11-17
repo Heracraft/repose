@@ -68,6 +68,9 @@ type Session interface {
 	// RunTrigger fires one (DECISIONS I-1248, I-1252).
 	SetTriggers(ctx context.Context, m *guestdv1.SetTriggers) error
 	RunTrigger(ctx context.Context, m *guestdv1.RunTrigger) (*guestdv1.TriggerRunResult, error)
+	// WriteTriggerPrompt writes one trigger's prompt into the machine as
+	// dev, which is what a browser has in place of SSH (DECISIONS I-1266).
+	WriteTriggerPrompt(ctx context.Context, m *guestdv1.WriteTriggerPrompt) error
 	Notifications() <-chan *guestdv1.Notify
 	Done() <-chan struct{}
 	Close() error
@@ -253,6 +256,11 @@ func (s *session) SayToAgent(ctx context.Context, m *guestdv1.SayToAgent) (*gues
 
 func (s *session) SetTriggers(ctx context.Context, m *guestdv1.SetTriggers) error {
 	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_SetTriggers{SetTriggers: m}})
+	return err
+}
+
+func (s *session) WriteTriggerPrompt(ctx context.Context, m *guestdv1.WriteTriggerPrompt) error {
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_WriteTriggerPrompt{WriteTriggerPrompt: m}})
 	return err
 }
 

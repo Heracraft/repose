@@ -91,6 +91,19 @@ message Trigger {
 // SetTriggers carries the project's whole set, as WriteSecrets carries the
 // whole named set (DECISIONS I-1248). An empty list removes every trigger.
 message SetTriggers { repeated Trigger triggers = 1; }
+// WriteTriggerPrompt writes one trigger's prompt into the machine as dev
+// (DECISIONS I-1266). The dashboard has no SSH, so a prompt typed in the
+// browser reaches the machine this way; the api holds the text for the
+// length of the request and the hand-off that follows it and stores it
+// nowhere, so the row still keeps a path and never the text. The path is
+// read exactly as the runner reads it: relative to the workdir, or
+// absolute.
+message WriteTriggerPrompt {
+  string trigger = 1;
+  string workdir = 2;        // checkout|worktree-N|~/PATH|/PATH
+  string prompt_path = 3;    // relative to workdir, or absolute
+  bytes text = 4;            // at most 64 KB, as the runner reads at most 64 KB
+}
 // RunTrigger runs one now (DECISIONS I-1252, I-1256). run_id is the api's
 // row and the command's idempotency key: a repeat is answered with that
 // run's state and starts no second agent. payload_run replays an earlier
@@ -126,6 +139,7 @@ message Request {
     SayToAgent say_to_agent = 14;
     SetTriggers set_triggers = 15;
     RunTrigger run_trigger = 16;
+    WriteTriggerPrompt write_trigger_prompt = 17;
   }
 }
 

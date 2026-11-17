@@ -35182,3 +35182,142 @@ failed wake; `TestConnectionGoneReadsTheErrorBeforeDone` covers the CI
 ordering (EOF, `Done` open) and the live cases. The lint fix the
 conductor made in the r20261117-1 batch (`perr = ...`, the retried
 session is not read after) stands.
+
+**I-1266. A user-visible feature is not shipped until the dashboard can
+make, change, run and remove it (triggers-dashboard, 2026-11-17).** The
+owner, on the morning triggers went out: "we're gaining a lot of
+features behind the CLI and we're not giving them usability within the
+dashboard. What if the user isn't comfortable in the terminal? What if
+they just want to do something quick in the browser? And even then why
+have it in the browser if you're not gonna let them actually use it."
+Triggers shipped the same day with seven CLI verbs and a tab that could
+list, run, turn off and remove, and could not make one (I-1258). That
+half is the case this entry closes: a tab that shows a thing a user
+cannot make is a tab that tells them to open a terminal, and the reader
+who cannot is out of the product.
+
+So `docs/CHECKLIST.md` gains a row under "For every change": anything a
+user can create, change, run or remove from the CLI can be created,
+changed, run and removed on the dashboard, or a decision says why not,
+and the evidence is a Playwright test that does each one against the
+fake api. The alternatives were a milestone ("a dashboard pass after the
+CLI lands"), which is what produced this gap and has no forcing
+function, and a per-feature judgement, which is the judgement that said
+a browser could not write a prompt and was wrong for one request's
+worth of work. The row sits beside "A feature without user docs is not
+done" (I-242) and reads the same way: it is not extra work at the end,
+it is part of the feature.
+
+What it does not demand: a dashboard screen for an operator command
+(`repose-admin`), for a thing whose whole value is a pipe
+(`repose triggers url`, which the tab answers with Copy URL), or for a
+flag that only means something in a terminal (`--json`, `-q`,
+`--wait`). Those are named in the decision that skips them.
+
+*Checked:* the row is in `docs/CHECKLIST.md`; `apps/web/tests/triggers.spec.ts`
+makes a route trigger, makes a schedule, changes one, fires one, dry-runs
+one, turns one off and removes one, 9 tests green.
+
+**I-1268. The api carries a trigger's prompt to the machine and stores
+none of it, over a hand-off row that is deleted the moment the guest has
+it (triggers-dashboard, 2026-11-17).** I-1248 put the prompt's text
+nowhere but the machine: `repose triggers add -p TEXT` writes
+`.repose/triggers/NAME.md` over SSH and sends the api a path, and the
+schema says so in its own comment. A browser has no SSH. I-1258 read
+that as "the dashboard cannot make a trigger"; the answer the owner
+wants is that the text passes *through* the api without stopping.
+
+`POST /projects/:id/triggers` takes `prompt`. The api never writes it to
+the `triggers` row, never answers with it, and never logs it; the row
+goes on holding `prompt_path`. Delivery is the problem I-1162 already
+solved for a fire: the api runs as two processes and only `API_MODE=grpc`
+holds a host's stream, so the http process that takes the POST cannot
+reach the machine, and anything it knows at request time has to be on a
+row. So the text is one row of `trigger_prompts` (migration 0044,
+**unlogged**, at most one row per trigger), the `repose_trigger_sets`
+NOTIFY the store already writes wakes the grpc process, and that process
+sends `WriteTriggerPrompt` down the host's stream, then deletes the row.
+A row no machine took is swept after ten minutes, delivered or not, in
+the clock's own pass. Unlogged is the point: the text never reaches the
+WAL, a replica or a physical backup, and it is gone in the time one
+command takes.
+
+The alternatives. **A `prompt` column on `triggers`** is one line of SQL
+and keeps the text for the life of the trigger, which would let the tab
+show a prompt back — and would make the api a place prompts live, which
+is the thing I-1248 refused and the privacy page's own sentence rests on.
+Refused; the cost is that the form can write a prompt and cannot show the
+one that is there, which the form says in as many words. **The text on
+the `SetTriggers` set** needs no new command, and a set is re-sent at
+every create, start and restore, so a prompt would be written over a
+file the user had since edited in the machine. Refused. **An internal
+HTTP hop from the http process to the grpc one** keeps the text out of
+Postgres entirely, and needs a new address, a new credential and a deploy
+change that fails silently in production if it is missed. Refused.
+
+Because the prompt needs a machine to be written into, the api refuses
+`prompt` on a project that is not `running`, with `409 conflict`,
+`detail.reason = machine_not_running`, and the sentence the CLI prints
+for the same refusal; `prompt_path` is still accepted there, exactly as
+`--prompt-file` is. Over 64 KB is `400 invalid`,
+`detail.reason = prompt_too_large`, the runner's own cap; an `@`-prompt
+on `pi` is the `prompt_at` I-780 named. The CLI is unchanged: it goes on
+writing over SSH, which works against any api.
+
+*Checked:* `internal/api/triggers`:
+`TestAPromptIsAHandOffAndNeverATriggersColumn` (the row holds no text,
+the hand-off holds one row a trigger, ClearPrompt forgets it),
+`TestAPromptNoMachineTookIsSweptAway`, `TestAPromptsRefusalsAreTheCLIs`.
+`internal/api/http`: `TestAPromptOnPostTriggers` over the real schema and
+the real routes — 201, no text in the answer or the listing, 400
+`prompt_too_large`, 409 `machine_not_running` with the CLI's sentence,
+and the same trigger taken with a path. `internal/guestd/trigger`:
+`TestAPromptWrittenThroughTheApiIsTheFileTheRunReads` (the file is dev's,
+under the trigger's workdir, and the next run starts the agent on it).
+Interfaces in the same commit: `api.md`, `grpc-hostd.md`,
+`vsock-guestd.md`, `db-schema.md`. Not run against a real guest: the
+live check names it.
+
+**I-1270. The Triggers tab makes and changes a trigger in a form, and
+the row grows a fourth button (triggers-dashboard, 2026-11-17).** This
+is I-1258 §3 amended: "There is no Add on the tab, and that is the
+design" is replaced by a form that takes everything `repose triggers
+add` takes, with its defaults and its refusals in the same words.
+
+The form is the one `Add trigger` in the section head opens and the one
+`Edit` on a row opens, as a secret's add form is (I-841). The door is a
+two-item segmented control; a schedule is built from the six shapes of
+I-1252 rather than typed, so nobody learns a grammar to say "every
+weekday at seven", and the spec and its zone are shown before it is
+made because 07:00 means nothing without the zone it is read in. The
+prompt is a textarea or a path, the second being `--prompt-file`. The
+twelve settings that have right defaults — agent, working directory,
+timeout, concurrency, gate, dedupe and the four switches — are behind
+`More settings`: a form of eighteen fields is a form nobody reads.
+`apps/web/src/lib/triggerspec.ts` builds and reads back the canonical
+spec, and `triggerspec.test.ts` holds it to `internal/triggerspec`'s own
+six kinds, so a spec made in the browser is one the api stores unchanged
+and `Edit` opens in the fields that made it.
+
+The row's buttons are `Run`, `Edit`, `On/Off`, `Remove…`. I-1258 said
+three fit a 390 row and a fourth did not; the fourth it weighed was
+`Copy`, in a row that also drew the target. Four short ghost buttons
+measure about 236px, and below 640 the row is a block where they have a
+line to themselves: the 390 capture shows them on one line with room.
+`Copy URL` and `Dry run` stay in the row's expansion, where the runs are.
+
+Remove keeps the two-step confirm in the row, not `ConfirmType`:
+`ConfirmType` is "the one pattern for an action that cannot be undone"
+(destroying a project, deleting an account, restoring over a disk), and
+removing a trigger leaves the prompt file and can be done again. That is
+what `webhooks` and `secrets` do for the same class of act.
+
+The empty state no longer names `repose triggers add`, because the
+button beside it does the thing.
+
+*Checked:* `apps/web/tests/triggers.spec.ts`, 9 tests green against the
+fake api, including the prompt reaching the machine's own copy and never
+appearing in any api answer. Viewport captures at 1x, 1440 and 390,
+light and dark, of the empty tab, the list, an opened row, the form, the
+form with More settings, and Edit. `pnpm exec svelte-check` 0 errors 0
+warnings; `docs/CHECKLIST.md`'s "look" greps at their stated counts.

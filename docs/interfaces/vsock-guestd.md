@@ -32,6 +32,7 @@ framing; hostd picks by flag.
 
 | `SetTriggers` | triggers (the project's whole set; shapes in grpc-hostd.md) | | the set the receiver on 9227 and the runner work from (DECISIONS I-1248). Kept in memory only, as secrets' values are, and re-sent by the api on every start. Each trigger's prompt is a path, never its text |
 | `RunTrigger` | trigger, run_id, source (`clock\|hand`), payload_run, payload_path, dry_run | state (`working\|skipped\|failed`), window, reason | runs the trigger now (I-1252, I-1256): admission (I-1254), then one tmux window `t-<trigger>` with the agent started on the prompt as its own argument (I-780). A repeat for a run_id already started is answered with that run's state and starts no second agent. `dry_run` runs the gate alone and starts no agent. `not_found` for a trigger this guest does not know |
+| `WriteTriggerPrompt` | trigger, workdir, prompt_path, text (bytes) | | writes that trigger's prompt into the machine as `dev` (DECISIONS I-1266), at the path the runner reads it from: relative to the workdir, or absolute. Every directory it makes under dev's home is dev's, as a payload's are. `invalid_argument` for an empty name, path or text, or text over 64 KB, which is the cap the runner reads a prompt file at. This is the dashboard's half of `repose triggers add -p`, which writes the same file over SSH |
 
 ## Notifications (guestd → hostd)
 

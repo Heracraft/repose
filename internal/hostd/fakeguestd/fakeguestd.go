@@ -69,6 +69,9 @@ type Server struct {
 	princ   []string
 	// triggers is the last set SetTriggers carried (DECISIONS I-1248).
 	triggers []*guestdv1.Trigger
+	// prompts is what WriteTriggerPrompt wrote, by trigger name, which
+	// is the file a real guest would hold (DECISIONS I-1266).
+	prompts  map[string][]byte
 	frozen   bool
 	conn     *vsockrpc.ServerConn
 	closed   bool
@@ -195,6 +198,17 @@ func (s *Server) Triggers() []*guestdv1.Trigger {
 	return append([]*guestdv1.Trigger(nil), s.triggers...)
 }
 
+// Prompts returns what WriteTriggerPrompt wrote, by trigger name.
+func (s *Server) Prompts() map[string][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string][]byte, len(s.prompts))
+	for k, v := range s.prompts {
+		out[k] = append([]byte(nil), v...)
+	}
+	return out
+}
+
 // Secrets returns what WriteSecrets delivered.
 func (s *Server) Secrets() map[string][]byte {
 	s.mu.Lock()
@@ -251,6 +265,8 @@ func kindOf(req *guestdv1.Request) string {
 		return "SetTriggers"
 	case *guestdv1.Request_RunTrigger:
 		return "RunTrigger"
+	case *guestdv1.Request_WriteTriggerPrompt:
+		return "WriteTriggerPrompt"
 	case *guestdv1.Request_GrowFs:
 		return "GrowFs"
 	case *guestdv1.Request_WriteSecrets:
@@ -415,6 +431,17 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 		// test can read what hostd relayed (DECISIONS I-1248).
 		s.mu.Lock()
 		s.triggers = r.SetTriggers.GetTriggers()
+		s.mu.Unlock()
+	case *guestdv1.Request_WriteTriggerPrompt:
+		w := r.WriteTriggerPrompt
+		if w.GetTrigger() == "" || w.GetPromptPath() == "" || len(w.GetText()) == 0 {
+			return fail("invalid_argument", "trigger, prompt_path and text required")
+		}
+		s.mu.Lock()
+		if s.prompts == nil {
+			s.prompts = map[string][]byte{}
+		}
+		s.prompts[w.GetTrigger()] = w.GetText()
 		s.mu.Unlock()
 	case *guestdv1.Request_RunTrigger:
 		if r.RunTrigger.GetTrigger() == "" || r.RunTrigger.GetRunId() == "" {

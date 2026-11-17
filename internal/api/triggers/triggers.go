@@ -101,6 +101,17 @@ const Stale = 3 * TickInterval
 // Stale's clock.
 const MaxWait = 10 * time.Minute
 
+// PromptCap is the prompt's own cap, the runner's: a file over it is
+// `prompt_too_large`, so the api refuses the same size the machine
+// would (I-1266).
+const PromptCap = 64 << 10
+
+// PromptHandoff is how long a prompt typed in a browser waits in the api
+// for the machine. After it the text is forgotten whether the machine
+// took it or not, and the trigger's first fire says the prompt file is
+// missing, which is a row the user reads.
+const PromptHandoff = 10 * time.Minute
+
 // Kinds of trigger.
 const (
 	KindRoute    = "route"
@@ -140,6 +151,7 @@ var (
 	ErrInvalidAgent     = errors.New("an agent is claude, codex, opencode, gemini or pi")
 	ErrInvalidTimeout   = fmt.Errorf("a timeout is 0 or up to %s", MaxTimeout)
 	ErrAtPromptOnPi     = errors.New("pi reads a prompt that begins with @ as a file, so it cannot be a trigger's prompt")
+	ErrPromptTooLarge   = fmt.Errorf("a prompt is at most %d bytes", PromptCap)
 	ErrTooMany          = fmt.Errorf("a project may have %d triggers", MaxTriggers)
 	ErrNotFound         = errors.New("no such trigger")
 	ErrNoDoor           = errors.New("a new trigger fires on a route (--route) or on a schedule (--every)")
@@ -166,7 +178,7 @@ var Agents = map[string]bool{"claude": true, "codex": true, "opencode": true, "g
 var inputErrors = []error{
 	ErrInvalidName, ErrInvalidKind, ErrInvalidDedupe, ErrDedupeOnSchedule,
 	ErrInvalidWorkdir, ErrInvalidPrompt, ErrInvalidAgent, ErrInvalidTimeout,
-	ErrAtPromptOnPi, ErrTooMany, ErrPayloadPath, ErrPayloadGone, ErrNoDoor, ErrHerdr,
+	ErrAtPromptOnPi, ErrPromptTooLarge, ErrTooMany, ErrPayloadPath, ErrPayloadGone, ErrNoDoor, ErrHerdr,
 	// A route name and the route cap are the webhooks store's refusals,
 	// which a trigger's `--route` can cause.
 	webhooks.ErrInvalidName, webhooks.ErrTooMany,
@@ -344,7 +356,11 @@ type Input struct {
 	Spec  string
 	Zone  string
 
-	PromptPath  *string
+	PromptPath *string
+	// Prompt is the prompt's TEXT, which a browser types and has no SSH
+	// to write with (I-1266). It is never stored on the trigger row and
+	// never logged: the api carries it to the machine and forgets it.
+	Prompt      *string
 	Workdir     *string
 	Agent       *string
 	TimeoutS    *int
@@ -391,6 +407,16 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 	}
 	if in.PromptPath != nil && !ValidPromptPath(*in.PromptPath) {
 		return spec, ErrInvalidPrompt
+	}
+	if in.Prompt != nil && len(*in.Prompt) > PromptCap {
+		return spec, ErrPromptTooLarge
+	}
+	// pi reads a prompt that begins with @ as a file to include, so the
+	// one prompt form it refuses is caught while the user is still
+	// typing rather than at 03:00 (I-780). The CLI checks the same pair.
+	if in.Prompt != nil && in.Agent != nil && *in.Agent == "pi" &&
+		strings.HasPrefix(strings.TrimSpace(*in.Prompt), "@") {
+		return spec, ErrAtPromptOnPi
 	}
 	if in.Agent != nil && *in.Agent != "" && !Agents[*in.Agent] {
 		return spec, ErrInvalidAgent

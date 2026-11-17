@@ -229,10 +229,14 @@ type project struct {
 	webhooks    []*WebhookRoute
 	triggers    []*FakeTrigger
 	triggerRuns []FakeTriggerRun
-	revisions   []*Revision
-	snapshots   []*Snapshot
-	events      []*Event
-	eventKeys   map[string]bool // (agent, kind, ts second) dedupe for /internal/events
+	// triggerPrompts is the prompt text each trigger's machine was
+	// given, which the real api carries to the guest and forgets
+	// (I-1266). No route answers with it.
+	triggerPrompts map[string]string
+	revisions      []*Revision
+	snapshots      []*Snapshot
+	events         []*Event
+	eventKeys      map[string]bool // (agent, kind, ts second) dedupe for /internal/events
 }
 
 type op struct {

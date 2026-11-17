@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -87,5 +88,87 @@ func TestTriggerRunListings(t *testing.T) {
 	other := e.signIn(t, "sub-mallory", "mallory")
 	if r := e.do(t, other, "GET", "/trigger-runs", nil); r.status != 200 || len(r.list) != 0 {
 		t.Errorf("another account's listing: %d %s", r.status, r.raw)
+	}
+}
+
+// The prompt a browser types, over the real schema and the real route
+// (DECISIONS I-1266). It goes in on `prompt`, it never comes back, and
+// it is refused for the same reasons `repose triggers add -p` refuses
+// it: a machine that is not running has nothing to write to, and a
+// prompt over the cap is one the runner would not read.
+func TestAPromptOnPostTriggers(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-prompt", "prompter")
+	var uid uuid.UUID
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "select id from users where logto_sub = $1", "sub-prompt").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	u, err := store.GetUser(e.h.Ctx, e.h.Pool, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := e.h.CreateRunning(u, "prompt-one")
+	const text = "Triage the new issues; tell me what needs me"
+
+	r := e.do(t, tok, "POST", "/projects/"+p.ID.String()+"/triggers", map[string]any{
+		"name": "triage", "kind": "schedule", "spec": "weekdays 07:00",
+		"zone": "Europe/Berlin", "prompt": text,
+	})
+	if r.status != 201 {
+		t.Fatalf("add with a prompt: %d %s", r.status, r.raw)
+	}
+	// The answer carries a path and never the text, and nor does the row.
+	if r.body["prompt_path"] != ".repose/triggers/triage.md" {
+		t.Errorf("prompt_path is %v", r.body["prompt_path"])
+	}
+	if strings.Contains(string(r.raw), "Triage the new issues") {
+		t.Fatalf("the answer carries the prompt's text: %s", r.raw)
+	}
+	if r := e.do(t, tok, "GET", "/projects/"+p.ID.String()+"/triggers", nil); strings.Contains(string(r.raw), "Triage") {
+		t.Fatalf("the listing carries the prompt's text: %s", r.raw)
+	}
+	// It is waiting for the machine, which is the whole of where it is.
+	pending, err := e.h.Triggers.PendingPrompts(e.h.Ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Body != text {
+		t.Fatalf("the hand-off holds %+v", pending)
+	}
+
+	// Over the cap: `invalid`, with the reason a surface prints.
+	big := e.do(t, tok, "POST", "/projects/"+p.ID.String()+"/triggers", map[string]any{
+		"name": "big", "kind": "schedule", "spec": "daily 03:00",
+		"prompt": strings.Repeat("x", triggers.PromptCap+1),
+	})
+	if big.status != 400 || errCode(big) != "invalid" {
+		t.Fatalf("a prompt over the cap: %d %s", big.status, big.raw)
+	}
+	if errDetail(big, "reason") != "prompt_too_large" {
+		t.Errorf("a long prompt's reason is %v", errDetail(big, "reason"))
+	}
+
+	// A machine that is not running has nothing to write to, and the
+	// refusal says what to do instead, as the CLI's does.
+	stopped := e.h.NewProject(u, "prompt-stopped", "large")
+	bad := e.do(t, tok, "POST", "/projects/"+stopped.ID.String()+"/triggers", map[string]any{
+		"name": "apply", "kind": "route", "route": "recruiting", "prompt": text,
+	})
+	if bad.status != 409 || errCode(bad) != "conflict" {
+		t.Fatalf("a prompt on a machine that is not running: %d %s", bad.status, bad.raw)
+	}
+	if errDetail(bad, "reason") != "machine_not_running" {
+		t.Errorf("the reason is %v", errDetail(bad, "reason"))
+	}
+	if !strings.Contains(string(bad.raw), "a prompt is written into the machine") {
+		t.Errorf("the refusal reads %s", bad.raw)
+	}
+	// And the same trigger with a path instead is taken, because a file
+	// already in the machine is not read until the first fire.
+	ok := e.do(t, tok, "POST", "/projects/"+stopped.ID.String()+"/triggers", map[string]any{
+		"name": "apply", "kind": "route", "route": "recruiting", "prompt_path": "apply.md",
+	})
+	if ok.status != 201 {
+		t.Fatalf("add with a path on a stopped machine: %d %s", ok.status, ok.raw)
 	}
 }

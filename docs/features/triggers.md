@@ -16,7 +16,9 @@ The decisions are I-1248 (the feature and where a trigger lives), I-1250
 (the event door), I-1252 (the clock door and the grammar), I-1254
 (admission), I-1256 (the session and its outcome), I-1258 (the dashboard
 tab, amending I-1216), I-1260 (the unused notice, amending I-262) and
-I-1262 (limits and retention). User-facing documentation is
+I-1262 (limits and retention). I-1266, I-1268 and I-1270 amend I-1258:
+the tab makes and changes a trigger, and the api carries a prompt into
+the machine without storing it. User-facing documentation is
 `apps/web/src/content/docs/triggers.md`.
 
 ## 1. The shape
@@ -163,12 +165,14 @@ a field you fill in once belongs in Config.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- Three inline ghost buttons a row — Run, On/Off, Remove… — the same on
-  every row, and no menu (`apps/web` has none, and this is not the tab to
-  invent one on). A route trigger's Copy URL is in the row's expansion
-  with a line saying what it copies. There is no Copy in the row itself:
-  a fourth button does not fit a 390 row, and the one it would push out
-  is Remove.
+- Four inline ghost buttons a row — Run, Edit, On/Off, Remove… — the
+  same on every row, and no menu (`apps/web` has none, and this is not
+  the tab to invent one on). Four short ghost buttons measure about
+  236px, and below 640 the row is a block where they have a line to
+  themselves (I-1270). A route trigger's Copy URL and its Dry run are in
+  the row's expansion, each with a line saying what it does; neither is
+  in the row itself, because the one a fifth button would push out is
+  Remove.
 - **Below 640 px the row is a block**, as `ProjectWebhooks` makes its
   own: the name and the state on one line, the prompt and the door under
   them, the actions on their own line. Three buttons and a target side by
@@ -208,19 +212,37 @@ a field you fill in once belongs in Config.
   this doc would repeat.
 - Empty: the `hk-empty-title` `No triggers yet` and one sentence,
   `A trigger starts an agent when a webhook arrives or at a time you
-  choose.`, with `repose triggers add` named as what makes one.
-- **There is no Add on the tab, and that is the design.** Making a
-  trigger means writing a prompt into the machine, which is what
-  `repose triggers add -p` does over SSH and what a browser cannot do: a
-  form here could only name a path and hope, and the api never reads a
-  file in a guest, so nothing would check it. The trigger would be made,
-  look right, and fail at 03:00 with `the prompt file is missing`. The
-  empty state names the command instead, and the tab does everything
-  that needs no file: run, on, off, copy the URL, remove, and read the
-  runs. Changing a trigger's schedule, gate or timeout is
-  `repose triggers add` on the name that exists, for the same reason:
-  the command that edits a trigger is the one that can also write its
-  prompt.
+  choose.`, beside the `Add trigger` button that makes one. It names no
+  command: the button does the thing.
+- **Add trigger and Edit open the same form** (I-1270, amending this
+  section's first draft). It takes everything `repose triggers add`
+  takes, with the same defaults and the same refusals in the same
+  words. The door is a two-item segmented control. A schedule is built
+  from the six shapes of §6 rather than typed, so nobody learns a
+  grammar to say "every weekday at seven", and the spec and the zone it
+  will be stored in are shown before it is made, because 07:00 means
+  nothing without the zone it is read in. The prompt is a textarea or a
+  path in the machine, the second being `--prompt-file`. The twelve
+  settings that have right defaults — agent, working directory,
+  timeout, concurrency, gate, dedupe and the four switches — are behind
+  `More settings`.
+- **The prompt the browser types reaches the machine through the api**
+  (I-1268). The first draft of this section said a browser could not
+  write a prompt and therefore could not make a trigger; the answer is
+  that the text passes through the api without stopping: `prompt` on
+  `POST /projects/:id/triggers`, one unlogged hand-off row between the
+  api's two processes, `WriteTriggerPrompt` to the machine, and the row
+  deleted. The api stores no prompt, so the form can write one and
+  cannot show the one that is there, and it says so where the field is.
+  A machine that is not running takes `--prompt-file`'s half of the
+  field and refuses the other, in the words the CLI refuses it with.
+- `Dry run`, in the row's expansion, takes the admission decision and
+  runs the gate and starts no agent, which is how a gate is written
+  (§7.4).
+- Remove keeps its two-step confirm in the row rather than
+  `ConfirmType`: that control is for an act that cannot be undone
+  (I-680), and a trigger removed can be made again, its prompt file
+  still in the machine. `webhooks` and `secrets` ask the same way.
 
 ## 4. Where a trigger lives, and where its prompt does not
 
@@ -915,6 +937,18 @@ never "tests pass".
       one, a row opened into its runs, and the tab strip at 390 with
       seven tabs. A 20-trigger page and a working run were not
       captured: both are the same row drawn more often.
+- [x] The form at 1440 and 390, light and dark, viewport captures at
+      1x: a route trigger being made, the same with `More settings`
+      open, a schedule being built, and Edit opened on a schedule
+      (I-1270).
+- [x] The dashboard makes, changes, runs and removes a trigger with no
+      terminal, and the prompt it types reaches the machine while no api
+      answer and no row carries the text
+      (`apps/web/tests/triggers.spec.ts`, 9 tests; I-1266, I-1268).
+- [ ] A prompt typed on the dashboard reaches a real guest and the next
+      fire starts an agent on it. Nothing here has run against a real
+      machine: the hand-off, `WriteTriggerPrompt` and the file's
+      ownership are covered by tests alone.
 - [ ] `repose status` shows the `triggers` row for a project with one and
       no such row for a project without.
 
