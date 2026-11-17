@@ -62,6 +62,9 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/triggers/{name}", a(s.getTrigger))
 	s.route(m, "DELETE /v1/projects/{id}/triggers/{name}", a(s.deleteTrigger))
 	s.route(m, "POST /v1/projects/{id}/triggers/{name}/fire", a(s.fireTrigger))
+	// Every project's runs in one listing, which is what "what did my
+	// agents do last night" asks (I-1256), beside the per-project one.
+	s.route(m, "GET /v1/trigger-runs", a(s.listAllTriggerRuns))
 	s.route(m, "GET /v1/projects/{id}/trigger-runs", a(s.listTriggerRuns))
 	s.route(m, "GET /v1/projects/{id}/trigger-runs/{run_id}", a(s.getTriggerRun))
 	// The dashboard's view of the machine browser (DECISIONS I-1216).

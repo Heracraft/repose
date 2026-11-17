@@ -138,7 +138,7 @@ func TriggersAddCmd(ctx context.Context, e *Env, projectArg, name string, o Trig
 	if o.Prompt != "" || o.PromptFile != "" {
 		if project.State != "running" {
 			if o.Prompt != "" {
-				return exitf(ExitGeneric, "%s is %s, and -p writes the prompt into the machine. Start it, or pass --prompt-file for a file that is already there.", project.Slug, project.State)
+				return exitf(ExitGuestNotRunning, "%s is %s, and -p writes the prompt into the machine. Start it, or pass --prompt-file for a file that is already there.", project.Slug, project.State)
 			}
 			_, _ = fmt.Fprintf(e.ErrOut, "%s is %s, so the prompt file was not checked.\n", project.Slug, project.State)
 		} else {
@@ -187,7 +187,7 @@ func TriggersAddCmd(ctx context.Context, e *Env, projectArg, name string, o Trig
 		// The URL and nothing else, so `| pbcopy` works (I-1110's rule).
 		_, _ = fmt.Fprintln(e.Out, t.Route.URL)
 	case t.Spec != "":
-		_, _ = fmt.Fprintf(e.Out, "%s %s, next %s\n", t.Spec, t.Zone, triggerNext(t.NextAt))
+		_, _ = fmt.Fprintf(e.Out, "%s %s, next %s\n", t.Spec, t.Zone, triggerNext(t.NextAt, t.Zone))
 	default:
 		_, _ = fmt.Fprintf(e.Out, "%s\n", t.Name)
 	}
@@ -287,7 +287,7 @@ func TriggersListCmd(ctx context.Context, e *Env, projectArg string, quiet bool)
 	}
 	ts, err := e.Client.ListTriggers(ctx, project.ID)
 	if err != nil {
-		return err
+		return triggerCmdErr(err, project.Slug, "")
 	}
 	if e.JSON {
 		return writeJSONOut(e.Out, ts)
@@ -311,11 +311,26 @@ func TriggersListCmd(ctx context.Context, e *Env, projectArg string, quiet bool)
 	return tw.Flush()
 }
 
+// triggerDoor is what a trigger fires on: a route reads as its route and
+// a schedule as its spec, with the zone where that is not the laptop's
+// own — `07:00` means nothing without it, and the NEXT column is in that
+// zone.
 func triggerDoor(t Trigger) string {
 	if t.Route != nil {
 		return t.Route.Name + " (route)"
 	}
+	if z := triggerZoneNote(t); z != "" {
+		return t.Spec + " " + z
+	}
 	return t.Spec
+}
+
+// triggerZoneNote is a schedule's zone where it is not the laptop's own.
+func triggerZoneNote(t Trigger) string {
+	if t.Kind != "schedule" || t.Zone == "" || t.Zone == localTZ() {
+		return ""
+	}
+	return t.Zone
 }
 
 func triggerLastRun(t Trigger) string {
@@ -329,33 +344,55 @@ func triggerNextCol(t Trigger) string {
 	if t.Kind != "schedule" || !t.Enabled {
 		return ""
 	}
-	return triggerNext(t.NextAt)
+	return triggerNext(t.NextAt, t.Zone)
 }
 
-// triggerNext is the next fire in the laptop's own zone, since that is
-// the clock the user is reading it on.
-func triggerNext(at *time.Time) string {
+// triggerNext is the next fire in the trigger's own zone, which is the
+// zone its spec is written in and the one printed beside it. Drawing it
+// in the laptop's zone instead undid the whole point of storing one:
+// `add` answered `daily 03:00 UTC, next 04:00 tomorrow` in Berlin, and
+// the dashboard had the same fault (ProjectTriggers.svelte).
+func triggerNext(at *time.Time, zone string) string {
 	if at == nil {
 		return ""
 	}
-	local := at.Local()
-	now := time.Now()
+	loc := time.Local
+	if zone != "" {
+		if l, err := time.LoadLocation(zone); err == nil {
+			loc = l
+		}
+	}
+	local := at.In(loc)
+	now := time.Now().In(loc)
 	switch {
 	case local.YearDay() == now.YearDay() && local.Year() == now.Year():
 		return local.Format("15:04") + " today"
-	case local.Sub(now) < 48*time.Hour && local.YearDay() == now.Add(24*time.Hour).YearDay():
+	case local.Sub(now) < 48*time.Hour && local.YearDay() == now.AddDate(0, 0, 1).YearDay():
 		return local.Format("15:04") + " tomorrow"
 	default:
 		return local.Format("Mon 2 Jan 15:04")
 	}
 }
 
-// TriggersRunsCmd implements `repose triggers runs [NAME]`.
-func TriggersRunsCmd(ctx context.Context, e *Env, projectArg, name string, limit int, quiet bool) error {
+// TriggersRunsCmd implements `repose triggers runs [NAME]`, and with
+// all set every project's runs in one listing — "what did my agents do
+// last night", which no per-project listing answers.
+func TriggersRunsCmd(ctx context.Context, e *Env, projectArg, name string, limit int, quiet, all bool) error {
 	if name != "" {
 		if err := checkTriggerName(name); err != nil {
 			return err
 		}
+	}
+	// The bound the api holds and `--help` names, checked before the
+	// round trip (I-346).
+	if limit != 0 && (limit < 1 || limit > 200) {
+		return exitf(ExitUsage, "--tail takes 1 to 200, got %d", limit)
+	}
+	if all {
+		if name != "" {
+			return cobraUsageError{errors.New("--all is every project's runs, so it takes no NAME")}
+		}
+		return triggerAllRuns(ctx, e, limit, quiet)
 	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
@@ -366,7 +403,7 @@ func TriggersRunsCmd(ctx context.Context, e *Env, projectArg, name string, limit
 	}
 	runs, err := e.Client.TriggerRuns(ctx, project.ID, name, limit)
 	if err != nil {
-		return err
+		return triggerCmdErr(err, project.Slug, name)
 	}
 	if e.JSON {
 		return writeJSONOut(e.Out, runs)
@@ -390,6 +427,39 @@ func TriggersRunsCmd(ctx context.Context, e *Env, projectArg, name string, limit
 	for _, r := range runs {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			shortID(r.RunID), r.Trigger, r.Source, humanAge(r.CreatedAt), triggerTook(r), r.State, triggerWhy(r))
+	}
+	return tw.Flush()
+}
+
+// triggerAllRuns prints every project's runs, newest first, with the
+// machine each ran on.
+func triggerAllRuns(ctx context.Context, e *Env, limit int, quiet bool) error {
+	if limit == 0 {
+		limit = triggerRunsKept
+	}
+	runs, err := e.Client.AllTriggerRuns(ctx, limit)
+	if err != nil {
+		return err
+	}
+	if e.JSON {
+		return writeJSONOut(e.Out, runs)
+	}
+	if quiet {
+		for _, r := range runs {
+			_, _ = fmt.Fprintln(e.Out, r.RunID)
+		}
+		return nil
+	}
+	if len(runs) == 0 {
+		_, _ = fmt.Fprintln(e.Out, "No trigger has run.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "RUN\tPROJECT\tTRIGGER\tSOURCE\tSTARTED\tTOOK\tSTATE\tWHY")
+	for _, r := range runs {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			shortID(r.RunID), r.Project, r.Trigger, r.Source, humanAge(r.CreatedAt),
+			triggerTook(r), r.State, triggerWhy(r))
 	}
 	return tw.Flush()
 }
@@ -460,7 +530,7 @@ func TriggersFireCmd(ctx context.Context, e *Env, projectArg, name string, o Tri
 	}
 	if o.Payload != "" {
 		if project.State != "running" {
-			return exitf(ExitGeneric, "%s is %s, and --payload writes the file into the machine.", project.Slug, project.State)
+			return exitf(ExitGuestNotRunning, "%s is %s, and --payload writes the file into the machine.", project.Slug, project.State)
 		}
 		p, err := triggerWritePayload(ctx, e, project, name, o.Payload)
 		if err != nil {
@@ -539,26 +609,27 @@ func resolveRunID(ctx context.Context, e *Env, projectID, want string) (string, 
 	if _, err := uuid.Parse(want); err == nil {
 		return want, nil
 	}
-	if len(want) < 4 {
-		return "", exitf(ExitUsage, "--run takes a run id, or 4 or more characters of one; got %q", want)
+	if len(want) < minIDPart {
+		return "", exitf(ExitUsage, "--run takes a run id, or %d or more characters of one; got %q", minIDPart, want)
 	}
 	runs, err := e.Client.TriggerRuns(ctx, projectID, "", 200)
 	if err != nil {
 		return "", err
 	}
-	var hits []string
-	for _, r := range runs {
-		if strings.HasSuffix(r.RunID, want) || strings.HasPrefix(r.RunID, want) {
-			hits = append(hits, r.RunID)
-		}
+	ids := make([]string, len(runs))
+	for i, r := range runs {
+		ids[i] = r.RunID
 	}
-	switch len(hits) {
-	case 0:
-		return "", exitf(ExitGeneric, "no run of this project has the id %s.", want)
+	// matchID is the rule `repose snapshots restore` uses, down to the
+	// exit code: an id that names nothing and an id that names several
+	// are both the caller's own mistake.
+	switch hits := matchID(ids, want); len(hits) {
 	case 1:
 		return hits[0], nil
+	case 0:
+		return "", exitf(ExitUsage, "no run of this project has the id %s. `repose triggers runs` lists them.", want)
 	default:
-		return "", exitf(ExitUsage, "%d runs have the id %s; give more of it", len(hits), want)
+		return "", exitf(ExitUsage, "%s names %d runs; give more of the id.", want, len(hits))
 	}
 }
 
@@ -581,9 +652,19 @@ func triggerWritePayload(ctx context.Context, e *Env, project *Project, name, lo
 		r = f
 	}
 	guest := path.Join(".repose/triggers", name, "fire-payload")
+	// One byte over the cap is refused rather than cut: a truncated
+	// payload is a JSON body an agent cannot parse, and the file form of
+	// the same event says so instead of guessing.
+	cap1 := 1 << 20
 	script := "set -e\nf=" + shQuote(guest) + "\nmkdir -p \"$(dirname \"$f\")\"\nhead -c " +
-		fmt.Sprint(1<<20) + " > \"$f.part\"\nmv -f \"$f.part\" \"$f\"\n"
+		fmt.Sprint(cap1+1) + " > \"$f.part\"\n" +
+		"if [ \"$(wc -c < \"$f.part\")\" -gt " + fmt.Sprint(cap1) + " ]; then rm -f \"$f.part\"; echo too-large >&2; exit 9; fi\n" +
+		"mv -f \"$f.part\" \"$f\"\n"
 	if _, err := runSSH(ctx, e.target(project.Slug), script, r); err != nil {
+		var se *sshError
+		if errors.As(err, &se) && se.ExitCode == 9 {
+			return "", exitf(ExitUsage, "the payload is over 1 MiB, which is the webhook body cap")
+		}
 		return "", fmt.Errorf("writing the payload into %s: %w", project.Slug, err)
 	}
 	return "~/.repose/triggers/" + name + "/fire-payload", nil
@@ -605,18 +686,39 @@ func TriggersOnOffCmd(ctx context.Context, e *Env, projectArg, name string, on b
 	if e.JSON {
 		return writeJSONOut(e.Out, t)
 	}
-	_, _ = fmt.Fprintf(e.Out, "%s is %s\n", t.Name, onOffWord(t.Enabled))
+	// One line, as `repose notify` and `repose config` print one. A
+	// schedule says when it fires next, because `on` arms the clock from
+	// now and that is the one thing the user cannot work out.
 	if t.Enabled && t.Kind == "schedule" {
-		_, _ = fmt.Fprintf(e.Out, "next %s\n", triggerNext(t.NextAt))
+		_, _ = fmt.Fprintf(e.Out, "%s is on, next %s\n", t.Name, triggerNext(t.NextAt, t.Zone))
+		return nil
 	}
+	_, _ = fmt.Fprintf(e.Out, "%s is %s\n", t.Name, onOff(t.Enabled))
 	return nil
 }
 
-func onOffWord(on bool) string {
-	if on {
-		return "on"
+// TriggersURLCmd implements `repose triggers url NAME`: the URL and
+// nothing else, so it pipes, as `repose webhooks url` does.
+func TriggersURLCmd(ctx context.Context, e *Env, projectArg, name string) error {
+	if err := checkTriggerName(name); err != nil {
+		return err
 	}
-	return "off"
+	project, err := requireProject(ctx, e, projectArg)
+	if err != nil {
+		return err
+	}
+	t, err := e.Client.GetTrigger(ctx, project.ID, name)
+	if err != nil {
+		return triggerCmdErr(err, project.Slug, name)
+	}
+	if t.Route == nil {
+		return exitf(ExitGeneric, "%s fires on a schedule, so it has no URL.", name)
+	}
+	if e.JSON {
+		return writeJSONOut(e.Out, t.Route)
+	}
+	_, _ = fmt.Fprintln(e.Out, t.Route.URL)
+	return nil
 }
 
 // TriggersRmCmd implements `repose triggers rm NAME...`.
@@ -658,7 +760,7 @@ func triggerCmdErr(err error, slug, name string) error {
 // triggerStatusLine is `repose status`'s triggers row: each trigger's
 // last run, and the next fire for a schedule. A project with no trigger
 // has no such row, which is the webhooks row's own rule.
-func triggerStatusLine(ts []Trigger, now time.Time) string {
+func triggerStatusLine(ts []Trigger) string {
 	parts := make([]string, 0, len(ts))
 	for _, t := range ts {
 		switch {
@@ -667,7 +769,7 @@ func triggerStatusLine(ts []Trigger, now time.Time) string {
 		case t.Last != nil:
 			parts = append(parts, t.Name+" "+t.Last.State+" "+humanAge(t.Last.CreatedAt))
 		case t.Kind == "schedule" && t.NextAt != nil:
-			parts = append(parts, t.Name+" next "+triggerNext(t.NextAt))
+			parts = append(parts, t.Name+" next "+triggerNext(t.NextAt, t.Zone))
 		default:
 			parts = append(parts, t.Name+" never run")
 		}
@@ -675,6 +777,5 @@ func triggerStatusLine(ts []Trigger, now time.Time) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	_ = now
 	return strings.Join(parts, ", ")
 }

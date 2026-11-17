@@ -9,6 +9,7 @@ import (
 	"github.com/heracraft/repose/internal/agentprompt"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/multiplexer"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // `repose say` (DECISIONS I-1144): the owner types a message for an agent
@@ -183,7 +184,7 @@ func (w *Watcher) sayWindow(want string) (string, error) {
 // TriggerWindowPrefix is the window prefix a trigger's run uses
 // (`t-apply`, `t-apply.2`, DECISIONS I-1256). It is reserved in
 // guest-conventions.md, as a platform port is.
-const TriggerWindowPrefix = "t-"
+const TriggerWindowPrefix = triggerrun.WindowPrefix
 
 // rememberSay keeps a delivered say id so a resent command is answered
 // from the record instead of typed again.

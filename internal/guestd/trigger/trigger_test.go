@@ -293,6 +293,16 @@ func TestAGateRefusesAnEventAndSaysWhy(t *testing.T) {
 	if gate.User != "dev" {
 		t.Errorf("the gate ran as %q, want dev", gate.User)
 	}
+	// Its whole output is in the run's directory, where
+	// guest-conventions.md says it is: the row carries the last line
+	// only, and `fire --dry-run` is a loop a gate is written in.
+	b, err := os.ReadFile(filepath.Join(h.root, "home/dev/.repose/triggers/deploy/runs/r1/gate.err"))
+	if err != nil {
+		t.Fatalf("gate.err: %v", err)
+	}
+	if !strings.Contains(string(b), "checking") {
+		t.Errorf("gate.err holds %q, want the gate's own output", b)
+	}
 }
 
 // `--dry-run` runs the gate and starts no agent, which is how a gate

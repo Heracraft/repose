@@ -30,10 +30,12 @@ type TriggerRun struct {
 	Window      string     `json:"window"`
 	DedupeKey   string     `json:"dedupe_key"`
 	PayloadKept bool       `json:"payload_kept"`
-	Skips       int        `json:"skips"`
-	StartedAt   *time.Time `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// Project is set only by the cross-project listing (`runs --all`).
+	Project    string     `json:"project"`
+	Skips      int        `json:"skips"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // Trigger is one of a project's triggers.
@@ -151,6 +153,20 @@ func (c *Client) TriggerRuns(ctx context.Context, id, trigger string, limit int)
 	path := "/projects/" + url.PathEscape(id) + "/trigger-runs"
 	if len(q) > 0 {
 		path += "?" + q.Encode()
+	}
+	out := []TriggerRun{}
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AllTriggerRuns is every project's runs in one listing, newest first,
+// which `repose triggers runs --all` prints.
+func (c *Client) AllTriggerRuns(ctx context.Context, limit int) ([]TriggerRun, error) {
+	path := "/trigger-runs"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
 	}
 	out := []TriggerRun{}
 	if err := c.get(ctx, path, &out); err != nil {

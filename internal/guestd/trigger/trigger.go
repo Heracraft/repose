@@ -77,6 +77,9 @@ const (
 	// enough that a command resent after a reconnect is answered from
 	// it, and not so long that the registry grows for ever.
 	EndedKept = 30 * time.Minute
+	// GateErrKept is how much of a gate's own stderr the run's directory
+	// keeps, which guest-conventions.md names.
+	GateErrKept = 200
 	// SettleGrace is how long an agent that is in its window but has not
 	// worked yet may read `idle` before the supervisor believes it. A
 	// prompt-hooked agent reads `idle` until its first hook, so this is
@@ -482,7 +485,7 @@ func (r *Runner) reserve(t Trigger, req Request) (*run, string) {
 		return nil, triggerrun.ReasonConcurrency
 	}
 	rn := &run{ID: req.RunID, Trigger: t.Name, Source: req.Source,
-		Window: freeWindow("t-"+t.Name, taken), Started: r.now(), LastSeen: r.now()}
+		Window: freeWindow(triggerrun.WindowPrefix+t.Name, taken), Started: r.now(), LastSeen: r.now()}
 	r.runs[rn.ID] = rn
 	return rn, ""
 }
@@ -728,6 +731,12 @@ func (r *Runner) gate(ctx context.Context, t Trigger, runID, dir string, payload
 		Argv: []string{"bash", "-lc", "cd " + agentwindow.Quote(dirPath(r.paths, dir)) + " 2>/dev/null; " + t.Gate},
 		User: "dev", Env: env, Stdin: payload, MaxOutput: 4 << 10,
 	})
+	// The gate's own stderr, in the run's directory, which is where
+	// guest-conventions.md says it is and what makes `fire --dry-run` a
+	// loop a gate can be written in: the row carries only the last line,
+	// and the owner reads the rest on the machine. It is the gate's own
+	// output, so it stays in the guest and is never logged.
+	r.writeGateErr(t.Name, runID, res.Stderr)
 	switch {
 	case gctx.Err() != nil:
 		return triggerrun.ReasonGateTimeout
@@ -739,6 +748,26 @@ func (r *Runner) gate(ctx context.Context, t Trigger, runID, dir string, payload
 		return triggerrun.GateReason(lastLine(res.Stderr, ReasonCap))
 	}
 	return ""
+}
+
+// writeGateErr keeps the last GateErrKept bytes of a gate's stderr
+// beside the run's payload. A gate that wrote nothing leaves no file.
+func (r *Runner) writeGateErr(name, runID string, stderr []byte) {
+	if len(stderr) == 0 {
+		return
+	}
+	if len(stderr) > GateErrKept {
+		stderr = stderr[len(stderr)-GateErrKept:]
+	}
+	uid, gid := sysdep.DevIdentity()
+	path := filepath.Join(r.runDir(name, runID), "gate.err")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return
+	}
+	_ = os.Chown(filepath.Dir(path), uid, gid)
+	if err := sysdep.WriteFileAtomic(path, stderr, 0o600, uid, gid); err != nil {
+		r.log.Warn("the gate's output was not kept", "event", "trigger_run", "run_id", runID)
+	}
 }
 
 func lastLine(b []byte, cap int) string {

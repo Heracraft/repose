@@ -328,6 +328,9 @@ type Run struct {
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 	CreatedAt  time.Time
+	// ProjectSlug is set only by the cross-project listing (AllRuns),
+	// where a row has to say which machine it ran on.
+	ProjectSlug string
 }
 
 // Input is what a caller asks for. A nil pointer leaves a field as it is
@@ -391,6 +394,14 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 	}
 	if in.Agent != nil && *in.Agent != "" && !Agents[*in.Agent] {
 		return spec, ErrInvalidAgent
+	}
+	// 0 is the ceiling, which is what `--timeout 0` means in the help
+	// and the docs. It is normalized here rather than meant three ways:
+	// the runner read 0 as "never kill it", and the api's backstop then
+	// buried the run at two hours as `unreachable`.
+	if in.TimeoutS != nil && *in.TimeoutS == 0 {
+		max := int(MaxTimeout.Seconds())
+		in.TimeoutS = &max
 	}
 	if in.TimeoutS != nil && (*in.TimeoutS < 0 || time.Duration(*in.TimeoutS)*time.Second > MaxTimeout) {
 		return spec, ErrInvalidTimeout
@@ -602,6 +613,34 @@ func scanRun(rows pgx.Rows) (Run, error) {
 		&r.PayloadBytes, &r.Skips, &r.StartedMachine, &r.PayloadPath, &r.DryRun, &r.PayloadRun,
 		&r.CommandID, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
 	return r, err
+}
+
+// AllRuns lists the user's runs across every project, newest first, each
+// with its project's slug. "What did my agents do last night" is the
+// question the whole layer exists for, and a per-project listing cannot
+// answer it: `repose triggers runs --all` and the dashboard read this,
+// as they read the cross-project listings of questions and snapshots.
+func (s *Store) AllRuns(ctx context.Context, userID uuid.UUID, limit int) ([]Run, error) {
+	if limit < 1 || limit > 200 {
+		limit = RunsKept
+	}
+	rows, err := s.pool.Query(ctx, `select `+runCols+`, p.slug
+		from trigger_runs r join projects p on p.id = r.project_id
+		where p.user_id = $1 and p.state <> 'destroyed'
+		order by r.created_at desc limit $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := scanRunWith(rows, &r, &r.ProjectSlug); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // Runs lists a project's runs, newest first. trigger empty means every

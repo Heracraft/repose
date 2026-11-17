@@ -18,6 +18,13 @@ package triggerrun
 // can import another.
 const ReceiverPort = 9227
 
+// WindowPrefix is the prefix of the tmux window a run opens, `t-<name>`
+// (DECISIONS I-1256). It is reserved: the sampler keeps such a window
+// out of `repose ps`'s own listing, the CLI's status groups them, and
+// the runner names them. It lives here for the same reason the reasons
+// do — three packages spelled it `"t-"` by hand.
+const WindowPrefix = "t-"
+
 // States of a run. Pending and Sending are the hand-off between the
 // api's two processes (I-1162) and are never shown to anyone: every
 // surface draws them as Queued, as a say's are.

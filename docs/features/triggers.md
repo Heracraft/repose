@@ -72,7 +72,7 @@ RUN       TRIGGER  SOURCE  STARTED     TOOK    STATE    WHY
 41d8e2aa  apply    route   1h04m ago   0s      skipped  the gate refused it: exit 1
 9b3f0c17  triage   clock   7h ago      4m11s   done     12 issues triaged, 2 need you
 0ea77d31  apply    hand    2h ago      1h00m   timeout  killed at the timeout
-5512bb08  sweep    clock   3h ago      14s     failed   claude is not logged in
+5512bb08  sweep    clock   3h ago      14s     failed   the agent is not logged in
 c93a4f60  triage   clock   yesterday   0s      skipped  the machine was stopped (612 events)
 
 $ repose triggers fire apply
@@ -86,10 +86,11 @@ sweep is off
 |---|---|
 | `repose triggers add NAME (--route ROUTE \| --every SPEC)` | Create it, or change the flags given on one that exists. Prints the route's URL for `--route`, and nothing else, so it pipes; prints the spec, its zone and the next fire for `--every`. `--json` prints the trigger. |
 | `repose triggers list [PROJECT]` | Alias `ls`, and `repose triggers` alone, which takes no flags of its own. `--json`, `-q`/`--quiet` for names. |
-| `repose triggers runs [NAME]` | The last runs, newest first, each with the last 8 characters of its id, which is what `fire --run` takes. `-n`/`--tail N` (1..200, default 20), `--json`, `-q` for whole run ids. |
+| `repose triggers runs [NAME]` | The last runs, newest first, each with the last 8 characters of its id, which is what `fire --run` takes. `--all` is every project's runs in one listing, with the machine each ran on: "what did my agents do last night" is the question the layer exists for, and a per-project listing cannot answer it. `-n`/`--tail N` (1..200, default 20), `--json`, `-q` for whole run ids. |
+| `repose triggers url NAME` | A route trigger's URL, and nothing else, so it pipes, as `repose webhooks url` is. A schedule has none. `add` prints it once, and this is how it is read back. |
 | `repose triggers fire NAME` | Run it now; the run's `source` is `hand`. `--payload FILE` hands that file to the session (`-` for stdin), `--run RUN` replays an earlier run's payload (a whole id, or the 8 characters the table prints), `--wait` waits for the outcome and prints it, for 20 seconds at a time until the run ends or `--wait-for` runs out (default 5 minutes; a run may take an hour, and a command that hangs that long is not a wait), `--dry-run` takes the admission decision and runs the gate and starts no agent. `--json` prints the run. |
 | `repose triggers on NAME` / `off NAME` | Let it fire, or keep it from firing. `off` leaves the row, the route and the prompt file alone, which is the one other place the CLI has a two-command boolean that is not a delete (`repose config on`/`off`). `on` re-arms a schedule from now, so a trigger that was off for a week does not fire the moment it comes back. |
-| `repose triggers rm NAME...` | Remove them. Alias `remove`. A route the trigger made is removed with it, unless the user made that route first or another trigger uses it. |
+| `repose triggers rm NAME...` | Remove them. Alias `remove`. A route the trigger made is removed with it, unless the user made that route first or another trigger uses it, and its URL then answers 410 for 30 days, so a provider's own log says the door is gone. The prompt file stays on the machine. |
 
 Flags on `add`:
 
@@ -101,7 +102,7 @@ Flags on `add`:
 | `--prompt-file PATH` | `.repose/triggers/NAME.md` | The prompt as a path in the machine, relative to the working directory. `add` checks the file is there (§7.1). |
 | `--workdir DIR` | the checkout | The session's working directory: `checkout`, `worktree-N`, `~/PATH` or `/PATH`, as `repose exec --workdir` takes them. |
 | `--agent NAME` | the project's agent | `claude`, `codex`, `opencode`, `gemini` or `pi`, as `repose run --agent` takes them. |
-| `--timeout DURATION` | `1h` | Kill the window when the run has worked this long, at most `24h`. Time waiting for an answer to `repose-ask` does not count (§8.3). `0` means 24 hours. |
+| `--timeout DURATION` | `1h` | Kill the window when the run has worked this long, at most `24h`. Time waiting for an answer to `repose-ask` does not count (§8.3). `0` is stored as 24 hours, so one number means one thing to the runner and to the api's backstop. |
 | `--concurrency N` | `1` | How many runs of this trigger may work at once (1..3; 1 on a `tiny`, whose 2 GB hold one agent and one browser). At the limit an event is `skipped: a run is working`. |
 | `--gate CMD` | | Admission: run CMD with the payload on stdin; a non-zero exit skips the run. This is where a signature check goes (§7.4). |
 | `--dedupe KEY` | | Admission: skip an event whose key was seen in the last 24 hours. KEY is `header:NAME` or `json:FIELD` (§7.3). |
@@ -151,40 +152,50 @@ a field you fill in once belongs in Config.
 │ todo-app                                            ● running  Stop │
 │ Overview  Browser  Triggers  Events  Usage  Snapshots  Config        │
 ├──────────────────────────────────────────────────────────────────────┤
-│ 3 triggers                                              Add trigger  │
-│                                                                      │
-│  apply          recruiting            ● done 12m ago                 │
-│  on             .repose/triggers/…    Run   Copy   Remove…           │
-│                                                                      │
-│  triage         weekdays 07:00        ● done 7h ago                  │
-│  on             next 07:00 tomorrow   Run   Copy   Remove…           │
-│                                                                      │
-│  sweep          daily 03:00           ● failed 3h ago                │
-│  off            claude is not log…    Run   Copy   Remove…           │
+│ 3 triggers                                                           │
+│  NAME    ON                 PROMPT              LAST RUN      NEXT   │
+│  apply   recruiting (route) .repose/triggers/…  ● done 12m           │
+│                                                 Run  Off  Remove…    │
+│  triage  weekdays 07:00     .repose/triggers/…  ● done 7h   07:00 ↑  │
+│                                                 Run  Off  Remove…    │
+│  sweep   daily 03:00        .repose/triggers/…  ● failed 3h          │
+│  off                                            Run  On   Remove…    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 - Three inline ghost buttons a row — Run, On/Off, Remove… — the same on
   every row, and no menu (`apps/web` has none, and this is not the tab to
   invent one on). A route trigger's Copy URL is in the row's expansion
-  with a line saying what it copies.
+  with a line saying what it copies. There is no Copy in the row itself:
+  a fourth button does not fit a 390 row, and the one it would push out
+  is Remove.
 - **Below 640 px the row is a block**, as `ProjectWebhooks` makes its
   own: the name and the state on one line, the prompt and the door under
   them, the actions on their own line. Three buttons and a target side by
   side broke the target mid-word there, which is why that component has
   the breakpoint.
-- `on`/`off` is a column with a dot and a lowercase word, as every other
-  state on a project's tabs is drawn. It is not a badge: a badge on a
-  project tab means `temporary` and nothing else.
+- A trigger that is **off** says `off` under its own name, in the muted
+  word every other state on a project's tabs uses, and its row's button
+  offers `On`. It is not a column of its own: the state that matters on
+  the row is the last run's, and a second dot beside it reads as a
+  second run. It is not a badge either — a badge on a project tab means
+  `temporary` and nothing else.
+- **The columns a width cannot hold move into the row's expansion**, in
+  the order they stop being drawn: `Prompt` below `2xl`, `Next` below
+  `md`, and `On` below `sm` — except that the door is what a trigger
+  *is*, so at phone width it is drawn under the name instead, where a
+  list of names alone would not say which fires on a webhook and which
+  on a clock.
 - `Run` fires it. While the run works the button's label is `Running…`
   and it is disabled; there is no spinner, which is the house rule
   (`hk/tokens.css`). A fire is not an op: it never takes `ctx.opBusy`, so
   Stop, Start and a snapshot stay available while an agent runs.
 - The tab polls on the layout's own cadence, 10 s in view and 60 s
-  hidden, through the same `PollGroup` every other tab uses, and
-  `pollUntilDone` holds the faster poll only while a fire of this page's
-  own is in flight. The list draws `LoadState` for loading, empty, error
-  and its retry, as every list on these tabs does.
+  hidden (`pollWhileVisible`), through the same `PollGroup` every other
+  tab uses. A fire holds no faster loop of its own: a run that is working
+  changes state by itself, and the list is already the thing that polls.
+  The list draws `LoadState` for loading, empty, error and its retry, as
+  every list on these tabs does.
 - A row opens into its runs, in the `<ul>` grid the Events tab uses:
   state, when, how long, the summary the agent sent, its link as a button
   where there is one (I-931), and the window's name. A run that is
@@ -261,24 +272,27 @@ times.
 | `plan_limit` | your plan's memory is in use | the api |
 | `prompt_missing` | the prompt file is missing | the runner |
 | `prompt_too_large` | the prompt file is over 64 KB | the runner |
-| `no_agent` | `<agent>` is not installed on this machine | the runner |
-| `not_logged_in` | `<agent>` is not logged in | the runner |
-| `no_permission_mode` | `<agent>` stopped at a permission prompt | the runner |
+| `no_agent` | the agent is not installed on this machine | the runner |
+| `not_logged_in` | the agent is not logged in | the runner |
+| `no_permission_mode` | the agent stopped at a permission prompt | the runner |
 | `timeout` | killed at the timeout | the runner |
 | `guest_restart` | the machine's agent supervisor restarted | the runner |
 | `machine_stopped` | the machine stopped | the api or the runner |
+| `clock_late` | the fire was late and was not caught up | the api |
 | `unreachable` | the machine did not take the fire | the api |
 | `payload_gone` | that run's payload is no longer kept | the api, at `fire --run` |
 | `dry_run` | the gate ran and no agent was started | the runner |
+| `herdr` | this machine runs under herdr, and a trigger starts a tmux window | the runner |
 
 `gated` is the one reason that carries free text: a gate's own last line
 of stderr, at most 200 bytes, which is tenant content and never logged.
 Everything else is the token and its sentence.
 
-**An edge-side refusal coalesces.** A machine stopped for a week takes
-600 refusals an hour, and a run row each would evict every run that ran
-from the 20 a trigger keeps. So the api keeps one `skipped` row per
-trigger, reason and hour, and counts: `skipped: the machine was stopped
+**Every refusal coalesces, whichever door it came in by.** A machine
+stopped for a week takes 600 refusals an hour, and a run row each would
+evict every run that ran from the 20 a trigger keeps. So the api keeps
+one `skipped` row per trigger, reason and hour, and counts: `skipped: the
+machine was stopped
 (612 events)`.
 
 **The log fields a trigger adds** are `trigger_id`, `run_id`, `source`
@@ -368,9 +382,18 @@ So a fire is a row, exactly as a `say` is:
    already has for a long poll, and prints the outcome when the row is
    terminal.
 
-A row still in `pending` or `sending` after twice the hand-off window is
-failed by the worker, so a fire cannot arrive long after the user was
-told it did not.
+**The hand-off's own clock.** A row still in the hand-off three passes
+after the worker last took it or put it back is failed `unreachable`, so
+a fire cannot arrive long after the user was told it did not. Three
+passes and not one: a fire that starts a stopped machine is put back for
+the next pass, and at 40 seconds against a 60-second tick the next pass
+failed that same fire and notified the owner about a machine that was
+starting exactly as asked. Every put-back restarts that clock, so a
+second ceiling ends a run that waits ten minutes for a machine that
+never arrives. A machine that is on its way up — `starting`,
+`restoring`, `creating`, `building` — is waited for and not skipped
+`busy`: a start takes 12 to 14 seconds, and any project's fire makes a
+pass happen.
 
 **The grammar** is small and is not systemd's calendar language:
 
@@ -595,7 +618,16 @@ started by a trigger keeps working through it. guestd rebuilds its runs
 from `tmux list-windows` at start, the way hostd rebuilds guests from
 `systemctl list-units 'guest@*'`: a run whose window is alive stays
 `working`, and only a run with no window ends
-`failed: guestd restarted`. Marking a live run failed would let the next
+`failed: guestd restarted`. **The set comes back too.** The trigger set
+is the api's state and the receiver answers 404 without it, so guestd
+keeps it at `/var/lib/repose/trigger-set.json` — on the volume, with the
+dedupe window, so it survives a reboot and a move to another host — and
+reads it at start. Memory alone was the first draft, and then a
+`systemctl restart repose-guestd` turned every delivery into
+`route_gone`, "the route was removed", about a route that was still
+there, until the machine was next started. hostd also hands a second
+`Ready` the set it holds, so a set the api changed while guestd was down
+is not stale until the next start. Marking a live run failed would let the next
 fire start a second agent on the same checkout while the first is
 mid-side-effect, which is what §11 exists to prevent. Open runs are
 announced again on each new hostd connection for ten minutes, as open
@@ -613,7 +645,15 @@ away by the success that followed it.
 
 A run ends when the agent's turn ends, which guestd already knows from
 the agent's own end-of-turn hook and its pane-idle heuristic (the same
-knowledge `say` waits on). The run's state is:
+knowledge `say` waits on). A turn ends only once the agent has been seen
+**working**: a prompt-hooked agent reads `idle` until its first hook, so
+the seconds between the window opening and the agent taking the prompt
+look exactly like a finished turn, and the supervisor ticks every five
+seconds. The first draft therefore reported a run `done`, with no
+summary, while its agent was still starting — and `--stop-after` then
+stopped the machine under it. An agent that is in its window and has not
+worked after two minutes is believed, so a run still ends. The run's
+state is:
 
 - `done` — the turn ended. The summary is what the agent sent with
   `repose-notify --done` (I-688), and empty when it sent nothing: the
@@ -672,7 +712,18 @@ is not the user's:
 A machine a trigger started stays up until the user stops it, unless the
 trigger says `--stop-after`: repose stops no machine on its own (R1-5,
 I-262), and a flag the user set is the user's instruction, not repose
-acting. `add --start` prints that sentence once.
+acting. `add --start` prints that sentence once. `--stop-after` holds for
+an ending the api wrote itself — a fire the machine never took, a run
+whose report never came, a run its machine's stop ended — because the
+first draft ran it only on the guest's own report and a refused fire
+then left the machine it started running and billing.
+
+**A herdr machine takes no triggers.** A run is an agent in its own tmux
+window, and a herdr project has no tmux session, so `triggers add` is
+refused with the words `repose say` uses for the same reason (I-501) and
+a trigger that predates the switch is skipped `herdr`. The first draft
+tried `tmux new-window` anyway and reported "the agent is not installed
+on this machine", which is not what happened.
 
 **A trigger run is use for the unused notice** (I-262, amended by
 I-1260). A machine that triages issues every morning is not a machine
@@ -693,7 +744,7 @@ delivery.
 | Triggers a project | 20 |
 | Routes a project | 20, unchanged, of which a trigger's route is one |
 | Concurrency a trigger | 3; 1 on a `tiny` |
-| Runs kept | 20 a trigger, as a route keeps its last 20 deliveries. An edge-side refusal coalesces, so a week of them costs one row an hour |
+| Runs kept | 20 a trigger, as a route keeps its last 20 deliveries. Every refusal coalesces — the edge's, the guest's and the api's own — so a week of them costs one row an hour, and `every 15m` against a stopped machine cannot evict the runs that ran |
 | Payloads kept | one a kept run, under `/home/dev/.repose/triggers/<name>/runs/<run>/` on the volume: 20 payloads at the 1 MiB cap is 20 MiB a trigger |
 | Payload | 1 MiB, the webhook body cap |
 | Prompt file | 64 KB |
@@ -756,17 +807,22 @@ never "tests pass".
       same two requests and the notification.
 - [x] `docs/interfaces/guest-conventions.md`: 9227 in "Ports", the run
       directory, the `seen` file and the session's environment; 9227 in
-      `forwardPlatformPorts`, `ports-and-previews.md` and
-      `DOCS-AUDIT.md`'s "9224 to 9226".
+      `forwardPlatformPorts`, `ports-and-previews.md`, `machine.md` and
+      `DOCS-AUDIT.md`, whose row now reads "9224 to 9227".
 - [x] `docs/features/README.md` lists `triggers.md`;
       `apps/web/src/content/docs/triggers.md` and `cli.md` ship with the
       code and `internal/cli/docs_test.go` is green.
 - [x] `docs/features/notifications.md`: the `trigger_failed` row, its
       title and its payload, and that it is a platform kind.
 - [x] `docs/features/agents.md` and `run-and-attach.md`: a `t-*` window
-      is an agent window `say` does not resolve to and `ps` marks.
+      is an agent window `say` does not resolve to by itself. `repose ps`
+      lists it like any other window and marks nothing: the prefix is
+      reserved (`triggerrun.WindowPrefix`), and `repose status`'s
+      triggers row is where a run is read.
 - [x] `docs/features/status-and-logs.md` and `cli.md`: the `triggers`
-      row of `repose status`, and `ps`/`ls` marking a trigger's window.
+      row of `repose status`, and `repose ls` counting a trigger's runs
+      on their own so a machine nobody is using does not read as if
+      somebody were.
 
 **The two doors**
 
@@ -789,11 +845,15 @@ never "tests pass".
 
 - [x] `--dedupe` admits one of a provider's two identical deliveries, and
       still does after a guest reboot.
-- [x] `--gate` with the documented HMAC line admits a signed payload and
-      skips a tampered one; `--dry-run` prints the gate's own output.
+- [x] A gate's non-zero exit skips the run and its own last line of
+      stderr is the reason, with the whole output in the run's
+      `gate.err`; `--dry-run` runs the gate and starts no agent.
+- [ ] The documented HMAC gate line admits a provider's signed payload
+      and skips a tampered one, against a real signature.
 - [x] `--concurrency 1` with two deliveries at once runs one and skips
-      the other; `--on-busy queue` runs the second after the first; a
-      21st queued event writes `skipped: the queue was full`.
+      the other, and the two take one window name between them. There is
+      no queue: `--on-busy queue` was dropped before the code was
+      written (DECISIONS I-1254), so a refusal is a row and not a wait.
 - [ ] A missing prompt file is caught at `add` and, when it is deleted
       later, fails the run and notifies.
 
@@ -821,10 +881,17 @@ never "tests pass".
 
 - [x] No log line holds a prompt, a prompt path, a payload, a gate
       command, a summary or a trigger's name; `docs/CHECKLIST.md`'s greps
-      are clean and the three metrics are registered.
+      are clean, and both metrics —
+      `repose_trigger_runs_total{kind,state}` and
+      `repose_trigger_run_seconds` — are registered, recorded and
+      declared in `OBSERVABILITY.md`, with `kind` and not `source`
+      because §5's low-cardinality list is fixed (the first draft
+      panicked `metrics.New`, so the api did not start).
 - [x] The Triggers tab at 1440 and 390, light and dark, viewport
-      captures at 1x, with 0, 1 and 20 triggers, a working run and a
-      failed one; the tab strip at 390 with seven tabs.
+      captures at 1x, with 0 and 3 triggers, a done run and a failed
+      one, a row opened into its runs, and the tab strip at 390 with
+      seven tabs. A 20-trigger page and a working run were not
+      captured: both are the same row drawn more often.
 - [ ] `repose status` shows the `triggers` row for a project with one and
       no such row for a project without.
 
@@ -838,7 +905,10 @@ never "tests pass".
 | one fire per tick, the edge's refusals | `internal/api/triggers`: `TestOneFirePerTickAcrossTwoClocks`, `TestADeliveryTheEdgeRefusedBecomesOneRowAnHour` (32 refusals, 3 rows, the run that ran still listed) |
 | the timeout, the question, the restart | `TestATimeoutKillsThatWindowAndNoOther`, `TestTheSupervisorEndsARunAndWaitsForAQuestion`, `TestReconcileKeepsALiveRunAndEndsALostOne` |
 | the daylight-saving rule | `internal/triggerspec`: `TestTheWallClockHoldsOnBothTransitionDays`, which fails on the first version's form with `fired at 08:00` and `fired at 06:00` |
-| the tab at 1440 and 390 | viewport shots at 1x, light and dark, with 0 and 3 triggers and a failed run |
+| the tab at 1440 and 390 | viewport shots at 1x, light and dark, with 0 and 3 triggers, a failed run and an opened row |
+| the hand-off's own failures | `internal/api/triggers`: `TestAGuestSkipOfAFireEndsTheRowTheApiWrote` (the 23505 that left hostd resending the event for ever), `TestTheApisOwnRefusalsCoalesceAndAHandFireDoesNot`, `TestARequeuedFireIsNotStaleOnTheNextPass` |
+| the set and the agent's start | `internal/guestd/trigger`: `TestTheSetSurvivesAGuestdRestart`, `TestARunIsNotDoneBeforeItsAgentStarts`, `TestAnAgentThatNeverStartsEndsPastTheGrace`, `TestAHerdrMachineRefusesTheFireAndSaysWhy` |
+| the prompt's own path | `internal/agentwindow`: `TestQuoteMakesOneWordOfAnything`, `TestEveryAgentsPromptFormSurvivesALeadingDash`, `TestNoFormMeansNoArgvPrompt`, `TestStartCommandIsQuotedTwice`, `TestNewWindowTrustsTheFolderThenOpensOneWindow` |
 
 **What is still open, and why**: every unticked item above needs a
 machine. Nothing here has run against a real guest: no delivery has

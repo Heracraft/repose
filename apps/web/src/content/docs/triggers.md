@@ -86,14 +86,20 @@ Every event that gets in costs a whole agent run, which costs you money at your 
 
 ```
 $ repose triggers runs
-RUN       TRIGGER  STARTED    TOOK   STATE    WHY
-7c0a1b94  apply    12m ago    1m52s  done     applied at Intel
-41d8e2aa  apply    1h04m ago  0s     skipped  the gate said no
-9b3f0c17  triage   7h ago     4m11s  done     12 issues, 2 for you
-0ea77d31  apply    2h ago     1h00m  timeout  killed at the timeout
-5512bb08  sweep    3h ago     14s    failed   claude is not logged in
-c93a4f60  triage   yesterday  0s     skipped  stopped (612 events)
+RUN       TRIGGER  SOURCE  STARTED    TOOK   STATE    WHY
+7c0a1b94  apply    route   12m ago    1m52s  done     applied at Intel
+41d8e2aa  apply    route   1h04m ago  0s     skipped  the gate refused it: no signature header
+9b3f0c17  triage   clock   7h ago     4m11s  done     12 issues, 2 for you
+0ea77d31  apply    hand    2h ago     1h00m  timeout  killed at the timeout
+5512bb08  sweep    clock   3h ago     14s    failed   the agent is not logged in
+c93a4f60  triage   clock   yesterday  0s     skipped  the machine was stopped (612 events)
 ```
+
+`SOURCE` is which door the run came in: `route` a delivery, `clock` its
+schedule, `hand` a `repose triggers fire`.
+
+`repose triggers runs --all` is every project's runs in one listing, with
+the machine each ran on — what your agents did last night, in one place.
 
 `done` carries whatever the agent said with `repose-notify --done`; a run that said nothing is still `done`. A run that **failed** emails you (and reaches your other [channels](/docs/notifications)), because a trigger that quietly stops working is the thing worth telling you about; `--no-notify` turns that off for one trigger. A run that ended well tells you only what the agent chose to tell you.
 
@@ -111,7 +117,7 @@ A fire will start todo-app, and it stays running until you
 stop it. `--stop-after` stops it when the run ends.
 ```
 
-`--stop-after` stops the machine again when the run ends, and only if that fire started it, a machine you started yourself is never stopped under you. A machine that was frozen wakes for a fire and needs neither flag.
+`--stop-after` stops the machine again when the run ends, and only if that fire started it, a machine you started yourself is never stopped under you. It holds for a run repose itself ends — a fire its machine never took, a run whose report never came — so a fire cannot leave a machine running behind it. A machine that was frozen wakes for a fire and needs neither flag.
 
 A fire that is late because the machine was stopped, its host was away or repose was down is skipped. `--catch-up` runs one missed fire when the machine comes back, if it is less than an hour late: a 07:00 standup summary at 08:00 is late, and at 15:00 it is wrong.
 
@@ -147,13 +153,17 @@ A zone may end any of them (`daily 03:00 UTC`, `weekdays 07:00 Europe/Berlin`). 
 
 ```
 repose triggers            # the list, with the next fire
+repose triggers url apply  # the URL a provider posts to
 repose triggers off sweep  # stop it firing; the row stays
 repose triggers on sweep   # and arm its schedule from now
 repose triggers fire apply # run it now, even when it is off
 repose triggers fire apply --run 7c0a1b94   # that payload
+repose triggers runs --all # every project's runs
 repose triggers rm apply   # and the route it made
 ```
 
 A run that failed is not retried: an agent run that half happened has already sent the application or posted the comment, and doing it again does it twice. The failed run and its payload stay in the list, and `fire --run` replays it when you have fixed what was wrong.
 
-Twenty triggers a project. A trigger's route is one of the project's twenty routes. A run is killed after an hour by default (`--timeout`, up to 24h), and time it spends waiting for an answer to `repose-ask` does not count against that.
+Twenty triggers a project. A trigger's route is one of the project's twenty routes. A run is killed after an hour by default (`--timeout`, up to 24h, and `0` means 24h), and time it spends waiting for an answer to `repose-ask` does not count against that.
+
+A run is an agent in its own tmux window, so a machine you have switched to [herdr](/docs/run-and-attach#herdr-instead-of-tmux) takes no triggers: `triggers add` says so, and a trigger that predates the switch is skipped with the same words until you switch back.

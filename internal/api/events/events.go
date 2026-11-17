@@ -124,11 +124,13 @@ const GuestEventsPerHour = 600
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
 // noDedupe are the kinds that are never collapsed into an earlier one.
-// `trigger_failed` is one of them because the collapse is on
-// (project, agent, kind): two different triggers failing inside the
-// window are two failures, and one row with both summaries appended is
-// a lie about both (DECISIONS I-1256).
-var noDedupe = map[string]bool{"agent_message": true, "agent_question": true, "agent_done": true, "trigger_failed": true}
+// `trigger_failed` is not one of them: features/notifications.md says it
+// is collapsed by the 60-second dedupe on (project, kind) "like every
+// platform kind", so a trigger failing in a loop costs one notification
+// a minute and not thirty. Two triggers that fail inside the same minute
+// are two rows in `repose events` either way; what the dedupe collapses
+// is the notification.
+var noDedupe = map[string]bool{"agent_message": true, "agent_question": true, "agent_done": true}
 
 // dedupes says a kind collapses a repeat within DedupeWindow: the
 // notifying kinds a person did not send on purpose, and a turn end, which

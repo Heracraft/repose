@@ -83,6 +83,11 @@ func runJSON(r *triggers.Run) map[string]any {
 		"started_machine": r.StartedMachine,
 		"created_at":      r.CreatedAt,
 	}
+	if r.ProjectSlug != "" {
+		// Only the cross-project listing sets it: a row there has to say
+		// which machine it ran on.
+		out["project"] = r.ProjectSlug
+	}
 	if r.DedupeKey != "" {
 		// Which event was dropped, which is the point of writing a skip
 		// down at all (features/triggers.md §7.5).
@@ -308,6 +313,32 @@ func (s *Server) fireTrigger(w http.ResponseWriter, r *http.Request) error {
 		return triggerErr(err)
 	}
 	writeJSON(w, http.StatusAccepted, runJSON(&run))
+	return nil
+}
+
+// listAllTriggerRuns is GET /trigger-runs: the user's runs across every
+// project, newest first, each with its project's slug.
+func (s *Server) listAllTriggerRuns(w http.ResponseWriter, r *http.Request) error {
+	if err := s.triggersEnabled(); err != nil {
+		return err
+	}
+	limit := triggers.RunsKept
+	if q := r.URL.Query().Get("limit"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 1 || n > 200 {
+			return errf("invalid", "limit is 1 to 200")
+		}
+		limit = n
+	}
+	runs, err := s.d.Triggers.AllRuns(r.Context(), userFrom(r.Context()).ID, limit)
+	if err != nil {
+		return err
+	}
+	out := make([]map[string]any, 0, len(runs))
+	for i := range runs {
+		out = append(out, runJSON(&runs[i]))
+	}
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 

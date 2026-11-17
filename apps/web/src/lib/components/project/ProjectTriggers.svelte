@@ -28,6 +28,7 @@
 	import { toastApiError, PollFailure, PollGroup } from '$lib/api/toast';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
+	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { pollWhileVisible } from '$lib/poll';
 	import { ageShort, dateTime } from '$lib/format';
 	import { reasonSentence } from '$lib/triggers';
@@ -127,11 +128,21 @@
 			if (open === name) open = undefined;
 			await load();
 			toast.success(`${name} removed.`);
+			// The row that asked is gone, so focus lands on the next
+			// row's own control rather than on <body> (WCAG 2.4.3).
+			const next = triggers?.[0]?.name;
+			if (next) void focusAfterRender(`open-${next}`);
 		} catch (err) {
 			toastApiError(err, `Could not remove ${name}.`);
 		} finally {
 			busy = undefined;
 		}
+	}
+
+	/** Keep, which puts focus back on the Remove that opened the confirm. */
+	function keep(name: string): void {
+		confirming = undefined;
+		void focusAfterRender(`remove-${name}`);
 	}
 
 	/** The door, as the CLI's ON column prints it. */
@@ -258,10 +269,18 @@
 								<td class="tname">
 									<button
 										type="button"
+										id={`open-${t.name}`}
 										class="trunsbtn"
 										aria-expanded={open === t.name}
 										onclick={() => toggleRuns(t.name)}
 										>{t.name}{#if !t.enabled}<span class="toff">off</span>{/if}</button
+									>
+									<!-- The door, where the On column is not shown: a list of
+									     names alone does not say which is a webhook and which
+									     is a schedule, which is the first thing to know. -->
+									<span class="tdoor sm:hidden"
+										>{door(t)}{#if zoneNote(t)}
+											{zoneNote(t)}{/if}</span
 									>
 								</td>
 								<td class="hidden whitespace-nowrap sm:table-cell"
@@ -330,7 +349,8 @@
 												<button
 													type="button"
 													class="hk-btn-secondary hk-btn-sm"
-													onclick={() => (confirming = undefined)}>Keep</button
+													use:focusOnMount
+													onclick={() => keep(t.name)}>Keep</button
 												>
 											</div>
 										</div>
@@ -341,7 +361,6 @@
 								<tr class="runs-row">
 									<td colspan="6">
 										<p class="turl">
-											{#if t.kind === 'schedule'}<span class="sm:hidden">{door(t)}</span>{/if}
 											{#if t.kind === 'schedule' && t.enabled && t.next_at}
 												<span class="md:hidden">next {next(t)}</span>
 											{/if}
@@ -349,7 +368,7 @@
 										</p>
 										{#if t.route}
 											<p class="turl">
-												<span>Route <b>{t.route.name}</b>, into this machine</span>
+												<span>Route <b>{t.route.name}</b></span>
 												<CopyButton
 													text={t.route.url}
 													label="Copy URL"
@@ -409,6 +428,14 @@
 		outline: 2px solid var(--hk-ring);
 		outline-offset: 2px;
 		border-radius: 2px;
+	}
+	/* The door under the name, at the widths where the On column is
+	   not drawn. */
+	.tdoor {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: 400;
+		color: var(--hk-muted);
 	}
 	.toff {
 		margin-inline-start: 0.5rem;

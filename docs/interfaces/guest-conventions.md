@@ -99,6 +99,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/run/repose/project-set-up` | written by guestd once `SetupProject` has started the session unit; the mark, in a boot record, that the project was set up (DECISIONS I-706) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
 | `/var/lib/repose/paths-loaded` | sha256 of the last registration `nix-store --load-db` took, on the volume; a `RegisterPaths` with the same bytes and `/nix/var/nix/db/db.sqlite` present only writes the stamp above (DECISIONS I-225) |
+| `/var/lib/repose/trigger-set.json` | the project's trigger set as the api last sent it, root 0600, on the volume. guestd reads it at start: the set is the api's state and the receiver answers 404 without it, so a guestd that restarted turned every delivery into "the route was removed" about a route that is still there (DECISIONS I-1248) |
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
 | `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
@@ -919,7 +920,7 @@ survive a stop, a reboot and a move to another host:
 | `fire-payload` | the file `repose triggers fire --payload` writes over SSH, which the runner copies into the run's directory. The one path the api will accept as a `payload_path` |
 | `runs/<run_id>/payload` | the event's bytes, at most the 1 MiB body cap |
 | `runs/<run_id>/headers.json` | the delivery's headers, a JSON object; never `Repose-Webhook-URL`, which carries the route's token |
-| `runs/<run_id>/gate.err` | the gate's last 200 bytes of stderr, when it wrote any |
+| `runs/<run_id>/gate.err` | the gate's last 200 bytes of stderr, when it wrote any. The run's row carries the last line only, so this is where a gate is debugged with `repose triggers fire --dry-run` |
 
 One payload is kept per run the api keeps, so 20 a trigger and 20 MiB at
 the body cap, oldest dropped first (I-1262). A snapshot holds them, so a

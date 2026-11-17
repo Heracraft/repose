@@ -143,12 +143,14 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var (
 		runsLimit int
 		runsQuiet bool
+		runsAll   bool
 	)
 	runs := &cobra.Command{
 		Use:   "runs [NAME]",
 		Short: "List what the triggers did, newest first",
 		Long: "Every run and how it ended: done with the agent's own summary, failed, timeout,\n" +
-			"or skipped with the reason. NAME keeps one trigger's runs.\n\n" +
+			"or skipped with the reason. NAME keeps one trigger's runs, and --all is every\n" +
+			"project's runs in one listing.\n\n" +
 			"A machine that was stopped for a week shows one row an hour with the number of\n" +
 			"events it turned away, not a row for each.",
 		Args:              argsN(0, 1, "no more than one NAME"),
@@ -166,10 +168,11 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return err
 			}
 			e.Quiet = runsQuiet
-			return TriggersRunsCmd(cmd.Context(), e, g.project, name, runsLimit, runsQuiet)
+			return TriggersRunsCmd(cmd.Context(), e, g.project, name, runsLimit, runsQuiet, runsAll)
 		},
 	}
 	runs.Flags().IntVarP(&runsLimit, "tail", "n", 0, "how many runs to print (1 to 200, default 20)")
+	runs.Flags().BoolVar(&runsAll, "all", false, "every project's runs, with the machine each ran on")
 	runs.Flags().BoolVar(&g.json, "json", false, "print every field of every run as JSON")
 	runs.Flags().BoolVarP(&runsQuiet, "quiet", "q", false, "print the run ids alone")
 
@@ -189,7 +192,7 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"which is how a gate gets written.",
 		Example: "  repose triggers fire apply\n" +
 			"  repose triggers fire apply --payload ./event.json --wait\n" +
-			"  repose triggers fire apply --run 019b2c71 --dry-run",
+			"  repose triggers fire apply --run 4f2a9c10 --dry-run",
 		Args:              argsN(1, 1, "one NAME"),
 		ValidArgsFunction: completeTriggerName(env, g),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -241,13 +244,31 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	on.Flags().BoolVar(&g.json, "json", false, "print every field of the trigger as JSON")
 	off.Flags().BoolVar(&g.json, "json", false, "print every field of the trigger as JSON")
 
+	url := &cobra.Command{
+		Use:   "url NAME",
+		Short: "Print a route trigger's URL",
+		Long: "The URL a provider posts to, and nothing else, so it pipes. A schedule has no\n" +
+			"URL. The token in it is the route's whole credential, so treat it as one.",
+		Args:              argsN(1, 1, "one NAME"),
+		ValidArgsFunction: completeTriggerName(env, g),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return TriggersURLCmd(cmd.Context(), e, g.project, args[0])
+		},
+	}
+
 	rm := &cobra.Command{
 		Use:        "rm NAME...",
 		Aliases:    []string{"remove"},
 		SuggestFor: []string{"delete"},
 		Short:      "Remove triggers",
 		Long: "Remove each NAME. A route the trigger made goes with it, unless you made that\n" +
-			"route yourself or another trigger uses it; the runs stay until they age out.",
+			"route yourself or another trigger uses it, and its URL then answers 410 for 30\n" +
+			"days, so a provider's own log says the door is gone. The prompt file stays in\n" +
+			"the machine and the runs stay until they age out.",
 		Args:              argsN(1, -1, "one or more NAMEs"),
 		ValidArgsFunction: completeTriggerName(env, g),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -259,21 +280,12 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 
-	root.AddCommand(add, list, runs, fire, on, off, rm)
-	// The bare noun lists, as `repose webhooks` and `repose secrets` do.
-	root.Args = projectArgs
-	root.ValidArgsFunction = completeProject(env)
-	root.RunE = func(cmd *cobra.Command, args []string) error {
-		project, err := projectFrom(args, g)
-		if err != nil {
-			return err
-		}
-		e, err := env()
-		if err != nil {
-			return err
-		}
-		return TriggersListCmd(cmd.Context(), e, project, false)
-	}
+	root.AddCommand(add, list, runs, fire, on, off, rm, url)
+	// The bare noun lists, through the same helper every other group
+	// uses: hand-rolling it made `repose triggers lsit` exit 4 "No
+	// repose project is called lsit" where every other group answers
+	// with a usage error and the subcommand it meant.
+	bareRuns(root, list)
 	return root
 }
 

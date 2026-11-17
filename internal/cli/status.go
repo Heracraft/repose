@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/multiplexer"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // StatusCmd implements `repose status [PROJECT] [--json]` (07-cli.md §5.7).
@@ -505,7 +506,7 @@ func writeStatus(w io.Writer, v statusView) {
 	if line := webhookStatusLine(v.hooks); line != "" {
 		statusRow(w, "webhooks", line)
 	}
-	if line := triggerStatusLine(v.triggers, v.now); line != "" {
+	if line := triggerStatusLine(v.triggers); line != "" {
 		statusRow(w, "triggers", line)
 	}
 	if v.route != nil {
@@ -692,7 +693,7 @@ func agentWord(state string) string {
 // prefix is reserved for them (guest-conventions.md "Triggers").
 func splitTriggerWindows(all []AgentSignal) (mine, triggers []AgentSignal) {
 	for _, a := range all {
-		if strings.HasPrefix(a.Window, "t-") {
+		if strings.HasPrefix(a.Window, triggerrun.WindowPrefix) {
 			triggers = append(triggers, a)
 			continue
 		}
