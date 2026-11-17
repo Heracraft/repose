@@ -351,16 +351,14 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		WebhookRoutes: a.routes,
 		Triggers:      a.triggers,
 		// The http process cannot send a command (I-1162), so a changed
-		// set is pushed by the grpc one; in API_MODE=all this is the
-		// same process and the push is direct.
-		// In API_MODE=all this is the same process and the push is
-		// direct; across two, the store's own NOTIFY carries it to the
-		// grpc one, so this is a fast path and never the only one.
-		TriggerPush: func(ctx context.Context, projectID uuid.UUID) {
-			a.pushTriggers(ctx, projectID)
-		},
-		CLILatest: a.cliLatest.Version,
-		CLIOldest: clirelease.Oldest,
+		// set is pushed by the grpc one, which the store's own NOTIFY
+		// wakes. In API_MODE=all this is the same process and the push
+		// is a fast path; in API_MODE=http there is no stream to send
+		// on, and trying warned "host not connected" on every add about
+		// a set that had already arrived.
+		TriggerPush: triggerPush(a, cfg.Mode),
+		CLILatest:   a.cliLatest.Version,
+		CLIOldest:   clirelease.Oldest,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
 			return len(st.Pending), err
@@ -763,6 +761,16 @@ func (a *App) loops(ctx context.Context) {
 type markOnly struct{}
 
 func (markOnly) Delete(context.Context, string) error { return nil }
+
+// triggerPush is the fast path for a changed set, in the process that
+// holds the host's streams. In API_MODE=http there is none, and the
+// NOTIFY the store writes is the whole hand-off.
+func triggerPush(a *App, mode string) func(context.Context, uuid.UUID) {
+	if mode == "http" {
+		return nil
+	}
+	return func(ctx context.Context, projectID uuid.UUID) { a.pushTriggers(ctx, projectID) }
+}
 
 // pushTriggers sends the project's whole trigger set to its machine
 // (DECISIONS I-1248). A machine that is not running is not an error: the

@@ -597,6 +597,24 @@ const runCols = `id, project_id, trigger_id, trigger_name, source, state, coales
 	payload_bytes, skips, started_machine, coalesce(payload_path, ''), dry_run, payload_run,
 	command_id, started_at, finished_at, created_at`
 
+// runColsR is runCols with every column qualified to the run, for the
+// one query that joins `projects` onto `trigger_runs`. The two tables
+// share `id`, `state` and `created_at`, so the unqualified list is
+// "column reference \"id\" is ambiguous" (SQLSTATE 42702) — which is
+// how the cross-project listing shipped answering 500 to every call
+// (2026-11-17, found by the release's own live check). The two lists
+// are held to the same columns in the same order by
+// TestTheJoinedColumnListIsTheOtherOne.
+const runColsR = `r.id, r.project_id, r.trigger_id, r.trigger_name, r.source, r.state, coalesce(r.reason, ''),
+	coalesce(r.summary, ''), coalesce(r.link_url, ''), coalesce(r.link_label, ''),
+	coalesce(r.tmux_window, ''), coalesce(r.dedupe_key, ''), r.delivery_id,
+	r.payload_bytes, r.skips, r.started_machine, coalesce(r.payload_path, ''), r.dry_run, r.payload_run,
+	r.command_id, r.started_at, r.finished_at, r.created_at`
+
+// RunColsForTest and RunColsRForTest are the two column lists, for the
+// test that holds them to the same columns in the same order.
+const RunColsForTest, RunColsRForTest = runCols, runColsR
+
 // scanRunWith reads a run and one more column, for a query that joins
 // something onto it.
 func scanRunWith(rows pgx.Rows, r *Run, extra *string) error {
@@ -624,7 +642,7 @@ func (s *Store) AllRuns(ctx context.Context, userID uuid.UUID, limit int) ([]Run
 	if limit < 1 || limit > 200 {
 		limit = RunsKept
 	}
-	rows, err := s.pool.Query(ctx, `select `+runCols+`, p.slug
+	rows, err := s.pool.Query(ctx, `select `+runColsR+`, p.slug
 		from trigger_runs r join projects p on p.id = r.project_id
 		where p.user_id = $1 and p.state <> 'destroyed'
 		order by r.created_at desc limit $2`, userID, limit)

@@ -965,6 +965,13 @@ secrets:
 | `REPOSE_PAYLOAD` | `runs/<run_id>/payload`, absent when the run has none |
 | `REPOSE_PAYLOAD_HEADERS` | `runs/<run_id>/headers.json`, absent for a run with no delivery |
 
+The runner sets these with `tmux new-window -e`, so they are the
+window's own: a tmux window inherits the server's environment, not the
+environment of the command that ran `tmux`. Every directory under
+`~/.repose/triggers` is `dev`-owned, including the folder itself, which
+guestd makes at start; guestd is root, so a directory it creates without
+chowning it is one `dev` cannot write in or read through.
+
 A gate (`--gate CMD`) runs through `bash -c` as `dev`, in the working
 directory, with the same variables, the payload's bytes on stdin, the
 project's secrets in its environment, a 10-second timeout and no agent. A

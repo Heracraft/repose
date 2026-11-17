@@ -266,6 +266,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// still fires, and a run whose agent is still working through that
 	// restart is not failed.
 	s.triggers.Load()
+	s.triggers.EnsureDirs()
 	s.triggers.Reconcile(ctx)
 	go func() {
 		if err := s.triggers.Serve(ctx); err != nil {

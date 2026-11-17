@@ -104,6 +104,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		Unsub:     unsub,
 		Questions: h.Questions,
 		Say:       h.Say,
+		Triggers:  h.Triggers,
 		Resting:   h.Resting,
 		// hooks.test keeps the URLs in these tests short and names the
 		// host the assertions check (DECISIONS I-1110).

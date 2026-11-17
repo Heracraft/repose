@@ -172,11 +172,27 @@ func TestADeliveryOpensOneWindowWithThePromptOnArgv(t *testing.T) {
 	if opened.User != "dev" {
 		t.Errorf("the window was opened as %q, want dev", opened.User)
 	}
-	env := strings.Join(opened.Env, "\n")
-	for _, want := range []string{"REPOSE_TRIGGER=apply", "REPOSE_RUN=019b2c71", "REPOSE_SOURCE=route", "REPOSE_PAYLOAD="} {
-		if !strings.Contains(env, want) {
-			t.Errorf("the session's environment has no %s", want)
+	// The window's own environment, on `new-window -e`, and not the
+	// environment of the command that runs tmux: a tmux window inherits
+	// the server's environment, not the client's, so the first version
+	// of this assertion passed while the agent said "REPOSE_PAYLOAD
+	// isn't set in this shell" on a real machine.
+	for _, want := range []string{
+		"-e 'REPOSE_TRIGGER=apply'",
+		"-e 'REPOSE_RUN=019b2c71-0000-7000-8000-000000000001'",
+		"-e 'REPOSE_SOURCE=route'",
+		"-e 'REPOSE_PAYLOAD=" + h.root + "/home/dev/.repose/triggers/apply/runs/019b2c71-0000-7000-8000-000000000001/payload'",
+		"-e 'REPOSE_PAYLOAD_HEADERS=",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Errorf("the window is opened without %s:\n%s", want, cmd)
 		}
+	}
+	// And every -e comes before the command, where tmux reads it. Only
+	// the tmux part: the trust script before it has a `jq -e` of its own.
+	tmuxLine := cmd[strings.Index(cmd, "tmux new-window"):]
+	if i, j := strings.LastIndex(tmuxLine, " -e "), strings.Index(tmuxLine, " -d "); i > j {
+		t.Errorf("an -e after the -d command word:\n%s", tmuxLine)
 	}
 	// The payload and its headers are files in the machine.
 	dir := filepath.Join(h.root, "home/dev/.repose/triggers/apply/runs/019b2c71-0000-7000-8000-000000000001")
@@ -819,5 +835,71 @@ func TestTwoSetsAtOnceLeaveOneWholeFile(t *testing.T) {
 		if strings.HasPrefix(e.Name(), ".trigger-set-") {
 			t.Errorf("a temp file was left behind: %s", e.Name())
 		}
+	}
+}
+
+// Every directory the runner makes under dev's home belongs to dev.
+// guestd runs as root, and plain MkdirAll left ~/.repose/triggers
+// root-owned 0700: the agent could not read its own payload through it,
+// and `repose triggers fire --payload`, which writes over SSH as dev,
+// failed with "mkdir: cannot create directory '.repose/triggers':
+// Permission denied" on the first live run.
+func TestEveryDirectoryUnderTheHomeIsDevs(t *testing.T) {
+	h := newHarness(t)
+	var mu sync.Mutex
+	owned := map[string]bool{}
+	h.r.SetChownForTest(func(name string, uid, gid int) error {
+		mu.Lock()
+		defer mu.Unlock()
+		owned[name] = true
+		return nil
+	})
+	h.set(basic("apply"))
+	h.writePrompt(".repose/triggers/apply.md", "go")
+	if _, err := h.r.Start(context.Background(), trigger.Request{
+		Trigger: "apply", RunID: "r1", Source: triggerrun.SourceRoute,
+		Payload: []byte(`{"id":"evt_1"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	home := filepath.Join(h.root, "home/dev")
+	for _, rel := range []string{
+		".repose",
+		".repose/triggers",
+		".repose/triggers/apply",
+		".repose/triggers/apply/runs",
+		".repose/triggers/apply/runs/r1",
+	} {
+		p := filepath.Join(home, rel)
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s was not made: %v", rel, err)
+			continue
+		}
+		mu.Lock()
+		got := owned[p]
+		mu.Unlock()
+		if !got {
+			t.Errorf("%s was left to root, so dev cannot write or read through it", rel)
+		}
+	}
+	// EnsureDirs does it before anything has run, which is what makes
+	// `fire --payload` work on a machine whose triggers are all new.
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "home/dev"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	next := newHarnessAt(t, root)
+	var made []string
+	next.r.SetChownForTest(func(name string, uid, gid int) error {
+		made = append(made, name)
+		return nil
+	})
+	next.r.EnsureDirs()
+	if len(made) == 0 {
+		t.Error("EnsureDirs gave nothing to dev")
+	}
+	if _, err := os.Stat(filepath.Join(next.root, "home/dev/.repose/triggers")); err != nil {
+		t.Errorf("EnsureDirs did not make the trigger folder: %v", err)
 	}
 }

@@ -109,6 +109,46 @@ func TestStartCommandIsQuotedTwice(t *testing.T) {
 	}
 }
 
+// A window's environment goes on `tmux new-window -e`, because a tmux
+// window inherits the server's environment and not the client's: a
+// trigger's REPOSE_PAYLOAD set around the tmux command never reached
+// the agent, which said so on the first live run (2026-11-17). Proved
+// on tmux 3.7c: with -e the window's own process has the variables,
+// without it the count is 0.
+func TestTheWindowCarriesItsOwnEnvironment(t *testing.T) {
+	// Only the tmux part: the trust script before it has a `jq -e` of
+	// its own, which is how the first version of this test failed.
+	tmuxPart := func(line string) string { return line[strings.Index(line, "tmux new-window"):] }
+	got := agentwindow.NewWindow("todo-app", "t-apply", "'/home/dev/todo-app'", "claude", "go", "",
+		"REPOSE_TRIGGER=apply", "REPOSE_PAYLOAD=/home/dev/.repose/triggers/apply/runs/r1/payload", "")
+	got = tmuxPart(got)
+	for _, want := range []string{
+		"-e 'REPOSE_TRIGGER=apply'",
+		"-e 'REPOSE_PAYLOAD=/home/dev/.repose/triggers/apply/runs/r1/payload'",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s is not on the command:\n%s", want, got)
+		}
+	}
+	// An empty pair is not passed at all, and every -e comes before the
+	// command word, where tmux reads it.
+	if strings.Contains(got, "-e ''") {
+		t.Error("an empty -e went on the command")
+	}
+	if i, j := strings.LastIndex(got, " -e "), strings.Index(got, " -d "); i > j {
+		t.Errorf("an -e after -d:\n%s", got)
+	}
+	// A value with a space, a quote or a $ in it is one word still.
+	tricky := tmuxPart(agentwindow.NewWindow("s", "w", "'/d'", "claude", "", "", "X=a 'b' $(echo c)"))
+	if !strings.Contains(tricky, `-e 'X=a '"'"'b'"'"' $(echo c)'`) {
+		t.Errorf("a value with quotes in it is not one word:\n%s", tricky)
+	}
+	// With no env the command is what it always was.
+	if plain := tmuxPart(agentwindow.NewWindow("s", "w", "'/d'", "claude", "go", "")); strings.Contains(plain, " -e ") {
+		t.Errorf("an -e with no environment to pass:\n%s", plain)
+	}
+}
+
 // The window a run opens: the trust shell first, then one tmux
 // new-window with the agent's line as its command.
 func TestNewWindowTrustsTheFolderThenOpensOneWindow(t *testing.T) {

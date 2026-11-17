@@ -222,10 +222,25 @@ func TrustScript(binary, dir, approvalsJSON string) string {
 // session is the tmux session (the project's slug), window the window's
 // name, dir a shell word for the working directory (`~/<slug>` or
 // `"$repose_co"`), binary the agent, prompt its first turn ("" for a
-// window with no prompt) and approvalsJSON the laptop's `.mcp.json`
-// answers ("" for none, which is every trigger).
-func NewWindow(session, window, dir, binary, prompt, approvalsJSON string) string {
-	return TrustScript(binary, dir, approvalsJSON) +
-		fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s",
-			session, window, dir, StartCommand(binary, prompt))
+// window with no prompt), approvalsJSON the laptop's `.mcp.json`
+// answers ("" for none, which is every trigger), and env the `KEY=VALUE`
+// pairs the window's own process needs.
+//
+// env goes on `tmux new-window -e`, not in the caller's environment: a
+// tmux window inherits the **server's** environment, not the client's,
+// so a trigger's REPOSE_PAYLOAD set around the `tmux` command never
+// reached the agent. The first live run said so itself — "REPOSE_PAYLOAD
+// isn't set in this shell, so there was no file name to read"
+// (2026-11-17) — while the test that was supposed to cover it asserted
+// the environment of the client.
+func NewWindow(session, window, dir, binary, prompt, approvalsJSON string, env ...string) string {
+	line := TrustScript(binary, dir, approvalsJSON) +
+		fmt.Sprintf("tmux new-window -t %s -n %s -c %s", session, window, dir)
+	for _, kv := range env {
+		if kv == "" {
+			continue
+		}
+		line += " -e " + Quote(kv)
+	}
+	return line + " -d " + StartCommand(binary, prompt)
 }
