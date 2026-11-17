@@ -385,11 +385,65 @@ export interface WebhookRoute {
 	port: number;
 	path: string;
 	allow_start: boolean;
+	/** The trigger that owns this route, absent for a route of the user's own (I-1250). */
+	trigger?: string;
 	url: string;
 	created_at: string;
 	updated_at: string;
 	last_delivery?: WebhookDelivery;
 	deliveries?: WebhookDelivery[];
+}
+
+// Triggers (DECISIONS I-1248..I-1262): an event or a time starts an
+// agent session on the machine. `prompt_path` is a path in the machine;
+// the prompt's text and every payload stay there and never reach the
+// api, which is why neither is in these shapes.
+export interface TriggerRun {
+	run_id: string;
+	trigger_id?: string;
+	trigger: string;
+	source: 'route' | 'clock' | 'hand';
+	state: 'queued' | 'working' | 'done' | 'failed' | 'timeout' | 'skipped';
+	reason?: string;
+	summary?: string;
+	/** The agent's `--link URL --label TEXT` (I-931), as an event's. */
+	link?: AgentLink;
+	window?: string;
+	dedupe_key?: string;
+	payload_bytes: number;
+	payload_kept: boolean;
+	/** Above 1 on a row that stands for several refusals in one hour. */
+	skips?: number;
+	started_machine: boolean;
+	started_at?: string;
+	finished_at?: string;
+	created_at: string;
+}
+
+export interface Trigger {
+	trigger_id: string;
+	name: string;
+	kind: 'route' | 'schedule';
+	route?: { name: string; url: string };
+	spec?: string;
+	zone?: string;
+	next_at?: string;
+	prompt_path: string;
+	workdir: string;
+	agent?: string;
+	timeout_s: number;
+	concurrency: number;
+	gate?: string;
+	dedupe?: string;
+	notify: 'failed' | 'never';
+	enabled: boolean;
+	allow_start: boolean;
+	stop_after: boolean;
+	catch_up: boolean;
+	created_at: string;
+	updated_at: string;
+	last_run?: TriggerRun;
+	runs?: TriggerRun[];
 }
 
 export interface SecretMeta {

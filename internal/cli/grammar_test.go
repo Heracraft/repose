@@ -64,7 +64,7 @@ func TestProjectFlagRefusedOnAccountCommands(t *testing.T) {
 // mistyped subcommand.
 func TestBareGroupsRunTheirListing(t *testing.T) {
 	root := newRootCmd("dev")
-	for group, sub := range map[string]string{"secrets": "list", "snapshots": "list", "mcp": "list", "config": "show", "webhooks": "list"} {
+	for group, sub := range map[string]string{"secrets": "list", "snapshots": "list", "mcp": "list", "config": "show", "webhooks": "list", "triggers": "list"} {
 		c, _, err := root.Find([]string{group})
 		if err != nil || c.Annotations[bareRunsKey] != sub || !c.Runnable() {
 			t.Errorf("repose %s: runs %q, want %q", group, c.Annotations[bareRunsKey], sub)
@@ -83,6 +83,7 @@ func TestBareGroupsRunTheirListing(t *testing.T) {
 		{"config todo-app", "todo-app is a project: `repose config show todo-app`."},
 		{"mcp todo-app", "todo-app is a project: `repose mcp list todo-app`."},
 		{"secrets todo-app", "todo-app is a project: `repose secrets list todo-app`."},
+		{"triggers todo-app", "todo-app is a project: `repose triggers list todo-app`."},
 	} {
 		if got := unknownCommand(newRootCmd("dev"), strings.Fields(c.args), isProject); got != c.want {
 			t.Errorf("repose %s: %q, want %q", c.args, got, c.want)

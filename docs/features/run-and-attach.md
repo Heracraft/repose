@@ -132,6 +132,12 @@ Session and windows (see `interfaces/guest-conventions.md`):
   has none; guest-conventions "The checkout"). `repose run` with no
   prompt attaches to the session's
   current window.
+- A trigger's run opens a window named `t-<trigger>`, and `t-<trigger>.2`
+  for a second concurrent run (I-1256). `t-` is reserved for them:
+  `repose attach PROJECT t-apply` reaches one, `repose say --agent
+  t-apply` talks to the agent in it, and `repose say` without `--agent`
+  does not resolve to one, so a 03:00 run cannot turn an owner's message
+  into `several_agents`.
 - A prompt opens a window named after the agent (`claude`, `opencode`,
   `codex`, `gemini`, `pi`). If that window already exists, the new one is
   the lowest free `<agent>-N` (`-2`, `-3`, ... with no limit, I-253). With

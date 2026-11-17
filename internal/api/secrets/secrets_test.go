@@ -464,7 +464,6 @@ func TestConcurrentResealKeepsEveryRow(t *testing.T) {
 	}
 }
 
-
 // hookKV runs hook on the first Unwrap, which Reseal calls after it has
 // read the rows and before it writes them.
 type hookKV struct {

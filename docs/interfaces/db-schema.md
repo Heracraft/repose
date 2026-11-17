@@ -346,6 +346,57 @@ says         (id pk, project_id fk, user_id fk,   -- `repose say` (0039, I-1144)
               command_id uuid,     -- the SayToAgent command (idempotency)
               created_at, updated_at)
 
+triggers     (id pk, project_id fk, name text,     -- `repose triggers` (0043, I-1248)
+              kind text,           -- route|schedule
+              route_id fk null,    -- the webhook_routes row a route trigger fires on
+              spec text null, zone text null,   -- the canonical spec and its IANA zone (I-1252)
+              anchor_at null,      -- `every D` counts from here, never from the last fire
+              next_at null,        -- the clock's claim point; null for a route trigger
+              prompt_path text,    -- a path in the machine; the prompt's TEXT is never here
+              workdir text, agent text null,
+              timeout_s int, concurrency int,
+              gate text null,      -- the admission command, as the user wrote it
+              dedupe text null,    -- header:NAME or json:FIELD
+              notify text,         -- failed|never
+              enabled bool, allow_start bool, stop_after bool, catch_up bool,
+              created_at, updated_at,
+              unique (project_id, name),
+              check (kind = 'schedule' and spec is not null and zone is not null
+                     or kind = 'route' and spec is null))
+
+trigger_runs (id pk, project_id fk,              -- one run (0043, I-1256)
+              trigger_id fk null,  -- null once the trigger is removed: a run outlives it,
+                                   -- so `repose triggers runs` after an `rm` still shows
+                                   -- what the thing did
+              trigger_name text,   -- kept on the row for that case
+              source text,         -- route|clock|hand
+              state text,          -- pending|sending|working|done|failed|timeout|skipped;
+                                   -- pending and sending are the hand-off between the api's
+                                   -- two processes (I-1162, says' shape): the clock tick or
+                                   -- the http process stores the row, the grpc one claims it
+                                   -- (sending) and sends RunTrigger. Every surface draws
+                                   -- both as `queued`
+              reason text null,    -- the bounded enum of features/triggers.md §4; the only
+                                   -- free text is a gate's last stderr line, tenant content
+              summary text null,   -- 1 KB, the agent's own `repose-notify --done` words:
+                                   -- tenant content, as events.summary is, never logged
+              link_url text null, link_label text null,   -- the agent's --link (I-931)
+              tmux_window text null, dedupe_key text null,
+              delivery_id uuid null,  -- the webhook_deliveries row, for a route run
+              payload_bytes bigint,  -- `fire --run` replays a run whose bytes are above 0:
+                                     -- a payload lives as long as its run row (I-1262)
+              skips int,           -- how many refusals this row stands for: an edge-side
+                                   -- refusal coalesces into one row per trigger, reason
+                                   -- and hour, so a week of them cannot evict the runs
+                                   -- that ran (I-1254)
+              started_machine bool,  -- this fire started the machine, so --stop-after may
+                                     -- stop it again
+              payload_path text null, dry_run bool, payload_run uuid null,
+                                   -- what the fire asked for, on the row because the row
+                                   -- IS the hand-off between the api's two processes
+              command_id uuid null,   -- the RunTrigger command (idempotency)
+              started_at null, finished_at null, created_at)
+
 schema_migrations (version int pk, name text, applied_at)
 ```
 
@@ -358,7 +409,14 @@ desc)`, `certificates(user_id) where revoked_at is null`, `usage_hours(hour)`,
 = 'pending'`, `questions(deliver_next_at) where state <> 'pending' and
 delivered_at is null`, `questions(deliver_command_id)`, `says(project_id, created_at desc)`,
 `says(project_id, tmux_window) where state = 'waiting'` (0039),
-`says(created_at) where state in ('pending', 'sending')` (0040), `usage_hours(hour) where
+`says(created_at) where state in ('pending', 'sending')` (0040),
+`triggers(next_at) where enabled and next_at is not null`,
+`triggers(route_id) where route_id is not null`,
+`trigger_runs(trigger_id, created_at desc)`,
+`trigger_runs(project_id, created_at desc)`,
+`trigger_runs(created_at) where state in ('pending', 'sending')`,
+`trigger_runs(project_id, finished_at desc) where state <> 'skipped'` (0043,
+the unused notice reads it, I-1260), `usage_hours(hour) where
 stripe_usage_record_id is null` (unused since I-289), `credit_ledger(user_id, created_at)`,
 `subscriptions(user_id) where status in (live) unique`, `subscriptions(user_id,
 created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
@@ -370,7 +428,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0039_says`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0043_triggers`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

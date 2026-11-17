@@ -504,7 +504,11 @@ type Manager struct {
 	// refuse a guest the api has work for (I-818).
 	inflightTarget map[string]string
 	secrets        map[string][]*guestdv1.Secret
-	monitors       map[string]*monitor
+	// triggers is each guest's set, as the last create, start or restore
+	// delivered it (DECISIONS I-1248). In memory only, as the secrets
+	// are: hostd keeps none of it on disk.
+	triggers map[string][]*guestdv1.Trigger
+	monitors map[string]*monitor
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
 	boots    map[string]*hostdv1.BootTimings
@@ -851,6 +855,15 @@ func (m *Manager) newEvent(ev any) *hostdv1.Event {
 		e.Ev = v
 	case *hostdv1.Event_GuestResting:
 		e.Ev = v
+	case *hostdv1.Event_TriggerRun:
+		e.Ev = v
+	default:
+		// An event kind nobody added here is an event with no payload,
+		// which the api reads as nothing and nobody sees. That is how
+		// Event_TriggerRun was dropped for a day: it compiled, it
+		// vetted, and both ends' tests passed.
+		m.d.Log.Error("event kind with no case in newEvent", "event", "notify_dropped", "reason", "invalid")
+		m.notifyDropped("invalid")
 	}
 	return e
 }
@@ -1089,6 +1102,38 @@ func (m *Manager) cachedSecrets(guestID string) []*guestdv1.Secret {
 	return m.secrets[guestID]
 }
 
+// cacheTriggers records the trigger set a create, start or restore
+// carried, and cachedTriggers hands it to the guest after Ready
+// (DECISIONS I-1248). In memory only, as the secrets are: hostd keeps
+// none of it, and the api sends it again on every start.
+func (m *Manager) cacheTriggers(guestID string, set []*hostdv1.Trigger) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.triggers == nil {
+		m.triggers = map[string][]*guestdv1.Trigger{}
+	}
+	if len(set) == 0 {
+		delete(m.triggers, guestID)
+		return
+	}
+	out := make([]*guestdv1.Trigger, 0, len(set))
+	for _, t := range set {
+		out = append(out, &guestdv1.Trigger{
+			Name: t.GetName(), Kind: t.GetKind(), PromptPath: t.GetPromptPath(),
+			Workdir: t.GetWorkdir(), Agent: t.GetAgent(), TimeoutS: t.GetTimeoutS(),
+			Concurrency: t.GetConcurrency(), Gate: t.GetGate(), Dedupe: t.GetDedupe(),
+			Enabled: t.GetEnabled(),
+		})
+	}
+	m.triggers[guestID] = out
+}
+
+func (m *Manager) cachedTriggers(guestID string) []*guestdv1.Trigger {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.triggers[guestID]
+}
+
 // cachedHostKey reports whether the cache holds the guest's sshd host key.
 func (m *Manager) cachedHostKey(guestID string) bool {
 	m.mu.Lock()
@@ -1142,6 +1187,10 @@ func Kind(cmd *hostdv1.Command) string {
 		return "AnswerQuestion"
 	case *hostdv1.Command_SayToAgent:
 		return "SayToAgent"
+	case *hostdv1.Command_SetTriggers:
+		return "SetTriggers"
+	case *hostdv1.Command_RunTrigger:
+		return "RunTrigger"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
@@ -1181,6 +1230,10 @@ func Target(cmd *hostdv1.Command) string {
 		return c.AnswerQuestion.GuestId
 	case *hostdv1.Command_SayToAgent:
 		return c.SayToAgent.GuestId
+	case *hostdv1.Command_SetTriggers:
+		return c.SetTriggers.GuestId
+	case *hostdv1.Command_RunTrigger:
+		return c.RunTrigger.GuestId
 	case *hostdv1.Command_PauseGuest:
 		return c.PauseGuest.GuestId
 	case *hostdv1.Command_WakeGuest:
@@ -1507,6 +1560,11 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Wake{Wake: r} })
 	case *hostdv1.Command_SetBurst:
 		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
+	case *hostdv1.Command_SetTriggers:
+		return payloadOrErr(id, m.setTriggers(ctx, c.SetTriggers), nil)
+	case *hostdv1.Command_RunTrigger:
+		r, err := m.runTrigger(ctx, c.RunTrigger)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_TriggerRun{TriggerRun: r} })
 	}
 	return errResult(id, errf(CodeInvalidArgument, "unknown command"))
 }

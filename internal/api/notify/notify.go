@@ -902,7 +902,7 @@ func ntfyPriority(kind string) string {
 	switch kind {
 	case "needs_input", "agent_question":
 		return "5"
-	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "stop_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted":
+	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "stop_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted", "trigger_failed":
 		return "4"
 	}
 	return "3"

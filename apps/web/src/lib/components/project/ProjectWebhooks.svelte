@@ -63,6 +63,10 @@
 	});
 
 	function target(r: WebhookRoute): string {
+		// A route a trigger owns reads as that trigger: it is aimed at the
+		// machine's own receiver, and a port here would say the user can
+		// change it (I-1250).
+		if (r.trigger) return `trigger ${r.trigger}`;
 		return `:${r.port}${r.path === '/' ? '/' : r.path}`;
 	}
 

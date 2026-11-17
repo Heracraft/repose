@@ -45,6 +45,7 @@ ship goes over the edge's WireGuard.
    - api requests: `{component="api"} | json | project_id="<id>"`
    - gateway sessions: `{component="gateway"} | json | event=~"session_.*" | project_id="<id>"`
    - webhook deliveries: `{component="gateway"} | json | event="webhook_delivery" | project_id="<id>"` (DECISIONS I-1110). The line carries `route_id`, `status`, `outcome`, `ms`, `bytes_in`, `bytes_out` and `source_prefix` (the /24), and never the path, which holds the token, nor the query, a header value or a body byte
+   - trigger runs: `{component=~"api|guestd"} | json | event="trigger_run" | project_id="<id>"` (DECISIONS I-1248..I-1262). The line carries `trigger_id`, `run_id`, `source` (`route|clock|hand`), `state`, `reason` (the bounded enum of `features/triggers.md` §4, or for a file failure one of `permission|missing|no_space|read_only|io`) and `ms`, and never the trigger's **name**, its prompt or prompt path, a payload byte, a gate's command or its stderr, or the agent's summary. A file error's own text is not logged either: every path under a trigger holds the trigger's name
 4. Builds: `repose-admin ops list --project <id>` then `ops log <op id>`
    for the full Nix output (stored in `build_logs`, not Loki).
 5. Events the user saw: `select ts, kind, agent, summary, delivered from
@@ -249,6 +250,17 @@ so "the agent kept working after the laptop closed" is a number. It cannot
 be backfilled -- `meter_samples` is kept 90 days and `usage_hours` for
 ever -- which is why it shipped before launch rather than after.
 
+Triggers (DECISIONS I-1248..I-1262):
+`repose_trigger_runs_total{kind,state}` counts every run the api
+records, where `kind` is the door it came in by (`route`, `clock`,
+`hand`) and `state` how it ended, and `repose_trigger_run_seconds` is a
+histogram of a finished run's duration. The label is `kind` and not
+`source` because §5's low-cardinality list is fixed and `source` is not
+on it. Both are registered beside the webhook metrics. There is
+no third metric for a queue depth, because there is no queue: a queue in
+the guest had no row the api could read, so nothing could have exported
+it (I-1254).
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),
@@ -363,6 +375,11 @@ line stored by us:**
 - card details of any kind, including last four (Polar holds the card; the api never sees it)
 - a webhook URL's path or query: the path holds the route's token, which
   is a credential (I-1110). Log `route_id`
+- a trigger's name, its prompt, its prompt path, its gate command, a
+  gate's stderr, a payload byte or a run's summary (I-1248). The name is
+  the user's own word and the rest is what they wrote or what a stranger
+  sent: log `trigger_id` and `run_id`, and keep the gate's line and the
+  summary in the run row, which is tenant content the owner reads
 - a browser view's ticket, or its sha256: it is a bearer credential for a
   live desktop (I-1216). Log `ticket_id`, the row's opaque id
 - the guest's per-boot VNC password, in any form, on any leg of the view.

@@ -7,6 +7,7 @@ describe('tabOf', () => {
 		expect(tabOf(`/projects/${id}`, id)).toBe('Overview');
 		expect(tabOf(`/projects/${id}/`, id)).toBe('Overview');
 		expect(tabOf(`/projects/${id}/browser`, id)).toBe('Browser');
+		expect(tabOf(`/projects/${id}/triggers`, id)).toBe('Triggers');
 		expect(tabOf(`/projects/${id}/events`, id)).toBe('Events');
 		expect(tabOf(`/projects/${id}/usage`, id)).toBe('Usage');
 		expect(tabOf(`/projects/${id}/snapshots`, id)).toBe('Snapshots');
@@ -19,10 +20,11 @@ describe('tabOf', () => {
 		expect(tabOf('/projects/other/config', id)).toBe('Overview');
 		expect(tabOf('/projects', id)).toBe('Overview');
 	});
-	it('keeps the six in order, Browser second', () => {
+	it('keeps the seven in order, Browser second and Triggers third', () => {
 		expect(PROJECT_TABS.map(([t]) => t)).toEqual([
 			'Overview',
 			'Browser',
+			'Triggers',
 			'Events',
 			'Usage',
 			'Snapshots',

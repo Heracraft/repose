@@ -13,6 +13,7 @@ import (
 	"github.com/heracraft/repose/internal/guestd/sample"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/guestd/system"
+	"github.com/heracraft/repose/internal/guestd/trigger"
 	"github.com/heracraft/repose/internal/vsockrpc"
 )
 
@@ -133,6 +134,17 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 	case *guestdv1.Request_AnswerQuestion:
 		return empty(s.answerQuestion(r.AnswerQuestion))
 
+	case *guestdv1.Request_SetTriggers:
+		s.setTriggers(r.SetTriggers)
+		return empty(nil)
+
+	case *guestdv1.Request_RunTrigger:
+		res, err := s.runTrigger(ctx, r.RunTrigger)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(&guestdv1.Response_TriggerRun{TriggerRun: res})
+
 	case *guestdv1.Request_SayToAgent:
 		res, err := s.sayToAgent(ctx, r.SayToAgent)
 		if err != nil {
@@ -195,6 +207,39 @@ func (s *Server) sayToAgent(ctx context.Context, m *guestdv1.SayToAgent) (*guest
 	s.log.Info("message for an agent", "event", "agent_prompted",
 		"window", out.Window, "state", out.State, "replaced", out.Replaced)
 	return &guestdv1.SayResult{State: out.State, Window: out.Window, Replaced: out.Replaced}, nil
+}
+
+// setTriggers takes the project's whole trigger set (DECISIONS I-1248).
+// It is a state the api owns: kept in memory only, and sent again on
+// every start, so a guest that lost it comes back with it.
+func (s *Server) setTriggers(m *guestdv1.SetTriggers) {
+	set := make([]trigger.Trigger, 0, len(m.GetTriggers()))
+	for _, t := range m.GetTriggers() {
+		set = append(set, trigger.Trigger{
+			Name: t.GetName(), Kind: t.GetKind(), PromptPath: t.GetPromptPath(),
+			Workdir: t.GetWorkdir(), Agent: t.GetAgent(), TimeoutS: t.GetTimeoutS(),
+			Concurrency: t.GetConcurrency(), Gate: t.GetGate(), Dedupe: t.GetDedupe(),
+			Enabled: t.GetEnabled(),
+		})
+	}
+	s.triggers.SetTriggers(set)
+}
+
+// runTrigger fires one now (DECISIONS I-1252, I-1256). A repeat for a
+// run already started is answered with that run's state and starts no
+// second agent: the api sends the run's id as the command id.
+func (s *Server) runTrigger(ctx context.Context, m *guestdv1.RunTrigger) (*guestdv1.TriggerRunResult, error) {
+	res, err := s.triggers.Start(ctx, trigger.Request{
+		Trigger: m.GetTrigger(), RunID: m.GetRunId(), Source: m.GetSource(),
+		PayloadPath: m.GetPayloadPath(), PayloadRun: m.GetPayloadRun(), DryRun: m.GetDryRun(),
+	})
+	if errors.Is(err, trigger.ErrUnknown) {
+		return nil, sysdep.NotFound("no trigger %q on this machine", m.GetTrigger())
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &guestdv1.TriggerRunResult{State: res.State, Window: res.Window, Reason: res.Reason}, nil
 }
 
 // shutdown powers the guest off after the response has been flushed.

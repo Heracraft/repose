@@ -446,6 +446,29 @@ An account secret is for every project, so `--global` beside a project exits 2.
 
 A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
 
+## Triggers
+
+A [trigger](/docs/triggers) starts an agent when a webhook arrives or at a time you choose.
+
+| Command                            | What it does |
+| ---------------------------------- | ------------ |
+| `repose triggers add NAME`         | Add a trigger, or change the flags you pass on one that exists. `--route NAME` fires it on a delivery to that [webhook route](/docs/webhooks), which is created and aimed at the machine if it isn't there, and the command prints the URL and nothing else so it pipes. `--every SPEC` fires it on a schedule (the six shapes are below) and prints the spec, the zone it stored and the next fire. `-p`/`--prompt TEXT` is the prompt, written into the machine as `.repose/triggers/NAME.md`; `--prompt-file PATH` names a file that is already there, and `add` checks it is. `--workdir DIR` is the session's directory (`checkout`, `worktree-N`, `~/PATH`, `/PATH`), `--agent NAME` one of `claude`, `codex`, `opencode`, `gemini`, `pi`. `--timeout DURATION` kills the window when the run has worked that long (default `1h`, at most `24h`, and `0` means 24h; a run waiting for an answer to `repose-ask` is not working). `--concurrency N` is how many runs may work at once (1 to 3). `--gate CMD` runs CMD with the payload on stdin and skips the run on a non-zero exit, which is where a signature check goes. `--dedupe header:NAME` or `--dedupe json:FIELD` skips an event whose key was seen in 24 hours. `--no-notify` keeps a failed run from notifying you. `--start` lets a fire start a stopped machine, `--no-start` is the default, and `--stop-after` stops it again when the run ends if this trigger started it. `--catch-up` runs one missed fire when the machine comes back. `--json` prints the trigger. |
+| `repose triggers list [PROJECT]`   | The triggers with their door, their prompt, whether they're on, the last run and the next fire. Alias `ls`, and `repose triggers` alone. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose triggers runs [NAME]`      | What they did, newest first, each with the last 8 characters of its id, which is what `fire --run` takes: `done` with the agent's own summary, `failed`, `timeout`, or `skipped` with the reason. NAME keeps one trigger's runs, and `--all` is every project's runs in one listing with the machine each ran on: what your agents did last night. `-n`/`--tail N` is how many (1 to 200, default 20), `--json` for JSON, `-q`/`--quiet` for run ids. A machine that was stopped shows one row an hour with the number of events it turned away. |
+| `repose triggers fire NAME`        | Run it now, as a delivery or its schedule would; a trigger that is `off` still fires this way. `--payload FILE` hands the session that file as the event (`-` for stdin), `--run RUN` replays an earlier run's payload (a whole id, or the 8 characters `repose triggers runs` prints), `--wait` waits for the outcome and prints it, `--wait-for DURATION` is how long it follows the run (default 5m), `--dry-run` runs the gate alone and starts no agent. `--json` prints the run. |
+| `repose triggers url NAME`         | Print a route trigger's URL, and nothing else, so it pipes. A schedule has no URL. |
+| `repose triggers on NAME`          | Let it fire again, and arm its schedule from now, so a trigger that was off for a week fires at its next proper time. `--json` prints the trigger. |
+| `repose triggers off NAME`         | Keep it from firing. Its row, its route and its prompt file stay as they are. `--json` prints the trigger. |
+| `repose triggers rm NAME...`       | Remove them. Alias `remove`. A route the trigger made goes with it, unless you made that route yourself or another trigger uses it, and its URL then answers 410 for 30 days. The prompt file stays in the machine. |
+
+`repose status` gains a `triggers` row for a project that has one, with each trigger's last run and the next fire, and `repose ls`'s AGENTS cell counts a trigger's runs on their own (`claude: working, 1 trigger run`) so a machine you aren't using doesn't read as if you were.
+
+A schedule is one of `every 15m` (15m to 24h), `daily 03:00`, `weekdays 07:00`, `weekends 10:00`, `mon,thu 18:30` or `monthly 1 09:00`, with an optional zone at the end (`daily 03:00 UTC`, `weekdays 07:00 Europe/Berlin`). Without one it takes your laptop's zone and prints which, so `07:00` is your 07:00 all year.
+
+A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a bad spec, duration or dedupe key. A name the project does not have exits 1, and `-p` or `--payload` on a machine that is not running exits 5, since both write a file into it.
+
+A machine that runs [herdr](/docs/run-and-attach#herdr-instead-of-tmux) instead of tmux takes no triggers: a run is an agent in its own tmux window, so `triggers add` there exits 2 and says so.
+
 ## Configuration
 
 | Command                             | What it does |

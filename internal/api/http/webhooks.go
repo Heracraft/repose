@@ -39,6 +39,12 @@ func routeJSON(st *webhooks.Store, r *webhooks.Route, token string) map[string]a
 		"created_at":  r.CreatedAt,
 		"updated_at":  r.UpdatedAt,
 	}
+	if r.Trigger != "" {
+		// A route a trigger owns reads as that trigger, not as a port:
+		// the two surfaces must not disagree about what a URL reaches
+		// (DECISIONS I-1250).
+		out["trigger"] = r.Trigger
+	}
 	if token != "" {
 		out["url"] = st.URL(r.ProjectID.String(), r.Name, token)
 	}
@@ -113,6 +119,18 @@ func (s *Server) putWebhook(w http.ResponseWriter, r *http.Request) error {
 	}
 	if body.Port < 1 || body.Port > 65535 {
 		return errf("invalid", "%v", webhooks.ErrInvalidTarget)
+	}
+	// 9227 is the machine's own trigger receiver, and a route a trigger
+	// owns is the trigger's to change: one way in (DECISIONS I-1250).
+	if body.Port == webhooks.ReceiverPort {
+		return withDetail(errf("invalid", "%v", webhooks.ErrReservedPort),
+			map[string]any{"reason": "reserved_port"})
+	}
+	if trigger, err := s.d.WebhookRoutes.TriggerOf(r.Context(), p.ID, body.Name); err != nil {
+		return err
+	} else if trigger != "" {
+		return withDetail(errf("conflict", "the %s trigger owns this route; `repose triggers add %s` changes it", trigger, trigger),
+			map[string]any{"reason": "trigger_route", "trigger": trigger})
 	}
 	u := userFrom(r.Context())
 	route, token, created, err := s.d.WebhookRoutes.Upsert(r.Context(), u.ID, p.ID, body.Name, body.Port, body.Path, body.AllowStart)
@@ -203,6 +221,14 @@ func (s *Server) deleteWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// A trigger's route goes with its trigger, never on its own: the
+	// other way leaves a route trigger with no door (DECISIONS I-1250).
+	if trigger, err := s.d.WebhookRoutes.TriggerOf(r.Context(), p.ID, r.PathValue("name")); err != nil {
+		return err
+	} else if trigger != "" {
+		return withDetail(errf("conflict", "the %s trigger owns this route; `repose triggers rm %s` removes both", trigger, trigger),
+			map[string]any{"reason": "trigger_route", "trigger": trigger})
+	}
 	name := r.PathValue("name")
 	u := userFrom(r.Context())
 	if err := s.d.WebhookRoutes.Delete(r.Context(), p.ID, name); err != nil {
@@ -280,6 +306,16 @@ func (s *Server) internalWebhookDeliveries(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 			return err
+		}
+		// A delivery the edge refused on a trigger's route becomes the
+		// `skipped` run the user reads: the guest never heard it, so
+		// nothing in the guest can write it down (DECISIONS I-1250).
+		// Coalesced to one row per trigger, reason and hour, so a machine
+		// stopped for a week cannot evict the runs that ran.
+		if s.d.Triggers != nil {
+			if err := s.d.Triggers.SkipFromDelivery(r.Context(), rid, d.Outcome, d.At); err != nil {
+				return err
+			}
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)

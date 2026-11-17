@@ -48,6 +48,17 @@ func (p Paths) ProjectSetUp() string { return p.join("run", "repose", "project-s
 // which is on every start's path to the first login (DECISIONS I-225).
 func (p Paths) PathsLoaded() string { return p.join("var", "lib", "repose", "paths-loaded") }
 
+// TriggerSet is /var/lib/repose/trigger-set.json, root 0600, on the
+// guest's volume: the project's trigger set as the api last sent it.
+//
+// The set is the api's state and the receiver answers 404 without it, so
+// a guestd that restarts and has no set turns every delivery into "the
+// route was removed" and every scheduled fire into a 404. It is on the
+// volume and not a tmpfs so that it also survives a reboot and a move to
+// another host, as a trigger's dedupe window does (DECISIONS I-1248,
+// I-1254).
+func (p Paths) TriggerSet() string { return p.join("var", "lib", "repose", "trigger-set.json") }
+
 // NixDB is the guest's nix database, whose absence means nothing was
 // ever loaded into it.
 func (p Paths) NixDB() string { return p.join("nix", "var", "nix", "db", "db.sqlite") }

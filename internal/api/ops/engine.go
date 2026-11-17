@@ -83,6 +83,13 @@ type Config struct {
 const notifyChannel = "repose_ops"
 
 // Engine is the op driver.
+// TriggerSet is internal/api/triggers' ForGuest: the project's whole
+// set, as the guest reads it. An interface because the ops engine is
+// below the trigger store and must not import it.
+type TriggerSet interface {
+	ForGuest(ctx context.Context, projectID uuid.UUID) ([]*hostdv1.Trigger, error)
+}
+
 type Engine struct {
 	pool   *db.Pool
 	send   Sender
@@ -93,6 +100,11 @@ type Engine struct {
 	m      *metrics.M
 	log    *slog.Logger
 	cfg    Config
+
+	// triggers fills the trigger set every create, start and restore
+	// carries (DECISIONS I-1248); nil sends none, which is an api
+	// configured without triggers.
+	triggers TriggerSet
 
 	kick    chan struct{}
 	driving atomic.Bool
@@ -926,6 +938,10 @@ func (e *Engine) setResult(ctx context.Context, op *store.Op, fields map[string]
 
 // SetOnFinished installs the hook called after an op reaches done or error.
 // Safe to call while the engine is running.
+// SetTriggers gives the engine the trigger set to deliver, as app.go
+// installs the other sinks after New.
+func (e *Engine) SetTriggers(t TriggerSet) { e.triggers = t }
+
 func (e *Engine) SetOnFinished(f func(ctx context.Context, op *store.Op)) {
 	e.onFinishedMu.Lock()
 	defer e.onFinishedMu.Unlock()

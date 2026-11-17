@@ -229,6 +229,11 @@ type delivery struct {
 	env        map[string]string
 	principals []string
 	project    []byte
+	// triggers is the project's whole trigger set (DECISIONS I-1248). It
+	// rides every create, start and restore for the reason the secrets
+	// do: hostd keeps none of it, so a guest that lost it — a stop and
+	// start, a reboot, a move to another host — comes back with it.
+	triggers []*hostdv1.Trigger
 	// values is every user secret's plaintext, for build-log redaction and
 	// the fragment scan; it never leaves this package.
 	values []string
@@ -306,6 +311,13 @@ func (e *Engine) delivery(ctx context.Context, p *store.Project, u *store.User) 
 		return nil, err
 	}
 	d.project = pj
+	if e.triggers != nil {
+		set, err := e.triggers.ForGuest(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		d.triggers = set
+	}
 	return d, nil
 }
 
@@ -862,7 +874,7 @@ func (e *Engine) buildCreate(ctx context.Context, op *store.Op, p *store.Project
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_CreateGuest{CreateGuest: &hostdv1.CreateGuest{
 		ProjectId: p.ID.String(), GuestId: p.GuestID.String(), Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: *rev.SystemClosure,
 		Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert,
-		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project,
+		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project, Triggers: d.triggers,
 	}}}, *p.HostID, false, nil
 }
 
@@ -879,7 +891,8 @@ func (e *Engine) buildStart(ctx context.Context, op *store.Op, p *store.Project,
 	}
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_StartGuest{StartGuest: &hostdv1.StartGuest{
 		GuestId: p.GuestID.String(), Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert, ProjectJson: d.project,
-		Class: p.Class, // I-260: a class changed while stopped applies at this start
+		Class:    p.Class, // I-260: a class changed while stopped applies at this start
+		Triggers: d.triggers,
 	}}}, *p.HostID, false, nil
 }
 
@@ -983,7 +996,7 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	r := &hostdv1.Restore{
 		ProjectId: p.ID.String(), GuestId: gidStr, Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: closure,
 		Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert,
-		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project,
+		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project, Triggers: d.triggers,
 	}
 	r.BlobPath, r.Sha256 = snap.BlobPath, sha256Of(snap)
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Restore{Restore: r}}, hostID, false, nil

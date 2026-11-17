@@ -182,6 +182,9 @@ message CreateGuest {
   string project_slug = 14;
   string remote_url = 15;
   bytes project_json = 16;
+  // The project's whole trigger set (DECISIONS I-1248), as StartGuest
+  // carries it.
+  repeated Trigger triggers = 17;
 }
 // StartGuest carries the same delivery fields as CreateGuest (DECISIONS
 // I-26) so a host that restarted, and holds nothing on disk, can deliver
@@ -201,6 +204,10 @@ message StartGuest {
   bytes host_cert = 8;
   bytes project_json = 9;
   string class = 10;
+  // The project's whole trigger set (DECISIONS I-1248). It rides every
+  // start for the same reason the secrets do: hostd keeps none of it,
+  // so a guest that lost it comes back with it.
+  repeated Trigger triggers = 11;
 }
 message StopGuest { string guest_id = 1; bool snapshot_first = 2; uint32 timeout_s = 3; }
 message DestroyGuest { string guest_id = 1; bool keep_volume = 2; }
@@ -269,6 +276,9 @@ message Restore {
   // shared by every sibling of one fork. Only to a host whose Hello names
   // "local_clone".
   RestoreClone clone = 19;
+  // The project's whole trigger set (DECISIONS I-1248), as StartGuest
+  // carries it: a restored machine comes back with its triggers.
+  repeated Trigger triggers = 20;
 }
 // RestoreClone names the volume a Restore copies on the host itself.
 // point_id (32 hex digits) names the moment: the first Restore of a fork
@@ -315,6 +325,41 @@ message SayToAgent {
   bool from_owner = 6;
 }
 
+// Trigger is one of a project's triggers (DECISIONS I-1248), relayed to
+// guestd whole. The prompt is a PATH in the machine: the api has never
+// held its text.
+message Trigger {
+  string name = 1;
+  string kind = 2;            // route|schedule
+  string prompt_path = 3;
+  string workdir = 4;
+  string agent = 5;
+  uint32 timeout_s = 6;
+  uint32 concurrency = 7;
+  string gate = 9;
+  string dedupe = 10;         // header:NAME|json:FIELD
+  bool enabled = 11;
+}
+// SetTriggers carries the project's whole set, as UpdateSecrets carries
+// the whole named set (DECISIONS I-1248). An empty list removes every
+// trigger. hostd keeps none of it: the api re-sends it on every start.
+message SetTriggers {
+  string guest_id = 1;
+  repeated Trigger triggers = 2;
+}
+// RunTrigger runs one now (DECISIONS I-1252, I-1256). The api sends it
+// with the run's id as the command_id, so a re-send after a reconnect
+// returns the stored result and starts no second agent.
+message RunTrigger {
+  string guest_id = 1;
+  string trigger = 2;
+  string run_id = 3;
+  string source = 4;          // clock|hand
+  string payload_run = 5;
+  bool dry_run = 6;
+  string payload_path = 7;   // see guestd.proto's RunTrigger
+}
+
 message Command {
   string command_id = 1;
   oneof cmd {
@@ -336,6 +381,8 @@ message Command {
     WakeGuest wake_guest = 25;
     SetBurst set_burst = 26;
     SayToAgent say_to_agent = 27;
+    SetTriggers set_triggers = 28;   // DECISIONS I-1248
+    RunTrigger run_trigger = 29;     // DECISIONS I-1252
   }
 }
 
@@ -368,6 +415,7 @@ message Result {
     PauseResult pause = 17;  // DECISIONS I-818
     WakeResult wake = 18;    // DECISIONS I-818
     SayResult say = 19;      // DECISIONS I-1144
+    TriggerRunResult trigger_run = 20; // DECISIONS I-1256
   }
 }
 // BootTimings is where one boot's time went, in milliseconds (DECISIONS
@@ -548,6 +596,32 @@ message OperatorLogin {
   uint64 serial = 4;          // certificate serial, 0 for a plain key
   string key_fingerprint = 5; // SHA256:... of the key (the bootstrap key when key_id is empty)
 }
+// TriggerRunResult is guestd's answer to a RunTrigger, relayed: state
+// working, skipped or failed, with the window and the bounded reason.
+message TriggerRunResult { string state = 1; string window = 2; string reason = 3; }
+// TriggerRunEvent is a guest's TriggerRun notify, relayed (DECISIONS
+// I-1256). summary is the agent's own `--done` words and reason may be a
+// gate's last stderr line: both tenant content, shown to the owner and
+// never logged. dedupe_key is a provider's own event id and is kept on
+// the run row for the same reason.
+message TriggerRunEvent {
+  string guest_id = 1;
+  string run_id = 2;
+  string trigger = 3;
+  string state = 4;           // working|done|failed|timeout|skipped
+  string reason = 5;
+  string summary = 6;
+  string link_url = 7;
+  string link_label = 8;
+  string window = 9;
+  int64 started_unix = 10;
+  int64 finished_unix = 11;
+  string dedupe_key = 12;
+  uint64 payload_bytes = 13;
+  // 14 was payload_kept; the api derives it (I-1262).
+  reserved 14;
+  string source = 15;         // route|clock|hand
+}
 message Event {
   string event_id = 1;
   int64 ts = 2;
@@ -559,5 +633,6 @@ message Event {
     OperatorLogin operator_login = 14;
     AgentQuestion agent_question = 15;
     GuestResting guest_resting = 16;
+    TriggerRunEvent trigger_run = 17;  // DECISIONS I-1256
   }
 }

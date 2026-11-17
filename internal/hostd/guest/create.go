@@ -215,6 +215,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.injected(stepSecrets); err != nil {
 		return nil, m.fail(g, stepSecrets, err)
 	}
+	m.cacheTriggers(g.GuestID, c.Triggers)
 	if err := m.cacheSecrets(g.GuestID, c.Secrets, c.SshCaPub, c.HostKey, c.HostCert); err != nil {
 		return nil, m.fail(g, stepSecrets, err)
 	}
@@ -438,6 +439,14 @@ func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.
 			return paths, fmt.Errorf("SetPrincipals: %w", err)
 		}
 	}
+	// The trigger set, before SetupProject starts the session: a
+	// delivery that arrives on a machine whose receiver has no set is a
+	// 404 the provider reads as "no such route" (I-1248).
+	if set := m.cachedTriggers(g.GuestID); len(set) > 0 {
+		if err := sess.SetTriggers(ctx, &guestdv1.SetTriggers{Triggers: set}); err != nil {
+			return paths, fmt.Errorf("SetTriggers: %w", err)
+		}
+	}
 	slug := g.ProjectSlug
 	if slug == "" {
 		slug = g.ProjectID
@@ -654,6 +663,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	// DECISIONS I-26: StartGuest may carry the delivery fields so a host
 	// that restarted still has the guest's secrets and sshd material.
 	if len(c.Secrets) > 0 || len(c.HostKey) > 0 || len(c.HostCert) > 0 || c.SshCaPub != "" {
+		m.cacheTriggers(g.GuestID, c.Triggers)
 		if err := m.cacheSecrets(g.GuestID, c.Secrets, c.SshCaPub, c.HostKey, c.HostCert); err != nil {
 			return nil, err
 		}
@@ -826,13 +836,38 @@ func (mon *monitor) current() vsockclient.Session {
 	return mon.sess
 }
 
-func (mon *monitor) markReady() {
+// markReady reports whether this was the guest's first Ready. A second
+// one is a guestd that restarted under a running guest.
+func (mon *monitor) markReady() bool {
 	mon.mu.Lock()
-	if !mon.readyOK {
-		mon.readyOK = true
-		close(mon.ready)
+	defer mon.mu.Unlock()
+	if mon.readyOK {
+		return false
 	}
-	mon.mu.Unlock()
+	mon.readyOK = true
+	close(mon.ready)
+	return true
+}
+
+// resendTriggers hands a restarted guestd the trigger set hostd holds.
+// It is best effort: the guest's own copy on the volume is what makes a
+// restart invisible, and this covers the set that changed while guestd
+// was down.
+func (m *Manager) resendTriggers(mon *monitor) {
+	set := m.cachedTriggers(mon.g.GuestID)
+	if len(set) == 0 {
+		return
+	}
+	sess := mon.current()
+	if sess == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := sess.SetTriggers(ctx, &guestdv1.SetTriggers{Triggers: set}); err != nil {
+		m.log(mon.g).Warn("the restarted guestd did not take the trigger set",
+			"event", "trigger_run", "err", err.Error())
+	}
 }
 
 // waitReady blocks until guestd reports Ready or answers a Ping.
@@ -975,7 +1010,7 @@ func (mon *monitor) regained() {
 func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	m := mon.m
 	switch v := n.N.(type) {
-	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning:
+	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning, *guestdv1.Notify_TriggerRun:
 		// The ones that become api events pass the guest's bucket, so one
 		// guest cannot fill the host's stream (I-445). The first close of
 		// a question hostd passed as open takes no token (I-690): a lost
@@ -1002,7 +1037,19 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	}
 	switch v := n.N.(type) {
 	case *guestdv1.Notify_Ready:
-		mon.markReady()
+		if !mon.markReady() {
+			// A guestd that restarted under a running guest: it has
+			// whatever it kept on the volume, and hostd hands it the
+			// set it holds, so a set the api changed while guestd was
+			// down is not stale until the next start (I-1248).
+			//
+			// It also fires once on an ordinary first boot, because the
+			// Ping path marks the guest ready before this Ready
+			// arrives. That is a repeat of the set the boot itself
+			// delivers, from the same cache, so the guest writes the
+			// same bytes twice and nothing changes.
+			go m.resendTriggers(mon)
+		}
 	case *guestdv1.Notify_AgentEvent:
 		ae := v.AgentEvent
 		ev, ok := cleanAgentEvent(mon.g.GuestID, ae.Agent, ae.Kind, ae.Summary, ae.TmuxWindow)
@@ -1029,6 +1076,17 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 		m.emitGuestEvent(&hostdv1.Event_AgentQuestion{AgentQuestion: aq})
 	case *guestdv1.Notify_AgentState:
 		m.log(mon.g).Debug("agent state", "event", "agent_state", "agent", cleanToken(v.AgentState.Agent, capAgent), "state", cleanToken(v.AgentState.State, capAgent))
+	case *guestdv1.Notify_TriggerRun:
+		tr, ok := cleanTriggerRun(mon.g.GuestID, v.TriggerRun)
+		if !ok {
+			m.notifyDropped("invalid")
+			return
+		}
+		// The trigger's name is the user's word and the summary is the
+		// agent's: counted, never logged (DECISIONS I-1248).
+		m.log(mon.g).Info("trigger run", "event", "trigger_run", "run_id", tr.RunId,
+			"state", tr.State, "source", tr.Source, "summary_bytes", len(tr.Summary))
+		m.emitGuestEvent(&hostdv1.Event_TriggerRun{TriggerRun: tr})
 	case *guestdv1.Notify_Warning:
 		w := cleanWarning(mon.g.GuestID, v.Warning.Kind, v.Warning.Detail)
 		m.log(mon.g).Warn("guest warning", "event", "host_warning", "kind", w.Kind)

@@ -57,6 +57,7 @@ todo-app  running 3h12m  large
 Events (see agents.md for how each agent produces them):
 
 - Kinds: `needs_input`, `error`, `agent_done`, plus the platform-originated
+  `trigger_failed` (I-1256: a trigger's run that failed or timed out),
   `billing_stopped`, `base_update_failed`, `snapshot_failed`,
   `destroy_failed` (DECISIONS I-165: the CLI no longer waits for a
   destroy, so its failure is announced), `stop_failed` (I-710, for the
@@ -181,6 +182,23 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   done`, ntfy priority 4. The agent says the work the owner asked for
   is finished, since a finished turn notifies nobody. Like a message it is
   never collapsed and counts against the cap (I-688).
+- A trigger's run that ends `failed` or `timeout` sends a
+  `trigger_failed` (DECISIONS I-1256): title `<project>: trigger
+  failed`, which is every other event's shape, and a body whose first
+  words are the trigger's name and what happened
+  (`sweep failed: the agent is not logged in`), as
+  `features/triggers.md` §4.1 words it. ntfy priority 4 (`claude is not logged in`, `killed at the timeout`,
+  `the prompt file is missing`), with the run id. It is a **platform**
+  kind, not an agent kind: it is never held while the owner is at the
+  machine (I-689 holds agent kinds), because a trigger that fails in
+  silence is the failure triggers exist to make visible. It counts
+  against the 30-an-hour cap like every event, and it is collapsed by
+  the 60-second dedupe on `(project, kind)` like every platform kind, so
+  a trigger failing in a loop costs one notification a minute and not
+  thirty. `repose triggers add --no-notify` turns it off for one trigger
+  without turning the trigger off. A run that ends `done` notifies
+  nothing of itself: what the owner hears is whatever the agent sent with
+  `repose-notify --done`, which is I-688's rule.
 - `repose-ask [--options A,B,C] [--timeout 30m] QUESTION` sends an
   `agent_question` (title `<project>: <agent> asks`, ntfy priority 5) and
   blocks until the owner answers, then prints the answer. Exit codes: 0
@@ -416,6 +434,7 @@ one email, ours.
 | `plan_changed` | Your plan changed | billing, on an upgrade or a scheduled downgrade | `{from_plan, to_plan, effective_at}` |
 | `egress_stopped` | Your machines were stopped: egress limit | billing, at four times the egress allowance: the period's egress, the limit, until when, the upgrade link | `{plan, egress_gb, limit_gb, until}` |
 | `notify_channel_broken` | Google Chat notifications stopped | the outbox, the first time Google refuses the user's Chat webhook with 401, 403 or 404 (I-692), in the transaction that sets `gchat_broken_at`: the space, the date, that nothing goes to Google Chat until a new URL is saved or a test gets through | `{channel, space, since}` |
+| `trigger_failed` | `<project>: the <trigger> trigger failed` | a run that ended `failed` or `timeout`, from the machine's own report (I-1256), unless the trigger says `--no-notify`: the reason in the words of `features/triggers.md` §4.1, and the run id | `{trigger, run_id, state, reason}` |
 | `disk_over_plan` | Your projects hold more than your plan's disk | billing's hourly tick, once a period, when the projects hold more than the plan's disk (I-585): what they hold, the plan's disk, that machines keep running and starting, what is refused until they hold less, and that a deleted file stops counting within a day or at the machine's stop | `{plan, held_gb, limit_gb}` |
 
 `billing_stopped` (`Your machines were stopped: a payment failed`) and

@@ -819,6 +819,20 @@ func (w *Watcher) RecordHook(window, kind string, at time.Time) {
 	}
 }
 
+// WindowAgent is the agent state in a window and whether an agent is
+// there at all, which is what a trigger's supervisor reads to tell a
+// turn that ended from a window whose agent went away (DECISIONS
+// I-1256).
+func (w *Watcher) WindowAgent(window string) (string, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ws, ok := w.windows[window]
+	if !ok || ws.agent == "" {
+		return "", false
+	}
+	return ws.state, true
+}
+
 // Signals returns the cached guest signals and whether the cache is fresh.
 func (w *Watcher) Signals() (*hostdv1.GuestSignals, bool) {
 	w.mu.Lock()

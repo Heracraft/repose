@@ -77,7 +77,16 @@ a stopped project, or a sample without it, shows the disk's size alone
 line reads `disk 95 percent full; \`repose resize todo-app 80G\` grows
 it`, the size double the disk up to 320 GB. AGENTS names the one agent,
 or counts several by state: `3 agents: 1 needs input, 2 working`; text
-prints `needs input` in words, `--json` keeps `needs_input` (I-617).
+prints `needs input` in words, `--json` keeps `needs_input` (I-617). A
+trigger's run is counted on its own (`claude: working, 1 trigger run`,
+or `2 trigger runs` where the user has no agent of their own), so a
+machine nobody is attached to does not read as the user's agent working
+(I-1256).
+
+`repose status` has a `triggers` row for a project that has one: each
+trigger's last run, or `off`, and the next fire for a schedule
+(`triage done 7h ago, sweep off, apply next 07:00`). A project with no
+trigger has no such row, which is the `webhooks` row's own rule.
 
 ```
 $ repose logs                    # console of failed boots, last 200 lines each

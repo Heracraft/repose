@@ -36,6 +36,13 @@ Picking a default for projects created from now on, in
 default_agent = "codex"
 ```
 
+A trigger's run starts one of the same five, with the prompt on the
+agent's own command line (I-780, I-1256); `features/triggers.md` has
+that path. An unattended run is proven for Claude Code, whose guest
+settings carry `bypassPermissions` (I-250); another agent may stop at
+its first permission prompt, and `repose triggers add --agent` says so
+once.
+
 A project keeps the default it was created with; `repose run --agent NAME`
 picks another for one prompt.
 

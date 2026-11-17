@@ -34,6 +34,8 @@ import type {
 	SampleWindow,
 	Say,
 	Snapshot,
+	Trigger,
+	TriggerRun,
 	UsageRow,
 	ViewTicket,
 	WebhookRoute
@@ -255,6 +257,34 @@ export const rotateWebhook = (id: string, name: string) =>
 	});
 export const deleteWebhook = (id: string, name: string) =>
 	request<void>(`/projects/${id}/webhooks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// Triggers (DECISIONS I-1248..I-1262).
+export const listTriggers = (id: string) => request<Trigger[]>(`/projects/${id}/triggers`);
+export const getTrigger = (id: string, name: string) =>
+	request<Trigger>(`/projects/${id}/triggers/${encodeURIComponent(name)}`);
+/**
+ * Creates a trigger or changes the fields given on one that exists. A
+ * body with only `name` and `enabled` is how the on/off column reaches
+ * it: the door is left as it is (api.md's "Triggers").
+ */
+export const putTrigger = (id: string, body: Record<string, unknown>) =>
+	request<Trigger>(`/projects/${id}/triggers`, { method: 'POST', body });
+export const deleteTrigger = (id: string, name: string) =>
+	request<void>(`/projects/${id}/triggers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+/** Runs it now. The run is the hand-off row, so this answers `queued`. */
+export const fireTrigger = (id: string, name: string) =>
+	request<TriggerRun>(`/projects/${id}/triggers/${encodeURIComponent(name)}/fire`, {
+		method: 'POST'
+	});
+export const listTriggerRuns = (id: string, trigger?: string, limit?: number) => {
+	const q = new URLSearchParams();
+	if (trigger) q.set('trigger', trigger);
+	if (limit) q.set('limit', String(limit));
+	const tail = q.size > 0 ? `?${q}` : '';
+	return request<TriggerRun[]>(`/projects/${id}/trigger-runs${tail}`);
+};
+export const getTriggerRun = (id: string, runId: string) =>
+	request<TriggerRun>(`/projects/${id}/trigger-runs/${encodeURIComponent(runId)}`);
 
 // The machine's browser view (DECISIONS I-1216).
 /**

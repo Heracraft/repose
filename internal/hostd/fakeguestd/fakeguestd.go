@@ -62,11 +62,13 @@ type Server struct {
 	opts Options
 	ln   net.Listener
 
-	mu       sync.Mutex
-	calls    []Call
-	dropped  map[string]bool
-	secrets  map[string][]byte
-	princ    []string
+	mu      sync.Mutex
+	calls   []Call
+	dropped map[string]bool
+	secrets map[string][]byte
+	princ   []string
+	// triggers is the last set SetTriggers carried (DECISIONS I-1248).
+	triggers []*guestdv1.Trigger
 	frozen   bool
 	conn     *vsockrpc.ServerConn
 	closed   bool
@@ -186,6 +188,13 @@ func (s *Server) Kinds() []string {
 // WriteSecrets without it does not remove.
 var reservedName = map[string]bool{"ssh_host_ed25519_key": true, "ssh_host_ed25519_key-cert.pub": true, "user_ca.pub": true}
 
+// Triggers is the set the last SetTriggers carried.
+func (s *Server) Triggers() []*guestdv1.Trigger {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*guestdv1.Trigger(nil), s.triggers...)
+}
+
 // Secrets returns what WriteSecrets delivered.
 func (s *Server) Secrets() map[string][]byte {
 	s.mu.Lock()
@@ -238,6 +247,10 @@ func kindOf(req *guestdv1.Request) string {
 		return "AnswerQuestion"
 	case *guestdv1.Request_SayToAgent:
 		return "SayToAgent"
+	case *guestdv1.Request_SetTriggers:
+		return "SetTriggers"
+	case *guestdv1.Request_RunTrigger:
+		return "RunTrigger"
 	case *guestdv1.Request_GrowFs:
 		return "GrowFs"
 	case *guestdv1.Request_WriteSecrets:
@@ -397,6 +410,30 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 			window = "claude"
 		}
 		ok.Result = &guestdv1.Response_Say{Say: &guestdv1.SayResult{State: "delivered", Window: window}}
+	case *guestdv1.Request_SetTriggers:
+		// The set is state the api owns; the fake keeps the last one so a
+		// test can read what hostd relayed (DECISIONS I-1248).
+		s.mu.Lock()
+		s.triggers = r.SetTriggers.GetTriggers()
+		s.mu.Unlock()
+	case *guestdv1.Request_RunTrigger:
+		if r.RunTrigger.GetTrigger() == "" || r.RunTrigger.GetRunId() == "" {
+			return fail("invalid_argument", "trigger and run_id required")
+		}
+		s.mu.Lock()
+		known := false
+		for _, t := range s.triggers {
+			if t.GetName() == r.RunTrigger.GetTrigger() {
+				known = true
+			}
+		}
+		s.mu.Unlock()
+		if !known {
+			return fail("not_found", "no such trigger")
+		}
+		ok.Result = &guestdv1.Response_TriggerRun{TriggerRun: &guestdv1.TriggerRunResult{
+			State: "working", Window: "t-" + r.RunTrigger.GetTrigger(),
+		}}
 	default:
 		return fail("invalid_argument", "unknown request")
 	}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/multiplexer"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // StatusCmd implements `repose status [PROJECT] [--json]` (07-cli.md §5.7).
@@ -72,6 +73,9 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	}
 	hooks := make(chan []WebhookRoute, 1)
 	go func() { h, _ := e.Client.ListWebhooks(ctx, project.ID); hooks <- h }()
+	// Beside the other reads, so the row costs no round trip of its own.
+	trigs := make(chan []Trigger, 1)
+	go func() { t, _ := e.Client.ListTriggers(ctx, project.ID); trigs <- t }()
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	events, _ := e.Client.ListEvents(ctx, project.ID, "")
 	noteWaits(project, events)
@@ -84,6 +88,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 		p: project, route: route, snaps: snaps, events: events, mux: mux,
 		disk: g.disk, procs: g.procs, forwards: g.forwards, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, probeWaited: g.waited, bill: <-bill, now: time.Now(),
 		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent, hooks: <-hooks,
+		triggers: <-trigs,
 	})
 	return nil
 }
@@ -389,7 +394,11 @@ type statusView struct {
 	// row shows only the ones a provider has used, so a project with
 	// routes nobody has called yet adds no line.
 	hooks []WebhookRoute
-	now   time.Time
+	// triggers are the project's triggers (DECISIONS I-1248); the row
+	// shows each one's last run and the next fire, and a project with
+	// none adds no line, which is the webhooks row's own rule.
+	triggers []Trigger
+	now      time.Time
 }
 
 func writeStatusLines(w io.Writer, p *Project, route *Route, snaps []Snapshot, events []Event) {
@@ -496,6 +505,9 @@ func writeStatus(w io.Writer, v statusView) {
 	}
 	if line := webhookStatusLine(v.hooks); line != "" {
 		statusRow(w, "webhooks", line)
+	}
+	if line := triggerStatusLine(v.triggers); line != "" {
+		statusRow(w, "triggers", line)
 	}
 	if v.route != nil {
 		host := v.route.HostName
@@ -676,6 +688,40 @@ func agentWord(state string) string {
 	return strings.ReplaceAll(state, "_", " ")
 }
 
+// splitTriggerWindows divides the machine's agents into the user's own
+// and the triggers' runs, which are the windows named `t-...`: the
+// prefix is reserved for them (guest-conventions.md "Triggers").
+func splitTriggerWindows(all []AgentSignal) (mine, triggers []AgentSignal) {
+	for _, a := range all {
+		if strings.HasPrefix(a.Window, triggerrun.WindowPrefix) {
+			triggers = append(triggers, a)
+			continue
+		}
+		mine = append(mine, a)
+	}
+	return mine, triggers
+}
+
+// triggerWord is the AGENTS cell for a machine whose only agents are
+// triggers' runs, and triggerTail what it adds beside the user's own.
+func triggerWord(triggers []AgentSignal) string {
+	switch len(triggers) {
+	case 0:
+		return ""
+	case 1:
+		return "1 trigger run"
+	default:
+		return fmt.Sprintf("%d trigger runs", len(triggers))
+	}
+}
+
+func triggerTail(triggers []AgentSignal) string {
+	if w := triggerWord(triggers); w != "" {
+		return ", " + w
+	}
+	return ""
+}
+
 // agentState is the AGENTS column: the one agent with its state, or, for
 // several, how many are in each state, needs input first. It showed the
 // first agent alone, so a machine with five read `claude: working`
@@ -685,12 +731,19 @@ func agentState(p *Project) string {
 		return ""
 	}
 	now := time.Now()
-	agents := p.Signals.Agents
+	// A trigger's window is an agent window, but it is not the user's:
+	// a machine nobody is attached to must not read as `claude: working`
+	// because a 03:00 sweep is running (DECISIONS I-1256). They are
+	// counted on their own, after the user's.
+	agents, triggers := splitTriggerWindows(p.Signals.Agents)
+	if len(agents) == 0 {
+		return triggerWord(triggers)
+	}
 	if len(agents) == 1 {
 		if w := agentWord(agents[0].State); w != "" {
-			return fmt.Sprintf("%s: %s%s%s", agents[0].Agent, w, staleMark(p, now), waitAge(p, agents[0], now))
+			return fmt.Sprintf("%s: %s%s%s%s", agents[0].Agent, w, staleMark(p, now), waitAge(p, agents[0], now), triggerTail(triggers))
 		}
-		return agents[0].Agent
+		return agents[0].Agent + triggerTail(triggers)
 	}
 	// The longest wait is the one to act on (I-634).
 	var longest string

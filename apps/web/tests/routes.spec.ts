@@ -31,16 +31,24 @@ test('/questions renders', async ({ page }) => {
 	await expect(page).toHaveTitle(/(^|\) )Questions · repose$/);
 });
 
-// A project is six tabs under one header (I-841, I-1216): the layout draws
+// A project is seven tabs under one header (I-841, I-1216, I-1258): the layout draws
 // the title and the tabs, each tab its own sections.
-test('/projects/[id] renders the Overview sections and the six tabs', async ({ page }) => {
+test('/projects/[id] renders the Overview sections and the seven tabs', async ({ page }) => {
 	await page.goto(`/projects/${projectId}`);
 	await expect(page.getByRole('heading', { level: 1, name: projectName })).toBeVisible();
 	for (const name of ['Connect', 'Agents', 'Machine', 'Details', 'Destroy']) {
 		await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
 	}
 	const tabs = page.getByRole('navigation', { name: 'Project' }).getByRole('link');
-	await expect(tabs).toHaveText(['Overview', 'Browser', 'Events', 'Usage', 'Snapshots', 'Config']);
+	await expect(tabs).toHaveText([
+		'Overview',
+		'Browser',
+		'Triggers',
+		'Events',
+		'Usage',
+		'Snapshots',
+		'Config'
+	]);
 });
 
 // The Browser tab's own states are browser-view.spec.ts; this is the
