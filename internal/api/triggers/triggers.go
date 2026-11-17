@@ -82,11 +82,24 @@ const (
 	WorkingGrace = 2 * time.Hour
 )
 
-// Stale is when the worker fails a row still in the hand-off: past every
-// waiter's window, so a fire cannot reach a machine long after the sender
-// was told it did not (say's rule, I-1162). A waiter's own window is the
-// api's long poll, which the op reads bound.
-const Stale = 40 * time.Second
+// Stale is how long a row may sit in the hand-off, measured from the
+// moment the worker last took it or put it back, before the worker fails
+// it: past every waiter's window, so a fire cannot reach a machine long
+// after the sender was told it did not (say's rule, I-1162).
+//
+// It is three passes and not one: at 40 seconds the pass that requeued a
+// run to start its machine failed that same run on the next pass, and a
+// `sending` row whose guest woke, ran a 10-second gate and answered was
+// failed `unreachable` while its agent worked. A hand-off nobody takes
+// for three passes is a worker that is gone, which is what this is for.
+const Stale = 3 * TickInterval
+
+// MaxWait is the ceiling on the whole hand-off, so a run that keeps
+// waiting for something that never comes — a machine whose start never
+// finishes, a project stuck in `starting` — ends instead of being put
+// back for ever. Stale cannot see it, because every requeue restarts
+// Stale's clock.
+const MaxWait = 10 * time.Minute
 
 // Kinds of trigger.
 const (
@@ -414,7 +427,11 @@ type Store struct {
 	// internal/api/questions raises a question's (I-1256). nil raises
 	// none, which is a store in a test that is not watching for them.
 	events *events.Ingest
-	now    func() time.Time
+	// done is what runs when an ending the api wrote itself is written:
+	// app.StopAfterRun, so `--stop-after` holds for the endings the
+	// machine never reports (a skip, a stale hand-off, a stop).
+	done func(ctx context.Context, runID uuid.UUID)
+	now  func() time.Time
 }
 
 // SetEvents gives the store the ingest, which app.go installs after New
@@ -422,13 +439,17 @@ type Store struct {
 func (s *Store) SetEvents(e *events.Ingest) { s.events = e }
 func (s *Store) SetMetrics(m *metrics.M)    { s.m = m }
 
+// SetDone gives the store what to run when it writes an ending itself,
+// which is the same `--stop-after` the guest's own report triggers.
+func (s *Store) SetDone(f func(ctx context.Context, runID uuid.UUID)) { s.done = f }
+
 // counted records a run that ended: the door it came in and how it
 // went, and how long it took when it worked.
 func (s *Store) counted(r Run) {
 	if s.m == nil || !Terminal(r.State) {
 		return
 	}
-	s.m.TriggerRuns.WithLabelValues(r.Source, r.State).Inc()
+	s.m.TriggerRuns.WithLabelValues(r.Source, r.State).Inc() // label `kind`
 	if r.StartedAt != nil && r.FinishedAt != nil {
 		s.m.TriggerRunSeconds.Observe(r.FinishedAt.Sub(*r.StartedAt).Seconds())
 	}

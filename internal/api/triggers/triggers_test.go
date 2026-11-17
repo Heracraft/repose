@@ -536,3 +536,170 @@ func TestGuestSkipsCoalesceAndKeepTheRunsThatRan(t *testing.T) {
 		t.Errorf("the coalesced row counted %d, want 50", counted)
 	}
 }
+
+// A fire the guest refuses — a gate that said no, a `--dry-run`, a
+// duplicate — ends the row the api already wrote for it. The first draft
+// sent every guest skip down the coalescing insert, whose conflict target
+// is (trigger, reason, hour) and not the primary key, so a skip of a run
+// the api had already written raised 23505. The event was never acked and
+// hostd resent it on every reconnect, which is the whole admission
+// surface: dry_run, gated, duplicate, concurrency, off, too_many_fires.
+func TestAGuestSkipOfAFireEndsTheRowTheApiWrote(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "apply", Kind: triggers.KindRoute, Route: "r", PromptPath: strp("a.md"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := s.Fire(ctx, pid, "apply", triggers.FireOpts{
+		Source: triggerrun.SourceHand, DryRun: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, fresh, err := s.Apply(ctx, triggers.Report{
+		RunID: run.ID, ProjectID: pid, Trigger: "apply", State: triggerrun.StateSkipped,
+		Reason: triggerrun.ReasonDryRun, Source: triggerrun.SourceHand,
+	})
+	if err != nil {
+		t.Fatalf("the guest's skip of a run the api wrote: %v", err)
+	}
+	if !fresh {
+		t.Error("the report was not taken, so hostd keeps resending it")
+	}
+	if got.ID != run.ID {
+		t.Errorf("the skip went to %s, not to the row the fire wrote (%s)", got.ID, run.ID)
+	}
+	if got.State != triggerrun.StateSkipped || got.Reason != triggerrun.ReasonDryRun {
+		t.Errorf("the row reads %q/%q, want skipped/dry_run", got.State, got.Reason)
+	}
+	runs, err := s.Runs(ctx, pid, "apply", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Errorf("%d rows for one fire, want 1", len(runs))
+	}
+}
+
+// A schedule the api itself refuses hour after hour — a stopped machine,
+// a plan's memory in use — folds into one row an hour, as §10 says. With
+// a row per fire, `every 15m` wrote four an hour and the 20 rows kept per
+// trigger evicted every run that ever ran inside five hours. A hand fire
+// keeps its own row, because `fire --wait` is waiting on that id.
+func TestTheApisOwnRefusalsCoalesceAndAHandFireDoesNot(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "sweep", Kind: triggers.KindSchedule, Spec: "every 15m", PromptPath: strp("s.md"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Apply(ctx, triggers.Report{
+		RunID: uuid.Must(uuid.NewV7()), ProjectID: pid, Trigger: "sweep",
+		State: triggerrun.StateDone, Summary: "swept", Source: triggerrun.SourceClock,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for range 40 {
+		run, err := s.Fire(ctx, pid, "sweep", triggers.FireOpts{Source: triggerrun.SourceClock})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Answered(ctx, run.ID, triggerrun.StateSkipped, "", triggerrun.ReasonStopped); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hand, err := s.Fire(ctx, pid, "sweep", triggers.FireOpts{Source: triggerrun.SourceHand})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Answered(ctx, hand.ID, triggerrun.StateSkipped, "", triggerrun.ReasonStopped); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := s.Runs(ctx, pid, "sweep", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var done, clockSkips, handSkips, counted int
+	for _, r := range runs {
+		switch {
+		case r.State == triggerrun.StateDone:
+			done++
+		case r.ID == hand.ID:
+			handSkips++
+		default:
+			clockSkips++
+			counted = r.Skips
+		}
+	}
+	if done != 1 {
+		t.Error("the run that ran was evicted by the clock's refusals")
+	}
+	if clockSkips != 1 {
+		t.Errorf("%d rows for 40 refused clock fires, want 1", clockSkips)
+	}
+	if counted != 40 {
+		t.Errorf("the hour's row counted %d, want 40", counted)
+	}
+	if handSkips != 1 {
+		t.Error("a hand fire's own row went missing; `fire --wait` waits on that id")
+	}
+}
+
+// The hand-off's clock runs from the last time the worker took the row,
+// not from when it was written. The pass that requeues the fire which
+// started a machine used to fail that same fire `unreachable` on the next
+// pass, 60 seconds later, and notify the owner about a machine that was
+// starting exactly as asked.
+func TestARequeuedFireIsNotStaleOnTheNextPass(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "nightly", Kind: triggers.KindSchedule, Spec: "daily 03:00",
+		PromptPath: strp("n.md"), AllowStart: boolp(true),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Written a minute and a half ago, which is past Stale on its own.
+	s.SetNow(func() time.Time { return time.Now().UTC().Add(-90 * time.Second) })
+	run, err := s.Fire(ctx, pid, "nightly", triggers.FireOpts{Source: triggerrun.SourceClock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetNow(time.Now)
+	taken, err := s.TakePending(ctx, 10)
+	if err != nil || len(taken) != 1 {
+		t.Fatalf("TakePending: %v, %d rows", err, len(taken))
+	}
+	if err := s.Requeue(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.FailStale(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("the fire that started the machine was failed `unreachable` while the machine started")
+	}
+	// A hand-off nobody takes for the whole ceiling does end, so a run
+	// waiting for a machine that never arrives is not waiting for ever.
+	s.SetNow(func() time.Time { return time.Now().UTC().Add(triggers.MaxWait + time.Minute) })
+	if n, err := s.FailStale(ctx); err != nil || n != 1 {
+		t.Errorf("past MaxWait: %d rows ended, %v", n, err)
+	}
+	got, err := s.GetRun(ctx, pid, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reason != triggerrun.ReasonUnreachable {
+		t.Errorf("reason %q, want unreachable", got.Reason)
+	}
+}

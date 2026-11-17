@@ -63,10 +63,13 @@ type M struct {
 	OutboxDepth                  prometheus.Gauge
 	OutboxLagSeconds             prometheus.Gauge
 	// TriggerRuns counts every run the api records, by the door it came
-	// in and how it ended, and TriggerRunSeconds is how long a finished
-	// run took (DECISIONS I-1256). A trigger's name is not a label: it
-	// is the user's own word, and a label value outside a fixed set is a
-	// new series per value (I-445).
+	// in (`kind`: route, clock or hand) and how it ended, and
+	// TriggerRunSeconds is how long a finished run took (DECISIONS
+	// I-1256). The label is `kind` and not `source` because the obs
+	// rules keep a fixed low-cardinality list and `source` is not on
+	// it. A trigger's name is not a label either: it is the user's own
+	// word, and a value outside a fixed set is a new series per value
+	// (I-445).
 	TriggerRuns       *prometheus.CounterVec
 	TriggerRunSeconds prometheus.Histogram
 	// BillingWebhookTotal counts Polar webhook deliveries by event kind and
@@ -199,7 +202,7 @@ func New(reg prometheus.Registerer) *M {
 		NotifyDeliveryLatencySeconds: prometheus.NewHistogram(prometheus.HistogramOpts{Name: "repose_api_notify_delivery_latency_seconds", Help: "Event timestamp to delivered timestamp, successful deliveries only.", Buckets: prometheus.ExponentialBuckets(1, 2, 12)}),
 		OutboxDepth:                  prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_depth", Help: "Undelivered outbox rows."}),
 		OutboxLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_lag_seconds", Help: "How long the oldest due outbox row has waited past its next_at."}),
-		TriggerRuns:                  prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_trigger_runs_total", Help: "Trigger runs the api recorded, by source (route, clock, hand) and state."}, []string{"source", "state"}),
+		TriggerRuns:                  prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_trigger_runs_total", Help: "Trigger runs the api recorded, by the door they came in (route, clock, hand) and how they ended."}, []string{"kind", "state"}),
 		TriggerRunSeconds:            prometheus.NewHistogram(prometheus.HistogramOpts{Name: "repose_trigger_run_seconds", Help: "How long a finished trigger run took.", Buckets: []float64{1, 5, 15, 60, 300, 900, 3600, 14400}}),
 		BillingWebhookTotal:          prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_webhook_total", Help: "Polar webhook deliveries by event kind and result."}, []string{"kind", "result"}),
 		BillingOverageChargesTotal:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_overage_charges_total", Help: "Egress overage lines sent to Polar by result."}, []string{"result"}),

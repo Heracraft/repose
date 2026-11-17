@@ -286,9 +286,10 @@ trigger, reason and hour, and counts: `skipped: the machine was stopped
 line) and `ms`. A trigger's **name** is not a log field, as a route's
 name is not: `OBSERVABILITY.md` allows ids and bounded enums and nothing
 else, and the name is the user's word. The metrics are
-`repose_trigger_runs_total{source,state}` and
-`repose_trigger_run_seconds`, both registered where the webhook metrics
-are; an unregistered metric has no exporter, which is why there is no
+`repose_trigger_runs_total{kind,state}` (`kind` is the door, which is
+what `source` is called on a label, because the observability rules keep
+a fixed list) and `repose_trigger_run_seconds`, both registered where
+the webhook metrics are; an unregistered metric has no exporter, which is why there is no
 third metric for a queue that does not exist (§11).
 
 ## 5. The event door

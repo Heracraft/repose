@@ -254,6 +254,13 @@ func (c *Clock) dispatch(ctx context.Context, run Run) error {
 		// also what makes a start that fails end as a skip rather than a
 		// run that never happened.
 		return c.store.Requeue(ctx, run.ID)
+	case state == "starting" || state == "restoring" || state == "creating" || state == "building":
+		// A machine on its way up is not busy, and a fire that lands in
+		// a start's 12 to 14 seconds used to be thrown away — including
+		// the fire that started it, because any project's NOTIFY makes
+		// this pass happen. It waits for the next pass instead, and
+		// MaxWait ends it if the machine never arrives.
+		return c.store.Requeue(ctx, run.ID)
 	case state != "running" || guestID == nil:
 		return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonBusy)
 	case hostID == nil:
@@ -341,8 +348,12 @@ func (s *Store) byID(ctx context.Context, id uuid.UUID) (Trigger, error) {
 
 // Requeue puts a claimed run back in the hand-off, for the one case that
 // has to wait for something else: a machine the fire is starting.
+// It stamps handoff_at, which is what Stale measures from: without it
+// the pass that requeued a run failed that same run `unreachable` on the
+// next pass, 60 seconds later, and notified the owner about a machine
+// that was starting exactly as asked.
 func (s *Store) Requeue(ctx context.Context, runID uuid.UUID) error {
-	_, err := s.pool.Exec(ctx, `update trigger_runs set state = $2 where id = $1 and state = $3`,
-		runID, StatePending, StateSending)
+	_, err := s.pool.Exec(ctx, `update trigger_runs set state = $2, handoff_at = now()
+		where id = $1 and state = $3`, runID, StatePending, StateSending)
 	return err
 }

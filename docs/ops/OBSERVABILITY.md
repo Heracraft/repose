@@ -251,9 +251,12 @@ be backfilled -- `meter_samples` is kept 90 days and `usage_hours` for
 ever -- which is why it shipped before launch rather than after.
 
 Triggers (DECISIONS I-1248..I-1262):
-`repose_trigger_runs_total{source,state}` counts every run the api
-records and `repose_trigger_run_seconds` is a histogram of a finished
-run's duration. Both are registered beside the webhook metrics. There is
+`repose_trigger_runs_total{kind,state}` counts every run the api
+records, where `kind` is the door it came in by (`route`, `clock`,
+`hand`) and `state` how it ended, and `repose_trigger_run_seconds` is a
+histogram of a finished run's duration. The label is `kind` and not
+`source` because §5's low-cardinality list is fixed and `source` is not
+on it. Both are registered beside the webhook metrics. There is
 no third metric for a queue depth, because there is no queue: a queue in
 the guest had no row the api could read, so nothing could have exported
 it (I-1254).

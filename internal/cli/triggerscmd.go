@@ -19,7 +19,7 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"Alone, list them.\n\n" +
 			"The prompt is a file in the machine and the payload is a file in the machine.\n" +
 			"repose stores neither; the row holds a path.",
-		Example: "  repose triggers add apply --route recruiting -p 'Read $REPOSE_PAYLOAD and apply if it fits'\n" +
+		Example: "  repose triggers add apply --route recruiting -p 'Read $REPOSE_PAYLOAD'\n" +
 			"  repose triggers add triage --every 'weekdays 07:00' --prompt-file triage.md\n" +
 			"  repose triggers runs",
 		SuggestFor: []string{"trigger", "schedule", "cron"},
@@ -48,7 +48,7 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"keeps the route's token, so a URL already in a provider's dashboard goes on\n" +
 			"working.",
 		Example: "  repose triggers add apply --route recruiting --prompt-file apply.md\n" +
-			"  repose triggers add apply --gate 'verify-signature.sh' --dedupe header:X-GitHub-Delivery\n" +
+			"  repose triggers add apply --gate verify.sh --dedupe header:X-GitHub-Delivery\n" +
 			"  repose triggers add triage --every 'weekdays 07:00' -p 'triage new issues'\n" +
 			"  repose triggers add sweep --every 'daily 03:00' --start --stop-after",
 		Args:              argsNOwn(1, 1, "one NAME", nil),
@@ -206,7 +206,7 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	fire.Flags().StringVar(&firePayload, "payload", "", "hand the session this `FILE` as the event (- for stdin)")
 	fire.Flags().StringVar(&fireRun, "run", "", "replay the payload of an earlier `RUN`")
 	fire.Flags().BoolVar(&fireWait, "wait", false, "wait for the run to end and print the outcome")
-	fire.Flags().DurationVar(&fireWaitFor, "wait-for", 5*time.Minute, "how long --wait waits before pointing at `repose triggers runs`")
+	fire.Flags().DurationVar(&fireWaitFor, "wait-for", 5*time.Minute, "how long --wait follows the run")
 	fire.Flags().BoolVar(&fireDryRun, "dry-run", false, "run the gate alone and start no agent")
 	fire.Flags().BoolVar(&g.json, "json", false, "print every field of the run as JSON")
 

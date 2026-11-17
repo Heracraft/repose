@@ -494,7 +494,7 @@ func (s *Store) TakePending(ctx context.Context, limit int) ([]Run, error) {
 	rows, err := s.pool.Query(ctx, `with taken as (
 			select id from trigger_runs where state = $1
 			order by created_at limit $2 for update skip locked)
-		update trigger_runs r set state = $3
+		update trigger_runs r set state = $3, handoff_at = now()
 		where r.id in (select id from taken)
 		returning `+runCols, StatePending, limit, StateSending)
 	if err != nil {
@@ -557,7 +557,43 @@ func (s *Store) raise(ctx context.Context, ids ...uuid.UUID) {
 			Window: e.run.Window, Summary: Sentence(e.run), Source: "api",
 			NoNotify: kind == "trigger_failed" && e.notify != "failed",
 		})
+		// `--stop-after` holds for an ending the api wrote itself too:
+		// a fire that started a machine and was then refused, or whose
+		// report never came, left that machine running and billing.
+		if s.done != nil {
+			s.done(ctx, e.run.ID)
+		}
 	}
+}
+
+// coalesceSkip folds one refusal into the single row its (trigger,
+// reason, hour) keeps and reports whether that row is new, which is the
+// one event a user sees for the hour. It is the whole of §10's promise
+// that a week of a stopped machine's refusals costs one row an hour, and
+// all three doors go through it: the edge's, the guest's and the api's.
+func (s *Store) coalesceSkip(ctx context.Context, tx pgx.Tx, runID, projectID, triggerID uuid.UUID,
+	name, source, reason, dedupeKey string) (uuid.UUID, bool, error) {
+	hour := s.now().UTC().Truncate(time.Hour)
+	var id uuid.UUID
+	var skips int
+	err := tx.QueryRow(ctx, `insert into trigger_runs
+		(id, project_id, trigger_id, trigger_name, source, state, reason,
+		 dedupe_key, skip_hour, created_at, finished_at)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
+		on conflict (trigger_id, reason, skip_hour) where skip_hour is not null
+		do update set skips = trigger_runs.skips + 1,
+			finished_at = excluded.finished_at,
+			dedupe_key = coalesce(excluded.dedupe_key, trigger_runs.dedupe_key)
+		returning id, skips`,
+		runID, projectID, triggerID, name, source, StateSkipped, reason,
+		nilStr(dedupeKey), hour, s.now().UTC()).Scan(&id, &skips)
+	if err != nil {
+		return uuid.UUID{}, false, err
+	}
+	if err := pruneRuns(ctx, tx, triggerID); err != nil {
+		return uuid.UUID{}, false, err
+	}
+	return id, skips == 1, nil
 }
 
 // Answered writes the machine's answer to a RunTrigger back on the row,
@@ -565,6 +601,9 @@ func (s *Store) raise(ctx context.Context, ids ...uuid.UUID) {
 func (s *Store) Answered(ctx context.Context, runID uuid.UUID, state, window, reason string) error {
 	if !Terminal(state) && state != StateWorking {
 		return fmt.Errorf("%q is not an answer to a fire", state)
+	}
+	if state == StateSkipped {
+		return s.answeredSkip(ctx, runID, reason)
 	}
 	var finished any
 	if Terminal(state) {
@@ -574,16 +613,97 @@ func (s *Store) Answered(ctx context.Context, runID uuid.UUID, state, window, re
 	if state == StateWorking {
 		started = s.now().UTC()
 	}
-	_, err := s.pool.Exec(ctx, `update trigger_runs
+	tag, err := s.pool.Exec(ctx, `update trigger_runs
 		set state = $2, tmux_window = coalesce(nullif($3, ''), tmux_window),
 		    reason = coalesce(nullif($4, ''), reason),
 		    started_at = coalesce(started_at, $5), finished_at = coalesce($6, finished_at)
 		where id = $1 and state in ($7, $8)`,
 		runID, state, window, reason, started, finished, StatePending, StateSending)
-	if err == nil && Terminal(state) {
+	// Only an update that moved the row raises: a Result the host
+	// resends after a reconnect matched nothing, and raising on it gave
+	// the run a second ending event and a second notification.
+	if err == nil && Terminal(state) && tag.RowsAffected() > 0 {
 		s.raise(ctx, runID)
 	}
 	return err
+}
+
+// answeredSkip is the api's own refusal of a fire: the machine is
+// stopped, busy, in error, or the plan's memory is in use.
+//
+// A clock fire folds into its hour's row like every other refusal
+// (coalesceSkip). It has to: `every 15m` against a stopped machine wrote
+// four rows an hour, and with 20 rows kept per trigger that evicted
+// every run that ever ran inside five hours. A hand fire keeps its own
+// row, because `repose triggers fire --wait` is waiting on that id.
+func (s *Store) answeredSkip(ctx context.Context, runID uuid.UUID, reason string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var projectID uuid.UUID
+	var triggerID *uuid.UUID
+	var name, source string
+	var dedupe *string
+	err = tx.QueryRow(ctx, `select project_id, trigger_id, trigger_name, source, dedupe_key
+		from trigger_runs where id = $1 and state in ($2, $3) for update`,
+		runID, StatePending, StateSending).Scan(&projectID, &triggerID, &name, &source, &dedupe)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // already ended, and the first ending wins
+	}
+	if err != nil {
+		return err
+	}
+
+	if triggerID == nil || source != SourceClock {
+		if _, err := tx.Exec(ctx, `update trigger_runs
+			set state = $2, reason = coalesce(nullif($3, ''), reason), finished_at = $4
+			where id = $1`, runID, StateSkipped, reason, s.now().UTC()); err != nil {
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return err
+		}
+		s.raise(ctx, runID)
+		return nil
+	}
+
+	if _, err := tx.Exec(ctx, `delete from trigger_runs where id = $1`, runID); err != nil {
+		return err
+	}
+	word := reason
+	if !triggerrun.Reason(word) {
+		word = triggerrun.ReasonError
+	}
+	id, fresh, err := s.coalesceSkip(ctx, tx, runID, projectID, *triggerID, name, SourceClock, word, strVal(dedupe))
+	if err != nil {
+		return err
+	}
+	run, err := s.runTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	// The hour's first refusal is the one event; the rest are the count
+	// on that row, which is what keeps a week of them quiet.
+	if fresh {
+		s.raise(ctx, id)
+	} else {
+		s.counted(run)
+	}
+	return nil
+}
+
+// strVal is a nullable text column as a string.
+func strVal(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // FailStale fails a hand-off row the worker never finished, past every
@@ -591,10 +711,12 @@ func (s *Store) Answered(ctx context.Context, runID uuid.UUID, state, window, re
 // was told it did not (say's StaleAfter).
 func (s *Store) FailStale(ctx context.Context) (int, error) {
 	rows, err := s.pool.Query(ctx, `update trigger_runs
-		set state = $1, reason = $5, finished_at = now()
-		where state in ($2, $3) and coalesce(handoff_at, created_at) < $4
+		set state = $1, reason = $6, finished_at = now()
+		where state in ($2, $3)
+		  and (coalesce(handoff_at, created_at) < $4 or created_at < $5)
 		returning id`,
-		StateFailed, StatePending, StateSending, s.now().UTC().Add(-Stale),
+		StateFailed, StatePending, StateSending,
+		s.now().UTC().Add(-Stale), s.now().UTC().Add(-MaxWait),
 		triggerrun.ReasonUnreachable)
 	if err != nil {
 		return 0, err
@@ -778,32 +900,37 @@ func (s *Store) Apply(ctx context.Context, rep Report) (Run, bool, error) {
 		return Run{}, false, err
 	}
 
-	// A skip the guest reported coalesces exactly as an edge-side one
-	// does: one row per trigger, reason and hour, with the count. A
-	// provider retrying 600 times is the case `--dedupe` exists for,
-	// and a row each would evict every run that ran (I-1254, I-1262).
-	if rep.State == StateSkipped && triggerID != nil {
-		hour := s.now().UTC().Truncate(time.Hour)
+	// Does the api already hold this run — a fire or a clock run it
+	// wrote and sent? That decides what a skip means. A skip of a row
+	// the api has is that row's ending; a skip of a run the machine
+	// started itself has no row yet and folds into its hour's.
+	var was string
+	errWas := tx.QueryRow(ctx, `select state from trigger_runs where id = $1 for update`, rep.RunID).Scan(&was)
+	known := errWas == nil
+	if !known && !errors.Is(errWas, pgx.ErrNoRows) {
+		return Run{}, false, errWas
+	}
+
+	// A skip the guest reported for a run it started coalesces exactly
+	// as an edge-side one does: one row per trigger, reason and hour,
+	// with the count. A provider retrying 600 times is the case
+	// `--dedupe` exists for, and a row each would evict every run that
+	// ran (I-1254, I-1262).
+	//
+	// Only for a run the api does not already hold: the first draft
+	// took this branch for every skip, and a `fire --dry-run` or a
+	// gated fire then inserted a second row with a run id that was
+	// already a row. The conflict was on the primary key, which this
+	// statement's target does not cover, so the insert raised 23505,
+	// the event was never acked, and hostd resent it for ever.
+	if rep.State == StateSkipped && triggerID != nil && !known {
 		reason := rep.Reason
 		if !triggerrun.Reason(reason) {
 			reason = triggerrun.ReasonGated // a gate's line is one reason, not many
 		}
-		var id uuid.UUID
-		err := tx.QueryRow(ctx, `insert into trigger_runs
-			(id, project_id, trigger_id, trigger_name, source, state, reason,
-			 dedupe_key, skip_hour, created_at, finished_at)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
-			on conflict (trigger_id, reason, skip_hour) where skip_hour is not null
-			do update set skips = trigger_runs.skips + 1,
-				finished_at = excluded.finished_at,
-				dedupe_key = coalesce(excluded.dedupe_key, trigger_runs.dedupe_key)
-			returning id`,
-			rep.RunID, rep.ProjectID, *triggerID, rep.Trigger, source, StateSkipped, reason,
-			nilStr(rep.DedupeKey), hour, s.now().UTC()).Scan(&id)
+		id, fresh, err := s.coalesceSkip(ctx, tx, rep.RunID, rep.ProjectID, *triggerID,
+			rep.Trigger, source, reason, rep.DedupeKey)
 		if err != nil {
-			return Run{}, false, err
-		}
-		if err := pruneRuns(ctx, tx, *triggerID); err != nil {
 			return Run{}, false, err
 		}
 		run, err := s.runTx(ctx, tx, id)
@@ -811,13 +938,11 @@ func (s *Store) Apply(ctx context.Context, rep Report) (Run, bool, error) {
 			return Run{}, false, err
 		}
 		s.counted(run)
-		return run, true, tx.Commit(ctx)
+		return run, fresh, tx.Commit(ctx)
 	}
 
-	var was string
-	err = tx.QueryRow(ctx, `select state from trigger_runs where id = $1 for update`, rep.RunID).Scan(&was)
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case !known:
 		// A run the machine started: a delivery came in the front door
 		// and the api hears of it here first.
 		if _, err := tx.Exec(ctx, `insert into trigger_runs
@@ -831,8 +956,6 @@ func (s *Store) Apply(ctx context.Context, rep Report) (Run, bool, error) {
 			rep.StartedAt, rep.FinishedAt); err != nil {
 			return Run{}, false, err
 		}
-	case err != nil:
-		return Run{}, false, err
 	case Terminal(was):
 		// The first terminal state wins, as the first answer to a
 		// question does: a repeat on a reconnect changes nothing.

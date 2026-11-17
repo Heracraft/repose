@@ -512,8 +512,7 @@ func triggerWaitForRun(ctx context.Context, e *Env, projectID string, run *Trigg
 			return run, nil
 		}
 		if !time.Now().Before(deadline) {
-			_, _ = fmt.Fprintf(e.ErrOut, "still %s after %s; `repose triggers runs %s` has the outcome.\n",
-				run.State, waitFor, run.Trigger)
+			_, _ = fmt.Fprintf(e.ErrOut, "still %s after %s.\n", run.State, waitFor)
 			return run, nil
 		}
 		next, err := e.Client.GetTriggerRun(ctx, projectID, run.RunID, 20*time.Second)
