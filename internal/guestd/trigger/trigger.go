@@ -39,6 +39,7 @@ import (
 	"github.com/heracraft/repose/internal/agentwindow"
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
+	"github.com/heracraft/repose/internal/multiplexer"
 	"github.com/heracraft/repose/internal/triggerrun"
 )
 
@@ -76,6 +77,12 @@ const (
 	// enough that a command resent after a reconnect is answered from
 	// it, and not so long that the registry grows for ever.
 	EndedKept = 30 * time.Minute
+	// SettleGrace is how long an agent that is in its window but has not
+	// worked yet may read `idle` before the supervisor believes it. A
+	// prompt-hooked agent reads `idle` until its first hook, so this is
+	// the window between `tmux new-window` and the agent taking the
+	// prompt (DECISIONS I-1256).
+	SettleGrace = 2 * time.Minute
 	// StartGrace is how long a run may sit with no agent in its window
 	// before it is failed: the wrapper loads the dev shell first, which
 	// on a first run builds it.
@@ -115,6 +122,12 @@ type Agents interface {
 // default before it sends the set, so the guest never guesses.
 type Project struct {
 	Slug string
+	// Mux is the project's multiplexer, normalized (multiplexer.Tmux or
+	// multiplexer.Herdr). A run opens a tmux window, so a herdr project
+	// is refused here rather than failing at `tmux new-window` with
+	// "the agent is not installed on this machine", which is what the
+	// first draft reported. `repose say` refuses herdr the same way.
+	Mux string
 }
 
 // Runner owns the set, the runs and the receiver.
@@ -161,6 +174,9 @@ type run struct {
 	// SawAgent is set once an agent was seen in the window, so a window
 	// that never got one is told apart from one whose agent exited.
 	SawAgent bool
+	// SawWorking is set once that agent was seen working, which is what
+	// tells a finished turn from an agent that has not started one.
+	SawWorking bool
 	// State and Reason are an ended run's, so a resent command is
 	// answered with what happened rather than run again.
 	State  string
@@ -179,17 +195,76 @@ func New(p sysdep.Paths, r sysdep.Runner, agents Agents, project func() Project,
 }
 
 // SetTriggers replaces the whole set, as WriteSecrets replaces the whole
-// named set. It is kept in memory only: the api sends it again on every
-// start, so a guest that lost it comes back with it (I-1248).
+// named set. The api owns it and sends it on every create, start and
+// restore; the runner also keeps it on the volume, so a guestd that
+// restarts between two starts still has it (Load).
 func (r *Runner) SetTriggers(set []Trigger) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	next := make(map[string]Trigger, len(set))
 	for _, t := range set {
 		next[t.Name] = t
 	}
 	r.set = next
+	r.mu.Unlock()
 	r.log.Info("trigger set", "event", "trigger_run", "count", len(next))
+	r.save(set)
+}
+
+// save keeps the set beside the guest's other state. A set that cannot be
+// written is a warning and nothing more: the set in memory is the one
+// that answers deliveries, and the api sends it again on the next start.
+func (r *Runner) save(set []Trigger) {
+	path := r.paths.TriggerSet()
+	if len(set) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			r.log.Warn("trigger set not removed", "event", "trigger_run", "err", err.Error())
+		}
+		return
+	}
+	b, err := json.Marshal(set)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "err", err.Error())
+	}
+}
+
+// Load reads the kept set at start, which is what makes a guestd restart
+// invisible to a provider: without it every delivery after a restart was
+// a 404 the edge reports as `route_gone`, "the route was removed", about
+// a route that is still there, and every scheduled fire failed the same
+// way. Guest state reconciles (CLAUDE.md), and this set is state.
+func (r *Runner) Load() {
+	b, err := os.ReadFile(r.paths.TriggerSet())
+	if err != nil {
+		if !os.IsNotExist(err) {
+			r.log.Warn("kept trigger set unreadable", "event", "trigger_run", "err", err.Error())
+		}
+		return
+	}
+	var set []Trigger
+	if err := json.Unmarshal(b, &set); err != nil {
+		r.log.Warn("kept trigger set unreadable", "event", "trigger_run", "err", "invalid")
+		return
+	}
+	r.mu.Lock()
+	next := make(map[string]Trigger, len(set))
+	for _, t := range set {
+		next[t.Name] = t
+	}
+	r.set = next
+	r.mu.Unlock()
+	r.log.Info("trigger set from the volume", "event", "trigger_run", "count", len(next))
 }
 
 // Get is one trigger of the set.
@@ -259,6 +334,14 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 	// that is off: `off` shuts the doors, and a fire is the owner asking.
 	if !t.Enabled && req.Source != triggerrun.SourceHand {
 		return r.skip(req, triggerrun.ReasonOff), nil
+	}
+	// A run is an agent in its own tmux window. A herdr project has no
+	// tmux session, so `tmux new-window` fails and the first draft
+	// reported "the agent is not installed on this machine"; the api
+	// refuses `triggers add` on such a project, and this is the machine
+	// saying the same thing about a trigger that predates the switch.
+	if multiplexer.Normalize(r.project().Mux) == multiplexer.Herdr {
+		return r.skip(req, triggerrun.ReasonHerdr), nil
 	}
 	if key := r.dedupeKey(t, req); key != "" {
 		seen, err := r.seenRecently(t.Name, key)
@@ -939,8 +1022,19 @@ func (r *Runner) sweep(ctx context.Context) {
 				end = append(end, ending{rn, triggerrun.StateFailed, triggerrun.ReasonNoAgent})
 			}
 		case present && state == "working":
-			rn.SawAgent = true
+			rn.SawAgent, rn.SawWorking = true, true
 			rn.Worked += now.Sub(rn.LastSeen)
+		case present && state == "idle" && !rn.SawWorking && now.Sub(rn.Started) <= SettleGrace:
+			// An agent that is there and has not worked yet. A
+			// prompt-hooked agent reads `idle` until its first hook
+			// (sample.Watcher.computeState), so the seconds between the
+			// window opening and the agent taking the prompt off its own
+			// argv — node's start, a dev shell, a trust dialog — look
+			// exactly like a finished turn. The supervisor ticks every
+			// five seconds, so without this a run was reported `done`,
+			// with no summary, while its agent was still starting, and
+			// `--stop-after` then stopped the machine under it.
+			rn.SawAgent = true
 		case present && (state == "idle" || state == "needs_input"):
 			// The turn ended. `needs_input` is an agent waiting at a
 			// prompt it asked for itself, which for an unattended run is

@@ -146,6 +146,7 @@ var (
 	ErrRunNotFound      = errors.New("no such run")
 	ErrPayloadGone      = errors.New("that run's payload is no longer kept")
 	ErrPayloadPath      = errors.New("a payload path is the file `repose triggers fire --payload` writes")
+	ErrHerdr            = errors.New("a trigger starts an agent in a tmux window, which this machine does not run (it runs herdr)")
 )
 
 var (
@@ -165,7 +166,7 @@ var Agents = map[string]bool{"claude": true, "codex": true, "opencode": true, "g
 var inputErrors = []error{
 	ErrInvalidName, ErrInvalidKind, ErrInvalidDedupe, ErrDedupeOnSchedule,
 	ErrInvalidWorkdir, ErrInvalidPrompt, ErrInvalidAgent, ErrInvalidTimeout,
-	ErrAtPromptOnPi, ErrTooMany, ErrPayloadPath, ErrPayloadGone, ErrNoDoor,
+	ErrAtPromptOnPi, ErrTooMany, ErrPayloadPath, ErrPayloadGone, ErrNoDoor, ErrHerdr,
 	// A route name and the route cap are the webhooks store's refusals,
 	// which a trigger's `--route` can cause.
 	webhooks.ErrInvalidName, webhooks.ErrTooMany,

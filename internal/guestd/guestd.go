@@ -206,7 +206,9 @@ func New(cfg Config) (*Server, error) {
 	// The runner reads a window's agent state from the watcher and a
 	// pending question from the asks store, which both already know.
 	s.triggers = trigger.New(paths, runner, triggerAgents{w: s.watcher, q: s.asks},
-		func() trigger.Project { return trigger.Project{Slug: s.project.Slug()} },
+		func() trigger.Project {
+			return trigger.Project{Slug: s.project.Slug(), Mux: s.project.Multiplexer()}
+		},
 		s.emitTriggerRun, log, cfg.Now)
 	return s, nil
 }
@@ -259,8 +261,11 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.watcher.Run(ctx)
 	go s.asks.Run(ctx)
 	// The trigger receiver and the runs' supervisor (DECISIONS I-1250,
-	// I-1256). The reconcile runs first, so a run whose agent is still
-	// working through a guestd restart is not failed.
+	// I-1256). The set comes off the volume and the reconcile runs
+	// first, so a delivery that lands a second after a guestd restart
+	// still fires, and a run whose agent is still working through that
+	// restart is not failed.
+	s.triggers.Load()
 	s.triggers.Reconcile(ctx)
 	go func() {
 		if err := s.triggers.Serve(ctx); err != nil {

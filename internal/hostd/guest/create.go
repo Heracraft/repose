@@ -818,13 +818,38 @@ func (mon *monitor) current() vsockclient.Session {
 	return mon.sess
 }
 
-func (mon *monitor) markReady() {
+// markReady reports whether this was the guest's first Ready. A second
+// one is a guestd that restarted under a running guest.
+func (mon *monitor) markReady() bool {
 	mon.mu.Lock()
-	if !mon.readyOK {
-		mon.readyOK = true
-		close(mon.ready)
+	defer mon.mu.Unlock()
+	if mon.readyOK {
+		return false
 	}
-	mon.mu.Unlock()
+	mon.readyOK = true
+	close(mon.ready)
+	return true
+}
+
+// resendTriggers hands a restarted guestd the trigger set hostd holds.
+// It is best effort: the guest's own copy on the volume is what makes a
+// restart invisible, and this covers the set that changed while guestd
+// was down.
+func (m *Manager) resendTriggers(mon *monitor) {
+	set := m.cachedTriggers(mon.g.GuestID)
+	if len(set) == 0 {
+		return
+	}
+	sess := mon.current()
+	if sess == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := sess.SetTriggers(ctx, &guestdv1.SetTriggers{Triggers: set}); err != nil {
+		m.log(mon.g).Warn("the restarted guestd did not take the trigger set",
+			"event", "trigger_run", "err", err.Error())
+	}
 }
 
 // waitReady blocks until guestd reports Ready or answers a Ping.
@@ -974,7 +999,13 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	}
 	switch v := n.N.(type) {
 	case *guestdv1.Notify_Ready:
-		mon.markReady()
+		if !mon.markReady() {
+			// A guestd that restarted under a running guest: it has
+			// whatever it kept on the volume, and hostd hands it the
+			// set it holds, so a set the api changed while guestd was
+			// down is not stale until the next start (I-1248).
+			go m.resendTriggers(mon)
+		}
 	case *guestdv1.Notify_AgentEvent:
 		ae := v.AgentEvent
 		ev, ok := cleanAgentEvent(mon.g.GuestID, ae.Agent, ae.Kind, ae.Summary, ae.TmuxWindow)

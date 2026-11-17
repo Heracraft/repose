@@ -103,6 +103,7 @@ const (
 	ReasonUnreachable      = "unreachable"
 	ReasonPayloadGone      = "payload_gone"
 	ReasonDryRun           = "dry_run"
+	ReasonHerdr            = "herdr"
 )
 
 // Sentences is every reason and the words each surface prints for it.
@@ -131,6 +132,7 @@ var Sentences = map[string]string{
 	ReasonUnreachable:      "the machine did not take the fire",
 	ReasonPayloadGone:      "that run's payload is no longer kept",
 	ReasonDryRun:           "the gate ran and no agent was started",
+	ReasonHerdr:            "this machine runs under herdr, and a trigger starts a tmux window",
 }
 
 // Reason reports whether word is one of the enum, which is the only

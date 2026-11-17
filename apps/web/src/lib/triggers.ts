@@ -28,7 +28,8 @@ export const TRIGGER_REASONS: Record<string, string> = {
 	clock_late: 'the fire was late and was not caught up',
 	unreachable: 'the machine did not take the fire',
 	payload_gone: "that run's payload is no longer kept",
-	dry_run: 'the gate ran and no agent was started'
+	dry_run: 'the gate ran and no agent was started',
+	herdr: 'this machine runs under herdr, and a trigger starts a tmux window'
 };
 
 /**

@@ -37,6 +37,7 @@ type harness struct {
 	ag     *agents
 	r      *trigger.Runner
 	now    time.Time
+	mux    string
 	// mu guards runs: two deliveries at once report from two
 	// goroutines, as two of the edge's connections would. In the guest
 	// the emit is a channel send (guestd's enqueue).
@@ -56,7 +57,7 @@ func newHarness(t *testing.T) *harness {
 		ag: &agents{}, now: time.Date(2026, 11, 17, 7, 0, 0, 0, time.UTC)}
 	paths := sysdep.Paths{Root: root}
 	h.r = trigger.New(paths, h.runner, h.ag,
-		func() trigger.Project { return trigger.Project{Slug: "todo-app"} },
+		func() trigger.Project { return trigger.Project{Slug: "todo-app", Mux: h.mux} },
 		func(n *guestdv1.TriggerRun) {
 			h.mu.Lock()
 			defer h.mu.Unlock()
@@ -64,6 +65,24 @@ func newHarness(t *testing.T) *harness {
 		},
 		slog.New(slog.DiscardHandler), func() time.Time { return h.now })
 	// tmux answers with the windows the test says exist.
+	h.setWindows()
+	return h
+}
+
+// newHarnessAt is a runner over a volume that already exists, which is
+// what a restarted guestd is.
+func newHarnessAt(t *testing.T, root string) *harness {
+	t.Helper()
+	h := &harness{t: t, root: root, runner: sysdep.NewFakeRunner(),
+		ag: &agents{}, now: time.Date(2026, 11, 17, 7, 0, 0, 0, time.UTC)}
+	h.r = trigger.New(sysdep.Paths{Root: root}, h.runner, h.ag,
+		func() trigger.Project { return trigger.Project{Slug: "todo-app", Mux: h.mux} },
+		func(n *guestdv1.TriggerRun) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			h.runs = append(h.runs, n)
+		},
+		slog.New(slog.DiscardHandler), func() time.Time { return h.now })
 	h.setWindows()
 	return h
 }
@@ -633,5 +652,120 @@ func TestAGatedEventIsNotADuplicateNextTime(t *testing.T) {
 	}
 	if res.State != triggerrun.StateWorking {
 		t.Fatalf("the retry of a gated event is %+v, want working: a gated event paid for nothing", res)
+	}
+}
+
+// The set is the api's state and the receiver answers 404 without it, so
+// a guestd that restarts reads back the set it was last sent. Without
+// this every delivery after a guestd restart was a 404 the edge reports
+// as `route_gone` — "the route was removed" — about a route that is
+// still there, and every scheduled fire failed the same way, until the
+// next start of the machine.
+func TestTheSetSurvivesAGuestdRestart(t *testing.T) {
+	h := newHarness(t)
+	h.set(basic("apply"), basic("triage"))
+
+	// A second runner over the same volume is the restarted guestd.
+	next := newHarnessAt(t, h.root)
+	if _, ok := next.r.Get("apply"); ok {
+		t.Fatal("the set was there before Load, so this test proves nothing")
+	}
+	next.r.Load()
+	for _, name := range []string{"apply", "triage"} {
+		if _, ok := next.r.Get(name); !ok {
+			t.Errorf("%s was lost by the restart, so its deliveries are 404s", name)
+		}
+	}
+	// A set emptied by the api does not come back from the volume.
+	h.set()
+	last := newHarnessAt(t, h.root)
+	last.r.Load()
+	if _, ok := last.r.Get("apply"); ok {
+		t.Error("a trigger the user removed came back after a restart")
+	}
+}
+
+// A run on a herdr project is refused with the reason that says so. The
+// runner opens a tmux window, and a herdr machine has no tmux session,
+// so `tmux new-window` failed and the run was reported `no_agent` — "the
+// agent is not installed on this machine" — which is not what happened.
+func TestAHerdrMachineRefusesTheFireAndSaysWhy(t *testing.T) {
+	h := newHarness(t)
+	h.mux = "herdr"
+	h.set(basic("apply"))
+	h.writePrompt(".repose/triggers/apply.md", "go")
+	res, err := h.r.Start(context.Background(), trigger.Request{
+		Trigger: "apply", RunID: "r1", Source: triggerrun.SourceRoute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.State != triggerrun.StateSkipped || res.Reason != triggerrun.ReasonHerdr {
+		t.Fatalf("a herdr machine answered %q/%q, want skipped/herdr", res.State, res.Reason)
+	}
+	for _, c := range h.runner.Calls() {
+		if strings.Contains(strings.Join(c.Argv, " "), "new-window") {
+			t.Error("it tried to open a tmux window on a herdr machine")
+		}
+	}
+}
+
+// A prompt-hooked agent reads `idle` until its first hook, so the
+// seconds between its window opening and it taking the prompt look
+// exactly like a finished turn. The supervisor ticks every five seconds:
+// without the settle grace a run was reported `done`, with no summary,
+// while its agent was still starting — and `--stop-after` then stopped
+// the machine under it.
+func TestARunIsNotDoneBeforeItsAgentStarts(t *testing.T) {
+	h := newHarness(t)
+	h.set(basic("apply"))
+	h.writePrompt(".repose/triggers/apply.md", "go")
+	if _, err := h.r.Start(context.Background(), trigger.Request{
+		Trigger: "apply", RunID: "r1", Source: triggerrun.SourceRoute,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.setWindows("t-apply")
+
+	// Claude is in the window and has sent no hook yet.
+	h.ag.state, h.ag.present = "idle", true
+	for range 6 {
+		h.now = h.now.Add(5 * time.Second)
+		h.r.Sweep(context.Background())
+	}
+	if got := h.last(); got.State != triggerrun.StateWorking {
+		t.Fatalf("a run whose agent had not started yet ended as %q/%q", got.State, got.Reason)
+	}
+
+	// Its first hook arrives, it works, and the turn ends: that idle is
+	// the real one.
+	h.ag.state = "working"
+	h.now = h.now.Add(5 * time.Second)
+	h.r.Sweep(context.Background())
+	h.ag.state = "idle"
+	h.now = h.now.Add(5 * time.Second)
+	h.r.Sweep(context.Background())
+	if got := h.last(); got.State != triggerrun.StateDone {
+		t.Fatalf("the finished turn did not end the run: %q/%q", got.State, got.Reason)
+	}
+}
+
+// An agent that never starts at all does end, so a run is not open for
+// ever: past the settle grace the supervisor believes the idle it reads.
+func TestAnAgentThatNeverStartsEndsPastTheGrace(t *testing.T) {
+	h := newHarness(t)
+	h.set(basic("apply"))
+	h.writePrompt(".repose/triggers/apply.md", "go")
+	if _, err := h.r.Start(context.Background(), trigger.Request{
+		Trigger: "apply", RunID: "r1", Source: triggerrun.SourceRoute,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.setWindows("t-apply")
+	h.ag.state, h.ag.present = "idle", true
+	h.now = h.now.Add(trigger.SettleGrace + time.Second)
+	h.r.Sweep(context.Background())
+	if got := h.last(); !triggerrun.Terminal(got.State) {
+		t.Fatalf("the run is still %q past the settle grace", got.State)
 	}
 }

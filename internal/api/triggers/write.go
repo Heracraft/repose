@@ -13,6 +13,7 @@ import (
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/multiplexer"
 	"github.com/heracraft/repose/internal/triggerrun"
 	"github.com/heracraft/repose/internal/triggerspec"
 )
@@ -34,6 +35,27 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 		return Trigger{}, false, err
 	}
 	now := s.now().UTC()
+
+	// A run is an agent in a tmux window, and a herdr project has no
+	// tmux session: the machine refuses the fire, so the api refuses the
+	// trigger here, where the user is still typing and can read why.
+	// `repose say` refuses herdr in the same words (I-501).
+	var mux string
+	if err := s.pool.QueryRow(ctx, `select coalesce(multiplexer, '') from projects where id = $1`,
+		projectID).Scan(&mux); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Trigger{}, false, err
+	}
+	if multiplexer.Normalize(mux) == multiplexer.Herdr {
+		// A trigger that predates the switch can still be turned off or
+		// removed; only a new one is refused.
+		_, err := s.Get(ctx, projectID, in.Name)
+		switch {
+		case errors.Is(err, ErrNotFound):
+			return Trigger{}, false, ErrHerdr
+		case err != nil:
+			return Trigger{}, false, err
+		}
+	}
 
 	var routeID *uuid.UUID
 	routeMade := false
