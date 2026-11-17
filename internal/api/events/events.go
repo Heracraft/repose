@@ -123,7 +123,7 @@ const GuestEventsPerHour = 600
 // noDedupe are kinds the user sent on purpose, one notification each: two
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
-// noDedupe are the kinds that are never collapsed into an earlier one.
+//
 // `trigger_failed` is not one of them: features/notifications.md says it
 // is collapsed by the 60-second dedupe on (project, kind) "like every
 // platform kind", so a trigger failing in a loop costs one notification

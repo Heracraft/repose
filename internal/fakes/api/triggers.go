@@ -365,8 +365,9 @@ func (f *Fake) listAllTriggerRuns(w http.ResponseWriter, r *http.Request) *apiEr
 		}
 		limit = n
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	// No lock: ServeHTTP holds f.mu for the whole dispatch, as every
+	// other handler here relies on. Taking it again deadlocked this
+	// route, and nothing called it, so the suite stayed green.
 	out := []FakeTriggerRun{}
 	for _, p := range f.userProjects(userFrom(r)) {
 		for _, run := range p.triggerRuns {

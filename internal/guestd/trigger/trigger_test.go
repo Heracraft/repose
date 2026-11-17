@@ -779,3 +779,45 @@ func TestAnAgentThatNeverStartsEndsPastTheGrace(t *testing.T) {
 		t.Fatalf("the run is still %q past the settle grace", got.State)
 	}
 }
+
+// Two sets at once: hostd sends one on a start and another when a
+// restarted guestd says Ready, so the write to the volume has to be
+// serialised with the map. An unsynchronised save could rename the
+// older set in last, or tear the file between the two, which is the
+// failure keeping it on the volume exists to prevent. Run with -race.
+func TestTwoSetsAtOnceLeaveOneWholeFile(t *testing.T) {
+	h := newHarness(t)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if i%2 == 0 {
+				h.r.SetTriggers([]trigger.Trigger{basic("apply"), basic("triage")})
+				return
+			}
+			h.r.SetTriggers([]trigger.Trigger{basic("apply"), basic("triage"), basic("sweep")})
+		}()
+	}
+	wg.Wait()
+
+	next := newHarnessAt(t, h.root)
+	next.r.Load()
+	// Whichever of the two sets landed last, the file is one of them
+	// whole: `apply` and `triage` are in both.
+	for _, name := range []string{"apply", "triage"} {
+		if _, ok := next.r.Get(name); !ok {
+			t.Errorf("%s is missing, so the kept set was torn", name)
+		}
+	}
+	// And no temp file is left behind for a Load to trip over.
+	entries, err := os.ReadDir(filepath.Dir(next.r.SetPathForTest()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".trigger-set-") {
+			t.Errorf("a temp file was left behind: %s", e.Name())
+		}
+	}
+}

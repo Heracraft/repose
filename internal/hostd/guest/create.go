@@ -1004,6 +1004,12 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 			// whatever it kept on the volume, and hostd hands it the
 			// set it holds, so a set the api changed while guestd was
 			// down is not stale until the next start (I-1248).
+			//
+			// It also fires once on an ordinary first boot, because the
+			// Ping path marks the guest ready before this Ready
+			// arrives. That is a repeat of the set the boot itself
+			// delivers, from the same cache, so the guest writes the
+			// same bytes twice and nothing changes.
 			go m.resendTriggers(mon)
 		}
 	case *guestdv1.Notify_AgentEvent:

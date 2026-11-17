@@ -204,20 +204,27 @@ func New(p sysdep.Paths, r sysdep.Runner, agents Agents, project func() Project,
 // restore; the runner also keeps it on the volume, so a guestd that
 // restarts between two starts still has it (Load).
 func (r *Runner) SetTriggers(set []Trigger) {
+	// The file is written under the same lock as the map, so the set on
+	// the volume is the set in memory. Two SetTriggers can land at once
+	// — hostd sends one on a start and another when a restarted guestd
+	// says Ready — and an unsynchronised save could rename the older
+	// one in last, or tear the file between them, which is the failure
+	// keeping it was for. It is a few KB.
 	r.mu.Lock()
 	next := make(map[string]Trigger, len(set))
 	for _, t := range set {
 		next[t.Name] = t
 	}
 	r.set = next
+	r.save(set)
 	r.mu.Unlock()
 	r.log.Info("trigger set", "event", "trigger_run", "count", len(next))
-	r.save(set)
 }
 
-// save keeps the set beside the guest's other state. A set that cannot be
-// written is a warning and nothing more: the set in memory is the one
-// that answers deliveries, and the api sends it again on the next start.
+// save keeps the set beside the guest's other state, under r.mu. A set
+// that cannot be written is a warning and nothing more: the set in
+// memory is the one that answers deliveries, and the api sends it again
+// on the next start.
 func (r *Runner) save(set []Trigger) {
 	path := r.paths.TriggerSet()
 	if len(set) == 0 {
@@ -234,15 +241,36 @@ func (r *Runner) save(set []Trigger) {
 		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
 		return
 	}
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	// A temp file of its own, so a write that fails halfway leaves
+	// nothing a Load could read and no name a second writer shares.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".trigger-set-*")
+	if err != nil {
 		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
 		return
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	defer func() { _ = os.Remove(tmp.Name()) }() // a no-op once renamed
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
+		return
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
+		return
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		r.log.Warn("trigger set not kept", "event", "trigger_run", "reason", fileReason(err))
 	}
 }
+
+// SetPathForTest is where the kept set lives, for a test that looks at
+// the directory it is written in.
+func (r *Runner) SetPathForTest() string { return r.paths.TriggerSet() }
 
 // Load reads the kept set at start, which is what makes a guestd restart
 // invisible to a provider: without it every delivery after a restart was
