@@ -123,8 +123,9 @@ func Parse(spec, zone string) (Spec, error) {
 	}
 	s := Spec{Zone: loc.String(), loc: loc}
 
-	switch head := fields[0]; {
-	case head == KindEvery:
+	head := fields[0]
+	switch head {
+	case KindEvery:
 		if len(fields) != 2 {
 			return Spec{}, fmt.Errorf("%w: write `every 15m`", ErrSpec)
 		}
@@ -142,7 +143,7 @@ func Parse(spec, zone string) (Spec, error) {
 		s.Text = s.canonical()
 		return s, nil
 
-	case head == KindMonthly:
+	case KindMonthly:
 		if len(fields) != 3 {
 			return Spec{}, fmt.Errorf("%w: write `monthly 1 09:00`", ErrSpec)
 		}
@@ -158,7 +159,7 @@ func Parse(spec, zone string) (Spec, error) {
 		s.Text = s.canonical()
 		return s, nil
 
-	case head == KindDaily, head == KindWeekdays, head == KindWeekends:
+	case KindDaily, KindWeekdays, KindWeekends:
 		if len(fields) != 2 {
 			return Spec{}, fmt.Errorf("%w: write `%s 07:00`", ErrSpec, head)
 		}

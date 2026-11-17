@@ -551,8 +551,8 @@ func TriggersFireCmd(ctx context.Context, e *Env, projectArg, name string, o Tri
 	if e.JSON {
 		return writeJSONOut(e.Out, run)
 	}
-	switch {
-	case run.State == "queued" || run.State == "working":
+	switch run.State {
+	case "queued", "working":
 		if run.Window != "" {
 			_, _ = fmt.Fprintf(e.Out, "%s, run %s\n", run.Window, shortID(run.RunID))
 			return nil
@@ -644,7 +644,7 @@ func triggerWritePayload(ctx context.Context, e *Env, project *Project, name, lo
 		if err != nil {
 			return "", exitf(ExitGeneric, "%v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		st, err := f.Stat()
 		if err == nil && st.Size() > 1<<20 {
 			return "", exitf(ExitUsage, "%s is %d bytes; a payload is at most 1 MiB, which is the webhook body cap", local, st.Size())

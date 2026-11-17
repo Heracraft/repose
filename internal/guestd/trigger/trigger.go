@@ -818,7 +818,7 @@ func (r *Runner) seenRecently(name, key string) (bool, error) {
 		}
 		return false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	cutoff := r.now().Add(-DedupeWindow).Unix()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

@@ -528,7 +528,7 @@ func TestTheReceiverAnswersTheEdge(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		b, _ := io.ReadAll(res.Body)
 		return res.StatusCode, string(b)
 	}

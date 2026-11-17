@@ -136,7 +136,7 @@ var (
 	ErrInvalidDedupe    = errors.New("a dedupe key is header:NAME or json:FIELD")
 	ErrDedupeOnSchedule = errors.New("--dedupe reads a delivery's header or body, so a schedule has nothing to read")
 	ErrInvalidWorkdir   = errors.New("a workdir is checkout, worktree-N, ~/PATH or /PATH")
-	ErrInvalidPrompt    = errors.New("a prompt path is relative to the working directory, without ..")
+	ErrInvalidPrompt    = errors.New("a prompt path is relative to the working directory, with no `..` in it")
 	ErrInvalidAgent     = errors.New("an agent is claude, codex, opencode, gemini or pi")
 	ErrInvalidTimeout   = fmt.Errorf("a timeout is 0 or up to %s", MaxTimeout)
 	ErrAtPromptOnPi     = errors.New("pi reads a prompt that begins with @ as a file, so it cannot be a trigger's prompt")
