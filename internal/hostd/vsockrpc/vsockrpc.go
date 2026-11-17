@@ -140,13 +140,17 @@ func NewClient(c net.Conn, notifyBuf int) *Client {
 }
 
 func (cl *Client) readLoop() {
-	defer close(cl.done)
 	defer close(cl.notify)
 	for {
 		env, err := cl.conn.Read()
 		if err != nil {
+			// Done closes before any waiting call is answered, so a caller
+			// that gets this failure as its error and then asks Done sees
+			// the connection gone. The other order let a wake read a dead
+			// session as live between the two (DECISIONS I-1264).
 			cl.mu.Lock()
 			cl.err = err
+			close(cl.done)
 			for id, ch := range cl.pending {
 				close(ch)
 				delete(cl.pending, id)

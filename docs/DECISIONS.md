@@ -35151,3 +35151,34 @@ at the number above. `TestAgentGuideCommandsExist` names `cloudflared`,
 passes. Not run on a guest: a tunnel opened by an agent (the live check
 names it). Docs: /docs/machine, /docs/agents, features/agents.md,
 features/config.md, features/webhooks.md, the menu catalog.
+
+**I-1264. A wake reads the call's error, not only Done, before it tries
+the next session; the RPC client closes Done before it answers the calls
+a failure ended (wake-retry, 2026-11-17).** I-1228's second try was
+gated on `sessionEnded`, a non-blocking read of the session's `Done`
+right after the clock step's Exec or the Ping failed. On the push after
+r20261117-1, CI (ubuntu-latest, 2 vCPU) failed
+`TestWakeSurvivesAReplacedSession` in 0.02 s with the incident's own
+error, `guestd did not answer after the resume: vsockrpc: EOF`, while it
+passed 60 of 60 here under `-race`. The two were never one event: the
+client's read loop, on a failed read, recorded the error and closed every
+waiting call's channel, and closed `Done` only by a defer on its way out,
+so a call could return `vsockrpc: EOF` while `Done` was still open for a
+few more instructions. The wake read the dead session as live, skipped
+the retry and counted the failure, which is what I-1228 was for, and
+production's guestd replacement has the same window. Two changes. The
+read loop closes `Done` under its lock before it releases any waiting
+call, so a caller that gets the failure and then asks `Done` sees the
+connection gone; `TestDoneClosedBeforeTheCallReturns` holds that order
+over 200 rounds on a `net.Pipe`, and on the old loop it fails in about 4
+runs of 60 across `-cpu 1,2,4` with the CI line, `the call returned
+vsockrpc: EOF with Done still open`, so the window is real and not a
+CI artefact. And the wake's gate, now
+`connectionGone(sess, err)`, reads the error as well: `io.EOF`,
+`vsockrpc.ErrClosed` or `net.ErrClosed` through the client's `%w`
+wrapping means the connection is gone whatever `Done` says, while a
+deadline or a guestd `RemoteError` on a live connection is still a
+failed wake; `TestConnectionGoneReadsTheErrorBeforeDone` covers the CI
+ordering (EOF, `Done` open) and the live cases. The lint fix the
+conductor made in the r20261117-1 batch (`perr = ...`, the retried
+session is not read after) stands.
