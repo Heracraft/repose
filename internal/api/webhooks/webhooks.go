@@ -27,6 +27,7 @@ import (
 
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // MaxRoutes is the routes one project may have (the proposal's §3.9).
@@ -46,7 +47,7 @@ const DeliveriesKept = 20
 // ReceiverPort is guestd's trigger receiver (DECISIONS I-1250). A
 // trigger's route is aimed at it, and a user's route may not be: there is
 // one way to make a trigger fire from outside, which is `repose triggers`.
-const ReceiverPort = 9227
+const ReceiverPort = triggerrun.ReceiverPort
 
 // ErrInvalidName, ErrInvalidTarget and ErrTooMany are the refusals a
 // caller turns into its own message.

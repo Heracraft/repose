@@ -10,6 +10,14 @@
 // likely real failures into unbounded tenant text, and then logged them.
 package triggerrun
 
+// ReceiverPort is the loopback port in the guest that the edge delivers
+// a trigger's events to (DECISIONS I-1250). It lives here because four
+// packages need the one number — the api that aims a route at it, the
+// webhooks store that refuses a user's route on it, guestd that listens,
+// and the CLI that keeps it off a laptop's forwards — and none of them
+// can import another.
+const ReceiverPort = 9227
+
 // States of a run. Pending and Sending are the hand-off between the
 // api's two processes (I-1162) and are never shown to anyone: every
 // surface draws them as Queued, as a say's are.

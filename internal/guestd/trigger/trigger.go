@@ -45,7 +45,7 @@ import (
 // ReceiverPort is the loopback port the edge delivers a trigger's events
 // to (I-1250). It is platform-owned: never auto-forwarded to a laptop,
 // and listening on loopback alone.
-const ReceiverPort = 9227
+const ReceiverPort = triggerrun.ReceiverPort
 
 // The limits of features/triggers.md §10, enforced here because this is
 // where an event arrives.
