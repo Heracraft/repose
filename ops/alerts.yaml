@@ -669,8 +669,8 @@ groups:
         labels:
           severity: warn
         annotations:
-          summary: "a running project has no snapshot for over 36 hours"
-          description: "Oldest last-snapshot is {{ $value | humanizeDuration }}. A host loss now loses up to that much of a tenant's work."
+          summary: "a running project has run 36 hours past its newest snapshot or its start"
+          description: "The longest run since a snapshot or a start is {{ $value | humanizeDuration }}. A host loss now loses up to that much of a tenant's work."
           runbook: "docs/ops/RUNBOOK.md#snapshotstale"
 
       - alert: GatewayAuthSpike

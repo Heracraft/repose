@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-976 entries.
+977 entries.
 
 ## Scope
 
@@ -336,7 +336,7 @@ pointer, not a summary.
 - **I-257** The terms say a machine is not for serving production traffic to others — 2026-09-25; L6261
 - **I-252** `repose paste` sends the laptop's clipboard image to the guest and pastes its path; one direction, no socket — 2026-09-25; partly superseded by I-280; L6277
 - **I-250** Claude Code in a guest starts in `bypassPermissions` unless the user set another default — 2026-09-25; amended by I-546; L6326
-- **I-251** cloudflared is a menu entry in group `deploy` — 2026-09-25; L6378
+- **I-251** cloudflared is a menu entry in group `deploy` — 2026-09-25; partly reversed by I-1246; L6378
 - **I-253** Any number of agent windows in one guest, and `repose run --worktree` puts one in its own git worktree beside the checkout — 2026-09-25; partly superseded by I-342; amended by I-509; L6393
 - **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; amended by I-701; superseded by I-1082; L6443
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6535
@@ -982,7 +982,7 @@ pointer, not a summary.
 - **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L32561
 - **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32605
 - **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32635
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32699
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; amended by I-1246; L32699
 - **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32748
 - **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32842
 - **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32880
@@ -1008,3 +1008,4 @@ pointer, not a summary.
 - **I-1240** `repose stop` and `repose rm` fetch nothing first — 2026-11-16; L34123
 - **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; L34158
 - **I-1244** SnapshotStale counts from the later of the newest snapshot and the machine's start, and the gauge refreshes hourly — 2026-11-16; L34205
+- **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L34237

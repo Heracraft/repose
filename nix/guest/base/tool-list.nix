@@ -40,4 +40,8 @@ with pkgs; [
   gcc binutils gnumake pkg-config cmake
   # Everyday CLIs a developer expects on a Linux box (I-218).
   file lsof zip dnsutils sqlite postgresqlClient openssl gnupg psmisc
+  # A public https URL for a port while the owner is away: the agent
+  # guide tells an agent to open a quick tunnel and send the link
+  # (I-1246, reversing I-251's "not in the base").
+  cloudflared
 ]

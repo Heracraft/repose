@@ -160,9 +160,9 @@ A route serves no page. No HTML, no script, no redirect, no cookie;
 sized for events; counted egress; and the edge stores nothing, so a
 takedown has no content to remove — the operator removes the route.
 
-What stays open is narrower than `cloudflared`, which is a menu entry
-(I-251) and gives any guest a full public URL with HTML, files and no
-rate limit.
+What stays open is narrower than `cloudflared`, which every machine has
+(I-251 as a menu entry, in the base since I-1246) and gives any guest a
+full public URL with HTML, files and no rate limit.
 
 ## 6. Machine states
 
