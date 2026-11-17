@@ -17,10 +17,12 @@ grep
 jq
 nix
 nix-collect-garbage
+nohup
 npm
 npx
 opencode
 pi
+pkill
 python3
 repose-ask needs
 repose-checkout needs

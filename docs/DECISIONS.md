@@ -34601,3 +34601,46 @@ payload per kept run**, under
 cleared a stored flag. A run is at most 24 hours, a gate 10 seconds, a
 prompt file 64 KB, a spec 64 characters, a summary 1 KB, a gate's reason
 200 bytes and a dedupe key 128.
+**I-1246. cloudflared is in every machine's base, and an agent whose owner
+is away opens a quick tunnel for the port and sends the link.** (catchall,
+2026-11-17; reverses I-251's "not in the base" and amends I-1098.)
+
+The owner, 2026-11-16: the guide told an agent to run `repose-presence`
+and, on `away`, to name `repose open PORT`, which needs the laptop the
+owner is away from; "my plan was if the user is not attached, and they are
+on their phone for example, just use trycloudflare and give them a https
+url so they can see". And on 2026-11-17: "build it, no need for a wrapper,
+just tell the agent to run trycloudflare and its always in so they will be
+able to."
+
+Decided:
+- `cloudflared` joins `nix/guest/base/tool-list.nix`, so every machine
+  has it. I-251 kept it a menu entry because "most projects never need a
+  public URL"; the agent that needs one cannot add a menu entry, and a
+  URL the owner can open on a phone is now the point. Closure: 6465924664
+  bytes against the 7 GiB limit (1.0 GiB under). The menu entry stays,
+  described as already present, because a config that selected it still
+  names the id and an unknown id is refused.
+- The guide's `away` branch: run `cloudflared tunnel --url
+  http://localhost:PORT` with nohup, wait for the `trycloudflare.com` line,
+  send it with `repose-notify --link`, say it is public while it runs,
+  don't open one for a server that holds the owner's data unless asked,
+  and `pkill` it when the owner is done. The "no public URLs" line becomes
+  "that tunnel is the one public URL; don't open one for anything else".
+  No wrapper command: the owner's call, and cloudflared's own line is
+  the whole interface.
+- The quick tunnel's terms are Cloudflare's (I-251): no account, random
+  URL, 200 in-flight requests, no server-sent events, testing only. A
+  freeze ends it (`/docs/lifecycle#frozen-machines`).
+
+What this exposes: anyone with the URL reaches the server while the
+tunnel runs. The guide says so and limits it to servers the owner asked
+to see; that is the whole guard, and the owner accepted it.
+
+*Checked:* `nix build ./nix#guest-system` has
+`sw/bin/cloudflared` -> cloudflared-2026.9.1; `guest-closure-size` passes
+at the number above. `TestAgentGuideCommandsExist` names `cloudflared`,
+`nohup` and `pkill` in `guestCommands`; `TestAgentGuideCoversTheMachineDocs`
+passes. Not run on a guest: a tunnel opened by an agent (the live check
+names it). Docs: /docs/machine, /docs/agents, features/agents.md,
+features/config.md, features/webhooks.md, the menu catalog.

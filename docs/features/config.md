@@ -61,7 +61,8 @@ CLI command for it.
 
 The menu is a catalog (`GET /catalog`) of packages and services with labels
 and groups: languages, databases, browsers, tools, and deploy CLIs
-(wrangler, the Supabase CLI, flyctl and cloudflared from nixpkgs; the Vercel CLI and
+(wrangler, the Supabase CLI and flyctl from nixpkgs, and cloudflared, which
+every machine has since I-1246 and the entry now adds nothing; the Vercel CLI and
 portless, which nixpkgs does not carry, installed once with `npm i -g`
 into `~/.npm-global` by a user unit after the network is up). None of
 these needs the menu: `npm i -g <cli>` in the guest works and persists

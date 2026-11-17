@@ -658,8 +658,8 @@ tests:
               job: api
               instance: 10.255.0.9:9103
             exp_annotations:
-              summary: "a running project has no snapshot for over 36 hours"
-              description: "Oldest last-snapshot is 1d 12h 0m 1s. A host loss now loses up to that much of a tenant's work."
+              summary: "a running project has run 36 hours past its newest snapshot or its start"
+              description: "The longest run since a snapshot or a start is 1d 12h 0m 1s. A host loss now loses up to that much of a tenant's work."
               runbook: "docs/ops/RUNBOOK.md#snapshotstale"
 
   - interval: 1m

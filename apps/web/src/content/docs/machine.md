@@ -176,13 +176,13 @@ To forward one port without attaching, [`repose open`](/docs/cli#repose-open-loc
 repose open 3000
 ```
 
-The one public path into a machine is a [webhook route](/docs/webhooks): a URL a provider can POST to, forwarded to a port inside the machine. It passes a provider's event through and will not serve a page. To show someone a running app, deploy it or use a tunnel. `cloudflared` is in [the menu](/docs/config#the-menu): `repose config add cloudflared` on your laptop. Then, on the machine:
+The one public path into a machine is a [webhook route](/docs/webhooks): a URL a provider can POST to, forwarded to a port inside the machine. It passes a provider's event through and will not serve a page. To show someone a running app, deploy it or use a tunnel. `cloudflared` is on every machine:
 
 ```
 cloudflared tunnel --url http://localhost:3000
 ```
 
-This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. It's for testing: at most 200 requests at a time, and no server-sent events. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
+This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. Anyone with the URL reaches the server. It's for testing: at most 200 requests at a time, and no server-sent events. An agent opens one for you when you ask for a URL while you're away from the machine, and sends you the link; it stops the tunnel when you're done. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
 
 ### Your laptop's ports on the machine
 

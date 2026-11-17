@@ -296,8 +296,12 @@ window's contents: nothing here reads the window.
   name, like `repose-notify` and `repose-ask`, so the guest base gains
   no binary. The guide's rule: before handing the user a URL for a port
   on the machine, run it; `attached` means say `http://localhost:PORT`,
-  which the forward carries to the laptop, and `away` means say which
-  port it is here and name `repose open PORT`.
+  which the forward carries to the laptop, and `away` means open a
+  cloudflared quick tunnel to the port (cloudflared is in the base,
+  I-1246) and send the `trycloudflare.com` URL with `repose-notify
+  --link`, saying it is public while it runs, and close it when the
+  owner is done. Before I-1246 `away` meant naming `repose open PORT`,
+  which needs the laptop the owner is away from.
 - `repose say [PROJECT] "<text>"` (DECISIONS I-1144) puts a message from
   the owner into the agent's own tmux window, through the same submit
   script `repose run -w -p` uses, the moment the agent's hook state is
