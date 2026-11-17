@@ -116,6 +116,19 @@ A fire that is late because the machine was stopped, its host was away or repose
 
 A trigger run counts as using the machine, so a machine that triages your issues every morning is not [announced as unused](/docs/lifecycle#unused-machines).
 
+## Where else they show
+
+`repose status` has a `triggers` row for a project that has one:
+
+```
+triggers   triage done 7h ago, sweep off, apply next 07:00
+```
+
+`repose ls` counts a trigger's runs on their own, so a machine you
+aren't using doesn't read as if you were: `claude: working, 1 trigger
+run`. A run's window is `t-<name>`, which `repose attach` takes, and
+`repose say --agent t-apply` talks to the agent in it while it works.
+
 ## The schedule shapes
 
 | Spec | Fires |

@@ -478,6 +478,25 @@ func (s *Store) Pending() []Question {
 	return out
 }
 
+// OpenInWindow reports whether a question asked from that window is
+// still waiting for the owner. A trigger run's clock stops while one is:
+// a `repose-ask` at 02:00 waits for a person, and the run's timeout must
+// not kill the primitive that makes leaving an agent alone safe
+// (DECISIONS I-1256).
+func (s *Store) OpenInWindow(window string) bool {
+	if window == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.qs {
+		if e.q.Open() && e.q.Window == window {
+			return true
+		}
+	}
+	return false
+}
+
 // Sweep expires open questions past their deadline, closes those nobody
 // has polled for OrphanAfter (asker_gone), and forgets closed ones older
 // than Keep.

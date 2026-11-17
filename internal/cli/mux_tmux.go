@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heracraft/repose/internal/agentwindow"
 	"github.com/heracraft/repose/internal/multiplexer"
 )
 
@@ -429,83 +430,34 @@ func agentWindowCommand(slug, extra, windowName, dir, binary, prompt string, app
 	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, agentStartCommand(binary, prompt))
 }
 
-// claudeTrustScript is shell, run before tmux starts claude in dir (a
-// shell word: "~/<name>..." or "$repose_co"), that sets
-// projects["<dir, symlinks resolved>"].hasTrustDialogAccepted to true in
-// ~/.claude.json, the flag Claude Code (2.1.283) reads to skip its "Is
-// this a project you trust?" dialog. That dialog's default is "No, exit",
-// so the prompt and Enter `repose run` types would quit Claude Code
-// (I-486). Only folders repose itself starts an agent in get here: the
-// checkout, a --worktree directory, another checkout. A false Claude Code
-// wrote after an earlier refusal is replaced, since this run is the user
-// asking for an agent there; every other key in the file is kept. The
-// file is written only when the flag is not already true, atomically, and
-// never when it is not valid JSON. Best effort: the window starts whatever
-// happens here, and waitPaneIdle catches a dialog that shows anyway.
-// appr, the laptop's .mcp.json answers for the repository, adds to
-// enabledMcpjsonServers and disabledMcpjsonServers each server the guest
-// has no answer for in either list, so the .mcp.json dialog does not take
-// the prompt either (I-556). Claude Code writes both lists empty into
-// every project it opens, so an empty list is no answer; an answer given
-// on the machine is kept. The write holds Claude Code's own lock, the
-// directory ~/.claude.json.lock, as repose-mcp sync and agent-setup do
-// (I-555): a lock older than 10 s is taken over, and after 5 s of waiting
-// nothing is written.
-func claudeTrustScript(dir string, appr mcpApprovals) string {
-	a := "{}"
+// agentTrustScript is internal/agentwindow's, which guestd reads too
+// (DECISIONS I-1256). The CLI marshals its own .mcp.json answers at this
+// boundary, so the leaf package takes plain JSON and knows nothing of
+// the carry.
+func agentTrustScript(binary, dir string, appr mcpApprovals) string {
+	a := ""
 	if !appr.empty() {
 		if b, err := json.Marshal(appr); err == nil {
 			a = string(b)
 		}
 	}
-	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && command -v jq >/dev/null && repose_cj="$HOME/.claude.json" && repose_ta=%s && repose_lk="$repose_cj.lock" && repose_n=0 && until mkdir "$repose_lk" 2>/dev/null; do
-    if [ "$(( $(date +%%s) - $(stat -c %%Y "$repose_lk" 2>/dev/null || date +%%s) ))" -gt 10 ] && rmdir "$repose_lk" 2>/dev/null; then continue; fi
-    repose_n=$((repose_n + 1)); [ "$repose_n" -lt 100 ] || break; sleep 0.05
-  done && [ "$repose_n" -lt 100 ] && {
-  if [ ! -s "$repose_cj" ]; then
-    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq -n --arg p "$repose_tp" --argjson a "$repose_ta" '{projects: {($p): ({hasTrustDialogAccepted: true} + $a)}}' > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
-  elif jq -e --arg p "$repose_tp" --argjson a "$repose_ta" '(.projects // {})[$p] as $e | ($e.hasTrustDialogAccepted != true) or (((($e // {}).enabledMcpjsonServers // []) + (($e // {}).disabledMcpjsonServers // [])) as $h | [$a[][] | select(. as $n | $h | index([$n]) | not)] | length > 0)' "$repose_cj" >/dev/null 2>&1; then
-    repose_tt=$(mktemp "$repose_cj.XXXXXX") && jq --arg p "$repose_tp" --argjson a "$repose_ta" '.projects[$p] |= ((. // {}) | .hasTrustDialogAccepted = true | reduce ($a | to_entries[] | .key as $k | .value[] | {k: $k, n: .}) as $x (.; if (((.enabledMcpjsonServers // []) + (.disabledMcpjsonServers // [])) | index([$x.n])) then . else .[$x.k] = ((.[$x.k] // []) + [$x.n]) end))' "$repose_cj" > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_cj"
-  fi
-  [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
-  rmdir "$repose_lk"
-}; } >/dev/null 2>&1 || true
-`, dir, shQuote(a))
+	return agentwindow.TrustScript(binary, dir, a)
 }
 
-// agentTrustScript is the shell that marks dir trusted for the agent
-// binary starts, or "" for an agent without a folder trust dialog
-// (opencode, pi) or with it off machine-wide (Gemini CLI, I-553).
-func agentTrustScript(binary, dir string, appr mcpApprovals) string {
-	switch binary {
-	case "claude":
-		return claudeTrustScript(dir, appr)
-	case "codex":
-		return codexTrustScript(dir)
+// claudeTrustScript and codexTrustScript keep their names here for the
+// tests that are the evidence for I-486 and I-544: they read the shell
+// these produce, and that evidence does not move with the code.
+func claudeTrustScript(dir string, appr mcpApprovals) string {
+	a := ""
+	if !appr.empty() {
+		if b, err := json.Marshal(appr); err == nil {
+			a = string(b)
+		}
 	}
-	return ""
+	return agentwindow.ClaudeTrustScript(dir, a)
 }
 
-// codexTrustScript is shell, run before tmux starts codex in dir, that
-// appends a [projects."<dir, symlinks resolved>"] table with trust_level =
-// "trusted" to ${CODEX_HOME:-~/.codex}/config.toml, which Codex (0.157)
-// reads to skip its "Trust this folder?" screen; that screen's default is
-// "Trust and continue", so the Enter `repose run` types trusts the folder
-// and the prompt is lost (I-544). Nothing is written when the file already
-// has a table for that folder in either quoting, whatever its trust_level,
-// so the user's "untrusted" stays. Only paths of the checkout's character
-// set ([A-Za-z0-9._/-]) are written, since TOML would need escapes for
-// others, nor into a config.toml that is a symlink (a file a dotfiles
-// tool manages). Atomic and best effort, like claudeTrustScript.
-func codexTrustScript(dir string) string {
-	return fmt.Sprintf(`{ repose_tp=$(cd %s 2>/dev/null && pwd -P) && case "$repose_tp" in *[!A-Za-z0-9._/-]*) false ;; esac && repose_xd="${CODEX_HOME:-$HOME/.codex}" && repose_xc="$repose_xd/config.toml" && [ ! -L "$repose_xc" ] && {
-  if ! grep -qF -e "[projects.\"$repose_tp\"]" -e "[projects.'$repose_tp']" "$repose_xc" 2>/dev/null; then
-    mkdir -p "$repose_xd" && repose_tt=$(mktemp "$repose_xc.XXXXXX") && { if [ -s "$repose_xc" ]; then cat "$repose_xc" && [ -z "$(tail -c1 "$repose_xc")" ] || echo; fi; printf '\n[projects."%%s"]\ntrust_level = "trusted"\n' "$repose_tp"; } > "$repose_tt" && chmod 600 "$repose_tt" && mv -f "$repose_tt" "$repose_xc"
-  fi
-  [ -z "${repose_tt:-}" ] || rm -f "$repose_tt"
-}; } >/dev/null 2>&1 || true
-`, dir)
-}
+func codexTrustScript(dir string) string { return agentwindow.CodexTrustScript(dir) }
 
 // agentDialogs are lines an agent's dialog shows that a typed prompt
 // must not answer: Claude Code's folder trust dialog, in the wording of

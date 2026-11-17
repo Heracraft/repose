@@ -658,3 +658,27 @@ func triggerCmdErr(err error, slug, name string) error {
 	}
 	return err
 }
+
+// triggerStatusLine is `repose status`'s triggers row: each trigger's
+// last run, and the next fire for a schedule. A project with no trigger
+// has no such row, which is the webhooks row's own rule.
+func triggerStatusLine(ts []Trigger, now time.Time) string {
+	parts := make([]string, 0, len(ts))
+	for _, t := range ts {
+		switch {
+		case !t.Enabled:
+			parts = append(parts, t.Name+" off")
+		case t.Last != nil:
+			parts = append(parts, t.Name+" "+t.Last.State+" "+humanAge(t.Last.CreatedAt))
+		case t.Kind == "schedule" && t.NextAt != nil:
+			parts = append(parts, t.Name+" next "+triggerNext(t.NextAt))
+		default:
+			parts = append(parts, t.Name+" never run")
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	_ = now
+	return strings.Join(parts, ", ")
+}

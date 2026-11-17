@@ -149,8 +149,15 @@ func saySendable(state string) bool {
 // lock. An empty name means the guest's one agent window; more than one
 // is a refusal that names them, so the sender can pick with --agent.
 func (w *Watcher) sayWindow(want string) (string, error) {
+	// A trigger's window is an agent window, but it is not the user's:
+	// a 03:00 sweep must not turn an ordinary `repose say` into
+	// `several_agents` (DECISIONS I-1256). Naming one with --agent still
+	// reaches it, which is how you talk to a run.
 	var names []string
 	for name := range w.windows {
+		if strings.HasPrefix(name, TriggerWindowPrefix) {
+			continue
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -172,6 +179,11 @@ func (w *Watcher) sayWindow(want string) (string, error) {
 		return "", sysdep.Invalid("%d agents are running: %s. Name one with --agent", len(names), strings.Join(names, ", "))
 	}
 }
+
+// TriggerWindowPrefix is the window prefix a trigger's run uses
+// (`t-apply`, `t-apply.2`, DECISIONS I-1256). It is reserved in
+// guest-conventions.md, as a platform port is.
+const TriggerWindowPrefix = "t-"
 
 // rememberSay keeps a delivered say id so a resent command is answered
 // from the record instead of typed again.

@@ -899,7 +899,7 @@ func TestGuestMessageScriptPrefersHerdrUnit(t *testing.T) {
 			"herdr":     `echo herdr >> ` + log,
 			// One client on the session (I-1067's list-clients shape), so the
 			// tmux branch has a terminal to show the message on.
-			"tmux":      `case "$1" in list-clients) echo "/dev/pts/7 todo-app " ;; *) echo "tmux $1" >> ` + log + ` ;; esac`,
+			"tmux": `case "$1" in list-clients) echo "/dev/pts/7 todo-app " ;; *) echo "tmux $1" >> ` + log + ` ;; esac`,
 		} {
 			if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/usr/bin/env bash\n"+body+"\n"), 0o755); err != nil {
 				t.Fatal(err)

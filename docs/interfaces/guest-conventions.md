@@ -967,8 +967,11 @@ quoting exercise.
 `t-*` windows are agent windows and are reported as such, with one
 exception each way: `repose say` without `--agent` does not resolve to
 one (a run must not turn an owner's `say` into `several_agents`), and
-`repose ps` and `repose ls` mark them, so a machine nobody is attached to
-does not read as the user's own agent working.
+`repose ls`'s AGENTS cell counts them on their own
+(`claude: working, 1 trigger run`), so a machine nobody is attached to
+does not read as the user's own agent working. Naming one with
+`--agent t-apply` still reaches it, which is how the owner talks to a
+run. Both read the prefix, which is why it is reserved.
 
 ## Credentials the CLI syncs into the guest
 

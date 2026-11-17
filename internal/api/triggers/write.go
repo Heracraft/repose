@@ -833,14 +833,26 @@ func (s *Store) ForGuest(ctx context.Context, projectID uuid.UUID) ([]*hostdv1.T
 	if err != nil {
 		return nil, err
 	}
+	// The agent is resolved here, where the project's default is known:
+	// the guest has no copy of it, and a guest guessing would be a
+	// second answer to one question.
+	var dflt string
+	if err := s.pool.QueryRow(ctx, `select coalesce(agent_default, '') from projects where id = $1`,
+		projectID).Scan(&dflt); err != nil {
+		return nil, err
+	}
 	out := make([]*hostdv1.Trigger, 0, len(ts))
 	for _, t := range ts {
+		agent := t.Agent
+		if agent == "" {
+			agent = dflt
+		}
 		out = append(out, &hostdv1.Trigger{
 			Name:        t.Name,
 			Kind:        t.Kind,
 			PromptPath:  t.PromptPath,
 			Workdir:     t.Workdir,
-			Agent:       t.Agent,
+			Agent:       agent,
 			TimeoutS:    uint32(t.TimeoutS),
 			Concurrency: uint32(t.Concurrency),
 			Gate:        t.Gate,

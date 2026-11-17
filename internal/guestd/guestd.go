@@ -29,6 +29,7 @@ import (
 	"github.com/heracraft/repose/internal/guestd/ssh"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/guestd/system"
+	"github.com/heracraft/repose/internal/guestd/trigger"
 	"github.com/heracraft/repose/internal/guestd/warn"
 	"github.com/heracraft/repose/internal/msglink"
 	"github.com/heracraft/repose/internal/obs"
@@ -120,6 +121,10 @@ type Server struct {
 	warn    *warn.Checker
 	hooks   *hooks.Server
 	asks    *questions.Store
+	// triggers is the machine's half of a trigger (DECISIONS I-1248):
+	// the set the api pushes, the receiver on 9227, the runs and their
+	// supervisor.
+	triggers *trigger.Runner
 
 	notify  chan *guestdv1.Envelope
 	dropped atomic.Uint64
@@ -198,6 +203,11 @@ func New(cfg Config) (*Server, error) {
 	// repose-presence reads the owner's presence off the same signals
 	// the hold uses (DECISIONS I-689, I-1098).
 	s.hooks.SetPresence(s.sampler.Attached)
+	// The runner reads a window's agent state from the watcher and a
+	// pending question from the asks store, which both already know.
+	s.triggers = trigger.New(paths, runner, triggerAgents{w: s.watcher, q: s.asks},
+		func() trigger.Project { return trigger.Project{Slug: s.project.Slug()} },
+		s.emitTriggerRun, log, cfg.Now)
 	return s, nil
 }
 
@@ -248,6 +258,16 @@ func (s *Server) Run(ctx context.Context) error {
 
 	go s.watcher.Run(ctx)
 	go s.asks.Run(ctx)
+	// The trigger receiver and the runs' supervisor (DECISIONS I-1250,
+	// I-1256). The reconcile runs first, so a run whose agent is still
+	// working through a guestd restart is not failed.
+	s.triggers.Reconcile(ctx)
+	go func() {
+		if err := s.triggers.Serve(ctx); err != nil {
+			s.log.Error("the trigger receiver stopped serving", "event", "listen", "listener", "triggers")
+		}
+	}()
+	go s.triggers.Supervise(ctx)
 	go s.warn.Run(ctx)
 	go s.readyProbe(ctx)
 	// The roots of the shared store's paths (DECISIONS I-588) are brought
@@ -559,3 +579,22 @@ func (s *Server) uptimeSeconds() uint64 {
 	}
 	return uint64(s.now().Sub(s.started).Seconds())
 }
+
+// emitTriggerRun sends a run's state up, as emitQuestion sends a
+// question's (DECISIONS I-1256).
+func (s *Server) emitTriggerRun(n *guestdv1.TriggerRun) {
+	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_TriggerRun{TriggerRun: n}})
+}
+
+// Triggers is the trigger runner (tests).
+func (s *Server) Triggers() *trigger.Runner { return s.triggers }
+
+// triggerAgents joins the two things a trigger's supervisor needs, each
+// from the component that already knows it.
+type triggerAgents struct {
+	w *sample.Watcher
+	q *questions.Store
+}
+
+func (a triggerAgents) WindowAgent(window string) (string, bool) { return a.w.WindowAgent(window) }
+func (a triggerAgents) QuestionOpen(window string) bool          { return a.q.OpenInWindow(window) }

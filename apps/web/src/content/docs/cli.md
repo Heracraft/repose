@@ -460,6 +460,8 @@ A [trigger](/docs/triggers) starts an agent when a webhook arrives or at a time 
 | `repose triggers off NAME`         | Keep it from firing. Its row, its route and its prompt file stay as they are. `--json` prints the trigger. |
 | `repose triggers rm NAME...`       | Remove them. Alias `remove`. A route the trigger made goes with it, unless you made that route yourself or another trigger uses it. |
 
+`repose status` gains a `triggers` row for a project that has one, with each trigger's last run and the next fire, and `repose ls`'s AGENTS cell counts a trigger's runs on their own (`claude: working, 1 trigger run`) so a machine you aren't using doesn't read as if you were.
+
 A schedule is one of `every 15m` (15m to 24h), `daily 03:00`, `weekdays 07:00`, `weekends 10:00`, `mon,thu 18:30` or `monthly 1 09:00`, with an optional zone at the end (`daily 03:00 UTC`, `weekdays 07:00 Europe/Berlin`). Without one it takes your laptop's zone and prints which, so `07:00` is your 07:00 all year.
 
 A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a bad spec, duration or dedupe key. A name the project does not have exits 1.
