@@ -146,6 +146,11 @@ type Runner struct {
 	project func() Project
 	emit    func(*guestdv1.TriggerRun)
 
+	// chown is os.Chown, which a test replaces to record what the
+	// runner gave to dev: the box a test runs on is not root, so a real
+	// chown there says nothing.
+	chown func(name string, uid, gid int) error
+
 	mu   sync.Mutex
 	set  map[string]Trigger
 	runs map[string]*run
@@ -195,7 +200,7 @@ func New(p sysdep.Paths, r sysdep.Runner, agents Agents, project func() Project,
 		now = time.Now
 	}
 	return &Runner{paths: p, run: r, log: log.With("component", "guestd"), now: now,
-		agents: agents, project: project, emit: emit,
+		agents: agents, project: project, emit: emit, chown: os.Chown,
 		set: map[string]Trigger{}, runs: map[string]*run{}, fires: map[string][]time.Time{}}
 }
 
@@ -268,9 +273,49 @@ func (r *Runner) save(set []Trigger) {
 	}
 }
 
+// SetChownForTest replaces the chown the directory maker uses.
+func (r *Runner) SetChownForTest(f func(name string, uid, gid int) error) { r.chown = f }
+
 // SetPathForTest is where the kept set lives, for a test that looks at
 // the directory it is written in.
 func (r *Runner) SetPathForTest() string { return r.paths.TriggerSet() }
+
+// mkdirDev makes every missing directory of path and gives each one to
+// dev. guestd runs as root, so plain MkdirAll left ~/.repose/triggers
+// root-owned: the agent could not read its own payload through it, and
+// `repose triggers fire --payload`, which writes over SSH as dev, failed
+// with "mkdir: cannot create directory '.repose/triggers': Permission
+// denied" (found on the first live run, 2026-11-17). It also repairs a
+// machine where that already happened, which is what reconciling means.
+func (r *Runner) mkdirDev(path string) error {
+	uid, gid := sysdep.DevIdentity()
+	home := r.paths.Home()
+	rel, err := filepath.Rel(home, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return os.MkdirAll(path, 0o700) // not under dev's home: unchanged
+	}
+	cur := home
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if part == "." || part == "" {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		if err := os.Mkdir(cur, 0o700); err != nil && !os.IsExist(err) {
+			return err
+		}
+		_ = r.chown(cur, uid, gid)
+	}
+	return nil
+}
+
+// EnsureDirs makes the trigger folder dev's before anything writes in
+// it, so `repose triggers fire --payload` can write its file into a
+// machine whose triggers have not run yet.
+func (r *Runner) EnsureDirs() {
+	if err := r.mkdirDev(filepath.Join(r.paths.Home(), ".repose", "triggers")); err != nil {
+		r.log.Warn("the trigger folder was not made", "event", "trigger_run", "reason", fileReason(err))
+	}
+}
 
 // Load reads the kept set at start, which is what makes a guestd restart
 // invisible to a provider: without it every delivery after a restart was
@@ -436,20 +481,26 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 	}
 
 	window := rn.Window
-	cmd := agentwindow.NewWindow(r.project().Slug, window, agentwindow.Quote(dirPath(r.paths, dir)), agent, prompt, "")
-	env := append(sysdep.DevEnv(r.paths, "dev"),
-		"REPOSE_TRIGGER="+t.Name,
-		"REPOSE_RUN="+req.RunID,
-		"REPOSE_SOURCE="+req.Source,
-	)
+	// The window's own environment (`new-window -e`), which is what the
+	// agent reads. Setting these around the tmux command instead left
+	// REPOSE_PAYLOAD out of the session: a tmux window inherits the
+	// server's environment, not the client's.
+	windowEnv := []string{
+		"REPOSE_TRIGGER=" + t.Name,
+		"REPOSE_RUN=" + req.RunID,
+		"REPOSE_SOURCE=" + req.Source,
+	}
 	if payload != nil {
-		env = append(env, "REPOSE_PAYLOAD="+r.payloadPath(t.Name, req.RunID))
+		windowEnv = append(windowEnv, "REPOSE_PAYLOAD="+r.payloadPath(t.Name, req.RunID))
 	}
 	if headers != nil {
-		env = append(env, "REPOSE_PAYLOAD_HEADERS="+r.headersPath(t.Name, req.RunID))
+		windowEnv = append(windowEnv, "REPOSE_PAYLOAD_HEADERS="+r.headersPath(t.Name, req.RunID))
 	}
+	cmd := agentwindow.NewWindow(r.project().Slug, window,
+		agentwindow.Quote(dirPath(r.paths, dir)), agent, prompt, "", windowEnv...)
 	res, err := r.run.Run(ctx, sysdep.RunSpec{
-		Argv: []string{"bash", "-lc", cmd}, User: "dev", Env: env, MaxOutput: 4 << 10,
+		Argv: []string{"bash", "-lc", cmd}, User: "dev",
+		Env: sysdep.DevEnv(r.paths, "dev"), MaxOutput: 4 << 10,
 	})
 	if err != nil || res.ExitCode != 0 {
 		r.log.Error("trigger window not opened", "event", "trigger_run", "run_id", req.RunID)
@@ -710,12 +761,10 @@ func (r *Runner) writePayload(t Trigger, req Request) (payload []byte, headers m
 		return nil, nil, 0, nil
 	}
 	dir := r.runDir(t.Name, req.RunID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := r.mkdirDev(dir); err != nil {
 		return nil, nil, 0, err
 	}
 	uid, gid := sysdep.DevIdentity()
-	_ = os.Chown(dir, uid, gid)
-	_ = os.Chown(filepath.Dir(dir), uid, gid)
 	if payload != nil {
 		if err := sysdep.WriteFileAtomic(r.payloadPath(t.Name, req.RunID), payload, 0o600, uid, gid); err != nil {
 			return nil, nil, 0, err
@@ -812,10 +861,9 @@ func (r *Runner) writeGateErr(name, runID string, stderr []byte) {
 	}
 	uid, gid := sysdep.DevIdentity()
 	path := filepath.Join(r.runDir(name, runID), "gate.err")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := r.mkdirDev(filepath.Dir(path)); err != nil {
 		return
 	}
-	_ = os.Chown(filepath.Dir(path), uid, gid)
 	if err := sysdep.WriteFileAtomic(path, stderr, 0o600, uid, gid); err != nil {
 		r.log.Warn("the gate's output was not kept", "event", "trigger_run", "run_id", runID)
 	}
@@ -886,7 +934,7 @@ func (r *Runner) seenRecently(name, key string) (bool, error) {
 
 func (r *Runner) remember(name, key string) error {
 	dir := r.triggerDir(name)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := r.mkdirDev(dir); err != nil {
 		return err
 	}
 	path := filepath.Join(dir, "seen")

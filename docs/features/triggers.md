@@ -581,10 +581,24 @@ that can ask a human is what makes the whole thing safe to leave alone.
 | `REPOSE_PAYLOAD` | the payload file's path, or unset when there is none |
 | `REPOSE_PAYLOAD_HEADERS` | a JSON object of the delivery's headers, for a `route` run |
 
+They go on `tmux new-window -e`, which is the window's own
+environment. Setting them around the `tmux` command instead sets them
+for the client and not the window — a tmux window inherits the
+**server's** environment — and the first live run said so itself:
+"REPOSE_PAYLOAD isn't set in this shell, so there was no file name to
+read" (2026-11-17).
+
 The session is the machine's own tmux session, so it has the project's
 named secrets in its environment exactly as any other window does: a
 prompt written against `$STRIPE_KEY` finds it, and a secret never has to
 reach a trigger another way.
+
+Every directory under `~/.repose/triggers` belongs to `dev`, including
+the folder itself, which guestd makes at start. guestd runs as root, so
+the directories it creates for a run would otherwise be root's: the
+agent could not read its own payload through them, and
+`repose triggers fire --payload`, which writes over SSH as `dev`, could
+not write one.
 
 `REPOSE_PAYLOAD_HEADERS` holds the provider's headers and
 `Repose-Delivery`. It does not hold `Repose-Webhook-URL`, which carries
@@ -828,8 +842,13 @@ never "tests pass".
 
 **The two doors**
 
-- [ ] A real delivery through `hooks.repose.run` starts a session that
-      reads its payload, with the status the edge returned pasted in.
+- [x] A real delivery through `hooks.repose.run` starts a session, with
+      the edge's 202 pasted in — **and the session could not read its
+      payload**: `REPOSE_PAYLOAD` was set around the `tmux` command, not
+      on the window, so the agent answered "REPOSE_PAYLOAD isn't set in
+      this shell". Fixed with `new-window -e`; the read itself is still
+      owed.
+- [ ] A real delivery's session reads `$REPOSE_PAYLOAD` and acts on it.
 - [ ] `--every` fires within a minute of the time, in the stored zone, on
       a running machine, on a frozen one (wake) and on a stopped one with
       `--start`.
@@ -861,8 +880,10 @@ never "tests pass".
 
 **The session**
 
-- [ ] A real agent takes the prompt from its own argv on a fresh trigger
-      window, for Claude Code at minimum, with the transcript pasted.
+- [x] A real agent takes the prompt from its own argv on a fresh trigger
+      window: Claude Code (Opus, bypass) on 2026-11-17 ran `apply` to
+      `done` in 18 s in `t-apply`, and `apply2` printed what it was asked
+      and ended `done`.
 - [x] `--timeout 30s` kills the window and only that window; the tmux
       server and every other agent live.
 - [x] A run whose agent asks `repose-ask` is not killed by its timeout
@@ -911,6 +932,19 @@ never "tests pass".
 | the hand-off's own failures | `internal/api/triggers`: `TestAGuestSkipOfAFireEndsTheRowTheApiWrote` (the 23505 that left hostd resending the event for ever), `TestTheApisOwnRefusalsCoalesceAndAHandFireDoesNot`, `TestARequeuedFireIsNotStaleOnTheNextPass` |
 | the set and the agent's start | `internal/guestd/trigger`: `TestTheSetSurvivesAGuestdRestart`, `TestARunIsNotDoneBeforeItsAgentStarts`, `TestAnAgentThatNeverStartsEndsPastTheGrace`, `TestAHerdrMachineRefusesTheFireAndSaysWhy` |
 | the prompt's own path | `internal/agentwindow`: `TestQuoteMakesOneWordOfAnything`, `TestEveryAgentsPromptFormSurvivesALeadingDash`, `TestNoFormMeansNoArgvPrompt`, `TestStartCommandIsQuotedTwice`, `TestNewWindowTrustsTheFolderThenOpensOneWindow` |
+
+**What the first live run found** (2026-11-17, r20261117-1 on a real
+guest): a delivery reached `hooks.repose.run`, started a session and ran
+a real Claude Code to `done` in 18 seconds; a repeat of the same event
+was `skipped: a duplicate of an event already seen`; a gate's non-zero
+exit was `skipped: the gate refused it`; `repose status` showed the row.
+Four defects came with it, all fixed on `triggers-runs-all`: the
+cross-project listing answered 500 (`column reference "id" is
+ambiguous`), `REPOSE_PAYLOAD` never reached the agent (a tmux window
+inherits the server's environment, not the client's),
+`fire --payload` could not write into `~/.repose/triggers` (guestd had
+made it as root), and the http replica warned "trigger set not pushed"
+on every add about a set that had already arrived.
 
 **What is still open, and why**: every unticked item above needs a
 machine. Nothing here has run against a real guest: no delivery has

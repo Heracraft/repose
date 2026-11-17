@@ -703,3 +703,124 @@ func TestARequeuedFireIsNotStaleOnTheNextPass(t *testing.T) {
 		t.Errorf("reason %q, want unreachable", got.Reason)
 	}
 }
+
+// The cross-project listing joins `projects` onto `trigger_runs`, and
+// the two tables share `id`, `state` and `created_at`. With the
+// unqualified column list every call answered 500 — `column reference
+// "id" is ambiguous` (SQLSTATE 42702) — and nothing caught it, because
+// AllRuns had no store test and the fake api answers the same route in
+// Go. It is one trigger run away from being caught, so here it is.
+func TestAllRunsReadsEveryProjectsRuns(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, one := newProject(t, pool)
+	two := secondProject(t, pool, uid)
+	_, other := newProject(t, pool) // another account's
+
+	for _, p := range []struct {
+		id      uuid.UUID
+		trigger string
+		ago     time.Duration
+	}{{one, "apply", 2 * time.Hour}, {two, "triage", time.Hour}, {other, "sweep", time.Minute}} {
+		if _, _, err := s.Put(ctx, uid, p.id, "large", triggers.Input{
+			Name: p.trigger, Kind: triggers.KindSchedule, Spec: "daily 03:00",
+			PromptPath: strp("p.md"),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		s.SetNow(func() time.Time { return time.Now().UTC().Add(-p.ago) })
+		if _, _, err := s.Apply(ctx, triggers.Report{
+			RunID: uuid.Must(uuid.NewV7()), ProjectID: p.id, Trigger: p.trigger,
+			State: triggerrun.StateDone, Summary: "did it", Source: triggerrun.SourceClock,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		s.SetNow(time.Now)
+	}
+
+	runs, err := s.AllRuns(ctx, uid, 20)
+	if err != nil {
+		t.Fatalf("AllRuns: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("%d runs, want this account's 2 and not the other account's", len(runs))
+	}
+	// Newest first, each saying which machine it ran on.
+	if runs[0].TriggerName != "triage" || runs[1].TriggerName != "apply" {
+		t.Errorf("order: %s then %s, want triage then apply", runs[0].TriggerName, runs[1].TriggerName)
+	}
+	for _, r := range runs {
+		if r.ProjectSlug == "" {
+			t.Errorf("%s has no project slug, so a fleet row cannot say where it ran", r.TriggerName)
+		}
+		if r.State != triggerrun.StateDone || r.Summary != "did it" {
+			t.Errorf("%s came back as %q/%q: the join took the project's columns",
+				r.TriggerName, r.State, r.Summary)
+		}
+	}
+	// The limit is the api's, and a limit outside it falls back rather
+	// than reaching Postgres as a negative.
+	if got, err := s.AllRuns(ctx, uid, 1); err != nil || len(got) != 1 {
+		t.Errorf("limit 1: %d runs, %v", len(got), err)
+	}
+	if got, err := s.AllRuns(ctx, uid, -3); err != nil || len(got) != 2 {
+		t.Errorf("a limit outside 1..200: %d runs, %v", len(got), err)
+	}
+}
+
+// secondProject is another project of the same account.
+func secondProject(t *testing.T, pool *db.Pool, userID uuid.UUID) uuid.UUID {
+	t.Helper()
+	pid := uuid.Must(uuid.NewV7())
+	if _, err := pool.Exec(context.Background(), `insert into projects (id, user_id, name, slug, class, state, volume_bytes)
+		values ($1, $2, 'p', $3, 'large', 'running', 1)`, pid, userID, "p-"+uuid.NewString()[:8]); err != nil {
+		t.Fatal(err)
+	}
+	return pid
+}
+
+// The two column lists are the same columns in the same order, so the
+// one query that joins scans into the same fields as every other.
+func TestTheJoinedColumnListIsTheOtherOne(t *testing.T) {
+	plain, joined := splitCols(triggers.RunColsForTest), splitCols(triggers.RunColsRForTest)
+	for i := range joined {
+		joined[i] = strings.ReplaceAll(joined[i], "r.", "")
+	}
+	if len(plain) != len(joined) {
+		t.Fatalf("%d columns unqualified, %d qualified", len(plain), len(joined))
+	}
+	for i := range plain {
+		if plain[i] != joined[i] {
+			t.Errorf("column %d: %q unqualified, %q qualified", i, plain[i], joined[i])
+		}
+	}
+	// And every qualified column really names the run's table, which is
+	// the whole point of the second list.
+	for _, f := range splitCols(triggers.RunColsRForTest) {
+		if !strings.Contains(f, "r.") {
+			t.Errorf("%q is not qualified, so a join makes it ambiguous", f)
+		}
+	}
+}
+
+// splitCols is a select list's columns, splitting on the commas between
+// them and not on the ones inside a call like coalesce(x, '').
+func splitCols(list string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i, c := range list {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				out = append(out, strings.Join(strings.Fields(list[start:i]), " "))
+				start = i + 1
+			}
+		}
+	}
+	return append(out, strings.Join(strings.Fields(list[start:]), " "))
+}
