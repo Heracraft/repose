@@ -402,7 +402,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 				cancel()
 				if err == nil && sr != nil {
 					// Guest-written: bounded before it joins the host's batch (I-446).
-					gsm.Signals = cleanSignals(sr.Signals)
+					gsm.Signals = cleanSignals(sr.Signals, m.d.Now())
 					gsm.Signals.GuestdOk = true
 					gsm.Procs = cleanProcs(sr.Procs)
 					gsm.CpuPressureUsDelta = m.advancePressure(g.GuestID, sr.GetCpuPressureUsTotal())

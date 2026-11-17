@@ -6,11 +6,13 @@
   carries the kind; the dot is a cue. guest_state_changed is the
   machine's state, drawn as the state list draws it. On a phone the time,
   kind and agent share the first line and the summary takes the second.
+  A row whose notification went nowhere says so under the summary
+  (I-1280); one that was sent says nothing.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
-	import { eventKind, toneDot as dotFor } from '$lib/events';
+	import { eventKind, notSent, toneDot as dotFor } from '$lib/events';
 	import { clockTime, dateTime } from '$lib/format';
 	import { agentLink } from '$lib/agent-link';
 	import type { GuestState, ProjectEvent } from '$lib/api/types';
@@ -38,6 +40,7 @@
 	);
 	let toneDot = $derived(dotFor(info.tone));
 	let link = $derived(agentLink(event.link));
+	let unsent = $derived(notSent(event.delivered));
 
 	// The summary turns into a button only when two lines cut it short; a
 	// button on every row would be a tab stop that does nothing.
@@ -88,6 +91,9 @@
 				>{link.text}</a
 			>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		{/if}
+		{#if unsent}
+			<span class="unsent" data-testid="event-unsent">{unsent}</span>
 		{/if}
 	</span>
 </li>
@@ -149,6 +155,12 @@
 		margin-top: 0.125rem;
 		font-size: 0.8125rem;
 		overflow-wrap: anywhere;
+	}
+	.unsent {
+		display: block;
+		margin-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
 	}
 	.more {
 		width: 100%;

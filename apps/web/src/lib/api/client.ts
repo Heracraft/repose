@@ -141,7 +141,12 @@ export const getMe = (opts: { passive?: boolean } = {}) =>
 	request<Me>('/me', { passive: opts.passive });
 export const patchMe = (body: {
 	tz?: string;
-	notify?: { email?: boolean; ntfy_url?: string | null; gchat_url?: string | null };
+	notify?: {
+		email?: boolean;
+		ntfy_url?: string | null;
+		gchat_url?: string | null;
+		hold_seconds?: number;
+	};
 }) => request<Me>('/me', { method: 'PATCH', body });
 export const deleteMe = () => request<void>('/me', { method: 'DELETE' });
 

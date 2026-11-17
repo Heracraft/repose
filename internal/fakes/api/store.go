@@ -120,6 +120,9 @@ type Event struct {
 	Summary string    `json:"summary"`
 	// Link is an agent's `--link` (DECISIONS I-931): {url, label}.
 	Link map[string]string `json:"link,omitempty"`
+	// Delivered is each channel's outcome (I-689, I-1280): a send time,
+	// `held`, `dropped: resolved`, or a failure.
+	Delivered map[string]string `json:"delivered,omitempty"`
 }
 
 // SecretMeta is one row of GET /projects/:id/secrets. Values are never
@@ -209,6 +212,9 @@ type userRec struct {
 	CreatedAt   time.Time
 	NotifyEmail bool
 	NtfyURL     string
+	// NotifyHoldSeconds is the presence hold (I-1282), notify.DefaultHold
+	// for a new account.
+	NotifyHoldSeconds int
 	// GChatURL and GChatBrokenAt are the Google Chat channel (I-692).
 	GChatURL      string
 	GChatBrokenAt *time.Time

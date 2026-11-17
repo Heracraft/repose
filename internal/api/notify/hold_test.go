@@ -51,10 +51,29 @@ func newHoldEnv(t *testing.T) *holdEnv {
 }
 
 // sample writes a meter sample at ts with the given tmux clients and SSH
-// sessions.
+// sessions and no last_input_at: a guest from before I-1272, which the
+// hold reads by I-689's rule.
 func (h *holdEnv) sample(ts time.Time, tmux, ssh int) {
 	h.t.Helper()
 	if _, err := h.pool.Exec(h.ctx, `insert into meter_samples (ts, project_id, state, class, tmux_clients, ssh_sessions) values ($1, $2, 'running', 'large', $3, $4)`, ts, h.pid, tmux, ssh); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// typed writes a sample at ts from a guest that reports input times
+// (I-1272): somebody is attached either way, and lastInput is when they
+// last touched the keyboard.
+func (h *holdEnv) typed(ts, lastInput time.Time) {
+	h.t.Helper()
+	if _, err := h.pool.Exec(h.ctx, `insert into meter_samples (ts, project_id, state, class, tmux_clients, ssh_sessions, last_input_at) values ($1, $2, 'running', 'large', 1, 1, $3)`, ts, h.pid, lastInput); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// hold sets the user's own hold (I-1282).
+func (h *holdEnv) hold(d time.Duration) {
+	h.t.Helper()
+	if _, err := h.pool.Exec(h.ctx, "update users set notify_hold_seconds = $1", int(d.Seconds())); err != nil {
 		h.t.Fatal(err)
 	}
 }
@@ -93,14 +112,14 @@ func (h *holdEnv) outbox(id uuid.UUID) (attempts int, next time.Time, ok bool) {
 	return attempts, next, err == nil
 }
 
-// TestHeldWhilePresentThenSent (DECISIONS I-689): an agent kind queued
-// while a tmux client is attached waits a minute at a time without an
-// attempt, shows "held", and goes out 10 minutes after its event even if
-// the owner never leaves; a platform kind is never held.
+// TestHeldWhilePresentThenSent (DECISIONS I-689, I-1272, I-1274): a
+// report queued while somebody is typing in the machine waits HoldStep
+// at a time without an attempt, shows "held", and goes out MaxHold after
+// its event even if they never stop; a platform kind is never held.
 func TestHeldWhilePresentThenSent(t *testing.T) {
 	h := newHoldEnv(t)
 	start := h.now
-	h.sample(start.Add(-30*time.Second), 1, 0)
+	h.typed(start.Add(-30*time.Second), start.Add(-30*time.Second))
 	done := h.insert("agent_done", "main")
 	platform := h.insert("snapshot_failed", "")
 	h.pass(start.Add(time.Second))
@@ -117,23 +136,160 @@ func TestHeldWhilePresentThenSent(t *testing.T) {
 	if h.delivered(platform) == "" {
 		t.Fatal("platform notice not marked")
 	}
-	// Still attached nine minutes on: held, and the next try is at the
-	// tenth minute, not past it.
-	h.sample(start.Add(9*time.Minute), 0, 1)
-	h.pass(start.Add(9*time.Minute + 30*time.Second))
+	// Still typing a step before the end: held, and the next try is at
+	// the end of the hold, not past it.
+	at := start.Add(notify.MaxHold - notify.HoldStep)
+	h.typed(at, at)
+	h.pass(at)
 	if len(h.sent.sent) != 1 {
 		t.Fatal("sent while the owner was present")
 	}
 	if _, next, _ := h.outbox(done); !near(next, start.Add(notify.MaxHold)) {
 		t.Fatalf("next try %v after the event, want %v", next.Sub(start), notify.MaxHold)
 	}
-	h.sample(start.Add(10*time.Minute), 1, 1)
+	h.typed(start.Add(notify.MaxHold), start.Add(notify.MaxHold))
 	h.pass(start.Add(notify.MaxHold))
 	if len(h.sent.sent) != 2 || h.sent.sent[1].Kind != "agent_done" {
 		t.Fatalf("not sent at the end of the hold: %d sent", len(h.sent.sent))
 	}
 	if got := h.delivered(done); got == notify.DeliveredHeld || got == "" {
 		t.Fatalf("delivered %q after the send", got)
+	}
+}
+
+// TestAttachedButIdleIsNotPresence (DECISIONS I-1272) is the owner's
+// 2026-11-17 report: an `agent_done` carrying a deployment URL sat held
+// for the whole hold while they were away from the keyboard, because the
+// laptop's SSH session was still open. A fresh sample with a client and
+// a session, whose last input is older than InputIdle, is not presence,
+// and the report goes out at once.
+func TestAttachedButIdleIsNotPresence(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	h.typed(start, start.Add(-notify.InputIdle-time.Minute))
+	done := h.insert("agent_done", "main")
+	h.pass(start.Add(time.Second))
+	if len(h.sent.sent) != 1 || h.sent.sent[0].Kind != "agent_done" {
+		t.Fatalf("sent %v, want the report at once", h.sent.sent)
+	}
+	if got := h.delivered(done); got == notify.DeliveredHeld || got == "" {
+		t.Fatalf("delivered %q, want a send time", got)
+	}
+}
+
+// TestGuestWithoutInputTimeFallsBackToSessionCounts (I-1272): a sample
+// from a guest or a host from before this carries no last_input_at, and
+// the hold reads I-689's rule rather than treating the machine as empty.
+func TestGuestWithoutInputTimeFallsBackToSessionCounts(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	h.sample(start, 0, 1) // an SSH session, no input time
+	done := h.insert("agent_done", "main")
+	h.pass(start.Add(time.Second))
+	if len(h.sent.sent) != 0 {
+		t.Fatalf("sent %v, want held under the old rule", h.sent.sent)
+	}
+	if got := h.delivered(done); got != notify.DeliveredHeld {
+		t.Fatalf("delivered %q, want held", got)
+	}
+}
+
+// TestHoldOffForTheUser (I-1282): a user whose hold is 0 is never held,
+// however present they are.
+func TestHoldOffForTheUser(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	h.hold(0)
+	h.typed(start, start)
+	done := h.insert("agent_done", "main")
+	h.pass(start.Add(time.Second))
+	if len(h.sent.sent) != 1 || h.delivered(done) == notify.DeliveredHeld {
+		t.Fatalf("sent %v, delivered %q: want the report at once", h.sent.sent, h.delivered(done))
+	}
+}
+
+// TestTheUsersOwnHoldIsTheWindow (I-1282): the hold runs for as long as
+// the user set, not for MaxHold.
+func TestTheUsersOwnHoldIsTheWindow(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	h.hold(5 * time.Minute) // neither MaxHold nor I-689's ten minutes
+	h.typed(start, start)
+	done := h.insert("agent_done", "main")
+	h.pass(start.Add(time.Second))
+	if h.delivered(done) != notify.DeliveredHeld {
+		t.Fatalf("delivered %q, want held", h.delivered(done))
+	}
+	at := start.Add(notify.MaxHold + time.Minute)
+	h.typed(at, at)
+	h.pass(at)
+	if len(h.sent.sent) != 0 {
+		t.Fatalf("sent %v past MaxHold, want held to the user's own 5m", h.sent.sent)
+	}
+	at = start.Add(5 * time.Minute)
+	h.typed(at, at)
+	h.pass(at)
+	if len(h.sent.sent) != 1 {
+		t.Fatalf("sent %d at the end of the user's hold, want 1", len(h.sent.sent))
+	}
+}
+
+// TestNeedsInputIsNeverHeld (I-1276): an agent stopped at a permission
+// prompt is not a report that can wait, so it goes out at once with the
+// owner typing.
+func TestNeedsInputIsNeverHeld(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	h.typed(start, start)
+	prompt := h.insert("needs_input", "main")
+	h.pass(start.Add(time.Second))
+	if len(h.sent.sent) != 1 || h.sent.sent[0].Kind != "needs_input" {
+		t.Fatalf("sent %v, want the prompt at once", h.sent.sent)
+	}
+	if got := h.delivered(prompt); got == notify.DeliveredHeld || got == "" {
+		t.Fatalf("delivered %q, want a send time", got)
+	}
+}
+
+// TestALaterPromptDoesNotResolveAnEarlierOne (I-1278): only the end of
+// the turn means a `needs_input` is over. On 30 days of prod, 7 of 20
+// dropped prompts were killed by a later `needs_input` and one by an
+// `agent_question`, which left an agent still waiting and the owner
+// told nothing.
+func TestALaterPromptDoesNotResolveAnEarlierOne(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	// A prompt is never held (I-1276), so each row here is parked past
+	// the later events instead, which is the race the drop is about: a
+	// row still queued when the next event of its window lands.
+	park := func(id uuid.UUID, at time.Time) {
+		if _, err := h.pool.Exec(h.ctx, "update events_outbox set next_at = $2 where event_id = $1", id, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := h.insert("needs_input", "main")
+	park(first, start.Add(time.Hour))
+	// Later events in the same window: another prompt and a question.
+	// Each is more than the ingest's 60 second dedupe window after the
+	// one before it and less than its 5 minute skew clamp from now, or
+	// the ingest would fold them into one event.
+	h.now = start.Add(2 * time.Minute)
+	h.insert("needs_input", "main")
+	h.now = start.Add(3 * time.Minute)
+	h.insert("agent_question", "main")
+	h.pass(start.Add(time.Hour + time.Second))
+	if got := h.delivered(first); got == notify.DeliveredDropped || got == "" {
+		t.Fatalf("prompt %q after a later prompt and question, want a send: the agent is still waiting", got)
+	}
+	// The turn ending does resolve a prompt.
+	h.now = start.Add(4 * time.Minute)
+	prompt := h.insert("needs_input", "w2")
+	park(prompt, start.Add(2*time.Hour))
+	h.now = start.Add(4*time.Minute + 30*time.Second)
+	h.insert("completed", "w2")
+	h.pass(start.Add(2*time.Hour + time.Second))
+	if got := h.delivered(prompt); got != notify.DeliveredDropped {
+		t.Fatalf("prompt %q after its turn ended, want dropped", got)
 	}
 }
 
@@ -156,10 +312,9 @@ func TestNotHeldWhenAwayOrStale(t *testing.T) {
 // TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved: a question
 // goes out at once with the owner attached (I-1242, amending I-689), a
 // question already answered in the terminal by its first send is dropped
-// with "dropped: resolved", and a held needs_input followed by a later
-// event of the same agent window is dropped too; another agent's prompt
-// in that window is not resolved by it. Probe: with "agent_question" back
-// in heldKinds, eid reads held after the first pass.
+// with "dropped: resolved", and a report in the same window is held
+// meanwhile. Probe: with "agent_question" back in heldKinds, eid reads
+// held after the first pass.
 func TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved(t *testing.T) {
 	h := newHoldEnv(t)
 	start := h.now
@@ -180,8 +335,7 @@ func TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved(t *testing.T) {
 	if _, err := h.pool.Exec(h.ctx, "update questions set state = 'answered', answered_via = 'terminal' where id = $1", answered); err != nil {
 		t.Fatal(err)
 	}
-	prompt := h.insert("needs_input", "main")
-	other := h.insertAs("codex", "needs_input", "main")
+	report := h.insert("agent_message", "main")
 	h.pass(start.Add(time.Second))
 	if len(h.sent.sent) != 1 || h.sent.sent[0].EventID != eid {
 		t.Fatalf("sent %v, want the pending question alone, at once", h.sent.sent)
@@ -192,20 +346,13 @@ func TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved(t *testing.T) {
 	if h.delivered(aeid) != notify.DeliveredDropped {
 		t.Fatalf("question answered before its send: %q, want dropped", h.delivered(aeid))
 	}
-	for _, id := range []uuid.UUID{prompt, other} {
-		if h.delivered(id) != notify.DeliveredHeld {
-			t.Fatalf("%s not held: %q", id, h.delivered(id))
-		}
+	if h.delivered(report) != notify.DeliveredHeld {
+		t.Fatalf("report not held: %q", h.delivered(report))
 	}
-	h.now = start.Add(20 * time.Second)
-	h.insert("completed", "main")
 	h.sample(start.Add(time.Minute), 0, 0)
 	h.pass(start.Add(time.Minute + time.Second))
-	if h.delivered(prompt) != notify.DeliveredDropped {
-		t.Fatalf("prompt %q, want dropped", h.delivered(prompt))
-	}
-	if len(h.sent.sent) != 2 || h.sent.sent[1].EventID != other {
-		t.Fatalf("sent %d, want the question and then the other window's prompt", len(h.sent.sent))
+	if len(h.sent.sent) != 2 || h.sent.sent[1].EventID != report {
+		t.Fatalf("sent %d, want the question and then the report once nobody is there", len(h.sent.sent))
 	}
 	var rows int
 	_ = h.pool.QueryRow(h.ctx, "select count(*) from events_outbox").Scan(&rows)
@@ -288,11 +435,18 @@ func near(a, b time.Time) bool { return a.Sub(b).Abs() < time.Millisecond }
 func TestHoldMetricsAndLag(t *testing.T) {
 	h := newHoldEnv(t)
 	start := h.now
+	h.hold(10 * time.Minute)
 	h.insert("agent_done", "main")
-	prompt := h.insert("needs_input", "w2")
+	h.insert("agent_message", "w2")
+	prompt := h.insert("needs_input", "w3")
+	// The prompt is never held (I-1276); it is parked past the passes so
+	// the drop below is the one being counted.
+	if _, err := h.pool.Exec(h.ctx, "update events_outbox set next_at = $2 where event_id = $1", prompt, start.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 3; i++ {
 		at := start.Add(time.Second + time.Duration(i)*notify.HoldStep)
-		h.sample(at.Add(-time.Second), 1, 0)
+		h.typed(at.Add(-time.Second), at.Add(-time.Second))
 		h.pass(at)
 		if lag := testutil.ToFloat64(h.m.OutboxLagSeconds); lag != 0 {
 			t.Fatalf("pass %d: lag %v while every row is held", i, lag)
@@ -302,8 +456,8 @@ func TestHoldMetricsAndLag(t *testing.T) {
 		t.Fatalf("held counted %v, want 2 (once per row)", got)
 	}
 	h.now = start.Add(3 * time.Minute)
-	h.sample(h.now, 1, 0)
-	h.insert("agent_message", "w2") // resolves the prompt
+	h.typed(h.now, h.now)
+	h.insert("completed", "w3") // ends the prompt's turn
 	h.pass(start.Add(3*time.Minute + time.Second))
 	if h.delivered(prompt) != notify.DeliveredDropped {
 		t.Fatalf("prompt %q, want dropped", h.delivered(prompt))

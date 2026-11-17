@@ -221,36 +221,47 @@ func (t tmuxClient) listPanes(ctx context.Context, session string) ([]tmuxPane, 
 
 // listClients counts attached tmux clients for the session: those on it
 // and those on a session grouped with it, which is where each attach puts
-// its terminal (DECISIONS I-1067).
-func (t tmuxClient) listClients(ctx context.Context, session string) (uint32, bool, error) {
+// its terminal (DECISIONS I-1067). It also returns the newest
+// `client_activity` among them, which tmux moves on when a client sends
+// input: when somebody last typed in this machine (DECISIONS I-1272).
+// It is a time, never what was typed.
+func (t tmuxClient) listClients(ctx context.Context, session string) (uint32, int64, bool, error) {
 	res, err := t.run.Run(ctx, sysdep.RunSpec{
-		Argv:      []string{"tmux", "list-clients", "-F", "#{session_name}\t#{session_group}"},
+		Argv:      []string{"tmux", "list-clients", "-F", "#{session_name}\t#{session_group}\t#{client_activity}"},
 		User:      "dev",
 		Env:       sysdep.DevEnv(t.paths, "dev"),
 		MaxOutput: 8 << 10,
 	})
 	if err != nil {
-		return 0, false, sysdep.Errf(sysdep.CodeInternal, "list tmux clients: %w", err)
+		return 0, 0, false, sysdep.Errf(sysdep.CodeInternal, "list tmux clients: %w", err)
 	}
 	if res.ExitCode != 0 {
 		reason := tmuxFailure(string(res.Stderr))
 		if reason == "server_down" {
-			return 0, false, nil
+			return 0, 0, false, nil
 		}
 		if reason == "session_missing" {
-			return 0, true, nil
+			return 0, 0, true, nil
 		}
-		return 0, true, sysdep.Errf(sysdep.CodeInternal,
+		return 0, 0, true, sysdep.Errf(sysdep.CodeInternal,
 			"list tmux clients: tmux exited %d (%s)", res.ExitCode, reason)
 	}
 	var n uint32
+	var newest int64
 	for _, line := range strings.Split(strings.TrimRight(string(res.Stdout), "\n"), "\n") {
-		name, group, _ := strings.Cut(line, "\t")
-		if name == session || group == session {
-			n++
+		name, rest, _ := strings.Cut(line, "\t")
+		group, activity, _ := strings.Cut(rest, "\t")
+		if name != session && group != session {
+			continue
+		}
+		n++
+		// A tmux too old for client_activity, or a client that has none,
+		// leaves the count alone and the time to the others.
+		if ts, err := strconv.ParseInt(strings.TrimSpace(activity), 10, 64); err == nil && ts > newest {
+			newest = ts
 		}
 	}
-	return n, true, nil
+	return n, newest, true, nil
 }
 
 // windowOfPane resolves a tmux pane id (the $TMUX_PANE of a hook's caller) to

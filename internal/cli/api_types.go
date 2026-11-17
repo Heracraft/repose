@@ -38,6 +38,9 @@ type Me struct {
 		NtfyURL *string `json:"ntfy_url"`
 		// GChat is the Google Chat channel, never its URL (I-692).
 		GChat *GChatChannel `json:"gchat"`
+		// HoldSeconds is how long a report waits while you are at the
+		// machine (I-1282); 0 is off.
+		HoldSeconds int `json:"hold_seconds"`
 	} `json:"notify"`
 }
 
@@ -276,6 +279,10 @@ type Event struct {
 	Summary string    `json:"summary"`
 	// Link is the agent's `--link URL --label TEXT` (DECISIONS I-931).
 	Link *EventLink `json:"link,omitempty"`
+	// Delivered is each channel's outcome: a send time, "held" while the
+	// presence hold has it (I-689), "dropped: resolved", or a failure.
+	// `repose events` says so only when nothing went out (I-1280).
+	Delivered map[string]string `json:"delivered,omitempty"`
 	// Project is the project's name, which the CLI adds (the api answers
 	// for one project); `repose events` outside a checkout covers them
 	// all (DECISIONS I-609).

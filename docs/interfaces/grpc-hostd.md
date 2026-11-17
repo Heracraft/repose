@@ -291,10 +291,18 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               optional uint64 burst_cpu_ns_delta;                  // I-1126
               uint32 burst_cap_millicores; }                       // I-1126
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
-               uint32 docker_containers; bool guestd_ok; }
+               uint32 docker_containers; bool guestd_ok;
+               uint64 last_input_unix; }                             // I-1272
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
 // tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504)
 // tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)
+// last_input_unix (I-1272): the newest `client_activity` of a tmux client of the project's
+// session, which tmux moves on when a client sends input: when somebody last typed in the
+// machine. It is a time and never what was typed. guestd reports when the watcher started
+// while nobody has typed yet, so 0 means only "no answer" -- tmux has never been readable,
+// or this is a guestd from before I-1272 -- and the api's notification hold then reads the
+// two session counts instead (I-689's rule). It only ever moves forward: tmux forgets a
+// client the moment it detaches, and nobody attached now is not nobody typing a moment ago.
 ProcSample { string comm; uint64 cpu_ns_delta; uint64 rss_bytes; }  // comm only; never argv
 // resting (I-818): this guest is paused. `state` stays `running`, which is what bills
 // the minute; `signals` repeats the last figures the guest wrote and `guestd_ok` stays

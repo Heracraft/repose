@@ -97,11 +97,12 @@ func (t *tmuxSource) Panes(ctx context.Context) ([]Pane, bool, error) {
 	return out, true, nil
 }
 
-// clients counts attached tmux clients; GuestSignals.tmux_clients stays
+// clients counts attached tmux clients and returns when one of them last
+// sent input (unix seconds, 0 for none); GuestSignals.tmux_clients stays
 // tmux-only (a herdr client arrives over SSH and is in ssh_sessions).
-func (t *tmuxSource) clients(ctx context.Context) (uint32, error) {
-	n, _, err := t.client.listClients(ctx, t.slugs.Slug())
-	return n, err
+func (t *tmuxSource) clients(ctx context.Context) (uint32, int64, error) {
+	n, lastInput, _, err := t.client.listClients(ctx, t.slugs.Slug())
+	return n, lastInput, err
 }
 
 // Resolve maps a tmux pane id ($TMUX_PANE) to its window name.

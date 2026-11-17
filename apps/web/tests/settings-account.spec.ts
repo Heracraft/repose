@@ -2,8 +2,27 @@
 // "Account deletion flow requires typing the handle and explains
 // retention." The account is a section of Settings (DECISIONS I-578), and
 // Settings is four tabs: General, Notifications, Secrets, machine.nix (I-841).
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { fail, failNext, signIn, unfail } from './helpers';
+
+/**
+ * The viewport at 1440 and 390 in both schemes, at 1x, for the review
+ * CLAUDE.md asks for ("Judge visuals at real size"). Written only with
+ * REPOSE_SHOTS_DIR set, as triggers.spec.ts does.
+ */
+async function shots(page: Page, name: string): Promise<void> {
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (!dir) return;
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
+		}
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: null });
+}
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -74,6 +93,31 @@ test('settings round-trips timezone, email toggle and ntfy URL, and the test but
 	await page.getByLabel('ntfy URL').fill('');
 	await save.click();
 	await expect(page.getByText('ntfy turned off.')).toBeVisible();
+});
+
+// I-1282: the hold is a choice on the page, not a CLI-only setting
+// (I-1266). It saves on change, like the email toggle, and survives a
+// reload; a refused save puts the old choice back.
+test('the hold saves on change and comes back after a reload', async ({ page }) => {
+	await page.goto('/settings/notifications');
+	const hold = page.getByLabel('A report waits before it reaches your phone');
+	await expect(hold).toHaveValue('120');
+	await expect(page.getByText('A question or a stopped agent is never held.')).toBeVisible();
+
+	await hold.selectOption('0');
+	await expect(page.getByText('Reports are sent at once.')).toBeVisible();
+	await page.reload();
+	await expect(page.getByLabel('A report waits before it reaches your phone')).toHaveValue('0');
+
+	await failNext('PATCH', '/me', 'internal');
+	await page.getByLabel('A report waits before it reaches your phone').selectOption('600');
+	await expect(page.locator('[data-sonner-toast][data-type="error"]')).toBeVisible();
+	await expect(page.getByLabel('A report waits before it reaches your phone')).toHaveValue('0');
+
+	// Put the fake's account back for later specs.
+	await page.getByLabel('A report waits before it reaches your phone').selectOption('120');
+	await expect(page.getByText('Hold saved.')).toBeVisible();
+	await shots(page, 'settings-notifications');
 });
 
 test('a failed email toggle reverts the checkbox', async ({ page }) => {
@@ -195,7 +239,13 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 	// Secrets' head is its count ("2 secrets"); machine.nix has no head
 	// under its own tab (review IA).
 	for (const [name, url, headings] of [
-		['Notifications', '/settings/notifications', ['Email', 'ntfy', 'Google Chat', 'Test']],
+		[
+			'Notifications',
+			'/settings/notifications',
+			// Hold sits after Email and before the channels (I-1282): it is
+			// about when, and the three below it about where.
+			['Email', 'Hold', 'ntfy', 'Google Chat', 'Test']
+		],
 		['Secrets', '/settings/secrets', [/^(Secrets|\d+ secrets?)$/]],
 		['machine.nix', '/settings/machine-nix', []]
 	] as const) {

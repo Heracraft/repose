@@ -4605,8 +4605,14 @@ type GuestSignals struct {
 	Agents           []*AgentProc `protobuf:"bytes,3,rep,name=agents,proto3" json:"agents,omitempty"`
 	DockerContainers uint32       `protobuf:"varint,4,opt,name=docker_containers,json=dockerContainers,proto3" json:"docker_containers,omitempty"`
 	GuestdOk         bool         `protobuf:"varint,5,opt,name=guestd_ok,json=guestdOk,proto3" json:"guestd_ok,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Unix seconds of the last activity of a tmux client of the project's
+	// session: when somebody last typed in the guest (DECISIONS I-1272).
+	// 0 when no client has ever been seen, when tmux is down, and from a
+	// guestd from before I-1272; the notification hold reads the session
+	// counts above in that case.
+	LastInputUnix uint64 `protobuf:"varint,6,opt,name=last_input_unix,json=lastInputUnix,proto3" json:"last_input_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GuestSignals) Reset() {
@@ -4672,6 +4678,13 @@ func (x *GuestSignals) GetGuestdOk() bool {
 		return x.GuestdOk
 	}
 	return false
+}
+
+func (x *GuestSignals) GetLastInputUnix() uint64 {
+	if x != nil {
+		return x.LastInputUnix
+	}
+	return 0
 }
 
 type GuestSample struct {
@@ -6432,13 +6445,14 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04comm\x18\x01 \x01(\tR\x04comm\x12 \n" +
 	"\fcpu_ns_delta\x18\x02 \x01(\x04R\n" +
 	"cpuNsDelta\x12\x1b\n" +
-	"\trss_bytes\x18\x03 \x01(\x04R\brssBytes\"\xd2\x01\n" +
+	"\trss_bytes\x18\x03 \x01(\x04R\brssBytes\"\xfa\x01\n" +
 	"\fGuestSignals\x12!\n" +
 	"\fssh_sessions\x18\x01 \x01(\rR\vsshSessions\x12!\n" +
 	"\ftmux_clients\x18\x02 \x01(\rR\vtmuxClients\x122\n" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
-	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\"\x84\a\n" +
+	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\x12&\n" +
+	"\x0flast_input_unix\x18\x06 \x01(\x04R\rlastInputUnix\"\x84\a\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +

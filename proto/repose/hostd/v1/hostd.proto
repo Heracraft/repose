@@ -486,6 +486,12 @@ message GuestSignals {
   repeated AgentProc agents = 3;
   uint32 docker_containers = 4;
   bool guestd_ok = 5;
+  // Unix seconds of the last activity of a tmux client of the project's
+  // session: when somebody last typed in the guest (DECISIONS I-1272).
+  // 0 when no client has ever been seen, when tmux is down, and from a
+  // guestd from before I-1272; the notification hold reads the session
+  // counts above in that case.
+  uint64 last_input_unix = 6;
 }
 message GuestSample {
   string guest_id = 1;

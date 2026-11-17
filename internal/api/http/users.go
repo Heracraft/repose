@@ -38,7 +38,7 @@ func (s *Server) userJSON(ctx context.Context, u *store.User) (map[string]any, e
 		"id": u.ID, "handle": u.Handle, "email": u.Email, "github_login": u.GithubLogin, "tz": u.TZ, "created_at": u.CreatedAt,
 		"billing":  b,
 		"limits":   billing.LimitsFor(u, sub).JSON(),
-		"notify":   map[string]any{"email": u.NotifyEmail, "ntfy_url": u.NtfyURL, "gchat": gchatJSON(u)},
+		"notify":   map[string]any{"email": u.NotifyEmail, "ntfy_url": u.NtfyURL, "gchat": gchatJSON(u), "hold_seconds": u.NotifyHoldSeconds},
 		"waitlist": place.JSON(),
 	}, nil
 }
@@ -78,6 +78,9 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 			NtfyURL json.RawMessage `json:"ntfy_url"`
 			// GChatURL is a Google Chat webhook (I-692), null or "" to clear.
 			GChatURL json.RawMessage `json:"gchat_url"`
+			// HoldSeconds is the presence hold (I-1282): 0 off, at most
+			// an hour. Absent leaves it alone.
+			HoldSeconds *int `json:"hold_seconds"`
 		} `json:"notify"`
 	}
 	if err := decode(r, &body); err != nil {
@@ -129,6 +132,14 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 		}
 		if len(body.Notify.GChatURL) > 0 {
 			if err := s.setGChat(r.Context(), u, body.Notify.GChatURL); err != nil {
+				return err
+			}
+		}
+		if body.Notify.HoldSeconds != nil {
+			if *body.Notify.HoldSeconds < 0 || *body.Notify.HoldSeconds > notify.MaxHoldSeconds {
+				return errf("invalid", "hold_seconds is 0 to %d", notify.MaxHoldSeconds)
+			}
+			if _, err := s.d.Pool.Exec(r.Context(), "update users set notify_hold_seconds = $2 where id = $1", u.ID, *body.Notify.HoldSeconds); err != nil {
 				return err
 			}
 		}

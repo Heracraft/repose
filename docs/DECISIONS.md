@@ -35321,3 +35321,126 @@ appearing in any api answer. Viewport captures at 1x, 1440 and 390,
 light and dark, of the empty tab, the list, an opened row, the form, the
 form with More settings, and Edit. `pnpm exec svelte-check` 0 errors 0
 warnings; `docs/CHECKLIST.md`'s "look" greps at their stated counts.
+
+**I-1272. Being at the machine is having typed, not having a session
+open (notify-hold, 2026-11-17). Amends I-689.**
+
+The owner, 2026-11-17: an agent handed them a URL for a deployment and
+their phone stayed silent. Prod, their account: the `agent_done`
+carrying that link was queued at 13:30:22Z and sent at 13:40:22Z,
+`delivered {"gchat": "held"}` for the whole of it, to the second of
+`event + MaxHold`. Not a loss, a ten minute delay, and the normal path
+rather than a bad minute: over the 7 days to 2026-11-17 their delivered
+rows averaged 246 s (`agent_done`), 221 s (`agent_message`) and 351 s
+(`needs_input`) between the event and the send, and 24 of 86 went at the
+cap. The laptop's SSH session was open the whole time, as it is most of
+the day, and I-689 reads an open session as the owner being there.
+
+- Present means the project's latest sample, at most `PresenceFresh` (2
+  minutes) old, says somebody typed in the guest's tmux within
+  `InputIdle` (5 minutes). The signal is `GuestSignals.last_input_unix`,
+  the newest `client_activity` among the tmux clients of the project's
+  session, which tmux moves on when a client sends input; the api stores
+  it as `meter_samples.last_input_at` (0045).
+- It is a time and never what was typed. tmux is asked for one number
+  per client beside the count it was already asked for, in the same
+  `list-clients` call, so the guest does no new work and reads no pane.
+- guestd's figure only ever moves forward. tmux forgets a client the
+  moment it detaches, and "nobody is attached now" is not "nobody typed
+  five seconds ago". While nobody has typed since the watcher started it
+  reports the watcher's start, so 0 means one thing only: there is no
+  answer, from a guestd before this or a tmux that has never been
+  readable. The api reads such a sample by I-689's rule, `tmux_clients +
+  ssh_sessions > 0`, which keeps every guest on an older base working
+  until the base ships.
+- `repose-presence` (I-1098) is NOT changed. It answers a different
+  question — is a session open, so does `localhost:PORT` reach the
+  user's laptop — and for that an idle attached session is the right
+  answer. Two questions, two signals; `sample.Handler.Attached` stays as
+  it is.
+- Rejected: an input time for SSH sessions as well, from the pts
+  device's mtime. That is the terminal's last *output*, which a running
+  build moves on with nobody present, and every interactive session on a
+  repose machine is a tmux client anyway.
+
+*Checked:* `TestAttachedButIdleIsNotPresence` (internal/api/notify) is
+the owner's case — a fresh sample with a client and a session whose last
+input is older than `InputIdle` sends at once — and
+`TestGuestWithoutInputTimeFallsBackToSessionCounts` holds the fallback.
+Both were run against the code before this change and fail there.
+
+**I-1274. The hold is 2 minutes, a step at a time of 30 seconds
+(notify-hold, 2026-11-17). Amends I-689.**
+
+I-689 chose 10 minutes with no measurement behind it. On the 7 days of
+prod in I-1272 a third of the owner's reports went at the cap, which
+means the hold's common outcome is not "you were there, so you saw it"
+but "you got it ten minutes late". Ten minutes is long enough that the
+ping no longer reads as being about the thing that caused it.
+
+`MaxHold` is 2 minutes and `HoldStep` 30 seconds. The lease `pass` takes
+on a picked row stays a minute: `hold` writes the row's `next_at`
+itself, so the lease never sets the step.
+
+**I-1276. A stopped agent is never held (notify-hold, 2026-11-17).
+Amends I-689 and I-1242.**
+
+I-1242 took `agent_question` out of the hold with the reason that an
+agent blocked on an answer cannot wait ten minutes. A `needs_input` is
+the same agent blocked on the same owner, at a permission prompt instead
+of a question, and it stayed in. It leaves `heldKinds` too.
+
+`heldKinds` is now `agent_done`, `agent_message`, `error`: the three
+reports. Everything that stops an agent goes out when it happens.
+
+**I-1278. Only the end of a turn resolves a permission prompt
+(notify-hold, 2026-11-17). Amends I-689.**
+
+I-689 drops a queued `needs_input` when the same project has any later
+event with the same agent and window, `completed` included. Prod, 30
+days of the owner's account: 20 prompts were dropped that way, and the
+later event was a `completed` or an `agent_done` in 12 of them — the
+turn ended, the drop is right — a later `needs_input` in 7, and an
+`agent_question` in 1. In those 8 the agent was still waiting on the
+owner when the notification was thrown away.
+
+The check now names the two kinds that end a turn: `completed` and
+`agent_done`. A later `needs_input` means the agent is blocked again,
+not freed, and an `agent_question` from that window is its own
+notification. With I-1276 the earlier prompt has usually gone out
+already, so this is about the rows still queued; it is kept because the
+rule should say what it means.
+
+*Checked:* `TestALaterPromptDoesNotResolveAnEarlierOne`
+(internal/api/notify).
+
+**I-1280. An event says why its notification went nowhere, and only then
+(notify-hold, 2026-11-17).**
+
+The owner's report began "sometimes notifications don't come in at all
+and it's really weird and disorienting". `delivered` has held the answer
+since I-689 and nothing a user reads has ever shown it.
+
+`repose events` and the dashboard's event rows add one phrase to a row
+whose notification did not go out: `not sent yet: you are at the
+machine` while it is held, `not sent: it was over by then` once it is
+dropped. A row that reached a channel, that failed on a channel (which
+has its own words), or whose kind queues no delivery says nothing: by
+I-485 the line is only worth its space for the ping that never came.
+
+**I-1282. The hold is the user's, in the CLI and on the dashboard
+(notify-hold, 2026-11-17).**
+
+`users.notify_hold_seconds` (0045), 120 by default, 0 for off, 3600 at
+most in the schema's CHECK, the api and the CLI. `repose notify set
+--hold off|DURATION` sets it, `repose notify` prints it, and Settings →
+Notifications has the same choice as a five-item select that saves on
+change, by I-1266: a setting the CLI has and the dashboard does not is
+not shipped. It bounds the hold for the three held kinds only; a
+question and a `needs_input` ignore it.
+
+Rejected: a per-project hold. The hold is about where the owner's
+attention is, which is not a property of a project.
+
+*Checked:* `TestHoldOffForTheUser` and `TestTheUsersOwnHoldIsTheWindow`
+(internal/api/notify).

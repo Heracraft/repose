@@ -1,8 +1,9 @@
 <script lang="ts">
-	// Settings → Notifications (DECISIONS I-332, I-691, I-692, I-841): the
-	// three channels and Send test. The email toggle saves the moment it
-	// changes; the ntfy URL and the Google Chat webhook are typed, so each
-	// has its own Save, and a link followed while one is unsaved asks first.
+	// Settings → Notifications (DECISIONS I-332, I-691, I-692, I-841,
+	// I-1282): the three channels, the hold, and Send test. The email
+	// toggle and the hold save the moment they change; the ntfy URL and
+	// the Google Chat webhook are typed, so each has its own Save, and a
+	// link followed while one is unsaved asks first.
 	import { onMount, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -21,6 +22,9 @@
 	let me = $state<Me | undefined>(undefined);
 	let loadError = $state<string | undefined>(undefined);
 	let emailOn = $state(true);
+	// The hold (I-1282), in seconds; 0 is off. The api's default is 120.
+	let holdSeconds = $state(120);
+	let savingHold = $state(false);
 	let ntfyUrl = $state('');
 	let savedNtfyUrl = $state('');
 	let savingNtfy = $state(false);
@@ -50,6 +54,7 @@
 			billingStore.setMe(me);
 			loadError = undefined;
 			emailOn = me.notify?.email ?? true;
+			holdSeconds = me.notify?.hold_seconds ?? 120;
 			ntfyUrl = me.notify?.ntfy_url ?? '';
 			savedNtfyUrl = ntfyUrl;
 			gchatUrl = '';
@@ -103,6 +108,31 @@
 		} catch (err) {
 			emailOn = !next;
 			toastApiError(err, 'Could not change email notifications.');
+		}
+	}
+
+	/** The hold's choices, in seconds. */
+	const HOLDS = [
+		{ value: 0, label: 'Send at once' },
+		{ value: 60, label: 'Wait 1 minute' },
+		{ value: 120, label: 'Wait 2 minutes' },
+		{ value: 300, label: 'Wait 5 minutes' },
+		{ value: 600, label: 'Wait 10 minutes' }
+	];
+
+	async function saveHold(e: Event) {
+		const previous = holdSeconds;
+		const next = Number((e.currentTarget as HTMLSelectElement).value);
+		holdSeconds = next;
+		savingHold = true;
+		try {
+			me = await patchMe({ notify: { hold_seconds: next } });
+			toast.success(next === 0 ? 'Reports are sent at once.' : 'Hold saved.');
+		} catch (err) {
+			holdSeconds = previous;
+			toastApiError(err, 'Could not change the hold.');
+		} finally {
+			savingHold = false;
 		}
 	}
 
@@ -204,6 +234,30 @@
 					<input type="checkbox" bind:checked={emailOn} onchange={saveEmail} />
 					Email notifications
 				</label>
+			</div>
+		</section>
+
+		<section class="set-row" id="hold">
+			<div class="set-head">
+				<h2 id="hold-h" class="hk-h2-app">Hold</h2>
+				<p class="set-note">While you are typing in the machine</p>
+			</div>
+			<div class="set-body">
+				<label for="hold-seconds" class="hk-field-label"
+					>A report waits before it reaches your phone</label
+				>
+				<select
+					id="hold-seconds"
+					class="hk-input hold-select"
+					value={String(holdSeconds)}
+					aria-disabled={savingHold ? 'true' : undefined}
+					onchange={saveHold}
+				>
+					{#each HOLDS as h (h.value)}
+						<option value={String(h.value)}>{h.label}</option>
+					{/each}
+				</select>
+				<p class="field-note">A question or a stopped agent is never held.</p>
 			</div>
 		</section>
 
@@ -387,6 +441,11 @@
 		margin: 0.375rem 0 0;
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
+	}
+	/* The hold is one choice, not a sentence: it stops at a readable
+	   width instead of running the card's whole span. */
+	.hold-select {
+		max-width: 16rem;
 	}
 	.ask {
 		margin: 0.75rem 0 0;

@@ -245,6 +245,7 @@ type row struct {
 	gchat       *string
 	gchatBroken *time.Time
 	notifyEmail bool
+	holdSecs    int // the user's own hold, 0 for off (I-1282)
 	userID      uuid.UUID
 	eventTS     time.Time
 	projectID   uuid.UUID
@@ -284,7 +285,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, q.secret_name, e.link_url, e.link_label, e.delivered ->> o.channel, u.tz
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, u.notify_hold_seconds, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, q.secret_name, e.link_url, e.link_label, e.delivered ->> o.channel, u.tz
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
@@ -295,7 +296,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.secret, &r.linkURL, &r.linkLabel, &r.delivered, &r.tz); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.holdSecs, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.secret, &r.linkURL, &r.linkLabel, &r.delivered, &r.tz); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -406,7 +407,8 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 			return
 		}
 		now := o.Now()
-		if until := r.eventTS.Add(MaxHold); heldKinds[r.kind] && now.Before(until) {
+		hold := time.Duration(r.holdSecs) * time.Second
+		if until := r.eventTS.Add(hold); hold > 0 && heldKinds[r.kind] && now.Before(until) {
 			present, err := o.present(ctx, r.projectID, now)
 			if err != nil {
 				o.log.Error("outbox presence check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
@@ -537,43 +539,72 @@ func (o *Outbox) markBroken(ctx context.Context, userID uuid.UUID, gchatURL stri
 var agentKinds = map[string]bool{"agent_question": true, "agent_done": true, "agent_message": true, "needs_input": true, "error": true}
 
 // heldKinds are the agent kinds held while the owner is at the machine.
-// A question is not one of them (DECISIONS I-1242, amending I-689): the
-// owner at the machine may be in another tmux window or another desktop,
-// and a question held ten minutes is an agent stopped for ten minutes,
-// or a `repose-ask --secret` nobody saw. Its answer still ends the
-// agent's wait wherever it is given, so the question is sent at once and
-// the terminal keeps closing it (I-690).
-var heldKinds = map[string]bool{"agent_done": true, "agent_message": true, "needs_input": true, "error": true}
+// A question is not one of them (DECISIONS I-1242, amending I-689), and
+// since I-1276 neither is a `needs_input`: both are an agent stopped
+// until the owner acts, and the hold stopped it for as long as it ran.
+// What is left is the two reports, which can wait.
+var heldKinds = map[string]bool{"agent_done": true, "agent_message": true, "error": true}
 
-// The hold (DECISIONS I-689): a row of a held kind waits HoldStep at a
-// time while the owner is present, for at most MaxHold from its event;
-// presence is a tmux client or an SSH session in the project's latest
-// sample, when that sample is at most PresenceFresh old.
+// The hold (DECISIONS I-689, shortened by I-1274): a row of a held kind
+// waits HoldStep at a time while the owner is present, for at most
+// MaxHold from its event. DefaultHold is MaxHold for a user who has not
+// set their own (I-1282); a user's own 0 turns the hold off.
 const (
-	HoldStep      = time.Minute
-	MaxHold       = 10 * time.Minute
-	PresenceFresh = 2 * time.Minute
+	HoldStep    = 30 * time.Second
+	MaxHold     = 2 * time.Minute
+	DefaultHold = MaxHold
 )
 
-// present says the project's owner is at the machine now.
+// MaxHoldSeconds is the longest hold a user may set, which is the schema's
+// CHECK in 0045 and what the api and the CLI refuse past.
+const MaxHoldSeconds = 3600
+
+// Presence (I-1272). The owner is at the machine when the project's
+// latest sample is at most PresenceFresh old and that sample says
+// somebody typed in the guest's tmux within InputIdle. A guest that
+// reports no input time (one from before I-1272) falls back to
+// FallbackPresent: a tmux client or an SSH session, I-689's rule, which
+// counts an attached-but-idle session as presence.
+const (
+	PresenceFresh = 2 * time.Minute
+	InputIdle     = 5 * time.Minute
+)
+
+// present says the project's owner is at the machine now: the latest
+// sample is fresh and somebody typed in the guest's tmux within
+// InputIdle (I-1272). A sample with no last_input_at comes from a guest
+// or a host from before I-1272 and is read by I-689's rule instead.
 func (o *Outbox) present(ctx context.Context, projectID uuid.UUID, now time.Time) (bool, error) {
 	var ts time.Time
+	var lastInput *time.Time
 	var n int
-	err := o.pool.QueryRow(ctx, "select ts, tmux_clients + ssh_sessions from meter_samples where project_id = $1 order by ts desc limit 1", projectID).Scan(&ts, &n)
+	err := o.pool.QueryRow(ctx, "select ts, last_input_at, tmux_clients + ssh_sessions from meter_samples where project_id = $1 order by ts desc limit 1", projectID).Scan(&ts, &lastInput, &n)
 	if db.IsNoRows(err) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return n > 0 && now.Sub(ts) <= PresenceFresh, nil
+	if now.Sub(ts) > PresenceFresh {
+		return false, nil
+	}
+	if lastInput == nil {
+		return n > 0, nil // I-689's rule, for a guest that reports no input time
+	}
+	return now.Sub(*lastInput) <= InputIdle, nil
 }
 
 // resolved says what a row reports is over: its question is no longer
 // pending (answered anywhere, withdrawn, expired), or a needs_input was
-// followed by a later event from the same agent window. It reads the
-// question's state now, not at pick time: a row can wait on its lane
-// behind slow sends, and the question may close meanwhile (I-689).
+// followed by the end of that agent's turn. It reads the question's
+// state now, not at pick time: a row can wait on its lane behind slow
+// sends, and the question may close meanwhile (I-689).
+//
+// I-1278 narrowed the needs_input case from any later event in the
+// window to the two that end the turn. A later `needs_input` means the
+// agent is blocked again, not that the owner is free of it, and an
+// `agent_question` from the same window is its own notification; on 30
+// days of prod both dropped a report of an agent still waiting.
 func (o *Outbox) resolved(ctx context.Context, r row) (bool, error) {
 	switch r.kind {
 	case "agent_question":
@@ -590,7 +621,7 @@ func (o *Outbox) resolved(ctx context.Context, r row) (bool, error) {
 		var later bool
 		err := o.pool.QueryRow(ctx, `select exists (select 1 from events l join events e on e.id = $1
 			where l.project_id = e.project_id and coalesce(l.agent, '') = coalesce(e.agent, '') and coalesce(l.tmux_window, '') = coalesce(e.tmux_window, '')
-			and l.ts > e.ts and l.id <> e.id)`, r.eventID).Scan(&later)
+			and l.ts > e.ts and l.id <> e.id and l.kind in ('completed', 'agent_done'))`, r.eventID).Scan(&later)
 		return later, err
 	}
 	return false, nil

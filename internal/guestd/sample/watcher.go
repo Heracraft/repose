@@ -170,6 +170,7 @@ type Watcher struct {
 	windows    map[string]*windowState
 	hooks      map[string]hookRecord
 	clients    uint32
+	lastInput  int64 // unix seconds; see the refresh, and Signals
 	containers uint32
 	dockerUp   bool
 	tmuxUp     bool
@@ -397,9 +398,10 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 			"event", "agent_state", "error_code", sysdep.CodeOf(tmuxErr), "reason", tmuxErr.Error())
 	}
 	clients := uint32(0)
+	lastInput := int64(0)
 	if tmuxUp && tmuxErr == nil {
 		var err error
-		if clients, err = w.tmux.clients(ctx); err != nil {
+		if clients, lastInput, err = w.tmux.clients(ctx); err != nil {
 			w.log.Warn("could not list tmux clients",
 				"event", "agent_state", "error_code", sysdep.CodeOf(err), "reason", err.Error())
 		}
@@ -452,6 +454,16 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		// Sample goes partial instead of reporting stale windows as fresh.
 		w.tmuxUp = tmuxUp
 		w.clients = clients
+		// The last input time only ever moves forward (I-1272): tmux
+		// forgets a client the moment it detaches, and "nobody is
+		// attached now" is not "nobody typed five seconds ago". A
+		// watcher that has seen no input at all reports when it started
+		// watching, so the field is zero only where there is no answer
+		// -- tmux down, or a guestd from before I-1272 -- which is what
+		// the api reads to fall back to the session counts.
+		if lastInput > w.lastInput {
+			w.lastInput = lastInput
+		}
 		w.refreshed = now
 	}
 
@@ -833,6 +845,25 @@ func (w *Watcher) WindowAgent(window string) (string, bool) {
 	return ws.state, true
 }
 
+// lastInputUnix is what GuestSignals.last_input_unix carries: when
+// somebody last typed in the guest's tmux (DECISIONS I-1272), or, while
+// nobody has yet, when this watcher started. Zero means there is no
+// answer -- tmux has never been readable -- and the api reads that as
+// "fall back to the session counts", so it must not be returned for a
+// machine nobody has merely touched yet. Call it under w.mu.
+func (w *Watcher) lastInputUnix() uint64 {
+	if !w.tmuxUp {
+		return 0
+	}
+	if w.lastInput > 0 {
+		return uint64(w.lastInput)
+	}
+	if w.started.IsZero() {
+		return 0
+	}
+	return uint64(w.started.Unix())
+}
+
 // Signals returns the cached guest signals and whether the cache is fresh.
 func (w *Watcher) Signals() (*hostdv1.GuestSignals, bool) {
 	w.mu.Lock()
@@ -841,6 +872,7 @@ func (w *Watcher) Signals() (*hostdv1.GuestSignals, bool) {
 		TmuxClients:      w.clients,
 		DockerContainers: w.containers,
 		GuestdOk:         true,
+		LastInputUnix:    w.lastInputUnix(),
 	}
 	for name, ws := range w.windows {
 		sig.Agents = append(sig.Agents, &hostdv1.AgentProc{

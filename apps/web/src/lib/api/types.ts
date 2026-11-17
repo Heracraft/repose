@@ -93,6 +93,11 @@ export interface Me {
 		/** The Google Chat channel (I-692): the webhook's space and when
 		 * Google refused it. The webhook URL itself is never sent back. */
 		gchat?: { space: string; broken_at: string | null } | null;
+		/**
+		 * How long a report waits while you are typing in the machine,
+		 * in seconds; 0 is off (I-1282). Absent from an api before it.
+		 */
+		hold_seconds?: number;
 	};
 	/** The place on the waitlist while the user holds one (I-269, I-290). */
 	waitlist?: WaitlistPlace | null;
@@ -503,6 +508,12 @@ export interface ProjectEvent {
 	summary: string;
 	/** The agent's `--link URL --label TEXT` (I-931). */
 	link?: AgentLink;
+	/**
+	 * Each channel's outcome: a send time, `held` while the presence hold
+	 * has it (I-689), `dropped: resolved`, or a failure. The row says so
+	 * only when nothing went out (I-1280).
+	 */
+	delivered?: Record<string, string>;
 }
 
 /** One page of events and, from an api with I-662, how many match in all. */

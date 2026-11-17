@@ -5,6 +5,24 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, addEvents, addQuestion } from './helpers';
 
+/**
+ * The viewport at 1440 and 390 in both schemes, at 1x ("Judge visuals at
+ * real size"). Written only with REPOSE_SHOTS_DIR set.
+ */
+async function shots(page: Page, name: string): Promise<void> {
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (!dir) return;
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
+		}
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: null });
+}
+
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
 });
@@ -251,4 +269,48 @@ test('an old events link lands on the Events tab at its page', async ({ page }) 
 	await page.goto(`/projects/${p.id}?events_kind=errors`);
 	await expect(page).toHaveURL(`/projects/${p.id}/events?events_kind=errors`);
 	await expect(page.getByTestId('events-total')).toHaveText(/^\d+ events?$|^Events$/);
+});
+
+// I-1280: a row whose notification went nowhere says why, and a row that
+// reached a channel says nothing. This is the owner's "sometimes
+// notifications don't come in at all": `delivered` held the answer and
+// nothing a user reads showed it.
+test('an event says why its notification went nowhere, and only then', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'hold-app',
+		remote_url: 'github.com/heracraft/hold-app'
+	});
+	await addEvents(p.id, 1, {
+		kinds: ['agent_done'],
+		agents: ['claude'],
+		summaries: ['Deployed, the URL is in the link.'],
+		delivered: { gchat: 'held' }
+	});
+	await addEvents(p.id, 1, {
+		kinds: ['needs_input'],
+		agents: ['codex'],
+		summaries: ['Drop the legacy table?'],
+		delivered: { gchat: 'dropped: resolved' }
+	});
+	await addEvents(p.id, 1, {
+		kinds: ['agent_message'],
+		agents: ['claude'],
+		summaries: ['Tests are green.'],
+		delivered: { gchat: '2026-11-17T13:40:22Z' }
+	});
+	await page.goto(`/projects/${p.id}/events`);
+
+	const row = (text: string) => page.getByTestId('event-row').filter({ hasText: text });
+	await expect(row('Deployed, the URL is in the link.').getByTestId('event-unsent')).toHaveText(
+		'not sent yet: you are at the machine'
+	);
+	await expect(row('Drop the legacy table?').getByTestId('event-unsent')).toHaveText(
+		'not sent: it was over by then'
+	);
+	await expect(row('Tests are green.').getByTestId('event-unsent')).toHaveCount(0);
+	// A machine's own event queues no delivery and says nothing either.
+	await expect(
+		page.getByTestId('event-row').filter({ hasText: 'created' }).getByTestId('event-unsent')
+	).toHaveCount(0);
+	await shots(page, 'events-unsent');
 });
