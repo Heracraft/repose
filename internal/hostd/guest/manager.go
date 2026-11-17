@@ -1142,6 +1142,10 @@ func Kind(cmd *hostdv1.Command) string {
 		return "AnswerQuestion"
 	case *hostdv1.Command_SayToAgent:
 		return "SayToAgent"
+	case *hostdv1.Command_SetTriggers:
+		return "SetTriggers"
+	case *hostdv1.Command_RunTrigger:
+		return "RunTrigger"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
@@ -1181,6 +1185,10 @@ func Target(cmd *hostdv1.Command) string {
 		return c.AnswerQuestion.GuestId
 	case *hostdv1.Command_SayToAgent:
 		return c.SayToAgent.GuestId
+	case *hostdv1.Command_SetTriggers:
+		return c.SetTriggers.GuestId
+	case *hostdv1.Command_RunTrigger:
+		return c.RunTrigger.GuestId
 	case *hostdv1.Command_PauseGuest:
 		return c.PauseGuest.GuestId
 	case *hostdv1.Command_WakeGuest:
@@ -1507,6 +1515,11 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Wake{Wake: r} })
 	case *hostdv1.Command_SetBurst:
 		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
+	case *hostdv1.Command_SetTriggers:
+		return payloadOrErr(id, m.setTriggers(ctx, c.SetTriggers), nil)
+	case *hostdv1.Command_RunTrigger:
+		r, err := m.runTrigger(ctx, c.RunTrigger)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_TriggerRun{TriggerRun: r} })
 	}
 	return errResult(id, errf(CodeInvalidArgument, "unknown command"))
 }

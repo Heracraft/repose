@@ -56,6 +56,14 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/webhooks/{name}", a(s.getWebhook))
 	s.route(m, "DELETE /v1/projects/{id}/webhooks/{name}", a(s.deleteWebhook))
 	s.route(m, "POST /v1/projects/{id}/webhooks/{name}/rotate", a(s.rotateWebhook))
+	// Triggers (DECISIONS I-1248..I-1262).
+	s.route(m, "GET /v1/projects/{id}/triggers", a(s.listTriggers))
+	s.route(m, "POST /v1/projects/{id}/triggers", a(s.putTrigger))
+	s.route(m, "GET /v1/projects/{id}/triggers/{name}", a(s.getTrigger))
+	s.route(m, "DELETE /v1/projects/{id}/triggers/{name}", a(s.deleteTrigger))
+	s.route(m, "POST /v1/projects/{id}/triggers/{name}/fire", a(s.fireTrigger))
+	s.route(m, "GET /v1/projects/{id}/trigger-runs", a(s.listTriggerRuns))
+	s.route(m, "GET /v1/projects/{id}/trigger-runs/{run_id}", a(s.getTriggerRun))
 	// The dashboard's view of the machine browser (DECISIONS I-1216).
 	// The stream route carries no project id on purpose: the ticket names
 	// the project, and the handler resolves nothing a caller chose.

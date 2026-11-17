@@ -72,6 +72,42 @@ message SayToAgent {
   bool from_owner = 5;
 }
 
+// Trigger is one of the project's triggers, as the api owns it
+// (DECISIONS I-1248). The prompt is a PATH in the machine and never its
+// text: the api has never held the text and cannot send it. guestd keeps
+// the set in memory only, and the api re-sends it on every start.
+message Trigger {
+  string name = 1;
+  string kind = 2;            // route|schedule
+  string prompt_path = 3;     // relative to workdir, or absolute
+  string workdir = 4;         // checkout|worktree-N|~/PATH|/PATH
+  string agent = 5;           // empty means the project's agent
+  uint32 timeout_s = 6;
+  uint32 concurrency = 7;
+  string gate = 9;            // the admission command; empty means none
+  string dedupe = 10;         // header:NAME|json:FIELD; empty means none
+  bool enabled = 11;
+}
+// SetTriggers carries the project's whole set, as WriteSecrets carries the
+// whole named set (DECISIONS I-1248). An empty list removes every trigger.
+message SetTriggers { repeated Trigger triggers = 1; }
+// RunTrigger runs one now (DECISIONS I-1252, I-1256). run_id is the api's
+// row and the command's idempotency key: a repeat is answered with that
+// run's state and starts no second agent. payload_run replays an earlier
+// run's kept payload; dry_run runs the gate alone and starts no agent.
+message RunTrigger {
+  string trigger = 1;
+  string run_id = 2;
+  string source = 3;          // clock|hand
+  string payload_run = 4;
+  bool dry_run = 5;
+  // The file `repose triggers fire --payload FILE` wrote over SSH, which
+  // the runner copies into the run's own directory. It is always under
+  // the trigger's own folder; the api checks that, and the bytes never
+  // pass through the api (DECISIONS I-1248).
+  string payload_path = 6;
+}
+
 message Request {
   oneof req {
     Ping ping = 1;
@@ -88,6 +124,8 @@ message Request {
     RegisterPaths register_paths = 12;
     AnswerQuestion answer_question = 13;
     SayToAgent say_to_agent = 14;
+    SetTriggers set_triggers = 15;
+    RunTrigger run_trigger = 16;
   }
 }
 
@@ -122,6 +160,12 @@ message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 // whether it replaced a message that was still waiting there.
 message SayResult { string state = 1; string window = 2; bool replaced = 3; }
 
+// TriggerRunResult is guestd's answer to a RunTrigger: state working (the
+// window is open and the agent has its prompt), skipped (admission
+// refused it) or failed (the prompt file is gone, or no agent is
+// installed), with the window and the bounded reason.
+message TriggerRunResult { string state = 1; string window = 2; string reason = 3; }
+
 message Response {
   bool ok = 1;
   Error error = 2;
@@ -132,6 +176,7 @@ message Response {
     SampleResult sample = 13;
     ExecResult exec = 14;
     SayResult say = 15;
+    TriggerRunResult trigger_run = 16;
   }
 }
 
@@ -171,6 +216,38 @@ message Question {
   string link_label = 11;
 }
 
+// TriggerRun is a run's state as the runner changes it (DECISIONS
+// I-1256). A run a webhook delivery started is announced here with state
+// working, which is how the api learns of a run it did not ask for. Open
+// runs are announced again on each new hostd connection for ten minutes,
+// as open questions are. summary is the agent's own `--done` words, 1 KB,
+// tenant content; reason is the bounded enum of features/triggers.md §4,
+// except a gate's last stderr line, at most 200 bytes.
+message TriggerRun {
+  string run_id = 1;
+  string trigger = 2;
+  string state = 3;           // working|done|failed|timeout|skipped
+  string reason = 4;
+  string summary = 5;
+  string link_url = 6;
+  string link_label = 7;
+  string window = 8;
+  int64 started_unix = 9;
+  int64 finished_unix = 10;
+  // The dedupe key the run was admitted or skipped on, at most 128 bytes
+  // (DECISIONS I-1254). It is the provider's own event id, which is why
+  // it is in the run row and in no log line.
+  string dedupe_key = 11;
+  uint64 payload_bytes = 12;
+  // 13 was payload_kept, which the api derives from payload_bytes on a
+  // run that survived retention (I-1262): nothing in the guest ever
+  // cleared the flag, so it was a promise the row could not keep.
+  reserved 13;
+  // The source, for a run the api did not start: route (a delivery) or,
+  // after a guestd restart, the source the run was started with.
+  string source = 14;
+}
+
 message Notify {
   oneof n {
     Ready ready = 1;
@@ -178,5 +255,6 @@ message Notify {
     AgentState agent_state = 3;
     Warning warning = 4;
     Question question = 5;
+    TriggerRun trigger_run = 6;
   }
 }

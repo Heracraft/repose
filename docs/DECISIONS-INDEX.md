@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-976 entries.
+984 entries.
 
 ## Scope
 
@@ -342,7 +342,7 @@ pointer, not a summary.
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6535
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6566
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6587
-- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; amended by I-818; L6604
+- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; amended by I-818; amended by I-1260; L6604
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; amended by I-712; L6648
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; partly amended by I-595; L6709
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6754
@@ -955,7 +955,7 @@ pointer, not a summary.
 - **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L30874
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30954
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31015
-- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31061
+- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; partly amended by I-1260; L31061
 - **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31147
 - **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31211
 - **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31265
@@ -999,7 +999,7 @@ pointer, not a summary.
 - **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33697
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33751
-- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L33802
+- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; L33802
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L33983
 - **I-1232** `repose exec` runs one quoted word with spaces in the machine's shell, and the laptop-path note shows the command to type — 2026-11-16; L34020
 - **I-1234** `repose cp` copies a directory without `-r` — 2026-11-16; L34056
@@ -1008,3 +1008,11 @@ pointer, not a summary.
 - **I-1240** `repose stop` and `repose rm` fetch nothing first — 2026-11-16; L34123
 - **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; L34158
 - **I-1244** SnapshotStale counts from the later of the newest snapshot and the machine's start, and the gauge refreshes hourly — 2026-11-16; L34205
+- **I-1248** Triggers: an event or a time starts an agent session on the project's machine. The trigger is a row in the api; its prompt and every payload are files in the machine, and the api holds neither — 2026-11-17; L34237
+- **I-1250** The event door is the webhook route that exists, pointed at a receiver guestd owns on `127.0.0.1:9227`; what the edge refuses becomes a skipped run — 2026-11-17; L34284
+- **I-1252** The schedule clock is the api's, a fire is a claimed row the grpc process sends, and the grammar is six shapes with a zone — 2026-11-17; L34321
+- **I-1254** Admission is ordered, every drop is a run row, and the gate is a command; repose checks no provider's signature — 2026-11-17; L34396
+- **I-1256** A run is one tmux window, started with the prompt on the agent's own command line, supervised by guestd, and reconciled from tmux; a failure notifies and a success says only what the agent said — 2026-11-17; L34455
+- **I-1258** Triggers is a project's third tab, after Browser — 2026-11-17; L34521
+- **I-1260** A trigger run is use for the unused notice, counted from `trigger_runs` — 2026-11-17; L34560
+- **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L34579

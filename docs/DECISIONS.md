@@ -34233,3 +34233,364 @@ an hour ago reads about 3600 s; an unsnapshotted project running two
 hours reads about 7200 s; a snapshot newer than the start counts from the
 snapshot. With the old query the first reads about four days and the
 second 0.
+
+**I-1248. Triggers: an event or a time starts an agent session on the
+project's machine. The trigger is a row in the api; its prompt and every
+payload are files in the machine, and the api holds neither.**
+(triggers, 2026-11-17.)
+
+The pitch sells repose as a framework for running always-on agents
+(`proposals/2026-11-12-always-on-framework.md`), the landing has shipped
+that sentence since r20261115-1, and the layer it names did not exist:
+`repose webhooks` (I-1110) stops at a port, and the job agent on the
+`job` guest hand-rolled a receiver, a signature check, a dedupe, a gate,
+a queue, one session per event, a 10-second supervisor, timeouts, a
+ledger and an outcome. A trigger is that layer, and this entry is
+approach A of the proposal; approach B (a machine per event) and C (a
+workflow graph) stay unbuilt, and `--fresh` is not in this build.
+
+Decided:
+- A trigger binds one door (a webhook route, or a schedule) to one
+  prompt, one working directory and one agent, with admission, a
+  lifecycle, an outcome and a run list. `repose triggers` and a project's
+  Triggers tab reach it. `docs/features/triggers.md` is the behaviour.
+- The `triggers` and `trigger_runs` rows are the api's, as a route's are
+  (I-1110, and I-820's reasoning for `keep_awake`): the api must know a
+  trigger while the laptop is shut and the machine is stopped, which is
+  when a schedule fires; the dashboard lists triggers for a machine that
+  is not running; and the api never reads a file from the checkout.
+- **The prompt is a file in the machine and the row holds its path.**
+  `-p TEXT` writes `.repose/triggers/<name>.md` over SSH, as
+  `repose run -p` already puts a prompt in a machine, and stores that
+  path. The privacy policy's sentence — repose never records the prompts
+  you give an agent — therefore needs no change, and no prompt is stored
+  anywhere the api can read.
+- **A payload is a file in the machine too.** An event's body reaches the
+  guest through the edge's delivery path (I-1250) and never the api; a
+  `fire --payload` goes over SSH. What the api holds of a run is its
+  state, its bounded reason, and at most 1 KB of summary — the words the
+  agent sent with `repose-notify --done` — declared tenant content beside
+  `events.summary`.
+- A temporary machine (I-347) takes no trigger: it is destroyed within 24
+  hours, and a schedule on it is a promise that dies.
+
+The alternative was the api storing the prompt as a row, which is what
+option A of `proposals/2026-11-10-scheduled-prompts.md` costed. It needs
+a change to the privacy policy's words to store what a user typed for an
+agent, and it buys nothing: the machine is where the prompt is used, the
+user already edits it there with every other file of their project, and
+git versions it for them.
+
+**I-1250. The event door is the webhook route that exists, pointed at a
+receiver guestd owns on `127.0.0.1:9227`; what the edge refuses becomes a
+skipped run.** (triggers, 2026-11-17; extends I-1110, I-1112, I-1114.)
+
+Decided:
+- `repose triggers add NAME --route R` makes (or takes over) the route R
+  and sets its target to `127.0.0.1:9227/t/NAME`. The URL, the 128-bit
+  token, `rotate`, the 1 MiB cap, the rates, the 503 table, the wake and
+  `--start` are I-1110's and are not re-implemented. A trigger's route is
+  one of the project's twenty.
+- 9227 is platform-owned: it joins `guest-conventions.md` "Ports" and
+  `forwardPlatformPorts`, so it is never auto-forwarded to an attached
+  laptop and never read as the user's own listener. It listens on
+  loopback only, and the only way in is the edge's existing
+  `direct-tcpip` channel.
+- The receiver answers the edge and nothing else: `202` when the event is
+  admitted and its payload written, `200 {"skipped": reason}` when
+  admission dropped it, `503` when it cannot run one. It never waits for
+  the agent: a provider's timeout is 3 s (Slack) to 10 s (GitHub), and an
+  agent run is minutes.
+- `/internal/webhook-routes` carries the route's `trigger` and
+  `trigger_id`. Every outcome the edge already reports for a delivery it
+  refused — `stopped`, `start_refused`, `too_large`, a 503 for a busy or
+  errored machine — becomes a `skipped` run row with that reason when the
+  route belongs to a trigger. Without this the one failure a user must
+  see (a trigger that has dropped a week of events because the machine
+  was stopped) appears on no screen: the guest never hears those
+  deliveries, so nothing in the guest can write them down.
+- A user cannot aim a route at 9227 by hand, and `webhooks add` on a
+  route a trigger holds is refused and names the trigger. One way in.
+
+The alternative was the api relaying each event to the machine as a
+command. It carries a stranger's bytes through the control plane, needs
+its own rate limits and body cap beside the edge's, and gives the api a
+copy of every payload — against I-1248's second half. The edge path
+already has all of it.
+
+**I-1252. The schedule clock is the api's, a fire is a claimed row the
+grpc process sends, and the grammar is six shapes with a zone.**
+(triggers, 2026-11-17; the answer to
+`proposals/2026-11-10-scheduled-prompts.md` questions a, b, 7 and 8; cites
+I-518, I-818, I-104, I-1162, I-87, I-163.)
+
+Decided:
+- The api owns the clock. A systemd user timer in the guest (I-518, the
+  proposal's option B) was the cheaper build and lost: a stopped machine
+  runs nothing, a timer cannot be listed for a machine that is not
+  running, and `OnCalendar=Mon..Fri 07:00` with no zone fires at 07:00
+  UTC, which looks wrong to everyone who writes it. The freeze's armed
+  wake (I-818) is not needed for a trigger, because the api wakes the
+  machine itself with the wake the edge already asks for.
+- **A fire is a row, not a call.** The api is two processes and only
+  `API_MODE=grpc` holds a host's stream (I-87, I-163); I-1162 is the
+  morning `say` answered `machine_unreachable` for every message because
+  the http process sent the command. So: the clock ticks in the grpc
+  process, once a minute, under `db.LockTriggers`; it claims a due
+  trigger by writing its next fire in the same statement
+  (`where enabled and next_at <= now() ... returning`), which makes a
+  fire happen once across replicas and once across a restart; the claim
+  inserts a `pending` run row; a worker in the grpc process takes
+  `pending` rows `for update skip locked` and sends `RunTrigger` with the
+  run id as the `command_id`. `repose triggers fire` and the dashboard's
+  Run insert the same row from the http process. `pending` and `sending`
+  are the hand-off and are never shown: every surface draws them
+  `queued`, as `say`'s are.
+- **A fire time is built as a wall clock in its zone**, never as midnight
+  plus a duration: the first version did the latter and fired
+  `daily 07:00 Europe/Berlin` at 08:00 on 2026-03-29 and 06:00 on
+  2026-10-25, which is exactly what this entry promises it does not do.
+  `time.Date` normalising a time the clock skips is what gives the
+  documented 03:30 for a 02:30, and the test that holds it asserts the
+  wall-clock hour on both transition days — a monotonicity walk across
+  them saw nothing wrong.
+- A zone is `UTC` or an IANA `Region/City`. An abbreviation is refused
+  even where the host has it: `daily 07:00 EST` is a fixed offset that
+  ignores the summer the user lives in. The zone database is linked into
+  the binary (`time/tzdata`), because the CLI runs on a laptop and the
+  api in a scratch container, and a missing zone would silently become
+  UTC.
+- Turning a trigger `on`, and changing its spec or zone, re-arms the
+  clock from now. Without that a trigger off for a week has a fire a week
+  in the past and runs an agent the moment it is enabled, which is what
+  the catch-up rule exists to prevent.
+- The grammar is `every 15m`, `daily 03:00`, `weekdays 07:00`,
+  `weekends 10:00`, `mon,thu 18:30`, `monthly 1 09:00`, with an optional
+  IANA zone at the end. `internal/triggerspec` is the one parser, in the
+  CLI (a typo exits 2 with no round trip) and in the api (the clock). A
+  spec is accepted as typed and stored in one spelling. `hourly` was in
+  the first draft and is gone: `every 1h` says it, and one thing has one
+  name.
+- The minimum is 15 minutes. Five was the first draft, and it sat on the
+  hour's cap of 12 with no room for a catch-up, for an interval shorter
+  than most agent runs.
+- `every D` fires from an anchor the row stores, never from the last
+  fire, so the clock's one-minute spread of a fleet's 07:00 cannot drift
+  it a minute a fire into 96 minutes a day.
+- The zone is the one named in the spec, else the project's `tz`, else
+  the laptop's at `add` (I-104), else UTC; `add` prints what it stored in
+  every case. Daylight saving follows `systemd.time(7)`, which is the
+  user's prior: a time the clock skips fires at the next real minute, and
+  a time the clock repeats fires once.
+- Catch-up is **off** by default (the proposal left it open). A 07:00
+  standup summary run at 15:00 is work whose whole value was its time,
+  and it is the same argument I-1256 makes against an automatic retry.
+  `--catch-up` runs one missed fire, and only within the trigger's own
+  interval.
+- A machine a trigger started stays up until the user stops it (R1-5,
+  I-262 unchanged), and `add --start` prints that sentence once.
+  `--stop-after` stops the machine when the run ends **if that trigger
+  started it**: a flag the user set is the user's instruction, not repose
+  stopping a machine on its own.
+
+**I-1254. Admission is ordered, every drop is a run row, and the gate is
+a command; repose checks no provider's signature.** (triggers,
+2026-11-17.)
+
+Every admitted event costs a whole agent run, which costs the user money
+at their provider, so the cheap checks come first: the trigger is off,
+the machine cannot run it, the event is a duplicate, the gate refused it,
+the concurrency limit is reached, the plan's memory is in use. Each one
+writes a `trigger_runs` row in `skipped` with a bounded reason — a
+dropped queue entry and an edge-side refusal included — because an event
+that exists nowhere is the failure this feature is built to end.
+
+Decided:
+- `--dedupe header:NAME` or `json:FIELD` skips an event whose key was
+  seen in 24 hours. The keys live at
+  `/home/dev/.repose/triggers/<name>/seen`, on the volume and not a
+  tmpfs, so the window survives a stop, a reboot and a move to another
+  host; on a tmpfs a provider's retry after a restart would pay twice.
+- `--gate CMD` runs CMD through `bash -c` as `dev`, in the working
+  directory, with the project's named secrets in its environment, the
+  payload's bytes on stdin, and `REPOSE_PAYLOAD` and
+  `REPOSE_PAYLOAD_HEADERS` set, under 10 seconds and with no agent. Exit
+  0 admits. A gate is a command and not an expression language:
+  `jq -e '.action == "opened"'` is already a gate, and a user who needs
+  more writes a script in the repo they already have. `fire --dry-run`
+  runs the gate alone, records the run as `skipped: dry_run` and prints
+  the gate's own output, which is how one gets written.
+- **There is no queue.** The first draft held 20 payloads at the
+  concurrency limit. A queue inside the guest has no row in the api,
+  nothing reconciles it after a guestd restart, and no exporter can see
+  its depth — so an event in it could be lost in exactly the silence
+  this feature exists to end, and `--on-busy` was a flag that promised
+  otherwise. Concurrency is the primitive (1 to 3, 1 on a `tiny`); at
+  the limit the event is `skipped: a run is working`, with its dedupe key
+  on the row so the user can see which event it was.
+- **An edge-side refusal coalesces**: one `skipped` row per trigger,
+  reason and hour, with a count. A machine stopped for a week takes 600
+  refusals an hour, and a row each would have evicted every run that ran
+  from the 20 a trigger keeps — the fix for one silence would have made
+  another.
+- **repose does not verify a provider's signature, and the gate is where
+  the user does.** I-1110 works because the app's own check passes on
+  bytes and headers the edge did not touch; a trigger has no app, so the
+  check moves into the gate, which is why the gate gets the raw bytes and
+  the headers and not a parsed body. The public page carries a
+  four-line `openssl dgst -sha256 -hmac` script for GitHub and one for
+  Stripe, each reading a named secret from the environment, as files in
+  the user's own repository. **No `repose-verify` ships**: a helper that
+  knew five providers' schemes would be a sixth thing to keep up to date
+  with them, and the gate already takes any command. A route trigger with
+  no gate is told once, at `add`, that anyone with the URL can start an
+  agent run. Signing at the edge was refused by I-1110 and stays refused:
+  it would make repose a party to every provider's scheme.
+- **The receiver trusts loopback**, and the doc says so: it is a port
+  inside the user's own machine, so anything there can POST to it with
+  bytes of its own — as anything there can already run
+  `repose triggers fire`. The gate is what decides whether a payload is
+  real, wherever it came from.
+
+**I-1256. A run is one tmux window, started with the prompt on the
+agent's own command line, supervised by guestd, and reconciled from tmux;
+a failure notifies and a success says only what the agent said.**
+(triggers, 2026-11-17; cites I-780, I-752, I-688, I-689, I-931, I-1144.)
+
+Decided:
+- One window per run, `t-<trigger>`, and `t-<trigger>.2` for a second
+  concurrent run — a dot, because a trigger may be named `apply-2` and
+  `t-apply-2` would be both that trigger's window and the second run of
+  `apply`, which would have the timeout killing one and the reconcile
+  crediting the other. **A run is keyed by its id**, in
+  `/run/repose/triggers/<run_id>`, not by its window; `t-` is a reserved
+  window prefix, as 9227 is a reserved port, so a window a user names
+  `t-x` is their own. A window and not a headless `claude -p`,
+  because `repose-ask`, `repose say` and `repose attach` keep working in
+  it: an unattended agent that can ask a human is what makes leaving one
+  alone safe.
+- The prompt goes on the agent's own command line — I-780's cold path,
+  through the one leaf package the CLI and guestd share. I-752's typing
+  path submitted **1 prompt in 10** on a fresh window, and a trigger's
+  window is always fresh, so the typing path is never used here. I-780's
+  one refusal stands: a prompt beginning with `@` on `pi` is refused at
+  `add`, naming the pair, rather than silently taking a path that works
+  once in ten. A prompt file over 64 KB is refused for the same reason it
+  is a command-line argument.
+- The run's clock stops while a question that run asked is pending. A
+  `repose-ask` at 02:00 waits for the owner, and the one-hour default
+  would otherwise kill the primitive the design rests on. A question's
+  own ceiling is 24 hours and so is a run's.
+- At the timeout guestd kills that window and nothing else. Never the
+  server: `tmux kill-server` takes every agent on the machine.
+- **guestd reconciles.** A guestd restart does not touch tmux, so an
+  agent started by a trigger keeps working through one. guestd rebuilds
+  its runs from `tmux list-windows` at start, as hostd rebuilds guests
+  from `systemctl list-units 'guest@*'`: a run whose window lives stays
+  `working`; only a run with no window ends `failed`. Failing a live run
+  would let the next fire start a second agent on a checkout where the
+  first is mid-side-effect. Open runs are announced again on each new
+  hostd connection for ten minutes, as open questions are.
+- Every run that ends is one `trigger_run` event — lower_snake like
+  every other event kind, and one event per run rather than one per state
+  change.
+- A run's states are `done`, `failed`, `timeout` and `skipped`. `done`
+  carries the agent's own `--done` summary and is empty when the agent
+  sent none: the state is the machine's, the words are the agent's, and
+  I-688's rule that a finished turn notifies nobody holds. `failed`
+  notifies, kind `trigger_failed`, a platform kind that is never held
+  while the owner is attached (I-689 holds agent kinds) because a trigger
+  failing in silence is the failure this feature exists to surface;
+  `--no-notify` is the switch for a trigger that fails every quarter
+  hour. A `timeout` notifies as a `failed` does: a run killed at its
+  timeout did not do the work. The kind, its title and its payload are in
+  `features/notifications.md`'s own table, and the 60-second dedupe on
+  `(project, kind)` holds a trigger failing in a loop to one notification
+  a minute. Every run is also a `trigger.run` event.
+- **No automatic retry.** A failed agent run has already done part of its
+  work; running it again sends a second application, posts a second
+  comment, refunds a second payment. The dead letter is the run list, and
+  `fire --run RUN` replays a kept payload by hand. A payload no longer
+  kept says so and exits 1.
+- A trigger's window is not the user's: `t-*` windows are left out of
+  `say`'s single-agent resolution, so a run does not turn an ordinary
+  `repose say` into `several_agents`, and `repose ps` and `repose ls`
+  mark them, so a machine nobody is attached to does not read as the
+  user's agent working.
+
+**I-1258. Triggers is a project's third tab, after Browser.** (triggers,
+2026-11-17; amends I-1216's six tabs.)
+
+I-1216 made Browser second because watching the machine is the other
+thing done from a project's page, "not the last of five reports". Reading
+what ran without you is the next such thing, and it comes before the four
+reports: Overview, Browser, Triggers, Events, Usage, Snapshots, Config.
+I-1216 records that five tabs fit a 360-wide screen and six do not, so
+that strip already scrolls and a seventh joins one that scrolls.
+
+Decided, and each of these is a pattern `apps/web` already has:
+- Three inline ghost buttons a row — Run, Copy, Remove… — and Edit in
+  the row's expansion. The first draft had a kebab menu, which exists
+  nowhere in `apps/web`; this is not the tab to invent one on. **Below
+  640 px the row is a block**, which is what `ProjectWebhooks` does and
+  why: three buttons and a target side by side broke the target mid-word
+  there.
+- Webhooks is a section of the Config tab and triggers are a tab, which
+  needs saying because they are neighbours. A route is configuration, set
+  once and pasted elsewhere. A trigger has a history — every run, its
+  outcome, its summary — and an action that makes the machine work; a
+  list that grows and an action are a page.
+- The tab polls on the layout's own cadence (10 s in view, 60 s hidden,
+  the shared `PollGroup`), with `pollUntilDone` only while a fire of its
+  own is in flight, and the list draws `LoadState` as every list on these
+  tabs does.
+- `on`/`off` is a column with a dot and a lowercase word, as every other
+  row state is drawn. Not a badge: a badge on a project tab means
+  `temporary`.
+- A running fire swaps the button's label to `Running…` and disables it.
+  No spinner (`hk/tokens.css`).
+- **A fire is not an op.** It never takes `ctx.opBusy`, so Stop, Start,
+  a snapshot and a restore stay available while an agent runs, and the
+  tab polls the run itself every 2 s. `OpKind` is unchanged.
+- A row opens into its runs in the `<ul>` grid the Events tab uses, with
+  the agent's `--link` as a button (I-931) and the window's name.
+- `Copy` puts a route trigger's URL on the clipboard and draws none of
+  it, which is I-1110's rule for a screen.
+
+**I-1260. A trigger run is use for the unused notice, counted from
+`trigger_runs`.** (triggers, 2026-11-17; amends I-262 and I-1110's §6.)
+
+I-262 announces a machine nobody is using after 24 hours and never stops
+it. I-1110 settled that a webhook delivery is not use, so a machine that
+only receives deliveries is still announced. A trigger changes what the
+machine is: one that triages issues every morning is being used, by its
+owner, through the thing this product sells.
+
+Decided:
+- A trigger run in the window is use. A delivery that starts a run is
+  therefore use, and `features/webhooks.md` §6 is edited to say so; a
+  delivery that starts no run is still not use.
+- The notice cannot learn this from samples. I-262 decides idleness from
+  minute samples of agent state, and a run of 14 seconds — the length of
+  the sweep in `features/triggers.md` §2 — falls between two samples. So
+  the rule reads `trigger_runs` over its own window instead of inferring
+  it from the sampler.
+
+**I-1262. A trigger's limits are per trigger, and the retention is a
+route's twenty.** (triggers, 2026-11-17.)
+
+Twenty triggers a project; a trigger's route is one of the project's
+twenty routes, and the 21st route names the triggers that hold one.
+Concurrency 1 to 3, and 1 on a `tiny`, whose 2 GB hold one agent and one
+browser. **Twenty runs a trigger**, not a pool a project shares: the
+first draft kept 200 runs a project, and one route trigger at the hour's
+cap of 60 would have erased every other trigger's history in 3.3 hours,
+so `repose triggers runs triage` would print nothing by morning. A route
+keeps its last 20 deliveries (I-1110) and this is that number. **One
+payload per kept run**, under
+`/home/dev/.repose/triggers/<name>/runs/<run>/` on the volume, which is
+20 MiB a trigger at the body cap; `payload_kept` is read off
+`payload_bytes` rather than stored, because nothing in the guest ever
+cleared a stored flag. A run is at most 24 hours, a gate 10 seconds, a
+prompt file 64 KB, a spec 64 characters, a summary 1 KB, a gate's reason
+200 bytes and a dedupe key 128.

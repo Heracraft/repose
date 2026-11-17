@@ -48,6 +48,11 @@ var notifyKinds = map[string]bool{
 	// A temporary machine an hour from its end, and its end (internal/api/
 	// temp, DECISIONS I-347).
 	"temp_expiring": true, "temp_destroyed": true,
+	// A trigger's run that failed (DECISIONS I-1256). A platform kind,
+	// so it is never held while the owner is attached: a trigger failing
+	// in silence is the failure triggers exist to make visible. A run
+	// that ended well notifies only what the agent itself sent.
+	"trigger_failed": true,
 	// The account's machine.nix did not build or apply on a project
 	// (DECISIONS I-490).
 	"personal_failed": true,
@@ -138,6 +143,16 @@ type QuestionHandler interface {
 	GuestStopped(ctx context.Context, projectID uuid.UUID) error
 }
 
+// TriggerHandler is the trigger store (internal/api/triggers), which
+// sits on top of this package.
+type TriggerHandler interface {
+	// OnRun records a machine's TriggerRun. It answers the stored run's
+	// state words, whether this report ended the run, and whether the
+	// trigger wants a failure notified; an error leaves the host event
+	// unacked, so it is sent again.
+	OnRun(ctx context.Context, projectID uuid.UUID, ev *hostdv1.TriggerRunEvent) (summary string, ended, notify bool, err error)
+}
+
 // RestingHandler is the resting service (internal/api/resting), which
 // sits on top of this package. A pause and a wake are the one host event
 // that raises nothing a user reads: no event row, no notification (the
@@ -167,6 +182,7 @@ type Ingest struct {
 	questions QuestionHandler
 	resting   RestingHandler
 	says      SayHandler
+	triggers  TriggerHandler
 }
 
 // SayHandler is internal/api/say's Delivered: the machine typed a
@@ -184,6 +200,11 @@ func (i *Ingest) SetResting(r RestingHandler) { i.resting = r }
 
 // SetSays installs the `repose say` store (before serving).
 func (i *Ingest) SetSays(s SayHandler) { i.says = s }
+
+// SetTriggers sets the trigger store, which records a machine's runs
+// (DECISIONS I-1256). nil drops a TriggerRun event, which is an api
+// configured without triggers.
+func (i *Ingest) SetTriggers(t TriggerHandler) { i.triggers = t }
 
 // New builds an ingest.
 func New(pool *db.Pool, m *metrics.M, log *slog.Logger) *Ingest {
@@ -497,6 +518,45 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 			i.says.Delivered(ctx, p.ID, store.CleanText(e.AgentEvent.TmuxWindow, MaxWindow))
 		}
 		return true
+	case *hostdv1.Event_TriggerRun:
+		// A trigger's run (DECISIONS I-1256). The run row is the store's;
+		// the event row is what `repose events` and the Events tab show,
+		// and a failed run is the one that notifies.
+		if i.triggers == nil {
+			return true
+		}
+		p, err := i.projectOnHost(ctx, hostID, e.TriggerRun.GuestId)
+		if err != nil {
+			return true
+		}
+		summary, ended, notify, err := i.triggers.OnRun(ctx, p.ID, e.TriggerRun)
+		if err != nil {
+			i.log.Error("trigger run", "event", "trigger_run", "err", err.Error())
+			return false
+		}
+		if !ended {
+			// A run that only started is on the row and on the screens
+			// that poll it; one event per run, at its end.
+			return true
+		}
+		if capped, err := i.overGuestCap(ctx, p.ID); err != nil {
+			i.log.Error("guest event count", "event", "trigger_run", "err", err.Error())
+			return false
+		} else if capped {
+			return true
+		}
+		kind := "trigger_run"
+		if notify {
+			kind = "trigger_failed"
+		}
+		if _, _, err := i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind,
+			Window: store.CleanText(e.TriggerRun.GetWindow(), MaxWindow), Summary: summary,
+			Source: "host", HostEventID: ev.EventId,
+			LinkURL: e.TriggerRun.GetLinkUrl(), LinkLabel: e.TriggerRun.GetLinkLabel()}); err != nil {
+			i.log.Error("trigger event insert", "event", "trigger_run", "err", err.Error())
+			return false
+		}
+		return true
 	case *hostdv1.Event_SnapshotDone:
 		p, err := i.projectOnHost(ctx, hostID, e.SnapshotDone.GuestId)
 		if err != nil {
@@ -655,4 +715,3 @@ func (i *Ingest) Platform(ctx context.Context, projectID uuid.UUID, kind, summar
 	_, _, err := i.Insert(ctx, Incoming{ProjectID: projectID, TS: i.now(), Kind: kind, Summary: summary, Source: "api"})
 	return err
 }
-

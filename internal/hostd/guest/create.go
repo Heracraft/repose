@@ -937,7 +937,7 @@ func (mon *monitor) regained() {
 func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	m := mon.m
 	switch v := n.N.(type) {
-	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning:
+	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning, *guestdv1.Notify_TriggerRun:
 		// The ones that become api events pass the guest's bucket, so one
 		// guest cannot fill the host's stream (I-445). The first close of
 		// a question hostd passed as open takes no token (I-690): a lost
@@ -991,6 +991,17 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 		m.emitGuestEvent(&hostdv1.Event_AgentQuestion{AgentQuestion: aq})
 	case *guestdv1.Notify_AgentState:
 		m.log(mon.g).Debug("agent state", "event", "agent_state", "agent", cleanToken(v.AgentState.Agent, capAgent), "state", cleanToken(v.AgentState.State, capAgent))
+	case *guestdv1.Notify_TriggerRun:
+		tr, ok := cleanTriggerRun(mon.g.GuestID, v.TriggerRun)
+		if !ok {
+			m.notifyDropped("invalid")
+			return
+		}
+		// The trigger's name is the user's word and the summary is the
+		// agent's: counted, never logged (DECISIONS I-1248).
+		m.log(mon.g).Info("trigger run", "event", "trigger_run", "run_id", tr.RunId,
+			"state", tr.State, "source", tr.Source, "summary_bytes", len(tr.Summary))
+		m.emitGuestEvent(&hostdv1.Event_TriggerRun{TriggerRun: tr})
 	case *guestdv1.Notify_Warning:
 		w := cleanWarning(mon.g.GuestID, v.Warning.Kind, v.Warning.Detail)
 		m.log(mon.g).Warn("guest warning", "event", "host_warning", "kind", w.Kind)

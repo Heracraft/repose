@@ -35,10 +35,11 @@ import (
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
-	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/ratelimit"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/api/triggers"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
@@ -72,11 +73,17 @@ type Deps struct {
 	Questions *questions.Service
 	// Say carries `repose say` to the machine (DECISIONS I-1144); nil
 	// answers POST /projects/:id/say with 500.
-	Say    *say.Service
-	Parser *config.Parser
-	Metrics   *metrics.M
-	Registry  *prometheus.Registry
-	Log       *slog.Logger
+	Say *say.Service
+	// Triggers owns a project's triggers and their runs (DECISIONS
+	// I-1248); nil answers every trigger route `internal`. TriggerPush,
+	// when set, tells the machine the set changed: it is the grpc
+	// process's job, so the http one calls it through the app.
+	Triggers    *triggers.Store
+	TriggerPush func(ctx context.Context, projectID uuid.UUID)
+	Parser      *config.Parser
+	Metrics     *metrics.M
+	Registry    *prometheus.Registry
+	Log         *slog.Logger
 	// Billing is the /billing routes' service (DECISIONS I-289); nil makes
 	// every one answer 503 billing_disabled.
 	Billing *billing.Service
@@ -185,12 +192,12 @@ type Server struct {
 	// authenticates: `authed`'s per-user buckets never run there
 	// (viewlimit.go).
 	viewConns *viewLimiter
-	sessions *sessionTracker
-	seats    seatsCache // GET /public/seats, a minute old at most
-	ready    bool
-	waiters  opWaiters   // held op reads (I-236)
-	draining atomic.Bool // SetReady(false): held op reads answer now
-	mu       sync.Mutex
+	sessions  *sessionTracker
+	seats     seatsCache // GET /public/seats, a minute old at most
+	ready     bool
+	waiters   opWaiters   // held op reads (I-236)
+	draining  atomic.Bool // SetReady(false): held op reads answer now
+	mu        sync.Mutex
 }
 
 // New builds the server and registers every route.

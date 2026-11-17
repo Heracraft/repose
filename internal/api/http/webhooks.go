@@ -114,6 +114,18 @@ func (s *Server) putWebhook(w http.ResponseWriter, r *http.Request) error {
 	if body.Port < 1 || body.Port > 65535 {
 		return errf("invalid", "%v", webhooks.ErrInvalidTarget)
 	}
+	// 9227 is the machine's own trigger receiver, and a route a trigger
+	// owns is the trigger's to change: one way in (DECISIONS I-1250).
+	if body.Port == webhooks.ReceiverPort {
+		return withDetail(errf("invalid", "%v", webhooks.ErrReservedPort),
+			map[string]any{"reason": "reserved_port"})
+	}
+	if trigger, err := s.d.WebhookRoutes.TriggerOf(r.Context(), p.ID, body.Name); err != nil {
+		return err
+	} else if trigger != "" {
+		return withDetail(errf("conflict", "the %s trigger owns this route; `repose triggers add %s` changes it", trigger, trigger),
+			map[string]any{"reason": "trigger_route", "trigger": trigger})
+	}
 	u := userFrom(r.Context())
 	route, token, created, err := s.d.WebhookRoutes.Upsert(r.Context(), u.ID, p.ID, body.Name, body.Port, body.Path, body.AllowStart)
 	if err != nil {
@@ -202,6 +214,14 @@ func (s *Server) deleteWebhook(w http.ResponseWriter, r *http.Request) error {
 	p, err := s.userProject(r)
 	if err != nil {
 		return err
+	}
+	// A trigger's route goes with its trigger, never on its own: the
+	// other way leaves a route trigger with no door (DECISIONS I-1250).
+	if trigger, err := s.d.WebhookRoutes.TriggerOf(r.Context(), p.ID, r.PathValue("name")); err != nil {
+		return err
+	} else if trigger != "" {
+		return withDetail(errf("conflict", "the %s trigger owns this route; `repose triggers rm %s` removes both", trigger, trigger),
+			map[string]any{"reason": "trigger_route", "trigger": trigger})
 	}
 	name := r.PathValue("name")
 	u := userFrom(r.Context())

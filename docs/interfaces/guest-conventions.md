@@ -901,6 +901,75 @@ repose-ask --cancel [ID | --all]
 | 6 | the user sent the asking agent a prompt, which closed the question (I-690) |
 | 130 | interrupted |
 
+## Triggers (DECISIONS I-1248..I-1262)
+
+A trigger's definitions come from the api: hostd sends the project's
+whole set as `SetTriggers` at create, start, restore and on every change,
+and guestd keeps them in memory alone, as it keeps secrets' values. A
+`RunTrigger` command, or a delivery to the receiver on 9227, starts one
+run.
+
+Everything a run keeps is under `/home/dev/.repose/triggers/<name>/`,
+dev's, on the volume and not a tmpfs, so a dedupe window and a payload
+survive a stop, a reboot and a move to another host:
+
+| Path | What |
+|---|---|
+| `seen` | one line per dedupe key admitted, `<unix> <key>`, keys older than 24 h dropped on write (I-1254) |
+| `fire-payload` | the file `repose triggers fire --payload` writes over SSH, which the runner copies into the run's directory. The one path the api will accept as a `payload_path` |
+| `runs/<run_id>/payload` | the event's bytes, at most the 1 MiB body cap |
+| `runs/<run_id>/headers.json` | the delivery's headers, a JSON object; never `Repose-Webhook-URL`, which carries the route's token |
+| `runs/<run_id>/gate.err` | the gate's last 200 bytes of stderr, when it wrote any |
+
+One payload is kept per run the api keeps, so 20 a trigger and 20 MiB at
+the body cap, oldest dropped first (I-1262). A snapshot holds them, so a
+restore brings a provider's old bodies and their signature headers back
+with the volume.
+
+The prompt is **not** here: it is the user's own file,
+`.repose/triggers/<name>.md` in the working directory by default, and
+`repose triggers add -p TEXT` writes it over SSH like any other file of
+theirs.
+
+**A run is keyed by its id.** guestd writes
+`/run/repose/triggers/<run_id>` for each run it started — the trigger,
+the window, the pid and the started time — the way it keeps its
+questions, and rebuilds that set from `tmux list-windows` at start
+(I-1256). The window's name is for the user to attach to; the id is what
+the machine and the api agree on.
+
+A run's window is `t-<trigger>` in the project's session, and
+`t-<trigger>.2` for a second concurrent run: a dot, because a trigger may
+be named `apply-2` and `t-apply-2` would otherwise be both that
+trigger's window and the second run of `apply`. **`t-` is a reserved
+window prefix**, as 9227 is a reserved port: a window the user opens as
+`t-anything` is their own, and guestd knows its runs from its registry
+and not from a name.
+
+Its agent is started with the prompt as the agent's own argument (I-780),
+and these variables are in its environment beside the project's named
+secrets:
+
+| Variable | Value |
+|---|---|
+| `REPOSE_TRIGGER` | the trigger's name |
+| `REPOSE_RUN` | the run's id (UUIDv7) |
+| `REPOSE_SOURCE` | `route`, `clock` or `hand` |
+| `REPOSE_PAYLOAD` | `runs/<run_id>/payload`, absent when the run has none |
+| `REPOSE_PAYLOAD_HEADERS` | `runs/<run_id>/headers.json`, absent for a run with no delivery |
+
+A gate (`--gate CMD`) runs through `bash -c` as `dev`, in the working
+directory, with the same variables, the payload's bytes on stdin, the
+project's secrets in its environment, a 10-second timeout and no agent. A
+shell is what makes `jq -e '.action == "opened"'` a gate rather than a
+quoting exercise.
+
+`t-*` windows are agent windows and are reported as such, with one
+exception each way: `repose say` without `--agent` does not resolve to
+one (a run must not turn an owner's `say` into `several_agents`), and
+`repose ps` and `repose ls` mark them, so a machine nobody is attached to
+does not read as the user's own agent working.
+
 ## Credentials the CLI syncs into the guest
 
 | Laptop path | Guest path | Owner/mode |
@@ -1223,8 +1292,8 @@ Anything the user binds on `0.0.0.0` or `127.0.0.1` (or `::`, `::1`)
 inside the guest is reachable through `repose open <port>` (SSH `-L`), and
 is forwarded automatically while a CLI is attached (DECISIONS I-199), read
 with `ss -Hltn` (iproute2, in the base). Platform-owned ports, never
-auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), and
-5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
+auto-forwarded: 6080, 6081, 5900, 9224, 9225 (I-246), 9226 (I-296), 9227
+(I-1250), and 5353, 5355 (I-215). Nor is the guest end of a reverse forward any laptop
 holds (I-1104). Each attached CLI records its forwarded
 ports in `/home/dev/.repose/forwards/<id>`; the project session's
 `status-right` is set from their union and unset when none is left.
@@ -1261,6 +1330,12 @@ whenever the display is); the agents' browser's DevTools on 9224
 9226 is where the guest's sshd listens for the reverse forward of `repose
 browser bridge` (I-296), and while that bridge is on, 9224 is
 `repose-browser-bridge.socket`, whose proxy goes to 9226 instead of 9225.
+9227 is guestd's trigger receiver (I-1250), on `127.0.0.1` and `::1`
+only. The edge's delivery for a trigger's route opens a `direct-tcpip`
+channel to it exactly as it does for a user's own port, and asks for
+`POST /t/<trigger>`; anything else on that port is 404. A payload's bytes
+are written to the run's directory below and never logged.
+
 `repose-prisma-engines.socket` listens on `127.0.0.1:850` (under 1024, so
 never forwarded) and answers every GET with a redirect to
 binaries.prisma.sh, a `linux-nixos` engine path rewritten to

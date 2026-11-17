@@ -43,12 +43,21 @@ const StartInterval = 10 * time.Minute
 // DeliveriesKept is how many deliveries a route keeps.
 const DeliveriesKept = 20
 
+// ReceiverPort is guestd's trigger receiver (DECISIONS I-1250). A
+// trigger's route is aimed at it, and a user's route may not be: there is
+// one way to make a trigger fire from outside, which is `repose triggers`.
+const ReceiverPort = 9227
+
 // ErrInvalidName, ErrInvalidTarget and ErrTooMany are the refusals a
 // caller turns into its own message.
 var (
 	ErrInvalidName   = errors.New("a route name matches [a-z0-9-]{1,32}")
 	ErrInvalidTarget = errors.New("a target is PORT or PORT/PATH")
 	ErrTooMany       = fmt.Errorf("a project may have %d webhook routes", MaxRoutes)
+	ErrReservedPort  = fmt.Errorf("port %d is the machine's own trigger receiver; `repose triggers add` aims a route at it", ReceiverPort)
+	// ErrTriggerRoute is a route a trigger owns, which only
+	// `repose triggers` changes or removes.
+	ErrTriggerRoute = errors.New("a trigger owns this route")
 )
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -415,6 +424,22 @@ func (s *Store) Rotate(ctx context.Context, userID, projectID uuid.UUID, name st
 }
 
 // Delete removes a route and tombstones its token.
+// TriggerOf is the trigger that owns a route, empty for a route of the
+// user's own (DECISIONS I-1250). `webhooks add` and `webhooks rm` are
+// both refused on such a route and name it: removing it by hand would
+// leave a `kind = route` trigger with no door, which still reads `on`
+// and can never fire.
+func (s *Store) TriggerOf(ctx context.Context, projectID uuid.UUID, name string) (string, error) {
+	var trigger string
+	err := s.pool.QueryRow(ctx, `select coalesce(t.name, '')
+		from webhook_routes r left join triggers t on t.route_id = r.id
+		where r.project_id = $1 and r.name = $2 limit 1`, projectID, name).Scan(&trigger)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return trigger, err
+}
+
 func (s *Store) Delete(ctx context.Context, projectID uuid.UUID, name string) error {
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var hash []byte

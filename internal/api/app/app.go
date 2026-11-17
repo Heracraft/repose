@@ -33,13 +33,14 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/api/questions"
-	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/resume"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/snapshots"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
+	"github.com/heracraft/repose/internal/api/triggers"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
@@ -55,35 +56,38 @@ import (
 
 // App is the assembled process.
 type App struct {
-	cfg       Config
-	log       *slog.Logger
-	pool      *db.Pool
-	reg       *prometheus.Registry
-	m         *metrics.M
-	sec       *secrets.Store
-	ca        *ca.CA
-	hostMgr   *hostmgr.Server
-	cliLatest *clirelease.Latest // nil reads no release (I-626)
-	engine    *ops.Engine
-	logs      *buildlog.Store
-	events    *events.Ingest
-	meterIn   *meter.Ingest
-	abuse     *abuse.Guard
-	questions *questions.Service
-	say       *say.Service
-	resting   *resting.Service
-	resume    *resume.Resumer
-	outbox    *notify.Outbox
-	polar     *billing.Polar
-	billing   *billing.Service
-	overage   *billing.Overage
-	hooks     *billing.Webhooks
-	gate      *billing.Gate
-	seats     *waitlist.Service
-	bcfg      billing.Config
-	server    *httpapi.Server
-	version   string
-	otelOff   func(context.Context) error
+	cfg          Config
+	log          *slog.Logger
+	pool         *db.Pool
+	reg          *prometheus.Registry
+	m            *metrics.M
+	sec          *secrets.Store
+	ca           *ca.CA
+	hostMgr      *hostmgr.Server
+	cliLatest    *clirelease.Latest // nil reads no release (I-626)
+	engine       *ops.Engine
+	logs         *buildlog.Store
+	events       *events.Ingest
+	meterIn      *meter.Ingest
+	abuse        *abuse.Guard
+	questions    *questions.Service
+	say          *say.Service
+	routes       *webhooks.Store
+	triggers     *triggers.Store
+	triggerClock *triggers.Clock
+	resting      *resting.Service
+	resume       *resume.Resumer
+	outbox       *notify.Outbox
+	polar        *billing.Polar
+	billing      *billing.Service
+	overage      *billing.Overage
+	hooks        *billing.Webhooks
+	gate         *billing.Gate
+	seats        *waitlist.Service
+	bcfg         billing.Config
+	server       *httpapi.Server
+	version      string
+	otelOff      func(context.Context) error
 }
 
 // New wires the process. Nothing listens yet.
@@ -169,6 +173,13 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.events.SetQuestions(a.questions)
 	a.say = say.New(a.pool, a.hostMgr, log)
 	a.events.SetSays(a.say)
+	// Triggers (DECISIONS I-1248..I-1262). The store is shared with the
+	// http process through Deps; the clock and the worker run here, in
+	// the process that holds the host streams (I-1162).
+	a.routes = webhooks.New(a.pool, a.sec, cfg.WebhookHost)
+	a.triggers = triggers.New(a.pool, a.routes)
+	a.triggerClock = triggers.NewClock(a.triggers, a.hostMgr, log)
+	a.events.SetTriggers(a.triggers)
 	// The rest rule and the wake (DECISIONS I-818). It sends straight to
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.
@@ -191,6 +202,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.events.SetResting(a.resting)
 	a.questions.Waker = a.resting
 	a.say.Waker = a.resting
+	a.triggerClock.Wake = a.resting
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -213,6 +225,9 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 				return
 			}
 			if a.say.OnResult(ctx, hostID, r) { // a `repose say` (I-1144)
+				return
+			}
+			if a.triggerClock.OnResult(ctx, r) { // a RunTrigger (I-1252)
 				return
 			}
 			a.engine.OnResult(ctx, hostID, r)
@@ -319,9 +334,16 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		ViewOrigins: viewOrigins(cfg.DashboardURL),
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
-		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),
-		CLILatest:     a.cliLatest.Version,
-		CLIOldest:     clirelease.Oldest,
+		WebhookRoutes: a.routes,
+		Triggers:      a.triggers,
+		// The http process cannot send a command (I-1162), so a changed
+		// set is pushed by the grpc one; in API_MODE=all this is the
+		// same process and the push is direct.
+		TriggerPush: func(ctx context.Context, projectID uuid.UUID) {
+			a.pushTriggers(ctx, projectID)
+		},
+		CLILatest: a.cliLatest.Version,
+		CLIOldest: clirelease.Oldest,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
 			return len(st.Pending), err
@@ -568,6 +590,9 @@ func (a *App) loops(ctx context.Context) {
 	// The rest rule, every minute, on the replica that holds its own lock
 	// (I-818).
 	go a.resting.Run(ctx)
+	// The trigger clock: it claims the schedules that are due and sends
+	// every pending run, on the replica that holds its own lock (I-1252).
+	go a.triggerClock.Run(ctx)
 	// The abuse gauges (BusyUnattended, EgressHigh, held projects) are
 	// read-only aggregates; every replica exports them and the alerts take
 	// the max (DECISIONS I-239).
@@ -721,3 +746,39 @@ func (a *App) loops(ctx context.Context) {
 type markOnly struct{}
 
 func (markOnly) Delete(context.Context, string) error { return nil }
+
+// pushTriggers sends the project's whole trigger set to its machine
+// (DECISIONS I-1248). A machine that is not running is not an error: the
+// api sends the set again at its next start, which is what makes a guest
+// that lost it come back with it.
+func (a *App) pushTriggers(ctx context.Context, projectID uuid.UUID) {
+	if a.triggers == nil {
+		return
+	}
+	var guestID, hostID *uuid.UUID
+	var state string
+	if err := a.pool.QueryRow(ctx,
+		`select state, guest_id, host_id from projects where id = $1`, projectID).
+		Scan(&state, &guestID, &hostID); err != nil {
+		return
+	}
+	if state != "running" || guestID == nil || hostID == nil {
+		return
+	}
+	set, err := a.triggers.ForGuest(ctx, projectID)
+	if err != nil {
+		a.log.Error("trigger set", "event", "trigger_run", "err", err.Error())
+		return
+	}
+	cmd := &hostdv1.Command{
+		CommandId: store.NewID().String(),
+		Cmd: &hostdv1.Command_SetTriggers{SetTriggers: &hostdv1.SetTriggers{
+			GuestId: guestID.String(), Triggers: set,
+		}},
+	}
+	if err := a.hostMgr.Send(ctx, *hostID, cmd); err != nil {
+		// The set is state the api owns, not an event: the next start
+		// carries it, so a host that is away costs nothing but latency.
+		a.log.Warn("trigger set not pushed", "event", "trigger_run", "err", err.Error())
+	}
+}
