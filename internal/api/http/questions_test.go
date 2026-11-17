@@ -461,3 +461,110 @@ func TestAgentLink(t *testing.T) {
 		t.Fatalf("questions: %s", r.raw)
 	}
 }
+
+// TestQuestionHold (DECISIONS I-1242): a hold moves a pending question's
+// expiry to five minutes from now and tells the guest, a second hold
+// inside 30 s changes nothing and sends nothing, a hold never moves it
+// past created_at + 24 h + 5 min, and a hold on an expired or answered
+// question is conflict with the question.
+func TestQuestionHold(t *testing.T) {
+	a := newAskEnv(t, "hal")
+	qid := a.ask(t, "What should the table be called?", nil, 60)
+	path := "/projects/" + a.p.ID.String() + "/questions/" + qid.String() + "/hold"
+	var before time.Time
+	if err := a.h.Pool.QueryRow(a.h.Ctx, "select expires_at from questions where id = $1", qid).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+
+	r := a.do(t, a.tok, "POST", path, nil)
+	if r.status != 200 || r.body["state"] != "pending" {
+		t.Fatalf("hold: %d %s", r.status, r.raw)
+	}
+	first, _ := time.Parse(time.RFC3339Nano, r.body["expires_at"].(string))
+	if left := time.Until(first); left < 4*time.Minute || left > 5*time.Minute+time.Second {
+		t.Fatalf("expires_at after a hold is %v from now (was %v)", left, before)
+	}
+	if !first.After(before) {
+		t.Fatalf("hold did not move expires_at: %v -> %v", before, first)
+	}
+	a.h.WaitFor("the guest's new deadline", func() bool {
+		h := a.h.Fake.Held(qid.String())
+		return h != nil && h.Status == "extended" && h.ExpiresUnix == first.Unix()
+	})
+	if a.h.Fake.Answer(qid.String()) != nil {
+		t.Fatal("a hold closed the question on the guest")
+	}
+	cmds := 0
+	for _, c := range a.h.Fake.Commands() {
+		if c.GetAnswerQuestion() != nil {
+			cmds++
+		}
+	}
+
+	// Inside 30 s: a no-op that still answers 200 and sends nothing.
+	r = a.do(t, a.tok, "POST", path, nil)
+	if r.status != 200 {
+		t.Fatalf("second hold: %d %s", r.status, r.raw)
+	}
+	if again, _ := time.Parse(time.RFC3339Nano, r.body["expires_at"].(string)); !again.Equal(first) {
+		t.Fatalf("a hold inside 30 s moved expires_at: %v -> %v", first, again)
+	}
+	time.Sleep(100 * time.Millisecond)
+	for _, c := range a.h.Fake.Commands() {
+		if c.GetAnswerQuestion() != nil {
+			cmds--
+		}
+	}
+	if cmds != 0 {
+		t.Fatalf("a no-op hold sent %d command(s)", -cmds)
+	}
+
+	// The cap: a question created 24 h ago is held to created_at + 24 h + 5 min at most.
+	if _, err := a.h.Pool.Exec(a.h.Ctx, "update questions set created_at = now() - interval '24 hours', expires_at = now() + interval '1 minute' where id = $1", qid); err != nil {
+		t.Fatal(err)
+	}
+	r = a.do(t, a.tok, "POST", path, nil)
+	if r.status != 200 {
+		t.Fatalf("capped hold: %d %s", r.status, r.raw)
+	}
+	capped, _ := time.Parse(time.RFC3339Nano, r.body["expires_at"].(string))
+	if left := time.Until(capped); left < 4*time.Minute || left > 5*time.Minute+time.Second {
+		t.Fatalf("capped hold left %v", left)
+	}
+	if _, err := a.h.Pool.Exec(a.h.Ctx, "update questions set created_at = now() - interval '24 hours' - interval '4 minutes', expires_at = now() + interval '1 minute' where id = $1", qid); err != nil {
+		t.Fatal(err)
+	}
+	r = a.do(t, a.tok, "POST", path, nil)
+	if r.status != 200 {
+		t.Fatalf("hold near the cap: %d %s", r.status, r.raw)
+	}
+	capped, _ = time.Parse(time.RFC3339Nano, r.body["expires_at"].(string))
+	if left := time.Until(capped); left > 61*time.Second {
+		t.Fatalf("a hold moved expires_at past created_at + 24 h + 5 min: %v left", left)
+	}
+
+	// Expired: conflict, with the question.
+	if _, err := a.h.Pool.Exec(a.h.Ctx, "update questions set expires_at = now() - interval '1 minute' where id = $1", qid); err != nil {
+		t.Fatal(err)
+	}
+	r = a.do(t, a.tok, "POST", path, nil)
+	if r.status != 409 || r.body["error"].(map[string]any)["detail"].(map[string]any)["question"] == nil {
+		t.Fatalf("hold after expiry: %d %s", r.status, r.raw)
+	}
+
+	// Answered: conflict too.
+	q2 := a.ask(t, "Merge?", []string{"yes", "no"}, 600)
+	if r := a.do(t, a.tok, "POST", "/projects/"+a.p.ID.String()+"/questions/"+q2.String()+"/answer", map[string]any{"answer": "yes"}); r.status != 200 {
+		t.Fatalf("answer: %d %s", r.status, r.raw)
+	}
+	r = a.do(t, a.tok, "POST", "/projects/"+a.p.ID.String()+"/questions/"+q2.String()+"/hold", nil)
+	if r.status != 409 || !strings.Contains(string(r.raw), "already answered: yes") {
+		t.Fatalf("hold after answer: %d %s", r.status, r.raw)
+	}
+
+	// Another user's token: not found, as answer is.
+	other := a.signIn(t, "sub-other", "other")
+	if r := a.do(t, other, "POST", path, nil); r.status != 404 {
+		t.Fatalf("hold by another user: %d %s", r.status, r.raw)
+	}
+}

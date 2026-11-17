@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -417,9 +416,13 @@ func TestLsEmptyCountsDestroyed(t *testing.T) {
 	}
 }
 
-// In the checkout whose `repose` remote is the machine, a stop fetches
-// the agent's commits first (I-615; review 1.1).
-func TestStopFetchesFirst(t *testing.T) {
+// A stop fetches nothing first, even in the checkout whose `repose`
+// remote is the machine (I-1240, reversing I-615's fetch clause): the
+// stop line is the first line, and the laptop's repose/main stays where
+// it was. Probe: with fetchBeforeStop back in StopProjectsCmd this fails
+// on lines[0] ("Fetched 3 commits on repose/main and 1 on
+// repose/worktree-1.").
+func TestStopDoesNotFetch(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	git := func(dir string, args ...string) string {
 		t.Helper()
@@ -440,46 +443,39 @@ func TestStopFetchesFirst(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
 	}
-	git(machine, "branch", "worktree-1")
-	git(machine, "checkout", "-q", "worktree-1")
-	git(machine, "commit", "-q", "--allow-empty", "-m", "worktree")
-	git(machine, "checkout", "-q", "main")
 	git(laptop, "remote", "add", "repose", "demo.repose:~/demo")
 	git(laptop, "config", "url."+machine+".insteadOf", "demo.repose:~/demo")
+	before := git(laptop, "rev-parse", "origin/main")
 
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	ctx := context.Background()
 	e := newLifecycleEnv(t, fake)
-	e.Cwd = filepath.Join(laptop)
-	var out bytes.Buffer
-	e.Out = &out
+	e.Cwd = laptop
+	var out, errOut bytes.Buffer
+	e.Out, e.ErrOut = &out, &errOut
 	p := runningProject(t, fake, e, "demo")
 	out.Reset()
 	if err := StopCmd(ctx, e, p.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(out.String(), "\n")
-	if lines[0] != "Fetched 3 commits on repose/main and 1 on repose/worktree-1." || !strings.HasPrefix(lines[1], "Stopped demo in ") {
-		t.Fatalf("out %q", out.String())
+	if !strings.HasPrefix(lines[0], "Stopped demo in ") || strings.Contains(out.String(), "Fetched") || strings.Contains(errOut.String(), "fetch") {
+		t.Fatalf("out %q err %q", out.String(), errOut.String())
 	}
-	if git(laptop, "rev-parse", "repose/main") != git(machine, "rev-parse", "main") {
-		t.Fatal("not fetched")
+	if _, err := exec.Command("git", "-C", laptop, "rev-parse", "--verify", "-q", "refs/remotes/repose/main").Output(); err == nil {
+		t.Fatal("the stop fetched: refs/remotes/repose/main exists")
 	}
-
-	// Nothing new: no line. Another project's stop: no fetch.
-	q := runningProject(t, fake, e, "other")
-	git(machine, "commit", "-q", "--allow-empty", "-m", "later")
-	out.Reset()
-	if err := StopCmd(ctx, e, q.ID, true); err != nil || !strings.HasPrefix(out.String(), "Stopped other in ") {
-		t.Fatalf("other: %v %q", err, out.String())
+	if git(laptop, "rev-parse", "origin/main") != before {
+		t.Fatal("the stop moved a ref")
 	}
 }
 
-// From another folder, a stop fetches in the machine's laptop folders
-// projects.json records, and the line names the folder; a folder whose
-// `repose` remote no longer names the machine is left alone (I-638).
-func TestStopFetchesInTheRecordedFolder(t *testing.T) {
+// From another folder, status counts in the machine's laptop folders
+// projects.json records; a folder whose `repose` remote no longer names
+// the machine is left alone (I-638). A stop from there fetches nothing
+// in them (I-1240).
+func TestRecordedFolderCountsAndAStopDoesNotFetchThere(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	git := func(dir string, args ...string) string {
 		t.Helper()
@@ -529,24 +525,11 @@ func TestStopFetchesInTheRecordedFolder(t *testing.T) {
 	if err := StopCmd(ctx, e, p.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(out.String(), "\n")
-	// The expected path is spelled out, not taken from the formatter the
-	// line uses: asserting against laptopPath would have passed just as
-	// happily on the `~//home/...` it used to print (I-892).
-	wantIn := root
-	if home, err := os.UserHomeDir(); err == nil {
-		if rel, err := filepath.Rel(home, root); err == nil && !strings.HasPrefix(rel, "..") {
-			wantIn = "~/" + filepath.ToSlash(rel)
-		}
-	}
-	if strings.HasPrefix(wantIn, "~//") || strings.Contains(wantIn, "//") {
-		t.Fatalf("the folder reads %q", wantIn)
-	}
-	if lines[0] != "Fetched 2 commits on repose/main in "+wantIn+"." || !strings.HasPrefix(lines[1], "Stopped demo in ") {
+	if !strings.HasPrefix(out.String(), "Stopped demo in ") || strings.Contains(out.String(), "Fetched") {
 		t.Fatalf("out %q err %q", out.String(), errOut.String())
 	}
-	if git(laptop, "rev-parse", "repose/main") != git(machine, "rev-parse", "main") {
-		t.Fatal("not fetched")
+	if _, err := exec.Command("git", "-C", laptop, "rev-parse", "--verify", "-q", "refs/remotes/repose/main").Output(); err == nil {
+		t.Fatal("the stop fetched in the recorded folder")
 	}
 	// rm forgets the folder with the rest of the project's entries.
 	forgetProject(&e.Cache, p.ID)
@@ -618,9 +601,11 @@ func TestInterruptedResizeSaysWhatIsLeft(t *testing.T) {
 	}
 }
 
-// rm fetches the machine's commits before it destroys the machine, as
-// stop does, and the fetched refs stay after its remote goes (I-641).
-func TestRmFetchesFirst(t *testing.T) {
+// rm fetches nothing before it destroys the machine (I-1240, reversing
+// I-641's fetch): the destroy line comes first, the remote is removed, and
+// no refs/remotes/repose/* was made. Probe: with fetchBefore back in
+// DestroyProjectsCmd, lines[0] is "Fetched 2 commits on repose/main.".
+func TestRmDoesNotFetch(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	git := func(dir string, args ...string) string {
 		t.Helper()
@@ -639,7 +624,6 @@ func TestRmFetchesFirst(t *testing.T) {
 	laptop := t.TempDir()
 	git(laptop, "clone", "-q", machine, ".")
 	git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
-	git(machine, "commit", "-q", "--allow-empty", "-m", "agent")
 	git(laptop, "remote", "add", "repose", "demo.repose:~/demo")
 	git(laptop, "config", "url."+machine+".insteadOf", "demo.repose:~/demo")
 
@@ -657,14 +641,13 @@ func TestRmFetchesFirst(t *testing.T) {
 	if err := DestroyProjectsCmd(ctx, e, []string{p.ID}, true, false, nil); err != nil {
 		t.Fatalf("%v: out %q err %q", err, out.String(), errOut.String())
 	}
-	lines := strings.Split(out.String(), "\n")
-	if lines[0] != "Fetched 2 commits on repose/main." || !strings.HasPrefix(lines[1], "Destroying demo.") {
+	if !strings.HasPrefix(out.String(), "Destroying demo.") || strings.Contains(out.String(), "Fetched") {
 		t.Fatalf("out %q err %q", out.String(), errOut.String())
 	}
 	if !strings.Contains(errOut.String(), "Removed the git remote repose.") {
 		t.Fatalf("err %q", errOut.String())
 	}
-	if git(laptop, "rev-parse", "refs/remotes/repose/main") != git(machine, "rev-parse", "main") {
-		t.Fatal("the fetched commits did not stay after the remote went")
+	if _, err := exec.Command("git", "-C", laptop, "rev-parse", "--verify", "-q", "refs/remotes/repose/main").Output(); err == nil {
+		t.Fatal("rm fetched: refs/remotes/repose/main exists")
 	}
 }

@@ -201,7 +201,7 @@ func New(reg prometheus.Registerer) *M {
 		Subscriptions:                prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_subscriptions", Help: "Live subscriptions by plan and status."}, []string{"plan", "status"}),
 		MRRCents:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_mrr_cents", Help: "Plan revenue a month in cents by status, at the list price each subscription is on."}, []string{"status"}),
 		BillingStopsTotal:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_stops_total", Help: "Machines the api stopped for billing, by reason."}, []string{"reason"}),
-		SnapshotAgeSeconds:           prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_snapshot_age_seconds", Help: "Oldest newest-snapshot age over running projects."}),
+		SnapshotAgeSeconds:           prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_snapshot_age_seconds", Help: "Over running projects, the longest time since the later of the newest snapshot and the last start."}),
 		GRPCStreams:                  prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_grpc_streams", Help: "Connected host streams."}),
 		OpsTotal:                     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_ops_total", Help: "Ops finished by kind and state."}, []string{"kind", "state"}),
 		OpsOpen:                      prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_ops_open", Help: "Ops pending or running by kind."}, []string{"kind"}),

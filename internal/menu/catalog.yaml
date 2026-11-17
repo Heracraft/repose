@@ -302,13 +302,14 @@
       Install.WantedBy = [ "default.target" ];
     };
 
-# A project's ports have no public URL (machine.md); cloudflared's quick
-# tunnel gives one for testing, a named tunnel on the user's own domain a
-# stable one (DECISIONS I-251).
+# cloudflared is in every machine's base since I-1246 (an agent opens a
+# quick tunnel for an owner who is away). The entry stays because a
+# config that selected it (I-251) still names the id, and an unknown id
+# is refused; selecting it now adds nothing the machine lacks.
 - id: cloudflared
   label: cloudflared (Cloudflare Tunnel)
   group: deploy
   kind: package
-  description: Cloudflare Tunnel's client, for a public URL to a port on the machine.
+  description: Cloudflare Tunnel's client. Every machine has it already.
   hm: |
     home.packages = [ pkgs.cloudflared ];

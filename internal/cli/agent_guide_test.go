@@ -82,6 +82,10 @@ var guestCommands = map[string]string{
 
 	// Scheduled jobs are user timers (I-518).
 	"systemctl": "system:systemd, NixOS's init",
+	// The quick tunnel for an owner who is away (I-1246).
+	"cloudflared": "nix/guest/base/tool-list.nix:cloudflared",
+	"nohup":       "system:NixOS's base system path (coreutils)",
+	"pkill":       "nix/guest/base/tool-list.nix:psmisc",
 }
 
 // notCommands are backticked words in the guide that are names, not

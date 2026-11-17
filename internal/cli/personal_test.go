@@ -147,13 +147,41 @@ func TestGlobalConfigCommands(t *testing.T) {
 			t.Fatalf("%q: %v", bad, err)
 		}
 	}
-	// A file add cannot edit is refused with a pointer to edit.
+	// A module with no list gets one on add (I-1236); a file that is not a
+	// module is still refused with a pointer to edit, and remove never
+	// invents a list.
+	_ = os.WriteFile(e.machineNixPath(), []byte("{ config, ... }:\n{\n  programs.git.enable = true;\n}\n"), 0o644)
+	if err := GlobalApplyCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	out.buf.Reset()
+	if err := GlobalPackagesCmd(ctx, e, []string{"jq"}, true); err != nil || !strings.HasPrefix(out.buf.String(), "Added jq to ~/") {
+		t.Fatalf("add without a list: %v %q", err, out.buf.String())
+	}
+	local, _ = os.ReadFile(e.machineNixPath())
+	if want := "{ pkgs, config, ... }:\n{\n  home.packages = with pkgs; [\n    jq\n  ];\n  programs.git.enable = true;\n}\n"; string(local) != want {
+		t.Fatalf("machine.nix after add without a list:\n%s\nwant:\n%s", local, want)
+	}
+	_ = os.WriteFile(e.machineNixPath(), []byte(""), 0o644)
+	if err := GlobalApplyCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := GlobalPackagesCmd(ctx, e, []string{"jq"}, true); err != nil {
+		t.Fatalf("add to an emptied file: %v", err)
+	}
+	local, _ = os.ReadFile(e.machineNixPath())
+	if !strings.HasPrefix(string(local), "# machine.nix") || !strings.Contains(string(local), "  home.packages = with pkgs; [\n    jq\n  ];") {
+		t.Fatalf("machine.nix after add to an emptied file:\n%s", local)
+	}
 	_ = os.WriteFile(e.machineNixPath(), []byte("{ programs.git.enable = true; }\n"), 0o644)
 	if err := GlobalApplyCmd(ctx, e, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := GlobalPackagesCmd(ctx, e, []string{"jq"}, true); exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "repose config --global edit") {
-		t.Fatalf("add without a list: %v", err)
+		t.Fatalf("add to a file that is not a module: %v", err)
+	}
+	if err := GlobalPackagesCmd(ctx, e, []string{"jq"}, false); exitCode(err) != ExitUsage {
+		t.Fatalf("remove without a list: %v", err)
 	}
 	// A failing machine.nix names its line in the laptop's copy.
 	broken := "{\n  repose-force-eval-error = 1;\n}\n"

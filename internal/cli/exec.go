@@ -70,7 +70,8 @@ const execDevshell = "/etc/repose/devshell.sh"
 // execScript is the remote command line: cd into the checkout (home, with
 // a note on stderr, when it is not there yet), load the environment, then
 // exec the command, each argument quoted so the guest's shell passes it
-// through unchanged, as docker exec does. A shell pipeline is `sh -c`'s job.
+// through unchanged, as docker exec does. A shell pipeline is `sh -c`'s
+// job, which execShellWords gives a single quoted word.
 func execScript(slug, extra string, argv []string) string {
 	return execScriptIn(slug, extra, "", argv)
 }
@@ -111,6 +112,41 @@ func execWord(a string) string {
 		return `"$HOME"/` + shQuote(rest)
 	}
 	return shQuote(a)
+}
+
+// execShellWords is the command as the machine runs it: the words as they
+// are, or, for a single word with a space in it, `sh -c WORD`. The one
+// way a space reaches repose inside one word is the reader quoting a
+// whole command line (`repose exec notebook 'cat ~/x'`), which docker
+// exec would hand to a program named "cat ~/x"; nobody has one. The
+// machine's shell then expands the ~, the pipe and the glob, which is
+// what the quotes asked for (DECISIONS I-1232).
+func execShellWords(argv []string) []string {
+	if len(argv) == 1 && strings.ContainsAny(argv[0], " \t\n") {
+		return []string{"sh", "-c", argv[0]}
+	}
+	return argv
+}
+
+// laptopHomeNote is the stderr line for a word the laptop's shell made
+// out of an unquoted ~ (I-1048): what the word is, and the command to
+// type instead, with that word quoted so the machine expands it. The
+// first version said "write '~/x', quoted" and the owner's next try was
+// cat " ~/x", then "cat ~/x": the line now shows the whole command
+// (I-1232).
+func laptopHomeNote(project string, argv []string, word, home string) string {
+	fixed := make([]string, 0, len(argv)+3)
+	fixed = append(fixed, "repose", "exec")
+	if project != "" {
+		fixed = append(fixed, project)
+	}
+	for _, a := range argv {
+		if a == word {
+			a = "'~" + strings.TrimPrefix(word, home) + "'"
+		}
+		fixed = append(fixed, a)
+	}
+	return fmt.Sprintf("%s is a path on this computer, not on the machine, whose home is %s. Quote the ~ so your shell leaves it: %s", word, guestHome, strings.Join(fixed, " "))
 }
 
 // laptopHomePath is the first word of the command that is a path under
@@ -196,14 +232,15 @@ func newExecCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Long: "Run COMMAND in the checkout on PROJECT's machine (this checkout's project, by\n" +
 			"default), with the project's secrets and dev shell, as an agent there has them.\n" +
 			"Output streams back, and the exit code is the command's. The words pass through\n" +
-			"as they are; for a pipeline, use sh -c '...'. A first word that names one of\n" +
+			"as they are; one quoted word with spaces, 'cat ~/x | head', runs in the\n" +
+			"machine's shell. A first word that names one of\n" +
 			"your projects is PROJECT; put -- before a command that has a project's name.\n" +
 			"exec's own flags go before COMMAND.\n\n" +
 			"A word that is ~ or starts with ~/ is the machine's home, /home/dev. Quote it:\n" +
 			"unquoted, your own shell expands it to this computer's home first.\n\n" +
 			"Without -i the command gets no input, and without -t no terminal; -it gives\n" +
 			"both, for something interactive such as a REPL.",
-		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql\n  repose exec todo-app ls '~/out'\n  repose exec --workdir worktree-1 npm test",
+		Example: "  repose exec npm test\n  repose exec todo-app git log --oneline -5\n  repose exec -it psql\n  repose exec todo-app ls '~/out'\n  repose exec todo-app 'cat ~/out/report.txt | head'\n  repose exec --workdir worktree-1 npm test",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 || cmd.ArgsLenAtDash() == len(args) {
 				return cobraUsageError{fmt.Errorf("no command: repose exec [PROJECT] [--] COMMAND")}
@@ -286,9 +323,9 @@ func ExecCmd(ctx context.Context, e *Env, opts ExecOptions, stdin io.Reader) err
 		return err
 	}
 	if word, home := laptopHomePath(opts.Command); word != "" {
-		e.warn("%s is a path on this computer. The machine's home is %s: write '~%s', quoted, and the machine expands it.", word, guestHome, strings.TrimPrefix(word, home))
+		e.warn("%s", laptopHomeNote(opts.ProjectArg, opts.Command, word, home))
 	}
-	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScriptIn(project.Slug, target.Checkout, opts.Workdir, opts.Command))...)
+	c := exec.CommandContext(ctx, "ssh", execSSHArgs(target, opts, execScriptIn(project.Slug, target.Checkout, opts.Workdir, execShellWords(opts.Command)))...)
 	c.Stdout, c.Stderr = e.Out, e.ErrOut
 	if opts.Interactive || opts.TTY {
 		c.Stdin = stdin

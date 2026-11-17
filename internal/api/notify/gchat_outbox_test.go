@@ -292,9 +292,9 @@ func TestGChatClosedQuestionCardDropped(t *testing.T) {
 	}
 }
 
-// A Google Chat row is held while the owner is attached, like ntfy's
-// (I-689, I-692).
-func TestGChatHeldWhilePresent(t *testing.T) {
+// A Google Chat question card posts while the owner is attached: a
+// question is never held (I-1242, amending I-689 and I-692).
+func TestGChatQuestionPostsWhilePresent(t *testing.T) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
 	_, pid := seedGChat(t, pool)
@@ -314,8 +314,8 @@ func TestGChatHeldWhilePresent(t *testing.T) {
 	}
 	var got string
 	_ = pool.QueryRow(ctx, "select coalesce(delivered ->> 'gchat', '') from events where id = $1", eid).Scan(&got)
-	if posts.Load() != 0 || got != notify.DeliveredHeld {
-		t.Fatalf("posts %d, delivered.gchat %q: want held while attached", posts.Load(), got)
+	if posts.Load() != 1 || got == notify.DeliveredHeld || got == "" {
+		t.Fatalf("posts %d, delivered.gchat %q: want the card posted while attached", posts.Load(), got)
 	}
 }
 

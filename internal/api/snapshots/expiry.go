@@ -68,7 +68,10 @@ func New(pool *db.Pool, blob BlobStore, m *metrics.M, log *slog.Logger) *Expiry 
 	return &Expiry{pool: pool, blob: blob, m: m, log: log.With("component", "api"), Now: time.Now}
 }
 
-// Run executes the job daily until ctx ends.
+// Run executes the job daily until ctx ends. The age gauge has its own
+// ticker (RunAgeGauge): refreshed here alone it held a day-old number,
+// so SnapshotStale kept firing a day after the snapshots it missed had
+// been taken (DECISIONS I-1244).
 func (e *Expiry) Run(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -80,6 +83,21 @@ func (e *Expiry) Run(ctx context.Context, every time.Duration) {
 			}
 			release()
 		}
+		e.UpdateAgeGauge(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// RunAgeGauge refreshes the age gauge at once and then every `every`
+// until ctx ends (I-1244).
+func (e *Expiry) RunAgeGauge(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
 		e.UpdateAgeGauge(ctx)
 		select {
 		case <-ctx.Done():
@@ -192,11 +210,20 @@ func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, er
 
 var errSkip = errors.New("snapshot no longer expired")
 
-// UpdateAgeGauge sets repose_api_snapshot_age_seconds to the oldest
-// newest-snapshot age over running projects (the SnapshotStale input).
+// UpdateAgeGauge sets repose_api_snapshot_age_seconds, the SnapshotStale
+// input: over running projects, the longest time since the later of the
+// project's newest snapshot and its last start. A stop takes a snapshot,
+// so a project that sat stopped for four days and started an hour ago
+// has an hour of unsnapshotted work, not four days; measured from the
+// snapshot alone, two such projects kept SnapshotStale firing from
+// 2026-11-07 with nothing wrong (DECISIONS I-1244). A running project
+// with no snapshot at all counts from its start, where before it was
+// not counted.
 func (e *Expiry) UpdateAgeGauge(ctx context.Context) {
 	var oldest *time.Time
-	err := e.pool.QueryRow(ctx, `select min(newest) from (select (select max(taken_at) from snapshots s where s.project_id = p.id and s.deleted_at is null) as newest from projects p where p.state = 'running' and p.destroyed_at is null) t`).Scan(&oldest)
+	err := e.pool.QueryRow(ctx, `select min(greatest(newest, p.started_at)) from (select p.started_at,
+		(select max(taken_at) from snapshots s where s.project_id = p.id and s.deleted_at is null) as newest
+		from projects p where p.state = 'running' and p.destroyed_at is null) p`).Scan(&oldest)
 	if err != nil || oldest == nil {
 		e.m.SnapshotAgeSeconds.Set(0)
 		return

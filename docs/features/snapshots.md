@@ -134,8 +134,10 @@ copy's `~/<slug>` is a symlink to the source's, made by guestd's
 
 Alerts:
 
-- A running project whose newest snapshot is older than 36 hours raises an
-  operator alert, because it means the nightly job failed twice.
+- A running project 36 hours past the later of its newest snapshot and
+  its last start raises an operator alert, because it means the nightly
+  job failed twice. A project that sat stopped for days counts from its
+  start, not from the stop's snapshot (I-1244).
 
 ## Depends on
 

@@ -8,89 +8,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 )
 
-// stopFetchTimeout bounds the fetch a stop makes first. A machine that
-// does not answer is often why it is being stopped, and its commits are
-// in the stop's snapshot either way.
-//
-// It was 60 s, which is a minute of a stop the user is watching for
-// commits that are already safe. 15 s matches the budget the guest read
-// beside it takes (I-890).
+// stopFetchTimeout bounds the fetch `stop -w` makes before it removes a
+// worktree (stop_window.go). It was the budget of the fetch every stop
+// made first (I-615, I-890); that fetch is gone (I-1240), and a worktree
+// is only removed once its branch is here, so the one fetch left keeps
+// the 15 s.
 var stopFetchTimeout = 15 * time.Second
-
-// fetchBeforeStop runs `git fetch repose` in every laptop folder whose
-// `repose` remote is one of the running machines about to stop
-// (DECISIONS I-615, I-638): a stopped machine cannot be fetched from, so
-// without it getting the agent's last commits costs a start, a fetch and
-// a stop. The folders are the working directory's checkout and those
-// projects.json links to the machine, so `stop api web` from ~ fetches
-// too. It prints what came, as "Fetched 3 commits on repose/main." (with
-// " in ~/code/api" for a folder other than the working directory's),
-// and nothing when nothing did. A fetch that fails is one line on stderr
-// and the stop goes ahead. Ctrl-C during it stops nothing. rm fetches
-// the same way before it destroys (I-641).
-func fetchBeforeStop(ctx context.Context, e *Env, running []*Project) error {
-	return fetchBefore(ctx, e, running, "stopping it", "Interrupted. Nothing stopped.")
-}
-
-// fetchBefore is fetchBeforeStop for any command that ends the machines:
-// what names the act in a failed fetch's warning, and interrupted is the
-// line for Ctrl-C during the fetch.
-func fetchBefore(ctx context.Context, e *Env, running []*Project, what, interrupted string) error {
-	if e.TargetFor != nil { // tests that stand in for ssh
-		return nil
-	}
-	jobs := e.fetchJobsFor(running)
-	if len(jobs) == 0 {
-		return nil
-	}
-	pr := e.newProgress()
-	defer pr.Fail()
-	pr.Phase("Fetching from "+joinNames(slugsOfJobs(jobs)), "")
-	// A ControlPersist master that answers `ssh -O check` but whose
-	// connection died (the laptop slept) holds the fetch for its whole
-	// budget. masterAlive stops such a master, as the guest read does
-	// (I-740); the fetch had the same exposure and none of the guard,
-	// which is the likeliest reason the owner's stop took 55 s (I-890).
-	checkMasters(ctx, e, slugsOfJobs(jobs))
-	func() {
-		defer timeSpan("stop: fetch")()
-		runFetches(ctx, jobs)
-	}()
-	pr.Fail()
-	if ctx.Err() != nil {
-		return exitf(ExitInterrupted, "%s", interrupted)
-	}
-	for _, j := range jobs {
-		if w := j.fetchFailure(what); w != "" {
-			e.warn("%s", w)
-		}
-		if l := j.fetchedLine(); l != "" {
-			_, _ = fmt.Fprintln(e.Out, l)
-		}
-	}
-	return nil
-}
-
-// checkMasters stops any ssh master of these machines that answers
-// `-O check` but not a command, so the fetch that follows connects
-// afresh instead of waiting out its budget on a dead socket. One check
-// per machine, all at once, each inside masterAlive's own short budget.
-func checkMasters(ctx context.Context, e *Env, slugs []string) {
-	defer timeSpan("stop: ssh masters")()
-	var wg sync.WaitGroup
-	for _, slug := range slugs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			masterAlive(ctx, e.target(slug))
-		}()
-	}
-	wg.Wait()
-}
 
 // fetchRepose fetches the checkout's `repose` remote and says what it
 // brought: "3 commits on repose/main and 5 on repose/worktree-1", counting

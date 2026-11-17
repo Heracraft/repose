@@ -157,9 +157,10 @@ type Fake struct {
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests.
-	wakes     int
-	sessions  []SessionReport
-	questions []*Question // newest last (DECISIONS I-245)
+	wakes         int
+	sessions      []SessionReport
+	questions     []*Question       // newest last (DECISIONS I-245)
+	holds         []string          // question ids the dashboard held (I-1242)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
 	says          []Say
@@ -707,6 +708,7 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/questions", f.listProjectQuestions)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/answer", f.answerQuestion)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/cancel", f.cancelQuestion)
+	f.handle("POST /v1/projects/{id}/questions/{qid}/hold", f.holdQuestion)
 	// A message for the project's agent (DECISIONS I-1144).
 	f.handle("POST /v1/projects/{id}/say", f.sayToAgent)
 	f.handle("GET /v1/questions/reply", f.replyQuestion)

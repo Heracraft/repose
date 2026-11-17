@@ -76,7 +76,7 @@ Google refuses a webhook that was deleted, or whose space removed it. repose the
 
 A notification goes to every channel you have on.
 
-While you're at the machine, nothing an agent sends reaches a channel. It waits until you leave, or 10 minutes, whichever comes first. Being at the machine means a tmux client or an SSH connection; your editor and a herdr bridge count as SSH connections. One that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
+While you're at the machine, nothing an agent sends reaches a channel, except a question: that goes out at once, wherever you are. Anything else waits until you leave, or 10 minutes, whichever comes first. Being at the machine means a tmux client or an SSH connection; your editor and a herdr bridge count as SSH connections. One that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
 
 On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page, or the Questions page for a question.
 
@@ -148,14 +148,14 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 
 `repose-ask` options:
 
-| Option            | Default    |                                                                                                                                                       |
-| ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                    |
-| `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                   |
-| `--link URL`      | none       | A button to what the question is about. `--label TEXT` names it. As on `repose-notify`.                                                               |
-| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds.                                      |
-| `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                             |
-| `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many. |
+| Option            | Default    |                                                                                                                                                                                                    |
+| ----------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                                                                 |
+| `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                                                                |
+| `--link URL`      | none       | A button to what the question is about. `--label TEXT` names it. As on `repose-notify`.                                                                                                            |
+| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds. While you are typing an answer on the dashboard, the question stays open past it. |
+| `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                                                                          |
+| `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many.                                              |
 
 It exits with:
 

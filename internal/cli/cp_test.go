@@ -72,7 +72,7 @@ func TestCpBothWays(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
-	if err := CpCmd(ctx, f.env, []string{":logs/x.log"}, out, false, ""); err != nil {
+	if err := CpCmd(ctx, f.env, []string{":logs/x.log"}, out, ""); err != nil {
 		t.Fatalf("cp from the guest: %v %s", err, f.env.ErrOut.(*discardWriter).buf.String())
 	}
 	if b, err := os.ReadFile(filepath.Join(out, "x.log")); err != nil || string(b) != "line from the guest\n" {
@@ -82,14 +82,31 @@ func TestCpBothWays(t *testing.T) {
 	if err := os.WriteFile(local, []byte(`{"from":"laptop"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CpCmd(ctx, f.env, []string{local}, testSlug+":tmp/trace.json", false, ""); err == nil {
+	if err := CpCmd(ctx, f.env, []string{local}, testSlug+":tmp/trace.json", ""); err == nil {
 		t.Fatal("copy into a directory that does not exist should fail like scp")
 	}
-	if err := CpCmd(ctx, f.env, []string{local}, testSlug+":logs/", false, ""); err != nil {
+	if err := CpCmd(ctx, f.env, []string{local}, testSlug+":logs/", ""); err != nil {
 		t.Fatalf("cp to the guest: %v", err)
 	}
 	if b, err := os.ReadFile(filepath.Join(logs, "trace.json")); err != nil || string(b) != `{"from":"laptop"}` {
 		t.Fatalf("in the guest = %q %v", b, err)
+	}
+	// A directory copies with its contents and no -r (I-1234). Probe:
+	// without the -r CpCmd adds, scp answers "not a regular file" and
+	// nothing lands.
+	export := filepath.Join(f.guestRepo(), "export")
+	if err := os.MkdirAll(filepath.Join(export, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(export, "sub", "poster.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := CpCmd(ctx, f.env, []string{":export"}, dir, ""); err != nil {
+		t.Fatalf("cp of a directory: %v %s", err, f.env.ErrOut.(*discardWriter).buf.String())
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "export", "sub", "poster.png")); err != nil || string(b) != "png" {
+		t.Fatalf("directory copy = %q %v", b, err)
 	}
 	// The classic protocol (what -O and OpenSSH before 8.8 speak) hands the
 	// remote path to the guest's shell: a space or a $ must survive it.
@@ -97,13 +114,13 @@ func TestCpBothWays(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(logs, odd), []byte("odd name\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := CpCmd(ctx, f.env, []string{":logs/" + odd}, out, false, ""); err != nil {
+	if err := CpCmd(ctx, f.env, []string{":logs/" + odd}, out, ""); err != nil {
 		t.Fatalf("cp of %q from the guest: %v", odd, err)
 	}
 	if b, err := os.ReadFile(filepath.Join(out, odd)); err != nil || string(b) != "odd name\n" {
 		t.Fatalf("copied %q = %q %v", odd, b, err)
 	}
-	if err := CpCmd(ctx, f.env, []string{"a"}, "b", false, ""); err == nil || err.(*exitError).code != ExitUsage {
+	if err := CpCmd(ctx, f.env, []string{"a"}, "b", ""); err == nil || err.(*exitError).code != ExitUsage {
 		t.Errorf("two local sides: %v", err)
 	}
 
@@ -117,11 +134,11 @@ func TestCpBothWays(t *testing.T) {
 		}
 		fwd = append(fwd, p)
 	}
-	if err := CpCmd(ctx, f.env, fwd, testSlug+":logs/", false, ""); err != nil {
+	if err := CpCmd(ctx, f.env, fwd, testSlug+":logs/", ""); err != nil {
 		t.Fatalf("cp of two files to the guest: %v", err)
 	}
 	back := t.TempDir()
-	if err := CpCmd(ctx, f.env, []string{":logs/Fwd_a.pdf", ":logs/Fwd_b c.pdf"}, back, false, ""); err != nil {
+	if err := CpCmd(ctx, f.env, []string{":logs/Fwd_a.pdf", ":logs/Fwd_b c.pdf"}, back, ""); err != nil {
 		t.Fatalf("cp of two files from the guest: %v", err)
 	}
 	for _, n := range []string{"Fwd_a.pdf", "Fwd_b c.pdf"} {
@@ -139,7 +156,7 @@ func TestCpBothWays(t *testing.T) {
 		{[]string{"./Fwd_a.pdf", "./Fwd_b.pdf"}, "/tmp", "Every argument"},
 		{[]string{"./Fwd_a.pdf"}, ":" + testSlug + ":/tmp/", "write " + testSlug + ":/tmp/"},
 	} {
-		err := CpCmd(ctx, f.env, c.srcs, c.dst, false, "")
+		err := CpCmd(ctx, f.env, c.srcs, c.dst, "")
 		if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.Error(), c.want) {
 			t.Errorf("cp %v %s: %v, want a usage error with %q", c.srcs, c.dst, err, c.want)
 		}

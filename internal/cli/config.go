@@ -20,6 +20,7 @@ const defaultLogtoIssuer = "https://accounts.herakraft.co" // the owner's Logto 
 // by name; "repose-cli" as client_id answered oidc.invalid_client at the
 // M2 gate (DECISIONS I-99). Public, like the dashboard's PUBLIC_LOGTO_APP_ID.
 const defaultLogtoClientID = "jccig5bb3i4d78bq4farv"
+
 // apiResource is the audience an access token is asked for, and it keeps
 // the old name on purpose. Logto identifies an API resource by this opaque
 // string, not by where the api answers; every installed CLI sends it and
@@ -314,8 +315,8 @@ type ProjectsCache struct {
 	Checkouts map[string]CachedCheckout `json:"checkouts,omitempty"`
 	// Folders maps each laptop folder whose `repose` remote the CLI
 	// pointed at a machine to that machine's project id (DECISIONS
-	// I-638), so `stop` and `status` run elsewhere fetch and count
-	// there. Never read to pick a project: resolve does not see it.
+	// I-638), so `status` run elsewhere counts there, and `stop -w`
+	// fetches there before it removes a worktree. Never read to pick a project: resolve does not see it.
 	Folders map[string]string `json:"folders,omitempty"`
 
 	// base is the file as this process loaded it. A save applies only what

@@ -45,6 +45,12 @@ func TestBrowserForwardArgs(t *testing.T) {
 // viewerStandIn serves what the guest's web root serves at /healthz, on a
 // free laptop port, and records the paths it was asked for.
 func viewerStandIn(t *testing.T, healthy bool) (port int, paths *[]string) {
+	return viewerStandInNamed(t, healthy, "")
+}
+
+// viewerStandInNamed is viewerStandIn whose project.json names a project,
+// as the guest's web root does (I-198); "" serves no project.json.
+func viewerStandInNamed(t *testing.T, healthy bool, name string) (port int, paths *[]string) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -55,6 +61,10 @@ func viewerStandIn(t *testing.T, healthy bool) (port int, paths *[]string) {
 		seen = append(seen, r.URL.String())
 		if r.URL.Path == "/healthz" && healthy {
 			_, _ = io.WriteString(w, "repose desktop viewer ok\n")
+			return
+		}
+		if r.URL.Path == "/project.json" && name != "" {
+			_, _ = fmt.Fprintf(w, `{"name":%q,"idle_minutes":30}`, name)
 			return
 		}
 		http.NotFound(w, r)
@@ -122,6 +132,16 @@ func TestBrowserCmdWatchesReusesAndStops(t *testing.T) {
 	desktopGuestPort = guestPort
 	t.Cleanup(func() { desktopGuestPort = old })
 
+	// This project's record points at a port where another project's
+	// viewer answers (its forward took the port after ours died): it is
+	// not reused, not killed, and a port of our own is forwarded
+	// (I-1238). Probe: with viewerIsFor removed from ensureBrowserForward
+	// the line names theirsPort and the healthz-only check passes it.
+	theirsPort, theirsSeen := viewerStandInNamed(t, true, "recruiting")
+	if err := writeBrowserForward(f.env, testSlug, browserForward{Port: theirsPort, PID: 0}); err != nil {
+		t.Fatal(err)
+	}
+
 	ctx := context.Background()
 	out, errOut := &strings.Builder{}, &strings.Builder{}
 	f.env.Out, f.env.ErrOut = out, errOut
@@ -132,6 +152,12 @@ func TestBrowserCmdWatchesReusesAndStops(t *testing.T) {
 	prefix := "Watching " + testSlug + "'s browser at http://localhost:"
 	if !strings.HasPrefix(line, prefix) || !strings.Contains(line, "/#p=s3cr3tpw (the view sleeps after 30 idle minutes).") {
 		t.Fatalf("printed %q", line)
+	}
+	if strings.Contains(line, fmt.Sprintf("localhost:%d/", theirsPort)) {
+		t.Fatalf("reused another project's viewer on %d: %q", theirsPort, line)
+	}
+	if !viewerHealthy(theirsPort) || len(*theirsSeen) == 0 {
+		t.Fatalf("the other project's forward was killed or never asked: %v", *theirsSeen)
 	}
 	if strings.Contains(errOut.String(), "s3cr3tpw") {
 		t.Fatalf("the password reached stderr: %s", errOut.String())

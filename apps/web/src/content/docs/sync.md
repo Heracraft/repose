@@ -191,7 +191,7 @@ The machine's checkout has an `origin` of its own: the SSH form of your project'
 
 ### Single files
 
-For a file that shouldn't go through git, use [`repose cp`](/docs/cli#repose-cp-r-src-dst). A path after `:` is on the machine, relative to the checkout:
+For a file that shouldn't go through git, use [`repose cp`](/docs/cli#repose-cp-src-dst). A path after `:` is on the machine, relative to the checkout:
 
 ```
 repose cp :logs/app.log .

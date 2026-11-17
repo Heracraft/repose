@@ -134,7 +134,7 @@ repose config --global show            # the account's copy
 repose config --global apply           # push the laptop's
 ```
 
-It is a home-manager module under the same rules as a project's file.
+It is a home-manager module under the same rules as a project's file. `add` puts the package list in when the file has none, or has been emptied.
 
 ```nix
 { pkgs, ... }:

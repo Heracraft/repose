@@ -70,7 +70,7 @@ func BrowserCmd(ctx context.Context, e *Env, projectArg string, opts BrowserOpti
 	if pw == "" {
 		return stepFailed("read the desktop's password", errors.New("repose-guest-profile desktop start printed none"), "")
 	}
-	port, err := ensureBrowserForward(ctx, e, project.Slug, target)
+	port, err := ensureBrowserForward(ctx, e, project, target)
 	if err != nil {
 		return err
 	}
@@ -163,16 +163,61 @@ func viewerHealthy(port int) bool {
 	return resp.StatusCode == http.StatusOK && strings.HasPrefix(string(body), "repose desktop viewer")
 }
 
+// viewerName is the project the viewer on a laptop port belongs to, from
+// the project.json the guest writes into the viewer's web root at every
+// start (nix/guest/base/desktop.nix, I-198); "" when the page does not
+// say. Every guest's viewer answers /healthz with the same words, so the
+// health check alone cannot tell one machine's viewer from another's:
+// the owner's `repose browser job` reused a port that recruiting's
+// forward had meanwhile taken, and the page refused job's password
+// (DECISIONS I-1238).
+func viewerName(port int) string {
+	c := &http.Client{Timeout: 2 * time.Second}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/project.json", port))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var v struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&v); err != nil {
+		return ""
+	}
+	return v.Name
+}
+
+// viewerIsFor reports whether the viewer on the port is this project's:
+// its page names the project, or does not say (a guest from before
+// project.json). Another project's name means another machine's forward
+// holds the port.
+func viewerIsFor(port int, p *Project) bool {
+	name := viewerName(port)
+	return name == "" || name == p.Slug || name == p.Name
+}
+
 // ensureBrowserForward returns the laptop port that reaches the project's
 // viewer: the live forward from an earlier invocation when it still
-// answers, else a new one on 6080 or the next free port (I-261).
-func ensureBrowserForward(ctx context.Context, e *Env, slug string, target sshTarget) (int, error) {
-	if f, ok := readBrowserForward(e, slug); ok {
-		if viewerHealthy(f.Port) {
+// answers for this project, else a new one on 6080 or the next free port
+// (I-261). A recorded port where another project's viewer answers is
+// that project's forward, left running; this project's record is
+// forgotten and it gets a port of its own (I-1238).
+func ensureBrowserForward(ctx context.Context, e *Env, p *Project, target sshTarget) (int, error) {
+	if f, ok := readBrowserForward(e, p.Slug); ok {
+		switch {
+		case viewerHealthy(f.Port) && viewerIsFor(f.Port, p):
 			return f.Port, nil
+		case viewerHealthy(f.Port):
+			if err := os.Remove(browserForwardPath(e, p.Slug)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return 0, err
+			}
+		default:
+			// Dead or hijacked: end whatever is left and start over.
+			_ = stopBrowserForward(e, p.Slug)
 		}
-		// Dead or hijacked: end whatever is left and start over.
-		_ = stopBrowserForward(e, slug)
 	}
 	port, err := pickLocalPort(e, desktopPort, laptopPortFree, freePort)
 	if err != nil {
@@ -182,7 +227,7 @@ func ensureBrowserForward(ctx context.Context, e *Env, slug string, target sshTa
 	if err != nil {
 		return 0, err
 	}
-	if err := writeBrowserForward(e, slug, browserForward{Port: port, PID: pid}); err != nil {
+	if err := writeBrowserForward(e, p.Slug, browserForward{Port: port, PID: pid}); err != nil {
 		return 0, err
 	}
 	return port, nil

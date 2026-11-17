@@ -77,6 +77,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/projects/{id}/questions", a(s.listProjectQuestions))
 	s.route(m, "POST /v1/projects/{id}/questions/{qid}/answer", a(s.answerQuestion))
 	s.route(m, "POST /v1/projects/{id}/questions/{qid}/cancel", a(s.cancelQuestion))
+	s.route(m, "POST /v1/projects/{id}/questions/{qid}/hold", a(s.holdQuestion))
 	// Usage and billing (DECISIONS I-289). POST /v1/billing/waitlist and
 	// GET /v1/public/seats are the seats workstream's (I-290).
 	s.route(m, "GET /v1/usage", a(s.usage))

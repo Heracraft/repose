@@ -34194,3 +34194,264 @@ in this branch.
 Nothing a user reads changes: `lifecycle.md` says "next to no CPU or
 network" and never carried the figure. `docs/features/stop-start-destroy.md`
 and `docs/workstreams/18-idle-pause.md` carry the new one.
+
+**I-1232. `repose exec` runs one quoted word with spaces in the machine's
+shell, and the laptop-path note shows the command to type.** (catchall,
+2026-11-16; amends I-275 and I-1048.)
+
+The owner, 2026-11-16, against a machine whose home is `/home/dev`:
+`repose exec notebook cat ~/ritual/ritual-paper.txt` (the laptop's shell
+expanded the `~`; I-1048's note said "write '~/ritual/ritual-paper.txt',
+quoted"), then `cat " ~/ritual/ritual-paper.txt"` (a space inside the
+quotes, from the note's own spelling), then `"cat ~/ritual/ritual-paper.txt"`
+and `'cat ~/ritual/ritual-paper.txt'`, both answered `bash: line 11:
+/home/dev/cat ~/ritual/ritual-paper.txt: No such file or directory`:
+I-275 quotes every word, so the one word became a program name. Five
+commands, no file read.
+
+Decided:
+- A command of exactly one word that has a space, tab or newline in it is
+  run as `sh -c WORD` on the machine (`execShellWords`). The only way such
+  a word reaches repose is a reader quoting a command line, and docker
+  exec's answer to it, a program called "cat ~/x", is a program nobody
+  has. The machine's shell then expands the `~`, the pipe and the glob
+  the quotes were asking for. Every other shape is unchanged: several
+  words still pass as they are, a single word with no space is still the
+  program.
+- The note for a word under this computer's home shows the whole
+  command, with that word quoted: `repose exec notebook cat
+  '~/ritual/paper.txt'`. The rule alone was read three ways; the command
+  is read one way.
+
+Rejected: running every command through a shell. It would change what
+`repose exec grep 'a b' file` means, which I-275 and I-411 settled.
+
+*Checked:* `TestExecOneQuotedWordRunsInTheMachinesShell` (the script ends
+in `exec 'sh' '-c' 'cat ~/x | head'` for one word and in `exec 'ls'
+"$HOME"/'out'` for two) and `TestLaptopHomeNoteShowsTheCommandToType`
+(internal/cli). Docs: cli.md, features/run-and-attach.md.
+
+**I-1234. `repose cp` copies a directory without `-r`.** (catchall,
+2026-11-16; amends I-201.)
+
+The owner, 2026-11-16: `repose cp parth-event:/home/dev/posters/.../export
+.` answered `scp: download ...: not a regular file`; the retry with `/*`
+was refused by fish as a wildcard with no match; the third try quoted the
+glob and worked. "This pattern keeps happening." scp's default of
+refusing a directory serves nothing a reader of `repose cp` means by
+naming one, so scp always gets `-r`. A regular file copies as before.
+`-r`/`--recursive` is still accepted, hidden, and changes nothing; it
+leaves in a release (`hiddenCommands` in docs_test.go says so).
+
+*Checked:* `TestCpBothWays` copies `:export` with a nested file and no
+`-r`; without the `-r` CpCmd adds, scp answers "not a regular file" and
+nothing lands. Docs: cli.md.
+
+**I-1236. `repose config --global add` puts the package list in when
+machine.nix has none.** (catchall, 2026-11-16; amends I-622.)
+
+The owner, 2026-11-16: `repose config --global add litellm` answered
+`~/.config/repose/machine.nix has no \`home.packages = with pkgs; [ ...
+];\` list to add; change it with \`repose config --global edit\``. The
+docs tell a reader to empty the file to remove the module, and a file
+written by hand or on the dashboard need not carry the template's list;
+`add` is then the command that cannot do the one thing it is for.
+
+Decided: on an add with no list, an empty file gets the template with the
+names in it; a module of the `{ args }: { ... }` shape gets `home.packages
+= with pkgs; [ ... ];` as the first attribute of its body, with `pkgs`
+added to the arguments when they lack it (`{ config, ... }:` becomes `{
+pkgs, config, ... }:`). A file that is neither is refused as before.
+`remove` never invents a list.
+
+*Checked:* `TestGlobalConfigCommands` (internal/cli): a module without a
+list and without `pkgs` gets both; an emptied file gets the template; a
+bare attribute set is refused with the pointer to `edit`; `remove` on a
+file with no list exits 2. Docs: features/config.md, /docs/config.
+
+**I-1238. `repose browser` tells one machine's viewer from another's.**
+(catchall, 2026-11-16; amends I-292.)
+
+The owner, 2026-11-16: `repose browser job` printed
+`http://localhost:6080/#p=...` twice and the page, titled "recruiting ·
+the agent's browser", said "The password was refused". The CLI had a
+record for job at 6080 from an earlier forward that had died; recruiting's
+forward had since taken 6080; and the record's check was `/healthz`,
+which every guest's viewer answers with the same words, so the CLI reused
+recruiting's forward with job's password.
+
+Decided: the recorded port is reused only when its `/project.json`, the
+file the guest writes into the viewer's web root at every viewer start
+(I-198), names this project, or does not say (a guest from before that
+file). A port where another project's viewer answers is that project's
+forward: it keeps running, this project's record is forgotten, and the
+project gets a port of its own (6081 and up, with the "port 6080 is
+taken" line of I-199), so both tabs work.
+
+Rejected: killing the other forward and taking 6080, which the owner
+suggested. Two machines watched at once is the case that found this, and
+one tab going dark for the other is the bug in another coat.
+
+*Checked:* `TestBrowserCmdWatchesReusesAndStops` (internal/cli) now
+starts with a record pointing at a stand-in that names `recruiting`: the
+line names another port and the stand-in still answers. Without
+`viewerIsFor` the line names the stand-in's port. Docs: features/browser.md,
+cli.md.
+
+**I-1240. `repose stop` and `repose rm` fetch nothing first.** (catchall,
+2026-11-16; reverses the fetch clause of I-615 and I-638, I-641's rm
+fetch and I-890's tuning; the owner's call.)
+
+The owner, 2026-11-16: "Whenever I stop projects now, it does fetching
+from project name and that runs for min 3-4 seconds [...] I don't think we
+should be fetching every time we stop unless it actually adds something",
+then "lets completely remove fetching before stopping. Adds unnecessary
+lag, wait for 0 real value."
+
+What the fetch bought: a stopped machine cannot be fetched from, so the
+morning's `git fetch repose` cost a start and a stop (I-615). What it
+cost: a "Fetching from <slug>" phase on every stop, 3 to 4 seconds on the
+owner's laptop with nothing new to fetch (I-890 had already cut its budget
+from 60 s to 15 s for the same complaint and left "gate it on the probe"
+as the next step). Work is moving onto the machines: a stop is taken from
+~, the checkout is on the machine, and the commits are in the stop's
+snapshot either way.
+
+Decided: `stop` and `rm` fetch nothing. The stop line still says what the
+laptop lacks (`Stopping todo-app; 3 commits on main not fetched`), read
+from the machine by the probe (I-634), so the reader knows when to fetch.
+`stop -w WINDOW` keeps its fetch (I-639, I-1060): it removes a worktree only once
+the branch is on the laptop, and that fetch is what makes the removal
+safe. `repose status` keeps counting in the laptop folders (I-638).
+`fetchBeforeStop`, `fetchBefore` and `checkMasters` are gone;
+`fetchRepose` and the fetch jobs stay for `-w`.
+
+*Checked:* `TestStopDoesNotFetch`, `TestRecordedFolderCountsAndAStopDoesNotFetchThere`,
+`TestRmDoesNotFetch` (internal/cli): the stop or destroy line is the
+first line and `refs/remotes/repose/main` does not exist afterwards;
+with `fetchBeforeStop` back, the first line is `Fetched 3 commits on
+repose/main and 1 on repose/worktree-1.`. Docs: cli.md, lifecycle,
+features/stop-start-destroy, interfaces/cli-config.
+
+**I-1242. A question is never held, and a question being answered does
+not expire.** (catchall, 2026-11-16; amends I-689 and I-244.)
+
+The owner, 2026-11-16: "I was answering a question and it expired while I
+was answering it. This should never happen. And also there's not notify
+me when the question came in. [...] Questions should always notify, even
+if you're attached. You might be attaching in a window that's in another
+desktop." On secrets: "definitely let's make an exception for secrets,
+like asking for secrets." And the missing notification for an agent's
+secret ask the same day was this: the owner was attached, so the
+`agent_question` sat in the hold.
+
+Decided:
+- `agent_question` leaves `heldKinds`. A question, a `repose-ask --secret`
+  included, is sent the moment it is queued, present or not. The other
+  agent kinds (`agent_done`, `agent_message`, `needs_input`, `error`)
+  keep I-689's hold: a report can wait ten minutes, an agent blocked on
+  an answer cannot. The "is it over" drop (I-689) still applies to a
+  question: one answered in the terminal before its first send is
+  `dropped: resolved`, not sent with buttons that answer nothing.
+- The dashboard holds a question open while the owner answers it. A row
+  whose answer field is focused or has text, and the secret dialog while
+  it is open, call `POST /projects/:id/questions/:qid/hold` at once and
+  every 60 s; the api moves `expires_at` to at least 5 minutes from now
+  (a second hold inside 30 s changes nothing; nothing lives past
+  `created_at` + 24 h + 5 min) and carries the new deadline to the guest
+  as an `AnswerQuestion` of status `extended` with `expires_unix`, so
+  the `repose-ask` the agent is blocked on moves its own clock. An
+  abandoned tab stops holding within five minutes. A guestd from before
+  this refuses the status as invalid, which closes nothing. The agent's
+  `--timeout` is a floor while nobody is answering, not a wall while
+  someone is.
+
+Kept from I-689: the hold for the four other agent kinds, and the owner's
+own words that founded it ("only have them when the user is not
+attached") now read as the case the owner has reversed, with the reason
+above.
+
+*Checked:* `TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved`
+and `TestGChatQuestionPostsWhilePresent` (internal/api/notify): a
+question is sent on the first pass with a tmux client attached; with
+`agent_question` back in `heldKinds` it reads `held`. The hold route, the
+guest's `Extend` and the dashboard's heartbeat are checked by the tests
+named in their files (internal/api/http, internal/guestd/questions,
+apps/web). Docs: features/notifications.md, /docs/notifications,
+interfaces/api.md, grpc-hostd.md, vsock-guestd.md.
+
+**I-1244. SnapshotStale counts from the later of the newest snapshot and
+the machine's start, and the gauge refreshes hourly.** (catchall,
+2026-11-16; amends 10-observability §5's `repose_api_snapshot_age_seconds`.)
+
+SnapshotStale fired from 2026-11-07 02:22 UTC for four days. Two running
+projects had been stopped on 2026-11-03 and 2026-11-04 (each stop took
+its snapshot), sat stopped, and were started on 2026-11-06. `UpdateAgeGauge`
+measured each running project's newest snapshot alone, so a machine that
+had run for an hour read as four days stale. And the gauge was refreshed
+only when the daily expiry job ran, so the number stayed flat for a day
+after the nightly snapshots that would have cleared it, and a snapshot
+that really fails is invisible to this gauge for up to a day. No snapshot
+op had failed; the runbook's causes (freeze_timeout, Blob auth, pool
+metadata) were all wrong.
+
+Decided:
+- The gauge is, over running projects, the longest time since
+  `greatest(newest snapshot, started_at)`. A running project with no
+  snapshot at all now counts from its start, where before it was not
+  counted (`min` skips a null).
+- `RunAgeGauge` refreshes it at start and hourly, on its own ticker,
+  beside the expiry job's daily sweep.
+- The alert's expression and threshold are unchanged; its comment, the
+  runbook and features/snapshots.md say what the age is measured from.
+
+*Checked:* `TestSnapshotAgeCountsFromTheLaterOfSnapshotAndStart`
+(internal/api/snapshots): a project with a four-day-old snapshot started
+an hour ago reads about 3600 s; an unsnapshotted project running two
+hours reads about 7200 s; a snapshot newer than the start counts from the
+snapshot. With the old query the first reads about four days and the
+second 0.
+
+**I-1246. cloudflared is in every machine's base, and an agent whose owner
+is away opens a quick tunnel for the port and sends the link.** (catchall,
+2026-11-17; reverses I-251's "not in the base" and amends I-1098.)
+
+The owner, 2026-11-16: the guide told an agent to run `repose-presence`
+and, on `away`, to name `repose open PORT`, which needs the laptop the
+owner is away from; "my plan was if the user is not attached, and they are
+on their phone for example, just use trycloudflare and give them a https
+url so they can see". And on 2026-11-17: "build it, no need for a wrapper,
+just tell the agent to run trycloudflare and its always in so they will be
+able to."
+
+Decided:
+- `cloudflared` joins `nix/guest/base/tool-list.nix`, so every machine
+  has it. I-251 kept it a menu entry because "most projects never need a
+  public URL"; the agent that needs one cannot add a menu entry, and a
+  URL the owner can open on a phone is now the point. Closure: 6465924664
+  bytes against the 7 GiB limit (1.0 GiB under). The menu entry stays,
+  described as already present, because a config that selected it still
+  names the id and an unknown id is refused.
+- The guide's `away` branch: run `cloudflared tunnel --url
+  http://localhost:PORT` with nohup, wait for the `trycloudflare.com` line,
+  send it with `repose-notify --link`, say it is public while it runs,
+  don't open one for a server that holds the owner's data unless asked,
+  and `pkill` it when the owner is done. The "no public URLs" line becomes
+  "that tunnel is the one public URL; don't open one for anything else".
+  No wrapper command: the owner's call, and cloudflared's own line is
+  the whole interface.
+- The quick tunnel's terms are Cloudflare's (I-251): no account, random
+  URL, 200 in-flight requests, no server-sent events, testing only. A
+  freeze ends it (`/docs/lifecycle#frozen-machines`).
+
+What this exposes: anyone with the URL reaches the server while the
+tunnel runs. The guide says so and limits it to servers the owner asked
+to see; that is the whole guard, and the owner accepted it.
+
+*Checked:* `nix build ./nix#guest-system` has
+`sw/bin/cloudflared` -> cloudflared-2026.9.1; `guest-closure-size` passes
+at the number above. `TestAgentGuideCommandsExist` names `cloudflared`,
+`nohup` and `pkill` in `guestCommands`; `TestAgentGuideCoversTheMachineDocs`
+passes. Not run on a guest: a tunnel opened by an agent (the live check
+names it). Docs: /docs/machine, /docs/agents, features/agents.md,
+features/config.md, features/webhooks.md, the menu catalog.

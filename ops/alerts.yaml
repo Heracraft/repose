@@ -660,14 +660,17 @@ groups:
 
       - alert: SnapshotStale
         # Nightly at 03:00 plus one on every stop (DESIGN §6), so 36 hours
-        # without one means two schedules have been missed.
+        # without one means two schedules have been missed. The gauge
+        # counts from the later of the newest snapshot and the machine's
+        # start, refreshed hourly (I-1244): a machine stopped for days
+        # and started this morning is hours stale, not days.
         expr: repose_api_snapshot_age_seconds > 36 * 3600
         for: 10m
         labels:
           severity: warn
         annotations:
-          summary: "a running project has no snapshot for over 36 hours"
-          description: "Oldest last-snapshot is {{ $value | humanizeDuration }}. A host loss now loses up to that much of a tenant's work."
+          summary: "a running project has run 36 hours past its newest snapshot or its start"
+          description: "The longest run since a snapshot or a start is {{ $value | humanizeDuration }}. A host loss now loses up to that much of a tenant's work."
           runbook: "docs/ops/RUNBOOK.md#snapshotstale"
 
       - alert: GatewayAuthSpike
@@ -966,9 +969,10 @@ groups:
           runbook: "docs/ops/RUNBOOK.md#gatewaydialfailing"
 
       - alert: SnapshotFailing
-        # SnapshotStale reads the api's backstop gauge, which the expiry
-        # job refreshes on a 24-hour ticker, so a snapshot that fails now
-        # is invisible for up to that long plus the alert's window. The
+        # SnapshotStale reads the api's backstop gauge, which the api
+        # refreshes hourly (I-1244; it was the expiry job's 24-hour
+        # ticker), so a snapshot that fails now is invisible there for up
+        # to an hour plus the alert's window. The
         # histogram's count is observed by the failing path itself
         # (snapshot.go), so this fires within the hour.
         expr: sum by (host_id, result) (increase(repose_host_snapshot_duration_seconds_count{result!="ok"}[1h])) > 0

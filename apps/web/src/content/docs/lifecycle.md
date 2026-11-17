@@ -38,11 +38,10 @@ The dashboard's **Projects** page lists the same projects, with **Stop** on a ru
 $ repose stop todo-app
 todo-app has claude (working). Stopping ends it. Stop todo-app?
 [y/N] y
-Fetched 2 commits on repose/main.
-Stopping todo-app; 1 file not committed.
+Stopping todo-app; 2 commits on main not fetched.
 ```
 
-A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
+A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer. Nothing is fetched: the snapshot holds the commits, and `git fetch repose` brings them to your laptop when you want them. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
 
 The dashboard asks the same question, in the same words, before a Stop that would end an agent's turn, on the project's page and on a row of **Projects**, with **Stop anyway** and **Keep it running**. A machine with no agent mid-turn or waiting on an answer stops on one click.
 

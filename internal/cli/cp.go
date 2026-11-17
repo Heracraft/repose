@@ -23,7 +23,13 @@ import (
 //	repose cp :logs/x.log .
 //	repose cp izma:/tmp/trace.json ./trace.json
 //	repose cp ./report-*.pdf izma:/tmp/
-//	repose cp -r ./fixtures :test/fixtures
+//	repose cp ./fixtures :test/fixtures
+//
+// A directory copies with what is in it: scp always gets -r (DECISIONS
+// I-1234). The owner's `repose cp parth-event:.../export .` answered
+// "not a regular file" and the retry was a glob the shell refused;
+// nothing a reader means by copying a folder is served by scp's default.
+// -r is still accepted and changes nothing.
 
 // scpExtraArgs is added to every scp; tests set -O (the classic protocol)
 // because the local sshd harness has no SFTP server. A real guest's sshd
@@ -81,19 +87,20 @@ func (s cpSide) relative() bool {
 func newCpCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var recursive bool
 	cmd := &cobra.Command{
-		Use:   "cp [-r] SRC... DST",
+		Use:   "cp SRC... DST",
 		Short: "Copy files to or from a machine",
 		Long: `Copy files between the laptop and a machine with scp. One side names the
 machine: PROJECT:PATH for a project's, :PATH for this checkout's. A relative
-path on the machine starts in its checkout. Several sources copy into the
-destination directory, so a glob such as ./logs/* works.`,
+path on the machine starts in its checkout. A directory copies with its
+contents. Several sources copy into the destination directory, so a glob
+such as ./logs/* works.`,
 		// `copy` led to `repose fork` until it was removed (I-1082);
 		// the command that copies files is the one it means now.
 		SuggestFor: []string{"copy"},
 		Example: "  repose cp :logs/x.log .\n" +
 			"  repose cp todo-app:/tmp/trace.json .\n" +
 			"  repose cp ./report-*.pdf todo-app:/tmp/\n" +
-			"  repose cp -r ./fixtures :test/fixtures",
+			"  repose cp ./fixtures :test/fixtures",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 2 {
 				return cobraUsageError{fmt.Errorf("repose cp takes SRC... DST, one side PROJECT:PATH or :PATH; got %s", gotArgs(args))}
@@ -105,10 +112,13 @@ destination directory, so a glob such as ./logs/* works.`,
 			if err != nil {
 				return err
 			}
-			return CpCmd(cmd.Context(), e, args[:len(args)-1], args[len(args)-1], recursive, g.project)
+			return CpCmd(cmd.Context(), e, args[:len(args)-1], args[len(args)-1], g.project)
 		},
 	}
-	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "copy directories")
+	// Accepted for the hands that type it; a directory copies without it
+	// (I-1234).
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "copy directories (always on)")
+	_ = cmd.Flags().MarkHidden("recursive")
 	cmd.ValidArgsFunction = completeCpArg(env)
 	return cmd
 }
@@ -116,7 +126,7 @@ destination directory, so a glob such as ./logs/* works.`,
 // CpCmd resolves the one guest side, refreshes the certificate the way
 // run does, and runs scp over the project's multiplexed connection. The
 // sources are all on one side and the destination on the other.
-func CpCmd(ctx context.Context, e *Env, srcArgs []string, dstArg string, recursive bool, projectFlag string) error {
+func CpCmd(ctx context.Context, e *Env, srcArgs []string, dstArg string, projectFlag string) error {
 	if len(srcArgs) == 0 {
 		return exitf(ExitUsage, "repose cp takes SRC... DST; got no source.")
 	}
@@ -190,9 +200,7 @@ func CpCmd(ctx context.Context, e *Env, srcArgs []string, dstArg string, recursi
 		}
 	}
 	args = append(args, opts...)
-	if recursive {
-		args = append(args, "-r")
-	}
+	args = append(args, "-r") // a directory copies with its contents (I-1234)
 	for _, s := range append(srcs, dst) {
 		if s.Remote {
 			p := s.guestPath(checkout)

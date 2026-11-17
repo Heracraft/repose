@@ -10,14 +10,13 @@ import (
 	"sync"
 )
 
-// A machine's laptop folders (DECISIONS I-638). `stop` fetches the
-// agent's commits and `status` counts what the laptop lacks in every
-// folder on this laptop whose `repose` remote is the machine, wherever
-// the command runs: a machine stopped from ~ with `stop api web` or
-// `stop --unused` no longer leaves its commits behind until the next
-// start. projects.json's `folders` remembers each folder the CLI pointed
-// a `repose` remote at; by_dir and checkouts name more. A folder counts
-// only while its `repose` remote still names the machine.
+// A machine's laptop folders (DECISIONS I-638). `status` counts what the
+// laptop lacks, and `stop -w` fetches before it removes a worktree, in
+// every folder on this laptop whose `repose` remote is the machine,
+// wherever the command runs. (`stop` and `rm` fetched here too until
+// I-1240.) projects.json's `folders` remembers each folder the CLI
+// pointed a `repose` remote at; by_dir and checkouts name more. A folder
+// counts only while its `repose` remote still names the machine.
 
 // rememberFolder records root as a laptop folder of project id, saving
 // projects.json only when that is news. A failed save is a warning: the
@@ -82,7 +81,7 @@ func (e *Env) laptopFolders(p *Project) []string {
 	return out
 }
 
-// fetchJob is one folder fetchBeforeStop fetches into.
+// fetchJob is one folder a fetch goes into (stop -w, stop_window.go).
 type fetchJob struct {
 	slug, root string
 	here       bool // the working directory's checkout
@@ -168,15 +167,4 @@ func (j *fetchJob) fetchFailure(what string) string {
 		where = " into " + laptopPath(j.root)
 	}
 	return fmt.Sprintf("Could not fetch from %s%s before %s: %s", j.slug, where, what, oneLine(j.err.Error()))
-}
-
-// slugsOfJobs is the projects the jobs fetch from, each once, in order.
-func slugsOfJobs(jobs []*fetchJob) []string {
-	var out []string
-	for _, j := range jobs {
-		if len(out) == 0 || out[len(out)-1] != j.slug {
-			out = append(out, j.slug)
-		}
-	}
-	return out
 }

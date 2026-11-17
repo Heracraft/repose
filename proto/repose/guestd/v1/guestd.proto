@@ -45,7 +45,15 @@ message Shutdown { uint32 timeout_s = 1; }
 // on (DECISIONS I-244): status answered|cancelled|expired|no_channel, and
 // the user's answer when answered. Answering an already-closed question
 // with the same status is a no-op; an unknown question_id is not_found.
-message AnswerQuestion { string question_id = 1; string status = 2; string answer = 3; }
+// status `extended` (DECISIONS I-1242) closes nothing: expires_unix (unix
+// seconds) is the question's new deadline, applied only when it is later
+// than the one it has.
+message AnswerQuestion {
+  string question_id = 1;
+  string status = 2;
+  string answer = 3;
+  int64 expires_unix = 4;
+}
 // SayToAgent is a message the owner typed for one of this guest's agents
 // (DECISIONS I-1144). text is tenant content, capped at 4 KB, and is
 // never logged. window is the tmux window or herdr agent key; empty means

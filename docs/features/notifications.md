@@ -140,21 +140,25 @@ Events (see agents.md for how each agent produces them):
   than a button, stays the project's page, or the Questions page for a
   question.
 - Presence hold (DECISIONS I-689): while the owner is at the machine,
-  nothing an agent reports reaches their phone. Present means the
+  nothing an agent reports reaches their phone, except a question
+  (I-1242): `agent_question`, a secret ask included, goes out at once,
+  because the owner at the machine may be in another window or on
+  another desktop and an agent waits on nothing else. Present means the
   project's latest guest sample, at most 2 minutes old, shows a tmux
   client or an SSH session (`meter_samples.tmux_clients + ssh_sessions >
   0`; a laptop herdr bridge is an SSH session, I-511). The outbox worker
-  checks it at send time for `agent_question`, `agent_done`,
-  `agent_message`, `needs_input` and `error` (`repose-presence` in the
-  guest answers the same question from the machine, I-1098, agents.md):
+  checks it at send time for `agent_done`, `agent_message`,
+  `needs_input` and `error` (`repose-presence` in the guest answers the
+  same question from the machine, I-1098, agents.md):
   while present it moves the
   row's `next_at` on by 1 minute without counting an attempt and writes
   `held` to `delivered[channel]`, for at most 10 minutes from the event,
   then sends. Before sending such a row, the worker drops it and writes
-  `dropped: resolved` when what it reports is over: the question is no
-  longer pending (answered anywhere, answered in the terminal,
-  withdrawn, expired), or a `needs_input` has a later event from the same
-  agent and window. Platform and account kinds are never held.
+  `dropped: resolved` when what it reports is over (a question too,
+  though never held): the question is no longer pending (answered
+  anywhere, answered in the terminal, withdrawn, expired), or a
+  `needs_input` has a later event from the same agent and window.
+  Platform and account kinds are never held.
 - Delivery runs on up to 8 workers. Each user's rows on one channel go in
   order on one lane, so a hanging ntfy server delays its owner's rows
   only (I-691). Resend gets `Idempotency-Key: <event id>/email`, so a
@@ -234,6 +238,17 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
 - The answer reaches the waiting command within seconds over the
   hostd↔guestd channel, and survives a hostd, api or guestd restart; a
   guest that stops or reboots ends its questions.
+- A question being answered on the dashboard is held open (DECISIONS
+  I-1242): while the row's field has focus or a draft, or the secret
+  dialog is open for the question, the page calls `POST
+  /projects/:id/questions/:qid/hold` at once and every minute, and each
+  hold moves the expiry to five minutes from then (never past created_at
+  + 24 h + 5 min) and carries the new deadline to the guest as
+  `AnswerQuestion` status `extended`. The agent's `--timeout` is a floor,
+  not a wall, while the owner is typing; a tab that is closed stops
+  holding, and the question runs out within five minutes. Failure that
+  must not happen: an answer typed into the field lost because the
+  question expired under it (2026-11-16).
 - Question and answer text are tenant content: shown to the owner, never
   logged, and stored like an event summary.
 

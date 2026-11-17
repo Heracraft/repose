@@ -543,6 +543,7 @@ func (a *App) loops(ctx context.Context) {
 	}
 	expiry := snapshots.New(a.pool, blob, a.m, a.log)
 	go expiry.Run(ctx, 24*time.Hour)
+	go expiry.RunAgeGauge(ctx, time.Hour)
 	rollup := billing.NewRollup(a.pool, a.m, a.log)
 	// The burst allowance (DECISIONS I-1128). It reads usage_hours, so
 	// it runs beside the rollup that fills them and under the same lock.

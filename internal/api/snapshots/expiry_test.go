@@ -2,6 +2,8 @@ package snapshots_test
 
 import (
 	"context"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"log/slog"
 	"os"
 	"testing"
@@ -262,5 +264,44 @@ func TestForkSnapshotIsNotOneOfTheSeven(t *testing.T) {
 	s, _ := store.GetSnapshot(ctx, pool, forkSnap)
 	if s.DeletedAt != nil || !b.Exists(s.BlobPath) {
 		t.Fatal("the fork's snapshot was retired by the count cap")
+	}
+}
+
+// TestSnapshotAgeCountsFromTheLaterOfSnapshotAndStart (I-1244): a project
+// that sat stopped for days and started an hour ago is an hour stale,
+// not days; a running project with no snapshot counts from its start;
+// and the gauge is the worst case over running projects. Probe: with the
+// old query (min of the newest snapshot alone) the first check reads
+// about 4 days, and the second reads 0 because a project with no
+// snapshot was not counted.
+func TestSnapshotAgeCountsFromTheLaterOfSnapshotAndStart(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	b := blob.New()
+	m := metrics.New(prometheus.NewRegistry())
+	e := snapshots.New(pool, b, m, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	restarted := project(t, pool, false)
+	snap(t, pool, b, restarted, 4*24*time.Hour, nil) // the stop's snapshot, four days ago
+	if _, err := pool.Exec(ctx, "update projects set started_at = now() - interval '1 hour' where id = $1", restarted); err != nil {
+		t.Fatal(err)
+	}
+	e.UpdateAgeGauge(ctx)
+	if got := testutil.ToFloat64(m.SnapshotAgeSeconds); got < 3500 || got > 3700 {
+		t.Fatalf("age after a restart = %.0fs, want about an hour", got)
+	}
+	// Never snapshotted, running for two hours: the worst case now.
+	fresh := project(t, pool, false)
+	if _, err := pool.Exec(ctx, "update projects set started_at = now() - interval '2 hours' where id = $1", fresh); err != nil {
+		t.Fatal(err)
+	}
+	e.UpdateAgeGauge(ctx)
+	if got := testutil.ToFloat64(m.SnapshotAgeSeconds); got < 7100 || got > 7300 {
+		t.Fatalf("age with an unsnapshotted project = %.0fs, want about two hours", got)
+	}
+	// A snapshot newer than the start counts from the snapshot.
+	snap(t, pool, b, fresh, 10*time.Minute, nil)
+	e.UpdateAgeGauge(ctx)
+	if got := testutil.ToFloat64(m.SnapshotAgeSeconds); got < 3500 || got > 3700 {
+		t.Fatalf("age once the fresh project is snapshotted = %.0fs, want the restarted project's hour", got)
 	}
 }
