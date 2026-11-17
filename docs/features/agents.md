@@ -44,7 +44,7 @@ picks another for one prompt.
 | Agent | Binary | Window | How it reports | Login in guest |
 |---|---|---|---|---|
 | Claude Code | `claude` | `claude` | `Notification`, `Stop` and `UserPromptSubmit` hooks in `~/.claude/settings.json` run `repose-hook`: prompt, finished, needs input | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
-| opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 1 and OpenCode 2, I-481) sends prompt (V1 `chat.message`, I-690), finished (`session.idle`; V2 `session.execution.succeeded`), needs input (`permission.asked`), error (`session.error`; V2 `session.execution.failed`) | `~/.local/share/opencode/auth.json` synced from the laptop |
+| opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 2, the machine's, and version 1 for a reader who kept one: I-481, I-1050) sends prompt (V2 `session.execution.started`; V1 `chat.message`, I-690), finished (V2 `session.execution.succeeded`; V1 `session.idle`), needs input (`permission.asked`), error (V2 `session.execution.failed`; V1 `session.error`) | `~/.local/share/opencode/auth.json` synced from the laptop; version 2 keeps its own logins in `~/.local/share/opencode/opencode.db`, so whether a copied `auth.json` still reaches it is the live check on I-1050 |
 | Codex CLI | `codex` | `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`: finished; a `UserPromptSubmit` hook in `/etc/codex/config.toml` (I-690): prompt | `~/.codex/auth.json` synced from the laptop |
 | Gemini CLI | `gemini` | `gemini` | `BeforeAgent` and `AfterAgent` hooks in the platform extension's `hooks/hooks.json` (I-690): prompt, finished; the tmux pane-idle heuristic until the first hook, or herdr's own detection on a herdr project (I-504) | `GEMINI_API_KEY` named secret, or log in on the machine |
 | pi | `pi` | `pi` | the platform pi extension's `input` and `agent_end` handlers (I-690): prompt, finished; the tmux pane-idle heuristic until the first hook, or herdr's own detection on a herdr project (I-504) | provider API key as a named secret |
@@ -323,8 +323,8 @@ window's contents: nothing here reads the window.
   lasts as long as the server. CPU in the pane says nothing (a dev server
   the agent started uses it too). Claude and codex are hooked from the
   start; gemini, pi and opencode once their window sent a prompt hook.
-  OpenCode 2 sends none and, like any agent with no hooks, shows `running`
-  while its process is alive. A shell window with no agent in front is no agent,
+  An agent with no hooks shows `running` while its process is alive.
+  A shell window with no agent in front is no agent,
   and `repose stop` asks only about agents `working` or `needs_input`.
   An agent started by hand in another window (the `shell` window) is one
   of them while it is that window's foreground program (I-421).
@@ -349,7 +349,7 @@ I-553, I-554):
 |---|---|---|---|
 | Claude Code | `~/.claude.json` `mcpServers`, from `/etc/repose/mcp.json`, by `repose-mcp sync claude` (I-555) | `/mcp`, per project | wins (I-246) |
 | Codex | `~/.codex/config.toml` `[mcp_servers.NAME]`, by `repose-mcp sync codex` (I-555); on a base without `repose-mcp`, appended by `repose-agent-setup` when the parsed file lacks NAME; a file that is a symlink (home-manager) is left alone | `enabled = false` in that table | wins; repose never touches a table it did not write |
-| opencode | `/etc/opencode/opencode.json` `mcp.NAME`, `{type: "local", command: [...]}` | `{"mcp":{"playwright":{"enabled":false}}}` in `~/.config/opencode/opencode.json` | merged field by field; the user picks another name |
+| opencode | `~/.config/opencode/opencode.json` `mcp.servers.NAME`, `{type: "local", command: [...]}`, by `repose-mcp sync opencode` (I-1050: opencode 2 puts `/etc/opencode` above the user's file, so a platform layer there would take the switch away; version 1 read `mcp.NAME` beneath it) | `"disabled": true` on that entry; the entry is then the user's and stays as written | wins; repose never touches an entry it did not write |
 | Gemini CLI | `/etc/gemini-cli/system-defaults.json` `mcpServers`, a copied root 0644 file | `{"mcp":{"excluded":["playwright"]}}` in `~/.gemini/settings.json` | replaces ours whole |
 | pi | `pi.registerMcpServer` in `/etc/repose/pi-extension.js` (pi 0.99 and later) | `{"mcpServers":{"playwright":{"command":"playwright-mcp","enabled":false}}}` in `~/.pi/agent/mcp.json` | wins |
 
@@ -389,7 +389,7 @@ writes to `laptop.json`, and each forwarded server in `forward/NAME.json`.
 `repose-mcp sync AGENT`, run by `repose-agent-setup` at every agent start,
 writes that list into the agent's own config: `~/.claude.json` (user scope,
 and `projects[<path>]` for a checkout's servers), `~/.codex/config.toml`,
-the Gemini CLI extension `repose-mcp`, `~/.config/opencode/config.json`
+the Gemini CLI extension `repose-mcp`, `~/.config/opencode/opencode.json`
 (which opencode loads beneath the user's `opencode.json`), and
 `~/.repose/mcp/agents/pi.json` for pi's extension. The carry and the
 forward never touch an agent file. repose writes `~/.claude.json` from

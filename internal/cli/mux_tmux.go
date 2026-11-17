@@ -168,9 +168,12 @@ var agentPromptArgs = map[string]func(prompt string) ([]string, bool){
 	// the help banner, `--prompt=-lead` starts the TUI. The positional is
 	// a project path and `opencode run` is headless, so neither is used.
 	// Seen taking the argument in a tmux window on the dev box (again a
-	// hand-made window) on 1.18.30, where the guest pins 1.18.34: the
-	// prompt appears as the submitted user message, the model answered
-	// it, and the TUI stayed interactive.
+	// hand-made window) on 1.18.30: the prompt appears as the submitted
+	// user message, the model answered it, and the TUI stayed
+	// interactive. The guest pins 2.2.5 now (I-1050), whose own
+	// `--help` still lists `--prompt string  Prompt to use` (read off
+	// the built binary); that it takes a leading `-` with `=` is on
+	// I-1050's live checks.
 	"opencode": func(p string) ([]string, bool) { return []string{"--prompt=" + p}, true },
 	// pi: `pi [options] [--] [@files...] [messages...]`, "message
 	// Provide an initial prompt", "`--` Stop option parsing so a prompt

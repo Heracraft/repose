@@ -1,8 +1,1 @@
-{
-  "mcp": {
-    "baz": {
-      "type": "remote",
-      "url": "https://baz.example/mcp"
-    }
-  }
-}
+{"mcp":{"foo":{"type":"remote","url":"https://foo.example/mcp"}}}

@@ -140,7 +140,7 @@ A question can be answered in five places:
 
 The value is stored as the project's secret NAME, as [`repose secrets set NAME`](/docs/secrets#store-an-api-key) stores it, and replaces a value the project already had. The agent never sees it in the answer. Its `repose-ask` waits 2 hours unless the agent asks for less, and returns once the machine has the secret; its next command reads `$NAME`.
 
-You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
+You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions.
 
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. The dashboard says where an answer came from, such as `Answered yes by email` or `Answered in the terminal`. **Dismiss** on the dashboard ends a question without answering.
 

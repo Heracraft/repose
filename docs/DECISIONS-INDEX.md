@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-980 entries.
+981 entries.
 
 ## Scope
 
@@ -543,472 +543,473 @@ pointer, not a summary.
 - **I-480** One machine holds several checkouts: `repose run --on PROJECT` — 2026-10-04; amended by I-509; amended by I-618; L12585
 - **I-484** A command that worked says what happened and stops; the next command is for failures and refusals — 2026-10-04; amended by I-570; L12624
 - **I-485** Trust the reader: say what is true, where they look for it, once, and stop — 2026-10-04; L12689
-- **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; L12754
-- **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; superseded by I-501; L12794
-- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; amended by I-495; amended by I-547; L12819
-- **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12859
-- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; amended by I-544; L12885
-- **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12935
-- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; amended by I-519; amended by I-508; L12967
-- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; amended by I-659; L13028
-- **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L13055
-- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; amended by I-505; amended by I-576; L13073
-- **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; amended by I-546; L13091
-- **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13118
-- **I-543** Gemini CLI and pi never update themselves on a guest — 2026-10-06; L13139
-- **I-544** The CLI marks the folder it starts Codex in as trusted — 2026-10-06; L13178
-- **I-545** Withdrawn: platform MCP servers for Codex, opencode and Gemini CLI — 2026-10-06; superseded by I-553; L13204
-- **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13213
-- **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13234
-- **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13261
-- **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; amended by I-1148; L13277
-- **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13348
-- **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; amended by I-558; L13378
-- **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13513
-- **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13626
-- **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13742
-- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; amended by I-663; superseded by I-672; L13783
-- **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13854
-- **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13865
-- **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13889
-- **I-522** A carried cargo tool gets rustup a default toolchain first — 2026-10-05; L13911
-- **I-523** Python packages go in a venv; pipx gets the nix-ld python3; Tk comes with a uv Python — 2026-10-05; L13928
-- **I-524** A carried Ruby with RubyGems 3.7 gets Bundler 2.7 — 2026-10-05; L13944
-- **I-512** The base ships terminfo for Ghostty's and kitty's own TERM — 2026-10-05; L13964
-- **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13984
-- **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L14012
-- **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L14049
-- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; amended by I-577; L14085
-- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L14104
-- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L14125
-- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L14143
-- **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L14161
-- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; amended by I-614; amended by I-636; L14186
-- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; partly amended by I-597; L14203
-- **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L14241
-- **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L14275
-- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; amended by I-688; amended by I-694; L14291
-- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; amended by I-576; L14321
-- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L14340
-- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L14355
-- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L14366
-- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; amended by I-596; amended by I-597; amended by I-598; amended by I-606; L14385
-- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; amended by I-598; amended by I-602; L14420
-- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14442
-- **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14453
-- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14469
-- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-733; L14517
-- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L14584
-- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14646
-- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14665
-- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14701
-- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; amended by I-598; L14728
-- **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14793
-- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14806
-- **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14820
-- **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14839
-- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14865
-- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14878
-- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; amended by I-587; amended by I-588; L14902
-- **I-530** dev is a trusted nix user — 2026-10-06; L14941
-- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14955
-- **I-532** The guest has no nix channels — 2026-10-06; L14976
-- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; amended by I-718; L14987
-- **I-534** The guest has man pages — 2026-10-06; L15023
-- **I-550** A guest's hostname is its project's slug — 2026-10-06; L15038
-- **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L15059
-- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L15090
-- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L15117
-- **I-539** dev may ptrace its own processes — 2026-10-05; L15133
-- **I-540** The browser has CJK fonts — 2026-10-05; L15142
-- **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; amended by I-1108; L15160
-- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15172
-- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-733; L15222
-- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15330
-- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15354
-- **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15381
-- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15440
-- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; amended by I-618; amended by I-1100; L15457
-- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15554
-- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; amended by I-601; L15612
-- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15657
-- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; amended by I-904; L15767
-- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; amended by I-585; L15798
-- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; amended by I-655; L15869
-- **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15894
-- **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L15996
-- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; amended by I-841; L16058
-- **I-587** A start removes the whiteouts in the store overlay's upper dir before stage 2 — 2026-10-07; L16088
-- **I-588** guestd roots every store path the host shares into the guest, so no nix garbage collection inside it deletes one — 2026-10-07; L16119
-- **I-589** A switch to a closure a whiteout hides fails saying so, with its own code — 2026-10-07; L16158
-- **I-590** A boot that never reaches Ready falls back to the guest's last good closure, once, and the start ends running with a warning — 2026-10-07; L16194
-- **I-591** ApplyConfig on a stopped guest checks what the boot will read from the host — 2026-10-07; L16262
-- **I-592** A boot that never reaches Ready is classified from its console, and the console reaches its owner through `repose logs --kind console` — 2026-10-07; L16275
-- **I-593** A Switch error guestd codes reaches the api with its code — 2026-10-07; L16324
-- **I-599** A refusal of the user's own certificate does not count towards the gateway's per-source ban, and failures and bans are logged — 2026-10-07; L16348
-- **I-594** A snapshot of a killed guest replays its journal on the LVM snapshot and goes out as extents — 2026-10-07; L16388
-- **I-595** A size change restarts without a snapshot, and a restore says how big its snapshot was — 2026-10-07; L16452
-- **I-596** On herdr, the sync that makes the checkout closes the idle `home` workspace, as tmux respawns its `shell` window — 2026-10-07; L16492
-- **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16519
-- **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16555
-- **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; amended by I-604; L16597
-- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16635
-- **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16680
-- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; amended by I-888; L16707
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16768
-- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; amended by I-890; L16835
-- **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16885
-- **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16919
-- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16934
-- **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16964
-- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16976
-- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; L17061
-- **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17150
-- **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17176
-- **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17230
-- **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17272
-- **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; amended by I-629; amended by I-631; L17290
-- **I-623** One sentence and one exit code per kind of failure: the network is 1, a plan limit is 7, capacity is 8 wherever it happens — 2026-10-09; amended by I-632; L17356
-- **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17400
-- **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; amended by I-634; L17412
-- **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; amended by I-631; amended by I-633; L17427
-- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; L17452
-- **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; amended by I-632; amended by I-635; L17488
-- **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17507
-- **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17564
-- **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17584
-- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; amended by I-1236; L17603
-- **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17662
-- **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17695
-- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; amended by I-750; amended by I-888; L17794
-- **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17891
-- **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — amended by I-894; L17930
-- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; amended by I-1108; L18028
-- **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18091
-- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; amended by I-757; L18123
-- **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18165
-- **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — amended by I-641; L18188
-- **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18209
-- **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; amended by I-1128; L18238
-- **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18385
-- **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18409
-- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; amended by I-837; amended by I-841; L18428
-- **I-656** One frame for every page (web-polish, 2026-10-11) — L18472
-- **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18493
-- **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18501
-- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; amended by I-837; L18521
-- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — amended by I-681; amended by I-837; L18549
-- **I-661** An armed danger button (web-polish, 2026-10-11) — L18596
-- **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18603
-- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; amended by I-837; L18647
-- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; amended by I-837; amended by I-841; L18676
-- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; amended by I-837; L18763
-- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; amended by I-837; amended by I-841; L18800
-- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; amended by I-837; amended by I-841; L18827
-- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; amended by I-837; L18857
-- **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18908
-- **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18948
-- **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18996
-- **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L19058
-- **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L19102
-- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19118
-- **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19166
-- **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19185
-- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19289
-- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19503
-- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — amended by I-757; L19562
-- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — partly amended by I-848; L19688
-- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19746
-- **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19778
-- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; partly superseded by I-841; amended by I-826; amended by I-856; L19796
-- **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; superseded by I-837; L19826
-- **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; superseded by I-837; L19876
-- **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; superseded by I-837; L19955
-- **I-667** The hero tells the snapshot story with true causes, on a balanced stage that is never empty (landing-hero, 2026-10-11) — amended by I-677; superseded by I-837; L20012
-- **I-677** The hero's copies stay inside the panel they are drawn in, one drawing at a time, and the stage fits 1280x800 (landing-fix-hero, 2026-10-11) — superseded by I-837; L20087
-- **I-673** The landing's pictures share one grammar: one window head, one chip, one machine wall, one radius, a dark scheme that layers as the light one does, the pause button on the floor (landing-fix-grammar, 2026-10-11) — amended by I-684; superseded by I-837; L20144
-- **I-675** The two story panels: copies seen only in the panel they land in, the machine never an empty box, and ComesBack in a closed window with its snapshots under it where it is narrow (landing-fix-panels, 2026-10-11) — amended by I-684; superseded by I-837; L20209
-- **I-676** The grid's Browser, Localhost and Editor without doubled text or cut lines, and grid pictures that take turns (landing-fix-browser, 2026-10-11) — superseded by I-837; L20264
-- **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — superseded by I-837; L20334
-- **I-642** The pricing research carries Hetzner's 15 June 2026 dedicated prices, and the plans lose money on Hetzner too (hetzner-repricing, 2026-10-09) — L20377
-- **I-672** Launch at ladder C: Solo $49, Plus $89, Pro $169, with a founding $39 for the first 30 Solo subscribers (pricing-directions, 2026-10-11) — L20402
-- **I-678** A Polar event about a customer or product repose does not know is acknowledged, not failed — 2026-10-12; L20449
-- **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20468
-- **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20485
-- **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20594
-- **I-734** The oversubscription ratio is counted against physical cores, not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15) — amended by I-784; L20663
-- **I-735** Hosts report physical cores, and the api records them (cpu-weight, 2026-10-15) — L20720
-- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; L20761
-- **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; amended by I-1168; L20820
-- **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20858
-- **I-746** The validity pass stops eating the boot deadline and blaming `--load-db` for it (cpu-weight, 2026-10-15) — L20904
-- **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; amended by I-1168; L20939
-- **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L21012
-- **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L21039
-- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — amended by I-1242; L21052
-- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L21062
-- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21078
-- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21092
-- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — amended by I-837; amended by I-841; L21105
-- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L21116
-- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L21125
-- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L21131
-- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L21147
-- **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L21155
-- **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L21231
-- **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L21250
-- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L21287
-- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — amended by I-718; L21325
-- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L21352
-- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L21388
-- **I-700** A restore downloads its snapshot once and checks the digest as it writes (fork-fast, 2026-10-13) — L21418
-- **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L21469
-- **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L21572
-- **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L21597
-- **I-733** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-15) — L21618
-- **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21716
-- **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21834
-- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — amended by I-771; L21927
-- **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21988
-- **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L22035
-- **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L22129
-- **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L22202
-- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L22244
-- **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L22280
-- **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L22306
-- **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L22336
-- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L22384
-- **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22421
-- **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22456
-- **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22482
-- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; amended by I-743; amended by I-744; L22507
-- **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22578
-- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22622
-- **I-716** The fetch does not start during boot — 2026-10-13; L22669
-- **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22680
-- **I-740** The stop reads the checkout within its own 15 s, past a dead master and with no stdin to wait on, and says when it could not; the gateway holds a session's EOF until the guest accepts its command (stop-probe, 2026-10-14). Amends I-634, I-710 — L22715
-- **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22799
-- **I-742** The apply reports its own steps' times — 2026-10-14; L22831
-- **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22870
-- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22924
-- **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22967
-- **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22973
-- **I-752** A typed prompt is checked and the Enter is pressed again; an unsubmitted prompt is said out loud — 2026-10-17; amended by I-780; L22987
-- **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L23003
-- **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L23008
-- **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L23013
-- **I-757** An agent window whose agent had already exited comes back as the shell it held; amends I-636, I-646 — 2026-10-17; L23017
-- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; amended by I-781; L23022
-- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23035
-- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; amended by I-1086; L23042
-- **I-750** A word after `--temp` that is not a duration is the project's name, and the docs stop promising otherwise; amends I-631 — 2026-10-16; L23053
-- **I-761** The projects list is ordered by what wants you, then what is up, then what is at rest; the api's order is not a reading order — 2026-10-17; L23062
-- **I-762** /projects has a search and a state filter, both in the URL, and the list is capped at 25 with "Show all N" — 2026-10-17; L23069
-- **I-751** The bridge's allowlist survives the warm attach, and a `--allow` that names no host is refused; amends I-305, with I-311's enforcement — 2026-10-17; L23076
-- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L23082
-- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23129
-- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23168
-- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23229
-- **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23300
-- **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L23339
-- **I-765** The dashboard asks before it ends an agent's turn, and can keep a temporary machine: parity with the CLI where the CLI has a rule — 2026-10-17; L23348
-- **I-766** Every line on the dashboard says what is true, and the pages that poll stop paying for what nobody reads — 2026-10-17; L23356
-- **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L23369
-- **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23376
-- **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23420
-- **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; amended by I-837; L23457
-- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; amended by I-936; L23540
-- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23607
-- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23633
-- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23664
-- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — partly amended by I-1126; amended by I-1168; L23677
-- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23916
-- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23982
-- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24213
-- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24245
-- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; L24372
-- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24721
-- **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24784
-- **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24839
-- **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24877
-- **I-806** `usage_hours` records `attended_seconds` and `unattended_agent_seconds` — 2026-10-19; L24900
-- **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24923
-- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24950
-- **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24969
-- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25006
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; amended by I-1230; L25011
-- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25141
-- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; amended by I-1114; L25169
-- **I-824** The pause must never cost a machine its memory — L25212
-- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; amended by I-896; L25246
-- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25278
-- **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L25297
-- **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L25330
-- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L25372
-- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L25419
-- **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L25472
-- **I-856** A frozen machine is ice, not cyan, and the colour grep needs no allowance — 2026-10-22; L25506
-- **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L25547
-- **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25574
-- **I-864** A click on the landing's primary button is lost if it lands before hydration, and nothing tells the visitor — 2026-10-25; L25611
-- **I-878** `GET /signin` starts the OIDC flow on the server, so every sign-in surface is a link — 2026-10-27; L25694
-- **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25767
-- **I-872** repose builds the kexec installer it installs through, the install has a deadline, and both fail before a VM exists (second-host, 2026-10-26) — L25889
-- **I-866** The control plane's WireGuard socket takes a fixed port, because the edge learns its endpoint from the packets it sends — 2026-10-26; L25976
-- **I-868** A refusal the gateway makes because its own caches are stale does not count towards the source's ban — 2026-10-26; L26005
-- **I-870** The gateway's cache age is the alert for a control plane the gateway cannot reach — 2026-10-26; L26027
-- **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L26046
-- **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L26103
-- **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26150
-- **I-886** The idle pause is on by default; a host that says nothing rests its idle guests — 2026-10-28; L26223
-- **I-888** `repose run` refuses what it used to guess: the old prompt form is gone, and a duration spelled with a word after `--temp` is an error — 2026-10-28; L26254
-- **I-890** `repose stop` checks the ssh master before it fetches, waits 15 seconds rather than 60, and says where its time went — 2026-10-28; L26302
-- **I-892** A laptop folder reads as the user spells it, and the UP cell rolls to days — 2026-10-28; L26341
-- **I-894** The messages say the thing once and stop — 2026-10-28; L26367
-- **I-896** /projects shows what is running, one duration a row, and no head that repeats the control above it — 2026-10-28; L26443
-- **I-898** The word is freeze, not awake — 2026-10-28; L26493
-- **I-900** A project keeps seven snapshots, which is what the docs have always said — 2026-10-28; L26506
-- **I-902** An expired waitlist hold cools down before its turn comes round — 2026-10-28; superseded by I-1033; L26557
-- **I-904** `repose snapshots list` with no project lists every snapshot the account has, over a new `GET /v1/snapshots` — 2026-10-28; L26599
-- **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26650
-- **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26673
-- **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26698
-- **I-916** An operator ssh block pins no `HostKeyAlias`; the WireGuard address is the identity — 2026-10-30; L26719
-- **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26758
-- **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26781
-- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26826
-- **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26870
-- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26984
-- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L27030
-- **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L27079
-- **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27138
-- **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27170
-- **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27224
-- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27267
-- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27308
-- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27326
-- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27389
-- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27408
-- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27423
-- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27462
-- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27474
-- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27487
-- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27504
-- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27524
-- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27552
-- **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27565
-- **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27623
-- **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27667
-- **I-961** The landing is one quiet, gapless composition: bands that end on the next band's rule, one two-column line from 1024px, one stage and one terminal palette — 2026-11-02; L27739
-- **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L28019
-- **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L28076
-- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L28091
-- **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L28127
-- **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L28178
-- **I-982** Hosts boot with `hashdist=0`, so the kernel's large system hash tables stay in the linear map — 2026-11-02; L28194
-- **I-984** A kernel oops reboots the host: `panic_on_oops=1`, `panic=30` — 2026-11-02; L28243
-- **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L28285
-- **I-986** The Docker probe does not cancel its own request before reading the answer — 2026-11-02; L28311
-- **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28355
-- **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28374
-- **I-1020** The hostd stub died on a value-less flag, and three tests did not notice — 2026-11-03; L28429
-- **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28526
-- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28542
-- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28561
-- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28577
-- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28590
-- **I-1002** The host-restart memory image is a park, not a freeze — 2026-11-03; L28602
-- **I-1004** Prod's plan names anything machine-shaped in the resource group that the configuration does not create — 2026-11-03; L28717
-- **I-1008** A cut is refused while `main`'s CI is red, with a named override — 2026-11-03; L28779
-- **I-1012** A test asserts the kernel honoured a parameter, not that it was passed — 2026-11-03; L28798
-- **I-1014** A test that forces a host's state must stop the host that writes it — 2026-11-03; L28887
-- **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28900
-- **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28911
-- **I-1010** Nothing in the fleet read the kernel's own verdict on a host — 2026-11-03; L28925
-- **I-1024** A VM test that quotes a message or a rendering asserts a substring something owns, or it is a second spelling that rots — 2026-11-03; L29044
-- **I-1022** A throwaway Postgres cluster is owned by a process, and the kernel is what reports that process's death — 2026-11-03; L29132
-- **I-1026** "Not finished" is not "passed", and a table that runs none of its rows is not a test — 2026-11-03; L29190
-- **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29230
-- **I-1030** hostd knew its own version and did not tell the metric that publishes it — 2026-11-03; L29270
-- **I-1032** Six checks in one day were green in exactly the situation they existed for, and the ones with the best names survived longest — 2026-11-03; L29318
-- **I-1036** A test that skips when its tool is missing must not skip in the one place it says it belongs — 2026-11-03; L29399
-- **I-1038** A test that waits for something waits on the thing, not only on the clock — 2026-11-03; L29438
-- **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29481
-- **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29609
-- **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29699
-- **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29754
-- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L29845
-- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; amended by I-1232; L29893
-- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29929
-- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L29970
-- **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30026
-- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30069
-- **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30124
-- **I-1062** The released main is stored when it is known, not grepped for afterwards — 2026-11-06; L30195
-- **I-1064** `repose github setup` gives the machines a GitHub token of the user's own, for the repositories they picked, and stops copying the gh login — 2026-11-08; L30241
-- **I-1068** A host repairs its own one-way tunnel by rebinding the socket, because twice now nothing else has — 2026-11-10; L30359
-- **I-1070** RUNBOOK had a HostWgDown section for an alert that was never written, so the one failure it describes pages as something else — 2026-11-10; L30473
-- **I-1074** A runbook heading that reads as an alert name has to be one, or say why not — 2026-11-10; L30537
-- **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30575
-- **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30683
-- **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L30829
-- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L30874
-- **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30954
-- **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31015
-- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31061
-- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31147
-- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31211
-- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31265
-- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; amended by I-1216; L31321
-- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31343
-- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31377
-- **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31475
-- **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31555
-- **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31641
-- **I-1132** repose starts Claude Code Remote Control on a machine: the `remoteControlAtStartup` setting and a `remote-control` tmux window — 2026-11-11; L31743
-- **I-1134** Remote Control is off until the user asks for it, because its idle cost could not be measured — 2026-11-11; L31833
-- **I-1136** The switch is `remote_control` in `config.toml`, global and per project, and Claude Code's own keys win over it — 2026-11-11; L31871
-- **I-1138** Cursor's self-hosted worker is not built — 2026-11-11; L31907
-- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31922
-- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31964
-- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L32005
-- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L32084
-- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L32148
-- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L32241
-- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L32278
-- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32368
-- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32435
-- **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — amended by I-1162; L32479
-- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L32561
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32605
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32635
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; amended by I-1246; L32699
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32748
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32842
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32880
-- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32914
-- **I-1156** repose answers on `repose.run`; the Logto API resource and the host-to-api gRPC name keep the old name — 2026-11-11; L33028
-- **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33093
-- **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33117
-- **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33178
-- **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33244
-- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — amended by I-1169; L33312
-- **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — partly amended by I-1212; L33386
-- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33454
-- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33612
-- **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33697
-- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33714
-- **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L33751
-- **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L33802
-- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L33846
-- **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34027
-- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34063
-- **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34127
-- **I-1232** `repose exec` runs one quoted word with spaces in the machine's shell, and the laptop-path note shows the command to type — 2026-11-16; L34198
-- **I-1234** `repose cp` copies a directory without `-r` — 2026-11-16; L34234
-- **I-1236** `repose config --global add` puts the package list in when machine.nix has none — 2026-11-16; L34250
-- **I-1238** `repose browser` tells one machine's viewer from another's — 2026-11-16; L34272
-- **I-1240** `repose stop` and `repose rm` fetch nothing first — 2026-11-16; L34301
-- **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; L34336
-- **I-1244** SnapshotStale counts from the later of the newest snapshot and the machine's start, and the gauge refreshes hourly — 2026-11-16; L34383
-- **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L34415
+- **I-481** One opencode plugin serves version 1 and OpenCode 2, and a base replaces only its own earlier copies — 2026-10-04; amended by I-1050; L12754
+- **I-482** herdr is documented, not packaged, and gets no boot unit — 2026-10-04; superseded by I-501; L12801
+- **I-487** The guest's Codex is a complete Codex package — 2026-10-04; amended by I-495; amended by I-547; L12826
+- **I-489** `run` and `sync` apply the checkout's `repose.nix` without being asked — 2026-10-04; L12866
+- **I-486** The CLI marks the folder it starts Claude Code in as trusted — 2026-10-04; amended by I-544; L12892
+- **I-491** A kept ssh master is reused only after it answers, and an attach keeps the access token fresh — 2026-10-04; L12942
+- **I-488** A fragment's session variables reach every process, and your own shells load the flake dev shell agents get — 2026-10-04; amended by I-519; amended by I-508; L12974
+- **I-492** The project page shows the machine: its size spelled out, and charts of its minute samples over an hour, a day or a week — 2026-10-04; amended by I-659; L13035
+- **I-493** Samples carry CPU pressure inside the guest, the host CPU wait of its hypervisor, and memory in use as the guest sees it — 2026-10-04; L13062
+- **I-494** In the guest, SSH sessions and the tmux server run at ten times a pane's CPU weight; a live `repose status --watch` is documented, not built — 2026-10-04; amended by I-505; amended by I-576; L13080
+- **I-495** The guest's Codex ships upstream's own bwrap — 2026-10-05; amended by I-546; L13098
+- **I-496** A base switch never restarts the tmux session unit — 2026-10-05; L13125
+- **I-543** Gemini CLI and pi never update themselves on a guest — 2026-10-06; L13146
+- **I-544** The CLI marks the folder it starts Codex in as trusted — 2026-10-06; L13185
+- **I-545** Withdrawn: platform MCP servers for Codex, opencode and Gemini CLI — 2026-10-06; superseded by I-553; L13211
+- **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13220
+- **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13241
+- **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13268
+- **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; amended by I-1148; L13284
+- **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13355
+- **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; amended by I-558; L13385
+- **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13520
+- **I-557** `repose mcp forward` runs laptop-bound MCP servers through a guest shim that answers for an absent laptop — 2026-10-06; L13633
+- **I-558** `repose mcp list` shows each MCP server on a machine, where it came from and which agents have it — 2026-10-06; L13749
+- **I-497** Solo costs $20 a month with 100 GB of egress for its first three months, then $29 with 250 GB, on an account's first subscription — 2026-10-05; amended by I-604; amended by I-663; superseded by I-672; L13790
+- **I-498** The landing drops the headline's bar and the star, and links Feedback in the top bar — 2026-10-05; L13861
+- **I-520** pnpm 11's global bin dir is on PATH, and yarn is corepack's — 2026-10-05; L13872
+- **I-521** `/bin/bash`, `/usr/bin/python3` and `/etc/ssl/cert.pem` exist — 2026-10-05; L13896
+- **I-522** A carried cargo tool gets rustup a default toolchain first — 2026-10-05; L13918
+- **I-523** Python packages go in a venv; pipx gets the nix-ld python3; Tk comes with a uv Python — 2026-10-05; L13935
+- **I-524** A carried Ruby with RubyGems 3.7 gets Bundler 2.7 — 2026-10-05; L13951
+- **I-512** The base ships terminfo for Ghostty's and kitty's own TERM — 2026-10-05; L13971
+- **I-513** A login bash reads ~/.bashrc when the user has no login file of their own — 2026-10-05; L13991
+- **I-514** Shell defaults: GNU ls, long history, fzf's keys, starship that waits, vi and vim — 2026-10-05; L14019
+- **I-515** tmux sends 24-bit colour only to terminals that have it, and sets the laptop's title — 2026-10-05; L14056
+- **I-516** An agent's bash -c names the package of a missing command — 2026-10-05; amended by I-577; L14092
+- **I-517** The not-found hint skips test attributes, prefers top-level ones and answers apt, pip and cron itself — 2026-10-05; L14111
+- **I-518** A scheduled job is a systemd user timer; the base has no cron — 2026-10-05; L14132
+- **I-519** home.shellAliases from machine.nix or repose.nix reach every shell — 2026-10-05; L14150
+- **I-499** The Claude settings merge unions hooks per event, and takes out the hooks the previous laptop file added — 2026-10-05; L14168
+- **I-500** `repose stop` names the agents it interrupted, without a resume command — 2026-10-05; amended by I-614; amended by I-636; L14193
+- **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; partly amended by I-597; L14210
+- **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L14248
+- **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L14282
+- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; amended by I-688; amended by I-694; L14298
+- **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; amended by I-576; L14328
+- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L14347
+- **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L14362
+- **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L14373
+- **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; amended by I-596; amended by I-597; amended by I-598; amended by I-606; L14392
+- **I-510** The CLI keeps the laptop herdr's machine list for repose's machines — 2026-10-05; amended by I-542; amended by I-598; amended by I-602; L14427
+- **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14449
+- **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14460
+- **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14476
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-733; L14524
+- **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L14591
+- **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14653
+- **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14672
+- **I-562** `tmux_down` and `herdr_down` wait for this boot's SetupProject, and the watcher sends each warning kind at most once per 10 minutes — 2026-10-06; L14708
+- **I-542** The multiplexer probe runs only for a prompt or an attach; a certificate refresh only removes sidebar entries; herdr's notifications need its toast delivery on — 2026-10-05; amended by I-598; L14735
+- **I-564** The base's herdr config turns on herdr's toast delivery — 2026-10-06; L14800
+- **I-565** The herdr config seed gives back the file home-manager moved aside — 2026-10-06; L14813
+- **I-525** The base installs git-lfs with its filter in /etc/gitconfig — 2026-10-05; L14827
+- **I-526** gh is the guest's credential helper for GitHub, by command name, in /etc/gitconfig — 2026-10-05; L14846
+- **I-527** git defaults for a fresh HOME, at system scope — 2026-10-05; L14872
+- **I-528** gpg-agent's pinentry is pinentry-curses, set in /etc/gnupg/gpg-agent.conf — 2026-10-05; L14885
+- **I-529** The guest deletes, weekly, the unused store paths only its overlay holds — 2026-10-06; amended by I-587; amended by I-588; L14909
+- **I-530** dev is a trusted nix user — 2026-10-06; L14948
+- **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14962
+- **I-532** The guest has no nix channels — 2026-10-06; L14983
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; amended by I-718; L14994
+- **I-534** The guest has man pages — 2026-10-06; L15030
+- **I-550** A guest's hostname is its project's slug — 2026-10-06; L15045
+- **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L15066
+- **I-537** Containers resolve through resolved on 172.20.0.1 — 2026-10-05; L15097
+- **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L15124
+- **I-539** dev may ptrace its own processes — 2026-10-05; L15140
+- **I-540** The browser has CJK fonts — 2026-10-05; L15149
+- **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; amended by I-1108; L15167
+- **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15179
+- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-733; L15229
+- **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15337
+- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15361
+- **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15388
+- **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15447
+- **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; amended by I-618; amended by I-1100; L15464
+- **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15561
+- **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; amended by I-601; L15619
+- **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15664
+- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; amended by I-904; L15774
+- **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; amended by I-585; L15805
+- **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; amended by I-655; L15876
+- **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15901
+- **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L16003
+- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; amended by I-841; L16065
+- **I-587** A start removes the whiteouts in the store overlay's upper dir before stage 2 — 2026-10-07; L16095
+- **I-588** guestd roots every store path the host shares into the guest, so no nix garbage collection inside it deletes one — 2026-10-07; L16126
+- **I-589** A switch to a closure a whiteout hides fails saying so, with its own code — 2026-10-07; L16165
+- **I-590** A boot that never reaches Ready falls back to the guest's last good closure, once, and the start ends running with a warning — 2026-10-07; L16201
+- **I-591** ApplyConfig on a stopped guest checks what the boot will read from the host — 2026-10-07; L16269
+- **I-592** A boot that never reaches Ready is classified from its console, and the console reaches its owner through `repose logs --kind console` — 2026-10-07; L16282
+- **I-593** A Switch error guestd codes reaches the api with its code — 2026-10-07; L16331
+- **I-599** A refusal of the user's own certificate does not count towards the gateway's per-source ban, and failures and bans are logged — 2026-10-07; L16355
+- **I-594** A snapshot of a killed guest replays its journal on the LVM snapshot and goes out as extents — 2026-10-07; L16395
+- **I-595** A size change restarts without a snapshot, and a restore says how big its snapshot was — 2026-10-07; L16459
+- **I-596** On herdr, the sync that makes the checkout closes the idle `home` workspace, as tmux respawns its `shell` window — 2026-10-07; L16499
+- **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16526
+- **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16562
+- **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; amended by I-604; L16604
+- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16642
+- **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16687
+- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; amended by I-888; L16714
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16775
+- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; amended by I-890; L16842
+- **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16892
+- **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16926
+- **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16941
+- **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16971
+- **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16983
+- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; L17068
+- **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17157
+- **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17183
+- **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17237
+- **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17279
+- **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; amended by I-629; amended by I-631; L17297
+- **I-623** One sentence and one exit code per kind of failure: the network is 1, a plan limit is 7, capacity is 8 wherever it happens — 2026-10-09; amended by I-632; L17363
+- **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17407
+- **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; amended by I-634; L17419
+- **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; amended by I-631; amended by I-633; L17434
+- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; L17459
+- **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; amended by I-632; amended by I-635; L17495
+- **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17514
+- **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17571
+- **I-621** One name for each size, positive switches, and a Windows drive in `repose cp` — 2026-10-09; L17591
+- **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; amended by I-1236; L17610
+- **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17669
+- **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17702
+- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; amended by I-750; amended by I-888; L17801
+- **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17898
+- **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — amended by I-894; L17937
+- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; amended by I-1108; L18035
+- **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18098
+- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; amended by I-757; L18130
+- **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18172
+- **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — amended by I-641; L18195
+- **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18216
+- **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; amended by I-1128; L18245
+- **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18392
+- **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18416
+- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; amended by I-837; amended by I-841; L18435
+- **I-656** One frame for every page (web-polish, 2026-10-11) — L18479
+- **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18500
+- **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18508
+- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; amended by I-837; L18528
+- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — amended by I-681; amended by I-837; L18556
+- **I-661** An armed danger button (web-polish, 2026-10-11) — L18603
+- **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18610
+- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; amended by I-837; L18654
+- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; amended by I-837; amended by I-841; L18683
+- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; amended by I-837; L18770
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; amended by I-837; amended by I-841; L18807
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; amended by I-837; amended by I-841; L18834
+- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; amended by I-837; L18864
+- **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18915
+- **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18955
+- **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L19003
+- **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L19065
+- **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L19109
+- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19125
+- **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19173
+- **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19192
+- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19296
+- **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19510
+- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — amended by I-757; L19569
+- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — partly amended by I-848; L19695
+- **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19753
+- **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19785
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; partly superseded by I-841; amended by I-826; amended by I-856; L19803
+- **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; superseded by I-837; L19833
+- **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; superseded by I-837; L19883
+- **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; superseded by I-837; L19962
+- **I-667** The hero tells the snapshot story with true causes, on a balanced stage that is never empty (landing-hero, 2026-10-11) — amended by I-677; superseded by I-837; L20019
+- **I-677** The hero's copies stay inside the panel they are drawn in, one drawing at a time, and the stage fits 1280x800 (landing-fix-hero, 2026-10-11) — superseded by I-837; L20094
+- **I-673** The landing's pictures share one grammar: one window head, one chip, one machine wall, one radius, a dark scheme that layers as the light one does, the pause button on the floor (landing-fix-grammar, 2026-10-11) — amended by I-684; superseded by I-837; L20151
+- **I-675** The two story panels: copies seen only in the panel they land in, the machine never an empty box, and ComesBack in a closed window with its snapshots under it where it is narrow (landing-fix-panels, 2026-10-11) — amended by I-684; superseded by I-837; L20216
+- **I-676** The grid's Browser, Localhost and Editor without doubled text or cut lines, and grid pictures that take turns (landing-fix-browser, 2026-10-11) — superseded by I-837; L20271
+- **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — superseded by I-837; L20341
+- **I-642** The pricing research carries Hetzner's 15 June 2026 dedicated prices, and the plans lose money on Hetzner too (hetzner-repricing, 2026-10-09) — L20384
+- **I-672** Launch at ladder C: Solo $49, Plus $89, Pro $169, with a founding $39 for the first 30 Solo subscribers (pricing-directions, 2026-10-11) — L20409
+- **I-678** A Polar event about a customer or product repose does not know is acknowledged, not failed — 2026-10-12; L20456
+- **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20475
+- **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20492
+- **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20601
+- **I-734** The oversubscription ratio is counted against physical cores, not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15) — amended by I-784; L20670
+- **I-735** Hosts report physical cores, and the api records them (cpu-weight, 2026-10-15) — L20727
+- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; L20768
+- **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; amended by I-1168; L20827
+- **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20865
+- **I-746** The validity pass stops eating the boot deadline and blaming `--load-db` for it (cpu-weight, 2026-10-15) — L20911
+- **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; amended by I-1168; L20946
+- **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L21019
+- **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L21046
+- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — amended by I-1242; L21059
+- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L21069
+- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21085
+- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21099
+- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — amended by I-837; amended by I-841; L21112
+- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L21123
+- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L21132
+- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L21138
+- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L21154
+- **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L21162
+- **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L21238
+- **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L21257
+- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L21294
+- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — amended by I-718; L21332
+- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L21359
+- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L21395
+- **I-700** A restore downloads its snapshot once and checks the digest as it writes (fork-fast, 2026-10-13) — L21425
+- **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L21476
+- **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L21579
+- **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L21604
+- **I-733** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-15) — L21625
+- **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21723
+- **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21841
+- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — amended by I-771; L21934
+- **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21995
+- **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L22042
+- **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L22136
+- **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L22209
+- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L22251
+- **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L22287
+- **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L22313
+- **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L22343
+- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L22391
+- **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22428
+- **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22463
+- **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22489
+- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; amended by I-743; amended by I-744; L22514
+- **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22585
+- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22629
+- **I-716** The fetch does not start during boot — 2026-10-13; L22676
+- **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22687
+- **I-740** The stop reads the checkout within its own 15 s, past a dead master and with no stdin to wait on, and says when it could not; the gateway holds a session's EOF until the guest accepts its command (stop-probe, 2026-10-14). Amends I-634, I-710 — L22722
+- **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22806
+- **I-742** The apply reports its own steps' times — 2026-10-14; L22838
+- **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22877
+- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22931
+- **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22974
+- **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22980
+- **I-752** A typed prompt is checked and the Enter is pressed again; an unsubmitted prompt is said out loud — 2026-10-17; amended by I-780; L22994
+- **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L23010
+- **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L23015
+- **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L23020
+- **I-757** An agent window whose agent had already exited comes back as the shell it held; amends I-636, I-646 — 2026-10-17; L23024
+- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; amended by I-781; L23029
+- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23042
+- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; amended by I-1086; L23049
+- **I-750** A word after `--temp` that is not a duration is the project's name, and the docs stop promising otherwise; amends I-631 — 2026-10-16; L23060
+- **I-761** The projects list is ordered by what wants you, then what is up, then what is at rest; the api's order is not a reading order — 2026-10-17; L23069
+- **I-762** /projects has a search and a state filter, both in the URL, and the list is capped at 25 with "Show all N" — 2026-10-17; L23076
+- **I-751** The bridge's allowlist survives the warm attach, and a `--allow` that names no host is refused; amends I-305, with I-311's enforcement — 2026-10-17; L23083
+- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L23089
+- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23136
+- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23175
+- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23236
+- **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23307
+- **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L23346
+- **I-765** The dashboard asks before it ends an agent's turn, and can keep a temporary machine: parity with the CLI where the CLI has a rule — 2026-10-17; L23355
+- **I-766** Every line on the dashboard says what is true, and the pages that poll stop paying for what nobody reads — 2026-10-17; L23363
+- **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L23376
+- **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23383
+- **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23427
+- **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; amended by I-837; L23464
+- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; amended by I-936; L23547
+- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23614
+- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23640
+- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23671
+- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — partly amended by I-1126; amended by I-1168; L23684
+- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23923
+- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23989
+- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24220
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24252
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; L24379
+- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24728
+- **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24791
+- **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24846
+- **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24884
+- **I-806** `usage_hours` records `attended_seconds` and `unattended_agent_seconds` — 2026-10-19; L24907
+- **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24930
+- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24957
+- **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24976
+- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25013
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; amended by I-1114; amended by I-1230; L25018
+- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25148
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; amended by I-1114; L25176
+- **I-824** The pause must never cost a machine its memory — L25219
+- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; amended by I-896; L25253
+- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25285
+- **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L25304
+- **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L25337
+- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L25379
+- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L25426
+- **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L25479
+- **I-856** A frozen machine is ice, not cyan, and the colour grep needs no allowance — 2026-10-22; L25513
+- **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L25554
+- **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25581
+- **I-864** A click on the landing's primary button is lost if it lands before hydration, and nothing tells the visitor — 2026-10-25; L25618
+- **I-878** `GET /signin` starts the OIDC flow on the server, so every sign-in surface is a link — 2026-10-27; L25701
+- **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25774
+- **I-872** repose builds the kexec installer it installs through, the install has a deadline, and both fail before a VM exists (second-host, 2026-10-26) — L25896
+- **I-866** The control plane's WireGuard socket takes a fixed port, because the edge learns its endpoint from the packets it sends — 2026-10-26; L25983
+- **I-868** A refusal the gateway makes because its own caches are stale does not count towards the source's ban — 2026-10-26; L26012
+- **I-870** The gateway's cache age is the alert for a control plane the gateway cannot reach — 2026-10-26; L26034
+- **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L26053
+- **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L26110
+- **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26157
+- **I-886** The idle pause is on by default; a host that says nothing rests its idle guests — 2026-10-28; L26230
+- **I-888** `repose run` refuses what it used to guess: the old prompt form is gone, and a duration spelled with a word after `--temp` is an error — 2026-10-28; L26261
+- **I-890** `repose stop` checks the ssh master before it fetches, waits 15 seconds rather than 60, and says where its time went — 2026-10-28; L26309
+- **I-892** A laptop folder reads as the user spells it, and the UP cell rolls to days — 2026-10-28; L26348
+- **I-894** The messages say the thing once and stop — 2026-10-28; L26374
+- **I-896** /projects shows what is running, one duration a row, and no head that repeats the control above it — 2026-10-28; L26450
+- **I-898** The word is freeze, not awake — 2026-10-28; L26500
+- **I-900** A project keeps seven snapshots, which is what the docs have always said — 2026-10-28; L26513
+- **I-902** An expired waitlist hold cools down before its turn comes round — 2026-10-28; superseded by I-1033; L26564
+- **I-904** `repose snapshots list` with no project lists every snapshot the account has, over a new `GET /v1/snapshots` — 2026-10-28; L26606
+- **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26657
+- **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26680
+- **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26705
+- **I-916** An operator ssh block pins no `HostKeyAlias`; the WireGuard address is the identity — 2026-10-30; L26726
+- **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26765
+- **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26788
+- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26833
+- **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26877
+- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26991
+- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L27037
+- **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L27086
+- **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27145
+- **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27177
+- **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27231
+- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27274
+- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27315
+- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27333
+- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27396
+- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27415
+- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27430
+- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27469
+- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27481
+- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27494
+- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27511
+- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27531
+- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27559
+- **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27572
+- **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27630
+- **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27674
+- **I-961** The landing is one quiet, gapless composition: bands that end on the next band's rule, one two-column line from 1024px, one stage and one terminal palette — 2026-11-02; L27746
+- **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L28026
+- **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L28083
+- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L28098
+- **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L28134
+- **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L28185
+- **I-982** Hosts boot with `hashdist=0`, so the kernel's large system hash tables stay in the linear map — 2026-11-02; L28201
+- **I-984** A kernel oops reboots the host: `panic_on_oops=1`, `panic=30` — 2026-11-02; L28250
+- **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L28292
+- **I-986** The Docker probe does not cancel its own request before reading the answer — 2026-11-02; L28318
+- **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28362
+- **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28381
+- **I-1020** The hostd stub died on a value-less flag, and three tests did not notice — 2026-11-03; L28436
+- **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28533
+- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28549
+- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28568
+- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28584
+- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28597
+- **I-1002** The host-restart memory image is a park, not a freeze — 2026-11-03; L28609
+- **I-1004** Prod's plan names anything machine-shaped in the resource group that the configuration does not create — 2026-11-03; L28724
+- **I-1008** A cut is refused while `main`'s CI is red, with a named override — 2026-11-03; L28786
+- **I-1012** A test asserts the kernel honoured a parameter, not that it was passed — 2026-11-03; L28805
+- **I-1014** A test that forces a host's state must stop the host that writes it — 2026-11-03; L28894
+- **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28907
+- **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28918
+- **I-1010** Nothing in the fleet read the kernel's own verdict on a host — 2026-11-03; L28932
+- **I-1024** A VM test that quotes a message or a rendering asserts a substring something owns, or it is a second spelling that rots — 2026-11-03; L29051
+- **I-1022** A throwaway Postgres cluster is owned by a process, and the kernel is what reports that process's death — 2026-11-03; L29139
+- **I-1026** "Not finished" is not "passed", and a table that runs none of its rows is not a test — 2026-11-03; L29197
+- **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29237
+- **I-1030** hostd knew its own version and did not tell the metric that publishes it — 2026-11-03; L29277
+- **I-1032** Six checks in one day were green in exactly the situation they existed for, and the ones with the best names survived longest — 2026-11-03; L29325
+- **I-1036** A test that skips when its tool is missing must not skip in the one place it says it belongs — 2026-11-03; L29406
+- **I-1038** A test that waits for something waits on the thing, not only on the clock — 2026-11-03; L29445
+- **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29488
+- **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29616
+- **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29706
+- **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29761
+- **I-1050** opencode on the machine is version 2, and version 1 is gone — 2026-11-04; L29852
+- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L30130
+- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; amended by I-1232; L30178
+- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L30214
+- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L30255
+- **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30311
+- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30354
+- **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30409
+- **I-1062** The released main is stored when it is known, not grepped for afterwards — 2026-11-06; L30480
+- **I-1064** `repose github setup` gives the machines a GitHub token of the user's own, for the repositories they picked, and stops copying the gh login — 2026-11-08; L30526
+- **I-1068** A host repairs its own one-way tunnel by rebinding the socket, because twice now nothing else has — 2026-11-10; L30644
+- **I-1070** RUNBOOK had a HostWgDown section for an alert that was never written, so the one failure it describes pages as something else — 2026-11-10; L30758
+- **I-1074** A runbook heading that reads as an alert name has to be one, or say why not — 2026-11-10; L30822
+- **I-1072** The runbook is entered by symptom, because an alert name is not one and 101 of its 159 sections are reachable no other way — 2026-11-10; L30860
+- **I-1076** Nineteen operational claims the code contradicted, five of them commands that cannot run — 2026-11-10; L30968
+- **I-1078** `ops/check.sh` refuses a documented `repose-admin` command that does not exist — 2026-11-10; L31114
+- **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; amended by I-1120; L31159
+- **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L31239
+- **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31300
+- **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31346
+- **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31432
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31496
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31550
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; amended by I-1216; L31606
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31628
+- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31662
+- **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31760
+- **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31840
+- **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31926
+- **I-1132** repose starts Claude Code Remote Control on a machine: the `remoteControlAtStartup` setting and a `remote-control` tmux window — 2026-11-11; L32028
+- **I-1134** Remote Control is off until the user asks for it, because its idle cost could not be measured — 2026-11-11; L32118
+- **I-1136** The switch is `remote_control` in `config.toml`, global and per project, and Claude Code's own keys win over it — 2026-11-11; L32156
+- **I-1138** Cursor's self-hosted worker is not built — 2026-11-11; L32192
+- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L32207
+- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L32249
+- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L32290
+- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L32369
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L32433
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L32526
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L32563
+- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32653
+- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32720
+- **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — amended by I-1162; L32764
+- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L32846
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32890
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32920
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; amended by I-1246; L32984
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L33033
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L33127
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L33165
+- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L33199
+- **I-1156** repose answers on `repose.run`; the Logto API resource and the host-to-api gRPC name keep the old name — 2026-11-11; L33313
+- **I-1158** The dashboard reads the api's audience from `PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL` — 2026-11-11; L33378
+- **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33402
+- **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33463
+- **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33529
+- **I-1167** The landing sells a framework for running always-on agents, with any agent and any model (tensions-landing, 2026-11-12). Amends I-477's "What we sell" and the hero of I-843 and I-961 — amended by I-1169; L33597
+- **I-1169** The landing sells a platform for running your own always-on agents, composed in layers, and its centrepiece is a 3D stack that composes three of them (tensions-landing, 2026-11-12). Amends I-1167 — partly amended by I-1212; L33671
+- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33739
+- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33897
+- **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33982
+- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33999
+- **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34036
+- **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L34087
+- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L34131
+- **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34312
+- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34348
+- **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34412
+- **I-1232** `repose exec` runs one quoted word with spaces in the machine's shell, and the laptop-path note shows the command to type — 2026-11-16; L34483
+- **I-1234** `repose cp` copies a directory without `-r` — 2026-11-16; L34519
+- **I-1236** `repose config --global add` puts the package list in when machine.nix has none — 2026-11-16; L34535
+- **I-1238** `repose browser` tells one machine's viewer from another's — 2026-11-16; L34557
+- **I-1240** `repose stop` and `repose rm` fetch nothing first — 2026-11-16; L34586
+- **I-1242** A question is never held, and a question being answered does not expire — 2026-11-16; L34621
+- **I-1244** SnapshotStale counts from the later of the newest snapshot and the machine's start, and the gauge refreshes hourly — 2026-11-16; L34668
+- **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L34700

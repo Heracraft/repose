@@ -128,8 +128,8 @@ type hookRecord struct {
 	Kind string    `json:"kind"`
 	At   time.Time `json:"at"`
 	// Prompted is set once the window's agent sent a prompt hook: from
-	// then on its state comes from hooks (I-694). OpenCode 2 and an older
-	// extension send turn ends only, and stay running.
+	// then on its state comes from hooks (I-694). An older extension, or
+	// an agent that reports turn ends only, stays running.
 	Prompted bool `json:"prompted,omitempty"`
 }
 

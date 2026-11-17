@@ -61,7 +61,9 @@ func TestBumpAgentsPRAcceptsOnlyValueChanges(t *testing.T) {
 		e := entry(m, "opencode")
 		e["version"] = "9.9.9"
 		e["x86_64-linux"] = map[string]any{
-			"url":  "https://github.com/anomalyco/opencode/releases/download/v9.9.9/opencode-linux-x64.tar.gz",
+			// opencode comes from npm since I-1050; the scoped package
+			// name is the shape the host check has to accept.
+			"url":  "https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-9.9.9.tgz",
 			"hash": "sha256-MEbgQE/cYPuAMH56R4JLoHR3NkF4pNCbqoVISW3W1Ds=",
 		}
 	})
