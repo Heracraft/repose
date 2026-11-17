@@ -343,3 +343,67 @@ func TestCleanLink(t *testing.T) {
 		}
 	}
 }
+
+// TestGuestTriggerRunIsBounded: a guest's TriggerRun reaches the api as
+// an event, and everything a guest chose is bounded on the way
+// (DECISIONS I-1256). A run id that is not a uuid, or a state a guest
+// may not send, is dropped; a reason that is not one of the enum is
+// read as a gate's own line and capped; the dedupe key is capped; a
+// source nobody defined becomes empty.
+func TestGuestTriggerRunIsBounded(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	gd := h.guestd(gid1)
+	send := func(r *guestdv1.TriggerRun) {
+		if err := gd.Notify(&guestdv1.Notify{N: &guestdv1.Notify_TriggerRun{TriggerRun: r}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const good = "0199aaaa-0000-7000-8000-0000000000a1"
+	send(&guestdv1.TriggerRun{RunId: "not-a-uuid", Trigger: "apply", State: "done"})
+	send(&guestdv1.TriggerRun{RunId: "0199aaaa-0000-7000-8000-0000000000a2", Trigger: "apply", State: "pending"})
+	send(&guestdv1.TriggerRun{RunId: "0199aaaa-0000-7000-8000-0000000000a3", State: "done"})
+	send(&guestdv1.TriggerRun{
+		RunId: good, Trigger: "apply", State: "failed",
+		Reason:    "gated: " + strings.Repeat("x", 1000),
+		Summary:   strings.Repeat("s", 4000),
+		Window:    strings.Repeat("w", 500),
+		DedupeKey: strings.Repeat("k", 500),
+		Source:    "nonsense",
+	})
+	h.waitEvents(func(e []*hostdv1.Event) bool {
+		for _, ev := range e {
+			if ev.GetTriggerRun() != nil {
+				return true
+			}
+		}
+		return false
+	})
+	time.Sleep(50 * time.Millisecond) // anything dropped would have arrived by now
+	var got []*hostdv1.TriggerRunEvent
+	for _, e := range h.waitEvents(func(e []*hostdv1.Event) bool { return true }) {
+		if r := e.GetTriggerRun(); r != nil {
+			got = append(got, r)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("trigger run events %v, want the one that is well formed", got)
+	}
+	r := got[0]
+	switch {
+	case r.RunId != good:
+		t.Errorf("run id %q", r.RunId)
+	case len(r.Reason) > capTriggerReason:
+		t.Errorf("a gate's line is %d bytes, over the %d cap", len(r.Reason), capTriggerReason)
+	case len(r.Summary) > capSummary:
+		t.Errorf("summary %d bytes, over the %d cap", len(r.Summary), capSummary)
+	case len(r.Window) > capWindow:
+		t.Errorf("window %d bytes, over the %d cap", len(r.Window), capWindow)
+	case len(r.DedupeKey) > capDedupeKey:
+		t.Errorf("dedupe key %d bytes, over the %d cap", len(r.DedupeKey), capDedupeKey)
+	case r.Source != "":
+		t.Errorf("source %q was taken from the guest unchecked", r.Source)
+	case r.Trigger != "apply":
+		t.Errorf("trigger %q", r.Trigger)
+	}
+}

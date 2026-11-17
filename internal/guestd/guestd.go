@@ -438,6 +438,7 @@ func (s *Server) AgentState(agent, window, state string) {
 
 // AgentEvent queues an AgentEvent notification (the sample.Emitter interface).
 func (s *Server) AgentEvent(agent, window, kind, summary string) {
+	s.triggers.OnAgentEvent(window, kind, summary, "", "")
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_AgentEvent{
 		AgentEvent: &guestdv1.AgentEvent{Agent: agent, TmuxWindow: window, Kind: kind, Summary: summary},
 	}})
@@ -446,6 +447,7 @@ func (s *Server) AgentEvent(agent, window, kind, summary string) {
 // AgentEventLinked is AgentEvent with the link a `repose-notify --link`
 // attached (DECISIONS I-931).
 func (s *Server) AgentEventLinked(agent, window, kind, summary string, link msglink.Link) {
+	s.triggers.OnAgentEvent(window, kind, summary, link.URL, link.Label)
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_AgentEvent{
 		AgentEvent: &guestdv1.AgentEvent{Agent: agent, TmuxWindow: window, Kind: kind, Summary: summary, LinkUrl: link.URL, LinkLabel: link.Label},
 	}})

@@ -113,6 +113,10 @@ create table trigger_runs (
   payload_path  text,
   dry_run       boolean not null default false,
   payload_run   uuid,
+  -- When the row entered the hand-off, which is not created_at: a fire
+  -- that started a machine goes back to `pending` to wait for it, and
+  -- staleness measured from creation would fail it on the next tick.
+  handoff_at    timestamptz,
   command_id    uuid,
   started_at    timestamptz,
   finished_at   timestamptz,

@@ -215,6 +215,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.injected(stepSecrets); err != nil {
 		return nil, m.fail(g, stepSecrets, err)
 	}
+	m.cacheTriggers(g.GuestID, c.Triggers)
 	if err := m.cacheSecrets(g.GuestID, c.Secrets, c.SshCaPub, c.HostKey, c.HostCert); err != nil {
 		return nil, m.fail(g, stepSecrets, err)
 	}
@@ -438,6 +439,14 @@ func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.
 			return paths, fmt.Errorf("SetPrincipals: %w", err)
 		}
 	}
+	// The trigger set, before SetupProject starts the session: a
+	// delivery that arrives on a machine whose receiver has no set is a
+	// 404 the provider reads as "no such route" (I-1248).
+	if set := m.cachedTriggers(g.GuestID); len(set) > 0 {
+		if err := sess.SetTriggers(ctx, &guestdv1.SetTriggers{Triggers: set}); err != nil {
+			return paths, fmt.Errorf("SetTriggers: %w", err)
+		}
+	}
 	slug := g.ProjectSlug
 	if slug == "" {
 		slug = g.ProjectID
@@ -654,6 +663,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	// DECISIONS I-26: StartGuest may carry the delivery fields so a host
 	// that restarted still has the guest's secrets and sshd material.
 	if len(c.Secrets) > 0 || len(c.HostKey) > 0 || len(c.HostCert) > 0 || c.SshCaPub != "" {
+		m.cacheTriggers(g.GuestID, c.Triggers)
 		if err := m.cacheSecrets(g.GuestID, c.Secrets, c.SshCaPub, c.HostKey, c.HostCert); err != nil {
 			return nil, err
 		}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,7 +37,11 @@ type harness struct {
 	ag     *agents
 	r      *trigger.Runner
 	now    time.Time
-	runs   []*guestdv1.TriggerRun
+	// mu guards runs: two deliveries at once report from two
+	// goroutines, as two of the edge's connections would. In the guest
+	// the emit is a channel send (guestd's enqueue).
+	mu   sync.Mutex
+	runs []*guestdv1.TriggerRun
 }
 
 func newHarness(t *testing.T) *harness {
@@ -52,7 +57,11 @@ func newHarness(t *testing.T) *harness {
 	paths := sysdep.Paths{Root: root}
 	h.r = trigger.New(paths, h.runner, h.ag,
 		func() trigger.Project { return trigger.Project{Slug: "todo-app"} },
-		func(n *guestdv1.TriggerRun) { h.runs = append(h.runs, n) },
+		func(n *guestdv1.TriggerRun) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			h.runs = append(h.runs, n)
+		},
 		slog.New(slog.DiscardHandler), func() time.Time { return h.now })
 	// tmux answers with the windows the test says exist.
 	h.setWindows()
@@ -80,6 +89,8 @@ func (h *harness) set(ts ...trigger.Trigger) { h.r.SetTriggers(ts) }
 
 func (h *harness) last() *guestdv1.TriggerRun {
 	h.t.Helper()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if len(h.runs) == 0 {
 		h.t.Fatal("no run was reported")
 	}
@@ -505,5 +516,122 @@ func TestTheReceiverAnswersTheEdge(t *testing.T) {
 	}
 	if code, _ := post("/t/apply", strings.Repeat("x", trigger.PayloadCap+1)); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("a body over the cap answered %d, want 413", code)
+	}
+}
+
+// Two deliveries that arrive together take one slot and one window
+// name. The first version checked the limit, then wrote the payload,
+// then ran a gate of up to ten seconds, and only then registered the
+// run: both passed `concurrency: 1` and both opened `t-apply`.
+func TestTwoDeliveriesAtOnceTakeOneSlotAndOneName(t *testing.T) {
+	h := newHarness(t)
+	tr := basic("apply")
+	tr.Concurrency = 1
+	tr.Gate = "slow-gate"
+	h.set(tr)
+	h.writePrompt(".repose/triggers/apply.md", "go")
+	// The gate admits, slowly, which is where the window was.
+	h.runner.Match["slow-gate"] = sysdep.RunResult{ExitCode: 0}
+
+	type got struct {
+		res trigger.Result
+		err error
+	}
+	out := make(chan got, 2)
+	for i := range 2 {
+		go func(i int) {
+			res, err := h.r.Start(context.Background(), trigger.Request{
+				Trigger: "apply", RunID: "r" + string(rune('1'+i)), Source: triggerrun.SourceRoute,
+				Payload: []byte("{}"),
+			})
+			out <- got{res, err}
+		}(i)
+	}
+	working, skipped := 0, 0
+	for range 2 {
+		g := <-out
+		if g.err != nil {
+			t.Fatal(g.err)
+		}
+		switch g.res.State {
+		case triggerrun.StateWorking:
+			working++
+		case triggerrun.StateSkipped:
+			skipped++
+			if g.res.Reason != triggerrun.ReasonConcurrency {
+				t.Errorf("the second delivery is %q, want concurrency", g.res.Reason)
+			}
+		}
+	}
+	if working != 1 || skipped != 1 {
+		t.Fatalf("%d working and %d skipped, want one of each", working, skipped)
+	}
+	var windows []string
+	for _, c := range h.runner.Calls() {
+		if len(c.Argv) > 2 && strings.Contains(c.Argv[2], "tmux new-window") {
+			windows = append(windows, c.Argv[2])
+		}
+	}
+	if len(windows) != 1 {
+		t.Fatalf("%d windows opened for one slot", len(windows))
+	}
+}
+
+// A run that ends with no summary is still done: the state is the
+// machine's and the words are the agent's (I-688). The first version
+// read "no summary" as "no agent" and failed, notified and alarmed the
+// owner for every quiet run.
+func TestARunThatSaidNothingIsStillDone(t *testing.T) {
+	h := newHarness(t)
+	h.set(basic("sweep"))
+	h.writePrompt(".repose/triggers/sweep.md", "sweep")
+	if _, err := h.r.Start(context.Background(), trigger.Request{
+		Trigger: "sweep", RunID: "r1", Source: triggerrun.SourceClock,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.setWindows("t-sweep")
+	h.ag.state, h.ag.present = "working", true
+	h.now = h.now.Add(time.Second)
+	h.r.Sweep(context.Background())
+	// The agent exits without saying anything and its window closes.
+	h.setWindows()
+	h.now = h.now.Add(time.Second)
+	h.r.Sweep(context.Background())
+	got := h.last()
+	if got.State != triggerrun.StateDone {
+		t.Fatalf("a quiet run ended %q/%q, want done", got.State, got.Reason)
+	}
+	if got.Summary != "" {
+		t.Errorf("summary %q, want none", got.Summary)
+	}
+}
+
+// A gated event is not remembered as seen: it paid for nothing, so the
+// provider's retry of it is gated again rather than read as a duplicate.
+func TestAGatedEventIsNotADuplicateNextTime(t *testing.T) {
+	h := newHarness(t)
+	tr := basic("deploy")
+	tr.Gate = "verify.sh"
+	tr.Dedupe = "header:X-Delivery"
+	h.set(tr)
+	h.writePrompt(".repose/triggers/deploy.md", "deploy")
+	h.runner.Match["verify.sh"] = sysdep.RunResult{ExitCode: 1, Stderr: []byte("no signature\n")}
+
+	req := func(id string) trigger.Request {
+		return trigger.Request{Trigger: "deploy", RunID: id, Source: triggerrun.SourceRoute,
+			Headers: map[string]string{"X-Delivery": "d1"}, Payload: []byte("{}")}
+	}
+	if res, _ := h.r.Start(context.Background(), req("r1")); res.State != triggerrun.StateSkipped {
+		t.Fatalf("the gated event is %+v", res)
+	}
+	// The gate is fixed and the provider retries the same delivery.
+	h.runner.Match["verify.sh"] = sysdep.RunResult{ExitCode: 0}
+	res, err := h.r.Start(context.Background(), req("r2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.State != triggerrun.StateWorking {
+		t.Fatalf("the retry of a gated event is %+v, want working: a gated event paid for nothing", res)
 	}
 }

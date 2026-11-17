@@ -183,10 +183,11 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   is finished, since a finished turn notifies nobody. Like a message it is
   never collapsed and counts against the cap (I-688).
 - A trigger's run that ends `failed` or `timeout` sends a
-  `trigger_failed` (DECISIONS I-1256): title
-  `<project>: the <trigger> trigger failed`, email subject the same,
-  ntfy priority 4, body the run's reason as `features/triggers.md` §4.1
-  words it (`claude is not logged in`, `killed at the timeout`,
+  `trigger_failed` (DECISIONS I-1256): title `<project>: trigger
+  failed`, which is every other event's shape, and a body whose first
+  words are the trigger's name and what happened
+  (`sweep failed: the agent is not logged in`), as
+  `features/triggers.md` §4.1 words it. ntfy priority 4 (`claude is not logged in`, `killed at the timeout`,
   `the prompt file is missing`), with the run id. It is a **platform**
   kind, not an agent kind: it is never held while the owner is at the
   machine (I-689 holds agent kinds), because a trigger that fails in

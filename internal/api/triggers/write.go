@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -227,8 +228,18 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 	if err := tx.Commit(ctx); err != nil {
 		return Trigger{}, false, err
 	}
+	s.notifySet(ctx, projectID)
 	t, err = s.Get(ctx, projectID, in.Name)
 	return t, created, err
+}
+
+// notifySet tells the process that holds the host's stream that this
+// project's set changed (I-1162). A lost notify costs nothing: the set
+// rides the machine's next start.
+func (s *Store) notifySet(ctx context.Context, projectID uuid.UUID) {
+	if _, err := s.pool.Exec(ctx, "select pg_notify($1, $2)", SetChannel, projectID.String()); err != nil {
+		return
+	}
 }
 
 func nilIfEmpty(p *string) any {
@@ -278,7 +289,11 @@ func (s *Store) Delete(ctx context.Context, projectID uuid.UUID, name string) (r
 			}
 		}
 	}
-	return routeToRemove, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	s.notifySet(ctx, projectID)
+	return routeToRemove, nil
 }
 
 // FireOpts is `repose triggers fire`.
@@ -324,7 +339,17 @@ func (s *Store) Fire(ctx context.Context, projectID uuid.UUID, name string, opts
 	if source == "" {
 		source = SourceHand
 	}
-	return s.insertRun(ctx, nil, t, source, StatePending, "", opts)
+	run, err := s.insertRun(ctx, nil, t, source, StatePending, "", opts)
+	if err != nil {
+		return Run{}, err
+	}
+	// The worker is in the other process, so a fire that waited for the
+	// minute tick would make the build loop cost a minute an iteration
+	// (I-1162's hand-off, say's Kick).
+	if _, err := s.pool.Exec(ctx, "select pg_notify($1, '')", NotifyChannel); err != nil {
+		return run, nil
+	}
+	return run, nil
 }
 
 func (s *Store) insertRun(ctx context.Context, tx pgx.Tx, t Trigger, source, state, reason string, opts FireOpts) (Run, error) {
@@ -336,8 +361,8 @@ func (s *Store) insertRun(ctx context.Context, tx pgx.Tx, t Trigger, source, sta
 	}
 	q := `insert into trigger_runs
 		(id, project_id, trigger_id, trigger_name, source, state, reason,
-		 payload_path, dry_run, payload_run, command_id, created_at, finished_at)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$1,$11,$12)`
+		 payload_path, dry_run, payload_run, command_id, created_at, handoff_at, finished_at)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$1,$11,$11,$12)`
 	args := []any{id, t.ProjectID, t.ID, t.Name, source, state, nilStr(reason),
 		nilStr(opts.PayloadPath), opts.DryRun, opts.PayloadRun, now, finished}
 	var err error
@@ -487,6 +512,53 @@ func (s *Store) TakePending(ctx context.Context, limit int) ([]Run, error) {
 	return out, rows.Err()
 }
 
+// raise turns an ending the api wrote itself into the event (and the
+// notification) a user sees. The machine's own endings come through
+// OnRun; these do not, and each of them used to write a terminal row
+// and tell nobody: the fire the machine never took, the runs a stopped
+// machine left, the hand-off nobody delivered and the report that never
+// came.
+func (s *Store) raise(ctx context.Context, ids ...uuid.UUID) {
+	if s.events == nil || len(ids) == 0 {
+		return
+	}
+	rows, err := s.pool.Query(ctx, `select `+runCols+`,
+			coalesce((select t.notify from triggers t where t.id = r.trigger_id), 'failed')
+		from trigger_runs r where r.id = any($1)`, ids)
+	if err != nil {
+		return
+	}
+	type ending struct {
+		run    Run
+		notify string
+	}
+	var ends []ending
+	for rows.Next() {
+		var run Run
+		var notify string
+		if err := scanRunWith(rows, &run, &notify); err != nil {
+			rows.Close()
+			return
+		}
+		ends = append(ends, ending{run, notify})
+	}
+	rows.Close()
+	for _, e := range ends {
+		if !Terminal(e.run.State) {
+			continue
+		}
+		kind := "trigger_run"
+		if e.run.State == StateFailed || e.run.State == StateTimeout {
+			kind = "trigger_failed"
+		}
+		_, _, _ = s.events.Insert(ctx, events.Incoming{
+			ProjectID: e.run.ProjectID, TS: s.now().UTC(), Kind: kind,
+			Window: e.run.Window, Summary: Sentence(e.run), Source: "api",
+			NoNotify: kind == "trigger_failed" && e.notify != "failed",
+		})
+	}
+}
+
 // Answered writes the machine's answer to a RunTrigger back on the row,
 // which is what a `fire --wait` is waiting for.
 func (s *Store) Answered(ctx context.Context, runID uuid.UUID, state, window, reason string) error {
@@ -507,6 +579,9 @@ func (s *Store) Answered(ctx context.Context, runID uuid.UUID, state, window, re
 		    started_at = coalesce(started_at, $5), finished_at = coalesce($6, finished_at)
 		where id = $1 and state in ($7, $8)`,
 		runID, state, window, reason, started, finished, StatePending, StateSending)
+	if err == nil && Terminal(state) {
+		s.raise(ctx, runID)
+	}
 	return err
 }
 
@@ -514,14 +589,35 @@ func (s *Store) Answered(ctx context.Context, runID uuid.UUID, state, window, re
 // waiter's window, so a fire cannot reach a machine long after the sender
 // was told it did not (say's StaleAfter).
 func (s *Store) FailStale(ctx context.Context) (int, error) {
-	tag, err := s.pool.Exec(ctx, `update trigger_runs
-		set state = $1, reason = 'unreachable', finished_at = now()
-		where state in ($2, $3) and created_at < $4`,
-		StateFailed, StatePending, StateSending, s.now().UTC().Add(-Stale))
+	rows, err := s.pool.Query(ctx, `update trigger_runs
+		set state = $1, reason = $5, finished_at = now()
+		where state in ($2, $3) and coalesce(handoff_at, created_at) < $4
+		returning id`,
+		StateFailed, StatePending, StateSending, s.now().UTC().Add(-Stale),
+		triggerrun.ReasonUnreachable)
 	if err != nil {
 		return 0, err
 	}
-	return int(tag.RowsAffected()), nil
+	ids, err := scanIDs(rows)
+	if err != nil {
+		return 0, err
+	}
+	s.raise(ctx, ids...)
+	return len(ids), nil
+}
+
+// scanIDs reads the ids an update returned.
+func scanIDs(rows pgx.Rows) ([]uuid.UUID, error) {
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // FailWorking ends a run the machine stopped reporting on: it stopped
@@ -529,29 +625,47 @@ func (s *Store) FailStale(ctx context.Context) (int, error) {
 // Without it a row stays `working` for ever, `fire --wait` burns its
 // whole window, and UsedAt counts that row as use for ever, so the
 // unused notice never fires on the project again.
+//
+// The reason is `unreachable` and not `timeout`: the guest owns the
+// timeout and kills the window itself, and its clock stops while a
+// question waits. A row this sweep ends is one nobody reported on.
 func (s *Store) FailWorking(ctx context.Context) (int, error) {
 	now := s.now().UTC()
-	tag, err := s.pool.Exec(ctx, `update trigger_runs r
+	rows, err := s.pool.Query(ctx, `update trigger_runs r
 		set state = $1, reason = $2, finished_at = $3
 		from triggers t
 		where t.id = r.trigger_id and r.state = $4
-		  and r.started_at < $3::timestamptz - make_interval(secs => greatest(t.timeout_s, 1) + $5::int)`,
-		StateFailed, triggerrun.ReasonTimeout, now, StateWorking, int(WorkingGrace.Seconds()))
+		  and r.started_at < $3::timestamptz - make_interval(secs => greatest(t.timeout_s, 1) + $5::int)
+		returning r.id`,
+		StateFailed, triggerrun.ReasonUnreachable, now, StateWorking, int(WorkingGrace.Seconds()))
+	if err != nil {
+		return 0, err
+	}
+	ids, err := scanIDs(rows)
 	if err != nil {
 		return 0, err
 	}
 	// A run whose trigger is gone has no timeout to measure, so it is
 	// swept at the ceiling a run can have.
-	tag2, err := s.pool.Exec(ctx, `update trigger_runs
+	rows2, err := s.pool.Query(ctx, `update trigger_runs
 		set state = $1, reason = $2, finished_at = $3
 		where state = $4 and trigger_id is null
-		  and started_at < $3::timestamptz - make_interval(secs => $5::int)`,
-		StateFailed, triggerrun.ReasonTimeout, now, StateWorking,
+		  and started_at < $3::timestamptz - make_interval(secs => $5::int)
+		returning id`,
+		StateFailed, triggerrun.ReasonUnreachable, now, StateWorking,
 		int((MaxTimeout + WorkingGrace).Seconds()))
 	if err != nil {
-		return int(tag.RowsAffected()), err
+		s.raise(ctx, ids...)
+		return len(ids), err
 	}
-	return int(tag.RowsAffected() + tag2.RowsAffected()), nil
+	ids2, err := scanIDs(rows2)
+	if err != nil {
+		s.raise(ctx, ids...)
+		return len(ids), err
+	}
+	ids = append(ids, ids2...)
+	s.raise(ctx, ids...)
+	return len(ids), nil
 }
 
 // MachineStopped ends every run of a project that was still working when
@@ -559,12 +673,21 @@ func (s *Store) FailWorking(ctx context.Context) (int, error) {
 // events ingest calls it on the guest's state change, as it cancels a
 // project's questions there.
 func (s *Store) MachineStopped(ctx context.Context, projectID uuid.UUID) error {
-	_, err := s.pool.Exec(ctx, `update trigger_runs
+	rows, err := s.pool.Query(ctx, `update trigger_runs
 		set state = $1, reason = $2, finished_at = now()
-		where project_id = $3 and state in ($4, $5, $6)`,
+		where project_id = $3 and state in ($4, $5, $6)
+		returning id`,
 		StateFailed, triggerrun.ReasonMachineStopped, projectID,
 		StateWorking, StatePending, StateSending)
-	return err
+	if err != nil {
+		return err
+	}
+	ids, err := scanIDs(rows)
+	if err != nil {
+		return err
+	}
+	s.raise(ctx, ids...)
+	return nil
 }
 
 // StartedMachine records that this run's own fire started the machine,

@@ -33,6 +33,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/triggerrun"
@@ -69,10 +70,15 @@ const (
 	PayloadCap = 1 << 20
 	// PromptPathCap bounds a stored prompt path.
 	PromptPathCap = 200
-	// WorkingGrace is how long past its timeout a `working` run may go
-	// unreported before the sweep fails it: a machine that stopped
-	// mid-run, or a report the guest's notify budget dropped.
-	WorkingGrace = 10 * time.Minute
+	// WorkingGrace is the api's backstop: how long past a run's timeout
+	// the api waits before giving up on a `working` row nobody has
+	// reported. It is not a second timeout — the guest owns that, kills
+	// the window itself, and stops the run's clock while a
+	// `repose-ask` waits for the owner (I-1256), so a run may honestly
+	// be open far longer than timeout_s. This is the "nobody has told
+	// me anything in hours" case: a machine that went away, or a report
+	// the notify budget dropped.
+	WorkingGrace = 2 * time.Hour
 )
 
 // Stale is when the worker fails a row still in the hand-off: past every
@@ -401,8 +407,16 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 type Store struct {
 	pool  *db.Pool
 	hooks *webhooks.Store
-	now   func() time.Time
+	// events raises the endings the api writes itself, as
+	// internal/api/questions raises a question's (I-1256). nil raises
+	// none, which is a store in a test that is not watching for them.
+	events *events.Ingest
+	now    func() time.Time
 }
+
+// SetEvents gives the store the ingest, which app.go installs after New
+// because the ingest is built first.
+func (s *Store) SetEvents(e *events.Ingest) { s.events = e }
 
 // New builds a store. hooks may be nil on an api with no webhook routes
 // configured, and a route trigger is then refused rather than half made.
@@ -533,6 +547,15 @@ const runCols = `id, project_id, trigger_id, trigger_name, source, state, coales
 	coalesce(tmux_window, ''), coalesce(dedupe_key, ''), delivery_id,
 	payload_bytes, skips, started_machine, coalesce(payload_path, ''), dry_run, payload_run,
 	command_id, started_at, finished_at, created_at`
+
+// scanRunWith reads a run and one more column, for a query that joins
+// something onto it.
+func scanRunWith(rows pgx.Rows, r *Run, extra *string) error {
+	return rows.Scan(&r.ID, &r.ProjectID, &r.TriggerID, &r.TriggerName, &r.Source, &r.State,
+		&r.Reason, &r.Summary, &r.LinkURL, &r.LinkLabel, &r.Window, &r.DedupeKey, &r.DeliveryID,
+		&r.PayloadBytes, &r.Skips, &r.StartedMachine, &r.PayloadPath, &r.DryRun, &r.PayloadRun,
+		&r.CommandID, &r.StartedAt, &r.FinishedAt, &r.CreatedAt, extra)
+}
 
 func scanRun(rows pgx.Rows) (Run, error) {
 	var r Run

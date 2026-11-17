@@ -181,7 +181,11 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.routes = webhooks.New(a.pool, a.sec, cfg.WebhookHost)
 	a.triggers = triggers.New(a.pool, a.routes)
 	a.triggerClock = triggers.NewClock(a.triggers, a.hostMgr, log)
+	a.triggers.SetEvents(a.events)
 	a.events.SetTriggers(a.triggers)
+	// Every create, start and restore carries the set, which is what
+	// makes a guest that lost it come back with it (I-1248).
+	a.engine.SetTriggers(a.triggers)
 	a.events.SetTriggerDone(a.StopAfterRun)
 	// The rest rule and the wake (DECISIONS I-818). It sends straight to
 	// the host, outside the op engine: the op that needs a machine awake
@@ -207,6 +211,10 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.say.Waker = a.resting
 	a.triggerClock.Wake = a.resting
 	a.triggerClock.Start = a
+	// The push is this process's: only it holds a host's stream, so the
+	// http one notifies and the clock's listener does the sending
+	// (I-1162).
+	a.triggerClock.Push = a.pushTriggers
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -343,6 +351,9 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		// The http process cannot send a command (I-1162), so a changed
 		// set is pushed by the grpc one; in API_MODE=all this is the
 		// same process and the push is direct.
+		// In API_MODE=all this is the same process and the push is
+		// direct; across two, the store's own NOTIFY carries it to the
+		// grpc one, so this is a fast path and never the only one.
 		TriggerPush: func(ctx context.Context, projectID uuid.UUID) {
 			a.pushTriggers(ctx, projectID)
 		},

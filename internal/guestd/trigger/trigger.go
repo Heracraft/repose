@@ -256,21 +256,25 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 			r.log.Warn("dedupe store unreadable", "event", "trigger_run", "err", err.Error())
 		}
 		if seen {
-			res := r.skip(req, triggerrun.ReasonDuplicate)
-			return res, nil
+			return r.skip(req, triggerrun.ReasonDuplicate), nil
 		}
-		// The key is remembered once the event is admitted, which is at
-		// the end: a gate that refused it has not paid for a run, so a
-		// provider's retry of a gated event is gated again rather than
-		// read as a duplicate.
-		defer func() { _ = r.remember(t.Name, key) }()
 	}
-	if over := r.overHourlyCap(t.Name); over {
-		return r.skip(req, triggerrun.ReasonTooManyFires), nil
+	// The hour's cap, the concurrency limit, the window's name and the
+	// run's place in the registry are taken under one lock: two
+	// deliveries that arrive together would otherwise both pass a limit
+	// of one and both take the name `t-apply`, and tmux would open two
+	// windows with one name for the timeout to pick between.
+	rn, reason := r.reserve(t, req)
+	if reason != "" {
+		return r.skip(req, reason), nil
 	}
-	if n := r.working(t.Name); uint32(n) >= max32(t.Concurrency, 1) {
-		return r.skip(req, triggerrun.ReasonConcurrency), nil
-	}
+	// Anything that refuses the run from here gives the slot back.
+	admitted := false
+	defer func() {
+		if !admitted {
+			r.release(rn.ID)
+		}
+	}()
 
 	dir := r.workdir(t)
 	payload, headers, bytes, err := r.writePayload(t, req)
@@ -280,11 +284,8 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 	}
 
 	if t.Gate != "" {
-		switch reason := r.gate(ctx, t, dir, payload, headers); reason {
-		case "":
-		default:
-			res := r.skip(req, reason)
-			return res, nil
+		if reason := r.gate(ctx, t, req.RunID, dir, payload, headers); reason != "" {
+			return r.skip(req, reason), nil
 		}
 	}
 	if req.DryRun {
@@ -308,8 +309,8 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 		return r.fail(req, triggerrun.ReasonNoPermissionMode), nil
 	}
 
-	window := r.windowName(t.Name)
-	cmd := agentwindow.NewWindow(r.project().Slug, window, dir, agent, prompt, "")
+	window := rn.Window
+	cmd := agentwindow.NewWindow(r.project().Slug, window, agentwindow.Quote(dirPath(r.paths, dir)), agent, prompt, "")
 	env := append(sysdep.DevEnv(r.paths, "dev"),
 		"REPOSE_TRIGGER="+t.Name,
 		"REPOSE_RUN="+req.RunID,
@@ -329,14 +330,19 @@ func (r *Runner) Start(ctx context.Context, req Request) (Result, error) {
 		return r.fail(req, triggerrun.ReasonNoAgent), nil
 	}
 
+	admitted = true
 	now := r.now()
-	rn := &run{ID: req.RunID, Trigger: t.Name, Window: window, Source: req.Source,
-		Started: now, LastSeen: now, DedupeKey: r.dedupeKey(t, req), Payload: bytes,
-		TimeoutS: t.TimeoutS}
 	r.mu.Lock()
-	r.runs[req.RunID] = rn
+	rn.Started, rn.LastSeen, rn.Payload, rn.TimeoutS = now, now, bytes, t.TimeoutS
+	rn.DedupeKey = r.dedupeKey(t, req)
 	r.fires[t.Name] = append(r.fires[t.Name], now)
 	r.mu.Unlock()
+	// The key is remembered only once the event is admitted: a gated or
+	// dry run has paid for nothing, so a provider's retry of it is
+	// gated again rather than read as a duplicate.
+	if key := r.dedupeKey(t, req); key != "" {
+		_ = r.remember(t.Name, key)
+	}
 	if err := r.writeMark(rn); err != nil {
 		r.log.Warn("run mark not written", "event", "trigger_run", "run_id", rn.ID, "err", err.Error())
 	}
@@ -350,6 +356,64 @@ func max32(a, b uint32) uint32 {
 		return a
 	}
 	return b
+}
+
+// reserve takes the slot, the hour's place and the window's name under
+// one lock, and puts the run in the registry before anything slow
+// happens. A refusal from here on calls release.
+func (r *Runner) reserve(t Trigger, req Request) (*run, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cutoff := r.now().Add(-time.Hour)
+	kept := r.fires[t.Name][:0]
+	for _, at := range r.fires[t.Name] {
+		if at.After(cutoff) {
+			kept = append(kept, at)
+		}
+	}
+	r.fires[t.Name] = kept
+	if len(kept) >= FiresPerHour {
+		return nil, triggerrun.ReasonTooManyFires
+	}
+	working := 0
+	taken := map[string]bool{}
+	for _, other := range r.runs {
+		if !other.Ended {
+			taken[other.Window] = true
+			if other.Trigger == t.Name {
+				working++
+			}
+		}
+	}
+	if uint32(working) >= max32(t.Concurrency, 1) {
+		return nil, triggerrun.ReasonConcurrency
+	}
+	rn := &run{ID: req.RunID, Trigger: t.Name, Source: req.Source,
+		Window: freeWindow("t-"+t.Name, taken), Started: r.now(), LastSeen: r.now()}
+	r.runs[rn.ID] = rn
+	return rn, ""
+}
+
+// release gives back a reservation a refusal did not use.
+func (r *Runner) release(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.runs, id)
+}
+
+// freeWindow is `t-<trigger>`, and `t-<trigger>.2` for a second
+// concurrent run: a dot, because a trigger may be named `apply-2` and
+// `t-apply-2` would be both that trigger's window and the second run of
+// `apply` (I-1256).
+func freeWindow(base string, taken map[string]bool) string {
+	if !taken[base] {
+		return base
+	}
+	for n := 2; ; n++ {
+		if w := base + "." + strconv.Itoa(n); !taken[w] {
+			return w
+		}
+	}
 }
 
 // skip and fail report a run that never started. Both are terminal, so
@@ -404,58 +468,6 @@ func cut(s string, n int) string {
 	return s
 }
 
-// windowName is `t-<trigger>`, and `t-<trigger>.2` for a second
-// concurrent run: a dot, because a trigger may be named `apply-2` and
-// `t-apply-2` would be both that trigger's window and the second run of
-// `apply` (I-1256).
-func (r *Runner) windowName(name string) string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	taken := map[string]bool{}
-	for _, rn := range r.runs {
-		if !rn.Ended {
-			taken[rn.Window] = true
-		}
-	}
-	base := "t-" + name
-	if !taken[base] {
-		return base
-	}
-	for n := 2; ; n++ {
-		if w := base + "." + strconv.Itoa(n); !taken[w] {
-			return w
-		}
-	}
-}
-
-// working is how many runs of a trigger are in flight.
-func (r *Runner) working(name string) int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	n := 0
-	for _, rn := range r.runs {
-		if rn.Trigger == name && !rn.Ended {
-			n++
-		}
-	}
-	return n
-}
-
-// overHourlyCap reports whether this trigger has had its hour's fires.
-func (r *Runner) overHourlyCap(name string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	cutoff := r.now().Add(-time.Hour)
-	kept := r.fires[name][:0]
-	for _, at := range r.fires[name] {
-		if at.After(cutoff) {
-			kept = append(kept, at)
-		}
-	}
-	r.fires[name] = kept
-	return len(kept) >= FiresPerHour
-}
-
 // workdir is the session's directory as the guest's shell spells it.
 func (r *Runner) workdir(t Trigger) string {
 	slug := r.project().Slug
@@ -469,6 +481,12 @@ func (r *Runner) workdir(t Trigger) string {
 	default:
 		return t.Workdir
 	}
+}
+
+// dirPath turns the workdir's shell form into the path this process and
+// a quoted shell word both read.
+func dirPath(p sysdep.Paths, dir string) string {
+	return strings.Replace(dir, "$HOME", p.Home(), 1)
 }
 
 // prompt reads the prompt file, or says why it cannot.
@@ -495,7 +513,7 @@ func (r *Runner) prompt(t Trigger, dir string) (string, string) {
 // resolve turns the workdir's shell form and the prompt's relative path
 // into a filesystem path this process can read.
 func (r *Runner) resolve(t Trigger, dir string) string {
-	d := strings.Replace(dir, "$HOME", r.paths.Home(), 1)
+	d := dirPath(r.paths, dir)
 	if filepath.IsAbs(t.PromptPath) {
 		return t.PromptPath
 	}
@@ -583,18 +601,18 @@ func (r *Runner) writePayload(t Trigger, req Request) (payload []byte, headers m
 // gate runs the admission command: through the guest's shell, as dev, in
 // the working directory, with the payload on stdin and the project's
 // secrets in its environment. "" admits (I-1254).
-func (r *Runner) gate(ctx context.Context, t Trigger, dir string, payload []byte, headers map[string]string) string {
+func (r *Runner) gate(ctx context.Context, t Trigger, runID, dir string, payload []byte, headers map[string]string) string {
 	gctx, cancel := context.WithTimeout(ctx, GateTimeout)
 	defer cancel()
 	env := append(sysdep.DevEnv(r.paths, "dev"), "REPOSE_TRIGGER="+t.Name)
 	if payload != nil {
-		env = append(env, "REPOSE_PAYLOAD="+r.payloadPath(t.Name, "gate"))
+		env = append(env, "REPOSE_PAYLOAD="+r.payloadPath(t.Name, runID))
 	}
 	if headers != nil {
-		env = append(env, "REPOSE_PAYLOAD_HEADERS="+r.headersPath(t.Name, "gate"))
+		env = append(env, "REPOSE_PAYLOAD_HEADERS="+r.headersPath(t.Name, runID))
 	}
 	res, err := r.run.Run(gctx, sysdep.RunSpec{
-		Argv: []string{"bash", "-lc", "cd " + agentwindow.Quote(strings.Replace(dir, "$HOME", r.paths.Home(), 1)) + " 2>/dev/null; " + t.Gate},
+		Argv: []string{"bash", "-lc", "cd " + agentwindow.Quote(dirPath(r.paths, dir)) + " 2>/dev/null; " + t.Gate},
 		User: "dev", Env: env, Stdin: payload, MaxOutput: 4 << 10,
 	})
 	switch {
@@ -881,8 +899,11 @@ func (r *Runner) sweep(ctx context.Context) {
 		switch {
 		case !live[rn.Window]:
 			// The window is gone: the agent exited, or somebody closed
-			// it. A run that had reported its summary is done.
-			if rn.Summary != "" {
+			// it. A run whose agent worked is done, with or without a
+			// summary — the state is the machine's and the words are the
+			// agent's (I-688). A window that never had an agent in it is
+			// the failure.
+			if rn.SawAgent {
 				end = append(end, ending{rn, triggerrun.StateDone, ""})
 			} else {
 				end = append(end, ending{rn, triggerrun.StateFailed, triggerrun.ReasonNoAgent})
@@ -906,11 +927,7 @@ func (r *Runner) sweep(ctx context.Context) {
 			// dev-shell load is the slow case and StartGrace covers it.
 			end = append(end, ending{rn, triggerrun.StateFailed, triggerrun.ReasonNotLoggedIn})
 		case !present && rn.SawAgent:
-			if rn.Summary != "" {
-				end = append(end, ending{rn, triggerrun.StateDone, ""})
-			} else {
-				end = append(end, ending{rn, triggerrun.StateFailed, triggerrun.ReasonNoAgent})
-			}
+			end = append(end, ending{rn, triggerrun.StateDone, ""})
 		}
 		rn.LastSeen = now
 		// The timeout counts time working, so an hour spent waiting for

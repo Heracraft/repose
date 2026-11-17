@@ -75,3 +75,6 @@ __pycache__/
 
 
 
+
+# A `go build ./cmd/fakeapi` in the repo root (2026-11-17).
+/fakeapi

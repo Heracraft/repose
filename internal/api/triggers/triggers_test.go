@@ -341,8 +341,9 @@ func TestARunningRunEndsWhenTheMachineStops(t *testing.T) {
 		t.Errorf("a run the machine stopped under is %q/%q, want failed/machine_stopped", run.State, run.Reason)
 	}
 
-	// A second run whose report never came, started long enough ago to
-	// be past its timeout and the grace.
+	// A second run nobody has reported on for hours: the api's backstop,
+	// not a second timeout — the guest owns that, and its clock stops
+	// while a question waits (I-1256).
 	old := uuid.Must(uuid.NewV7())
 	started := time.Now().UTC().Add(-2*time.Hour - triggers.WorkingGrace)
 	if _, _, err := s.Apply(ctx, triggers.Report{
@@ -366,11 +367,51 @@ func TestARunningRunEndsWhenTheMachineStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if swept.State != triggerrun.StateFailed || swept.Reason != triggerrun.ReasonTimeout {
-		t.Errorf("the swept run is %q/%q, want failed/timeout", swept.State, swept.Reason)
+	if swept.State != triggerrun.StateFailed || swept.Reason != triggerrun.ReasonUnreachable {
+		t.Errorf("the swept run is %q/%q, want failed/unreachable: the guest owns the timeout",
+			swept.State, swept.Reason)
 	}
 	if swept.FinishedAt == nil {
 		t.Error("the swept run has no finish time, so nothing can tell it ended")
+	}
+}
+
+// The api's backstop does not touch a run the guest is still holding
+// open: a `repose-ask` at 02:00 waits for the owner, the guest stops
+// that run's clock, and the api must not end the run the design calls
+// load-bearing (I-1256).
+func TestTheBackstopLeavesARunTheGuestIsHolding(t *testing.T) {
+	pool := testdb.Open(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	uid, pid := newProject(t, pool)
+	if _, _, err := s.Put(ctx, uid, pid, "large", triggers.Input{
+		Name: "triage", Kind: triggers.KindRoute, Route: "r", PromptPath: strp("t.md"),
+		TimeoutS: intp(60),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.Must(uuid.NewV7())
+	// Started an hour ago, with a one-minute timeout: far past the
+	// guest's own clock, inside the api's backstop.
+	started := time.Now().UTC().Add(-time.Hour)
+	if _, _, err := s.Apply(ctx, triggers.Report{
+		RunID: runID, ProjectID: pid, Trigger: "triage", State: triggerrun.StateWorking,
+		StartedAt: &started,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.FailWorking(ctx); err != nil {
+		t.Fatal(err)
+	} else if n != 0 {
+		t.Fatalf("the backstop ended %d runs the guest is still holding", n)
+	}
+	run, err := s.GetRun(ctx, pid, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.State != triggerrun.StateWorking {
+		t.Errorf("the run is %q, want working", run.State)
 	}
 }
 

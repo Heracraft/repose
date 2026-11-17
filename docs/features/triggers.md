@@ -621,7 +621,10 @@ knowledge `say` waits on). The run's state is:
 
 `trigger_failed` is a platform kind: it is never held while the owner is
 attached (I-689 holds agent kinds), because a trigger failing silently is
-the failure this feature exists to make visible. It counts against the
+the failure this feature exists to make visible. Its title is the shape
+every other event's is, `<project>: trigger failed`, and its body opens
+with the trigger's name and what happened, because a project may have
+twenty: `sweep failed: the agent is not logged in`. It counts against the
 project's 30 notifications an hour like everything else, and a trigger
 that fails every 15 minutes is why `--notify never` exists. It is in
 `notifications.md`'s table with its title and payload.

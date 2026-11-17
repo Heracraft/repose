@@ -62,11 +62,11 @@ type Server struct {
 	opts Options
 	ln   net.Listener
 
-	mu       sync.Mutex
-	calls    []Call
-	dropped  map[string]bool
-	secrets  map[string][]byte
-	princ    []string
+	mu      sync.Mutex
+	calls   []Call
+	dropped map[string]bool
+	secrets map[string][]byte
+	princ   []string
 	// triggers is the last set SetTriggers carried (DECISIONS I-1248).
 	triggers []*guestdv1.Trigger
 	frozen   bool

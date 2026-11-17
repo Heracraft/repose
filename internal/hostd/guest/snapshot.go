@@ -377,6 +377,7 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 			return fail(errf(CodeInternal, "gcroot: %v", err))
 		}
 	}
+	m.cacheTriggers(g.GuestID, c.Triggers)
 	if err := m.cacheSecrets(g.GuestID, c.Secrets, c.SshCaPub, c.HostKey, c.HostCert); err != nil {
 		return fail(err)
 	}

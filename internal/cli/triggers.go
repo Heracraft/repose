@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/heracraft/repose/internal/triggerrun"
 	"github.com/heracraft/repose/internal/triggerspec"
 )
 
@@ -420,48 +421,11 @@ func triggerWhy(r TriggerRun) string {
 	return why
 }
 
-// triggerReasonSentence is the one table of §4.1: every surface prints
-// the same words for a reason.
-func triggerReasonSentence(reason string) string {
-	if reason == "" {
-		return ""
-	}
-	if s, ok := triggerReasons[reason]; ok {
-		return s
-	}
-	// `gated` carries the gate's own last line of stderr, and anything
-	// else is a reason a newer api knows and this CLI does not.
-	if s, rest, ok := strings.Cut(reason, ": "); ok && s == "gated" {
-		return "the gate refused it: " + rest
-	}
-	return reason
-}
-
-var triggerReasons = map[string]string{
-	"off":                "the trigger is off",
-	"stopped":            "the machine was stopped",
-	"busy":               "the machine was busy",
-	"error":              "the machine is in error",
-	"route_gone":         "the route was removed",
-	"payload_too_large":  "the event was over 1 MiB",
-	"too_many_fires":     "more than 60 fires this hour",
-	"duplicate":          "a duplicate of an event already seen",
-	"gated":              "the gate refused it",
-	"gate_timeout":       "the gate took more than 10 seconds",
-	"concurrency":        "a run is working",
-	"plan_limit":         "your plan's memory is in use",
-	"prompt_missing":     "the prompt file is missing",
-	"prompt_too_large":   "the prompt file is over 64 KB",
-	"no_agent":           "the agent is not installed on this machine",
-	"not_logged_in":      "the agent is not logged in",
-	"no_permission_mode": "the agent stopped at a permission prompt",
-	"timeout":            "killed at the timeout",
-	"guest_restart":      "the machine's agent supervisor restarted",
-	"machine_stopped":    "the machine stopped",
-	"unreachable":        "the machine did not take the fire",
-	"payload_gone":       "that run's payload is no longer kept",
-	"dry_run":            "the gate ran and no agent was started",
-}
+// triggerReasonSentence is internal/triggerrun's one table, which the
+// api and hostd read too: the copy that used to live here was already
+// missing `clock_late` by the time it was written, so the most common
+// skip on a machine that was off printed a raw token.
+func triggerReasonSentence(reason string) string { return triggerrun.Sentence(reason) }
 
 // TriggerFireOptions is `repose triggers fire`'s flags.
 type TriggerFireOptions struct {

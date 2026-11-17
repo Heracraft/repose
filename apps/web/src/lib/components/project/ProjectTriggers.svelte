@@ -30,6 +30,7 @@
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { pollWhileVisible } from '$lib/poll';
 	import { ageShort, dateTime } from '$lib/format';
+	import { reasonSentence } from '$lib/triggers';
 	import type { Trigger, TriggerRun } from '$lib/api/types';
 
 	let { projectId }: { projectId: string } = $props();
@@ -95,7 +96,7 @@
 		try {
 			const run = await fireTrigger(projectId, name);
 			if (run.state === 'skipped') {
-				toast.message(`${name}: ${reasonText(run.reason)}`);
+				toast.message(`${name}: ${reasonSentence(run.reason)}`);
 			}
 			await load();
 			if (open === name) runs = await listTriggerRuns(projectId, name);
@@ -161,46 +162,11 @@
 		return t.last_run.state;
 	}
 
-	/** The one table of reasons (features/triggers.md §4.1): every surface
-	 *  prints the same words. `gated` carries the gate's own line. */
-	const REASONS: Record<string, string> = {
-		off: 'the trigger is off',
-		stopped: 'the machine was stopped',
-		busy: 'the machine was busy',
-		error: 'the machine is in error',
-		route_gone: 'the route was removed',
-		payload_too_large: 'the event was over 1 MiB',
-		too_many_fires: 'more than 60 fires this hour',
-		duplicate: 'a duplicate of an event already seen',
-		gated: 'the gate refused it',
-		gate_timeout: 'the gate took more than 10 seconds',
-		concurrency: 'a run is working',
-		plan_limit: "your plan's memory is in use",
-		prompt_missing: 'the prompt file is missing',
-		prompt_too_large: 'the prompt file is over 64 KB',
-		no_agent: 'the agent is not installed on this machine',
-		not_logged_in: 'the agent is not logged in',
-		no_permission_mode: 'the agent stopped at a permission prompt',
-		timeout: 'killed at the timeout',
-		guest_restart: "the machine's agent supervisor restarted",
-		machine_stopped: 'the machine stopped',
-		unreachable: 'the machine did not take the fire',
-		payload_gone: "that run's payload is no longer kept",
-		dry_run: 'the gate ran and no agent was started'
-	};
-
-	function reasonText(reason?: string): string {
-		if (!reason) return '';
-		if (REASONS[reason]) return REASONS[reason];
-		if (reason.startsWith('gated: ')) return `the gate refused it: ${reason.slice(7)}`;
-		return reason;
-	}
-
 	/** What a run says for itself: the agent's own words where it sent
 	 *  any, else the reason, with the count where the row stands for
 	 *  several refusals in its hour. */
 	function why(r: TriggerRun): string {
-		const base = r.summary || reasonText(r.reason);
+		const base = r.summary || reasonSentence(r.reason);
 		if (r.skips && r.skips > 1) return `${base} (${r.skips} events)`;
 		return base;
 	}

@@ -35,8 +35,15 @@ type Starter interface {
 }
 
 // NotifyChannel carries "a run is waiting" from the http process to the
-// worker in the grpc one. The worker's tick covers a lost NOTIFY.
-const NotifyChannel = "repose_trigger_runs"
+// worker in the grpc one, and SetChannel "this project's set changed".
+// Both are the same lesson as a say's row: only the grpc process holds a
+// host's stream (I-1162). The worker's tick covers a lost NOTIFY for a
+// run; a lost set notify costs nothing, because the set rides the next
+// start.
+const (
+	NotifyChannel = "repose_trigger_runs"
+	SetChannel    = "repose_trigger_sets"
+)
 
 // TickInterval is the clock's pass. A fire lands within a minute of its
 // time, which is what features/triggers.md §6 promises.
@@ -57,6 +64,9 @@ type Clock struct {
 	// run then skips with the reason that says why.
 	Wake  Waker
 	Start Starter
+	// Push sends a project's whole set to its machine. It is the app's,
+	// because only this process can send a command.
+	Push func(ctx context.Context, projectID uuid.UUID)
 
 	// Interval and Batch are the pass; tests shorten them.
 	Interval time.Duration
@@ -123,17 +133,27 @@ func (c *Clock) loop(ctx context.Context) {
 	}
 }
 
-// listen turns a NOTIFY from the http process into a pass.
+// listen turns a NOTIFY from the http process into a pass, or into a
+// push of one project's set.
 func (c *Clock) listen(ctx context.Context) {
 	for ctx.Err() == nil {
 		conn, err := c.store.pool.Acquire(ctx)
 		if err != nil {
 			return
 		}
-		if _, err := conn.Exec(ctx, "listen "+NotifyChannel); err == nil {
+		_, errSet := conn.Exec(ctx, "listen "+SetChannel)
+		_, errRun := conn.Exec(ctx, "listen "+NotifyChannel)
+		if errRun == nil && errSet == nil {
 			for {
-				if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
+				n, err := conn.Conn().WaitForNotification(ctx)
+				if err != nil {
 					break
+				}
+				if n.Channel == SetChannel {
+					if id, err := uuid.Parse(n.Payload); err == nil && c.Push != nil {
+						c.Push(ctx, id)
+					}
+					continue
 				}
 				select {
 				case c.kicks <- struct{}{}:
