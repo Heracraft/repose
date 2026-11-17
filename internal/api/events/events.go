@@ -183,12 +183,12 @@ const RatePerHour = 30
 
 // Ingest writes events.
 type Ingest struct {
-	pool      *db.Pool
-	m         *metrics.M
-	log       *slog.Logger
-	now       func() time.Time
-	questions QuestionHandler
-	resting   RestingHandler
+	pool        *db.Pool
+	m           *metrics.M
+	log         *slog.Logger
+	now         func() time.Time
+	questions   QuestionHandler
+	resting     RestingHandler
 	says        SayHandler
 	triggers    TriggerHandler
 	triggerDone func(ctx context.Context, runID uuid.UUID)
