@@ -378,7 +378,7 @@
 										</p>
 										{#if t.route}
 											<p class="turl">
-												<span>Route <b>{t.route.name}</b></span>
+												<span>Route <span class="rname">{t.route.name}</span></span>
 												<CopyButton
 													text={t.route.url}
 													label="Copy URL"
@@ -444,10 +444,13 @@
 		font: inherit;
 		color: inherit;
 	}
+	.rname {
+		font-weight: 500;
+	}
 	.trunsbtn:focus-visible {
 		outline: 2px solid var(--hk-ring);
 		outline-offset: 2px;
-		border-radius: 2px;
+		border-radius: var(--hk-radius-xs);
 	}
 	/* The door under the name, at the widths where the On column is not
 	   drawn. The media query is the component's own, as EventRow's and
