@@ -466,6 +466,8 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	if err := m.setResting(g, nil, reason); err != nil {
 		m.log(g).Warn("resting mark not cleared after the resume", "event", "guest_resting", "err", err.Error())
 	}
+	// The monitor dials nothing while the mark stands (I-1228); now it may.
+	m.pokeMonitor(id)
 	sess, serr := m.awaitSession(ctx, id, WakeGuestdWait, nil)
 	if serr != nil {
 		m.countWakeFailed("guestd")
@@ -473,6 +475,35 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "guestd")
 		return nil, serr
 	}
+	perr := m.settleGuestd(ctx, g, sess)
+	if perr != nil && sessionEnded(sess) {
+		// The session ended under the wake: guestd replaced it with a
+		// newer connection (one that waited out the rest in the
+		// hypervisor's backlog, DECISIONS I-1228) or restarted. guestd is
+		// answering; this connection is what is gone. The next session
+		// gets one more try before the wake is called failed.
+		m.log(g).Info("guestd session ended during the wake; trying the next", "event", "guest_resting")
+		if next, nerr := m.awaitSession(ctx, id, WakeGuestdWait, sess); nerr == nil {
+			sess, perr = next, m.settleGuestd(ctx, g, next)
+		}
+	}
+	if perr != nil {
+		m.countWakeFailed("guestd")
+		m.Warn("guest_wake_failed", "guest "+id+": no answer from the guest after the resume")
+		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "guestd", "err", perr.Error())
+		return nil, errf(CodeGuestUnresponsive, "guestd did not answer after the resume: %v", perr)
+	}
+	took := m.d.Now().Sub(start)
+	if m.d.Metrics != nil {
+		m.d.Metrics.GuestWakeSeconds.Observe(took.Seconds())
+	}
+	m.log(g).Info("guest woken", "event", "guest_resting", "reason", reason, "wake_ms", took.Milliseconds())
+	return &hostdv1.WakeResult{WasResting: true, WakeMs: uint32(took.Milliseconds())}, nil
+}
+
+// settleGuestd is the wake's guest side on one session: the clock step
+// with the desktop's idle stamps, then the Ping that says guestd answers.
+func (m *Manager) settleGuestd(ctx context.Context, g *state.Guest, sess vsockclient.Session) error {
 	sec := strconv.FormatFloat(float64(m.d.Now().UnixNano())/1e9, 'f', 6, 64)
 	cctx, ccancel := context.WithTimeout(ctx, PrepareTimeout)
 	// The clock step and the desktop's idle stamps go in one call: the
@@ -497,25 +528,28 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	// the line it logs.
 	script := "date -u -s @" + sec + "; rc=$?; " +
 		`d=/run/repose/desktop; if [ -d "$d" ]; then touch "$d/last-client" "$d/last-cdp" && chown dev:dev "$d/last-client" "$d/last-cdp"; fi; exit $rc`
-	if r, err := sess.Exec(cctx, []string{"/bin/sh", "-c", script}, 10, ""); err != nil || r.GetExitCode() != 0 {
+	r, err := sess.Exec(cctx, []string{"/bin/sh", "-c", script}, 10, "")
+	ccancel()
+	if err != nil && sessionEnded(sess) {
+		return err // the session, not the clock: the caller tries the next one
+	}
+	if err != nil || r.GetExitCode() != 0 {
 		m.log(g).Warn("guest clock not set after the wake", "event", "guest_resting")
 	}
-	ccancel()
 	pctx, pcancel := context.WithTimeout(ctx, WakeGuestdWait)
 	_, perr := sess.Ping(pctx)
 	pcancel()
-	if perr != nil {
-		m.countWakeFailed("guestd")
-		m.Warn("guest_wake_failed", "guest "+id+": no answer from the guest after the resume")
-		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "guestd", "err", perr.Error())
-		return nil, errf(CodeGuestUnresponsive, "guestd did not answer after the resume: %v", perr)
+	return perr
+}
+
+// sessionEnded says whether a session's connection is gone.
+func sessionEnded(s vsockclient.Session) bool {
+	select {
+	case <-s.Done():
+		return true
+	default:
+		return false
 	}
-	took := m.d.Now().Sub(start)
-	if m.d.Metrics != nil {
-		m.d.Metrics.GuestWakeSeconds.Observe(took.Seconds())
-	}
-	m.log(g).Info("guest woken", "event", "guest_resting", "reason", reason, "wake_ms", took.Milliseconds())
-	return &hostdv1.WakeResult{WasResting: true, WakeMs: uint32(took.Milliseconds())}, nil
 }
 
 func (m *Manager) countWakeFailed(reason string) {

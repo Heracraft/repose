@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-970 entries.
+971 entries.
 
 ## Scope
 
@@ -1002,3 +1002,4 @@ pointer, not a summary.
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L33802
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — L33846
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34027
+- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34063

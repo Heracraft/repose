@@ -100,6 +100,18 @@ func Listen(path string, opts Options) (*Server, error) {
 // Path is the socket path.
 func (s *Server) Path() string { return s.path }
 
+// DropNext makes the next request of that kind close the connection, as
+// DropOnce does from the start; it can be set once the fake is serving.
+func (s *Server) DropNext(kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.opts.DropOnce == nil {
+		s.opts.DropOnce = map[string]bool{}
+	}
+	s.opts.DropOnce[kind] = true
+	delete(s.dropped, kind)
+}
+
 func (s *Server) accept() {
 	defer s.wg.Done()
 	for {
