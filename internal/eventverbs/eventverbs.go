@@ -21,6 +21,11 @@ var Verbs = map[string]string{
 	// notifies nobody, so this word is only ever read in `repose events`
 	// and the dashboard's event stream.
 	"agent_prompted": "got a message",
+	// A trigger's run (DECISIONS I-1256). `trigger_run` is every run
+	// that ended and notifies nobody; `trigger_failed` is the one that
+	// reaches the owner, and its title names the trigger.
+	"trigger_run":          "ran a trigger",
+	"trigger_failed":       "trigger failed",
 	"idle_running":         "unused for 24h, holding plan memory",
 	"temp_expiring":        "destroyed in an hour",
 	"temp_destroyed":       "temporary machine destroyed",

@@ -23,6 +23,10 @@ create table triggers (
   -- uses it, so this is `on delete set null` and not cascade: a route
   -- deleted by hand must leave a trigger that says what it was.
   route_id     uuid references webhook_routes(id) on delete set null,
+  -- Whether `triggers add` made that route. A route the user made first
+  -- is not the trigger's to remove: a removal tombstones its token for
+  -- 30 days (I-1114) and the user cannot undo that.
+  route_made   boolean not null default false,
 
   -- A schedule trigger's clock (I-1252). `spec` is the canonical
   -- spelling internal/triggerspec stores, `zone` an IANA name.
@@ -101,6 +105,11 @@ create table trigger_runs (
   -- hand-off between the api's two processes (I-1162): the http one
   -- writes it and the grpc one sends it, so anything held in the
   -- asking process's memory would be lost between them.
+  -- The hour an edge-side refusal coalesces into, null on every other
+  -- row. It is a column and not an expression so that the unique index
+  -- below can hold "one row per trigger, reason and hour" in the insert
+  -- itself, rather than in a read-then-write that two deliveries race.
+  skip_hour     timestamptz,
   payload_path  text,
   dry_run       boolean not null default false,
   payload_run   uuid,
@@ -119,4 +128,6 @@ create index trigger_runs_use on trigger_runs (project_id, finished_at desc) whe
 create unique index trigger_runs_command on trigger_runs (command_id) where command_id is not null;
 -- The coalescing lookup: the open skip row of this trigger, reason and
 -- hour (I-1254).
-create index trigger_runs_coalesce on trigger_runs (trigger_id, reason, created_at desc) where state = 'skipped';
+create unique index trigger_runs_coalesce on trigger_runs (trigger_id, reason, skip_hour) where skip_hour is not null;
+-- The sweep that ends a run the machine stopped reporting on (I-1256).
+create index trigger_runs_working on trigger_runs (started_at) where state = 'working';

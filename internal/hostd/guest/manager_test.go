@@ -52,8 +52,9 @@ func TestEveryCommandKindIsHandled(t *testing.T) {
 		}
 		seen++
 	}
-	if seen != 18 {
-		t.Fatalf("expected 18 commands in the contract, saw %d", seen)
+	// 18 before SetTriggers and RunTrigger (DECISIONS I-1248, I-1252).
+	if seen != 20 {
+		t.Fatalf("expected 20 commands in the contract, saw %d", seen)
 	}
 }
 

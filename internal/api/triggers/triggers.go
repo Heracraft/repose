@@ -35,6 +35,7 @@ import (
 
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/triggerrun"
 	"github.com/heracraft/repose/internal/triggerspec"
 )
 
@@ -60,17 +61,25 @@ const (
 	SummaryCap = 1 << 10
 	ReasonCap  = 200
 	// FiresPerHour is the most runs a route trigger is admitted an hour.
+	// The receiver enforces it; the api carries it so one number is
+	// written once.
 	FiresPerHour = 60
+	// PayloadCap is the webhook body cap, which bounds what a guest may
+	// report a run's payload as.
+	PayloadCap = 1 << 20
+	// PromptPathCap bounds a stored prompt path.
+	PromptPathCap = 200
+	// WorkingGrace is how long past its timeout a `working` run may go
+	// unreported before the sweep fails it: a machine that stopped
+	// mid-run, or a report the guest's notify budget dropped.
+	WorkingGrace = 10 * time.Minute
 )
 
-// Handoff is how long the http process waits for the machine's answer to
-// a `fire`, and Stale is when the worker fails a row still in the
-// hand-off: past every waiter's window, so a fire cannot reach a machine
-// long after the sender was told it did not (say's rule, I-1162).
-const (
-	Handoff = 20 * time.Second
-	Stale   = 2 * Handoff
-)
+// Stale is when the worker fails a row still in the hand-off: past every
+// waiter's window, so a fire cannot reach a machine long after the sender
+// was told it did not (say's rule, I-1162). A waiter's own window is the
+// api's long poll, which the op reads bound.
+const Stale = 40 * time.Second
 
 // Kinds of trigger.
 const (
@@ -78,60 +87,27 @@ const (
 	KindSchedule = "schedule"
 )
 
-// Sources of a run.
+// The states, sources and reasons are internal/triggerrun's, which hostd
+// and the CLI read too: a forked copy turned two real failures into
+// unbounded tenant text (I-1256).
 const (
-	SourceRoute = "route"
-	SourceClock = "clock"
-	SourceHand  = "hand"
+	StatePending = triggerrun.StatePending
+	StateSending = triggerrun.StateSending
+	StateWorking = triggerrun.StateWorking
+	StateDone    = triggerrun.StateDone
+	StateFailed  = triggerrun.StateFailed
+	StateTimeout = triggerrun.StateTimeout
+	StateSkipped = triggerrun.StateSkipped
+	Queued       = triggerrun.Queued
+
+	SourceRoute = triggerrun.SourceRoute
+	SourceClock = triggerrun.SourceClock
+	SourceHand  = triggerrun.SourceHand
 )
 
-// States of a run. Pending and Sending are the hand-off between the api's
-// two processes and are never shown to anyone: every surface draws them
-// as `queued`, as a say's are.
-const (
-	StatePending = "pending"
-	StateSending = "sending"
-	StateWorking = "working"
-	StateDone    = "done"
-	StateFailed  = "failed"
-	StateTimeout = "timeout"
-	StateSkipped = "skipped"
-)
-
-// Queued is the word a client sees for the two hand-off states.
-const Queued = "queued"
-
-// Shown turns a stored state into the word every surface prints.
-func Shown(state string) string {
-	if state == StatePending || state == StateSending {
-		return Queued
-	}
-	return state
-}
-
-// Terminal reports whether a run has ended, which is what `fire --wait`
-// and the dashboard's poll wait for.
-func Terminal(state string) bool {
-	switch state {
-	case StateDone, StateFailed, StateTimeout, StateSkipped:
-		return true
-	}
-	return false
-}
-
-// Reasons are the bounded enum a log line may carry (I-1248, the
-// OBSERVABILITY rule). A gate's stderr line is the one reason that is
-// free text, and it never reaches a log field.
-var Reasons = map[string]bool{
-	"off": true, "stopped": true, "busy": true, "error": true,
-	"duplicate": true, "gated": true, "gate_timeout": true,
-	"concurrency": true, "plan_limit": true,
-	"prompt_missing": true, "prompt_too_large": true,
-	"no_agent": true, "not_logged_in": true, "no_permission_mode": true,
-	"timeout": true, "guest_restart": true, "machine_stopped": true,
-	"too_many_fires": true, "unreachable": true, "payload_too_large": true,
-	"route_gone": true, "payload_gone": true, "dry_run": true,
-}
+// Shown and Terminal are triggerrun's.
+func Shown(state string) string  { return triggerrun.Shown(state) }
+func Terminal(state string) bool { return triggerrun.Terminal(state) }
 
 // The refusals a caller turns into its own message.
 var (
@@ -140,6 +116,7 @@ var (
 	ErrInvalidDedupe    = errors.New("a dedupe key is header:NAME or json:FIELD")
 	ErrDedupeOnSchedule = errors.New("--dedupe reads a delivery's header or body, so a schedule has nothing to read")
 	ErrInvalidWorkdir   = errors.New("a workdir is checkout, worktree-N, ~/PATH or /PATH")
+	ErrInvalidPrompt    = errors.New("a prompt path is relative to the working directory, without ..")
 	ErrInvalidAgent     = errors.New("an agent is claude, codex, opencode, gemini or pi")
 	ErrInvalidTimeout   = fmt.Errorf("a timeout is 0 or up to %s", MaxTimeout)
 	ErrAtPromptOnPi     = errors.New("pi reads a prompt that begins with @ as a file, so it cannot be a trigger's prompt")
@@ -161,6 +138,33 @@ var (
 // Agents are the five the base installs, as `repose run --agent` takes
 // them.
 var Agents = map[string]bool{"claude": true, "codex": true, "opencode": true, "gemini": true, "pi": true}
+
+// inputErrors are the refusals a caller caused, which every surface
+// turns into `invalid` and exit 2 rather than a 500 (round 3's blocker:
+// a typed `--notify maybe` answered `internal`).
+var inputErrors = []error{
+	ErrInvalidName, ErrInvalidKind, ErrInvalidDedupe, ErrDedupeOnSchedule,
+	ErrInvalidWorkdir, ErrInvalidPrompt, ErrInvalidAgent, ErrInvalidTimeout,
+	ErrAtPromptOnPi, ErrTooMany, ErrPayloadPath, ErrPayloadGone, ErrNoDoor,
+	// A route name and the route cap are the webhooks store's refusals,
+	// which a trigger's `--route` can cause.
+	webhooks.ErrInvalidName, webhooks.ErrTooMany,
+}
+
+// IsInputError reports whether err is one of the caller's own, including
+// the plain ones Validate builds with errors.New.
+func IsInputError(err error) bool {
+	for _, e := range inputErrors {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return errors.Is(err, triggerspec.ErrSpec) || errors.Is(err, errBadField)
+}
+
+// errBadField is the parent of Validate's one-line refusals, so a caller
+// can tell a field it got wrong from an api that is broken.
+var errBadField = errors.New("invalid field")
 
 // ValidName reports whether name is a usable trigger name.
 func ValidName(name string) bool { return nameRe.MatchString(name) }
@@ -192,6 +196,26 @@ func FirePayloadPath(name string) string { return PayloadDir(name) + "fire-paylo
 // writes for that trigger.
 func ValidPayloadPath(name, path string) bool { return path == FirePayloadPath(name) }
 
+// ValidPromptPath bounds a prompt path: relative to the working
+// directory, no `..`, no absolute path, no NUL. The prompt is the user's
+// own file in their own machine, so this is not a privilege boundary; it
+// keeps a stored path a path (features/triggers.md §2) and keeps
+// `/etc/shadow` out of a row and a window's argv.
+func ValidPromptPath(p string) bool {
+	if p == "" || len(p) > PromptPathCap {
+		return false
+	}
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "~") || strings.Contains(p, "\x00") {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidDedupe reads `header:NAME` or `json:FIELD`.
 func ValidDedupe(s string) bool {
 	kind, rest, ok := strings.Cut(s, ":")
@@ -217,6 +241,9 @@ type Trigger struct {
 
 	RouteID   *uuid.UUID
 	RouteName string
+	// RouteMade is whether `triggers add` made that route, which decides
+	// whether `rm` takes it away again.
+	RouteMade bool
 
 	Spec     string
 	Zone     string
@@ -338,6 +365,9 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 	if in.Workdir != nil && !workdirRe.MatchString(*in.Workdir) {
 		return spec, ErrInvalidWorkdir
 	}
+	if in.PromptPath != nil && !ValidPromptPath(*in.PromptPath) {
+		return spec, ErrInvalidPrompt
+	}
 	if in.Agent != nil && *in.Agent != "" && !Agents[*in.Agent] {
 		return spec, ErrInvalidAgent
 	}
@@ -345,7 +375,7 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 		return spec, ErrInvalidTimeout
 	}
 	if in.Notify != nil && *in.Notify != "failed" && *in.Notify != "never" {
-		return spec, errors.New("--notify is failed or never")
+		return spec, fmt.Errorf("%w: --notify is failed or never", errBadField)
 	}
 	if in.Dedupe != nil && *in.Dedupe != "" {
 		if !ValidDedupe(*in.Dedupe) {
@@ -360,7 +390,7 @@ func (in *Input) Validate(class string) (triggerspec.Spec, error) {
 	if in.Concurrency != nil {
 		n := ClampConcurrency(class, *in.Concurrency)
 		if *in.Concurrency < 1 || *in.Concurrency > MaxConcurrency {
-			return spec, fmt.Errorf("--concurrency is 1 to %d", MaxConcurrency)
+			return spec, fmt.Errorf("%w: --concurrency is 1 to %d", errBadField, MaxConcurrency)
 		}
 		in.Concurrency = &n
 	}
@@ -383,7 +413,7 @@ func New(pool *db.Pool, hooks *webhooks.Store) *Store {
 // SetNow is for tests.
 func (s *Store) SetNow(f func() time.Time) { s.now = f }
 
-const selectTrigger = `select t.id, t.project_id, t.name, t.kind, t.route_id, coalesce(r.name, ''),
+const selectTrigger = `select t.id, t.project_id, t.name, t.kind, t.route_id, coalesce(r.name, ''), t.route_made,
 		coalesce(t.spec, ''), coalesce(t.zone, ''), t.anchor_at, t.next_at,
 		t.prompt_path, t.workdir, coalesce(t.agent, ''), t.timeout_s, t.concurrency,
 		coalesce(t.gate, ''), coalesce(t.dedupe, ''), t.notify,
@@ -392,7 +422,7 @@ const selectTrigger = `select t.id, t.project_id, t.name, t.kind, t.route_id, co
 
 func scanTrigger(rows pgx.Rows) (Trigger, error) {
 	var t Trigger
-	err := rows.Scan(&t.ID, &t.ProjectID, &t.Name, &t.Kind, &t.RouteID, &t.RouteName,
+	err := rows.Scan(&t.ID, &t.ProjectID, &t.Name, &t.Kind, &t.RouteID, &t.RouteName, &t.RouteMade,
 		&t.Spec, &t.Zone, &t.AnchorAt, &t.NextAt,
 		&t.PromptPath, &t.Workdir, &t.Agent, &t.TimeoutS, &t.Concurrency,
 		&t.Gate, &t.Dedupe, &t.Notify,
@@ -448,12 +478,30 @@ func (s *Store) Get(ctx context.Context, projectID uuid.UUID, name string) (Trig
 		return Trigger{}, err
 	}
 	rows.Close()
-	last, err := s.lastRuns(ctx, projectID)
+	last, err := s.lastRun(ctx, t.ID)
 	if err != nil {
 		return Trigger{}, err
 	}
-	t.Last = last[t.ID]
+	t.Last = last
 	return t, nil
+}
+
+// lastRun is one trigger's newest run.
+func (s *Store) lastRun(ctx context.Context, triggerID uuid.UUID) (*Run, error) {
+	rows, err := s.pool.Query(ctx, `select `+runCols+` from trigger_runs
+		where trigger_id = $1 order by created_at desc limit 1`, triggerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	r, err := scanRun(rows)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // lastRuns is the newest run of each of a project's triggers, in one
@@ -504,7 +552,11 @@ func (s *Store) Runs(ctx context.Context, projectID uuid.UUID, trigger string, l
 	q := `select ` + runCols + ` from trigger_runs where project_id = $1`
 	args := []any{projectID}
 	if trigger != "" {
-		q += ` and trigger_name = $2`
+		// By the trigger's id, which is what trigger_runs_trigger holds;
+		// the name is kept on the row for a run whose trigger is gone,
+		// and such a run is nobody's to list by name.
+		q += ` and (trigger_id = (select id from triggers where project_id = $1 and name = $2)
+			or (trigger_id is null and trigger_name = $2))`
 		args = append(args, trigger)
 	}
 	q += fmt.Sprintf(` order by created_at desc limit %d`, limit)

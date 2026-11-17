@@ -13,6 +13,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/msglink"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // Everything a guest sends over vsock is written by whoever is root in that
@@ -168,36 +169,23 @@ func cleanAgentEvent(guestID, agent, kind, summary, window string) (*hostdv1.Age
 // (DECISIONS I-1256). A gate's own last line of stderr is the one reason
 // that is free text; it is tenant content, bounded like a summary and
 // never logged.
-var triggerRunStates = map[string]bool{
-	"working": true, "done": true, "failed": true, "timeout": true, "skipped": true,
-}
-
-var triggerReasons = map[string]bool{
-	"off": true, "stopped": true, "busy": true, "error": true,
-	"duplicate": true, "gated": true, "gate_timeout": true,
-	"concurrency": true, "queue_full": true, "plan_limit": true,
-	"prompt_missing": true, "prompt_too_large": true, "no_agent": true,
-	"timeout": true, "guest_restart": true, "machine_stopped": true,
-	"too_many_fires": true, "unreachable": true,
-}
-
 // capDedupeKey bounds the provider's own event id a run was admitted on.
 const capDedupeKey = 128
 
 // cleanTriggerRun bounds a guest's TriggerRun; ok is false for a run id
 // that is not a uuid or a state a guest may not send.
 func cleanTriggerRun(guestID string, t *guestdv1.TriggerRun) (*hostdv1.TriggerRunEvent, bool) {
-	if _, err := uuid.Parse(t.GetRunId()); err != nil || !triggerRunStates[t.GetState()] {
+	if _, err := uuid.Parse(t.GetRunId()); err != nil || !triggerrun.GuestStates[t.GetState()] {
 		return nil, false
 	}
 	reason := t.GetReason()
-	if reason != "" && !triggerReasons[reason] {
+	if reason != "" && !triggerrun.Reason(reason) {
 		// Anything that is not one of the enum words is read as a gate's
 		// line, which is tenant content and bounded as such.
 		reason = cleanText(reason, capTriggerReason)
 	}
 	source := t.GetSource()
-	if source != "route" && source != "clock" && source != "hand" {
+	if !triggerrun.Sources[source] {
 		source = ""
 	}
 	ev := &hostdv1.TriggerRunEvent{

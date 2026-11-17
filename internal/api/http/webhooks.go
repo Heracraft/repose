@@ -39,6 +39,12 @@ func routeJSON(st *webhooks.Store, r *webhooks.Route, token string) map[string]a
 		"created_at":  r.CreatedAt,
 		"updated_at":  r.UpdatedAt,
 	}
+	if r.Trigger != "" {
+		// A route a trigger owns reads as that trigger, not as a port:
+		// the two surfaces must not disagree about what a URL reaches
+		// (DECISIONS I-1250).
+		out["trigger"] = r.Trigger
+	}
 	if token != "" {
 		out["url"] = st.URL(r.ProjectID.String(), r.Name, token)
 	}
@@ -300,6 +306,16 @@ func (s *Server) internalWebhookDeliveries(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 			return err
+		}
+		// A delivery the edge refused on a trigger's route becomes the
+		// `skipped` run the user reads: the guest never heard it, so
+		// nothing in the guest can write it down (DECISIONS I-1250).
+		// Coalesced to one row per trigger, reason and hour, so a machine
+		// stopped for a week cannot evict the runs that ran.
+		if s.d.Triggers != nil {
+			if err := s.d.Triggers.SkipFromDelivery(r.Context(), rid, d.Outcome, d.At); err != nil {
+				return err
+			}
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)

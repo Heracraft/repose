@@ -10,6 +10,7 @@ import (
 
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // Sender sends a command down a host's stream. Only the API_MODE=grpc
@@ -162,6 +163,13 @@ func (c *Clock) Once(ctx context.Context) error {
 	} else if n > 0 {
 		c.log.Warn("trigger runs nobody delivered", "event", "trigger_run", "count", n)
 	}
+	// A run the machine stopped reporting on: it stopped mid-run, or its
+	// report was dropped. Without this the row is `working` for ever.
+	if n, err := c.store.FailWorking(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		c.log.Warn("trigger runs past their timeout", "event", "trigger_run", "count", n)
+	}
 	runs, err := c.store.TakePending(ctx, c.Batch)
 	if err != nil {
 		return err
@@ -180,12 +188,12 @@ func (c *Clock) Once(ctx context.Context) error {
 // which is the only place a user can read it.
 func (c *Clock) dispatch(ctx context.Context, run Run) error {
 	if run.TriggerID == nil {
-		return c.store.Answered(ctx, run.ID, StateSkipped, "", "error")
+		return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonError)
 	}
 	t, err := c.store.byID(ctx, *run.TriggerID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return c.store.Answered(ctx, run.ID, StateSkipped, "", "error")
+			return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonError)
 		}
 		return err
 	}
@@ -203,18 +211,23 @@ func (c *Clock) dispatch(ctx context.Context, run Run) error {
 	switch {
 	case state == "stopped":
 		if !t.AllowStart || c.Start == nil {
-			return c.store.Answered(ctx, run.ID, StateSkipped, "", "stopped")
+			return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonStopped)
 		}
 		started, why, err := c.Start.StartForTrigger(ctx, run.ProjectID)
 		if err != nil {
 			return err
 		}
 		if !started {
-			reason := "stopped"
-			if why == "plan_limit" {
-				reason = "plan_limit"
+			reason := triggerrun.ReasonStopped
+			if why == triggerrun.ReasonPlanLimit {
+				reason = triggerrun.ReasonPlanLimit
 			}
 			return c.store.Answered(ctx, run.ID, StateSkipped, "", reason)
+		}
+		// This fire started the machine, so `--stop-after` may stop it
+		// again when the run ends (I-1252).
+		if err := c.store.StartedMachine(ctx, run.ID); err != nil {
+			return err
 		}
 		// The start is an op of its own and takes 12 to 14 seconds. The
 		// run stays in the hand-off and the next pass sends it, which is
@@ -222,9 +235,9 @@ func (c *Clock) dispatch(ctx context.Context, run Run) error {
 		// run that never happened.
 		return c.store.Requeue(ctx, run.ID)
 	case state != "running" || guestID == nil:
-		return c.store.Answered(ctx, run.ID, StateSkipped, "", "busy")
+		return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonBusy)
 	case hostID == nil:
-		return c.store.Answered(ctx, run.ID, StateSkipped, "", "error")
+		return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonError)
 	}
 
 	if resting && c.Wake != nil {
@@ -250,7 +263,7 @@ func (c *Clock) dispatch(ctx context.Context, run Run) error {
 		Cmd:       &hostdv1.Command_RunTrigger{RunTrigger: rt},
 	}
 	if err := c.send.Send(ctx, *hostID, cmd); err != nil {
-		return c.store.Answered(ctx, run.ID, StateSkipped, "", "unreachable")
+		return c.store.Answered(ctx, run.ID, StateSkipped, "", triggerrun.ReasonUnreachable)
 	}
 	return nil
 }
@@ -267,14 +280,25 @@ func (c *Clock) OnResult(ctx context.Context, res *hostdv1.Result) bool {
 		return false
 	}
 	state, window, reason := payload.TriggerRun.GetState(), payload.TriggerRun.GetWindow(), payload.TriggerRun.GetReason()
+	if !triggerrun.GuestStates[state] {
+		state, reason = StateFailed, triggerrun.ReasonError
+	}
+	if reason != "" && !triggerrun.Reason(reason) && triggerrun.LogReason(reason) == "" {
+		// Not an enum word and not a gate's line: a guest sending
+		// something nobody defined, which is not a reason at all.
+		reason = triggerrun.ReasonError
+	}
 	if !res.GetOk() {
 		state, reason = StateFailed, "unreachable"
-		if res.GetError() != nil && Reasons[res.GetError().GetCode()] {
+		if res.GetError() != nil && triggerrun.Reason(res.GetError().GetCode()) {
 			reason = res.GetError().GetCode()
 		}
 	}
 	if err := c.store.Answered(ctx, id, state, window, reason); err != nil && ctx.Err() == nil {
-		c.log.Error("trigger answer", "event", "trigger_run", "run_id", id.String(), "err", err.Error())
+		// The error's text may quote the machine's own words, so the log
+		// line carries the bounded reason and the run id alone.
+		c.log.Error("trigger answer", "event", "trigger_run",
+			"run_id", id.String(), "state", state, "reason", triggerrun.LogReason(reason))
 	}
 	return true
 }

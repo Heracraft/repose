@@ -73,6 +73,10 @@ var Outcomes = map[string]bool{
 	"start_refused": true, "wake_failed": true, "no_listener": true,
 	"timeout": true, "too_large": true, "rate_limited": true,
 	"body_dropped": true, "unavailable": true,
+	// A token the edge answered 410 or 404 for (I-1110's state table):
+	// documented in api.md from the start, and needed by the trigger
+	// skip rows, which map `gone` and `not_found` to `route_gone`.
+	"not_found": true, "gone": true,
 }
 
 // ParseTarget reads `3000` or `3000/api/webhooks/stripe` into a port and
@@ -113,6 +117,10 @@ type Route struct {
 	AllowStart bool
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	// Trigger is the trigger that owns this route, empty for a route of
+	// the user's own (DECISIONS I-1250). A route a trigger owns is aimed
+	// at the machine's receiver, and only `repose triggers` changes it.
+	Trigger string
 	// Last is the newest delivery, or nil for a route nothing has used.
 	Last *Delivery
 }
@@ -203,8 +211,10 @@ func (s *Store) URL(projectID, name, token string) string {
 // delivery.
 func (s *Store) List(ctx context.Context, projectID uuid.UUID) ([]Route, error) {
 	rows, err := s.pool.Query(ctx, `select r.id, r.project_id, r.name, r.port, r.path, r.allow_start, r.created_at, r.updated_at,
+			coalesce(t.name, ''),
 			d.at, d.status, d.outcome, d.duration_ms, d.bytes_in, d.bytes_out
 		from webhook_routes r
+		left join triggers t on t.route_id = r.id
 		left join lateral (
 			select at, status, outcome, duration_ms, bytes_in, bytes_out
 			from webhook_deliveries where route_id = r.id order by at desc limit 1
@@ -222,7 +232,7 @@ func (s *Store) List(ctx context.Context, projectID uuid.UUID) ([]Route, error) 
 		var outcome *string
 		var in, bout *int64
 		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt,
-			&at, &status, &outcome, &durMs, &in, &bout); err != nil {
+			&r.Trigger, &at, &status, &outcome, &durMs, &in, &bout); err != nil {
 			return nil, err
 		}
 		if at != nil {
@@ -274,9 +284,11 @@ func (s *Store) Deliveries(ctx context.Context, routeID uuid.UUID) ([]Delivery, 
 // Get returns one route by name.
 func (s *Store) Get(ctx context.Context, projectID uuid.UUID, name string) (*Route, error) {
 	var r Route
-	err := s.pool.QueryRow(ctx, `select id, project_id, name, port, path, allow_start, created_at, updated_at
-		from webhook_routes where project_id = $1 and name = $2`, projectID, name).
-		Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt)
+	err := s.pool.QueryRow(ctx, `select r.id, r.project_id, r.name, r.port, r.path, r.allow_start,
+			r.created_at, r.updated_at, coalesce(t.name, '')
+		from webhook_routes r left join triggers t on t.route_id = r.id
+		where r.project_id = $1 and r.name = $2`, projectID, name).
+		Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt, &r.Trigger)
 	if db.IsNoRows(err) {
 		return nil, db.ErrNotFound
 	}
@@ -333,8 +345,8 @@ func (s *Store) Upsert(ctx context.Context, userID, projectID uuid.UUID, name st
 			}
 			var r Route
 			if err := tx.QueryRow(ctx, `update webhook_routes set port = $2, path = $3, allow_start = $4 where id = $1
-				returning id, project_id, name, port, path, allow_start, created_at, updated_at`, existing, port, path, allow).
-				Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt); err != nil {
+				returning id, project_id, name, port, path, allow_start, created_at, updated_at, ''`, existing, port, path, allow).
+				Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt, &r.Trigger); err != nil {
 				return err
 			}
 			route = &r
@@ -361,9 +373,9 @@ func (s *Store) Upsert(ctx context.Context, userID, projectID uuid.UUID, name st
 		var r Route
 		if err := tx.QueryRow(ctx, `insert into webhook_routes (id, project_id, name, port, path, allow_start, token_sha256, ciphertext, dek_wrapped, kv_key_version)
 			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-			returning id, project_id, name, port, path, allow_start, created_at, updated_at`,
+			returning id, project_id, name, port, path, allow_start, created_at, updated_at, ''`,
 			uuid.Must(uuid.NewV7()), projectID, name, port, path, allow, HashToken(t), ct, wrapped, version).
-			Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt, &r.Trigger); err != nil {
 			return err
 		}
 		route, token, created = &r, t, true
@@ -406,8 +418,8 @@ func (s *Store) Rotate(ctx context.Context, userID, projectID uuid.UUID, name st
 		}
 		var r Route
 		if err := tx.QueryRow(ctx, `update webhook_routes set token_sha256 = $2, ciphertext = $3, dek_wrapped = $4, kv_key_version = $5 where id = $1
-			returning id, project_id, name, port, path, allow_start, created_at, updated_at`, id, HashToken(t), ct, wrapped, version).
-			Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			returning id, project_id, name, port, path, allow_start, created_at, updated_at, ''`, id, HashToken(t), ct, wrapped, version).
+			Scan(&r.ID, &r.ProjectID, &r.Name, &r.Port, &r.Path, &r.AllowStart, &r.CreatedAt, &r.UpdatedAt, &r.Trigger); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `insert into webhook_tombstones (token_sha256, project_id, at) values ($1, $2, now())

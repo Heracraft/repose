@@ -12,6 +12,7 @@ import (
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/triggerrun"
 	"github.com/heracraft/repose/internal/triggerspec"
 )
 
@@ -34,6 +35,7 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 	now := s.now().UTC()
 
 	var routeID *uuid.UUID
+	routeMade := false
 	if in.Kind == KindRoute {
 		if s.hooks == nil {
 			return Trigger{}, false, errors.New("webhook routes are not configured on this api")
@@ -41,13 +43,13 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 		// The route's target is the receiver, not a port of the user's.
 		// Upsert keeps the token of a route that exists, so a URL already
 		// in a provider's dashboard goes on working.
-		r, _, _, err := s.hooks.Upsert(ctx, userID, projectID, in.Route,
+		r, _, made, err := s.hooks.Upsert(ctx, userID, projectID, in.Route,
 			webhooks.ReceiverPort, "/t/"+in.Name, in.AllowStart)
 		if err != nil {
 			return Trigger{}, false, err
 		}
 		id := r.ID
-		routeID = &id
+		routeID, routeMade = &id, made
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -56,13 +58,15 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var existing uuid.UUID
-	err = tx.QueryRow(ctx, `select id from triggers where project_id = $1 and name = $2`, projectID, in.Name).Scan(&existing)
+	var cur Trigger
+	curT, err := s.Get(ctx, projectID, in.Name)
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case errors.Is(err, ErrNotFound):
 		created = true
 	case err != nil:
 		return Trigger{}, false, err
+	default:
+		cur = curT
 	}
 
 	if created {
@@ -77,6 +81,12 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 			return Trigger{}, false, err
 		}
 		if n >= MaxTriggers {
+			if routeMade {
+				// The route was made before this transaction, so a refusal
+				// here would leave a live URL on the receiver with no
+				// trigger behind it.
+				_ = s.hooks.Delete(ctx, projectID, in.Route)
+			}
 			return Trigger{}, false, ErrTooMany
 		}
 		prompt := DefaultPromptPath(in.Name)
@@ -93,20 +103,27 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 			specText, zone = &st, &zn
 		}
 		id := uuid.Must(uuid.NewV7())
-		_, err = tx.Exec(ctx, `insert into triggers
-			(id, project_id, name, kind, route_id, spec, zone, anchor_at, next_at,
-			 prompt_path, workdir, agent, timeout_s, concurrency, gate, dedupe,
-			 notify, enabled, allow_start, stop_after, catch_up, created_at, updated_at)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-				coalesce($11, 'checkout'), $12, coalesce($13, $21), coalesce($14, 1),
-				$15, $16, coalesce($17, 'failed'),
-				coalesce($18, true), coalesce($19, false), coalesce($20, false), coalesce($22, false),
-				$23, $23)`,
-			id, projectID, in.Name, in.Kind, routeID, specText, zone, anchor, next,
+		// Every column in order, one placeholder each: the first draft
+		// renumbered these by hand after a column moved and dropped
+		// prompt_path, which Postgres answered with "INSERT has more
+		// target columns than expressions".
+		_, err = tx.Exec(ctx, `insert into triggers (
+			id, project_id, name, kind, route_id, route_made,
+			spec, zone, anchor_at, next_at,
+			prompt_path, workdir, agent, timeout_s, concurrency,
+			gate, dedupe, notify, enabled, allow_start, stop_after, catch_up,
+			created_at, updated_at)
+			values ($1,$2,$3,$4,$5,$6,
+				$7,$8,$9,$10,
+				$11,coalesce($12, 'checkout'),$13,coalesce($14::int, $23::int),coalesce($15, 1),
+				$16,$17,coalesce($18, 'failed'),coalesce($19, true),coalesce($20, false),coalesce($21, false),coalesce($22, false),
+				$24,$24)`,
+			id, projectID, in.Name, in.Kind, routeID, routeMade,
+			specText, zone, anchor, next,
 			prompt, in.Workdir, nilIfEmpty(in.Agent), in.TimeoutS, in.Concurrency,
-			nilIfEmpty(in.Gate), nilIfEmpty(in.Dedupe), in.Notify,
-			in.Enabled, in.AllowStart, in.StopAfter,
-			int(DefaultTimeout/time.Second), in.CatchUp, now)
+			nilIfEmpty(in.Gate), nilIfEmpty(in.Dedupe), in.Notify, in.Enabled,
+			in.AllowStart, in.StopAfter, in.CatchUp,
+			int(DefaultTimeout/time.Second), now)
 		if err != nil {
 			return Trigger{}, false, err
 		}
@@ -123,6 +140,9 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 		}
 		if in.Kind == KindRoute && routeID != nil {
 			add("route_id", *routeID)
+			if routeMade {
+				add("route_made", true)
+			}
 			add("kind", KindRoute)
 			add("spec", nil)
 			add("zone", nil)
@@ -136,6 +156,32 @@ func (s *Store) Put(ctx context.Context, userID, projectID uuid.UUID, class stri
 			add("anchor_at", now)
 			add("next_at", spec.Next(now, now))
 			add("route_id", nil)
+		}
+		// Turning a schedule on re-arms its clock from now, and so does a
+		// zone named on its own. Without this a trigger off for a week
+		// has a fire a week in the past and runs an agent the moment it is
+		// enabled (I-1252). `repose triggers on` is this route, which is
+		// why the re-arm lives here and not only in SetEnabled.
+		if in.Kind != KindSchedule && cur.Kind == KindSchedule {
+			zone := cur.Zone
+			if in.Zone != "" {
+				zone = in.Zone
+			}
+			reArm := in.Zone != "" && in.Zone != cur.Zone
+			if in.Enabled != nil && *in.Enabled && !cur.Enabled {
+				reArm = true
+			}
+			if reArm {
+				cs, err := triggerspec.Parse(cur.Spec, zone)
+				if err != nil {
+					return Trigger{}, false, err
+				}
+				if in.Zone != "" {
+					add("zone", cs.Zone)
+				}
+				add("anchor_at", now)
+				add("next_at", cs.Next(now, now))
+			}
 		}
 		if in.PromptPath != nil {
 			add("prompt_path", *in.PromptPath)
@@ -192,44 +238,6 @@ func nilIfEmpty(p *string) any {
 	return *p
 }
 
-// SetEnabled is `repose triggers on|off`. It leaves the row, the route
-// and the prompt file alone.
-//
-// Turning a schedule on re-arms the clock from now. Without that, a
-// trigger that was off for a week has a next fire a week in the past and
-// fires the moment it is enabled: an agent run nobody asked for, which
-// is what the catch-up rule exists to prevent (I-1252).
-func (s *Store) SetEnabled(ctx context.Context, projectID uuid.UUID, name string, on bool) error {
-	t, err := s.Get(ctx, projectID, name)
-	if err != nil {
-		return err
-	}
-	now := s.now().UTC()
-	var next *time.Time
-	if on && t.Kind == KindSchedule {
-		spec, err := triggerspec.Parse(t.Spec, t.Zone)
-		if err != nil {
-			return err
-		}
-		anchor := now
-		if t.AnchorAt != nil {
-			anchor = *t.AnchorAt
-		}
-		nx := spec.Next(now, anchor)
-		next = &nx
-	}
-	tag, err := s.pool.Exec(ctx, `update triggers
-		set enabled = $3, next_at = case when $3 then $4 else next_at end, updated_at = $5
-		where project_id = $1 and name = $2`, projectID, name, on, next, now)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // Delete removes a trigger. Its route goes with it unless another trigger
 // uses that route or the user made it before the trigger did; the caller
 // says which with keepRoute.
@@ -255,7 +263,12 @@ func (s *Store) Delete(ctx context.Context, projectID uuid.UUID, name string) (r
 		err := tx.QueryRow(ctx, `select name from triggers where route_id = $1 limit 1`, *t.RouteID).Scan(&other)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
-			routeToRemove = t.RouteName
+			// Only a route this trigger made goes with it. A route the
+			// user made first stays: its token is tombstoned for 30 days
+			// by a removal, and that is not undoable (I-1114).
+			if t.RouteMade {
+				routeToRemove = t.RouteName
+			}
 		case err != nil:
 			return "", err
 		default:
@@ -336,6 +349,13 @@ func (s *Store) insertRun(ctx context.Context, tx pgx.Tx, t Trigger, source, sta
 	if err != nil {
 		return Run{}, err
 	}
+	if tx != nil {
+		if err := pruneRuns(ctx, tx, t.ID); err != nil {
+			return Run{}, err
+		}
+	} else if err := pruneRunsPool(ctx, s.pool, t.ID); err != nil {
+		return Run{}, err
+	}
 	return Run{ID: id, ProjectID: t.ProjectID, TriggerID: &t.ID, TriggerName: t.Name,
 		Source: source, State: state, Reason: reason, CommandID: &id,
 		PayloadPath: opts.PayloadPath, DryRun: opts.DryRun, PayloadRun: opts.PayloadRun,
@@ -353,9 +373,6 @@ func nilStr(s string) any {
 type Due struct {
 	Trigger Trigger
 	Run     Run
-	// Missed is true when the fire is later than its own interval, which
-	// is a fire the catch-up rule decides (I-1252).
-	Missed bool
 }
 
 // Claim is the clock: it takes every schedule trigger whose next fire has
@@ -403,7 +420,7 @@ func (s *Store) Claim(ctx context.Context, limit int) ([]Due, error) {
 			if _, err := tx.Exec(ctx, `update triggers set enabled = false, next_at = null where id = $1`, t.ID); err != nil {
 				return nil, err
 			}
-			if _, err := s.insertRun(ctx, tx, t, SourceClock, StateSkipped, "error", FireOpts{}); err != nil {
+			if _, err := s.insertRun(ctx, tx, t, SourceClock, StateSkipped, triggerrun.ReasonError, FireOpts{}); err != nil {
 				return nil, err
 			}
 			continue
@@ -418,17 +435,26 @@ func (s *Store) Claim(ctx context.Context, limit int) ([]Due, error) {
 		}
 		late := now.Sub(*t.NextAt)
 		missed := late > time.Minute+2*time.Second
-		if missed && !t.CatchUp {
-			if _, err := s.insertRun(ctx, tx, t, SourceClock, StateSkipped, "machine_stopped", FireOpts{}); err != nil {
-				return nil, err
+		// A fire the clock is late for: the machine was stopped, its host
+		// was away, or the api was down. `machine_stopped` would blame a
+		// machine that was never asked, so the reason says what happened.
+		if missed {
+			interval := time.Hour
+			if spec.Kind == triggerspec.KindEvery && spec.Every < interval {
+				interval = spec.Every
 			}
-			continue
+			if !t.CatchUp || late > interval {
+				if _, err := s.insertRun(ctx, tx, t, SourceClock, StateSkipped, triggerrun.ReasonClockLate, FireOpts{}); err != nil {
+					return nil, err
+				}
+				continue
+			}
 		}
 		run, err := s.insertRun(ctx, tx, t, SourceClock, StatePending, "", FireOpts{})
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Due{Trigger: t, Run: run, Missed: missed})
+		out = append(out, Due{Trigger: t, Run: run})
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
@@ -498,6 +524,70 @@ func (s *Store) FailStale(ctx context.Context) (int, error) {
 	return int(tag.RowsAffected()), nil
 }
 
+// FailWorking ends a run the machine stopped reporting on: it stopped
+// mid-run, or the guest's notify budget dropped the report (I-1256).
+// Without it a row stays `working` for ever, `fire --wait` burns its
+// whole window, and UsedAt counts that row as use for ever, so the
+// unused notice never fires on the project again.
+func (s *Store) FailWorking(ctx context.Context) (int, error) {
+	now := s.now().UTC()
+	tag, err := s.pool.Exec(ctx, `update trigger_runs r
+		set state = $1, reason = $2, finished_at = $3
+		from triggers t
+		where t.id = r.trigger_id and r.state = $4
+		  and r.started_at < $3::timestamptz - make_interval(secs => greatest(t.timeout_s, 1) + $5::int)`,
+		StateFailed, triggerrun.ReasonTimeout, now, StateWorking, int(WorkingGrace.Seconds()))
+	if err != nil {
+		return 0, err
+	}
+	// A run whose trigger is gone has no timeout to measure, so it is
+	// swept at the ceiling a run can have.
+	tag2, err := s.pool.Exec(ctx, `update trigger_runs
+		set state = $1, reason = $2, finished_at = $3
+		where state = $4 and trigger_id is null
+		  and started_at < $3::timestamptz - make_interval(secs => $5::int)`,
+		StateFailed, triggerrun.ReasonTimeout, now, StateWorking,
+		int((MaxTimeout + WorkingGrace).Seconds()))
+	if err != nil {
+		return int(tag.RowsAffected()), err
+	}
+	return int(tag.RowsAffected() + tag2.RowsAffected()), nil
+}
+
+// MachineStopped ends every run of a project that was still working when
+// its machine stopped, which is §8.3's `failed: the machine stopped`. The
+// events ingest calls it on the guest's state change, as it cancels a
+// project's questions there.
+func (s *Store) MachineStopped(ctx context.Context, projectID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `update trigger_runs
+		set state = $1, reason = $2, finished_at = now()
+		where project_id = $3 and state in ($4, $5, $6)`,
+		StateFailed, triggerrun.ReasonMachineStopped, projectID,
+		StateWorking, StatePending, StateSending)
+	return err
+}
+
+// StartedMachine records that this run's own fire started the machine,
+// which is the only run `--stop-after` may stop it after (I-1252).
+func (s *Store) StartedMachine(ctx context.Context, runID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `update trigger_runs set started_machine = true where id = $1`, runID)
+	return err
+}
+
+// StopAfter is the project and run of a finished run whose trigger says
+// `--stop-after` and whose own fire started the machine. The caller
+// stops the machine; nothing here does, because stopping is an op.
+func (s *Store) StopAfter(ctx context.Context, runID uuid.UUID) (uuid.UUID, bool, error) {
+	var projectID uuid.UUID
+	err := s.pool.QueryRow(ctx, `select r.project_id from trigger_runs r
+		join triggers t on t.id = r.trigger_id
+		where r.id = $1 and r.started_machine and t.stop_after`, runID).Scan(&projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.UUID{}, false, nil
+	}
+	return projectID, err == nil, err
+}
+
 // Report is a TriggerRun the machine sent: a run it started itself (a
 // delivery), or a change of state on one the api asked for. It inserts
 // by run id, so a repeat on a new hostd connection is harmless, and it
@@ -523,6 +613,22 @@ type Report struct {
 // Apply writes a machine's report. It returns the stored run and whether
 // this report ended it, which is what the notification path reads.
 func (s *Store) Apply(ctx context.Context, rep Report) (Run, bool, error) {
+	if !triggerrun.GuestStates[rep.State] {
+		// A state nobody defined is a report to drop, as a run id that is
+		// not a uuid is: the insert would fail the check constraint, the
+		// host event would never be acked, and it would come back on
+		// every reconnect for ever.
+		return Run{}, false, nil
+	}
+	if !triggerrun.Sources[rep.Source] && rep.Source != "" {
+		rep.Source = SourceRoute
+	}
+	if rep.Reason != "" && !triggerrun.Reason(rep.Reason) && triggerrun.LogReason(rep.Reason) == "" {
+		rep.Reason = triggerrun.ReasonError
+	}
+	if rep.PayloadBytes < 0 || rep.PayloadBytes > PayloadCap {
+		rep.PayloadBytes = PayloadCap
+	}
 	if len(rep.Summary) > SummaryCap {
 		rep.Summary = rep.Summary[:SummaryCap]
 	}
@@ -622,17 +728,27 @@ func (s *Store) runTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (Run, error)
 // per project: one route trigger at the hour's cap would otherwise erase
 // every other trigger's history in a morning (I-1262).
 func pruneRuns(ctx context.Context, tx pgx.Tx, triggerID uuid.UUID) error {
-	_, err := tx.Exec(ctx, `delete from trigger_runs where trigger_id = $1 and id not in (
-		select id from trigger_runs where trigger_id = $1 order by created_at desc limit $2)`,
-		triggerID, RunsKept)
+	_, err := tx.Exec(ctx, pruneSQL, triggerID, RunsKept)
 	return err
 }
+
+func pruneRunsPool(ctx context.Context, pool *db.Pool, triggerID uuid.UUID) error {
+	_, err := pool.Exec(ctx, pruneSQL, triggerID, RunsKept)
+	return err
+}
+
+// A run still in the hand-off or working is never pruned: it is the row
+// a waiter is reading and the row the machine will report on.
+const pruneSQL = `delete from trigger_runs where trigger_id = $1
+	and state not in ('pending', 'sending', 'working')
+	and id not in (
+		select id from trigger_runs where trigger_id = $1 order by created_at desc limit $2)`
 
 // SkipFromDelivery turns an edge-side refusal into the run row the user
 // reads (I-1250). The guest never heard that delivery, so nothing in the
 // guest can write it down, and without this a trigger whose machine has
 // been stopped for a week appears on no screen.
-func (s *Store) SkipFromDelivery(ctx context.Context, routeID uuid.UUID, deliveryID uuid.UUID, outcome string, at time.Time) error {
+func (s *Store) SkipFromDelivery(ctx context.Context, routeID uuid.UUID, outcome string, at time.Time) error {
 	reason := deliveryReason(outcome)
 	if reason == "" {
 		return nil
@@ -658,23 +774,23 @@ func (s *Store) SkipFromDelivery(ctx context.Context, routeID uuid.UUID, deliver
 		// machine stopped for a week takes 600 refusals an hour, and a
 		// row each would evict every run that ran from the 20 a trigger
 		// keeps (I-1254, I-1262).
+		// One statement: the insert carries the hour in its conflict
+		// target, so two deliveries in one tick add to one row rather
+		// than racing to create two.
 		hour := at.UTC().Truncate(time.Hour)
-		tag, err := s.pool.Exec(ctx, `update trigger_runs
-			set skips = skips + 1, finished_at = $4, delivery_id = $5
-			where trigger_id = $1 and state = $2 and reason = $3
-			  and created_at >= $6 and created_at < $6 + interval '1 hour'`,
-			t.ID, StateSkipped, reason, at, deliveryID, hour)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() > 0 {
-			continue
-		}
 		id := uuid.Must(uuid.NewV7())
 		if _, err := s.pool.Exec(ctx, `insert into trigger_runs
-			(id, project_id, trigger_id, trigger_name, source, state, reason, delivery_id, created_at, finished_at)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
-			id, t.ProjectID, t.ID, t.Name, SourceRoute, StateSkipped, reason, deliveryID, at); err != nil {
+			(id, project_id, trigger_id, trigger_name, source, state, reason,
+			 skip_hour, created_at, finished_at)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+			on conflict (trigger_id, reason, skip_hour) where skip_hour is not null
+			do update set skips = trigger_runs.skips + 1,
+				finished_at = excluded.finished_at`,
+			id, t.ProjectID, t.ID, t.Name, SourceRoute, StateSkipped, reason,
+			hour, at); err != nil {
+			return err
+		}
+		if err := pruneRunsPool(ctx, s.pool, t.ID); err != nil {
 			return err
 		}
 	}
@@ -708,10 +824,6 @@ func deliveryReason(outcome string) string {
 	}
 	return ""
 }
-
-// PayloadsKeptFor is how many of a trigger's payloads are replayable,
-// which is the runs it keeps.
-func PayloadsKeptFor() int { return PayloadsKept }
 
 // ForGuest is the SetTriggers payload: the project's whole set, as
 // UpdateSecrets sends the whole named set. The prompt is a path; the api

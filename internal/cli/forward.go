@@ -135,7 +135,13 @@ func parseForwardRows(out string) []forwardRow {
 // (ssh, the DNS stub) are never forwarded at all. The rule is by port, not
 // by owner: a container the dev user publishes is served by root's
 // docker-proxy and must still forward.
-var forwardPlatformPorts = map[int]bool{6080: true, 6081: true, 5900: true, 9224: true, 9225: true, bridgeGuestPort: true, 5353: true, 5355: true}
+var forwardPlatformPorts = map[int]bool{6080: true, 6081: true, 5900: true, 9224: true, 9225: true, bridgeGuestPort: true, triggerReceiverPort: true, 5353: true, 5355: true}
+
+// triggerReceiverPort is guestd's trigger receiver (DECISIONS I-1250).
+// It is the edge's own way in, so a laptop never forwards it: a
+// forwarded one would let any process on the laptop start an agent run
+// on the machine with bytes of its own.
+const triggerReceiverPort = 9227
 
 // forwardDisabled is REPOSE_NO_FORWARD=1, the one knob (15 §5.5).
 const forwardEnvOff = envNoForward

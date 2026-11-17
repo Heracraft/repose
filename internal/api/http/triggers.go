@@ -10,6 +10,7 @@ import (
 
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/triggers"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/triggerspec"
 )
 
@@ -73,12 +74,19 @@ func triggerJSON(t *triggers.Trigger, url string) map[string]any {
 
 func runJSON(r *triggers.Run) map[string]any {
 	out := map[string]any{
-		"run_id":       r.ID.String(),
-		"trigger":      r.TriggerName,
-		"source":       r.Source,
-		"state":        triggers.Shown(r.State),
-		"payload_kept": r.PayloadKept(),
-		"created_at":   r.CreatedAt,
+		"run_id":          r.ID.String(),
+		"trigger":         r.TriggerName,
+		"source":          r.Source,
+		"state":           triggers.Shown(r.State),
+		"payload_bytes":   r.PayloadBytes,
+		"payload_kept":    r.PayloadKept(),
+		"started_machine": r.StartedMachine,
+		"created_at":      r.CreatedAt,
+	}
+	if r.DedupeKey != "" {
+		// Which event was dropped, which is the point of writing a skip
+		// down at all (features/triggers.md §7.5).
+		out["dedupe_key"] = r.DedupeKey
 	}
 	if r.TriggerID != nil {
 		out["trigger_id"] = r.TriggerID.String()
@@ -409,9 +417,26 @@ func triggerErr(err error) error {
 		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "spec"})
 	case errors.Is(err, triggers.ErrAtPromptOnPi):
 		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "prompt_at"})
+	case errors.Is(err, triggers.ErrDedupeOnSchedule):
+		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "dedupe_on_schedule"})
+	case errors.Is(err, triggers.ErrPayloadPath):
+		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "payload_path"})
+	case errors.Is(err, triggers.ErrInvalidPrompt):
+		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "prompt_path"})
+	case errors.Is(err, webhooks.ErrInvalidName):
+		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "route_name"})
+	case errors.Is(err, webhooks.ErrTooMany):
+		return withDetail(errf("invalid", "%s", err.Error()), map[string]any{"reason": "too_many_routes"})
 	case errors.Is(err, triggers.ErrInvalidName), errors.Is(err, triggers.ErrInvalidKind),
 		errors.Is(err, triggers.ErrInvalidDedupe), errors.Is(err, triggers.ErrInvalidWorkdir),
 		errors.Is(err, triggers.ErrInvalidAgent), errors.Is(err, triggers.ErrInvalidTimeout):
+		return errf("invalid", "%s", err.Error())
+	}
+	// Every other refusal the store makes is a field the caller got
+	// wrong, and a 500 on a typed flag is the first thing a new user
+	// would see. A store error that is not one of ours is still an
+	// internal one, which is what an unwrapped pgx error is.
+	if triggers.IsInputError(err) {
 		return errf("invalid", "%s", err.Error())
 	}
 	return err

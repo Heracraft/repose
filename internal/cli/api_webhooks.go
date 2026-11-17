@@ -25,6 +25,7 @@ type WebhookRoute struct {
 	Port       int               `json:"port"`
 	Path       string            `json:"path"`
 	AllowStart bool              `json:"allow_start"`
+	Trigger    string            `json:"trigger"`
 	URL        string            `json:"url"`
 	CreatedAt  time.Time         `json:"created_at"`
 	UpdatedAt  time.Time         `json:"updated_at"`

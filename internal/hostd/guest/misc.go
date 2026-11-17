@@ -7,6 +7,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
+	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 func (m *Manager) updateSecrets(ctx context.Context, c *hostdv1.UpdateSecrets) *Error {
@@ -214,9 +215,18 @@ func (m *Manager) runTrigger(ctx context.Context, c *hostdv1.RunTrigger) (*hostd
 	if res == nil {
 		res = &guestdv1.TriggerRunResult{}
 	}
+	// The result is a guest's words: the state is bounded to what a guest
+	// may say, and the reason's own free text (a gate's last line of
+	// stderr) is tenant content, so the log line carries the enum word
+	// alone and the api gets the rest.
+	state := res.GetState()
+	if !triggerrun.GuestStates[state] {
+		state = triggerrun.StateFailed
+	}
 	m.log(g).Info("trigger run", "event", "trigger_run", "run_id", c.RunId,
-		"source", c.Source, "state", res.GetState(), "reason", res.GetReason())
-	return &hostdv1.TriggerRunResult{State: res.GetState(), Window: res.GetWindow(), Reason: res.GetReason()}, nil
+		"source", c.Source, "state", state, "reason", triggerrun.LogReason(res.GetReason()))
+	return &hostdv1.TriggerRunResult{State: state, Window: cleanLine(res.GetWindow(), capWindow),
+		Reason: cleanText(res.GetReason(), capTriggerReason)}, nil
 }
 
 // SayTextCap is the longest message `repose say` may carry, four times

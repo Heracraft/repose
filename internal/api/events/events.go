@@ -123,7 +123,12 @@ const GuestEventsPerHour = 600
 // noDedupe are kinds the user sent on purpose, one notification each: two
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
-var noDedupe = map[string]bool{"agent_message": true, "agent_question": true, "agent_done": true}
+// noDedupe are the kinds that are never collapsed into an earlier one.
+// `trigger_failed` is one of them because the collapse is on
+// (project, agent, kind): two different triggers failing inside the
+// window are two failures, and one row with both summaries appended is
+// a lie about both (DECISIONS I-1256).
+var noDedupe = map[string]bool{"agent_message": true, "agent_question": true, "agent_done": true, "trigger_failed": true}
 
 // dedupes says a kind collapses a repeat within DedupeWindow: the
 // notifying kinds a person did not send on purpose, and a turn end, which
@@ -151,6 +156,9 @@ type TriggerHandler interface {
 	// trigger wants a failure notified; an error leaves the host event
 	// unacked, so it is sent again.
 	OnRun(ctx context.Context, projectID uuid.UUID, ev *hostdv1.TriggerRunEvent) (summary string, ended, notify bool, err error)
+	// MachineStopped ends every run that was still working when the
+	// project's machine stopped.
+	MachineStopped(ctx context.Context, projectID uuid.UUID) error
 }
 
 // RestingHandler is the resting service (internal/api/resting), which
@@ -181,8 +189,9 @@ type Ingest struct {
 	now       func() time.Time
 	questions QuestionHandler
 	resting   RestingHandler
-	says      SayHandler
-	triggers  TriggerHandler
+	says        SayHandler
+	triggers    TriggerHandler
+	triggerDone func(ctx context.Context, runID uuid.UUID)
 }
 
 // SayHandler is internal/api/say's Delivered: the machine typed a
@@ -206,6 +215,10 @@ func (i *Ingest) SetSays(s SayHandler) { i.says = s }
 // configured without triggers.
 func (i *Ingest) SetTriggers(t TriggerHandler) { i.triggers = t }
 
+// SetTriggerDone sets what runs when a trigger's run ends: the app's
+// --stop-after path (DECISIONS I-1252). nil does nothing.
+func (i *Ingest) SetTriggerDone(f func(ctx context.Context, runID uuid.UUID)) { i.triggerDone = f }
+
 // New builds an ingest.
 func New(pool *db.Pool, m *metrics.M, log *slog.Logger) *Ingest {
 	return &Ingest{pool: pool, m: m, log: log.With("component", "api"), now: time.Now}
@@ -228,6 +241,11 @@ type Incoming struct {
 	// Insert checks them again and drops a link that fails.
 	LinkURL   string
 	LinkLabel string
+	// NoNotify writes the row and queues nothing, for an event whose
+	// kind notifies but whose own source says not to: a trigger with
+	// `--no-notify` (DECISIONS I-1256). The kind stays the fact, so
+	// `repose events` still reads a failure as a failure.
+	NoNotify bool
 }
 
 // Insert stores an event with dedupe and outbox rows. inserted is false
@@ -314,7 +332,7 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 		}
 		inserted = true
 		i.m.EventsTotal.WithLabelValues(n.Kind).Inc()
-		if !notifyKinds[n.Kind] {
+		if !notifyKinds[n.Kind] || n.NoNotify {
 			return nil
 		}
 		return i.enqueue(ctx, tx, id, n.ProjectID, n.Kind, ts)
@@ -459,6 +477,15 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 				return false
 			}
 		}
+		// A run still working went down with the machine (I-1256). Without
+		// this the row stays `working` for ever, a `fire --wait` burns its
+		// window, and the unused notice reads that row as use.
+		if i.triggers != nil && st != "running" && st != "starting" {
+			if err := i.triggers.MachineStopped(ctx, p.ID); err != nil {
+				i.log.Error("end the runs of a stopped machine", "event", "trigger_run", "project_id", p.ID.String(), "err", err.Error())
+				return false
+			}
+		}
 		return true
 	case *hostdv1.Event_GuestResting:
 		// The marker on the row, within seconds of the pause, and nothing
@@ -539,17 +566,29 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 			// that poll it; one event per run, at its end.
 			return true
 		}
+		// A run whose own fire started the machine and whose trigger says
+		// --stop-after: the app stops it, because a stop is an op.
+		if i.triggerDone != nil {
+			if id, err := uuid.Parse(e.TriggerRun.GetRunId()); err == nil {
+				i.triggerDone(ctx, id)
+			}
+		}
 		if capped, err := i.overGuestCap(ctx, p.ID); err != nil {
 			i.log.Error("guest event count", "event", "trigger_run", "err", err.Error())
 			return false
 		} else if capped {
 			return true
 		}
+		// The kind is the fact: a failed run is `trigger_failed` whether
+		// or not it notifies, because `repose events` and the Events tab
+		// must not read a failure as a success. `--no-notify` turns off
+		// the notification, which is what NoNotify below does.
 		kind := "trigger_run"
-		if notify {
+		switch e.TriggerRun.GetState() {
+		case "failed", "timeout":
 			kind = "trigger_failed"
 		}
-		if _, _, err := i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind,
+		if _, _, err := i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind, NoNotify: !notify,
 			Window: store.CleanText(e.TriggerRun.GetWindow(), MaxWindow), Summary: summary,
 			Source: "host", HostEventID: ev.EventId,
 			LinkURL: e.TriggerRun.GetLinkUrl(), LinkLabel: e.TriggerRun.GetLinkLabel()}); err != nil {

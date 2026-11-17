@@ -40,9 +40,11 @@ import (
 	"github.com/heracraft/repose/internal/api/snapshots"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
+	"github.com/heracraft/repose/internal/api/lifecycle"
 	"github.com/heracraft/repose/internal/api/triggers"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/api/webhooks"
+	"github.com/heracraft/repose/internal/triggerrun"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/fakes/kv"
@@ -180,6 +182,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.triggers = triggers.New(a.pool, a.routes)
 	a.triggerClock = triggers.NewClock(a.triggers, a.hostMgr, log)
 	a.events.SetTriggers(a.triggers)
+	a.events.SetTriggerDone(a.StopAfterRun)
 	// The rest rule and the wake (DECISIONS I-818). It sends straight to
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.
@@ -203,6 +206,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.questions.Waker = a.resting
 	a.say.Waker = a.resting
 	a.triggerClock.Wake = a.resting
+	a.triggerClock.Start = a
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -781,4 +785,114 @@ func (a *App) pushTriggers(ctx context.Context, projectID uuid.UUID) {
 		// carries it, so a host that is away costs nothing but latency.
 		a.log.Warn("trigger set not pushed", "event", "trigger_run", "err", err.Error())
 	}
+}
+
+// StartForTrigger starts a stopped machine for a fire on a trigger that
+// says --start (DECISIONS I-1252). It is the owner's own start path, so
+// the plan's memory, an abuse hold and billing refuse it exactly as they
+// refuse `repose start`, and the start is at most once per project per
+// webhooks.StartInterval, which is the rule a delivery already obeys
+// (I-1114). A refusal is not an error: the run's row records which.
+func (a *App) StartForTrigger(ctx context.Context, projectID uuid.UUID) (bool, string, error) {
+	p, err := store.GetProject(ctx, a.pool, projectID)
+	if err != nil {
+		return false, "", err
+	}
+	if p.DestroyedAt != nil || p.State != "stopped" {
+		return false, triggerrun.ReasonStopped, nil
+	}
+	claimed, err := a.routes.ClaimStart(ctx, projectID)
+	if err != nil {
+		return false, "", err
+	}
+	if !claimed {
+		// Another fire or a delivery started it within the window; the
+		// next pass of the clock sends the run.
+		return false, triggerrun.ReasonStopped, nil
+	}
+	u, err := store.GetUser(ctx, a.pool, p.UserID)
+	if err != nil {
+		return false, "", err
+	}
+	var res *lifecycle.Result
+	err = db.InTx(ctx, a.pool, func(tx db.Tx) error {
+		var ierr error
+		res, ierr = lifecycle.Start(ctx, tx, lifecycle.Deps{Pool: a.pool, Engine: a.engine, Gate: a.gate}, u, projectID, lifecycle.Options{})
+		return ierr
+	})
+	var ref *lifecycle.Refusal
+	if errors.As(err, &ref) {
+		reason := triggerrun.ReasonStopped
+		if ref.Code == "payment_required" || ref.Code == "plan_limit" {
+			reason = triggerrun.ReasonPlanLimit
+		}
+		a.log.Info("trigger start refused", "event", "trigger_run",
+			"project_id", projectID.String(), "reason", ref.Code)
+		return false, reason, nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	a.engine.Kick()
+	if _, err := store.Audit(ctx, a.pool, "api:trigger", "trigger_start", projectID.String(),
+		map[string]any{"op_id": res.OpID.String()}); err != nil {
+		return false, "", err
+	}
+	a.log.Info("a trigger started a machine", "event", "trigger_run",
+		"project_id", projectID.String(), "op_id", res.OpID.String())
+	return true, "", nil
+}
+
+// StopAfterRun stops the machine a finished run's own fire started, when
+// its trigger says --stop-after (DECISIONS I-1252). repose stops no
+// machine on its own; this is the flag the user set, so it is their
+// instruction. A machine somebody is attached to is left alone: a stop
+// under an SSH session or a tmux client would take the user's own work
+// with it.
+func (a *App) StopAfterRun(ctx context.Context, runID uuid.UUID) {
+	projectID, ok, err := a.triggers.StopAfter(ctx, runID)
+	if err != nil || !ok {
+		if err != nil {
+			a.log.Error("trigger stop-after", "event", "trigger_run", "err", err.Error())
+		}
+		return
+	}
+	busy, err := a.someoneAttached(ctx, projectID)
+	if err != nil || busy {
+		if busy {
+			a.log.Info("trigger stop-after held: somebody is attached", "event", "trigger_run",
+				"project_id", projectID.String())
+		}
+		return
+	}
+	p, err := store.GetProject(ctx, a.pool, projectID)
+	if err != nil || p.State != "running" {
+		return
+	}
+	// A stop is an op, as `repose stop` is: the engine owns it, and a
+	// project with an op already under way keeps that one.
+	if _, err := a.engine.Enqueue(ctx, a.pool, ops.NewOp{Kind: ops.KindStop, ProjectID: &projectID,
+		Params: map[string]any{"snapshot": true}, Phases: ops.PlanStop()}, false); err != nil {
+		a.log.Info("trigger stop-after did not stop the machine", "event", "trigger_run",
+			"project_id", projectID.String())
+		return
+	}
+	a.engine.Kick()
+	a.log.Info("a trigger stopped the machine it started", "event", "trigger_run",
+		"project_id", projectID.String())
+}
+
+// someoneAttached reports whether the project's latest sample saw an SSH
+// session or a tmux client, which is the same presence the notification
+// hold reads.
+func (a *App) someoneAttached(ctx context.Context, projectID uuid.UUID) (bool, error) {
+	var sessions, clients int
+	err := a.pool.QueryRow(ctx, `select coalesce(ssh_sessions, 0), coalesce(tmux_clients, 0)
+		from meter_samples where project_id = $1 order by ts desc limit 1`, projectID).Scan(&sessions, &clients)
+	if err != nil {
+		// No sample at all is nobody attached, which is the safe reading
+		// for a machine this fire started seconds ago.
+		return false, nil
+	}
+	return sessions > 0 || clients > 0, nil
 }
