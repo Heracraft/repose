@@ -1003,7 +1003,7 @@ pointer, not a summary.
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L34087
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; L34131
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34312
-- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34348
+- **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16); amended by I-1264 — L34348
 - **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34412
 - **I-1232** `repose exec` runs one quoted word with spaces in the machine's shell, and the laptop-path note shows the command to type — 2026-11-16; L34483
 - **I-1234** `repose cp` copies a directory without `-r` — 2026-11-16; L34519
@@ -1021,3 +1021,4 @@ pointer, not a summary.
 - **I-1260** A trigger run is use for the unused notice, counted from `trigger_runs` — 2026-11-17; L35030
 - **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L35049
 - **I-1246** cloudflared is in every machine's base, and an agent whose owner is away opens a quick tunnel for the port and sends the link — 2026-11-17; L35111
+- **I-1264** A wake reads the call's error, not only Done, before it tries the next session; the RPC client closes Done before it answers the calls a failure ended (wake-retry, 2026-11-17) — L35155

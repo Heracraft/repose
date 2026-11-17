@@ -3,6 +3,9 @@ package guest
 import (
 	"bufio"
 	"context"
+	"errors"
+	"io"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +15,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/vsockclient"
+	"github.com/heracraft/repose/internal/hostd/vsockrpc"
 )
 
 // The idle pause (DECISIONS I-818). A machine nobody is using has its
@@ -476,7 +480,7 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		return nil, serr
 	}
 	perr := m.settleGuestd(ctx, g, sess)
-	if perr != nil && sessionEnded(sess) {
+	if connectionGone(sess, perr) {
 		// The session ended under the wake: guestd replaced it with a
 		// newer connection (one that waited out the rest in the
 		// hypervisor's backlog, DECISIONS I-1228) or restarted. guestd is
@@ -530,7 +534,7 @@ func (m *Manager) settleGuestd(ctx context.Context, g *state.Guest, sess vsockcl
 		`d=/run/repose/desktop; if [ -d "$d" ]; then touch "$d/last-client" "$d/last-cdp" && chown dev:dev "$d/last-client" "$d/last-cdp"; fi; exit $rc`
 	r, err := sess.Exec(cctx, []string{"/bin/sh", "-c", script}, 10, "")
 	ccancel()
-	if err != nil && sessionEnded(sess) {
+	if connectionGone(sess, err) {
 		return err // the session, not the clock: the caller tries the next one
 	}
 	if err != nil || r.GetExitCode() != 0 {
@@ -542,14 +546,25 @@ func (m *Manager) settleGuestd(ctx context.Context, g *state.Guest, sess vsockcl
 	return perr
 }
 
-// sessionEnded says whether a session's connection is gone.
-func sessionEnded(s vsockclient.Session) bool {
+// connectionGone says whether a call's error means the session's
+// connection is gone: Done is closed, or the error is the client's own
+// word for a connection that ended (EOF, a closed socket). Both are read
+// because the two are not one event: the client answers a waiting call
+// when its read fails and closes Done around the same time, and a check
+// on Done alone ran between the two on CI and read a dead session as
+// live, so the wake failed where it should have tried the next session
+// (DECISIONS I-1264). A timeout or a guestd error on a live connection is
+// neither.
+func connectionGone(s vsockclient.Session, err error) bool {
+	if err == nil {
+		return false
+	}
 	select {
 	case <-s.Done():
 		return true
 	default:
-		return false
 	}
+	return errors.Is(err, io.EOF) || errors.Is(err, vsockrpc.ErrClosed) || errors.Is(err, net.ErrClosed)
 }
 
 func (m *Manager) countWakeFailed(reason string) {
