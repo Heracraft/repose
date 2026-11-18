@@ -346,16 +346,10 @@
 		<CommandList
 			label="Connect"
 			commands={[
-				// A temporary project has no checkout to run in.
-				...(project.remote_url
-					? [
-							{
-								command: 'repose run',
-								what: 'repose run',
-								note: 'in the checkout on your laptop'
-							}
-						]
-					: []),
+				// One command for every machine, temporary or not, from any
+				// folder: attach, which starts a stopped one. run is for
+				// making a machine, not reaching one (DECISIONS I-1350).
+				{ command: `repose attach ${project.slug}`, what: 'the repose attach command' },
 				// A plain ssh never starts a stopped machine; repose ssh does
 				// (ssh-and-editors.md, review r1 dash-r1-5).
 				project.state === 'running'

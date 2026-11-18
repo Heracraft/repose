@@ -292,11 +292,7 @@
 			<CommandList
 				label="Connect"
 				commands={[
-					{
-						command: 'repose run',
-						what: 'repose run, from the checkout',
-						note: 'from the checkout'
-					},
+					{ command: 'repose attach todo-app', what: 'the repose attach command' },
 					{ command: 'ssh todo-app.repose', what: 'the ssh command' },
 					{ command: 'repose code todo-app', what: 'the repose code command' }
 				]}

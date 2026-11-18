@@ -603,6 +603,9 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"waited for and then started. On a restarting server it waits for the server.\n" +
 			"One word that names no project is WINDOW of this checkout's.",
 		Example: "  repose attach\n  repose attach todo-app claude-2\n  repose attach -w 2",
+		// `connect` is the word the dashboard's Connect card and other CLIs
+		// use for reaching a machine (DECISIONS I-1350).
+		SuggestFor: []string{"connect"},
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 2 {
 				return cobraUsageError{fmt.Errorf("%s takes PROJECT and WINDOW, got %s", cmd.CommandPath(), gotArgs(args))}

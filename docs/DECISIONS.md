@@ -36047,3 +36047,24 @@ already runs at Nice 10, idle IO and CPU weight 20. A temporary or tiny
 machine never starts the unit (I-1346).
 
 *Checked:* `nix eval ./nix#guestSystem.config.systemd.user.services.repose-tools-carry.serviceConfig.MemoryHigh` prints `40%`.
+
+**I-1350. Connect is `repose attach PROJECT` for every machine; `run`
+is for making one (connect-attach, 2026-11-18).** *Made during
+implementation.* The dashboard's Connect card offered `repose run` on a
+project with a remote, nothing of the kind on a temporary one or one
+with no checkout, and `ssh` and `repose code` on all of them: which
+command reached a machine depended on what kind of machine it was,
+and `run`, the command that creates and syncs, was the one named for
+reaching one that exists. Now every project's Connect card leads with
+`repose attach <slug>`, which works from any folder for any machine,
+temporary or not, and starts a stopped one; then the `ssh` line, then
+`repose code`. `run` is not on the card: it is the command that makes a
+machine or sends a checkout to one, and the quickstart and the empty
+projects list are where it belongs. The word `connect`, typed as a
+subcommand, now leads to `attach` instead of `ssh`; `shell`, `console`
+and `sh` still lead to `ssh`. The CLI's `run` and `attach` are not
+changed.
+
+*Checked:* `TestUnknownCommandSuggests` (`connect izma` names
+`repose attach`); `Connect offers repose attach first and never repose
+run` in apps/web/tests/project-layout.spec.ts.
