@@ -31,7 +31,7 @@ Upgrading to a plan with more seats needs a free seat too, and is refused while 
 
 ## Cores
 
-- A size's cores are always yours. The cores in a size's **Up to** column ([sizes](/docs/machine#sizes)) are the server's idle ones, lent while it has them and taken back within a second when it does not. Nothing is charged for them, and a machine never drops below its size's cores.
+- A size's cores are always yours. The cores in a size's **Up to** column ([sizes](/docs/machine)) are the server's idle ones, lent while it has them and taken back within a second when it does not. Nothing is charged for them, and a machine never drops below its size's cores.
 
 ## Egress
 
