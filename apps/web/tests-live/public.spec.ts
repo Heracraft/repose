@@ -226,9 +226,24 @@ test('the live api sends the CORS headers the dashboard needs', async ({ request
 	});
 	expect(preflight.status()).toBe(204);
 	const h = preflight.headers();
-	expect(h['access-control-allow-origin']).toBe('*');
+	// The dashboard's own origin is echoed with credentials allowed, for the
+	// browser view's cookie ticket (I-1216); any other origin gets the
+	// wildcard, as every origin did before.
+	expect(h['access-control-allow-origin']).toBe(LIVE_URL);
+	expect(h['access-control-allow-credentials']).toBe('true');
 	expect(h['access-control-allow-headers']).toContain('Authorization');
 	expect(h['access-control-allow-methods']).toContain('GET');
+	const other = await request.fetch(`${API_URL}/v1/me`, {
+		method: 'OPTIONS',
+		headers: {
+			Origin: 'https://example.com',
+			'Access-Control-Request-Method': 'GET',
+			'Access-Control-Request-Headers': 'authorization'
+		},
+		failOnStatusCode: false
+	});
+	expect(other.status()).toBe(204);
+	expect(other.headers()['access-control-allow-origin']).toBe('*');
 
 	// And on the response itself, not only on the preflight.
 	const real = await request.get(`${API_URL}/v1/me`, {
