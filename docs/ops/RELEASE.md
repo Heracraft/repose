@@ -271,7 +271,7 @@ else integrated with it.
    own small batch, integrated and pushed).
 3. **Write the notes before the sign job runs.** `release.yml`'s sign job
    refuses a draft with under 400 bytes of notes (I-798). The tag creates the
-   draft; `gh release edit v0.1.N --title "repose v0.1.N" --notes-file
+   draft; `gh release edit v0.1.N --title "v0.1.N" --notes-file
    notes.md` on it; if the job already failed, `gh run rerun <id> --failed`.
    Notes: highlights first, plain, no AI tells (`release-notes` memory).
 

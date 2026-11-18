@@ -216,12 +216,28 @@ describe('the size classes', () => {
 	// markdown itself through llms.txt (I-660).
 	it('match the table published in /docs/machine', () => {
 		const md = readFileSync(join(__dirname, '..', 'content', 'docs', 'machine.md'), 'utf8');
+		const lines = md.split('\n');
+		// Columns by their header, so a column added for I-1326 ("Up to",
+		// the burst ceiling) moves nothing here.
+		const header = lines.find((l) => l.startsWith('| Size '))!;
+		const col = header.split('|').map((x) => x.trim());
+		const at = (row: string[], name: string) => row[col.indexOf(name)];
+		// The ceilings are hostd's table (internal/hostd/guest/manager.go,
+		// I-1126): the docs say what the host does.
+		const manager = readFileSync(
+			join(__dirname, '..', '..', '..', '..', 'internal', 'hostd', 'guest', 'manager.go'),
+			'utf8'
+		);
+		const ceiling: Record<string, number> = {};
+		for (const [, cls, n] of manager.matchAll(/"(\w+)":\s*\{[^}]*CeilingVCPUs:\s*(\d+)/g))
+			ceiling[cls] = Number(n);
 		for (const c of CLASSES) {
-			const row = md.split('\n').find((l) => l.startsWith(`| \`${c}\``));
-			expect(row, `${c} row`).toBeDefined();
-			const [, , vcpu, memory] = row!.split('|').map((x) => x.trim());
-			expect(Number(vcpu), `${c} vCPU`).toBe(classVCPUs(c));
-			expect(memory, `${c} memory`).toBe(`${classMemoryGB(c)} GB`);
+			const line = lines.find((l) => l.startsWith(`| \`${c}\``));
+			expect(line, `${c} row`).toBeDefined();
+			const row = line!.split('|').map((x) => x.trim());
+			expect(Number(at(row, 'Cores')), `${c} vCPU`).toBe(classVCPUs(c));
+			expect(at(row, 'Memory'), `${c} memory`).toBe(`${classMemoryGB(c)} GB`);
+			expect(Number(at(row, 'Up to')), `${c} ceiling`).toBe(ceiling[c]);
 		}
 	});
 });

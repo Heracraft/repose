@@ -35571,3 +35571,56 @@ api lacks. Not published: request and answer bodies, which are the CLI's
 
 *Checked:* `TestTokensCreateListRm` (internal/cli), `TestDocsNameEveryEnvVar`,
 `TestPublicAPIDocNamesRealRoutes` (internal/api/apidoc).
+**I-1326. Burst cores are on for host-02 at a gate of 0.75 (the owner,
+2026-11-18). Amends I-1126's "off on every host".** I-1126 shipped the
+controller with `repose.host.burst.enable` false everywhere and named
+the release gate: the latency curve of proposal §6.2 on a host. That
+measurement ran on host-stg-01 on 2026-11-11
+(`docs/research/burst-staging-2026-11-11.md`): with the gate at 0.75 of
+4 physical cores, a lone hungry guest got about 2.6 to 2.9 cores, two
+shared the headroom equally, the base share held at 95 percent under
+contention, the gate closed in one tick, and typing lag at the gate was
+0.3 to 0.4 ms p50 and 1.2 to 1.4 ms p90 in the guest against 0.1 and
+0.4 idle. The owner read it the same day and said "keep 0.75 and turn it
+on for host-02", held it as a recorded task to keep thinking, and gave
+the word on 2026-11-18.
+
+`nix/hosts/host-02.nix` sets `burst.enable = true` and `burst.gate =
+0.75` explicitly. host-02 is a D64s_v7 with 32 physical cores, so the
+gate is 24 busy cores. Guests cold-started after the switch boot at their
+class ceiling (small 4, large 6, xl 8, tiny 2) and `nproc` says so; a
+guest running since before it keeps its count until its next stop.
+Placement (I-736), the seat count (I-739), the 1.5 ratio (I-734) and the
+cgroup weight (I-737) still read the base vCPUs, so this sells nothing
+new and no plan or price moves. The public docs change in the same
+commit, as I-1126 said the switching commit must: `/docs/machine`'s
+size table gains an **Up to** column and its `nproc` sentence says what
+the number now means, "Nothing is capped" goes, and `/docs/limits` gains
+a Cores section. The two costs I-1126 named stand and are in the docs'
+words: `make -j$(nproc)` on a small now runs 4 jobs in 4 GB, and a guest
+at a shut gate waits for its base share inside the 100 ms period.
+
+Not built with this: the proposal's stages 4 and 5 (an overage switch, a
+`status` row and a `/run/repose/cores` file saying what the machine may
+use now). Until they exist a user has the docs' sentence and `nproc`,
+and nothing is charged for a burst. host-01 is retired, staging keeps
+its own flag in a branch, so host-02 is the fleet and "off on every host"
+is now "on on the one host there is".
+**I-1336. The queue's host comparison covers every production host in
+the flake, not one named host (conductor, 2026-11-18). Amends I-759's
+narrowing of `host`.** `ops/dev/release-queue add` drops `host` from a
+branch's targets when `ops/dev/closure-equiv.py` finds the host system
+unchanged (I-759, I-958). It compared `nixosConfigurations.host-01`
+alone. host-01 was retired on 2026-11-02 and host-02 is the fleet, so a
+change to `nix/hosts/host-02.nix` left host-01's system identical and
+the tool answered "unchanged": the branch that turns burst cores on for
+host-02 (I-1326) queued as `web` with no host deploy, which is the
+silent drop I-958 warned of, found only because the conductor had read
+hostd's `ExecStart` by hand. `exact_nix` now compares each `host-NN` the
+flake defines (`fleet_hosts`: host-01 and host-02 today; `host`,
+`host-bench`, `host-stg-01` and the installer are not release targets)
+and keeps the target when any of them changes or any comparison fails;
+when `nix eval` cannot list them it falls back to host-02 rather than to
+nothing. `ops/dev/release-queue-test` passes unchanged (52), its stub
+standing in for the comparison as before. Rejected: naming host-02 in
+place of host-01, which is the same mistake one host later.
