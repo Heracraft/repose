@@ -4,8 +4,9 @@ Several agents build on this repository at once. Each one works on its own
 worktree branch and queues the branch when it is done; one session, the
 conductor, merges the queue into main in verified batches, and ships
 what main holds when the owner asks for a release. DECISIONS I-416
-records why. `ORCHESTRATION.md` covers the rest of the conductor's job;
-this file is the part between "a branch is done" and "it is live".
+records why. `ORCHESTRATION.md` covers the rest of the conductor's job and
+`CONDUCTOR-HANDOFF.md` is where the last conductor left it; this file is
+the part between "a branch is done" and "it is live".
 
 ## For an agent building a change
 
@@ -331,7 +332,9 @@ else integrated with it.
    release signing key" below).
 5. **Check it live.** Run each released branch's `--live` check on
    throwaway `e2e-*` projects, never on the owner's projects, at most two
-   alive at once. Paste the output into the release record.
+   alive at once. A check that needs a signed-in dashboard gets one from
+   `ops/dev/dashboard-session` (`DEV-BOX.md`, "Things the 2026-11-18
+   conductor had to find out"), as the owner, for an hour. Paste the output into the release record.
 6. **Record.** `ops/dev/release-queue record <release>` prints the line for
    `docs/workstreams/STATUS.md` and the detail that does not fit in it,
    from what the queue already holds — the branches with the decision ids

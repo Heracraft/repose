@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Mint a signed-in dashboard session for live checks, as the owner.
+
+Logto's impersonation: the M2M app (Management API role) asks for a subject
+token for the user, and the dashboard's own client id exchanges it for an api
+access token. The result is written as Playwright's storageState in the
+@logto/browser SDK's keys, so the dashboard reads it as a sign-in. Expires in
+an hour; no refresh token, so it cannot renew. Nothing is printed.
+"""
+import base64, json, os, sys, time, urllib.parse, urllib.request, stat
+
+ENDPOINT = "https://accounts.herakraft.co"
+M2M_ID = "t9ogvrzosgfpq1361ua4z"
+SPA_ID = "osfcu4s5rg0p6tn91lpb8"
+RESOURCE = "https://api.repose.herakraft.co"
+USER = sys.argv[1] if len(sys.argv) > 1 else "c7fh26yzrl93"
+OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/projects/factory/apps/web/tests-live/.auth/state.json")
+SECRET = open(os.path.expanduser("~/.config/repose-ops/logto-m2m-secret")).read().strip()
+
+def post(url, data=None, headers=None, form=None, auth=None):
+    h = dict(headers or {}); h["User-Agent"] = "repose-dashboard-session/1"
+    if form is not None:
+        body = urllib.parse.urlencode(form).encode(); h["Content-Type"] = "application/x-www-form-urlencoded"
+    else:
+        body = json.dumps(data).encode(); h["Content-Type"] = "application/json"
+    if auth:
+        h["Authorization"] = "Basic " + base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
+    req = urllib.request.Request(url, data=body, headers=h, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+m = post(f"{ENDPOINT}/oidc/token", form={"grant_type": "client_credentials", "resource": "https://default.logto.app/api", "scope": "all"}, auth=(M2M_ID, SECRET))["access_token"]
+st = post(f"{ENDPOINT}/api/subject-tokens", data={"userId": USER, "context": {"purpose": "live checks by the conductor"}}, headers={"Authorization": f"Bearer {m}"})["subjectToken"]
+ex = post(f"{ENDPOINT}/oidc/token", form={"grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "client_id": SPA_ID, "subject_token": st, "subject_token_type": "urn:ietf:params:oauth:token-type:access_token", "resource": RESOURCE, "scope": "openid"})
+now = int(time.time())
+# An id token the SDK only decodes: isAuthenticated() is its presence, and
+# the callback that would verify a signature never runs for this state.
+def b64(o): return base64.urlsafe_b64encode(json.dumps(o, separators=(",", ":")).encode()).rstrip(b"=").decode()
+idt = ".".join([b64({"alg": "none", "typ": "JWT"}), b64({"iss": f"{ENDPOINT}/oidc", "sub": USER, "aud": SPA_ID, "iat": now, "exp": now + ex.get("expires_in", 3600), "at_hash": ""}), ""])
+amap = {"@" + RESOURCE: {"token": ex["access_token"], "scope": ex.get("scope", ""), "expiresAt": now + ex.get("expires_in", 3600)}}
+pfx = f"logto:{SPA_ID}:"
+state = {"cookies": [], "origins": [{"origin": "https://repose.run", "localStorage": [
+    {"name": pfx + "idToken", "value": idt},
+    {"name": pfx + "accessToken", "value": json.dumps(amap)},
+]}]}
+os.makedirs(os.path.dirname(OUT), mode=0o700, exist_ok=True)
+fd = os.open(OUT, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f: json.dump(state, f)
+print(f"session for {USER} written to {OUT}, expires in {ex.get('expires_in', 3600)} s")
