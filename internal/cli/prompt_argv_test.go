@@ -34,7 +34,7 @@ func TestAgentWindowCommandCarriesThePrompt(t *testing.T) {
 		{"cat", `'cat'`},
 	} {
 		t.Run(c.binary, func(t *testing.T) {
-			got := agentWindowCommand("proj", "", c.binary, "~/proj", c.binary, prompt, mcpApprovals{})
+			got := agentWindowCommand("proj", "", c.binary, "~/proj", c.binary, prompt, "", mcpApprovals{})
 			want := "tmux new-window -t proj -n " + c.binary + " -c ~/proj -d " + c.want
 			if !strings.HasSuffix(got, want) {
 				t.Fatalf("command line\n got %s\nwant it to end in %s", got, want)
@@ -70,7 +70,7 @@ func TestNoPromptNoArgument(t *testing.T) {
 		if _, ok := agentPromptArgv(a, ""); ok {
 			t.Fatalf("%s took an empty prompt as an argument", a)
 		}
-		if got := agentStartCommand(a, ""); got != shQuote(a) {
+		if got := agentStartCommand(a, "", ""); got != shQuote(a) {
 			t.Fatalf("%s with no prompt = %s", a, got)
 		}
 	}
@@ -85,7 +85,7 @@ func TestHostilePromptReachesTheAgentAsOneArgument(t *testing.T) {
 	// dash, both quotes, a newline, $, a backtick and a command
 	// substitution that must never run.
 	prompt := "-n it's \"the $PATH\" and `id`\nsecond $(touch " + t.TempDir() + "/pwned) 'line'"
-	args := startAgentInTmux(t, "claude", prompt)
+	args := startAgentInTmux(t, "claude", prompt, "")
 	if want := []string{"--", prompt}; !slices.Equal(args, want) {
 		t.Fatalf("argv = %q, want %q", args, want)
 	}
@@ -94,7 +94,7 @@ func TestHostilePromptReachesTheAgentAsOneArgument(t *testing.T) {
 // startAgentInTmux runs agentWindowCommand's shell in a tmux of its own,
 // with a stand-in agent on PATH that records its argv, and returns the
 // words that agent was started with.
-func startAgentInTmux(t *testing.T, binary, prompt string) []string {
+func startAgentInTmux(t *testing.T, binary, prompt, resume string) []string {
 	t.Helper()
 	for _, c := range []string{"tmux", "sh"} {
 		if _, err := exec.LookPath(c); err != nil {
@@ -133,7 +133,7 @@ sleep 30
 	if out, err := run("tmux -f /dev/null new-session -d -s proj -n shell -x 120 -y 30"); err != nil {
 		t.Fatalf("tmux: %v %s", err, out)
 	}
-	if out, err := run(agentWindowCommand("proj", "", binary, dir, binary, prompt, mcpApprovals{})); err != nil {
+	if out, err := run(agentWindowCommand("proj", "", binary, dir, binary, prompt, resume, mcpApprovals{})); err != nil {
 		t.Fatalf("new-window: %v %s", err, out)
 	}
 	deadline := time.Now().Add(15 * time.Second)
@@ -215,7 +215,7 @@ func TestWindowRunsASimpleCommand(t *testing.T) {
 				}
 				want = shQuote(want)
 			}
-			if got := agentStartCommand(binary, p); got != want {
+			if got := agentStartCommand(binary, p, ""); got != want {
 				t.Errorf("agentStartCommand(%q, %.24q)\n got %s\nwant %s", binary, p, got, want)
 			}
 		}
@@ -248,7 +248,7 @@ func TestBashExecsTheAgent(t *testing.T) {
 	}
 	for _, binary := range agentNames {
 		t.Run(binary, func(t *testing.T) {
-			line := agentStartCommand(binary, "fix the flaky test")
+			line := agentStartCommand(binary, "fix the flaky test", "")
 			// What the guest's bash is handed: the one argument tmux
 			// gives it, with the outer quoting undone by the shell that
 			// ran the tmux command.

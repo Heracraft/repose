@@ -33,7 +33,7 @@ func (tmuxMux) NamesScript(slug string) string {
 func (tmuxMux) Label(extra, agent string) string { return windowLabel(extra, agent) }
 
 func (tmuxMux) StartAgent(ctx context.Context, t sshTarget, s agentStart) error {
-	return startAgentWindow(ctx, t, s.Slug, s.Name, s.Dir, s.Agent, s.Prompt, s.AttachOnly, s.OnLoading, s.MCPApprovals)
+	return startAgentWindow(ctx, t, s.Slug, s.Name, s.Dir, s.Agent, s.Prompt, s.Resume, s.AttachOnly, s.OnLoading, s.MCPApprovals)
 }
 
 // Attach starts the session helper beside `tmux attach` (I-195).
@@ -219,13 +219,20 @@ func agentPromptArgv(binary, prompt string) ([]string, bool) {
 // exactly those words. Both levels go through shQuote, which is why a
 // prompt holding single quotes, double quotes, newlines, `$`, a backtick
 // or a leading `-` reaches the agent as one argv word and runs nothing.
-func agentStartCommand(binary, prompt string) string {
+func agentStartCommand(binary, prompt, resume string) string {
 	args, ok := agentPromptArgv(binary, prompt)
-	if !ok {
+	var pre []string
+	if resume != "" {
+		// `claude --resume <id>` opens the conversation `--session`
+		// brought, and the prompt, which `--` keeps out of the option
+		// parser, is its next turn (DECISIONS I-1328).
+		pre = []string{"--resume", resume}
+	}
+	if !ok && len(pre) == 0 {
 		return shQuote(binary)
 	}
 	line := shQuote(binary)
-	for _, a := range args {
+	for _, a := range append(pre, args...) {
 		line += " " + shQuote(a)
 	}
 	return shQuote(line)
@@ -374,16 +381,19 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 // an *agentDialogError. With the prompt on the command line there is
 // nothing to type into it, so the dialog is not looked for: it waits for
 // the user in the window, with the prompt behind it.
-func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func(), appr mcpApprovals) error {
+func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt, resume string, attachOnly bool, onLoading func(), appr mcpApprovals) error {
 	// The login path opens the window on Claude Code's login and types
 	// the prompt after it (I-607), so that window starts the agent with
 	// nothing on its command line.
 	argv := prompt
 	if attachOnly {
-		argv = ""
+		// The login comes first, so the window starts the plain binary:
+		// nothing on its command line, the conversation `--session`
+		// brought included (DECISIONS I-1328).
+		argv, resume = "", ""
 	}
 	_, carried := agentPromptArgv(binary, argv)
-	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary, argv, appr), nil); err != nil {
+	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary, argv, resume, appr), nil); err != nil {
 		return err
 	}
 	if attachOnly {
@@ -392,6 +402,12 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 			_, err := runSSH(ctx, t, pendingPromptTmux(slug, windowName, prompt), nil)
 			return err
 		}
+		return nil
+	}
+	if prompt == "" {
+		// Nothing to type: a window `--session` opened has its
+		// conversation on the agent's command line and no prompt
+		// (DECISIONS I-1328).
 		return nil
 	}
 	if carried {
@@ -424,13 +440,20 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 // window that is not given the prompt on the command line (an agent with
 // no form for it, the login path); otherwise it is one argument of the
 // command tmux starts (agentStartCommand, I-780).
-func agentWindowCommand(slug, extra, windowName, dir, binary, prompt string, appr mcpApprovals) string {
+func agentWindowCommand(slug, extra, windowName, dir, binary, prompt, resume string, appr mcpApprovals) string {
 	prefix, cdir := "", dir
 	if dir == "" {
 		prefix, cdir = checkoutVar(slug, extra), `"$repose_co"`
 	}
 	prefix += agentTrustScript(binary, cdir, appr)
-	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, agentStartCommand(binary, prompt))
+	line := prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, agentStartCommand(binary, prompt, resume))
+	if resume == "" {
+		return line
+	}
+	// The window records the conversation it was resumed on, so the next
+	// `--session` for it finds this window instead of starting a second
+	// claude on one transcript (DECISIONS I-1328).
+	return line + fmt.Sprintf("\ntmux set-option -w -t %s:%s @%s %s\n", slug, windowName, sessionWindowOption, shQuote(resume))
 }
 
 // agentTrustScript is internal/agentwindow's, which guestd reads too

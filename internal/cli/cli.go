@@ -248,6 +248,7 @@ func newRootCmd(version string) *cobra.Command {
 		newCpCmd(env, g),
 		newPasteCmd(env, g),
 		newScanCmd(env),
+		newSessionsCmd(env, g),
 		newSessionHelperCmd(),
 		newSSHPrepareCmd(env),
 		newCodeCmd(env, g),
@@ -476,6 +477,7 @@ func newLogoutCmd(env func() (*Env, error)) *cobra.Command {
 func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var opts RunOptions
 	var tempRaw string
+	var sessionRaw string
 	cmd := &cobra.Command{
 		Use:   "run [PROJECT]",
 		Short: "Create or start this checkout's machine and attach",
@@ -498,7 +500,11 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
+			opts.Session, args = sessionArgs(sessionRaw, args, sessionIDsHere)
 			if err := runArgs(&opts, args, g.project); err != nil {
+				return err
+			}
+			if err := checkSessionFlags(opts); err != nil {
 				return err
 			}
 			if opts.ProjectArg != "" && g.project != "" && opts.ProjectArg != g.project {
@@ -574,6 +580,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "type -p's text and Enter into this agent `WINDOW` (a name or number from repose ps) instead of starting an agent")
 	cmd.Flags().BoolVar(&opts.Bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
 	cmd.Flags().StringArrayVar(&opts.BridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
+	addSessionFlag(cmd, &sessionRaw, env)
 	_ = cmd.RegisterFlagCompletionFunc("agent", cobra.FixedCompletions(agentNames, cobra.ShellCompDirectiveNoFileComp))
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
@@ -583,6 +590,7 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var bridge bool
 	var bridgeAllow []string
 	var window string
+	var sessionRaw string
 	cmd := &cobra.Command{
 		Use:   "attach [PROJECT[:CHECKOUT]] [WINDOW]",
 		Short: "Attach to a project's session, or to one of its windows",
@@ -603,8 +611,12 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
+			session, args := sessionArgs(sessionRaw, args, sessionIDsHere)
 			if args, window, err = windowArgs(args, window, g.project); err != nil {
 				return err
+			}
+			if session != "" && window != "" {
+				return cobraUsageError{fmt.Errorf("--session opens the conversation in a new %s; -w opens one that is already there", "window")}
 			}
 			if _, err := projectFrom(args, g); err != nil {
 				return err
@@ -617,13 +629,14 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return err
 			}
 			return orWindow(cmd.Context(), e, args, window, g.project, func(project, window string) error {
-				return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
+				return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow, Session: session}, true)
 			})
 		},
 	}
 	cmd.Flags().StringVarP(&window, "window", "w", "", "open on window `NAME` (a name or number, or a herdr agent)")
 	cmd.Flags().BoolVar(&bridge, "bridge", false, "bridge this laptop's Chrome to the machine while attached")
 	cmd.Flags().StringArrayVar(&bridgeAllow, "bridge-allow", nil, "bridge, and let the agents open only this host (repeatable)")
+	addSessionFlag(cmd, &sessionRaw, env)
 	return cmd
 }
 
@@ -632,7 +645,7 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 // attaching.
 func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var opts RunOptions
-	var tempRaw string
+	var tempRaw, sessionRaw string
 	cmd := &cobra.Command{
 		Use:   "sync [PROJECT]",
 		Short: "Send this checkout's changes to its machine",
@@ -651,6 +664,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
+			opts.Session, args = sessionArgs(sessionRaw, args, sessionIDsHere)
 			// Checked after --temp took its duration (`sync --temp 2h
 			// spike`).
 			if err := projectArgs(cmd, args); err != nil {
@@ -697,6 +711,7 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("stash-remote")
 	_ = cmd.Flags().MarkHidden("discard-remote")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
+	addSessionFlag(cmd, &sessionRaw, env)
 	_ = cmd.RegisterFlagCompletionFunc("size", cobra.FixedCompletions(classOrder, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }

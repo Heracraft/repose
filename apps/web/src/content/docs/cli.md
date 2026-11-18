@@ -49,6 +49,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                           |
 | `--no-personal`           | Keep your [machine.nix](/docs/config#your-machine-nix) off this machine from now on: a new one is created without it, and one that has it switches without it in the background.                                                                                   |
 | `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start, and it stays with the project. Default: [`default_multiplexer`](#config-toml).    |
+| `--session [ID]`          | Bring one of this laptop's [Claude Code conversations](/docs/agents#continue-a-conversation-on-the-machine) to the machine and open a window on it with `claude --resume`. ID is a whole conversation id, its start or its end; bare, it's this checkout's newest, and the line names the one it chose. [`repose sessions`](#repose-sessions) lists them. A window already open on that conversation is used instead of a second one. Not with `-w`, `--worktree`, or `--agent` naming another agent. |
 
 ### `repose attach [PROJECT[:CHECKOUT]] [WINDOW]`
 
@@ -56,7 +57,7 @@ Attach to the project's session, on its current window, without syncing. WINDOW 
 
 A machine that isn't running comes up first, as [`repose start`](#repose-start-project) does. A machine being removed, or one stopped for running a miner, exits 5.
 
-A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). `--bridge` [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached; `--bridge-allow HOST` does that with an allowlist.
+A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). `--bridge` [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached; `--bridge-allow HOST` does that with an allowlist. `--session [ID]` brings a [Claude Code conversation](/docs/agents#continue-a-conversation-on-the-machine) from this laptop and attaches to the window it opens on it, as on `run`; not with `-w`.
 
 If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and [come back on their own](/docs/run-and-attach#detach-and-come-back). Keys you type while it waits are dropped. With `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead.
 
@@ -73,6 +74,7 @@ It writes nothing and exits 6 when the machine changed files your laptop changed
 | `--size small\|large\|xl` | Size of a new or stopped project, as on `run`.                     |
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
 | `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
+| `--session [ID]`          | Bring one of this laptop's [Claude Code conversations](/docs/agents#continue-a-conversation-on-the-machine) to the machine. `sync` starts no agent, so it prints `Conversation 907f3a2c is on the machine.` and leaves `claude --resume` to you. |
 | `--json`                  | Print the project as JSON when done; the text goes to stderr.      |
 
 `--stash-machine` and `--discard-machine` were `--stash-remote` and `--discard-remote`, which still work for one release. `repose run` given any of them exits 2 and names this command.
@@ -242,6 +244,19 @@ Copy the image on your clipboard, up to 50 MB, to `/tmp/repose-paste/` on the ma
 | --------------- | ------------------------------------------------------------------------------------- |
 | `--window NAME` | Paste into this tmux window (name or number), or this herdr agent's pane, instead.    |
 | `--print`       | Copy the image and print its path on the machine; paste nothing. Not with `--window`. |
+
+### `repose sessions`
+
+List the [Claude Code conversations](/docs/agents#continue-a-conversation-on-the-machine) this laptop has in this checkout, newest first. It reads your `~/.claude/` and asks no machine and no server. In your home folder it exits 2, as `--session` does: a conversation belongs to a checkout.
+
+```
+$ repose sessions
+ID        LAST USED     FOLDER  TITLE
+907f3a2c  2 hours ago   .       Payments refactor
+4d1be880  3 days ago    web     Make the table sortable
+```
+
+FOLDER is where in the checkout the conversation ran, and the machine gets it in the same place. TITLE is the title you set in Claude Code, else the one it wrote, else the conversation's first prompt. `-q`/`--quiet` prints the whole ids, one per line; `--json` gives `id`, `cwd`, `title`, `at` and `bytes` per conversation.
 
 ### `repose scan [DIR]`
 

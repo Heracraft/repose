@@ -109,11 +109,10 @@ func (o *carryOutcome) Lines() []string {
 		out = append(out, "Not carried (would not work on the machine): "+strings.Join(o.Dropped, ", ")+".")
 	}
 	if n := len(o.Installing); n > 0 {
-		what := "tool"
-		if n > 1 {
-			what = "tools"
-		}
-		out = append(out, fmt.Sprintf("Installing %d of your %s in the background: %s", n, what, strings.Join(o.Installing, ", ")))
+		// "1 of your tools", never "1 of your tool": the count is of the
+		// set, which is plural whatever the count is. Seen live on
+		// 2026-11-18.
+		out = append(out, fmt.Sprintf("Installing %d of your tools in the background: %s", n, strings.Join(o.Installing, ", ")))
 	}
 	out = append(out, o.mcpLines()...)
 	out = append(out, o.Warnings...)

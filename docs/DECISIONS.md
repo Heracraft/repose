@@ -35444,3 +35444,182 @@ attention is, which is not a property of a project.
 
 *Checked:* `TestHoldOffForTheUser` and `TestTheUsersOwnHoldIsTheWindow`
 (internal/api/notify).
+
+**I-1328. One Claude Code conversation comes over when the user names it,
+and `claude --resume` is what opens it (session-import, 2026-11-18).**
+
+The owner asked how a user who has coded for an hour on their laptop
+continues on the machine. The carry (I-196) deliberately never copies
+`~/.claude/projects`, `history.jsonl`, `todos/` or `sessions/`, and that
+stays: a transcript is every prompt, every file read and every tool
+result of a conversation, and sending all of them to every machine at
+every run would be both the bytes and the user's work in a place they did
+not ask for it.
+
+`--session [ID]`, on `run`, `attach` and `sync`, brings one named
+conversation, chosen per run. It travels with its own `<id>.jsonl` and,
+under `<id>/`, the `subagents/` transcripts, the `tool-results/` the
+transcript points at by path, and a `custom-title.json`; plus
+`todos/<id>*`. An allowlist, so the next directory Claude Code invents
+stays on the laptop until someone decides it should travel. Nothing else
+of `~/.claude` moves: not another conversation, not `history.jsonl`, and
+never the login, which is still only ever the user's own (I-278).
+
+The window opens in the conversation's own folder, and the probe makes
+it: tmux hands a window whose `-c` does not exist the home directory
+instead, and the sync brings no folder that holds nothing it tracks, so
+a conversation from `<checkout>/web` came up in `/home/dev` until the
+folder was made (seen live, 2026-11-18). The folder is made in the probe
+and not in the part, because a conversation the machine already has
+sends no part and still needs it.
+
+It lands in `~/.claude/projects/<encoded cwd>/` on the machine, where
+`<encoded cwd>` is Claude Code's own name for a directory — every
+character that is neither a letter nor a digit replaced by `-`, read off
+2.1.272 on the dev box — built from the conversation's own working
+directory mapped onto the machine's checkout, so a conversation that ran
+in `<checkout>/web` lands in the machine's `web`. The laptop's paths
+inside it are rewritten the way `settings.json`'s home is (I-196,
+`claude_merge.jq`'s `swap`): the checkout to the machine's checkout, the
+home to `/home/dev`, and the encoded `projects/` names too, without
+which the `tool-results` and scratchpad paths the transcript holds would
+point at a directory the machine does not have. The swap applies only
+where the name ends, so `/Users/jane` is never `/Users/janet`, and it
+runs per JSON string, so a Windows laptop's escaped path stays escaped.
+
+Why `--resume` only when asked: a machine whose claude silently resumed
+the last conversation would make the next `repose run -p` a reply to
+something the user had stopped thinking about, with that conversation's
+context and its permission answers, and there would be no way left to ask
+for a clean one. The ask is the flag. `--agent` naming another agent,
+`-w` and `--worktree` are refused with it: the first is a different
+program, the second types into a window that is already running, and the
+third puts the agent in a folder where `claude --resume` would not look.
+
+One window per conversation. A resumed window carries the conversation's
+id as the tmux window option `@repose-session`, and the probe looks for
+it: a `--session` for a conversation a window already holds sends
+nothing and uses that window, the prompt included. Two claudes appending
+one `<id>.jsonl` would interleave two conversations into one file, which
+is the user's own work and not recoverable, and `run -p`'s existing
+"Another claude window is open in the same working tree" is a warning
+and not a stop. herdr has no window options, so a herdr machine finds
+nothing here and opens a second tab; its own line still names it. NOT
+verified live: there is no herdr machine on this box.
+
+Two copies, and the longer one wins. The machine records the import's
+hash as the carry marker `session-<id>`; the probe, its own ssh before
+the upload, reads it with the size of the transcript the machine holds.
+An unchanged conversation is not uploaded at all. A machine whose copy is
+longer has gone further with the conversation than the laptop, so it
+keeps its own and the run says so; otherwise the machine's copy is
+replaced and kept beside it as `<id>.jsonl.repose-prev`, as
+`settings.json.repose-prev` is.
+
+Rejected: carrying every transcript of the checkout, which is I-196's
+decision again and loses on both bytes and consent. Rejected: a `repose
+resume` noun, which would be a second name for what `run` already is.
+Rejected: riding the carry's own ssh, which cannot work — the rewrite
+needs the machine's checkout name, and the sync only knows it once it
+has run.
+
+Dashboard parity (I-1266): the dashboard shows nothing new, and that is
+the whole of its parity here. The conversations are files on the laptop,
+the api never sees one and never should, so there is nothing for a
+browser to list and nothing for it to send. No dashboard action is
+missing, because none is possible.
+
+*Checked:* live on 2026-11-18, machine `si-e2e`: a conversation made on
+the dev box was told the codeword FERROVIA, `repose run -d --session`
+brought it, and the machine's own claude — started as `claude --resume
+285e08de-...` — answered `FERROVIA` to a question typed into that window,
+with `grep -c azureuser` on the machine's transcript at 0. A second
+`--session` after the machine had gone further kept the machine's copy.
+`TestSessionCarryRewritesPathsAndBringsOnlyTheConversation`,
+`TestSessionSwapStopsAtTheEndOfTheName`,
+`TestSessionPartWritesTheMachinesProjectDirectory`,
+`TestAgentStartCommandResumes` (a stand-in claude in a real tmux window
+records its argv) in `internal/cli`.
+
+**I-1330. `repose sessions` is the laptop's list, and it asks nothing
+(session-import, 2026-11-18).**
+
+`--session` needs a way to see what there is to bring. `repose sessions`
+lists the conversations whose own working directory is this checkout or a
+folder under it, newest first: the id's end (I-619), how long ago it was
+written, the folder inside the checkout, and a title — the one the user
+set in Claude Code, else the one Claude Code wrote (`ai-title`), else the
+first prompt.
+
+It reads `~/.claude/projects` and calls no machine and no server, so it
+answers with every machine stopped and with no network. The rows are
+therefore about the laptop only: it says nothing about which
+conversations a machine already holds, because answering that would mean
+an ssh to a machine that may be stopped, and the question the user has in
+front of `--session` is "which one of mine".
+
+Membership is read from each transcript's own `cwd`, not from the
+directory's name: Claude Code's encoding is not reversible, and a name
+cannot say whether `-home-u-app-server` was `app/server` or `app-server`.
+
+Rejected: showing a message count, which means reading every transcript
+whole — 4 MB each on this box — to print one column. The listing reads
+at most 512 KB of a transcript's head, and stops at the first `cwd` when
+that is another folder's, which is a few lines.
+
+**The noun is `sessions` and the word is "conversation", on purpose.**
+CLAUDE.md forbids a second name for one thing, so this is recorded
+rather than left to be found. In repose "session" already means the
+machine's tmux session (`repose attach` opens one, `repose ps` lists its
+windows) and the session helper, so `repose sessions` alone would read as
+"the machine's sessions". But "session" is Claude Code's own word for
+the thing — `--resume`, `--session-id`, `/resume` — and a user comes
+looking for it, so the command and the flag keep it and complete by it.
+Every line the user reads says "conversation", which is unambiguous in
+repose and is what the Claude Code UI shows them. The command is the
+name they search for; the prose is the name that cannot be
+misunderstood.
+
+A bare `--session` names what it chose (`Conversation 907f3a2c: Payments
+refactor`) because the user did not: with several conversations in one
+checkout, the newest by mtime is whichever agent last wrote a tool
+result, not the one in the laptop's foreground. A named id prints
+nothing on `run` and `attach`, where the window shows the conversation,
+and `Conversation 907f3a2c is on the machine.` on `sync`, which opens no
+window.
+
+*Checked:* `TestListLaptopSessionsIsThisCheckoutsNewestFirst`,
+`TestSessionsCmdPrintsTheList`, `TestSessionsCmdOnAFolderWithNone`
+(internal/cli).
+
+**I-1332. A bare `--session` followed by a word takes it as the id only
+when it names a conversation (session-import, 2026-11-18).**
+
+`--session` has an optional value, like `--temp` (I-351), so pflag leaves
+`repose run --session 907f3a2c` with the id among the arguments, where
+`repose run PROJECT` reads it as the project. `--temp` answers this with
+a shape test, and that test has twice been the wrong one: I-631 narrowed
+the units so `run 1password` stayed a project, and I-888 refused `3hr`
+after the owner got a machine called `tmp-jaxr`.
+
+A conversation id does not need a shape test. The list the flag resolves
+against is on this laptop, so the word is the id when it names one of
+this folder's conversations under I-619's matching and the project
+otherwise. A project named `facade` stays a project; a project named
+after an id of this folder's would not, which is the one case left and
+`--session=ID` is the way out of it.
+
+*Checked:* `TestSessionArgsTakesTheIDAfterABareFlag` (internal/cli).
+
+**I-1334. The docs' ghost-flag check reads repose's own command lines
+only (session-import, 2026-11-18).**
+
+`TestDocsNameEveryCommandAndFlag` refuses a `--flag` in `cli.md` that no
+repose command has, which is what catches a docs line left behind by a
+removal. It read every backtick span, so `claude --resume` — Claude
+Code's flag, which these docs must now name — failed it.
+
+A span whose first word is neither `repose` nor a flag is another
+program's command line and is no longer read for flags. The guard it
+exists for is unchanged: every span of repose's own, and every bare
+`--flag`, is still checked both ways.

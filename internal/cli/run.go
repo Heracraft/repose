@@ -52,6 +52,11 @@ type RunOptions struct {
 	// prompt it is `run -w`: the prompt is typed there instead of into
 	// a new agent, and the attach opens on it (I-639).
 	Window string
+	// Session is --session: one Claude Code conversation of this laptop
+	// comes to the machine and a claude starts with `--resume` on it
+	// (DECISIONS I-1328). sessionLast is this checkout's newest;
+	// anything else is a whole conversation id, its start or its end.
+	Session string
 }
 
 // opPollInterval is how often an op (and the project, for the phase
@@ -99,6 +104,17 @@ var errPromptNotSubmitted = errors.New("the agent started but did not take the p
 // attachOnly runs only steps 1 (resolve, no create), 3, 4, 8 — what
 // `repose attach` is (§5.5's last paragraph).
 func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retErr error) {
+	// `--session` is read from the laptop before anything is connected,
+	// so a typed id that names no conversation costs no machine and no
+	// api call, and the answer is held for the import (DECISIONS I-1328).
+	sessionBare := opts.Session == sessionLast
+	if opts.Session != "" {
+		s, _, err := e.findSession(opts.Session, "")
+		if err != nil {
+			return err
+		}
+		opts.Session = s.ID
+	}
 	// A project this checkout ran before, with its ssh master still up:
 	// attach needs no api call, and run's probe goes out beside the api's
 	// answer instead of after it (DECISIONS I-223).
@@ -397,7 +413,43 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if l := tempLine(project, time.Now()); l != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
-		return attach(opts.Window, opts.Window != "")
+		if opts.Session == "" {
+			return attach(opts.Window, opts.Window != "")
+		}
+		// `attach --session` is the one thing an attach does before the
+		// terminal is handed over: the user asked for a conversation to
+		// be here, and a window that opened on nothing would be the
+		// wrong answer (DECISIONS I-1328).
+		mux, err := muxNow()
+		if err != nil {
+			return err
+		}
+		co, err := guestCheckoutName(ctx, target, project.Slug)
+		if err != nil {
+			return err
+		}
+		pr.Phase(sessionImportStep, "")
+		b, err := e.bringSession(ctx, target, opts.Session, helper.RepoDir, guestHomePath(co))
+		if err != nil {
+			pr.Fail()
+			return err
+		}
+		pr.End()
+		if l := b.line(sessionBare, false); l != "" {
+			_, _ = fmt.Fprintln(e.Out, l)
+		}
+		if b.Window != "" {
+			// Already open there: the attach lands on it (I-1328).
+			return attach(b.Window, true)
+		}
+		// The laptop's .mcp.json answers are read with the carry, which
+		// on an attach runs beside it; the window still gets the folder
+		// trust (I-486).
+		w, err := e.startAgentFor(ctx, pr, target, project, opts, mux, &co, mcpApprovals{}, b.ID, b.Dir)
+		if err != nil {
+			return err
+		}
+		return attach(w, true)
 	}
 
 	// The machine's checkout, as its sync or carry found it (I-368).
@@ -557,6 +609,38 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
 	}
 
+	// One Claude Code conversation of this laptop (DECISIONS I-1328),
+	// after the sync: the rewrite inside it maps the laptop's checkout
+	// onto the machine's, which only the sync or the carry's probe
+	// knows.
+	resume, resumeDir, reuse := "", "", ""
+	if opts.Session != "" {
+		co := ""
+		if checkout != nil {
+			co = *checkout
+		} else if n, err := guestCheckoutName(ctx, target, project.Slug); err != nil {
+			return err
+		} else {
+			co = n
+		}
+		pr.Phase(sessionImportStep, "")
+		b, err := e.bringSession(ctx, target, opts.Session, helper.RepoDir, guestHomePath(co))
+		if err != nil {
+			pr.Fail()
+			return err
+		}
+		pr.End()
+		resume, resumeDir = b.ID, b.Dir
+		if b.Window != "" {
+			// Already open there (I-1328): the prompt goes to that
+			// window and no second claude starts on one transcript.
+			reuse, opts.Window = b.Window, b.Window
+		}
+		if l := b.line(sessionBare, opts.Sync); l != "" {
+			_, _ = fmt.Fprintln(e.Out, l)
+		}
+	}
+
 	window := ""
 	if opts.Window != "" && opts.Prompt != "" {
 		// Typed into an agent already there: an answer to its question,
@@ -582,108 +666,30 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			}
 		}
 		window = opts.Window
-	} else if opts.Prompt != "" {
+	} else if opts.Prompt != "" || (resume != "" && reuse == "" && !opts.Sync) {
 		mux, err := muxNow()
 		if err != nil {
 			return err
 		}
-		agent := opts.Agent
-		if agent == "" {
-			agent = project.AgentDefault
+		w, err := e.startAgentFor(ctx, pr, target, project, opts, mux, checkout, mcpAppr, resume, resumeDir)
+		if err != nil {
+			return err
 		}
-		if agent == "" {
-			agent = e.Cfg.DefaultAgent
+		window = w
+	}
+	if reuse != "" {
+		// The conversation's own window, which this run did not open
+		// (I-1328): the attach lands there, and a run that does not
+		// attach says where it is, as a started agent does.
+		if window == "" {
+			window = reuse
 		}
-		pr.Phase("Starting "+agent, "")
-		name, dir := "", ""
-		if checkout != nil {
-			dir = tildePath(*checkout)
-		}
-		if opts.Worktree {
-			wt, err := prepareWorktreeWith(ctx, target, project.Slug, agent, mux)
-			if err != nil {
-				return err
+		if opts.NoAttach && !opts.Sync {
+			unit := "window"
+			if mux, err := muxNow(); err == nil {
+				unit = mux.Unit()
 			}
-			name, dir = wt.Window, wt.Dir
-			pr.End()
-			_, _ = fmt.Fprintf(e.Out, "Worktree: %s on branch %s\n", wt.Dir, wt.Branch)
-			if wt.Env > 0 {
-				_, _ = fmt.Fprintf(e.Out, "Copied %d .env %s from %s\n", wt.Env, plural(wt.Env, "file", "files"), tildePath(wt.Checkout))
-			}
-			if wt.Dirty {
-				_, _ = fmt.Fprintf(e.ErrOut, "The worktree starts at the last commit; the uncommitted changes in %s are not in it.\n", tildePath(wt.Checkout))
-			}
-			pr.Resume("Starting "+agent, "")
-		} else {
-			n, othersOpen, err := mux.PickName(ctx, target, project.Slug, agent)
-			if err != nil {
-				return stepFailed("list the machine's "+mux.Name()+" "+mux.Unit()+"s", err, "")
-			}
-			name = n
-			if othersOpen {
-				pr.Fail()
-				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open in the same working tree.\n", agent, mux.Unit())
-				pr.Resume("Starting "+agent, "")
-			}
-		}
-		window = name
-
-		attachInstead := false
-		if agent == "claude" {
-			hasSecret, err := hasOAuthSecret(ctx, e.Client, project.ID)
-			if err != nil {
-				return err
-			}
-			attachInstead, err = needsClaudeLogin(ctx, target, hasSecret)
-			if err != nil {
-				return err
-			}
-		}
-		loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
-		prompt := opts.Prompt
-		if attachInstead && opts.NoAttach {
-			// Nobody logs in now: the prompt is refused below, not
-			// left to type itself later (I-607).
-			prompt = ""
-		}
-		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
-		var dialog *agentDialogError
-		var unsent *promptNotSubmittedError
-		if errors.As(err, &dialog) {
-			// The pre-trust did not take (I-486): the window is open
-			// on the dialog, and the prompt was not typed.
-			pr.Fail()
-			if opts.NoAttach {
-				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s -w %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug, name)
-			}
-			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
-		} else if errors.As(err, &unsent) {
-			// The prompt was typed and the agent never took it (I-752):
-			// it is in the input, waiting for an Enter.
-			pr.Fail()
-			if opts.NoAttach {
-				return exitCausef(ExitGeneric, errPromptNotSubmitted, "%s did not take your prompt; it is in its input in the %s %s. `repose attach %s -w %s`, then press Enter.", agentDisplayName(agent), name, mux.Unit(), project.Slug, name)
-			}
-			_, _ = fmt.Fprintf(e.ErrOut, "%s did not take your prompt; it is in its input. Press Enter in the %s that opens.\n", agentDisplayName(agent), mux.Unit())
-		} else if err != nil {
-			return stepFailed("start "+agent+" on the machine", err, "")
-		}
-		pr.End()
-		if attachInstead {
-			if opts.NoAttach {
-				// herdr's login tab has no agent name (`herdr pane run`),
-				// but it is the focused one.
-				at := "repose attach " + project.Slug
-				if mux.Name() != multiplexer.Herdr {
-					at += " -w " + name
-				}
-				return exitf(ExitGeneric, "Claude Code is not logged in on %s, so your prompt was not typed. Log in with `%s`, then run your prompt again.", project.Slug, at)
-			}
-			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on %s. Log in in the %s that opens; your prompt is typed after the login.\n", project.Slug, mux.Unit())
-		} else if opts.NoAttach {
-			// Where the prompt went: the name `attach -w` and `ps`
-			// take (I-607).
-			_, _ = fmt.Fprintf(e.Out, "%s: %s\n", capitalize(mux.Unit()), name)
+			_, _ = fmt.Fprintf(e.Out, "%s: %s\n", capitalize(unit), reuse)
 		}
 	}
 
@@ -2398,4 +2404,127 @@ func capitalize(s string) string {
 		return s
 	}
 	return string(s[0]-'a'+'A') + s[1:]
+}
+
+// startAgentFor is `repose run`'s agent: the window (or herdr tab) it
+// opens, the agent it starts there and the prompt it gives it. It returns
+// the name the attach opens on. resume is `--session`'s conversation,
+// which only claude takes (DECISIONS I-1328).
+func (e *Env) startAgentFor(ctx context.Context, pr *progress, target sshTarget, project *Project, opts RunOptions, mux muxer, checkout *string, mcpAppr mcpApprovals, resume, resumeDir string) (string, error) {
+	agent := opts.Agent
+	if agent == "" {
+		agent = project.AgentDefault
+	}
+	if agent == "" {
+		agent = e.Cfg.DefaultAgent
+	}
+	if resume != "" {
+		// A Claude Code conversation resumes in Claude Code.
+		agent = "claude"
+	}
+	pr.Phase("Starting "+agent, "")
+	name, dir := "", ""
+	if checkout != nil {
+		dir = tildePath(*checkout)
+	}
+	if resumeDir != "" {
+		// The conversation's own folder, which is the checkout or a
+		// folder under it (DECISIONS I-1328).
+		dir = resumeDir
+	}
+	if opts.Worktree {
+		wt, err := prepareWorktreeWith(ctx, target, project.Slug, agent, mux)
+		if err != nil {
+			return "", err
+		}
+		name, dir = wt.Window, wt.Dir
+		pr.End()
+		_, _ = fmt.Fprintf(e.Out, "Worktree: %s on branch %s\n", wt.Dir, wt.Branch)
+		if wt.Env > 0 {
+			_, _ = fmt.Fprintf(e.Out, "Copied %d .env %s from %s\n", wt.Env, plural(wt.Env, "file", "files"), tildePath(wt.Checkout))
+		}
+		if wt.Dirty {
+			_, _ = fmt.Fprintf(e.ErrOut, "The worktree starts at the last commit; the uncommitted changes in %s are not in it.\n", tildePath(wt.Checkout))
+		}
+		pr.Resume("Starting "+agent, "")
+	} else {
+		n, othersOpen, err := mux.PickName(ctx, target, project.Slug, agent)
+		if err != nil {
+			return "", stepFailed("list the machine's "+mux.Name()+" "+mux.Unit()+"s", err, "")
+		}
+		name = n
+		if othersOpen {
+			pr.Fail()
+			_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open in the same working tree.\n", agent, mux.Unit())
+			pr.Resume("Starting "+agent, "")
+		}
+	}
+
+	attachInstead := false
+	if agent == "claude" {
+		hasSecret, err := hasOAuthSecret(ctx, e.Client, project.ID)
+		if err != nil {
+			return "", err
+		}
+		attachInstead, err = needsClaudeLogin(ctx, target, hasSecret)
+		if err != nil {
+			return "", err
+		}
+	}
+	loadingDevShell := func() { pr.Phase("Loading the project's dev shell", "Dev shell loaded") }
+	prompt := opts.Prompt
+	if attachInstead && opts.NoAttach {
+		// Nobody logs in now: the prompt is refused below, not
+		// left to type itself later (I-607).
+		prompt = ""
+	}
+	err := mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: prompt, Resume: resume, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
+	var dialog *agentDialogError
+	var unsent *promptNotSubmittedError
+	if errors.As(err, &dialog) {
+		// The pre-trust did not take (I-486): the window is open
+		// on the dialog, and the prompt was not typed.
+		pr.Fail()
+		if opts.NoAttach {
+			return "", exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s -w %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug, name)
+		}
+		_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
+	} else if errors.As(err, &unsent) {
+		// The prompt was typed and the agent never took it (I-752):
+		// it is in the input, waiting for an Enter.
+		pr.Fail()
+		if opts.NoAttach {
+			return "", exitCausef(ExitGeneric, errPromptNotSubmitted, "%s did not take your prompt; it is in its input in the %s %s. `repose attach %s -w %s`, then press Enter.", agentDisplayName(agent), name, mux.Unit(), project.Slug, name)
+		}
+		_, _ = fmt.Fprintf(e.ErrOut, "%s did not take your prompt; it is in its input. Press Enter in the %s that opens.\n", agentDisplayName(agent), mux.Unit())
+	} else if err != nil {
+		return "", stepFailed("start "+agent+" on the machine", err, "")
+	}
+	pr.End()
+	if attachInstead {
+		// herdr's login tab has no agent name (`herdr pane run`), but it
+		// is the focused one.
+		at := "repose attach " + project.Slug
+		if mux.Name() != multiplexer.Herdr {
+			at += " -w " + name
+		}
+		switch {
+		case prompt == "" && resume != "":
+			// The login is the user's (I-278), so the window starts the
+			// plain binary and the conversation waits on the machine.
+			if opts.NoAttach {
+				return "", exitf(ExitGeneric, "Claude Code is not logged in on %s, so the conversation did not open. Log in with `%s`, then `claude --resume %s` continues it.", project.Slug, at, resume)
+			}
+			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on %s. Log in in the %s that opens, then `claude --resume %s` continues the conversation.\n", project.Slug, mux.Unit(), resume)
+		case opts.NoAttach:
+			return "", exitf(ExitGeneric, "Claude Code is not logged in on %s, so your prompt was not typed. Log in with `%s`, then run your prompt again.", project.Slug, at)
+		default:
+			_, _ = fmt.Fprintf(e.Out, "Claude Code is not logged in on %s. Log in in the %s that opens; your prompt is typed after the login.\n", project.Slug, mux.Unit())
+		}
+	} else if opts.NoAttach {
+		// Where the prompt went: the name `attach -w` and `ps`
+		// take (I-607).
+		_, _ = fmt.Fprintf(e.Out, "%s: %s\n", capitalize(mux.Unit()), name)
+	}
+	return name, nil
 }

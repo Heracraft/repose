@@ -254,6 +254,12 @@ func warmTarget(ctx context.Context, e *Env, guess *Project) (t sshTarget, cover
 // everything the attach needs. done is false when the full path must
 // run; it then has done nothing.
 func attachFast(ctx context.Context, e *Env, opts RunOptions) (done bool, err error) {
+	if opts.Session != "" {
+		// `attach --session` brings a conversation and opens a window on
+		// it before the terminal is handed over; this path hands it over
+		// at once (DECISIONS I-1328).
+		return false, nil
+	}
 	explicit := e.resolveArg(opts.ProjectArg)
 	deps := defaultResolveDeps()
 	guess := cachedGuess(e, explicit, deps)

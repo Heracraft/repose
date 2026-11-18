@@ -156,6 +156,29 @@ Your `settings.json` is merged into the machine's: your keys win, and permission
 
 Never copied: your login, conversation history, anything in `~/.claude.json` besides your MCP servers, and anything named like a key or credential.
 
+## Continue a conversation on the machine
+
+`repose run --session=ID` brings one of this laptop's Claude Code conversations to the machine and opens a window on it with `claude --resume`:
+
+```
+$ repose sessions
+ID        LAST USED     FOLDER  TITLE
+907f3a2c  2 hours ago   .       Payments refactor
+4d1be880  3 days ago    web     Make the table sortable
+
+$ repose run --session=907f3a2c
+```
+
+It works the same on `repose attach`, and on `repose sync`, which brings the conversation and starts nothing. Add `-p` and the prompt is the conversation's next turn. The machine's Claude Code resumes a conversation only when you ask for one this way; otherwise every window starts fresh.
+
+Conversation history is [not part of the copy](#your-agent-setup-comes-along), so nothing comes until you name it, and then only that one conversation: its own transcript, its subagents' transcripts, the tool results it points at and its todos. Your other conversations, your shell history and your login stay on your laptop.
+
+Your laptop's paths inside the conversation become the machine's, so the files it talks about are the files it finds: your checkout becomes the machine's checkout, and your home becomes `/home/dev`. A conversation that ran in a folder of the checkout lands in the same folder on the machine, and the window opens there.
+
+A transcript over 64 MB doesn't travel, and `--session` says so by its size. The files beside it stop at 32 MB in all; a tool result left behind reads to the agent as one that was cleaned up.
+
+Work on the conversation in both places and the machine's copy is the one that can be ahead. If it has more of the conversation than your laptop, or a window on the machine is open on it, `--session` leaves it as it is, says so, and takes you to it. Otherwise the machine's copy is replaced and the one it had is kept beside it as `<id>.jsonl.repose-prev`.
+
 ## MCP servers
 
 Every agent on the machine has the [browser tools](/docs/machine#browser) `playwright` and `chrome-devtools`. In place of Claude in Chrome, `repose browser bridge` lends those tools [your laptop's Chrome](/docs/your-chrome), logins included.

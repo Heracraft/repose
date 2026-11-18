@@ -56,6 +56,10 @@ type Env struct {
 	listed []Project
 	// home caches inHome: the working directory is the home folder.
 	home *bool
+	// session is the conversation `--session` names (DECISIONS I-1328),
+	// read from the laptop before the machine is touched and kept for
+	// the import that follows; nil until then.
+	session *laptopSession
 
 	Dir     string // ~/.config/repose
 	Cfg     Config

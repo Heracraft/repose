@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-999 entries.
+1003 entries.
 
 ## Scope
 
@@ -1031,3 +1031,7 @@ pointer, not a summary.
 - **I-1278** Only the end of a turn resolves a permission prompt (notify-hold, 2026-11-17). Amends I-689 — L35396
 - **I-1280** An event says why its notification went nowhere, and only then (notify-hold, 2026-11-17) — L35417
 - **I-1282** The hold is the user's, in the CLI and on the dashboard (notify-hold, 2026-11-17) — L35431
+- **I-1328** One Claude Code conversation comes over when the user names it, and `claude --resume` is what opens it (session-import, 2026-11-18) — L35448
+- **I-1330** `repose sessions` is the laptop's list, and it asks nothing (session-import, 2026-11-18) — L35544
+- **I-1332** A bare `--session` followed by a word takes it as the id only when it names a conversation (session-import, 2026-11-18) — L35595
+- **I-1334** The docs' ghost-flag check reads repose's own command lines only (session-import, 2026-11-18) — L35614

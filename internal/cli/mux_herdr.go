@@ -296,9 +296,19 @@ printf '#pane %%s\n' "$repose_p"
 		}
 		return b.String()
 	}
-	fmt.Fprintf(&b, `repose_r=$(herdr agent start %s --kind %s --pane "$repose_p" --timeout %d 2>&1)
+	// `--resume <id>` reaches the agent through herdr's own agent-argument
+	// slot, `herdr agent start <NAME> --kind <KIND> --pane <ID> [OPTIONS]
+	// [-- [AGENT_ARG]...]` (herdr 0.9.3's --help, read for I-752). The
+	// prompt stays on herdr's verified `agent prompt` path: I-752 left it
+	// there, and this box has no herdr guest to move it on. NOT verified
+	// live: there is no herdr machine here (DECISIONS I-1328).
+	resume := ""
+	if s.Resume != "" {
+		resume = " -- --resume " + shQuote(s.Resume)
+	}
+	fmt.Fprintf(&b, `repose_r=$(herdr agent start %s --kind %s --pane "$repose_p" --timeout %d%s 2>&1)
 printf '#start %%s\n' "$(printf '%%s\n' "$repose_r" | `+herdrStatusJQ+`)"
-`, shQuote(s.Name), shQuote(s.Agent), herdrAgentStartTimeout.Milliseconds())
+`, shQuote(s.Name), shQuote(s.Agent), herdrAgentStartTimeout.Milliseconds(), resume)
 	return b.String()
 }
 
@@ -381,6 +391,11 @@ func (herdrMux) StartAgent(ctx context.Context, t sshTarget, s agentStart) error
 		// anyway rather than hang, as the tmux path does.
 	default:
 		return fmt.Errorf("herdr could not start %s (%s)", s.Agent, orDash(status))
+	}
+	if s.Prompt == "" {
+		// A window `--session` opened resumes its conversation and has
+		// no prompt to type (DECISIONS I-1328).
+		return nil
 	}
 	out, err = runSSH(ctx, t, herdrPromptScript(s.Name, s.Prompt), nil)
 	if err != nil {
