@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""The record block of a pull request (docs/PR.md).
+
+    pr-record parse PR|FILE|-          the record as key=value lines (lists comma-joined)
+    pr-record decisions [--all]        every decision id in every open PR, one a line
+                                       (--all: closed ones of the last 90 days too)
+    pr-record check PR|FILE|-          exit 1 with what is missing from the body
+    pr-record render [--branch B] [--commit SHA] [--stack S] [--decisions a,b]
+                     [--migrations a,b] [--ships a,b] [--live TEXT] < body.md
+                                       the body with its record filled in; a body with
+                                       no record gets the template's parts appended
+
+A PR number reads GitHub through `gh`; a file or `-` reads the body text.
+Nothing here needs a YAML library: the record is `key: value` lines and
+`[a, b]` lists, read and written by hand so an agent on a bare guest can
+run it.
+"""
+import json
+import re
+import subprocess
+import sys
+
+FIELDS = ["branch", "commit", "stack", "decisions", "migrations", "ships", "live"]
+LISTS = {"decisions", "migrations", "ships"}
+FENCE = re.compile(r"^```record[ \t]*\n(.*?)^```[ \t]*$", re.S | re.M)
+PARTS = ["In depth", "For agents", "Record"]
+ID = re.compile(r"\b(?:I|R)-[0-9]+(?:\.\.(?:I|R)-[0-9]+)?\b")
+
+
+def die(msg):
+    print(f"pr-record: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def body_of(arg):
+    if arg == "-":
+        return sys.stdin.read()
+    if arg.isdigit():
+        out = subprocess.run(["gh", "pr", "view", arg, "--json", "body", "--jq", ".body"],
+                             capture_output=True, text=True)
+        if out.returncode != 0:
+            die(f"gh pr view {arg}: {out.stderr.strip()}")
+        return out.stdout
+    with open(arg, encoding="utf-8") as f:
+        return f.read()
+
+
+def parse_record(text):
+    m = FENCE.search(text)
+    if not m:
+        return None
+    rec = {}
+    for line in m.group(1).splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        k = k.strip()
+        v = v.strip()
+        if k in LISTS:
+            v = v.strip("[]")
+            rec[k] = [x.strip().strip("'\"") for x in v.split(",") if x.strip()]
+        else:
+            rec[k] = v
+    return rec
+
+
+def render_record(rec):
+    lines = []
+    for k in FIELDS:
+        v = rec.get(k, [] if k in LISTS else "")
+        if k in LISTS:
+            lines.append(f"{k}: [{', '.join(v)}]")
+        else:
+            lines.append(f"{k}: {v}")
+    return "```record\n" + "\n".join(lines) + "\n```"
+
+
+def sentences(text):
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = re.sub(r"`[^`]*`", "x", text)
+    return [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+
+
+def head_of(text):
+    """The what-changes part: everything before **Why.** or the first details."""
+    cut = len(text)
+    for mark in ("**Why.**", "<details>"):
+        i = text.find(mark)
+        if i != -1:
+            cut = min(cut, i)
+    return text[:cut]
+
+
+def check(text):
+    faults = []
+    head = head_of(text)
+    if not sentences(head):
+        faults.append("the what-changes part is empty")
+    elif len(sentences(head)) > 5:
+        faults.append(f"the what-changes part has {len(sentences(head))} sentences; five at most")
+    if "**Why.**" not in text:
+        faults.append("no **Why.** line")
+    else:
+        why = text.split("**Why.**", 1)[1]
+        why = why[: why.find("<details>")] if "<details>" in why else why
+        why_lines = [l for l in why.strip().splitlines() if l.strip() and not l.strip().startswith("<!--")]
+        if not why_lines:
+            faults.append("the Why part is empty")
+        elif len(why_lines) > 3:
+            faults.append(f"the Why part has {len(why_lines)} lines; three at most")
+    for p in PARTS:
+        if f"<summary>{p}</summary>" not in text:
+            faults.append(f"no <details><summary>{p}</summary> part")
+    rec = parse_record(text)
+    if rec is None:
+        faults.append("no ```record block")
+    else:
+        for k in FIELDS:
+            if k not in rec:
+                faults.append(f"record: no {k}")
+        for k in ("branch", "commit", "stack"):
+            if not rec.get(k):
+                faults.append(f"record: {k} is empty")
+        for d in rec.get("decisions", []):
+            if not ID.fullmatch(d):
+                faults.append(f"record: decisions holds {d!r}, which is not an I-<n>")
+    return faults, rec
+
+
+def cmd_parse(args):
+    if not args:
+        die("parse: PR number, file or -")
+    rec = parse_record(body_of(args[0]))
+    if rec is None:
+        die("no ```record block in that body")
+    for k in FIELDS:
+        v = rec.get(k, [] if k in LISTS else "")
+        print(f"{k}={','.join(v) if isinstance(v, list) else v}")
+
+
+def cmd_decisions(args):
+    state = "all" if "--all" in args else "open"
+    out = subprocess.run(
+        ["gh", "pr", "list", "--state", state, "--limit", "200", "--json", "number,body,closedAt"],
+        capture_output=True, text=True)
+    if out.returncode != 0:
+        die(f"gh pr list: {out.stderr.strip()}")
+    seen = set()
+    for pr in json.loads(out.stdout or "[]"):
+        rec = parse_record(pr.get("body") or "")
+        if not rec:
+            continue
+        for d in rec.get("decisions", []):
+            m = ID.fullmatch(d)
+            if not m:
+                continue
+            for n in re.findall(r"[0-9]+", d):
+                seen.add(int(n))
+    for n in sorted(seen):
+        print(f"I-{n}")
+
+
+def cmd_check(args):
+    if not args:
+        die("check: PR number, file or -")
+    faults, _ = check(body_of(args[0]))
+    for f in faults:
+        print(f"pr-record: {f}", file=sys.stderr)
+    sys.exit(1 if faults else 0)
+
+
+TEMPLATE_TAIL = """
+**Why.**
+
+<details>
+<summary>In depth</summary>
+
+</details>
+
+<details>
+<summary>For agents</summary>
+
+</details>
+
+<details>
+<summary>Record</summary>
+
+```record
+```
+
+</details>
+"""
+
+
+def cmd_render(args):
+    opts = {}
+    it = iter(args)
+    for a in it:
+        if not a.startswith("--"):
+            die(f"render: unknown argument {a}")
+        k = a[2:]
+        try:
+            v = next(it)
+        except StopIteration:
+            die(f"render: --{k} needs a value")
+        opts[k] = v
+    body = sys.stdin.read() if not sys.stdin.isatty() else ""
+    if parse_record(body) is None:
+        if "<summary>Record</summary>" not in body:
+            body = body.rstrip("\n") + "\n" + TEMPLATE_TAIL
+        else:
+            body = body.replace("<summary>Record</summary>", "<summary>Record</summary>\n\n```record\n```", 1)
+    rec = parse_record(body) or {}
+    for k in FIELDS:
+        if k in opts:
+            rec[k] = [x.strip() for x in opts[k].split(",") if x.strip()] if k in LISTS else opts[k]
+        elif k not in rec:
+            rec[k] = [] if k in LISTS else ""
+    if not rec.get("stack"):
+        rec["stack"] = "integrated"
+    body = FENCE.sub(lambda m: render_record(rec), body, count=1)
+    sys.stdout.write(body if body.endswith("\n") else body + "\n")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(2)
+    cmd, args = sys.argv[1], sys.argv[2:]
+    {"parse": cmd_parse, "decisions": cmd_decisions, "check": cmd_check, "render": cmd_render}.get(
+        cmd, lambda a: die(f"unknown command {cmd}"))(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -36048,6 +36048,54 @@ machine never starts the unit (I-1346).
 
 *Checked:* `nix eval ./nix#guestSystem.config.systemd.user.services.repose-tools-carry.serviceConfig.MemoryHigh` prints `40%`.
 
+**I-1352. The queue is the pull requests: each branch is a PR against
+`integrated` in a fixed shape, stacked on the last, labelled with what it
+ships, carrying its decisions in a record a tool reads; the conductor
+merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763.**
+The release queue reinvented pull requests: an entry file per branch,
+`ls`, `where`, an inbox, a machine column. Its cost showed on
+2026-11-18, when a branch queued on kanali was in no queue the conductor
+reads, because the state is one clone's (I-763 froze kanali's). The
+owner's words: "the whole release queue thing is just a sham for PRs",
+and "if I queue it from Kanali, will you know when to merge?" The answer
+was no.
+
+What stays is what a PR does not have: decision ids need one counter
+across both machines; a batch must say what it deploys, since a push of
+`main` is itself a deploy and host, edge and base each need an act; and
+a release needs each branch's live check and its result. So the PR
+carries those in a form a tool reads, and the queue tool becomes a
+client of the PRs:
+
+- A PR's base is `integrated`, the last integrated commit (I-651), or
+  the branch of a queued PR it builds on; GitHub retargets it when that
+  one merges. No PR targets `main`: a merge there deploys.
+- `queued` is the label that makes a PR the conductor's; `ships:<t>` the
+  labels that say what a merge deploys, from the same computation `add`
+  always did. Nothing else is a label.
+- The body has a fixed shape (`docs/PR.md`): five sentences of what
+  changes, three lines of why, an "In depth" fold, a "For agents" fold,
+  and a `record` block with branch, commit, stack, decisions,
+  migrations, ships and live. `ops/dev/pr-record` reads and writes it
+  through `gh`'s JSON, so no agent reads a PR into its context to find
+  an id; `release-queue id` reads every PR's record, which closes the
+  cross-machine window a band only narrowed (I-760).
+- `add` pushes the branch and opens or updates the PR; `ls` and `cut`
+  read the queued PRs in stack order and fetch their branches; `done`
+  pushes `integrated`, which closes them as merged, and takes the label
+  off. A box with no `gh` (a repose guest) still queues a local entry.
+- The conductor merges, by `cut` and `done`. It never asks the owner to
+  merge a PR, and no PR is merged on GitHub by hand, unless the owner
+  says so for that PR.
+
+Rejected: GitHub's merge queue (it merges into the target on push, and
+`main`'s push is the deploy; it would have to target `integrated`, and
+then a release is still a push the conductor makes); a merge bot (bors,
+Mergify) for the same reason, and because batch verification here is a
+box's worth of VM checks the bot would not run; a shared message channel
+as the hand-off (records intent, not the commit); and moving kanali's
+sessions onto this clone (the sessions are on that box because the owner
+watches them there).
 **I-1350. Connect is `repose attach PROJECT` for every machine; `run`
 is for making one (connect-attach, 2026-11-18).** *Made during
 implementation.* The dashboard's Connect card offered `repose run` on a

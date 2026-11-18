@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1018 entries.
+1019 entries.
 
 ## Scope
 
@@ -476,11 +476,11 @@ pointer, not a summary.
 - **I-408** Placement waits up to three minutes for a guest being stopped before it answers `capacity` — 2026-10-01; L10623
 - **I-409** hostd sends a heartbeat ahead of every command result — 2026-10-01; L10647
 - **I-422** The laptop chooses which logins `run` copies: `repose secrets choose` and `[logins] skip` in config.toml — 2026-10-03; amended by I-1340; L10663
-- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; partly amended by I-758; partly amended by I-759; amended by I-760; L10728
+- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; partly amended by I-758; partly amended by I-759; amended by I-760; amended by I-1352; L10728
 - **I-415** The feedback board is Fider's hosted `repose.fider.io`, and you sign in there with your repose account through Logto — 2026-10-01; L10762
 - **I-417** A boot sets the old /tmp aside in one rename and deletes it after the boot — 2026-10-02; L10791
 - **I-410** The command-not-found hint survives a command only one package has — 2026-10-03; L10835
-- **I-411** `repose exec` takes the command with or without `--` — 2026-10-03; partly amended by I-745; L10847
+- **I-411** `repose exec` takes the command with or without `--` — 2026-10-03; partly amended by I-745; amended by I-1352; L10847
 - **I-412** The docs as markdown at /llms.txt, and the laptop's CLI version on the machine — 2026-10-03; L10864
 - **I-413** The tools carry reads Homebrew formulae and installs them from nixpkgs — 2026-10-03; superseded by I-423; L10880
 - **I-414** Events page back: `before` and `limit` on the api, Show older on the dashboard, and `repose events` reads the whole window — 2026-10-03; amended by I-662; L10900
@@ -809,7 +809,7 @@ pointer, not a summary.
 - **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23136
 - **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — partly amended by I-1336; L23175
 - **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23236
-- **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23307
+- **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — amended by I-1352; L23307
 - **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L23346
 - **I-765** The dashboard asks before it ends an agent's turn, and can keep a temporary machine: parity with the CLI where the CLI has a rule — 2026-10-17; L23355
 - **I-766** Every line on the dashboard says what is true, and the pages that poll stop paying for what nobody reads — 2026-10-17; L23363
@@ -1049,4 +1049,5 @@ pointer, not a summary.
 - **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35966
 - **I-1346** A temporary or tiny machine gets the carry's state and none of its builds: no laptop tools, no runtime pins, no Claude plugins (carry-lite, 2026-11-18). Amends I-221, I-222 and I-196's plugins — L36000
 - **I-1348** The tools carry's unit is capped at 40 percent of the machine's memory (carry-lite, 2026-11-18) — L36041
-- **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36051
+- **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — L36051
+- **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36099
