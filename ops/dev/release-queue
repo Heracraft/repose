@@ -279,6 +279,15 @@ needs_of() {
 # Skipped by --fast, and skipped when nix is not on PATH, which is every
 # repose guest: the answer then stays the path-based one and the entry says
 # so, because a wrong "nothing to deploy" is worse than a wide one.
+# fleet_hosts lists the production hosts the flake defines, host-NN, one a
+# line: host-01, host-02 today. The bench and staging hosts, `host` and
+# the installer are not deploy targets of a release.
+fleet_hosts() {
+  local top; top=$(git rev-parse --show-toplevel)
+  nix eval --json "$top/nix#nixosConfigurations" --apply builtins.attrNames 2>/dev/null \
+    | tr -d '[]"' | tr ',' '\n' | grep -E '^host-[0-9]+$' || echo host-02
+}
+
 exact_nix() {  # base-commit targets...
   local base=$1; shift
   local t out keep=() attr equiv
@@ -291,20 +300,30 @@ exact_nix() {  # base-commit targets...
     printf '%s\n' "$@"; return 0
   fi
   for t in "$@"; do
+    local attrs=()
     case $t in
-      base) attr=packages.x86_64-linux.guest-system ;;
-      host) attr=nixosConfigurations.host-01.config.system.build.toplevel ;;
-      edge) attr=nixosConfigurations.edge.config.system.build.toplevel ;;
+      base) attrs=(packages.x86_64-linux.guest-system) ;;
+      # Every production host, host-NN in the flake: a change to one
+      # host's own file (host-02.nix) leaves every other host's system
+      # unchanged, and comparing one named host dropped the deploy
+      # silently when the fleet moved to host-02 (I-1336).
+      host) mapfile -t attrs < <(fleet_hosts | sed 's/.*/nixosConfigurations.&.config.system.build.toplevel/') ;;
+      edge) attrs=(nixosConfigurations.edge.config.system.build.toplevel) ;;
       *) keep+=("$t"); continue ;;
     esac
-    if out=$("$equiv" "$attr" "$base" HEAD 2>&1); then
-      echo "release-queue: $t: the system is unchanged from $(git rev-parse --short "$base"), so it is not a deploy target" >&2
-    else
+    local changed=0 attr
+    for attr in "${attrs[@]}"; do
+      if out=$("$equiv" "$attr" "$base" HEAD 2>&1); then
+        continue
+      fi
       case $out in
-        *"VERDICT: the system really changes"*) keep+=("$t") ;;
-        *) keep+=("$t")
-           echo "release-queue: $t: could not compare the systems, so it stays a target" >&2 ;;
+        *"VERDICT: the system really changes"*) changed=1 ;;
+        *) changed=1
+           echo "release-queue: $t: could not compare ${attr#nixosConfigurations.}, so it stays a target" >&2 ;;
       esac
+    done
+    if [ $changed = 1 ]; then keep+=("$t")
+    else echo "release-queue: $t: the system is unchanged from $(git rev-parse --short "$base"), so it is not a deploy target" >&2
     fi
   done
   [ ${#keep[@]} -eq 0 ] || printf '%s\n' "${keep[@]}"
