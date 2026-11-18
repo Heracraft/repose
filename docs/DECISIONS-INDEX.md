@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-999 entries.
+1000 entries.
 
 ## Scope
 
@@ -962,7 +962,7 @@ pointer, not a summary.
 - **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31550
 - **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; amended by I-1216; L31606
 - **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31628
-- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31662
+- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; partly amended by I-1326; L31662
 - **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31760
 - **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31840
 - **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31926
@@ -1031,3 +1031,4 @@ pointer, not a summary.
 - **I-1278** Only the end of a turn resolves a permission prompt (notify-hold, 2026-11-17). Amends I-689 — L35396
 - **I-1280** An event says why its notification went nowhere, and only then (notify-hold, 2026-11-17) — L35417
 - **I-1282** The hold is the user's, in the CLI and on the dashboard (notify-hold, 2026-11-17) — L35431
+- **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35448
