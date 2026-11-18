@@ -124,6 +124,16 @@ func loginStatus(ctx context.Context, e *Env) error {
 	if err != nil {
 		return err
 	}
+	if me.Token != nil {
+		// REPOSE_TOKEN (I-1314): the token, not a login, is what the
+		// api answered to.
+		reach := "every project"
+		if me.Token.Project != nil && me.Token.Project.Slug != nil {
+			reach = *me.Token.Project.Slug + " only"
+		}
+		_, _ = fmt.Fprintf(e.Out, "%s with token %s (%s, %s, until %s) on %s\n", me.Handle, me.Token.Name, strings.Join(me.Token.Scopes, ", "), reach, me.Token.ExpiresAt.Local().Format("2006-01-02"), hostOf(e.Cfg.APIURL))
+		return nil
+	}
 	plan := "no plan"
 	if me.Billing.Plan != nil && *me.Billing.Plan != "" {
 		plan = planTitle(*me.Billing.Plan) + " plan"

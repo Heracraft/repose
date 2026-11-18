@@ -10,6 +10,8 @@ import (
 // and the real api identically).
 
 type Me struct {
+	// Token is set when the call was made with an API token (I-1314).
+	Token       *APIToken `json:"token,omitempty"`
 	ID          string    `json:"id"`
 	Handle      string    `json:"handle"`
 	Email       string    `json:"email"`

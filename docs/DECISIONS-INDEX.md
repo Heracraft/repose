@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-999 entries.
+1005 entries.
 
 ## Scope
 
@@ -826,7 +826,7 @@ pointer, not a summary.
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23989
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24220
 - **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24252
-- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; L24379
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; amended by I-1322; L24379
 - **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24728
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24791
 - **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24846
@@ -1031,3 +1031,9 @@ pointer, not a summary.
 - **I-1278** Only the end of a turn resolves a permission prompt (notify-hold, 2026-11-17). Amends I-689 — L35396
 - **I-1280** An event says why its notification went nowhere, and only then (notify-hold, 2026-11-17) — L35417
 - **I-1282** The hold is the user's, in the CLI and on the dashboard (notify-hold, 2026-11-17) — L35431
+- **I-1314** API tokens: a bearer the user mints for an agent or a script, stored as its sha256 and shown once (api-tokens, 2026-11-18) — L35448
+- **I-1316** A token's scopes are six areas, and every user route is placed in one, in a "never" list, or refused (api-tokens, 2026-11-18) — L35475
+- **I-1318** A token may be bound to one project, and then sees that project alone (api-tokens, 2026-11-18) — L35501
+- **I-1320** A token expires, 30 days unless asked and a year at most; an account holds 20; a revoked row is listed 30 days (api-tokens, 2026-11-18) — L35516
+- **I-1322** Settings gets a fifth tab, API tokens, and the dialog shows the token once (api-tokens, 2026-11-18). Amends I-841 — L35535
+- **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35554

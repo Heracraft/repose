@@ -59,6 +59,24 @@ type staticToken string
 
 func (s staticToken) AccessToken(context.Context, bool) (string, error) { return string(s), nil }
 
+// envToken is REPOSE_TOKEN (DECISIONS I-1314): an API token in place of
+// the login. It never refreshes, and a 401 is its own sentence, not
+// "run repose login".
+type apiTokenSource string
+
+func (s apiTokenSource) AccessToken(context.Context, bool) (string, error) { return string(s), nil }
+
+// tokenRefusedError is the api's 401 to a REPOSE_TOKEN call.
+type tokenRefusedError struct{ cause *APIError }
+
+func (e *tokenRefusedError) Error() string {
+	m := strings.TrimSuffix(strings.TrimSpace(e.cause.Message), ".")
+	if m == "" || m == "invalid token" {
+		return "REPOSE_TOKEN is not a token the api knows."
+	}
+	return "REPOSE_TOKEN was refused: " + m + "."
+}
+
 // Client is the HTTP API client (docs/interfaces/api.md).
 type Client struct {
 	BaseURL string
@@ -156,6 +174,11 @@ func (c *Client) doHeader(ctx context.Context, method, path string, body any, ou
 				return err
 			}
 			continue
+		}
+		if apiErr != nil && apiErr.Code == "unauthenticated" {
+			if _, ok := c.Tokens.(apiTokenSource); ok {
+				return &tokenRefusedError{cause: apiErr}
+			}
 		}
 		if apiErr != nil && apiErr.Code == "unauthenticated" && !refreshed && c.Tokens != nil {
 			refreshed = true

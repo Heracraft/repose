@@ -457,6 +457,44 @@ export interface SecretMeta {
 	updated_at: string;
 }
 
+/** One row of GET /me/tokens (DECISIONS I-1314): everything but the token. */
+export interface ApiToken {
+	id: string;
+	name: string;
+	prefix: string;
+	scopes: TokenScope[];
+	project: { id: string; slug: string | null } | null;
+	expires_at: string;
+	created_at: string;
+	last_used_at: string | null;
+	revoked_at: string | null;
+	/** Set on the create answer only. */
+	token?: string;
+}
+
+export type TokenScope = 'read' | 'projects' | 'config' | 'secrets' | 'triggers' | 'agents';
+
+/** The six scopes and one line each, the api's tokens.Means word for word. */
+export const TOKEN_SCOPES: { name: TokenScope; means: string }[] = [
+	{
+		name: 'read',
+		means: 'read every project, its status, events, questions, triggers and settings'
+	},
+	{ name: 'projects', means: 'create, start, stop, resize, snapshot, restore and remove projects' },
+	{ name: 'config', means: "change machine.nix and a project's config" },
+	{ name: 'secrets', means: 'set and remove secrets (never read a value)' },
+	{ name: 'triggers', means: 'make, change, fire and remove triggers and webhook routes' },
+	{ name: 'agents', means: 'message an agent and answer its questions' }
+];
+
+/** POST /me/tokens. */
+export interface CreateTokenRequest {
+	name: string;
+	scopes: TokenScope[];
+	project_id?: string;
+	expires_in_days?: number;
+}
+
 /** PUT /me/secrets/:name: the running machines that got it now, and the
  * projects whose own secret of that name wins (I-697). */
 export interface AccountSecretPut {

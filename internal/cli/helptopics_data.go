@@ -24,6 +24,7 @@ var envTopic = []topicRow{
 	{[]string{"`REPOSE_NO_INPUT_PROXY=1`"}, "Don't copy dropped files or pasted images to the machine; `run` and `attach` hand the terminal straight to `ssh`. `REPOSE_INPUT_PROXY=0` is its old name."},
 	{[]string{"`REPOSE_NO_CLIPBOARD_PATH=1`"}, "On macOS, leave the clipboard alone while you are attached, so `Cmd+V` with only an image on it pastes nothing; `Ctrl+V` still pastes the image. `REPOSE_CLIPBOARD_PATH=0` is its old name."},
 	{[]string{"`REPOSE_API_URL`"}, "Like `--api-url`."},
+	{[]string{"`REPOSE_TOKEN`"}, "An [API token](/docs/api) to use in place of your login. Commands that open SSH (`run`, `attach`, `exec`, `ssh`, `cp`) need a login and are refused with it; `repose login --status` says which token the api sees."},
 	{[]string{"`REPOSE=1`"}, "Set on every repose machine, so scripts can tell where they run."},
 	{[]string{"`XDG_CONFIG_HOME`"}, "If set, the CLI's files are in `$XDG_CONFIG_HOME/repose/`."},
 	{[]string{"`CLAUDE_CONFIG_DIR`"}, "Where your laptop's Claude Code setup is copied from, instead of `~/.claude`."},

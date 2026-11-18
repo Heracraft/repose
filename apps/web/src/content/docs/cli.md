@@ -446,6 +446,16 @@ An account secret is for every project, so `--global` beside a project exits 2.
 
 A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
 
+## API tokens
+
+| Command                          | What it does |
+| -------------------------------- | ------------ |
+| `repose tokens create NAME`      | Make an [API token](/docs/api) and print it, and nothing else, so it pipes. It is not shown again. `--scope` is one or more of `read`, `projects`, `config`, `secrets`, `triggers`, `agents` (repeat it, or separate with commas); `--project NAME` binds the token to one project; `--expires DAYS` is its life, 30 unless given, 365 at most. `--json` prints every field, the token included. |
+| `repose tokens list`             | Your tokens with their scopes, project, end and last use, live ones first; a revoked one stays listed for 30 days. Alias `ls`, and `repose tokens` alone. `--json` for JSON, `-q`/`--quiet` for the live names. |
+| `repose tokens rm NAME...`       | Revoke tokens. Alias `remove`. A call with one is refused from that moment. |
+
+A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a scope that is not one of the six. An account holds 20 live tokens. These three commands take a login, not `REPOSE_TOKEN`.
+
 ## Triggers
 
 A [trigger](/docs/triggers) starts an agent when a webhook arrives or at a time you choose.
@@ -490,7 +500,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 
 | Command | What it does |
 | ------- | ------------ |
-| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
+| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't; with `REPOSE_TOKEN` set it prints the token's name, scopes, project and end instead. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
 | `repose logout`                                 | Log out and revoke your SSH certificates; the connections they opened [close within 30 seconds, on any device](/docs/limits#ssh-connections). A failed revoke still logs out on this laptop, says so and exits 1; the certificates stop working within 24 hours. `--purge` also removes [the CLI's files](#files-on-your-laptop). |
 | `repose notify`                                 | Where notifications go: `email: on, to you@example.com`, `ntfy: off` or its URL, `gchat: on, space AAAA...`, `off`, or `broken since 2026-01-02 (Google refused the webhook)`, and `hold: 2m` or `off`. `--json` for JSON. |
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook), `--hold off\|DURATION` ([how long a report waits while you're at the machine](/docs/notifications#while-youre-at-the-machine), an hour at most). |
@@ -562,6 +572,7 @@ reverse = ["15432:5432"]
 | `REPOSE_NO_INPUT_PROXY=1`    | Don't copy dropped files or pasted images to the machine; `run` and `attach` hand the terminal straight to `ssh`. `REPOSE_INPUT_PROXY=0` is its old name.                                   |
 | `REPOSE_NO_CLIPBOARD_PATH=1` | On macOS, leave the clipboard alone while you are attached, so `Cmd+V` with only an image on it pastes nothing; `Ctrl+V` still pastes the image. `REPOSE_CLIPBOARD_PATH=0` is its old name. |
 | `REPOSE_API_URL`             | Like `--api-url`.                                                                                                                                                                           |
+| `REPOSE_TOKEN`               | An [API token](/docs/api) to use in place of your login. Commands that open SSH (`run`, `attach`, `exec`, `ssh`, `cp`) need a login and are refused with it; `repose login --status` says which token the api sees.                                     |
 | `REPOSE=1`                   | Set on every repose machine, so scripts can tell where they run.                                                                                                                            |
 | `XDG_CONFIG_HOME`            | If set, the CLI's files are in `$XDG_CONFIG_HOME/repose/`.                                                                                                                                  |
 | `CLAUDE_CONFIG_DIR`          | Where your laptop's Claude Code setup is copied from, instead of `~/.claude`.                                                                                                               |
