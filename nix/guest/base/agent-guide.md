@@ -71,6 +71,7 @@ The user may have added other repositories to this machine as folders beside it,
 - `nix-collect-garbage` and `nix store gc` are safe here: they keep the store paths repose shares with this machine. <!-- /docs/machine#memory-and-disk -->
 - If processes keep getting killed for memory, tell the user: `repose resize --size large` (or `--size xl`) on their laptop gives the machine more memory. It restarts the machine, which ends every process here, you included. <!-- /docs/machine#changing-the-size -->
 - The user sees this machine's CPU, memory and busiest processes on the dashboard. Several builds or test runs at once can keep every core busy and slow each other down; run fewer at a time. <!-- /docs/machine#seeing-what-the-machine-is-doing -->
+- `nproc` says the most cores this machine may use. Its size's own cores are always there; the rest come only while the server has idle ones and go within a second when it does not, so a build with `-j$(nproc)` may slow down without the machine being at fault. <!-- /docs/limits#cores -->
 
 ## Reaching the user
 
