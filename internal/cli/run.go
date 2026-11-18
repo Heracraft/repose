@@ -514,7 +514,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			var b builtCarry
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
-			b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot))                                 // I-221, I-222, I-490
+			if !noBuilds(project) { // I-1346
+				b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
+			}
 			b.mc, b.mcNotes = buildMCPCarry(e.HomeDir, gitRepoRoot(repoRoot), project.Slug, target.Checkout, toolBinsOf(b.tc)) // I-556
 			carryDone <- b
 		}()
@@ -568,7 +570,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 					Kept: func(label string) {
 						noted.warn(e, keptLoginLine(label))
 					},
-				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers})
+				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, NoBuilds: noBuilds(project), RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers})
 			},
 		})
 		if err != nil {
@@ -2337,7 +2339,10 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		delete(markers, credsMarker)
 	}
 	noted := newCarryNoter(e.Dir, project.ID) // DECISIONS I-618
-	co := carryOptions{TZ: tz, RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
+	co := carryOptions{TZ: tz, RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers, NoBuilds: noBuilds(project)}
+	if !co.NoBuilds { // I-1346
+		co.Tools = buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))
+	}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)
 		if err != nil {

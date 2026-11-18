@@ -396,7 +396,9 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   markers), the credentials and carry, and the apply (with the .env
   files).
 
-Tools (DECISIONS I-221, I-222):
+Tools (DECISIONS I-221, I-222; none on a temporary or tiny machine,
+I-1346: `noBuilds` leaves `Tools` nil and `NoBuilds` leaves out the
+Claude plugins, while the state copies go as everywhere):
 
 - `repose run` makes the guest have the tools the laptop has and the
   project runs. It lists the laptop's global tools by reading the

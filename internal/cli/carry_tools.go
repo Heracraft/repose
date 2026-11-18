@@ -689,6 +689,18 @@ func precedenceFor(personal bool, repoDir string) toolPrecedence {
 // buildToolsCarry reads the laptop's globals and scans the checkout
 // (repoDir may be "": globals only), each unless prec skips it. It
 // returns nil when there is nothing to install.
+// noBuilds says whether a machine gets the carry's builds at all: the
+// laptop's tools, the runtime pins and the Claude plugins (DECISIONS
+// I-1346). A temporary machine is thrown away within a day, and a tiny
+// one has half a core and 2 GB; on both the installs took the first ten
+// minutes and most of the memory (measured 2026-11-18: 12 tools, 3m49s
+// and 831 MB, then a 488 MB profile copy they caused). The state copies
+// (checkout, logins, Claude config, MCP list, secrets) still go: they
+// take seconds. The agent installs what it needs.
+func noBuilds(p *Project) bool {
+	return p != nil && (p.Class == "tiny" || p.ExpiresAt != nil)
+}
+
 func buildToolsCarry(homeDir, repoDir string, prec toolPrecedence) *toolsCarry {
 	var items []toolItem
 	if !prec.SkipGlobals {

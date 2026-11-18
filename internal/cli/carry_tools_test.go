@@ -394,3 +394,41 @@ func TestBuildToolsCarryIsFast(t *testing.T) {
 		t.Fatalf("one read took %s", per)
 	}
 }
+
+// A temporary or tiny machine gets no builds (I-1346): no tools list,
+// no Claude plugins; the rest of the carry is untouched.
+func TestNoBuildsOnTempAndTiny(t *testing.T) {
+	later := time.Now().Add(time.Hour)
+	for _, c := range []struct {
+		p    *Project
+		want bool
+	}{
+		{nil, false},
+		{&Project{Class: "large"}, false},
+		{&Project{Class: "small"}, false},
+		{&Project{Class: "tiny"}, true},
+		{&Project{Class: "large", ExpiresAt: &later}, true},
+		{&Project{Class: "tiny", ExpiresAt: &later}, true},
+	} {
+		if got := noBuilds(c.p); got != c.want {
+			t.Errorf("noBuilds(%+v) = %v, want %v", c.p, got, c.want)
+		}
+	}
+	cc := &claudeCarry{Plugins: []string{"x@m"}, Marketplaces: map[string]string{"m": "org/repo"}}
+	for _, nb := range []bool{false, true} {
+		p := newGuestPayload()
+		sent, err := addClaudeParts(p, cc, carryOptions{NoBuilds: nb})
+		if err != nil {
+			t.Fatal(err)
+		}
+		has := false
+		for _, s := range sent {
+			if s == "claude-plugins" {
+				has = true
+			}
+		}
+		if has == nb {
+			t.Errorf("NoBuilds=%v: plugins part sent=%v", nb, has)
+		}
+	}
+}

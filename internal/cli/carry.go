@@ -41,6 +41,10 @@ const carryVersion = "1"
 type carryOptions struct {
 	// TZ is the laptop's IANA zone; "" leaves the guest's alone.
 	TZ string
+	// NoBuilds leaves out the Claude plugin installs (I-1346): a
+	// temporary or tiny machine. The tools are left out by the caller
+	// (Tools nil), which is the same rule.
+	NoBuilds bool
 	// Git is the laptop's git config for the checkout (I-195); nil when
 	// the command is not run from the project's checkout, whose includeIf
 	// rules and identity it needs.

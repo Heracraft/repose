@@ -47,6 +47,11 @@ in
       Nice = 10;
       IOSchedulingClass = "idle";
       CPUWeight = 20;
+      # A build (a crate, a native npm module) is throttled past 40
+      # percent of the machine's memory rather than pushing the agent out
+      # (DECISIONS I-1348): 1.6 GB on small, 3.2 GB on large. A temporary
+      # or tiny machine never starts this unit (I-1346).
+      MemoryHigh = "40%";
     };
   };
 }

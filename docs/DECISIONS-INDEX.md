@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1015 entries.
+1017 entries.
 
 ## Scope
 
@@ -279,7 +279,7 @@ pointer, not a summary.
 - **I-177** The bootstrap key can be retired per host once the Host CA is there, and a key file in root's home is never read — 2026-09-23; L4296
 - **I-195..I-205** laptop parity, settled with the owner on 2026-09-23 before any code — 2026-09-23; L4335
 - **I-195** `run` and `attach` carry the laptop's git config, minus a denylist — amended by I-525; L4343
-- **I-196** `run` and `attach` carry the laptop's Claude Code config, and merge `settings.json` — amended by I-556; amended by I-499; L4370
+- **I-196** `run` and `attach` carry the laptop's Claude Code config, and merge `settings.json` — amended by I-556; amended by I-499; partly amended by I-1346; L4370
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4394
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4408
 - **I-199** Ports are auto-forwarded while a CLI session is attached — amended by I-1106; L4413
@@ -305,8 +305,8 @@ pointer, not a summary.
 - **I-217** A guest's 200 Mbit/s shape limits what it sends, on its tap's ingress, and never traffic to the host; the npm front gzips package documents — amended by I-451; L4893
 - **I-218** The guest base has a C toolchain, the everyday CLIs, nix-ld, and `nixpkgs` pinned to its own nixpkgs — 2026-09-23; amended by I-531; amended by I-532; amended by I-534; L4949
 - **I-219** An unknown command in the guest names the nixpkgs package that has it — 2026-09-23; amended by I-517; L4998
-- **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L5031
-- **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5068
+- **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; amended by I-1346; L5031
+- **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; amended by I-1346; L5068
 - **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5099
 - **I-224** The sync's writes are one ssh, and none when nothing changed — amended by I-713; amended by I-743; L5146
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — amended by I-588; L5180
@@ -1047,3 +1047,5 @@ pointer, not a summary.
 - **I-1340** The account can refuse the gh copy; it can never ask for one (github-first-run, 2026-11-18). Amends I-422 — L35875
 - **I-1342** The token's expiry is what GitHub said, read once on the laptop, and only ever a warning (github-first-run, 2026-11-18) — L35925
 - **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35966
+- **I-1346** A temporary or tiny machine gets the carry's state and none of its builds: no laptop tools, no runtime pins, no Claude plugins (carry-lite, 2026-11-18). Amends I-221, I-222 and I-196's plugins — L36000
+- **I-1348** The tools carry's unit is capped at 40 percent of the machine's memory (carry-lite, 2026-11-18) — L36041

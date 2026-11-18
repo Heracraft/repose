@@ -562,7 +562,7 @@ func addClaudeParts(p *guestPayload, cc *claudeCarry, opts carryOptions) ([]stri
 			sent = append(sent, "claude-settings")
 		}
 	}
-	if len(cc.Plugins) > 0 {
+	if len(cc.Plugins) > 0 && !opts.NoBuilds {
 		list, _ := json.Marshal(map[string]any{"plugins": cc.Plugins, "marketplaces": cc.Marketplaces})
 		hash := carryHash(list)
 		if !opts.unchanged("claude-plugins", hash) {
