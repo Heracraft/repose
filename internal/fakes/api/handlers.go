@@ -73,6 +73,7 @@ type meView struct {
 	Billing   billingView `json:"billing"`
 	Limits    limitsView  `json:"limits"`
 	Notify    notifyView  `json:"notify"`
+	GitHub    githubView  `json:"github"`
 	// Waitlist is the place on the waitlist, null when not waiting
 	// (DECISIONS I-269, I-290).
 	Waitlist *WaitlistPlace `json:"waitlist"`
@@ -108,6 +109,14 @@ type notifyView struct {
 	HoldSeconds int `json:"hold_seconds"`
 }
 
+// githubView is GET /me's github (I-1340, I-1342): whether a laptop may
+// copy the account's GitHub CLI login, and what GitHub said about its
+// GH_TOKEN. Never the token.
+type githubView struct {
+	LoginCopy      bool       `json:"login_copy"`
+	TokenExpiresAt *time.Time `json:"token_expires_at"`
+}
+
 // gchatView is notify.gchat: the space, never the webhook URL (I-692).
 type gchatView struct {
 	Space    string     `json:"space"`
@@ -119,6 +128,7 @@ func (f *Fake) meOf(u *userRec) meView {
 		Billing:  f.meBilling(),
 		Limits:   f.meLimits(),
 		Notify:   notifyView{Email: u.NotifyEmail, HoldSeconds: u.NotifyHoldSeconds},
+		GitHub:   githubView{LoginCopy: u.GhLoginCopy, TokenExpiresAt: u.GhTokenExpiresAt},
 		Waitlist: f.bill.waitlist}
 	if u.NtfyURL != "" {
 		url := u.NtfyURL
@@ -153,6 +163,10 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 			GChatURL    json.RawMessage `json:"gchat_url"`
 			HoldSeconds *int            `json:"hold_seconds"`
 		} `json:"notify"`
+		GitHub *struct {
+			LoginCopy      *bool           `json:"login_copy"`
+			TokenExpiresAt json.RawMessage `json:"token_expires_at"`
+		} `json:"github"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -202,6 +216,21 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 				}
 				u.GChatURL, u.GChatBrokenAt = canonical, nil
 			}
+		}
+	}
+	if body.GitHub != nil {
+		if body.GitHub.LoginCopy != nil {
+			u.GhLoginCopy = *body.GitHub.LoginCopy
+		}
+		if len(body.GitHub.TokenExpiresAt) > 0 {
+			var t *time.Time
+			if err := json.Unmarshal(body.GitHub.TokenExpiresAt, &t); err != nil {
+				return invalid("token_expires_at must be a time or null")
+			}
+			if t != nil && (t.Before(time.Now().Add(-24*time.Hour)) || t.After(time.Now().AddDate(10, 0, 0))) {
+				return invalid("token_expires_at is not a plausible expiry")
+			}
+			u.GhTokenExpiresAt = t
 		}
 	}
 	writeJSON(w, http.StatusOK, f.meOf(u))
@@ -1499,6 +1528,10 @@ func (f *Fake) deleteAccountSecret(w http.ResponseWriter, r *http.Request) *apiE
 		return notFound("secret")
 	}
 	delete(u.secrets, name)
+	if name == "GH_TOKEN" {
+		// The expiry the account held was this token's (I-1342).
+		u.GhTokenExpiresAt = nil
+	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

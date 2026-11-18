@@ -3,20 +3,24 @@
 // retention." The account is a section of Settings (DECISIONS I-578), and
 // Settings is four tabs: General, Notifications, Secrets, machine.nix (I-841).
 import { test, expect, type Page } from '@playwright/test';
-import { fail, failNext, signIn, unfail } from './helpers';
+import { apiURLFromEnv, fail, failNext, signIn, unfail } from './helpers';
 
 /**
  * The viewport at 1440 and 390 in both schemes, at 1x, for the review
  * CLAUDE.md asks for ("Judge visuals at real size"). Written only with
  * REPOSE_SHOTS_DIR set, as triggers.spec.ts does.
  */
-async function shots(page: Page, name: string): Promise<void> {
+async function shots(page: Page, name: string, into?: string): Promise<void> {
 	const dir = process.env.REPOSE_SHOTS_DIR;
 	if (!dir) return;
 	for (const width of [1440, 390]) {
 		for (const scheme of ['light', 'dark'] as const) {
 			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
 			await page.emulateMedia({ colorScheme: scheme });
+			// A section further down the page is judged where a visitor
+			// sees it, not above the fold it is not on (CLAUDE.md "Judge
+			// visuals at real size").
+			if (into) await page.locator(into).scrollIntoViewIfNeeded();
 			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
 		}
 	}
@@ -228,6 +232,7 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 	expect(await h2()).toEqual([
 		'Account',
 		'Timezone',
+		'GitHub',
 		'Install',
 		'Revoke certificates',
 		'Delete account'
@@ -433,4 +438,83 @@ test('Sign out on Settings signs out', async ({ page }) => {
 	await expect(page).toHaveURL('/', { timeout: 10_000 });
 	await page.goto('/settings');
 	await expect(page).not.toHaveURL('/settings');
+});
+
+// The GitHub section of Settings → General (DECISIONS I-1340, I-1344): what
+// the account holds, its expiry, and the switch that tells every laptop to
+// stop copying its gh login. The switch can only turn the copy off; a
+// laptop that chose to keep its login at home is never told to send it.
+//
+// The fixture's account is shared with every spec after this one, so both
+// tests put the account back: the switch on, and no GH_TOKEN.
+const api = (path: string, init?: RequestInit) =>
+	fetch(apiURLFromEnv() + path, {
+		...init,
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' }
+	});
+
+test.afterAll(async () => {
+	await api('/me', {
+		method: 'PATCH',
+		body: JSON.stringify({ github: { login_copy: true, token_expires_at: null } })
+	});
+	await api('/me/secrets/GH_TOKEN', { method: 'DELETE' });
+});
+
+const ghSwitch = (page: Page) =>
+	page
+		.locator('section#github')
+		.getByRole('checkbox', { name: 'Laptops may copy their gh login' });
+
+test('settings shows what the machines use for GitHub and turns the login copy off', async ({
+	page
+}) => {
+	await page.goto('/settings');
+	const github = page.locator('section#github');
+	await expect(github.getByRole('heading', { name: 'GitHub' })).toBeVisible();
+	// No token on the account yet: the section says where one comes from.
+	await expect(github.getByText('repose github setup')).toBeVisible();
+	await expect(ghSwitch(page)).toBeChecked();
+	await shots(page, 'settings-github', 'section#github');
+
+	await ghSwitch(page).uncheck();
+	await expect(page.getByText('Your laptops stop copying their gh login.')).toBeVisible();
+	// It is the account's, so a reload shows it off.
+	await page.reload();
+	await expect(ghSwitch(page)).not.toBeChecked();
+
+	// A failed save puts the switch back and says so. `click`, not
+	// `check`: the box ends where it started, which is the point.
+	await failNext('PATCH', '/me', 'internal');
+	await ghSwitch(page).click();
+	await expect(page.getByText('Could not save the GitHub setting.')).toBeVisible();
+	await expect(ghSwitch(page)).not.toBeChecked();
+	await unfail('PATCH', '/me');
+
+	// Back on, for the specs that follow.
+	await ghSwitch(page).check();
+	await expect(page.getByText('Your laptops may copy their gh login again.')).toBeVisible();
+});
+
+// The token the account holds and when it expires come from the api; the
+// dashboard shows the name and the date and never the value.
+test('settings names the account GitHub token and when it expires', async ({ page }) => {
+	const at = new Date(Date.now() + 300 * 24 * 3600 * 1000).toISOString();
+	const put = await api('/me/secrets/GH_TOKEN', {
+		method: 'PUT',
+		body: JSON.stringify({ value: btoa('github_pat_11EXAMPLE0000') })
+	});
+	expect(put.ok).toBe(true);
+	const patch = await api('/me', {
+		method: 'PATCH',
+		body: JSON.stringify({ github: { token_expires_at: at } })
+	});
+	expect(patch.ok).toBe(true);
+
+	await page.goto('/settings');
+	const github = page.locator('section#github');
+	await expect(github.getByText(/GH_TOKEN/)).toBeVisible();
+	await expect(github.getByText(/It expires/)).toBeVisible();
+	await expect(github).not.toContainText('github_pat_');
+	await shots(page, 'settings-github-token', 'section#github');
 });

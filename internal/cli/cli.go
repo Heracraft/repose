@@ -2102,7 +2102,7 @@ func newGithubCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Long: "Give the machines a GitHub token of your own, for the repositories you pick,\n" +
 			"in place of the gh login repose copies, which reaches every repository you\n" +
 			"can.",
-		Example: "  repose github setup\n  repose github setup --owner acme",
+		Example: "  repose github status\n  repose github setup\n  repose github setup --owner acme",
 	}
 	var owner string
 	setup := &cobra.Command{
@@ -2133,7 +2133,25 @@ func newGithubCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	setup.Flags().StringVar(&owner, "owner", "", "the account or organisation that owns the repositories (`NAME`); the checkout's, else yours")
-	root.AddCommand(setup)
+	status := &cobra.Command{
+		Use:   "status",
+		Short: "Show what your machines reach GitHub with",
+		Long: "Show what the machines use for GitHub: the GH_TOKEN secret, the gh login this\n" +
+			"laptop copies, or nothing. One row for your account and one for each project\n" +
+			"whose answer differs, with the token's expiry when GitHub gave one, and a\n" +
+			"warning in the week before it.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return GithubStatusCmd(cmd.Context(), e)
+		},
+	}
+	status.Flags().BoolVar(&g.json, "json", false, "print as JSON")
+	root.AddCommand(setup, status)
+	bareRuns(root, status)
 	return root
 }
 

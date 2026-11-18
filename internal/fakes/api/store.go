@@ -218,6 +218,11 @@ type userRec struct {
 	// GChatURL and GChatBrokenAt are the Google Chat channel (I-692).
 	GChatURL      string
 	GChatBrokenAt *time.Time
+	// GhLoginCopy is whether a laptop may copy this account's GitHub CLI
+	// login (I-1340); true for a new account. GhTokenExpiresAt is what
+	// GitHub said about its GH_TOKEN (I-1342).
+	GhLoginCopy      bool
+	GhTokenExpiresAt *time.Time
 	Cancelling    bool
 	// personal is the account's machine.nix saves, oldest first (I-490).
 	personal []*personalRev

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1011 entries.
+1015 entries.
 
 ## Scope
 
@@ -475,7 +475,7 @@ pointer, not a summary.
 - **I-407** `repose run` waits for a destroy that holds the name it wants, instead of creating NAME-2 — 2026-10-01; L10610
 - **I-408** Placement waits up to three minutes for a guest being stopped before it answers `capacity` — 2026-10-01; L10623
 - **I-409** hostd sends a heartbeat ahead of every command result — 2026-10-01; L10647
-- **I-422** The laptop chooses which logins `run` copies: `repose secrets choose` and `[logins] skip` in config.toml — 2026-10-03; L10663
+- **I-422** The laptop chooses which logins `run` copies: `repose secrets choose` and `[logins] skip` in config.toml — 2026-10-03; amended by I-1340; L10663
 - **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; partly amended by I-758; partly amended by I-759; amended by I-760; L10728
 - **I-415** The feedback board is Fider's hosted `repose.fider.io`, and you sign in there with your repose account through Logto — 2026-10-01; L10762
 - **I-417** A boot sets the old /tmp aside in one rename and deletes it after the boot — 2026-10-02; L10791
@@ -1043,3 +1043,7 @@ pointer, not a summary.
 - **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35733
 - **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35753
 - **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35788
+- **I-1338** The first `repose run` asks what the machines use for GitHub (github-first-run, 2026-11-18) — L35807
+- **I-1340** The account can refuse the gh copy; it can never ask for one (github-first-run, 2026-11-18). Amends I-422 — L35875
+- **I-1342** The token's expiry is what GitHub said, read once on the laptop, and only ever a warning (github-first-run, 2026-11-18) — L35925
+- **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35966

@@ -23,6 +23,20 @@ func (c *Client) GetMe(ctx context.Context) (*Me, error) {
 type PatchMeRequest struct {
 	TZ     *string      `json:"tz,omitempty"`
 	Notify *NotifyPatch `json:"notify,omitempty"`
+	// GitHub is the account's GitHub answer (DECISIONS I-1340, I-1342).
+	GitHub *GitHubPatch `json:"github,omitempty"`
+}
+
+// GitHubPatch is PATCH /me's github.
+type GitHubPatch struct {
+	// LoginCopy false tells every laptop of the account to stop copying
+	// its GitHub CLI login; it can only subtract from what a laptop's
+	// own config.toml says (I-1340).
+	LoginCopy *bool `json:"login_copy,omitempty"`
+	// TokenExpiresAt is what GitHub answered for the GH_TOKEN just
+	// stored; a pointer to a pointer so "leave it alone" (nil) is told
+	// from "clear it" (points at nil, marshals to null), as NtfyURL is.
+	TokenExpiresAt **time.Time `json:"token_expires_at,omitempty"`
 }
 
 type NotifyPatch struct {

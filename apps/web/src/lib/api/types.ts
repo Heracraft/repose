@@ -99,6 +99,20 @@ export interface Me {
 		 */
 		hold_seconds?: number;
 	};
+	/**
+	 * The account's GitHub answer (I-1340, I-1342). Absent from an api
+	 * before it, which means the laptops copy the gh login as they
+	 * always have.
+	 */
+	github?: {
+		/** Whether a laptop may copy this account's GitHub CLI login
+		 * into its machines. It can only subtract: a laptop that has
+		 * turned the copy off stays off whatever this says. */
+		login_copy: boolean;
+		/** What GitHub said about the account's GH_TOKEN when it was
+		 * stored, null when it said nothing or the secret is gone. */
+		token_expires_at: string | null;
+	};
 	/** The place on the waitlist while the user holds one (I-269, I-290). */
 	waitlist?: WaitlistPlace | null;
 }

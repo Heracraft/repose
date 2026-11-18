@@ -82,6 +82,8 @@ func runLogin(ctx context.Context, dir string, cfg Config, httpClient *http.Clie
 	if err := saveCredentials(dir, creds); err != nil {
 		return err
 	}
+	// The next account's GitHub answer is not the last one's (I-1340).
+	forgetAccount(dir)
 
 	client := newClient(cfg.APIURL, staticToken(tr.AccessToken))
 	client.HTTP = httpClient
@@ -201,6 +203,7 @@ func runLogout(ctx context.Context, dir string, cfg Config, httpClient *http.Cli
 	if err := deleteCredentials(dir); err != nil {
 		return err
 	}
+	forgetAccount(dir) // I-1340: the account's answer goes with the account
 	sd, err := sshDir()
 	if err != nil {
 		return err

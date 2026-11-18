@@ -128,7 +128,9 @@ func SecretsListCmd(ctx context.Context, e *Env, projectArg string) error {
 			own[s.Name] = true
 		}
 		writeAccountSecrets(e.Out, true, account, own, project.Slug, false)
-		skip, _, _ := e.Cfg.loginSkip(project.Slug)
+		// What is actually copied, the account's GitHub switch included
+		// (I-1340), not only what this laptop's list says.
+		skip, _ := e.loginSkipFor(ctx, project.Slug)
 		_, _ = fmt.Fprintln(e.Out, "Copied from this laptop at each repose run:")
 		writeLoginRows(e.Out, skip, e.loginsFound())
 	}

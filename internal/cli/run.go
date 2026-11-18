@@ -452,6 +452,12 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		return attach(w, true)
 	}
 
+	// The GitHub choice, once per laptop (DECISIONS I-1338), before any
+	// login is copied: the question is about what is about to travel.
+	if err := e.askGithubChoice(ctx); err != nil {
+		return err
+	}
+
 	// The machine's checkout, as its sync or carry found it (I-368).
 	var checkout *string
 	// The laptop's .mcp.json answers for this repository, which the agent
@@ -478,7 +484,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			pr.Phase("Copying logins", "")
 		}
 		endSync := timeSpan("phase sync")
-		skip, chosen := e.loginSkip(project.Slug)
+		skip, chosen := e.loginSkipFor(ctx, project.Slug)
 		// Tool logins, the git identity and the carry run first in the
 		// sync's apply ssh, so the checkout lands in a guest whose git
 		// already knows the user and how to reach the remote (I-150), and
@@ -607,6 +613,14 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// The checkout's repose.nix is the machine's configuration (I-489).
 	if !skipSync && !opts.NoSync && !homeRun {
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
+	}
+
+	// A GitHub token in its last week, from what the account last said
+	// (DECISIONS I-1342). It belongs where the user is, not only in
+	// `repose github status`: an agent that meets a 401 overnight is the
+	// loss this prevents. From the cache, so it costs no api call.
+	if l := e.ghExpiryWarnOnce(time.Now()); l != "" {
+		e.warn("%s", l)
 	}
 
 	// One Claude Code conversation of this laptop (DECISIONS I-1328),
@@ -923,6 +937,9 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 	}
 	endAPI()
 	e.listed = allProjects
+	// The account's GitHub answer, cached for the runs that make no api
+	// call of their own (DECISIONS I-1340).
+	e.rememberAccount(me)
 	params := certParams{Handle: me.Handle, Projects: allProjects, CheckAlias: e.TargetFor == nil}
 	endCert := timeSpan("connect cert+ssh files")
 	cr, err := ensureCert(ctx, e.Client, params, nil)
@@ -2344,7 +2361,7 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		noted.warn(e, n)
 	}
 	co.MCP = mc
-	skip, chosen := e.loginSkip(project.Slug)
+	skip, chosen := e.loginSkipFor(ctx, project.Slug)
 	copied, carried, err := syncCredentialsAndCarry(ctx, t, e.HomeDir, repoDir, credSyncOptions{
 		RemoteURL: project.RemoteURL,
 		Skip:      skip,

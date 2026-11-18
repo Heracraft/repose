@@ -44,6 +44,25 @@ type Me struct {
 		// machine (I-1282); 0 is off.
 		HoldSeconds int `json:"hold_seconds"`
 	} `json:"notify"`
+	// GitHub is what the account says about GitHub (I-1340, I-1342):
+	// whether a laptop may copy its GitHub CLI login, and what GitHub
+	// said about the GH_TOKEN it holds. A pointer because a server from
+	// before I-1340 sends no `github` at all, which must read as "copy
+	// as before" and not as the zero value's refusal.
+	GitHub *GitHubState `json:"github"`
+}
+
+// GitHubState is GET /me's github.
+type GitHubState struct {
+	LoginCopy      bool       `json:"login_copy"`
+	TokenExpiresAt *time.Time `json:"token_expires_at"`
+}
+
+// ghLoginCopy is whether the account lets a laptop copy its GitHub CLI
+// login (I-1340). An account the CLI has not read, and a server that
+// does not answer, both mean yes: this field can only ever subtract.
+func (m *Me) ghLoginCopy() bool {
+	return m == nil || m.GitHub == nil || m.GitHub.LoginCopy
 }
 
 type Project struct {

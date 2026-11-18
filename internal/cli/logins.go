@@ -105,6 +105,19 @@ func (e *Env) loginSkip(slug string) (map[string]bool, bool) {
 	return skip, chosen
 }
 
+// loginSkipFor is loginSkip with the account's GitHub switch applied
+// (DECISIONS I-1340): the account can tell every laptop to stop copying
+// its gh login, and can never tell one to start. It reads the account at
+// most once an hour (accountTTL), and only when this laptop would
+// otherwise copy a gh login it has.
+func (e *Env) loginSkipFor(ctx context.Context, slug string) (map[string]bool, bool) {
+	skip, chosen := e.loginSkip(slug)
+	if !skip["gh"] && e.hasGhLogin() && !e.accountGhLoginCopy(ctx) {
+		skip["gh"] = true
+	}
+	return skip, chosen
+}
+
 // loginsScope is what `repose secrets choose` reads and writes: the
 // global list, or one project's.
 type loginsScope struct {
@@ -172,6 +185,12 @@ func chooseList(ctx context.Context, e *Env, projectArg string) error {
 	}
 	skip, own := scope.current(e.Cfg)
 	found := e.loginsFound()
+	// This list is the laptop's; the account can turn the gh copy off for
+	// every laptop (I-1340), and a user reading `[x] gh` here while that
+	// is set would be reading the wrong answer.
+	if !skip["gh"] && e.hasGhLogin() && !e.accountGhLoginCopy(ctx) {
+		e.warn("Your account turns the gh copy off for every laptop, so this list's gh is not copied.")
+	}
 	if !e.JSON && term.IsTerminal(int(os.Stdin.Fd())) && writerIsTerminal(e.ErrOut) {
 		on, saved, err := pickLoginsTTY(loginsHeader(scope, own), loginItems(), skip, found)
 		if err != nil {
