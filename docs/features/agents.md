@@ -223,7 +223,8 @@ guest, and never its login or its history:
   them on a new machine, so the guest installs the marketplace plugins
   in `enabledPlugins` that it lacks, in the background, with `claude
   plugin marketplace add` and `claude plugin install`, and says in tmux
-  what it installed or could not. A failed install is tried again on the
+  what it installed or could not. Not on a temporary or tiny machine
+  (I-1346). A failed install is tried again on the
   next run. A plugin whose marketplace is a directory on the laptop is
   named once and skipped.
 - Only what changed on the laptop is sent (one marker per item in the

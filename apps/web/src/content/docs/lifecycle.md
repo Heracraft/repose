@@ -231,7 +231,7 @@ A plain `repose run` there stops with ``Your home folder is not a project. cd in
 
 ## Temporary machines
 
-`--temp` makes a new machine that is destroyed after 24 hours, with no snapshot:
+`--temp` makes a new machine that is destroyed after 24 hours, with no snapshot: It syncs your checkout, logins and Claude config like any machine, and installs none of [your laptop's tools](/docs/machine#your-laptops-tools-come-along) or Claude plugins.
 
 ```
 $ cd ~/code/todo-app

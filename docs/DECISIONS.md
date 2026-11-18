@@ -35996,3 +35996,54 @@ The column is PROJECT and not SCOPE: on anything GitHub, "scope" means
 *Checked:* `TestGithubStatusRows` (internal/cli); live on 2026-11-18,
 where a project with a logins list of its own and a project with its own
 `GH_TOKEN` each became a row and the account's row stayed the first.
+
+**I-1346. A temporary or tiny machine gets the carry's state and none of
+its builds: no laptop tools, no runtime pins, no Claude plugins
+(carry-lite, 2026-11-18). Amends I-221, I-222 and I-196's plugins.**
+*Made during implementation.* The owner, on a tiny temporary machine
+made that day: "there's that boot spike at the start, the one core is
+already exhausted from installing in the background, which I don't
+want". Measured on that machine (`tmp-wyyd`, 2 GB, half a core) in its
+first ten minutes: the tools carry installed the laptop's 12 global
+CLIs in 3m49s wall and 32 s CPU at an 831 MB peak, and because the
+installs made dev a nix profile, `repose-pin-profile` then copied 59
+store paths (488 MB) in 2m53s at a 641 MB peak. Claude Code itself used
+14 s. Seven of the first eleven minutes, for tools an agent on a
+throwaway machine never calls.
+
+The carry is two things under one name. The state copies take seconds
+over one SSH and are what a temporary machine is for: the checkout, the
+tool logins, the Claude config and skills, the MCP list, the secrets.
+The builds take minutes and memory: the laptop's tools, the Node, Ruby
+and Java pins, the Claude plugins. `noBuilds(project)` (class `tiny`, or
+`expires_at` set) leaves `Tools` nil and sets `NoBuilds`, so the tools
+part and the plugins part are not sent; everything else goes as before.
+The agent installs what it needs, which the base already supports: the
+command-not-found handler offers the line and the agent guide says how.
+No new kind of machine and no new flag: the user chose `--temp` or
+`tiny` a moment ago, and the behaviour follows from that choice. The
+only visible change is that the "Installing N of your tools" line does
+not appear, and one sentence on /docs/machine, /docs/lifecycle and the
+`--temp` and `--size` rows says so.
+
+Rejected: dropping the sync on temporary machines altogether. The sync
+is cheap and is the point; what cost the core was the installs.
+Rejected: a third axis ("dev machine" against "quick machine"). Lifetime
+and class already say it.
+
+Noted, not done here: the pin copy after a carry install happens on
+every class, which I-718 did not foresee ("a fresh guest has no
+profile"); on a large machine it is noise, and it deserves its own line.
+
+*Checked:* `TestNoBuildsOnTempAndTiny` (internal/cli); live on a new
+`repose run --temp --size tiny` below.
+
+**I-1348. The tools carry's unit is capped at 40 percent of the
+machine's memory (carry-lite, 2026-11-18).** *Made during
+implementation.* `MemoryHigh=40%` on `repose-tools-carry`: 1.6 GB on
+small, 3.2 GB on large. A crate build or a native npm module that
+grows past it is throttled rather than pushing the agent out; the unit
+already runs at Nice 10, idle IO and CPU weight 20. A temporary or tiny
+machine never starts the unit (I-1346).
+
+*Checked:* `nix eval ./nix#guestSystem.config.systemd.user.services.repose-tools-carry.serviceConfig.MemoryHigh` prints `40%`.
