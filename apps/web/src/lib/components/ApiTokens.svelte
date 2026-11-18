@@ -475,15 +475,25 @@
 	.scopes legend {
 		margin-bottom: 0.375rem;
 	}
+	/* A row's text can wrap, so the box is centred on the first line, not
+	   the row (repose.css, .hk-check): the text is one size at every
+	   width, so its first line box is 1.6 × 0.8125rem tall, and the box
+	   (1rem) sits half the difference down. Baseline alignment put the
+	   box's bottom on the baseline, 4px above the line's middle. */
 	.scope {
-		align-items: baseline;
+		align-items: flex-start;
 		padding-block: 0.125rem;
+	}
+	.scope > input {
+		margin-top: calc((1.6 * 0.8125rem - 1rem) / 2);
 	}
 	/* The name is a column from 480px, as `--help` prints it. */
 	.scope > span {
 		display: grid;
 		grid-template-columns: 4.5rem 1fr;
 		column-gap: 0.5rem;
+		font-size: 0.8125rem;
+		line-height: 1.6;
 	}
 	@media (max-width: 479.98px) {
 		.scope > span {
@@ -492,10 +502,8 @@
 	}
 	.scope-name {
 		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
 	}
 	.scope-means {
-		font-size: 0.8125rem;
 		color: var(--hk-text-3);
 	}
 	.two {
