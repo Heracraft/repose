@@ -29,9 +29,10 @@ func newTokensCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "create NAME",
 		Short: "Make a token and print it, once",
 		Long: "Make a token called NAME and print it, and nothing else on stdout, so it\n" +
-			"pipes. It is not shown again. --scope says what it may do; --project binds\n" +
-			"it to one project; --expires is its life in days, 30 unless given, 365 at\n" +
-			"most. An account holds 20 live tokens.",
+			"pipes. It is not shown again. --project binds it to one project; --expires\n" +
+			"is its life in days, 30 unless given, 365 at most. An account holds 20 live\n" +
+			"tokens.\n\n" +
+			"--scope says what it may do, one or more of:" + tokenScopeLines(),
 		Example: "  repose tokens create ci --scope read,triggers\n" +
 			"  repose tokens create bot --scope read,projects --project todo-app\n" +
 			"  repose tokens create ci --scope read --expires 90 > token",
@@ -44,7 +45,7 @@ func newTokensCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return TokensCreateCmd(cmd.Context(), e, args[0], scopes, g.project, expires)
 		},
 	}
-	create.Flags().StringArrayVar(&scopes, "scope", nil, tokenScopeHelp())
+	create.Flags().StringArrayVar(&scopes, "scope", nil, "what the token may do: read, projects, config, secrets, triggers or agents (repeatable, or comma-separated)")
 	create.Flags().StringVar(&expires, "expires", "", "the token's life in days (`DAYS`), 1 to 365; 30 unless given")
 	create.Flags().BoolVar(&g.json, "json", false, "print every field, the token included, as JSON")
 

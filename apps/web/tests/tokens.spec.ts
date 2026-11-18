@@ -136,3 +136,23 @@ test('API tokens shots', async ({ page }, testInfo) => {
 	}
 	await page.emulateMedia({ colorScheme: null });
 });
+
+// Five tabs and the API page fit a phone without sideways scroll
+// (I-1322, I-1324; the design spec's rule for every docs page).
+for (const width of [390, 360]) {
+	test(`the Settings tabs and /docs/api fit at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 800 });
+		await page.goto('/settings/tokens');
+		await expect(page.locator('#tokens')).toBeVisible();
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+			width
+		);
+		const tabs = page.getByRole('navigation', { name: 'Settings' });
+		await expect(tabs.getByRole('link', { name: 'API tokens' })).toBeInViewport({ ratio: 1 });
+		await page.goto('/docs/api');
+		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+			width
+		);
+	});
+}

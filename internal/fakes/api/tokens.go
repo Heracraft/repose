@@ -196,8 +196,10 @@ func (f *Fake) tokenAuth(r *http.Request, pattern, bearer string) (*userRec, *fa
 		never = "SSH"
 	case strings.HasPrefix(path, "/billing"), path == "/usage":
 		never = "billing"
-	case strings.HasSuffix(path, "/browser/view"), path == "/me/notify-test":
+	case strings.HasSuffix(path, "/browser/view"):
 		never = "the browser view"
+	case path == "/me/notify-test":
+		never = "your notification channels"
 	}
 	if never != "" {
 		return nil, nil, errf("forbidden", "an API token cannot reach %s; log in for that", never).withDetail(map[string]any{"reason": "token_never"})
@@ -253,4 +255,3 @@ func (f *Fake) tokenAuth(r *http.Request, pattern, bearer string) (*userRec, *fa
 func tokenMeView(t *fakeToken) map[string]any {
 	return map[string]any{"id": t.ID, "name": t.Name, "prefix": t.Prefix, "scopes": t.Scopes, "project": t.Project, "expires_at": t.ExpiresAt}
 }
-

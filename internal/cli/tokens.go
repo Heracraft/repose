@@ -20,7 +20,7 @@ import (
 // tokens.Means word for word; the CLI carries its own copy because it
 // does not import the api.
 var tokenScopes = []struct{ name, means string }{
-	{"read", "read every project, its status, events, questions, triggers and settings"},
+	{"read", "read every project: status, events, questions, triggers, settings"},
 	{"projects", "create, start, stop, resize, snapshot, restore and remove projects"},
 	{"config", "change machine.nix and a project's config"},
 	{"secrets", "set and remove secrets (never read a value)"},
@@ -28,11 +28,11 @@ var tokenScopes = []struct{ name, means string }{
 	{"agents", "message an agent and answer its questions"},
 }
 
-// tokenScopeHelp is the --scope flag's help: the names, and the meaning
-// of each on its own line under `repose tokens create --help`.
-func tokenScopeHelp() string {
+// tokenScopeLines is the scope table as `repose tokens create --help`
+// prints it under its Long text, one line each, so cobra's flag column
+// does not wrap it.
+func tokenScopeLines() string {
 	var b strings.Builder
-	b.WriteString("what the token may do (repeatable, or comma-separated):")
 	for _, s := range tokenScopes {
 		fmt.Fprintf(&b, "\n  %-9s %s", s.name, s.means)
 	}
