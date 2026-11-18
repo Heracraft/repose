@@ -53,7 +53,7 @@ integrated_branch=${REPOSE_INTEGRATED_BRANCH:-integrated}
 GH_ON=
 gh_on() {
   if [ -z "$GH_ON" ]; then
-    if [ "${REPOSE_QUEUE_LOCAL:-}" = 1 ] || [ "${REPOSE_QUEUE_SKIP_RED_MAIN:-}" = 1 ] \
+    if [ "${REPOSE_QUEUE_LOCAL:-}" = 1 ] || [ "${RQ_PR_OFF:-}" = 1 ] || [ "${REPOSE_QUEUE_SKIP_RED_MAIN:-}" = 1 ] \
        || ! command -v gh >/dev/null || ! gh auth status >/dev/null 2>&1; then GH_ON=no; else GH_ON=yes; fi
   fi
   [ "$GH_ON" = yes ]
