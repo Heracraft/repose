@@ -361,7 +361,7 @@ func newSSHCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Long: "Open a login shell in the checkout on PROJECT's machine (this checkout's\n" +
 			"project, by default), outside the session that attach opens: exit ends it.\n" +
 			"A stopped machine starts first. repose exec runs one command instead.",
-		SuggestFor:        []string{"shell", "connect", "console", "sh"},
+		SuggestFor:        []string{"shell", "console", "sh"},
 		Args:              sshArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

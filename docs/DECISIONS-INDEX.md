@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1017 entries.
+1018 entries.
 
 ## Scope
 
@@ -1049,3 +1049,4 @@ pointer, not a summary.
 - **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35966
 - **I-1346** A temporary or tiny machine gets the carry's state and none of its builds: no laptop tools, no runtime pins, no Claude plugins (carry-lite, 2026-11-18). Amends I-221, I-222 and I-196's plugins — L36000
 - **I-1348** The tools carry's unit is capped at 40 percent of the machine's memory (carry-lite, 2026-11-18) — L36041
+- **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36051
