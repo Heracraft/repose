@@ -19,6 +19,7 @@ nix
 nix-collect-garbage
 nohup
 npm
+nproc
 npx
 opencode
 pi
