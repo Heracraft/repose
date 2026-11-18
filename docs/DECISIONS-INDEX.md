@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-999 entries.
+1000 entries.
 
 ## Scope
 
@@ -807,7 +807,7 @@ pointer, not a summary.
 - **I-751** The bridge's allowlist survives the warm attach, and a `--allow` that names no host is refused; amends I-305, with I-311's enforcement — 2026-10-17; L23083
 - **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L23089
 - **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23136
-- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23175
+- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — partly amended by I-1336; L23175
 - **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23236
 - **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23307
 - **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L23346
@@ -1031,3 +1031,4 @@ pointer, not a summary.
 - **I-1278** Only the end of a turn resolves a permission prompt (notify-hold, 2026-11-17). Amends I-689 — L35396
 - **I-1280** An event says why its notification went nowhere, and only then (notify-hold, 2026-11-17) — L35417
 - **I-1282** The hold is the user's, in the CLI and on the dashboard (notify-hold, 2026-11-17) — L35431
+- **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35448

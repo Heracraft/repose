@@ -35444,3 +35444,22 @@ attention is, which is not a property of a project.
 
 *Checked:* `TestHoldOffForTheUser` and `TestTheUsersOwnHoldIsTheWindow`
 (internal/api/notify).
+
+**I-1336. The queue's host comparison covers every production host in
+the flake, not one named host (conductor, 2026-11-18). Amends I-759's
+narrowing of `host`.** `ops/dev/release-queue add` drops `host` from a
+branch's targets when `ops/dev/closure-equiv.py` finds the host system
+unchanged (I-759, I-958). It compared `nixosConfigurations.host-01`
+alone. host-01 was retired on 2026-11-02 and host-02 is the fleet, so a
+change to `nix/hosts/host-02.nix` left host-01's system identical and
+the tool answered "unchanged": the branch that turns burst cores on for
+host-02 (I-1326) queued as `web` with no host deploy, which is the
+silent drop I-958 warned of, found only because the conductor had read
+hostd's `ExecStart` by hand. `exact_nix` now compares each `host-NN` the
+flake defines (`fleet_hosts`: host-01 and host-02 today; `host`,
+`host-bench`, `host-stg-01` and the installer are not release targets)
+and keeps the target when any of them changes or any comparison fails;
+when `nix eval` cannot list them it falls back to host-02 rather than to
+nothing. `ops/dev/release-queue-test` passes unchanged (52), its stub
+standing in for the comparison as before. Rejected: naming host-02 in
+place of host-01, which is the same mistake one host later.
