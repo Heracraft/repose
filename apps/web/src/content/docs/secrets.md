@@ -87,6 +87,36 @@ At each `repose run`, these are copied straight to the machine over SSH if you h
 
 With the `gh` login copied, git on the machine sends every GitHub URL over HTTPS with that login, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included. The same rewrite is made when you leave the login at home, so a [token](#a-token-for-only-some-repositories) covers SSH remotes too. A `gh auth login` made on the machine covers HTTPS URLs only. A copy on the machine newer than your laptop's is kept, so the login you made there survives the next run.
 
+### What the machines use for GitHub
+
+The first `repose run` on a laptop that has a `gh` login asks, once. One key, no Enter needed:
+
+```
+This laptop has a GitHub CLI login.
+What should your machines use for GitHub?
+  c  copy this laptop's gh login: every repo, kept on disk
+  t  a token for the repos you pick, made on github.com
+  n  neither: nothing on the machine can push to GitHub
+Choose c, t or n, or Enter to copy it now and be asked again:
+```
+
+`t` runs [`repose github setup`](#a-token-for-only-some-repositories) immediately. The answer is saved on your laptop, in the same list `repose secrets choose` writes, so it is asked once; `repose secrets choose --reset` has it asked again. Off a terminal nothing is asked and the login is copied.
+
+To change the answer later: `repose github setup` for a token, `repose secrets choose --off gh` for neither, `repose secrets choose --on gh` to copy the login again.
+
+`repose github status` says what the machines reach GitHub with:
+
+```
+$ repose github status
+PROJECT        REACHES GITHUB WITH     EXPIRES
+every project  GH_TOKEN                2027-11-18 (in 365 days)
+todo-app       your laptop's gh login  -
+```
+
+One row for your account, then one for each project whose answer differs. EXPIRES is what GitHub said when you pasted the token; change the token's expiry on GitHub and this column still shows the old date. Only your account's token has one; a project's own shows `-`. In the token's last week `repose github status` says so, and so does `repose run`.
+
+**Settings** → **General** shows the same on the dashboard. Its switch stops every laptop on the account copying the login: each stops within an hour. Turning it back on lets a laptop copy again only where that laptop still has `gh` on its own list; one that answered `t` or `n` is left as it is.
+
 Never copied: SSH private keys, [Claude Code's login, Gemini's OAuth login](/docs/agents#log-in), the Vercel CLI's login.
 
 The Vercel CLI's login stays on your laptop because it reaches your whole Vercel account: every team and every project. An agent on the machine could deploy, delete a project or read another project's environment variables with it. To use Vercel on the machine, log in there:
@@ -130,7 +160,7 @@ The list is saved in `~/.config/repose/config.toml` on your laptop and covers ev
 
 The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A `.env` file an agent changed there is left alone, and `run` names it. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays.
 
-Without the `gh` login, git on the machine needs a token: `repose github setup` stores one for the repositories you pick (below), or run `gh auth login` on the machine.
+Without the `gh` login, git on the machine needs a token ([below](#a-token-for-only-some-repositories)), or a `gh auth login` on the machine.
 
 ### A token for only some repositories
 

@@ -39,6 +39,7 @@ func (s *Server) userJSON(ctx context.Context, u *store.User) (map[string]any, e
 		"billing":  b,
 		"limits":   billing.LimitsFor(u, sub).JSON(),
 		"notify":   map[string]any{"email": u.NotifyEmail, "ntfy_url": u.NtfyURL, "gchat": gchatJSON(u), "hold_seconds": u.NotifyHoldSeconds},
+		"github":   githubJSON(u),
 		"waitlist": place.JSON(),
 	}, nil
 }
@@ -54,6 +55,18 @@ func gchatJSON(u *store.User) any {
 		broken = u.GChatBrokenAt.UTC()
 	}
 	return map[string]any{"space": notify.GChatSpace(*u.GChatURL), "broken_at": broken}
+}
+
+// githubJSON is GET /me's github (DECISIONS I-1340, I-1342): whether a
+// laptop may copy this account's GitHub CLI login, and what GitHub said
+// about the GH_TOKEN the account stored. Never the token, which is a
+// secret and is only ever written.
+func githubJSON(u *store.User) any {
+	var expires any
+	if u.GhTokenExpiresAt != nil {
+		expires = u.GhTokenExpiresAt.UTC()
+	}
+	return map[string]any{"login_copy": u.GhLoginCopy, "token_expires_at": expires}
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
@@ -91,6 +104,15 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 			// an hour. Absent leaves it alone.
 			HoldSeconds *int `json:"hold_seconds"`
 		} `json:"notify"`
+		// GitHub is the account's answer to what its machines use for
+		// GitHub (I-1340, I-1342). Absent keys are left alone.
+		GitHub *struct {
+			LoginCopy *bool `json:"login_copy"`
+			// TokenExpiresAt is what GitHub said about the GH_TOKEN the
+			// client has just stored; null clears it. Only `repose
+			// github setup` sends it, and nothing is refused by it.
+			TokenExpiresAt json.RawMessage `json:"token_expires_at"`
+		} `json:"github"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -160,6 +182,25 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 				if err := events.DropQueued(r.Context(), s.d.Pool, u.ID, "email"); err != nil {
 					return err
 				}
+			}
+		}
+	}
+	if body.GitHub != nil {
+		if body.GitHub.LoginCopy != nil {
+			if _, err := s.d.Pool.Exec(r.Context(), "update users set gh_login_copy = $2 where id = $1", u.ID, *body.GitHub.LoginCopy); err != nil {
+				return err
+			}
+		}
+		if len(body.GitHub.TokenExpiresAt) > 0 {
+			var t *time.Time
+			if err := json.Unmarshal(body.GitHub.TokenExpiresAt, &t); err != nil {
+				return errf("invalid", "token_expires_at must be a time or null")
+			}
+			if t != nil && (t.Before(time.Now().Add(-24*time.Hour)) || t.After(time.Now().AddDate(10, 0, 0))) {
+				return errf("invalid", "token_expires_at is not a plausible expiry")
+			}
+			if _, err := s.d.Pool.Exec(r.Context(), "update users set gh_token_expires_at = $2 where id = $1", u.ID, t); err != nil {
+				return err
 			}
 		}
 	}

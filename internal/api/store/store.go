@@ -41,6 +41,13 @@ type User struct {
 	// NotifyHoldSeconds is how long a report waits while the owner is at
 	// the machine (0045, I-1282); 0 turns the hold off.
 	NotifyHoldSeconds int `db:"notify_hold_seconds"`
+	// GhLoginCopy is whether a laptop may copy this account's GitHub CLI
+	// login into its machines (0047, I-1340). A refusal only: a laptop
+	// that has turned the copy off keeps it off whatever this says.
+	GhLoginCopy bool `db:"gh_login_copy"`
+	// GhTokenExpiresAt is what GitHub said about the account's GH_TOKEN
+	// when it was stored (0047, I-1342), or nil when it said nothing.
+	GhTokenExpiresAt *time.Time `db:"gh_token_expires_at"`
 	// BillingCustomerID is the Polar customer, which Polar creates when
 	// the first checkout completes (0008, 0020, I-289, I-604). BillingAnchor is unused since I-289 (the period is the
 	// subscription's); PastDueSince is when the account first failed a
@@ -62,7 +69,7 @@ type User struct {
 	UpdatedAt         time.Time  `db:"updated_at"`
 }
 
-const userCols = `id, logto_sub, handle, email, github_login, tz, notify_email, ntfy_url, gchat_url, gchat_broken_at, notify_hold_seconds, billing_customer_id, billing_anchor, past_due_since, billing_status, has_card, trial_credit_cents, project_limit, xl_limit, suspended_at, suspended_reason, cancelled_at, deleted_at, created_at, updated_at`
+const userCols = `id, logto_sub, handle, email, github_login, tz, notify_email, ntfy_url, gchat_url, gchat_broken_at, notify_hold_seconds, gh_login_copy, gh_token_expires_at, billing_customer_id, billing_anchor, past_due_since, billing_status, has_card, trial_credit_cents, project_limit, xl_limit, suspended_at, suspended_reason, cancelled_at, deleted_at, created_at, updated_at`
 
 // Project is a projects row.
 type Project struct {

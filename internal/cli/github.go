@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 )
 
 // `repose github setup` (DECISIONS I-1064): the machines get one GitHub
@@ -100,6 +101,10 @@ type githubSetupOpts struct {
 	Project string
 	Owner   string
 	Token   []byte
+	// Global stores the token for the account whatever $REPOSE_PROJECT
+	// says: the first-run question is the laptop's choice, not one
+	// project's (DECISIONS I-1338).
+	Global bool
 }
 
 // GithubSetupCmd implements `repose github setup`: it names the prefilled
@@ -113,6 +118,9 @@ func GithubSetupCmd(ctx context.Context, e *Env, o githubSetupOpts) error {
 	// leaves every other project sending the broad login, which is the
 	// failure this command exists to end.
 	project := e.resolveArg(o.Project)
+	if o.Global {
+		project = ""
+	}
 	scope, err := e.loginsScope(ctx, project)
 	if err != nil {
 		return err
@@ -150,9 +158,17 @@ func GithubSetupCmd(ctx context.Context, e *Env, o githubSetupOpts) error {
 	if !bytes.HasPrefix(token, []byte("github_pat_")) {
 		e.warn("That is not a fine-grained token, so it is not limited to the repositories you picked.")
 	}
+	// What GitHub says this token's life is, asked before it is stored
+	// and only to feed the week-ahead warning (I-1342). The laptop asks,
+	// never the api, which holds the token as ciphertext and nothing
+	// else; nothing is refused by the answer, and no answer is normal.
+	expires := tokenExpiry(ctx, token)
 	if project == "" {
 		if err := SecretsSetGlobalCmd(ctx, e, githubTokenSecret, token); err != nil {
 			return err
+		}
+		if err := e.setGhTokenExpiry(ctx, expires); err != nil {
+			e.warn("Stored %s, but could not record when it expires (%s), so nothing will warn you before it does.", githubTokenSecret, oneLine(err.Error()))
 		}
 	} else if err := SecretsSetCmd(ctx, e, project, githubTokenSecret, token); err != nil {
 		return err
@@ -217,4 +233,17 @@ func (e *Env) warnProjectsStillCopyingGh(scope loginsScope) {
 		verb, own, copies = "have", "lists of their own", "copy"
 	}
 	e.warn("%s %s %s that still %s the gh login; run this with --project to cover it.", joinNames(still), verb, own, copies)
+}
+
+// setGhTokenExpiry records what GitHub said about the account's token, so
+// `repose github status` and the dashboard can warn a week ahead
+// (DECISIONS I-1342). A nil expiry clears whatever was held: the token it
+// belonged to is gone.
+func (e *Env) setGhTokenExpiry(ctx context.Context, expires *time.Time) error {
+	me, err := e.Client.PatchMe(ctx, PatchMeRequest{GitHub: &GitHubPatch{TokenExpiresAt: &expires}})
+	if err != nil {
+		return err
+	}
+	e.rememberAccount(me)
+	return nil
 }

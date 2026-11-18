@@ -4,14 +4,14 @@
 	// Notifications, Secrets and machine.nix are the other tabs.
 	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { getMe, patchMe, deleteMe, revokeAllCerts } from '$lib/api/client';
+	import { getMe, patchMe, deleteMe, revokeAllCerts, listAccountSecrets } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
 	import { signOut } from '$lib/auth.svelte';
 	import { billingStore } from '$lib/billing.svelte';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { INSTALL_COMMAND } from '$lib/links';
-	import { dateOnly } from '$lib/format';
+	import { dateOnly, relativeTime } from '$lib/format';
 	import { focusAfterRender } from '$lib/focus';
 	import { title } from '$lib/title';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -30,6 +30,29 @@
 	let deleting = $state(false);
 	let revoking = $state(false);
 	let loadError = $state<string | undefined>(undefined);
+
+	// GitHub (DECISIONS I-1340, I-1344). Two facts and one switch: whether
+	// the account holds a GH_TOKEN and when it expires, and whether a
+	// laptop may copy its gh login. The switch can only subtract -- a
+	// laptop that has turned the copy off in its own config.toml stays
+	// off -- so the note says where it lands and when.
+	let ghToken = $state<'yes' | 'no' | 'unknown'>('unknown');
+	let loginCopy = $state(true);
+	let savingCopy = $state(false);
+	// A week before the expiry, and after it, the line names what to do
+	// (I-1342); the CLI's `repose github status` says the same.
+	const GH_WARN_MS = 7 * 24 * 3600 * 1000;
+	let ghExpiresSoon = $derived(
+		me?.github?.token_expires_at
+			? new Date(me.github.token_expires_at).getTime() - Date.now() <= GH_WARN_MS
+			: false
+	);
+	/** The expiry as ApiTokens writes one: a date ahead, what ended it behind. */
+	function ghEnds(iso: string): string {
+		return new Date(iso).getTime() <= Date.now()
+			? `It expired ${relativeTime(iso)}`
+			: `It expires ${dateOnly(iso)}`;
+	}
 
 	// Delete account opens in place of its button (I-386): the typed
 	// handle, then the danger button; Keep it gives the focus back.
@@ -51,9 +74,21 @@
 
 	// loadError is cleared only by a load that worked, so a Retry keeps the
 	// banner and its button ("Retrying…") until the answer comes.
+	// The account's secrets say whether a token is there; its value never
+	// leaves the api, and the name is all this needs. Read before `me` is
+	// assigned, so the section paints once instead of growing a line.
+	async function readGhToken() {
+		try {
+			ghToken = (await listAccountSecrets()).some((s) => s.name === 'GH_TOKEN') ? 'yes' : 'no';
+		} catch {
+			ghToken = 'unknown';
+		}
+	}
+
 	async function load() {
 		try {
-			me = await getMe();
+			const [fresh] = await Promise.all([getMe(), readGhToken()]);
+			me = fresh;
 			billingStore.setMe(me);
 			loadError = undefined;
 			tz = me.tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -63,6 +98,7 @@
 			loadError = loadErrorText(err, 'Could not load settings.');
 			return;
 		}
+		loginCopy = me.github?.login_copy ?? true;
 		// The sections render only now, after the browser looked for the
 		// fragment's target and found nothing: /settings#delete-account and
 		// /account#account arrive here with one.
@@ -93,6 +129,25 @@
 		} catch (err) {
 			tz = savedTz;
 			toastApiError(err, 'Could not save the timezone.');
+		}
+	}
+
+	async function saveLoginCopy() {
+		const next = loginCopy;
+		savingCopy = true;
+		try {
+			me = await patchMe({ github: { login_copy: next } });
+			billingStore.setMe(me);
+			toast.success(
+				next
+					? 'Your laptops may copy their gh login again.'
+					: 'Your laptops stop copying their gh login.'
+			);
+		} catch (err) {
+			loginCopy = !next;
+			toastApiError(err, 'Could not save the GitHub setting.');
+		} finally {
+			savingCopy = false;
 		}
 	}
 
@@ -179,6 +234,48 @@
 				{:else}
 					<input class="hk-input tz" aria-label="Timezone" bind:value={tz} onchange={saveTz} />
 				{/if}
+			</div>
+		</section>
+
+		<section class="set-row" id="github">
+			<div class="set-head">
+				<h2 id="github-h" class="hk-h2-app">GitHub</h2>
+				<p class="set-note">For every laptop on this account</p>
+			</div>
+			<div class="set-body">
+				{#if ghToken === 'yes'}
+					<p class="consequence">
+						A token of yours, the <code>GH_TOKEN</code> secret, for the repositories you picked.
+					</p>
+					{#if me.github?.token_expires_at}
+						<p class="consequence">
+							{ghEnds(me.github.token_expires_at)}.
+							{#if ghExpiresSoon}
+								<code>repose github setup</code> on a laptop stores a new one.
+							{/if}
+						</p>
+					{/if}
+				{:else if ghToken === 'no'}
+					<p class="consequence">
+						No token. <code>repose github setup</code> on a laptop makes one for the repositories you
+						pick.
+					</p>
+				{:else}
+					<p class="consequence">Could not read whether your account holds a token.</p>
+				{/if}
+				<label class="hk-check after">
+					<input
+						type="checkbox"
+						bind:checked={loginCopy}
+						onchange={saveLoginCopy}
+						disabled={savingCopy}
+					/>
+					Laptops may copy their gh login
+				</label>
+				<p class="field-note">
+					Turned off, each laptop stops within an hour. Turning it back on lets a laptop copy again
+					only where that laptop still has <code>gh</code> on its own list.
+				</p>
 			</div>
 		</section>
 	{/if}
@@ -288,6 +385,15 @@
 		margin: 0;
 		font-size: 0.9375rem;
 		color: var(--hk-text-2);
+		text-wrap: pretty;
+	}
+	/* The same note as the Notifications tab's, to the pixel: the body's
+	   smallest rank must not outrank the head's own note. */
+	.field-note {
+		margin: 0.375rem 0 0;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
 		text-wrap: pretty;
 	}
 </style>

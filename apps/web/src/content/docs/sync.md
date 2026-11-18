@@ -187,7 +187,7 @@ The remote is fetch-only. `git push repose` fails with `'this remote is fetch-on
 
 ### Pushing from the machine
 
-The machine's checkout has an `origin` of its own: the SSH form of your project's remote, `git@github.com:owner/repo.git`, so `git push` there reaches the same repository yours does. It pushes with the `gh` login copied from your laptop ([Logins copied from your laptop](/docs/secrets#logins-copied-from-your-laptop)); [other git hosts](/docs/secrets#other-git-hosts) have none that repose copies. A project with no remote of its own gets no `origin` on the machine.
+The machine's checkout has an `origin` of its own: the SSH form of your project's remote, `git@github.com:owner/repo.git`, so `git push` there reaches the same repository yours does. It pushes with whatever GitHub credential the machine has ([what the machines use for GitHub](/docs/secrets#what-the-machines-use-for-github)); [other git hosts](/docs/secrets#other-git-hosts) have none that repose copies. A project with no remote of its own gets no `origin` on the machine.
 
 ### Single files
 

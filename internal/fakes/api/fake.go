@@ -233,7 +233,7 @@ func (f *Fake) addUser(u User) {
 	if _, ok := f.users[u.ID]; ok {
 		return
 	}
-	f.users[u.ID] = &userRec{User: u, TZ: "UTC", CreatedAt: f.now(), NotifyEmail: true, NotifyHoldSeconds: int(notify.DefaultHold.Seconds())}
+	f.users[u.ID] = &userRec{User: u, TZ: "UTC", CreatedAt: f.now(), NotifyEmail: true, NotifyHoldSeconds: int(notify.DefaultHold.Seconds()), GhLoginCopy: true}
 }
 
 func (f *Fake) now() time.Time {

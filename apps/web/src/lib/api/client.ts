@@ -149,6 +149,13 @@ export const patchMe = (body: {
 		gchat_url?: string | null;
 		hold_seconds?: number;
 	};
+	/** The account's GitHub answer (I-1340): login_copy false tells every
+	 * laptop to stop copying its gh login. token_expires_at is written
+	 * by `repose github setup` alone. */
+	github?: {
+		login_copy?: boolean;
+		token_expires_at?: string | null;
+	};
 }) => request<Me>('/me', { method: 'PATCH', body });
 export const deleteMe = () => request<void>('/me', { method: 'DELETE' });
 

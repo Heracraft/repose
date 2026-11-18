@@ -35625,3 +35625,196 @@ when `nix eval` cannot list them it falls back to host-02 rather than to
 nothing. `ops/dev/release-queue-test` passes unchanged (52), its stub
 standing in for the comparison as before. Rejected: naming host-02 in
 place of host-01, which is the same mistake one host later.
+
+**I-1338. The first `repose run` asks what the machines use for GitHub
+(github-first-run, 2026-11-18).**
+
+The owner: "make the user choose on first run; if no to gh then scoped
+tokens." Until now a laptop with a gh login copied it into every machine
+unless the user found `repose secrets choose` (I-422) or `repose github
+setup` (I-1064). The broadest credential a developer owns was the
+default, and the narrow one was the thing you had to go looking for —
+which is the wrong way round for a credential an agent with every
+permission can read.
+
+The first `repose run` on a laptop that has a gh login and has recorded
+no choice asks, on the terminal, one key: `c` copies the login as before,
+`t` runs `repose github setup` there and then, `n` copies nothing. The
+question is asked after the connect and before any login is copied,
+because it is about what is on its way.
+
+The record is `[logins] skip` in the laptop's config.toml, which I-422
+already defined: `c` writes `skip = []`, `n` writes `skip = ["gh"]`, and
+`t`'s setup turns the gh row off itself. An explicit list is the record
+that a choice was made, so there is no second place to look and no new
+key; `repose secrets choose --reset` drops the list, which means "ask me
+again". A project with a list of its own does not silence the question:
+the choice is the laptop's.
+
+Nothing is asked where there is nobody to ask: off a terminal, under
+`--json`, or on a terminal that will not go into raw mode, the login is
+copied as before and no script's behaviour changes. Enter, `q`, Esc and
+an input that ends leave the choice unmade and it comes back next time —
+a question that cannot be answered must not turn a credential off by
+accident. `attach` never asks: its carry runs detached beside tmux
+(I-195) with no terminal, and a machine is `run` before it is attached.
+
+Rejected: a flag (`repose run --github=token`), which is a thing to
+discover and so is the problem again. Rejected: asking before the machine
+is created, which would put a credential question in front of a user who
+has not yet seen anything work.
+
+A council of four read it on 2026-11-18 and changed five things. The
+escape said "Enter to be asked again" while the run went on copying the
+login, so it says what it does: "Enter to copy it now and be asked
+again". `c`'s own line said "every login is copied, for every project"
+for a question about one login, so the answer prints its own line. `c`
+names what separates it from `t`: the copy is kept on the machine's
+disk, and so in its snapshots. `n` said "agents cannot reach GitHub",
+which a `gh auth login` on the machine disproves, so it says "nothing on
+the machine can push to GitHub". And the question is not asked at all
+when the account has turned the copy off (I-1340): offering `c` there
+would print "copied" for a login that is not.
+
+Two more, found live and in the same reading. The answer must change the
+run that heard it: the config in memory was read before the question, so
+the run that heard "no" still copied the login until it was read again.
+And `t` takes the account scope explicitly, since `GithubSetupCmd`
+resolves `$REPOSE_PROJECT` otherwise, which would have stored the token
+for one project and left every other one copying the broad login. A
+setup that fails (no paste, a server that refused it) warns and the run
+goes on; only Ctrl-C ends it.
+
+*Checked:* live on 2026-11-18, on a real terminal: the question printed,
+`n` wrote `skip = ["gh"]` and that same run printed `Logins copied: git`
+with no `~/.config/gh/hosts.yml` on the machine; `c` wrote `skip = []`
+and copied it; the next run asked nothing.
+`TestGithubChoiceMenuKeys`, `TestGhChoiceWanted`,
+`TestGithubChoiceAnswersAreRecorded`,
+`TestGithubChoiceAsksNobodyWithoutATerminal`,
+`TestGithubChoiceAppliesToThisRun` (internal/cli).
+
+**I-1340. The account can refuse the gh copy; it can never ask for one
+(github-first-run, 2026-11-18). Amends I-422.**
+
+I-422 put the copied-logins choice on the laptop and said the api never
+holds it: the logins go laptop to guest over SSH, the api never sees
+them, and each laptop decides for the logins it has. The owner now wants
+the dashboard to turn the copy off (I-1266's parity rule), which that
+reasoning argues against.
+
+Both hold if the account's field is a refusal and never a permission.
+`users.gh_login_copy` (0047), true by default, is set from Settings and
+from `PATCH /me`; every laptop reads it and adds `gh` to what it leaves
+behind. It cannot subtract from a laptop's own list: a laptop that keeps
+its login at home stays that way whatever the account says. So the api
+still never sees a login, no laptop is ever told to send one, and the
+switch can only make things narrower. That is the whole of I-422's
+reasoning, kept.
+
+A laptop applies it at the next command that would copy the login,
+reading `account.json` (cli-config.md) and refreshing it when it is over
+an hour old. The window is an hour, which is right for the case this
+serves — a user who set up a token on one laptop and wants the others to
+stop — and it is not a revocation: what takes the login out of reach is
+`gh auth logout` or GitHub. An api that cannot be reached, and a cache
+that was never written, both answer "copy": a laptop must not start
+behaving differently because the network is down, and a server from
+before this sends no `github` at all.
+
+Rejected: enforcing it in the guest, which would mean guestd deciding
+whether a file the laptop wrote may stay — a new mechanism for a
+preference. Rejected: leaving the dashboard with nothing to do here,
+which I-1266 does not allow and which would leave the owner's own case
+unserved.
+
+The cache is one server's and one account's: it records the api URL and
+refuses a cache from another, `repose login` and `repose logout` remove
+it, and a `read_at` in the future is a moved clock and not a fresh read.
+Without that a laptop that changed accounts would spend an hour applying
+the old account's answer, and in the direction that matters (the new
+account refuses) that means copying a login against a live refusal.
+Every laptop view that says what is copied reads it: `repose secrets
+list`'s logins block, and `repose secrets choose`, which is the laptop's
+own list and says one line when the account has turned the gh copy off.
+
+*Checked:* `TestPatchMeGitHub` (internal/api/http),
+`TestLoginSkipForHonoursTheAccount`, `TestGhLoginCopyDefaultsToYes`
+(internal/cli); live on 2026-11-18 against the production api, which
+does not have the field yet and so sends no `github` at all: the laptop
+read it as "copy", which is the compatibility this turns on.
+
+**I-1342. The token's expiry is what GitHub said, read once on the
+laptop, and only ever a warning (github-first-run, 2026-11-18).**
+
+`features/secrets.md` deferred this because GitHub's
+`github-authentication-token-expiration` header is documented for classic
+tokens and is reported to answer the current time for fine-grained ones.
+That is a reason not to trust it as a fact about the token, not a reason
+to have no warning.
+
+`repose github setup` asks `https://api.github.com/` (which needs no
+permission, so a token with only Contents and Pull requests gets an
+answer) with the token the user has just pasted, before it is stored, and
+records what comes back as `users.gh_token_expires_at` (0047). A value
+that is not ahead of now is treated as no answer. `repose github status`
+and Settings show it, and in the week before it, and after it, one line
+says so and names `repose github setup`. Nothing is refused by it: an
+expiry the header got wrong costs a wrong warning, never a blocked push.
+
+The laptop asks, never the api. The api holds the token as ciphertext and
+has no business spending it, and the laptop has the plaintext in hand at
+exactly that moment. Removing the account's `GH_TOKEN` clears the expiry,
+since a warning about a token that is gone is worse than none; another
+secret's removal leaves it alone.
+
+NOT verified live: this box has no fine-grained token to read the header
+with, so what GitHub answers for one is still unmeasured. Whoever
+measures it needs a real fine-grained token and
+`TestTokenExpiryReadsGitHub`'s shape.
+
+The request refuses redirects rather than following them: Go keeps the
+`Authorization` header across a redirect inside a domain, and the token
+has no business anywhere but `api.github.com`. The client is its own, so
+`-v` never prints that header. `repose run` prints the warning at most
+once a day per laptop (`warned_at` in `account.json`): a token's last
+week is seven lines, not one per run of a day's work. The line names no
+command (I-484); the dashboard's does, since a browser cannot run one.
+
+*Checked:* `TestParseGithubExpiry`, `TestTokenExpiryReadsGitHub`,
+`TestGhExpiryLine` (internal/cli); `TestPatchMeGitHub`
+(internal/api/http) for the expiry a token's removal clears.
+
+**I-1344. `repose github status` is the one place that answers "what do
+my machines use for GitHub" (github-first-run, 2026-11-18).**
+
+The other deferred item. The answer lived in two commands and three
+scopes: `repose secrets choose` for the login, `repose secrets list` for
+the token, the account's and each project's.
+
+```
+$ repose github status
+SCOPE          REACHES GITHUB WITH  EXPIRES
+every project  GH_TOKEN             2027-11-18 (in 365 days)
+izma           your laptop's gh login  -
+```
+
+Three answers only — the `GH_TOKEN` secret, the gh login this laptop
+copies, or nothing, which is the state where an HTTPS push meets git's
+username prompt. The account's row, then one row per project whose answer
+differs from it (its own `GH_TOKEN`, I-697, or its own logins list,
+I-422). A project that follows the account says nothing: twenty rows
+repeating one fact are twenty lines nobody reads (I-485). `repose github`
+alone runs it (`bareRuns`, as `repose secrets` runs `secrets list`), and
+`--json` gives the rows.
+
+Each project's secrets are read together, eight at a time, and a read
+that fails leaves that project out rather than failing the command: the
+account's row is the answer that matters most and it is already in hand.
+
+The column is PROJECT and not SCOPE: on anything GitHub, "scope" means
+`repo` and `read:org`, and these rows are projects.
+
+*Checked:* `TestGithubStatusRows` (internal/cli); live on 2026-11-18,
+where a project with a logins list of its own and a project with its own
+`GH_TOKEN` each became a row and the account's row stayed the first.

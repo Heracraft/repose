@@ -222,6 +222,10 @@ func (s *Server) putAccountSecret(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
+// githubTokenSecret is the name `repose github setup` stores (I-1064);
+// the api knows it only to clear the expiry it held when the token goes.
+const githubTokenSecret = "GH_TOKEN"
+
 func (s *Server) deleteAccountSecret(w http.ResponseWriter, r *http.Request) error {
 	name := r.PathValue("name")
 	if !secrets.ValidName(name) {
@@ -236,6 +240,13 @@ func (s *Server) deleteAccountSecret(w http.ResponseWriter, r *http.Request) err
 		return errf("not_found", "your account has no secret named %s", name)
 	}
 	s.d.Metrics.SecretsOpsTotal.WithLabelValues("account_delete").Inc()
+	if name == githubTokenSecret {
+		// The expiry the account held was this token's (I-1342); a
+		// warning about a token that is gone is worse than none.
+		if _, err := s.d.Pool.Exec(r.Context(), "update users set gh_token_expires_at = null where id = $1", u.ID); err != nil {
+			return err
+		}
+	}
 	if _, err := store.Audit(r.Context(), s.d.Pool, "user:"+u.ID.String(), "account_secret_delete", "user:"+u.ID.String(), map[string]any{"name": name}); err != nil {
 		return err
 	}

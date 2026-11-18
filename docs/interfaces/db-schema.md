@@ -14,6 +14,13 @@ users        (id pk, logto_sub text unique, handle text unique, email text,
               notify_hold_seconds int not null default 120,  -- 0045, I-1282: how long a report
                                            -- waits while the owner is at the machine; 0 is off,
                                            -- 3600 the most the CHECK and the api allow
+              gh_login_copy bool not null default true,  -- 0047, I-1340: whether a laptop may
+                                           -- copy this account's GitHub CLI login into its
+                                           -- machines. A refusal only: a laptop that has turned
+                                           -- the copy off in its own config.toml stays off
+              gh_token_expires_at timestamptz,  -- 0047, I-1342: what GitHub said about the
+                                           -- account's GH_TOKEN when it was stored, null when it
+                                           -- said nothing; cleared when that secret goes
               billing_customer_id text unique,  -- Polar's customer id; was stripe_customer_id (0008, I-289),
                                                -- then paddle_customer_id (0020, I-604)
               billing_anchor timestamptz,   -- signup; unused since I-289, the period is the subscription's

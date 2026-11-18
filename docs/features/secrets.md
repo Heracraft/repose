@@ -87,6 +87,89 @@ machine exists to remove. The generated `~/.ssh/repose/hosts` says
 `ForwardAgent no` and the gateway refuses agent forwarding from any
 client.
 
+**What the machines use for GitHub, chosen once (I-1338).** Until I-1338
+a laptop with a gh login copied it into every machine unless the user
+found `repose secrets choose` or `repose github setup`, so the broadest
+credential a developer owns was the default and the narrow one was the
+thing you had to go looking for. The first `repose run` on a laptop that
+has a gh login and has recorded no choice asks, on the terminal, one key:
+
+```
+This laptop has a GitHub CLI login.
+What should your machines use for GitHub?
+  c  copy this laptop's gh login: every repo it can reach
+  t  a token for the repos you pick, made on github.com
+  n  neither: agents on the machine cannot reach GitHub
+Choose c, t or n, or Enter to be asked again:
+```
+
+- `c` writes `[logins] skip = []`, `n` writes `skip = ["gh"]`, and `t`
+  runs `repose github setup` there and then, which stores the token and
+  turns the gh row off itself. The record is the list I-422 already
+  defined, so there is no second place to look and `repose secrets choose
+  --reset` means "ask me again".
+- It is asked before any login is copied, after the connect, since the
+  question is about what is on its way, and the answer is applied to
+  that same run (the config in memory was read before the question).
+  Enter, `q` and Esc leave it unanswered, the login is copied this once
+  and the question comes back next time, which the last line says. Off a
+  terminal, under `--json`, and on a terminal that will not go raw,
+  nothing is asked and the login is copied as before: a script's
+  behaviour does not change. It is not asked at all when the account has
+  turned the copy off (I-1340).
+- `t` stores the token for the account whatever `$REPOSE_PROJECT` says:
+  the choice is the laptop's. A setup that fails warns and the run goes
+  on; only Ctrl-C ends it.
+- `attach` never asks. Its carry runs detached beside tmux (I-195) and
+  has no terminal to ask on, and a machine is always `run` before it is
+  attached.
+
+**The account can refuse the copy (I-1340).** `users.gh_login_copy`
+(0047), true by default, is the dashboard's switch: Settings turns it off
+and every laptop of the account stops copying its gh login. It is a
+refusal and never a permission — a laptop whose own `config.toml` leaves
+the login behind stays that way whatever the account says — which is what
+keeps I-422's reasoning intact: the api still never sees a login, and no
+laptop is ever told to send one. A laptop applies it at the next command
+that would copy the login, from `account.json` (cli-config.md) refreshed
+hourly, so the window is an hour and not a revocation; revoking the
+login itself is `gh auth logout` or GitHub.
+
+**The token's expiry (I-1342).** `repose github setup` asks GitHub, with
+the token the user has just pasted and before it is stored, what its
+expiration is (`github-authentication-token-expiration` on
+`https://api.github.com/`, which needs no permission) and records it as
+`users.gh_token_expires_at`. The laptop asks, never the api, which holds
+the token as ciphertext and has no business spending it. The header is
+documented for classic tokens and reported to answer the current time for
+fine-grained ones, so a value that is not ahead of now is treated as no
+answer: this feeds a warning, refuses nothing, and no answer is normal.
+Removing the account's `GH_TOKEN` clears it, because a warning about a
+token that is gone is worse than none. That closes the first of the two
+items this doc deferred.
+
+**`repose github status` (I-1344)**, the second deferred item: what the
+machines reach GitHub with, which until now meant reading `repose secrets
+choose` for the login and `repose secrets list` for the token, per scope.
+
+```
+$ repose github status
+SCOPE          REACHES GITHUB WITH  EXPIRES
+every project  GH_TOKEN             2027-11-18 (in 365 days)
+izma           your laptop's gh login  -
+```
+
+The account's row, then one row per project whose answer differs from it
+(its own `GH_TOKEN`, I-697, or its own logins list, I-422); a project that
+follows the account says nothing, since twenty rows repeating one fact are
+twenty lines nobody reads (I-485). Three answers only: `GH_TOKEN`, the
+copied login, or nothing, which is the state where an HTTPS push meets
+git's username prompt. In the week before an expiry, and after it, one
+line says so, in `repose github status` and in `repose run`, which reads
+it from `account.json` and costs no api call for it. Only the account's
+token has a recorded expiry; a project's own shows `-`. `repose github`
+alone runs status. The dashboard's Settings → General shows the same.
+
 `repose github setup` (I-1064) is how a user gives the machines less than
 the gh login's reach: it names GitHub's fine-grained token form with
 `name`, `target_name`, `expires_in` and one query parameter per
@@ -369,12 +452,12 @@ login sync), 08 (dashboard page), 12 (fragment scan, build log redaction).
 
 ## Deferred
 
-Warning before the GitHub token expires (I-1064): the machine would have
-to read GitHub's `GitHub-Authentication-Token-Expiration` header, which is
-documented for classic tokens alone and is reported to answer the current
-time for fine-grained ones, so until that is checked on a live token an
-expired token is a 401 the agent asks about. A `repose github status` that
-says which GitHub credential a machine has.
+The GitHub token's expiry warning and `repose github status` were here
+until I-1342 and I-1344 built them ("What the machines use for GitHub"
+above). The expiry is read on the laptop, once, from the token the user
+pastes, and is used only to warn: the header is still unverified for a
+fine-grained token, and a header that answers anything but a future time
+is treated as no answer rather than as an expiry.
 Per-project LUKS so an operator with root on a host cannot read a stopped
 tenant's disk (R3-10 revisit). Keeping one account secret off one project
 without a value of its own there (I-697). Copy between projects. Secret versions and rollback.
