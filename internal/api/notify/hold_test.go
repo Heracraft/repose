@@ -89,7 +89,25 @@ func (h *holdEnv) insertAs(agent, kind, window string) uuid.UUID {
 	if err != nil || !ins {
 		h.t.Fatalf("insert %s: %v %v", kind, ins, err)
 	}
+	h.queued(id)
 	return id
+}
+
+// queued puts the event's outbox rows on the env's clock. The ingest
+// writes next_at as the database's now(), while every pass here runs at
+// the env's clock, which is time.Now() from when the env was made: on a
+// loaded box the database and the inserts land seconds later than that,
+// a pass at start + 1 s finds nothing due, and the test reads "sent [],
+// want ..." (4 of 5 full -race runs on 2026-11-18, I-1054's class).
+// Probe: a 1.5 s sleep at the end of newHoldEnv fails
+// TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved with
+// "sent [], want the pending question alone" without this, and this
+// file's tests all pass with it.
+func (h *holdEnv) queued(id uuid.UUID) {
+	h.t.Helper()
+	if _, err := h.pool.Exec(h.ctx, "update events_outbox set next_at = $2 where event_id = $1", id, h.now); err != nil {
+		h.t.Fatal(err)
+	}
 }
 
 // pass runs the outbox at the env's clock, a second past the due rows.
@@ -331,6 +349,7 @@ func TestQuestionSentWhilePresentAndHeldRowDroppedWhenResolved(t *testing.T) {
 		if _, _, err := h.ing.Insert(h.ctx, events.Incoming{ID: q.e, ProjectID: h.pid, TS: start, Kind: "agent_question", Agent: "claude", Summary: "ok?"}); err != nil {
 			t.Fatal(err)
 		}
+		h.queued(q.e)
 	}
 	if _, err := h.pool.Exec(h.ctx, "update questions set state = 'answered', answered_via = 'terminal' where id = $1", answered); err != nil {
 		t.Fatal(err)
@@ -378,6 +397,7 @@ func TestQuestionClosedWhileQueuedOnItsLane(t *testing.T) {
 	if _, _, err := h.ing.Insert(h.ctx, events.Incoming{ID: eid, ProjectID: h.pid, TS: h.now, Kind: "agent_question", Agent: "claude", Summary: "ok?"}); err != nil {
 		t.Fatal(err)
 	}
+	h.queued(eid)
 	// The first send closes the question, as an answer in the terminal
 	// would while the lane is busy with it.
 	h.ob = notify.New(h.pool, map[string]notify.Sender{"ntfy": notify.SenderFunc(func(ctx context.Context, m notify.Message) error {
