@@ -24,7 +24,10 @@ test('landing renders with the install command and the sign-in button', async ({
 }, testInfo) => {
 	await page.goto('/');
 	await expect(
-		page.getByRole('heading', { level: 1, name: 'A platform for running your own always-on agents' })
+		page.getByRole('heading', {
+			level: 1,
+			name: 'A platform for running your own always-on agents'
+		})
 	).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
 	await expect(
@@ -250,7 +253,7 @@ test('the live api sends the CORS headers the dashboard needs', async ({ request
 		headers: { Origin: LIVE_URL },
 		failOnStatusCode: false
 	});
-	expect(real.headers()['access-control-allow-origin']).toBe('*');
+	expect(real.headers()['access-control-allow-origin']).toBe(LIVE_URL);
 });
 
 // The landing page's install command is only true if the script is
