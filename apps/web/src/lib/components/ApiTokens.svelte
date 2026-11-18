@@ -292,7 +292,7 @@
 		>
 			<div class="tdlg-head"><h2 id="tdlg-title" class="hk-modal-title">Create a token</h2></div>
 			<div class="tdlg-body">
-				<div class="field">
+				<div class="tok-field">
 					<label for="tdlg-name" class="hk-field-label">Name</label>
 					<input
 						id="tdlg-name"
@@ -308,7 +308,7 @@
 					{#if nameError}<p id="tdlg-name-error" class="hk-field-error">{nameError}</p>{/if}
 				</div>
 				<fieldset
-					class="field scopes"
+					class="tok-field scopes"
 					aria-describedby={scopeError ? 'tdlg-scope-error' : undefined}
 				>
 					<legend class="hk-field-label">Scopes</legend>
@@ -328,7 +328,7 @@
 					{#if scopeError}<p id="tdlg-scope-error" class="hk-field-error">{scopeError}</p>{/if}
 				</fieldset>
 				<div class="two">
-					<div class="field">
+					<div class="tok-field">
 						<label for="tdlg-project" class="hk-field-label">Project</label>
 						<select id="tdlg-project" class="hk-select" bind:value={projectId}>
 							<option value="">All projects</option>
@@ -337,7 +337,7 @@
 							{/each}
 						</select>
 					</div>
-					<div class="field">
+					<div class="tok-field">
 						<label for="tdlg-expires" class="hk-field-label">Expires in</label>
 						<select id="tdlg-expires" class="hk-select" bind:value={days}>
 							{#each EXPIRIES as x (x.days)}
@@ -462,12 +462,12 @@
 		gap: 1rem;
 		padding: 0.75rem 1.25rem 0.25rem;
 	}
-	.field {
+	.tok-field {
 		display: grid;
 		gap: 0.375rem;
 		min-width: 0;
 	}
-	fieldset.field {
+	fieldset.tok-field {
 		margin: 0;
 		padding: 0;
 		border: 0;

@@ -38,12 +38,20 @@
 </PageShell>
 
 <style>
-	/* Five labels are wider than a 390 column: the row scrolls sideways
-	   inside itself (.hk-tabs) and the cut fifth label is the cue, as
-	   I-841 allowed at 320. All five fit from 480. */
-	@media (max-width: 479.98px) {
+	/* Five labels measure 383px and a 360 column holds 305, so below 480
+	   the row wraps to two instead of scrolling sideways (I-1322): every
+	   tab stays on the screen, which a scrolled row does not -- the fifth
+	   one was off the edge with nothing to say so. Each row carries its
+	   own current-tab edge; the last row's lies on the head's rule, as
+	   the single row's does. Measured: one row is 431px wide at 480,
+	   where the column is 425, and fits from 520 (465 of 465), so 520
+	   is where the wrap stops and not the 480 the eye would guess. */
+	@media (max-width: 519.98px) {
 		.hk-tabs.settings-tabs {
-			gap: 0.75rem;
+			flex-wrap: wrap;
+			overflow-x: visible;
+			column-gap: 1rem;
+			row-gap: 0;
 		}
 	}
 

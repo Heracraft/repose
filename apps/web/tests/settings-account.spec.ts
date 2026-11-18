@@ -233,11 +233,18 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 		'Delete account'
 	]);
 	const tabs = page.getByRole('navigation', { name: 'Settings' }).getByRole('link');
-	await expect(tabs).toHaveText(['General', 'Notifications', 'Secrets', 'machine.nix']);
+	await expect(tabs).toHaveText([
+		'General',
+		'Notifications',
+		'Secrets',
+		'API tokens',
+		'machine.nix'
+	]);
 	await expect(tab(page, 'General')).toHaveAttribute('aria-current', 'page');
 
-	// Secrets' head is its count ("2 secrets"); machine.nix has no head
-	// under its own tab (review IA).
+	// Secrets' head is its count ("2 secrets") and API tokens' likewise;
+	// machine.nix has no head under its own tab (review IA). Five tabs
+	// since I-1322, which amends I-841's four.
 	for (const [name, url, headings] of [
 		[
 			'Notifications',
@@ -247,6 +254,9 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 			['Email', 'Hold', 'ntfy', 'Google Chat', 'Test']
 		],
 		['Secrets', '/settings/secrets', [/^(Secrets|\d+ secrets?)$/]],
+		// API tokens' head is its count too ("3 tokens"), and "API tokens"
+		// while the account has none (I-1322).
+		['API tokens', '/settings/tokens', [/^(API tokens|\d+ tokens?)$/]],
 		['machine.nix', '/settings/machine-nix', []]
 	] as const) {
 		await tab(page, name).click();
@@ -258,7 +268,9 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 });
 
 // The tabs fit at 360 and 390 without sideways scroll, and the title and
-// tabs stay at one y from tab to tab.
+// tabs stay at one y from tab to tab. Five labels are 383px against a
+// 305px column at 360, so below 520 the row wraps to two (I-1322); every
+// tab stays on the screen, which is what this asserts.
 test('the Settings tabs fit a phone and hold still between tabs', async ({ page }) => {
 	for (const width of [360, 390]) {
 		await page.setViewportSize({ width, height: 800 });
@@ -273,6 +285,7 @@ test('the Settings tabs fit a phone and hold still between tabs', async ({ page 
 		'/settings',
 		'/settings/notifications',
 		'/settings/secrets',
+		'/settings/tokens',
 		'/settings/machine-nix'
 	]) {
 		await page.goto(url);
