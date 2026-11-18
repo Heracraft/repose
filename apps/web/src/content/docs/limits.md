@@ -29,6 +29,10 @@ We let people in, in the order they joined, one seat each, as plans end and as w
 
 Upgrading to a plan with more seats needs a free seat too, and is refused while there is none: each seat that frees goes to the oldest account on the waitlist.
 
+## Cores
+
+- A size's cores are always yours. The cores in a size's **Up to** column ([sizes](/docs/machine)) are the server's idle ones, lent while it has them and taken back within a second when it does not. Nothing is charged for them, and a machine never drops below its size's cores.
+
 ## Egress
 
 Data your machines send to the internet, and what a [webhook route](/docs/webhooks) replies, counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Past four times it, starting a machine is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.run/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.

@@ -26,4 +26,13 @@
   # can finish, and the guest memory still unwritten when the deadline
   # passes is gone on the restart.
   repose.host.park.writeRateMBs = 400;
+
+  # Burst cores ON (DECISIONS I-1326, the owner's word of 2026-11-18 after
+  # the staging measurement of docs/research/burst-staging-2026-11-11.md).
+  # A guest here boots at its class ceiling and hostd raises its cpu.max
+  # while this host's busy CPU stays under the gate; at 0.75 of this
+  # D64s_v7's 32 physical cores that is 24 busy cores. Placement, seats
+  # and weights still count the base, so this sells nothing new.
+  repose.host.burst.enable = true;
+  repose.host.burst.gate = 0.75;
 }
