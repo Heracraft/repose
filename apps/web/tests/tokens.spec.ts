@@ -1,0 +1,158 @@
+// API tokens (DECISIONS I-1314..I-1322): Settings → API tokens lists them,
+// makes one in a dialog that shows the token once, and revokes with the
+// two-step the Secrets tab uses. The token reaches the DOM once, in the
+// dialog, and never in the list.
+import { test, expect } from '@playwright/test';
+import { signIn, createProject, apiURLFromEnv } from './helpers';
+
+test.beforeEach(async ({ page }) => {
+	await signIn(page);
+});
+
+const created: string[] = [];
+test.afterAll(async () => {
+	for (const id of created) {
+		await fetch(`${apiURLFromEnv()}/projects/${id}`, {
+			method: 'DELETE',
+			headers: { Authorization: 'Bearer playwright' }
+		});
+	}
+});
+
+test('Settings makes, lists and revokes an API token', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'tokens-app',
+		remote_url: 'github.com/heracraft/tokens-app'
+	});
+	created.push(p.id);
+
+	await page.goto('/settings/tokens');
+	const section = page.locator('#tokens');
+	await expect(section.getByRole('heading', { name: /^(API tokens|\d+ tokens?)$/ })).toBeVisible();
+	const dialog = page.getByTestId('token-dialog');
+	await expect(dialog.getByLabel('Name', { exact: true })).toHaveCount(0);
+
+	// The form: a name, the six scopes with read on, the project, the end.
+	await section.getByRole('button', { name: 'Create token' }).click();
+	await expect(dialog.getByLabel('Name', { exact: true })).toBeFocused();
+	await expect(dialog.getByRole('checkbox', { name: /^read / })).toBeChecked();
+	await expect(dialog.getByRole('checkbox')).toHaveCount(6);
+	// An empty name is refused in place.
+	await dialog.getByRole('button', { name: 'Create' }).click();
+	await expect(dialog.getByText('1 to 32 of a-z')).toBeVisible();
+	await dialog.getByLabel('Name', { exact: true }).fill('ci');
+	await dialog.getByRole('checkbox', { name: /^triggers / }).check();
+	await dialog.getByLabel('Project', { exact: true }).selectOption({ label: p.slug });
+	await dialog.getByLabel('Expires in', { exact: true }).selectOption({ label: '90 days' });
+	await dialog.getByRole('button', { name: 'Create' }).click();
+
+	// The one view of the token.
+	const value = dialog.getByTestId('token-value').locator('pre.line');
+	await expect(value).toBeVisible();
+	const token = (await value.textContent()) ?? '';
+	expect(token).toMatch(/^rpt_[A-Za-z0-9_-]{43}$/);
+	await expect(dialog.getByText('Copy it now. It is not shown again.')).toBeVisible();
+	await expect(dialog.getByText(`read, triggers · ${p.slug} · until`)).toBeVisible();
+	await expect(dialog.getByRole('button', { name: 'Done' })).toBeFocused();
+	await dialog.getByRole('button', { name: 'Done' }).click();
+	await expect(dialog).not.toBeVisible();
+	await expect(section.getByRole('button', { name: 'Create token' })).toBeFocused();
+
+	// The list: name, prefix, scopes, project, end, last use; never the token.
+	const table = page.getByTestId('api-tokens');
+	await expect(section.getByRole('heading', { name: '1 token' })).toBeVisible();
+	const row = table.getByRole('row', { name: /ci/ });
+	await expect(row).toContainText(token.slice(0, 12) + '…');
+	await expect(row).toContainText('read, triggers');
+	await expect(row).toContainText(p.slug);
+	await expect(row).toContainText('Never');
+	expect(await page.content()).not.toContain(token);
+
+	// A second with the same name is refused under the field.
+	await section.getByRole('button', { name: 'Create token' }).click();
+	await dialog.getByLabel('Name', { exact: true }).fill('ci');
+	await dialog.getByRole('button', { name: 'Create' }).click();
+	await expect(dialog.getByText('You already have a token named ci.')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).not.toBeVisible();
+
+	// The token works against the api, and its use shows.
+	const me = await fetch(`${apiURLFromEnv()}/me`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	expect(me.status).toBe(200);
+	expect(((await me.json()) as { token: { name: string } }).token.name).toBe('ci');
+	await page.reload();
+	await expect(table.getByRole('row', { name: /ci/ })).not.toContainText('Never');
+
+	// Revoke: two steps, Keep it goes back, Revoke ends it, the row says so.
+	await table.getByRole('button', { name: 'Revoke ci…' }).click();
+	const confirm = page.getByTestId('confirm-revoke-token');
+	await expect(confirm.getByRole('button', { name: 'Keep it' })).toBeFocused();
+	await confirm.getByRole('button', { name: 'Keep it' }).click();
+	await expect(confirm).toHaveCount(0);
+	await expect(table.getByRole('button', { name: 'Revoke ci…' })).toBeFocused();
+	await table.getByRole('button', { name: 'Revoke ci…' }).click();
+	await confirm.getByRole('button', { name: 'Revoke ci now' }).click();
+	await expect(confirm).toHaveCount(0);
+	await expect(table.getByRole('row', { name: /ci/ })).toContainText('Revoked');
+	await expect(table.getByRole('button', { name: 'Revoke ci…' })).toHaveCount(0);
+	await expect(section.getByRole('heading', { name: 'API tokens' })).toBeVisible();
+	const after = await fetch(`${apiURLFromEnv()}/me`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	expect(after.status).toBe(401);
+});
+
+// The viewport at 1440 and 390 in both schemes, at 1x, for the review
+// (CLAUDE.md "Judge visuals at real size").
+test('API tokens shots', async ({ page }, testInfo) => {
+	// One live token, so the list has a row.
+	const res = await fetch(`${apiURLFromEnv()}/me/tokens`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ name: 'nightly', scopes: ['read', 'triggers'], expires_in_days: 90 })
+	});
+	expect(res.status).toBe(201);
+	await page.goto('/settings/tokens');
+	const shot = (name: string) =>
+		page.screenshot({ path: testInfo.outputPath(`${name}.png`), animations: 'disabled' });
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await expect(page.getByTestId('api-tokens')).toBeVisible();
+			await shot(`tokens-${width}-${scheme}`);
+			await page.locator('#tokens').getByRole('button', { name: 'Create token' }).click();
+			const dialog = page.getByTestId('token-dialog');
+			await expect(dialog.getByLabel('Name', { exact: true })).toBeVisible();
+			await shot(`tokens-dialog-${width}-${scheme}`);
+			await dialog.getByLabel('Name', { exact: true }).fill(`shot-${width}-${scheme}`);
+			await dialog.getByRole('button', { name: 'Create' }).click();
+			await expect(dialog.getByTestId('token-value')).toBeVisible();
+			await shot(`tokens-made-${width}-${scheme}`);
+			await dialog.getByRole('button', { name: 'Done' }).click();
+		}
+	}
+	await page.emulateMedia({ colorScheme: null });
+});
+
+// Five tabs and the API page fit a phone without sideways scroll
+// (I-1322, I-1324; the design spec's rule for every docs page).
+for (const width of [390, 360]) {
+	test(`the Settings tabs and /docs/api fit at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 800 });
+		await page.goto('/settings/tokens');
+		await expect(page.locator('#tokens')).toBeVisible();
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+			width
+		);
+		const tabs = page.getByRole('navigation', { name: 'Settings' });
+		await expect(tabs.getByRole('link', { name: 'API tokens' })).toBeInViewport({ ratio: 1 });
+		await page.goto('/docs/api');
+		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+			width
+		);
+	});
+}

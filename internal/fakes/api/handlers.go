@@ -131,6 +131,15 @@ func (f *Fake) meOf(u *userRec) meView {
 }
 
 func (f *Fake) getMe(w http.ResponseWriter, r *http.Request) *apiError {
+	if t := tokenFrom(r); t != nil {
+		// A call made with an API token learns which (I-1314).
+		b, _ := json.Marshal(f.meOf(userFrom(r)))
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		m["token"] = tokenMeView(t)
+		writeJSON(w, http.StatusOK, m)
+		return nil
+	}
 	writeJSON(w, http.StatusOK, f.meOf(userFrom(r)))
 	return nil
 }
@@ -424,7 +433,12 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 
 func (f *Fake) listProjects(w http.ResponseWriter, r *http.Request) *apiError {
 	out := []Project{}
+	bound := tokenFrom(r)
 	for _, p := range f.userProjects(userFrom(r)) {
+		// A project-bound token sees its one project (I-1318).
+		if bound != nil && bound.Project != nil && bound.Project.ID != p.ID {
+			continue
+		}
 		out = append(out, p.Project)
 	}
 	writeJSON(w, http.StatusOK, out)

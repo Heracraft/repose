@@ -30,6 +30,7 @@ import (
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/api/tokens"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/ca/sshca"
@@ -47,6 +48,7 @@ type env struct {
 	h        *apitest.Harness
 	logto    *logto.Fake
 	srv      *httpapi.Server
+	tokens   *tokens.Store
 	api      *httptest.Server
 	internal *httptest.Server
 	logs     *bytes.Buffer
@@ -60,6 +62,9 @@ type env struct {
 }
 
 // logText is the captured log, read under the logger's own lock.
+// tokensNow moves the token store's clock (expiry, I-1320).
+func (e *env) tokensNow(f func() time.Time) { e.tokens.SetNow(f) }
+
 func (e *env) logText() string {
 	e.logw.mu.Lock()
 	defer e.logw.mu.Unlock()
@@ -96,7 +101,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{h: h, logto: lf, logs: logs, logw: syncw, sent: sent, unsub: unsub}
+	e := &env{h: h, logto: lf, logs: logs, logw: syncw, sent: sent, unsub: unsub, tokens: tokens.NewStore(h.Pool)}
 	deps := httpapi.Deps{
 		Pool: h.Pool, Verifier: auth.NewVerifier(lf.Issuer(), aud, nil), Users: auth.NewProvisioner(h.Pool, auth.NewLogtoManagement(lf.Issuer(), "m2m", "s", nil)),
 		CA: h.CA, Secrets: h.Secrets, Engine: h.Engine, Logs: h.Logs, Events: h.Events, Parser: parser, Metrics: h.Metrics, Registry: reg, Log: log,
@@ -105,6 +110,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		Questions: h.Questions,
 		Say:       h.Say,
 		Triggers:  h.Triggers,
+		Tokens:    e.tokens,
 		Resting:   h.Resting,
 		// hooks.test keeps the URLs in these tests short and names the
 		// host the assertions check (DECISIONS I-1110).

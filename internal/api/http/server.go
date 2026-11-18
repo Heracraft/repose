@@ -39,6 +39,7 @@ import (
 	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/api/tokens"
 	"github.com/heracraft/repose/internal/api/triggers"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/api/webhooks"
@@ -80,10 +81,13 @@ type Deps struct {
 	// process's job, so the http one calls it through the app.
 	Triggers    *triggers.Store
 	TriggerPush func(ctx context.Context, projectID uuid.UUID)
-	Parser      *config.Parser
-	Metrics     *metrics.M
-	Registry    *prometheus.Registry
-	Log         *slog.Logger
+	// Tokens is the api's own bearers (DECISIONS I-1314); nil refuses
+	// every `rpt_` token as invalid and answers the token routes 500.
+	Tokens   *tokens.Store
+	Parser   *config.Parser
+	Metrics  *metrics.M
+	Registry *prometheus.Registry
+	Log      *slog.Logger
 	// Billing is the /billing routes' service (DECISIONS I-289); nil makes
 	// every one answer 503 billing_disabled.
 	Billing *billing.Service
@@ -515,6 +519,7 @@ type ctxKey int
 const (
 	userKey ctxKey = iota + 1
 	reqInfoKey
+	tokenKey
 )
 
 // reqInfo carries what the handlers learn about a request back to the
@@ -556,19 +561,31 @@ func (s *Server) authed(h handler, queryToken bool) handler {
 		if token == "" {
 			return errf("unauthenticated", "bearer token required")
 		}
-		claims, err := s.d.Verifier.Verify(r.Context(), token)
-		if err != nil {
-			if errors.Is(err, auth.ErrIdentityProviderUnavailable) {
-				return errf("unauthenticated", "identity provider unavailable")
+		var u *store.User
+		var apiToken *tokens.Token
+		if tokens.IsToken(token) {
+			// The api's own bearer (DECISIONS I-1314): the row says who,
+			// and the policy says whether this route is its to call.
+			var err error
+			u, apiToken, err = s.authToken(r, token)
+			if err != nil {
+				return err
 			}
-			return errf("unauthenticated", "invalid token")
-		}
-		u, err := s.d.Users.EnsureUser(r.Context(), claims.Sub)
-		if err != nil {
-			if errors.Is(err, auth.ErrProvisionFailed) {
-				return errf("internal", "identity provider unavailable")
+		} else {
+			claims, err := s.d.Verifier.Verify(r.Context(), token)
+			if err != nil {
+				if errors.Is(err, auth.ErrIdentityProviderUnavailable) {
+					return errf("unauthenticated", "identity provider unavailable")
+				}
+				return errf("unauthenticated", "invalid token")
 			}
-			return err
+			u, err = s.d.Users.EnsureUser(r.Context(), claims.Sub)
+			if err != nil {
+				if errors.Is(err, auth.ErrProvisionFailed) {
+					return errf("internal", "identity provider unavailable")
+				}
+				return err
+			}
 		}
 		// A suspended account may only read itself and its billing, and
 		// reach the portal to pay (api.md "Usage and billing"); every other
@@ -594,7 +611,12 @@ func (s *Server) authed(h handler, queryToken bool) handler {
 			info.user = u
 		}
 		ctx := context.WithValue(r.Context(), userKey, u)
-		ctx = obs.WithLogger(ctx, obs.Logger(ctx, s.d.Log).With("user_id", u.ID.String()))
+		log := obs.Logger(ctx, s.d.Log).With("user_id", u.ID.String())
+		if apiToken != nil {
+			ctx = context.WithValue(ctx, tokenKey, apiToken)
+			log = log.With("token_id", apiToken.ID.String())
+		}
+		ctx = obs.WithLogger(ctx, log)
 		return h(w, r.WithContext(ctx))
 	}
 }

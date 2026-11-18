@@ -1,7 +1,18 @@
 # HTTP API
 
 Base: `https://api.repose.run/v1`. JSON. Auth: `Authorization:
-Bearer <Logto access token>` for user routes (resource
+Bearer <Logto access token>` for user routes, or `Bearer rpt_...`, an API
+token the user minted (DECISIONS I-1314): the api looks it up by its
+sha256, loads its user, and refuses the call with `403 forbidden` when
+the route needs a scope the token lacks (`detail.reason = token_scope`,
+`detail.needs`, `detail.scopes`), when the token is bound to another
+project (`token_project`), or when the route is one no token opens
+(`token_never`: the account, billing, SSH certificates, the browser view,
+tokens). An expired or revoked token is `401 unauthenticated` with
+`detail.reason = token_expired` or `token_revoked`. `GET /me` made with a
+token adds `token`, the row `GET /me/tokens` lists for it. The
+routes a scope opens are listed in docs/features/tokens.md. The Logto
+resource is (resource
 `https://api.repose.herakraft.co`, an opaque audience that kept its name
 when the api moved to `api.repose.run`, DECISIONS I-1156; verified against
 Logto JWKS, `sub` is the user id). Internal routes under `/internal/` are for the gateway and use the
@@ -48,6 +59,9 @@ goes on (DECISIONS I-1088).
 | GET | `/me/config` | the account's personal layer, `machine.nix` (DECISIONS I-490): `{revision_id, fragment, created_at, source: cli\|dashboard, opted_out: [slug]}`; `revision_id`, `created_at` and `source` are null and `fragment` is `""` when the account has none. `opted_out` lists the live projects that keep it off |
 | PUT | `/me/config` | `{fragment, base_revision_id?, source?: cli\|dashboard}` → `{revision_id, fragment, created_at, source, projects: [{project_id, slug, revision_id, op_id?, merged?, running}], unchanged?}`. `fragment: ""` removes the layer. Validated like a project fragment: 256 KB, then Nix's parser, whose `400 invalid` names `machine.nix:L:C` with `detail.personal_line`; a secret's value in it fails the build that would carry it (`machine.nix contains the value of secret NAME`). `base_revision_id`, when present, must be the account's current revision (`""` or null when it has none), else `409 conflict` "machine.nix on your account changed since this copy was pushed" with `detail: {current_revision_id, source, created_at}`; the CLI sends the revision it last pushed. The same text as the current one answers `unchanged: true` and rebuilds nothing. A new text gives every live project that has not opted out, running ones first and at most 50, a revision with its current fragment and the new layer, and a build op queued behind whatever the project is doing: a running machine switches in place, a stopped one at its next start (`projects[].running`). A build of an earlier personal change that has not started takes the new text instead (`merged: true`, no `op_id`). A personal build that fails leaves the machine on its current revision and records a `personal_failed` event naming `machine.nix` |
 | GET | `/me/config/revisions` | `[{revision_id, created_at, source, bytes}]`, newest first, at most 50 |
+| GET | `/me/tokens` | the account's API tokens (DECISIONS I-1314): `[{id, name, prefix, scopes: [read\|projects\|config\|secrets\|triggers\|agents], project: {id, slug}\|null, expires_at, created_at, last_used_at\|null, revoked_at\|null}]`, live ones first, then those revoked within 30 days. Never the token |
+| POST | `/me/tokens` | `{name, scopes: [...], project_id?, expires_in_days?}` → 201, the row above plus `token`, the one answer that carries it (`rpt_` and 43 characters). `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among the account's live tokens, else `409 conflict`, `detail.reason = name_taken`; `scopes` is one or more of the six, else `400 invalid`, `detail.reason = scopes`; `expires_in_days` is 1 to 365, 30 unless given (I-1320); `project_id` binds the token to that project (I-1318), `404 not_found` for one the account does not have. A 21st live token is `400 invalid`, `detail.reason = token_limit` |
+| DELETE | `/me/tokens/:name` | 204; the token stops working at once and the row stays 30 days as `revoked_at`. `404 not_found` for a name the account has no live token by |
 | GET | `/notify/unsubscribe?token=` | no auth; the link in an email's unsubscribe line and its `List-Unsubscribe` header (13-notifications.md §5.6, DECISIONS I-442). The token is signed and names the user and an expiry 90 days after the email was sent; a token of the earlier shape (the user id alone, no expiry) is still accepted until the release after next. Answers an HTML page with a button that POSTs; a GET changes nothing, because mail scanners open links. Expired → `410`, invalid → `400`, both HTML |
 | POST | `/notify/unsubscribe?token=` | no auth; sets `notify_email = false` and drops queued email rows, answering an HTML confirmation. `token` may also be a form field; a mail client's RFC 8058 one-click POST (`List-Unsubscribe=One-Click` body, token in the query) is the same call. Expired → `410`, invalid → `400` |
 
