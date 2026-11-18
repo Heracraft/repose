@@ -18,10 +18,9 @@ A core is a physical core, not a hyperthread. **Cores** is what a size
 always has. **Up to** is what it may use while the server has idle cores:
 a machine started since 18 November 2026 boots with that many, `nproc`
 says that number, and a build takes them when they are free. When the
-server is busy the machine drops back to its cores within a second; a
-machine never has fewer than its size's cores, and another machine's
-burst never slows your typing. A machine started before that date keeps
-the count it started with until its next stop. A `tiny` gets half a core
+server is busy the machine drops back to its cores within a second, and
+never below them. A machine started before that date keeps the count it
+started with until its next stop. A `tiny` gets half a core
 and `nproc` says 1.
 
 Sizes by what they are big enough for: `tiny` drives a browser, calls
