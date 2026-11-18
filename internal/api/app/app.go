@@ -41,6 +41,7 @@ import (
 	"github.com/heracraft/repose/internal/api/snapshots"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
+	"github.com/heracraft/repose/internal/api/tokens"
 	"github.com/heracraft/repose/internal/api/triggers"
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/api/webhooks"
@@ -350,6 +351,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: a.routes,
 		Triggers:      a.triggers,
+		Tokens:        tokens.NewStore(a.pool),
 		// The http process cannot send a command (I-1162), so a changed
 		// set is pushed by the grpc one, which the store's own NOTIFY
 		// wakes. In API_MODE=all this is the same process and the push

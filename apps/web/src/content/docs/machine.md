@@ -7,17 +7,21 @@ order: 12
 
 Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
 
-| Size    | Cores | Memory | Disk  |
-| ------- | ----- | ------ | ----- |
-| `tiny`  | 0.5   | 2 GB   | 10 GB |
-| `small` | 1     | 4 GB   | 20 GB |
-| `large` | 2     | 8 GB   | 40 GB |
-| `xl`    | 4     | 16 GB  | 80 GB |
+| Size    | Cores | Up to | Memory | Disk  |
+| ------- | ----- | ----- | ------ | ----- |
+| `tiny`  | 0.5   | 2     | 2 GB   | 10 GB |
+| `small` | 1     | 4     | 4 GB   | 20 GB |
+| `large` | 2     | 6     | 8 GB   | 40 GB |
+| `xl`    | 4     | 8     | 16 GB  | 80 GB |
 
-A core is a physical core, not a hyperthread. `nproc` says the same
-number, and a machine running since before 18 October 2026 keeps the
-count it started with until its next stop. A `tiny` gets half a core and
-`nproc` says 1.
+A core is a physical core, not a hyperthread. **Cores** is what a size
+always has. **Up to** is what it may use while the server has idle cores:
+a machine started since 18 November 2026 boots with that many, `nproc`
+says that number, and a build takes them when they are free. When the
+server is busy the machine drops back to its cores within a second, and
+never below them. A machine started before that date keeps the count it
+started with until its next stop. A `tiny` gets half a core
+and `nproc` says 1.
 
 Sizes by what they are big enough for: `tiny` drives a browser, calls
 APIs and writes documents; `small` runs an agent on a codebase; `large`
@@ -271,7 +275,7 @@ The hour is drawn a minute to a point, the day five minutes and the week an hour
 
 Under the charts, folded, are the eight busiest processes of the window: name, CPU time, peak memory. repose records process names and numbers, never their arguments or anything you type ([what repose stores](/docs/secrets#what-repose-stores)). For a live view, run `htop` on the machine.
 
-Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every core is busy, so what you type keeps showing up at once. Nothing is capped: on an idle machine a build gets everything.
+Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every core is busy, so what you type keeps showing up at once. On an idle machine a build gets every core the size has, and the extra ones in **Up to** while the server has them idle.
 
 ## Changing the size
 

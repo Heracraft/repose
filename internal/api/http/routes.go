@@ -21,6 +21,10 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/me/secrets", a(s.listAccountSecrets))
 	s.route(m, "PUT /v1/me/secrets/{name}", a(s.putAccountSecret))
 	s.route(m, "DELETE /v1/me/secrets/{name}", a(s.deleteAccountSecret))
+	// API tokens (DECISIONS I-1314): a login's routes, never a token's.
+	s.route(m, "GET /v1/me/tokens", a(s.listTokens))
+	s.route(m, "POST /v1/me/tokens", a(s.createToken))
+	s.route(m, "DELETE /v1/me/tokens/{name}", a(s.deleteToken))
 	// Projects
 	s.route(m, "GET /v1/projects", a(s.listProjects))
 	s.route(m, "POST /v1/projects", a(s.createProject))

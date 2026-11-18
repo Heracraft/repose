@@ -136,6 +136,8 @@ type Fake struct {
 	ipSeq    int
 	serial   uint64
 	tokens   map[string]string // token -> user id
+	// apiTokens is the api's own bearers by secret (I-1314).
+	apiTokens map[string]*fakeToken
 	users    map[string]*userRec
 	projects map[string]*project
 	ops      map[string]*op
@@ -192,6 +194,7 @@ func New(opts Options) *Fake {
 		opts:       opts,
 		mux:        http.NewServeMux(),
 		tokens:     map[string]string{},
+		apiTokens:  map[string]*fakeToken{},
 		users:      map[string]*userRec{},
 		projects:   map[string]*project{},
 		ops:        map[string]*op{},
@@ -479,6 +482,14 @@ type ctxKey int
 
 const ctxUser ctxKey = 1
 
+// ctxToken is the API token a request authenticated with (I-1314).
+const ctxToken ctxKey = 2
+
+func tokenFrom(r *http.Request) *fakeToken {
+	t, _ := r.Context().Value(ctxToken).(*fakeToken)
+	return t
+}
+
 func userFrom(r *http.Request) *userRec {
 	u, _ := r.Context().Value(ctxUser).(*userRec) // internal routes carry no user; handlers that need one are never internal
 	return u
@@ -558,6 +569,18 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// not by a bearer token (I-1216), like the signed-token links above.
 	if !strings.HasPrefix(r.URL.Path, "/v1/internal/") && !strings.HasPrefix(r.URL.Path, "/v1/public/") && r.URL.Path != "/v1/notify/unsubscribe" && r.URL.Path != "/v1/questions/reply" && r.URL.Path != "/v1/browser/stream" {
 		u, tok, ok := f.authenticate(r, pattern)
+		if bearer := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")); strings.HasPrefix(bearer, "rpt_") {
+			// The api's own bearer (I-1314): the row says who, the policy
+			// says whether.
+			tu, tt, e := f.tokenAuth(r, pattern, bearer)
+			if e != nil {
+				f.mu.Unlock()
+				writeError(w, e)
+				return
+			}
+			u, tok, ok = tu, bearer, true
+			r = r.WithContext(context.WithValue(r.Context(), ctxToken, tt))
+		}
 		if !ok {
 			f.mu.Unlock()
 			writeError(w, errf("unauthenticated", "missing or unknown bearer token"))
@@ -716,6 +739,9 @@ func (f *Fake) register() {
 	f.handle("GET /v1/me/secrets", f.listAccountSecrets)
 	f.handle("PUT /v1/me/secrets/{name}", f.putAccountSecret)
 	f.handle("DELETE /v1/me/secrets/{name}", f.deleteAccountSecret)
+	f.handle("GET /v1/me/tokens", f.listTokens)
+	f.handle("POST /v1/me/tokens", f.createToken)
+	f.handle("DELETE /v1/me/tokens/{name}", f.deleteToken)
 	// Snapshots.
 	f.handle("GET /v1/snapshots", f.listAllSnapshots)
 	f.handle("GET /v1/projects/{id}/snapshots", f.listSnapshots)

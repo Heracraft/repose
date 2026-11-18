@@ -30,6 +30,8 @@ import type {
 	Route,
 	SecretMeta,
 	AccountSecretPut,
+	ApiToken,
+	CreateTokenRequest,
 	Samples,
 	SampleWindow,
 	Say,
@@ -324,6 +326,13 @@ export const putAccountSecret = (name: string, valueBase64: string) =>
 	});
 export const deleteAccountSecret = (name: string) =>
 	request<void>(`/me/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// API tokens (DECISIONS I-1314): a login's routes, never a token's.
+export const listTokens = () => request<ApiToken[]>('/me/tokens');
+export const createToken = (body: CreateTokenRequest) =>
+	request<ApiToken>('/me/tokens', { method: 'POST', body });
+export const deleteToken = (name: string) =>
+	request<void>(`/me/tokens/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 // Snapshots.
 export const getSamples = (id: string, window: SampleWindow) =>

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1003 entries.
+1011 entries.
 
 ## Scope
 
@@ -807,7 +807,7 @@ pointer, not a summary.
 - **I-751** The bridge's allowlist survives the warm attach, and a `--allow` that names no host is refused; amends I-305, with I-311's enforcement — 2026-10-17; L23083
 - **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L23089
 - **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23136
-- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23175
+- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — partly amended by I-1336; L23175
 - **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23236
 - **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23307
 - **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L23346
@@ -826,7 +826,7 @@ pointer, not a summary.
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23989
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24220
 - **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24252
-- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; L24379
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; amended by I-1322; L24379
 - **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24728
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24791
 - **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24846
@@ -962,7 +962,7 @@ pointer, not a summary.
 - **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31550
 - **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; amended by I-1216; L31606
 - **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31628
-- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31662
+- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; partly amended by I-1326; L31662
 - **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31760
 - **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31840
 - **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31926
@@ -1035,3 +1035,11 @@ pointer, not a summary.
 - **I-1330** `repose sessions` is the laptop's list, and it asks nothing (session-import, 2026-11-18) — L35544
 - **I-1332** A bare `--session` followed by a word takes it as the id only when it names a conversation (session-import, 2026-11-18) — L35595
 - **I-1334** The docs' ghost-flag check reads repose's own command lines only (session-import, 2026-11-18) — L35614
+- **I-1314** API tokens: a bearer the user mints for an agent or a script, stored as its sha256 and shown once (api-tokens, 2026-11-18) — L35626
+- **I-1316** A token's scopes are six areas, and every user route is placed in one, in a "never" list, or refused (api-tokens, 2026-11-18) — L35653
+- **I-1318** A token may be bound to one project, and then sees that project alone (api-tokens, 2026-11-18) — L35679
+- **I-1320** A token expires, 30 days unless asked and a year at most; an account holds 20; a revoked row is listed 30 days (api-tokens, 2026-11-18) — L35694
+- **I-1322** Settings gets a fifth tab, API tokens, and the dialog shows the token once (api-tokens, 2026-11-18). Amends I-841 — L35713
+- **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35733
+- **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35753
+- **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35788

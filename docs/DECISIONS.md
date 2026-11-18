@@ -35623,3 +35623,183 @@ A span whose first word is neither `repose` nor a flag is another
 program's command line and is no longer read for flags. The guard it
 exists for is unchanged: every span of repose's own, and every bare
 `--flag`, is still checked both ways.
+**I-1314. API tokens: a bearer the user mints for an agent or a script,
+stored as its sha256 and shown once (api-tokens, 2026-11-18).** *Made
+during implementation.* The owner's 2026-11-17 notebook: "let users access
+the platform via API, that is, let agents create and orchestrate always-on
+agents on repose; service accounts with permissions; scoped, not API keys:
+rolling, granular access, expiry." The api already exposes every object
+over seventy documented routes; the one principal it knew was a Logto
+login. A token (`rpt_` and 43 characters of base64url, 256 random bits)
+is a row in `api_tokens` (0046) with the token's sha256, never the token;
+`POST /me/tokens` answers it once. `authed` sends an `rpt_` bearer to the
+row and every other bearer to Logto, loads the row's user, and goes on as
+that user: the rate limit, the suspension check and the handlers are
+unchanged. `GET /me` made with a token adds `token: {name, scopes,
+project, expires_at}` so a caller can learn what it holds. Logs carry
+`token_id`, never the token.
+
+Rejected: Logto machine-to-machine applications as the user's tokens.
+They are the api's own identity to Logto's management API, their scopes
+are Logto resources rather than repose's areas, and a revoke would be a
+round trip to a third service for a row the api can own in one UPDATE.
+Rejected: an SDK and an MCP server in this version. The CLI is the
+client an agent already has (`REPOSE_TOKEN`, I-1324), and the owner's
+own note doubts agents need an SDK.
+
+*Checked:* `TestAPITokens` (internal/api/http): the token has the shape,
+the list never carries it, an unknown token is 401.
+
+**I-1316. A token's scopes are six areas, and every user route is placed
+in one, in a "never" list, or refused (api-tokens, 2026-11-18).** *Made
+during implementation.* `read` (every GET a user may make), `projects`,
+`config`, `secrets`, `triggers` (with the webhook routes a trigger stands
+on) and `agents` (say, a question's answer, cancel and hold). One map in
+`internal/api/http/tokens.go` names the scope each mux pattern needs; a
+second names the routes no token opens and why: the account itself
+(`PATCH/DELETE /me`, notify-test), money (billing, usage), SSH
+certificates, the browser view, and tokens, so a token cannot mint
+tokens. `TestEveryUserRouteHasATokenPolicy` fails when a route behind
+`authed` is in neither map, and `tokenCheck` refuses such a route
+anyway: a forgotten line closes, never opens. A refusal is `403
+forbidden` with `detail.reason` `token_scope` (`needs`, `scopes`) or
+`token_never`, and its message names the token's scopes and the one the
+call needs, so the holder knows what to ask for.
+
+The six are areas, not verbs: "read every project" and "make triggers"
+are what a user says, and a per-route grant would be a list nobody could
+hold in their head. Each scope's one-line meaning lives once in
+`tokens.Means` and is repeated word for word by the CLI's `--scope` help,
+the dashboard's dialog and `/docs/api`.
+
+*Checked:* `TestAPITokens` (a read-only token's stop is `token_scope`
+naming "read, triggers" and "needs projects"; nine never-routes answer
+`token_never`), `TestEveryUserRouteHasATokenPolicy`.
+
+**I-1318. A token may be bound to one project, and then sees that
+project alone (api-tokens, 2026-11-18).** *Made during implementation.*
+`project_id` on the row. A call whose path names another project is
+`403 token_project`; a call on the account (`GET /questions`, `PUT
+/me/config`, `POST /projects`) is the same refusal; `GET /me`, `GET
+/catalog` and `GET /projects` stay open, the last narrowed to the one
+project, because the list is how a CLI turns a name into an id. The
+project's row cascades: a destroyed project takes its tokens with it.
+The use the owner named is an agent on a machine holding a token for its
+own project (`repose secrets set REPOSE_TOKEN`), able to read its runs
+and add a trigger without reaching the rest of the account.
+
+*Checked:* `TestAPITokens` (bound list has one row, the other project
+and `/questions` are `token_project`, say on its own project is not).
+
+**I-1320. A token expires, 30 days unless asked and a year at most; an
+account holds 20; a revoked row is listed 30 days (api-tokens,
+2026-11-18).** *Made during implementation.* `expires_at` is not null:
+a token without an end is a login that never logs out, which is the
+exposure the Claude login share (I-278) exists to avoid elsewhere.
+`expires_in_days` is 1 to 365; the dashboard offers 7, 30, 90 and 365.
+`last_used_at` is written at most once a minute per token so a polling
+agent does not turn every GET into an UPDATE. A revoke sets
+`revoked_at`; the row stays 30 days so `repose tokens ls` and the
+dashboard can tell the holder "revoked" rather than nothing, and the
+name is free again at once. Twenty live tokens, the webhook routes'
+twenty (I-1114). An expired or revoked token is `401 unauthenticated`
+with `detail.reason` `token_expired` or `token_revoked`, and the CLI
+prints the reason after `REPOSE_TOKEN was refused:`.
+
+*Checked:* `TestAPITokenExpires`, `TestAPITokens` (21st is
+`token_limit`, revoke is 401 `token_revoked`, a second revoke is 404, the
+name is reused).
+
+**I-1322. Settings gets a fifth tab, API tokens, and the dialog shows the
+token once (api-tokens, 2026-11-18). Amends I-841.** *Made during
+implementation.* I-841's four tabs become five: General, Notifications,
+Secrets, API tokens, machine.nix. Five labels are wider than a 390
+column, so the row scrolls sideways inside itself and the cut fifth
+label is the cue, as I-841 allowed at 320; all five fit from 480. The page is the Secrets tab's shape (I-697, I-929): a count for a
+heading, a table, a two-step delete named Revoke, and a dialog from the
+head's button. The dialog takes the name, the six scopes as checkboxes
+with their one line each, a project select and an expiry select; on
+create it becomes the one view of the token in the dashboard's copy
+box (CodeCopy), Done focused, with the sentence "Copy it now. It is not
+shown again." A click outside the box does not close that view; Escape
+and Done do, and the page then holds nothing. By I-1266 the dashboard makes, lists and
+revokes; there is nothing a token does that the dashboard cannot.
+
+*Checked:* `tokens.spec.ts` (apps/web/tests): the token appears in the
+dialog and in no other markup, the row shows the prefix and never the
+token, a duplicate name is refused under the field, revoke makes the
+api answer 401.
+
+**I-1324. `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api`
+is the page a token's holder reads (api-tokens, 2026-11-18).** *Made
+during implementation.* The owner asked for a "super robust" API "so
+existing users of agents can transition easily". The API is the one the
+CLI and the dashboard already use; what was missing was a way in without
+a browser, and a page that says what is there. `REPOSE_TOKEN` is read
+before the login file: the CLI sends it as the bearer, never refreshes
+it, and prints the api's reason on a 401 (exit 3, as "not logged in").
+`repose login --status` says which token the api sees. `repose tokens
+create|list|rm` are the login's and refuse a token caller in one
+sentence. `/docs/api` is a Reference page: how to make a token, the six
+scopes, how to call (`Authorization: Bearer`, the error envelope, the
+limits), the routes by scope, and how to give an agent one. The route
+list is checked against `docs/interfaces/api.md` by
+`TestPublicAPIDocNamesRealRoutes`, so the page cannot name a route the
+api lacks. Not published: request and answer bodies, which are the CLI's
+`--json` shapes and would be a second copy of the interface doc to keep.
+
+*Checked:* `TestTokensCreateListRm` (internal/cli), `TestDocsNameEveryEnvVar`,
+`TestPublicAPIDocNamesRealRoutes` (internal/api/apidoc).
+**I-1326. Burst cores are on for host-02 at a gate of 0.75 (the owner,
+2026-11-18). Amends I-1126's "off on every host".** I-1126 shipped the
+controller with `repose.host.burst.enable` false everywhere and named
+the release gate: the latency curve of proposal §6.2 on a host. That
+measurement ran on host-stg-01 on 2026-11-11
+(`docs/research/burst-staging-2026-11-11.md`): with the gate at 0.75 of
+4 physical cores, a lone hungry guest got about 2.6 to 2.9 cores, two
+shared the headroom equally, the base share held at 95 percent under
+contention, the gate closed in one tick, and typing lag at the gate was
+0.3 to 0.4 ms p50 and 1.2 to 1.4 ms p90 in the guest against 0.1 and
+0.4 idle. The owner read it the same day and said "keep 0.75 and turn it
+on for host-02", held it as a recorded task to keep thinking, and gave
+the word on 2026-11-18.
+
+`nix/hosts/host-02.nix` sets `burst.enable = true` and `burst.gate =
+0.75` explicitly. host-02 is a D64s_v7 with 32 physical cores, so the
+gate is 24 busy cores. Guests cold-started after the switch boot at their
+class ceiling (small 4, large 6, xl 8, tiny 2) and `nproc` says so; a
+guest running since before it keeps its count until its next stop.
+Placement (I-736), the seat count (I-739), the 1.5 ratio (I-734) and the
+cgroup weight (I-737) still read the base vCPUs, so this sells nothing
+new and no plan or price moves. The public docs change in the same
+commit, as I-1126 said the switching commit must: `/docs/machine`'s
+size table gains an **Up to** column and its `nproc` sentence says what
+the number now means, "Nothing is capped" goes, and `/docs/limits` gains
+a Cores section. The two costs I-1126 named stand and are in the docs'
+words: `make -j$(nproc)` on a small now runs 4 jobs in 4 GB, and a guest
+at a shut gate waits for its base share inside the 100 ms period.
+
+Not built with this: the proposal's stages 4 and 5 (an overage switch, a
+`status` row and a `/run/repose/cores` file saying what the machine may
+use now). Until they exist a user has the docs' sentence and `nproc`,
+and nothing is charged for a burst. host-01 is retired, staging keeps
+its own flag in a branch, so host-02 is the fleet and "off on every host"
+is now "on on the one host there is".
+**I-1336. The queue's host comparison covers every production host in
+the flake, not one named host (conductor, 2026-11-18). Amends I-759's
+narrowing of `host`.** `ops/dev/release-queue add` drops `host` from a
+branch's targets when `ops/dev/closure-equiv.py` finds the host system
+unchanged (I-759, I-958). It compared `nixosConfigurations.host-01`
+alone. host-01 was retired on 2026-11-02 and host-02 is the fleet, so a
+change to `nix/hosts/host-02.nix` left host-01's system identical and
+the tool answered "unchanged": the branch that turns burst cores on for
+host-02 (I-1326) queued as `web` with no host deploy, which is the
+silent drop I-958 warned of, found only because the conductor had read
+hostd's `ExecStart` by hand. `exact_nix` now compares each `host-NN` the
+flake defines (`fleet_hosts`: host-01 and host-02 today; `host`,
+`host-bench`, `host-stg-01` and the installer are not release targets)
+and keeps the target when any of them changes or any comparison fails;
+when `nix eval` cannot list them it falls back to host-02 rather than to
+nothing. `ops/dev/release-queue-test` passes unchanged (52), its stub
+standing in for the comparison as before. Rejected: naming host-02 in
+place of host-01, which is the same mistake one host later.

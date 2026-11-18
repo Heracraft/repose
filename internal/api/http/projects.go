@@ -177,6 +177,17 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// A project-bound token sees its one project (I-1318): the list is
+	// how a CLI turns a name into an id, so it is not refused.
+	if t := tokenFrom(r.Context()); t != nil && t.ProjectID != nil {
+		kept := projects[:0]
+		for i := range projects {
+			if projects[i].ID == *t.ProjectID {
+				kept = append(kept, projects[i])
+			}
+		}
+		projects = kept
+	}
 	out := make([]map[string]any, 0, len(projects))
 	for i := range projects {
 		j, err := s.projectJSON(r.Context(), &projects[i], u)

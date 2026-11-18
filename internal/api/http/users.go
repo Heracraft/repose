@@ -61,6 +61,15 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// A call made with an API token learns which (I-1314): its name,
+	// scopes, project and end, so `repose login --status` can say so.
+	if t := tokenFrom(r.Context()); t != nil {
+		tj, err := s.tokenJSON(r.Context(), t)
+		if err != nil {
+			return err
+		}
+		j["token"] = tj
+	}
 	writeJSON(w, http.StatusOK, j)
 	return nil
 }

@@ -26,7 +26,7 @@ var commandGroups = []struct {
 	{"work", "Work on a machine:", []string{"run", "attach", "sync", "sessions", "exec", "ssh", "code", "cp", "paste", "open", "browser"}},
 	{"agents", "Follow the agents:", []string{"ps", "events", "questions", "reply", "say", "mcp", "triggers"}},
 	{"projects", "Manage projects:", []string{"ls", "status", "start", "stop", "resize", "keep", "rm", "restore", "snapshots", "logs"}},
-	{"setup", "Set up:", []string{"login", "logout", "config", "secrets", "webhooks", "github", "notify", "scan"}},
+	{"setup", "Set up:", []string{"login", "logout", "config", "secrets", "webhooks", "tokens", "github", "notify", "scan"}},
 }
 
 func init() {

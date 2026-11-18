@@ -39,13 +39,14 @@ const (
 	envWaylandDisplay  = "WAYLAND_DISPLAY" // repose paste: read the Wayland clipboard (I-252)
 	envDisplay         = "DISPLAY"         // repose paste: else the X11 one
 	envReposeEditor    = "REPOSE_EDITOR"   // repose code: the editor when --editor is not given (I-282)
+	envToken           = "REPOSE_TOKEN"    // an API token used in place of the login (I-1314)
 )
 
 var userEnvVars = []string{
 	envProject, envAPIURL, envTiming, envNoSpinner, envNoForward, envNoFastPath, envNoBrowser,
 	envInGuest, envXDGConfigHome, envClaudeConfigDir, envVisual, envEditor,
 	envWaylandDisplay, envDisplay, envNoInputProxy, envNoClipboardPath, envInputProxy, envClipboardPath,
-	envReposeEditor,
+	envReposeEditor, envToken,
 }
 
 // Env bundles what almost every command needs: config, the API client,
@@ -157,7 +158,11 @@ func newEnv(apiURLFlag string, jsonOut, verbose bool) (*Env, error) {
 
 	httpClient := withVerbose(withTiming(&http.Client{Timeout: 30 * time.Second}), cfg.APIURL)
 	var tokens TokenSource
-	if creds, ok, err := loadCredentials(dir); err == nil && ok && (creds.RefreshToken != "" || creds.AccessToken != "") {
+	if tok := strings.TrimSpace(os.Getenv(envToken)); tok != "" {
+		// An API token (I-1314) stands in for the login: no refresh, and
+		// the api's refusal is the whole answer.
+		tokens = apiTokenSource(tok)
+	} else if creds, ok, err := loadCredentials(dir); err == nil && ok && (creds.RefreshToken != "" || creds.AccessToken != "") {
 		tokens = newOIDCTokenSource(dir, httpClient, creds)
 	} else {
 		tokens = notLoggedInSource{}
@@ -218,6 +223,11 @@ func exitCodeFor(err error, stderr io.Writer) int {
 		// `repose login` would fail the same way (DECISIONS I-623).
 		_, _ = fmt.Fprintln(stderr, loginAway.Error())
 		return ExitGeneric
+	}
+	var refused *tokenRefusedError
+	if errors.As(err, &refused) {
+		_, _ = fmt.Fprintln(stderr, refused.Error())
+		return ExitNotLoggedIn
 	}
 	var notLoggedIn *notLoggedInError
 	if errors.As(err, &notLoggedIn) {

@@ -1,7 +1,7 @@
 <script lang="ts">
-	// Settings' four tabs (DECISIONS I-841): General, Notifications, Secrets
-	// and machine.nix, links on PageShell's hairline as a project's tabs
-	// are. The layout draws the title and the tabs, so a tab switch moves
+	// Settings' five tabs (DECISIONS I-841, I-1322): General, Notifications,
+	// Secrets, API tokens and machine.nix, links on PageShell's hairline as
+	// a project's tabs are. The layout draws the title and the tabs, so a tab switch moves
 	// nothing above the content; each page renders its sections only.
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
@@ -14,6 +14,7 @@
 		{ href: resolve('/settings'), label: 'General' },
 		{ href: resolve('/settings/notifications'), label: 'Notifications' },
 		{ href: resolve('/settings/secrets'), label: 'Secrets' },
+		{ href: resolve('/settings/tokens'), label: 'API tokens' },
 		{ href: resolve('/settings/machine-nix'), label: 'machine.nix' }
 	];
 </script>
@@ -37,11 +38,20 @@
 </PageShell>
 
 <style>
-	/* All four fit from 360 without sideways scroll; at 320 they scroll
-	   sideways inside their own row (.hk-tabs). */
-	@media (max-width: 479.98px) {
+	/* Five labels measure 383px and a 360 column holds 305, so below 480
+	   the row wraps to two instead of scrolling sideways (I-1322): every
+	   tab stays on the screen, which a scrolled row does not -- the fifth
+	   one was off the edge with nothing to say so. Each row carries its
+	   own current-tab edge; the last row's lies on the head's rule, as
+	   the single row's does. Measured: one row is 431px wide at 480,
+	   where the column is 425, and fits from 520 (465 of 465), so 520
+	   is where the wrap stops and not the 480 the eye would guess. */
+	@media (max-width: 519.98px) {
 		.hk-tabs.settings-tabs {
-			gap: 0.75rem;
+			flex-wrap: wrap;
+			overflow-x: visible;
+			column-gap: 1rem;
+			row-gap: 0;
 		}
 	}
 

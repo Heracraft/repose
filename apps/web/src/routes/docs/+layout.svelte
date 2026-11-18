@@ -615,6 +615,21 @@
 			color var(--hk-dur-fast) var(--hk-ease),
 			background-color var(--hk-dur-fast) var(--hk-ease);
 	}
+	/* The desktop sidebar holds every page at 1440x900 with Tutorials
+	   folded (I-660), and the 25th page (/docs/api, I-1322) took the list
+	   24px past the window. The drawer below 768 scrolls and keeps its
+	   roomier rows; from 768 the group gaps and the rows tighten, which
+	   buys 62px: 867px of list becomes 805 against 843 of room, so the
+	   next page or two still fits. Measured, not guessed. */
+	@media (min-width: 768px) {
+		.group-block {
+			margin-top: 0.875rem;
+		}
+		.items a {
+			padding-top: 0.25rem;
+			padding-bottom: 0.25rem;
+		}
+	}
 	.items a:hover {
 		color: var(--hk-text);
 		background: var(--hk-hover);
