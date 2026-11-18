@@ -37,6 +37,22 @@ test('Settings makes, lists and revokes an API token', async ({ page }) => {
 	await expect(dialog.getByLabel('Name', { exact: true })).toBeFocused();
 	await expect(dialog.getByRole('checkbox', { name: /^read / })).toBeChecked();
 	await expect(dialog.getByRole('checkbox')).toHaveCount(6);
+	// Each box is centred on its row's first line of text, a wrapping row
+	// included (it hung 4px above it under baseline alignment, 2026-11-18).
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 1000 });
+		const off = await dialog.locator('label.scope').evaluateAll((els) =>
+			els.map((el) => {
+				const box = el.querySelector('input')!.getBoundingClientRect();
+				const range = document.createRange();
+				range.selectNodeContents(el.querySelector('.scope-name')!);
+				const line = range.getClientRects()[0];
+				return box.top + box.height / 2 - (line.top + line.height / 2);
+			})
+		);
+		for (const d of off) expect(Math.abs(d), `at ${width}`).toBeLessThan(1);
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
 	// An empty name is refused in place.
 	await dialog.getByRole('button', { name: 'Create' }).click();
 	await expect(dialog.getByText('1 to 32 of a-z')).toBeVisible();
