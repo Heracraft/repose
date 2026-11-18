@@ -26,6 +26,7 @@ var accountCommands = map[string]bool{
 	"repose notify":         true,
 	"repose notify set":     true,
 	"repose notify test":    true,
+	"repose sessions":       true,
 }
 
 // refuseProjectFlag is a usage error for --project on a command that acts

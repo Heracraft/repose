@@ -23,7 +23,7 @@ var commandGroups = []struct {
 	id, title string
 	names     []string
 }{
-	{"work", "Work on a machine:", []string{"run", "attach", "sync", "exec", "ssh", "code", "cp", "paste", "open", "browser"}},
+	{"work", "Work on a machine:", []string{"run", "attach", "sync", "sessions", "exec", "ssh", "code", "cp", "paste", "open", "browser"}},
 	{"agents", "Follow the agents:", []string{"ps", "events", "questions", "reply", "say", "mcp", "triggers"}},
 	{"projects", "Manage projects:", []string{"ls", "status", "start", "stop", "resize", "keep", "rm", "restore", "snapshots", "logs"}},
 	{"setup", "Set up:", []string{"login", "logout", "config", "secrets", "webhooks", "tokens", "github", "notify", "scan"}},
@@ -67,12 +67,13 @@ func groupCommands(root *cobra.Command) {
 	root.InitDefaultHelpCmd()
 }
 
-// flagUsages is a flag set's help, wrapped at helpWidth. --temp's
-// optional value shows as DURATION, not the "bare" the code uses for a
-// --temp with none (review C3).
+// flagUsages is a flag set's help, wrapped at helpWidth. --temp's and
+// --session's optional values show as DURATION and ID, not the sentinels
+// the code uses for one given without a value (review C3).
 func flagUsages(fs *pflag.FlagSet) string {
 	s := fs.FlagUsagesWrapped(helpWidth)
-	return strings.ReplaceAll(s, ` string[="`+tempBare+`"]`, `[=DURATION]     `)
+	s = strings.ReplaceAll(s, ` string[="`+tempBare+`"]`, `[=DURATION]     `)
+	return strings.ReplaceAll(s, ` string[="`+sessionLast+`"]`, `[=ID]           `)
 }
 
 // globalFlagUsages is the Global Flags section: the inherited flags,

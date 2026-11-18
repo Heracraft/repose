@@ -40,6 +40,7 @@ var guideSkippedSections = map[string]string{
 	"agents#what-agents-are-told-about-the-machine": "describes this guide",
 	"agents#agent-states":                           "what the user sees of the agent; the guide's turn line covers what the agent does",
 	"agents#send-it-a-message":                      "a `repose say` arrives in the agent's own input as the user's next prompt (I-1144); there is nothing for the agent to do about it, and a line narrating it would be help nobody asked for",
+	"agents#continue-a-conversation-on-the-machine": "`repose run --session` reads files on the laptop; an agent on the machine cannot bring one and would only find the conversation already there (I-1328)",
 	"agents#opencode-version":                       "which opencode the platform pins, and the copy a reader installed under version 1; nothing an agent does (I-1050)",
 	"limits#projects":                               "account limits on the number of projects, not the machine",
 	"limits#when-repose-is-full":                    "the seats waitlist gates choosing a plan (I-290); an agent on a machine is past it",
