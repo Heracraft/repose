@@ -82,6 +82,11 @@ type agentStart struct {
 	// it with `herdr worktree open` so it groups under the repository.
 	Worktree bool
 	Prompt   string
+	// Resume is `--session`'s conversation id (DECISIONS I-1328): the
+	// window starts `claude --resume <id>`, so Claude Code opens on the
+	// conversation the laptop brought instead of a new one. Only claude
+	// has it; nothing else sets it.
+	Resume string
 	// AttachOnly opens the terminal and starts the agent without typing
 	// into it: Claude Code's login comes first. A Prompt then goes to a
 	// waiter on the machine that types it after the login (I-607).

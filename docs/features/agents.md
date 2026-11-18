@@ -203,7 +203,10 @@ guest, and never its login or its history:
   `projects/` (transcripts), `history.jsonl`, `todos/`,
   `shell-snapshots/`, `file-history/`, `paste-cache/`, `sessions/`,
   `plugins/`, `statsig/`, and `~/.claude.json`. The list above is an
-  allowlist, so nothing else is read.
+  allowlist, so nothing else is read. `repose run --session` is the one
+  way a transcript reaches a machine, per run and for one named
+  conversation ("Bringing one conversation over" below, I-1328); the
+  carry itself still never sends one.
 - `settings.json` is merged in the guest with `jq`, never overwritten:
   the guest's file is the base and the laptop's goes on top (the laptop
   wins on any key it sets, `model` included); `permissions.allow`, `deny`
@@ -225,6 +228,91 @@ guest, and never its login or its history:
   named once and skipped.
 - Only what changed on the laptop is sent (one marker per item in the
   guest, DECISIONS I-206).
+
+## Bringing one conversation over (DECISIONS I-1328)
+
+The lid-closing moment the carry did not cover: an hour of Claude Code on
+the laptop, and then the machine takes it from there.
+
+```
+$ repose sessions
+ID        LAST USED     FOLDER  TITLE
+907f3a2c  2 hours ago   .       Payments refactor
+4d1be880  3 days ago    web     Make the table sortable
+
+$ repose run --session=907f3a2c
+...
+Bringing the conversation...
+Starting claude...          (the window runs `claude --resume 907f3a2c...`)
+```
+
+- `repose sessions` lists the laptop's conversations whose own working
+  directory is this checkout or a folder under it, newest first, with the
+  id's end (I-619), how long ago it was written, the folder and a title:
+  the one the user set in Claude Code (`<id>/custom-title.json`), else the
+  one Claude Code wrote (`ai-title`), else the first prompt. It reads
+  `~/.claude/projects` and asks no machine and no server, so it answers
+  with the machine stopped. `-q` prints whole ids, `--json` the rows.
+- `--session [ID]` is on `run`, `attach` and `sync`. ID is a whole id, its
+  start or its end (I-619's rule, `matchID`); bare it is the newest.
+  Bare and followed by an argument, the argument is the id when it names
+  one of this folder's conversations, and the project otherwise, so a
+  project whose name looks like an id stays the project.
+- What travels: the conversation's `<id>.jsonl`, and under `<id>/` its
+  `subagents/`, `tool-results/` and `custom-title.json`, and
+  `todos/<id>*`. An allowlist, and the only transcript that ever leaves
+  the laptop. Never: another conversation, `history.jsonl`, the login.
+- The laptop's paths inside it are rewritten the way `settings.json`'s
+  home is: the checkout becomes the machine's checkout, the home becomes
+  `/home/dev`, and the names Claude Code gives its `projects/`
+  directories are rewritten too, so the `tool-results` and scratchpad
+  paths the transcript holds resolve on the machine. A swap applies only
+  where the name ends, so `/Users/jane` never matches `/Users/janet`.
+  Rewriting is per JSON string, so an escaped Windows path stays escaped.
+- Where it lands: `~/.claude/projects/<encoded machine cwd>/`, where the
+  machine's cwd is the conversation's own folder mapped onto the
+  machine's checkout. A conversation that ran in `<checkout>/web` lands
+  in the machine's `web`, and the window opens there. The probe makes
+  that folder: the sync does not bring a folder holding nothing it
+  tracks, and tmux hands a window whose `-c` does not exist the home
+  directory instead, which is how the window came up in `/home/dev`
+  before the folder was made (2026-11-18). It is in the probe and not in
+  the part because a conversation the machine already has sends no part
+  and still needs the folder.
+- `claude --resume` only when asked. The machine's claude starts fresh
+  otherwise: a window that silently resumed the last conversation would
+  make `repose run -p` continue a conversation the user had forgotten,
+  with its context and its permissions, and there would be no way to ask
+  for a clean one. `--session` is the ask; `--agent` naming another
+  agent, `-w` and `--worktree` are refused with it.
+- One window per conversation: a resumed window carries the id as the
+  tmux window option `@repose-session`, and the probe looks for it. A
+  `--session` for a conversation a window already holds sends nothing
+  and uses that window, the prompt included (`run -p` types into it, the
+  attach lands on it, `run -d` prints its name). Two claudes appending
+  one transcript would interleave two conversations into one file. herdr
+  has no window options, so it opens a second tab and its own line names
+  it.
+- The line: a bare `--session` prints `Conversation 907f3a2c: Payments
+  refactor`, because the user did not choose and the newest by mtime is
+  whichever agent last wrote a tool result. A named id prints nothing on
+  `run` and `attach`, where the window shows the conversation, and
+  `Conversation 907f3a2c is on the machine.` on `sync`, which opens no
+  window.
+- Twice over: the machine records the import's hash as the carry marker
+  `session-<id>`, and the probe reads it with the size of the transcript
+  the machine holds. An unchanged conversation is not uploaded at all. A
+  machine whose copy is longer than the laptop's has gone further with
+  the conversation, so it keeps its own and the run says so; otherwise
+  the machine's copy is replaced and kept beside it as
+  `<id>.jsonl.repose-prev`.
+- Caps: a transcript over 64 MB is refused by its size, since without it
+  there is no conversation; the files beside it over 32 MB stay behind
+  with one line, since a missing tool result reads as one cleaned up.
+- The dashboard shows nothing new (I-1266's parity rule). The files are
+  on the laptop and the api never sees one: there is nothing for a
+  browser to list and nothing for it to send. The parity the rule asks
+  for is that no dashboard action is missing, and none is.
 
 ## Remote Control: the machine in the Claude app (DECISIONS I-1132)
 

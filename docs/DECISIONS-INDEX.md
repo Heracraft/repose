@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1011 entries.
+1015 entries.
 
 ## Scope
 
@@ -1031,15 +1031,19 @@ pointer, not a summary.
 - **I-1278** Only the end of a turn resolves a permission prompt (notify-hold, 2026-11-17). Amends I-689 — L35396
 - **I-1280** An event says why its notification went nowhere, and only then (notify-hold, 2026-11-17) — L35417
 - **I-1282** The hold is the user's, in the CLI and on the dashboard (notify-hold, 2026-11-17) — L35431
-- **I-1314** API tokens: a bearer the user mints for an agent or a script, stored as its sha256 and shown once (api-tokens, 2026-11-18) — L35448
-- **I-1316** A token's scopes are six areas, and every user route is placed in one, in a "never" list, or refused (api-tokens, 2026-11-18) — L35475
-- **I-1318** A token may be bound to one project, and then sees that project alone (api-tokens, 2026-11-18) — L35501
-- **I-1320** A token expires, 30 days unless asked and a year at most; an account holds 20; a revoked row is listed 30 days (api-tokens, 2026-11-18) — L35516
-- **I-1322** Settings gets a fifth tab, API tokens, and the dialog shows the token once (api-tokens, 2026-11-18). Amends I-841 — L35535
-- **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35555
-- **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35575
-- **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35610
-- **I-1338** The first `repose run` asks what the machines use for GitHub (github-first-run, 2026-11-18) — L35629
-- **I-1340** The account can refuse the gh copy; it can never ask for one (github-first-run, 2026-11-18). Amends I-422 — L35697
-- **I-1342** The token's expiry is what GitHub said, read once on the laptop, and only ever a warning (github-first-run, 2026-11-18) — L35747
-- **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35788
+- **I-1328** One Claude Code conversation comes over when the user names it, and `claude --resume` is what opens it (session-import, 2026-11-18) — L35448
+- **I-1330** `repose sessions` is the laptop's list, and it asks nothing (session-import, 2026-11-18) — L35544
+- **I-1332** A bare `--session` followed by a word takes it as the id only when it names a conversation (session-import, 2026-11-18) — L35595
+- **I-1334** The docs' ghost-flag check reads repose's own command lines only (session-import, 2026-11-18) — L35614
+- **I-1314** API tokens: a bearer the user mints for an agent or a script, stored as its sha256 and shown once (api-tokens, 2026-11-18) — L35626
+- **I-1316** A token's scopes are six areas, and every user route is placed in one, in a "never" list, or refused (api-tokens, 2026-11-18) — L35653
+- **I-1318** A token may be bound to one project, and then sees that project alone (api-tokens, 2026-11-18) — L35679
+- **I-1320** A token expires, 30 days unless asked and a year at most; an account holds 20; a revoked row is listed 30 days (api-tokens, 2026-11-18) — L35694
+- **I-1322** Settings gets a fifth tab, API tokens, and the dialog shows the token once (api-tokens, 2026-11-18). Amends I-841 — L35713
+- **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35733
+- **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35753
+- **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35788
+- **I-1338** The first `repose run` asks what the machines use for GitHub (github-first-run, 2026-11-18) — L35807
+- **I-1340** The account can refuse the gh copy; it can never ask for one (github-first-run, 2026-11-18). Amends I-422 — L35875
+- **I-1342** The token's expiry is what GitHub said, read once on the laptop, and only ever a warning (github-first-run, 2026-11-18) — L35925
+- **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35966

@@ -306,10 +306,16 @@ func TestDocsNameEveryCommandAndFlag(t *testing.T) {
 	})
 
 	// The other way round: a command or flag the docs name must exist.
+	// Only repose's own spans are read for flags: a span that starts with
+	// another program's name is that program's command line, and
+	// `claude --resume` is Claude Code's flag, not one this CLI must have.
 	var ghosts []string
 	for _, sp := range backtickSpans(doc) {
 		if _, ok, ghost := commandPath(root, sp); ok && ghost != "" {
 			ghosts = append(ghosts, "`"+sp+"` names "+ghost+", which is not a command")
+		}
+		if f := strings.Fields(sp); len(f) > 0 && f[0] != "repose" && !strings.HasPrefix(f[0], "-") {
+			continue
 		}
 		for _, tok := range spanTokens(sp) {
 			if strings.HasPrefix(tok, "-") && len(tok) > 1 && !flagOf[tok] && tok != "--help" && tok != "-h" && tok != "--" {
