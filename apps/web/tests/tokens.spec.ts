@@ -47,13 +47,13 @@ test('Settings makes, lists and revokes an API token', async ({ page }) => {
 	await dialog.getByRole('button', { name: 'Create' }).click();
 
 	// The one view of the token.
-	const value = dialog.getByTestId('token-value');
+	const value = dialog.getByTestId('token-value').locator('pre.line');
 	await expect(value).toBeVisible();
 	const token = (await value.textContent()) ?? '';
 	expect(token).toMatch(/^rpt_[A-Za-z0-9_-]{43}$/);
 	await expect(dialog.getByText('Copy it now. It is not shown again.')).toBeVisible();
 	await expect(dialog.getByText(`read, triggers · ${p.slug} · until`)).toBeVisible();
-	await expect(dialog.getByRole('button', { name: 'Copy' })).toBeFocused();
+	await expect(dialog.getByRole('button', { name: 'Done' })).toBeFocused();
 	await dialog.getByRole('button', { name: 'Done' }).click();
 	await expect(dialog).not.toBeVisible();
 	await expect(section.getByRole('button', { name: 'Create token' })).toBeFocused();
@@ -65,7 +65,7 @@ test('Settings makes, lists and revokes an API token', async ({ page }) => {
 	await expect(row).toContainText(token.slice(0, 12) + '…');
 	await expect(row).toContainText('read, triggers');
 	await expect(row).toContainText(p.slug);
-	await expect(row).toContainText('Never used');
+	await expect(row).toContainText('Never');
 	expect(await page.content()).not.toContain(token);
 
 	// A second with the same name is refused under the field.
@@ -83,7 +83,7 @@ test('Settings makes, lists and revokes an API token', async ({ page }) => {
 	expect(me.status).toBe(200);
 	expect(((await me.json()) as { token: { name: string } }).token.name).toBe('ci');
 	await page.reload();
-	await expect(table.getByRole('row', { name: /ci/ })).not.toContainText('Never used');
+	await expect(table.getByRole('row', { name: /ci/ })).not.toContainText('Never');
 
 	// Revoke: two steps, Keep it goes back, Revoke ends it, the row says so.
 	await table.getByRole('button', { name: 'Revoke ci…' }).click();

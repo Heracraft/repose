@@ -38,8 +38,9 @@
 </PageShell>
 
 <style>
-	/* All five fit from 390 without sideways scroll; below that they
-	   scroll sideways inside their own row (.hk-tabs). */
+	/* Five labels are wider than a 390 column: the row scrolls sideways
+	   inside itself (.hk-tabs) and the cut fifth label is the cue, as
+	   I-841 allowed at 320. All five fit from 480. */
 	@media (max-width: 479.98px) {
 		.hk-tabs.settings-tabs {
 			gap: 0.75rem;

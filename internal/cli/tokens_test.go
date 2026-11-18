@@ -27,7 +27,7 @@ func TestTokensCreateListRm(t *testing.T) {
 	if !strings.HasPrefix(token, "rpt_") || strings.Contains(token, "\n") || strings.Contains(token, " ") {
 		t.Fatalf("stdout is the token alone: %q", out.buf.String())
 	}
-	if got := errOut.buf.String(); !strings.HasPrefix(got, "ci: read, triggers, every project, until ") || !strings.HasSuffix(got, ". Not shown again.\n") {
+	if got := errOut.buf.String(); !strings.HasPrefix(got, "ci: read, triggers, all projects, until ") || !strings.HasSuffix(got, ". Not shown again.\n") {
 		t.Fatalf("stderr: %q", got)
 	}
 
@@ -50,7 +50,7 @@ func TestTokensCreateListRm(t *testing.T) {
 	}{
 		{"x", []string{"root"}, "", "--scope root: a scope is one of"},
 		{"x", nil, "", "--scope is required"},
-		{"Bad Name", []string{"read"}, "", "a token name is"},
+		{"Bad Name", []string{"read"}, "", "NAME must match"},
 		{"x", []string{"read"}, "400", "--expires 400"},
 	} {
 		err := TokensCreateCmd(ctx, e, c.name, c.scopes, "", c.expires)
@@ -103,11 +103,11 @@ func TestTokensCreateListRm(t *testing.T) {
 	if err := loginStatus(ctx, te); err != nil {
 		t.Fatal(err)
 	}
-	if got := tout.buf.String(); !strings.Contains(got, "with token ci (read, triggers, every project, until ") {
+	if got := tout.buf.String(); !strings.Contains(got, "with token ci (read, triggers, all projects, until ") {
 		t.Fatalf("login --status with a token: %q", got)
 	}
 	err = TokensListCmd(ctx, te)
-	if err == nil || !strings.Contains(err.Error(), "Tokens are made with a login") {
+	if err == nil || !strings.Contains(err.Error(), "repose tokens takes a login") {
 		t.Fatalf("tokens with a token: %v", err)
 	}
 	if _, err := te.Client.DestroyProject(ctx, p.ID); err == nil || !strings.Contains(err.Error(), "needs projects") {

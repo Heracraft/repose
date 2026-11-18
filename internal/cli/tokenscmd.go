@@ -15,8 +15,9 @@ func newTokensCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Long: "An API token lets an agent or a script call repose's api as you, for the\n" +
 			"areas its scopes name, for one project or all, until it expires. Set it as\n" +
 			"REPOSE_TOKEN and this CLI uses it in place of your login; or send it as\n" +
-			"`Authorization: Bearer` to https://api.repose.run/v1. Alone, list them.\n\n" +
-			"A token never reaches your account, billing, SSH or other tokens.",
+			"`Authorization: Bearer` to the api. Alone, list them.\n\n" +
+			"No token reaches your account, billing, SSH, the browser view or other\n" +
+			"tokens.",
 		Example: "  repose tokens create ci --scope read,triggers\n" +
 			"  repose tokens create bot --scope read,projects --project todo-app\n" +
 			"  REPOSE_TOKEN=$(cat token) repose ls",
@@ -45,7 +46,7 @@ func newTokensCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return TokensCreateCmd(cmd.Context(), e, args[0], scopes, g.project, expires)
 		},
 	}
-	create.Flags().StringArrayVar(&scopes, "scope", nil, "what the token may do: read, projects, config, secrets, triggers or agents (repeatable, or comma-separated)")
+	create.Flags().StringArrayVar(&scopes, "scope", nil, "what the token may do (`SCOPE`): read, projects, config, secrets, triggers or agents (repeatable, or comma-separated)")
 	create.Flags().StringVar(&expires, "expires", "", "the token's life in days (`DAYS`), 1 to 365; 30 unless given")
 	create.Flags().BoolVar(&g.json, "json", false, "print every field, the token included, as JSON")
 

@@ -127,7 +127,7 @@ func loginStatus(ctx context.Context, e *Env) error {
 	if me.Token != nil {
 		// REPOSE_TOKEN (I-1314): the token, not a login, is what the
 		// api answered to.
-		reach := "every project"
+		reach := "all projects"
 		if me.Token.Project != nil && me.Token.Project.Slug != nil {
 			reach = *me.Token.Project.Slug + " only"
 		}

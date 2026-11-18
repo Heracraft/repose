@@ -40,7 +40,7 @@ var exitTopic = []topicRow{
 	{[]string{"0"}, "Worked."},
 	{[]string{"1"}, "Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too."},
 	{[]string{"2"}, "Wrong usage."},
-	{[]string{"3"}, "Not logged in, or the login expired."},
+	{[]string{"3"}, "Not logged in, the login expired, or `REPOSE_TOKEN` was refused."},
 	{[]string{"4"}, "No such project."},
 	{[]string{"5"}, "The machine isn't running."},
 	{[]string{"6"}, "The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first."},

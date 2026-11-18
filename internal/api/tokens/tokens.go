@@ -55,7 +55,7 @@ var AllScopes = []string{ScopeRead, ScopeProjects, ScopeConfig, ScopeSecrets, Sc
 // help, the dashboard's dialog and the docs. One source, so the three
 // agree.
 var Means = map[string]string{
-	ScopeRead:     "read every project: status, events, questions, triggers, settings",
+	ScopeRead:     "every project's status, events, questions, triggers and settings",
 	ScopeProjects: "create, start, stop, resize, snapshot, restore and remove projects",
 	ScopeConfig:   "change machine.nix and a project's config",
 	ScopeSecrets:  "set and remove secrets (never read a value)",

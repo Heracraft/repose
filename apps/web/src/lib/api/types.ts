@@ -478,7 +478,7 @@ export type TokenScope = 'read' | 'projects' | 'config' | 'secrets' | 'triggers'
 export const TOKEN_SCOPES: { name: TokenScope; means: string }[] = [
 	{
 		name: 'read',
-		means: 'read every project: status, events, questions, triggers, settings'
+		means: "every project's status, events, questions, triggers and settings"
 	},
 	{ name: 'projects', means: 'create, start, stop, resize, snapshot, restore and remove projects' },
 	{ name: 'config', means: "change machine.nix and a project's config" },

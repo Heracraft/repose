@@ -454,7 +454,7 @@ A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a targe
 | `repose tokens list`             | Your tokens with their scopes, project, end and last use, live ones first; a revoked one stays listed for 30 days. Alias `ls`, and `repose tokens` alone. `--json` for JSON, `-q`/`--quiet` for the live names. |
 | `repose tokens rm NAME...`       | Revoke tokens. Alias `remove`. A call with one is refused from that moment. |
 
-A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a scope that is not one of the six. An account holds 20 live tokens. These three commands take a login, not `REPOSE_TOKEN`.
+A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a scope that is not one of the six. An account holds 20 live tokens. These three commands take a login, not `REPOSE_TOKEN`. A revoked token stays in the list for 30 days.
 
 ## Triggers
 
@@ -500,7 +500,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 
 | Command | What it does |
 | ------- | ------------ |
-| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't; with `REPOSE_TOKEN` set it prints the token's name, scopes, project and end instead. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
+| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't; with `REPOSE_TOKEN` set it prints your handle with the token's name, scopes, project and end, and no plan. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
 | `repose logout`                                 | Log out and revoke your SSH certificates; the connections they opened [close within 30 seconds, on any device](/docs/limits#ssh-connections). A failed revoke still logs out on this laptop, says so and exits 1; the certificates stop working within 24 hours. `--purge` also removes [the CLI's files](#files-on-your-laptop). |
 | `repose notify`                                 | Where notifications go: `email: on, to you@example.com`, `ntfy: off` or its URL, `gchat: on, space AAAA...`, `off`, or `broken since 2026-01-02 (Google refused the webhook)`, and `hold: 2m` or `off`. `--json` for JSON. |
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook), `--hold off\|DURATION` ([how long a report waits while you're at the machine](/docs/notifications#while-youre-at-the-machine), an hour at most). |
@@ -612,7 +612,7 @@ Two lines on stderr are about the CLI itself. One release behind the latest, it 
 | 0 | Worked. |
 | 1 | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too. |
 | 2 | Wrong usage. |
-| 3 | Not logged in, or the login expired. |
+| 3 | Not logged in, the login expired, or `REPOSE_TOKEN` was refused. |
 | 4 | No such project. |
 | 5 | The machine isn't running. |
 | 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first. |

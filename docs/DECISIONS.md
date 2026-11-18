@@ -35535,15 +35535,16 @@ name is reused).
 **I-1322. Settings gets a fifth tab, API tokens, and the dialog shows the
 token once (api-tokens, 2026-11-18). Amends I-841.** *Made during
 implementation.* I-841's four tabs become five: General, Notifications,
-Secrets, API tokens, machine.nix. They fit from 390 without sideways
-scroll; below that the row scrolls inside itself, as I-841 allowed at
-320. The page is the Secrets tab's shape (I-697, I-929): a count for a
+Secrets, API tokens, machine.nix. Five labels are wider than a 390
+column, so the row scrolls sideways inside itself and the cut fifth
+label is the cue, as I-841 allowed at 320; all five fit from 480. The page is the Secrets tab's shape (I-697, I-929): a count for a
 heading, a table, a two-step delete named Revoke, and a dialog from the
 head's button. The dialog takes the name, the six scopes as checkboxes
 with their one line each, a project select and an expiry select; on
-create it becomes the one view of the token, selectable, Copy focused,
-with the sentence "Copy it now. It is not shown again." Done closes it
-and the page holds nothing. By I-1266 the dashboard makes, lists and
+create it becomes the one view of the token in the dashboard's copy
+box (CodeCopy), Done focused, with the sentence "Copy it now. It is not
+shown again." A click outside the box does not close that view; Escape
+and Done do, and the page then holds nothing. By I-1266 the dashboard makes, lists and
 revokes; there is nothing a token does that the dashboard cannot.
 
 *Checked:* `tokens.spec.ts` (apps/web/tests): the token appears in the

@@ -10,7 +10,7 @@ project (`token_project`), or when the route is one no token opens
 (`token_never`: the account, billing, SSH certificates, the browser view,
 tokens). An expired or revoked token is `401 unauthenticated` with
 `detail.reason = token_expired` or `token_revoked`. `GET /me` made with a
-token adds `token: {id, name, prefix, scopes, project, expires_at}`. The
+token adds `token`, the row `GET /me/tokens` lists for it. The
 routes a scope opens are listed in docs/features/tokens.md. The Logto
 resource is (resource
 `https://api.repose.herakraft.co`, an opaque audience that kept its name

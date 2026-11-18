@@ -20,7 +20,7 @@ import (
 // tokens.Means word for word; the CLI carries its own copy because it
 // does not import the api.
 var tokenScopes = []struct{ name, means string }{
-	{"read", "read every project: status, events, questions, triggers, settings"},
+	{"read", "every project's status, events, questions, triggers and settings"},
 	{"projects", "create, start, stop, resize, snapshot, restore and remove projects"},
 	{"config", "change machine.nix and a project's config"},
 	{"secrets", "set and remove secrets (never read a value)"},
@@ -43,7 +43,7 @@ var tokenNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 func checkTokenName(name string) error {
 	if !tokenNameRe.MatchString(name) {
-		return cobraUsageError{fmt.Errorf("a token name is 1 to 32 of a-z, 0-9 and -, starting with a letter or digit, not %q", name)}
+		return exitf(ExitUsage, "NAME must match [a-z0-9][a-z0-9-]{0,31}, got %q", name)
 	}
 	return nil
 }
@@ -115,7 +115,9 @@ func TokensCreateCmd(ctx context.Context, e *Env, name string, scopeFlags []stri
 	}
 	req := CreateTokenRequest{Name: name, Scopes: scopes, ExpiresInDays: days}
 	var bound *Project
-	if projectArg != "" {
+	// --project or $REPOSE_PROJECT, never the folder: a token is the
+	// account's unless the user names a project.
+	if projectArg = e.resolveArg(projectArg); projectArg != "" {
 		p, err := requireProject(ctx, e, projectArg)
 		if err != nil {
 			return err
@@ -133,7 +135,7 @@ func TokensCreateCmd(ctx context.Context, e *Env, name string, scopeFlags []stri
 	_, _ = fmt.Fprintln(e.Out, t.Token)
 	// The one line that prevents a loss the user cannot undo: the token
 	// is not shown again.
-	reach := "every project"
+	reach := "all projects"
 	if bound != nil {
 		reach = bound.Slug + " only"
 	}
@@ -236,7 +238,7 @@ func tokenErr(err error, name string) error {
 	case apiErr.Code == "conflict" && name != "":
 		return exitf(ExitGeneric, "You already have a token named %s; `repose tokens rm %s` first.", name, name)
 	case apiErr.Code == "forbidden" && apiErr.Detail["reason"] == "token_never":
-		return exitf(ExitGeneric, "Tokens are made with a login, not with REPOSE_TOKEN.")
+		return exitf(ExitGeneric, "repose tokens takes a login, not REPOSE_TOKEN.")
 	}
 	return err
 }

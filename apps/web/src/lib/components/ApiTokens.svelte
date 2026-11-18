@@ -13,6 +13,7 @@
 	import { ApiError } from '$lib/api/errors';
 	import { dateOnly, relativeTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
+	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { projectsStore } from '$lib/projects.svelte';
 	import { TOKEN_SCOPES, type ApiToken, type TokenScope } from '$lib/api/types';
@@ -22,7 +23,7 @@
 		{ days: 7, label: '7 days' },
 		{ days: 30, label: '30 days' },
 		{ days: 90, label: '90 days' },
-		{ days: 365, label: 'A year' }
+		{ days: 365, label: '365 days' }
 	];
 
 	let tokens = $state<ApiToken[] | undefined>(undefined);
@@ -42,7 +43,6 @@
 	let nameError = $state<string | undefined>(undefined);
 	let scopeError = $state<string | undefined>(undefined);
 	let made = $state<ApiToken | undefined>(undefined);
-	let copied = $state(false);
 
 	let live = $derived((tokens ?? []).filter((t) => !t.revoked_at));
 	let projects = $derived(projectsStore.list ?? []);
@@ -82,7 +82,6 @@
 		nameError = undefined;
 		scopeError = undefined;
 		made = undefined;
-		copied = false;
 	}
 
 	function close() {
@@ -113,7 +112,7 @@
 				expires_in_days: days
 			});
 			await load();
-			void tick().then(() => document.getElementById('token-copy')?.focus());
+			void tick().then(() => document.getElementById('token-done')?.focus());
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				nameError = `You already have a token named ${n}.`;
@@ -125,17 +124,6 @@
 			}
 		} finally {
 			saving = false;
-		}
-	}
-
-	async function copy() {
-		if (!made?.token) return;
-		try {
-			await navigator.clipboard.writeText(made.token);
-			copied = true;
-		} catch {
-			// No clipboard here; the token is selectable.
-			copied = false;
 		}
 	}
 
@@ -175,7 +163,7 @@
 	}
 
 	function used(t: ApiToken): string {
-		return t.last_used_at ? relativeTime(t.last_used_at) : 'Never used';
+		return t.last_used_at ? relativeTime(t.last_used_at) : 'Never';
 	}
 </script>
 
@@ -197,7 +185,7 @@
 		{/if}
 	</div>
 	<p class="lede">
-		An agent or a script calls the api as you, for the areas you pick, until the token expires.
+		An agent or a script calls the api as you, with the scopes you pick, until the token expires.
 		<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'api' })}>How to use one</a>.
 	</p>
 	<LoadState
@@ -228,7 +216,9 @@
 							<td class="c-name">
 								<span class="name">{t.name}</span>
 								<span class="prefix">{t.prefix}…</span>
-								<span class="phone-meta">{t.scopes.join(', ')} · {reach(t)} · {ends(t)}</span>
+								<span class="phone-meta"
+									>{t.scopes.join(', ')} · {reach(t)} <span class="nw">· {ends(t)}</span></span
+								>
 							</td>
 							<td class="c-scopes">{t.scopes.join(', ')}</td>
 							<td class="c-reach">{reach(t)}</td>
@@ -288,7 +278,8 @@
 		close();
 	}}
 	onclick={(e) => {
-		if (e.target === dialog) close();
+		// A stray click must not lose the one view of the token; Escape and Done close it.
+		if (e.target === dialog && !made) close();
 	}}
 >
 	{#if open && !made}
@@ -299,7 +290,7 @@
 				void create();
 			}}
 		>
-			<h2 id="tdlg-title" class="hk-modal-title">Create a token</h2>
+			<div class="tdlg-head"><h2 id="tdlg-title" class="hk-modal-title">Create a token</h2></div>
 			<div class="tdlg-body">
 				<div class="field">
 					<label for="tdlg-name" class="hk-field-label">Name</label>
@@ -320,7 +311,7 @@
 					class="field scopes"
 					aria-describedby={scopeError ? 'tdlg-scope-error' : undefined}
 				>
-					<legend class="hk-field-label">What it may do</legend>
+					<legend class="hk-field-label">Scopes</legend>
 					{#each TOKEN_SCOPES as s (s.name)}
 						<label class="hk-check scope">
 							<input
@@ -339,7 +330,7 @@
 				<div class="two">
 					<div class="field">
 						<label for="tdlg-project" class="hk-field-label">Project</label>
-						<select id="tdlg-project" class="hk-input" bind:value={projectId}>
+						<select id="tdlg-project" class="hk-select" bind:value={projectId}>
 							<option value="">All projects</option>
 							{#each projects as p (p.id)}
 								<option value={p.id}>{p.slug}</option>
@@ -348,7 +339,7 @@
 					</div>
 					<div class="field">
 						<label for="tdlg-expires" class="hk-field-label">Expires in</label>
-						<select id="tdlg-expires" class="hk-input" bind:value={days}>
+						<select id="tdlg-expires" class="hk-select" bind:value={days}>
 							{#each EXPIRIES as x (x.days)}
 								<option value={x.days}>{x.label}</option>
 							{/each}
@@ -356,7 +347,7 @@
 					</div>
 				</div>
 			</div>
-			<div class="tdlg-actions">
+			<div class="hk-modal-foot">
 				<button type="button" class="hk-btn-ghost" onclick={close}>Cancel</button>
 				<button type="submit" class="hk-btn" aria-disabled={saving ? 'true' : undefined}
 					>{saving ? 'Creating…' : 'Create'}</button
@@ -365,17 +356,18 @@
 		</form>
 	{:else if open && made}
 		<div class="tdlg-made">
-			<h2 id="tdlg-title" class="hk-modal-title">{made.name}</h2>
-			<p class="tdlg-once">Copy it now. It is not shown again.</p>
-			<output class="token" data-testid="token-value" for="tdlg-title">{made.token}</output>
-			<p class="tdlg-facts">
-				{made.scopes.join(', ')} · {reach(made)} · until {dateOnly(made.expires_at)}
-			</p>
-			<div class="tdlg-actions">
-				<button type="button" class="hk-btn-ghost" onclick={close}>Done</button>
-				<button type="button" id="token-copy" class="hk-btn" onclick={copy}
-					>{copied ? 'Copied' : 'Copy'}</button
-				>
+			<div class="tdlg-head"><h2 id="tdlg-title" class="hk-modal-title">{made.name}</h2></div>
+			<div class="tdlg-body">
+				<p class="tdlg-once">Copy it now. It is not shown again.</p>
+				<div data-testid="token-value">
+					<CodeCopy command={made.token ?? ''} what="the token" />
+				</div>
+				<p class="tdlg-facts">
+					{made.scopes.join(', ')} · {reach(made)} · until {dateOnly(made.expires_at)}
+				</p>
+			</div>
+			<div class="hk-modal-foot">
+				<button type="button" id="token-done" class="hk-btn" onclick={close}>Done</button>
 			</div>
 		</div>
 	{/if}
@@ -458,18 +450,17 @@
 		}
 	}
 
-	/* The dialog: the secret dialog's box and padding. */
+	/* The dialog: the secret dialog's box, head and body. */
 	.tdlg {
-		max-width: 32rem;
+		max-width: 30rem;
 	}
-	.tdlg form,
-	.tdlg-made {
-		padding: 1.25rem;
+	.tdlg-head {
+		padding: 1.25rem 1.25rem 0;
 	}
 	.tdlg-body {
 		display: grid;
 		gap: 1rem;
-		margin-top: 1rem;
+		padding: 0.75rem 1.25rem 0.25rem;
 	}
 	.field {
 		display: grid;
@@ -487,6 +478,17 @@
 	.scope {
 		align-items: baseline;
 		padding-block: 0.125rem;
+	}
+	/* The name is a column from 480px, as `--help` prints it. */
+	.scope > span {
+		display: grid;
+		grid-template-columns: 4.5rem 1fr;
+		column-gap: 0.5rem;
+	}
+	@media (max-width: 479.98px) {
+		.scope > span {
+			display: inline;
+		}
 	}
 	.scope-name {
 		font-family: var(--hk-font-mono);
@@ -506,32 +508,18 @@
 			grid-template-columns: 1fr;
 		}
 	}
-	.tdlg-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.5rem;
-		margin-top: 1.25rem;
-	}
 	.tdlg-once {
-		margin: 0.75rem 0 0.5rem;
+		margin: 0;
 		font-size: 0.875rem;
 		color: var(--hk-text-2);
 	}
-	.token {
-		display: block;
-		padding: 0.625rem 0.75rem;
-		border: 1px solid var(--hk-hairline);
-		border-radius: var(--hk-radius, 6px);
-		background: var(--hk-surface-2, transparent);
-		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
-		overflow-wrap: anywhere;
-		user-select: all;
-	}
 	.tdlg-facts {
-		margin: 0.5rem 0 0;
+		margin: 0;
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
+	}
+	.nw {
+		white-space: nowrap;
 	}
 	@media (forced-colors: active) {
 		.c-act button {

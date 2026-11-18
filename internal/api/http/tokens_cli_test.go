@@ -81,7 +81,7 @@ func TestAPITokensWithTheRealCLI(t *testing.T) {
 	if !strings.HasPrefix(token, "rpt_") || len(token) != 47 || strings.ContainsAny(out, " \t") {
 		t.Fatalf("stdout: %q", out)
 	}
-	if !strings.HasPrefix(errOut, "ci: read, triggers, every project, until ") || !strings.HasSuffix(errOut, ". Not shown again.\n") {
+	if !strings.HasPrefix(errOut, "ci: read, triggers, all projects, until ") || !strings.HasSuffix(errOut, ". Not shown again.\n") {
 		t.Fatalf("stderr: %q", errOut)
 	}
 	out, _, code = run("", "tokens")
@@ -91,7 +91,7 @@ func TestAPITokensWithTheRealCLI(t *testing.T) {
 
 	// The token's caller: who it is, what it sees, what it is refused.
 	out, errOut, code = run(token, "login", "--status")
-	if code != 0 || !strings.Contains(out, "clitok with token ci (read, triggers, every project, until ") {
+	if code != 0 || !strings.Contains(out, "clitok with token ci (read, triggers, all projects, until ") {
 		t.Fatalf("login --status with the token: %d %q %q", code, out, errOut)
 	}
 	out, errOut, code = run(token, "ls")
@@ -104,13 +104,13 @@ func TestAPITokensWithTheRealCLI(t *testing.T) {
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("curl with the token: %v %v", err, resp)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	_, errOut, code = run(token, "stop", "pa")
 	if code == 0 || !strings.Contains(errOut, "token's scopes are read, triggers; this call needs projects (forbidden).") {
 		t.Fatalf("stop with a read token: %d %q", code, errOut)
 	}
 	_, errOut, code = run(token, "tokens")
-	if code == 0 || !strings.Contains(errOut, "Tokens are made with a login, not with REPOSE_TOKEN.") {
+	if code == 0 || !strings.Contains(errOut, "repose tokens takes a login, not REPOSE_TOKEN.") {
 		t.Fatalf("tokens with the token: %d %q", code, errOut)
 	}
 

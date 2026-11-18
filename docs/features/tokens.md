@@ -29,7 +29,7 @@ A row (`api_tokens`, 0046): `id`, `user_id`, `name`
 ```
 $ repose tokens create ci --scope read,triggers
 rpt_…                                  ← stdout, the token alone
-ci: read, triggers, every project, until 2026-12-18. Not shown again.   ← stderr
+ci: read, triggers, all projects, until 2026-12-18. Not shown again.   ← stderr
 $ repose tokens create deploy --scope read,projects --project todo-app --expires 90
 $ repose tokens                        ← the list; ls, --json, -q
 NAME    SCOPES          PROJECT   EXPIRES     LAST USED
@@ -40,10 +40,10 @@ $ repose tokens rm ci
 
 `REPOSE_TOKEN` makes the CLI a token's caller: the token is sent as the
 bearer, never refreshed, and a 401 prints `REPOSE_TOKEN was refused:
-<the api's reason>.` with exit 3. `repose login --status` prints `you
-with token ci (read, triggers, every project, until 2026-12-18) on
-api.repose.run`. The three `tokens` commands refuse a token caller with
-`Tokens are made with a login, not with REPOSE_TOKEN.` Commands that
+<the api's reason>.` with exit 3. `repose login --status` prints
+`<handle> with token ci (read, triggers, all projects, until 2026-12-18)
+on api.repose.run`. The three `tokens` commands refuse a token caller
+with `repose tokens takes a login, not REPOSE_TOKEN.` Commands that
 mint an SSH certificate (`run`, `attach`, `exec`, `ssh`, `cp`) meet the
 api's `token_never` and print its sentence.
 
@@ -94,8 +94,8 @@ The message names the token's scopes and the one the call needs.
 
 ## 6. What a token is not
 
-- Not a login: no SSH certificate, no browser view, no money, no
-  account changes. An agent that needs a machine's shell runs on the
+- Not a login. No token reaches your account, billing, SSH, the browser
+  view or other tokens. An agent that needs a machine's shell runs on the
   machine; one that needs a certificate is a person with `repose login`.
 - Not readable: no route answers a token or a secret's value, and the
   logs carry `token_id`, never the token.
@@ -114,8 +114,10 @@ bearer a call carries.
 
 ## 8. Checklist
 
-- [ ] `TestAPITokens`, `TestAPITokenExpires`, `TestEveryUserRouteHasATokenPolicy` (internal/api/http) pass in `nix develop`.
-- [ ] `TestTokensCreateListRm` (internal/cli) passes; `TestDocsNameEveryCommandAndFlag` and `TestDocsNameEveryEnvVar` pass with the `tokens` noun and `REPOSE_TOKEN`.
-- [ ] `tokens.spec.ts` passes against `cmd/fakeapi`, and its shots at 1440 and 390 in both schemes were looked at.
-- [ ] `TestPublicAPIDocNamesRealRoutes` (internal/api/apidoc) passes: every route on `/docs/api` is in `docs/interfaces/api.md`.
-- [ ] Live: a token made on the dashboard lists a machine with `curl`, `REPOSE_TOKEN=… repose ls` prints it, a `projects` call with a read-only token answers 403 `token_scope`, and `repose tokens rm` makes the next call 401 `token_revoked`.
+- [x] `TestAPITokens`, `TestAPITokenExpires`, `TestEveryUserRouteHasATokenPolicy` (internal/api/http) pass in `nix develop`: `ok github.com/heracraft/repose/internal/api/http 1.848s` (2026-11-18).
+- [x] `TestAPITokensWithTheRealCLI` (internal/api/http): the real `repose` binary built from the tree, against the real api on Postgres: mint, list, `REPOSE_TOKEN` for `login --status`, `ls` and a Bearer GET, a scope refusal in the CLI's words, revoke, the 401 after; the log carries `token_id` and never the token. `--- PASS (1.40s)`.
+- [x] `TestTokensCreateListRm` (internal/cli) passes; `TestDocsNameEveryCommandAndFlag`, `TestDocsNameEveryEnvVar`, `TestHelpFitsEightyColumns`, `TestRootHelpIsGrouped`, `TestBareGroupsRunTheirListing` pass with the `tokens` noun and `REPOSE_TOKEN`; the whole package passes under `-race` (467s).
+- [x] `tokens.spec.ts` 4 passed against `cmd/fakeapi` (make, list, revoke; shots; the five tabs and /docs/api fit at 390 and 360); the shots at 1440 and 390 in light and dark (list, dialog, made view) were looked at at 1x, and a four-hat council reviewed them: kit selects, the kit's footer, CodeCopy for the one view, scope names as a column, no backdrop close on the made view.
+- [x] `TestPublicAPIDocNamesRealRoutes` (internal/api/apidoc) passes: every route on `/docs/api` is in `docs/interfaces/api.md`, and every route a scope opens is on the page.
+- [x] svelte-check 0 errors, eslint 0, golangci-lint 0 on the touched packages, `just done-check` clean of leftovers in the new files.
+- [ ] Live, after the release: a token made on the dashboard lists a machine with `curl`, `REPOSE_TOKEN=… repose ls` prints it, a `projects` call with a read-only token answers 403 `token_scope`, and `repose tokens rm` makes the next call 401 `token_revoked`.
