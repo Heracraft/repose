@@ -1036,6 +1036,6 @@ pointer, not a summary.
 - **I-1318** A token may be bound to one project, and then sees that project alone (api-tokens, 2026-11-18) — L35501
 - **I-1320** A token expires, 30 days unless asked and a year at most; an account holds 20; a revoked row is listed 30 days (api-tokens, 2026-11-18) — L35516
 - **I-1322** Settings gets a fifth tab, API tokens, and the dialog shows the token once (api-tokens, 2026-11-18). Amends I-841 — L35535
-- **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35554
-- **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35574
-- **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35609
+- **I-1324** `REPOSE_TOKEN` makes the CLI a token's caller, and `/docs/api` is the page a token's holder reads (api-tokens, 2026-11-18) — L35555
+- **I-1326** Burst cores are on for host-02 at a gate of 0.75 (the owner, 2026-11-18). Amends I-1126's "off on every host" — L35575
+- **I-1336** The queue's host comparison covers every production host in the flake, not one named host (conductor, 2026-11-18). Amends I-759's narrowing of `host` — L35610
