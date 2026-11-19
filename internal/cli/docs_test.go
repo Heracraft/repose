@@ -97,6 +97,9 @@ var internalEnvVars = map[string]string{
 	"REPOSE_ENV_GEN":         "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
 	"REPOSE_CARRY_EARLY":     "set in the guest by a first sync's apply for the carry it runs in the background, never read on the laptop (sync_prefetch.go, DECISIONS I-743)",
 	"REPOSE_CHECKOUT":        "never read: part of @@REPOSE_CHECKOUT@@, the placeholder the MCP carry's guest script replaces (carry_mcp.go, DECISIONS I-556)",
+	"REPOSE_APPLIANCE_URL":   "a lab knob: where `repose host add` on a Mac fetches the appliance image instead of the published release (appliance.go, research doc §9, RUNBOOK); no Mac owner sets it",
+	"REPOSE_VFKIT_URL":       "a lab knob: where the appliance install fetches vfkit instead of the pinned release (appliance.go)",
+	"REPOSE_VFKIT_SHA256":    "a lab knob: the checksum that goes with REPOSE_VFKIT_URL (appliance.go)",
 	"REPOSE_PAYLOAD":         "never read: a variable the machine sets for a trigger's own session, named in `triggers add`'s example (triggerscmd.go, DECISIONS I-1256); the set is in /docs/triggers",
 }
 
