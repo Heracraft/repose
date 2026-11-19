@@ -173,7 +173,7 @@ aws_status() {
     aws_ ec2 describe-hosts --host-ids "$host" | jq -r '.Hosts[0] |
       "host         \(.HostId)  \(.State)  \(.AvailabilityZone)",
       "allocated    \(.AllocationTime)",
-      "releasable   \((.AllocationTime | sub("\\.[0-9]+";"") | fromdate) + 86400 | todate)  (24 h minimum)"'
+      "releasable   \((.AllocationTime | sub("\\.[0-9]+";"") | sub("\\+00:00$";"Z") | fromdate) + 86400 | todate)  (24 h minimum)"'
   else echo "host         none"; fi
   if [ -n "$inst" ]; then
     aws_instance | jq -r '"instance     \(.InstanceId)  \(.State.Name)  \(.InstanceType)", "ip           \(.PublicIpAddress // "none yet")", "ssh          ssh ec2-user@\(.PublicIpAddress // "?")"'

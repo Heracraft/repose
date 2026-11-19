@@ -81,10 +81,13 @@ if ! tart list 2>/dev/null | grep -q "^local *$L1 "; then
   tart set "$L1" --cpu "$L1_CPUS" --memory "$L1_MEM_MIB" --disk-size 80
 fi
 if ! pgrep -f "tart run .*$L1" >/dev/null; then
-  nohup tart run --nested --no-graphics "$L1" > "$LAB/$L1.log" 2>&1 &
+  # Not nohup: under the ssh -t tty macOS's nohup says "can't detach from
+  # console" and the VM dies with the session (first run, 2026-11-19). A
+  # subshell with every fd off the tty survives the ssh exit.
+  (tart run --nested --no-graphics "$L1" </dev/null > "$LAB/$L1.log" 2>&1 &)
   sleep 5
 fi
-L1_IP=$(tart ip "$L1" --wait 180) || fail "step 2: L1 got no IP in 180 s; see $LAB/$L1.log"
+L1_IP=$(tart ip "$L1" --wait 300) || fail "step 2: L1 got no IP in 300 s; see $LAB/$L1.log"
 echo "l1_ip $L1_IP" | tee "$RES/l1.txt"
 
 # the image's login is admin/admin; put our key in once
@@ -123,11 +126,11 @@ say "step 7: vfkit --nested on the Tart disk"
 if command -v vfkit >/dev/null; then
   tart stop "$L1" 2>/dev/null || true; sleep 3
   MAC=52:54:00:c0:ff:ee
-  nohup vfkit --cpus "$L1_CPUS" --memory "$L1_MEM_MIB" --nested \
+  (vfkit --cpus "$L1_CPUS" --memory "$L1_MEM_MIB" --nested \
     --bootloader "efi,variable-store=$LAB/vfkit-nvram,create" \
     --device "virtio-blk,path=$HOME/.tart/vms/$L1/disk.img" \
     --device "virtio-net,nat,mac=$MAC" \
-    --device virtio-rng --device virtio-serial,stdio > "$LAB/vfkit.log" 2>&1 &
+    --device virtio-rng --device "virtio-serial,logFilePath=$LAB/vfkit-serial.log" </dev/null > "$LAB/vfkit.log" 2>&1 &)
   VF_IP=
   for _ in $(seq 1 60); do
     VF_IP=$(arp -an | grep -i "${MAC//:/.}\|$MAC" | sed -E 's/.*\(([0-9.]+)\).*/\1/' | head -n1)
