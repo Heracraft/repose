@@ -838,7 +838,7 @@ test.describe('the Own hardware plan', () => {
 		await page.goto('/billing');
 		const own = page.getByTestId('plan-own');
 		await expect(own.getByRole('heading', { level: 2, name: 'Own hardware' })).toBeVisible();
-		await expect(own.locator('.pr .n')).toHaveText('$10');
+		await expect(own.locator('.o-price .o-n')).toHaveText('$10');
 		await expect(own).toContainText('One host; its memory and disk are the limits.');
 		// The three cards are untouched: still three, still their figures.
 		await expect(page.locator('.plans .plan')).toHaveCount(3);

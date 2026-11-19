@@ -32,21 +32,21 @@
 </script>
 
 <div class="own" class:current data-testid="plan-{plan.id}">
-	<div class="head">
-		<svelte:element this={`h${level}`} class="name">{plan.name}</svelte:element>
+	<div class="o-top">
+		<svelte:element this={`h${level}`} class="o-name">{plan.name}</svelte:element>
 		{#if current}<span class="hk-badge hk-badge--outline">Current</span>{/if}
 	</div>
-	<p class="pr">
-		<span class="n">{price(plan.priceCents)}</span>
-		<span class="per">a month</span>
+	<p class="o-price">
+		<span class="o-n">{price(plan.priceCents)}</span>
+		<span class="o-per">a month</span>
 	</p>
-	<p class="what">
+	<p class="o-what">
 		A Mac mini or an x86 box you own, in your account. {plan.hosts === 1
 			? 'One host'
 			: `${plan.hosts} hosts`}; its memory and disk are the limits.
 	</p>
 	{#if action && variant === 'app'}
-		<div class="act">{@render action(plan)}</div>
+		<div class="o-act">{@render action(plan)}</div>
 	{/if}
 </div>
 
@@ -65,7 +65,7 @@
 		border-color: var(--hk-border-strong);
 		background: var(--hk-surface);
 	}
-	.head {
+	.o-top {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -74,7 +74,7 @@
 	}
 	/* The cards' name: a heading element for the outline, drawn as the
 	   kit's small-caps label, so the row reads as one of them. */
-	.name {
+	.o-name {
 		margin: 0;
 		font-family: var(--hk-font-sans);
 		font-size: 0.6875rem;
@@ -84,7 +84,7 @@
 		text-transform: uppercase;
 		color: var(--hk-text-3);
 	}
-	.pr {
+	.o-price {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
@@ -92,7 +92,7 @@
 		margin: 0;
 		padding-top: 0.5rem;
 	}
-	.pr .n {
+	.o-price .o-n {
 		font-family: var(--hk-font-display);
 		font-size: 1.75rem;
 		font-weight: 400;
@@ -101,19 +101,19 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--hk-text);
 	}
-	.pr .per {
+	.o-price .o-per {
 		font-size: 0.875rem;
 		color: var(--hk-text-3);
 		white-space: nowrap;
 	}
-	.what {
+	.o-what {
 		margin: 0;
 		font-size: 0.875rem;
 		line-height: 1.375rem;
 		color: var(--hk-text-2);
 		text-wrap: pretty;
 	}
-	.act {
+	.o-act {
 		padding-top: 1rem;
 	}
 	/* From 900px the row reads as a row: the name and price at the left,
@@ -125,20 +125,20 @@
 			column-gap: 2rem;
 			align-items: center;
 		}
-		.head {
+		.o-top {
 			grid-column: 1;
 			grid-row: 1;
 		}
-		.pr {
+		.o-price {
 			grid-column: 1;
 			grid-row: 2;
 			padding-top: 0.25rem;
 		}
-		.what {
+		.o-what {
 			grid-column: 2;
 			grid-row: 1 / span 2;
 		}
-		.act {
+		.o-act {
 			grid-column: 3;
 			grid-row: 1 / span 2;
 			padding-top: 0;
