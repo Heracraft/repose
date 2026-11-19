@@ -41,8 +41,10 @@ const (
 	envReposeEditor    = "REPOSE_EDITOR"   // repose code: the editor when --editor is not given (I-282)
 	envToken           = "REPOSE_TOKEN"    // an API token used in place of the login (I-1314)
 	// The Mac appliance's downloads (I-1380): where `repose host add`
-	// fetches the image and vfkit, and vfkit's checksum, for a lab or a
-	// mirror. The defaults are the published ones.
+	// fetches the image and vfkit, and vfkit's checksum: a lab knob for the
+	// Mac days (docs/research/mac-mini-nested-kvm.md §9) and the RUNBOOK's
+	// image publish, not a user's; the defaults are the published ones, and
+	// the docs test lists these as internal.
 	envApplianceURL = "REPOSE_APPLIANCE_URL"
 	envVfkitURL     = "REPOSE_VFKIT_URL"
 	envVfkitSHA256  = "REPOSE_VFKIT_SHA256"
@@ -52,7 +54,7 @@ var userEnvVars = []string{
 	envProject, envAPIURL, envTiming, envNoSpinner, envNoForward, envNoFastPath, envNoBrowser,
 	envInGuest, envXDGConfigHome, envClaudeConfigDir, envVisual, envEditor,
 	envWaylandDisplay, envDisplay, envNoInputProxy, envNoClipboardPath, envInputProxy, envClipboardPath,
-	envReposeEditor, envToken, envApplianceURL, envVfkitURL, envVfkitSHA256,
+	envReposeEditor, envToken,
 }
 
 // Env bundles what almost every command needs: config, the API client,
