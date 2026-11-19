@@ -252,7 +252,7 @@ in
       }
       {
         assertion = !cfg.park.enable;
-        message = "repose.host.park on a Mac appliance: the park wraps its image keys with an Azure Key Vault the Mac has no identity for (I-653); gated on gate 0 step 5 (I-1376).";
+        message = "repose.host.park on a Mac appliance: the park wraps its image keys with an Azure Key Vault the Mac has no identity for (I-653). The mechanism itself passed on Apple silicon (I-1376); a key design for owned hosts is what is missing.";
       }
     ];
 

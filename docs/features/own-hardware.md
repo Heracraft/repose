@@ -223,9 +223,11 @@ assertion (research doc §7). A machine's boot on a Mac is minutes, not
 seconds (3 min 36 s cold and 3 min 59 s warm to multi-user on an M4 at 2
 vCPU, research doc §9; hostd's per-start dump-db of the closure is half
 of it), so hostd's ready window is five minutes there
-(`guestReadyTimeout`) where the Azure hosts keep 60 s. Freeze and restore across a Mac reboot
-are off until gate 0 step 5 has run; a reboot stops the machines and the
-api starts the ones that were running (I-645). `repose-appliance
+(`guestReadyTimeout`) where the Azure hosts keep 60 s. Freeze and restore work on Apple silicon
+(gate 0 step 5, research doc §9) and stay off on the appliance until an
+owned host has a way to wrap the image key that is not Key Vault
+(I-653); a reboot stops the machines and the api starts the ones that
+were running (I-645). `repose-appliance
 start|stop|status|log|grow|uninstall` is the user's side on the Mac.
 
 ## Behaviour that must hold

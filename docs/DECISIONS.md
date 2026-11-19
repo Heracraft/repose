@@ -37022,6 +37022,18 @@ untested on Apple silicon); 6.8 (below the assertion).
   containerd and succeeds on its retry; and once in three starts
   SetupProject's `systemctl --user start` of the tmux session unit
   exited 1 under the slow boot, cause unverified.
+- *Freeze and restore pass on Apple silicon* (gate 0 step 5, run on the
+  same day with a lab image whose park used a key file): a small guest
+  parked at the appliance's shutdown in 6.1 s (snapshot 306 ms, image
+  672 MB) and was restored 31 s later in 7.8 s (image read 911 ms, resume
+  182 ms), with a marker in its tmpfs and its uptime continuous across
+  the restart. The appliance still ships with the park off: the image
+  key is wrapped by Key Vault with the host's Azure identity (I-653),
+  which a Mac has not, and `park.keyFile` is for staging and tests. A
+  key design for owned hosts is its own decision; until it is made a
+  Mac reboot stops the machines and the api restarts them (I-645). A
+  park also needs room on the pool for the image, which a lab disk at
+  the installer's minimum lacked (`no_room`, the guest started cold).
 
 *Checked:* `host-mac` and `mac-launcher-sizing` green under `nix flake
 check` (the 19f report); the aarch64 outputs evaluated; the Mac day

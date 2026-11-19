@@ -307,7 +307,7 @@ Ireland had capacity on the first try once its quota applied.
 | 2 nested KVM | PASS | `/dev/kvm` in the appliance VM (Tart `--nested`, Ubuntu 24.04 arm64, 8 vCPU, 12 GiB), `kvm-ok` passes; KVM reports "Hyp mode initialized", GICv3 system-register interface, no GICv2 |
 | 3 guest boots | PASS on 6.18.57 and 6.8; FAIL on 7.0 | a stock Ubuntu cloud image: `Run /init` 1.5 s, systemd 4.0 s, login prompt 134 to 139 s (the image waits 120 s for a network the guest has no NIC for; the kernel-to-systemd time is the figure) |
 | 4 nesting tax | PASS, none measurable | one-thread `openssl speed sha256`, 16 KiB blocks: guest 3.12 GB/s, appliance 2.92 GB/s (ratio 1.07, inside core-to-core noise on a chip with P and E cores); the appliance at 8 threads 18.7 GB/s, 6.4x one thread; the Mac itself under LibreSSL 3.23 GB/s at 8 KiB, not like for like |
-| 5 freeze and restore | not run | |
+| 5 freeze and restore | PASS (19f, §9: parked in 6.1 s, restored in 7.8 s, memory and uptime kept) | |
 | 6 virtiofs | not run | |
 | 7 vfkit | PASS | vfkit 0.6.4 `--nested` booted the Tart disk to a login prompt on the first run; the address lookup was the harness's fault |
 
@@ -402,6 +402,20 @@ pool's 1.37 GB allocated (the caches volume's ext4 1.08, the guest
 volume 0.28, metadata 1 GiB), so the 3 GB gap was stale blocks from the
 image build, given back by discard through virtio-blk to APFS. With the
 large guest running: 9.76 GB. vfkit's own RSS: 24 MiB.
+
+**Freeze and restore (step 5), passed.** A lab image with
+`repose.host.park` on and a key file: `repose-appliance stop` parks at
+the appliance's shutdown (`guest parked`, class small, `snapshot_ms`
+306, `duration_ms` 6051, `image_bytes` 672 MB; the stop took 17 s), and
+the next start restores (`restore phases net_ms 28, virtiofsd_ms 49,
+store_view_ms 136, image_read_ms 911, resume_ms 182`, `duration_ms`
+7834, `parked_s` 31); a marker in the guest's tmpfs read back and
+`/proc/uptime` ran on from 144 s to 294 s with no reboot. The first
+attempt was skipped with `no_room`: the pool on a 39 GiB disk file had
+no room for the image, and `repose-appliance grow 60` plus a restart
+gave it 25 GB. hostd's own start breakdown for the small guest:
+`prepare_ms 457, ready_ms 45733, paths_ms 59725, setup_ms 34808,
+total_ms 140725`.
 
 Lessons, each of which cost a run:
 
