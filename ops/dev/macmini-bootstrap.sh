@@ -108,65 +108,7 @@ pass "step 2: /dev/kvm present in L1 and kvm-ok passes"
 
 # --- step 3 and 4 inside L1: an L2 guest under Cloud Hypervisor -----------
 say "steps 3 and 4: Cloud Hypervisor guest inside L1"
-cat > "$LAB/l1-measure.sh" <<'L1SH'
-#!/bin/bash
-# Runs inside L1. Boots an Ubuntu arm64 cloud image as an L2 guest under
-# Cloud Hypervisor five times, timing exec to the login prompt, then logs
-# in over the serial console and runs the same openssl benchmark L1 runs.
-set -eu
-cd "$HOME"; mkdir -p l2 results; cd l2
-CH=https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download
-[ -x cloud-hypervisor ] || { curl -fsSL -o cloud-hypervisor $CH/cloud-hypervisor-static-aarch64; chmod +x cloud-hypervisor; }
-[ -x ch-remote ]        || { curl -fsSL -o ch-remote $CH/ch-remote-static-aarch64; chmod +x ch-remote; }
-./cloud-hypervisor --version | tee ../results/ch-version.txt
-# the L1 kernel boots L2: arm64 vmlinuz is a gzip'd Image, CH wants it uncompressed
-if [ ! -s Image ]; then
-  k=/boot/vmlinuz-$(uname -r)
-  if file -L "$k" | grep -q gzip; then echo admin | sudo -S -p "" zcat "$k" > Image; else echo admin | sudo -S -p "" cp "$k" Image; fi
-  echo admin | sudo -S -p "" cp "/boot/initrd.img-$(uname -r)" initrd.img
-  echo admin | sudo -S -p "" chown "$USER" Image initrd.img
-fi
-[ -s root.raw ] || {
-  curl -fsSL -o noble.img https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img
-  qemu-img convert -O raw noble.img root.raw && rm noble.img
-  qemu-img resize -f raw root.raw 8G
-}
-[ -s seed.img ] || {
-  printf 'instance-id: l2\nlocal-hostname: l2\n' > meta-data
-  printf '#cloud-config\npassword: l2pass\nchpasswd: { expire: false }\nssh_pwauth: true\n' > user-data
-  cloud-localds seed.img user-data meta-data
-}
-run_l2() { # $1 = run number; prints seconds to login prompt and keeps the openssl output on the last run
-  local n=$1 sock=/tmp/ch-$n.sock log=../results/l2-boot-$n.log
-  rm -f "$sock"
-  expect <<EXP > "$log" 2>&1
-set timeout 180
-set t0 [clock milliseconds]
-spawn ./cloud-hypervisor --api-socket $sock --kernel Image --initramfs initrd.img \
-  --disk path=root.raw path=seed.img \
-  --cmdline "console=ttyAMA0 root=/dev/vda1 rw" \
-  --cpus boot=2 --memory size=2048M --serial tty --console off
-expect -re "login:" { puts "BOOT_MS [expr [clock milliseconds] - \$t0]" }
-send "ubuntu\r"
-expect -re "(?i)password:"
-send "l2pass\r"
-expect -re "\\\\$ $"
-send "openssl speed -multi 2 -seconds 5 sha256 2>&1 | tail -n 4; echo OPENSSL_DONE\r"
-expect "OPENSSL_DONE"
-send "sudo poweroff\r"
-expect eof
-EXP
-  grep BOOT_MS "$log" | awk '{print $2}'
-}
-: > ../results/l2-boot-ms.txt
-for n in 1 2 3 4 5; do
-  ms=$(run_l2 $n); echo "$ms" | tee -a ../results/l2-boot-ms.txt
-done
-sed -n '/sha256/,/OPENSSL_DONE/p' ../results/l2-boot-5.log > ../results/openssl-l2.txt
-openssl speed -multi 2 -seconds 5 sha256 2>&1 | tail -n 4 > ../results/openssl-l1-2threads.txt
-openssl speed -multi "$(nproc)" -seconds 5 sha256 2>&1 | tail -n 4 > ../results/openssl-l1-all.txt
-echo done
-L1SH
+cp "$HOME/macmini-measure-linux.sh" "$LAB/l1-measure.sh"
 scp -i "$LAB/id_lab" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$LAB/l1-measure.sh" "admin@$L1_IP:l1-measure.sh"
 $SSH "admin@$L1_IP" 'chmod +x l1-measure.sh && ./l1-measure.sh' 2>&1 | tee "$RES/l1-measure.log"
 scp -i "$LAB/id_lab" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -r "admin@$L1_IP:results/." "$RES/"

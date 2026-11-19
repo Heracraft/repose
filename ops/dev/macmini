@@ -18,7 +18,7 @@
 # only, never a file in this repository.
 #
 # Knobs: MACMINI_NAME (repose-macmini-lab), MACMINI_TYPE (M4-S),
-# MACMINI_ZONE (fr-par-1), MACMINI_OS (an `os list` name or label;
+# MACMINI_ZONE (fr-par-1), MACMINI_WATCH_SECONDS (300), MACMINI_OS (an `os list` name or label;
 # unset means Scaleway's default, which is the one that delivers fastest),
 # MACMINI_SSH_PUBKEY (~/.ssh/id_ed25519.pub).
 #
@@ -27,7 +27,7 @@
 set -euo pipefail
 
 NAME=${MACMINI_NAME:-repose-macmini-lab}
-TYPE=${MACMINI_TYPE:-M4-S}
+TYPE=${MACMINI_TYPE:-M4-S}   # cmd_watch overrides per attempt
 ZONE=${MACMINI_ZONE:-fr-par-1}
 PUBKEY=${MACMINI_SSH_PUBKEY:-$HOME/.ssh/id_ed25519.pub}
 KNOWN_HOSTS=$HOME/.ssh/known_hosts_macmini
@@ -35,7 +35,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 DATA_DIR=$REPO/docs/research/mac-mini-nested-kvm-data
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
 die() { echo "macmini: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null || die "$1 is not on PATH (nix develop ./nix#infra)"; }
 need scw; need jq
@@ -122,18 +122,51 @@ cmd_ssh() {
 }
 
 cmd_bootstrap() {
-  local ip user; ip=$(field .ip); user=$(field .ssh_username)
+  local ip user os; ip=$(field .ip); user=$(field .ssh_username)
   # shellcheck disable=SC2046
-  scp $(ssh_opts) "$HERE/macmini-bootstrap.sh" "$user@$ip:macmini-bootstrap.sh"
+  scp $(ssh_opts) "$HERE/macmini-bootstrap.sh" "$HERE/macmini-measure-linux.sh" "$user@$ip:"
   # shellcheck disable=SC2046
-  ssh $(ssh_opts) -t "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
+  os=$(ssh $(ssh_opts) "$user@$ip" uname -s)
+  if [ "$os" = Linux ]; then
+    # an Asahi box: KVM is native, so only the Linux half runs (steps 3 and
+    # 4 without nesting; steps 2 and 7 have no meaning here)
+    echo "Linux box ($user@$ip): running the Cloud Hypervisor measurement natively"
+    # shellcheck disable=SC2046
+    ssh $(ssh_opts) -t "$user@$ip" "chmod +x macmini-measure-linux.sh && SUDO_PASS='$(field .sudo_password)' ./macmini-measure-linux.sh"
+  else
+    # shellcheck disable=SC2046
+    ssh $(ssh_opts) -t "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
+  fi
+}
+
+# Stock is per server type (no_stock, low_stock, high_stock). Watch the
+# types given (default M4-S then M4-M) and rent the first one that is in
+# stock. Scaleway's M4 stock was empty on 2026-11-19; this is the
+# alternative to refreshing the console.
+cmd_watch() {
+  local types=("$@"); [ ${#types[@]} -gt 0 ] || types=(M4-S M4-M)
+  local every=${MACMINI_WATCH_SECONDS:-300}
+  echo "watching ${types[*]} in $ZONE every ${every}s; renting the first in stock as $NAME"
+  while :; do
+    local stock t
+    stock=$(scw apple-silicon server-type list zone="$ZONE" -o json)
+    for t in "${types[@]}"; do
+      local st; st=$(jq -r --arg t "$t" '.[] | select(.name == $t) | .stock' <<<"$stock")
+      printf '%s %s %s\n' "$(date -u +%FT%TZ)" "$t" "${st:-absent}"
+      if [ "$st" = low_stock ] || [ "$st" = high_stock ]; then
+        TYPE=$t cmd_create; return
+      fi
+    done
+    sleep "$every"
+  done
 }
 
 cmd_results() {
   local ip user; ip=$(field .ip); user=$(field .ssh_username)
   mkdir -p "$DATA_DIR"
   # shellcheck disable=SC2046
-  scp -r $(ssh_opts) "$user@$ip:repose-lab/results/." "$DATA_DIR/"
+  scp -r $(ssh_opts) "$user@$ip:repose-lab/results/." "$DATA_DIR/" 2>/dev/null \
+    || scp -r $(ssh_opts) "$user@$ip:results/." "$DATA_DIR/"   # the Linux-native layout
   echo "results in $DATA_DIR"; ls -1 "$DATA_DIR"
 }
 
@@ -156,6 +189,7 @@ case "${1:-}" in
   ssh)       shift; cmd_ssh "$@" ;;
   bootstrap) cmd_bootstrap ;;
   results)   cmd_results ;;
+  watch)     shift; cmd_watch "$@" ;;
   destroy)   shift; cmd_destroy "$@" ;;
   *)         usage ;;
 esac

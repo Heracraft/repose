@@ -26,12 +26,22 @@ source code and should be checked on the machine.
 
 Scaleway is the one with an API, a CLI in nixpkgs (`scaleway-cli`
 2.62.0) and a Terraform provider, so it is the one the automation
-targets. The M2 and M2 Pro machines are useless here: nested
-virtualization wants an M3 or later. Scaleway also sells Asahi Linux on
-the M2 Pro (native Linux, native KVM, no 24 h minimum), which would
-measure aarch64 guests without the nesting; it does not measure the
-product's path and the chip is wrong, so it is a fallback for building
-the aarch64 base, not for the go or no-go.
+targets. **On 2026-11-19 every macOS Mac mini there was out of stock**
+(M1-M, M2-M, M2-L, M4-S, M4-M, M4-XL), and a new account must pass
+identity verification before it has any Apple silicon quota at all. The
+server-type API carries `stock` (`no_stock`, `low_stock`, `high_stock`),
+so `ops/dev/macmini watch` polls it and rents the first M4 that appears.
+The one machine in stock was `M2-L-ASAHI` (M2 Pro, Asahi Linux, €0.21 an
+hour, no minimum lease). The M2 and M2 Pro machines are useless here: nested
+virtualization wants an M3 or later. Asahi Linux on the
+M2 Pro is native Linux with native KVM: it runs steps 3, 5, 6 and 8 of
+the protocol (a Cloud Hypervisor guest, freeze and restore, virtiofs,
+the aarch64 base build) today, as an aarch64 box without the nesting.
+It cannot answer steps 2, 4 and 7, which are the Mac path's go or
+no-go, because the chip predates nested virtualization and there is no
+macOS on it. The day on an M4 still has to happen; AWS `mac-m4.metal`
+at about $30 for its 24 h minimum is the fallback if Scaleway's M4
+stock stays empty.
 
 ## 2. Scaleway facts the automation relies on
 
@@ -152,8 +162,11 @@ also someone's desktop. Those come from the first trusted user's box.
 
 ## 5. Automation
 
-`ops/dev/macmini` (this branch) drives the Scaleway side from woker-1
-and `ops/dev/macmini-bootstrap.sh` runs on the Mac. Both are **untested**
+`ops/dev/macmini` (this branch) drives the Scaleway side from woker-1,
+`ops/dev/macmini-bootstrap.sh` runs on the Mac, and
+`ops/dev/macmini-measure-linux.sh` is the Linux half (Cloud Hypervisor
+boots and the benchmark), which runs inside L1 on a Mac or natively on
+an Asahi box: `bootstrap` looks at `uname` and picks. Both are **untested**
 until the owner's API key exists; what they do is exactly section 4,
 steps 1 to 4 and 7, with the results in `~/repose-lab/results/` on the
 Mac and copied back by `ops/dev/macmini results`. Steps 5, 6 and 8 are
@@ -162,6 +175,7 @@ hand steps on the first day and go into the script once seen to work.
 ```
 nix develop ./nix#infra
 export SCW_ACCESS_KEY=... SCW_SECRET_KEY=... SCW_DEFAULT_PROJECT_ID=...
+ops/dev/macmini watch             # polls M4-S then M4-M stock every 5 min and creates on the first hit
 ops/dev/macmini create            # M4-S, fr-par-1, no commitment; uploads your SSH key
 ops/dev/macmini wait              # until ready and sshd answers
 ops/dev/macmini bootstrap         # Tart, vfkit, the Ubuntu VM with --nested, steps 1-4 and 7
