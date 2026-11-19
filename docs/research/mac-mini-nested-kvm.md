@@ -231,6 +231,13 @@ with the `metal` provider replaced by:
 
 ## 8. The aarch64 build (I-1374, 2026-11-19)
 
+**Nothing aarch64 has been built. Every number a build would give is
+below as a placeholder, and every aarch64 output in the flake has only
+ever been evaluated, never realised.** A flake output nobody has built
+is the same class of thing as a migration written and never registered;
+this section exists so that the reader does not take the evaluation
+evidence for a build.
+
 What exists, from `nix/flake.nix`: `packages.aarch64-linux` (the guest
 runner and system, the Go binaries, the agents), `guestSystems.aarch64-linux`
 (what hostd on an aarch64 host evaluates), `nixosConfigurations.host-aarch64`
@@ -239,14 +246,16 @@ the runner, the host and the installer build; no VM tests, they need KVM
 of the builder's architecture). The runner boots the kernel's `Image`
 with `console=ttyAMA0`; hostd renders the same console on arm64. Every
 agent's arm64 release is pinned beside the x86 one in `versions.json`.
+The CI job `nix-aarch64-overlay` and `ops/dev/aarch64-base` are written
+and have never run.
 
 Measured on woker-1 (x86, evaluation only, no aarch64 builder; every
 number below is from `nix eval` under the shared build lock):
 
 - The aarch64 guest system, host system, installer and closure check all
   evaluate to derivations; the x86 derivations are unchanged by the
-  restructuring (the runner's and agents' `.drv` paths are identical to
-  `mac-mini`'s).
+  restructuring (the guest system's, runner's, host-02's, edge's and
+  installer's `.drv` paths are identical to `mac-mini`'s).
 - The host kernel pin resolves to 6.18.57 on aarch64 too (the same
   nixpkgs revision), so `nix/hosts/kernel.nix`'s CVE-2026-99999
   assertion holds.
@@ -261,15 +270,20 @@ number below is from `nix eval` under the shared build lock):
   one, so the day may include one node compile: budget an hour for it
   on 8 vCPU before reading the closure number.
 
-Not measured yet, owed to this section by the Mac build day:
+Owed by the first aarch64 build day (the Mac's appliance VM, or any
+aarch64 Linux box with nix), each line replaced by its number:
 
-- the aarch64 closure's size in bytes, from
-  `nix build ./nix#checks.aarch64-linux.guest-closure-size` on the
-  appliance VM (the x86 closure is about 6.0 GiB against the 7 GiB limit);
-- the build time of the guest system and of the host system on the
-  8 vCPU, 12 GiB appliance VM, and how much of each was substituted from
-  cache.nixos.org against built there (the `--dry-run` count);
-- whether 12 GiB is enough for the build, or the spark raises the VM.
+- aarch64 guest closure size: **NOT BUILT**, from
+  `ops/dev/aarch64-base check` (the x86 closure is about 6.0 GiB
+  against the 7 GiB limit).
+- guest system build time, wall clock on the builder: **NOT BUILT**.
+- host system build time (`host-aarch64`): **NOT BUILT**.
+- paths substituted against built, and whether the node compile
+  happened: **NOT BUILT**.
+- builder memory: **NOT BUILT** (asked for 16 GiB, 24 comfortable, with
+  about 15 GB free in `/nix`, before the first attempt).
+- the aarch64 overlay on Cachix: **NOT PUSHED** (the CI job runs on the
+  first push of this to `main`; the recipe's `push` has never run).
 
 `ops/dev/aarch64-base` is the recipe for the day (`check`, `build`,
 `push`), and `docs/ops/DEV-BOX.md` "aarch64 builds" says where it runs.
