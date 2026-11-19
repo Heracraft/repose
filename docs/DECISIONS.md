@@ -37013,7 +37013,9 @@ untested on Apple silicon); 6.8 (below the assertion).
   image carries stale blocks from its own build (12.7 GB real on the
   Mac for a lab image, 9.7 after `fstrim`), so the appliance trims at
   every boot and the installer unpacks sparse; the production image
-  costs 4.4 GB after unpack and about 2 GB after the trim. (3) hostd's
+  costs 4.58 GB after unpack and 5.65 GB after its first boot (the
+  pool's metadata and the caches volume's filesystem), measured on the
+  image built before the trim. (3) hostd's
   Hello on a 12 GiB VM: 12,492,406,784 bytes visible, 10,344,923,136
   placeable, 8 vCPUs; the plan's "your Mac's memory is the cap" is
   those figures. Two guest-base findings on aarch64, recorded and not

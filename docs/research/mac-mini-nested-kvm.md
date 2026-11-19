@@ -395,7 +395,12 @@ the large guest placed; `pool_bytes` 11,790,188,544 on a 46 GiB disk
 file (the image's 4 GiB PV grown at first boot).
 
 Disk on the Mac (the sparse file's real blocks): the production image
-unpacks in 21 s to 4.4 GB (apparent 37 GiB); a lab image with the 6.6
+installs in 29 s and unpacks to 4.58 GB (apparent 37 GiB, then grown to
+the volume's free space less 20 GB), and sits at 5.65 GB after its
+first boot (the pool's metadata grown to 1 GiB, the caches volume's
+ext4), with the volume's free space down 6 GB in all; that image
+predates the boot-time trim, which gives the build's stale blocks back
+(below); a lab image with the 6.6
 GiB guest closure held 12.7 GB after boot and 9.7 GB after `fstrim -av`
 inside the appliance, which matches root 7.97 GB + /boot 0.1 + the thin
 pool's 1.37 GB allocated (the caches volume's ext4 1.08, the guest
