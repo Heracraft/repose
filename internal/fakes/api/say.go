@@ -112,4 +112,3 @@ func (f *Fake) sayToAgent(w http.ResponseWriter, r *http.Request) *apiError {
 	writeJSON(w, http.StatusOK, s)
 	return nil
 }
-

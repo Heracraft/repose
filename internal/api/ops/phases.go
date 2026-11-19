@@ -640,7 +640,11 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 				}
 				picked = h.ID
 			} else {
-				pk, err := scheduler.PickHost(ctx, tx, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+				t, err := e.target(ctx, tx, p)
+				if err != nil {
+					return err
+				}
+				pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 				if err != nil {
 					return err
 				}
@@ -651,6 +655,12 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 		})
 		if errors.Is(err, scheduler.ErrNoCapacity) && e.placementWaits(ctx, op, p) {
 			return nil, uuid.Nil, false, errPlacementWait
+		}
+		if errors.Is(err, scheduler.ErrNoOwnHost) {
+			e.m.ScheduleTotal.WithLabelValues("no_own_host").Inc()
+			e.log.Warn("no host of the account's own has capacity", "event", "schedule_fail",
+				"project_id", p.ID.String(), "class", p.Class, "reason", "no_own_host")
+			return nil, uuid.Nil, false, e.ownHostRefusal(ctx, p)
 		}
 		if errors.Is(err, scheduler.ErrNoCapacity) {
 			// docs/workstreams/10-observability.md §5 requires schedule_fail
@@ -939,7 +949,11 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	}
 	if hostID == uuid.Nil {
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
-			pk, err := scheduler.PickHost(ctx, tx, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+			t, err := e.target(ctx, tx, p)
+			if err != nil {
+				return err
+			}
+			pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 			if err != nil {
 				return err
 			}
@@ -948,6 +962,10 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 		})
 		if errors.Is(err, scheduler.ErrNoCapacity) && e.placementWaits(ctx, op, p) {
 			return nil, uuid.Nil, false, errPlacementWait
+		}
+		if errors.Is(err, scheduler.ErrNoOwnHost) {
+			e.m.ScheduleTotal.WithLabelValues("no_own_host").Inc()
+			return nil, uuid.Nil, false, e.ownHostRefusal(ctx, p)
 		}
 		if errors.Is(err, scheduler.ErrNoCapacity) {
 			return nil, uuid.Nil, false, errCapacity()
@@ -1481,4 +1499,36 @@ func bootTimings(b *hostdv1.BootTimings) map[string]any {
 	}
 	return map[string]any{"volume_ms": b.VolumeMs, "prepare_ms": b.PrepareMs, "ready_ms": b.ReadyMs,
 		"paths_ms": b.PathsMs, "setup_ms": b.SetupMs, "total_ms": b.TotalMs}
+}
+
+// ownHostRefusal is the error a placement that only the account's own
+// hardware could take failed with (DECISIONS I-1366). A user whose Mac
+// is asleep must read about their Mac: "no host with capacity" is a
+// sentence about repose's fleet and tells them nothing they can act on.
+// The code is still `capacity`, so the api answers 503 and the op can be
+// retried once the machine is back, exactly as a fleet placement can.
+func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
+	hosts, err := store.ListAccountHosts(ctx, e.pool, p.UserID)
+	if err != nil {
+		// The sentence is the only thing lost; the refusal stands.
+		e.log.Warn("own host lookup", "event", "schedule_fail", "project_id", p.ID.String(), "err", err.Error())
+	}
+	for _, h := range hosts {
+		if h.State == "retired" || h.State == "lost" {
+			// Not a host the account has any more: the placement filter
+			// does not count these either, so they explain nothing.
+			continue
+		}
+		switch h.State {
+		case "registering":
+			return &opError{code: "capacity", msg: "your host " + h.Name + " has not registered yet"}
+		case "unreachable":
+			return &opError{code: "capacity", msg: "your host " + h.Name + " is not answering, so nothing can be placed on it"}
+		case "draining":
+			return &opError{code: "capacity", msg: "your host " + h.Name + " is being removed, so nothing can be placed on it"}
+		default:
+			return &opError{code: "capacity", msg: "your host " + h.Name + " has no room for a " + p.Class + " machine"}
+		}
+	}
+	return &opError{code: "capacity", msg: "you own no host yet; `repose host add` prints the step that adds one"}
 }

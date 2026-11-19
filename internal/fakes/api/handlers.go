@@ -443,7 +443,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	p := &project{
 		Project: Project{
 			ID: f.nextID(), Name: name, Slug: slug, RemoteURL: remoteURL, Class: class,
-			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux,
+			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux, Placement: "own",
 			VolumeBytes: classes[class], DiskUsedBytes: 1 << 30, CreatedAt: now,
 			RootUsedBytes: 1 << 30, RootSizeBytes: classes[class] - classes[class]/40,
 		},
@@ -486,6 +486,8 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		PersonalOptOut bool `json:"personal_opt_out"`
 		// Multiplexer is tmux (the default) or herdr (I-502).
 		Multiplexer *string `json:"multiplexer"`
+		// Placement is own (the default) or hosted (I-1366).
+		Placement *string `json:"placement"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -498,6 +500,19 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 			if e := f.herdrGate(slugOf(body.Name), "", true); e != nil {
 				return e
 			}
+		}
+	}
+	if body.Placement != nil {
+		if *body.Placement != "own" && *body.Placement != "hosted" {
+			return invalid("placement must be own or hosted").withDetail(map[string]any{"reason": "placement"})
+		}
+		// A plan that sells no fleet memory cannot ask for a machine on
+		// repose's own hosts (I-1366); the fake's own-hardware account
+		// is one whose host limit a test set above zero and whose
+		// memory it set to none.
+		if *body.Placement == "hosted" && f.hostLimit != nil && *f.hostLimit > 0 {
+			return errf("payment_required", "Your plan runs machines on your own host. Choose a plan at %s/billing to run one on repose's servers.", FakeDashboard).
+				withDetail(map[string]any{"reason": "hosted_plan_required"})
 		}
 	}
 	if body.TZ != "" {
@@ -531,6 +546,9 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p.PersonalOptOut = body.PersonalOptOut
 	if body.Multiplexer != nil {
 		p.Multiplexer = *body.Multiplexer
+	}
+	if body.Placement != nil {
+		p.Placement = *body.Placement
 	}
 	if cur := f.currentPersonal(u); cur != nil && cur.Fragment != "" && !body.PersonalOptOut {
 		if rev := p.revision(p.ConfigRevisionID); rev != nil {

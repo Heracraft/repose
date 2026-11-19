@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1022 entries.
+1023 entries.
 
 ## Scope
 
@@ -1054,3 +1054,4 @@ pointer, not a summary.
 - **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36119
 - **I-1354** A project made on the dashboard is an empty machine, and its repository is what the laptop's `repose run` looks it up by, not a clone (dash-create, 2026-11-19) — L36193
 - **I-1360** One door, two receivers: the Triggers tab lists every way the outside reaches a machine with what answers it, and Config's Webhooks section is gone (doors, 2026-11-19) — L36270
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36324

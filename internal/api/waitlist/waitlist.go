@@ -2,7 +2,8 @@
 // I-290 and I-739). The fleet has as many seats as its ready, undrained
 // hosts deliver, each host the smaller of what its memory divides into
 // and what its physical cores can serve (hostseats.go), or as many as
-// SEATS_TOTAL says. A seat is held by every live subscription
+// SEATS_TOTAL says. A host a user owns delivers none (DECISIONS I-1366):
+// a seat is a place on hardware repose bought. A seat is held by every live subscription
 // (its plan's seats) and by every invitation whose hold has not run out.
 // Checkout asks Reserve before it creates a Polar checkout; without a
 // free seat the user joins the list and gets `waitlisted`. Every minute
@@ -143,8 +144,14 @@ func count(ctx context.Context, q store.Querier, total int, now time.Time) (Coun
 		// guest cannot borrow an idle core on a neighbour and the risk
 		// of a host being asked for more than it can serve is a fact
 		// about that host alone (I-739).
+		// `owner_account_id is null` leaves out the hosts users own
+		// (DECISIONS I-1366): a seat is a place on hardware repose
+		// bought, so a Mac mini somebody added to their own account
+		// must not raise the number of plans the fleet will sell, and
+		// its owner holds no seat for the machines they run on it.
 		rows, err := q.Query(ctx, `select h.mem_bytes, h.cores
-			from hosts h where h.state = 'ready' and not h.draining`)
+			from hosts h where h.state = 'ready' and not h.draining
+			  and h.owner_account_id is null`)
 		if err != nil {
 			return c, d, err
 		}
