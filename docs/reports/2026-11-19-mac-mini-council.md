@@ -36,9 +36,25 @@ unverified by anyone.
 
 ## The gate, and where it stands
 
-The review's gate is a second pass that finds no P0. **It has not been run and
-cannot pass today**: two P0 are open, and a third of the product has not been
-looked at. Nothing in this report clears the branch to ship.
+The review's gate is a second pass that finds no P0. **It has not been run,
+and nothing in this report clears the branch to ship.** Where each P0 stood
+when this section was last written, 2026-11-20 just after midnight UTC:
+
+| P0 | State |
+|---|---|
+| 0. No customer on any Mac can finish the first command | **Fixed.** The image was published at 22:28 UTC and the reviewer closes the finding on its own anonymous reading. Its cause (ENG-62) has a check queued as its own PR, and publishing it broke every platform's installer for 26 minutes, which that check also now catches. |
+| 1. Nothing lets a customer say where a project runs | **A fix is being built** (`fix-placement`), briefed to land the per-command override and the missing API documentation first and separately. Not merged. |
+| 2. Billing measures against the wrong plan's limits | **Fixed on a branch** (`fix-billing`), merged into the program branch and under test. The cause was `PlanOrSolo` answering Solo for an account with no subscription, so an exempt account was measured against Solo's ceilings; ENG-40 shared the gap and is fixed with it. |
+
+**Two things still make the gate unpassable regardless.** The Mac surface has
+barely been reviewed — the reviewer reached the first command and stopped
+there, which is where it found P0 zero. And the park on owned hardware
+(ENG-2) is built but **deliberately not merged**: it is blocked on a park, a
+real restart and an unpark on the Mac, because two questions have no answer
+off that hardware — whether macOS honours the launcher's shutdown window
+through a restart, and whether reading the wrapping key prompts from a
+launchd agent. If it prompts, the park fails silently for every customer.
+A build is not a grade.
 
 ## The three P0
 
