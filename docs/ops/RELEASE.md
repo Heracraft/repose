@@ -206,7 +206,11 @@ Integrate whenever branches are queued; it needs no owner approval.
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
      -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
-     `docs/CHECKLIST.md` greps.
+     `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
+     `200` for every URL the CLI fetches on a customer's machine (the
+     appliance image the batch pins and its checksum, vfkit, the latest
+     CLI release's six assets, `install.sh`) and exits 1 naming the one
+     that does not (DECISIONS I-1398).
      `DATABASE_URL` is not a detail of convenience and "a real Postgres"
      was the wrong way to say it: `internal/db/testdb` starts a throwaway
      cluster **per test process** when the variable is unset, which is
@@ -322,7 +326,14 @@ else integrated with it.
    --changelog "..."` on the control VM.
 
 4. **Ship the rest**, in this order when present: `base` publish (the rev
-   is the pushed main commit), `cli` tag (the next `v0.1.N`), `host`
+   is the pushed main commit), `cli` tag (the next `v0.1.N`; **every
+   artefact URL the CLI hard-codes must answer 200 anonymously before the
+   tag**: `ops/dev/release-assets --cli none` on the commit being tagged,
+   and the sign job runs the same check and leaves the draft unpublished
+   when it fails; after the job, `ops/dev/release-assets --cli v0.1.N`
+   says the new release is what `releases/latest` resolves to and that
+   its six assets answer. v0.1.51 was tagged pinning an appliance image
+   whose release did not exist, DECISIONS I-1398), `host`
    switches (RUNBOOK "Switch a host to main"; host-01 is retired since
    2026-11-02, so that is host-02) and the `edge` switch (its first switch
    onto a unit that gained a `StateDirectory` needs a restart; the gateway's
@@ -412,7 +423,17 @@ A `v*` tag runs `release.yml`: GoReleaser uploads a draft, and the `sign`
 job signs `checksums.txt`, attests the archives and publishes the draft
 (DECISIONS I-430). A tag whose `sign` job fails leaves a draft that
 install.sh never sees; fix the cause and re-run the job from the Actions
-page.
+page. The job also fails before the publish when an asset the tag's code
+fetches at run time (the appliance image it pins, its checksum, vfkit)
+does not answer 200 to an anonymous client, and after it when the
+published release's own assets do not (`ops/dev/release-assets`, I-1398).
+
+**Only a CLI release is "latest".** `install.sh` and `repose version
+update` turn "latest" into a tag by following `releases/latest`, so a
+release of anything else (`appliance-<version>`) published as latest
+sends every install to a tag with no archives: 26 minutes on 2026-11-19.
+Publish such a release with `--latest=false`; `gh release edit <the
+newest v0.1.N> --latest` is the repair.
 
 **The notes are written before the tag is pushed** (DECISIONS I-798).
 `release.yml` refuses to publish a release whose body is under 400 bytes,
