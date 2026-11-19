@@ -66,9 +66,18 @@ fi
   qemu-img convert -O raw noble.img root.raw && rm noble.img
   qemu-img resize -f raw root.raw 8G
 }
+# the benchmark runs from cloud-init and prints to the serial console, so
+# no serial login is needed (the login dance lost two runs to echo races
+# and to cloud-init setting the password late)
 [ -s seed.img ] || {
-  printf 'instance-id: l2\nlocal-hostname: l2\n' > meta-data
-  printf '#cloud-config\npassword: l2pass\nchpasswd: { expire: false }\nssh_pwauth: true\n' > user-data
+  printf 'instance-id: l2-bench-%s\nlocal-hostname: l2\n' "$(date +%s)" > meta-data
+  cat > user-data <<'UD'
+#cloud-config
+password: l2pass
+chpasswd: { expire: false }
+runcmd:
+  - [ sh, -c, "openssl speed -seconds 5 sha256 2>&1 | tail -n 3 > /dev/ttyAMA0; echo OPENSSL_DONE > /dev/ttyAMA0" ]
+UD
   cloud-localds seed.img user-data meta-data
 }
 run_l2() { # $1 = run number; prints seconds to login prompt and keeps the openssl output on the last run
@@ -82,29 +91,14 @@ spawn ./cloud-hypervisor --api-socket $sock --kernel Image --initramfs initrd.im
   --disk path=root.raw,image_type=raw path=seed.img,image_type=raw \
   --cmdline "console=ttyAMA0 root=/dev/vda1 rw" \
   --cpus boot=2 --memory size=2048M --serial tty --console off
-expect -re "login:" { puts "BOOT_MS [expr [clock milliseconds] - \$t0]" }
-# first boot: cloud-init sets the password after the prompt is up, and a
-# login typed at once fails (seen 2026-11-19); wait, then log in with retries
-sleep 45
-set tries 0
-while {\$tries < 4} {
-  send "\r"
-  expect -re "login:"
-  send "ubuntu\r"
-  expect {
-    -re "(?i)password:" { send "l2pass\r" }
-    -re "login:" { incr tries; continue }
-  }
-  expect {
-    -re "\\$ $" { break }
-    -re "(?i)incorrect|login:" { incr tries; sleep 5 }
-  }
+expect {
+  -re "login:" { puts "BOOT_MS [expr [clock milliseconds] - \$t0]" }
+  -re "OPENSSL_DONE" { puts "BOOT_MS [expr [clock milliseconds] - \$t0] (benchmark finished before the prompt)" }
 }
-send "openssl speed -seconds 5 sha256 2>&1 | tail -n 3; echo OPENSSL_DONE\r"
+set timeout 300
 expect "OPENSSL_DONE"
-send "sudo poweroff\r"
-expect eof
 EXP
+  for p in $(pgrep -f "^\./cloud-hypervisor"); do kill -9 "$p"; done
   grep BOOT_MS "$log" | awk '{print $2}'
 }
 : > ../results/l2-boot-ms.txt
