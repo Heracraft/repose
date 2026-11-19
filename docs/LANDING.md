@@ -156,7 +156,13 @@ grid (I-961, option D; see "The sheet" below). In order:
    line repeats either (I-961). Under the head, `PlanCells` in its
    public variant (the one drawing of the plans, I-663), as flush cells
    split by inner rules with no card edge: three across on the thirds
-   lines from 1024px, stacked below.
+   lines from 1024px, stacked below. Under them, one more flush cell for
+   the Own hardware plan (`OwnHardwarePlan`, I-1364): the name and
+   `$10 a month` at the left, and one line saying what it is ("A Mac
+   mini or an x86 box you own, in your account. One host; its memory and
+   disk are the limits."). It is a row and not a fourth card because it
+   sells none of the three figures a card carries, and it has no action
+   of its own: the section's one button is "Start a free week".
 9. **08 Questions. "Before you try it"**, with "Limits" and "Billing"
    on the heading's last line, set as the Agents links. Six questions,
    each one a reason to try it, overhauled on the owner's ask to show

@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HOLD_HOURS, MEMORY_STATES, PLANS, fromApi, memoryLine, ordinal } from './plans';
+import {
+	HOLD_HOURS,
+	MEMORY_STATES,
+	OWN_HARDWARE,
+	PLANS,
+	fromApi,
+	memoryLine,
+	ordinal
+} from './plans';
 import { classMemoryGB, classVCPUs } from './format';
 
 // The landing is prerendered, so its plans are figures in the web's own
@@ -68,6 +76,38 @@ describe('plans', () => {
 				expect(p.intro, `${p.name} intro`).toBeUndefined();
 			}
 		}
+	});
+
+	// The Own hardware plan is plans.go's too, and it is deliberately not
+	// one of the three cards: it sells none of repose's compute, so a
+	// card of it would be three blank rows (I-1364).
+	it('match plans.go for the Own hardware plan, which is not one of the three', () => {
+		const go = goPlan('Own');
+		expect(OWN_HARDWARE.id).toBe(go.ID);
+		expect(OWN_HARDWARE.name).toBe(go.Name);
+		expect(OWN_HARDWARE.priceCents).toBe(Number(go.PriceCents));
+		expect(OWN_HARDWARE.trialDays).toBe(Number(go.TrialDays));
+		expect(OWN_HARDWARE.hosts).toBe(Number(go.Hosts));
+		// plans.go leaves the rest at zero, which is what "sells none of
+		// ours" is written as there; the page must not invent figures.
+		expect([
+			OWN_HARDWARE.seats,
+			OWN_HARDWARE.memoryGB,
+			OWN_HARDWARE.diskGB,
+			OWN_HARDWARE.egressGB
+		]).toEqual([0, 0, 0, 0]);
+		expect(OWN_HARDWARE.intro).toBeUndefined();
+		expect(PLANS.map((p) => p.id)).not.toContain('own');
+	});
+
+	// The Pricing page says the same two figures, for the agents that read
+	// the markdown through llms.txt (I-660).
+	it('say the Own hardware price and host count in /docs/billing.md', () => {
+		const md = readFileSync(join(__dirname, '..', 'content', 'docs', 'billing.md'), 'utf8');
+		const m = md.match(/\*\*\$(\d+) a month\*\* for (one) host you own/);
+		expect(m, 'billing.md states the Own hardware price and host count').not.toBeNull();
+		expect(Number(m![1]) * 100).toBe(OWN_HARDWARE.priceCents);
+		expect(OWN_HARDWARE.hosts).toBe(1);
 	});
 
 	// /docs/billing draws PlanCells over its table, but /docs/billing.md, the

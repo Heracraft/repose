@@ -48,6 +48,39 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
+// The Own hardware plan under the three cells (I-1364): a row, not a
+// fourth card, because it sells one host the visitor owns and none of
+// the three figures the cards carry.
+test('the pricing section offers Own hardware as a row under the three', async ({ page }) => {
+	await resetBilling();
+	await page.goto('/');
+	const pricing = page.locator('#pricing');
+	const own = pricing.getByTestId('plan-own');
+	await expect(own.getByRole('heading', { level: 3, name: 'Own hardware' })).toBeVisible();
+	await expect(own.locator('.o-price .o-n')).toHaveText('$10');
+	await expect(own).toContainText('One host; its memory and disk are the limits.');
+	// It is below the three, and the three are still three.
+	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveCount(3);
+	const cells = await pricing.locator('[data-testid^="plan-"]').allTextContents();
+	expect(cells[cells.length - 1]).toContain('Own hardware');
+	// Flush with the sheet like the cells above it: no card edge of its
+	// own (landing.css, the plans as flush cells).
+	await expect(own).toHaveCSS('border-top-left-radius', '0px');
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (dir) {
+		for (const width of [1440, 390]) {
+			for (const scheme of ['light', 'dark'] as const) {
+				await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+				await page.emulateMedia({ colorScheme: scheme });
+				await own.scrollIntoViewIfNeeded();
+				await page.screenshot({ path: `${dir}/landing-own-${width}-${scheme}.png` });
+			}
+		}
+		await page.setViewportSize({ width: 1280, height: 720 });
+		await page.emulateMedia({ colorScheme: null });
+	}
+});
+
 test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {
 	await setBilling({ founding_left: 0 });
 	await page.goto('/');

@@ -196,6 +196,7 @@
 	text-wrap: balance;
 }
 .landing .item-title,
+.landing .own .o-name,
 .landing .plans .p-name {
 	margin: 0;
 	font-family: var(--hk-font-display);
@@ -901,6 +902,26 @@
 }
 .landing .plans--public .p-top {
 	min-height: 1.75rem;
+}
+/* The Own hardware row under the three cells: the same flush cell on the
+   sheet, one more inner rule, no card edge, and the cells' own name and
+   price faces, so the row reads as one of them (I-1364). */
+.landing .own .o-price .o-n {
+	font-size: 2.25rem;
+	line-height: 2.5rem;
+}
+.landing .own {
+	margin: 0 calc(-1 * var(--edge));
+	padding: 1.5rem var(--edge) 2rem;
+	border: 0;
+	border-top: 1px solid var(--rule-in);
+	border-radius: 0;
+	background: none;
+}
+@media (min-width: 1024px) {
+	.landing .own {
+		padding-block: 2rem 2.5rem;
+	}
 }
 /* The struck founding-era price in the price's own face, at the item
    title's size, so the price line is one face. */

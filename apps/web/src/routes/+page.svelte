@@ -10,8 +10,9 @@
 	import { publicSeats } from '$lib/api/client';
 	import { tabStopWhenScrolls } from '$lib/scroller';
 	import type { PublicSeats } from '$lib/api/types';
-	import { PLANS } from '$lib/plans';
+	import { OWN_HARDWARE, PLANS } from '$lib/plans';
 	import PlanCells from '$lib/components/PlanCells.svelte';
+	import OwnHardwarePlan from '$lib/components/OwnHardwarePlan.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import HeroOrbitV1 from '$lib/components/landing/HeroOrbitV1.svelte';
@@ -380,6 +381,10 @@
 			</div>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
+		<!-- The fourth thing for sale, and not a fourth card: it sells one
+		     host the visitor owns and none of the three figures above
+		     (I-1364). -->
+		<OwnHardwarePlan plan={OWN_HARDWARE} variant="public" level={3} />
 	</section>
 
 	<section class="band faq-band" aria-labelledby="faq-h">
