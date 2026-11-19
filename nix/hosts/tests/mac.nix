@@ -180,6 +180,7 @@ pkgs.testers.runNixOSTest {
         assert bundle["token"] not in joinlog and bundle["wg"]["private_key"] not in joinlog, "the bundle reached the journal"
 
     with subtest("wg0 comes up on the bootstrap key before registration, and hostd registers over it"):
+        host.wait_for_unit("repose-host-net.service")
         netlog = host.succeed("journalctl -u repose-host-net --no-pager -o cat")
         print(netlog)
         assert "hub.json applied: wg0 configured for registration" in netlog, netlog
