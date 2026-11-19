@@ -123,6 +123,7 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 			fs.String("sku", "", "sku")
 			fs.String("region", "", "region")
 			fs.Bool("reissue", false, "mint a new token for a re-imaged host")
+			fs.String("owner", "", "handle of the account that owns the machine (I-1366); empty is a host repose runs")
 		})
 		if err != nil {
 			return err
@@ -135,11 +136,27 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 			return fmt.Errorf("%w: hosts add needs --name", ErrUsage)
 		}
 		reissue := fs.Lookup("reissue").Value.String() == "true"
-		token, err := hostmgr.MintJoinToken(ctx, e.pool, name, fs.Lookup("provider").Value.String(), fs.Lookup("sku").Value.String(), fs.Lookup("region").Value.String(), reissue)
-		if err != nil {
+		// --owner mints for a machine the user owns, which the user's own
+		// `POST /hosts` does for itself (I-1366); this is here for the
+		// operator adding a host on somebody's behalf and for the live
+		// checks of 19a, and it is the only way an operator can make one.
+		req := hostmgr.JoinTokenRequest{Name: name, Provider: fs.Lookup("provider").Value.String(), SKU: fs.Lookup("sku").Value.String(), Region: fs.Lookup("region").Value.String(), Reissue: reissue}
+		if handle := fs.Lookup("owner").Value.String(); handle != "" {
+			u, err := e.findUser(ctx, handle)
+			if err != nil {
+				return err
+			}
+			req.Owner = &u.ID
+		}
+		var token string
+		if err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
+			var err error
+			token, _, err = hostmgr.MintJoinTokenIn(ctx, tx, req)
+			return err
+		}); err != nil {
 			return err
 		}
-		if _, err := e.audited(ctx, "host_add", name, map[string]any{"reissue": reissue}); err != nil {
+		if _, err := e.audited(ctx, "host_add", name, map[string]any{"reissue": reissue, "owned": req.Owner != nil}); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(e.Stderr, "join token for %s (valid %s, single use; put it in infra/azure/prod/prod.local.tfvars or /run/repose/join-token):\n", name, hostmgr.JoinTokenValidity)
@@ -150,7 +167,7 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		rows := [][]string{{"NAME", "STATE", "SKU", "MEM", "FREE", "RESERVED", "GUESTS", "POOL FREE", "HEARTBEAT", "GUEST CIDR"}}
+		rows := [][]string{{"NAME", "OWNER", "STATE", "SKU", "MEM", "FREE", "RESERVED", "GUESTS", "POOL FREE", "HEARTBEAT", "GUEST CIDR"}}
 		for _, h := range hosts {
 			var reserved int64
 			var guests int
@@ -167,7 +184,17 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 			if h.Draining && state == "ready" {
 				state = "draining"
 			}
-			rows = append(rows, []string{h.Name, state, sku, gb(h.MemBytes), gb(h.FreeMemBytes), gb(reserved), strconv.Itoa(guests), gb(h.PoolFreeBytes), fmtTime(h.LastHeartbeatAt), cidr})
+			// A host repose runs reads `-`; a host a user owns reads
+			// their handle, so one listing answers "whose machine is
+			// this" (I-1366).
+			owner := "-"
+			if h.OwnerAccountID != nil {
+				owner = h.OwnerAccountID.String()
+				if u, err := store.GetUser(ctx, e.pool, *h.OwnerAccountID); err == nil && u.Handle != "" {
+					owner = u.Handle
+				}
+			}
+			rows = append(rows, []string{h.Name, owner, state, sku, gb(h.MemBytes), gb(h.FreeMemBytes), gb(reserved), strconv.Itoa(guests), gb(h.PoolFreeBytes), fmtTime(h.LastHeartbeatAt), cidr})
 		}
 		e.table(rows)
 		return nil
@@ -244,6 +271,8 @@ func (e *Env) hosts(ctx context.Context, args []string) error {
 		}
 		_, err = e.audited(ctx, "host_mark_lost", h.Name, map[string]any{"projects": len(projects)})
 		return err
+	case "install-command":
+		return e.hostInstallCommand(ctx, args[1:])
 	case "reconcile":
 		fs, err := flagsFor("reconcile", args[1:], func(fs *flag.FlagSet) { fs.Bool("fix", false, "apply the host's view") })
 		if err != nil || fs.NArg() < 1 {
@@ -1919,4 +1948,50 @@ func (e *Env) nextBaseVersion(ctx context.Context, now time.Time) (string, error
 		return day, nil
 	}
 	return fmt.Sprintf("%s.%d", day, next), nil
+}
+
+// hostInstallCommand reads or sets the one line a user runs on a machine
+// of their own to install repose on it, with `%s` where the join token
+// goes (DECISIONS I-1366). `POST /hosts` puts the token in it and
+// answers it as `install.command`; without a line recorded the api sends
+// none and the CLI and the dashboard show the token and the docs page.
+//
+// A setting rather than an api environment variable, for the reason
+// `loki_url` is one (DECISIONS I-95): the installer lives outside this
+// deployment, and moving it must not be a redeploy of the api.
+func (e *Env) hostInstallCommand(ctx context.Context, args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("%w: hosts install-command takes one line, or none to print the current one", ErrUsage)
+	}
+	if err := e.connect(ctx); err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		cur, err := store.Setting(ctx, e.pool, httpapi.SettingHostInstall)
+		if err != nil {
+			return err
+		}
+		if cur == "" {
+			_, _ = fmt.Fprintln(e.Stdout, "no install line recorded; `repose host add` prints the token and the docs page")
+			return nil
+		}
+		_, _ = fmt.Fprintln(e.Stdout, cur)
+		return nil
+	}
+	line := args[0]
+	if line != "" && !strings.Contains(line, "%s") {
+		return fmt.Errorf("%w: the line carries %%s where the join token goes", ErrUsage)
+	}
+	if err := store.SetSetting(ctx, e.pool, httpapi.SettingHostInstall, line); err != nil {
+		return err
+	}
+	if _, err := e.audited(ctx, "host_install_command", line, nil); err != nil {
+		return err
+	}
+	if line == "" {
+		_, _ = fmt.Fprintln(e.Stdout, "install line cleared; `repose host add` prints the token and the docs page")
+		return nil
+	}
+	_, _ = fmt.Fprintln(e.Stdout, "install line recorded")
+	return nil
 }

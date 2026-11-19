@@ -25,6 +25,11 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/me/tokens", a(s.listTokens))
 	s.route(m, "POST /v1/me/tokens", a(s.createToken))
 	s.route(m, "DELETE /v1/me/tokens/{name}", a(s.deleteToken))
+	// The hosts a user owns (DECISIONS I-1366). The hosts repose runs
+	// are the operator's and are on none of these.
+	s.route(m, "GET /v1/hosts", a(s.listHosts))
+	s.route(m, "POST /v1/hosts", a(s.createHost))
+	s.route(m, "DELETE /v1/hosts/{id}", a(s.deleteHost))
 	// Projects
 	s.route(m, "GET /v1/projects", a(s.listProjects))
 	s.route(m, "POST /v1/projects", a(s.createProject))

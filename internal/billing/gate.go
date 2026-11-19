@@ -290,7 +290,7 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 		// what "no limit from the plan" looks like here: the client reads
 		// 0 as "the plan does not cap this" and prints no figure against
 		// it (internal/cli's planLine), and hosts is the one limit it has.
-		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Hosts: HostsAllowed(u, sub), Plan: &p}
+		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Hosts: planHosts(u, sub), Plan: &p}
 	}
 	l := Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: u.XLLimit, MemoryGB: Solo.MemoryGB, DiskGB: Solo.DiskGB, EgressGB: Solo.EgressGB}
 	if u.BillingStatus == "exempt" {
@@ -301,24 +301,8 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 			l.XL = 1
 		}
 	}
-	l.Hosts = HostsAllowed(u, sub)
+	l.Hosts = planHosts(u, sub)
 	return l
-}
-
-// HostsAllowed is how many hosts of their own an account may register:
-// its plan's Hosts (DECISIONS I-1364), and one for a billing-exempt
-// account, which has no plan to buy and is how the operator adds a
-// machine of their own without selling it to themselves. POST /hosts
-// refuses past this number and GET /me reports it as `limits.hosts`, so
-// the route and the page cannot disagree.
-func HostsAllowed(u *store.User, sub *Sub) int {
-	if u != nil && u.BillingStatus == "exempt" {
-		return 1
-	}
-	if sub != nil && sub.Live() {
-		return sub.PlanOrSolo().Hosts
-	}
-	return 0
 }
 
 // JSON is the /me limits object.

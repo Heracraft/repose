@@ -233,7 +233,7 @@ type billingState struct {
 	diskHeldGB    *float64
 	invoices      *[]Invoice
 	introUsed     bool
-	ownForSale    bool // the deployment sells the Own hardware plan (I-1364)
+	ownForSale    bool                // the deployment sells the Own hardware plan (I-1364)
 	foundingLeft  int                 // negative: no offer, founding_left null
 	checkouts     map[string]checkout // checkout id -> plan and return origin
 	checkoutSeq   int
@@ -867,13 +867,10 @@ func (f *Fake) meLimits() limitsView {
 	case BillingOff, BillingExempt:
 		// The top plan's numbers (I-289).
 		top := Plans[len(Plans)-1]
-		// A billing-exempt account may register one host of its own
-		// without buying a plan from itself (billing.HostsAllowed).
-		hosts := 0
-		if f.bill.mode == BillingExempt {
-			hosts = 1
-		}
-		return limitsView{Projects: ProjectCap, XL: 1, MemoryGB: top.MemoryGB, DiskGB: top.DiskGB, EgressGB: top.EgressGB, Hosts: hosts}
+		// The hosts figure is hostsAllowed()'s, which POST /hosts refuses
+		// past: /me and the route answer one number, as the api's
+		// Gate.HostsAllowed and limits.hosts do (I-1364).
+		return limitsView{Projects: ProjectCap, XL: 1, MemoryGB: top.MemoryGB, DiskGB: top.DiskGB, EgressGB: top.EgressGB, Hosts: f.hostsAllowed()}
 	}
 	plan := f.currentPlan()
 	if plan == nil {
@@ -886,7 +883,13 @@ func (f *Fake) meLimits() limitsView {
 	if plan.MemoryGB >= classGB["xl"] || !hostedPlan(plan) {
 		xl = 1
 	}
-	return limitsView{Projects: ProjectCap, XL: xl, MemoryGB: plan.MemoryGB, DiskGB: plan.DiskGB, EgressGB: plan.EgressGB, Hosts: plan.Hosts}
+	hosts := plan.Hosts
+	if hosts > f.hostsAllowed() {
+		// A test that asked for a plan that sells no host (SetHostLimit)
+		// is answered the same by /me and by POST /hosts.
+		hosts = f.hostsAllowed()
+	}
+	return limitsView{Projects: ProjectCap, XL: xl, MemoryGB: plan.MemoryGB, DiskGB: plan.DiskGB, EgressGB: plan.EgressGB, Hosts: hosts}
 }
 
 // Handlers.

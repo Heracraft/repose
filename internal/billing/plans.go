@@ -24,14 +24,17 @@ type Plan struct {
 	MemoryGB   int // may run at once; 0 on an own-hardware plan
 	DiskGB     int // may be allocated; 0 on an own-hardware plan
 	EgressGB   int // a period; 0 on an own-hardware plan
-	// Hosts is how many hosts of their own the account may register
-	// (DECISIONS I-1364). 0 on the hosted plans, where every host is the
-	// operator's. A plan with Hosts > 0 sells no fleet memory, disk or
-	// egress at all: the host the user owns is the only limit, so
-	// MemoryGB, DiskGB and EgressGB are 0 and nothing of the plan's
-	// refuses a start. What keeps such an account off a repose host is
-	// placement (host ownership, docs/workstreams/19-mac-mini.md item
-	// 19a), not the gate.
+	// Hosts is how many hosts of their own the plan lets the account add
+	// (DECISIONS I-1364, I-1366): one on Own hardware, none on the plans
+	// that sell memory on repose's own fleet. `POST /hosts` and /me's
+	// `limits.hosts` read this and nothing else holds the figure, so
+	// selling a second host is one number here.
+	//
+	// A plan with Hosts > 0 sells no fleet memory, disk or egress at all:
+	// the host the user owns is the only limit, so MemoryGB, DiskGB and
+	// EgressGB are 0 and none of the gate's three resource checks runs
+	// (Gate.check). What keeps such an account off a host repose bought
+	// is placement, through Gate.FleetAllowed, not the gate's refusals.
 	Hosts int
 	// BurstCoreHours is the CPU time above a machine's base cores that
 	// the plan includes in a period (DECISIONS I-1128). Past it, with

@@ -68,12 +68,70 @@ goes on (DECISIONS I-1088).
 `handle` is derived from the GitHub login at first sign-in, lowercased, `[a-z0-9-]`,
 unique; it is the second half of the SSH login name.
 
+## Hosts you own (DECISIONS I-1366)
+
+A host the user owns is a machine of their own that joined their account:
+their projects run on it and nobody else's ever does, and it is outside
+the seat count, the waitlist and the host gauges, because repose did not
+buy it. These three routes are the whole of it; the hosts repose runs are
+the operator's (`repose-admin hosts`) and appear on none of them.
+
+| Method | Path | Body / result |
+|---|---|---|
+| GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
+| POST | `/hosts` | `{name?}` → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
+| DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials cleared so it cannot come back on them, and a machine that is still dialling is refused. Already retired answers `204` too, so a repeated remove is not an error |
+
+```
+Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
+       projects, running_projects, last_heartbeat_at?, registered_at?,
+       created_at,
+       join_token?, join_token_expires_at?,     -- the POST answer only
+       install?: {command, url} }               -- the POST answer only
+```
+
+`state` is `hosts.state`: `registering` (the token is minted and nothing
+has used it yet), `ready`, `draining`, `unreachable` (no heartbeat for 90
+seconds, which for a machine at home is "switched off"), `retired`,
+`lost`. `mem_bytes`, `vcpus` and `cores` are 0 and `arch`,
+`last_heartbeat_at` and `registered_at` are absent until the host
+registers; `arch` is the first half of the system it reported
+(`x86_64`, `aarch64`). `projects` counts the account's live projects
+placed on it and `running_projects` those of them in a state that holds
+memory, which is what the dashboard's list shows.
+
+`install` is the one line to run on the machine, with the token already
+in it, and the address of the page that explains it:
+`command` is the `host_install_command` setting
+(`repose-admin hosts install-command`) with `%s` replaced by the token,
+and `url` is the dashboard's `/docs/own-hardware`. `command` is `""` while
+no setting has been recorded, and a client then shows the token and the
+page instead of a line it made up itself. The setting is a setting and not
+an environment variable for the reason `loki_url` is (DECISIONS I-95): it
+names something outside this deployment, and moving the installer must not
+be a redeploy of the api.
+
+Refusals of `POST /hosts`, beside the envelope's own:
+
+| Code | Status | When |
+|---|---|---|
+| `invalid` | 400 | `detail.reason = "name"`: a `name` outside `[a-z0-9][a-z0-9-]{0,31}` |
+| `conflict` | 409 | `detail.reason = "name_taken"`: this account already has a host by that name. Names are unique per account, so another account's `mac-mini` is no bar and is never named |
+| `conflict` | 409 | `detail.reason = "host_limit"`, `detail.limit`: the account already owns as many hosts as its plan allows (one on the Own hardware plan, I-1364; I-1366). The figure is the plan's, read from `billing.Plan.Hosts`, and lives nowhere else |
+| `payment_required` | 402 | `detail.reason = "own_hardware_plan_required"`: the account's plan sells no host (`limit` 0). A billing-exempt account is allowed one, as it is allowed everything else |
+
+`DELETE /hosts/{id}` answers `404 not_found` for an id that is not one of
+the account's hosts, and `409 conflict` with `detail: {reason:
+"host_has_projects", projects: [slug]}` while live projects are still
+placed there. A project moves host only by restore (DESIGN.md §6), so
+the machines go first: destroy them, or restore them onto another host.
+
 ## Projects
 
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/projects` | `[Project]` |
-| POST | `/projects` | `{name, remote_url?, class, tz?, agent_default?, multiplexer?, expires_in_s?, personal_opt_out?}` → `Project` (`multiplexer`, added with I-502, is `tmux` or `herdr`, default `tmux`; the CLI sends the value it picked, see `features/run-and-attach.md` "Choosing the multiplexer"; any other value is `400 invalid`, and `herdr` while the newest published base predates herdr is `409 conflict` `base_update_needed`, below; `personal_opt_out: true`, added with I-490, keeps the account's `machine.nix` off this machine, as `repose run --no-personal` does; otherwise the first revision carries it, and when the host has no closure of that combination the machine is created on the project layer alone and the combined revision is built and applied right after, as a `build` op queued behind the create; `agent_default` defaults to `claude`; the CLI sends `config.toml`'s `default_agent`, I-241) (409 if `(user, remote_url)` or `(user, name)` exists). `expires_in_s` (600..86400, added with I-347) makes the project temporary: `expires_at = now() + expires_in_s`, and the api destroys it with no snapshot once that has passed (`features/stop-start-destroy.md` "Temporary machines"); outside that range, or with a `remote_url`, it is `400 invalid`. A temporary project counts toward the project cap and the plan like any other. No waitlist gate here since I-290: the billing gate runs as on start, so a user without a plan gets `402 payment_required` `detail.reason = subscription_required`, and one whose projects hold more than the plan's disk with a new volume's first gigabyte added gets `disk_limit` (I-585) |
+| POST | `/projects` | `{name, remote_url?, class, tz?, agent_default?, multiplexer?, expires_in_s?, personal_opt_out?, placement?}` → `Project` (`placement`, added with I-1366, is `own` or `hosted`, default `own`: `own` puts the machine on a host this account owns when it owns any and on the hosted fleet when it owns none, `hosted` asks for the fleet whatever it owns. Any other value is `400 invalid`, `detail.reason = "placement"`; `hosted` from an account whose plan sells no memory on repose's own hosts is `402 payment_required`, `detail.reason = "hosted_plan_required"`. `multiplexer`, added with I-502, is `tmux` or `herdr`, default `tmux`; the CLI sends the value it picked, see `features/run-and-attach.md` "Choosing the multiplexer"; any other value is `400 invalid`, and `herdr` while the newest published base predates herdr is `409 conflict` `base_update_needed`, below; `personal_opt_out: true`, added with I-490, keeps the account's `machine.nix` off this machine, as `repose run --no-personal` does; otherwise the first revision carries it, and when the host has no closure of that combination the machine is created on the project layer alone and the combined revision is built and applied right after, as a `build` op queued behind the create; `agent_default` defaults to `claude`; the CLI sends `config.toml`'s `default_agent`, I-241) (409 if `(user, remote_url)` or `(user, name)` exists). `expires_in_s` (600..86400, added with I-347) makes the project temporary: `expires_at = now() + expires_in_s`, and the api destroys it with no snapshot once that has passed (`features/stop-start-destroy.md` "Temporary machines"); outside that range, or with a `remote_url`, it is `400 invalid`. A temporary project counts toward the project cap and the plan like any other. No waitlist gate here since I-290: the billing gate runs as on start, so a user without a plan gets `402 payment_required` `detail.reason = subscription_required`, and one whose projects hold more than the plan's disk with a new volume's first gigabyte added gets `disk_limit` (I-585) |
 | GET | `/projects/destroyed?before=&limit=` | `[DestroyedProject]`: the user's destroyed projects that still have a restorable snapshot, newest destroy first (I-167), `limit` (1..200, default 100) of them. `before=<project id>` (DECISIONS I-420) gives the ones destroyed before that one, ordered by `(destroyed_at, id)`; an id that is not one of the user's destroyed projects gives `[]`; a bad `limit` or `before` is `400 invalid`. Added with I-167 |
 | POST | `/projects/restore` | `{slug \| project_id \| snapshot_id, name?, start?: bool=true}` → `202 {op_id, project_id, name, slug, snapshot_id, snapshot_created_at, snapshot_bytes, from_project_id}` (`snapshot_bytes`, the stored size, added with I-595). Restores as a new project called `name` (default: the source's name). `slug` means the live project with that slug if there is one, else the user's destroyed projects with it; the newest restorable snapshot among them is used unless `snapshot_id` names one. `404 not_found` when nothing can be restored (`detail.reason: "no_snapshot"` when the project exists); `409 conflict` with `detail: {reason: "name_taken", name}` when a live project holds the name, and with `detail.reason: "destroying"` when `slug` names a live project whose destroy has not taken its final snapshot yet (retry in a few seconds; I-190). The new project gets the source's class, volume size, configuration and, when no live project has it, its `remote_url` (I-167). Added with I-167 |
 | GET | `/projects/:id` | `Project`, plus `op_id` when the project has an op pending or running (added with I-722; ops are serialised per project, so it is the one in flight). `repose run` follows that op instead of polling states: a `waitState` that returned on `error` used to be followed by a start, so one user action produced two ops and the create's error was never read (teksafari-org, 2026-10-13). The list route does not carry it (a query per project is an N+1), and a client that ignores it behaves as before |
@@ -102,7 +160,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, guest_ip?,
           keep_awake,                                  -- kept out of the rest rule (I-820)
           expires_at?,                                 -- set while temporary (I-347)
           personal_opt_out,                            -- machine.nix kept off (I-490)
-          multiplexer }                                -- tmux|herdr, from the next start (I-502)
+          multiplexer,                                 -- tmux|herdr, from the next start (I-502)
+          placement }                                  -- own|hosted, where it is placed (I-1366)
 
 DestroyedProject { id, name, slug, class, remote_url?, volume_bytes,
           destroyed_at, name_free, restorable_until?,
@@ -190,6 +249,21 @@ counts tmux clients only and is 0 on herdr, whose clients are in
 that ignores the field in `Project` sees what it saw before. The api
 writes `multiplexer` into `project_json` on every create, start and
 restore (`grpc-hostd.md`, I-26).
+
+`placement` (DECISIONS I-1366) is where the machine goes when it is
+placed: `own`, the default, is a host this account owns when it owns any
+and the hosted fleet when it owns none; `hosted` is the fleet whatever it
+owns. A project is pinned to its host for life (DESIGN.md §3), so the
+field is read at the create and at a re-placement (`POST
+/projects/:id/start` with `create: true`, I-406) and never after, which is
+why `PATCH /projects/:id` does not take it: nothing would honour it. An
+account whose plan sells no memory on repose's own hosts never lands
+there, whatever the field says (I-1366): a re-placement of such a project
+goes to its owner's hardware. A create for `own` while the account's own
+host has not registered yet, or cannot take the machine, fails the create
+op with `capacity` and a message that names the host and its state, rather
+than quietly using the fleet. An api older than I-1366 has no field and
+places as it always did.
 
 **The base gate.** `409 conflict` with `detail: {reason:
 "base_update_needed", base_version, needs}` answers a POST or PATCH
@@ -531,6 +605,7 @@ a volume) and carries `detail.reason`:
 | `plan_limit` | the running memory plus this machine's class would pass the plan's memory | `plan, limit_gb, used_gb, projects: [slug]` (the machines using it) |
 | `disk_limit` | since I-585: what the projects hold plus about what this adds (a new project's first 1 GB; a restore's source figure; nothing for growing a disk) would pass the plan's disk, or the disk asked for is larger than the plan's whole disk. A start is never refused for disk | `plan, limit_gb`, and either `used_gb` (held, rounded up to a GB), `held_gb`, `need_gb` (to a tenth), or `volume_gb` for a disk past the plan |
 | `egress_limit` | this period's egress passed four times the allowance; machines are stopped until `period_end` | `plan, limit_gb, used_gb, until` |
+| `hosted_plan_required` | since I-1366: `POST /projects` asked for `placement: "hosted"` and the plan sells no memory on repose's own hosts (the Own hardware plan) | `plan` |
 | `past_due` | the last payment failed (day 0 to 3) | |
 | `suspended` | three days past due, or an operator suspension | |
 

@@ -130,25 +130,37 @@ func TestOwnHardwareUsageAndLimits(t *testing.T) {
 	if l.JSON()["hosts"] != 1 {
 		t.Fatalf("limits JSON: %v", l.JSON())
 	}
-	// A hosted plan allows no host of its own; an exempt account one,
-	// so an operator can add a machine without buying from themselves.
+	// /me's limits.hosts is the figure POST /hosts refuses past
+	// (Gate.HostsAllowed), for every kind of account: one implementation,
+	// so the page and the route cannot disagree.
+	g := newGate(pool, newFakePolar())
+	hosts := func(a account) int {
+		t.Helper()
+		n, err := g.HostsAllowed(ctx, pool, user(t, pool, a))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := hosts(a); n != 1 || l.Hosts != n {
+		t.Fatalf("own hardware: the route allows %d hosts, /me says %d", n, l.Hosts)
+	}
 	solo := seedAccount(t, pool, "solo", "active", "", "")
 	soloSub, err := billing.LiveSubscription(ctx, pool, solo.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := billing.HostsAllowed(user(t, pool, solo), soloSub); n != 0 {
-		t.Fatalf("a Solo account may register %d hosts of its own", n)
+	if n, ml := hosts(solo), billing.LimitsFor(user(t, pool, solo), soloSub).Hosts; n != 0 || ml != 0 {
+		t.Fatalf("a Solo account: the route allows %d hosts of its own, /me says %d", n, ml)
 	}
+	// An exempt account gets one without buying a plan from itself.
 	ex := seedAccount(t, pool, "", "exempt", "", "")
-	if n := billing.HostsAllowed(user(t, pool, ex), nil); n != 1 {
-		t.Fatalf("an exempt account may register %d hosts of its own", n)
+	if n, ml := hosts(ex), billing.LimitsFor(user(t, pool, ex), nil).Hosts; n != billing.ExemptHosts || ml != billing.ExemptHosts {
+		t.Fatalf("an exempt account: the route allows %d, /me says %d", n, ml)
 	}
-	if n := billing.HostsAllowed(user(t, pool, solo), nil); n != 0 {
-		t.Fatalf("an account with no live subscription may register %d hosts", n)
-	}
-	if l := billing.LimitsFor(user(t, pool, ex), nil); l.Hosts != 1 {
-		t.Fatalf("exempt limits: %+v", l)
+	none := seedAccount(t, pool, "", "none", "", "")
+	if n, ml := hosts(none), billing.LimitsFor(user(t, pool, none), nil).Hosts; n != 0 || ml != 0 {
+		t.Fatalf("an account with no plan: the route allows %d, /me says %d", n, ml)
 	}
 }
 

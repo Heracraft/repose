@@ -35,7 +35,7 @@ users        (id pk, logto_sub text unique, handle text unique, email text,
               -- trigger inside the same transaction as the ledger row; the balance of
               -- record is sum(credit_ledger.cents) (09 §5.3)
 
-hosts        (id pk, name text unique, hostname text, sku text, provider text, region text,
+hosts        (id pk, name text, hostname text, sku text, provider text, region text,
               mem_bytes bigint, vcpus int, pool_bytes bigint, guest_cidr cidr,  -- pool_bytes: registered, then the newest heartbeat's (I-586)
               cores int not null default 0,  -- physical cores, what placement counts committed guest vCPUs
                                              -- against; vcpus is SMT threads. 0 is unknown (0027, I-735)
@@ -54,7 +54,18 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
                                                             -- ceiling and of placement. `hosts add --reissue` and a
                                                             -- re-register are what refresh them (I-1076)
               features text[] not null default '{}',  -- Hello.features: local_clone (0025, I-701)
-              join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
+              join_token_hash text, join_token_expires_at, registered_at,   -- the token itself is never stored
+              owner_account_id uuid fk users null)   -- the account that owns the machine (0048, I-1366);
+                                                            -- null is a host repose runs, which every host was
+                                                            -- before this. Set at the mint of the join token, so
+                                                            -- there is no host_join_tokens table to carry it: the
+                                                            -- single-use token has always been a column here.
+                                                            -- Placement puts only that account's projects on it
+                                                            -- and never anyone else's, and the seat count, the
+                                                            -- waitlist and the host gauges leave it out.
+              -- `name` is unique per owner from 0048, not globally: two accounts may
+              -- both call their machine `mac-mini`. Two partial unique indexes, since
+              -- Postgres counts nulls as distinct.
 
 projects     (id pk, user_id fk, name text, slug text, remote_url text,
               class text, state text, host_id fk null, guest_id uuid null,
@@ -67,6 +78,12 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
               multiplexer text not null default 'tmux'
                 check (multiplexer in ('tmux','herdr')),  -- what the next start runs (0017, I-502)
+              placement text not null default 'own'
+                check (placement in ('own','hosted')),  -- where the machine goes when it is
+                -- placed (0048, I-1366): `own` is the account's own hardware when it owns
+                -- any and the hosted fleet when it owns none, `hosted` the fleet whatever
+                -- it owns. A project is pinned to its host for life, so this is read at a
+                -- create and at a re-placement and never after
               resting_since timestamptz null,  -- when this machine's current rest began (0030, I-818):
                 -- its vCPUs are stopped and its memory is resident, so every
                 -- process survives. null while awake. The state stays 'running',
@@ -456,7 +473,11 @@ created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
 `events(user_id, ts desc) where user_id is not null`, `guest_resumes(host_id,
 created_at) where decided_at is null` (0022), `waitlist(joined_at,
 user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
-is not null and converted_at is null`.
+is not null and converted_at is null`, `hosts(owner_account_id)
+where owner_account_id is not null` (0048, the placement filter and the
+per-account listing), and the two partial unique indexes on host names,
+`hosts(name) where owner_account_id is null` and `hosts(owner_account_id,
+name) where owner_account_id is not null` (0048, I-1366).
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
 `0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0049_plan_own`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
