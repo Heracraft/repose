@@ -59,7 +59,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	add.Flags().BoolVar(&g.json, "json", false, "print every field, the install step and the token included, as JSON")
-	add.Flags().StringVar(&join, "join", "", "install on this Mac with the argument `repose host add` printed elsewhere")
+	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere")
 	add.Flags().IntVar(&ao.DiskGB, "disk", 0, "the appliance's disk in GB (default 100, bounded by the volume's free space less 20)")
 	add.Flags().IntVar(&ao.MemoryMiB, "memory", 0, "the appliance's memory in MiB (default three quarters of the Mac's)")
 	add.Flags().IntVar(&ao.CPUs, "cpus", 0, "the appliance's vCPUs (default all but two)")
