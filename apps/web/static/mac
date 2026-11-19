@@ -141,7 +141,9 @@ install_appliance() {
   # The settings the launcher reads at every start; a line per knob so
   # the user can edit one and `repose-appliance start` again.
   if [ ! -s "$DIR/config" ]; then
-    mac_addr=$(printf '52:54:00:%02x:%02x:%02x' $(( $(od -An -N1 -tu1 /dev/urandom) )) $(( $(od -An -N1 -tu1 /dev/urandom) )) $(( $(od -An -N1 -tu1 /dev/urandom) )))
+    # No zero octet: macOS's DHCP lease file drops leading zeros, which
+    # is what cost the lab a run (ops/dev/macmini-bootstrap.sh).
+    mac_addr=$(printf '52:54:aa:%02x:%02x:%02x' $(( $(od -An -N1 -tu1 /dev/urandom) % 239 + 16 )) $(( $(od -An -N1 -tu1 /dev/urandom) % 239 + 16 )) $(( $(od -An -N1 -tu1 /dev/urandom) % 239 + 16 )))
     {
       echo "VM_MEMORY_MIB=${REPOSE_VM_MEMORY_MIB:-$(vm_memory_mib "$(sysctl -n hw.memsize)")}"
       echo "VM_CPUS=${REPOSE_VM_CPUS:-$(vm_cpus "$(sysctl -n hw.ncpu)")}"
