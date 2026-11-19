@@ -140,3 +140,15 @@ and they apply to whoever runs the review as much as to the builders:
   not run, and which of these rules bit you. A review whose method is
   invisible cannot be checked, and the next reviewer repeats its
   mistakes.
+- **Do not rank a finding from the only state you could reach.** An account,
+  a plan, a device or a window you happen to have is not the state a customer
+  is in. One of this review's P1 findings was the behaviour of an exempt
+  account's billing page, filed by the only reviewer with an account, and it
+  disappeared when a normal account was reached.
+- **When a reviewer's finding and the product's behaviour disagree, reach the
+  state the reviewer could not.** It is almost always cheaper than the
+  argument about whether they needed to.
+- **Report what is right, measured.** A review that lists only damage
+  misleads the owner about where the product stands. The one screen this
+  review found good reached the report only because a wrong finding was
+  challenged, which is how a defect-only review hides the product's health.

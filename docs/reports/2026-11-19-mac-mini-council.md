@@ -10,7 +10,7 @@ The three reports are the evidence and this file never replaces them:
 | Surface | Report | Head |
 |---|---|---|
 | The command line | `docs/reports/2026-11-19-mac-mini-council-cli.md` | `council/cli` at `a057f6c1` |
-| The dashboard | `docs/reports/2026-11-19-mac-mini-council-dashboard.md` | `council/dash` at `7ca1cf95` |
+| The dashboard | `docs/reports/2026-11-19-mac-mini-council-dashboard.md` | `council/dash` at `beaa0245` |
 | The Mac itself | not yet run | held, see [The surface nobody has reviewed](#held) |
 
 Counts, conferred: **2 P0, 8 P1**, with the Mac surface unreviewed. The
@@ -93,7 +93,8 @@ on by the customer, and caused by the product's own sentence. ENG-34.
    a customer must read past an explicit warning. The half worth promoting is
    the reviewer's secondary finding: **the box is on by default on a machine
    that cannot keep a snapshot**, so the product manufactured six dead restore
-   points and labelled them kept. ENG-50.
+   points and labelled them kept. **Split out as ENG-69**; ENG-50 keeps the
+   display half.
 5. **A trigger takes over a live webhook URL** and the sender's deliveries stop
    arriving where they did. ENG-32.
 6. **The CLI says the account has no plan while the dashboard says it is
