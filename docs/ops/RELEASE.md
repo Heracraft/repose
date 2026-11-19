@@ -300,6 +300,11 @@ else integrated with it.
 2. **Push main.** Watch CI on the pushed commit; a push redeploys `api` and
    `web` whether CI passes or not, so a red run is fixed at once (as its
    own small batch, integrated and pushed).
+2b. **Tag right after the push when the release adds a command.** The
+   push deploys `web`, the public docs included, within minutes; the CLI
+   ships only at the tag, 20 to 30 minutes later. In that window the docs
+   describe a command nobody has (v0.1.50, 2026-11-19, with a plan on
+   sale). `gh release create --draft` makes no tag: push the annotated tag.
 3. **Write the notes before the sign job runs.** `release.yml`'s sign job
    refuses a draft with under 400 bytes of notes (I-798). The tag creates the
    draft; `gh release edit v0.1.N --title "v0.1.N" --notes-file

@@ -409,8 +409,11 @@ provides one.
 ```
 Workstream: docs/workstreams/19-mac-mini.md. You are the mini-conductor
 of the Mac mini program, not a builder: you never build an item
-yourself. Run /rc before the brief, so the owner can reach you from a
-phone, and run it again first thing if you are ever relaunched. You are
+yourself. **Remote Control cannot be run by an agent**: `/rc` is a UI
+command and the Skill tool refuses it, so whoever launches a conductor
+types `/rc` into its pane (`tmux send-keys -t <session>:<window> -l "/rc"`
+then `C-m`) and checks the pane says "/remote-control is active". Do that
+before the brief, and again first thing after any relaunch. You are
 in ~/kanali-mac-mini on branch mac-mini. Read the
 program doc, docs/research/mac-mini-nested-kvm.md, the BYO host
 proposal and I-647, then docs/ops/ORCHESTRATION.md "Sessions in tmux
@@ -513,6 +516,78 @@ Owned hosts pull a published host system from Cachix on a timer and
 switch; the api accepts the previous hostd release for one release;
 RUNBOOK section. Branch ws/19g-updates.
 ```
+
+### 19-council: three sessions, not one
+
+The owner, 2026-11-19: "The last review must be super ruthless, like going
+through every combination, possible combination. Every feature, try it out,
+find errors, be a real customer. CLI and dashboard." So the review is three
+sessions, each a real customer with a stopwatch, in its own worktree on its
+own branch, conferring at the end into **one** ranked report. The conductor
+launches them together, gives each the live addresses and the account to use,
+and names which of them owns the confer.
+
+Rules all three share, and the conductor puts them in each brief:
+
+- **You are a customer, not a builder.** You do not read the code to explain
+  a fault; you reproduce it. A finding is a sequence someone else can repeat,
+  with what you expected and what happened. If you cannot reproduce it, say
+  so and keep it, marked unreproduced.
+- **Time everything** and report seconds, not impressions. The hosted fleet
+  starts a machine in about 12 s and a Mac takes about 4 minutes; those are
+  the numbers to measure against, not your patience.
+- **Rank P0 (blocks launch), P1 (fix before the plan goes on sale), P2
+  (after).** Ranking by how it reaches a customer, not by how hard it is to
+  fix. Anything that loses a customer's work or charges them wrongly is P0
+  whatever its size.
+- Never run `tmux kill-server` on the default socket; before any heavy local
+  run check `free -m` and wait for 6 GB. Use the box's git identity; never
+  pass `-c user.email` or `-c user.name`.
+- The confer is one file, `docs/reports/<date>-mac-mini-council.md`, opening
+  with **"What would make a user scream"**, ranked, before anything else. One
+  session writes it from the three; the other two read and sign it or say
+  where they disagree, in the file.
+- **A finding you cannot reproduce is kept and marked unreproduced**, never
+  dropped. The same goes for anything you decide is not worth fixing: record
+  it with the reason, or the second pass rediscovers it and the owner reads
+  it twice.
+- **When the work board is live, a card's title is the symptom a customer
+  would say**, not the cause a builder would name; the cause belongs in the
+  report section the card links to. The report is the document, the cards
+  are the work, and the gate is the second pass with no P0 rather than an
+  empty column.
+- **A finding that needs the owner goes to the `Needs you` column and never
+  to their assignee field.** That rule is enforced by you, not by a
+  permission: the agent account can see the workspace's members, so nothing
+  stops you except this line. The owner looks at that column when they
+  choose; an assignment notifies them whether they chose to look or not.
+- **File findings as you go, not in one burst at the end.** The board's
+  instance rate-limits, and a seed of nineteen cards in a row exhausted it
+  and silently lost three field writes before anyone noticed. The tool now
+  backs off on 429, but three sessions filing twenty findings each is the
+  same wall, and the report is the record regardless — the cards are the
+  work, so a card that failed to write is work nobody does.
+
+**19-council-cli** — every command, every flag, every refusal. `run`,
+`attach`, `ls`, `status`, `logs`, `stop`, `start`, `destroy`, `code`, `say`,
+`ask`, `secrets`, `config`, `triggers`, `webhooks`, `snapshots`, `restore`,
+`host add|ls|rm`, `tokens`, the sizes, the temporary machines. Try the
+combinations a customer reaches by accident: the same name twice, a command
+on a machine that is stopped, stopping something already stopped, a flag with
+no value, a dirty checkout, no network, an expired token, a read-only token
+doing a write. Every error message is a line a customer reads: say which ones
+tell them what to do next and which leave them guessing.
+
+**19-council-dash** — every page and every action, at 1440 and 390, in both
+colour schemes. Projects, the machine page, Connect, Billing and every plan
+change, Settings and each tab, Hosts, Triggers, Secrets, Tokens, the
+questions view, sign-up and sign-out. The same combinations: add, rename,
+remove, cancel, go back mid-flow, reload mid-flow, two tabs at once, a
+refused action and what the page says. Judge the copy line by line and
+whether the dashboard can do everything the CLI can (the parity rule).
+
+**19-council-mac** — the Mac mini path, which is the one the owner cannot
+test at all. The old single-session brief below is this session's, unchanged.
 
 ### 19-council mac-mini-council
 
