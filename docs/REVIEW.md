@@ -68,6 +68,32 @@ the gate**. For a plan, the gate is not the release: repose ships a plan
 dormant and the commit that puts it on sale is held until the second pass is
 clean, so the release and the launch are separate events.
 
+## The report is a document; its findings are cards
+
+A review produces a ranked list all at once, which is the shape of a work
+board and so the place a second source of truth gets born. The division,
+settled before the findings land rather than after:
+
+- **The report stays the document**: `reports/<date>-<program>-council.md`,
+  with the reproductions, the measured numbers and the hats' verdicts. The
+  owner reads it once; it is the record of what the review found.
+- **The cards are the work**: one per finding someone will act on, linking
+  to its section of the report rather than restating it. A finding that
+  needs a decision goes to the owner's column; one that needs a fix goes to
+  the open one.
+- **A finding nobody will act on still gets a card**, parked, with the
+  reason where it is read first — otherwise the second pass rediscovers it
+  and the owner reads it twice.
+- **A card's title is the symptom a customer would say**, not the cause a
+  builder would name. The cause belongs in the report section it links to.
+- **An unreproduced finding is kept and marked unreproduced**, parked, never
+  dropped.
+
+**And the gate is never the board.** A review passes when its own rule says
+so — a second pass with no P0 — not when a column is empty. Closing a card
+is not evidence a finding is fixed, where a checklist item closed with its
+named evidence is.
+
 ## The evidence rules a review rests on
 
 These were learned in one day of the Mac mini program, each from a mistake,

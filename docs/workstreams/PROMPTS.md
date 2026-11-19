@@ -547,6 +547,15 @@ Rules all three share, and the conductor puts them in each brief:
   with **"What would make a user scream"**, ranked, before anything else. One
   session writes it from the three; the other two read and sign it or say
   where they disagree, in the file.
+- **A finding you cannot reproduce is kept and marked unreproduced**, never
+  dropped. The same goes for anything you decide is not worth fixing: record
+  it with the reason, or the second pass rediscovers it and the owner reads
+  it twice.
+- **When the work board is live, a card's title is the symptom a customer
+  would say**, not the cause a builder would name; the cause belongs in the
+  report section the card links to. The report is the document, the cards
+  are the work, and the gate is the second pass with no P0 rather than an
+  empty column.
 
 **19-council-cli** — every command, every flag, every refusal. `run`,
 `attach`, `ls`, `status`, `logs`, `stop`, `start`, `destroy`, `code`, `say`,
