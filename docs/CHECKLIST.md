@@ -19,6 +19,17 @@ written so none of them goes unnoticed again.
       deviation. Evidence: the entry exists, with alternatives.
 - [ ] Every interface the change touches is updated in `interfaces/` in the
       same commit. Evidence: `git show --stat` includes the interface doc.
+- [ ] Every `I-<n>` the change cites has its entry in `DECISIONS.md`, and the
+      index is regenerated. A citation with no entry points a reader at
+      nothing (DECISIONS I-994), and the reverse — an entry nobody cites —
+      is how two agents build against different contracts. Evidence:
+      `ops/dev/decisions-index.py --check > /tmp/idx.txt 2>&1; echo $?`
+      prints 0. Read the exit code of the script, not of a pipeline: this
+      script prints "is current" on its first line and its errors below, so
+      `--check | head` reports success while the script returns 1. That is
+      how four citations of an unwritten id reached a merge on 2026-11-19
+      with the check reported as current. `just done-check` does not run
+      it; `ops/dev/release-queue` does, and refuses the queue.
 - [ ] No hardcoded values that belong in config: hostnames, IPs, ports, sizes,
       prices, paths outside the documented conventions. Evidence: `rg` for the
       literal returns only the config definition.
