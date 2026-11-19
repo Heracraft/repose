@@ -4588,6 +4588,32 @@ too, and the webhook follows.
 Nothing in `usage_hours` or `overage_charges` is edited: they are the
 record of what was used and what was sent.
 
+## The Own hardware plan is not offered, or a checkout for it is refused
+
+*Symptom.* The Billing page shows the three plans and no Own hardware
+row, or `POST /billing/checkout` with `{"plan": "own"}` answers `400
+invalid` `plan must be solo, plus and pro`.
+
+That is the plan's switch working (DECISIONS I-1364): the api sells a
+plan only where it has a Polar product id for it, and
+`POLAR_PRODUCT_OWN` is the only optional one. The deployment has not
+pasted it.
+
+1. `repose-admin billing polar-bootstrap` against that environment's
+   Polar organization prints the whole `POLAR_*` block, including
+   `POLAR_PRODUCT_OWN=prod_...`. It creates the product if it is
+   missing and finds it on every rerun.
+2. Paste that one line into both api apps' environment (`api` and
+   `api-grpc`) in Coolify. Coolify restarts them itself.
+3. `GET /billing` then lists the plan and the dashboard draws its row;
+   nothing else changes, because the hosted plans' ids did not move.
+
+A subscription that already exists on the plan keeps working where the
+id is unset: the webhook needs the id to map the product, so a
+deployment that has never had it set records such an event as foreign
+(`billing_events.error` naming the product). Set the id and redeliver
+the event from Polar's delivery list.
+
 ## Move a user between plans by hand
 
 The dashboard's plan page (`POST /billing/plan`) is the only path a user
@@ -4610,6 +4636,13 @@ refused the change:
 3. If the webhook is down (BillingWebhookRejected), the row lags Polar.
    Do not edit `subscriptions.plan` by hand: fix the webhook and redeliver
    the event from the endpoint's delivery list; the row follows.
+
+A change between the Own hardware plan and a hosted one is refused by
+the api (`409 conflict`, `detail.reason = plan_kind`) and must not be
+made by hand in Polar either: the two sell different things, and the
+webhook would write a plan whose figures do not match what the account
+is running (I-1364). The user cancels and checks out the other plan
+when the period ends.
 
 A downgrade that Polar accepts while the user runs more than the smaller
 plan allows is not a problem for the api: the next start is refused with
