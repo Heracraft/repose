@@ -1,6 +1,7 @@
 # opencode from the npm registry: version 2's channel is a per-platform
-# package (@opencode/cli-linux-x64) holding one bun-compiled, dynamically
-# linked binary, pinned in versions.json. Version 2 is the machine's
+# package (@opencode/cli-linux-x64, @opencode/cli-linux-arm64) holding one
+# bun-compiled, dynamically linked binary, pinned in versions.json under
+# the architecture's slot (DECISIONS I-1374). Version 2 is the machine's
 # opencode since DECISIONS I-1050; version 1 came from the GitHub release
 # asset (I-481).
 { lib, stdenvNoCC, fetchurl, autoPatchelfHook, makeBinaryWrapper, ripgrep }:
@@ -15,7 +16,7 @@ assert lib.assertMsg (lib.versions.major v.version == "2")
 stdenvNoCC.mkDerivation {
   pname = "opencode";
   inherit (v) version;
-  src = fetchurl { inherit (v.x86_64-linux) url hash; };
+  src = fetchurl { inherit (v.${stdenvNoCC.hostPlatform.system}) url hash; };
   sourceRoot = "package";
   dontBuild = true;
   dontStrip = true;
@@ -33,6 +34,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://opencode.ai";
     license = lib.licenses.mit;
     mainProgram = "opencode";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }

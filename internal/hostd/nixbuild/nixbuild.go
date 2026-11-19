@@ -8,6 +8,7 @@
 package nixbuild
 
 import (
+	"runtime"
 	"bufio"
 	"context"
 	"errors"
@@ -151,7 +152,7 @@ type Real struct {
 	// above nix/) or "path" (path:<checkout>/nix, for a self-contained test
 	// flake).
 	BaseScheme    string
-	EvalAttr      string // guestSystem.config.system.build.toplevel.drvPath
+	EvalAttr      string // DefaultEvalAttr(): guestSystem.config.system.build.toplevel.drvPath on x86_64
 	Substituters  string
 	MemoryMax     string // 16G
 	Roots         gcroot.Roots
@@ -171,6 +172,20 @@ type Real struct {
 	LogLines int
 }
 
+// DefaultEvalAttr is the flake attribute a Build evaluates on this
+// architecture (docs/interfaces/nix-build-contract.md). A flake cannot
+// read the builder's own system, so the base carries one guest system per
+// architecture under `guestSystems.<system>` (DECISIONS I-1374); on x86_64
+// it stays `guestSystem`, the name every base revision before I-1374 and
+// every earlier hostd release use, so an x86 host keeps building old
+// revisions unchanged.
+func DefaultEvalAttr() string {
+	if runtime.GOARCH == "arm64" {
+		return "guestSystems.aarch64-linux.config.system.build.toplevel.drvPath"
+	}
+	return "guestSystem.config.system.build.toplevel.drvPath"
+}
+
 // Defaults fills the documented values into zero fields.
 func (b *Real) Defaults() *Real {
 	if b.BaseSubdir == "" {
@@ -180,7 +195,7 @@ func (b *Real) Defaults() *Real {
 		b.BaseScheme = "git"
 	}
 	if b.EvalAttr == "" {
-		b.EvalAttr = "guestSystem.config.system.build.toplevel.drvPath"
+		b.EvalAttr = DefaultEvalAttr()
 	}
 	if b.Substituters == "" {
 		// The platform overlay cache is a host option

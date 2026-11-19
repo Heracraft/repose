@@ -1,5 +1,6 @@
-# pi from its GitHub release: a bun-compiled, dynamically linked binary
-# that reads package.json, its themes, docs and a wasm module from the
+# pi from its GitHub release (pi-linux-x64 or pi-linux-arm64, one slot
+# per architecture in versions.json): a bun-compiled, dynamically linked
+# binary that reads package.json, its themes, docs and a wasm module from the
 # directory it lives in, so the whole tree is installed and bin/pi is a
 # wrapper into it. Pinned in versions.json. PI_SKIP_VERSION_CHECK, as
 # claude-code.nix and opencode.nix turn their updaters off: a package in
@@ -14,7 +15,7 @@ in
 stdenvNoCC.mkDerivation {
   pname = "pi-coding-agent";
   inherit (v) version;
-  src = fetchurl { inherit (v.x86_64-linux) url hash; };
+  src = fetchurl { inherit (v.${stdenvNoCC.hostPlatform.system}) url hash; };
   dontBuild = true;
   dontStrip = true;
   nativeBuildInputs = [ autoPatchelfHook makeBinaryWrapper ];
@@ -36,6 +37,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://pi.dev";
     license = lib.licenses.mit;
     mainProgram = "pi";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }

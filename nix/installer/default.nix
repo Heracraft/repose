@@ -35,7 +35,13 @@
 # address from DHCP. It is not a general-purpose installer: with
 # restore-network off, a target whose address is static and not in DHCP
 # would come up unreachable.
-{ config, lib, ... }:
+#
+# Built for aarch64 too (DECISIONS I-1374), for an aarch64 KVM box
+# installed over the network the way the x86 hosts are. The Mac mini
+# appliance is not that box: it boots from a disk image (19f) and never
+# kexecs. On aarch64 the uplink unit also admits virtio_net, which is
+# what an aarch64 VM has in place of Azure's hv_netvsc.
+{ config, lib, pkgs, ... }:
 {
   options.repose.installer = {
     kernelPackages = lib.mkOption {
@@ -98,7 +104,7 @@
     # installer's equivalent of nix/hosts/network.nix's 10-uplink, under
     # the same name so the two read as the same thing.
     systemd.network.networks."10-uplink" = {
-      matchConfig.Driver = "hv_netvsc";
+      matchConfig.Driver = "hv_netvsc" + lib.optionalString pkgs.stdenv.hostPlatform.isAarch64 " virtio_net";
       networkConfig = {
         DHCP = "ipv4";
         IPv6AcceptRA = true;

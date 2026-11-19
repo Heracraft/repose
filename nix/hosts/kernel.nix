@@ -180,8 +180,12 @@ in
     }
   ];
 
-  boot.kernelModules = [
-    "kvm-intel"
+  # KVM itself. On x86_64 the hosts are Intel (DESIGN §4), so it is the
+  # Intel module; on aarch64 KVM is built into the kernel (arm64's
+  # CONFIG_KVM is a bool, not a tristate), so there is nothing to load and
+  # /dev/kvm is there from boot (DECISIONS I-1374). A `kvm-intel` line on
+  # an aarch64 host would be one failed modprobe in every boot's journal.
+  boot.kernelModules = lib.optional pkgs.stdenv.hostPlatform.isx86_64 "kvm-intel" ++ [
     "vhost_vsock"
     "vhost_net"
     "tun"

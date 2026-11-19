@@ -40,6 +40,15 @@
 }:
 let
   lib = nixpkgs.lib;
+  # The serial console per architecture (DECISIONS I-1374): Cloud
+  # Hypervisor's serial device is a 16550 at ttyS0 on x86_64 and a PL011
+  # at ttyAMA0 on aarch64. The same split is in internal/hostd/ch (the
+  # command hostd renders) and must stay in step with this one.
+  consoleTTY = { x86_64-linux = "ttyS0"; aarch64-linux = "ttyAMA0"; }.${system};
+  consoleParams =
+    if system == "x86_64-linux"
+    then "console=ttyS0 earlyprintk=ttyS0"
+    else "console=${consoleTTY}";
   # The runner's own defaults, for a runner built without explicit vcpu and
   # mem (hostdev, and a hand-built runner on a dev box); hostd always passes
   # both from internal/hostd/guest.Classes, which is the table that counts.
@@ -114,8 +123,8 @@ let
           socket = "ch.sock";
         };
         # The kernel's ip= is handled by systemd-network-generator; the
-        # console lives on ttyS0.
-        boot.kernelParams = [ "console=ttyS0" ];
+        # console lives on ttyS0 (x86_64) or ttyAMA0 (aarch64).
+        boot.kernelParams = [ "console=${consoleTTY}" ];
       }
       ({ config, pkgs, ... }: {
         home-manager.useGlobalPkgs = true;
@@ -171,7 +180,13 @@ let
   cfg = guestSystem.config;
   pkgs = guestSystem.pkgs;
   toplevel = cfg.system.build.toplevel;
-  kernel = "${cfg.microvm.kernel.dev}/vmlinux";
+  # What Cloud Hypervisor boots: the uncompressed ELF on x86_64, the
+  # arm64 `Image` on aarch64 (the kernel's own target name), as
+  # microvm.nix's runner picks them.
+  kernel = {
+    x86_64-linux = "${cfg.microvm.kernel.dev}/vmlinux";
+    aarch64-linux = "${cfg.microvm.kernel.out}/${pkgs.stdenv.hostPlatform.linux-kernel.target}";
+  }.${system};
   initrd = cfg.microvm.initrdPath;
   ch = cfg.microvm.cloud-hypervisor.package;
   baseCmdline = lib.concatStringsSep " " (cfg.microvm.kernelParams ++ extraKernelParams);
@@ -269,7 +284,7 @@ let
     mkdir -p "$state_dir"
     rm -f "$api_socket" "$vsock_socket"
 
-    cmdline="console=ttyS0 earlyprintk=ttyS0 ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off systemd.hostname=$hostname"
+    cmdline="${consoleParams} ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off systemd.hostname=$hostname"
     if [ -n "$extra_cmdline" ]; then
       cmdline="$cmdline $extra_cmdline"
     fi

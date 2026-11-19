@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,19 @@ func Hostname(name string) string {
 	return name
 }
 
+// ConsoleTTY is the guest's serial console on this architecture: Cloud
+// Hypervisor's serial device is a 16550 at ttyS0 on x86_64 and a PL011 at
+// ttyAMA0 on aarch64 (DECISIONS I-1374). hostd runs on the host whose
+// guests it starts, so the host's own architecture is the guest's. The
+// same split is in nix/guest/microvm.nix (the runner's bin/run and the
+// base's console= line) and must stay in step with this one.
+func ConsoleTTY() string {
+	if runtime.GOARCH == "arm64" {
+		return "ttyAMA0"
+	}
+	return "ttyS0"
+}
+
 // Cmdline renders the kernel command line: the closure's init and params,
 // the serial console, the static address the guest's networkd reads and,
 // when Hostname is a DNS label, the guest's name. systemd.hostname= wins
@@ -91,7 +105,7 @@ func (s Spec) Cmdline() string {
 		parts = append(parts, p)
 	}
 	host := Hostname(s.Hostname)
-	parts = append(parts, "console=ttyS0",
+	parts = append(parts, "console="+ConsoleTTY(),
 		fmt.Sprintf("ip=%s::%s:%s:%s:eth0:off", s.IP, s.Gateway, s.Netmask, host))
 	if host != "" {
 		parts = append(parts, "systemd.hostname="+host)

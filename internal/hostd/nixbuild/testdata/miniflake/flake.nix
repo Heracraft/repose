@@ -46,5 +46,7 @@
     in
     {
       guestSystem = { config.system.build.toplevel = toplevel; };
+      # The per-architecture name hostd evaluates on aarch64 (I-1374).
+      guestSystems.aarch64-linux = { config.system.build.toplevel = toplevel; };
     };
 }
