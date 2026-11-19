@@ -483,6 +483,14 @@ trust_reader() {
   if [[ " $needs " == *" cli "* ]]; then
     (cd "$top" && go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1 >/dev/null) ||
       die "add: the CLI prints help nobody asked for (DECISIONS I-484); see: go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures'"
+    # What this CLI would fetch on a customer's machine exists and is
+    # public: the appliance image it pins, its checksum, vfkit. v0.1.51
+    # shipped pinning an image whose release was never published
+    # (DECISIONS I-1398). The CLI's own release is not the branch's to
+    # answer for, so --cli none; release.yml and release-assets.yml check it.
+    local assets
+    assets=$(cd "$top" && ops/dev/release-assets --cli none --install none 2>&1) ||
+      die "add: an asset this CLI fetches at run time does not answer (DECISIONS I-1398):"$'\n'"$assets"
   fi
   if [[ " $needs " == *" web "* ]]; then
     [ -d "$top/apps/web/node_modules" ] || die "add: apps/web has no node_modules, so the copy guards cannot run; pnpm install in $top first"

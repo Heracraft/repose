@@ -37228,3 +37228,124 @@ detached under `repose host run`), the appliance booted to its login
 prompt and consumed the bundle from the share; `repose host rm --local
 --yes` pressed the power button and removed it in 3 s ("System Power
 Off" on the console, no vfkit left, the directory and the agent gone).
+
+**I-1386. On a host the customer owns, the parked image's wrapping key is
+held by the macOS Keychain, so a Mac restart keeps a customer's work
+(owner, 2026-11-19).** *Made during implementation* (the open question
+I-1376 left when it switched the park off on `provider == "mac"` because
+"the Mac has no identity for a Key Vault, I-653"; the owner settled it
+and asked not to be asked again unless it does not work).
+
+- *Why it had to be answered.* I-653's exception keeps a guest's memory,
+  secrets included, as a dm-crypt image on the host across a restart, with
+  the image's key wrapped by Key Vault and unwrapped only by that host's
+  managed identity. A Mac on a customer's desk has no such identity, so
+  I-1376 switched the park off there — and a Mac restart then stops every
+  machine on it and loses what each was doing. Measured on the AWS M4
+  the same day: a park costs 6.5 s a guest (snapshot 203 ms, an 824 MB
+  image) and an unpark 3.8 s, against 57.9 s to start a guest cold and
+  lose its work. So the park is not a luxury on owned hardware; it is the
+  difference between a restart costing 25 seconds and costing a day.
+- *The custodian, and why this is not a fourth home.* The Keychain holds
+  **the wrapping key only** — one key per host, created on first park,
+  non-exportable, in the System keychain under the launcher's own access
+  group, used to wrap and unwrap the per-image key. No named secret, no
+  tenant data and no token is ever written to it, so CLAUDE.md's "three
+  homes and nothing else" is unchanged and this remains I-653's single
+  exception with a second custodian for hardware we do not own. The image
+  itself is unchanged: dm-crypt, on the host, removed once read and after
+  6 hours whether read or not, never leaving the host.
+- *Not hardware-backed, on purpose, for now.* The owner's words: "It's
+  not hardware backed of course, but we can fix that later." A Secure
+  Enclave key (`kSecAttrTokenIDSecureEnclave`) cannot wrap arbitrary
+  bytes directly and needs an ECIES envelope and a signed, entitled
+  binary, which is the work I-1380 deliberately avoided by launching
+  over a plist and vfkit. So: Keychain now, Secure Enclave as its own
+  decision, and the docs say which it is rather than implying hardware
+  protection the build does not have.
+- *What it does not promise.* A park runs on a restart the customer
+  asks for, and on a `repose host run` stop. It cannot run on a power
+  cut, a panic or a force-off, and the public docs say "restart your Mac
+  and your work survives", never "your work always survives".
+- *The threat it does and does not cover.* An attacker with the Mac's
+  disk alone reads ciphertext. An attacker with the unlocked Mac and
+  root reads the Keychain item and therefore the image, which is weaker
+  than the fleet's Key Vault custody and is the price of the customer
+  owning the machine; it is stated in `docs/features/secrets.md` rather
+  than left for a reader to work out.
+
+*Not done:* the implementation. This entry settles where the key lives;
+the code still has the park off on `provider == "mac"` (ENG-2).
+
+**I-1398. Every URL the shipped CLI fetches on a customer's machine is
+checked anonymously, at queue time, before a tag publishes, and every six
+hours (ENG-62, 2026-11-19).** *Made during implementation* (the night's
+top-ranked customer-review finding, and a second instance of the same
+class found while building the fix).
+
+- *What happened.* CLI v0.1.51 was tagged and published pinning
+  `applianceVersion = "2026.11.19"`, and the release
+  `appliance-2026.11.19` had never been published. On a real Mac at
+  21:38:44 UTC, with the published CLI and a fresh credential, `repose
+  host add` printed `fetching the appliance image 2026.11.19 (about 2
+  GB)` and then `the server answered 404`, exit 1, for 47 minutes, until a
+  human uploaded the asset. The same evening, at 22:28 UTC, that upload
+  was published without `--latest=false`, so `releases/latest` redirected
+  to the appliance tag; `install.sh` turns "latest" into a tag by that
+  redirect and then fetches `repose_<tag>_<os>_<arch>.tar.gz`, which
+  answered 404 under that tag for every platform until 22:54, when
+  `gh release edit v0.1.51 --latest` put it back. Neither was a defect in
+  the code: `release.yml` checks that the draft holds the four archives
+  and that the notes exist (I-798), and nothing anywhere asked whether
+  the things the code would fetch *existed* and *answered to a stranger*.
+- *The check.* `TestReleaseAssetsAnswerAnonymously` in `internal/cli`,
+  run by `ops/dev/release-assets`, fetches with a client that carries no
+  cookie, token or netrc: the appliance image the code pins (200, over 1
+  GiB) and its `.sha256` (a 64-hex body); vfkit, with its body hashed
+  against `vfkitSHA256`; the tag `releases/latest` resolves to, which must
+  match `releaseTagRe` (a `v*` tag); that tag's `checksums.txt` (naming
+  exactly the four archives), `checksums.txt.sig` verified with the key
+  the CLI carries, and each archive; and `https://repose.run/install.sh`.
+  It prints `200 <bytes> <url>` a line and exits 1 naming the asset and
+  the fix. The URLs are the package's own constants, not a list, and
+  `TestReleaseAssetURLsAreAllChecked` walks the package's sources for
+  release URLs and fails when one is not covered. Overrides exist to show
+  it red: `--appliance 2026.11.18` printed `404` for the image and its
+  checksum and exited 1; `--cli v0.1.99` printed `resolves to v0.1.51,
+  not v0.1.99` and exited 1; the plain run printed 200 for 11 assets and
+  exited 0, all on 2026-11-19.
+- *Where it runs, and why three places.* `release-queue add` runs it
+  with `--cli none` for a branch that ships as `cli`, so a bump of
+  `applianceVersion` to an unpublished image never reaches the queue:
+  that is the first failure's cause, caught where the author is. The
+  `sign` job of `release.yml` runs it with `--cli none` before it
+  publishes the draft, so a tag whose code pins a missing asset stays a
+  draft `install.sh` never sees, and again with `--cli <tag>` after the
+  publish, which also asserts `releases/latest` resolves to the new tag.
+  And `release-assets.yml` runs it every six hours against `main` and
+  against the tag customers install, because both failures lasted tens
+  of minutes with no release in progress; a release-time check alone
+  would have caught neither. A red scheduled run is the signal; it
+  reaches whoever GitHub notifies of one, and routing it to the owner's
+  chat (I-648) is not done.
+- *Alternatives.* A curl list in the runbook: it goes stale the day a
+  constant moves, which is the class of failure here. Checking inside
+  `release-queue cut`: the conductor's verify list in `RELEASE.md` names
+  the command, but a hard stop belongs where the mistake is made (`add`)
+  and where it ships (`release.yml`). Downloading the 2 GB image to hash
+  it: a HEAD with a size floor catches an empty or placeholder upload,
+  and the CLI checks the hash on the customer's machine; the daily cost
+  of 2 GB was not worth the one case (a corrupt upload of the right
+  size) this would add. Marking appliance releases `--prerelease`
+  instead of `--latest=false`: GitHub still excludes prereleases from
+  latest, but the word is wrong and a reader would act on it.
+- *Rules this adds.* A release of anything but the CLI is published
+  with `--latest=false` (RUNBOOK, "The Mac appliance image and install
+  line"). Every artefact URL a CLI release hard-codes answers 200
+  anonymously before the tag (RELEASE.md, "Ship the rest"). A row in
+  `docs/CHECKLIST.md` names the evidence.
+
+*Not done:* a chat notification for a red scheduled run; `repose host
+add`'s own message says `the server answered 404` and nothing about
+where to look, which is the customer's view of this and is ENG-62's
+sibling, not this entry's.
