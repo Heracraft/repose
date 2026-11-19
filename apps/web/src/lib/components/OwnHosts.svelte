@@ -37,7 +37,12 @@
 	let nameError = $state<string | undefined>(undefined);
 	let made = $state<OwnedHost | undefined>(undefined);
 
-	/** The hosts still yours; a removed one keeps its row in the api. */
+	/**
+	 * The hosts still yours. The api keeps a removed host's row for the
+	 * history, and this list leaves it out, because a host the user
+	 * removed is not hardware they have and `repose host ls` leaves it
+	 * out too (19c): two surfaces, one answer.
+	 */
 	let live = $derived((hosts ?? []).filter((h) => h.state !== 'retired' && h.state !== 'lost'));
 
 	async function load() {
@@ -127,19 +132,27 @@
 		}
 	}
 
-	/** The word a user reads for a host's state. */
+	/**
+	 * The word a user reads for a host's state, the same five
+	 * `repose host ls` prints (19c's `hostStateWord`, and
+	 * `internal/cli/hosts.go`'s): the two surfaces must not call one
+	 * state two things. Lower case, as a project row's state is.
+	 *
+	 * This is a copy until 19c's `$lib/offlinehost` is on the branch,
+	 * and then it is that import.
+	 */
 	function stateWord(s: HostState): string {
 		switch (s) {
 			case 'ready':
-				return 'Online';
+				return 'online';
 			case 'registering':
-				return 'Waiting for it';
+				return 'waiting';
 			case 'unreachable':
-				return 'Offline';
+				return 'offline';
 			case 'draining':
-				return 'Removing';
+				return 'removing';
 			default:
-				return 'Removed';
+				return 'removed';
 		}
 	}
 
@@ -195,7 +208,7 @@
 		onretry={load}
 		shape="rows"
 	>
-		{#if hosts && hosts.length === 0}
+		{#if hosts && live.length === 0}
 			<div class="hk-empty-row">
 				<h3 class="hk-empty-title">No hosts of your own.</h3>
 			</div>
@@ -212,18 +225,18 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each hosts as h (h.id)}
-						<tr
-							class:open={confirming === h.id}
-							class:gone={h.state === 'retired' || h.state === 'lost'}
-						>
+					{#each live as h (h.id)}
+						<tr class:open={confirming === h.id}>
 							<td class="c-name">
 								<span class="name">{h.name}</span>
 								{#if h.arch}<span class="arch">{h.arch}</span>{/if}
+								<!-- A host that has not registered has nothing to say but
+								     its state: no size, no machines, no heartbeat. -->
 								<span class="phone-meta">
-									<span class="dot" data-tone={tone(h.state)}></span>{stateWord(h.state)} · {size(
-										h
-									)} <span class="nw">· {machines(h)}</span>
+									<span class="dot" data-tone={tone(h.state)}></span>{stateWord(h.state)}
+									{#if h.last_heartbeat_at}<span class="nw">· heard {heard(h)}</span>{/if}
+									{#if h.mem_bytes}<span class="nw">· {size(h)}</span>{/if}
+									{#if h.projects}<span class="nw">· {machines(h)}</span>{/if}
 								</span>
 							</td>
 							<td class="c-state"
@@ -233,7 +246,7 @@
 							<td class="c-machines">{machines(h)}</td>
 							<td class="c-when">{heard(h)}</td>
 							<td class="c-act">
-								{#if h.state !== 'retired' && h.state !== 'lost' && confirming !== h.id}
+								{#if confirming !== h.id}
 									<button
 										type="button"
 										id={`host-remove-${h.id}`}
@@ -249,8 +262,8 @@
 								<td colspan="6">
 									<div class="hk-confirm" data-testid="confirm-remove-host">
 										<p>
-											Remove <code>{h.name}</code>? It stops taking your projects, and it joins
-											again only with a new install.
+											Remove <code>{h.name}</code>? It stops taking your projects, and it
+											joins again only with a new install.
 										</p>
 										<div class="hk-confirm-actions">
 											<button
@@ -406,9 +419,6 @@
 	}
 	.c-act button {
 		margin-right: -0.625rem;
-	}
-	.gone {
-		color: var(--hk-text-3);
 	}
 	/* The state dot, the same three tones the project rows use. */
 	.dot {
