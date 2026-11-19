@@ -13,8 +13,8 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
-- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest; `repose host ls` shows that share.
-- Free disk for your machines' volumes and their snapshots. A `large` machine's disk is 40 GB ([the sizes](/docs/machine)), and repose's own system takes a few gigabytes more.
+- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest. On a 16 GB Mac that share is about 12 GB, of which about 9.6 GB is what your machines may hold at once; repose keeps the rest for itself. `repose host ls` shows the share.
+- About 10 GB of free disk to begin with, and room to grow. Installing repose peaks at about 6.6 GB while the download is still on disk, and settles under 6 GB. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
 
@@ -54,6 +54,17 @@ mac-mini  online  24 GB   0         0        just now
 To name it yourself, `repose host add mac-mini`. A name is 1 to 32 characters of `a-z`, `0-9` and `-`. It is yours alone: another account may use the same one.
 
 On the dashboard, Settings → Hosts does the same three things. **Add a host** takes a name, or none, and shows the step to run on the machine once, with a copy button; it is not shown again, and a host that is still waiting can be removed and added again for a fresh one. The list shows each host's state, its memory and cores, how many of your machines are on it and how many are running, and when it last answered.
+
+## Starting a machine takes about four minutes
+
+A machine on your Mac takes about four minutes to start, the first time and
+every time after. On repose's own servers the same machine starts in about
+[12 seconds](/docs#6-come-back-and-stop). The difference is work repose redoes on the
+Mac at every start, not something the machine carries once it is up.
+
+Once it is running it is a machine like any other. The agents, the builds and
+the tests go at the Mac's own speed: the virtual machine around them costs
+nothing we can measure.
 
 ## When your hardware is offline
 
