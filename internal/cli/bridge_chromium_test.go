@@ -434,7 +434,7 @@ func TestBridgeWithPlaywright(t *testing.T) {
 
 // The guest's chrome-devtools-mcp, run as an agent runs it, through the
 // front with an allowlist. BRIDGE_TEST_DEVTOOLS_MCP is its entry script
-// (build/src/bin/chrome-devtools-mcp.js of repose-chrome-devtools-mcp).
+// (the bin of repose-chrome-devtools-mcp's package.json; upstream moves it).
 func TestBridgeWithChromeDevtoolsMCP(t *testing.T) {
 	entry := os.Getenv("BRIDGE_TEST_DEVTOOLS_MCP")
 	if entry == "" {
