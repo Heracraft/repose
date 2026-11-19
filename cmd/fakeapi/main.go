@@ -174,6 +174,29 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	})
+	// TRANSIENT, 19c's: superseded by POST /owned-host above. 19c's
+	// Playwright half still drives this one; it is deleted, with its
+	// callers swapped to /owned-host, before mac-mini is queued. Two
+	// admin routes doing one job on one fake is how they drift.
+	mux.HandleFunc("POST /offline-host", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			Name      string `json:"name"`
+			QuietMins int    `json:"quiet_minutes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Name == "" {
+			body.Name = "mac-mini"
+		}
+		id := f.AddOwnedHost(body.Name)
+		f.SetProjectHost(body.ProjectID, id)
+		f.SetOwnedHostOffline(id, time.Duration(body.QuietMins)*time.Minute)
+		f.SetHostUnreachable(body.ProjectID, true)
+		_ = json.NewEncoder(w).Encode(map[string]string{"host_id": id})
+	})
 	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
 		back, err := f.CompleteCheckout(r.PathValue("id"))
 		if err != nil {

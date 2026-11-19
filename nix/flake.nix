@@ -255,6 +255,42 @@
       # (nix/guest/tests). They need KVM on the builder: `system-features =
       # kvm` in nix.conf.
       checks.${system} = hostChecks // guestTests // fragmentChecks // {
+        # An owned host keeps its snapshots on its own disk and carries no
+        # bucket credentials (DECISIONS I-1372). Reads the two configurations'
+        # assertions and the hostd unit's argv, so it builds no system.
+        owned-host-keeps-snapshots-local =
+          let
+            owned = (mkHost {
+              hostName = "mac-check";
+              provider = "none";
+              modules = [{ repose.host.owned = true; }];
+            }).config;
+            withBucket = (mkHost {
+              hostName = "mac-check";
+              provider = "none";
+              modules = [{
+                repose.host.owned = true;
+                repose.host.snapshots.blobUrl = "https://example.blob.core.windows.net";
+              }];
+            }).config;
+            failed = cfg: lib.filter (a: !a.assertion) cfg.assertions;
+            argv = owned.systemd.services.hostd.serviceConfig.ExecStart;
+          in
+          pkgs.runCommand "owned-host-keeps-snapshots-local"
+            {
+              ownedFailures = toString (lib.length (failed owned));
+              bucketFailures = builtins.concatStringsSep "\n" (map (a: a.message) (failed withBucket));
+              hostdArgv = builtins.unsafeDiscardStringContext argv;
+            } ''
+            fail() { echo "$1" >&2; exit 1; }
+            [ "$ownedFailures" = 0 ] || fail "an owned host with no bucket should evaluate, got $ownedFailures failed assertions"
+            echo "$bucketFailures" | grep -q 'I-1372' || fail "an owned host given a blobUrl is accepted: $bucketFailures"
+            case "$hostdArgv" in
+              *--snapshot-dir\ /var/lib/repose/snapshots*) ;;
+              *) fail "hostd on an owned host does not write snapshots to its own disk: $hostdArgv" ;;
+            esac
+            echo ok > $out
+          '';
         # The browser view's port (DECISIONS I-1216). 6081 carries the
         # view relay, which the api dials; it was admitted from every
         # source on wg0 before, for a listener that did not exist, and a

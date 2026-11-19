@@ -134,7 +134,7 @@ func TestLsMarksHereAndDropsHours(t *testing.T) {
 		{ID: "b", Slug: "web", Class: "small", State: "stopped"},
 	}
 	var b strings.Builder
-	writeProjectsTableHere(&b, ps, "a")
+	writeProjectsTableHere(&b, ps, "a", nil)
 	want := "PROJECT     SIZE   STATE    UP  AGENTS\ntodo-app *  large  running  -   codex: needs input\nweb         small  stopped  -   -\n"
 	if b.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", b.String(), want)

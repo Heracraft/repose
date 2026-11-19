@@ -23,6 +23,7 @@ feature doc wins; on internals, the workstream doc wins.
 | [stop-start-destroy.md](stop-start-destroy.md) | Lifecycle states, what each one costs, retention | built, temporary machines included (I-347..I-355); idle auto-stop not built |
 | [status-and-logs.md](status-and-logs.md) | `repose status`, `repose ls`, `repose logs`, the dashboard view | partly built; git state in status not built |
 | [pricing.md](pricing.md) | Card before compute, the first day of compute, what is charged, the invoice, a failed payment | built |
+| [own-hardware.md](own-hardware.md) | A Mac mini or x86 box the user owns joins their account, takes only their projects, and keeps its snapshots on its own disk | hosted half built (ownership, placement, `repose host`, the Hosts page, the hub rules, the offline wording); the Mac appliance, its launcher and the aarch64 outputs not built, so no machine has joined yet and no install line is recorded; the Own hardware plan not in `plans.go`; unattended updates not built |
 
 Features with a written design that is not built live in the doc for the
 nearest built feature (preview URLs in ports-and-previews.md, `mcp

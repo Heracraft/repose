@@ -138,6 +138,9 @@ type Fake struct {
 	tokens map[string]string // token -> user id
 	// apiTokens is the api's own bearers by secret (I-1314).
 	apiTokens map[string]*fakeToken
+	// calls counts the requests that reached each route pattern, for a
+	// test that cares how many round trips a command costs (Calls).
+	calls     map[string]int
 	users     map[string]*userRec
 	projects  map[string]*project
 	ops       map[string]*op
@@ -502,6 +505,14 @@ func userFrom(r *http.Request) *userRec {
 	return u
 }
 
+// Calls is how many requests have reached a route, named as it is
+// registered ("GET /v1/hosts").
+func (f *Fake) Calls(pattern string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls[pattern]
+}
+
 func (f *Fake) handle(pattern string, h handler) {
 	f.routes = append(f.routes, pattern)
 	f.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -565,6 +576,10 @@ func (f *Fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, notFound("route"))
 		return
 	}
+	if f.calls == nil {
+		f.calls = map[string]int{}
+	}
+	f.calls[pattern]++
 	if code := f.forced(r, pattern); code != "" {
 		f.mu.Unlock()
 		writeError(w, errf(code, "forced by the test's error switch"))

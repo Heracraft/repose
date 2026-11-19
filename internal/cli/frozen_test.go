@@ -42,7 +42,7 @@ func TestLsStateCellSaysFrozen(t *testing.T) {
 			Signals: &Signals{Agents: []AgentSignal{{Agent: "claude", Window: "claude", State: "working"}}}},
 	}
 	var b strings.Builder
-	writeProjectsTableHere(&b, ps, "")
+	writeProjectsTableHere(&b, ps, "", nil)
 	out := b.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if strings.Contains(lines[0], "FROZEN") {
