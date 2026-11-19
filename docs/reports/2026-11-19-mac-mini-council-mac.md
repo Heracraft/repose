@@ -29,7 +29,7 @@ Ranked by how it reaches a customer, not by how hard it is to fix.
 | 4 | P1 | "Am I being charged for every gigabyte my agent downloads?" (unreproduced) | ENG-55 | [B2](#b2-the-own-plan-is-zero-memory-zero-disk-zero-egress) |
 | 5 | P1 | "I pressed Add and nothing happened." | ENG-25 | [D1](#d1-the-refusal-renders-behind-the-dialog-that-caused-it) |
 | 6 | P2 | "Your Troubleshooting page has nothing about the thing I'm troubleshooting." | ENG-57 | [D2](#d2-troubleshooting-does-not-know-this-feature-exists) |
-| 7 | P2 | "The price is one scroll below three plans I can't use." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads) |
+| 7 | P2 | "The price is one scroll below three plans I can't use." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads-first) |
 | 8 | P2 | "The one way out of this is documented nowhere I can find." | ENG-64 | [B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere) |
 | 9 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
 
@@ -55,7 +55,7 @@ rendered text":
 > previous/next pager or a hidden search palette is site chrome. The page
 > has not said anything.
 
-The method that settled it is in [A2](#a2-the-price-is-on-no-page-a-buyer-reads):
+The method that settled it is in [A2](#a2-the-price-is-on-no-page-a-buyer-reads-first):
 walk every text node and record the element path of each match.
 
 A second rule earned the same way: **the first reading is not the finding.**
@@ -98,7 +98,7 @@ at repose.run already interested, and that buyer does not exist yet.
 in Chromium: 1.29 s at 1440, 1.24 s at 390. `/docs/own-hardware`: 0.17 s.
 Nothing on this site is slow.
 
-### A2. The price is on no page a buyer reads
+### A2. The price is on no page a buyer *reads first*
 
 **What I expected.** To find out what the Own hardware plan costs before
 deciding to buy a Mac mini's worth of commitment.
@@ -182,8 +182,23 @@ them. Two characters each, and none of the held commit's tests would catch
 it, because they assert the price matches `plans.go` rather than that anyone
 can reach it.
 
-**Rank: P2**, down from the P1 I first filed. **Card ENG-47**, re-ranked and
-corrected on the board.
+**And a second correction, from the confer, narrowing it again.** I wrote
+that no surface tells a customer the price. The command-line reviewer
+re-measured `/billing` with a **non-exempt** account and withdrew that half:
+the dashboard renders **all four** plans, Own hardware at **$10 a month**
+with its own description and a Choose button. My reading — and theirs — was
+the `exempt` branch, which is the only account either of us had.
+
+Provenance, which has to travel with that: the render was the real dashboard
+build against the **fake** api. On production only `GET /v1/billing`
+returning `own` with `available: true` is established, and **nobody has seen
+a live non-exempt account**. The plan itself is live in the payment
+catalogue at **$10.00 a month with no overage charge**, verified against the
+live catalogue at 22:08 UTC by another session.
+
+So what survives is the **docs alone**, and it is the two un-anchored links
+above. **Rank: P2**, down from the P1 I first filed. **Card ENG-47**,
+re-ranked and corrected on the board, and matching the conferred report.
 
 ### A3. What I did not file
 
@@ -234,9 +249,12 @@ is billing-exempt, so `/billing` renders *"This account is billing-exempt."*
 and no plan picker at all — no Own hardware card, no price, no button. The
 whole page is the exemption notice and three usage meters.
 
-So **nobody has yet seen the Own hardware plan as a customer sees it**: not
-its card, not its price, not its checkout, not the Billing page of an
-account on it. That is a gap in this review, and it is the gap that matters
+So **nobody has yet seen the Own hardware plan on a live non-exempt
+account**: not its card, not its price, not its checkout, not the Billing
+page of an account on it. The command-line session has since rendered all
+four plans — Own hardware at $10 with a Choose button — against the **fake**
+api, and the plan is live in the payment catalogue at **$10.00 a month with
+no overage charge**. Neither is the same as a customer's own screen. That is a gap in this review, and it is the gap that matters
 most, because [B2](#b2-the-own-plan-is-zero-memory-zero-disk-zero-egress) is
 about what that page would say.
 
@@ -310,8 +328,16 @@ there is no way to learn its shape from the documentation.
 
 A customer whose install died, following the only pointer they were given,
 reaches an API page that documents no bodies and a CLI that never sends this
-one. **Rank: P2** on its own, but it is why the escape hatch is theoretical.
-**Card ENG-64.**
+one.
+
+**Independently confirmed by the command-line session**, which measured the
+page as served rather than as markdown: `/docs/api.md` answers 200 with
+11,553 bytes and contains the word `placement` **zero times**. Two different
+instruments, same answer — which is the one kind of agreement worth having.
+
+**Rank: P2** on its own. **Card ENG-64.** In the conferred report this is
+part of P0 #1: a paid account with no working machine by any route the
+product offers.
 
 ---
 
