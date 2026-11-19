@@ -36959,6 +36959,17 @@ aarch64 host built from it (I-1374).
   builder with KVM. The Mac itself is phase 3's: the appliance boots,
   registers over the hub, hostd says Hello and a project runs.
 
+- *The disko input moved*, from ff8702b4 (2026-06-11) to 1dd30c29
+  (2026-11-10), because the old pin's image builder hands nixpkgs's
+  vmTools a module tree as the kernel, which this nixpkgs refuses;
+  upstream fixed it on 2026-10-19. disko's module is in `hostModules`,
+  so the bump was measured rather than assumed: the same tree evaluated
+  with each pin and every differing leaf derivation listed, for host-01,
+  host-02, host-stg-01 and the edge the only differing leaf is the
+  hostd or gateway version stamp, which changes with every commit, and
+  the installer's derivation is identical. The bump is inert for every
+  host and the edge.
+
 Rejected: two disks, the fleet's layout as it stands (a second file the
 launcher must create and size, for no gain on a machine with one SSD);
 shipping the image at its final size (a 100 GB download of zeros); a
