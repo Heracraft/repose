@@ -85,6 +85,26 @@ then the queue. §6.
 
 ## 4. Settled shape (the assumptions the builders build on)
 
+**The owner, 2026-11-19, verbatim: "You are free to question the initial
+assumptions made by the development process. For example, do we have to use
+Cloud Hypervisor? Perhaps a different one for the Mac minis, something more
+efficient for their environment. As long as guests have NICs and boot, we're
+good. Weigh the guest cost against maintenance."** So everything below is a
+default and not a wall. A session that finds a better shape says so with
+numbers rather than building to the list.
+
+The live example, which the council's engineer hat and 19f both owe an
+opinion on: the deepest alternative on a Mac is **no appliance at all** -
+each project's machine run directly on Virtualization.framework by a macOS
+hostd, which removes the nesting, the appliance's kernel pin and one layer
+of memory, and would attack the four-minute start at its root. The cost is
+a second hostd platform to maintain: LVM thin pools become APFS clones,
+taps become vmnet, systemd becomes launchd. A middle option, keeping the
+appliance and the x86 hostd but a lighter VMM inside it, buys little. The
+honest comparison in a few lines, with numbers from the Mac we have, goes
+to the owner with the council's report. **Nothing is rebuilt on this before
+the release.**
+
 Each is a decision entry a builder writes under "Made during
 implementation" with the id given, unless the owner overrides it first.
 
