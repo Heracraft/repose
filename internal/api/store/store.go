@@ -173,11 +173,16 @@ type Host struct {
 	JoinTokenHash      *string    `db:"join_token_hash"`
 	JoinTokenExpiresAt *time.Time `db:"join_token_expires_at"`
 	RegisteredAt       *time.Time `db:"registered_at"`
-	CreatedAt          time.Time  `db:"created_at"`
-	UpdatedAt          time.Time  `db:"updated_at"`
+	// OwnerAccountID is the account that owns the machine (DECISIONS
+	// I-1366); nil is a host repose runs. Placement puts only that
+	// account's projects on an owned host, and the seat count, the
+	// waitlist and the pool gauges leave it out.
+	OwnerAccountID *uuid.UUID `db:"owner_account_id"`
+	CreatedAt      time.Time  `db:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at"`
 }
 
-const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, cores, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
+const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, cores, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, owner_account_id, created_at, updated_at`
 
 // Op is an ops row.
 type Op struct {
@@ -509,14 +514,31 @@ func GetHost(ctx context.Context, q Querier, id uuid.UUID) (*Host, error) {
 	return one[Host](ctx, q, "select "+hostCols+" from hosts where id = $1", id)
 }
 
-// GetHostByName fetches a host by name.
+// GetHostByName fetches one of the operator's own hosts by name. Names
+// are unique per owner since 0048 (DECISIONS I-1366), so a name alone
+// names a host only among the hosts repose runs; an owned host is
+// reached by id, or by name within its account with
+// GetAccountHostByName. That is also the safe default for the operator
+// CLI: `hosts drain mac-mini` must not find a user's Mac.
 func GetHostByName(ctx context.Context, q Querier, name string) (*Host, error) {
-	return one[Host](ctx, q, "select "+hostCols+" from hosts where name = $1", name)
+	return one[Host](ctx, q, "select "+hostCols+" from hosts where name = $1 and owner_account_id is null", name)
+}
+
+// GetAccountHostByName fetches one host the account owns, by the name
+// that account gave it.
+func GetAccountHostByName(ctx context.Context, q Querier, owner uuid.UUID, name string) (*Host, error) {
+	return one[Host](ctx, q, "select "+hostCols+" from hosts where owner_account_id = $1 and name = $2", owner, name)
 }
 
 // ListHosts lists hosts in name order.
 func ListHosts(ctx context.Context, q Querier) ([]Host, error) {
 	return many[Host](ctx, q, "select "+hostCols+" from hosts order by name")
+}
+
+// ListAccountHosts lists the hosts one account owns, oldest first, so a
+// user reads them in the order they added them.
+func ListAccountHosts(ctx context.Context, q Querier, owner uuid.UUID) ([]Host, error) {
+	return many[Host](ctx, q, "select "+hostCols+" from hosts where owner_account_id = $1 order by created_at, name", owner)
 }
 
 // --- ops --------------------------------------------------------------
