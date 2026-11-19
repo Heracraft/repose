@@ -10,11 +10,12 @@ one of the three the council confers from.
 
 ## What would make a user scream
 
-1. **"The code it gave me for my Mac doesn't work."** Settings → Hosts → Add a
-   host shows a 43-character token. `repose host add --join` takes a 339-character
-   envelope that the same API response also returns and the dialog never shows.
-   The value is one-shot, so the only recovery is remove-and-re-add, which hands
-   them the same wrong value again. [P0-1](#p0-1)
+1. ~~**"The code it gave me for my Mac doesn't work."**~~ **Fixed on production
+   at about 21:50 UTC, while this review was being written, by recording one api
+   setting.** For the hours I measured it, Settings → Hosts handed out a
+   43-character token that `repose host add --join` cannot take. The dialog was
+   falling back silently; see the re-check under [P0-1](#p0-1). What is left is
+   the silent fallback itself, not a P0.
 2. **"It told me I was over my limit, so I deleted three projects. I wasn't."**
    Billing measures the account against the wrong plan's limits, prints "over" in
    red, says creating is refused — and then creates a project in 6.0 s with that
@@ -32,7 +33,9 @@ one of the three the council confers from.
    plan on the landing page, on Pricing, or anywhere in the dashboard.
    [P1-5](#p1-5)
 
-Counts: **2 P0, 5 P1, 7 P2.**
+Counts at the close of the review: **1 P0, 5 P1, 8 P2.** (P0-1 was a P0 when
+measured and was fixed on production before this report was filed; the fallback
+behind it is still open.)
 
 ## Method, and who I was
 
@@ -117,6 +120,52 @@ as harmless and is not: no raw argument should reach a log, a card, a PR, or a
 screenshot of the dashboard.
 
 Measured 20:49 UTC, reproduced twice. Card: ENG-29.
+
+#### Re-checked at 21:50 UTC: the symptom is gone from production, and my diagnosis was wrong
+
+The release conductor recorded `host_install_command` on the live api as
+`repose host add --join %s`. I added a host again and read the dialog:
+
+```
+recheck-2
+Run this on the machine. It is not shown again.
+repose host add --join <340-char base64 argument>        [Copy]
+                                                          [Done]
+```
+
+The copy around it changed too — "Copy this token now. It is not shown again,
+and it is used once." became "Run this on the machine. It is not shown again.",
+and the "What to do with it" link is gone. **Copy puts the whole 363-character
+command on the clipboard, byte-identical to `install.command`.** Verified by
+reading `navigator.clipboard` after pressing it.
+
+So the deployed dashboard was reading `install.command` **all along**, and fell
+through to `join_token` only because the api had no command recorded. Nothing
+was deployed between my two measurements; one setting was recorded.
+
+**That makes the diagnosis above wrong, and the rank wrong with it.** I wrote
+that the dialog "chooses the wrong field". It does not; it has a fallback, and
+the fallback fired. The fault was never in the field the dashboard reads.
+
+**What survives, and it is a real card rather than a P0:** the fallback is
+silent and its product is unusable. With `host_install_command` unset the dialog
+hands out a bare 43-character token under confident copy telling the customer to
+copy it now because it is used once — and nothing can be done with it. A
+fallback that produces an unusable value and says nothing is how a configuration
+gap became, for the hours I measured it, a product that could not be bought and
+used. If the setting is ever lost — a new environment, a fresh api, a bad
+deploy — it returns in silence. That is the thing to fix, and it is what 19a's
+PR #78 should be judged against.
+
+The earlier measurement stands as a measurement: at 20:49 UTC on production the
+dialog showed a 43-character `join_token` and `install.command` was the empty
+string. Both are true; the cause was not what I said it was.
+
+One residue from the re-check, P2: the `<pre>` holding the command is
+`clientWidth` 362 against `scrollWidth` **2831** with `overflow: auto`, so a
+customer sees roughly an eighth of the line. Copy works, so this is cosmetic —
+but anyone who selects it by hand, or reads it to check what they are about to
+run on their Mac, gets a sliver.
 
 ### P0-2 — Billing says you are over your limit and that new projects are refused, then makes one {#p0-2}
 
@@ -532,11 +581,16 @@ well-built, the irreversible actions are guarded, the copy is mostly in the
 house voice, dark mode is honoured everywhere the dashboard itself renders, and
 the measured timings match the documented ones exactly.
 
-Two things block the launch, and they are specific rather than structural.
-[P0-1](#p0-1) is one field in one dialog, and until it is fixed the Own hardware
-plan has no working door on the dashboard. [P0-2](#p0-2) is one wrong source for
-three denominators, and until it is fixed the billing page tells customers a
-false thing about their own account in red.
+One thing blocks the launch. [P0-2](#p0-2) is one wrong source for three
+denominators, and until it is fixed the billing page tells customers a false
+thing about their own account in red, on an account type a real customer can
+have.
 
-**I do not sign the gate on the dashboard surface.** Fix those two, and the
-remaining five P1s are an afternoon.
+[P0-1](#p0-1) was the other, and it was fixed under me — by recording one api
+setting, not by changing the dashboard. I was wrong about why it happened, and
+the report says so where the finding is rather than in a footnote. The silent
+fallback that produced it is still there and is what PR #78 should be judged
+against.
+
+**I do not sign the gate on the dashboard surface.** Fix P0-2, and the five P1s
+are an afternoon.
