@@ -54,7 +54,14 @@ image.
 release shipped pointing at an artefact that was never published, and nothing
 in the release machinery checks that a release's assets exist. The next
 release can do the same thing on any Monday. The image was rebuilt tonight
-and is in verification; the gap it came through is still open.
+and **published at 22:28:37 UTC** — `appliance-2026.11.19`, tag `a3ecdc45`,
+both assets answering 200 anonymously, sha256
+`fce986ce2215326863ae233dfda84b4a4b840715516da5ede2bec296a0ed567b` identical
+on the builder, the Mac and this box, and the identity check passed
+(`hostd-a3ecdc4`, `--api-addr 10.255.255.1:8443`, the production CA, the lab
+address nowhere in the image). **The defect is fixed; the gap it came through
+is still open**, and the reviewer closes the finding on its own anonymous
+reading, not on this report's word.
 
 A second consequence worth naming: **the ENG-41 disk refusal has never been
 exercised by a customer path**, because sizing happens after the image is
