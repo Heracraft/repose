@@ -261,16 +261,31 @@ func TestOwnPlanNeedsNoSeat(t *testing.T) {
 		t.Fatalf("Solo is available on a full fleet: %v", planRow(out, "solo"))
 	}
 	// The subscription a webhook writes for it holds no seat, so the
-	// fleet's count does not move.
+	// fleet's count does not move and the user keeps any place they hold
+	// in the queue for one: they reserved nothing to convert.
 	before := seatsHeld(t, pool)
 	w := billing.NewWebhooks(pool, withOwn(testConfig(f)), nop(), quiet())
 	w.Now = at(time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC))
+	seatRec := &seatsRecorder{}
+	w.Seats = seatRec
 	ev := event("subscription.created", subData("sub_own_seat", a, "prod_own_test", "trialing", nil))
 	if err := post(t, w, f, ev); err != nil {
 		t.Fatalf("the webhook refused the own-hardware product: %v", err)
 	}
 	if after := seatsHeld(t, pool); after != before {
 		t.Fatalf("the seat count moved from %d to %d", before, after)
+	}
+	if len(seatRec.converted) != 0 {
+		t.Fatalf("an own-hardware subscription converted a waitlist place: %v", seatRec.converted)
+	}
+	// A hosted plan still converts, so the seat an invitation held is
+	// released at the checkout as before.
+	b := seedAccount(t, pool, "", "none", "", "")
+	if err := post(t, w, f, event("subscription.created", subData("sub_solo_seat", b, "prod_solo_test", "trialing", nil))); err != nil {
+		t.Fatal(err)
+	}
+	if len(seatRec.converted) != 1 || seatRec.converted[0] != b.UserID.String() {
+		t.Fatalf("a hosted subscription did not convert: %v", seatRec.converted)
 	}
 }
 
