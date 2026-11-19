@@ -48,6 +48,9 @@ type PlanDef struct {
 	MemoryGB   int    `json:"memory_gb"`
 	DiskGB     int    `json:"disk_gb"`
 	EgressGB   int    `json:"egress_gb"`
+	// Hosts is how many hosts of their own the account may register:
+	// 1 on the Own hardware plan, 0 on the hosted ones (I-1364).
+	Hosts int `json:"hosts"`
 	// ProjectLimit is ProjectCap on every plan; the api keeps sending it
 	// for one release after I-569.
 	ProjectLimit int `json:"project_limit"`
@@ -59,16 +62,30 @@ type PlanDef struct {
 	IntroEgressGB   int   `json:"intro_egress_gb"`
 }
 
-// Plans is docs/PRICING.md's table.
+// Plans is docs/PRICING.md's table: the hosted plans, which every seat,
+// memory and disk figure belongs to. The Own hardware plan is OwnPlan,
+// and GET /billing lists it only where the deployment sells it
+// (SetBillingState's own_for_sale, the fake's stand-in for the api's
+// POLAR_PRODUCT_OWN; DECISIONS I-1364).
 var Plans = []PlanDef{
 	{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: ProjectCap, IntroPriceCents: 3900, IntroMonths: 12},
 	{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: ProjectCap},
 	{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: ProjectCap},
 }
 
+// OwnPlan is the Own hardware plan (billing.Own, DECISIONS I-1364): $10 a
+// month for one host the user owns. It sells no memory, disk or egress of
+// ours, so those are 0 and no gate of theirs refuses anything; the host's
+// own memory and disk are the limits.
+var OwnPlan = PlanDef{ID: "own", Name: "Own hardware", PriceCents: 1000, Currency: "USD", TrialDays: 7, Hosts: 1, ProjectLimit: ProjectCap}
+
 // ProjectCap is how many live projects, running or stopped, an account
 // may have on every plan (billing.ProjectCap, DECISIONS I-569).
 const ProjectCap = 100
+
+// hostedPlan reports whether the plan sells memory on repose's fleet: a
+// plan with no host of its own (billing.Plan.OwnHardware).
+func hostedPlan(p *PlanDef) bool { return p == nil || p.Hosts == 0 }
 
 // classGB is each size class's memory, the unit a plan counts
 // (docs/interfaces/README.md).
@@ -105,6 +122,11 @@ const overageCentsPerGB = 5
 
 // egressStopFactor is the multiple of the allowance at which machines stop.
 const egressStopFactor = 4
+
+// MsgPlanKind refuses a change between the Own hardware plan and a hosted
+// plan, in the api's words (internal/api/http's msgPlanKind, which
+// TestPlanKindMessageIsTheApis holds equal; I-1364).
+const MsgPlanKind = "the Own hardware plan and the hosted plans sell different things; cancel this plan, then choose the other one when it ends"
 
 // CheckoutBase is where a checkout's URL points unless SetCheckoutBase
 // moves it: cmd/fakeapi serves a page there that completes the checkout
@@ -152,8 +174,14 @@ type Seats struct {
 type BillingState struct {
 	// Mode is one of the Billing* constants.
 	Mode *string `json:"mode,omitempty"`
-	// Plan is solo, plus or pro; ignored unless the mode has a subscription.
+	// Plan is solo, plus, pro or own; ignored unless the mode has a
+	// subscription.
 	Plan *string `json:"plan,omitempty"`
+	// OwnForSale is whether this deployment sells the Own hardware plan,
+	// the fake's stand-in for POLAR_PRODUCT_OWN being set (I-1364). It is
+	// false by default, as production is: the plan is listed and
+	// checked out only where it is turned on.
+	OwnForSale *bool `json:"own_for_sale,omitempty"`
 	// ScheduledPlan is a downgrade waiting for the renewal; "" clears it.
 	ScheduledPlan *string `json:"scheduled_plan,omitempty"`
 	// Cancelled sets or clears cancel_at (the period's end).
@@ -205,6 +233,7 @@ type billingState struct {
 	diskHeldGB    *float64
 	invoices      *[]Invoice
 	introUsed     bool
+	ownForSale    bool // the deployment sells the Own hardware plan (I-1364)
 	foundingLeft  int                 // negative: no offer, founding_left null
 	checkouts     map[string]checkout // checkout id -> plan and return origin
 	checkoutSeq   int
@@ -346,15 +375,18 @@ func (f *Fake) SetBillingState(s BillingState) error {
 		}
 		f.setMode(*s.Mode)
 	}
+	if s.OwnForSale != nil {
+		f.bill.ownForSale = *s.OwnForSale
+	}
 	if s.Plan != nil {
 		if planByID(*s.Plan) == nil {
-			return fmt.Errorf("plan: solo, plus or pro")
+			return fmt.Errorf("plan: solo, plus, pro or own")
 		}
 		f.bill.plan = *s.Plan
 	}
 	if s.ScheduledPlan != nil {
 		if *s.ScheduledPlan != "" && planByID(*s.ScheduledPlan) == nil {
-			return fmt.Errorf("scheduled_plan: solo, plus, pro or empty")
+			return fmt.Errorf("scheduled_plan: solo, plus, pro, own or empty")
 		}
 		f.bill.scheduledPlan = *s.ScheduledPlan
 	}
@@ -453,13 +485,44 @@ func (f *Fake) CompleteCheckout(checkoutID string) (string, error) {
 	return strings.TrimRight(co.origin, "/") + "/billing?checkout=done", nil
 }
 
+// planByID finds a plan by id, Own hardware included whether or not this
+// deployment sells it: a subscription already on the plan is honoured
+// even where a new checkout of it is refused, as the api honours one
+// whose product id was removed.
 func planByID(id string) *PlanDef {
 	for i := range Plans {
 		if Plans[i].ID == id {
 			return &Plans[i]
 		}
 	}
+	if id == OwnPlan.ID {
+		p := OwnPlan
+		return &p
+	}
 	return nil
+}
+
+// plansForSale are the plans GET /billing lists: the hosted three, and
+// Own hardware where the deployment sells it (I-1364).
+func (f *Fake) plansForSale() []PlanDef {
+	out := append([]PlanDef(nil), Plans...)
+	if f.bill.ownForSale {
+		out = append(out, OwnPlan)
+	}
+	return out
+}
+
+// planChoices is the refusal's list of plan ids, as the api's
+// billing.PlanChoices writes it: "solo, plus and pro".
+func (f *Fake) planChoices() string {
+	ids := make([]string, 0, 4)
+	for _, p := range f.plansForSale() {
+		ids = append(ids, p.ID)
+	}
+	if len(ids) < 2 {
+		return strings.Join(ids, "")
+	}
+	return strings.Join(ids[:len(ids)-1], ", ") + " and " + ids[len(ids)-1]
 }
 
 func (f *Fake) billingOn() bool { return f.bill.mode != BillingOff }
@@ -632,6 +695,12 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 	if plan == nil {
 		return nil
 	}
+	if !hostedPlan(plan) {
+		// An own-hardware plan sells no memory, disk or egress of ours and
+		// so refuses none of them: the machine is the user's (I-1364). The
+		// refusals above (no plan, past due, suspended) still apply.
+		return nil
+	}
 	if f.bill.egressGB >= float64(egressStopFactor*plan.EgressGB) {
 		return errf("payment_required", "Your machines are stopped until %s: egress this period is %.0f GB, four times %s's %d GB allowance.",
 			f.bill.periodEnd.Format("2006-01-02"), f.bill.egressGB, plan.Name, plan.EgressGB).
@@ -798,18 +867,26 @@ func (f *Fake) meLimits() limitsView {
 	case BillingOff, BillingExempt:
 		// The top plan's numbers (I-289).
 		top := Plans[len(Plans)-1]
-		return limitsView{Projects: ProjectCap, XL: 1, MemoryGB: top.MemoryGB, DiskGB: top.DiskGB, EgressGB: top.EgressGB}
+		// A billing-exempt account may register one host of its own
+		// without buying a plan from itself (billing.HostsAllowed).
+		hosts := 0
+		if f.bill.mode == BillingExempt {
+			hosts = 1
+		}
+		return limitsView{Projects: ProjectCap, XL: 1, MemoryGB: top.MemoryGB, DiskGB: top.DiskGB, EgressGB: top.EgressGB, Hosts: hosts}
 	}
 	plan := f.currentPlan()
 	if plan == nil {
 		return limitsView{}
 	}
-	// An xl fits any plan that holds 16 GB of memory for running machines (Plus and Pro).
+	// An xl fits any plan that holds 16 GB of memory for running machines
+	// (Plus and Pro), and every class fits an own-hardware plan: what
+	// fits there is the host's memory (I-1364).
 	xl := 0
-	if plan.MemoryGB >= classGB["xl"] {
+	if plan.MemoryGB >= classGB["xl"] || !hostedPlan(plan) {
 		xl = 1
 	}
-	return limitsView{Projects: ProjectCap, XL: xl, MemoryGB: plan.MemoryGB, DiskGB: plan.DiskGB, EgressGB: plan.EgressGB}
+	return limitsView{Projects: ProjectCap, XL: xl, MemoryGB: plan.MemoryGB, DiskGB: plan.DiskGB, EgressGB: plan.EgressGB, Hosts: plan.Hosts}
 }
 
 // Handlers.
@@ -832,7 +909,7 @@ func (f *Fake) getBilling(w http.ResponseWriter, r *http.Request) *apiError {
 	out.Seats = f.seatsOf()
 	out.Waitlist = f.bill.waitlist
 	out.IntroEligible = !f.hasSubscription() && !f.bill.introUsed
-	for _, p := range Plans {
+	for _, p := range f.plansForSale() {
 		available := f.seatsFor() >= p.Seats
 		if cur := f.currentPlan(); cur != nil {
 			// A subscriber holds their seats already; another plan needs
@@ -870,8 +947,10 @@ func (f *Fake) billingCheckout(w http.ResponseWriter, r *http.Request) *apiError
 		return e
 	}
 	plan := planByID(body.Plan)
-	if plan == nil {
-		return invalid("plan: solo, plus or pro")
+	if plan == nil || (!hostedPlan(plan) && !f.bill.ownForSale) {
+		// A plan this deployment does not sell reads as an unknown plan,
+		// as the api answers it (I-1364).
+		return invalid("plan must be %s", f.planChoices())
 	}
 	if f.hasSubscription() {
 		return errf("conflict", "you already have a plan; change it instead").withDetail(map[string]any{"reason": "subscribed"})
@@ -916,12 +995,16 @@ func (f *Fake) billingPlan(w http.ResponseWriter, r *http.Request) *apiError {
 		return e
 	}
 	to := planByID(body.Plan)
-	if to == nil {
-		return invalid("plan: solo, plus or pro")
+	if to == nil || (!hostedPlan(to) && !f.bill.ownForSale) {
+		return invalid("plan must be %s", f.planChoices())
 	}
 	cur := f.currentPlan()
 	if cur == nil {
 		return errf("conflict", "no plan to change; choose one first").withDetail(map[string]any{"reason": "no_subscription"})
+	}
+	if hostedPlan(to) != hostedPlan(cur) {
+		// The api's sentence, word for word (I-1364).
+		return errf("conflict", "%s", MsgPlanKind).withDetail(map[string]any{"reason": "plan_kind"})
 	}
 	u := userFrom(r)
 	now := f.now()

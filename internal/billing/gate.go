@@ -156,6 +156,18 @@ func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Re
 	if (sub.Status == StatusPastDue || u.BillingStatus == "past_due") && !req.Resume {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
+	if plan.OwnHardware() {
+		// An own-hardware plan sells no memory, disk or egress of ours, so
+		// it refuses none of them: the machine is the user's and its own
+		// memory and disk are the limits (DECISIONS I-1364). Everything
+		// above this line still applies: a suspended account, no
+		// subscription and a failed payment refuse a start as they do on
+		// any plan. What keeps such an account off a repose host is
+		// placement (host ownership, item 19a of
+		// docs/workstreams/19-mac-mini.md), not this gate, which cannot
+		// see whose host a project would land on.
+		return nil, nil
+	}
 	egress, err := PeriodEgress(ctx, q, u.ID, period)
 	if err != nil {
 		return nil, err
@@ -258,7 +270,11 @@ type Limits struct {
 	MemoryGB int
 	DiskGB   int
 	EgressGB int
-	Plan     *Plan
+	// Hosts is how many hosts of their own the account may register: the
+	// plan's (DECISIONS I-1364), 0 on the hosted plans and without a
+	// plan. POST /hosts refuses past it (item 19a).
+	Hosts int
+	Plan  *Plan
 }
 
 // LimitsFor computes a user's limits from their live subscription, with
@@ -270,7 +286,11 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 		if p.AllowsXL() {
 			xl = 1
 		}
-		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Plan: &p}
+		// An own-hardware plan's memory, disk and egress are 0, which is
+		// what "no limit from the plan" looks like here: the client reads
+		// 0 as "the plan does not cap this" and prints no figure against
+		// it (internal/cli's planLine), and hosts is the one limit it has.
+		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Hosts: HostsAllowed(u, sub), Plan: &p}
 	}
 	l := Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: u.XLLimit, MemoryGB: Solo.MemoryGB, DiskGB: Solo.DiskGB, EgressGB: Solo.EgressGB}
 	if u.BillingStatus == "exempt" {
@@ -281,12 +301,29 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 			l.XL = 1
 		}
 	}
+	l.Hosts = HostsAllowed(u, sub)
 	return l
+}
+
+// HostsAllowed is how many hosts of their own an account may register:
+// its plan's Hosts (DECISIONS I-1364), and one for a billing-exempt
+// account, which has no plan to buy and is how the operator adds a
+// machine of their own without selling it to themselves. POST /hosts
+// refuses past this number and GET /me reports it as `limits.hosts`, so
+// the route and the page cannot disagree.
+func HostsAllowed(u *store.User, sub *Sub) int {
+	if u != nil && u.BillingStatus == "exempt" {
+		return 1
+	}
+	if sub != nil && sub.Live() {
+		return sub.PlanOrSolo().Hosts
+	}
+	return 0
 }
 
 // JSON is the /me limits object.
 func (l Limits) JSON() map[string]any {
-	return map[string]any{"projects": l.Projects, "xl": l.XL, "memory_gb": l.MemoryGB, "disk_gb": l.DiskGB, "egress_gb": l.EgressGB}
+	return map[string]any{"projects": l.Projects, "xl": l.XL, "memory_gb": l.MemoryGB, "disk_gb": l.DiskGB, "egress_gb": l.EgressGB, "hosts": l.Hosts}
 }
 
 // Place is a user's waitlist row as /me, /billing and the gate report it.

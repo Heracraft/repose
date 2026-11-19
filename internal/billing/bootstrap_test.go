@@ -26,11 +26,11 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// meter, three products, the discount, the webhook endpoint.
-	if len(res.Created) != 6 || len(res.Found) != 0 {
+	// meter, four products, the discount, the webhook endpoint.
+	if len(res.Created) != 7 || len(res.Found) != 0 {
 		t.Fatalf("first run: created %v found %v", res.Created, res.Found)
 	}
-	if res.ProductSolo == "" || res.ProductPlus == "" || res.ProductPro == "" || res.MeterOverage == "" || res.WebhookSecret != f.Secret() || res.Environment != "sandbox" || res.Organization != "repose-fake" {
+	if res.ProductSolo == "" || res.ProductPlus == "" || res.ProductPro == "" || res.ProductOwn == "" || res.MeterOverage == "" || res.WebhookSecret != f.Secret() || res.Environment != "sandbox" || res.Organization != "repose-fake" {
 		t.Fatalf("result: %+v", res)
 	}
 	org := f.Bodies["PATCH /organizations/org_fake"]
@@ -59,8 +59,8 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 		t.Fatalf("meter body: %v", m)
 	}
 	products := f.Bodies["POST /products/"]
-	if len(products) != 3 {
-		t.Fatalf("%d products created", len(products))
+	if len(products) != len(billing.Plans) {
+		t.Fatalf("%d products created for %d plans", len(products), len(billing.Plans))
 	}
 	for i, pr := range products {
 		plan := billing.Plans[i]
@@ -68,10 +68,23 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 			t.Fatalf("product body: %v", pr)
 		}
 		prices := pr["prices"].([]any)
-		fixed, metered := prices[0].(map[string]any), prices[1].(map[string]any)
+		fixed := prices[0].(map[string]any)
 		if fixed["amount_type"] != "fixed" || fixed["price_amount"] != float64(plan.PriceCents) || fixed["price_currency"] != "usd" || fixed["tax_behavior"] != "exclusive" {
 			t.Fatalf("fixed price: %v", fixed)
 		}
+		// A plan that meters no egress has the fixed price alone: a
+		// metered price on the Own hardware product would promise a
+		// charge that can never arrive (I-1364).
+		if !plan.EgressMetered() {
+			if len(prices) != 1 {
+				t.Fatalf("%s has %d prices; a plan that meters no egress has one", plan.ID, len(prices))
+			}
+			continue
+		}
+		if len(prices) != 2 {
+			t.Fatalf("%s has %d prices; a metered plan has two", plan.ID, len(prices))
+		}
+		metered := prices[1].(map[string]any)
 		if metered["amount_type"] != "metered_unit" || metered["meter_id"] != res.MeterOverage || metered["unit_amount"] != "5" || metered["tax_behavior"] != "exclusive" {
 			t.Fatalf("metered price: %v", metered)
 		}
@@ -91,7 +104,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 		t.Fatalf("webhook endpoint: %v", we)
 	}
 	block := res.EnvBlock()
-	for _, want := range []string{"POLAR_ENVIRONMENT=sandbox", "POLAR_PRODUCT_SOLO=" + res.ProductSolo, "POLAR_PRODUCT_PLUS=" + res.ProductPlus, "POLAR_PRODUCT_PRO=" + res.ProductPro, "POLAR_DISCOUNT_INTRO=" + res.DiscountIntro, "POLAR_WEBHOOK_SECRET=" + f.Secret()} {
+	for _, want := range []string{"POLAR_ENVIRONMENT=sandbox", "POLAR_PRODUCT_SOLO=" + res.ProductSolo, "POLAR_PRODUCT_PLUS=" + res.ProductPlus, "POLAR_PRODUCT_PRO=" + res.ProductPro, "POLAR_PRODUCT_OWN=" + res.ProductOwn, "POLAR_DISCOUNT_INTRO=" + res.DiscountIntro, "POLAR_WEBHOOK_SECRET=" + f.Secret()} {
 		if !strings.Contains(block, want) {
 			t.Errorf("block lacks %q:\n%s", want, block)
 		}
@@ -108,7 +121,7 @@ func TestBootstrapIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(again.Created) != 0 || len(again.Found) != 7 || again.DiscountIntro != res.DiscountIntro || again.ProductSolo != res.ProductSolo || again.ProductPlus != res.ProductPlus || again.ProductPro != res.ProductPro || again.WebhookSecret != f.Secret() {
+	if len(again.Created) != 0 || len(again.Found) != 8 || again.DiscountIntro != res.DiscountIntro || again.ProductSolo != res.ProductSolo || again.ProductPlus != res.ProductPlus || again.ProductPro != res.ProductPro || again.ProductOwn != res.ProductOwn || again.WebhookSecret != f.Secret() {
 		t.Fatalf("rerun: created %v found %v", again.Created, again.Found)
 	}
 	for _, r := range f.Requests[before:] {

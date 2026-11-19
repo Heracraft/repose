@@ -103,6 +103,11 @@ func (o *Overage) DiskOverPlan(ctx context.Context) ([]uuid.UUID, error) {
 		sub := &subs[i]
 		period := sub.Period(now)
 		plan := sub.PlanFor(period.Start)
+		if plan.OwnHardware() {
+			// The plan sells no disk of ours: the host's own disk is the
+			// limit, so there is nothing to be over (DECISIONS I-1364).
+			continue
+		}
 		held, _, err := HeldDisk(ctx, o.pool, sub.UserID)
 		if err != nil {
 			return told, err
@@ -290,6 +295,11 @@ func (o *Overage) hardStops(ctx context.Context) ([]uuid.UUID, error) {
 		sub := &subs[i]
 		period := sub.Period(now)
 		plan := sub.PlanFor(period.Start)
+		if !plan.EgressMetered() {
+			// An own-hardware plan has no allowance and so no ceiling: the
+			// bytes left the user's own network (DECISIONS I-1364).
+			continue
+		}
 		egress, err := PeriodEgress(ctx, o.pool, sub.UserID, period)
 		if err != nil {
 			return stopped, err

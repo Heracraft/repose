@@ -99,6 +99,9 @@ type limitsView struct {
 	MemoryGB int `json:"memory_gb"`
 	DiskGB   int `json:"disk_gb"`
 	EgressGB int `json:"egress_gb"`
+	// Hosts is how many hosts of their own the account may register
+	// (billing.HostsAllowed, I-1364).
+	Hosts int `json:"hosts"`
 }
 
 type notifyView struct {
