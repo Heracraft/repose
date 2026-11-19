@@ -50,7 +50,7 @@ run_l2() { # $1 = run number; prints seconds to login prompt and keeps the opens
 set timeout 180
 set t0 [clock milliseconds]
 spawn ./cloud-hypervisor --api-socket $sock --kernel Image --initramfs initrd.img \
-  --disk path=root.raw path=seed.img \
+  --disk path=root.raw,image_type=raw path=seed.img,image_type=raw \
   --cmdline "console=ttyAMA0 root=/dev/vda1 rw" \
   --cpus boot=2 --memory size=2048M --serial tty --console off
 expect -re "login:" { puts "BOOT_MS [expr [clock milliseconds] - \$t0]" }
