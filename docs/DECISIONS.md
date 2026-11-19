@@ -37001,7 +37001,15 @@ untested on Apple silicon); 6.8 (below the assertion).
   `--ready-timeout`, `mac.nix` sets `guestReadyTimeout = "5m"`, and the
   Azure hosts keep 60 s unchanged. The Mac's value is minutes because a
   first boot there is minutes, not a figure to tune away later: a
-  shorter window turns a slow first boot into a failed one. (2) The
+  shorter window turns a slow first boot into a failed one. A warm
+  start of the same guest is no faster, 3 min 59 s, Ready at 90 s: the
+  guest skips its registration (`store paths already registered`,
+  I-225) but waits for hostd's RegisterPaths message, which arrives 95
+  s after Ready because the `nix-store -qR` and `--dump-db` of the
+  closure run on the appliance at every start. So the wait is per
+  start, not per guest or per closure, and the next thing for a Mac's
+  start time is hostd caching the closure's dump-db per closure (03's
+  change, not made here); the rest is the nested CPU. (2) The
   image carries stale blocks from its own build (12.7 GB real on the
   Mac for a lab image, 9.7 after `fstrim`), so the appliance trims at
   every boot and the installer unpacks sparse; the production image

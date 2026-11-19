@@ -377,7 +377,12 @@ critical chain is `repose-paths` waiting 1 min 41 s for hostd's
 RegisterPaths (I-232's dump-db of the closure, slow on the appliance),
 then home-manager 26 s. hostd's 60 s ready window closed on it twice,
 reproducibly: `--ready-timeout` and `guestReadyTimeout = "5m"` in
-mac.nix are the fix (I-1376). A stop takes 18 s. Failing units in the
+mac.nix are the fix (I-1376). A stop takes 18 s. A warm start of the
+same guest: kernel 15.6 s, userspace 3 min 43 s, Ready at 90 s,
+`repose-paths` 2 min 4 s; guestd logged `store paths already
+registered` at 185 s, so the wait is hostd's RegisterPaths arriving 95
+s after Ready: the closure's `nix-store -qR` and `--dump-db` on the
+appliance, at every start. Load average 7 on 2 vCPUs during boot. Failing units in the
 aarch64 guest, not fixed here: `repose-zram-swap` (`zramctl: /dev/zram0:
 failed to wait for initialized: No such file or directory`) and Docker's
 first attempt (`timeout waiting for containerd to start`, then it
