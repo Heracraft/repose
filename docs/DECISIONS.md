@@ -36116,3 +36116,76 @@ changed.
 *Checked:* `TestUnknownCommandSuggests` (`connect izma` names
 `repose attach`); `Connect offers repose attach first and never repose
 run` in apps/web/tests/project-layout.spec.ts.
+**I-1356. `repose say` with no `--agent` picks out of the agents the
+machine lists, and a trigger's run is told from a window the user named
+by the run registry, not by the window's name (say-agent-pick,
+2026-11-18).** *Made during implementation; amends I-1256.*
+
+On a live check on `e2e-dash`, one Claude Code agent was running, idle,
+in the window a run of the trigger `dash1` had opened. The dashboard's
+agents list showed `claude t-dash1 idle`. `repose say e2e-dash "TEXT"`
+answered `Guestd SayToAgent: no agent is running on this machine`, while
+`repose say e2e-dash --agent t-dash1 "TEXT"` delivered and the agent
+acted on it.
+
+Both halves of that were wrong. `sayWindow` dropped every window whose
+name begins `t-` and then reported the empty candidate list with the
+sentence for a machine with no agent at all, so the one surface that
+knew an agent was there (the same `w.windows` the agents list is built
+from) told the owner the opposite.
+
+- **The pick is the agents list, less the runs.** The candidates are the
+  windows the watcher reports — what `GuestSignals.agents`, so `repose
+  ps` and the dashboard, show — without the ones the trigger registry
+  says hold its own runs. One candidate takes the message; several is
+  `invalid_argument` naming them, as before.
+- **A run is still not the user's agent, while the user has one.** With
+  an agent of their own on the machine, a run is not in the choice and
+  cannot turn an ordinary `repose say` into `several_agents`, which is
+  what I-1256 protects.
+- **When every agent on the machine is a run, the runs are the
+  candidates.** So the machine's one agent takes the message whatever
+  its window is named, and several runs with nothing else refuse by
+  naming themselves. This is the part of I-1256 this entry amends: "say
+  without `--agent` does not resolve to a run" meant a machine whose
+  only agent was a run had, in the owner's reading, no agent at all —
+  and the dashboard's own say field delivers to that run, since it names
+  the window it typed under.
+- **The registry, not the prefix.** guestd keys a run by its id in
+  `/run/repose/triggers/<run_id>` and rebuilds that set from the marks
+  and tmux at start, so it knows exactly which windows are its runs'
+  (`trigger.Runner.RunWindows`). I-1256 had the two reading surfaces
+  read `t-` instead and accepted that a window a user names `t-notes`
+  counts as a run. That cost more than it saved: such a window is an
+  agent of the user's that the pick silently left out, so a say meant
+  for it went to their other agent with no refusal at all.
+- **`repose ls` still reads the prefix**, so `t-` stays reserved. Its
+  AGENTS cell is drawn on the laptop from the api's sample, which
+  carries window names and no run flag (I-1256's own reason for the
+  prefix), and a machine nobody is attached to must not read as the
+  user's agent working.
+- **Lock order.** The watcher reads the registry before it takes its own
+  lock, never under it: the runs' supervisor holds the runner's lock
+  while it reads a window's state from the watcher.
+- *What stays unanswered.* In the seconds between a guestd restart and
+  `Reconcile`, a run in flight is not in the registry yet, so a `say`
+  landing there treats its window as the user's. It reaches the same
+  agent `--agent` would.
+
+Rejected: a refusal of its own for "the only agent here is a run" (it
+would make the owner retype the command naming the only agent on the
+machine, and the dashboard would need a sentence for a refusal it cannot
+get). Rejected: a `trigger_run` field on `AgentProc` so every surface
+reads the registry — a change to grpc-hostd, the api's sample and the
+dashboard for a listing that is already right.
+
+*Checked:* `TestSayReachesTheOneAgentWhenItIsATriggerRun`
+(internal/guestd) replays the live machine over the wire — one claude in
+`t-dash1`, that run in the registry, no `--agent` — and read
+`code:"not_found" message:"no agent is running on this machine"` before
+the fix and `delivered in t-dash1` after.
+`TestSayPicksAnAgentTheDashboardLists` (internal/guestd/sample) holds the
+four cases: the only agent is a run (was `not_found`), a window the user
+named `t-notes` beside `claude` (was delivered to `claude` with no
+refusal), a run beside the user's own agent (goes to the user's), and two
+runs and nothing else (was `not_found`, now names both).

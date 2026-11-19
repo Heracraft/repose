@@ -9,7 +9,6 @@ import (
 	"github.com/heracraft/repose/internal/agentprompt"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/multiplexer"
-	"github.com/heracraft/repose/internal/triggerrun"
 )
 
 // `repose say` (DECISIONS I-1144): the owner types a message for an agent
@@ -103,12 +102,15 @@ func (w *Watcher) Say(ctx context.Context, r SayRequest) (SayOutcome, error) {
 		return SayOutcome{}, sysdep.Invalid("a message of %d bytes; at most %d", len(r.Text), SayTextCap)
 	}
 
+	// Before the lock, never under it: see triggerRuns.
+	runs := w.triggerRuns()
+
 	w.mu.Lock()
 	if out, done := w.saidAlready[r.ID]; done && r.ID != "" {
 		w.mu.Unlock()
 		return out, nil
 	}
-	window, err := w.sayWindow(r.Window)
+	window, err := w.sayWindow(r.Window, runs)
 	if err != nil {
 		w.mu.Unlock()
 		return SayOutcome{}, err
@@ -146,30 +148,64 @@ func saySendable(state string) bool {
 	return state == StateIdle || state == StateNeedsInput
 }
 
-// sayWindow resolves the window a message is for. The caller holds the
-// lock. An empty name means the guest's one agent window; more than one
-// is a refusal that names them, so the sender can pick with --agent.
-func (w *Watcher) sayWindow(want string) (string, error) {
-	// A trigger's window is an agent window, but it is not the user's:
-	// a 03:00 sweep must not turn an ordinary `repose say` into
-	// `several_agents` (DECISIONS I-1256). Naming one with --agent still
-	// reaches it, which is how you talk to a run.
-	var names []string
-	for name := range w.windows {
-		if strings.HasPrefix(name, TriggerWindowPrefix) {
-			continue
-		}
-		names = append(names, name)
+// SetRunWindows gives the watcher the trigger registry's own run
+// windows (trigger.Runner.RunWindows), which is how the pick below tells
+// a run from one of the user's agents (DECISIONS I-1356). Unset, nothing
+// is a run.
+func (w *Watcher) SetRunWindows(f func() map[string]bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.runWindows = f
+}
+
+// triggerRuns reads the registry's run windows. It is called before the
+// watcher's lock and never under it: the runs' supervisor holds the
+// runner's lock while it reads a window's state from this watcher
+// (trigger.Runner.sweep), so the other order is a deadlock.
+func (w *Watcher) triggerRuns() map[string]bool {
+	w.mu.Lock()
+	f := w.runWindows
+	w.mu.Unlock()
+	if f == nil {
+		return nil
 	}
-	sort.Strings(names)
+	return f()
+}
+
+// sayWindow resolves the window a message is for, out of the windows the
+// agents list shows (Signals) and runs, the ones the trigger registry
+// says hold its own runs. The caller holds the lock.
+//
+// An empty name means the machine's one agent, whatever its window is
+// called: with several the refusal names them, so the sender picks with
+// --agent (DECISIONS I-1144, I-1356). A trigger's run is an agent of the
+// machine's but not the user's, so it is left out of the choice while the
+// user has an agent of their own: a 03:00 sweep must not turn an ordinary
+// `repose say` into `several_agents` (I-1256). It is still the one agent
+// running when it is the only one, and `--agent t-apply` reaches a run
+// either way.
+func (w *Watcher) sayWindow(want string, runs map[string]bool) (string, error) {
+	var all, mine []string
+	for name := range w.windows {
+		all = append(all, name)
+		if !runs[name] {
+			mine = append(mine, name)
+		}
+	}
+	sort.Strings(all)
+	sort.Strings(mine)
 	if want != "" {
 		if _, ok := w.windows[want]; !ok {
-			if len(names) == 0 {
+			if len(all) == 0 {
 				return "", sysdep.NotFound("no agent is running on this machine")
 			}
-			return "", sysdep.NotFound("no agent in window %s; the agents here are %s", want, strings.Join(names, ", "))
+			return "", sysdep.NotFound("no agent in window %s; the agents here are %s", want, strings.Join(all, ", "))
 		}
 		return want, nil
+	}
+	names := mine
+	if len(names) == 0 {
+		names = all
 	}
 	switch len(names) {
 	case 0:
@@ -180,11 +216,6 @@ func (w *Watcher) sayWindow(want string) (string, error) {
 		return "", sysdep.Invalid("%d agents are running: %s. Name one with --agent", len(names), strings.Join(names, ", "))
 	}
 }
-
-// TriggerWindowPrefix is the window prefix a trigger's run uses
-// (`t-apply`, `t-apply.2`, DECISIONS I-1256). It is reserved in
-// guest-conventions.md, as a platform port is.
-const TriggerWindowPrefix = triggerrun.WindowPrefix
 
 // rememberSay keeps a delivered say id so a resent command is answered
 // from the record instead of typed again.

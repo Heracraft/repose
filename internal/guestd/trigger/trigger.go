@@ -606,6 +606,22 @@ func (r *Runner) reserve(t Trigger, req Request) (*run, string) {
 	return rn, ""
 }
 
+// RunWindows is the windows the runs in flight are working in. It is how
+// the rest of guestd tells a run's window from one the user named: the
+// registry is the fact, and `t-` is a name a user may type (DECISIONS
+// I-1356). A run that has reported its end is not in it.
+func (r *Runner) RunWindows() map[string]bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]bool, len(r.runs))
+	for _, rn := range r.runs {
+		if !rn.Ended {
+			out[rn.Window] = true
+		}
+	}
+	return out
+}
+
 // release gives back a reservation a refusal did not use.
 func (r *Runner) release(id string) {
 	r.mu.Lock()

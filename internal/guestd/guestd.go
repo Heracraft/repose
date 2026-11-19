@@ -210,6 +210,10 @@ func New(cfg Config) (*Server, error) {
 			return trigger.Project{Slug: s.project.Slug(), Mux: s.project.Multiplexer()}
 		},
 		s.emitTriggerRun, log, cfg.Now)
+	// And back the other way: `repose say` picks the machine's one agent
+	// out of the windows the watcher reports, and the registry is what
+	// says which of them hold a trigger's own run (DECISIONS I-1356).
+	s.watcher.SetRunWindows(s.triggers.RunWindows)
 	return s, nil
 }
 

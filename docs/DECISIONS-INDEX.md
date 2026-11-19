@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1019 entries.
+1020 entries.
 
 ## Scope
 
@@ -1016,7 +1016,7 @@ pointer, not a summary.
 - **I-1250** The event door is the webhook route that exists, pointed at a receiver guestd owns on `127.0.0.1:9227`; what the edge refuses becomes a skipped run — 2026-11-17; L34747
 - **I-1252** The schedule clock is the api's, a fire is a claimed row the grpc process sends, and the grammar is six shapes with a zone — 2026-11-17; L34784
 - **I-1254** Admission is ordered, every drop is a run row, and the gate is a command; repose checks no provider's signature — 2026-11-17; L34859
-- **I-1256** A run is one tmux window, started with the prompt on the agent's own command line, supervised by guestd, and reconciled from tmux; a failure notifies and a success says only what the agent said — 2026-11-17; L34918
+- **I-1256** A run is one tmux window, started with the prompt on the agent's own command line, supervised by guestd, and reconciled from tmux; a failure notifies and a success says only what the agent said — 2026-11-17; amended by I-1356; L34918
 - **I-1258** Triggers is a project's third tab, after Browser — 2026-11-17; L34984
 - **I-1260** A trigger run is use for the unused notice, counted from `trigger_runs` — 2026-11-17; L35030
 - **I-1262** A trigger's limits are per trigger, and the retention is a route's twenty — 2026-11-17; L35049
@@ -1051,3 +1051,4 @@ pointer, not a summary.
 - **I-1348** The tools carry's unit is capped at 40 percent of the machine's memory (carry-lite, 2026-11-18) — L36041
 - **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — L36051
 - **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36099
+- **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36119
