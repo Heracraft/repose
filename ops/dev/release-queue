@@ -488,8 +488,15 @@ trust_reader() {
     # shipped pinning an image whose release was never published
     # (DECISIONS I-1398). The CLI's own release is not the branch's to
     # answer for, so --cli none; release.yml and release-assets.yml check it.
-    local assets
-    assets=$(cd "$top" && ops/dev/release-assets --cli none --install none 2>&1) ||
+    # REPOSE_QUEUE_ASSETS names the script, as REPOSE_QUEUE_EQUIV names the
+    # closure comparison: the test fixture points it at a stub that answers
+    # for it. That is the only way around this gate. It never skips on a
+    # missing network, a failed call or a stubbed gh, because a release
+    # box can have any of those on the day, and a gate that passes by not
+    # running is the failure this gate exists for.
+    local assets check=${REPOSE_QUEUE_ASSETS:-$top/ops/dev/release-assets}
+    [ -x "$check" ] || die "add: $check is missing, so what this CLI fetches at run time cannot be checked (DECISIONS I-1398)"
+    assets=$("$check" --cli none --install none 2>&1) ||
       die "add: an asset this CLI fetches at run time does not answer (DECISIONS I-1398):"$'\n'"$assets"
   fi
   if [[ " $needs " == *" web "* ]]; then
