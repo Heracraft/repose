@@ -26,7 +26,7 @@ is not: there is no aarch64 guest base, no Mac appliance image and no
 launcher, so nothing has joined an account yet and no
 `host_install_command` has been recorded, which means every `repose host
 add` today prints the token and the docs page rather than a line to run
-(§3). Owned hosts do not update themselves; an operator switches them by
+(§2). Owned hosts do not update themselves; an operator switches them by
 hand, and the timer that would pull a published host system is not built
 and may ship after launch.
 
@@ -145,7 +145,41 @@ cannot take the machine, fails the create op with `capacity` and a
 message that names the host and its state, rather than quietly using the
 fleet and billing for it.
 
-## 4. When the host is offline
+## 4. How long a machine takes to start
+
+A machine on an owned Mac takes about **four minutes** to start, the first
+time and every time after. The hosted fleet starts the same machine in
+about 12 seconds (`/docs`, "Come back and stop"), so this is the one
+number on this feature where a user's experience is twenty times worse
+than the thing they already know, and the page says it in those words
+rather than "a few minutes".
+
+Measured by 19f on the real Mac, the same guest stopped and started:
+cold 3 min 36 s to multi-user, warm 3 min 59 s; Ready at 70 s cold and
+90 s warm; `hostd stop` 18 s. Load average inside the guest was 7 on 2
+vCPUs during boot, so everything in the boot path is two to three times
+slower than on x86.
+
+It is every start and not the first, which is the part that surprises.
+The guest skips its own registration the second time (`store paths
+already registered`, I-225), but only once hostd's `RegisterPaths`
+arrives, and that waits on hostd computing `nix-store -qR` and
+`--dump-db` of the closure on the appliance, per start. So it is neither
+once per guest nor once per closure: a second machine on the same
+closure pays it again.
+
+What is **not** slow: running. Gate 0 measured no nesting tax worth the
+name (a ratio of 1.07, inside noise), so once a machine is up the
+agents, builds and tests go at the Mac's own speed. A reader who takes
+four minutes to mean "everything is four times slower" has been misled
+by a true sentence, which is why the public page says both.
+
+Known and not built: hostd caching the closure's `dump-db` per closure
+rather than recomputing it per start, which 19f expects would halve the
+figure. It is recorded as the next thing and is not on the public page,
+because the page says what happens today.
+
+## 5. When the host is offline
 
 A Mac that is asleep, rebooting, switched off or off the network stops
 answering. After 90 seconds of no heartbeat its state is `unreachable`,
@@ -171,7 +205,7 @@ meanwhile. A host that was switched off or rebooted stops its machines,
 and the api starts the ones that were running again once it is back
 (I-645).
 
-## 5. Snapshots stay on the host's own disk
+## 6. Snapshots stay on the host's own disk
 
 Snapshots of machines on repose's servers go to Azure Blob. Snapshots of
 machines on hardware the user owns are written to that machine's own disk
@@ -189,7 +223,7 @@ fourth home for a secret where CLAUDE.md and `secrets.md` allow three.
 future provider module cannot hand an owned host a bucket by accident
 (I-1372).
 
-## 6. Removing a host
+## 7. Removing a host
 
 `repose host rm NAME` asks one question, then drains and retires the
 host and clears its certificate serials so it cannot come back on them.
