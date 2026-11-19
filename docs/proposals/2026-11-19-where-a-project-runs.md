@@ -14,9 +14,11 @@ ten tools and says which part of it the prior art supports.
 Since I-1366 a host has an owning account, and `projects.placement` defaults to
 `own`, so the moment a customer adds a Mac mini every new project goes to that
 Mac and the customer is never asked and never told. While the Mac answers,
-nothing names it: `repose ls` and `repose status` name the host only while it is
-not answering (`cli.md:488`), so the only readout of the active target appears
-after the target has already broken. If the Mac is not ready the create is
+`repose ls` and `repose status` name the host only once it has stopped
+answering (`cli.md:488`); the name is in `repose status -v`, which also writes a
+stderr line for every api request (`cli.md:27`), and `--json` carries `host_id`
+and no host name, so the readout sits where nobody looks and the
+machine-readable output has only a uuid. If the Mac is not ready the create is
 refused as `capacity` and the project is left in `error`, and a second attempt
 strands a second project, because the placement happens after the row exists.
 The CLI has no flag for the other answer: `placement: "hosted"` is documented as
@@ -92,9 +94,9 @@ New projects: on mac-mini. `repose host default repose` changes it,
 default_host = "mac-mini"   # or "repose"
 ```
 
-**3. The readout, which every working pattern has and repose does not.** The
-HOST column appears whenever the account owns a host, not only when that host
-has stopped answering.
+**3. The readout, which every working pattern has and repose has in the wrong
+place.** The HOST column appears whenever the account owns a host, not only
+when that host has stopped answering.
 
 ```
 $ repose ls
@@ -107,6 +109,20 @@ And `--host` on `repose run`, taking a host name of the account's or the literal
 `repose`, matching `--size` and `--agent` in shape. A name the account does not
 have exits 2. `--host repose` on a plan that sells no fleet memory exits with
 `hosted_plan_required`, which the API already answers.
+
+**This reverses a decision, and the reason it may be reversed is I-1366
+itself.** I-616 put the host behind `-v` on the ground that "the host and the
+machine's address are platform internals nobody acts on"
+(`internal/cli/status.go:454`, amending I-192), and on repose's own fleet that
+was true: a customer could not act on `host-02` and had no reason to know it
+existed. I-1366 ended that premise. A host with an owning account is a Mac on
+the customer's desk, which they bought, plugged in, named, and can unplug, so
+it is the opposite of an internal nobody acts on; it is the thing they act on
+most. Item (2) therefore needs a decision entry that amends I-616 and says
+this, rather than a quiet change to a column, and `host_name` needs to join
+`host_id` in the project JSON (`internal/cli/api_types.go:67`) so a script can
+print the name its owner gave the machine. The `--json` gap is the sharper half:
+a flag can be found, and a missing field cannot be worked around at all.
 
 ## Recommendation
 
@@ -184,9 +200,19 @@ Small, because the field already exists and is read in only two places.
 - Docs in the same commit: `own-hardware.md` (the paragraph that says new
   projects go to your hardware says who decided), the `repose run` flag table
   and the `repose host` rows in `cli.md`, and `internal/cli/docs_test.go`
-  follows. A decision id is needed before any of it is written.
+  follows. A decision id is needed before any of it is written, and it has to
+  amend I-616 rather than sit beside it, because that entry's reasoning is the
+  thing being overturned.
 
 ## Sources
+
+What this product does now, measured by the customer reviews of 2026-11-19 and
+not by this file: the CLI review found the `status -v` host row, its stderr
+price and the missing `host_name` in `--json`; the dashboard review measured
+the 17.0 second recovery and the `error`-with-only-Restart page. Both are
+theirs. The code and docs references were then read here:
+`internal/cli/status.go:454`, `internal/cli/api_types.go:67`, `cli.md:27`,
+`cli.md:488`, `machine.md:8`, `own-hardware.md:10`.
 
 Real complaints, not documentation, where the claim is about a mistake:
 
