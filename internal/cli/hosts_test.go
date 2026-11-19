@@ -237,6 +237,40 @@ func TestLsReadsHostsOnlyWhenOneIsQuiet(t *testing.T) {
 	}
 }
 
+// An API token with `read` may list the hardware; minting a join token
+// or retiring a host hands out, or takes away, a whole machine, so both
+// take a login (I-1370).
+func TestHostsUnderAnAPIToken(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	e.Out, e.ErrOut = &discardWriter{}, &discardWriter{}
+	fake.AddOwnedHost("mac-mini")
+
+	tok, err := e.Client.CreateToken(ctx, CreateTokenRequest{Name: "ci", Scopes: []string{"read", "projects"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	te := newLifecycleEnv(t, fake)
+	te.Client = newClient(fake.URL()+"/v1", apiTokenSource(tok.Token))
+	out := &discardWriter{}
+	te.Out, te.ErrOut = out, &discardWriter{}
+
+	if err := HostLsCmd(ctx, te); err != nil {
+		t.Fatalf("host ls under a token: %v", err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "mac-mini") {
+		t.Fatalf("host ls under a token:\n%s", got)
+	}
+	if err := HostAddCmd(ctx, te, "spare"); err == nil || !strings.Contains(err.Error(), "log in for that") {
+		t.Fatalf("host add under a token: %v", err)
+	}
+	if err := HostRmCmd(ctx, te, "mac-mini", true, nil); err == nil || !strings.Contains(err.Error(), "log in for that") {
+		t.Fatalf("host rm under a token: %v", err)
+	}
+}
+
 // The states a user reads, against the api's own words.
 func TestHostStateWords(t *testing.T) {
 	for api, want := range map[string]string{

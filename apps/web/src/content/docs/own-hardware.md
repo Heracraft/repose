@@ -24,7 +24,7 @@ Repose runs on your Mac as one virtual machine, and nothing of yours is touched:
 
 - x86_64 with hardware virtualization and `/dev/kvm`. Bare metal, Intel or AMD. A virtual machine works only if its own host passes virtualization through, which on Proxmox or libvirt is one setting; most cheap VPSes do not.
 - A machine you are willing to give away whole. Repose installs NixOS over what is there and wipes the disks it is given.
-- Two disks, or one disk with a spare partition for your machines' volumes.
+- Two disks: one for the system, one for your machines' volumes.
 - 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once.
 - Outbound UDP 51820 and TCP 443. No inbound port.
 
@@ -70,7 +70,9 @@ todo-app *  large  running  2h14m  claude: working
 todo-app: mac-mini has not answered for 14m.
 ```
 
-`repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else. A machine that was running is still running: repose has lost sight of the Mac, not the work. When the Mac answers again its machines are reachable, with whatever the agents did in between.
+`repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else.
+
+A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac that was switched off or rebooted stops them, and repose starts the ones that were running again once it is back.
 
 ## Snapshots stay on its disk
 
