@@ -352,6 +352,48 @@ at the first prompt of a cloud image fails because cloud-init has not
 set the password yet; `pkill -f` on a name that appears in your own
 command line kills your own shell.
 
+## 9. The appliance day (19f, 2026-11-19)
+
+The production image (`packages.aarch64-linux.mac-appliance-image`,
+DECISIONS I-1376) was built on the appliance VM L1 as the builder:
+`nixosConfigurations.mac` in 3 min 50 s from 19e's cache, closure 1.78
+GB; the image in 12 min 45 s (disko's image builder in a KVM VM, 37 GiB
+sparse raw inside), 2,081,798,905 bytes as `repose-appliance.raw.gz`.
+It boots on the Mac under vfkit 0.6.4 (`--nested`, EFI, virtio-blk,
+NAT, virtio-fs, the console to a file) to the login prompt on the
+6.18.57 pin, with the join, net, pool, grow and register units running.
+
+Lessons, each of which cost a run:
+
+- **Apple's NAT isolates VMs from each other at layer 2.** Two VMs on
+  vfkit's or Tart's NAT (bridge100, 192.168.64.0/24) each reach the Mac
+  and the internet, and the Mac reaches both, but ARP between them
+  fails. A two-VM lab (a hostdev in one, the appliance in the other)
+  needs a relay on the Mac: `ssh -N -L 192.168.64.1:8443:127.0.0.1:8443
+  admin@<builder>` and an image that dials the Mac's address. The
+  product is not affected; a real appliance dials the api over the
+  internet.
+- **BSD `dd ... count=0 seek=N` does not extend a file.** The installer
+  uses perl's `truncate`, which macOS ships.
+- **`gunzip` writes the zeros.** A 37 GiB image whose data is a few GiB
+  costs 37 GiB on the volume unless the unpack seeks over zero blocks;
+  the installer does, in perl.
+- **launchd takes no agent from an ssh session with no login.**
+  `launchctl bootstrap user/<uid>` answers "Bad request" for a
+  LaunchAgent; the GUI domain does not exist. The installer starts the
+  VM detached from a subshell with every descriptor off the terminal
+  (`nohup` under a tty says "can't detach from console" and the VM dies
+  with the session). On a Mac with a login session the agent is what a
+  user gets (I-1380).
+- **A reboot of the Ubuntu builder VM resets `/dev/kvm` to 0660**, and
+  nix's build users are not in `kvm`, so an image build after the
+  reboot fell back to TCG without saying so loudly (`qemu-system-aarch64:
+  Could not access KVM kernel module: Permission denied`, then `falling
+  back to tcg`). `chmod 666 /dev/kvm` before any build there.
+- **`pkill -f` with the pattern spelled in the same ssh command kills
+  the ssh session.** `pkill -f 'lab-image[2]'` matches the process and
+  not the shell that carries the pattern.
+
 ## Sources
 
 - Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:

@@ -37018,11 +37018,14 @@ the appliance takes as the ACPI power button and stops every guest
 cleanly (I-650), and gives it 120 s before the plug. Everything lives
 under `~/Library/Application Support/repose` and `~/Library/Logs/repose`;
 no sudo anywhere. Not a signed, notarised program: vfkit's release is
-one already, and the rest is shell a user can read. A headless Mac with
-no login session (the lab) starts the VM detached from a subshell with
-every descriptor off the terminal (`REPOSE_LAUNCHD=no`), because `nohup`
-under a tty does not detach on macOS and the VM died with the spark's
-session.
+one already, and the rest is shell a user can read. A Mac with a login
+session gets the agent: that is the user's path. A Mac reached over ssh
+with no login session (the lab) has no GUI domain and its user domain
+refuses an agent ("Bad request"), so the installer then starts the VM
+detached from a subshell with every descriptor off the terminal, because
+`nohup` under a tty does not detach on macOS and the VM died with the
+spark's session; the agent takes over at the next login. The lab
+artefact is the fallback, not the product.
 
 *What it holds and logs.* The argument, once, in a 0600 file in the
 share, which the appliance deletes after reading it. The launcher logs
