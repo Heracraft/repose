@@ -318,8 +318,11 @@ cmd_bootstrap() {
     # shellcheck disable=SC2046
     ssh $(ssh_opts) -t "$user@$ip" "chmod +x macmini-measure-linux.sh && SUDO_PASS='$("${p}_sudo_pass")' ./macmini-measure-linux.sh"
   else
+    # No -t: with a controlling tty, macOS hangs up the lab VM when this
+    # session ends (every run on 2026-11-19 lost L1 at exit); without one
+    # the VM outlives the session, and nothing in the script needs a tty.
     # shellcheck disable=SC2046
-    ssh $(ssh_opts) -t "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
+    ssh $(ssh_opts) "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
   fi
 }
 

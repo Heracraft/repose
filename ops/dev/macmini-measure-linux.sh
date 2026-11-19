@@ -28,7 +28,16 @@ CH=https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download
 # the L1 kernel boots L2: arm64 vmlinuz is a gzip'd Image, CH wants it uncompressed
 if [ ! -s Image ]; then
   k=/boot/vmlinuz-$(uname -r)
-  if file -L "$k" | grep -q gzip; then sudo_ zcat "$k" > Image; else sudo_ cp "$k" Image; fi
+  # Cloud Hypervisor wants the uncompressed arm64 Image (magic "ARM\x64" at
+  # byte 56); Ubuntu compresses vmlinuz with gzip or zstd depending on the
+  # release (CH said UefiTooBig when handed the compressed file, 2026-11-19).
+  case "$(sudo_ file -Lb "$k")" in
+    *gzip*) sudo_ zcat "$k" > Image ;;
+    *Zstandard*|*zstd*) command -v zstd >/dev/null || { if command -v apt-get >/dev/null; then sudo_ apt-get -qq install -y zstd >/dev/null; else sudo_ dnf -q -y install zstd >/dev/null; fi; }
+      sudo_ zstd -dc "$k" > Image ;;
+    *) sudo_ cp "$k" Image ;;
+  esac
+  echo "kernel $(sudo_ file -Lb "$k" | cut -c1-80); Image magic $(od -A n -t x1 -j 56 -N 4 Image | tr -d ' ') (41524d64 is ARM64)" | tee -a ../results/linux-facts.txt
   sudo_ cp "/boot/initrd.img-$(uname -r)" initrd.img
   sudo_ chown "$USER" Image initrd.img
 fi
