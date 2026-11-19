@@ -202,6 +202,28 @@ one release; RUNBOOK section.
 
 ## 6. The user council
 
+**The owner's scope, 2026-11-19, verbatim: "The last review must be super
+ruthless, like going through every combination, possible combination.
+Every feature, try it out, find errors, be a real customer. CLI and
+dashboard."** So the council is not the Mac mini path alone. It is every
+feature the product has, every command of the CLI and every action of the
+dashboard, in every combination a customer could reach: plans and plan
+changes, the four sizes, projects created and destroyed and restored,
+secrets, triggers and webhooks, the phone ask, pause and resume, snapshots,
+`host add` and `host rm`, cancellation, the lot. Every error reproduced and
+ranked.
+
+That is more than one session's day, so it is **two or three council
+sessions** with a split, each a real customer with a stopwatch, conferring
+at the end into one report: one on the CLI, one on the dashboard, one on the
+Mac path. Each writes what it did, what it waited for, what it had to read
+twice and what it would have tweeted; the confer produces the single
+ranked list. A finding one session cannot reproduce is the other's to try
+before it is dropped.
+
+The Mac mini half, which the rest of this section describes, is one of
+those three and the one the owner cannot test at all:
+
 The owner does not own a Mac mini and cannot test this; the council is
 the stand-in for the users who would otherwise scream. After phase 3
 the conductor launches one session that *is* a Mac mini owner: it has
