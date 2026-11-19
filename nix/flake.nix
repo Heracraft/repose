@@ -37,6 +37,10 @@
       url = "github:microvm-nix/microvm.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # At 2026-11-10 or later: the Mac appliance image is disko's image
+    # builder (I-1376), and before disko's 2026-10-19 fix it handed
+    # nixpkgs's vmTools a module tree as the kernel, which this nixpkgs
+    # refuses ("the `kernel` argument has no `target` attribute").
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
