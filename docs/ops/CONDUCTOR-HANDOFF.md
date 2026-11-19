@@ -20,27 +20,33 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-18, 22:00 UTC)
+## Where things stand (2026-11-19, 05:00 UTC)
 
-- Live: CLI v0.1.49, main 159231b9 pushed, base 2026.11.18.1, host-02
-  and the edge switched to it (hostd and gateway at 159231b). host-01 is
-  retired; host-02 is the fleet, burst cores on at gate 0.75 (I-1326).
-- Local main is 11 commits ahead (connect-attach, token-scopes,
-  pr-queue, this handoff once it is cut), ships cli and web; nothing of
-  it needs a switch. `origin/integrated` holds it.
-- The queue is empty. The queue is now the pull requests labelled
-  `queued` against `integrated` (I-1352, `docs/PR.md`); agents queue
-  with `ops/dev/release-queue add --body pr.md --live "..."`, which
-  pushes the branch and opens the PR. `RQ_PR_OFF=1` keeps a local entry.
-- Live sessions on this box (`ListAgents`): `factory-a1` (the
-  prioritization session; it reworked api-tokens), `factory-db`
-  (triggers), `catchall`, `wake-backlog`, `repose-browser-on-dash`
-  (browser-view), `handoff` (session-import, github-first-run). On
-  kanali: nothing live. Their briefs name earlier conductors; tell them
-  your name when you first write to them.
-- Machines that are not yours: everything in `repose ls` except
-  `e2e-*` you made. `tmp-wyyd` is the owner's. Destroy your own after
-  each check; at most two alive at once.
+- Live: CLI v0.1.49, main e57d63da pushed (two pushes on 2026-11-19, no
+  switch and no tag, owner's word), base 2026.11.18.1, host-02 and the
+  edge at 159231b. CI on origin/main is green (44444722781).
+- Local main is 12 commits ahead (r20261119-2: say-agent-pick I-1356,
+  dash-create I-1354, doors I-1360, the conductor-machine proposal,
+  rel-record-8), ships as base,web. `origin/integrated` holds it. The
+  pushed r20261119-1 carries bump-devtools-path, which reaches base,
+  host-02 and the edge and is published and switched nowhere yet. So
+  the next release needs: a push (api and web), a base publish (say,
+  bump) and the owner's word for the host-02 and edge switches.
+- The queue is empty. Every PR from the night is closed as merged; the
+  25 stale agent-bump and dependabot PRs were closed on the owner's word.
+- Worktrees: 152 removed on the owner's word on 2026-11-19 (branches
+  kept). What is left under `~` is this conductor's: `kanali-rel-record-8`,
+  `kanali-domain-dash-session`, `kanali-conductor-machine`,
+  `kanali-conductor-handoff-3`, and the owner's `kanali-doors`.
+- Live sessions on this box (`ListAgents`): the owner's own `factory-f0`
+  (made doors) and `factory-3f` (a bring-your-own-hardware assessment,
+  nothing queued). The ten sessions of the previous week were killed on
+  the owner's word after each reported nothing in flight.
+- Machines that are not yours: everything in `repose ls` except `e2e-*`
+  you made. `tmp-wyyd` is the owner's.
+- The dashboard parity order (I-1266): project create shipped as
+  dash-create; next are resize and logs, then the change-pass gaps the
+  decision names (`agent_default`, `multiplexer`).
 
 ## The owner's rules this week
 
@@ -113,6 +119,24 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   their own branches.
 - Burst's cap ratchets up while a guest is hungry and comes down only at
   a shut gate; `cpu.max` at the ceiling on a quiet guest is the design.
+- A batch that "ships none" still gets the Go set: r20261118-10 was cut
+  without it and the domain test was red on main for a night
+  (2026-11-19, fixed as domain-dash-session).
+- A batch worktree needs its own `pnpm install --frozen-lockfile` (under
+  two seconds from the store). Symlinking the main checkout's
+  `node_modules` gave three reds that were the checkout's stale modules,
+  not the batch's (2026-11-19).
+- `closure-equiv` says host-02 and the edge "really change" for any Go
+  change: hostd's derivation takes the whole Go tree as its source, so
+  `hostd-<rev>-go-modules.drv` re-hashes though hostd imports none of it.
+  Read the "what changes" list: if it is only the hostd and gateway
+  derivations and their units, and `go list -deps` of those binaries has
+  no hit for the changed packages, nothing on the host changed. Worth a
+  worker: filter the derivation's source to what the binary imports.
+- Every PR run on GitHub was red for a week and nobody read one: the
+  buf job passes its checks and then fails posting a comment with a token
+  that lacks the permission. Workers rerun whole suites locally because of
+  it. Fix the permission before trusting PR CI as a gate.
 
 ## Owed
 
@@ -123,5 +147,13 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 - Revoke certificates has no safe live check: it cuts the owner's own
   SSH.
 - 143 worktrees under `~`; removing them needs the owner's word.
-- The scheduled agent bump has failed daily since 2026-11-15
-  (chrome-devtools-mcp 1.13.0 moved its binary path).
+- bump-devtools-path is on origin/main but the base is not published and
+  host-02 and the edge are not switched; the daily bump's next run opens
+  its PR from the fixed wrapper, and `gemini-cli.nix` hardcodes
+  `bundle/gemini.js` the same way (not fixed).
+- Live checks owed to the next release: say-agent-pick (one agent in a
+  trigger run's window, `repose say` with no `--agent`), dash-create (New
+  project from `/projects`), doors (the Triggers tab's doors), bump
+  (`chrome-devtools-mcp --version` on the new base).
+- The buf job's comment permission in `ci.yml` (above), and the
+  post-merge full-suite reruns in worker briefs that it causes.
