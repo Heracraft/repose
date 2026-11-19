@@ -178,18 +178,21 @@ let
         ];
         systemd.services.home-manager-dev.restartTriggers = [ config.environment.etc."tmux.conf".source ];
       })
-      ({ config, ... }: {
-        # hostd reads the link (nixbuild.ClosureInfo) and adds the disk.
-        system.extraSystemBuilderCmds = lib.optionalString storeOnDisk ''
-          ln -s ${config.microvm.storeDisk} $out/repose-store-disk
-        '';
-      })
     ] ++ extraModules;
   };
 
   cfg = guestSystem.config;
   pkgs = guestSystem.pkgs;
   toplevel = cfg.system.build.toplevel;
+  # With storeOnDisk, what hostd boots in the toplevel's place: the
+  # toplevel's entries beside the repose-store-disk link, which
+  # nixbuild.ClosureInfo reads. The link cannot live inside the toplevel,
+  # since the image holds the toplevel's closure (a cycle).
+  toplevelOnDisk = if !storeOnDisk then null else pkgs.runCommandLocal "repose-guest-system-ondisk" { } ''
+    mkdir $out
+    for f in ${toplevel}/*; do ln -s "$f" $out/; done
+    ln -s ${cfg.microvm.storeDisk} $out/repose-store-disk
+  '';
   # What Cloud Hypervisor boots: the uncompressed ELF on x86_64, the
   # arm64 `Image` on aarch64 (what nixpkgs installs for an arm64 kernel,
   # and the one file Cloud Hypervisor boots there), as microvm.nix's
@@ -358,7 +361,7 @@ in
 pkgs.runCommand "repose-guest-runner-${baseVersion}-${class}"
 {
   passthru = {
-    inherit toplevel guestSystem class baseVersion;
+    inherit toplevel toplevelOnDisk guestSystem class baseVersion;
     config = cfg;
     kernel = kernel;
     initrd = initrd;
