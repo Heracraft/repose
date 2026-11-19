@@ -125,6 +125,38 @@ went wrong and what prevents it, because a list of apologies teaches nothing.
   that was not published. Sequence the thing everyone depends on first, and
   treat "the artifact exists and is reachable" as a gate of its own.
 
+## Research the pattern before you design one
+
+A standing instruction from the owner, given twice in one day and worth
+obeying literally: **do not invent a pattern, because what you invent will be
+unintuitive.** Somebody has almost certainly solved the shape of the problem
+already, in a product people use by choice, and a pattern a customer has met
+before needs no explaining.
+
+So when a problem is about **how a thing should work** rather than whether it
+works, the first move is a bounded research session: name eight to fifteen
+real systems to study, require what the human types and what actually goes
+wrong in practice, and **prefer real complaints — issues, forum threads,
+postmortems — over vendor documentation wherever the claim is about a mistake
+people make.** Documentation says what a tool intends; a complaint thread says
+what it does to people.
+
+Two results from running this twice in one night, both of which beat what the
+conductor would have designed:
+
+- The placement question returned the same answer from all twelve systems
+  studied — a named default, a per-command override, and a way to **see**
+  which is active — and none of the four options the brief had offered. It
+  also killed a proposed naming scheme on the product's own facts, and found a
+  recorded decision whose reasoning had quietly stopped being true.
+- The counter-evidence is as valuable as the pattern: `gh repo set-default`
+  refuses even when only one answer is possible and is widely resented for it,
+  which is what stops a researched "refuse when ambiguous" recommendation from
+  shipping as the hated version.
+
+Require the proposal to argue against itself in its own words, and to say
+where its evidence is a vendor doc rather than a measurement.
+
 ## What a mini-conductor should do, in order
 
 1. Read the program doc, `docs/REVIEW.md`, and this file.
