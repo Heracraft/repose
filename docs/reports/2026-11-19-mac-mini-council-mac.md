@@ -980,6 +980,60 @@ The one part of the lifecycle that behaved exactly as documented:
 `/docs/own-hardware` promises *"Remove the host and the virtual machine goes
 with it"*, and it does, including the disk. No finding.
 
+### F11. A build hash under my Mac's name, and no Remove button on a phone
+
+Settings → Hosts, with a host **actually online** — a state no earlier review
+could reach, because until 22:28 no host ever got past `waiting`.
+
+The row renders the host's name and then, directly beneath it in grey
+monospace:
+
+```
+mac-clean
+/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1
+```
+
+A customer sees a 32-character build hash captioned under the name they
+chose for their Mac mini.
+
+**Two symptoms, one cause.** At 1440 it is a cosmetic leak of an internal
+identifier. At 390 it is **functional**: the string does not wrap, so the row
+is wider than the viewport — `scrollWidth` **441** against `clientWidth`
+**390** — the page scrolls sideways, and the only control in the row,
+`Remove…`, is pushed off the right edge and renders as a single letter
+**`R`**.
+
+So **on a phone a customer cannot take their own hardware off their
+account** — and removing the host is the one action the product most needs
+them to find: it is the documented escape from a stuck host
+([B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere),
+ENG-28) and the fix for a failed install. The repo's own rule is no
+horizontal page scroll at 390.
+
+Worth deciding separately from wrapping the text: whether that identifier
+belongs on a customer's screen at all. **Card ENG-88, P1.**
+
+**One unit disagreement noticed in passing**, belonging with
+[F8](#f8-the-cli-counts-in-gib-and-says-gb): for the same host, the CLI says
+**18 GB** and the dashboard says **17.5 GB**. The true figure is
+18,796,412,928 bytes — 17.5 GiB, 18.8 GB. Both are rounding the same number
+in different units, and neither says which.
+
+### F12. The questions view works, and I left it alone
+
+Opening Settings showed a **Questions** badge of 1, and `repose questions`
+listed a real question: an agent on the account's `job` project, asked 59
+minutes earlier, expiring in 3h01m, with a four-part prompt and instructions
+for replying.
+
+That is the owner's own workflow, so I did not answer it. It is in this
+report because it is **evidence the ask path works end to end in
+production** — an agent asked, the question reached both the CLI and the
+dashboard with its age and expiry, and the badge found me without being
+looked for. I will exercise the path myself with my own question on the
+clean machine, inside the **2-minute notification hold** that `repose
+notify` reports, so that no real person is paged by a test.
+
 ### F10. What is still unmeasured
 
 Held open honestly rather than filled with impressions. These need a working
