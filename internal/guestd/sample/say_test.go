@@ -2,6 +2,7 @@ package sample
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -221,6 +222,92 @@ func TestSayPicksTheWindowOrNamesThem(t *testing.T) {
 		scripts := submitted(run)
 		if len(scripts) != 1 || !strings.Contains(scripts[0], "=todo-app:=codex") {
 			t.Fatalf("scripts = %v", scripts)
+		}
+	})
+}
+
+// sayWindows is a watcher that has seen one claude pane in each of these
+// windows, with runs the windows the trigger registry calls its own.
+func sayWindows(t *testing.T, runs []string, windows ...string) (*Watcher, *sysdep.FakeRunner) {
+	t.Helper()
+	procs := []fakeProc{{pid: 100, ppid: 1, comm: "bash"}}
+	var rows [][4]string
+	for i, name := range windows {
+		pid := 101 + i
+		procs = append(procs, fakeProc{pid: pid, ppid: 100, comm: "claude", ticks: 50})
+		rows = append(rows, [4]string{name, strconv.Itoa(pid), "claude", "0"})
+	}
+	w, run, _, _, _ := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput(rows...)
+	set := map[string]bool{}
+	for _, r := range runs {
+		set[r] = true
+	}
+	w.SetRunWindows(func() map[string]bool { return set })
+	w.Refresh(context.Background())
+	return w, run
+}
+
+// I-1356: the pick is the agents the dashboard lists, less the windows
+// the trigger registry says are its runs'. So the one agent on a machine
+// gets the message whatever its window is named, a window the user named
+// `t-...` is the user's own, and a run beside the user's agent still does
+// not take the owner's message (I-1256).
+func TestSayPicksAnAgentTheDashboardLists(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("the only agent is a trigger run", func(t *testing.T) {
+		w, run := sayWindows(t, []string{"t-dash1"}, "t-dash1")
+		out, err := w.Say(ctx, SayRequest{ID: "s1", Text: "stop there", FromOwner: true})
+		if err != nil {
+			t.Fatalf("err = %v (%s), want the message delivered", err, sysdep.CodeOf(err))
+		}
+		if out.State != SayDelivered || out.Window != "t-dash1" {
+			t.Fatalf("outcome = %+v, want delivered in t-dash1", out)
+		}
+		scripts := submitted(run)
+		if len(scripts) != 1 || !strings.Contains(scripts[0], "=todo-app:=t-dash1") {
+			t.Fatalf("scripts = %v", scripts)
+		}
+	})
+
+	t.Run("a window the user named t-", func(t *testing.T) {
+		w, run := sayWindows(t, nil, "claude", "t-notes")
+		_, err := w.Say(ctx, SayRequest{ID: "s1", Text: "stop there", FromOwner: true})
+		if err == nil || sysdep.CodeOf(err) != "invalid_argument" {
+			t.Fatalf("err = %v (%s), want invalid_argument", err, sysdep.CodeOf(err))
+		}
+		if !strings.Contains(err.Error(), "claude") || !strings.Contains(err.Error(), "t-notes") {
+			t.Fatalf("refusal %q does not name both windows", err)
+		}
+		if n := len(submitted(run)); n != 0 {
+			t.Fatalf("%d submit scripts, want none", n)
+		}
+	})
+
+	t.Run("a run beside the user's own agent", func(t *testing.T) {
+		w, run := sayWindows(t, []string{"t-apply"}, "claude", "t-apply")
+		out, err := w.Say(ctx, SayRequest{ID: "s1", Text: "stop there", FromOwner: true})
+		if err != nil || out.Window != "claude" {
+			t.Fatalf("out = %+v, err = %v, want the message in claude", out, err)
+		}
+		scripts := submitted(run)
+		if len(scripts) != 1 || !strings.Contains(scripts[0], "=todo-app:=claude") {
+			t.Fatalf("scripts = %v", scripts)
+		}
+	})
+
+	t.Run("several runs and nothing else", func(t *testing.T) {
+		w, run := sayWindows(t, []string{"t-apply", "t-sweep"}, "t-apply", "t-sweep")
+		_, err := w.Say(ctx, SayRequest{ID: "s1", Text: "stop there", FromOwner: true})
+		if err == nil || sysdep.CodeOf(err) != "invalid_argument" {
+			t.Fatalf("err = %v (%s), want invalid_argument", err, sysdep.CodeOf(err))
+		}
+		if !strings.Contains(err.Error(), "t-apply") || !strings.Contains(err.Error(), "t-sweep") {
+			t.Fatalf("refusal %q does not name both runs", err)
+		}
+		if n := len(submitted(run)); n != 0 {
+			t.Fatalf("%d submit scripts, want none", n)
 		}
 	})
 }

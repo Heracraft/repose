@@ -123,7 +123,7 @@ Any agent can message you or ask you a question from the machine with `repose-no
 
 An agent at its prompt, or waiting for your permission, gets the message at once. An agent in the middle of a turn gets it when the turn ends: the five agents don't all take input typed mid-turn, and a message half-swallowed is worse than one that lands five seconds later. One message waits per agent, so a second while one waits replaces it.
 
-`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. The dashboard sends to the agent whose row you typed under. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. A [trigger's run](/docs/triggers) takes a message only when you name its window or it is the machine's only agent. The dashboard sends to the agent whose row you typed under. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
 
 A delivered message is an event, so `repose events` and the project page show that the agent got one and who sent it. The message itself is never in an event, a log line or a notification.
 

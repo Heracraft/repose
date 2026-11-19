@@ -726,8 +726,13 @@ is not the user's:
 
 - `repose say` without `--agent` is `invalid: several_agents` when more
   than one agent runs. A trigger run must not break the user's ordinary
-  `repose say`, so `t-*` windows are left out of that resolution; naming
-  one with `--agent t-apply` reaches it, which is how you talk to a run.
+  `repose say`, so a run is left out of that resolution while the user
+  has an agent of their own; when every agent on the machine is a run,
+  the one run is the machine's one agent and takes the message, and
+  several runs with nothing else name themselves (I-1356). Which windows
+  are runs comes from the run registry, not from the `t-` prefix, so a
+  window the user named `t-notes` is the user's. Naming a run with
+  `--agent t-apply` reaches it either way, which is how you talk to one.
 - `repose ls`'s AGENTS cell counts a trigger's runs on their own
   (`claude: working, 1 trigger run`), so a machine nobody is attached to
   does not read as the user's agent working because a 03:00 sweep is

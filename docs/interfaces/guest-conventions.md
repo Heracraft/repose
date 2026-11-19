@@ -946,12 +946,12 @@ A run's window is `t-<trigger>` in the project's session, and
 `t-<trigger>.2` for a second concurrent run: a dot, because a trigger may
 be named `apply-2` and `t-apply-2` would otherwise be both that
 trigger's window and the second run of `apply`. **`t-` is a reserved
-window prefix**, as 9227 is a reserved port. guestd knows its own runs
-from the registry, but the two surfaces that must not read a run as the
-user's read the prefix instead: `repose say` without `--agent` skips a
-`t-*` window, and `repose ls` counts them on their own. So a window a
-user names `t-notes` is treated as a trigger's by both, which is what
-reserving the prefix means.
+window prefix**, as 9227 is a reserved port: `repose ls` counts a `t-*`
+window as a trigger's run, since it draws its AGENTS cell on the laptop
+from the api's sample, which carries window names and no run flag. So a
+window a user names `t-notes` is counted there as a run, which is what
+reserving the prefix means. Inside the machine the registry is the fact,
+and `repose say` reads it rather than the name (I-1356).
 
 Its agent is started with the prompt as the agent's own argument (I-780),
 and these variables are in its environment beside the project's named
@@ -979,13 +979,17 @@ shell is what makes `jq -e '.action == "opened"'` a gate rather than a
 quoting exercise.
 
 `t-*` windows are agent windows and are reported as such, with one
-exception each way: `repose say` without `--agent` does not resolve to
-one (a run must not turn an owner's `say` into `several_agents`), and
-`repose ls`'s AGENTS cell counts them on their own
-(`claude: working, 1 trigger run`), so a machine nobody is attached to
-does not read as the user's own agent working. Naming one with
-`--agent t-apply` still reaches it, which is how the owner talks to a
-run. Both read the prefix, which is why it is reserved.
+exception each way. `repose say` without `--agent` leaves a run out of
+the pick while the user has an agent of their own, so a 03:00 run cannot
+turn an owner's `say` into `several_agents`; when every agent on the
+machine is a run, the one run is the machine's one agent and takes the
+message (I-1356). It reads the registry, so a window the user named
+`t-notes` is the user's agent. `repose ls`'s AGENTS cell counts `t-*`
+windows on their own (`claude: working, 1 trigger run`), so a machine
+nobody is attached to does not read as the user's own agent working; it
+reads the prefix, which is why the prefix is reserved. Naming a run with
+`--agent t-apply` reaches it either way, which is how the owner talks to
+one.
 
 ## Credentials the CLI syncs into the guest
 

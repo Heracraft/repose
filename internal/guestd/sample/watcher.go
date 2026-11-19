@@ -212,6 +212,10 @@ type Watcher struct {
 	// delivering is the windows a message is being typed into right now,
 	// so Say and the refresh never type one twice.
 	delivering map[string]bool
+	// runWindows asks the trigger registry which windows hold its own
+	// runs (SetRunWindows, I-1356). nil means none, which is what a
+	// guestd without a runner has.
+	runWindows func() map[string]bool
 }
 
 // NewWatcher builds a watcher. now may be nil for time.Now.
