@@ -516,16 +516,21 @@ RUNBOOK section. Branch ws/19g-updates.
 
 ```
 You are not building. You are a developer who just bought an M4 Mac
-mini and read about repose; you have ~/kanali-mac-mini-council on
-branch council/mac-mini for the report only. Follow
-docs/workstreams/19-mac-mini.md §6: go through the public docs page,
-the dashboard, `repose host add`, the launcher, `repose run`, the
-phone ask, a reboot, on the real Mac the conductor names, as a user
-would, keeping notes of every line you read and every second you
-waited. Then judge with the four hats, each a separate short verdict
+mini and heard about repose; the owner has no Mac and you are the user
+they cannot be. You have ~/kanali-mac-mini-council on branch
+council/mac-mini for the report only. Follow
+docs/workstreams/19-mac-mini.md §6 as a genuine use, start to finish,
+with a stopwatch: the landing, sign-up, paying for the Own hardware
+plan in the Polar sandbox, the docs page, the install on the real Mac
+the conductor names, the host appearing, `repose run`, how long the
+first guest takes to answer and how the second feels, the phone ask,
+laptop closed and reopened, a Mac reboot, `repose host rm`, cancel.
+Note every second waited, every line read, every guess, every error,
+every moment you would have tweeted. Then judge with the four hats, each a separate short verdict
 written before they confer, and write
-docs/reports/<date>-mac-mini-council.md: findings ranked P0/P1/P2 with
-exact reproductions, the economist's cost line with its numbers, the
+docs/reports/<date>-mac-mini-council.md: first "What would make a user
+scream", ranked; then findings P0/P1/P2 with exact reproductions and
+the stopwatch numbers, the economist's cost line with its numbers, the
 brand skeptic's line-by-line copy notes. Commit the report and message
 the conductor with the P0 count.
 ```
