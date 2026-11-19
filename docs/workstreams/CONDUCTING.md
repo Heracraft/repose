@@ -126,7 +126,19 @@ went wrong and what prevents it, because a list of apologies teaches nothing.
 7. **A destructive command was nearly run on production** from a settings
    value that looked stale and was correct. **Read what the runtime uses
    before changing it.**
-8. **Small environment traps** cost an hour each and are each one line:
+8. **A publish instruction that omitted one flag took the installer down for
+   every platform.** The conductor told the spark to publish an artefact
+   release and did not say `--latest=false`; that release became the
+   repository's `latest`, the installer resolves `latest` by following that
+   redirect and building an archive name from the tag, and so every install on
+   every platform asked for a file under a tag that has none. 404 for 26
+   minutes, immediately after fixing a 404 that had lasted 47. **When you
+   instruct an action on something live, name the invariants it must not
+   change, not only the action**; and notice that the first fix created the
+   second break, which is the signature of a missing invariant rather than
+   carelessness. Neither break was announced by an alert, a test or a
+   customer: both were found because somebody happened to look.
+9. **Small environment traps** cost an hour each and are each one line:
    `TMPDIR` longer than 108 bytes breaks unix sockets (`/tmp/r`, not
    `/tmp/rt`); the harness kills background tool jobs under memory pressure.
 
