@@ -122,6 +122,11 @@ install_appliance() {
     xattr -d com.apple.quarantine "$DIR/bin/vfkit" 2>/dev/null || true
   fi
 
+  if [ -s "$DIR/disk.raw" ] && [ "$(stat -f %z "$DIR/disk.raw")" -lt 42949672960 ]; then
+    # An install the first version of this script left at the image's
+    # own size (2026-11-19): give it the disk it was meant to have.
+    grow_disk "$(disk_gb "$(df -g "$DIR" | awk 'NR == 2 { print $4 }')" "${REPOSE_DISK_GB:-}")"
+  fi
   if [ ! -s "$DIR/disk.raw" ]; then
     say "fetching the appliance image $APPLIANCE_VERSION (about 1.5 GB)"
     fetch "$APPLIANCE_URL.sha256" "$DIR/image.sha256"
@@ -130,7 +135,7 @@ install_appliance() {
     got=$(sha256_of "$DIR/image.raw.gz")
     [ "$got" = "$want" ] || { rm -f "$DIR/image.raw.gz"; die "the image's checksum is $got, not $want; nothing was installed"; }
     say "unpacking the image"
-    gunzip -c "$DIR/image.raw.gz" > "$DIR/disk.raw.part"
+    unpack_sparse "$DIR/image.raw.gz" "$DIR/disk.raw.part"
     mv "$DIR/disk.raw.part" "$DIR/disk.raw"
     rm -f "$DIR/image.raw.gz" "$DIR/image.sha256"
     free=$(df -g "$DIR" | awk 'NR == 2 { print $4 }')
@@ -168,12 +173,33 @@ install_appliance() {
   say "The appliance is starting. It joins your account in a few minutes: repose host ls"
 }
 
+# unpack_sparse <image.gz> <dest>: the image is 37 GiB of which a few are
+# data, and gunzip would write every zero to the volume. perl reads it in
+# 1 MiB blocks and seeks over the all-zero ones, so the file costs what it
+# holds (APFS keeps the holes). perl ships with macOS.
+unpack_sparse() {
+  gunzip -c "$1" | perl -e '
+    open(my $out, ">", $ARGV[0]) or die "open: $!\n";
+    binmode STDIN; binmode $out;
+    my $zero = "\0" x 1048576; my $pos = 0; my $buf;
+    while ((my $n = read(STDIN, $buf, 1048576)) > 0) {
+      if ($n == 1048576 && $buf eq $zero) { $pos += $n; next; }
+      seek($out, $pos, 0) or die "seek: $!\n";
+      print $out $buf or die "write: $!\n";
+      $pos += $n;
+    }
+    truncate($out, $pos) or die "truncate: $!\n";
+    close($out) or die "close: $!\n";
+  ' "$2"
+}
+
 grow_disk() { # gb
   gb=$1
   # A sparse file: APFS allocates blocks as the appliance writes them,
-  # so a 100 GB disk costs what your machines hold. BSD dd with count=0
-  # extends the file without writing it.
-  dd if=/dev/null of="$DIR/disk.raw" bs=1 count=0 seek="$(( gb * 1073741824 ))" 2>/dev/null
+  # so a 100 GB disk costs what your machines hold. perl ships with
+  # macOS and its truncate extends a file without writing it; BSD dd
+  # with count=0 does not (the lab Mac, 2026-11-19).
+  perl -e 'truncate($ARGV[0], $ARGV[1]) or die "truncate: $!\n"' "$DIR/disk.raw" "$(( gb * 1073741824 ))"
 }
 
 write_plist() {
@@ -274,7 +300,12 @@ start() {
     say "started (detached); log: $LOGS/launcher.log"
     return
   fi
-  launchctl bootstrap "$(domain)" "$PLIST" 2>/dev/null || launchctl kickstart -k "$(domain)/$LABEL"
+  if ! launchctl bootstrap "$(domain)" "$PLIST" 2>/dev/null && ! launchctl kickstart -k "$(domain)/$LABEL" 2>/dev/null; then
+    # No login session takes an agent (a Mac reached over ssh alone, the
+    # lab); the VM still runs, and the agent takes over at the next login.
+    say "launchd took no agent for this session; starting detached"
+    start --detached
+  fi
 }
 
 stop() {
@@ -298,7 +329,7 @@ grow() {
   gb=${1:-}; [ -n "$gb" ] || die "grow takes the new size in GB, larger than the disk is"
   cur=$(( $(stat -f %z "$DIR/disk.raw") / 1073741824 ))
   [ "$gb" -gt "$cur" ] || die "the disk is already $cur GB"
-  dd if=/dev/null of="$DIR/disk.raw" bs=1 count=0 seek="$(( gb * 1073741824 ))" 2>/dev/null
+  perl -e 'truncate($ARGV[0], $ARGV[1]) or die "truncate: $!\n"' "$DIR/disk.raw" "$(( gb * 1073741824 ))"
   say "disk is $gb GB; the appliance takes the room at its next start"
 }
 
