@@ -36,6 +36,10 @@ const maxFakeHosts = 1
 // install's addresses on.
 const FakeDashboard = "https://repose.run"
 
+// fakeWGKey is a canned WireGuard public key: 32 zero bytes in base64,
+// which is the right shape and the right length and opens nothing.
+const fakeWGKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
 var hostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // OwnedHost is one host the account owns, as the api returns it. Host
@@ -221,10 +225,16 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	if f.hostInstallSet {
 		line = f.hostInstall
 	}
-	// The step's argument is the join bundle (DECISIONS I-1380): the real
-	// api puts the machine's hub material beside the token; the fake has
-	// no hub and carries the token alone, in the same envelope.
-	argument := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"token":"` + h.JoinToken + `"}`))
+	// The step's argument is the join bundle (DECISIONS I-1380): the
+	// token and the machine's place on the hub, which it needs before it
+	// can reach the api at all. The fake runs no hub, so the WireGuard
+	// half is canned -- but it is there, and the same size it is in
+	// production (a bundle is about 340 characters, not the 60 a token
+	// alone makes). A client's layout and its copy button are judged
+	// against what a user will actually be handed.
+	argument := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"token":"` + h.JoinToken +
+		`","wg":{"private_key":"` + fakeWGKey + `","address":"10.255.0.9/16","edge_pubkey":"` + fakeWGKey +
+		`","edge_endpoint":"edge.repose.test:51820"}}`))
 	command := ""
 	if strings.Contains(line, "%s") {
 		command = strings.Replace(line, "%s", argument, 1)

@@ -84,12 +84,16 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 
 	// The one view of the step to run on the machine, with a copy button.
 	await expect(dialog.getByRole('heading', { name: 'mac-mini' })).toBeVisible();
-	await expect(dialog.getByText('Run this on the machine. It is not shown again.')).toBeVisible();
+	await expect(dialog.getByText(/Run this on the machine you are adding/)).toBeVisible();
 	const install = dialog.getByTestId('host-install');
 	await expect(install).toBeVisible();
 	await shots(page, 'hosts-added');
-	const line = (await install.innerText()).trim();
-	expect(line).toContain('repose host add --join ');
+	// The deployment's own installer line, which the fake records as
+	// `repose host add --join %s`. Decoded by the rule the CLI parses it
+	// with, not matched as a string: this assertion used to be
+	// `toContain('repose host add --join ')`, which the recorded line
+	// supplies whatever the dialog puts after it.
+	const bundle = await joinBundleOf(install);
 	await dialog.getByRole('button', { name: 'Done' }).click();
 	await expect(dialog).not.toBeVisible();
 
@@ -98,8 +102,9 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	const row = table.getByRole('row').filter({ hasText: 'mac-mini' });
 	await expect(row).toContainText('waiting');
 	await expect(section.getByRole('heading', { name: '1 host' })).toBeVisible();
-	const token = line.split('--join ')[1].split(/\s/)[0];
-	await expect(page.locator('body')).not.toContainText(token);
+	// The bundle's token, not the argument: the argument is on the page
+	// by design and the token inside it never is.
+	await expect(page.locator('body')).not.toContainText(bundle.token);
 
 	// A second host is refused by the plan, in the api's own sentence.
 	await section.getByRole('button', { name: 'Add a host' }).click();
@@ -141,19 +146,63 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	await dialog.getByRole('button', { name: 'Done' }).click();
 });
 
-test('a host with no install line recorded shows the token and the page', async ({ page }) => {
+/**
+ * The rule `repose host add --join` parses its argument by
+ * (`hostmgr.DecodeJoinBundle`, and the appliance's join unit in shell):
+ * base64url, JSON, version 1, a token in it. Asserting the dialog's text
+ * against this rather than against a string shape is the whole point —
+ * the spec used to assert that the copied text contained `repose host
+ * add --join `, and that passed for weeks while the dialog showed a bare
+ * 43-character token, because the prefix came from the assertion and not
+ * from the page.
+ */
+async function joinBundleOf(
+	step: import('@playwright/test').Locator
+): Promise<{ v: number; token: string }> {
+	// The command itself, not the box around it: the box carries the
+	// Copy button's own label, and the line wraps on a phone, so the
+	// argument is read off the `pre` with its whitespace removed —
+	// base64url has none.
+	const text = (await step.locator('pre').innerText()).trim();
+	const prefix = 'repose host add --join ';
+	expect(text.startsWith(prefix), `the step does not run anything: ${text}`).toBe(true);
+	const arg = text.slice(prefix.length).replace(/\s+/g, '');
+	const json = Buffer.from(arg, 'base64url').toString('utf8');
+	const bundle = JSON.parse(json) as { v: number; token: string };
+	expect(bundle.v).toBe(1);
+	expect(typeof bundle.token).toBe('string');
+	expect(bundle.token.length).toBeGreaterThan(0);
+	return bundle;
+}
+
+test('with no install line recorded the dialog shows the join step, never the token', async ({
+	page
+}) => {
 	await clearHosts(page);
-	// The live-today case: nothing has recorded an install line, so the
-	// api answers an empty command and the page must not invent one.
+	// The live-today case, and the one that shipped broken: no deployment
+	// has recorded an install line, so the api answers an empty `command`
+	// and the dialog must fall back to `install.argument` in the command
+	// that takes it. It showed `join_token` instead, which a customer
+	// cannot act on, and the dialog is one-shot so remove-and-add handed
+	// out the same wrong value again (ENG-29).
 	await ownedHost({ set_install: true, install_line: '' });
 	await page.goto('/settings/hosts');
 	await page.locator('#hosts').getByRole('button', { name: 'Add a host' }).click();
 	const dialog = page.getByTestId('host-dialog');
 	await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(dialog.getByTestId('host-token')).toBeVisible();
-	await expect(dialog.getByTestId('host-install')).toHaveCount(0);
-	await expect(dialog.getByText(/Copy this token now/)).toBeVisible();
-	await expect(dialog.getByRole('link', { name: 'What to do with it' })).toHaveAttribute(
+
+	const install = dialog.getByTestId('host-install');
+	await expect(install).toBeVisible();
+	await expect(dialog.getByTestId('host-token')).toHaveCount(0);
+	// What is on the page is what the CLI would accept.
+	const bundle = await joinBundleOf(install);
+
+	// And the token is not on the page in any form: the api sends it as
+	// `join_token` too, and showing it is what this test exists to stop.
+	await expect(page.locator('body')).not.toContainText(bundle.token);
+
+	await expect(dialog.getByText(/Run this on the machine you are adding/)).toBeVisible();
+	await expect(dialog.getByRole('link', { name: 'What this does' })).toHaveAttribute(
 		'href',
 		'/docs/own-hardware'
 	);
