@@ -474,13 +474,13 @@ A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a scope
 
 ## Your own hardware
 
-A Mac mini or x86 box you own joins your account as a host, and your projects run on it instead of repose's servers: [Add your own hardware](/docs/own-hardware).
+A Mac mini or x86 box you own joins your account as a host, and your projects run on it instead of repose's servers: [Your own hardware](/docs/own-hardware).
 
 | Command                | What it does |
 | ---------------------- | ------------ |
-| `repose host add [NAME]` | Add a machine of yours and print, on stdout alone so it pipes, the one step to run on that machine. It carries a token that works once, within 24 hours. Without NAME, repose names it. `--json` prints every field, the step and the token included. |
+| `repose host add [NAME]` | Add a machine of yours and print, on stdout alone so it pipes, the one step to run on that machine. It carries a token that works once, within 24 hours. Where the server has no install step recorded, the token is printed instead, with the page that says what to do with it. Without NAME, repose names it. `--json` prints every field, the step and the token included. |
 | `repose host list`       | Your hardware: its state, memory, how many of your machines are on it, how many are running, and when it last answered. Alias `ls`, and `repose host` alone. `--json` for JSON, `-q`/`--quiet` for names. |
-| `repose host rm NAME`    | Take it off your account, after one question. Alias `remove`. `-y`/`--yes` skips the question. The machines on it stop; the machine itself is untouched. A host still holding machines is refused, and the answer names them. |
+| `repose host rm NAME`    | Take it off your account, after one question. Alias `remove`. `-y`/`--yes` skips the question. The machine itself is untouched. A host still holding machines is refused, and the answer names them. |
 
 The STATE column is `waiting` before it has joined, `online`, `offline` when it has not answered for 90 seconds, and `removing` while it is being taken off; a host you have removed is not listed. A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2. A name you do not have exits 1, and a second host on a plan that takes one exits 1. These commands take a login, not `REPOSE_TOKEN`, except `repose host ls`, which a token with `read` may call.
 
