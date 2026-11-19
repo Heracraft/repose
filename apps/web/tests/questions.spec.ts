@@ -28,6 +28,7 @@ async function questionsOf(projectId: string) {
 		state: string;
 		answer: string | null;
 		answered_via: string | null;
+		expires_at: string;
 	}>;
 }
 
@@ -97,7 +98,13 @@ test('a free-text question takes a typed answer; Dismiss dismisses', async ({ pa
 	await expect(first).toContainText(/expires in [12]m/);
 	// Shift+Enter breaks a line; Enter sends.
 	await field.fill('4173');
-	await expect(first).toContainText(/expires in [45]m/);
+	// Exactly 5m, on a fast machine or a slow one: the row reads the clock
+	// when the api's new deadline arrives, rather than measuring it against
+	// a tick up to 30 s old, which rounded up to "6m" (CI 44459107926).
+	await expect(first).toContainText('expires in 5m');
+	// And the deadline the row is drawing is the api's own.
+	const held = (await questionsOf(p.id)).find((x) => x.id === q1.id);
+	expect(new Date(held!.expires_at).getTime() - Date.now()).toBeGreaterThan(4 * 60_000);
 	await field.press('Shift+Enter');
 	await expect(field).toHaveValue('4173\n');
 	await field.press('Backspace');

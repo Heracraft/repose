@@ -311,3 +311,86 @@ test('Remove asks in the row and names what goes with it', async ({ page }) => {
 	await confirm.getByRole('button', { name: 'Remove' }).click();
 	await expect(section.getByRole('heading', { name: '2 triggers' })).toBeVisible();
 });
+
+/**
+ * Where a control is, as a string, so two states compare in one expect.
+ * Only the box; a hidden control is "gone".
+ */
+async function at(page: Page, selector: string): Promise<string> {
+	const el = page.locator(selector).first();
+	if ((await el.count()) === 0) return 'gone';
+	const b = await el.boundingBox();
+	return b ? `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)}` : 'gone';
+}
+
+// The owner, 2026-11-19, on the live form: "a lot of layout shifts as
+// you do the different combinations". A control the user has just used,
+// or is about to, keeps its place: the Name input and the Fires on
+// control do not move or resize when the door changes, the time zone
+// stays in its column across the six shapes, and the buttons under the
+// receiver's fields stay put when the prompt becomes a path or the agent
+// becomes the app. What the form holds still changes; what moves is
+// only what has to.
+for (const width of [1440, 390]) {
+	test(`the form keeps its controls in place across every switch at ${width}`, async ({ page }) => {
+		const p = await createProject(apiURLFromEnv(), {
+			name: `trig-still-${width}`,
+			remote_url: `github.com/heracraft/trig-still-${width}`
+		});
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+		await page.goto(`/projects/${p.id}/triggers`);
+		const section = page.locator('#triggers');
+		await section.getByRole('button', { name: 'Add trigger' }).click();
+		const form = section.getByTestId('trigger-form');
+		await form.getByLabel('Name').fill('triage');
+		const dir = process.env.REPOSE_SHOTS_DIR;
+		const shot = async (name: string) => {
+			if (dir) await page.screenshot({ path: `${dir}/still-${name}-${width}.png` });
+		};
+		const name = '#trigger-name';
+		const fires = '[aria-labelledby="trigger-kind-label"]';
+		const submit = 'button[type=submit]';
+		const zone = '#trigger-zone';
+
+		// The prompt becomes a path and back: the buttons stay.
+		const nameAt = await at(page, name);
+		const firesAt = await at(page, fires);
+		const submitAt = await at(page, submit);
+		await shot('webhook-agent-write');
+		await form.getByRole('button', { name: 'A file in the machine' }).click();
+		await shot('webhook-agent-file');
+		expect(await at(page, submit)).toBe(submitAt);
+		await form.getByRole('button', { name: 'Write it here' }).click();
+
+		// The agent becomes the app: the first row stays; the buttons rise
+		// by the More settings line alone, which the app has no need of.
+		await form.getByRole('button', { name: 'Forward to your app' }).click();
+		await shot('webhook-forward');
+		expect(await at(page, name)).toBe(nameAt);
+		expect(await at(page, fires)).toBe(firesAt);
+		const moreLine = (await form.getByRole('button', { name: 'More settings' }).count()) === 0;
+		expect(moreLine).toBe(true);
+		await form.getByRole('button', { name: 'Start an agent' }).click();
+		expect(await at(page, submit)).toBe(submitAt);
+
+		// The door becomes a schedule: the name keeps its width and Fires
+		// on its place, though Then is no longer drawn.
+		await form.getByRole('button', { name: 'A schedule' }).click();
+		await shot('schedule-every');
+		expect(await at(page, name)).toBe(nameAt);
+		expect(await at(page, fires)).toBe(firesAt);
+
+		// The six shapes: the zone keeps its column at 1440.
+		const zoneAt = await at(page, zone);
+		for (const shape of ['daily', 'weekdays', 'weekends', 'days', 'monthly']) {
+			await form.getByLabel('When').selectOption(shape);
+			await shot(`schedule-${shape}`);
+			if (width === 1440) expect(await at(page, zone), shape).toBe(zoneAt);
+		}
+		await form.getByRole('button', { name: 'A webhook' }).click();
+		expect(await at(page, name)).toBe(nameAt);
+		expect(await at(page, fires)).toBe(firesAt);
+		await form.getByRole('button', { name: 'More settings' }).click();
+		await shot('webhook-more');
+	});
+}

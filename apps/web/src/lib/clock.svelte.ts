@@ -11,6 +11,18 @@ class Clock {
 	#users = 0;
 	#timer: ReturnType<typeof setInterval> | undefined;
 
+	/**
+	 * Reads the clock between ticks, for a fact that has just arrived and
+	 * is drawn against it. A question held open (I-1242) comes back from
+	 * the api as "five minutes from now": against a tick up to 30 seconds
+	 * old, `minutesLeft` rounds that up to "expires in 6m", a minute more
+	 * than the owner has.
+	 */
+	read(): number {
+		if (browser) this.now = Date.now();
+		return this.now;
+	}
+
 	/** Starts the ticks for one user; call the returned function to stop. */
 	use(): () => void {
 		if (!browser) return () => {};

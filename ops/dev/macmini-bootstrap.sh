@@ -81,10 +81,13 @@ if ! tart list 2>/dev/null | grep -q "^local *$L1 "; then
   tart set "$L1" --cpu "$L1_CPUS" --memory "$L1_MEM_MIB" --disk-size 80
 fi
 if ! pgrep -f "tart run .*$L1" >/dev/null; then
-  nohup tart run --nested --no-graphics "$L1" > "$LAB/$L1.log" 2>&1 &
+  # Not nohup: under the ssh -t tty macOS's nohup says "can't detach from
+  # console" and the VM dies with the session (first run, 2026-11-19). A
+  # subshell with every fd off the tty survives the ssh exit.
+  (tart run --nested --no-graphics "$L1" </dev/null > "$LAB/$L1.log" 2>&1 &)
   sleep 5
 fi
-L1_IP=$(tart ip "$L1" --wait 180) || fail "step 2: L1 got no IP in 180 s; see $LAB/$L1.log"
+L1_IP=$(tart ip "$L1" --wait 300) || fail "step 2: L1 got no IP in 300 s; see $LAB/$L1.log"
 echo "l1_ip $L1_IP" | tee "$RES/l1.txt"
 
 # the image's login is admin/admin; put our key in once
@@ -112,25 +115,38 @@ cp "$HOME/macmini-measure-linux.sh" "$LAB/l1-measure.sh"
 scp -i "$LAB/id_lab" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$LAB/l1-measure.sh" "admin@$L1_IP:l1-measure.sh"
 $SSH "admin@$L1_IP" 'chmod +x l1-measure.sh && ./l1-measure.sh' 2>&1 | tee "$RES/l1-measure.log"
 scp -i "$LAB/id_lab" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -r "admin@$L1_IP:results/." "$RES/"
-[ -s "$RES/l2-boot-ms.txt" ] && pass "step 3: L2 booted $(wc -l < "$RES/l2-boot-ms.txt" | tr -d ' ') times; ms to login: $(tr '\n' ' ' < "$RES/l2-boot-ms.txt")" \
-  || fail "step 3: no L2 boot recorded; read $RES/l1-measure.log and $RES/l2-boot-1.log"
-# the Mac's own number for the same benchmark, so L1's cost is visible too
-openssl speed -multi 2 -seconds 5 sha256 2>&1 | tail -n 4 > "$RES/openssl-l0-2threads.txt"
-pass "step 4: openssl sha256 recorded for L0, L1 and L2 (compare the 16384-byte column)"
+# five numbers, not five blank lines (the first run passed on blank lines)
+if [ "$(grep -cE '^[0-9]+$' "$RES/l2-boot-ms.txt" 2>/dev/null)" -ge 1 ]; then
+  pass "step 3: L2 booted $(grep -cE '^[0-9]+$' "$RES/l2-boot-ms.txt") times; ms to login: $(grep -E '^[0-9]+$' "$RES/l2-boot-ms.txt" | tr '\n' ' ')"
+else
+  fail "step 3: no L2 boot recorded; read $RES/l1-measure.log and $RES/l2-boot-1.log"
+fi
+# the Mac's own number for the same benchmark, so L1's cost is visible too.
+# macOS ships LibreSSL, whose speed has no -multi; one thread, like the others.
+openssl speed sha256 2>&1 | tail -n 3 > "$RES/openssl-l0-1thread.txt"
+grep -q "^sha256" "$RES/openssl-l0-1thread.txt" && grep -q "^sha256" "$RES/openssl-l2-1thread.txt" \
+  && pass "step 4: openssl sha256, one thread, at L0, L1 and L2 (compare the 16384-byte column)" \
+  || fail "step 4: an openssl line is missing; see $RES/openssl-l*-1thread.txt"
 
 # --- step 7: the same disk under vfkit ------------------------------------
 say "step 7: vfkit --nested on the Tart disk"
 if command -v vfkit >/dev/null; then
   tart stop "$L1" 2>/dev/null || true; sleep 3
-  MAC=52:54:00:c0:ff:ee
-  nohup vfkit --cpus "$L1_CPUS" --memory "$L1_MEM_MIB" --nested \
+  MAC=52:54:aa:c0:ff:ee   # no zero octets: the lease file drops leading zeros
+  (vfkit --cpus "$L1_CPUS" --memory "$L1_MEM_MIB" --nested \
     --bootloader "efi,variable-store=$LAB/vfkit-nvram,create" \
     --device "virtio-blk,path=$HOME/.tart/vms/$L1/disk.img" \
     --device "virtio-net,nat,mac=$MAC" \
-    --device virtio-rng --device virtio-serial,stdio > "$LAB/vfkit.log" 2>&1 &
+    --device virtio-rng --device "virtio-serial,logFilePath=$LAB/vfkit-serial.log" </dev/null > "$LAB/vfkit.log" 2>&1 &)
+  # the framework's NAT hands out addresses through macOS's own DHCP
+  # server, whose leases are in /var/db/dhcpd_leases (what `tart ip` reads)
   VF_IP=
   for _ in $(seq 1 60); do
-    VF_IP=$(arp -an | grep -i "${MAC//:/.}\|$MAC" | sed -E 's/.*\(([0-9.]+)\).*/\1/' | head -n1)
+    VF_IP=$(sudo cat /var/db/dhcpd_leases 2>/dev/null | awk -v m="1,$MAC" '
+      /^\{/ { ip=""; mac="" }
+      /ip_address=/ { ip=$0; sub(".*=", "", ip) }
+      /hw_address=/ { mac=$0; sub(".*=", "", mac) }
+      /^\}/ { if (mac == m) print ip }' | tail -n1)
     [ -n "$VF_IP" ] && $SSH -o BatchMode=yes "admin@$VF_IP" true 2>/dev/null && break
     VF_IP=; sleep 3
   done
