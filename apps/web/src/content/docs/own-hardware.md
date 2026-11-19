@@ -38,10 +38,10 @@ repose host add
 
 It prints one step and nothing else, so you can pipe it. Carry that step to the machine you are adding and run it there. It carries a token that works once, within 24 hours, and the machine's place on repose's network. Treat it as a password until the machine has joined: anyone who runs it adds a machine to your account. If you lose it, or let it go stale, `repose host rm` and `repose host add` again; the old step then opens nothing.
 
-On a Mac mini the step is:
+On a Mac mini the step is, with the argument `repose host add` printed:
 
 ```shell
-curl -fsSL https://repose.run/mac | sh -s -- <the argument it printed>
+curl -fsSL https://repose.run/mac | sh -s -- <argument>
 ```
 
 It fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 1.5 GB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd agent that starts it again at every login. While the machine runs, the Mac does not sleep. The machine's disk is one file there, `disk.raw`, 100 GB unless the volume has less free (`REPOSE_DISK_GB` sets it); it takes space only as your machines fill it, and `repose-appliance grow 200` makes it larger later. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`REPOSE_VM_MEMORY_MIB`, `REPOSE_VM_CPUS`).
