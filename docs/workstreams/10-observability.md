@@ -254,8 +254,20 @@ Families:
   exists for a host that was created and never registered: that host has
   no exporter to scrape. `HostUnreachable`, `HostUnregistered` and
   `HostNotInTargets` read it),
+  `repose_api_owned_hosts{state}` (the hosts users own, counted apart
+  from the two families above, DECISIONS I-1366: those describe the fleet
+  the operator is on call for and every host alert reads them, so a
+  stranger's Mac mini switched off at night or never copied into the
+  Prometheus targets must not page anybody. Nothing alerts on this one;
+  it is the number that says how many machines joined from outside),
   `repose_api_projects{state,class}`,
-  `repose_api_schedule_total{result}`,
+  `repose_api_schedule_total{result}` (`ok`, `no_capacity`, `no_cpu`,
+  `error`, and `no_own_host` since I-1366: a placement only the account's
+  own hardware could take, refused because that host is full, switched
+  off or not registered yet. `ScheduleRefused` deliberately leaves
+  `no_own_host` out of its matcher: it is somebody's Mac being asleep,
+  which the owner cannot fix and the user already reads in the op's own
+  message),
   `repose_api_resting_wake_total{reason,result}` (every wake the api
   asked for, and the one counter that breaks wakes down by reason, I-818:
   `reason` is what reached the machine (`connect`, `op`, `answer`,

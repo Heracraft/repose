@@ -1,6 +1,6 @@
 <script lang="ts">
-	// Settings' five tabs (DECISIONS I-841, I-1322): General, Notifications,
-	// Secrets, API tokens and machine.nix, links on PageShell's hairline as
+	// Settings' six tabs (DECISIONS I-841, I-1322, I-1366): General,
+	// Notifications, Secrets, API tokens, machine.nix and Hosts, links on PageShell's hairline as
 	// a project's tabs are. The layout draws the title and the tabs, so a tab switch moves
 	// nothing above the content; each page renders its sections only.
 	import type { Snippet } from 'svelte';
@@ -15,7 +15,8 @@
 		{ href: resolve('/settings/notifications'), label: 'Notifications' },
 		{ href: resolve('/settings/secrets'), label: 'Secrets' },
 		{ href: resolve('/settings/tokens'), label: 'API tokens' },
-		{ href: resolve('/settings/machine-nix'), label: 'machine.nix' }
+		{ href: resolve('/settings/machine-nix'), label: 'machine.nix' },
+		{ href: resolve('/settings/hosts'), label: 'Hosts' }
 	];
 </script>
 

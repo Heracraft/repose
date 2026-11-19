@@ -274,6 +274,8 @@ copy-paste version):
 |---|---|
 | List hosts with capacity | `repose-admin hosts list` |
 | Add a host | `repose-admin hosts add --name host-NN` (prints a join token), then `make -C infra apply ENV=prod` (`infra/README.md` "Adding a host") |
+| Add a host for a user who owns it | `repose-admin hosts add --name <name> --owner <handle>` (I-1366); the user's own way is the dashboard's Hosts page or `repose host add` |
+| Record the install line a user pastes | `repose-admin hosts install-command '<line with %s where the token goes>'`; no line recorded means `POST /hosts` answers an empty `install.command` and the user is shown the token and the docs page |
 | Drain a host (no new placements) | `repose-admin hosts drain host-NN` |
 | Retire a host (after all projects moved) | `repose-admin hosts retire host-NN`; refused while it holds any project, stopped ones included ("Retiring a host once its projects are moved") |
 | Move a project to another host | `repose-admin projects move <id> --to host-NN` (stop, snapshot, restore, start) |
@@ -4118,8 +4120,9 @@ the CLI printed `no capacity right now; you have not been charged`.
 
 1. Which term refused is in the api's `schedule_fail` line: `reason` is
    `no_cpu` when a host had the memory and the pool room but was already
-   committed past 1.5 guest vCPUs per physical core, and `no_capacity`
-   for every other full fleet.
+   committed past 1.5 guest vCPUs per physical core, `no_own_host` when
+   the account owns its host and that host could not take the machine
+   (below), and `no_capacity` for every other full fleet.
 2. `repose-admin hosts list`: no host is `ready` with free memory above
    the reserve for the class, pool room for the volume, and cores for the
    class's guest vCPUs. Draining, unreachable and stale-heartbeat hosts
@@ -4132,6 +4135,34 @@ the CLI printed `no capacity right now; you have not been charged`.
    for life, so only a guest on that host stopping, or another host,
    frees the cores (`HostCPUSaturated` is the same wall seen from the
    other side).
+
+## api: a user's own host could not take their machine
+
+An op ended `capacity` with the message `your host <name> is <state>` or
+`you own no host yet`, and `repose_api_schedule_total{result}` rose on
+`no_own_host` (DECISIONS I-1366). This is not a fleet problem and not
+yours to fix: the account owns its hardware, and placement will not put
+its projects on a host repose runs, so the machine waits for the user's
+own host.
+
+1. `repose-admin hosts list` shows the host under the account's handle in
+   the OWNER column. Its state is the whole answer: `registering` means
+   the join token was minted and the machine has never called `Register`
+   (the install step was not run, or it failed); `unreachable` means it
+   registered once and has missed heartbeats for 90 seconds, which for a
+   machine at home is switched off, asleep or off the network;
+   `draining` means a removal is in progress; `ready` means it answered
+   and had no room for the class.
+2. Nothing to do on our side in the first three cases. The user's own
+   surfaces say it: the dashboard's Hosts page and `repose host ls` show
+   the state and the last heartbeat, and the op's message names the host.
+3. `ready` with no room is the user's machine being full. `select slug,
+   class, state from projects where host_id = '<id>'` is what is on it;
+   they stop one, or take a smaller class.
+4. There is no alert on this and there should not be: a Mac mini asleep
+   at 3 a.m. is not an incident. `repose_api_owned_hosts{state}` is the
+   fleet-wide count of owned hosts by state if you want to see how many
+   are quiet.
 
 ## dashboard: up but the "Cannot reach the API" bar is showing
 
