@@ -32,7 +32,7 @@ one of the three the council confers from.
    that page says there are only three plans."** The dashboard sells it fine;
    the docs do not name the number. [P1-5](#p1-5)
 
-Counts at the close of the review: **2 P0, 3 P1, 10 P2** — the ranking and what
+Counts at the close of the review: **2 P0, 3 P1, 11 P2** — the ranking and what
 moved are in [Final ranking](#final-ranking-and-what-moved). P0-1 was a P0 when
 measured and was fixed on production before this report was filed; the silent
 fallback behind it is still open.
@@ -288,8 +288,12 @@ work. If the council reads the Snapshots tab as the surface a customer checks
 *before* they ever reach that confirmation — which is how I would use it — it
 belongs at P0.
 
-Secondary: **Snapshot on stop** was on by default on a machine that cannot keep
-one, so six stops produced six dead snapshots and nothing said so.
+**The secondary finding is the cheaper half and now has its own card (ENG-69).**
+**Snapshot on stop** was checked by default on a machine that cannot keep one,
+so six stops produced six snapshots the product was always going to throw away,
+and labelled them `kept`. That is the product manufacturing the false promise
+rather than displaying a stale label — the box should not default on where a
+snapshot cannot survive.
 
 ### P1-3 — Projects tell you to fix a host the Hosts tab says you do not have {#p1-3}
 
@@ -580,6 +584,13 @@ sound, and the review is worth less without them.
 | Destroy a running machine | **0.8 s** to the confirmation and back to `/projects` |
 | Horizontal overflow | none, on any page I checked, at 390 or 1440, in either scheme |
 
+- **The plan screen is good, and that is worth saying as loudly as a defect.**
+  For a non-exempt account it offers four plans with real prices, the Own
+  hardware row at $10 with its own description and a Choose button, "7 days
+  free, card at checkout, cancel any time.", the seats left, and "Prices in USD,
+  before tax." It is one screen and it answers the question a buyer has. I only
+  found it because a wrong finding of mine was challenged; a review that lists
+  only damage misleads the owner about where the product stands.
 - **Destroy is guarded properly.** The button is `disabled` until the project's
   name is typed, and the panel states the consequence first.
 - **Duplicate names are refused well.** Both the host dialog and the new-project
@@ -655,7 +666,7 @@ the dashboard has the control and the control does not work.
 
 ## Final ranking, and what moved
 
-At the close of the review, on the dashboard surface: **2 P0, 3 P1, 10 P2.**
+At the close of the review, on the dashboard surface: **2 P0, 3 P1, 11 P2.**
 Four findings changed rank during the review and every one of them moved
 because of a measurement, not an argument. One of the four — the last — was
 disproven by its own measurement rather than merely re-weighted.
@@ -695,6 +706,7 @@ a judgement about it.
 | 13 | The join command is about one eighth visible | ENG-63 | no |
 | 14 | The machine's own page says less than the list it came from | ENG-65 | no |
 | 15 | A grey smear under the frozen project row | ENG-48 | no |
+| 17 | Snapshot on stop defaults to on where a snapshot cannot survive | ENG-69 | split out of #3 |
 | 16 | The own-hardware docs page names no price and sends the reader to a page that says there are three plans | ENG-47 (merged; ENG-51 parked) | **P1 → P2** |
 
 **What moved #16:** I measured a non-exempt account and it sees the plan
