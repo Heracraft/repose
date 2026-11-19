@@ -1068,6 +1068,26 @@ is written:
 | A guest's cold start against **289 s** on a healthy appliance | **running** |
 | Whether [F7](#f7-both-machines-on-the-broken-appliance-died) survives a healthy appliance | **running** — decides ENG-80's rank |
 
+**A limit on what my reboot can prove, found while answering another
+session.** Every install here ends with:
+
+> `launchd took no agent for this session; the appliance starts detached and the agent takes over at the next login`
+
+and `launchctl list | grep repose` then returns **nothing**, though
+`~/Library/LaunchAgents/run.repose.appliance.plist` is on disk. An ssh
+session has no GUI login and so no `gui/$(id -u)` domain to bootstrap into.
+The CLI handles this well — it notices, does the right thing anyway, and
+says so in one line.
+
+But it means **this review cannot verify `/docs/own-hardware`'s promise of
+"a launchd agent that starts it again at every login"**, because the agent
+never loads for me. A Mac mini owner installing from a Terminal window in
+their own GUI session would get it; I never do. Anything I measure across a
+restart is therefore a measurement of the **detached** appliance, not the
+agent — which also bounds what a park-and-restart test run from here could
+honestly claim, and I have said so to the session building that fix
+(ENG-2).
+
 **A correction I was given and am recording rather than quietly using.** I
 was first told to measure a cold guest start against **57.9 s**. That figure
 came from an experimental store-on-disk path which is a parameter defaulting
