@@ -202,16 +202,27 @@ one release; RUNBOOK section.
 
 ## 6. The user council
 
-After phase 3 the conductor launches one session that *is* a Mac mini
-owner: it has the docs page, the dashboard, the CLI, and the real Mac
-(the AWS one). It goes through the whole thing as a user, then judges
-it with four hats, each writing its own short verdict before they
+The owner does not own a Mac mini and cannot test this; the council is
+the stand-in for the users who would otherwise scream. After phase 3
+the conductor launches one session that *is* a Mac mini owner: it has
+the landing page, the docs page, the dashboard, the CLI, and the real
+Mac (the AWS one). It does the genuine thing, start to finish, with a
+stopwatch: finds repose, signs up, pays for the Own hardware plan in
+the Polar sandbox, reads how to add a Mac mini, runs the install on
+the Mac, waits for the host to appear, starts a project, measures how
+long the first guest takes to answer and how a second one feels,
+opens the phone ask, closes the laptop, comes back, reboots the Mac,
+removes the host, cancels. Every wait in seconds, every line it had
+to read, every place it guessed, every error it saw, every moment it
+would have tweeted. Then it judges with four hats, each writing its own short verdict before they
 confer: the daily driver (does it work, is it pleasant, what broke),
 the economist (is it worth $10, what does it cost us, what is the
 relay cost per user), the brand skeptic (does any line oversell, does
 anything look unfinished, does it read like repose), the engineer
 (security of a stranger's host, idempotency, what happens on restart,
-sleep, Wi-Fi drop, a full disk). Output: `docs/reports/<date>-mac-mini-council.md`
+sleep, Wi-Fi drop, a full disk, how slow the guests are against the
+hosted ones in `docs/research/boot-speed.md`). The report's first
+section is "What would make a user scream", ranked, before the hats. Output: `docs/reports/<date>-mac-mini-council.md`
 with findings ranked P0 (blocks launch), P1 (fix before queue), P2
 (after), each with the exact reproduction. The conductor fixes P0 and
 P1 by relaunching the responsible builder with the finding, then runs
