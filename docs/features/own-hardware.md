@@ -48,16 +48,30 @@ of the build's stale blocks, so the shipping image's at-rest figure
 will be a little lower and nobody has measured it; the page says "under
 6 GB", which is true before the trim and after it.
 
-What a running machine costs is **not** established. The one
-measurement, 9.76 GB with a `large` machine running, is on the lab
-image, whose closure is 6.6 GiB larger, and the two do not reconcile:
-6.6 GiB is 7.09 GB, so 9.76 less that is 2.67 GB, which is below the
-5.65 GB at-rest figure the lab image cannot be smaller than. So the
-closure difference is not additive in real blocks, or the two readings
-are from different points, and until that is resolved no per-machine
-figure belongs on the page. The page says a machine costs what it
-writes, up to the size of its disk, which is the thin volume's actual
-behaviour and needs no arithmetic.
+What a machine costs, from one image minutes apart with nothing else
+changed: 9.71 GB with a `large` machine's 40 GiB volume created and the
+machine stopped, 9.76 GB with it running, and the thin volume 0.66
+percent of 40 GiB allocated, which is 0.28 GB. So a machine costs about
+0.3 GB when it is created, the volume's own filesystem, and from there
+what it writes. The 0.05 GB between stopped and running is the guest's
+first minutes of writes.
+
+The public page does not carry the 0.3 GB. It says a machine costs what
+it writes up to the size of its disk, which is the thin volume's
+behaviour and answers the question a reader is actually asking, which is
+whether three machines need three times 40 GB. 0.3 GB is close enough to
+nothing that quoting it would be one more number to carry and no
+decision changed.
+
+**Why two earlier figures appeared to disagree**, recorded because the
+next person will meet the same trap: 19f's lab reading of 9.71 GB was
+taken after a boot-time trim and the production reading of 5.65 GB
+before one, since that image predates the trim. Across that boundary the
+closure difference is not additive and a subtraction gives a figure
+below the at-rest floor. On the same side of a trim it reconciles:
+observed 9.71 less 5.65 is 4.06 GB, predicted 7.09 for the closure less
+the trim's 3.0 is 4.09 GB, within 0.03 GB. Two real-block readings are
+comparable only when both are on the same side of a trim.
 
 ## What the user sees
 
