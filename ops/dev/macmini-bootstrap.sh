@@ -132,15 +132,21 @@ grep -q "^sha256" "$RES/openssl-l0-1thread.txt" && grep -q "^sha256" "$RES/opens
 say "step 7: vfkit --nested on the Tart disk"
 if command -v vfkit >/dev/null; then
   tart stop "$L1" 2>/dev/null || true; sleep 3
-  MAC=52:54:00:c0:ff:ee
+  MAC=52:54:aa:c0:ff:ee   # no zero octets: the lease file drops leading zeros
   (vfkit --cpus "$L1_CPUS" --memory "$L1_MEM_MIB" --nested \
     --bootloader "efi,variable-store=$LAB/vfkit-nvram,create" \
     --device "virtio-blk,path=$HOME/.tart/vms/$L1/disk.img" \
     --device "virtio-net,nat,mac=$MAC" \
     --device virtio-rng --device "virtio-serial,logFilePath=$LAB/vfkit-serial.log" </dev/null > "$LAB/vfkit.log" 2>&1 &)
+  # the framework's NAT hands out addresses through macOS's own DHCP
+  # server, whose leases are in /var/db/dhcpd_leases (what `tart ip` reads)
   VF_IP=
   for _ in $(seq 1 60); do
-    VF_IP=$(arp -an | grep -i "${MAC//:/.}\|$MAC" | sed -E 's/.*\(([0-9.]+)\).*/\1/' | head -n1)
+    VF_IP=$(sudo cat /var/db/dhcpd_leases 2>/dev/null | awk -v m="1,$MAC" '
+      /^\{/ { ip=""; mac="" }
+      /ip_address=/ { ip=$0; sub(".*=", "", ip) }
+      /hw_address=/ { mac=$0; sub(".*=", "", mac) }
+      /^\}/ { if (mac == m) print ip }' | tail -n1)
     [ -n "$VF_IP" ] && $SSH -o BatchMode=yes "admin@$VF_IP" true 2>/dev/null && break
     VF_IP=; sleep 3
   done
