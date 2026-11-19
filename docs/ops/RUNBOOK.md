@@ -248,7 +248,16 @@ works:
 2. Publish it with its checksum where `repose host add` fetches it: a
    GitHub release of this repository, tag `appliance-<version>`, assets
    `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
-   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`). Another home
+   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`), **with
+   `--latest=false`**. `https://repose.run/install.sh` resolves `latest`
+   by following GitHub's `releases/latest` redirect and builds the CLI
+   archive name from that tag; an appliance release that becomes
+   "latest" sends every install on every platform to a tag with no CLI
+   archives, and they 404 (appliance-2026.11.19 did this for 26 minutes
+   on 2026-11-19 until `gh release edit v0.1.51 --latest` moved it
+   back). Confirm after publishing: `curl -sI
+   https://github.com/Heracraft/repose/releases/latest` must still
+   point at the CLI tag. Another home
    is a CLI release with `applianceURL` changed in
    `internal/cli/appliance.go`, or `REPOSE_APPLIANCE_URL` on the Mac.
 3. Bump `applianceVersion` in `internal/cli/appliance.go` to that
