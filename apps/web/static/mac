@@ -60,7 +60,7 @@ die() { printf 'repose: %s\n' "$*" >&2; exit 1; }
 # reserve inside the VM is the fleet's eighth (docs/DESIGN.md §4).
 vm_memory_mib() {
   total=$1
-  mib=$(( total / 1048576 * 3 / 4 ))
+  mib=$(( total * 3 / 4 / 1048576 ))
   [ "$mib" -lt 8192 ] && mib=8192
   echo "$mib"
 }
