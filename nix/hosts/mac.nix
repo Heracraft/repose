@@ -124,7 +124,7 @@ let
       part=''${2:-${toString mac.guestsPartition}}
       pv="''${disk}''${part}"
       case "$disk" in /dev/nvme*|/dev/loop*|/dev/mmcblk*) pv="''${disk}p''${part}" ;; esac
-      vg=vg-guests
+      vg="vg-guests"
       gib=$((1024 * 1024 * 1024))
 
       # 1. The partition, to the end of the disk. growpart exits 1 and
@@ -168,7 +168,7 @@ let
       vg_size=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
       extent=$(vgs --noheadings --units b --nosuffix -o vg_extent_size "$vg" | tr -d ' ')
       meta=$(lvs --noheadings --units b --nosuffix -o lv_metadata_size "$vg/thin" | tr -d ' ')
-      want=$(( vg_size / 100 * 95 ))
+      want=$(( vg_size * 95 / 100 ))
       cap=$(( vg_size - 2 * meta - 4 * extent ))
       [ "$want" -gt "$cap" ] && want=$cap
       want=$(( want / extent * extent ))
