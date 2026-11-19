@@ -83,10 +83,23 @@ spawn ./cloud-hypervisor --api-socket $sock --kernel Image --initramfs initrd.im
   --cmdline "console=ttyAMA0 root=/dev/vda1 rw" \
   --cpus boot=2 --memory size=2048M --serial tty --console off
 expect -re "login:" { puts "BOOT_MS [expr [clock milliseconds] - \$t0]" }
-send "ubuntu\r"
-expect -re "(?i)password:"
-send "l2pass\r"
-expect -re "\\\\$ $"
+# first boot: cloud-init sets the password after the prompt is up, and a
+# login typed at once fails (seen 2026-11-19); wait, then log in with retries
+sleep 45
+set tries 0
+while {\$tries < 4} {
+  send "\r"
+  expect -re "login:"
+  send "ubuntu\r"
+  expect {
+    -re "(?i)password:" { send "l2pass\r" }
+    -re "login:" { incr tries; continue }
+  }
+  expect {
+    -re "\\$ $" { break }
+    -re "(?i)incorrect|login:" { incr tries; sleep 5 }
+  }
+}
 send "openssl speed -seconds 5 sha256 2>&1 | tail -n 3; echo OPENSSL_DONE\r"
 expect "OPENSSL_DONE"
 send "sudo poweroff\r"
