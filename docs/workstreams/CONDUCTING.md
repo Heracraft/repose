@@ -9,6 +9,38 @@ after it.
 
 `docs/REVIEW.md` is the review half of this and is not repeated here.
 
+## The loop a program runs on
+
+The owner's method, stated at the end of the Mac mini program and close to
+their words:
+
+> Come up with a problem. Choose solutions — but usually those solutions are
+> not good enough. Do research, find good ones, critique them, experience
+> them as real users, fail, fix, and then ship. **Ship might happen three or
+> four times in the middle, and that is okay.**
+
+Seven steps, and the three a conductor is tempted to skip are the middle
+three. Taken in order:
+
+1. **Name the problem**, in the words a customer would use.
+2. **Choose solutions.** The first ones will be the obvious ones.
+3. **Assume they are not good enough**, because they usually are not. This is
+   the step that makes the rest happen; a conductor who believes its own
+   first answer skips straight to building it.
+4. **Research** what already works, in products people choose to use. See the
+   next section: do not invent a pattern.
+5. **Critique** the researched options, including the one you like, and write
+   the counter-evidence down in the proposal itself.
+6. **Experience it as a real user, and expect to fail.** This is the review
+   method in `docs/REVIEW.md`, and failing here is the point of it.
+7. **Fix, and ship** — several times along the way, not once at the end.
+
+The practical consequence for sequencing: **a program is not a line of
+builders followed by a review.** Research and design run while fixes ship;
+the review runs on each piece as it lands; and a program may ship three or
+four times before it is finished. Holding everything for one grand release is
+how a review of two thirds of a product gets called a review.
+
 ## The roles
 
 Seven roles ran this program. The point of naming them is that **a role is
