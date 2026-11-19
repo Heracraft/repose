@@ -1,8 +1,9 @@
-// A project's Triggers tab (DECISIONS I-1248..I-1262, I-1266): the list
-// with each trigger's door, its last run and the next fire; Run, Edit,
-// On/Off and Remove in the row; the runs and the dry run under it; and
-// the form that makes a trigger, including the prompt, which I-1266 let
-// a browser write into the machine.
+// A project's Triggers tab (DECISIONS I-1248..I-1262, I-1266, I-1360):
+// the list with each trigger's door, who answers it, its last run and
+// the next fire; Run, Edit, On/Off and Remove in the row; the runs and
+// the dry run under it; and the form that makes a trigger, including the
+// prompt, which I-1266 let a browser write into the machine. A webhook
+// route that forwards to the app is a row here too (webhooks.spec.ts).
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, addTriggerRun, triggerPrompt } from './helpers';
 
@@ -104,7 +105,14 @@ test('the form makes a route trigger and the URL is a copy away', async ({ page 
 	const form = section.getByTestId('trigger-form');
 	await form.getByLabel('Name').fill('apply');
 	await form.getByRole('button', { name: 'A webhook' }).click();
-	await form.getByLabel('Route').fill('recruiting');
+	// One door, two receivers (I-1360): a webhook starts an agent unless
+	// Then says the app. There is no Route field; the URL is the
+	// trigger's own.
+	await expect(form.getByRole('button', { name: 'Start an agent' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await expect(form.getByLabel('Route')).toHaveCount(0);
 	await form
 		.getByPlaceholder('Triage the new issues')
 		.fill('Read $REPOSE_PAYLOAD and apply if it fits');
@@ -116,9 +124,15 @@ test('the form makes a route trigger and the URL is a copy away', async ({ page 
 	await form.getByRole('button', { name: 'Add trigger' }).click();
 
 	await expect(section.getByRole('heading', { name: '1 trigger' })).toBeVisible();
-	await expect(
-		section.getByRole('cell', { name: 'recruiting (route)', exact: true })
-	).toBeVisible();
+	await expect(section.getByRole('cell', { name: 'webhook', exact: true })).toBeVisible();
+	// The route is named after the trigger, so the CLI's `repose
+	// webhooks` and this tab say the same name.
+	const routes = await fetch(`${apiURLFromEnv()}/projects/${p.id}/webhooks`, {
+		headers: { Authorization: 'Bearer playwright' }
+	}).then((r) => r.json());
+	expect(routes.map((r: { name: string; trigger?: string }) => [r.name, r.trigger])).toEqual([
+		['apply', 'apply']
+	]);
 	// The prompt reached the machine and the api kept none of it: the
 	// row holds a path, and no page ever draws the text (I-1266).
 	expect(await triggerPrompt(p.id, 'apply')).toBe('Read $REPOSE_PAYLOAD and apply if it fits');
@@ -175,7 +189,6 @@ test("a prompt is refused while the machine is stopped, in the api's words", asy
 	await section.getByRole('button', { name: 'Add trigger' }).click();
 	const form = section.getByTestId('trigger-form');
 	await form.getByLabel('Name').fill('apply');
-	await form.getByLabel('Route').fill('recruiting');
 	await form.getByPlaceholder('Triage the new issues').fill('do the thing');
 	await form.getByRole('button', { name: 'Add trigger' }).click();
 	await expect(form.getByTestId('trigger-form-error')).toContainText(
@@ -217,12 +230,16 @@ test('the list shows each door, its last run and the next fire', async ({ page }
 	const section = page.locator('#triggers');
 	await expect(section.getByRole('heading', { name: '3 triggers' })).toBeVisible();
 
-	// The door: a route trigger reads as its route, a schedule as its
-	// spec. It is in its own column at 1440 and under the name at phone
-	// width, so both cells carry it and the exact one is the column's.
+	// The door: a webhook trigger reads `webhook`, with the route's name
+	// where the CLI gave it one of its own (`--route recruiting`); a
+	// schedule reads as its spec. It is in its own column at 1440 and
+	// under the name at phone width, so both cells carry it and the
+	// exact one is the column's.
 	await expect(
-		section.getByRole('cell', { name: 'recruiting (route)', exact: true })
+		section.getByRole('cell', { name: 'webhook recruiting', exact: true })
 	).toBeVisible();
+	// Who answers it, beside the door.
+	await expect(section.getByRole('cell', { name: /^an agent/ }).first()).toBeVisible();
 	// The schedule's cell carries its zone beside the spec, so this is
 	// anchored rather than exact; the name cell's copy reads
 	// "triage weekdays 07:00…" and does not match.
@@ -241,7 +258,7 @@ test('the list shows each door, its last run and the next fire', async ({ page }
 	// the name: a list of names alone does not say which trigger fires
 	// on a webhook and which on a clock.
 	await page.setViewportSize({ width: 390, height: 844 });
-	await expect(section.getByRole('cell', { name: 'apply recruiting (route)' })).toBeVisible();
+	await expect(section.getByRole('cell', { name: 'apply webhook recruiting' })).toBeVisible();
 	await page.setViewportSize({ width: 1280, height: 720 });
 	// A route trigger's URL is in its expansion, on the clipboard, and
 	// never on the page.
