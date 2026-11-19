@@ -26,14 +26,20 @@
   oneDisk ? false,
   # The root's size when it does not take the rest of the disk.
   rootSize ? "32G",
+  # The pool metadata's floor. 1 GiB on a data disk; the one-disk image is
+  # formatted with a 4 GiB PV, where a 1 GiB metadata LV plus its spare
+  # beside a 95 percent pool is more than the VG holds, so the image takes
+  # 64 MiB and repose-mac-grow raises it to the 1 GiB floor once the PV
+  # has grown (mac.nix).
+  poolMetadataFloor ? 1073741824,
 }:
 let
-  # One percent of the PV, clamped to 1 to 16 GiB, in whole MiB: lvcreate
-  # rejects a byte count that is not a multiple of 512 (host-01, 2026-09-20).
-  # The clamp is assigned back to m; as a bare comma operand its value was
-  # discarded, so a 64 GiB test disk got 0.64 GiB and a disk over 1.6 TiB
-  # would have asked for more metadata than a thin pool allows.
-  poolMetadataSize = ''"$(( m = $(blockdev --getsize64 "''${lvm_devices[0]}") / 100, m = (m < 1073741824 ? 1073741824 : (m > 17179869184 ? 17179869184 : m)), m / 1048576 ))m"'';
+  # One percent of the PV, clamped to the floor and 16 GiB, in whole MiB:
+  # lvcreate rejects a byte count that is not a multiple of 512 (host-01,
+  # 2026-09-20). The clamp is assigned back to m; as a bare comma operand
+  # its value was discarded, so a 64 GiB test disk got 0.64 GiB and a disk
+  # over 1.6 TiB would have asked for more metadata than a thin pool allows.
+  poolMetadataSize = ''"$(( m = $(blockdev --getsize64 "''${lvm_devices[0]}") / 100, m = (m < ${toString poolMetadataFloor} ? ${toString poolMetadataFloor} : (m > 17179869184 ? 17179869184 : m)), m / 1048576 ))m"'';
 
   # A symlink under /dev/disk/repose is this hook's own answer from a
   # previous run. /dev is tmpfs, but an install that failed and is retried

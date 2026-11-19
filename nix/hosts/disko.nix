@@ -16,5 +16,6 @@ in
     # data disk.
     oneDisk = cfg.provider == "mac";
     rootSize = cfg.mac.rootSize;
+    poolMetadataFloor = if cfg.provider == "mac" then 64 * 1024 * 1024 else 1073741824;
   };
 }

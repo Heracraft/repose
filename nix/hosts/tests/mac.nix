@@ -58,6 +58,7 @@ let
           osDevice = "/dev/loop0";
           oneDisk = true;
           rootSize = "2G";
+          poolMetadataFloor = 64 * 1024 * 1024;
         };
         disko.enableConfig = false;
       }
@@ -225,8 +226,12 @@ pkgs.testers.runNixOSTest {
         pv = int(host.succeed("pvs --noheadings --units b --nosuffix -o pv_size /dev/vdb3").strip())
         pool = int(host.succeed("lvs --noheadings --units b --nosuffix -o lv_size vg-guests/thin").strip())
         vg = int(host.succeed("vgs --noheadings --units b --nosuffix -o vg_size vg-guests").strip())
+        meta = int(host.succeed("lvs --noheadings --units b --nosuffix -o lv_metadata_size vg-guests/thin").strip())
         assert pv > disk - 4 * 1024**3, (pv, disk)
-        assert pool > small and abs(pool - vg * 95 // 100) < 64 * 1024**2, (pool, vg)
+        # The metadata rose to its 1 GiB floor, and the pool took the rest
+        # less the metadata and its spare, under 95 percent of the VG.
+        assert meta == 1024**3, meta
+        assert pool > small and vg - 2 * meta - 256 * 1024**2 <= pool <= vg * 95 // 100, (pool, vg, meta)
         again = host.succeed("repose-mac-grow /dev/vdb 3")
         print(again)
         assert "event=partition_unchanged" in again and "event=pool_unchanged" in again, again

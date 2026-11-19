@@ -160,12 +160,18 @@ let
         echo "repose-mac-grow: event=pool_metadata_grown from=$have_meta to=$want_meta"
       fi
 
-      # 4. The pool, to 95 percent of the VG; the rest is the headroom
-      # lvm's autoextend grows into (storage.nix). In whole extents, so a
-      # second run computes the same size and does nothing.
+      # 4. The pool, to 95 percent of the VG, the rest being the headroom
+      # lvm's autoextend grows into (storage.nix), and never past what the
+      # VG holds beside the metadata and its spare (on a small disk the
+      # two are more than the 5 percent). In whole extents, so a second
+      # run computes the same size and does nothing.
       vg_size=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
       extent=$(vgs --noheadings --units b --nosuffix -o vg_extent_size "$vg" | tr -d ' ')
-      want=$(( vg_size / 100 * 95 / extent * extent ))
+      meta=$(lvs --noheadings --units b --nosuffix -o lv_metadata_size "$vg/thin" | tr -d ' ')
+      want=$(( vg_size / 100 * 95 ))
+      cap=$(( vg_size - 2 * meta - 4 * extent ))
+      [ "$want" -gt "$cap" ] && want=$cap
+      want=$(( want / extent * extent ))
       have=$(lvs --noheadings --units b --nosuffix -o lv_size "$vg/thin" | tr -d ' ')
       if [ "$have" -lt "$want" ]; then
         lvextend -L "''${want}b" "$vg/thin" >/dev/null
