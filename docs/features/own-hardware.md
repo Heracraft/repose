@@ -219,9 +219,12 @@ chose, with the machines' volumes and snapshots in it; three quarters of
 the Mac's memory to the VM and the fleet's host reserve inside it. The
 kernel is a product constraint: 6.18.57 is the one version known both to
 boot nested guests on Apple silicon and to pass the CVE-2026-99999
-assertion (research doc §7). Freeze and restore across a Mac reboot are
-off until gate 0 step 5 has run; a reboot stops the machines and the api
-starts the ones that were running (I-645). `repose-appliance
+assertion (research doc §7). A machine's first boot on a Mac is minutes,
+not seconds (3 min 36 s to multi-user on an M4 at 2 vCPU, research doc
+§9), so hostd's ready window is five minutes there (`guestReadyTimeout`)
+where the Azure hosts keep 60 s. Freeze and restore across a Mac reboot
+are off until gate 0 step 5 has run; a reboot stops the machines and the
+api starts the ones that were running (I-645). `repose-appliance
 start|stop|status|log|grow|uninstall` is the user's side on the Mac.
 
 ## Behaviour that must hold

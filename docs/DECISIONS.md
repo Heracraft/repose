@@ -36986,9 +36986,39 @@ the last, and the pool is the one that needs the room); `pkgs.linuxPackages`
 from `nixpkgs` for the appliance (6.18.56, below the assertion, and
 untested on Apple silicon); 6.8 (below the assertion).
 
+- *What the Mac said on 2026-11-19* (the AWS mac-m4.metal, macOS 15.8.2,
+  24 GB; `docs/research/mac-mini-nested-kvm.md` §9 has the raw numbers).
+  The image builds in 12 min 45 s and ships as 2.08 GB; it boots under
+  vfkit to the login prompt on 6.18.57; the join, hub, grow and register
+  units run; registration, Hello and hostd's stream work (against a
+  hostdev stand-in through a relay, since production's api does not
+  carry I-1380 yet). A repose guest runs on it with both virtiofs shares
+  mounted, read from inside the guest. Three findings that change the
+  product: (1) **a guest's first boot says Ready at 70 s and reaches
+  multi-user at 3 min 36 s** (two nested vCPUs, and hostd's RegisterPaths
+  of the 1225-path closure takes 1 min 41 s on the appliance), so
+  hostd's 60 s ready window closed on it twice; hostd now takes
+  `--ready-timeout`, `mac.nix` sets `guestReadyTimeout = "5m"`, and the
+  Azure hosts keep 60 s unchanged. The Mac's value is minutes because a
+  first boot there is minutes, not a figure to tune away later: a
+  shorter window turns a slow first boot into a failed one. (2) The
+  image carries stale blocks from its own build (12.7 GB real on the
+  Mac for a lab image, 9.7 after `fstrim`), so the appliance trims at
+  every boot and the installer unpacks sparse; the production image
+  costs 4.4 GB after unpack and about 2 GB after the trim. (3) hostd's
+  Hello on a 12 GiB VM: 12,492,406,784 bytes visible, 10,344,923,136
+  placeable, 8 vCPUs; the plan's "your Mac's memory is the cap" is
+  those figures. Two guest-base findings on aarch64, recorded and not
+  fixed here: `repose-zram-swap` fails (`/dev/zram0` not there when
+  `zramctl` waits for it) and Docker's first attempt times out on
+  containerd and succeeds on its retry; and once in three starts
+  SetupProject's `systemctl --user start` of the tmux session unit
+  exited 1 under the slow boot, cause unverified.
+
 *Checked:* `host-mac` and `mac-launcher-sizing` green under `nix flake
-check` (the 19f report); the aarch64 outputs evaluated. Not done at this
-line: the aarch64 image built, the appliance booted on the Mac.
+check` (the 19f report); the aarch64 outputs evaluated; the Mac day
+above. Not done at this line: a Mac joining a real account, which waits
+on the api release that carries I-1380 (the council's checkout too).
 
 **I-1380. The Mac launcher is a plist over vfkit, and the install step
 carries the host's place on the hub, minted at `host add` and rotated at

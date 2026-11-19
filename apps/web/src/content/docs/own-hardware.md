@@ -59,7 +59,7 @@ HOST      STATE   MEMORY  MACHINES  RUNNING  LAST SEEN
 mac-mini  online  24 GB   0         0        just now
 ```
 
-`waiting` means it has not joined yet. From `online`, `repose run` in any project puts it on your hardware.
+`waiting` means it has not joined yet. From `online`, `repose run` in any project puts it on your hardware. A machine's first start on a Mac takes a few minutes, not the seconds a machine on repose's servers takes: it runs two levels of virtualization deep.
 
 To name it yourself, `repose host add mac-mini`. A name is 1 to 32 characters of `a-z`, `0-9` and `-`. It is yours alone: another account may use the same one.
 

@@ -363,6 +363,41 @@ It boots on the Mac under vfkit 0.6.4 (`--nested`, EFI, virtio-blk,
 NAT, virtio-fs, the console to a file) to the login prompt on the
 6.18.57 pin, with the join, net, pool, grow and register units running.
 
+**A repose guest on the appliance** (a lab image with hostdev through a
+relay on the Mac, the aarch64 guest closure baked in; the VM at 12 GiB,
+8 vCPU): `hostdev create --class large` then `start`; inside the guest
+`findmnt -t virtiofs` lists `/nix/.ro-store ro-store` and
+`/run/repose/claude-auth claude-auth`, `/nix/store` is the overlay over
+the share, `ls /nix/store` of 1225 paths takes 0.18 s, Docker 29.8.0
+runs on overlay2, the tmux session unit is up, ssh with a certificate
+from hostdev's CA logs in. Gate 0 step 6 (virtiofs) therefore passes.
+Timing of the first boot (`systemd-analyze`): kernel 13.4 s, userspace
+3 min 23 s; guestd listening at 56 s, "guest is ready" at 70 s; the
+critical chain is `repose-paths` waiting 1 min 41 s for hostd's
+RegisterPaths (I-232's dump-db of the closure, slow on the appliance),
+then home-manager 26 s. hostd's 60 s ready window closed on it twice,
+reproducibly: `--ready-timeout` and `guestReadyTimeout = "5m"` in
+mac.nix are the fix (I-1376). A stop takes 18 s. Failing units in the
+aarch64 guest, not fixed here: `repose-zram-swap` (`zramctl: /dev/zram0:
+failed to wait for initialized: No such file or directory`) and Docker's
+first attempt (`timeout waiting for containerd to start`, then it
+starts). Once in three starts SetupProject failed at `start the tmux
+session unit: systemctl exited 1`; unverified.
+
+Hello from the 12 GiB VM: `mem_bytes` 12,492,406,784, `vcpus` 8, `cores`
+8; `free_mem_bytes` 10,344,923,136 before a guest and 1,218,117,632 with
+the large guest placed; `pool_bytes` 11,790,188,544 on a 46 GiB disk
+file (the image's 4 GiB PV grown at first boot).
+
+Disk on the Mac (the sparse file's real blocks): the production image
+unpacks in 21 s to 4.4 GB (apparent 37 GiB); a lab image with the 6.6
+GiB guest closure held 12.7 GB after boot and 9.7 GB after `fstrim -av`
+inside the appliance, which matches root 7.97 GB + /boot 0.1 + the thin
+pool's 1.37 GB allocated (the caches volume's ext4 1.08, the guest
+volume 0.28, metadata 1 GiB), so the 3 GB gap was stale blocks from the
+image build, given back by discard through virtio-blk to APFS. With the
+large guest running: 9.76 GB. vfkit's own RSS: 24 MiB.
+
 Lessons, each of which cost a run:
 
 - **Apple's NAT isolates VMs from each other at layer 2.** Two VMs on
