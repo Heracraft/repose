@@ -188,8 +188,8 @@ line, flush, split by an inner rule, stacked below 1024px: "On our servers"
 and "On a Mac mini you own" (the x86 box is a docs link in the cell, not a
 third column: the docs say what it needs and it is not a product a stranger
 pictures). Each cell is a serif claim, one paragraph of facts from the docs,
-and its reference command. Ours: a `large` starts in about 12 seconds, your
-plan's memory runs at once, snapshots go to cloud storage; `repose run`.
+and its reference command. Ours: your plan's memory runs at once, snapshots
+go to cloud storage; `repose run`.
 Yours: an M3 or newer with macOS 15 and 16 GB; `repose host add` puts one
 virtual machine on the Mac and changes nothing else on it; your projects go
 there and nobody else's; snapshots stay on its disk; `repose host add`. Under
@@ -197,14 +197,20 @@ the paragraph, in the Mac cell, the figures component (§5). The band's side
 item is the pair of docs links, "Your own hardware" and "Pricing", set as
 the Agents links are.
 
-What the band does not say: a start time on the Mac. The docs carry "about
-four minutes" (`/docs/own-hardware`) and that figure is on the board as far
-too slow (ENG-70). A page that says it repels; a page that omits it keeps the
-rule that every line says what is true, once, where they look for it, and
-the docs are where a buyer looks for it. The council decides whether an
-omission that size is honest. If the band ships before ENG-70 closes, the Mac
-cell says nothing about speed and the hosted cell keeps its 12 seconds, which
-is itself a comparison a careful reader will make.
+What the band does not say, **on purpose**: a start time on the Mac. The
+docs carry "about four minutes" (`/docs/own-hardware`) and that figure is on
+the board as far too slow (ENG-70). A page that says it repels; a page that
+omits it keeps the rule that every line says what is true, once, where they
+look for it, and the docs are where a buyer looks for it. The mac-mini
+conductor's reading, which this proposal adopts: the omission is honest only
+while nothing on the page implies speed for the Mac. Two cells under one
+heading, one saying "12 seconds" and the other silent, is an implication, not
+an omission. So while the Mac cell is silent, **no band names a start time
+for either home**: the hosted cell above drops its 12 seconds, and the figure
+stays in the docs for both. When ENG-70 closes, both cells may carry their
+figure. The omission is recorded here and on ENG-85 so a reviewer does not
+spend an evening hunting it; earlier tonight three did, for a price the
+conductor had withheld without saying so.
 
 **02 Permissions. "Let it run with full permissions."** *Understand: the
 agent is not asked command by command, and a snapshot brings the machine
@@ -278,7 +284,15 @@ Mac's" default (`internal/cli/hostscmd.go`):
 | 256 GB disk | a 100 GB sparse file by default | thin volumes, the pool overcommitted by design (I-586) | a project costs about 0.3 GB at creation and then what it writes, up to its class's disk (40 GB for a `large`) | "about two projects": **no rule behind it** |
 
 `nix/hosts/mac.nix`'s own comment says "one xl" for 24 GB and is wrong by
-the same arithmetic. None of this is the page's problem to solve: the
+the same arithmetic (its "a large and a small and a tiny" half is right).
+The mac-mini conductor multiplied it out without the per-guest overhead and
+got the same answer: 18,432 MiB appliance, 2,304 MiB reserve, 16,128 MiB
+placeable, and an `xl` of 16,384 MiB misses **by 256 MiB**. That margin is
+the finding: the class ladder and the appliance's share were designed apart
+and nobody multiplied them, so the top class is shut out of the hardware a
+customer actually buys by less than a third of a gigabyte. The sizing
+session owns the answer and the comment; nobody else edits `mac.nix`
+tonight, since another session holds it for the park. None of this is the page's problem to solve: the
 sizing session's proposal changes what a size means on an owned host (the
 owner's target is one machine getting most of the appliance, about 8 cores
 and 14 to 15 GB on a 24 GB mini), and the figures above become different
