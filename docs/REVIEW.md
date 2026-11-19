@@ -11,6 +11,15 @@ program and every program after it: "The last review must be super ruthless,
 like going through every combination, possible combination. Every feature,
 try it out, find errors, be a real customer. CLI and dashboard."
 
+The bar the review measures against, in the owner's words at the end of that
+same day: **"Gotta be something the user wants to use and pay for. Gotta be
+the best experience because otherwise, what's the flipping point? They might
+as well just use SSH."** That is the comparison every finding is ranked
+against. A customer who could do this with `ssh` and a terminal multiplexer
+is the competition, they already have it, and it costs them nothing. So a
+rough edge is not a cosmetic matter here: it is the reason someone closes the
+tab and goes back to what they had.
+
 The reusable form of this, for any project, is the `customer-review` skill.
 This file is the repose-specific version: the surfaces, the comparisons and
 the gate.
