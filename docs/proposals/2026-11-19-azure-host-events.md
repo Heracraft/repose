@@ -17,6 +17,8 @@ queries run from this branch at 20:30–21:35Z (activity log, Resource Health,
 `docs/ops/OBSERVABILITY.md`, `docs/ops/RUNBOOK.md`, DECISIONS I-472, I-473,
 I-643, I-645, I-648, I-649, I-653, I-848, I-942, I-944, I-956, I-1044, I-1068.
 
+**Correction, 21:25 UTC, from Grafana's own records and the owner.** The rules did fire and did reach the owner: Grafana's alert annotations show `HostdDown` alerting at 16:24:40 and `HostUnreachable` at 16:25:30 (nine minutes after host-02 went dark), `ApiDown` at 18:25 and 19:14, `ApiHostsAbsent` at page severity at 19:16; the notification policy's only receiver is the `google-chat` contact point, and the owner confirms the messages arrived in the Chat space. So the detection gap in §1 is not the channel: the page went out and nobody acted on it for three hours. What §1 still buys is a second, independent path (the api's own page, the outside probe) for the day the Grafana path is what is down, as it was between 18:21 and 18:27 when the edge rebooted and from 19:10 when the control VM lost its network. The response gap is a people question: who is on the hook for a page, and what the page must say to make the restart obvious (the runbook entry in §5).
+
 ## Summary
 
 | Question | Answer |
