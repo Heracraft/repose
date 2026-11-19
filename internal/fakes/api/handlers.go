@@ -554,7 +554,7 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	p.Placement = placement
 	if ownHostID != "" {
-		p.HostID = ownHostID
+		p.HostID, p.HostName = ownHostID, f.ownedHostName(ownHostID)
 	}
 	if body.ExpiresIn != nil {
 		t := f.now().Add(time.Duration(*body.ExpiresIn) * time.Second)

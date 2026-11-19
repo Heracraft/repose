@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1034 entries.
+1035 entries.
 
 ## Scope
 
@@ -662,7 +662,7 @@ pointer, not a summary.
 - **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16941
 - **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16971
 - **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16983
-- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; partly reversed by I-1390; L17068
+- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; partly reversed by I-1390; amended by I-1392; L17068
 - **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17157
 - **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17183
 - **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17237
@@ -1066,3 +1066,4 @@ pointer, not a summary.
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37292
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37343
+- **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` whenever the account owns a host, not only when it has stopped answering (fix-placement, 2026-11-19) — L37413

@@ -245,6 +245,9 @@ export interface Project {
 	class: SizeClass;
 	state: GuestState;
 	host_id?: string;
+	/** The name the account gave the host it is on, for a host of its own
+	 * only (I-1392); a host repose runs has host_id alone. */
+	host_name?: string;
 	guest_ip?: string;
 	agent_default: string;
 	hold_base_updates: boolean;

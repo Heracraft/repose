@@ -419,4 +419,19 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 	if n := rows(); n != 1 {
 		t.Fatalf("%d rows after one accepted create", n)
 	}
+	// host_name beside host_id (I-1392): absent on a host repose runs,
+	// the name the account gave it once the host is theirs.
+	pid := r.body["id"].(string)
+	if _, has := r.body["host_name"]; has {
+		t.Fatalf("a host repose runs carried host_name: %s", r.raw)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "GET", "/projects/"+pid, nil); r.status != 200 || r.body["host_name"] != "host-01" {
+		t.Fatalf("own host: %d %s, want host_name host-01", r.status, r.raw)
+	}
+	if r := e.do(t, tok, "GET", "/projects", nil); r.status != 200 || len(r.list) != 1 || r.list[0].(map[string]any)["host_name"] != "host-01" {
+		t.Fatalf("list: %d %s, want host_name host-01", r.status, r.raw)
+	}
 }

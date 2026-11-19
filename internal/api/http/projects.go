@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/heracraft/repose/internal/api/abuse"
@@ -124,6 +125,20 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// run the other one until it stops.
 		"multiplexer": multiplexer.Normalize(p.Multiplexer),
 		"placement":   store.NormalizePlacement(p.Placement),
+	}
+	if p.HostID != nil {
+		// The name the account gave its host, beside the id (I-1392): a
+		// script reading --json got an opaque uuid and never the name
+		// its owner typed, which nothing could work around. A host
+		// repose runs stays an id: that one is a platform internal
+		// (I-616), and its name is not the user's.
+		var name string
+		err := s.d.Pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id = $2", *p.HostID, u.ID).Scan(&name)
+		if err == nil {
+			out["host_name"] = name
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
 	}
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no

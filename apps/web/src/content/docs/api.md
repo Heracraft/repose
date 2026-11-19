@@ -122,7 +122,7 @@ Request and answer bodies are not listed here. They are what the CLI sends and r
 
 | Answer | When |
 | ------ | ---- |
-| `201` | The project, with `host_id` and `placement`. Placement is decided before anything is written. |
+| `201` | The project, with `host_id`, `host_name` when that host is one you own, and `placement`. Placement is decided before anything is written. |
 | `503 capacity`, `detail.reason: "no_own_host"` | Your host cannot take it: `detail.host` and `detail.host_state` (`registering`, `unreachable`, `draining`, or `ready` with no room) name which and why, and the message says it in words. Nothing is created. `detail.hosted_allowed` is whether `placement: "hosted"` would work on your plan. |
 | `503 capacity`, `detail.reason: "no_capacity"` or `"no_cpu"` | Repose's servers have no room. Nothing is created. |
 | `402 payment_required`, `detail.reason: "hosted_plan_required"` | `hosted` on a plan that buys no memory on repose's servers. |

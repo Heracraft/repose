@@ -37,8 +37,11 @@ func TestRunHostChoosesWhereTheMachineIsMade(t *testing.T) {
 	if err := runRun(ctx, e, RunOptions{Name: "web", Host: "mac-mini", NoSync: true, NoAttach: true}, false); err != nil {
 		t.Fatal(err)
 	}
-	if p := bySlug(listed(t, e), "web"); p == nil || p.Placement != "own" || p.HostID != mac {
-		t.Fatalf("--host mac-mini made %+v, want placement own on %s", p, mac)
+	if p := bySlug(listed(t, e), "web"); p == nil || p.Placement != "own" || p.HostID != mac || p.HostName != "mac-mini" {
+		t.Fatalf("--host mac-mini made %+v, want placement own on %s named mac-mini", p, mac)
+	}
+	if p := bySlug(listed(t, e), "api"); p.HostName != "" {
+		t.Fatalf("a project on repose's servers carries host_name %q", p.HostName)
 	}
 
 	// A machine is pinned to its host for life: the flag on one that

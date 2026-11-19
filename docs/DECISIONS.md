@@ -37409,3 +37409,46 @@ a per-command override and a readout; amends I-1366's placement).
 *Not done:* the dashboard's control (the parity rule, I-1354 under
 I-1266), the account-level default, `host_name` in the project JSON
 and the HOST column, each its own commit on this branch.
+
+**I-1392. A host the account owns is named where the account looks:
+`host_name` beside `host_id` in the project JSON, a HOST column in
+`repose ls` and a `host` row in `repose status` whenever the account owns
+a host, not only when it has stopped answering (fix-placement,
+2026-11-19).** *Made during implementation* (amends I-616, whose
+premise I-1366 ended; the readout half of ENG-68; the prior art is
+`docs/proposals/2026-11-19-where-a-project-runs.md`, PR #82, which
+found every working pattern has a way to see which target is active).
+
+- *The premise that no longer holds.* I-616 put the host and the
+  machine's address behind `status -v` because "the host and the
+  machine's address are platform internals nobody acts on", and on
+  repose's own fleet that was true: a customer could not act on
+  `host-02` and had no reason to know it existed. I-1366 gave a host an
+  owning account. A host with an owner is a Mac on the customer's desk,
+  which they bought, named, plug in and unplug: it is the thing they act
+  on most, and the opposite of an internal. I-616's ruling stands for a
+  host repose runs, which stays behind `-v` and stays an id; this entry
+  changes only what is said about a host of the account's own.
+- *`host_name` first, because it cannot be worked around.* `--json`
+  carried `host_id`, an opaque uuid, and no name; the name was under
+  `status -v`, which also writes a line per api request to stderr
+  (`cli.md`, "Output"), and the route answer. A flag can be found by
+  someone determined; a missing field cannot. `host_name` is the name
+  the account gave its host, set only when the host is the account's,
+  one indexed query per project in `projectJSON`; a host repose runs
+  has `host_id` alone, which is how a client tells the two apart
+  without a second field. An older api has no `host_name`, which
+  clients read as "not named".
+- *The readout.* `repose ls` gains a HOST column whenever the account
+  owns a host: the host's name for a machine on it, `repose` for one on
+  repose's servers, `-` for one placed nowhere. An account that owns no
+  host sees the table it always saw, because a column that reads
+  `repose` in every row says nothing. `repose status` says the same in
+  a `host` row under the same condition; `-v` keeps the address. The
+  column comes after the flag (I-1390) and not before it, because a
+  readout that shows a trap nobody can escape would only make the trap
+  visible.
+
+*Not done:* the HOST column and the `host` row (the next commit on
+this branch); the dashboard list, which already names an offline host
+on its row and reads `host_name` from here on.

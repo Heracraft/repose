@@ -74,6 +74,10 @@ type Project struct {
 	State     string `json:"state"`
 	OpID      string `json:"op_id,omitempty"` // the op a create or start left in flight
 	HostID    string `json:"host_id,omitempty"`
+	// HostName is the name the account gave the host the machine is on,
+	// set only for a host of the account's own (I-1392); a host repose
+	// runs has host_id alone. Absent from an older api.
+	HostName string `json:"host_name,omitempty"`
 	// Placement is what the project asked for (I-1366): `own`, a host
 	// the account owns when it owns one, or `hosted`, repose's servers.
 	// Absent from an older api, which the CLI reads as own.

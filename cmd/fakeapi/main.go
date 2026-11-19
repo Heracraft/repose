@@ -141,6 +141,8 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	// {name} adds a registered, answering host and answers its id;
 	// {id, quiet_minutes} marks one offline that long ago;
 	// {project_id, host_id} places a machine on it;
+	// {state_host, state} moves the host of that name to a state, which
+	// is how a test gets one that is still `registering` (waiting);
 	// {limit} is the plan's host count, -1 to let it be the default.
 	mux.HandleFunc("POST /owned-host", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -152,6 +154,8 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Limit        *int   `json:"limit"`
 			InstallLine  string `json:"install_line"`
 			SetInstall   bool   `json:"set_install"`
+			StateHost    string `json:"state_host"`
+			State        string `json:"state"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -168,6 +172,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		if body.ProjectID != "" && body.HostID != "" {
 			f.SetProjectHost(body.ProjectID, body.HostID)
+		}
+		if body.StateHost != "" && body.State != "" {
+			f.SetOwnedHostState(body.StateHost, body.State)
 		}
 		id := ""
 		if body.Name != "" {
