@@ -285,14 +285,20 @@ Mac's" default (`internal/cli/hostscmd.go`):
 
 `nix/hosts/mac.nix`'s own comment says "one xl" for 24 GB and is wrong by
 the same arithmetic (its "a large and a small and a tiny" half is right).
-The mac-mini conductor multiplied it out without the per-guest overhead and
-got the same answer: 18,432 MiB appliance, 2,304 MiB reserve, 16,128 MiB
-placeable, and an `xl` of 16,384 MiB misses **by 256 MiB**. That margin is
-the finding: the class ladder and the appliance's share were designed apart
-and nobody multiplied them, so the top class is shut out of the hardware a
-customer actually buys by less than a third of a gigabyte. The sizing
-session owns the answer and the comment; nobody else edits `mac.nix`
-tonight, since another session holds it for the park. None of this is the page's problem to solve: the
+In MiB, with the 512 MiB per-guest overhead that placement counts
+(`manager.go:145`: "Placement (FreeMemBytes) and the api count class RAM
+plus this"), checked by this session and by the mac-mini conductor against
+`create.go`, `manager.go` and `unit.go`: 18,432 appliance, 2,304 reserve,
+**16,128 placeable**. One `xl` needs 16,896 and is short by 768; two `large`
+need 17,408 and are short by 1,280; a `large`, a `small` and a `tiny` need
+15,872 and fit with **256 MiB spare**. That is the finding in its sharpest
+form: the only configuration our own documentation gets right for a 24 GB
+Mac has less headroom than one more guest's overhead. A customer who buys
+the bigger Mac and tries the obvious thing is refused twice, and what works
+is what nobody would guess. The class ladder and the appliance's share were
+designed apart and nobody multiplied them. The sizing session owns the
+answer and the `mac.nix` comment; nobody else edits that file tonight, since
+another session holds it for the park. None of this is the page's problem to solve: the
 sizing session's proposal changes what a size means on an owned host (the
 owner's target is one machine getting most of the appliance, about 8 cores
 and 14 to 15 GB on a 24 GB mini), and the figures above become different
