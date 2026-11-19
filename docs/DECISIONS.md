@@ -37276,3 +37276,55 @@ and asked not to be asked again unless it does not work).
 
 *Not done:* the implementation. This entry settles where the key lives;
 the code still has the park off on `provider == "mac"` (ENG-2).
+
+**I-1396. An account with no subscription is measured against no plan:
+`GET /billing`'s usage carries 0 for memory, disk and egress, the
+dashboard lists what a billing-exempt account holds with no limit beside
+it, and `repose login --status` says `billing-exempt` (fix-billing,
+2026-11-19).** *Made during implementation* (the council's dashboard
+review, `reports/2026-11-19-mac-mini-council-dashboard.md` P0-2, ENG-34;
+and its F6, ENG-40. Amends nothing: I-16 and I-1090 already say an
+exempt account is refused nothing.)
+
+- *What was wrong.* `Service.Overview` asked `sub.PlanFor` on a nil
+  subscription, and `PlanOrSolo` answers Solo, so `usage.memory_gb`,
+  `disk_gb` and `egress_included_gb` were 8, 100 and 250 for any account
+  with no subscription, while `/me`'s `limits` for the same exempt
+  account were Pro's 32, 500 and 1000 (`LimitsFor`, I-16). The billing
+  page preferred the usage block, drew "359.9 GB of 100 GB · over" in
+  red and "Creating and restoring projects, and growing a disk, are
+  refused", and the dashboard then created a project in 6 s, because the
+  gate refuses an exempt account nothing (`Gate.CheckIn`, I-1090). A
+  customer who believed the page would have deleted work to get under a
+  line that was never theirs; the owner's account is exempt, so a real
+  customer can be. The fake api sent 0 there all along
+  (`internal/fakes/api` `usageOf`), which is why no dashboard test saw
+  it. The CLI, from the same `/me`, printed `no plan` for the account the
+  page called billing-exempt (ENG-40): one account, two stories, and
+  "no plan" is the state every start is refused on.
+- *The rule.* With no subscription the usage block names no plan's
+  figures: the three are 0 and `overage_cents` is 0, the shape an
+  own-hardware subscription already has (I-1364: 0 means "the plan caps
+  nothing", not "allows nothing"). The page reads the usage block alone
+  and never `/me`'s limits, and treats a billing-exempt account as it
+  treats an own-hardware one: facts (running, held, machines), no meter,
+  no "over", no refusal banner; the own-hardware line about the host's
+  memory and disk is not printed for it, since the banner above already
+  says what bounds it. `repose login --status` prints `billing-exempt`
+  in the plan's place.
+- *Rejected:* measuring an exempt account against `/me`'s limits
+  (Pro's). They are a figure for what the biggest plan would allow, not a
+  ceiling: the gate reads `billing_status = 'exempt'` and nothing else,
+  so a page that drew them as a meter would still say "over" and
+  "refused" past 500 GB about an account nothing refuses, and the fix
+  would have reproduced the defect one plan up. Also rejected: sending
+  Pro's figures from `/billing` for an exempt account, for the same
+  reason, and changing `/me`'s `limits` (the CLI's `resize` and the
+  project cap read it; not this defect).
+- *Not changed:* `LimitsFor` and `/me`; an exempt account with a live
+  subscription is metered by the page as its plan says, as before, while
+  the gate still refuses it nothing. Evidence:
+  `TestNoSubscriptionUsageCapsNothing` (red on Solo's 8 before, green
+  after), `TestLoginStatus` (`billing-exempt`, `no plan`, `Plus plan`),
+  and the two dashboard tests, which set an exempt account past every
+  plan's disk, read no meter and no banner, and create a project.

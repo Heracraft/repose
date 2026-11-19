@@ -121,12 +121,16 @@
 	let diskHeld = $derived(
 		billing ? (billing.usage.disk_held_gb ?? billing.usage.disk_allocated_gb) : 0
 	);
-	// An exempt account has no plan, so /billing's usage carries no limits;
-	// /me's limits are what it works within (the biggest plan's, I-16).
+	// The plan's figures, 0 where no plan caps the account: an own-hardware
+	// plan sells none of the fleet's, and an account with no subscription
+	// has no plan (I-1364, I-1396). /me's limits are not read here: for an
+	// exempt account they are the biggest plan's as a figure, and the gate
+	// refuses that account nothing, so a meter against them read "over"
+	// and "refused" about an account nothing refuses.
 	let limits = $derived({
-		memory: billing?.usage.memory_gb || me?.limits?.memory_gb || 0,
-		disk: billing?.usage.disk_gb || me?.limits?.disk_gb || 0,
-		egress: billing?.usage.egress_included_gb || me?.limits?.egress_gb || 0
+		memory: billing?.usage.memory_gb ?? 0,
+		disk: billing?.usage.disk_gb ?? 0,
+		egress: billing?.usage.egress_included_gb ?? 0
 	});
 	// Memory running, split into what frozen machines hold and the rest;
 	// the total is the api's, so the meter agrees with the plan's gate.
@@ -136,13 +140,15 @@
 			.reduce((n, p) => n + classMemoryGB(p.class), 0)
 	);
 	let memRunning = $derived(Math.max(0, (billing?.usage.running_gb ?? 0) - memFrozen));
-	/** The plan sells no memory on repose's hosts, so there is nothing to
-	 *  meter: what runs is bounded by the user's own host
-	 *  (billing.Plan.SellsFleetMemory). A resource question, not a
-	 *  product one: a plan selling a host and fleet memory both would be
-	 *  metered here like any other. */
-	let noFleetLimits = $derived(!!billing && limits.memory === 0);
-	let diskOver = $derived(!!billing && limits.disk > 0 && diskHeld > limits.disk);
+	/** Nothing caps the account, so there is nothing to meter. The plan
+	 *  sells no memory on repose's hosts, and what runs is bounded by the
+	 *  user's own host (billing.Plan.SellsFleetMemory): a resource
+	 *  question, not a product one, so a plan selling a host and fleet
+	 *  memory both would be metered here like any other. Or the account
+	 *  is billing-exempt, which the gate refuses nothing whatever its
+	 *  figures say (I-1090, I-1396). */
+	let noFleetLimits = $derived(!!billing && (accountStatus === 'exempt' || limits.memory === 0));
+	let diskOver = $derived(!!billing && !noFleetLimits && limits.disk > 0 && diskHeld > limits.disk);
 	let heaviest = $derived(
 		projects
 			.filter((p) => (p.root_used_bytes ?? 0) > 0)
@@ -585,7 +591,9 @@
 						<dd>{billing.usage.projects}</dd>
 					</div>
 				</dl>
-				<p class="own-note">Your host's memory and disk are the limits.</p>
+				{#if accountStatus !== 'exempt'}
+					<p class="own-note">Your host's memory and disk are the limits.</p>
+				{/if}
 			{:else}
 			<div class="month">
 				<div class="cell">
@@ -683,7 +691,7 @@
 			</div>
 		{:else if accountStatus === 'exempt'}
 			<!-- Exempt: no plan to buy, so no cards and no buy buttons; what it
-			     holds, against the biggest plan's figures. -->
+			     holds, with no figure beside it, since nothing refuses it. -->
 			<div class="hk-banner hk-banner--ok" role="status">
 				<p>This account is billing-exempt.</p>
 			</div>

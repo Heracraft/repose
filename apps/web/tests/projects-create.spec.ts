@@ -195,6 +195,29 @@ test('an account with no plan is refused in place, with a link to the plan', asy
 	expect(page.url()).toContain('/projects');
 });
 
+// A billing-exempt account past every plan's disk: the Billing page says
+// nothing is refused, and Create makes the machine, so the page and the
+// next action agree (ENG-34, I-1396). Before this the page said creating
+// was refused, in red, and the dashboard created anyway.
+test('a billing-exempt account past every plan\'s disk is told nothing is refused, and Create makes the machine', async ({
+	page
+}) => {
+	await setBilling({ mode: 'exempt', disk_held_gb: 612.3 });
+	await page.goto('/billing');
+	await expect(page.getByText('This account is billing-exempt.')).toBeVisible();
+	await expect(page.getByTestId('own-usage')).toContainText('612.3 GB');
+	await expect(page.getByTestId('disk-over')).toHaveCount(0);
+	const name = unique('exempt-made');
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	await expect(page.locator('main h1')).toHaveText(name);
+});
+
 // The form and the machine it made, at the two widths and both schemes,
 // at 1x, to be read at that size (CLAUDE.md "Judge visuals at real
 // size"). As tokens.spec's "API tokens shots" does.
