@@ -943,8 +943,57 @@ seconds into its own boot when the control plane gave up after *a minute*.
 `small` = 4 GB, so two of them are 8 GB of an 18 GB appliance, and the Mac's
 load average was 3.72 across 10 cores. I had assumed OOM and was wrong.
 
-**Card ENG-80, P0 candidate**, with the rank resting on whether machines
-work on the clean appliance — the measurement running as this is written.
+**And then the clean appliance failed too, which is the decisive result and
+goes against my own hypothesis.**
+
+I expected a healthy appliance to fix this. At 23:02:20, on the appliance
+installed cleanly at 23:00:53 — **no FAILED line in its boot, grow unit
+finished `OK`, `disk.raw` 52.00 GiB, host `online 18 GB`** — a first
+`repose run --no-attach --size small` in a one-file checkout ran **567 s
+(9m27s)** and exited 1:
+
+```
+Could not start clean1: the machine did not answer within a minute of starting … (guest_unresponsive)
+```
+
+Every phase before the failure was normal and fast:
+
+```
+✓ Created clean1 (small)  0.5s
+✓ Fetched the base  4.0s
+✓ Evaluated your config  15s
+✓ Fetched 655 paths (1.7 GiB)  60s
+✓ Built 323 derivations  57s
+Booting clean1... 30s … 6m30s
+```
+
+So **ENG-80 is not caused by ENG-71.** A guest fails to come up on a healthy
+appliance as readily as on a broken one, and the two differ in the only way
+that mattered for [F6](#f6-the-appliance-boots-with-a-failed-unit-and-the-account-is-never-told).
+I had a tidy causal chain and the control killed it.
+
+**The one success, kept because it bounds the claim**: the very first
+machine, on the *broken* appliance, booted in **7m05s** and synced. So the
+failure is **not deterministic**, and 6m30s against 7m05s suggests the guest
+is close to whatever deadline is applied rather than dead — the
+`[196.433235]` systemd stamp from
+[the second machine](#f7-both-machines-on-the-broken-appliance-died) says
+the same thing.
+
+**Raised from candidate to confirmed P0: machines do not reliably start on
+owned hardware**, which is the whole feature. **Card ENG-80.**
+
+**Two lines a customer reads at that moment, both wrong** (card ENG-100, P1):
+
+- `repose run` counted **"Booting clean1… 6m30s"** and then refused with
+  *"did not answer **within a minute** of starting"*. Whichever number is
+  true, the other is on screen.
+- The same message says *"`repose logs --kind console` shows what it
+  printed"*. Running exactly that returns **one line** — the error restated
+  — and none of the machine's console. For an earlier failed machine the
+  same command returned a full NixOS stage 1 and 2 boot log, so the path is
+  **unreliable rather than absent**, and a customer cannot tell which case
+  they are in.
 
 ### F8. The CLI counts in GiB and says GB
 
