@@ -20,33 +20,39 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-19, 05:00 UTC)
+## Where things stand (2026-11-19, 21:35 UTC)
 
-- Live: CLI v0.1.49, main e57d63da pushed (two pushes on 2026-11-19, no
-  switch and no tag, owner's word), base 2026.11.18.1, host-02 and the
-  edge at 159231b. CI on origin/main is green (44444722781).
-- Local main is 12 commits ahead (r20261119-2: say-agent-pick I-1356,
-  dash-create I-1354, doors I-1360, the conductor-machine proposal,
-  rel-record-8), ships as base,web. `origin/integrated` holds it. The
-  pushed r20261119-1 carries bump-devtools-path, which reaches base,
-  host-02 and the edge and is published and switched nowhere yet. So
-  the next release needs: a push (api and web), a base publish (say,
-  bump) and the owner's word for the host-02 and edge switches.
-- The queue is empty. Every PR from the night is closed as merged; the
-  25 stale agent-bump and dependabot PRs were closed on the owner's word.
-- Worktrees: 152 removed on the owner's word on 2026-11-19 (branches
-  kept). What is left under `~` is this conductor's: `kanali-rel-record-8`,
-  `kanali-domain-dash-session`, `kanali-conductor-machine`,
-  `kanali-conductor-handoff-3`, and the owner's `kanali-doors`.
-- Live sessions on this box (`ListAgents`): the owner's own `factory-f0`
-  (made doors) and `factory-3f` (a bring-your-own-hardware assessment,
-  nothing queued). The ten sessions of the previous week were killed on
-  the owner's word after each reported nothing in flight.
+- Live: CLI v0.1.51 (v0.1.50 at 21:00, v0.1.51 at 21:29), main a3ecdc45
+  pushed, base 2026.11.19 (at 28272062), host-02 at hostd 2827206 and the
+  edge at 28272062, both switched 20:33 on the owner's word. The Own
+  hardware work (mac-mini, I-1364..I-1382) is on production; the plan is
+  on sale (`POLAR_PRODUCT_OWN` set by the owner); the edge hub material
+  has been in `settings` since 2026-09-20 (no edge init needed).
+- Local main equals origin/main and integrated. The queue is empty.
+- The mac-mini program (sessions `kanali-mac-mini-da` the mini-conductor,
+  `factory-3f` the spark) runs a customer review on production; its
+  findings land as ENG cards on the owner's board; it queues branches
+  itself and stays out of main. Known after v0.1.51: the dashboard's
+  add-host dialog shows `join_token` where the CLI takes
+  `install.argument` (ENG-29); `repose host add --join` puts a WireGuard
+  private key on the command line (ENG-42); a create on an unregistered
+  own host refuses and pages OpsFailing (ENG-46).
+- The outage of 2026-11-19 (host-02 16:21-20:29, the edge 18:21-18:27,
+  the control VM 19:10-19:37 UTC): Azure host-level events ("Live
+  Migration Failed" on host-02) left two VMs running with dead NICs;
+  `az vm restart` fixed each in seconds; the park unit saved four of five
+  guests at the restart (the xl txhm skipped: "snapshot would outlast the
+  deadline"). Grafana paged Chat within nine minutes each time; nobody
+  acted for three hours. `docs/proposals/2026-11-19-azure-host-events.md`
+  and RUNBOOK "Host or control VM dead on the network" hold the rest.
+- Worktrees under `~`: the owner's and the mac-mini program's (`kanali-doors`,
+  `kanali-form-shifts*`, `kanali-mac-mini*`, `kanali-council-*`, `kanali-pm`, `kanali-review-docs`); nothing of the conductor's.
+- Secrets on this box: `~/.config/repose-ops/{grafana-token,
+  logto-m2m-secret, polar-live-token, polar-sandbox-token}`; no Coolify
+  token (the owner sets Coolify envs in the UI).
 - Machines that are not yours: everything in `repose ls` except `e2e-*`
-  you made. `tmp-wyyd` is the owner's.
-- The dashboard parity order (I-1266): project create shipped as
-  dash-create; next are resize and logs, then the change-pass gaps the
-  decision names (`agent_default`, `multiplexer`).
+  you made. The box's CLI login (`~/.config/repose/account.json`) is the
+  owner's; a CLI built from main is at `/tmp/rt/repose-main`.
 
 ## The owner's rules this week
 
@@ -137,6 +143,26 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   buf job passes its checks and then fails posting a comment with a token
   that lacks the permission. Workers rerun whole suites locally because of
   it. Fix the permission before trusting PR CI as a gate.
+- `gh release create vX --draft` makes an "untagged" draft and no tag;
+  release.yml never runs. Push the annotated tag, wait about 90 s for the
+  workflow's draft, then `gh release edit vX --title vX --notes-file`.
+- A push deploys the docs pages at once; the CLI ships at the tag. A
+  release that adds a command documents it before anyone can run it (30
+  minutes on 2026-11-19, with the plan on sale). Tag right after the push.
+- After a host restart the api reconciles from Hello and issues ops.
+  Switching hostd two minutes later killed a stop-snapshot mid-op. Read
+  `repose-admin ops list --state running` before a switch.
+- `repose-admin hosts add` never calls PrepareHub and prints a bare
+  token; `POST /v1/hosts` builds the WireGuard bundle. Read the
+  `settings` rows before believing the api lacks edge material.
+- Heavy checks go under `flock /mnt/nixstore/repose-ws/nix-build.lock`;
+  two programs' VM checks at once put the load at 100 and OOM-killed nix
+  evaluations. The harness kills background Bash waiters on "low memory"
+  while the 15-minute load is high; a Monitor survives.
+- A VM "running" with the VM agent Not Ready, a login prompt on its
+  console and nothing on the network is a dead NIC from the host side;
+  Resource Health may still say Available. Restart it (RUNBOOK "Host or
+  control VM dead on the network").
 
 ## Owed
 
@@ -147,13 +173,20 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 - Revoke certificates has no safe live check: it cuts the owner's own
   SSH.
 - 143 worktrees under `~`; removing them needs the owner's word.
-- bump-devtools-path is on origin/main but the base is not published and
-  host-02 and the edge are not switched; the daily bump's next run opens
-  its PR from the fixed wrapper, and `gemini-cli.nix` hardcodes
-  `bundle/gemini.js` the same way (not fixed).
-- Live checks owed to the next release: say-agent-pick (one agent in a
-  trigger run's window, `repose say` with no `--agent`), dash-create (New
-  project from `/projects`), doors (the Triggers tab's doors), bump
-  (`chrome-devtools-mcp --version` on the new base).
+- `gemini-cli.nix` hardcodes `bundle/gemini.js` the way chrome-devtools-mcp
+  did (not fixed). The daily bump's next run proves the wrapper fix.
+- Live checks owed: say-agent-pick on a machine on base 2026.11.19 (one
+  agent in a trigger run's window, `repose say` with no `--agent`); the
+  mac-disk-floor refusal sentence on a Mac with under 57 GB free (the
+  mac-mini program has the Mac); bump (`chrome-devtools-mcp --version`
+  on the new base).
 - The buf job's comment permission in `ci.yml` (above), and the
   post-merge full-suite reruns in worker briefs that it causes.
+- From the outage research (PR #77): the api pages nothing itself on
+  `host_unreachable`; an outside probe of the VM agent heartbeat; the
+  edge keeping wgsync's peers across a reboot; `repose_gateway_wgsync_errors_total`
+  never exported; nothing watches `repose-wg-watchdog`. The owner picks.
+- The xl park deadline: an xl that cannot snapshot in time loses its
+  running state on every graceful host restart (txhm, 2026-11-19).
+- kanali's and verista's stop ops at 20:30 on 2026-11-19: trigger unknown
+  (the api container's logs went with the redeploy); ask the owner.
