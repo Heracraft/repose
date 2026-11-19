@@ -590,6 +590,27 @@ it over virtiofs, so the product shape is a store disk per base and
 the share for the rest, or a disk per closure; neither is designed
 here.
 
+**The restore's seconds (ENG-13).** §9 quoted the restore's phases
+without the last one: the `restore phases` line has always ended in
+`guestd_ms`, the wait for guestd after the resume, and the unpark's
+preparation (volume activation, fingerprint, key unwrap) and its image
+open ran untimed before the phases. A park cycle of the disk-fed guest
+the same evening (a clean appliance stop, which parks its guests, then
+`repose host run` again): the park took 6.5 s (snapshot 203 ms, an 824
+MB image; the appliance stopped in 15 s), the appliance was back at its
+login in 21 s, and the unpark took 3.8 s for 27 s parked: net 34 ms,
+virtiofsd 41, store view 152, image read 1,015, resume 174, guestd
+1,630, and 772 ms outside the phases. So the unmeasured part of §9's
+7.8 s was mostly the guestd wait, which the line names, plus under a
+second of preparation; hostd now times the preparation too (`activate`,
+`fingerprint`, `unwrap`, `image_open`, `restore`, `discard` on the
+`guest restored` line, 6a77f9db), though this cycle ran the image's
+hostd, since the swapped binary was a runtime bind mount the reboot
+undid. Where the seconds go, then: the image read at about 0.8 GB/s
+and the guest's own wake-up, 1.6 s of the 3.8; a faster restore is a
+smaller image (the guest's free pages) and a quicker guestd answer,
+not the host.
+
 ## Sources
 
 - Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:
