@@ -30,6 +30,18 @@ add` today prints the token and the docs page rather than a line to run
 hand, and the timer that would pull a published host system is not built
 and may ship after launch.
 
+**The two figures the public page quotes**, measured by 19f on the lab
+Mac and not on anyone's desk: an appliance given 12 GiB, which is what a
+16 GB Mac's share is sized at, reports 11.6 GiB and 8 vCPU in its Hello
+and leaves 9.6 GiB placeable after the eighth-with-a-2-GiB-floor reserve
+(I-724). The image unpacks sparse in 21 s to 4.4 GB of real blocks (37
+GiB apparent), peaking at about 6.5 GB while the 2.0 GB download is
+still on disk, and the lab disk held 21 GB with the guest closure built
+and one `large` volume created, before that machine had written
+anything. The caveats the page does not carry: the appliance was 12 GiB
+on a 24 GB Mac, and no guest had booted, so the cost of a machine that
+is actually working is not measured yet.
+
 ## What the user sees
 
 ```
