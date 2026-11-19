@@ -162,7 +162,27 @@ also someone's desktop. Those come from the first trusted user's box.
 
 ## 5. Automation
 
-`ops/dev/macmini` (this branch) drives the Scaleway side from woker-1,
+**2026-11-19, later the same day: the lab moved to AWS.** Scaleway's M4
+shelf was empty and two other Mac hosts were too, so the day runs on
+EC2 `mac-m4.metal` in us-east-1 (2024 Mac mini, M4, 24 GB, macOS on the
+metal, about $1.23 an hour with the same 24 h minimum, billed per
+Dedicated Host from the allocation call). The driver's default provider
+is now `aws`; `MACMINI_PROVIDER=scaleway` keeps the Scaleway path. New
+accounts have a quota of 0 for "Running Dedicated mac-m4 Hosts"
+(L-2CBA8B92), and the console's quota page lists the x86 "m4" family
+first, which is how the first request on this account went to the wrong
+quota. `ops/dev/macmini watch` polls the right one and allocates when it
+reaches 1. The macOS AMI comes from the SSM parameter
+`/aws/service/ec2-macos/<name>/arm64_mac/latest/image_id` (`sequoia`,
+`tahoe`, `golden_gate` for 15, 26, 27); the login is `ec2-user` with
+passwordless sudo; a stop or terminate puts the host through a scrubbing
+workflow before it can be released. AWS's EC2 Mac page says nothing
+about nested virtualization either way, so step 2 is still the go or
+no-go. Budget: `repose-lab-monthly`, $50 a month, emails at 50, 80 and a
+forecast of 100 percent; Budgets evaluate once a day, so it is an alarm,
+not a kill switch.
+
+`ops/dev/macmini` (this branch) drives the provider from woker-1,
 `ops/dev/macmini-bootstrap.sh` runs on the Mac, and
 `ops/dev/macmini-measure-linux.sh` is the Linux half (Cloud Hypervisor
 boots and the benchmark), which runs inside L1 on a Mac or natively on
