@@ -173,7 +173,7 @@ aws_status() {
     aws_ ec2 describe-hosts --host-ids "$host" | jq -r '.Hosts[0] |
       "host         \(.HostId)  \(.State)  \(.AvailabilityZone)",
       "allocated    \(.AllocationTime)",
-      "releasable   \((.AllocationTime | sub("\\.[0-9]+";"") | fromdate) + 86400 | todate)  (24 h minimum)"'
+      "releasable   \((.AllocationTime | sub("\\.[0-9]+";"") | sub("\\+00:00$";"Z") | fromdate) + 86400 | todate)  (24 h minimum)"'
   else echo "host         none"; fi
   if [ -n "$inst" ]; then
     aws_instance | jq -r '"instance     \(.InstanceId)  \(.State.Name)  \(.InstanceType)", "ip           \(.PublicIpAddress // "none yet")", "ssh          ssh ec2-user@\(.PublicIpAddress // "?")"'
@@ -318,8 +318,11 @@ cmd_bootstrap() {
     # shellcheck disable=SC2046
     ssh $(ssh_opts) -t "$user@$ip" "chmod +x macmini-measure-linux.sh && SUDO_PASS='$("${p}_sudo_pass")' ./macmini-measure-linux.sh"
   else
+    # No -t: with a controlling tty, macOS hangs up the lab VM when this
+    # session ends (every run on 2026-11-19 lost L1 at exit); without one
+    # the VM outlives the session, and nothing in the script needs a tty.
     # shellcheck disable=SC2046
-    ssh $(ssh_opts) -t "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
+    ssh $(ssh_opts) "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
   fi
 }
 

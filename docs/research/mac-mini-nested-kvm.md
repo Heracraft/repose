@@ -228,6 +228,64 @@ with the `metal` provider replaced by:
 - the runner's `console=ttyS0` made per-architecture;
 - freeze and restore gated on step 5's result, x86-only if it fails.
 
+## 7. What the Mac said (AWS mac-m4.metal, eu-west-1a, 2026-11-19)
+
+Host: EC2 Dedicated Host h-0b0c0ac94c35a8e93, instance i-03d94447e3932adfe,
+macOS 15.8.2 (24H232), Apple M4, 10 cores, 24 GB, `kern.hv_support` 1.
+Allocated 06:02 UTC after Virginia reported no capacity in any zone;
+Ireland had capacity on the first try once its quota applied.
+
+| Step | Result | Note |
+|---|---|---|
+| 1 chip and OS | PASS | macOS 15.8.2 on Apple M4 |
+| 2 nested KVM | PASS | `/dev/kvm` in the appliance VM (Tart `--nested`, Ubuntu 24.04 arm64, 8 vCPU, 12 GiB), `kvm-ok` passes; KVM reports "Hyp mode initialized", GICv3 system-register interface, no GICv2 |
+| 3 guest boots | PASS on 6.18.57 and 6.8; FAIL on 7.0 | a stock Ubuntu cloud image: `Run /init` 1.5 s, systemd 4.0 s, login prompt 134 to 139 s (the image waits 120 s for a network the guest has no NIC for; the kernel-to-systemd time is the figure) |
+| 4 nesting tax | PASS, none measurable | one-thread `openssl speed sha256`, 16 KiB blocks: guest 3.12 GB/s, appliance 2.92 GB/s (ratio 1.07, inside core-to-core noise on a chip with P and E cores); the appliance at 8 threads 18.7 GB/s, 6.4x one thread; the Mac itself under LibreSSL 3.23 GB/s at 8 KiB, not like for like |
+| 5 freeze and restore | not run | |
+| 6 virtiofs | not run | |
+| 7 vfkit | PASS | vfkit 0.6.4 `--nested` booted the Tart disk to a login prompt on the first run; the address lookup was the harness's fault |
+
+Raw files: `mac-mini-nested-kvm-data/` (host facts, kvm-ok, the guest
+console logs under 6.8 and 6.18.57, the hang logs under 7.0, the openssl
+outputs at all three levels). The appliance VM was then resized to 18
+GiB and given nix 2.35.6 as the aarch64 builder for workstream 19e.
+
+**The kernel condition (the finding of the day).** With Ubuntu's
+`7.0.0-43-generic` kernel in the appliance VM, every guest hangs about
+two seconds into boot, right after the initramfs hands over: the guest
+kernel prints `rcu_preempt kthread timer wakeup didn't happen ...
+Possible timer handling issue on cpu=0`, and never reaches a login
+prompt. It is the same under Cloud Hypervisor v54.1 and under QEMU
+8.2.2 with KVM (`-M virt -accel kvm -cpu host`), with one vCPU or two,
+with `idle=poll`, and with `nohz=off highres=off`. With
+`6.8.0-147-generic` in the same VM, on the same macOS and the same
+host, the same guest boots to a login prompt, and so does it with
+**`6.18.57`** (Ubuntu's mainline build of the exact version
+`nix/hosts/kernel.nix` asserts: `versionAtLeast 6.18.57`, the first
+stable kernel with the fix for CVE-2026-99999, a guest-to-host escape
+through a tap's `vnet_hdr`; DECISIONS I-778). So the appliance ships
+6.18.57 or a later 6.18 point release, **never 6.8**, and the pin is a
+product requirement rather than a detail: the `mac` provider's kernel
+(I-1374, I-1376) must be proven by `ops/dev/macmini-l2-try.sh` on
+Apple silicon before any bump, and the bisect window for whoever bumps
+next is 6.18.57 to 7.0.0-43.
+Whether this is a KVM regression between 6.8 and 7.0 in nVHE mode
+under Apple's hypervisor, or an Apple-side bug that newer kernels
+tickle, is *unverified*; the logs are in `mac-mini-nested-kvm-data/`
+(`l2-try-1.log`, `l2-try-2.log`, `l2-qemu.log` for the hang,
+`l2-boot-*.log` for the boots under 6.8). macOS 15 is enough: the
+requirement does not move to 26.
+
+**Harness lessons** (each cost a run): `nohup` under `ssh -t` on macOS
+does not detach and the VM dies with the session, so the driver runs
+the bootstrap without a tty; `/dev/kvm` is root:kvm 0660 in the Ubuntu
+image; Cloud Hypervisor v54 wants `image_type=raw` on every disk;
+Ubuntu's arm64 `vmlinuz` is an EFI zboot PE with the Image compressed
+inside (zstd here), which the measure script now unwraps; a login typed
+at the first prompt of a cloud image fails because cloud-init has not
+set the password yet; `pkill -f` on a name that appears in your own
+command line kills your own shell.
+
 ## Sources
 
 - Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:
