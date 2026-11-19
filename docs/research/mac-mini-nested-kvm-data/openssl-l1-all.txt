@@ -1,4 +1,4 @@
 options: bn(64,64)
 compiler: gcc -fPIC -pthread -Wa,--noexecstack -Wall -fzero-call-used-regs=used-gpr -DOPENSSL_TLS_SECURITY_LEVEL=2 -Wa,--noexecstack -g -O2 -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -ffile-prefix-map=/build/openssl-OQJ4SZ/openssl-3.0.13=. -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security -mbranch-protection=standard -fdebug-prefix-map=/build/openssl-OQJ4SZ/openssl-3.0.13=/usr/src/openssl-3.0.13-0ubuntu3.16 -DOPENSSL_USE_NODELETE -DOPENSSL_PIC -DOPENSSL_BUILDING_OPENSSL -DNDEBUG -Wdate-time -D_FORTIFY_SOURCE=3
 CPUINFO: OPENSSL_armcap=0xfd
-sha256         1038286.58k  3617611.57k  9219903.95k 15003180.03k 18409725.95k 18718919.88k
+sha256         1031668.24k  3561794.00k  9173681.92k 14958350.34k 18419146.75k 18713503.33k

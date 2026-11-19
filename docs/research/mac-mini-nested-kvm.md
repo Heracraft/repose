@@ -240,10 +240,15 @@ Ireland had capacity on the first try once its quota applied.
 | 1 chip and OS | PASS | macOS 15.8.2 on Apple M4 |
 | 2 nested KVM | PASS | `/dev/kvm` in the appliance VM (Tart `--nested`, Ubuntu 24.04 arm64, 8 vCPU, 12 GiB), `kvm-ok` passes; KVM reports "Hyp mode initialized", GICv3 system-register interface, no GICv2 |
 | 3 guest boots | PASS on 6.18.57 and 6.8; FAIL on 7.0 | a stock Ubuntu cloud image: `Run /init` 1.5 s, systemd 4.0 s, login prompt 134 to 139 s (the image waits 120 s for a network the guest has no NIC for; the kernel-to-systemd time is the figure) |
-| 4 nesting tax | pending | |
+| 4 nesting tax | PASS, none measurable | one-thread `openssl speed sha256`, 16 KiB blocks: guest 3.12 GB/s, appliance 2.92 GB/s (ratio 1.07, inside core-to-core noise on a chip with P and E cores); the appliance at 8 threads 18.7 GB/s, 6.4x one thread; the Mac itself under LibreSSL 3.23 GB/s at 8 KiB, not like for like |
 | 5 freeze and restore | not run | |
 | 6 virtiofs | not run | |
-| 7 vfkit | PASS (boot) | vfkit 0.6.4 `--nested` booted the Tart disk to a login prompt on the first run; the address lookup was the harness's fault |
+| 7 vfkit | PASS | vfkit 0.6.4 `--nested` booted the Tart disk to a login prompt on the first run; the address lookup was the harness's fault |
+
+Raw files: `mac-mini-nested-kvm-data/` (host facts, kvm-ok, the guest
+console logs under 6.8 and 6.18.57, the hang logs under 7.0, the openssl
+outputs at all three levels). The appliance VM was then resized to 18
+GiB and given nix 2.35.6 as the aarch64 builder for workstream 19e.
 
 **The kernel condition (the finding of the day).** With Ubuntu's
 `7.0.0-43-generic` kernel in the appliance VM, every guest hangs about

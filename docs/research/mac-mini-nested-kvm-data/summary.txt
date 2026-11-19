@@ -5,3 +5,17 @@ PASS step 2: /dev/kvm present in L1 and kvm-ok passes
 PASS step 3: L2 booted 5 times; ms to login:      
 PASS step 4: openssl sha256 recorded for L0, L1 and L2 (compare the 16384-byte column)
 NOTE step 7: vfkit boot or /dev/kvm not confirmed; see /Users/ec2-user/repose-lab/vfkit.log (arp lookup or flag syntax may need a fix)
+PASS step 1: macOS 15.8.2 on Apple M4
+PASS step 2: /dev/kvm present in L1 and kvm-ok passes
+FAIL step 3: no L2 boot recorded; read /Users/ec2-user/repose-lab/results/l1-measure.log and /Users/ec2-user/repose-lab/results/l2-boot-1.log
+PASS step 1: macOS 15.8.2 on Apple M4
+PASS step 2: /dev/kvm present in L1 and kvm-ok passes
+FAIL step 3: no L2 boot recorded; read /Users/ec2-user/repose-lab/results/l1-measure.log and /Users/ec2-user/repose-lab/results/l2-boot-1.log
+PASS step 1: macOS 15.8.2 on Apple M4
+PASS step 2: /dev/kvm present in L1 and kvm-ok passes
+FAIL step 3: no L2 boot recorded; read /Users/ec2-user/repose-lab/results/l1-measure.log and /Users/ec2-user/repose-lab/results/l2-boot-1.log
+PASS step 1: macOS 15.8.2 on Apple M4
+PASS step 2: /dev/kvm present in L1 and kvm-ok passes
+FAIL step 3: no L2 boot recorded; read /Users/ec2-user/repose-lab/results/l1-measure.log and /Users/ec2-user/repose-lab/results/l2-boot-1.log
+PASS step 1: macOS 15.8.2 on Apple M4
+PASS step 2: /dev/kvm present in L1 and kvm-ok passes
