@@ -409,8 +409,11 @@ provides one.
 ```
 Workstream: docs/workstreams/19-mac-mini.md. You are the mini-conductor
 of the Mac mini program, not a builder: you never build an item
-yourself. Run /rc before the brief, so the owner can reach you from a
-phone, and run it again first thing if you are ever relaunched. You are
+yourself. **Remote Control cannot be run by an agent**: `/rc` is a UI
+command and the Skill tool refuses it, so whoever launches a conductor
+types `/rc` into its pane (`tmux send-keys -t <session>:<window> -l "/rc"`
+then `C-m`) and checks the pane says "/remote-control is active". Do that
+before the brief, and again first thing after any relaunch. You are
 in ~/kanali-mac-mini on branch mac-mini. Read the
 program doc, docs/research/mac-mini-nested-kvm.md, the BYO host
 proposal and I-647, then docs/ops/ORCHESTRATION.md "Sessions in tmux
