@@ -170,12 +170,12 @@ pkgs.testers.runNixOSTest {
 
     with subtest("the join bundle becomes the token and the hub bootstrap"):
         host.wait_for_unit("repose-launcher-join.service")
-        log = host.succeed("journalctl -u repose-launcher-join --no-pager -o cat")
-        print(log)
-        assert "event=join_token_written" in log and "event=hub_bootstrap_written" in log, log
+        joinlog = host.succeed("journalctl -u repose-launcher-join --no-pager -o cat")
+        print(joinlog)
+        assert "event=join_token_written" in joinlog and "event=hub_bootstrap_written" in joinlog, joinlog
         host.succeed("test ! -e /run/repose/launcher/join")
         bundle = json.loads(host.succeed("cat ${lab}/join | tr -d '\\n' | python3 -c 'import sys,base64; s=sys.stdin.read(); print(base64.urlsafe_b64decode(s + \"=\" * (-len(s) % 4)).decode())'"))
-        assert bundle["token"] not in log and bundle["wg"]["private_key"] not in log, "the bundle reached the journal"
+        assert bundle["token"] not in joinlog and bundle["wg"]["private_key"] not in joinlog, "the bundle reached the journal"
 
     with subtest("wg0 comes up on the bootstrap key before registration, and hostd registers over it"):
         netlog = host.succeed("journalctl -u repose-host-net --no-pager -o cat")
