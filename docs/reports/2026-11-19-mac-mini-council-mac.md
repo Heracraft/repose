@@ -1102,6 +1102,75 @@ looked for. I will exercise the path myself with my own question on the
 clean machine, inside the **2-minute notification hold** that `repose
 notify` reports, so that no real person is paged by a test.
 
+### F13. The ask reaches me; the answer never reaches the agent
+
+The product's pitch is that an agent asks you for a yes and carries on when
+you answer. On a Mac mini the asking half fails while the owner is still
+interrupted.
+
+On a **working** machine — `guestd.service` active, api reporting
+`guestd_ok: true` three seconds earlier — run as an agent would:
+
+```
+$ repose-ask --options yes,no --timeout 3m "Council test question, please ignore"
+repose-ask: guestd is not answering on /run/repose/hooks.sock: Post "http://guestd/ask": context deadline exceeded
+real 0m6.115s
+```
+
+**It asked for three minutes and gave up in six seconds.** Reproduced twice,
+6.1 s both times.
+
+**And the question still reaches the owner.** Both times it appeared in
+`repose questions` within 12–20 s, complete:
+
+```
+clean1  shell asked just now, expires in 5m  (id 6a1821c5)
+  Council test question, please ignore: is this reaching the owner?
+  options: yes|no
+```
+
+and `repose reply --question <id> yes` answered it — `Answered shell in
+clean1: yes`.
+
+So the loop is **one-way**: the owner is interrupted, answers, and nothing
+is waiting for the reply. An agent written the documented way gets an error
+instead of an answer and carries on without one, while the owner's attention
+has been spent on a question that can no longer change anything.
+
+**Not established:** whether this is specific to owned hardware. I could not
+run the hosted control, because every hosted project on this account is the
+owner's live work — one of them had a real question pending while I tested.
+If it is product-wide it is worse, not better. **Card ENG-105, P0.**
+
+**Two things that worked, said because they did.** The notification **hold**
+is real: `repose notify` reports `hold: 2m0s`, and by answering within 36
+seconds I exercised the whole path without paging a human — which is also
+how I tested this without spending the owner's attention. And `repose reply`
+refused my first attempt correctly: I typed `repose reply <id> yes`, it
+answered *"2 questions are waiting; say which with the project or --question
+ID"* and listed them. The syntax is documented, the error named the fix, and
+I had simply not read it. **Not a finding.**
+
+### F14. Four documentation files left behind for having "credentials" in the name
+
+On the sync:
+
+```
+Not carried (the names look like credentials): ~/.claude/skills/amazon-bedrock/references/agentcore-credentials-and-security.md, ~/.claude/skills/aws-cdk/references/troubleshooting-credentials.md, ~/.claude/skills/aws-sdk-js-v3-usage/references/credentials.md, ~/.claude/skills/aws-sdk-python-usage/references/credentials.md
+```
+
+All four are public AWS documentation *about* credentials. The filter
+matches the filename.
+
+**Parked at P2 rather than opened**, because it is wrong in the safe
+direction and the message **names every file it skipped**, so a customer can
+copy one by hand. Recorded so a second pass does not rediscover it.
+**Card ENG-104.**
+
+The same sync also printed `Not carried (would not work on the machine):
+Claude hook "…"` with its reason, and `Installing 3 of your tools in the
+background: cptr, golangci-lint, portless`. Those are good lines.
+
 ### F10. What is still unmeasured
 
 Held open honestly rather than filled with impressions. These need a working
@@ -1110,9 +1179,9 @@ is written:
 
 | Asked for | Status |
 |---|---|
-| The phone ask | **not yet run** |
+| The phone ask | **done** — [F13](#f13-the-ask-reaches-me-the-answer-never-reaches-the-agent) |
 | Laptop closed and reopened | **not yet run** |
-| A Mac reboot, and the appliance back at its login against 21 s | **not yet run** |
+| A Mac reboot, and the appliance back at its login against 21 s | **delegated, with cause** — see below |
 | A parked guest restored, against **3.8 s** | **not yet run** |
 | A guest's cold start against **289 s** on a healthy appliance | **running** |
 | Whether [F7](#f7-both-machines-on-the-broken-appliance-died) survives a healthy appliance | **running** — decides ENG-80's rank |
