@@ -275,24 +275,8 @@
 		{/if}
 	</div>
 
-	{#if forwarding}
-		<div class="tfield">
-			<label for="trigger-target" class="hk-field-label">Port and path in the machine</label>
-			<input
-				id="trigger-target"
-				class="hk-input tnarrow"
-				autocomplete="off"
-				spellcheck="false"
-				placeholder="3000/api/webhooks/stripe"
-				bind:value={target}
-			/>
-		</div>
-		<label class="hk-check">
-			<input type="checkbox" bind:checked={forwardStart} />
-			<span>Let a delivery start the machine while it is stopped</span>
-		</label>
-	{:else if kind === 'schedule'}
-		<div class="hk-fields tfields">
+	{#if kind === 'schedule'}
+		<div class="hk-fields tfields tfields--when">
 			<div class="tfield">
 				<label for="trigger-shape" class="hk-field-label">When</label>
 				<select
@@ -347,7 +331,7 @@
 					/>
 				</div>
 			{/if}
-			<div class="tfield">
+			<div class="tfield tfield--zone">
 				<label for="trigger-zone" class="hk-field-label">Time zone</label>
 				<input
 					id="trigger-zone"
@@ -377,7 +361,28 @@
 		{#if specLine}<p class="thelp" data-testid="trigger-spec">It fires {specLine}.</p>{/if}
 	{/if}
 
-	{#if !forwarding}
+	<!-- The receiver's own fields sit in a slot of one height, so the
+	     buttons under it stay where they are when the prompt becomes a
+	     path or the agent becomes the app. -->
+	{#if forwarding}
+		<div class="tslot">
+			<div class="tfield">
+				<label for="trigger-target" class="hk-field-label">Port and path in the machine</label>
+				<input
+					id="trigger-target"
+					class="hk-input tnarrow"
+					autocomplete="off"
+					spellcheck="false"
+					placeholder="3000/api/webhooks/stripe"
+					bind:value={target}
+				/>
+			</div>
+			<label class="hk-check">
+				<input type="checkbox" bind:checked={forwardStart} />
+				<span>Let a delivery start the machine while it is stopped</span>
+			</label>
+		</div>
+	{:else}
 		<div class="tfield">
 			<span class="hk-field-label" id="trigger-prompt-label">Prompt</span>
 			<div class="hk-seg--buttons" role="group" aria-labelledby="trigger-prompt-label">
@@ -393,50 +398,54 @@
 				>
 			</div>
 		</div>
-		{#if promptKind === 'text'}
-			<div class="tfield">
-				<label for="trigger-prompt" class="hk-sr">The prompt the agent starts with</label>
-				<textarea
-					id="trigger-prompt"
-					class="hk-textarea tprompt"
-					rows="5"
-					spellcheck="false"
-					placeholder="Triage the new issues; tell me what needs me"
-					bind:value={promptText}
-				></textarea>
-				{#if !canWritePrompt}
+		<div class="tslot">
+			{#if promptKind === 'text'}
+				<div class="tfield">
+					<label for="trigger-prompt" class="hk-sr">The prompt the agent starts with</label>
+					<textarea
+						id="trigger-prompt"
+						class="hk-textarea tprompt"
+						rows="5"
+						spellcheck="false"
+						placeholder="Triage the new issues; tell me what needs me"
+						bind:value={promptText}
+					></textarea>
+					{#if !canWritePrompt}
+						<p class="thelp">
+							{project.slug} is {project.state}, and a prompt is written into the machine. Start it,
+							or name a file that is already there.
+						</p>
+					{:else if editing}
+						<p class="thelp">
+							It is written to <code class="hk-mono"
+								>{promptPath || `.repose/triggers/${name}.md`}</code
+							>, over the prompt that is there. Leave it empty to keep that one.
+						</p>
+					{:else}
+						<p class="thelp">
+							It is written into the machine as <code class="hk-mono"
+								>.repose/triggers/{name || 'NAME'}.md</code
+							>.
+						</p>
+					{/if}
+				</div>
+			{:else}
+				<div class="tfield">
+					<label for="trigger-prompt-path" class="hk-sr">The prompt file in the machine</label>
+					<input
+						id="trigger-prompt-path"
+						class="hk-input tnarrow"
+						autocomplete="off"
+						spellcheck="false"
+						placeholder=".repose/triggers/{name || 'NAME'}.md"
+						bind:value={promptPath}
+					/>
 					<p class="thelp">
-						{project.slug} is {project.state}, and a prompt is written into the machine. Start it,
-						or name a file that is already there.
+						Relative to the working directory. It is not read until the first fire.
 					</p>
-				{:else if editing}
-					<p class="thelp">
-						It is written to <code class="hk-mono"
-							>{promptPath || `.repose/triggers/${name}.md`}</code
-						>, over the prompt that is there. Leave it empty to keep that one.
-					</p>
-				{:else}
-					<p class="thelp">
-						It is written into the machine as <code class="hk-mono"
-							>.repose/triggers/{name || 'NAME'}.md</code
-						>.
-					</p>
-				{/if}
-			</div>
-		{:else}
-			<div class="tfield">
-				<label for="trigger-prompt-path" class="hk-sr">The prompt file in the machine</label>
-				<input
-					id="trigger-prompt-path"
-					class="hk-input tnarrow"
-					autocomplete="off"
-					spellcheck="false"
-					placeholder=".repose/triggers/{name || 'NAME'}.md"
-					bind:value={promptPath}
-				/>
-				<p class="thelp">Relative to the working directory. It is not read until the first fire.</p>
-			</div>
-		{/if}
+				</div>
+			{/if}
+		</div>
 
 		<button
 			type="button"
@@ -576,11 +585,42 @@
 		.tfields {
 			grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 		}
-		/* The first row: the name takes what is left and each segmented
-		   control is as wide as its two words, so "Forward to your app" is
-		   never clipped by a third of the frame. */
+		/* The first row: the name has one width whether Then is drawn or
+		   not, and each segmented control is as wide as its two words, so
+		   switching the door moves nothing and "Forward to your app" is
+		   never clipped. Below 1024 Then takes the next line. */
 		.tfields--doors {
-			grid-template-columns: minmax(10rem, 1fr) max-content max-content;
+			grid-template-columns: 14rem max-content;
+		}
+		/* The schedule's row: four tracks, with the time zone always in
+		   the last, so a shape that adds a field (monthly's day) fills
+		   the middle instead of wrapping the zone onto a new line. */
+		.tfields--when {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+		}
+		.tfield--zone {
+			grid-column: 4;
+		}
+	}
+	@media (min-width: 1024px) {
+		.tfields--doors {
+			grid-template-columns: 14rem max-content max-content;
+		}
+	}
+	/* The receiver's fields: a prompt written here, a path, or a port and
+	   a switch. One minimum height for all three, the written prompt's,
+	   so what is under the slot does not move when the slot changes. */
+	.tslot {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-height: 9.25rem;
+	}
+	/* At phone width the textarea is taller (touch sizes) and its help
+	   line wraps, so the written prompt's block is 11.5rem there. */
+	@media (max-width: 639.98px) {
+		.tslot {
+			min-height: 11.5rem;
 		}
 	}
 	.tfield {
