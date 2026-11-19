@@ -37,6 +37,10 @@
 , vcpu ? null
 , mem ? null
 , extraKernelParams ? [ ]
+  # The closure's store as a read-only erofs disk the guest boots from,
+  # beside the share (mounted at /nix/.ro-share then): the Mac appliance's
+  # experiment, research doc §10. Off for every product guest.
+, storeOnDisk ? false
 }:
 let
   lib = nixpkgs.lib;
@@ -101,14 +105,14 @@ let
           hypervisor = "cloud-hypervisor";
           vcpu = defaultVcpu;
           mem = defaultMem;
-          storeOnDisk = false;
+          storeOnDisk = storeOnDisk;
           writableStoreOverlay = "/nix/.rw-store";
           # Guest-side view only: the socket and image paths are placeholders
           # that bin/run replaces with the per-guest ones.
           shares = [{
             tag = "ro-store";
             source = "/nix/store";
-            mountPoint = "/nix/.ro-store";
+            mountPoint = if storeOnDisk then "/nix/.ro-share" else "/nix/.ro-store";
             proto = "virtiofs";
             socket = "virtiofsd.sock";
           }];
@@ -173,6 +177,12 @@ let
           "-${pkgs.callPackage ./base/tmux-reload.nix { }}/bin/repose-tmux-reload"
         ];
         systemd.services.home-manager-dev.restartTriggers = [ config.environment.etc."tmux.conf".source ];
+      })
+      ({ config, ... }: {
+        # hostd reads the link (nixbuild.ClosureInfo) and adds the disk.
+        system.extraSystemBuilderCmds = lib.optionalString storeOnDisk ''
+          ln -s ${config.microvm.storeDisk} $out/repose-store-disk
+        '';
       })
     ] ++ extraModules;
   };
@@ -301,6 +311,7 @@ let
       --serial "$serial" \
       --vsock "cid=$cid,socket=$vsock_socket" \
       --disk "path=$volume,image_type=raw,direct=on,num_queues=$vcpu" \
+      ${lib.optionalString storeOnDisk "--disk path=${cfg.microvm.storeDisk},image_type=raw,readonly=on"} \
       --fs "tag=ro-store,socket=$virtiofs_socket,num_queues=1,queue_size=1024" \
       --net "tap=$tap,mac=$mac" \
       --api-socket "$api_socket" \

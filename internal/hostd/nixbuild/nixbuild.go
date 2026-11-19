@@ -99,6 +99,12 @@ type Info struct {
 	Initrd       string
 	Init         string
 	KernelParams string
+	// StoreDisk is <closure>/repose-store-disk resolved: a read-only erofs
+	// image of the closure's store that the guest boots from a virtio-blk
+	// disk instead of the virtiofs share (an experiment on the Mac
+	// appliance, research doc §10; the share stays for later closures).
+	// Empty when the closure has none, which every production guest is.
+	StoreDisk string
 }
 
 // ClosureInfo reads kernel, initrd, init and kernel-params from a NixOS
@@ -121,6 +127,11 @@ func ClosureInfo(closure string) (Info, error) {
 		return in, fmt.Errorf("closure kernel-params: %w", err)
 	}
 	in.KernelParams = strings.TrimSpace(string(b))
+	if sd, err := filepath.EvalSymlinks(filepath.Join(closure, "repose-store-disk")); err == nil {
+		in.StoreDisk = sd
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return in, fmt.Errorf("closure repose-store-disk: %w", err)
+	}
 	return in, nil
 }
 

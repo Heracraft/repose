@@ -40,6 +40,11 @@ type Spec struct {
 	DiskIOPS        uint64
 	DiskBytesPerSec uint64
 	StoreTag        string // ro-store
+	// StoreDisk is the closure's read-only store image (nixbuild.Info);
+	// set, it is a second virtio-blk disk, read-only, and the guest mounts
+	// it as its lower store layer instead of the share. Empty on every
+	// production closure today.
+	StoreDisk string
 	// Hostname is the guest's name on the kernel line (the project slug,
 	// DECISIONS I-550); empty, or not a DNS label, leaves the closure's
 	// default (repose-guest).
@@ -149,15 +154,20 @@ func (s Spec) Args() []string {
 		// request reaches the volume, so it holds with direct=on and covers
 		// nothing the host does to the volume itself (snapshots, restores).
 		"--disk", "path=" + s.VolumeDev + ",image_type=raw,direct=on" + s.diskLimits(),
+	}
+	if s.StoreDisk != "" {
+		args = append(args, "--disk", "path="+s.StoreDisk+",image_type=raw,readonly=on")
+	}
+	args = append(args,
 		"--net", fmt.Sprintf("tap=%s,mac=%s", s.Tap, s.MAC),
 		"--fs", fmt.Sprintf("tag=%s,socket=%s", s.StoreTag, VirtiofsSocket(s.GuestDir)),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", s.CID, VsockSocket(s.GuestDir)),
-		"--serial", "socket=" + ConsoleSocket(s.GuestDir),
+		"--serial", "socket="+ConsoleSocket(s.GuestDir),
 		"--console", "off",
 		// Cloud Hypervisor's default; written out so a build that flips the
 		// default, or an operator reading ch.args, sees the filter is on.
 		"--seccomp", "true",
-	}
+	)
 	if s.AuthTag != "" {
 		args = append(args, "--fs", fmt.Sprintf("tag=%s,socket=%s", s.AuthTag, AuthSocket(s.GuestDir)))
 	}
