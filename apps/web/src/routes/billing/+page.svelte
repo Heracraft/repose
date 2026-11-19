@@ -95,8 +95,9 @@
 	);
 	let ownApi = $derived<Plan | undefined>(billing?.plans.find(isOwnHardware));
 	let own = $derived<PlanFigures | undefined>(ownApi ? fromApi(ownApi) : undefined);
-	/** The account is on the Own hardware plan: it caps nothing, so the
-	 *  meters and the plan cards are not its page. */
+	/** The account is on the Own hardware plan: a product question, which
+	 *  decides whether a plan change is offered at all (the api refuses
+	 *  one across the kinds). */
 	let onOwn = $derived(!!plan && isOwnHardware(plan));
 	let scheduledPlan = $derived<Plan | undefined>(
 		billing && sub?.scheduled_plan
@@ -135,6 +136,12 @@
 			.reduce((n, p) => n + classMemoryGB(p.class), 0)
 	);
 	let memRunning = $derived(Math.max(0, (billing?.usage.running_gb ?? 0) - memFrozen));
+	/** The plan sells no memory on repose's hosts, so there is nothing to
+	 *  meter: what runs is bounded by the user's own host
+	 *  (billing.Plan.SellsFleetMemory). A resource question, not a
+	 *  product one: a plan selling a host and fleet memory both would be
+	 *  metered here like any other. */
+	let noFleetLimits = $derived(!!billing && limits.memory === 0);
 	let diskOver = $derived(!!billing && limits.disk > 0 && diskHeld > limits.disk);
 	let heaviest = $derived(
 		projects
@@ -560,7 +567,7 @@
 					</p>
 				{/if}
 			</div>
-			{#if onOwn}
+			{#if noFleetLimits}
 				<!-- The plan caps nothing, so there is nothing to meter: what
 				     the machines on the user's own host hold, and the one line
 				     that says what bounds it (I-1364). -->

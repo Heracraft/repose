@@ -156,15 +156,24 @@ func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Re
 	if (sub.Status == StatusPastDue || u.BillingStatus == "past_due") && !req.Resume {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
-	if plan.OwnHardware() {
-		// An own-hardware plan sells no memory, disk or egress of ours, so
-		// it refuses none of them: the machine is the user's and its own
-		// memory and disk are the limits (DECISIONS I-1364). Everything
-		// above this line still applies: a suspended account, no
-		// subscription and a failed payment refuse a start as they do on
-		// any plan. What keeps such an account off a host repose bought is
-		// placement, through Gate.FleetAllowed (ownhardware.go), not this
-		// gate, which never sees which host a project would land on.
+	if !plan.SellsFleetMemory() {
+		// A plan that sells no memory on repose's hosts refuses nothing
+		// by memory, disk or egress: the machine runs on the user's own
+		// host, whose memory and disk are the limits, and whose traffic
+		// leaves their own network (DECISIONS I-1364). Everything above
+		// this line still applies: a suspended account, no subscription
+		// and a failed payment refuse a start as they do on any plan.
+		//
+		// This skip is safe only because placement keeps such an account
+		// off the hosts repose bought (Gate.FleetAllowed, DECISIONS
+		// I-1366), and the two read one predicate so they cannot drift:
+		// relax the placement term and this gate silently stops metering
+		// the fleet, with no test failing. The test that does fail is
+		// TestAPlanThatSellsFleetMemoryIsGatedOnIt, which gives the
+		// own-hardware plan fleet memory and expects every refusal back.
+		// The condition is the plan's memory, not its host count: a plan
+		// that sold a host and fleet memory both is placed on the fleet
+		// and must be metered there.
 		return nil, nil
 	}
 	egress, err := PeriodEgress(ctx, q, u.ID, period)

@@ -36343,16 +36343,34 @@ burst allowance of ours at all.
   holds.
 - *The zeros mean "sells none of ours", not "may do nothing".* The plan
   carries `MemoryGB`, `DiskGB` and `EgressGB` of 0 and `Hosts` of 1. The
-  gate therefore returns early for an own-hardware plan and runs none of
-  its three resource checks, because every one of them reads a zero as a
-  ceiling: the egress hard stop is four times zero, so an account that
-  has sent nothing is already past it; the memory check refuses any
-  class at all; the disk check refuses any volume. A plan whose caps are
-  the user's own machine has to skip them, not meet them. Everything
-  before those checks still applies: no subscription, a past-due
-  payment, a suspended account and the three-day stop behave as on any
-  plan, and day 3 snapshots and stops the machines on the user's own
-  host too.
+  gate therefore returns early and runs none of its three resource
+  checks, because every one of them reads a zero as a ceiling: the
+  egress hard stop is four times zero, so an account that has sent
+  nothing is already past it; the memory check refuses any class at all;
+  the disk check refuses any volume. A plan whose caps are the user's
+  own machine has to skip them, not meet them. Everything before those
+  checks still applies: no subscription, a past-due payment, a suspended
+  account and the three-day stop behave as on any plan, and day 3
+  snapshots and stops the machines on the user's own host too.
+- *The skip is keyed on the memory the plan sells, not on its host
+  count, and it is the same predicate placement reads.*
+  `Plan.SellsFleetMemory` (`MemoryGB > 0`) is asked by `Gate.check`,
+  which skips the three checks when it is false, and by
+  `Gate.FleetAllowed` (I-1366), which refuses the fleet when it is
+  false. Keying the gate off `OwnHardware` (`Hosts > 0`) instead, as it
+  first did, agrees on every plan that exists and diverges on the first
+  plan that sells a host *and* fleet memory -- the obvious upsell:
+  placement would put that account on repose's hosts and the gate would
+  meter it with nothing. `OwnHardware` stays for the questions it
+  answers well: which Polar product, which proration kind (`SameKind`),
+  which plan the three cards leave out. The skip is safe only while
+  placement holds, so relaxing the placement term silently stops the
+  metering; `TestAPlanThatSellsFleetMemoryIsGatedOnIt` gives the
+  own-hardware plan fleet memory and expects every refusal, the disk
+  email and the overage back. The same rule keyed `Usage.DiskOver` and
+  the `disk_over_plan` sweep on the plan's disk, and the dashboard's
+  meters on the memory the api reports. (Found by 19a's reading of the
+  two files before the merge.)
 - *Egress is not metered on it.* A guest on the user's host sends its
   traffic over the user's connection; none of it is ours to count. So
   there is no allowance, no $0.05 a GB line, no `egress_stopped` and no
@@ -36397,7 +36415,11 @@ burst allowance of ours at all.
   `detail.reason = hosted_plan_required`. The gate cannot do it: it
   never sees which host a project would land on.
 
-*Checked:* `TestOwnHardwareStartsOnItsOwnTerms` (an Own hardware account
+*Checked:* `TestAPlanThatSellsFleetMemoryIsGatedOnIt` (a plan with a host
+and fleet memory is gated on memory, disk and egress; red with the gate
+keyed on the host count, "want a refusal, got <nil>", and red again at
+the disk email with the sweep keyed the same way),
+`TestOwnHardwareStartsOnItsOwnTerms` (an Own hardware account
 starts an `xl` with 32 GB already running and a 200 GB volume and is
 refused nothing; red before the gate's early return, with
 `egress_limit`), `TestPlansMatchPricingDoc` (the $10 and the one host

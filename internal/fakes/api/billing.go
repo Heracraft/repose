@@ -83,8 +83,11 @@ var OwnPlan = PlanDef{ID: "own", Name: "Own hardware", PriceCents: 1000, Currenc
 // may have on every plan (billing.ProjectCap, DECISIONS I-569).
 const ProjectCap = 100
 
-// hostedPlan reports whether the plan sells memory on repose's fleet: a
-// plan with no host of its own (billing.Plan.OwnHardware).
+// hostedPlan reports whether the plan is one of the hosted products
+// rather than the Own hardware one (billing.Plan.OwnHardware). It
+// answers which product a plan is, for the change-of-kind refusal; what
+// the plan sells on the fleet is its MemoryGB, which is what the gate
+// reads.
 func hostedPlan(p *PlanDef) bool { return p == nil || p.Hosts == 0 }
 
 // classGB is each size class's memory, the unit a plan counts
@@ -695,10 +698,13 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 	if plan == nil {
 		return nil
 	}
-	if !hostedPlan(plan) {
-		// An own-hardware plan sells no memory, disk or egress of ours and
-		// so refuses none of them: the machine is the user's (I-1364). The
-		// refusals above (no plan, past due, suspended) still apply.
+	if plan.MemoryGB == 0 {
+		// A plan that sells no memory on repose's hosts refuses nothing by
+		// memory, disk or egress: the machine runs on the user's own host
+		// (I-1364). The refusals above (no plan, past due, suspended)
+		// still apply. Keyed on the memory the plan sells, as the api's
+		// Plan.SellsFleetMemory is, not on whether it comes with a host:
+		// a plan selling both is placed on the fleet and metered there.
 		return nil
 	}
 	if f.bill.egressGB >= float64(egressStopFactor*plan.EgressGB) {

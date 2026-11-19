@@ -103,9 +103,11 @@ func (o *Overage) DiskOverPlan(ctx context.Context) ([]uuid.UUID, error) {
 		sub := &subs[i]
 		period := sub.Period(now)
 		plan := sub.PlanFor(period.Start)
-		if plan.OwnHardware() {
+		if plan.DiskGB == 0 {
 			// The plan sells no disk of ours: the host's own disk is the
 			// limit, so there is nothing to be over (DECISIONS I-1364).
+			// Keyed on the disk the plan sells, not on its host count, so
+			// a plan that sold both still gets the email.
 			continue
 		}
 		held, _, err := HeldDisk(ctx, o.pool, sub.UserID)

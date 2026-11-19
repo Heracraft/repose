@@ -87,6 +87,103 @@ func TestOwnHardwareStartsOnItsOwnTerms(t *testing.T) {
 	}
 }
 
+// withFleetMemoryOnOwn gives the own-hardware plan fleet memory, disk
+// and egress for one test, and puts the table back afterwards. It is
+// the plan nobody sells yet and the one the owner asks for first: a
+// host of your own *and* some memory on repose's hosts. The plan id
+// stays `own` because the subscriptions check constraint lists the four
+// that exist (migration 0049), so a hypothetical fourth id could not be
+// seeded.
+func withFleetMemoryOnOwn(t *testing.T) billing.Plan {
+	t.Helper()
+	saved := append([]billing.Plan(nil), billing.Plans...)
+	t.Cleanup(func() { billing.Plans = saved })
+	var hybrid billing.Plan
+	for i := range billing.Plans {
+		if billing.Plans[i].ID != billing.Own.ID {
+			continue
+		}
+		billing.Plans[i].MemoryGB = 16
+		billing.Plans[i].DiskGB = 250
+		billing.Plans[i].EgressGB = 500
+		hybrid = billing.Plans[i]
+	}
+	if hybrid.ID == "" {
+		t.Fatal("no own-hardware plan to give fleet memory to")
+	}
+	return hybrid
+}
+
+// A plan that sells fleet memory is gated on it, whatever else it sells.
+// The gate skipped its three resource checks for any plan with a host
+// (Plan.OwnHardware), while placement let an account onto repose's
+// hosts whenever its plan sold memory there (Gate.FleetAllowed). The two
+// agree on every plan that exists today and diverge on the first plan
+// that sells both, which placement would put on the fleet and the gate
+// would meter with nothing. Both now read Plan.SellsFleetMemory.
+func TestAPlanThatSellsFleetMemoryIsGatedOnIt(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePolar()
+	defer f.Close()
+	ctx := context.Background()
+	hybrid := withFleetMemoryOnOwn(t)
+	if !hybrid.OwnHardware() || !hybrid.SellsFleetMemory() {
+		t.Fatalf("the test plan sells a host and fleet memory: %+v", hybrid)
+	}
+	g := newGate(pool, f)
+
+	a := seedAccount(t, pool, "own", "active", "xl", "running")
+	u := user(t, pool, a)
+	// Memory: an xl is running, so a second one passes the plan's 16 GB.
+	r := refusal(t, g.Check(ctx, u, billing.Request{Class: "xl"}))
+	if r.Reason != "plan_limit" || r.Detail["limit_gb"] != 16 {
+		t.Fatalf("memory on a plan that sells it: %+v", r)
+	}
+	// Disk: one volume larger than the plan's whole disk.
+	r = refusal(t, g.Check(ctx, u, billing.Request{Disk: true, VolumeBytes: int64(300) << 30}))
+	if r.Reason != "disk_limit" {
+		t.Fatalf("disk on a plan that sells it: %+v", r)
+	}
+	// Egress: past four times the plan's allowance.
+	usageHour(t, pool, a.ProjectID, a.Period.Start.Add(time.Hour), "xl", 3600, int64(2100)<<30, a.Period)
+	r = refusal(t, g.Check(ctx, u, billing.Request{Class: "tiny"}))
+	if r.Reason != "egress_limit" {
+		t.Fatalf("egress on a plan that sells it: %+v", r)
+	}
+	// And the rest of the fleet machinery comes back with it: the disk
+	// email, the overage line and the hard stop are all the plan's again.
+	held(t, pool, a.ProjectID, int64(300)<<30)
+	o := billing.NewOverage(pool, billing.NewPolar(testConfig(f), quiet()), testConfig(f), &stopRecorder{}, nop(), quiet())
+	o.Now = at(time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC))
+	told, err := o.DiskOverPlan(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(told) != 1 || told[0] != a.UserID {
+		t.Fatalf("the disk email on a plan that sells disk: %v", told)
+	}
+	sub, err := billing.LiveSubscription(ctx, pool, a.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := billing.LoadUsage(ctx, pool, a.UserID, sub.PlanOrSolo(), a.Period)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !usage.DiskOver() || !usage.EgressStopped() || usage.OverageCents == 0 {
+		t.Fatalf("usage on a plan that sells disk and egress: over %v stopped %v overage %d",
+			usage.DiskOver(), usage.EgressStopped(), usage.OverageCents)
+	}
+	// The product half of the plan is untouched: it is still the Own
+	// hardware product, still one host, still no change across the kinds.
+	if !billing.SameKind(hybrid, hybrid) || billing.SameKind(hybrid, billing.Solo) {
+		t.Fatal("a plan with a host is still the own-hardware kind")
+	}
+	if hybrid.Hosts != 1 {
+		t.Fatalf("hosts %d", hybrid.Hosts)
+	}
+}
+
 // The usage block and the limits of an own-hardware account: zeros that
 // mean "the plan caps nothing", one host, every class allowed, and no
 // overage however much egress the account's machines sent.

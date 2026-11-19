@@ -139,10 +139,12 @@ func LoadUsage(ctx context.Context, q store.Querier, userID uuid.UUID, plan Plan
 func (u Usage) DiskHeldGB() float64 { return gbTenths(u.DiskHeldBytes) }
 
 // DiskOver reports whether the projects hold more than the plan's disk.
-// An own-hardware plan sells no disk, so nothing is ever over it: the
-// host's own disk is the limit (DECISIONS I-1364).
+// A plan that sells no disk has nothing to be over: the host the user
+// owns has the disk, and its own size is the limit (DECISIONS I-1364).
+// The question is the plan's disk, not its host count, so a plan that
+// sold both a host and fleet disk is still measured against that disk.
 func (u Usage) DiskOver() bool {
-	return !u.Plan.OwnHardware() && u.DiskHeldBytes > int64(u.Plan.DiskGB)<<30
+	return u.Plan.DiskGB > 0 && u.DiskHeldBytes > int64(u.Plan.DiskGB)<<30
 }
 
 // gbTenths is bytes in GB rounded up to a tenth, so a figure over the

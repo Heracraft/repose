@@ -88,10 +88,26 @@ func HostedPlans() []Plan {
 	return out
 }
 
-// OwnHardware reports whether the plan sells a host the user owns rather
-// than memory on repose's fleet (DECISIONS I-1364). Such a plan caps
-// nothing: the host's own memory and disk do.
+// OwnHardware reports whether the plan sells a host the user owns
+// (DECISIONS I-1364). It answers "which product is this", and nothing
+// else: the Polar product and its description, the proration kind
+// (SameKind), and which plan the three cards leave out. It is the wrong
+// question for "does this plan sell repose's compute", which is
+// SellsFleetMemory, and keying a resource gate off it is what let a
+// plan with a host and fleet memory skip the gate while placement let
+// it onto the fleet.
 func (p Plan) OwnHardware() bool { return p.Hosts > 0 }
+
+// SellsFleetMemory reports whether the plan sells memory on the hosts
+// repose runs. It is the one predicate for the fleet, asked twice: the
+// gate skips its memory, disk and egress checks when it is false
+// (Gate.check), and placement refuses the fleet when it is false
+// (Gate.FleetAllowed, DECISIONS I-1366). The two must answer the same
+// question, because the gate's skip is only safe while placement keeps
+// such an account off the fleet; a plan that sold both a host and fleet
+// memory would otherwise be placed on repose's hosts and metered by
+// nothing.
+func (p Plan) SellsFleetMemory() bool { return p.MemoryGB > 0 }
 
 // OwnPlan is the own-hardware plan, if the table has one.
 func OwnPlan() (Plan, bool) {
@@ -199,8 +215,11 @@ func (p Plan) EgressHardStopBytes() int64 {
 }
 
 // AllowsXL reports whether an xl machine (16 GB) can run on the plan at
-// all, which is what /me's `limits.xl` says. An own-hardware plan allows
-// every class: what fits is the host's memory, not the plan's.
+// all, which is what /me's `limits.xl` says. A plan with a host of the
+// user's own allows every class whatever its fleet memory, because what
+// fits on that host is the host's memory; on a plan that sells both,
+// the gate still refuses an xl that does not fit the fleet memory, so
+// the generous answer here is right for either shape.
 func (p Plan) AllowsXL() bool { return p.OwnHardware() || p.MemoryGB >= ClassMemoryGB("xl") }
 
 // ClassMemoryGB is the memory a size class takes while it runs
