@@ -804,9 +804,10 @@ Measured from the running process and the api, not from the page:
 | "a launchd agent that starts it again at every login" | `~/Library/LaunchAgents/run.repose.appliance.plist` written |
 | "Nothing needs your password" | nothing did |
 
-**The host registered in about 60 seconds** from vfkit starting (disk and
-socket stamped 22:34; first heartbeat **22:35:07.694**) and `repose host ls`
-showed `online` with `just now`.
+**The host registered 61 seconds after `repose host add` was run**, install
+and 2 GB download included — exactly, from the api's own record:
+`created_at 23:00:52.612`, `registered_at 23:01:53.025`. (The first
+install, measured more loosely from file stamps, agreed at about 60 s.)
 
 **And one good message I did not expect.** Installing over SSH with no GUI
 session, the CLI said: *"launchd took no agent for this session; the
@@ -1010,8 +1011,26 @@ them to find: it is the documented escape from a stuck host
 ENG-28) and the fix for a failed install. The repo's own rule is no
 horizontal page scroll at 390.
 
-Worth deciding separately from wrapping the text: whether that identifier
-belongs on a customer's screen at all. **Card ENG-88, P1.**
+**And the cause is not the dashboard.** `repose host ls --json` for the same
+host returns, verbatim:
+
+```
+arch: /nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1
+```
+
+The field named `arch` carries a 32-character store hash rather than an
+architecture. The dashboard renders faithfully what it is given, and **a
+script reading `--json` for an aarch64 Mac gets a store path too**. So
+wrapping the text in the dashboard alone would leave the api answering a
+store path to every caller.
+
+Filed apart so closing one does not lose the other: **ENG-88** (the 390
+overflow and the unreachable Remove) and **ENG-89** (the field), both P1.
+
+The rest of that record is right and worth saying: `mem_bytes
+18796412928`, `vcpus 8`, `cores 8`, `state ready`, and `created_at
+23:00:52.612` against `registered_at 23:01:53.025` — **the host registered
+61 seconds after it was minted**, install included.
 
 **One unit disagreement noticed in passing**, belonging with
 [F8](#f8-the-cli-counts-in-gib-and-says-gb): for the same host, the CLI says
