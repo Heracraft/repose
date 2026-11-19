@@ -465,7 +465,7 @@ these differences:
   (after `repose-guest-pool`, before `hostd`, every boot, skipped while
   `/run/repose/pool-hold` exists) grows the partition, the PV, the
   pool's metadata and the pool to the disk, and logs
-  `partition_grown|partition_unchanged`, `pv_grown`,
+  `partition_grown|partition_unchanged`, `pv_resized`,
   `pool_metadata_grown`, `pool_grown|pool_unchanged` with sizes.
 - **The launcher's share** at `/run/repose/launcher` (virtio-fs, tag
   `repose-launcher`, `nofail`). `repose-launcher-join.service` (before

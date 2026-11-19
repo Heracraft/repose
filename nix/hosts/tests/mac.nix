@@ -225,7 +225,7 @@ pkgs.testers.runNixOSTest {
         small = int(host.succeed("lvs --noheadings --units b --nosuffix -o lv_size vg-guests/thin").strip())
         out = host.succeed("repose-mac-grow /dev/vdb 3")
         print(out)
-        assert "event=partition_grown" in out and "event=pv_grown" in out and "event=pool_grown" in out, out
+        assert "event=partition_grown" in out and "event=pv_resized" in out and "event=pool_grown" in out, out
         disk = int(host.succeed("blockdev --getsize64 /dev/vdb").strip())
         pv = int(host.succeed("pvs --noheadings --units b --nosuffix -o pv_size /dev/vdb3").strip())
         pool = int(host.succeed("lvs --noheadings --units b --nosuffix -o lv_size vg-guests/thin").strip())

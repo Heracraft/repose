@@ -142,12 +142,9 @@ let
         echo "repose-mac-grow: event=no_pv device=$pv" >&2
         exit 1
       fi
-      before=$(pvs --noheadings --units b --nosuffix -o pv_size "$pv" | tr -d ' ')
       pvresize "$pv" >/dev/null
       after=$(pvs --noheadings --units b --nosuffix -o pv_size "$pv" | tr -d ' ')
-      if [ "$before" != "$after" ]; then
-        echo "repose-mac-grow: event=pv_grown from=$before to=$after"
-      fi
+      echo "repose-mac-grow: event=pv_resized device=$pv size=$after"
 
       # 3. The pool's metadata: one percent of the PV, clamped to 1 to 16
       # GiB, as disko-layout.nix computes it at install.
