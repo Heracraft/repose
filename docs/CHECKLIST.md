@@ -619,3 +619,18 @@ entry and this list with it. Counts as of 2026-10-21.
       `main` (17 rules, 17 headings, 2026-09-21); HostMemory80, HostUnreachable, SnapshotStale,
       BuildQueueStuck, GatewayAuthSpike and EgressHigh are the six the
       row names.
+
+- [ ] A change the Mac's CLI compiles builds **for the Mac**. `go build
+      ./...` on the dev box is linux-only, so a darwin-only compile error —
+      a duplicate symbol in a `_darwin.go` file, a missing build tag —
+      survives every local check and first appears in CI's GoReleaser
+      matrix, after the branch is queued. Evidence:
+      `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/repose/...`
+      exits 0. Run it whenever you touch `internal/cli`, anything with a
+      `_darwin.go` sibling, or the appliance and park paths. Do not widen
+      it: `./...` fails on packages that are legitimately linux-only
+      (`internal/guestd/hooks`, `cmd/gateway`, `internal/hostd/storeview`),
+      and `go vet ./internal/cli/...` under `GOOS=darwin` pulls those in
+      too. The CLI is the only darwin target and `./cmd/repose/...` is the
+      whole of it. Caught on 2026-11-19: the park's keychain file declared
+      `keychainService` twice and the dev box built it green.
