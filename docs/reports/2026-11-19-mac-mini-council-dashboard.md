@@ -33,9 +33,10 @@ one of the three the council confers from.
    plan on the landing page, on Pricing, or anywhere in the dashboard.
    [P1-5](#p1-5)
 
-Counts at the close of the review: **1 P0, 5 P1, 8 P2.** (P0-1 was a P0 when
-measured and was fixed on production before this report was filed; the fallback
-behind it is still open.)
+Counts at the close of the review: **2 P0, 4 P1, 9 P2** — the ranking and what
+moved are in [Final ranking](#final-ranking-and-what-moved). P0-1 was a P0 when
+measured and was fixed on production before this report was filed; the silent
+fallback behind it is still open.
 
 ## Method, and who I was
 
@@ -628,6 +629,77 @@ the dashboard has the control and the control does not work.
   **Resize…** button that opens it and partly below the fold at 1440 × 900, with
   no scroll to it. Not filed; folded into [P2-7](#p2-7)'s neighbourhood as a
   layout nit.
+
+## Final ranking, and what moved
+
+At the close of the review, on the dashboard surface: **2 P0, 4 P1, 9 P2.**
+Three findings changed rank during the review and every one of them moved
+because of a measurement, not an argument.
+
+### P0
+
+| # | Finding | Card | Moved? |
+|---|---|---|---|
+| 1 | Billing measures the account against the wrong plan's limits, prints "over" in red, says creating is refused, then creates in 6.0 s | ENG-34 | no |
+| 2 | A host in `waiting` leaves the account with no way to make a working machine by any route the dashboard offers | ENG-33, ENG-28, ENG-65 | **P1 → P0** |
+
+**What moved #2:** I wrote it as P1-3 and agreed to the conductor's P0 without
+measuring, which was the wrong order. The 21:55 measurement settled it: the New
+project form is identical with and without a host, the request body carries no
+placement field, and the server silently defaults to the host that is not there.
+A paid account with no working machine by any route is a description of P0, not
+a judgement about it.
+
+### P1
+
+| # | Finding | Card | Moved? |
+|---|---|---|---|
+| 3 | A temporary machine lists six `kept` restore points and discards all of them | ENG-50 | no — argued P1, flagged that the council may read it as P0 |
+| 4 | The Projects table clips the Disk column at 1440 | ENG-24 | no |
+| 5 | An expired session drops you on the marketing page with no word and no return | ENG-44 | no |
+| 6 | No route anywhere — dashboard, landing or Pricing — tells a customer what the plan costs | ENG-51 | no (overlaps the Mac reviewer's ENG-47; merge them) |
+
+### P2
+
+| # | Finding | Card | Moved? |
+|---|---|---|---|
+| 7 | The host dialog's fallback is silent and its product is unusable | ENG-29 | **P0 → P2** |
+| 8 | A refusal raised while a dialog is open is drawn under its backdrop | ENG-25 | **P1 → P2** |
+| 9 | A refused destroy's reason lives 4.1 s while the panel stays unchanged | ENG-52 | **P1 → P2** |
+| 10 | The sign-in page is light-only in dark mode and says "Powered by Logto" | ENG-53 | no |
+| 11 | Questions clip to one line; unreadable on a phone | ENG-54 | no |
+| 12 | No standalone webhook view; one delivery shown instead of twenty | ENG-56 | no |
+| 13 | The join command is about one eighth visible | ENG-63 | no |
+| 14 | The machine's own page says less than the list it came from | ENG-65 | no |
+| 15 | A grey smear under the frozen project row | ENG-48 | no |
+
+**What moved #7:** the symptom was fixed on production at 21:50 by recording
+`host_install_command`, with nothing deployed, which proved my diagnosis wrong —
+the dialog reads `install.command` and fell back, it does not choose the wrong
+field. **What moved #8:** I measured that the toast is drawn rather than absent.
+**What moved #9:** I first recorded "nothing happens and nothing is said" after
+checking at +12 s, then measured 0.29 s and 4.1 s.
+
+### Dropped, and why
+
+Recorded here so a second pass does not rediscover them and the owner does not
+read them twice.
+
+- **"An Own-hardware customer would see 'X GB of 0 GB · over' permanently."**
+  Struck. The code prevents it (`noFleetLimits`, `diskOver`, I-1364). It was a
+  prediction, not an observation, and it was checkable and false.
+- **The CSP console error** on every page — the Cloudflare RUM beacon is blocked
+  by the site's own `script-src`. Not filed: no customer sees it, and the only
+  cost is that the analytics collect nothing.
+- **`repose-billing-mode` surviving sign-out.** Not filed: a display hint,
+  overwritten at the next sign-in.
+- **The Resize panel opening below the fold**, far from the button that opens
+  it. Not filed; it sits in the copy notes.
+- **The copy nits** in [P2-7](#p2-7) — the space in "Remove `host-1` ?", 39.1 GB
+  against 40 GB on one card, the sentence-case inconsistency across refusals,
+  the missing actions-column header. Not filed as cards. One card per typo is
+  how a board stops being read; they are a single editing pass and the report is
+  where that pass should start.
 
 ## Verdict
 
