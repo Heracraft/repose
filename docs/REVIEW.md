@@ -115,3 +115,28 @@ and they apply to whoever runs the review as much as to the builders:
   starved machine is worse than none, because it will be believed.
 - **Show a test red before green**, or say plainly that you did not. A test
   that has never failed has not been shown to test anything.
+- **Locate the hit; do not count it.** A grep that counts matches says a
+  thing exists somewhere. It does not say the page a customer opens carries
+  it. One finding that night rested on a count and died on the page.
+- **Check whether an absence is on purpose.** A missing price, a missing
+  flag and a missing line read the same from the outside. One of that
+  night's three was held back deliberately, and three reviewers hunted it
+  as a defect because nobody asked whether it was withheld.
+- **Check a timing window twice before you file it.** A state read once,
+  at one moment, cannot tell a propagation delay from a permanent wrong
+  answer. Read it again on a clock, at a named interval, and put the
+  readings in the report.
+- **Name the measurement a shortfall is computed against.** "Six seconds
+  unaccounted for" was arithmetic against a number that was never
+  measured; the six seconds did not exist.
+- **When two sessions review the same surface, the merge carries each
+  one's evidence or it carries neither.** Two true sentences about the
+  same screen can contradict each other, because each is true of its own
+  evidence. A merge that keeps the sentences and drops whose evidence they
+  were produces a confident claim that nobody measured. This happened
+  three times in one night, every time in the conductor's summary and
+  never in a reviewer's report.
+- **The report carries a method section.** What you ran, what you could
+  not run, and which of these rules bit you. A review whose method is
+  invisible cannot be checked, and the next reviewer repeats its
+  mistakes.
