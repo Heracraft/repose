@@ -14,6 +14,8 @@
 #   ops/dev/macmini bootstrap   copy and run ops/dev/macmini-bootstrap.sh on the Mac
 #   ops/dev/macmini results     copy ~/repose-lab/results/ back into docs/research/
 #   ops/dev/macmini destroy     terminate and release; retries the release until the 24 h minimum allows it
+#   ops/dev/macmini appliance-push IMAGE.raw.gz   copy the appliance image, its checksum and the installer to the Mac
+#   ops/dev/macmini appliance-install ARG         run the install step on the Mac against that copy (19f, I-1380)
 #
 # aws: needs aws (~/.local/bin, AWS CLI 2.41+) and jq, a logged-in profile
 # (AWS_PROFILE, default repose-lab; `aws login --remote --profile repose-lab`).
@@ -45,7 +47,7 @@ REPO=$(cd "$HERE/../.." && pwd)
 DATA_DIR=$REPO/docs/research/mac-mini-nested-kvm-data
 export PATH="$HOME/.local/bin:$PATH"
 
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
 die() { echo "macmini: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null || die "$1 is not on PATH"; }
 need jq
@@ -335,6 +337,32 @@ cmd_results() {
   echo "results in $DATA_DIR"; ls -1 "$DATA_DIR"
 }
 
+# The appliance on the lab Mac (19f, DECISIONS I-1376, I-1380): the image
+# built on the aarch64 builder, copied beside its checksum and the
+# installer, and the install step run against the copy (`file://` is a URL
+# curl reads) with no launchd agent, since a headless Mac has no login
+# session: the VM starts detached. The argument is what `repose host add`
+# printed. Stop the builder VM first: the appliance wants 18 GiB of the
+# Mac's 24.
+cmd_appliance_push() {
+  local img=$1 ip user; ip=$(host_ip); user=$(host_user)
+  [ -s "$img" ] || die "no image at $img (nix build ./nix#packages.aarch64-linux.mac-appliance-image on the builder)"
+  sha256sum "$img" | sed 's/ .*//' > "$img.sha256"
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$img" "$user@$ip:repose-appliance-aarch64.raw.gz"
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$img.sha256" "$user@$ip:repose-appliance-aarch64.raw.gz.sha256"
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$REPO/apps/web/static/mac" "$user@$ip:repose-mac-install"
+  echo "image, checksum and installer on $user@$ip"
+}
+cmd_appliance_install() {
+  local arg=$1 ip user; ip=$(host_ip); user=$(host_user)
+  [ -n "$arg" ] || die "appliance-install takes the argument repose host add printed"
+  # shellcheck disable=SC2046
+  ssh $(ssh_opts) "$user@$ip" "REPOSE_LAUNCHD=no REPOSE_APPLIANCE_URL=file://\$HOME/repose-appliance-aarch64.raw.gz sh ~/repose-mac-install '$arg'"
+}
+
 case "${1:-}" in
   create)    "${p}_create" ;;
   wait)      "${p}_wait" ;;
@@ -344,5 +372,7 @@ case "${1:-}" in
   results)   cmd_results ;;
   watch)     shift; "${p}_watch" "$@" ;;
   destroy)   shift; "${p}_destroy" "$@" ;;
+  appliance-push)    shift; cmd_appliance_push "$@" ;;
+  appliance-install) shift; cmd_appliance_install "$@" ;;
   *)         usage ;;
 esac
