@@ -62,7 +62,7 @@ var allowed = []struct {
 	{"ops/coolify/README.md", "`api.repose.herakraft.co,10.255.255.1,10.200.3.4`", "the same names"},
 	{"ops/coolify/README.md", "pass `apiServerName =", "hosts pin that internal name"},
 	{"nix/hosts/default.nix", `default = "api.repose.herakraft.co:443"`, "hostd's gRPC address"},
-	{"nix/hosts/prod.nix", "apiServerName =", "the production host pins it"},
+	{"nix/hosts/platform.nix", "apiServerName =", "the production host pins it"},
 	{"nix/hosts/prod.nix", "# api.repose.herakraft.co and this address", "the comment that says why"},
 	{"cmd/hostd/main.go", `"api-addr"`, "hostd's flag default for the same address"},
 	{"internal/hostd/register/register.go", "APIAddr    string", "a comment giving the shape of that address"},
