@@ -90,6 +90,12 @@ type Options struct {
 	// before burst stops; 0 takes guest.BurstGateDefault.
 	Burst     bool
 	BurstGate float64
+	// ReadyTimeout is how long a starting guest has to say Ready over
+	// vsock before the start fails; 0 takes guest.Config's 60 s. A guest
+	// on the Mac appliance said Ready at 70 s of its first boot under
+	// nested virtualization (DECISIONS I-1376), so mac.nix sets it to
+	// minutes there and the Azure hosts keep the default.
+	ReadyTimeout time.Duration
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -280,6 +286,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		Burst:              o.Burst,
 		BurstGate:          o.BurstGate,
 		Cores:              hostinfo.PhysicalCores(),
+		ReadyTimeout:       o.ReadyTimeout,
 	}
 	fcfg, fdeps := parkSetup(o, r, l, log)
 	cfg.Park = fcfg

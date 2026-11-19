@@ -269,6 +269,11 @@ in
       baseRepo.url = lib.mkDefault platform.baseRepoUrl;
       # The NIC vfkit's NAT gives the VM is virtio; udev names it below.
       uplinkInterface = lib.mkDefault "wan0";
+      # A guest's first boot here said Ready at 70 s and reached
+      # multi-user at 3 min 36 s (the AWS M4, 2026-11-19, I-1376): two
+      # nested vCPUs, and hostd's RegisterPaths of the closure takes over
+      # a minute on the appliance. hostd's 60 s window closed on it twice.
+      guestReadyTimeout = lib.mkDefault "5m";
     };
 
     # ---- boot ------------------------------------------------------------
@@ -323,6 +328,20 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = "${grow}/bin/repose-mac-grow ${mac.disk} ${toString mac.guestsPartition}";
+      };
+    };
+    # The image carries stale blocks from its own build (3 GB on the first
+    # one measured, I-1376) and the file on the Mac costs what it holds:
+    # a trim at every boot, before guests run, gives them back through
+    # virtio-blk's discard to APFS; hardening.nix's weekly fstrim keeps it.
+    systemd.services.repose-mac-trim = {
+      description = "Trim the appliance's filesystems so the disk file costs what it holds (I-1376)";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "repose-mac-grow.service" "repose-cache-volume.service" ];
+      before = [ "hostd.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.util-linux}/bin/fstrim -av";
       };
     };
     environment.systemPackages = [ grow launcherJoin ];

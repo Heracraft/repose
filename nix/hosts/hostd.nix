@@ -30,6 +30,9 @@ let
   # vCPUs and runs no controller.
   burstFlags = lib.optionalString cfg.burst.enable
     "--burst --burst-gate ${toString cfg.burst.gate}";
+  # The ready window (DECISIONS I-1376); nothing when unset, and hostd's
+  # 60 s then applies.
+  readyFlags = lib.optionalString (cfg.guestReadyTimeout != "") "--ready-timeout ${lib.escapeShellArg cfg.guestReadyTimeout}";
   # The guest park (park.nix, DECISIONS I-652); nothing when it is off.
   parkFlags = lib.optionalString cfg.park.enable (
     "--park --park-deadline ${toString cfg.park.deadline}s --park-write-rate ${toString cfg.park.writeRateMBs}"
@@ -190,7 +193,7 @@ in
       coreutils
     ];
     serviceConfig = {
-      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags}";
+      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags} ${readyFlags}";
       Restart = "always";
       RestartSec = 2;
       # A join token that has been used is not retried (03-hostd §6).

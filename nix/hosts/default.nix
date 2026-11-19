@@ -338,6 +338,18 @@ in
       description = "The host's timezone; `repose-snapshot.timer` fires at 03:00 in it (DESIGN §6).";
     };
 
+    guestReadyTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long a starting guest has to say Ready over vsock before the
+        start fails (hostd --ready-timeout, a Go duration such as "5m").
+        Empty is hostd's 60 s, which every Azure host meets in seconds.
+        The Mac appliance sets minutes (mac.nix, DECISIONS I-1376): under
+        nested virtualization a guest's first boot said Ready at 70 s.
+      '';
+    };
+
     owned = lib.mkOption {
       type = lib.types.bool;
       default = false;
