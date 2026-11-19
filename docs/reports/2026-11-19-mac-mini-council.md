@@ -44,7 +44,7 @@ when this section was last written, 2026-11-20 just after midnight UTC:
 |---|---|
 | 0. No customer on any Mac can finish the first command | **Fixed.** The image was published at 22:28 UTC and the reviewer closes the finding on its own anonymous reading. Its cause (ENG-62) has a check queued as its own PR, and publishing it broke every platform's installer for 26 minutes, which that check also now catches. |
 | 1. Nothing lets a customer say where a project runs | **A fix is being built** (`fix-placement`), briefed to land the per-command override and the missing API documentation first and separately. Not merged. |
-| 2. Billing measures against the wrong plan's limits | **Fixed on a branch** (`fix-billing`), merged into the program branch and under test. The cause was `PlanOrSolo` answering Solo for an account with no subscription, so an exempt account was measured against Solo's ceilings; ENG-40 shared the gap and is fixed with it. |
+| 2. Billing measures against the wrong plan's limits | **Fixed, merged and green.** `fix-billing` is in the program branch, which builds and passes `internal/billing` and the whole `internal/cli` suite, exit 0. The cause was `PlanOrSolo` answering Solo for an account with no subscription, so an exempt account was measured against Solo's ceilings; ENG-40 shared the gap and is fixed with it. |
 
 **Two things still make the gate unpassable regardless.** The Mac surface has
 barely been reviewed — the reviewer reached the first command and stopped
