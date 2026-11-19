@@ -122,6 +122,13 @@ func ClosureInfo(closure string) (Info, error) {
 	if _, err := os.Stat(in.Init); err != nil {
 		return in, fmt.Errorf("closure init: %w", err)
 	}
+	// Resolved, so a closure that is a wrapper beside the toplevel (the
+	// store-disk case: its init is a link into the toplevel, and only the
+	// toplevel is in the guest's store) names an init the guest can find.
+	// A toplevel's own init resolves to itself.
+	if r, err := filepath.EvalSymlinks(in.Init); err == nil {
+		in.Init = r
+	}
 	b, err := os.ReadFile(filepath.Join(closure, "kernel-params"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return in, fmt.Errorf("closure kernel-params: %w", err)
