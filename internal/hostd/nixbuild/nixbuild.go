@@ -8,7 +8,6 @@
 package nixbuild
 
 import (
-	"runtime"
 	"bufio"
 	"context"
 	"errors"
@@ -18,6 +17,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"

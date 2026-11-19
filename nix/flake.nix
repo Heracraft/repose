@@ -194,6 +194,216 @@
           default = guestRunner;
         };
 
+
+        # The base closure must stay under 7 GiB (02 §7, raised from 6 by
+        # DECISIONS I-1056): every host's store grows by it, and every
+        # first boot registers its metadata. The margin is the point --
+        # `main` sat 4 MiB under the old number, where any agent bump
+        # failed the base build. The same limit on both architectures
+        # (I-1374): an aarch64 host's store is the Mac's own disk.
+        guestClosureSize = pkgs.runCommand "guest-closure-size" {
+          closureInfo = pkgs.closureInfo { rootPaths = [ packages.guest-system ]; };
+        } ''
+          size=$(cut -f2 $closureInfo/total-nar-size 2>/dev/null || true)
+          [ -n "$size" ] || size=$(cat $closureInfo/total-nar-size)
+          limit=$((7 * 1024 * 1024 * 1024))
+          echo "guest system closure (${system}): $size bytes (limit $limit)"
+          if [ "$size" -gt "$limit" ]; then
+            echo "over the limit printed above; largest paths:" >&2
+            # closureInfo's registration is one record per path: the path,
+            # its hash, its NAR size, its deriver, then the number of
+            # references and that many lines. The sizes add up to
+            # total-nar-size, so the largest records are the paths to cut.
+            # It used to print the heading and exit, which named the
+            # problem and nothing to do about it (2026-10-15).
+            awk '{ p = $0; getline h; getline s; getline d; getline n; for (i = 0; i < n; i++) getline r; print s "\t" p }' \
+              "$closureInfo/registration" | sort -rn | head -20 |
+              awk -F'\t' '{ printf "  %8.1f MB  %s\n", $1 / 1048576, $2 }' >&2
+            exit 1
+          fi
+          echo "$size" > $out
+        '';
+
+        devShells = {
+          default = pkgs.mkShell {
+            packages = (import ./guest/base/tool-list.nix pkgs) ++ (with pkgs; [
+              reposeAgents.claude-code reposeAgents.opencode
+              go_1_26 gopls golangci-lint buf protoc-gen-go protoc-gen-go-grpc
+              opentofu azure-cli just nixos-anywhere nixos-rebuild
+              postgresql_16 sqlc wireguard-tools
+              # Observability (docs/workstreams/10-observability.md): promtool
+              # checks and tests ops/alerts.yaml, python3 generates and
+              # validates the dashboards, docker compose runs the local stack.
+              prometheus.cli python3 docker-compose
+            ]);
+          };
+
+          # `nix develop ./nix#infra`. tfsec runs the policies in
+          # infra/policy/tfsec; it is here rather than in the default shell
+          # because only workstream 11 needs it.
+          # docs/workstreams/11-infra-opentofu.md §7.
+          infra = pkgs.mkShell {
+            packages = with pkgs; [
+              opentofu azure-cli tfsec just jq nixos-anywhere wireguard-tools
+              scaleway-cli # ops/dev/macmini, docs/research/mac-mini-nested-kvm.md
+            ];
+          };
+        };
+      };
+
+      forAllSystems = f: lib.genAttrs systems (system: f (perSystem system));
+
+      # The x86_64 bindings, by their old names: the hosts, the edge and
+      # every VM test below are x86_64 and read them as before.
+      system = "x86_64-linux";
+      x86 = perSystem system;
+      aarch64 = perSystem "aarch64-linux";
+      inherit (x86) pkgs goPkgs guestd reposeHook mkGuestRunner composeGuest hostModules mkHost hostKernelPackages;
+
+      # The fragment pipeline's checks: every example fragment composes and
+      # builds, and the contract's refusals refuse (nix/guest/checks.nix).
+      fragmentChecks = import ./guest/checks.nix {
+        inherit pkgs lib composeGuest guestd baseVersion;
+        hook = reposeHook;
+        examplesDir = ../docs/features/config-examples;
+      };
+
+      guestTests = import ./guest/tests {
+        inherit pkgs lib baseVersion;
+        guestBase = self.nixosModules.guestBase;
+        inherit guestd reposeHook;
+        nixpkgsSource = nixpkgs.outPath;
+        homeManagerModule = home-manager.nixosModules.home-manager;
+      };
+
+      hostChecks = import ./hosts/tests {
+        inherit pkgs nixpkgs disko hostModules;
+        # host-services registers against a real hostdev (DECISIONS I-17).
+        hostdev = goPkgs.hostdev;
+      };
+    in {
+      overlays.agents = overlay;
+
+      # Hosts: nixos-anywhere targets. docs/workstreams/01-host-nixos.md.
+      # `host` is the generic configuration; named hosts are instances of
+      # lib.mkHost with their own hostName.
+      nixosConfigurations.host = mkHost { hostName = "repose-host"; };
+      nixosConfigurations.host-bench = mkHost { hostName = "host-bench"; };
+      # Production hosts by name (infra `host_flake_attrs`); each names what
+      # differs from `host`: today the api address, its CA and the Blob
+      # account (DECISIONS I-40).
+      nixosConfigurations.host-01 = mkHost { hostName = "host-01"; modules = [ ./hosts/host-01.nix ]; };
+      nixosConfigurations.host-02 = mkHost { hostName = "host-02"; modules = [ ./hosts/host-02.nix ]; };
+      # The staging host (infra/README.md, "Staging"): the same configuration
+      # pointed at `hostdev` instead of the api, because staging has no
+      # control plane (DECISIONS I-642).
+      nixosConfigurations.host-stg-01 = mkHost { hostName = "host-stg-01"; modules = [ ./hosts/host-stg-01.nix ]; };
+
+      # The generic host on aarch64 (DECISIONS I-1374): the same modules
+      # as `host`, with no provider, because the one aarch64 machine so far
+      # is the Mac mini appliance (19f's `mac` provider builds on this) and
+      # Azure has no aarch64 size a repose host may run on (DESIGN §4).
+      # `nix build ./nix#nixosConfigurations.host-aarch64.config.system.build.toplevel`
+      # on an aarch64 builder is the host half of the item's evidence.
+      nixosConfigurations.host-aarch64 = aarch64.mkHost { hostName = "repose-host"; provider = "none"; };
+
+      # The kexec installer every machine above is installed through
+      # (`nix/installer`), and the edge with them; one per architecture
+      # (perSystem.installer says why it exists at all).
+      nixosConfigurations.installer = x86.installer;
+      nixosConfigurations.installer-aarch64 = aarch64.installer;
+
+      # Edge: gateway + WireGuard hub. docs/workstreams/06-gateway-edge.md
+      # The production values (operator addresses, the control plane's
+      # WireGuard peer) are ./edge/edge-01.nix; the attribute keeps the name
+      # `edge` because infra's installer keys its re-install trigger on it
+      # (DECISIONS I-92).
+      nixosConfigurations.edge = lib.nixosSystem {
+        inherit system;
+        specialArgs = { inherit self; };
+        modules = [ disko.nixosModules.disko ./edge ./edge/edge-01.nix { repose.edge.gatewayPackage = goPkgs.gateway; } ];
+      };
+
+      # Guest base as a module, and the function hostd's build step calls with
+      # a user fragment to produce a runner. docs/workstreams/02-guest-base.md
+      # and docs/workstreams/12-nix-config-pipeline.md
+      nixosModules.guestBase = { pkgs, ... }: {
+        imports = [ ./guest/base ];
+        # What lib.nixosSystem sets for the runner, for users of the module
+        # outside it (the VM tests): `nixpkgs` in the guest's registry is
+        # this flake's nixpkgs (DECISIONS I-218).
+        nixpkgs.flake.source = lib.mkDefault nixpkgs.outPath;
+        # The same nixpkgs as a locked github: input for the global
+        # registry (DECISIONS I-531).
+        repose.nixpkgsLocked = lib.mkDefault { inherit (nixpkgs) rev narHash lastModified; };
+        # The index for the architecture the module is evaluated on, so
+        # one module serves both (I-1374).
+        repose.nixIndexPackage = lib.mkDefault nix-index-database.packages.${pkgs.stdenv.hostPlatform.system}.nix-index-with-small-db;
+        repose.baseVersion = lib.mkDefault baseVersion;
+        repose.guestd.package = lib.mkDefault (perSystem pkgs.stdenv.hostPlatform.system).guestd;
+        repose.hookPackage = lib.mkDefault (perSystem pkgs.stdenv.hostPlatform.system).reposeHook;
+      };
+
+      lib = {
+        # The x86_64 functions under their old names; `forSystem
+        # "<system>"` has the same set for the other architecture.
+        inherit mkGuestRunner mkHost baseVersion composeGuest;
+        # Name used by the scaffold; same function.
+        mkGuest = mkGuestRunner;
+        forSystem = perSystem;
+        inherit systems;
+      };
+
+      # What hostd evaluates for a Build (docs/interfaces/nix-build-contract.md),
+      # per architecture (I-1374): hostd on an aarch64 host evaluates
+      # `guestSystems.aarch64-linux`, since a flake cannot read the
+      # builder's own system and the one baked into `guestSystem` is x86_64.
+      # `guestSystem` stays the x86_64 one, byte for byte: every base
+      # revision an x86 host may still build names it, and so does every
+      # hostd release before this one.
+      guestSystems = lib.genAttrs systems (system: (perSystem system).guestSystem);
+      guestSystem = self.guestSystems.x86_64-linux;
+
+      packages = forAllSystems (s: s.packages);
+
+      # NixOS VM tests for the host (nix/hosts/tests) and the guest
+      # (nix/guest/tests). They need KVM on the builder: `system-features =
+      # kvm` in nix.conf.
+      checks.${system} = hostChecks // guestTests // fragmentChecks // {
+        # The browser view's port (DECISIONS I-1216). 6081 carries the
+        # view relay, which the api dials; it was admitted from every
+        # source on wg0 before, for a listener that did not exist, and a
+        # release that opened the listener without narrowing the rule
+        # would hand every tenant guest a fresh relay. Reads the rendered
+        # rulesets' text, so it builds no system.
+        edge-view-firewall =
+          let
+            edgeRules = builtins.unsafeDiscardStringContext
+              self.nixosConfigurations.edge.config.networking.nftables.ruleset;
+            hostRules = builtins.unsafeDiscardStringContext
+              self.nixosConfigurations.host-02.config.networking.nftables.ruleset;
+          in
+          pkgs.runCommand "edge-view-firewall"
+            {
+              edge = pkgs.writeText "edge-nftables.conf" edgeRules;
+              host = pkgs.writeText "host-nftables.conf" hostRules;
+            } ''
+            fail() { echo "$1" >&2; exit 1; }
+            # Rules only: a comment that names the port is not one.
+            grep -v '^[[:space:]]*#' "$edge" > edge.rules
+            grep -v '^[[:space:]]*#' "$host" > host.rules
+            # The edge admits 6081 from the control plane's address and
+            # from nothing else.
+            grep -q 'iifname "wg0" ip saddr 10.255.255.1 tcp dport 6081 accept' edge.rules || fail "the edge has no control-plane-only rule for 6081"
+            if grep -n '6081' edge.rules | grep -v 'ip saddr'; then fail "the edge admits 6081 without a source restriction"; fi
+            # Hook ingest keeps its own rule, from any guest.
+            grep -q 'iifname "wg0" tcp dport 8443 accept' edge.rules || fail "the edge lost the hook-ingest rule for 8443"
+            # A host lets a guest reach the edge's 8443 and nothing else:
+            # the relay dials the guest now.
+            grep -q 'tcp dport 8443 accept' host.rules || fail "the host lost the guest's hook-ingest rule"
+            if grep -n '6081' host.rules; then fail "a guest may still reach the edge on 6081"; fi
+            echo ok > $out
+          '';
         # The base closure limit, on this architecture (perSystem.guestClosureSize).
         guest-closure-size = x86.guestClosureSize;
         # A base switch must never restart a session unit: the tmux or
