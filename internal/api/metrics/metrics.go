@@ -26,7 +26,14 @@ type M struct {
 	// scoped with `equal: [host_id]`) and HostUnregistered (a host row the
 	// api created that nothing ever registered -- host-02 sat in that
 	// state for 17 hours with no series anywhere and no alert).
-	HostState     *prometheus.GaugeVec
+	HostState *prometheus.GaugeVec
+	// OwnedHosts counts the hosts users own, by state (DECISIONS
+	// I-1366). Apart from Hosts and HostState, which describe the fleet
+	// repose is on call for: the host alerts read those, and a user's Mac
+	// mini switched off at night is not an incident the owner can act on.
+	// Nothing alerts on this one; it is the number that says how many
+	// machines joined from outside.
+	OwnedHosts    *prometheus.GaugeVec
 	Projects      *prometheus.GaugeVec
 	ScheduleTotal *prometheus.CounterVec
 	// RestingWakeTotal counts the wakes the api asked for, by reason and
@@ -188,6 +195,7 @@ func New(reg prometheus.Registerer) *M {
 		RequestDuration:              prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "repose_api_request_duration_seconds", Help: "HTTP request latency by route.", Buckets: prometheus.DefBuckets}, []string{"route"}),
 		Hosts:                        prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_hosts", Help: "Hosts by state."}, []string{"state"}),
 		HostState:                    prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_host_state", Help: "1 for the state each host row is in, 0 for its other states (I-786)."}, []string{"host_id", "state"}),
+		OwnedHosts:                   prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_owned_hosts", Help: "Hosts users own, by state (I-1366); the fleet's own are in repose_api_hosts."}, []string{"state"}),
 		Projects:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_projects", Help: "Projects by state and class."}, []string{"state", "class"}),
 		ScheduleTotal:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_schedule_total", Help: "Placement attempts by result."}, []string{"result"}),
 		RestingWakeTotal:             prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_wake_total", Help: "Wakes of a frozen machine the api asked for, by reason and result: woken, awake, failed (I-818)."}, []string{"reason", "result"}),
@@ -266,7 +274,7 @@ func New(reg prometheus.Registerer) *M {
 		m.GRPCStreams, m.OpsTotal, m.OpsOpen, m.BuildDuration, m.SecretsOpsTotal, m.CommandsTotal, m.SamplesTotal, m.EventsTotal,
 		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
-		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
+		m.OwnedHosts, m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
 		m.GuestResumesPending, m.GuestResumesTotal, m.RestingWakeTotal,
 		m.RestingCandidates, m.RestingCandidateMinutesTotal, m.BrowserViewsTotal)
 	return m

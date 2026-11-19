@@ -285,6 +285,11 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.bcfg = bcfg
 	a.gate = billing.NewGate(a.pool, bcfg, a.m, log)
 	a.resume = resume.New(a.pool, a.engine, a.gate, a.m, log)
+	// Placement asks the plan one question (DECISIONS I-1366): may this
+	// account's machines run on hardware repose bought? An Own hardware
+	// plan sells no memory there, so the answer is no and every
+	// placement of that account stays on its own host.
+	a.engine.SetFleetPolicy(a.gate)
 	// The seat count (I-290, I-739): live subscriptions and unexpired
 	// invitations against what the ready hosts deliver -- the smaller of
 	// their memory in 8 GB blocks and what their physical cores can serve
@@ -348,8 +353,9 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		// The browser view's relay on the edge (DECISIONS I-1216); nil
 		// makes the view's mint route answer `unavailable`. The dashboard
 		// is the one origin its stream route accepts an upgrade from.
-		ViewRelay:   viewRelay,
-		ViewOrigins: viewOrigins(cfg.DashboardURL),
+		ViewRelay:    viewRelay,
+		ViewOrigins:  viewOrigins(cfg.DashboardURL),
+		DashboardURL: cfg.DashboardURL,
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: a.routes,

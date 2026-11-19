@@ -59,6 +59,9 @@ type Project struct {
 	PersonalOptOut bool `json:"personal_opt_out"`
 	// Multiplexer is what the next start runs, tmux or herdr (I-502).
 	Multiplexer string `json:"multiplexer"`
+	// Placement is where the machine goes when it is placed, own or
+	// hosted (I-1366).
+	Placement string `json:"placement"`
 }
 
 // Idle is Project.idle.
