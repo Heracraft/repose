@@ -53,6 +53,7 @@ var allowed = []struct {
 	{"apps/web/.env.example", "PUBLIC_API_RESOURCE=", "the dashboard asks for that audience too (I-1158)"},
 	{"ops/coolify/web.env.example", "PUBLIC_API_RESOURCE=", "the deployed value of it"},
 	{"apps/web/src/lib/api/resource.ts", "api.repose.herakraft.co", "the comment that says which audience PUBLIC_API_RESOURCE holds"},
+	{"ops/dev/dashboard-session", `RESOURCE = "https://api.repose.herakraft.co"`, "the operator tool exchanges a Logto token for that same audience, which is what the api checks"},
 	{"docs/workstreams/08-dashboard.md", "(DECISIONS I-1156, I-1158)", "the dashboard doc records the same audience"},
 
 	// The host-to-api gRPC name: internal, and the name on the certificate
