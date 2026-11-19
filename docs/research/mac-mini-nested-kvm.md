@@ -466,6 +466,88 @@ Lessons, each of which cost a run:
   the ssh session.** `pkill -f 'lab-image[2]'` matches the process and
   not the shell that carries the pattern.
 
+## 10. The I/O pair: where the nested guest's minutes go (19f, 2026-11-19)
+
+The question was whether a hostd running natively on macOS, one guest
+per Virtualization.framework VM and no appliance, would remove the
+minutes a guest start takes on the Mac (§9: a small guest's `ready` 45.7
+s, `paths` 59.7 s, `setup` 34.8 s against 14 to 16, 4 to 10 and 8 to 15 s
+on x86). §7 step 4 had shown no CPU tax (sha256 ratio 1.07) and step 3
+the same Ubuntu boot nested and native to the tenth of a second, so the
+remaining suspect was I/O. fio 3.36 (libaio, direct=1, 12 s a test) ran
+in L1, the Ubuntu builder VM directly on Virtualization.framework (8
+vCPU, 6 GB, its disk a file on APFS), and in L2, an Ubuntu guest under
+Cloud Hypervisor nested in it (2 vCPU, 2 GiB, the shape of a small
+guest), on the same kinds of target; the raw lines are in `~/fio` on the
+builder. The thin pool was a zeroing pool (chunk 64 KiB, as
+`disko-layout.nix` makes it) over a loop device on L1's ext4, since the
+builder has no spare disk; production has the pool on a partition, and
+the loop is why the pool's sequential write sits at 86 MB/s in both L1
+and L2. The L2 disks were opened `direct=on`, as hostd opens them.
+
+| 4 KiB, queue depth 1 | L1 file on ext4 | L1 thin volume | L2 thin volume | L2 sparse file |
+|---|---|---|---|---|
+| random read | 18.0k iops, 46 us | 17.3k iops, 47 us | 4.8k iops, 172 us | 6.5k iops, 116 us |
+| random write, chunk already allocated | 3.1k iops, 317 us | 1.1k iops, 914 us | 4.9k iops, 168 us | 1.0k iops, 987 us |
+| random write, first touch | 310 iops, 3.2 ms | first I/Os stalled for seconds | 801 iops, 1.2 ms | 1.0k iops, 0.96 ms |
+
+| bulk | L1 file on ext4 | L1 thin volume | L2 thin volume | L2 sparse file |
+|---|---|---|---|---|
+| 1 MiB sequential read, qd 4 | 6.7 GB/s | 14.5 GB/s | 7.7 GB/s | 3.3 GB/s |
+| 1 MiB sequential write, qd 4 | 12.2 GB/s | 86 MB/s | 87 MB/s | 121 MB/s |
+| 4 KiB random read, qd 16 | 117k iops | 230k iops | 52k iops | 69k iops |
+
+The Mac's page cache sits under L1's disk, which is why L1 reads and
+writes in gigabytes a second: a guest disk file on APFS through
+Virtualization.framework's virtio-blk, which is what a native hostd
+would give a guest, behaves the same. Nesting adds 70 to 125 us to a
+4 KiB I/O at depth 1 (three to four times) and halves the depth-16
+rate; sequential reads stay within a factor of two. A sparse file on
+ext4 opened O_DIRECT is pathological for allocation (p99 283 ms on a
+1 MiB write) and is not what hostd uses. None of this is minutes.
+
+The store share is. virtiofsd 1.10 in L1 (`--cache auto`, as hostd's
+store share) serving a directory to L2, read with the guest's cache
+dropped before each pass and L1's before the boot, against the same
+directory read in L1, through Apple's virtiofs in a Tart clone of the
+builder with the directory shared from the Mac, and on the Mac itself
+after `purge`:
+
+| read | L2 through virtiofsd | L1 directly | L1 through Apple's virtiofs | the Mac itself |
+|---|---|---|---|---|
+| 1 GiB file, first pass | 29.2 to 31.7 s (32 MB/s) | 0.09 s | 1.28 s | 1.09 s |
+| 1 GiB file, second pass | 7.8 s (130 MB/s); a third pass with 1 MiB reads 32.4 s | | 0.18 s | 0.06 s |
+| 256 MiB in 4 KiB reads | 6.7 s | | 0.07 s | |
+| a 1288-entry, 29 MB tree, cat every file, first pass | 0.97 to 1.59 s | 0.09 s | 1.23 s | 1.03 s |
+| the same, second pass | 0.69 s | | 0.19 s | 0.02 s |
+| stat every entry | 0.21 to 0.26 s | 0.03 s | 0.08 s | |
+
+A FUSE request through the nested virtiofsd costs 1 to 4 ms whatever
+its size, so the share delivers 32 to 130 MB/s and about half a
+millisecond a file; the cost is per request, not first touch (the
+second pass of the file was four times faster, the third as slow as the
+first). Apple's virtiofs costs nothing measurable over the Mac's own
+SSD (the cold first passes are the SSD at about 1 GB/s; warm, 5 to 6
+GB/s and 0.15 ms a file). A repose guest reads its whole closure
+through the store share at boot: the kernel's 13.4 s, `repose-paths`,
+home-manager, docker and the pin-profile copy-up are all reads of
+`/nix/store` over virtiofs, and at 32 MB/s and half a millisecond a
+file that is the minutes. The nesting tax is real and it is
+concentrated in one device.
+
+What this says for the two shapes. The native shape removes the cost
+by construction, at the price §9's report put on it (about 7,500 lines
+of hostd, a second storage and network model, a signed macOS binary).
+The appliance shape can remove it too, by not reading the closure
+through virtiofs in the nested guest: the store as a read-only
+virtio-blk volume (an erofs or squashfs image of the closure, which
+reads at gigabytes a second nested, above), or virtio-fs DAX if Cloud
+Hypervisor brings it back. Neither has been measured as a boot; a boot
+with the store on virtio-blk in the appliance is the measurement that
+decides between them, and it is a day's work on the Mac. Not measured:
+the Mac's own fio (no fio, no Homebrew there), and hostd's
+RegisterPaths natively on APFS.
+
 ## Sources
 
 - Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:
