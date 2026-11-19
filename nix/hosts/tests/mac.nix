@@ -124,9 +124,12 @@ pkgs.testers.runNixOSTest {
         growDisk = false;
       };
       dataDisk.enable = false;
-      # hostdev's CA instead of the platform's; both set is an error.
+      # hostdev's CA instead of the platform's; both set is an error. The
+      # server name is the address's host part, the IP SAN hostdev
+      # issues, not the fleet's internal name.
       apiCA = lib.mkForce "";
       apiCAFile = "${lab}/ca.pem";
+      apiServerName = lib.mkForce "";
     };
     disko.enableConfig = false;
     users.users.root.hashedPassword = lib.mkForce null;
@@ -145,7 +148,7 @@ pkgs.testers.runNixOSTest {
       "d /run/repose/launcher 0700 root root -"
       "C /run/repose/launcher/join 0600 root root - ${lab}/join"
     ];
-    environment.systemPackages = with pkgs; [ jq wireguard-tools util-linux gptfdisk e2fsprogs ];
+    environment.systemPackages = with pkgs; [ jq wireguard-tools util-linux gptfdisk e2fsprogs parted python3 ];
   };
 
   testScript = ''
