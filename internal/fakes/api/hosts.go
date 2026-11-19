@@ -57,7 +57,9 @@ var hostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // hostJoinTokenValidity is hostmgr.JoinTokenValidity.
 const hostJoinTokenValidity = 24 * time.Hour
 
-// defaultHostLimit is the Own hardware plan's one host (I-1364).
+// defaultHostLimit is the Own hardware plan's one host (19d's plan row
+// is what makes it 1 on the real api; cited by name, not by id, until
+// that entry is written).
 const defaultHostLimit = 1
 
 // hostInstallDocsURL is the page `install.url` always carries.
@@ -153,7 +155,7 @@ func (f *Fake) createOwnedHost(w http.ResponseWriter, r *http.Request) *apiError
 		limit = defaultHostLimit
 	}
 	if limit < 0 {
-		// No Own hardware plan: the account may own none at all (I-1364).
+		// No Own hardware plan: the account may own none at all.
 		return errf("payment_required", "hardware of your own needs the Own hardware plan").withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	if len(mine) >= limit {
