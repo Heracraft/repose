@@ -36189,3 +36189,81 @@ four cases: the only agent is a run (was `not_found`), a window the user
 named `t-notes` beside `claude` (was delivered to `claude` with no
 refusal), a run beside the user's own agent (goes to the user's), and two
 runs and nothing else (was `not_found`, now names both).
+
+**I-1354. A project made on the dashboard is an empty machine, and its
+repository is what the laptop's `repose run` looks it up by, not a clone
+(dash-create, 2026-11-19).** *Made during implementation.*
+
+I-1266's rule, in the order the owner gave on 2026-11-17: create first,
+then resize and logs. The dashboard listed projects and the only way to
+make one was `repose run` or `repose create`, so a user who is not in a
+terminal could read about their machines and own none.
+
+`POST /projects` already takes everything the form needs — `name`,
+`class`, `remote_url`, `tz`, `expires_in_s` — and nothing in it sends
+code to a machine. The CLI's own sync makes the checkout (I-368), and
+`SetupProject` only sets `origin` on a checkout that is already there.
+So the dashboard's New project calls that route as it stands, no api
+change, and what the machine starts from is nothing: the home directory,
+with the session and the agents working in it, which is what
+`repose run --no-sync` and `repose run --temp` in a folder that is not a
+repository already leave. `sync.md` said that state already and now names
+this third way into it.
+
+Repository is therefore optional and is never cloned. It records the
+remote the project is the machine for, in the same normalized form the
+CLI sends (`internal/cli/normalizeRemote`, `cli-config.md`), because
+`resolveProject` falls back to listing the account's projects and
+matching `remote_url`: with it, a later `repose run` in that checkout
+finds this machine; without it, the laptop makes a second machine for the
+same repository and the user pays for both. The field's one line says it
+is not cloned, since a repository URL beside a Create button reads like a
+clone.
+
+Rejected: cloning at create. It is api, hostd and guestd work for a step
+that is one line in the machine (`git clone`, with the account's
+`GH_TOKEN` or a `gh auth login` already there, I-1344), it would have to
+choose whose credential clones a private repository, and its failure
+would land in a build log with no terminal to read it in.
+
+Rejected: leaving the remote off the form, which is the two-machines-one-
+repository bill above.
+
+Rejected: a modal. The dashboard asks in place — TriggerForm,
+RestoreNameForm, the resize panel — and the token dialog is a dialog
+because it shows a secret once.
+
+The form is Name, Size, Keep it and Repository, in the head's New project
+button on `/projects`. Keep it is on the form because `repose run --temp`
+can only be answered at create: `PATCH` refuses `expires_in_s` on a
+project that is not temporary, so without it a browser could never make a
+temporary machine. The api refuses a remote beside a lifetime, so the
+Repository field gives way to the sentence that says why. The lifetimes
+offered are 1, 4, 12 and 24 hours inside the api's 10 minutes to 24
+hours; a user who wants 7 minutes has a terminal.
+
+Not on the form, and still open for the change pass: `agent_default` and
+`multiplexer`, which the dashboard shows and cannot change anywhere
+(`PATCH /projects/:id` takes both), so putting them here would make the
+dashboard able to set them once and never change them — a different gap
+from this one. `personal_opt_out` is a machine.nix choice and belongs
+beside machine.nix. `tz` is not asked: the form sends this browser's
+zone, as the CLI sends the laptop's (I-198).
+
+The name rule, both uniqueness refusals, the project cap and the plan
+stay the api's. The form checks only for an empty name and shows the
+api's own sentence for the rest, so there is no second copy of the rule
+to drift; a `payment_required` keeps the sentence with this page's link
+to the plan, as a row's Start does (I-1266's sibling rule against a toast
+that takes a refusal away before it can be acted on).
+
+*Checked:* `apps/web/tests/projects-create.spec.ts`, 6 tests: a machine
+made with a size and a repository opens on its own page with Connect's
+`repose attach <slug>` and is in the list at `small · 4 GB`, with
+`remote_url` stored as `github.com/heracraft/Dash-Made` from a typed
+`https://GitHub.com/heracraft/Dash-Made.git`; a name the api refuses
+keeps the form and what was typed; an empty name never reaches the api; a
+second project of the same name is refused in the api's words; Keep it
+makes a temporary machine and takes the Repository field away; an account
+with no plan is refused in place with a link to the plan; Cancel puts
+focus back on New project.

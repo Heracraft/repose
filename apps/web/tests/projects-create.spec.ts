@@ -1,0 +1,236 @@
+// New project on /projects: the dashboard makes a machine, which is the
+// first of I-1266's gaps in the owner's order (DECISIONS I-1354). A
+// project made here is an empty machine; Repository is the remote the
+// laptop's `repose run` looks the project up by, in the CLI's normalized
+// form, and never a clone.
+import { test, expect, type Page } from '@playwright/test';
+import {
+	signIn,
+	apiURLFromEnv,
+	destroyProject,
+	pruneProjects,
+	resetBilling,
+	setBilling
+} from './helpers';
+
+const litter: string[] = [];
+
+// The account is shared with every other file: start from no project, so
+// a list left long by an earlier one cannot push a row of this file's own
+// past the 25 the table draws.
+test.beforeAll(async () => {
+	await pruneProjects(apiURLFromEnv());
+});
+
+test.beforeEach(async ({ page }) => {
+	await resetBilling();
+	await signIn(page);
+});
+
+test.afterAll(async () => {
+	const api = apiURLFromEnv();
+	while (litter.length) await destroyProject(api, litter.pop()!);
+	await resetBilling();
+});
+
+/** A name no other run of this file has used (the suite shares one account). */
+const unique = (stem: string) => `${stem}-${Math.random().toString(36).slice(2, 8)}`;
+
+/**
+ * The create form's own locator. Every field is read through it: on a
+ * page whose list is not empty, a bare getByLabel('Size') also matches a
+ * row's "Stop resize-app" button, because getByLabel matches a substring.
+ */
+const form = (page: Page) => page.getByTestId('new-project-form');
+
+async function openForm(page: Page) {
+	await page.goto('/projects');
+	await page.getByRole('button', { name: 'New project' }).click();
+	await expect(form(page)).toBeVisible();
+}
+
+/** The project the fake api holds under this name, read straight from it. */
+async function fromApi(name: string) {
+	const res = await fetch(`${apiURLFromEnv()}/projects`, {
+		headers: { Authorization: 'Bearer playwright' }
+	});
+	expect(res.ok).toBe(true);
+	const list = (await res.json()) as {
+		id: string;
+		name: string;
+		slug: string;
+		class: string;
+		remote_url: string;
+		expires_at?: string;
+	}[];
+	return list.find((p) => p.name === name);
+}
+
+test('New project makes a machine, which opens on its page and is in the list', async ({
+	page
+}) => {
+	const name = unique('dash-made');
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByLabel('Size').selectOption('small');
+	// Typed as a user has it in their browser's address bar; what is stored
+	// has to be the form `repose run` looks a project up by.
+	await form(page).getByLabel('Repository').fill('https://GitHub.com/heracraft/Dash-Made.git');
+	await form(page).getByRole('button', { name: 'Create' }).click();
+
+	// The machine's own page, where Connect says how to reach it (I-1350).
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	expect(page.url()).toContain(`/projects/${made!.id}`);
+	await expect(page.locator('main h1')).toHaveText(name);
+	await expect(
+		page.getByRole('list', { name: 'Connect' }).getByRole('listitem').nth(0)
+	).toContainText(`repose attach ${made!.slug}`);
+
+	// The size asked for, and the remote in the CLI's normalized form:
+	// host lowercased, scheme, `.git` and the trailing slash gone.
+	expect(made!.class).toBe('small');
+	expect(made!.remote_url).toBe('github.com/heracraft/Dash-Made');
+	expect(made!.expires_at ?? null).toBeNull();
+
+	// And in the list it came from, with the size it was made at.
+	await page.goto('/projects');
+	const row = page
+		.locator('.hk-table-wrap')
+		.locator('tr')
+		.filter({ has: page.getByRole('link', { name, exact: true }) });
+	await expect(row).toBeVisible();
+	await expect(row).toContainText('small');
+	await expect(row).toContainText('4 GB');
+});
+
+test('the api refuses the name and the form keeps what was typed', async ({ page }) => {
+	await openForm(page);
+	// A space is not in the api's name rule; the api holds that rule, so
+	// its own sentence is what the field shows.
+	await form(page).getByLabel('Name').fill('not a name');
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	const error = form(page).getByTestId('new-project-error');
+	await expect(error).toContainText('[A-Za-z0-9._-]');
+	expect(page.url()).toContain('/projects');
+	await expect(page.getByTestId('new-project-form')).toBeVisible();
+	await expect(form(page).getByLabel('Name')).toHaveValue('not a name');
+
+	// An empty name never reaches the api.
+	await form(page).getByLabel('Name').fill('  ');
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	await expect(error).toHaveText('Name is required.');
+
+	// The same form goes through once the name is one the api takes.
+	const name = unique('refused-then');
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	// No repository typed: the machine is the empty one, with no remote.
+	expect(made!.remote_url).toBe('');
+	// The api's default class, which is what `repose run` gets.
+	expect(made!.class).toBe('large');
+});
+
+test('a name the account already has is refused in the api’s words', async ({ page }) => {
+	const name = unique('twice');
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	litter.push(made!.id);
+
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	await expect(form(page).getByTestId('new-project-error')).toContainText(name);
+	await expect(form(page).getByTestId('new-project-error')).toContainText('exists');
+});
+
+// `repose run --temp` is the only other door to a temporary machine, and
+// the api refuses a remote beside a lifetime, so the field gives way.
+test('Keep it makes a temporary machine and takes the repository away', async ({ page }) => {
+	const name = unique('dash-temp');
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await expect(form(page).getByLabel('Repository')).toBeVisible();
+	await form(page).getByLabel('Keep it').selectOption('3600');
+	await expect(form(page).getByLabel('Repository')).toHaveCount(0);
+	await expect(form(page).getByTestId('np-temp-note')).toContainText('no snapshot');
+	await form(page).getByRole('button', { name: 'Create' }).click();
+
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	expect(made!.expires_at).toBeTruthy();
+	expect(made!.remote_url).toBe('');
+
+	await page.goto('/projects');
+	const row = page
+		.locator('.hk-table-wrap')
+		.locator('tr')
+		.filter({ has: page.getByRole('link', { name, exact: true }) });
+	await expect(row).toContainText('temporary');
+});
+
+// A plan refusal is the api's sentence with this page's own link, as a
+// row's Start draws it, not a toast that takes the sentence away.
+test('an account with no plan is refused in place, with a link to the plan', async ({ page }) => {
+	await setBilling({ mode: 'none' });
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(unique('no-plan'));
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	const error = form(page).getByTestId('new-project-error');
+	await expect(error).toBeVisible();
+	await expect(error.getByRole('link', { name: 'See your plan' })).toBeVisible();
+	// The api's sentence, without the raw URL it ends with (refusal.ts).
+	await expect(error).not.toContainText('http');
+	expect(page.url()).toContain('/projects');
+});
+
+// The form and the machine it made, at the two widths and both schemes,
+// at 1x, to be read at that size (CLAUDE.md "Judge visuals at real
+// size"). As tokens.spec's "API tokens shots" does.
+test('New project shots', async ({ page }, testInfo) => {
+	const shot = (name: string) =>
+		page.screenshot({ path: testInfo.outputPath(`${name}.png`), animations: 'disabled' });
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			const name = `shot-${width}-${scheme}`;
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await openForm(page);
+			await form(page).getByLabel('Name').fill(name);
+			await form(page).getByLabel('Repository').fill('github.com/heracraft/todo-app');
+			await shot(`np-form-${width}-${scheme}`);
+			// An account holds one project per remote, and this test makes
+			// four machines: the field is emptied after the shot so each
+			// shot can show the same URL.
+			await form(page).getByLabel('Repository').fill('');
+			await form(page).getByRole('button', { name: 'Create' }).click();
+			await page.waitForURL(/\/projects\/[^/]+$/);
+			const made = await fromApi(name);
+			litter.push(made!.id);
+			await expect(page.getByRole('list', { name: 'Connect' })).toBeVisible();
+			await shot(`np-made-${width}-${scheme}`);
+			await page.goto('/projects');
+			await expect(page.getByRole('link', { name, exact: true })).toBeVisible();
+			await shot(`np-list-${width}-${scheme}`);
+		}
+	}
+	await page.emulateMedia({ colorScheme: null });
+});
+
+test('Cancel closes the form and puts focus back on New project', async ({ page }) => {
+	await openForm(page);
+	await form(page).getByRole('button', { name: 'Cancel' }).click();
+	await expect(page.getByTestId('new-project-form')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
+});
