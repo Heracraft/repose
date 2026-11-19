@@ -1,5 +1,5 @@
 ---
-title: Add your own hardware
+title: Your own hardware
 description: Run your projects on a Mac mini or an x86 box you own, on the Own hardware plan.
 section: Account
 order: 29
@@ -67,7 +67,7 @@ mac-mini  offline  24 GB   2         1        14m ago
 ```
 PROJECT     SIZE   STATE    UP     AGENTS
 todo-app *  large  running  2h14m  claude: working
-todo-app: mac-mini has not answered for 14m.
+todo-app: your host mac-mini has not answered for 14m.
 ```
 
 `repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else.

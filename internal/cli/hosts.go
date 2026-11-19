@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -107,6 +108,10 @@ func HostLsCmd(ctx context.Context, e *Env) error {
 		}
 		return writeJSONOut(e.Out, hosts)
 	}
+	// A host the user removed is not hardware they have; the api keeps
+	// the row and the listing leaves it out. `--json` is the api's
+	// answer unchanged.
+	hosts = slices.DeleteFunc(hosts, func(h Host) bool { return h.State == "retired" })
 	if e.Quiet {
 		for _, h := range hosts {
 			_, _ = fmt.Fprintln(e.Out, h.Name)
@@ -154,8 +159,13 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 	if err != nil {
 		return hostErr(err, name)
 	}
+	// A host already retired is not one the user has, so a second
+	// `host rm` of the same name says so rather than succeeding again.
 	var h *Host
 	for i := range hosts {
+		if hosts[i].State == "retired" {
+			continue
+		}
 		if hosts[i].Name == name || hosts[i].ID == name {
 			h = &hosts[i]
 		}
@@ -278,8 +288,10 @@ func hostUnreachableLine(p *Project, own map[string]Host, now time.Time) string 
 	if !ok {
 		return "its server is not answering"
 	}
+	// "your host <name>" is the api's own wording for a placement it
+	// refused (ops.ownHostRefusal), so the two say the same thing.
 	if h.LastHeartbeatAt == nil {
-		return fmt.Sprintf("%s has not answered", h.Name)
+		return fmt.Sprintf("your host %s has not answered", h.Name)
 	}
-	return fmt.Sprintf("%s has not answered for %s", h.Name, humanDuration(now.Sub(*h.LastHeartbeatAt)))
+	return fmt.Sprintf("your host %s has not answered for %s", h.Name, humanDuration(now.Sub(*h.LastHeartbeatAt)))
 }

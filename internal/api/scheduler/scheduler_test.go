@@ -47,12 +47,25 @@ func addHostPool(t *testing.T, pool *db.Pool, h host, size int64) uuid.UUID {
 	return id
 }
 
+// fleetTarget is a placement for an account that owns no host and whose
+// plan sells fleet memory: the only kind of placement there was before
+// DECISIONS I-1366, which is what the tests below that do not care about
+// ownership are asking about.
+func fleetTarget() scheduler.Target {
+	return scheduler.Target{Account: uuid.Must(uuid.NewV7()), Fleet: true}
+}
+
 func pick(t *testing.T, pool *db.Pool, class string, hold, vol int64) (scheduler.Pick, error) {
+	t.Helper()
+	return pickFor(t, pool, fleetTarget(), class, hold, vol)
+}
+
+func pickFor(t *testing.T, pool *db.Pool, target scheduler.Target, class string, hold, vol int64) (scheduler.Pick, error) {
 	t.Helper()
 	var p scheduler.Pick
 	err := db.InTx(context.Background(), pool, func(tx pgx.Tx) error {
 		var err error
-		p, err = scheduler.PickHost(context.Background(), tx, class, hold, vol, time.Now())
+		p, err = scheduler.PickHost(context.Background(), tx, target, class, hold, vol, time.Now())
 		return err
 	})
 	return p, err
@@ -114,7 +127,7 @@ func TestConcurrentPlacementsReserveExactly(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			err := db.InTx(ctx, pool, func(tx pgx.Tx) error {
-				p, err := scheduler.PickHost(ctx, tx, "large", 1<<30, 40<<30, time.Now())
+				p, err := scheduler.PickHost(ctx, tx, scheduler.Target{Account: uid, Fleet: true}, "large", 1<<30, 40<<30, time.Now())
 				if err != nil {
 					return err
 				}
@@ -259,11 +272,11 @@ func TestFreeingSkipsPoolUnavailable(t *testing.T) {
 		uuid.Must(uuid.NewV7()), uid, a); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := scheduler.Freeing(ctx, pool, "large", 1<<30, 40<<30, now); err != nil || !ok {
+	if ok, err := scheduler.Freeing(ctx, pool, fleetTarget(), "large", 1<<30, 40<<30, now); err != nil || !ok {
 		t.Fatalf("freeing %v %v, want true with a large guest stopping", ok, err)
 	}
 	setPoolUnavailable(t, pool, a)
-	if ok, err := scheduler.Freeing(ctx, pool, "large", 1<<30, 40<<30, now); err != nil || ok {
+	if ok, err := scheduler.Freeing(ctx, pool, fleetTarget(), "large", 1<<30, 40<<30, now); err != nil || ok {
 		t.Fatalf("freeing %v %v on a host whose pool is down, want false", ok, err)
 	}
 }
@@ -391,7 +404,7 @@ func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
 		uuid.Must(uuid.NewV7()), uid, h); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || ok {
+	if ok, err := scheduler.Freeing(ctx, pool, fleetTarget(), "small", 1<<30, 20<<30, now); err != nil || ok {
 		t.Fatalf("freeing %v %v at the CPU ceiling, want false: memory frees, cores do not", ok, err)
 	}
 	// Stop the xl instead: its 4 vCPUs are in the view and come back, so
@@ -399,7 +412,7 @@ func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
 	if _, err := pool.Exec(ctx, "update projects set state = 'stopping' where slug = 'kanali'"); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || !ok {
+	if ok, err := scheduler.Freeing(ctx, pool, fleetTarget(), "small", 1<<30, 20<<30, now); err != nil || !ok {
 		t.Fatalf("freeing %v %v with the xl stopping, want true", ok, err)
 	}
 }
@@ -512,5 +525,168 @@ func TestHostReservationsVCPUsMatchClassVCPU(t *testing.T) {
 		if n != scheduler.ClassMilliVCPU(class) {
 			t.Errorf("ClassMilliVCPUSQL(%q) = %d, ClassMilliVCPU = %d", class, n, scheduler.ClassMilliVCPU(class))
 		}
+	}
+}
+
+// --- ownership (DECISIONS I-1366) -------------------------------------
+
+// addAccount makes a user to own hosts and projects.
+func addAccount(t *testing.T, pool *db.Pool, handle string) uuid.UUID {
+	t.Helper()
+	id := uuid.Must(uuid.NewV7())
+	if _, err := pool.Exec(context.Background(), "insert into users (id, handle) values ($1, $2)", id, handle); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// own gives the host to an account.
+func own(t *testing.T, pool *db.Pool, hostID, owner uuid.UUID) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), "update hosts set owner_account_id = $2 where id = $1", hostID, owner); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOwnershipPlacesBothWays is the checklist row of
+// docs/workstreams/19-mac-mini.md §7: "a test places an owner's project
+// on their host and refuses a stranger's project there, shown red with
+// the ownership filter removed".
+//
+// Both directions, because each fails differently and only one of them
+// is a security incident: a stranger's project on somebody's Mac mini
+// puts one user's code on another user's machine, and an owner's project
+// on the fleet is a user paying for hardware that is not being used.
+// The red run with `ownedSQL` replaced by `true` is in the commit
+// message.
+func TestOwnershipPlacesBothWays(t *testing.T) {
+	pool := testdb.Open(t)
+	now := time.Now()
+	// One host repose runs, with more free memory than the owned one, so
+	// "most free wins" would choose it if ownership did not speak first.
+	addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	mac := addHost(t, pool, host{"mac-mini", "ready", false, 24 << 30, 20 << 30, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+	stranger := addAccount(t, pool, "stranger")
+	own(t, pool, mac, owner)
+
+	// Subtests, so a run with the ownership term removed reports both
+	// directions rather than stopping at the first.
+	t.Run("the owner's project goes to the owner's host", func(t *testing.T) {
+		// Not to the emptier host repose runs, which "most free wins"
+		// would otherwise choose.
+		if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true}, "large", 1<<30, 40<<30); err != nil || p.Name != "mac-mini" {
+			t.Fatalf("owner placed on %+v %v, want mac-mini", p, err)
+		}
+	})
+	t.Run("a stranger's project goes to the fleet", func(t *testing.T) {
+		if p, err := pickFor(t, pool, scheduler.Target{Account: stranger, Fleet: true}, "large", 1<<30, 40<<30); err != nil || p.Name != "fleet-01" {
+			t.Fatalf("stranger placed on %+v %v, want fleet-01", p, err)
+		}
+	})
+	t.Run("an owned host is not a fallback for a stranger", func(t *testing.T) {
+		// With the fleet host gone there is nowhere for the stranger:
+		// the Mac is not spare capacity, it is somebody's machine.
+		if _, err := pool.Exec(context.Background(), "update hosts set state = 'retired' where name = 'fleet-01'"); err != nil {
+			t.Fatal(err)
+		}
+		if p, err := pickFor(t, pool, scheduler.Target{Account: stranger, Fleet: true}, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+			t.Fatalf("stranger placed on %+v %v with only an owned host left, want no capacity", p, err)
+		}
+	})
+}
+
+// TestOwnHardwarePlanNeverReachesTheFleet is the second filter
+// (DECISIONS I-1366): an Own hardware plan sells no memory on
+// repose's own hosts, so placement is the only thing between such an
+// account and the fleet. Shown red with the `$9` term of ownedSQL
+// removed.
+func TestOwnHardwarePlanNeverReachesTheFleet(t *testing.T) {
+	pool := testdb.Open(t)
+	now := time.Now()
+	addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+
+	// No host of their own yet, and no fleet memory bought: nothing is
+	// eligible, and the error is the one that makes the api say "your
+	// host has not registered yet" rather than "no host with capacity".
+	if p, err := pickFor(t, pool, scheduler.Target{Account: owner}, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
+		t.Fatalf("own hardware account placed on %+v %v, want ErrNoOwnHost", p, err)
+	}
+	// Asking for the fleet outright does not get it either: the field is
+	// a request, the plan is the answer.
+	if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Hosted: true}, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+		t.Fatalf("own hardware account asked for hosted and got %+v %v, want no capacity", p, err)
+	}
+	// Their own host, once it is up, takes it.
+	mac := addHost(t, pool, host{"mac-mini", "ready", false, 24 << 30, 20 << 30, 1 << 40, now})
+	own(t, pool, mac, owner)
+	if p, err := pickFor(t, pool, scheduler.Target{Account: owner}, "large", 1<<30, 40<<30); err != nil || p.Name != "mac-mini" {
+		t.Fatalf("own hardware account placed on %+v %v, want mac-mini", p, err)
+	}
+}
+
+// TestOwnerAsksForTheFleet: `placement: "hosted"` on an account that has
+// both a host of its own and a plan that sells fleet memory goes to the
+// fleet, which is the escape hatch of docs/workstreams/19-mac-mini.md
+// item 19a ("unless the owner asks for hosted").
+func TestOwnerAsksForTheFleet(t *testing.T) {
+	pool := testdb.Open(t)
+	now := time.Now()
+	addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	mac := addHost(t, pool, host{"mac-mini", "ready", false, 24 << 30, 20 << 30, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+	own(t, pool, mac, owner)
+	if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Hosted: true, Fleet: true}, "large", 1<<30, 40<<30); err != nil || p.Name != "fleet-01" {
+		t.Fatalf("owner asked for hosted and got %+v %v, want fleet-01", p, err)
+	}
+}
+
+// TestOwnHostOffIsNotAFleetPlacement: a machine that is merely switched
+// off must not silently push its owner's next project onto hardware they
+// are not paying for, and a host that is gone for good must not trap
+// them on it either (DECISIONS I-1366).
+func TestOwnHostOffIsNotAFleetPlacement(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	mac := addHost(t, pool, host{"mac-mini", "unreachable", false, 24 << 30, 20 << 30, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+	own(t, pool, mac, owner)
+	target := scheduler.Target{Account: owner, Fleet: true}
+	if p, err := pickFor(t, pool, target, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
+		t.Fatalf("owner with an unreachable Mac placed on %+v %v, want ErrNoOwnHost", p, err)
+	}
+	// Retired: the host is not theirs any more, so the fleet is theirs
+	// again.
+	if _, err := pool.Exec(ctx, "update hosts set state = 'retired' where id = $1", mac); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := pickFor(t, pool, target, "large", 1<<30, 40<<30); err != nil || p.Name != "fleet-01" {
+		t.Fatalf("owner whose host is retired placed on %+v %v, want fleet-01", p, err)
+	}
+}
+
+// TestFreeingRespectsOwnership: the three-minute placement wait
+// (I-408) asks the same question, so a stranger does not wait for a
+// guest to stop on somebody's Mac.
+func TestFreeingRespectsOwnership(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	mac := addHost(t, pool, host{"mac-mini", "ready", false, 24 << 30, 4 << 30, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+	stranger := addAccount(t, pool, "stranger")
+	own(t, pool, mac, owner)
+	if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, 'p', 'p', 'large', 'stopping', $3, 1)`,
+		uuid.Must(uuid.NewV7()), owner, mac); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, scheduler.Target{Account: owner, Fleet: true}, "large", 1<<30, 40<<30, now); err != nil || !ok {
+		t.Fatalf("freeing %v %v for the owner, want true", ok, err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, scheduler.Target{Account: stranger, Fleet: true}, "large", 1<<30, 40<<30, now); err != nil || ok {
+		t.Fatalf("freeing %v %v for a stranger on an owned host, want false", ok, err)
 	}
 }

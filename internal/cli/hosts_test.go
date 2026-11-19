@@ -31,13 +31,13 @@ func TestHostAddListRm(t *testing.T) {
 
 	// With an install step recorded, stdout is that line and nothing
 	// else, so it pipes to the machine being added.
-	fake.SetHostInstallCommand("curl -fsSL https://repose.run/mac | sh -s -- %s")
+	fake.SetHostInstall("curl -fsSL https://repose.run/mac -- %s")
 	out.buf.Reset()
 	if err := HostAddCmd(ctx, e, "mac-mini"); err != nil {
 		t.Fatal(err)
 	}
 	step := strings.TrimRight(out.buf.String(), "\n")
-	if strings.Contains(step, "\n") || !strings.HasPrefix(step, "curl -fsSL https://repose.run/mac") || !strings.Contains(step, "rjt_") {
+	if strings.Contains(step, "\n") || !strings.HasPrefix(step, "curl -fsSL https://repose.run/mac -- ") || len(step) < 40 {
 		t.Fatalf("stdout is the install step alone: %q", out.buf.String())
 	}
 	if got := errOut.buf.String(); !strings.HasPrefix(got, "mac-mini: run this on the machine you are adding. It works once, before ") {
@@ -66,13 +66,13 @@ func TestHostAddListRm(t *testing.T) {
 
 	// An api with no install step recorded hands over the token instead,
 	// with the page that says what to do with it (19f records the line).
-	fake.SetHostInstallCommand("")
+	fake.SetHostInstall("")
 	out.buf.Reset()
 	errOut.buf.Reset()
 	if err := HostAddCmd(ctx, e, "spare"); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimRight(out.buf.String(), "\n"); !strings.HasPrefix(got, "rjt_") || strings.Contains(got, "\n") {
+	if got := strings.TrimRight(out.buf.String(), "\n"); got == "" || strings.ContainsAny(got, " \n") {
 		t.Fatalf("stdout is the token alone: %q", out.buf.String())
 	}
 	if got := errOut.buf.String(); !strings.HasPrefix(got, "spare: this is its join token.") || !strings.Contains(got, "/docs/own-hardware") {
@@ -127,7 +127,12 @@ func TestHostAddListRm(t *testing.T) {
 	if err := HostRmCmd(ctx, e, "spare", false, yes); err != nil {
 		t.Fatal(err)
 	}
-	// Removing it again is not an error: the api answers 204 either way.
+	// Removing it again is not an error: the api answers 204 either way,
+	// and the retired row the api keeps is not listed, so the second
+	// `host rm` cannot find it by name.
+	if err := HostRmCmd(ctx, e, "spare", true, nil); err == nil || !strings.Contains(err.Error(), "You have no host named spare") {
+		t.Fatalf("rm twice: %v", err)
+	}
 	if err := HostRmCmd(ctx, e, "mac-mini", true, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +193,7 @@ func TestOfflineOwnHostIsNamedEverywhereItShows(t *testing.T) {
 	if err := ProjectsCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.Contains(got, "todo-app: mac-mini has not answered for 14m.\n") {
+	if got := out.buf.String(); !strings.Contains(got, "todo-app: your host mac-mini has not answered for 14m.\n") {
 		t.Fatalf("repose ls:\n%s", got)
 	}
 
@@ -196,7 +201,7 @@ func TestOfflineOwnHostIsNamedEverywhereItShows(t *testing.T) {
 	if err := StatusCmd(ctx, e, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.Contains(got, "mac-mini has not answered for 14m") {
+	if got := out.buf.String(); !strings.Contains(got, "your host mac-mini has not answered for 14m") {
 		t.Fatalf("repose status:\n%s", got)
 	}
 

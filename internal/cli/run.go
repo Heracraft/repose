@@ -1451,7 +1451,7 @@ func waitHost(ctx context.Context, e *Env, project *Project, pr *progress) error
 	// because they are the one who turns it back on (DECISIONS I-1370).
 	what := project.Slug + "'s server"
 	if h, ok := hostsOffline(ctx, e.Client)[project.HostID]; ok {
-		what = h.Name
+		what = "your host " + h.Name
 	}
 	pr.Phase("Waiting for "+what+" to come back", "")
 	for project.HostUnreachable {

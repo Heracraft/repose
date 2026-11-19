@@ -44,6 +44,12 @@ type Plan struct {
 	// price at once: the founding offer's first 30 (DECISIONS I-672). Zero
 	// is no limit.
 	IntroLimit int
+	// Hosts is how many hosts of their own the plan lets the account
+	// add (DECISIONS I-1366): one on Own hardware, none on the
+	// plans that sell memory on repose's own fleet. `POST /hosts` reads
+	// this and nothing else holds the figure, so selling a second host
+	// is one number here.
+	Hosts int
 }
 
 // The three plans (DECISIONS I-362) at ladder C's prices, and Solo's

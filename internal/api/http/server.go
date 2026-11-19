@@ -124,6 +124,10 @@ type Deps struct {
 	// nil makes the wake route answer 503 and keep_awake take effect at
 	// the next rest rule rather than at once.
 	Resting Waker
+	// DashboardURL is the deployment's own origin, which the addresses
+	// in a host refusal are built from (DECISIONS I-1366). Empty uses
+	// https://repose.run, the same fallback billing.Config has.
+	DashboardURL string
 	// ViewOrigins are the browser origins the view's stream route accepts
 	// an upgrade from (the dashboard's own, DASHBOARD_URL). The ticket is
 	// a cookie, so it is ambient; empty switches the check off, which is

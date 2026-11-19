@@ -36421,3 +36421,112 @@ on this page a user cannot undo and cannot discover any other way).
 *Checked:* `nix flake check` with `repose.host.owned` on and a blobUrl
 set fails on the assertion; the docs page's section and
 `TestHostAddListRm`'s prompt assertion.
+**I-1366. A host has an owning account: placement puts only that
+account's projects on it, and the seat count, the waitlist and the host
+gauges leave it out (19a mac-mini-ownership, 2026-11-19).** *Made during
+implementation* (`docs/workstreams/19-mac-mini.md` §4, the settled shape
+the owner was given; the business shape is I-647 shape A and the plan is
+I-1364).
+
+- *The column.* `hosts.owner_account_id` (migration 0048), nullable;
+  null is a host repose runs, which is every host that existed before
+  this. There is no `host_join_tokens` table, on this branch or before
+  it: the single-use token has always been `hosts.join_token_hash` on the
+  row, so "the join token carries the owner" is this column being set at
+  the mint (`hostmgr.MintJoinTokenIn`), and the host binds to its owner
+  by the id the token already names. The item's §5 wording reads as if a
+  table existed; it does not, and inventing one would have put the same
+  fact in two places.
+- *Host names are unique per owner, not globally* (19c found it before
+  any code ran). `hosts_name_key` is replaced by two partial unique
+  indexes, `(name) where owner_account_id is null` and
+  `(owner_account_id, name) where owner_account_id is not null`, because
+  Postgres counts nulls as distinct and every operator host carries the
+  null. `store.GetHostByName` therefore resolves the operator's own hosts
+  only -- `repose-admin hosts drain mac-mini` must not find a user's Mac
+  -- and `GetAccountHostByName` is the account-scoped read. Two users may
+  both call their machine `mac-mini`, and neither is ever told the other
+  exists.
+- *Placement.* `scheduler.PickHost` and `scheduler.Freeing` take a
+  `Target` (the account, what the project asked for, whether the
+  account's plan sells memory on repose's own hosts) and answer one more
+  term, `ownedSQL`: a host the account owns is eligible unless the
+  project asked for the fleet and may have it; a host repose runs is
+  eligible only when the plan sells fleet memory, and then only when the
+  project asked for it or the account owns no host at all. A user who
+  bought a Mac gets their machines on the Mac without saying so per
+  project, and a stranger's project never reaches it.
+- *`projects.placement`* (`own`, the default, or `hosted`) is the escape
+  hatch the item asks for. It is read at a create and at a re-placement
+  and never after, because a project is pinned to its host for life, so
+  `PATCH /projects/:id` does not take it: a field nothing would honour is
+  worse than no field. `placement: "hosted"` from an account whose plan
+  sells no fleet memory is `402 payment_required`
+  `detail.reason = "hosted_plan_required"` at the route, not a placement
+  failure, because `capacity` is a sentence about repose's fleet and no
+  answer to a user who asked for the fleet on purpose.
+- *`retired` and `lost` do not count as owning a host.* A user whose only
+  machine is gone is released to the fleet rather than trapped on it;
+  every other state counts, so a Mac that is merely switched off answers
+  "your host is not answering" and never a silent placement on hardware
+  the user is not paying for. That sentence is why
+  `scheduler.ErrNoOwnHost` exists beside `ErrNoCapacity` (the shape of
+  `ErrNoCPUCapacity`, I-736): the code stays `capacity`, so the api still
+  answers 503 and the op can be retried when the machine is back, and the
+  message names the host and its state.
+- *The three routes.* `GET /hosts` (the account's own, oldest first),
+  `POST /hosts` (`{name?}`, 201 with the host plus `join_token`,
+  `join_token_expires_at` and `install`, the one answer that carries
+  them), `DELETE /hosts/{id}` (204; drain, retire, clear the certificate
+  serials and the unused join token). Refusals: `400 invalid` `name`,
+  `409 conflict` `name_taken`, `409 conflict` `host_limit` with
+  `detail.limit`, `402 payment_required` `own_hardware_plan_required`,
+  `404 not_found` for a host that is not the account's, and `409
+  conflict` `host_has_projects` with the slugs while machines are still
+  placed there -- a machine moves host only by restore (DESIGN.md §6), so
+  retiring a host under three of them would orphan them. A repeated
+  DELETE answers 204: a client that lost the first answer must be able to
+  ask again.
+- *`install` is `{command, url}`, and `command` may be empty.* It is the
+  `host_install_command` setting (`repose-admin hosts install-command`)
+  with `%s` replaced by the token, and the docs page's address. A setting
+  rather than an environment variable for the reason `loki_url` is one
+  (I-95): the installer lives outside this deployment, 19f ships it, and
+  moving it must not be a redeploy of the api. Nothing is recorded yet,
+  so the api sends an empty `command` and the CLI and the dashboard show
+  the token and the page instead of a curl line nobody serves. An
+  invented line would have been the first thing a Mac mini owner pasted.
+- *The host count is the plan's.* `billing.Plan.Hosts` is 1 on Own
+  hardware (19d's row) and the zero value on Solo, Plus and Pro;
+  `Gate.HostsAllowed` reads it, and a billing-exempt account is allowed
+  one whatever the plans say (`billing.ExemptHosts`), so the owner can
+  add their own Mac without selling themselves a plan. A second place
+  that knew "one host" would be a second place to change when the owner
+  sells two.
+- *Seats and the gauges.* The seat count's query gains
+  `owner_account_id is null`: a seat is a place on hardware repose
+  bought, so a Mac somebody added must not raise the number of plans the
+  fleet will sell, and its owner holds no seat for the machines they run
+  on it. `repose_api_hosts` and `repose_api_host_state` likewise count
+  only the fleet, because every host alert reads them and
+  `HostUnreachable`, `HostUnregistered` and `HostNotInTargets` would
+  otherwise page the owner because a stranger's Mac mini was switched off
+  at night or was never copied into the Prometheus targets. The owner
+  still gets a number for them, `repose_api_owned_hosts{state}`, with no
+  alert on it, and `repose_api_schedule_total{result="no_own_host"}` is
+  outside `ScheduleRefused` for the same reason.
+- *Not here, on purpose.* The plan's **memory** gate still counts every
+  running machine, including one on the account's own host, so 19d has to
+  make it not (I-1364); nothing in I-1366 touches
+  `internal/billing/gate.go`. `limits.hosts` on `GET /me` is 19d's.
+  `docs/SECURITY.md` "A host you do not own" is 19b's (I-1368) and the
+  placement rule belongs in it. `repose host`, the public page's install
+  half and the offline wording in `repose ls` are 19c's (I-1370).
+- *Evidence.* `internal/api/scheduler`'s five ownership tests, shown red
+  with `ownedSQL` replaced by a term that is always true: the owner's
+  project went to `fleet-01` instead of `mac-mini`, a stranger's project
+  went to `mac-mini` once the fleet host was retired, an Own hardware
+  account reached `fleet-01`, an owner with an unreachable Mac reached
+  `fleet-01`, and `Freeing` answered true for a stranger waiting on a
+  guest stopping on somebody else's Mac. The route tests and the
+  dashboard's are in the commit messages.

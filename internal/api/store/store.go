@@ -106,6 +106,12 @@ type Project struct {
 	// Multiplexer is what the guest's next start runs, tmux or herdr
 	// (0017, DECISIONS I-502); project_json carries it to the guest.
 	Multiplexer string `db:"multiplexer"`
+	// Placement is where the machine goes when it is placed, `own` or
+	// `hosted` (0048, DECISIONS I-1366): `own` is a host this account
+	// owns when it owns any and the hosted fleet when it owns none.
+	// Read at a create and at a re-placement, never after, because a
+	// project is pinned to its host for life.
+	Placement string `db:"placement"`
 	// DiskHeldBytes is the bytes the project's volume holds, the figure
 	// the plan's disk counts (0019, DECISIONS I-585): the thin volume's
 	// allocated blocks from the newest sample, or the estimate a new
@@ -134,7 +140,7 @@ func (p *Project) HeldBytes() int64 {
 	return p.VolumeBytes
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, disk_held_bytes, disk_held_at, resting_since, keep_awake`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake`
 
 // Host is a hosts row. Cores is the host's physical cores, which
 // placement counts committed guest vCPUs against (0027, DECISIONS I-735,
@@ -508,6 +514,23 @@ func SetProjectState(ctx context.Context, q Querier, id uuid.UUID, state string)
 }
 
 // --- hosts ------------------------------------------------------------
+
+// Where a project's machine goes when it is placed (0048, DECISIONS
+// I-1366). `own` is a host the account owns when it owns any and the
+// hosted fleet when it owns none; `hosted` is the fleet whatever it owns.
+const (
+	PlacementOwn    = "own"
+	PlacementHosted = "hosted"
+)
+
+// NormalizePlacement is the value a row carries, with the default for a
+// row written before 0048 or by a client that sent none.
+func NormalizePlacement(p string) string {
+	if p == PlacementHosted {
+		return PlacementHosted
+	}
+	return PlacementOwn
+}
 
 // GetHost fetches a host by id.
 func GetHost(ctx context.Context, q Querier, id uuid.UUID) (*Host, error) {

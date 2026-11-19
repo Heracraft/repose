@@ -29,14 +29,14 @@ describe('a host that has stopped answering', () => {
 	it('names a host the user owns, with how long it has been quiet', () => {
 		const hosts = new Map([['h1', host()]]);
 		expect(offlineHostLine({ host_id: 'h1', host_unreachable: true }, hosts, now)).toBe(
-			'mac-mini has not answered for 14m'
+			'your host mac-mini has not answered for 14m'
 		);
 	});
 
 	it('leaves out a time it does not have', () => {
 		const hosts = new Map([['h1', host({ last_heartbeat_at: null })]]);
 		expect(offlineHostLine({ host_id: 'h1', host_unreachable: true }, hosts, now)).toBe(
-			'mac-mini has not answered'
+			'your host mac-mini has not answered'
 		);
 	});
 

@@ -20,8 +20,10 @@ export function offlineHostLine(
 	if (!p.host_unreachable) return '';
 	const h = p.host_id ? hosts.get(p.host_id) : undefined;
 	if (!h) return 'server not answering';
-	if (!h.last_heartbeat_at) return `${h.name} has not answered`;
-	return `${h.name} has not answered for ${uptime(h.last_heartbeat_at, now)}`;
+	// "your host <name>" is the api's own wording for a placement it
+	// refused (ops.ownHostRefusal), so the two say the same thing.
+	if (!h.last_heartbeat_at) return `your host ${h.name} has not answered`;
+	return `your host ${h.name} has not answered for ${uptime(h.last_heartbeat_at, now)}`;
 }
 
 /** The host states in the words a user reads, as `repose host ls` prints them. */

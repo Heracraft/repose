@@ -6,23 +6,40 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
 
-// Hardware a user owns (DECISIONS I-1366, I-1370): `GET /hosts`,
-// `POST /hosts` and `DELETE /hosts/{id}`. The fake keeps one row per
-// host with its owner, mints a single-use join token per `POST /hosts`
-// and hands back the install step the real api composes, so the CLI and
-// the dashboard see the shape they will see in production.
+// The hosts a user owns, of docs/interfaces/api.md "Hosts you own"
+// (DECISIONS I-1366). The fake keeps the shapes `repose host` and the
+// dashboard's Hosts page read: the list, the mint's token and install
+// line, and every refusal, so a test sees what the api would answer.
 //
-// The producer is workstream 19a; this fake is what 19c builds against
-// until that merges (docs/interfaces/README.md "Fakes").
+// A fake host never registers by itself, because nothing here runs
+// hostd. `SetOwnedHostState` is how a test moves one to `ready`,
+// `unreachable` or anything else, and `SetOwnedHostMachines` gives it
+// the project counts the list shows.
 
-// OwnedHost is a row of GET /hosts. The name is OwnedHost here because
-// Host in this package is already a row of GET /internal/hosts, the
-// edge's WireGuard peer list.
+// FakeHostInstall is the install line the fake answers, with the token
+// already in it. The real api's is the `host_install_command` setting
+// and empty until an operator records one; the fake fills it so a test
+// of the printing has something to print, and SetHostInstall("") is how
+// a test takes it away again.
+const FakeHostInstall = "curl -fsSL https://repose.test/host.sh | REPOSE_JOIN_TOKEN=%s sh"
+
+// maxFakeHosts is the host count the plans allow: one on Own hardware
+// (DECISIONS I-1364).
+const maxFakeHosts = 1
+
+// FakeDashboard is the origin the fake builds the refusals' and the
+// install's addresses on.
+const FakeDashboard = "https://repose.run"
+
+var hostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// OwnedHost is one host the account owns, as the api returns it. Host
+// is taken by the row of GET /internal/hosts, which is the edge's view
+// of the fleet and a different thing entirely.
 type OwnedHost struct {
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
@@ -34,236 +51,220 @@ type OwnedHost struct {
 	Cores           int        `json:"cores"`
 	Projects        int        `json:"projects"`
 	RunningProjects int        `json:"running_projects"`
-	LastHeartbeatAt *time.Time `json:"last_heartbeat_at"`
-	RegisteredAt    *time.Time `json:"registered_at"`
+	LastHeartbeatAt *time.Time `json:"last_heartbeat_at,omitempty"`
+	RegisteredAt    *time.Time `json:"registered_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+	// The three the POST answer alone carries.
+	JoinToken          string            `json:"join_token,omitempty"`
+	JoinTokenExpiresAt *time.Time        `json:"join_token_expires_at,omitempty"`
+	Install            *OwnedHostInstall `json:"install,omitempty"`
 }
 
-// hostInstall is the step the user runs on the machine being added.
-type hostInstall struct {
+// OwnedHostInstall is OwnedHost.install: the line to run on the machine and the
+// page that explains it. Command is empty when the api has no line
+// recorded, and a client then shows the token and the page.
+type OwnedHostInstall struct {
 	Command string `json:"command"`
 	URL     string `json:"url"`
 }
 
-type ownedHost struct {
+type ownedHostRec struct {
 	OwnedHost
-	owner        string
-	token        string
-	tokenExpires time.Time
+	owner string
 }
 
-var hostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
-
-// hostJoinTokenValidity is hostmgr.JoinTokenValidity.
-const hostJoinTokenValidity = 24 * time.Hour
-
-// defaultHostLimit is the Own hardware plan's one host (19d's plan row
-// is what makes it 1 on the real api; cited by name, not by id, until
-// that entry is written).
-const defaultHostLimit = 1
-
-// hostInstallDocsURL is the page `install.url` always carries.
-const hostInstallDocsURL = "https://repose.run/docs/own-hardware"
-
-func (f *Fake) ownedHostsOf(user string) []*ownedHost {
-	var out []*ownedHost
+// SetOwnedHostState moves one of an account's hosts to a state, which is what
+// a registration, a heartbeat or a silence would have done. The host
+// gets its memory and its registration times with `ready`, so a test
+// does not have to fill them in.
+func (f *Fake) SetOwnedHostState(name, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, h := range f.ownedHosts {
-		if h.owner == user {
-			out = append(out, h)
+		if h.Name != name {
+			continue
+		}
+		h.State = state
+		if state == "ready" && h.RegisteredAt == nil {
+			now := f.now()
+			h.RegisteredAt = &now
+			h.LastHeartbeatAt = &now
+			h.MemBytes, h.VCPUs, h.Cores, h.Arch = 24<<30, 8, 8, "aarch64"
+			h.JoinToken = ""
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out
 }
 
-func (f *Fake) listOwnedHosts(w http.ResponseWriter, r *http.Request) *apiError {
-	u := userFrom(r)
-	out := []OwnedHost{}
-	for _, h := range f.ownedHostsOf(u.ID) {
-		row := h.OwnedHost
-		row.Projects, row.RunningProjects = f.placedOn(h.ID, u.ID)
-		out = append(out, row)
+// SetOwnedHostMachines sets the project counts the list shows for a host.
+func (f *Fake) SetOwnedHostMachines(name string, projects, running int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range f.ownedHosts {
+		if h.Name == name {
+			h.Projects, h.RunningProjects = projects, running
+		}
 	}
-	writeJSON(w, http.StatusOK, out)
+}
+
+// SetHostInstall replaces the install line the mint answers; "" is an
+// api with none recorded.
+func (f *Fake) SetHostInstall(line string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hostInstall, f.hostInstallSet = line, true
+}
+
+// SetHostLimit replaces the hosts an account may own, which is the
+// plan's figure in the real api; 0 is a plan that sells none.
+func (f *Fake) SetHostLimit(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hostLimit = &n
+}
+
+// hostsAllowed is the plan's figure in the real api. The fake allows
+// one to every account, exempt or not (billing.ExemptHosts is one too),
+// and SetHostLimit is how a test asks for a plan that sells none.
+func (f *Fake) hostsAllowed() int {
+	if f.hostLimit != nil {
+		return *f.hostLimit
+	}
+	return maxFakeHosts
+}
+
+func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
+	u := userFrom(r)
+	out := []*OwnedHost{}
+	for _, h := range f.ownedHosts {
+		if h.owner != u.ID {
+			continue
+		}
+		row := h.OwnedHost
+		row.JoinToken, row.JoinTokenExpiresAt, row.Install = "", nil, nil
+		out = append(out, &row)
+	}
+	writeJSON(w, 200, out)
 	return nil
 }
 
-// placedOn counts the account's live machines on a host and how many of
-// them hold memory.
-func (f *Fake) placedOn(hostID, user string) (placed, running int) {
-	for _, p := range f.projects {
-		if p.owner != user || p.destroyed || p.HostID != hostID {
-			continue
-		}
-		placed++
-		if p.State == "running" {
-			running++
-		}
-	}
-	return placed, running
-}
-
-// slugsOn is the account's live machines on a host, for the refusal to
-// retire a host under them.
-func (f *Fake) slugsOn(hostID, user string) []string {
-	var out []string
-	for _, p := range f.projects {
-		if p.owner == user && !p.destroyed && p.HostID == hostID {
-			out = append(out, p.Slug)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func (f *Fake) createOwnedHost(w http.ResponseWriter, r *http.Request) *apiError {
-	u := userFrom(r)
+func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
 		Name string `json:"name"`
 	}
 	if e := decodeBody(r, &body, true); e != nil {
 		return e
 	}
-	mine := f.ownedHostsOf(u.ID)
-	name := body.Name
+	name := strings.TrimSpace(body.Name)
+	if name != "" && !hostNameRe.MatchString(name) {
+		return invalid("a host name is lower-case letters, digits and dashes, at most 32 characters, like mac-mini").
+			withDetail(map[string]any{"reason": "name"})
+	}
+	u := userFrom(r)
+	allowed := f.hostsAllowed()
+	if allowed <= 0 {
+		return errf("payment_required", "Your plan does not include a host of your own. Choose the Own hardware plan at %s/billing.", FakeDashboard).
+			withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
+	}
+	have := 0
+	for _, h := range f.ownedHosts {
+		if h.owner == u.ID && h.State != "retired" && h.State != "lost" {
+			have++
+		}
+		if h.owner == u.ID && name != "" && h.Name == name {
+			return errf("conflict", "you already have a host called %s", name).
+				withDetail(map[string]any{"reason": "name_taken"})
+		}
+	}
+	if have >= allowed {
+		word := "hosts"
+		if allowed == 1 {
+			word = "host"
+		}
+		return errf("conflict", "your plan includes %d %s; remove one before you add another", allowed, word).
+			withDetail(map[string]any{"reason": "host_limit", "limit": allowed})
+	}
 	if name == "" {
-		// The api names it when the user does not: host-1, host-2, ...
-		// never a name another account could already hold.
-		for n := 1; ; n++ {
-			name = fmt.Sprintf("host-%d", n)
-			taken := false
-			for _, h := range mine {
-				if h.Name == name {
-					taken = true
-				}
-			}
-			if !taken {
-				break
-			}
-		}
+		name = f.nextHostName(u.ID)
 	}
-	if !hostNameRe.MatchString(name) {
-		return errf("invalid", "a host name is 1 to 32 of a-z, 0-9 and -, starting with a letter or digit").withDetail(map[string]any{"reason": "name"})
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return errf("internal", "%v", err)
 	}
-	for _, h := range mine {
-		if h.Name == name {
-			return errf("conflict", "you already have a host named %s", name).withDetail(map[string]any{"reason": "name_taken"})
-		}
+	expires := f.now().Add(24 * time.Hour)
+	h := &ownedHostRec{owner: u.ID, OwnedHost: OwnedHost{
+		ID: f.nextID(), Name: name, State: "registering", Provider: "metal",
+		CreatedAt: f.now(), JoinToken: base64.RawURLEncoding.EncodeToString(raw), JoinTokenExpiresAt: &expires,
+	}}
+	line := FakeHostInstall
+	if f.hostInstallSet {
+		line = f.hostInstall
 	}
-	limit := f.hostLimit
-	if limit == 0 {
-		limit = defaultHostLimit
-	}
-	if limit < 0 {
-		// No Own hardware plan: the account may own none at all.
-		return errf("payment_required", "hardware of your own needs the Own hardware plan").withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
-	}
-	if len(mine) >= limit {
-		return errf("conflict", "your plan takes %d host(s)", limit).withDetail(map[string]any{"reason": "host_limit", "limit": limit})
-	}
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	token := "rjt_" + base64.RawURLEncoding.EncodeToString(b)
-	now := time.Now().UTC()
-	h := &ownedHost{
-		owner: u.ID, token: token, tokenExpires: now.Add(hostJoinTokenValidity),
-		OwnedHost: OwnedHost{ID: f.nextID(), Name: name, State: "registering", CreatedAt: now},
-	}
-	f.ownedHosts = append(f.ownedHosts, h)
-	// The install step is the `host_install_command` setting with the
-	// token in place of its %s; no setting recorded means no line, and
-	// then the token is all the api can hand over (19f owns the real
-	// one).
 	command := ""
-	if f.hostInstall != "" {
-		command = strings.Replace(f.hostInstall, "%s", token, 1)
+	if strings.Contains(line, "%s") {
+		command = strings.Replace(line, "%s", h.JoinToken, 1)
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"id": h.ID, "name": h.Name, "state": h.State,
-		"mem_bytes": 0, "vcpus": 0, "cores": 0, "projects": 0, "running_projects": 0,
-		"last_heartbeat_at": nil, "registered_at": nil, "created_at": h.CreatedAt,
-		"join_token":            token,
-		"join_token_expires_at": h.tokenExpires,
-		"install":               hostInstall{Command: command, URL: hostInstallDocsURL},
-	})
+	h.Install = &OwnedHostInstall{Command: command, URL: FakeDashboard + "/docs/own-hardware"}
+	f.ownedHosts = append(f.ownedHosts, h)
+	writeJSON(w, 201, h.OwnedHost)
 	return nil
 }
 
-func (f *Fake) deleteOwnedHost(w http.ResponseWriter, r *http.Request) *apiError {
+func (f *Fake) deleteHost(w http.ResponseWriter, r *http.Request) *apiError {
 	u := userFrom(r)
 	id := r.PathValue("id")
-	for i, h := range f.ownedHosts {
-		if h.owner != u.ID || h.ID != id {
+	for _, h := range f.ownedHosts {
+		if h.ID != id || h.owner != u.ID {
 			continue
 		}
-		// A machine moves host only by restore, so a host under live
-		// machines is not retired (19a): the user clears them first.
-		if slugs := f.slugsOn(h.ID, u.ID); len(slugs) > 0 {
-			return errf("conflict", "%s still has machines on it", h.Name).withDetail(map[string]any{"reason": "host_has_projects", "projects": slugs})
+		if h.State == "retired" {
+			w.WriteHeader(204)
+			return nil
 		}
-		f.ownedHosts = append(f.ownedHosts[:i], f.ownedHosts[i+1:]...)
-		w.WriteHeader(http.StatusNoContent)
+		if h.Projects > 0 {
+			slugs := f.slugsOnHost(h.ID, u.ID, h.Projects)
+			word := "machines"
+			if len(slugs) == 1 {
+				word = "machine"
+			}
+			return errf("conflict", "%s still holds %d %s. A machine moves host only by restoring a snapshot, so remove them first: %s.",
+				h.Name, len(slugs), word, strings.Join(slugs, ", ")).
+				withDetail(map[string]any{"reason": "host_has_projects", "projects": slugs})
+		}
+		h.State = "retired"
+		h.JoinToken = ""
+		w.WriteHeader(204)
 		return nil
 	}
-	// A second remove of the same host is not an error (19a).
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+	return notFound("host " + id)
 }
 
-// AddOwnedHost adds a registered host of the canned user's, as one that
-// has joined and is answering, and returns its id.
-func (f *Fake) AddOwnedHost(name string) string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	now := time.Now().UTC()
-	h := &ownedHost{owner: CannedUser.ID, OwnedHost: OwnedHost{
-		ID: f.nextID(), Name: name, State: "ready", Provider: "mac", Arch: "aarch64",
-		MemBytes: 24 << 30, VCPUs: 8, Cores: 8,
-		LastHeartbeatAt: &now, RegisteredAt: &now, CreatedAt: now,
-	}}
-	f.ownedHosts = append(f.ownedHosts, h)
-	return h.ID
-}
-
-// SetOwnedHostOffline puts a host in `unreachable` and moves its last
-// heartbeat back by quiet, as the api's sweep does for a host that has
-// stopped answering.
-func (f *Fake) SetOwnedHostOffline(id string, quiet time.Duration) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, h := range f.ownedHosts {
-		if h.ID == id {
-			h.State = "unreachable"
-			seen := time.Now().UTC().Add(-quiet)
-			h.LastHeartbeatAt = &seen
+// slugsOnHost names the account's live projects the list says are on the
+// host. The fake places nothing, so a test that set a count without
+// making projects gets names that stand for them.
+func (f *Fake) slugsOnHost(hostID, owner string, count int) []string {
+	var slugs []string
+	for _, p := range f.projects {
+		if p.owner == owner && !p.destroyed && p.HostID == hostID {
+			slugs = append(slugs, p.Slug)
 		}
 	}
+	for i := len(slugs); i < count; i++ {
+		slugs = append(slugs, fmt.Sprintf("machine-%d", i+1))
+	}
+	return slugs
 }
 
-// SetHostLimit is how many hosts one account may add; 0 restores the
-// plan's one, and a negative number is an account with no Own hardware
-// plan, which may own none.
-func (f *Fake) SetHostLimit(n int) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.hostLimit = n
-}
-
-// SetHostInstallCommand is the api's `host_install_command` setting,
-// with %s where the join token goes; "" is an api with none recorded,
-// which is what it has until 19f sets the Mac's line.
-func (f *Fake) SetHostInstallCommand(cmd string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.hostInstall = cmd
-}
-
-// SetProjectHost moves a project onto a host, as placement does for an
-// account that owns one (I-1366).
-func (f *Fake) SetProjectHost(projectID, hostID string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if p, ok := f.projects[projectID]; ok {
-		p.HostID = hostID
+func (f *Fake) nextHostName(owner string) string {
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("host-%d", i)
+		taken := false
+		for _, h := range f.ownedHosts {
+			if h.owner == owner && h.Name == name {
+				taken = true
+			}
+		}
+		if !taken {
+			return name
+		}
 	}
 }

@@ -43,7 +43,7 @@ test("an offline host of the user's own is named in the list and on the machine'
 		const row = page
 			.locator('table.ptable tbody tr')
 			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
-		await expect(row).toContainText('mac-mini has not answered for 14m');
+		await expect(row).toContainText('your host mac-mini has not answered for 14m');
 		// The old line, which told a Mac mini owner nothing, is gone.
 		await expect(row).not.toContainText('server not answering');
 		await shots(page, 'offline-own-host-list');
@@ -51,7 +51,7 @@ test("an offline host of the user's own is named in the list and on the machine'
 		// The same words on the machine's own page, in the banner.
 		await page.goto(`/projects/${p.id}`);
 		const banner = page.getByTestId('host-unreachable');
-		await expect(banner).toContainText('mac-mini has not answered for 14m');
+		await expect(banner).toContainText('your host mac-mini has not answered for 14m');
 		await expect(banner).not.toContainText('The server running this machine');
 		await shots(page, 'offline-own-host');
 
@@ -62,7 +62,7 @@ test("an offline host of the user's own is named in the list and on the machine'
 			.locator('ul.mgroup li.mrow')
 			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) })
 			.first();
-		await expect(stacked).toContainText('mac-mini has not answered for 14m');
+		await expect(stacked).toContainText('your host mac-mini has not answered for 14m');
 	} finally {
 		await destroyProject(api, p.id);
 	}
