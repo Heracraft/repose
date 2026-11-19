@@ -185,7 +185,7 @@ func TestOfflineOwnHostIsNamedEverywhereItShows(t *testing.T) {
 	if err := HostLsCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.Contains(got, "mac-mini  offline") || !strings.Contains(got, "14m ago") {
+	if got := out.buf.String(); !strings.Contains(got, "mac-mini  offline") || !strings.Contains(got, "14m ago") || !strings.Contains(got, "24 GB") {
 		t.Fatalf("host ls:\n%s", got)
 	}
 

@@ -133,12 +133,17 @@ func HostLsCmd(ctx context.Context, e *Env) error {
 }
 
 // hostMemory is the host's memory, "" before it has registered and said
-// how much it has.
+// how much it has. Whole gigabytes, because a machine is sold in them
+// and reports a little less: a 24 GB Mac's meminfo is about 23.7 GiB,
+// and "23.7 GB" reads as the wrong machine.
 func hostMemory(h Host) string {
 	if h.MemBytes <= 0 {
 		return ""
 	}
-	return humanBytes(h.MemBytes)
+	if h.MemBytes < 1<<30 {
+		return humanBytes(h.MemBytes)
+	}
+	return fmt.Sprintf("%d GB", (h.MemBytes+1<<29)>>30)
 }
 
 // hostSeen is when the host last spoke to the api, "" for one that
