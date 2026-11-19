@@ -44,9 +44,11 @@ func hostStateWord(state string) string {
 	return state
 }
 
-// HostAddCmd implements `repose host add [NAME]`. The install step is
-// the whole of stdout, so it pipes; what to do with it is on stderr.
-func HostAddCmd(ctx context.Context, e *Env, name string) error {
+// HostAddCmd implements `repose host add [NAME]`. On a Mac with Apple
+// silicon the mint is followed by the install here (I-1380); elsewhere
+// the install step is the whole of stdout, so it pipes, and what to do
+// with it is on stderr.
+func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) error {
 	if name != "" {
 		if err := checkHostName(name); err != nil {
 			return err
@@ -58,6 +60,21 @@ func HostAddCmd(ctx context.Context, e *Env, name string) error {
 	}
 	if e.JSON {
 		return writeJSONOut(e.Out, h)
+	}
+	if onAppleSilicon() {
+		argument := ""
+		if h.Install != nil {
+			argument = h.Install.Argument
+		}
+		if argument == "" {
+			argument = encodeTokenBundle(h.JoinToken)
+		}
+		fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
+		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
+			return err
+		}
+		fmt.Fprintf(e.ErrOut, "%s is starting. It joins your account in a few minutes: repose host ls\n", h.Name)
+		return nil
 	}
 	// stdout is the one thing to carry to the machine, so it pipes: the
 	// install step the api composed, or, while no install line is
@@ -191,7 +208,44 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 	if err := e.Client.DeleteHost(ctx, h.ID); err != nil {
 		return hostErr(err, name)
 	}
+	// The Mac this runs on, when it is the one that runs h: the appliance
+	// goes with the host. A Mac that runs another host keeps it and says
+	// which; one whose appliance was added with --join has no recorded
+	// name and keeps it too, `--local` being the way to remove that one.
+	switch local, installed := localAppliance(e); {
+	case !installed:
+	case local == h.Name:
+		if err := applianceRemove(e); err != nil {
+			return exitf(ExitGeneric, "%s is off your account, but the appliance on this Mac could not be removed: %v", h.Name, err)
+		}
+	case local != "":
+		fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; its appliance stays.\n", local, h.Name)
+	default:
+		fmt.Fprintf(e.ErrOut, "This Mac runs an appliance added with --join; `repose host rm --local` removes it.\n")
+	}
 	return nil
+}
+
+// HostRmLocalCmd implements `repose host rm --local`: the appliance on
+// this Mac, and nothing on the account.
+func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error)) error {
+	name, installed := localAppliance(e)
+	if !installed {
+		return exitf(ExitGeneric, "There is no appliance on this Mac.")
+	}
+	if !yes {
+		if confirm == nil {
+			return exitf(ExitUsage, "Removing the appliance on this Mac needs a confirmation; pass --yes to skip it.")
+		}
+		what := "the appliance on this Mac"
+		if name != "" {
+			what = name + "'s appliance on this Mac"
+		}
+		if err := confirmOr(confirm, fmt.Sprintf("Remove %s, with every machine and snapshot on its disk? [y/N] ", what), "Nothing removed."); err != nil {
+			return err
+		}
+	}
+	return applianceRemove(e)
 }
 
 // hostRemovePrompt says what the removal costs. The api refuses while

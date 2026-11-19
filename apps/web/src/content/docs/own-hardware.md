@@ -30,23 +30,17 @@ Repose runs on your Mac as one virtual machine, and nothing of yours is touched:
 
 ## Adding it
 
-Run this on your laptop, in any folder:
+On the Mac mini, with the [CLI installed](/docs/cli) and logged in:
 
 ```shell
 repose host add
 ```
 
-It prints one step and nothing else, so you can pipe it. Carry that step to the machine you are adding and run it there. It carries a token that works once, within 24 hours, and the machine's place on repose's network. Treat it as a password until the machine has joined: anyone who runs it adds a machine to your account. If you lose it, or let it go stale, `repose host rm` and `repose host add` again; the old step then opens nothing.
+It says what it is about to do, then does it: fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 2 GB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd agent that starts it again at every login. While the machine runs, the Mac does not sleep. Nothing needs your password.
 
-On a Mac mini the step is, with the argument `repose host add` printed:
+From any other machine, `repose host add` prints one step and nothing else, so you can pipe it: `repose host add --join <argument>`, to run on the Mac. It carries a token that works once, within 24 hours, and the machine's place on repose's network. Treat it as a password until the machine has joined: anyone who runs it adds a machine to your account. If you lose it, or let it go stale, `repose host rm` and `repose host add` again; the old step then opens nothing.
 
-```shell
-curl -fsSL https://repose.run/mac | sh -s -- <argument>
-```
-
-It fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 1.5 GB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd agent that starts it again at every login. While the machine runs, the Mac does not sleep. The machine's disk is one file there, `disk.raw`, 100 GB unless the volume has less free (`REPOSE_DISK_GB` sets it); it takes space only as your machines fill it, and `repose-appliance grow 200` makes it larger later. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`REPOSE_VM_MEMORY_MIB`, `REPOSE_VM_CPUS`).
-
-`~/Library/Application Support/repose/bin/repose-appliance` is the launcher: `start`, `stop`, `status`, `log` (the machine's console), `grow GB`, and `uninstall`, which removes the machine and its disk, every snapshot on it included, after one question. Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
+The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
 
 The machine sets repose up and joins your account:
 
@@ -95,7 +89,7 @@ todo-app: your host mac-mini has not answered for 14m.
 
 `repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else.
 
-A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac that was switched off or rebooted stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not. `repose-appliance stop` and a shutdown of the Mac give your machines 20 seconds to finish writing before they stop.
+A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac that was switched off or rebooted stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not. `repose host rm` on the Mac and a shutdown of the Mac give your machines 20 seconds to finish writing before they stop.
 
 ## Snapshots stay on its disk
 
@@ -113,7 +107,7 @@ Only your own projects run on your hardware; nobody else's is ever placed there.
 repose host rm mac-mini
 ```
 
-Repose asks once, then stops placing projects there and retires the host. The machine itself is untouched: nothing of yours on it is deleted, and it keeps running until you turn it off. On a Mac, `repose-appliance uninstall` turns it off and removes it, disk included.
+Repose asks once, then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
 
 A host still holding machines is not removed. A machine moves hardware only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore) elsewhere, so `repose rm` or restore each of them first, and `repose host rm` then tells you which are in the way.
 

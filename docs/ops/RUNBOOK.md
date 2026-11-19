@@ -244,16 +244,16 @@ works:
    VM, `docs/ops/DEV-BOX.md` "aarch64 builds"): `nix build
    ./nix#packages.aarch64-linux.mac-appliance-image`; the result is
    `repose-appliance.raw.gz`.
-2. Publish it with its checksum where the installer fetches it: the
-   default in `apps/web/static/mac` is a GitHub release of this
-   repository, tag `appliance-<version>`, assets
+2. Publish it with its checksum where `repose host add` fetches it: a
+   GitHub release of this repository, tag `appliance-<version>`, assets
    `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
    (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`). Another home
-   is `REPOSE_APPLIANCE_URL` in the installer, one string.
-3. Bump `APPLIANCE_VERSION` in `apps/web/static/mac` to that version; the
-   site deploys it with main.
+   is a CLI release with `applianceURL` changed in
+   `internal/cli/appliance.go`, or `REPOSE_APPLIANCE_URL` on the Mac.
+3. Bump `applianceVersion` in `internal/cli/appliance.go` to that
+   version; it ships with the next CLI release.
 4. Record the line once, if it is not recorded:
-   `repose-admin hosts install-command 'curl -fsSL https://repose.run/mac | sh -s -- %s'`.
+   `repose-admin hosts install-command 'repose host add --join %s'`.
    The hub settings `repose-admin edge init` recorded are what let
    `POST /hosts` mint the machine's place on the hub; without them the
    bundle is the token alone and a Mac cannot register.
@@ -4775,12 +4775,13 @@ without it and keep a login of their own.
 step. The machine is theirs, so the first reads are theirs too; what to
 ask for, and what each answer means:
 
-1. `repose-appliance status` on the Mac. `stopped`: the VM is not
-   running; `~/Library/Logs/repose/launcher.log` has vfkit's refusal
-   (nested virtualization needs macOS 15 and an M3 or later, which the
-   installer checks; a `disk.raw` missing or truncated is a failed
-   download, run the step again).
-2. `repose-appliance log`: the appliance's console. `repose-launcher-join`
+1. `launchctl print gui/$(id -u)/run.repose.appliance` on the Mac, or
+   `pgrep -x vfkit`: the VM is not running when neither answers;
+   `~/Library/Logs/repose/launcher.log` has vfkit's refusal (nested
+   virtualization needs macOS 15 and an M3 or later, which `repose host
+   add` checks; a `disk.raw` missing or truncated is a failed download,
+   run `repose host add` again).
+2. `~/Library/Logs/repose/console.log`: the appliance's console. `repose-launcher-join`
    logs `join_token_written` and `hub_bootstrap_written` at the first
    boot; `no_join_file` means the share did not mount or the step's
    argument was never written (run the step again); `join_invalid` means
@@ -4802,8 +4803,8 @@ ask for, and what each answer means:
    edge). A host that registered and never connected is a tunnel that
    did not come back on the new key: the edge's `wireguard-wg0` restarted
    (every host peer is gone until wgsync's next pass, I-1382's comment)
-   or the Mac went to sleep, which the launcher's `caffeinate` prevents
-   only while the VM runs.
+   or the Mac went to sleep, which `repose host run`'s `caffeinate`
+   prevents only while the VM runs.
 
 Nothing here reads anything of the user's: the console log carries the
 appliance's journal, ids and events only.

@@ -28,9 +28,9 @@ recipe, the launcher, and the bootstrap order that lets a machine with
 no route to the api register over the hub. Not yet done at this line:
 the aarch64 image built and booted on a Mac, the image published where
 the installer fetches it, and the `host_install_command` recorded
-(`repose-admin hosts install-command 'curl -fsSL https://repose.run/mac
-| sh -s -- %s'`), so `repose host add` on production still prints the
-argument and the docs page rather than the line. Owned hosts do not
+(`repose-admin hosts install-command 'repose host add --join %s'`), so
+`repose host add` on production still prints the argument and the docs
+page rather than the line. Owned hosts do not
 update themselves; an operator switches them by hand, and the timer that
 would pull a published host system is not built and may ship after
 launch.
@@ -91,7 +91,7 @@ already in it, and nothing else, so it pipes to the machine:
 
 ```
 $ repose host add mac-mini
-curl -fsSL https://repose.run/mac | sh -s -- rjt_Vb3nQ8...
+repose host add --join eyJ2IjoxLCJ0b2tlbiI6InJqdF9WYjNuUTgu...
 mac-mini: run this on the machine you are adding. It works once, before Thu 20 Nov 14:05.
 ```
 
@@ -288,10 +288,12 @@ user has.
 
 One aarch64 NixOS VM on Apple's Virtualization framework runs hostd and
 the user's machines as Cloud Hypervisor microVMs under its KVM
-(`nix/hosts/mac.nix`, `nixosConfigurations.mac`, I-1376). The install
-step fetches vfkit and the appliance image and starts the VM from a
-launchd agent at every login, holding the Mac awake with `caffeinate`
-while it runs (I-1380). One disk, the image grown to the size the user
+(`nix/hosts/mac.nix`, `nixosConfigurations.mac`, I-1376). The launcher
+is the CLI itself: `repose host add` on a Mac fetches vfkit and the
+appliance image and starts the VM from a launchd agent that runs
+`repose host run` at every login, holding the Mac awake with
+`caffeinate` while it runs; `repose host rm` on that Mac takes the
+appliance away with the host (I-1380; `internal/cli/appliance.go`). One disk, the image grown to the size the user
 chose, with the machines' volumes and snapshots in it; three quarters of
 the Mac's memory to the VM and the fleet's host reserve inside it. The
 kernel is a product constraint: 6.18.57 is the one version known both to
@@ -304,8 +306,8 @@ of it), so hostd's ready window is five minutes there
 (gate 0 step 5, research doc §9) and stay off on the appliance until an
 owned host has a way to wrap the image key that is not Key Vault
 (I-653); a reboot stops the machines and the api starts the ones that
-were running (I-645). `repose-appliance
-start|stop|status|log|grow|uninstall` is the user's side on the Mac.
+were running (I-645). `repose host add`, `repose host run` and `repose host rm` are the
+user's side on the Mac.
 
 ## Behaviour that must hold
 
@@ -378,8 +380,10 @@ The host itself (I-1372, I-1368, I-1376, I-1380):
 - The appliance splits the bundle, brings wg0 up on the bootstrap key,
   registers over it at the hub address, swaps to the registration's key
   and ignores a second bundle; the one-disk layout grows to the disk:
-  the `host-mac` VM check. The launcher's sizing and its shell:
-  `mac-launcher-sizing`.
+  the `host-mac` VM check. The launcher's sizing, its sparse unpack, the
+  bundle, the config, the agent and vfkit's arguments:
+  `TestAppliance*` (internal/cli); the Mac refusals:
+  `TestApplianceRefusesTheWrongMac`.
 - An owned host writes snapshots to its own disk and carries no bucket
   credentials; the module refuses to build otherwise: the
   `owned-host-keeps-snapshots-local` flake check.

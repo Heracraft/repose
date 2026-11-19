@@ -37071,35 +37071,59 @@ Register (mac-mini 19f, 2026-11-19).** *Made during implementation*
 and I-1382 left to 19c and 19f, with 19b's finding that an owned host
 cannot reach the api's VNet address).
 
-*What the launcher is.* One POSIX shell installer served by the site at
-`https://repose.run/mac` (`apps/web/static/mac`), which `repose host add`
-prints as `curl -fsSL https://repose.run/mac | sh -s -- <argument>`
-(the `host_install_command` setting the operator records). It checks the
-Mac (Apple silicon, M3 or newer, macOS 15 or later, 16 GB), fetches
-vfkit 0.6.4 (Apache-2.0, crc-org; the checksum is in the installer)
-and the appliance image with its checksum, writes the argument to a
-directory it shares into the VM, and writes a launcher script and a
-launchd agent (`run.repose.appliance`, RunAtLoad, KeepAlive) that holds
+*What the launcher is.* The CLI. `repose host add` on a Mac with Apple
+silicon, after the mint (or with `--join <argument>` for an argument
+minted elsewhere, with no login), checks the Mac (M3 or newer, macOS 15
+or later, 16 GB), says what it is about to do, fetches vfkit 0.6.4
+(Apache-2.0, crc-org; the checksum is pinned in
+`internal/cli/appliance.go`) and the appliance image with its checksum,
+unpacks the image sparse, extends the disk file to the size chosen,
+writes the argument to a directory it shares into the VM, writes a
+launchd agent (`run.repose.appliance`, RunAtLoad, KeepAlive) whose
+program is `repose host run`, and starts it. `repose host run` holds
 vfkit in the foreground: `--nested`, EFI with its variable store beside
 the image, the image on virtio-blk, NAT virtio-net with a MAC kept in
 the launcher's config, virtio-rng, the share on virtio-fs, and the
-console to a log file. It wraps vfkit in `caffeinate -s -i`, which holds
-a power assertion while the VM runs: no `pmset` setting, because the docs
-page promises that nothing of the Mac's is changed, and a Mac mini is on
-mains. `repose-appliance start|stop|status|log|grow|uninstall` is the
-rest; `stop` asks the VM to shut down through vfkit's REST socket, which
-the appliance takes as the ACPI power button and stops every guest
-cleanly (I-650), and gives it 120 s before the plug. Everything lives
-under `~/Library/Application Support/repose` and `~/Library/Logs/repose`;
-no sudo anywhere. Not a signed, notarised program: vfkit's release is
-one already, and the rest is shell a user can read. A Mac with a login
-session gets the agent: that is the user's path. A Mac reached over ssh
-with no login session (the lab) has no GUI domain and its user domain
-refuses an agent ("Bad request"), so the installer then starts the VM
-detached from a subshell with every descriptor off the terminal, because
-`nohup` under a tty does not detach on macOS and the VM died with the
-spark's session; the agent takes over at the next login. The lab
-artefact is the fallback, not the product.
+console to a log file; wrapped in `caffeinate -s -i`, which holds a
+power assertion while the VM runs and changes no `pmset` setting, since
+the docs page promises nothing of the Mac's changes and a Mac mini is on
+mains. A stop (launchd's SIGTERM) asks the VM to shut down through
+vfkit's REST socket, which the appliance takes as the ACPI power button
+and stops every machine cleanly (I-650), with 120 s before the plug.
+`repose host rm NAME` on the Mac whose appliance is NAME removes the
+appliance with the host; on a Mac that runs another host it says which
+and leaves it; `repose host rm --local` removes this Mac's appliance
+alone. The step a laptop prints is the `host_install_command` setting,
+`repose host add --join %s`, a setting rather than a constant so an
+operator changes it without a release (I-1370). Everything lives under
+`~/Library/Application Support/repose` and `~/Library/Logs/repose`; no
+sudo anywhere.
+
+Why the CLI and not an app or a script, chosen by 19f after installing
+on the real Mac: a Mac mini owner on this plan has `repose` installed
+and is logged in, because that is how they add a host from anywhere, so
+the smoothest install is the command they know, run on the Mac, with
+no second artefact and no `curl | sh`, the one line that reads like a
+malware tutorial. A signed, notarised app is the Mac-native answer to
+the same discomfort and is also an Apple developer account,
+notarisation and a macOS runner nobody has, so it cannot ship first.
+The CLI's darwin build is cross-compiled without cgo (`ci.yml`,
+`dist/repose_darwin_arm64`), and driving the Virtualization framework
+from Go needs cgo (the `vz` library vfkit uses, MIT) plus an ad-hoc
+codesign with the `com.apple.security.virtualization` entitlement on a
+macOS runner; so the first ship keeps the build as it is and fetches
+vfkit as the helper, and folding `vz` into the binary is a later step,
+once the darwin build runs on a macOS runner. The shell launcher that
+proved the path on the lab Mac (`apps/web/static/mac`, 2026-11-19) was
+replaced by this the same day; its two hard-won fixes moved with it: a
+file is extended by `truncate` and not by BSD `dd count=0`, and the VM
+starts detached when launchd takes no agent in a session-less domain. A
+Mac with a login session gets the agent: that is the user's path. A Mac
+reached over ssh with no login session (the lab) has no GUI domain and
+its user domain refuses an agent ("Bad request"), so `host add` then
+starts `host run` detached with every descriptor off the terminal,
+because `nohup` under a tty does not detach on macOS and the VM died
+with the spark's session; the agent takes over at the next login.
 
 *What it holds and logs.* The argument, once, in a 0600 file in the
 share, which the appliance deletes after reading it. The launcher logs
@@ -37159,9 +37183,8 @@ the old token and mints a new key, and the old bundle is dead from that
 moment. Nothing logs it: the api's test reads its own log for the
 argument and the key, the CLI prints the step on stdout once and names
 no part of it on an error, the dashboard shows it in a dialog it says is
-not shown again, the installer writes it to a 0600 file and echoes
-nothing, and the appliance logs the events of reading it and never a
-value. `docs/SECURITY.md` "A host you do not own" carries the same
+not shown again, `host add` writes it to a 0600 file and echoes nothing, and the
+appliance logs the events of reading it and never a value. `docs/SECURITY.md` "A host you do not own" carries the same
 account.
 
 *What a bad moment looks like.* A Mac that boots before wgsync's next
@@ -37173,7 +37196,9 @@ user reads `waiting` in `repose host ls` a minute longer. After the key
 swap the same window opens once for hostd's stream, which reconnects on
 its own. No state is lost either way.
 
-Rejected: a public gRPC port for registration (I-1382 said why); the
+Rejected: a signed, notarised app as the first ship (above); `curl |
+sh` as the user's step (above); a public gRPC port for registration
+(I-1382 said why); the
 host generating its own key and trading it for the hub's details over
 the public HTTPS api with the token (a second use of a single-use token,
 a new public route and Go in the launcher, for the same key in the same
@@ -37191,5 +37216,7 @@ bundle split, `wg0` on the bootstrap key before registration, a
 handshake under that key on the hub, `hostd register` over it to a
 hostdev at `10.255.255.1`, the key swapped and `hub.json` gone, a second
 bundle ignored, hostd's stream connected after the peer swap;
-`mac-launcher-sizing` (shellcheck, dash and the sizing rules). Not done
-at this line: the step run on the AWS Mac, which is phase 3.
+`TestAppliance*` in internal/cli (the sizing rules, the sparse unpack,
+the bundle, the config, the agent, vfkit's arguments, the Mac refusals).
+The shell launcher it replaced ran on the AWS Mac three times (research
+doc §9); the CLI's own run there is in the 19f report.

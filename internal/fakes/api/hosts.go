@@ -26,7 +26,7 @@ import (
 // and empty until an operator records one; the fake fills it so a test
 // of the printing has something to print, and SetHostInstall("") is how
 // a test takes it away again.
-const FakeHostInstall = "curl -fsSL https://repose.test/host.sh | REPOSE_JOIN_TOKEN=%s sh"
+const FakeHostInstall = "repose host add --join %s"
 
 // maxFakeHosts is the host count the plans allow: one on the Own
 // hardware plan (DECISIONS I-1366).

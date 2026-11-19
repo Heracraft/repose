@@ -31,13 +31,13 @@ func TestHostAddListRm(t *testing.T) {
 
 	// With an install step recorded, stdout is that line and nothing
 	// else, so it pipes to the machine being added.
-	fake.SetHostInstall("curl -fsSL https://repose.run/mac -- %s")
+	fake.SetHostInstall("repose host add --join %s")
 	out.buf.Reset()
-	if err := HostAddCmd(ctx, e, "mac-mini"); err != nil {
+	if err := HostAddCmd(ctx, e, "mac-mini", applianceOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	step := strings.TrimRight(out.buf.String(), "\n")
-	if strings.Contains(step, "\n") || !strings.HasPrefix(step, "curl -fsSL https://repose.run/mac -- ") || len(step) < 40 {
+	if strings.Contains(step, "\n") || !strings.HasPrefix(step, "repose host add --join ") || len(step) < 40 {
 		t.Fatalf("stdout is the install step alone: %q", out.buf.String())
 	}
 	if got := errOut.buf.String(); !strings.HasPrefix(got, "mac-mini: run this on the machine you are adding. It works once, before ") {
@@ -46,20 +46,20 @@ func TestHostAddListRm(t *testing.T) {
 
 	// The name is checked before any call, and a name the account has is
 	// the api's conflict in the CLI's words.
-	if err := HostAddCmd(ctx, e, "Mac Mini"); err == nil || !strings.Contains(err.Error(), "NAME must match") {
+	if err := HostAddCmd(ctx, e, "Mac Mini", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "NAME must match") {
 		t.Fatalf("bad name: %v", err)
 	}
 	fake.SetHostLimit(2)
-	if err := HostAddCmd(ctx, e, "mac-mini"); err == nil || !strings.Contains(err.Error(), "already have a host named mac-mini") {
+	if err := HostAddCmd(ctx, e, "mac-mini", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "already have a host named mac-mini") {
 		t.Fatalf("taken name: %v", err)
 	}
 	// The plan's limit is the api's number, not the CLI's.
 	fake.SetHostLimit(1)
-	if err := HostAddCmd(ctx, e, "spare"); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
+	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
 		t.Fatalf("limit: %v", err)
 	}
 	fake.SetHostLimit(-1)
-	if err := HostAddCmd(ctx, e, "spare"); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
+	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
 		t.Fatalf("no plan: %v", err)
 	}
 	fake.SetHostLimit(2)
@@ -69,7 +69,7 @@ func TestHostAddListRm(t *testing.T) {
 	fake.SetHostInstall("")
 	out.buf.Reset()
 	errOut.buf.Reset()
-	if err := HostAddCmd(ctx, e, "spare"); err != nil {
+	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.TrimRight(out.buf.String(), "\n"); got == "" || strings.ContainsAny(got, " \n") {
@@ -268,7 +268,7 @@ func TestHostsUnderAnAPIToken(t *testing.T) {
 	if got := out.buf.String(); !strings.Contains(got, "mac-mini") {
 		t.Fatalf("host ls under a token:\n%s", got)
 	}
-	if err := HostAddCmd(ctx, te, "spare"); err == nil || !strings.Contains(err.Error(), "log in for that") {
+	if err := HostAddCmd(ctx, te, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "log in for that") {
 		t.Fatalf("host add under a token: %v", err)
 	}
 	if err := HostRmCmd(ctx, te, "mac-mini", true, nil); err == nil || !strings.Contains(err.Error(), "log in for that") {

@@ -226,10 +226,11 @@ with the `metal` provider replaced by:
   `nix/hosts/mac.nix` and `packages.aarch64-linux.mac-appliance-image`;
 - a launcher for macOS on vfkit or our own framework code, started at
   login, holding the join token for the first registration, with
-  `pmset` keeping the Mac awake: done as I-1380, `apps/web/static/mac`
-  (a plist over vfkit; `caffeinate`, not `pmset`, so no setting of the
-  Mac's changes), and the join carries the host's place on the hub too,
-  which is how a Mac registers with no route to the api's VNet;
+  `pmset` keeping the Mac awake: done as I-1380, `repose host add` and
+  `repose host run` in the CLI (a launchd agent over vfkit;
+  `caffeinate`, not `pmset`, so no setting of the Mac's changes), and
+  the join carries the host's place on the hub too, which is how a Mac
+  registers with no route to the api's VNet;
 - the runner's `console=ttyS0` made per-architecture: done as I-1374;
 - freeze and restore gated on step 5's result, x86-only if it fails:
   step 5 was not run on 2026-11-19 (§7), so the park is off in
@@ -443,15 +444,16 @@ Lessons, each of which cost a run:
   admin@<builder>` and an image that dials the Mac's address. The
   product is not affected; a real appliance dials the api over the
   internet.
-- **BSD `dd ... count=0 seek=N` does not extend a file.** The installer
-  uses perl's `truncate`, which macOS ships.
+- **BSD `dd ... count=0 seek=N` does not extend a file.** The shell
+  launcher of the day used perl's `truncate`; the CLI uses
+  `os.Truncate`.
 - **`gunzip` writes the zeros.** A 37 GiB image whose data is a few GiB
   costs 37 GiB on the volume unless the unpack seeks over zero blocks;
-  the installer does, in perl.
+  the CLI's `unpackSparse` does.
 - **launchd takes no agent from an ssh session with no login.**
   `launchctl bootstrap user/<uid>` answers "Bad request" for a
-  LaunchAgent; the GUI domain does not exist. The installer starts the
-  VM detached from a subshell with every descriptor off the terminal
+  LaunchAgent; the GUI domain does not exist. `repose host add` then
+  starts `repose host run` detached with every descriptor off the terminal
   (`nohup` under a tty says "can't detach from console" and the VM dies
   with the session). On a Mac with a login session the agent is what a
   user gets (I-1380).
