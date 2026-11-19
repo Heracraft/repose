@@ -30,7 +30,8 @@ Ranked by how it reaches a customer, not by how hard it is to fix.
 | 5 | P1 | "I pressed Add and nothing happened." | ENG-25 | [D1](#d1-the-refusal-renders-behind-the-dialog-that-caused-it) |
 | 6 | P2 | "Your Troubleshooting page has nothing about the thing I'm troubleshooting." | ENG-57 | [D2](#d2-troubleshooting-does-not-know-this-feature-exists) |
 | 7 | P2 | "The price is one scroll below three plans I can't use." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads) |
-| 8 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
+| 8 | P2 | "The one way out of this is documented nowhere I can find." | ENG-64 | [B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere) |
+| 9 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
 
 **One P0, and it stops the feature dead.** Nothing a Mac mini owner can buy,
 install and run exists today: the appliance image the shipped CLI fetches
@@ -284,6 +285,33 @@ on the own plan, add a host, move a few GB, read the Billing page and the
 invoice.
 
 **Rank: P1, unreproduced.** **Card ENG-55**, parked and marked.
+
+### B3. The one way out is named on one page and documented nowhere
+
+When an owned host is on the account, every new project goes to it — which
+is what makes [E3](#e3-a-dead-install-is-indistinguishable-from-a-slow-one-for-ever)
+and ENG-28 as bad as they are. The docs name exactly one escape, in one
+sentence, on `/docs/own-hardware`:
+
+> "A project made through the [API] can ask for repose's servers instead,
+> with `placement: "hosted"`, if your plan buys memory there."
+
+Measured across the 26 live docs pages: **`placement` appears in
+`own-hardware.md` and nowhere else**, `api.md` included. And `/docs/api`
+does not merely omit it — line 114 says:
+
+> "Request and answer bodies are not listed here. **They are what the CLI
+> sends and reads**: `--json` on the matching command prints the answer, and
+> `-v` prints each request it makes."
+
+The CLI never sends `placement`; `repose run --help` has no such flag. So
+the API reference's own rule tells a reader the field does not exist, and
+there is no way to learn its shape from the documentation.
+
+A customer whose install died, following the only pointer they were given,
+reaches an API page that documents no bodies and a CLI that never sends this
+one. **Rank: P2** on its own, but it is why the escape hatch is theoretical.
+**Card ENG-64.**
 
 ---
 
