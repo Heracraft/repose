@@ -865,22 +865,40 @@ never "tests pass".
 **The two doors**
 
 - [x] A real delivery through `hooks.repose.run` starts a session, with
-      the edge's 202 pasted in — **and the session could not read its
-      payload**: `REPOSE_PAYLOAD` was set around the `tmux` command, not
-      on the window, so the agent answered "REPOSE_PAYLOAD isn't set in
-      this shell". Fixed with `new-window -e`; the read itself is still
-      owed.
-- [ ] A real delivery's session reads `$REPOSE_PAYLOAD` and acts on it.
-- [ ] `--every` fires within a minute of the time, in the stored zone, on
-      a running machine, on a frozen one (wake) and on a stopped one with
-      `--start`.
-- [ ] A time-of-day spec keeps its wall clock on both daylight-saving
-      days (`internal/triggerspec`: the test fails on the old
-      midnight-plus-a-duration form with 08:00 and 06:00).
+      the edge's 202 pasted in. The first run (r20261117-1) could not
+      read its payload — `REPOSE_PAYLOAD` was set around the `tmux`
+      command, not on the window, so the agent answered "REPOSE_PAYLOAD
+      isn't set in this shell" — which `new-window -e` fixed in
+      r20261117-2.
+- [x] A real delivery's session reads `$REPOSE_PAYLOAD` and acts on it:
+      on the new base a real Claude Code printed the payload's first
+      line.
+- [x] `--every` fires within a minute of the time, in the stored zone,
+      on a running machine: the `every 15m` trigger fired at 11:50 UTC
+      (run `0c4aed15`, source `clock`, `done` in 14 s).
+- [x] A stopped machine with `--start` is started for a fire and
+      `--stop-after` stops it again: run `a383b24d` `done` in 13 s, and
+      the machine stopped behind it.
+- [ ] A **frozen** machine is woken for a fire (`--every` on a resting
+      machine, I-818's wake). Not run: nothing has been frozen with a
+      trigger on it.
+- [x] A guestd restart does not lose the set: after
+      `systemctl restart repose-guestd` the runner read it back from the
+      volume (count 4) and the next delivery fired.
+- [x] `repose triggers add` on a herdr project is refused in the words
+      it ships: "a trigger starts an agent in a tmux window, which this
+      machine does not run (it runs herdr)".
+- [x] A time-of-day spec keeps its wall clock on both daylight-saving
+      days (`internal/triggerspec`:
+      `TestTheWallClockHoldsOnBothTransitionDays`, which fails on the
+      old midnight-plus-a-duration form with 08:00 and 06:00). This one
+      never needed a machine; it was left open by oversight.
 - [x] Two api replicas tick together and the fire happens once; the api
       restarts mid-tick and the fire happens once.
-- [ ] A fire from the http process reaches the machine (I-1162's bug:
-      the test is `say_replicas_test.go`'s shape).
+- [x] A fire from the http process reaches the machine (I-1162's bug):
+      `repose triggers fire` goes to `API_MODE=http`, which writes the
+      row, and the grpc replica sent it — run `a383b24d`, source `hand`,
+      `done` in 13 s on a machine the same fire started.
 - [x] An edge-side refusal on a trigger route (stopped, busy, 413,
       `start_refused`) becomes a `skipped` run with that reason.
 
@@ -949,13 +967,17 @@ never "tests pass".
       fire starts an agent on it. Nothing here has run against a real
       machine: the hand-off, `WriteTriggerPrompt` and the file's
       ownership are covered by tests alone.
-- [ ] `repose status` shows the `triggers` row for a project with one and
-      no such row for a project without.
+- [ ] `repose status` shows the `triggers` row for a project with one
+      and no such row for a project without. The first half ran live on
+      2026-11-17 (the row, beside the webhooks row); the second has
+      neither a live run nor a test, since `triggerStatusLine` has no
+      test of its own.
 
 **What closed the ticked items** (the commits carry the full output):
 
 | Item | Evidence |
 |---|---|
+| every live item above | the two release-queue entries' own live records: `ops/dev/release-queue where triggers` (r20261117-1, the first run on `e2e-trig`) and `where triggers-runs-all` (r20261117-2, the four re-checks on a fresh project at base 2026.11.17.1). Each `live_result` names the run ids |
 | the decisions and the six contracts | written in the same commits as the code; the migration dedupe grep prints nothing |
 | the public docs | `/docs/triggers`, the `repose triggers` section of `/docs/cli`, and `go test ./internal/cli -run TestDocs` green |
 | dedupe, gate, dry run, concurrency | `internal/guestd/trigger`: `TestDedupeSkipsARetryAndSurvivesARestart`, `TestAGateRefusesAnEventAndSaysWhy`, `TestADryRunRunsTheGateAndStartsNoAgent`, `TestAdmissionRefusals` |
@@ -980,8 +1002,12 @@ inherits the server's environment, not the client's),
 made it as root), and the http replica warned "trigger set not pushed"
 on every add about a set that had already arrived.
 
-**What is still open, and why**: every unticked item above needs a
-machine. Nothing here has run against a real guest: no delivery has
-reached `hooks.repose.run`, no clock fire has woken a frozen machine, no
-real agent has taken a trigger's prompt off its own command line, and no
-`--start` has started anything. Those are this change's live checks.
+**What is still open, and why**: the layer has run on a real guest
+(r20261117-1 and r20261117-2, both entries' live records). What is left
+is each case nobody has put a machine through yet: a frozen machine
+woken for a fire, a prompt file deleted after `add`, a run that fails
+notifying once and a quiet one notifying nobody, `repose say` beside a
+run's window, `webhooks rm` on a trigger's route, an `off` trigger
+turned back `on` a week later, the documented HMAC gate against a real
+signature, a prompt typed on the dashboard reaching a guest, and the
+half of the `repose status` row that is the absence of a row.
