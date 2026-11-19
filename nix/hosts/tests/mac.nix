@@ -188,7 +188,8 @@ pkgs.testers.runNixOSTest {
         # A handshake under the bootstrap key on the hub: the Register
         # travelled over the tunnel, since nothing else of the host's dials
         # the hub address.
-        api.succeed(f"wg show wg0 latest-handshakes | grep -E '^{bootstrap_pub}\\s+[1-9]'")
+        # -F: a base64 key carries `+`, which grep -E would read as a quantifier.
+        api.succeed(f"wg show wg0 latest-handshakes | grep -F '{bootstrap_pub}' | awk '$2 > 0' | grep -q .")
         reg = host.succeed("journalctl -u repose-register --no-pager -o cat")
         print(reg)
         host.succeed("journalctl -u repose-register --no-pager -o cat | grep '\"event\":\"register\"' | tail -1 | jq -e '.msg == \"registered\" and .host_id' >/dev/null")
@@ -202,7 +203,7 @@ pkgs.testers.runNixOSTest {
         host.wait_until_succeeds("wg show wg0 public-key", timeout=60)
         new_pub = api.succeed("jq -r .host_wg_pubkey ${hostdevDir}/state.json").strip()
         assert new_pub and new_pub != bootstrap_pub, new_pub
-        host.wait_until_succeeds(f"wg show wg0 public-key | grep -qx '{new_pub}'", timeout=60)
+        host.wait_until_succeeds(f"wg show wg0 public-key | grep -qxF '{new_pub}'", timeout=60)
         # A second bundle on the share, after registration, is ignored.
         host.succeed("cp ${lab}/join /run/repose/launcher/join && systemctl restart repose-launcher-join.service")
         assert "event=join_ignored reason=registered" in host.succeed("journalctl -u repose-launcher-join --no-pager -o cat")
