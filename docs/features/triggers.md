@@ -262,6 +262,19 @@ the next, and Config has no Webhooks section.
   settings that have right defaults — agent, working directory,
   timeout, concurrency, gate, dedupe and the four switches — are behind
   `More settings`.
+- **A switch moves nothing the user did not change** (form-shifts,
+  2026-11-19; the owner: "a lot of layout shifts as you do the different
+  combinations"). The first row has a fixed name width and the controls
+  are as wide as their words, so dropping Then for a schedule leaves a
+  gap and moves nothing; the schedule's row is four tracks with the
+  time zone always in the last, so monthly's day field fills the middle
+  instead of wrapping the zone; and the receiver's fields sit in a slot
+  with one minimum height (the written prompt's), so a prompt that
+  becomes a path, or an agent that becomes the app, leaves the buttons
+  under it where they were. The cost is blank space under a short
+  variant, which is cheaper than a button that moves as the hand reaches
+  for it. `the form keeps its controls in place across every switch` in
+  apps/web/tests/triggers.spec.ts holds it at 1440 and 390.
 - **The prompt the browser types reaches the machine through the api**
   (I-1268). The first draft of this section said a browser could not
   write a prompt and therefore could not make a trigger; the answer is
