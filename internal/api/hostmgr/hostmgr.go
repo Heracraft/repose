@@ -147,34 +147,69 @@ func (s *Server) GRPCServer(tlsCfg *tls.Config) *grpc.Server {
 
 // --- join tokens --------------------------------------------------------
 
+// JoinTokenRequest is one mint. Owner is the account that owns the
+// machine (DECISIONS I-1366); nil mints for a host repose runs, which is
+// what `repose-admin hosts add` does.
+type JoinTokenRequest struct {
+	Name     string
+	Provider string
+	SKU      string
+	Region   string
+	Reissue  bool
+	Owner    *uuid.UUID
+}
+
 // MintJoinToken creates a host row (or reissues for an existing
 // unregistered host) and returns the single-use token; only its hash is
 // stored.
 func MintJoinToken(ctx context.Context, pool *db.Pool, name, provider, sku, region string, reissue bool) (string, error) {
+	var token string
+	err := db.InTx(ctx, pool, func(tx db.Tx) error {
+		var err error
+		token, _, err = MintJoinTokenIn(ctx, tx, JoinTokenRequest{Name: name, Provider: provider, SKU: sku, Region: region, Reissue: reissue})
+		return err
+	})
+	return token, err
+}
+
+// MintJoinTokenIn is MintJoinToken inside a transaction the caller owns,
+// and returns the host's id with the token. `POST /hosts` uses it so the
+// plan's host limit is counted and the row inserted in one transaction:
+// two requests at once must not both see room for the last host.
+func MintJoinTokenIn(ctx context.Context, tx db.Tx, req JoinTokenRequest) (string, uuid.UUID, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", err
+		return "", uuid.Nil, err
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(token))
 	hash := hex.EncodeToString(sum[:])
 	expires := time.Now().Add(JoinTokenValidity)
-	return token, db.InTx(ctx, pool, func(tx db.Tx) error {
-		h, err := store.GetHostByName(ctx, tx, name)
-		if err != nil && !errors.Is(err, db.ErrNotFound) {
-			return err
+	h, err := hostByName(ctx, tx, req)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		return "", uuid.Nil, err
+	}
+	if h != nil {
+		if h.RegisteredAt != nil && !req.Reissue {
+			return "", uuid.Nil, fmt.Errorf("host %s is already registered; pass --reissue to mint a new token for a re-imaged host", req.Name)
 		}
-		if h != nil {
-			if h.RegisteredAt != nil && !reissue {
-				return fmt.Errorf("host %s is already registered; pass --reissue to mint a new token for a re-imaged host", name)
-			}
-			_, err := tx.Exec(ctx, "update hosts set join_token_hash = $2, join_token_expires_at = $3, registered_at = null, state = 'registering' where id = $1", h.ID, hash, expires)
-			return err
-		}
-		_, err = tx.Exec(ctx, "insert into hosts (id, name, provider, sku, region, state, join_token_hash, join_token_expires_at) values ($1, $2, $3, $4, $5, 'registering', $6, $7)",
-			store.NewID(), name, nilIfEmpty(provider), nilIfEmpty(sku), nilIfEmpty(region), hash, expires)
-		return err
-	})
+		_, err := tx.Exec(ctx, "update hosts set join_token_hash = $2, join_token_expires_at = $3, registered_at = null, state = 'registering' where id = $1", h.ID, hash, expires)
+		return token, h.ID, err
+	}
+	id := store.NewID()
+	_, err = tx.Exec(ctx, "insert into hosts (id, name, provider, sku, region, state, join_token_hash, join_token_expires_at, owner_account_id) values ($1, $2, $3, $4, $5, 'registering', $6, $7, $8)",
+		id, req.Name, nilIfEmpty(req.Provider), nilIfEmpty(req.SKU), nilIfEmpty(req.Region), hash, expires, req.Owner)
+	return token, id, err
+}
+
+// hostByName resolves the row a mint would reuse: among the hosts repose
+// runs for an operator mint, and among the account's own for an owner's,
+// because names are unique per owner since migration 0048.
+func hostByName(ctx context.Context, tx db.Tx, req JoinTokenRequest) (*store.Host, error) {
+	if req.Owner != nil {
+		return store.GetAccountHostByName(ctx, tx, *req.Owner, req.Name)
+	}
+	return store.GetHostByName(ctx, tx, req.Name)
 }
 
 func nilIfEmpty(s string) *string {
@@ -696,22 +731,41 @@ func (s *Server) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 // state a host is not in reads 0 rather than going absent.
 var hostStates = []string{"registering", "ready", "draining", "unreachable", "retired", "lost"}
 
+// refreshGauges publishes the host tables.
+//
+// The hosts users own are counted apart from the hosts repose runs
+// (DECISIONS I-1366). `repose_api_hosts` and `repose_api_host_state`
+// describe the fleet an operator is on call for, and every host alert
+// reads them: HostUnreachable, HostUnregistered and HostNotInTargets
+// would page the owner because a stranger's Mac mini was switched off or
+// was never copied into the Prometheus targets, which is not an
+// incident and not something the owner can fix. The owner still gets a
+// number for them, `repose_api_owned_hosts{state}`, with no alert on it;
+// what a user needs to know about their own machine is the dashboard's
+// Hosts page and `repose ls`.
 func (s *Server) refreshGauges(ctx context.Context) {
-	rows, err := s.pool.Query(ctx, "select state, count(*) from hosts group by state")
+	rows, err := s.pool.Query(ctx, "select state, owner_account_id is not null as owned, count(*) from hosts group by state, owned")
 	if err != nil {
 		return
 	}
 	counts := map[string]float64{}
+	owned := map[string]float64{}
 	for rows.Next() {
 		var st string
+		var isOwned bool
 		var n int64
-		if err := rows.Scan(&st, &n); err == nil {
-			counts[st] = float64(n)
+		if err := rows.Scan(&st, &isOwned, &n); err == nil {
+			if isOwned {
+				owned[st] += float64(n)
+			} else {
+				counts[st] += float64(n)
+			}
 		}
 	}
 	rows.Close()
 	for _, st := range hostStates {
 		s.m.Hosts.WithLabelValues(st).Set(counts[st])
+		s.m.OwnedHosts.WithLabelValues(st).Set(owned[st])
 	}
 	// The same rows by identity (I-786). A count says two hosts are ready
 	// and names neither, so an alert on it cannot name the host that is
@@ -719,7 +773,7 @@ func (s *Server) refreshGauges(ctx context.Context) {
 	// to the monitoring server, and cannot be held back per host by an
 	// inhibition. The host's own exporters are no answer: a host that was
 	// created and never registered has no exporter to scrape.
-	byHost, err := s.pool.Query(ctx, "select name, state from hosts")
+	byHost, err := s.pool.Query(ctx, "select name, state from hosts where owner_account_id is null")
 	if err != nil {
 		return
 	}

@@ -39,8 +39,11 @@ func TestPublicAPIDocNamesRealRoutes(t *testing.T) {
 	}
 	// The routes a token opens, by the api's policy, are all on the
 	// page: the never-list and the token routes themselves are the only
-	// documented user routes allowed to be absent.
-	absentOK := regexp.MustCompile(`^(PATCH|DELETE) /me$|^POST /me/notify-test$|^POST /certs|^POST /projects/:id/browser/view$|/billing|^GET /usage$|/me/tokens|^POST /projects/:id/fork$|^GET /browser/stream$|^GET /public/seats$|/notify/unsubscribe$|^(GET|POST) /questions/reply$|^POST /billing/webhook$|^/internal`)
+	// documented user routes allowed to be absent. `POST /hosts` and
+	// `DELETE /hosts/{id}` are on the never-list (I-1366): adding a host
+	// hands out a join token and removing one retires a machine, so
+	// both take a login.
+	absentOK := regexp.MustCompile(`^(PATCH|DELETE) /me$|^POST /me/notify-test$|^POST /certs|^POST /projects/:id/browser/view$|/billing|^GET /usage$|/me/tokens|^POST /projects/:id/fork$|^(POST|DELETE) /hosts|^GET /browser/stream$|^GET /public/seats$|/notify/unsubscribe$|^(GET|POST) /questions/reply$|^POST /billing/webhook$|^/internal`)
 	for _, r := range documented {
 		key := r.Method + " " + r.Path
 		if strings.HasPrefix(r.Path, "/internal") || absentOK.MatchString(key) {

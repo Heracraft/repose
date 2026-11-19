@@ -130,17 +130,17 @@ type Fake struct {
 	mux    *http.ServeMux
 	routes []string
 
-	mu       sync.Mutex
-	seq      int64
-	reqSeq   int64
-	ipSeq    int
-	serial   uint64
-	tokens   map[string]string // token -> user id
+	mu     sync.Mutex
+	seq    int64
+	reqSeq int64
+	ipSeq  int
+	serial uint64
+	tokens map[string]string // token -> user id
 	// apiTokens is the api's own bearers by secret (I-1314).
 	apiTokens map[string]*fakeToken
-	users    map[string]*userRec
-	projects map[string]*project
-	ops      map[string]*op
+	users     map[string]*userRec
+	projects  map[string]*project
+	ops       map[string]*op
 	// webhookTombstones are the hex sha256 of tokens rotated or removed
 	// (DECISIONS I-1110); the edge answers 410 for them.
 	webhookTombstones []string
@@ -155,7 +155,14 @@ type Fake struct {
 	failAlways    map[string]string
 	hits          map[string][]time.Time
 	hosts         []Host // nil means the one canned host
-	gatewayCerts  int    // POST /internal/gateway-certs calls, for cache tests
+	// ownedHosts are the hosts users own, of GET /hosts (DECISIONS
+	// I-1366); hostInstall and hostLimit are what SetHostInstall and
+	// SetHostLimit put there.
+	ownedHosts     []*ownedHostRec
+	hostInstall    string
+	hostInstallSet bool
+	hostLimit      *int
+	gatewayCerts   int // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
@@ -687,6 +694,10 @@ func (f *Fake) register() {
 	f.handle("GET /v1/notify/unsubscribe", f.notifyUnsubscribe)
 	f.handle("POST /v1/notify/unsubscribe", f.notifyUnsubscribe)
 	// Projects.
+	// The hosts a user owns (DECISIONS I-1366).
+	f.handle("GET /v1/hosts", f.listHosts)
+	f.handle("POST /v1/hosts", f.createHost)
+	f.handle("DELETE /v1/hosts/{id}", f.deleteHost)
 	f.handle("GET /v1/projects", f.listProjects)
 	f.handle("POST /v1/projects", f.createProject)
 	f.handle("GET /v1/projects/destroyed", f.listDestroyed)

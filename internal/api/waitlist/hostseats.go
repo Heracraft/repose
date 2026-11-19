@@ -71,9 +71,11 @@ const (
 )
 
 // HostSeats is how many seats one ready host delivers: the smaller of
-// its memory and CPU ceilings. memBytes is the host's total memory and
-// cores its physical cores. cores <= 0 is a host that has not reported
-// them (a hostd older than I-735) and is bounded by memory alone, which
+// its memory and CPU ceilings. Only a host repose runs is ever asked:
+// the count's query leaves out the hosts users own (DECISIONS I-1366).
+// memBytes is the host's total memory and cores its physical cores.
+// cores <= 0 is a host that has not reported them (a hostd older than
+// I-735) and is bounded by memory alone, which
 // is what the derivation did before I-739; the bridge for such a host is
 // in the write path, where Register, Rotate and migration 0027 record
 // vcpus / 2 (DESIGN.md §4: every host is Intel with two threads per

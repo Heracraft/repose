@@ -6,6 +6,12 @@
 // used with the new volume's first bytes in it, pick the one with the
 // most free memory. Placement runs under one advisory transaction lock so
 // concurrent creates see each other's reservations.
+//
+// Since DECISIONS I-1366 a host may belong to an account rather than to
+// repose, so every placement also answers an ownership question: an owned
+// host takes its owner's projects and nobody else's, and an account whose
+// plan sells no fleet memory is never placed on a host repose runs. That
+// term is `ownedSQL` and the caller supplies it as a Target.
 package scheduler
 
 import (
@@ -146,6 +152,52 @@ func HostReserve(memBytes int64) int64 {
 // two cannot drift (DECISIONS I-724).
 const hostReserveSQL = `least(greatest(h.mem_bytes / 8, 2::bigint<<30), 16::bigint<<30)`
 
+// Target is who a placement is for (DECISIONS I-1366). A host a user
+// owns takes only that user's projects, and a user whose plan sells no
+// memory on the hosts repose runs takes only their own hardware, so
+// every placement is answered against this rather than against the
+// fleet alone.
+type Target struct {
+	// Account is the project's owner.
+	Account uuid.UUID
+	// Hosted is what the project asked for: projects.placement
+	// `hosted`, the fleet whatever the account owns. False is `own`,
+	// the account's own hardware when it owns any and the fleet when it
+	// owns none.
+	Hosted bool
+	// Fleet is whether the account's plan sells memory on the hosts
+	// repose runs (billing.Plan.MemoryGB above 0; the Own hardware plan sells none). False keeps
+	// every placement of that account on its own hardware, whatever
+	// Hosted says: an Own hardware account buys no fleet memory, and
+	// placement is the only thing between it and the fleet. An account
+	// with no plan is true here, because the billing gate has already
+	// refused it with subscription_required before placement runs.
+	Fleet bool
+}
+
+// ownedSQL is the ownership term for hosts h, with $7 the account, $8
+// whether the project asked for the fleet and $9 whether its plan sells
+// fleet memory (DECISIONS I-1366).
+//
+// A host the account owns is eligible unless the project asked for the
+// fleet and may have it. A host repose runs is eligible only when the
+// plan sells fleet memory, and then only when the project asked for it
+// or the account owns no host at all: a user who bought a Mac gets their
+// machines on the Mac without saying so per project, and a stranger's
+// project never reaches it.
+//
+// `retired` and `lost` hosts do not count as owning one. A user whose
+// only machine is gone is released to the fleet rather than trapped;
+// every other state does count, so a machine that is merely switched
+// off (`unreachable`) answers "your host cannot take this" and not a
+// silent placement on hardware they are not paying for.
+const ownedSQL = `(
+		   (h.owner_account_id = $7 and not ($8 and $9))
+		   or (h.owner_account_id is null and $9
+		       and ($8 or not exists (select 1 from hosts o
+		                               where o.owner_account_id = $7
+		                                 and o.state not in ('retired', 'lost')))))`
+
 // Pick is a placement.
 type Pick struct {
 	HostID    uuid.UUID
@@ -161,6 +213,16 @@ type Pick struct {
 // buying cores (DECISIONS I-736).
 var ErrNoCPUCapacity = fmt.Errorf("%w: committed guest vCPUs per physical core", ErrNoCapacity)
 
+// ErrNoOwnHost is ErrNoCapacity when the ownership term is what refused
+// a placement that only the account's own hardware could take: the
+// account owns no host that can take work, or the one it owns is full,
+// switched off or draining (DECISIONS I-1366). It wraps ErrNoCapacity so
+// every caller that tests for that keeps working, and exists so the user
+// reads "your machine is not answering" rather than "no host with
+// capacity", which would be a sentence about repose's fleet and no help
+// at all to someone whose Mac is asleep.
+var ErrNoOwnHost = fmt.Errorf("%w: no host of this account's own", ErrNoCapacity)
+
 // PickHost chooses a host inside tx and takes the placement lock; the
 // caller must record the placement (projects.host_id) in the same
 // transaction so the next placement sees it. A host whose thin pool is
@@ -169,30 +231,46 @@ var ErrNoCPUCapacity = fmt.Errorf("%w: committed guest vCPUs per physical core",
 // volume holds at first (store.Project.HeldBytes: a new project's
 // estimate, or a restore's source figure), volumeBytes its size.
 //
+// t is who the placement is for (DECISIONS I-1366): a host its owner's
+// account did not register is never chosen, and an account whose plan
+// sells no fleet memory is never placed on a host repose runs. When that
+// term is the only reason nothing fit, the error is ErrNoOwnHost.
+//
 // A host already at PlacementVCPUPct of its cores in committed guest
 // vCPUs is not chosen either (cpuRoomSQL, DECISIONS I-736); when that is
 // the only reason nothing fit, the error is ErrNoCPUCapacity.
-func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeBytes int64, now time.Time) (Pick, error) {
+func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes, volumeBytes int64, now time.Time) (Pick, error) {
 	if _, err := tx.Exec(ctx, "select pg_advisory_xact_lock($1)", LockPlacement); err != nil {
 		return Pick{}, err
 	}
 	need := ClassRAM(class)
 	vcpuMilli := ClassMilliVCPU(class)
+	args := []any{now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli, t.Account, t.Hosted, t.Fleet}
 	var p Pick
-	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6")),
-		now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli).Scan(&p.HostID, &p.Name, &p.FreeBytes)
+	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), ownedSQL), args...).Scan(&p.HostID, &p.Name, &p.FreeBytes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Which term refused is the difference between buying memory
 			// and buying cores, and the failure path is the only place
 			// that can say: one more query on a create that has already
-			// failed (I-736).
+			// failed (I-736). `$6 >= 0` and `$7::uuid is not null or $8
+			// or $9` hold for every placement and keep the parameters
+			// referenced, which the extended protocol requires: a
+			// parameter the query does not mention is a bind error, and
+			// an unqualified `$7` has no type to infer.
 			var ignored Pick
-			// `$6 >= 0` holds for every class and keeps the parameter
-			// referenced, which the extended protocol requires.
-			if err := tx.QueryRow(ctx, pickSQL("$6 >= 0"),
-				now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
+			if err := tx.QueryRow(ctx, pickSQL("$6 >= 0", ownedSQL), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
 				return Pick{}, ErrNoCPUCapacity
+			}
+			// Ownership last, so a host of the account's own that is
+			// merely full is reported as capacity and not as a host
+			// problem. A placement that only its own hardware may take
+			// is the one a user reads as "my machine is off", so it gets
+			// its own error and its own sentence (I-1366).
+			if !t.Hosted || !t.Fleet {
+				if err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), "($7::uuid is not null or $8 or $9)"), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
+					return Pick{}, ErrNoOwnHost
+				}
 			}
 			return Pick{}, ErrNoCapacity
 		}
@@ -201,10 +279,10 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 	return p, nil
 }
 
-// pickSQL is PickHost's query with cpuRoom as its CPU condition, so the
-// same query can be asked again with that condition satisfied trivially,
-// to find out whether it is what refused.
-func pickSQL(cpuRoom string) string {
+// pickSQL is PickHost's query with cpuRoom as its CPU condition and
+// owned as its ownership condition, so the same query can be asked again
+// with either satisfied trivially, to find out which one refused.
+func pickSQL(cpuRoom, owned string) string {
 	return `
 		select h.id, h.name,
 		       least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) as free
@@ -218,6 +296,7 @@ func pickSQL(cpuRoom string) string {
 		   and ` + poolRoomSQL + `
 		   and ` + slotsSQL + `
 		   and ` + cpuRoom + `
+		   and ` + owned + `
 		   and least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) >= $3
 		 order by free desc, h.name
 		 limit 1`
@@ -235,7 +314,7 @@ func pickSQL(cpuRoom string) string {
 // again.
 func Freeing(ctx context.Context, q interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}, class string, holdBytes, volumeBytes int64, now time.Time) (bool, error) {
+}, t Target, class string, holdBytes, volumeBytes int64, now time.Time) (bool, error) {
 	var ok bool
 	err := q.QueryRow(ctx, `
 		select exists (
@@ -257,8 +336,9 @@ func Freeing(ctx context.Context, q interface {
 		   and `+slotsSQL+`
 		   and g.going > 0
 		   and `+cpuRoomSQL("(coalesce(r.vcpu_milli, 0) - g.stopping_vcpu_milli)", "$6")+`
+		   and `+ownedSQL+`
 		   and least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
-		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class)).Scan(&ok)
+		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class), t.Account, t.Hosted, t.Fleet).Scan(&ok)
 	return ok, err
 }
 
