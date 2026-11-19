@@ -548,6 +548,69 @@ decides between them, and it is a day's work on the Mac. Not measured:
 the Mac's own fio (no fio, no Homebrew there), and hostd's
 RegisterPaths natively on APFS.
 
+**The boot, measured the same evening (ENG-12).** `mkGuestRunner
+storeOnDisk` puts the guest's closure on an erofs image (3.3 GB for the
+6.6 GiB closure, built by microvm.nix's store-disk module) that hostd
+attaches as the first virtio-blk disk, read-only, from the
+`repose-store-disk` link beside the toplevel; the guest mounts it at
+`/nix/.ro-store` under its overlay and the share moves to
+`/nix/.ro-share`. Lab image 6 carried both guests, so one appliance (8
+vCPU, 12 GiB, the 6.18.57 kernel) booted each by closure, small class,
+minutes apart, through hostdev:
+
+| hostd's create breakdown | store on the erofs disk | store over virtiofs |
+|---|---|---|
+| volume | 2.1 s | 1.9 s |
+| ready (guestd answers) | 29.1 s | 59.5 s |
+| paths (RegisterPaths) | 16.2 s | 125.5 s |
+| setup (SetupProject) | 10.3 s | 102.2 s |
+| total | 57.9 s | 289 s |
+| the guest's own clock (`systemd-analyze`) | 5.2 s kernel + 44.6 s userspace | 7.7 s kernel + 4 min 31 s userspace |
+| `repose-paths.service` | 20.6 s | 2 min 6 s |
+| `home-manager-dev.service` | 10.8 s | 1 min 38 s |
+
+Five times faster end to end, eight on the store-bound phases, with
+the kernel's 13 s (§9) down to 5. A warm restart of the disk-fed guest
+(stop, start) took 81 s (ready 35.7, paths 37.7, setup 7.8). The share
+guest here is slower than §9's 141 s because the disk-fed guest was
+still running beside it; the pair is the point. What the disk does not
+fix: RegisterPaths is still 16 s, hostd's own work on the appliance,
+and SetupProject's 10 s is the guest's. Against x86's 26 to 40 s start
+to set up (boot-speed.md) the appliance is now within two times, not
+five, and the gap left is the catalogue recompute (the first lever), not
+the hypervisor. Three things cost a boot each: the store disk must be
+the first disk, since the guest's drive letters follow microvm.nix's
+order and stage 1 otherwise fscks the erofs as its root; the init on
+the kernel line must be the toplevel's, resolved, since the wrapper
+beside it is not in the image; and the CLI of v0.1.50 truncated the
+disk file below the image on a volume with 52 GB free (ENG-41, fixed
+at 38f5b797). What the measurement did not do: the share still serves
+later closures, and a project whose closure is not the base one reads
+it over virtiofs, so the product shape is a store disk per base and
+the share for the rest, or a disk per closure; neither is designed
+here.
+
+**The restore's seconds (ENG-13).** §9 quoted the restore's phases
+without the last one: the `restore phases` line has always ended in
+`guestd_ms`, the wait for guestd after the resume, and the unpark's
+preparation (volume activation, fingerprint, key unwrap) and its image
+open ran untimed before the phases. A park cycle of the disk-fed guest
+the same evening (a clean appliance stop, which parks its guests, then
+`repose host run` again): the park took 6.5 s (snapshot 203 ms, an 824
+MB image; the appliance stopped in 15 s), the appliance was back at its
+login in 21 s, and the unpark took 3.8 s for 27 s parked: net 34 ms,
+virtiofsd 41, store view 152, image read 1,015, resume 174, guestd
+1,630, and 772 ms outside the phases. So the unmeasured part of §9's
+7.8 s was mostly the guestd wait, which the line names, plus under a
+second of preparation; hostd now times the preparation too (`activate`,
+`fingerprint`, `unwrap`, `image_open`, `restore`, `discard` on the
+`guest restored` line, 6a77f9db), though this cycle ran the image's
+hostd, since the swapped binary was a runtime bind mount the reboot
+undid. Where the seconds go, then: the image read at about 0.8 GB/s
+and the guest's own wake-up, 1.6 s of the 3.8; a faster restore is a
+smaller image (the guest's free pages) and a quicker guestd answer,
+not the host.
+
 ## Sources
 
 - Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:

@@ -14,7 +14,7 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
 - 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest. On a 16 GB Mac that share is about 12 GB, of which about 9.6 GB is what your machines may hold at once; repose keeps the rest for itself. `repose host ls` shows the share.
-- About 10 GB of free disk to begin with, and room to grow. Installing repose peaks at about 6.6 GB while the download is still on disk, and settles under 6 GB. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
+- About 60 GB of free disk to begin with. The appliance's disk is a 40 GB file at least (100 GB when the volume has the room) that takes space only as your machines fill it, and 20 GB of the volume stays free for you; with less, `repose host add` says how much to free. Installing repose peaks at about 6.6 GB while the download is still on disk, and settles under 6 GB. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
 
@@ -40,7 +40,7 @@ It says what it is about to do, then does it: fetches [vfkit](https://github.com
 
 From any other machine, `repose host add` prints one step and nothing else, so you can pipe it: `repose host add --join <argument>`, to run on the Mac. It carries a token that works once, within 24 hours, and the machine's place on repose's network. Treat it as a password until the machine has joined: anyone who runs it adds a machine to your account. If you lose it, or let it go stale, `repose host rm` and `repose host add` again; the old step then opens nothing.
 
-The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
+The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free, never under 40 GB and never closer than 20 GB to what the volume has (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
 
 The machine sets repose up and joins your account:
 
