@@ -93,7 +93,7 @@ func env(name, def string) string {
 
 // ConfigFromEnv reads the billing configuration; enabled is Enabled().
 func ConfigFromEnv() (cfg Config, enabled bool) {
-	dash := env("DASHBOARD_URL", "https://repose.run")
+	dash := env("DASHBOARD_URL", DefaultDashboardURL)
 	cfg = Config{
 		AccessToken:     strings.TrimSpace(os.Getenv("POLAR_ACCESS_TOKEN")),
 		Env:             strings.TrimSpace(os.Getenv("POLAR_ENVIRONMENT")),
@@ -160,11 +160,17 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// DefaultDashboardURL is where the dashboard lives when DASHBOARD_URL
+// says nothing: the one default, which the api's config and
+// `internal/api/http`'s host refusals read too (DECISIONS I-1366), so
+// three places cannot disagree about the address a user is sent to.
+const DefaultDashboardURL = "https://repose.run"
+
 // BillingURL is the dashboard page every refusal points at.
 func (c Config) BillingURL() string {
 	dash := c.DashboardURL
 	if dash == "" {
-		dash = "https://repose.run"
+		dash = DefaultDashboardURL
 	}
 	return strings.TrimRight(dash, "/") + "/billing"
 }

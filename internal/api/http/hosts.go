@@ -315,7 +315,7 @@ func (s *Server) dashboard() string {
 	if s.d.DashboardURL != "" {
 		return strings.TrimRight(s.d.DashboardURL, "/")
 	}
-	return "https://repose.run"
+	return billing.DefaultDashboardURL
 }
 
 // checkHostedAllowed refuses a project that asked for the hosted fleet
