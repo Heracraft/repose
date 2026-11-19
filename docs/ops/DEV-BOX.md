@@ -232,3 +232,8 @@ one section per batch and release from 2026-11-11 to 2026-11-18.
   redesigned as a conversation, not polished.
 - `tmp-wyyd` and the stopped `e2e-*` snapshots are the owner's; the
   conductor's throwaways are destroyed after each check.
+- **A batch worktree's web checks need their own modules**: `pnpm install
+  --frozen-lockfile` in the worktree, under two seconds from the store. A
+  symlink to the main checkout's `node_modules` carries that checkout's
+  age (it lacked `@novnc/novnc` on 2026-11-19 and made vitest, the build
+  and playwright red for a reason that was not the batch's).
