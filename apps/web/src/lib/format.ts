@@ -108,11 +108,15 @@ export function minutesLeft(iso: string, now = Date.now()): number {
  * the `:` after the host into `/`, drop a trailing `.git`, lowercase the
  * host. `git@github.com:a/b.git` and `https://github.com/a/b` both become
  * `github.com/a/b`, so the connect card shows one form regardless of how
- * the project's remote was recorded.
+ * the project's remote was recorded. The same form is what New project
+ * sends as `remote_url` (I-1354), so a later `repose run` in that
+ * checkout finds the project instead of making a second machine: the
+ * trailing slash goes too, as `normalizeRemote` in internal/cli drops it.
  */
 export function normalizeRemoteDisplay(remoteUrl: string): string {
 	let s = remoteUrl.trim();
 	s = s.replace(/^[a-z]+:\/\//i, '');
+	s = s.replace(/\/+$/, '');
 	s = s.replace(/^git@/i, '');
 	const slash = s.indexOf('/');
 	const colon = s.indexOf(':');

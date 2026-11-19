@@ -190,6 +190,19 @@ export const putPersonal = (fragment: string, base: string | null) =>
 export const listProjects = (opts: { passive?: boolean } = {}) =>
 	request<Project[]>('/projects', opts);
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
+/**
+ * Makes a project, as the first `repose run` in a checkout does (I-1354).
+ * `remote_url` is the git remote this project is the machine for, in
+ * cli-config.md's normalized form, and never a repository to clone; the
+ * api refuses it beside `expires_in_s`.
+ */
+export const createProject = (body: {
+	name: string;
+	class: string;
+	remote_url?: string;
+	tz?: string;
+	expires_in_s?: number;
+}) => request<Project>('/projects', { method: 'POST', body });
 export const patchProject = (
 	id: string,
 	body: {

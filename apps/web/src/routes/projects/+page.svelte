@@ -38,6 +38,7 @@
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import AgentChips from '$lib/components/projects/AgentChips.svelte';
+	import NewProjectForm from '$lib/components/projects/NewProjectForm.svelte';
 	import RecentActivity from '$lib/components/projects/RecentActivity.svelte';
 	import { runRowAction, type RowAction } from '$lib/components/projects/actions';
 	import {
@@ -64,7 +65,7 @@
 	import type { DestroyedProject, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
 	import { stopWarning } from '$lib/busyAgents';
-	import { focusOnMount } from '$lib/focus';
+	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { tabStopWhenScrolls } from '$lib/scroller';
 	import { inDash } from '$lib/dash';
 
@@ -244,6 +245,28 @@
 			stopPoll();
 		};
 	});
+
+	/** The New project form is open (I-1354). */
+	let creating = $state(false);
+
+	function closeForm() {
+		creating = false;
+		void focusAfterRender('new-project-open');
+	}
+
+	/**
+	 * A machine has been made: its own page is where it comes up, and it
+	 * goes into the list this page holds so the rail beside that page
+	 * already has it when it draws (I-841).
+	 */
+	async function created(p: Project) {
+		creating = false;
+		if (projects) {
+			projects = [...projects, p];
+			projectsStore.set(projects);
+		}
+		await goto(resolve('/projects/[id]', { id: p.id }));
+	}
 
 	// One Start or Stop per row at a time; the label says it while it runs.
 	let pending = $state<Record<string, RowAction>>({});
@@ -552,6 +575,26 @@
 <!-- Until the list answers, the lede's line is held empty, so the page
      under it does not drop 28px when the count arrives (I-664). -->
 <PageShell title="Projects" lede={projects === undefined ? '\u00a0' : summary}>
+	{#snippet action()}
+		<!-- The form's own head says New project, so the button that opened
+		     it gives way while it is open, as the Triggers tab's Add does;
+		     Cancel brings it back and takes the focus. -->
+		{#if !creating}
+			<button
+				type="button"
+				id="new-project-open"
+				class="hk-btn-secondary hk-btn-sm"
+				onclick={() => (creating = true)}>New project</button
+			>
+		{/if}
+	{/snippet}
+
+	<!-- Above the list and outside its LoadState: making a machine does not
+	     wait on the list that failed to load. -->
+	{#if creating}
+		<NewProjectForm onsaved={created} oncancel={closeForm} />
+	{/if}
+
 	<LoadState
 		status={projects !== undefined ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={refresh}

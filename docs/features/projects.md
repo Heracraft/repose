@@ -105,6 +105,29 @@ Identity:
   resolution for every command, so scripts can run `repose stop --project
   todo-app` from anywhere.
 
+On the dashboard (DECISIONS I-1354, under I-1266):
+
+- **New project** in the head of `/projects` opens a form in place with
+  Name, Size, Keep it and Repository, and calls `POST /projects` with
+  nothing the CLI does not send. The machine opens on its own page, where
+  Connect says `repose attach <slug>` (I-1350).
+- A project made there has no checkout: the user works in `/home/dev`
+  until a `repose sync` makes one, as on a `run --no-sync` machine.
+  Nothing is cloned.
+- Repository is optional and is `remote_url`, normalised as
+  `interfaces/cli-config.md` says, so a later `repose run` in that
+  checkout resolves to this project instead of creating a second one.
+- Keep it makes the project temporary (`expires_in_s`, 1, 4, 12 or 24
+  hours); the Repository field is not shown then, because the api
+  refuses a remote beside a lifetime.
+- The name rule, both uniqueness conflicts, the project cap and the
+  billing gate are the api's, and its sentence is what the form shows. A
+  `payment_required` keeps that sentence and adds the dashboard's own
+  link to the plan.
+- `agent_default` and `multiplexer` are not on the form: the dashboard
+  cannot change either one anywhere yet, which is a separate gap under
+  I-1266. `tz` is the browser's zone, sent silently.
+
 Limits:
 
 - The plan's memory limits what runs at once and its disk what is kept
