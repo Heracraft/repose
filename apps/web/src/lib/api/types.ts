@@ -321,7 +321,18 @@ export interface OwnedHost {
 	/** The POST answer alone carries these three. */
 	join_token?: string;
 	join_token_expires_at?: string;
-	install?: { command: string; url: string };
+	/**
+	 * What to do with the host (DECISIONS I-1366, I-1380). `command` is
+	 * the whole line to run on the machine, from the deployment's
+	 * `host_install_command`, and is `""` until an operator records one
+	 * — which is every deployment today, so the fallback is the normal
+	 * case. `argument` is the join bundle `repose host add --join`
+	 * takes: the token and, where the deployment has a hub, the
+	 * WireGuard material the machine needs before it can reach the api
+	 * at all. The bare `join_token` is neither of these and is an input
+	 * to the api rather than something a user runs.
+	 */
+	install?: { command: string; argument?: string; url: string };
 }
 
 /** hosts.state: `registering` is minted and never used, `unreachable` is
