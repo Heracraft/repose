@@ -23,36 +23,43 @@ Ranked by how it reaches a customer, not by how hard it is to fix.
 
 | # | Rank | What the customer says | Card | Section |
 |---|---|---|---|---|
-| 1 | **P0** | "I ran the install on my Mac mini and it stopped with a 404." | ENG-58 | [E1](#e1-p0-the-appliance-image-has-never-been-published) |
-| 2 | **P0** | "It refused my Mac for lack of disk, then installed anyway when I ran it again — and what it installed was broken." | ENG-71 | [F1](#f1-p0-candidate-the-disk-guard-refuses-once-then-lets-you-past) |
-| 3 | **P0?** | "Both machines on my Mac died: one went unreachable after saying Ready, the other never started." | ENG-80 | [F7](#f7-both-machines-on-the-broken-appliance-died) |
-| 4 | P1 | "My Mac says it is online while the thing running on it booted with a failed service." | ENG-79 | [F6](#f6-the-appliance-boots-with-a-failed-unit-and-the-account-is-never-told) |
-| 5 | P1 | "My failed run left a broken project behind, and the fix it told me to run can never work." | ENG-59 | [E2](#e2-a-refused-run-leaves-a-project-in-error-and-prints-advice-that-cannot-work) |
-| 6 | P1 | "My Mac install died and repose just says waiting, for ever." | ENG-60 | [E3](#e3-a-dead-install-is-indistinguishable-from-a-slow-one-for-ever) |
-| 7 | P1 | "Am I being charged for every gigabyte my agent downloads?" (unreproduced) | ENG-55 | [B2](#b2-the-own-plan-is-zero-memory-zero-disk-zero-egress) |
-| 8 | P1 | "I pressed Add and nothing happened." | ENG-25 | [D1](#d1-the-refusal-renders-behind-the-dialog-that-caused-it) |
-| 9 | P1 | "My first run printed three thousand lines of build log over its own summary." | ENG-27 | [F5](#f5-3664-lines-of-nix-and-42-lines-for-the-customer) |
-| 10 | P2 | "I freed the 60 GB the docs asked for and the install still refused me." | ENG-87 | [F8](#f8-the-cli-counts-in-gib-and-says-gb) |
-| 11 | P2 | "Your Troubleshooting page has nothing about the thing I'm troubleshooting." | ENG-57 | [D2](#d2-troubleshooting-does-not-know-this-feature-exists) |
-| 12 | P2 | "The one way out of this is documented nowhere I can find." | ENG-64 | [B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere) |
-| 13 | P2 | "The price is one scroll below three plans I can't use." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads-first) |
-| 14 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
+| 1 | **P0** | "Both machines on my Mac died: one went unreachable after saying Ready, the other never started." | ENG-80 | [F7](#f7-both-machines-on-the-broken-appliance-died) |
+| 2 | **P0** | "My agent asked me a question, I answered it, and the agent never heard the answer." | ENG-105 | [F13](#f13-the-ask-reaches-me-the-answer-never-reaches-the-agent) |
+| 3 | **P0** | "It refused my Mac for lack of disk, then installed anyway when I ran it again — and what it installed was broken." | ENG-71 | [F1](#f1-p0-candidate-the-disk-guard-refuses-once-then-lets-you-past) |
+| 4 | **P0** ✅ | "I ran the install on my Mac mini and it stopped with a 404." — **closed 22:28:08** | ENG-58 | [E1](#e1-p0-the-appliance-image-has-never-been-published) |
+| 5 | P1 | "Starting my first machine took seventeen minutes, not the four the page promises." | ENG-103 | [F4](#f4-the-first-machine-on-owned-hardware) |
+| 6 | P1 | "My Mac says it is online while the thing running on it booted with a failed service." | ENG-79 | [F6](#f6-the-appliance-boots-with-a-failed-unit-and-the-account-is-never-told) |
+| 7 | P1 | "It said my machine did not answer within a minute, after I watched it try for six and a half." | ENG-100 | [F7](#f7-both-machines-on-the-broken-appliance-died) |
+| 8 | P1 | "My failed run left a broken project behind, and the fix it told me to run can never work." | ENG-59 | [E2](#e2-a-refused-run-leaves-a-project-in-error-and-prints-advice-that-cannot-work) |
+| 9 | P1 | "My Mac install died and repose just says waiting, for ever." | ENG-60 | [E3](#e3-a-dead-install-is-indistinguishable-from-a-slow-one-for-ever) |
+| 10 | P1 | "My Mac is listed with gibberish under its name, and on my phone the Remove button is off the screen." | ENG-88 / ENG-89 | [F11](#f11-a-build-hash-under-my-macs-name-and-no-remove-button-on-a-phone) |
+| 11 | P1 | "My first run printed three thousand lines of build log over its own summary." | ENG-27 | [F5](#f5-3664-lines-of-nix-and-42-lines-for-the-customer) |
+| 12 | P1 | "Am I being charged for every gigabyte my agent downloads?" (unreproduced) | ENG-55 | [B2](#b2-the-own-plan-is-zero-memory-zero-disk-zero-egress) |
+| 13 | P1 | "I pressed Add and nothing happened." | ENG-25 | [D1](#d1-the-refusal-renders-behind-the-dialog-that-caused-it) |
+| 14 | P2 | "I freed the 60 GB the docs asked for and the install still refused me." | ENG-87 | [F8](#f8-the-cli-counts-in-gib-and-says-gb) |
+| 15 | P2 | "Your Troubleshooting page has nothing about the thing I'm troubleshooting." | ENG-57 | [D2](#d2-troubleshooting-does-not-know-this-feature-exists) |
+| 16 | P2 | "The one way out of this is documented nowhere I can find." | ENG-64 | [B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere) |
+| 17 | P2 | "The price is one scroll below three plans I can't use." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads-first) |
+| 18 | P2 | "Four of my documentation files were left behind for having 'credentials' in the name." | ENG-104 | [F14](#f14-four-documentation-files-left-behind-for-having-credentials-in-the-name) |
+| 19 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
 
-**Two P0 and a third that is probably one.** ENG-58 — the appliance image
-the shipped CLI fetched had never been published — **closed at 22:28:08**
-when the release went out, and I verified it anonymously. Its cause,
-**ENG-62**, does not close: nothing in the release machinery checks that a
-release's assets exist.
+**Three open P0 on this surface, and a fourth already closed.**
 
-**ENG-71 is the one to read first**, because it survives the publish. The
-disk guard refuses once and then lets you past on a retry, and what it
-installs is an appliance whose guest pool was never grown — which registers,
-reports `online 18 GB just now`, and tells the customer nothing. Every
-finding from F6 to F7 is downstream of it.
+**ENG-80 is first because it is the feature.** Across five start attempts on
+this Mac with the published build, **two succeeded and three failed**, in two
+distinct failure modes. A clean appliance failed as readily as a broken one.
 
-**What is still unmeasured** is in [E5](#e5-what-this-review-could-not-reach)
-and [F10](#f10-what-is-still-unmeasured): the phone ask, the laptop closed,
-the Mac reboot, and a parked guest against 3.8 s.
+**ENG-105 is second because it is the reason the product exists.** The agent
+asks, the owner is interrupted and answers, and the agent — which gave up
+after 6.1 seconds against a requested 3 minutes — never hears it.
+
+**ENG-71 is third because it survives everything else.** It is also the one
+finding here whose cause I proved and then had to retract as the cause of
+the others.
+
+**ENG-58 closed at 22:28:08** when the appliance release was published; I
+verified it anonymously. Its cause, **ENG-62**, does not close: nothing in
+the release machinery checks that a release's assets exist.
 
 ---
 
