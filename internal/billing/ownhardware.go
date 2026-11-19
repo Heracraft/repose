@@ -1,7 +1,8 @@
 package billing
 
 // Own hardware: the two questions the rest of the api asks the plan about
-// a host a user owns (DECISIONS I-1366, and I-1364 for the plan itself).
+// a host a user owns (DECISIONS I-1366; the Own hardware plan that
+// answers both is 19d's of the Mac mini program).
 //
 // One is "how many hosts may this account add", which `POST /hosts`
 // refuses past. The other is "may this account's machines run on hardware
