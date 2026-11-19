@@ -37041,9 +37041,15 @@ untested on Apple silicon); 6.8 (below the assertion).
   room on the pool for the image, which a lab disk at the installer's
   minimum lacked (`no_room`, the guest started cold).
 
-*Checked:* `host-mac` and `mac-launcher-sizing` green under `nix flake
-check` (the 19f report); the aarch64 outputs evaluated; the Mac day
-above. Not done at this line: a Mac joining a real account, which waits
+*Checked:* `nix build ./nix#checks.x86_64-linux.host-mac` green
+(/nix/store/pm880cbmxw1bf4gd7vcbnyf35aildn2r-vm-test-run-repose-host-mac,
+2026-11-19 13:44 UTC: the five subtests, the join bundle split, wg0 on
+the bootstrap key and registration over it, the key swapped and
+hub.json gone, hostd's stream after the peer swap, the one-disk format
+and grow) and `mac-launcher-sizing`; the test caught a wrong jq prefix
+in repose-host-net's hub.json branch that the Mac runs, which used
+token-only bundles, never exercised. The aarch64 outputs built on the
+Mac's builder; the Mac day above. Not done at this line: a Mac joining a real account, which waits
 on the api release that carries I-1380 (the council's checkout too).
 
 **I-1380. The Mac launcher is a plist over vfkit, and the install step
