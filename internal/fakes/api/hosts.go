@@ -65,8 +65,9 @@ type OwnedHost struct {
 // page that explains it. Command is empty when the api has no line
 // recorded, and a client then shows the token and the page.
 type OwnedHostInstall struct {
-	Command string `json:"command"`
-	URL     string `json:"url"`
+	Command  string `json:"command"`
+	Argument string `json:"argument,omitempty"`
+	URL      string `json:"url"`
 }
 
 type ownedHostRec struct {
@@ -220,11 +221,15 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	if f.hostInstallSet {
 		line = f.hostInstall
 	}
+	// The step's argument is the join bundle (DECISIONS I-1380): the real
+	// api puts the machine's hub material beside the token; the fake has
+	// no hub and carries the token alone, in the same envelope.
+	argument := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"token":"` + h.JoinToken + `"}`))
 	command := ""
 	if strings.Contains(line, "%s") {
-		command = strings.Replace(line, "%s", h.JoinToken, 1)
+		command = strings.Replace(line, "%s", argument, 1)
 	}
-	h.Install = &OwnedHostInstall{Command: command, URL: FakeDashboard + "/docs/own-hardware"}
+	h.Install = &OwnedHostInstall{Command: command, Argument: argument, URL: FakeDashboard + "/docs/own-hardware"}
 	if revive != nil {
 		*revive = *h
 	} else {

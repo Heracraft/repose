@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heracraft/repose/internal/api/hostmgr"
+	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/store"
 )
 
@@ -271,5 +273,64 @@ func TestPlacementField(t *testing.T) {
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "three", "class": "small", "placement": "somewhere"})
 	if r.status != 400 || detailOf(t, r)["reason"] != "placement" {
 		t.Fatalf("a bad placement: %d %s, want invalid placement", r.status, r.raw)
+	}
+}
+
+// TestHostAddPeersTheHubBeforeRegistration: the install step's argument
+// is the join bundle with the token and the hub material in it, and the
+// edge's host list carries the new host from the moment it is added, so
+// the tunnel exists before the machine first boots (DECISIONS I-1380).
+func TestHostAddPeersTheHubBeforeRegistration(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-hub", "hub")
+	e.exempt(t, "sub-hub")
+	for k, v := range map[string]string{
+		hostmgr.SettingEdgeWGPubkey:   "dyP2l2byrPpr9ehOwYga0Ya9/qkUChpSCR0vJVRa0f8=",
+		hostmgr.SettingEdgeWGEndpoint: "edge.example:51820",
+		httpapi.SettingHostInstall:    "curl -fsSL https://repose.run/mac | sh -s -- %s",
+	} {
+		if err := store.SetSetting(e.h.Ctx, e.h.Pool, k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	token, _ := r.body["join_token"].(string)
+	install, _ := r.body["install"].(map[string]any)
+	arg, _ := install["argument"].(string)
+	command, _ := install["command"].(string)
+	if arg == "" || command != "curl -fsSL https://repose.run/mac | sh -s -- "+arg {
+		t.Fatalf("install %v: want the command with the bundle where %%s was", install)
+	}
+	if strings.Contains(command, token) {
+		t.Fatal("the bare token is in the install step; the bundle carries it")
+	}
+	b, err := hostmgr.DecodeJoinBundle(arg)
+	if err != nil || b.Token != token || b.WG == nil || b.WG.EdgeEndpoint != "edge.example:51820" || b.WG.PrivateKey == "" {
+		t.Fatalf("bundle %+v (%v): want the token and the hub material", b, err)
+	}
+	// Nothing of the bundle reaches a log line: it is the machine's key.
+	if strings.Contains(e.logText(), b.WG.PrivateKey) || strings.Contains(e.logText(), arg) {
+		t.Fatal("the hub bootstrap reached a log line")
+	}
+
+	// The edge's list, which wgsync peers from, has the host already.
+	ih := e.internalDo(t, "GET", "/internal/hosts", nil)
+	if ih.status != 200 {
+		t.Fatalf("internal hosts: %d %s", ih.status, ih.raw)
+	}
+	var found map[string]any
+	for _, row := range ih.list {
+		if m, _ := row.(map[string]any); m != nil && m["name"] == "mac-mini" {
+			found = m
+		}
+	}
+	if found == nil || found["wg_pubkey"] == "" || found["wg_ip"] == nil || found["guest_cidr"] == nil || found["state"] != "registering" {
+		t.Fatalf("the unregistered host is not a peer: %v", found)
+	}
+	if b.WG.Address != found["wg_ip"].(string)+"/16" {
+		t.Fatalf("bundle address %s, listed wg_ip %v", b.WG.Address, found["wg_ip"])
 	}
 }

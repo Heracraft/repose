@@ -66,6 +66,8 @@ func HostAddCmd(ctx context.Context, e *Env, name string) error {
 	switch {
 	case installed:
 		_, _ = fmt.Fprintln(e.Out, h.Install.Command)
+	case h.Install != nil && h.Install.Argument != "":
+		_, _ = fmt.Fprintln(e.Out, h.Install.Argument)
 	case h.JoinToken != "":
 		_, _ = fmt.Fprintln(e.Out, h.JoinToken)
 	default:

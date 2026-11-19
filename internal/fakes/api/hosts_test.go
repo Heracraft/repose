@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 )
@@ -29,10 +30,14 @@ func TestFakeHostsWalkthrough(t *testing.T) {
 	if h.Install == nil || h.Install.Command == "" || h.Install.URL == "" {
 		t.Fatalf("add answered install %+v, want the fake's line and the docs page", h.Install)
 	}
-	// The default install line carries the token, so a client that
-	// prints it prints something a user could paste.
-	if !contains(h.Install.Command, h.JoinToken) {
-		t.Fatalf("the install line does not carry the token: %q", h.Install.Command)
+	// The default install line carries the join bundle, which carries the
+	// token (DECISIONS I-1380), so a client that prints it prints
+	// something a user could paste.
+	if h.Install.Argument == "" || !contains(h.Install.Command, h.Install.Argument) {
+		t.Fatalf("the install line does not carry the argument: %q", h.Install.Command)
+	}
+	if raw, err := base64.RawURLEncoding.DecodeString(h.Install.Argument); err != nil || !contains(string(raw), `"token":"`+h.JoinToken+`"`) {
+		t.Fatalf("the argument does not carry the token: %q (%v)", h.Install.Argument, err)
 	}
 
 	// The list never carries the token: it is minted once and shown once.

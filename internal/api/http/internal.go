@@ -217,7 +217,11 @@ func (s *Server) internalHosts(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := []map[string]any{}
 	for _, h := range hosts {
-		if h.RegisteredAt == nil || h.WGPubkey == nil {
+		// A host with a public key is a peer, registered or not: a host
+		// the user owns gets its key at `host add` (hostmgr.PrepareHub,
+		// DECISIONS I-1380) and registers over the tunnel the edge builds
+		// from this list. A row with no key has nothing to peer.
+		if h.WGPubkey == nil {
 			continue
 		}
 		row := map[string]any{"host_id": h.ID, "name": h.Name, "wg_pubkey": *h.WGPubkey, "state": h.State}
