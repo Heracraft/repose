@@ -1056,7 +1056,7 @@
           dash -n "$script"
           bash -n "$script"
           got() { REPOSE_SIZING_TEST=1 dash "$script" "$@"; }
-          want() { exp=$1; shift; out=$(got "$@"); [ "$out" = "$exp" ] || { echo "$*: got $out, want $exp" >&2; exit 1; }; }
+          want() { exp=$1; shift; res=$(got "$@"); [ "$res" = "$exp" ] || { echo "$*: got $res, want $exp" >&2; exit 1; }; }
           want 12288 vm_memory_mib 17179869184   # a 16 GB Mac
           want 18432 vm_memory_mib 25769803776   # a 24 GB Mac
           want 24576 vm_memory_mib 34359738368   # 32 GB
