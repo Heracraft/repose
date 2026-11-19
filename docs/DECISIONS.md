@@ -37247,9 +37247,13 @@ and asked not to be asked again unless it does not work).
   lose its work. So the park is not a luxury on owned hardware; it is the
   difference between a restart costing 25 seconds and costing a day.
 - *The custodian, and why this is not a fourth home.* The Keychain holds
-  **the wrapping key only** — one key per host, created on first park,
-  non-exportable, in the System keychain under the launcher's own access
-  group, used to wrap and unwrap the per-image key. No named secret, no
+  **the wrapping key only** — one key per host, created on first park, in
+  the **user's login keychain** (this entry first said the System keychain,
+  which was wrong: `internal/cli/appliance.go:84` puts the plist in
+  `~/Library/LaunchAgents` and bootstraps it into `gui/<uid>`, so the
+  appliance is a user agent that cannot run before someone logs in, and a
+  System item would need the root install and signed binary I-1380
+  deliberately avoided), used to wrap and unwrap the per-image key. No named secret, no
   tenant data and no token is ever written to it, so CLAUDE.md's "three
   homes and nothing else" is unchanged and this remains I-653's single
   exception with a second custodian for hardware we do not own. The image
@@ -37267,6 +37271,14 @@ and asked not to be asked again unless it does not work).
   asks for, and on a `repose host run` stop. It cannot run on a power
   cut, a panic or a force-off, and the public docs say "restart your Mac
   and your work survives", never "your work always survives".
+  **And it needs the customer to come back.** Because the appliance is a
+  user agent, hostd exists only once someone logs in, while the parked
+  image is removed after six hours whether it has been read or not
+  (I-653, `internal/hostd/guest/park.go:146`). So a customer who restarts
+  and does not log in within six hours loses the work anyway: hostd starts
+  later, finds the image past `MaxAge` and discards it. The docs say to log
+  back in within six hours; on our own hosts this case cannot arise,
+  because hostd starts with the machine.
 - *The threat it does and does not cover.* An attacker with the Mac's
   disk alone reads ciphertext. An attacker with the unlocked Mac and
   root reads the Keychain item and therefore the image, which is weaker
