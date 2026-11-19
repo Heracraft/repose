@@ -194,6 +194,32 @@ jobs:
           nix profile install --inputs-from "git+file://$GITHUB_WORKSPACE?dir=nix" nixpkgs#cachix
           nix build --print-out-paths --no-link ./nix#claude-code ./nix#opencode ./nix#codex ./nix#gemini-cli ./nix#pi-coding-agent ./nix#chrome-devtools-mcp ./nix#playwright-mcp             | cachix push repose
 
+  # The same overlay for aarch64-linux (DECISIONS I-1374), on GitHub's
+  # arm64 runner: the agents are prebuilt upstream binaries patched for
+  # the architecture they run on, which no x86 runner can do without
+  # binfmt. Pushed to the same Cachix cache, so an aarch64 host
+  # substitutes them instead of fetching upstream. The base closure is
+  # never pushed on either architecture (the cache's tier, I-46).
+  nix-aarch64-overlay:
+    name: aarch64 agent overlay (build, push to Cachix)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.35.2/install
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: build the aarch64 agent overlay
+        run: nix build --no-link ./nix#packages.aarch64-linux.claude-code ./nix#packages.aarch64-linux.opencode ./nix#packages.aarch64-linux.codex ./nix#packages.aarch64-linux.gemini-cli ./nix#packages.aarch64-linux.pi-coding-agent ./nix#packages.aarch64-linux.chrome-devtools-mcp ./nix#packages.aarch64-linux.playwright-mcp
+      - name: push the aarch64 overlay to Cachix
+        if: env.CACHIX_AUTH_TOKEN != '' && github.ref == 'refs/heads/main'
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          nix profile install --inputs-from "git+file://$GITHUB_WORKSPACE?dir=nix" nixpkgs#cachix
+          nix build --print-out-paths --no-link ./nix#packages.aarch64-linux.claude-code ./nix#packages.aarch64-linux.opencode ./nix#packages.aarch64-linux.codex ./nix#packages.aarch64-linux.gemini-cli ./nix#packages.aarch64-linux.pi-coding-agent ./nix#packages.aarch64-linux.chrome-devtools-mcp ./nix#packages.aarch64-linux.playwright-mcp | cachix push repose
+
   cli-goreleaser:
     name: cli GoReleaser matrix build
     runs-on: ubuntu-latest

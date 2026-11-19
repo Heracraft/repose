@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# The aarch64 build day (DECISIONS I-1374; docs/ops/DEV-BOX.md "aarch64
+# builds"): the checks, the guest base and the overlay push for
+# aarch64-linux, on an aarch64 machine or through one as a remote builder.
+#
+#   ops/dev/aarch64-base check [--builder ssh-ng://user@host]
+#       checks.aarch64-linux: the closure limit, and that the runner, the
+#       host system and the installer build. Prints the closure's size.
+#   ops/dev/aarch64-base build [--builder ...]
+#       packages.aarch64-linux.guest-system and the runner; prints the
+#       store paths and the closure size (nix path-info -S).
+#   ops/dev/aarch64-base push [--builder ...]
+#       the aarch64 agent overlay (the same seven packages ci.yml pushes
+#       for x86_64) to the Cachix cache `repose`; needs CACHIX_AUTH_TOKEN
+#       and cachix on PATH. The base closure is never pushed (I-46's tier).
+#
+# With --builder, evaluation runs here and every derivation is built on
+# that machine (nix's remote builder, --max-jobs 0 so nothing is tried
+# locally); on woker-1 the evaluation goes through the shared build lock
+# when it exists, because an evaluation of the guest base costs the same
+# memory whichever architecture it is for. Without --builder the script
+# expects to be running on the aarch64 machine itself and builds there.
+# Either way the time of each step is printed, which is what
+# docs/research/mac-mini-nested-kvm.md §8 records.
+set -euo pipefail
+
+root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+flake="git+file://$root?dir=nix"
+lock=/mnt/nixstore/repose-ws/nix-build.lock
+builder=""
+cmd=${1:-}
+shift || true
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --builder) builder=$2; shift ;;
+    *) echo "usage: $0 check|build|push [--builder ssh-ng://user@host]" >&2; exit 64 ;;
+  esac
+  shift
+done
+
+nixargs=()
+if [ -n "$builder" ]; then
+  nixargs+=(--builders "$builder aarch64-linux - 8 1 big-parallel" --max-jobs 0)
+elif [ "$(uname -m)" != aarch64 ]; then
+  echo "$0: this is $(uname -m); pass --builder ssh-ng://<user>@<aarch64 host>" >&2
+  exit 64
+fi
+
+run() {
+  # Under the lock when it exists (woker-1); plain anywhere else.
+  local t0 t1
+  t0=$(date +%s)
+  if [ -e "$lock" ]; then
+    flock "$lock" "$@"
+  else
+    "$@"
+  fi
+  t1=$(date +%s)
+  echo "$0: $((t1 - t0)) s: ${*: -1}" >&2
+}
+
+overlay=(claude-code opencode codex gemini-cli pi-coding-agent chrome-devtools-mcp playwright-mcp)
+
+case "$cmd" in
+  check)
+    for c in guest-closure-size guest-runner-builds host-aarch64-builds installer-aarch64-builds; do
+      out=$(run nix build --no-link --print-out-paths -L "${nixargs[@]}" "$flake#checks.aarch64-linux.$c")
+      echo "$c: $out"
+      [ "$c" = guest-closure-size ] && echo "closure: $(cat "$out") bytes"
+    done ;;
+  build)
+    out=$(run nix build --no-link --print-out-paths -L "${nixargs[@]}" "$flake#packages.aarch64-linux.guest-runner" "$flake#packages.aarch64-linux.guest-system")
+    echo "$out"
+    nix path-info -S "$flake#packages.aarch64-linux.guest-system" ;;
+  push)
+    : "${CACHIX_AUTH_TOKEN:?set CACHIX_AUTH_TOKEN}"
+    attrs=()
+    for a in "${overlay[@]}"; do attrs+=("$flake#packages.aarch64-linux.$a"); done
+    run nix build --no-link --print-out-paths "${nixargs[@]}" "${attrs[@]}" | cachix push repose ;;
+  *) echo "usage: $0 check|build|push [--builder ssh-ng://user@host]" >&2; exit 64 ;;
+esac

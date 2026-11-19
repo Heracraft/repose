@@ -261,7 +261,7 @@ func TestRealBuildFlow(t *testing.T) {
 		"--override-input fragment path:" + filepath.Join(b.BuildsDir, "r1"),
 		"--option restrict-eval true", "--option pure-eval true", "--option allow-import-from-derivation false",
 		"--option allowed-uris github:NixOS/nixpkgs/b1b8?narHash=sha256-zVx%3D path:" + filepath.Join(b.BuildsDir, "r1"),
-		"git+file://" + filepath.Join(base, "abc123") + "?dir=nix#guestSystem.config.system.build.toplevel.drvPath",
+		"git+file://" + filepath.Join(base, "abc123") + "?dir=nix#" + DefaultEvalAttr(),
 	} {
 		if !strings.Contains(evalCall, want) {
 			t.Fatalf("eval argv missing %q: %s", want, evalCall)

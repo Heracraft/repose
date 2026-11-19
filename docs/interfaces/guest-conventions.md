@@ -388,9 +388,10 @@ Every guest has herdr from the base, whatever its multiplexer; only a
 project whose `project.json` names herdr runs its server.
 
 - **Package.** `herdr` from `nix/overlay/agents/herdr.nix`, upstream's
-  static-pie x86-64 release pinned in `nix/overlay/agents/versions.json`
-  (`herdr.version`, `herdr.x86_64-linux.url` and `.hash`, the agents'
-  shape) and moved by `scripts/bump-agents.sh`.
+  static-pie release pinned in `nix/overlay/agents/versions.json`
+  (`herdr.version`, `herdr.x86_64-linux.url` and `.hash`, and the same
+  under `aarch64-linux`; the agents' shape, DECISIONS I-1374) and moved by
+  `scripts/bump-agents.sh`.
   The derivation's install check runs `herdr status client --json` and
   fails unless `endpoint_protocol_generation == 1` and `protocol >= 22`.
   It is in `environment.systemPackages`, so

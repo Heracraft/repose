@@ -284,10 +284,18 @@ the api does not reboot unattended guests.
 `nix/overlay/agents/versions.json`:
 
 ```json
-{ "claude-code": { "version": "2.1.273", "x86_64-linux": { "url": "...", "hash": "sha256-..." } },
+{ "claude-code": { "version": "2.1.273",
+                   "x86_64-linux": { "url": "...", "hash": "sha256-..." },
+                   "aarch64-linux": { "url": "...", "hash": "sha256-..." } },
   "codex": { ... }, "opencode": { ... }, "gemini-cli": { ... }, "pi-coding-agent": { ... },
   "playwright-mcp": { "version": "...", "npmDepsHash": "..." }, "chrome-devtools-mcp": { ... } }
 ```
+
+A binary agent has one slot per architecture (`x86_64-linux`,
+`aarch64-linux`, DECISIONS I-1374) and the derivation reads the slot of the
+architecture it is built for; Codex's `code-mode-host` and `bwrap` assets
+sit inside each slot, since they are per-target too. `gemini-cli` is one
+architecture-neutral bundle under `npm`.
 
 Each package is a `stdenv.mkDerivation` (or `buildNpmPackage`) reading
 that file, with `autoPatchelfHook` where binaries are dynamically linked

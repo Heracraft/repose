@@ -107,8 +107,8 @@ Mac mini (macOS 15+, M4)                          L0
   notarised macOS program to keep building.
 - **L2: Cloud Hypervisor**, as on x86. It supports aarch64 with KVM,
   boots an uncompressed arm64 `Image` directly (the serial console is
-  `ttyAMA0`, not `ttyS0`; our runner hard-codes `console=ttyS0` in
-  `nix/guest/microvm.nix`), and has snapshot and restore on aarch64, which
+  `ttyAMA0`, not `ttyS0`; the runner and hostd pick the console by
+  architecture since I-1374), and has snapshot and restore on aarch64, which
   is less travelled than on x86 and is what I-652's freeze depends on.
 - **The Lima issue that is not ours.** lima-vm/lima#4498 reports QEMU
   failing with "host kernel KVM does not support providing Virtualization
@@ -152,9 +152,10 @@ the finding.
    Apache-licensed.
 8. **Build the aarch64 base, if time allows.** Install Nix in L1, clone
    the repository, and attempt the guest closure for `aarch64-linux`.
-   The flake fixes `system = "x86_64-linux"` (`nix/flake.nix:63`), so
-   this is where the first code change shows itself; the closure's size
-   against the 7 GiB limit is the number to carry back.
+   The flake used to fix `system = "x86_64-linux"`; since I-1374 it has
+   `aarch64-linux` outputs (§8), so the step is `ops/dev/aarch64-base
+   check` and the closure's size against the 7 GiB limit is the number
+   to carry back.
 
 What the day cannot answer: how a user's own Mac mini behaves with the
 Mac asleep, on Wi-Fi, behind a home NAT, or on a 16 GB machine that is
@@ -219,14 +220,73 @@ with the `metal` provider replaced by:
 
 - an `aarch64-linux` guest base and host system as second flake outputs,
   built on the Mac's L1 as a Nix remote builder (woker-1 is x86 and has
-  no `binfmt` to emulate);
+  no `binfmt` to emulate): done as I-1374, §8;
 - a host image for the framework (`raw-efi`, one disk, a partition for
   `vg-guests`, a host reserve scaled for 16 GB);
 - a launcher for macOS on vfkit or our own framework code, started at
   login, holding the join token for the first registration, with
   `pmset` keeping the Mac awake;
-- the runner's `console=ttyS0` made per-architecture;
+- the runner's `console=ttyS0` made per-architecture: done as I-1374;
 - freeze and restore gated on step 5's result, x86-only if it fails.
+
+## 8. The aarch64 build (I-1374, 2026-11-19)
+
+**Nothing aarch64 has been built. Every number a build would give is
+below as a placeholder, and every aarch64 output in the flake has only
+ever been evaluated, never realised.** A flake output nobody has built
+is the same class of thing as a migration written and never registered;
+this section exists so that the reader does not take the evaluation
+evidence for a build.
+
+What exists, from `nix/flake.nix`: `packages.aarch64-linux` (the guest
+runner and system, the Go binaries, the agents), `guestSystems.aarch64-linux`
+(what hostd on an aarch64 host evaluates), `nixosConfigurations.host-aarch64`
+and `installer-aarch64`, and `checks.aarch64-linux` (the closure limit,
+the runner, the host and the installer build; no VM tests, they need KVM
+of the builder's architecture). The runner boots the kernel's `Image`
+with `console=ttyAMA0`; hostd renders the same console on arm64. Every
+agent's arm64 release is pinned beside the x86 one in `versions.json`.
+The CI job `nix-aarch64-overlay` and `ops/dev/aarch64-base` are written
+and have never run.
+
+Measured on woker-1 (x86, evaluation only, no aarch64 builder; every
+number below is from `nix eval` under the shared build lock):
+
+- The aarch64 guest system, host system, installer and closure check all
+  evaluate to derivations; the x86 derivations are unchanged by the
+  restructuring (the guest system's, runner's, host-02's, edge's and
+  installer's `.drv` paths are identical to `mac-mini`'s).
+- The host kernel pin resolves to 6.18.57 on aarch64 too (the same
+  nixpkgs revision), so `nix/hosts/kernel.nix`'s CVE-2026-99999
+  assertion holds.
+- `nix build --dry-run ./nix#packages.aarch64-linux.guest-system` on
+  2026-11-19: 979 paths fetched from cache.nixos.org (1.9 GiB download,
+  5.7 GiB unpacked) and 421 derivations built. The built ones are the
+  guest's own configuration (unit files, etc files, the initrd and the
+  shrunk module set), the Go binaries, the agents (prebuilt binaries
+  patched on the builder) and the playwright set with its chromium
+  override; the kernel, chromium and node itself are fetched. One
+  `nodejs-24.20.0` derivation is in the build list beside the fetched
+  one, so the day may include one node compile: budget an hour for it
+  on 8 vCPU before reading the closure number.
+
+Owed by the first aarch64 build day (the Mac's appliance VM, or any
+aarch64 Linux box with nix), each line replaced by its number:
+
+- aarch64 guest closure size: **NOT BUILT**, from
+  `ops/dev/aarch64-base check` (the x86 closure is about 6.0 GiB
+  against the 7 GiB limit).
+- guest system build time, wall clock on the builder: **NOT BUILT**.
+- host system build time (`host-aarch64`): **NOT BUILT**.
+- paths substituted against built, and whether the node compile
+  happened: **NOT BUILT**.
+- builder memory: **NOT BUILT** (asked for 16 GiB, 24 comfortable, with
+  about 15 GB free in `/nix`, before the first attempt).
+- the aarch64 overlay on Cachix: **NOT PUSHED** (the CI job runs on the
+  first push of this to `main`; the recipe's `push` has never run).
+
+`ops/dev/aarch64-base` is the recipe for the day (`check`, `build`,
+`push`), and `docs/ops/DEV-BOX.md` "aarch64 builds" says where it runs.
 
 ## Sources
 
