@@ -37029,11 +37029,15 @@ untested on Apple silicon); 6.8 (below the assertion).
   182 ms), with a marker in its tmpfs and its uptime continuous across
   the restart. The appliance still ships with the park off: the image
   key is wrapped by Key Vault with the host's Azure identity (I-653),
-  which a Mac has not, and `park.keyFile` is for staging and tests. A
-  key design for owned hosts is its own decision; until it is made a
-  Mac reboot stops the machines and the api restarts them (I-645). A
-  park also needs room on the pool for the image, which a lab disk at
-  the installer's minimum lacked (`no_room`, the guest started cold).
+  which a Mac has not, and `park.keyFile` is for staging and tests;
+  using it in the product would be the fourth home for a secret that
+  CLAUDE.md forbids. **Open question, not settled here and with no id
+  reserved:** where an owned host's image-wrapping key lives when the
+  host is a stranger's machine with no cloud identity, and who can read
+  it. Until it is settled a Mac reboot stops the machines and the api
+  restarts them (I-645), which the docs page says. A park also needs
+  room on the pool for the image, which a lab disk at the installer's
+  minimum lacked (`no_room`, the guest started cold).
 
 *Checked:* `host-mac` and `mac-launcher-sizing` green under `nix flake
 check` (the 19f report); the aarch64 outputs evaluated; the Mac day

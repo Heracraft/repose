@@ -415,7 +415,13 @@ attempt was skipped with `no_room`: the pool on a 39 GiB disk file had
 no room for the image, and `repose-appliance grow 60` plus a restart
 gave it 25 GB. hostd's own start breakdown for the small guest:
 `prepare_ms 457, ready_ms 45733, paths_ms 59725, setup_ms 34808,
-total_ms 140725`.
+total_ms 140725` (2 min 21 s against the large guest's 3 min 36 s, so
+the minutes are not a fixed cost; `paths` is the largest piece either
+way). The appliance ships with the park off: the image key is wrapped
+by Key Vault with the host's Azure identity (I-653) and a Mac has none;
+the key file the lab used is for staging and tests only. Open, and
+for the owner: where an owned host's wrapping key lives when the host
+is a stranger's machine with no cloud identity, and who can read it.
 
 Lessons, each of which cost a run:
 
