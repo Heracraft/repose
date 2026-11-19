@@ -131,7 +131,14 @@ func (a Account) WriteTo(w io.Writer) (int64, error) {
 	}
 	row("past due since", fmtT(a.PastDueSince))
 	row("suspended", fmtT(a.SuspendedAt))
-	row("limits", fmt.Sprintf("%d projects, xl %d, %d GB running, %d GB disk, %d GB egress", a.Limits.Projects, a.Limits.XL, a.Limits.MemoryGB, a.Limits.DiskGB, a.Limits.EgressGB))
+	// Each row says what the plan actually sells: a plan with a host and
+	// no fleet memory has no figures to print against, and one that sold
+	// both would print both.
+	if !a.Plan.SellsFleetMemory() {
+		row("limits", fmt.Sprintf("%d projects, xl %d, %d host of their own; no memory, disk or egress limit from the plan", a.Limits.Projects, a.Limits.XL, a.Limits.Hosts))
+	} else {
+		row("limits", fmt.Sprintf("%d projects, xl %d, %d GB running, %d GB disk, %d GB egress, %d host(s) of their own", a.Limits.Projects, a.Limits.XL, a.Limits.MemoryGB, a.Limits.DiskGB, a.Limits.EgressGB, a.Limits.Hosts))
+	}
 	if a.Place != nil {
 		row("waitlist", fmt.Sprintf("position %d, joined %s, invited %s, hold until %s", a.Place.Position, a.Place.JoinedAt.UTC().Format(time.RFC3339), fmtT(a.Place.InvitedAt), fmtT(a.Place.HoldUntil)))
 	}
@@ -140,15 +147,30 @@ func (a Account) WriteTo(w io.Writer) (int64, error) {
 	for _, p := range a.Usage.Running {
 		slugs = append(slugs, p.Slug+" ("+p.Class+")")
 	}
-	row("  running memory", fmt.Sprintf("%d of %d GB: %s", a.Usage.RunningGB, a.Plan.MemoryGB, orDash(strings.Join(slugs, ", "))))
-	row("  disk held", fmt.Sprintf("%s of %d GB over %d project(s)", fmtGB(a.Usage.DiskHeldBytes), a.Plan.DiskGB, a.Usage.Projects))
+	if a.Plan.SellsFleetMemory() {
+		row("  running memory", fmt.Sprintf("%d of %d GB: %s", a.Usage.RunningGB, a.Plan.MemoryGB, orDash(strings.Join(slugs, ", "))))
+	} else {
+		// The plan caps none of this; it is what the account holds on its
+		// own host (DECISIONS I-1364).
+		row("  running memory", fmt.Sprintf("%d GB, no plan limit: %s", a.Usage.RunningGB, orDash(strings.Join(slugs, ", "))))
+	}
+	if a.Plan.DiskGB > 0 {
+		row("  disk held", fmt.Sprintf("%s of %d GB over %d project(s)", fmtGB(a.Usage.DiskHeldBytes), a.Plan.DiskGB, a.Usage.Projects))
+	} else {
+		row("  disk held", fmt.Sprintf("%s GB over %d project(s), no plan limit", fmtGB(a.Usage.DiskHeldBytes), a.Usage.Projects))
+	}
 	for _, c := range []string{"tiny", "small", "large", "xl"} {
 		if secs := a.Hours[c]; secs > 0 {
 			row("  hours "+c, fmt.Sprintf("%.1f", float64(secs)/3600))
 		}
 	}
-	row("  egress", fmt.Sprintf("%.2f GB of %d GB included; hard stop at %d GB", float64(a.Usage.EgressBytes)/(1<<30), a.Plan.EgressGB, a.Plan.EgressHardStopBytes()>>30))
-	row("  overage", fmt.Sprintf("ceil(%.2f - %d) = %d GB x %d cents = %d cents", float64(a.Usage.EgressBytes)/(1<<30), a.Plan.EgressGB, a.Usage.OverageGB, OveragePerGBCents, a.Usage.OverageCents))
+	if a.Plan.EgressMetered() {
+		row("  egress", fmt.Sprintf("%.2f GB of %d GB included; hard stop at %d GB", float64(a.Usage.EgressBytes)/(1<<30), a.Plan.EgressGB, a.Plan.EgressHardStopBytes()>>30))
+		row("  overage", fmt.Sprintf("ceil(%.2f - %d) = %d GB x %d cents = %d cents", float64(a.Usage.EgressBytes)/(1<<30), a.Plan.EgressGB, a.Usage.OverageGB, OveragePerGBCents, a.Usage.OverageCents))
+	} else {
+		row("  egress", fmt.Sprintf("%.2f GB; not metered on the %s plan (it leaves the user's own network)", float64(a.Usage.EgressBytes)/(1<<30), a.Plan.Name))
+		row("  overage", "none: the plan meters no egress")
+	}
 	for i, o := range a.Overage {
 		k := ""
 		if i == 0 {

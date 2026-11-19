@@ -97,6 +97,7 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.Park.KeyVaultURL, "park-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
 	fs.StringVar(&o.Park.KeyName, "park-key-name", "", "name of that key")
 	fs.StringVar(&o.Park.KeyFile, "park-key-file", "", "RSA private key (PEM) to wrap image keys with instead of Key Vault (staging, tests)")
+	fs.DurationVar(&o.ReadyTimeout, "ready-timeout", 0, "how long a starting guest has to say Ready before the start fails; 0 is 60s, the Azure hosts' figure, and the Mac appliance sets minutes (DECISIONS I-1376: a guest's first boot there said Ready at 70s)")
 	fs.DurationVar(&o.Park.Deadline, "park-deadline", 240*time.Second, "longest a park of all guests may take; with the write rate it is how much guest memory a host restart can save")
 	fs.Uint64Var(&o.Park.WriteRateMBs, "park-write-rate", 100, "MB/s the snapshots are assumed to write guest memory at, until this park's first finished one shows the real rate; measure the disk the guest thin pool is on (a scratch thin volume, dd oflag=direct)")
 	fs.DurationVar(&o.Park.RestoreTimeout, "park-restore-timeout", 180*time.Second, "longest one restore's surroundings may take at the next start; the image's own read is added from the write rate")

@@ -212,7 +212,9 @@ Metrics `repose_gateway_` live in `internal/obs/metrics` as the
 `auth_fail_total{reason}` with reasons `no_cert`, `bad_ca`, `expired`,
 `revoked`, `wrong_principal`, `stopped`, `route_error`, `no_address`
 (I-721: running, host reachable, no address on the project row),
-`rate_limited`, `not_found`, `bad_login`, `busy`; `dial_fail_total`;
+`rate_limited`, `not_found`, `bad_login`, `busy`, `foreign_host` (I-1368:
+the project's host is owned by an account that is not the
+certificate's); `dial_fail_total`;
 `relay_bytes_total{direction}`; `session_seconds` histogram;
 `route_duration_seconds` histogram; `revocation_cache_age_seconds`;
 `wgsync_peers`; `wgsync_errors_total`; `hook_events_total{result}`;

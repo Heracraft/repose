@@ -90,6 +90,16 @@ type TriggerSet interface {
 	ForGuest(ctx context.Context, projectID uuid.UUID) ([]*hostdv1.Trigger, error)
 }
 
+// FleetPolicy answers whether an account's plan sells memory on the
+// hosts repose runs (DECISIONS I-1366): false keeps every
+// placement of that account on hardware it owns. An interface, like
+// TriggerSet, because the ops engine is below internal/billing and must
+// not import it; nil answers yes, which is an engine built without
+// billing (the admin CLI's, the tests) and the behaviour before I-1366.
+type FleetPolicy interface {
+	FleetAllowed(ctx context.Context, q store.Querier, userID uuid.UUID) (bool, error)
+}
+
 type Engine struct {
 	pool   *db.Pool
 	send   Sender
@@ -105,6 +115,10 @@ type Engine struct {
 	// carries (DECISIONS I-1248); nil sends none, which is an api
 	// configured without triggers.
 	triggers TriggerSet
+
+	// fleet says whether an account may be placed on the hosts repose
+	// runs (DECISIONS I-1366); nil says yes for every account.
+	fleet FleetPolicy
 
 	kick    chan struct{}
 	driving atomic.Bool
@@ -560,7 +574,7 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			return
 		}
 		if ph == "build" {
-			e.logs.Bind(cmd.CommandId, op.ID)
+			e.logs.Bind(cmd.CommandId, op.ID, hostID)
 		}
 		if ph == PhaseApplyConfig && op.Kind == KindBuild {
 			// The build's log goes on into its apply, so a client
@@ -711,7 +725,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		}
 		cmd.CommandId = op.CommandID.String()
 		if currentPhase(op) == "build" {
-			e.logs.Bind(cmd.CommandId, op.ID)
+			e.logs.Bind(cmd.CommandId, op.ID, hostID)
 		}
 		e.log.Info("re-sending unfinished command after Hello", "event", "command_resend", "op_id", op.ID.String(), "command_id", cmd.CommandId)
 		_ = e.send.Send(ctx, hostID, cmd) // a failed send is retried on the next Hello
@@ -805,7 +819,11 @@ func (e *Engine) placementWaits(ctx context.Context, op *store.Op, p *store.Proj
 	if e.now().Sub(op.CreatedAt) >= e.cfg.PlacementWait {
 		return false
 	}
-	ok, err := scheduler.Freeing(ctx, e.pool, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+	t, err := e.target(ctx, e.pool, p)
+	if err != nil {
+		return false
+	}
+	ok, err := scheduler.Freeing(ctx, e.pool, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 	if err != nil || !ok {
 		return false
 	}
@@ -941,6 +959,26 @@ func (e *Engine) setResult(ctx context.Context, op *store.Op, fields map[string]
 // SetTriggers gives the engine the trigger set to deliver, as app.go
 // installs the other sinks after New.
 func (e *Engine) SetTriggers(t TriggerSet) { e.triggers = t }
+
+// SetFleetPolicy gives the engine the plan question placement asks
+// (DECISIONS I-1366), installed after New as the other sinks are.
+func (e *Engine) SetFleetPolicy(f FleetPolicy) { e.fleet = f }
+
+// target is who a placement is for: the project's account, what the
+// project asked for, and whether its plan sells fleet memory
+// (DECISIONS I-1366).
+func (e *Engine) target(ctx context.Context, q store.Querier, p *store.Project) (scheduler.Target, error) {
+	t := scheduler.Target{Account: p.UserID, Hosted: p.Placement == "hosted", Fleet: true}
+	if e.fleet == nil {
+		return t, nil
+	}
+	ok, err := e.fleet.FleetAllowed(ctx, q, p.UserID)
+	if err != nil {
+		return t, err
+	}
+	t.Fleet = ok
+	return t, nil
+}
 
 func (e *Engine) SetOnFinished(f func(ctx context.Context, op *store.Op)) {
 	e.onFinishedMu.Lock()

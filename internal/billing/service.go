@@ -42,9 +42,44 @@ func (s *Service) Polar() *Polar { return s.polar }
 // Seats is the seat count in use.
 func (s *Service) Seats() waitlist.Seats { return s.seats }
 
+// PlansForSale are the plans this deployment sells: the ones with a Polar
+// product id (DECISIONS I-1364).
+func (s *Service) PlansForSale() []Plan { return s.cfg.PlansForSale() }
+
+// MsgPlanKind is the sentence POST /billing/plan answers with when a
+// change crosses between the hosted plans and the Own hardware plan
+// (I-1364). The two sell different things: a hosted plan sells memory on
+// the fleet, Own hardware a host of the user's own, and Polar prorates
+// between products, not between kinds. The sentence names the only way
+// across, which the user can do themselves. It lives here, not in the
+// route, because the fake api says it too and a fake that said it
+// another way would hide the difference from every test against it
+// (as plan_limit's did, I-633).
+const MsgPlanKind = "the Own hardware plan and the hosted plans sell different things; cancel this plan, then choose the other one when it ends"
+
+// PlanChoices lists the plan ids this deployment sells as a refusal
+// names them: "solo, plus and pro", or with the fourth product
+// configured, "solo, plus, pro and own".
+func PlanChoices(plans []Plan) string {
+	ids := make([]string, 0, len(plans))
+	for _, p := range plans {
+		ids = append(ids, p.ID)
+	}
+	return joinAnd(ids)
+}
+
 // The refusals the routes map to conflict, invalid and waitlisted.
 var (
-	ErrUnknownPlan      = errors.New("plan must be solo, plus or pro")
+	ErrUnknownPlan = errors.New("plan must be solo, plus, pro or own")
+	// ErrNotForSale is a plan the table has but this deployment does not
+	// sell: no Polar product id is configured for it (DECISIONS I-1364).
+	ErrNotForSale = errors.New("that plan is not for sale here")
+	// ErrPlanKind refuses a change between the hosted plans and the Own
+	// hardware plan: the two sell different things, so Polar would
+	// prorate between products that buy nothing alike, and a machine on
+	// a repose host would land on a plan that sells no memory
+	// (DECISIONS I-1364).
+	ErrPlanKind         = errors.New("the Own hardware plan and the hosted plans cannot be changed between")
 	ErrSubscribed       = errors.New("a subscription exists; change it with /billing/plan")
 	ErrNoSubscription   = errors.New("the account has no subscription")
 	ErrAlreadyCancelled = errors.New("the subscription is already cancelled")
@@ -112,10 +147,18 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 	if err != nil {
 		return nil, err
 	}
-	plans := make([]map[string]any, 0, len(Plans))
-	for _, p := range Plans {
+	// Only the plans this deployment sells: a plan with no Polar product
+	// id is not offered, which is how Own hardware stays off a
+	// deployment that has not pasted POLAR_PRODUCT_OWN (I-1364).
+	forSale := s.cfg.PlansForSale()
+	plans := make([]map[string]any, 0, len(forSale))
+	for _, p := range forSale {
 		available := true
-		if sub == nil {
+		switch {
+		case p.Seats == 0:
+			// A plan that holds no seat is always available, whatever the
+			// fleet is doing (I-1364).
+		case sub == nil:
 			// Fits, never Reserve: reading the page puts nobody on the
 			// waitlist and undoes nobody's lapse (I-1033).
 			ok, err := s.seats.Fits(ctx, u.ID.String(), p.Seats)
@@ -123,11 +166,12 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 				return nil, err
 			}
 			available = ok
-		} else if p.Seats > sub.Seats {
+		case p.Seats > sub.Seats:
 			available = count.Total == 0 || count.Free >= p.Seats-sub.Seats
 		}
+
 		plans = append(plans, map[string]any{"id": p.ID, "name": p.Name, "price_cents": p.PriceCents, "currency": p.Currency, "trial_days": p.TrialDays,
-			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "project_limit": ProjectCap, "available": available,
+			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "hosts": p.Hosts, "project_limit": ProjectCap, "available": available,
 			"intro_price_cents": p.IntroCents, "intro_months": p.IntroMonths, "intro_egress_gb": p.IntroEgressGB})
 	}
 	place, err := WaitlistPlace(ctx, s.pool, u.ID)
@@ -208,6 +252,9 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID, customerI
 	if s.seats == nil || s.polar == nil {
 		return "", ErrDisabled
 	}
+	if !s.cfg.ForSale(plan.ID) {
+		return "", ErrNotForSale
+	}
 	// Before Reserve: an exempt account has no plan to choose, so a
 	// checkout must not put it on the waitlist and hold a seat that
 	// nothing will ever convert (I-1090).
@@ -221,9 +268,18 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID, customerI
 	if sub != nil {
 		return "", ErrSubscribed
 	}
-	free, place, err := s.seats.Reserve(ctx, u.ID.String(), plan.Seats)
-	if err != nil {
-		return "", err
+	// A plan that holds no seat does not ask for one: an owned host is
+	// outside the seat count and the waitlist (DECISIONS I-1364), and
+	// asking anyway would both refuse the checkout on a full fleet and
+	// put the user on the waitlist, because waitlist.Service.fits reads a
+	// request for 0 seats as a request for 1.
+	free, place := true, (*waitlist.Place)(nil)
+	if plan.Seats > 0 {
+		var err error
+		free, place, err = s.seats.Reserve(ctx, u.ID.String(), plan.Seats)
+		if err != nil {
+			return "", err
+		}
 	}
 	if !free {
 		p := waitlist.Place{}
@@ -280,6 +336,9 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 	if s.polar == nil {
 		return PlanChange{}, ErrDisabled
 	}
+	if !s.cfg.ForSale(target.ID) {
+		return PlanChange{}, ErrNotForSale
+	}
 	sub, err := LiveSubscription(ctx, s.pool, u.ID)
 	if err != nil {
 		return PlanChange{}, err
@@ -288,6 +347,9 @@ func (s *Service) ChangePlan(ctx context.Context, u *store.User, planID string) 
 		return PlanChange{}, ErrNoSubscription
 	}
 	current := sub.PlanOrSolo()
+	if !SameKind(current, target) {
+		return PlanChange{}, ErrPlanKind
+	}
 	if current.ID == target.ID && (sub.ScheduledPlan == nil || *sub.ScheduledPlan == target.ID) {
 		return PlanChange{}, ErrSamePlan
 	}

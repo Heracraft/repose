@@ -1,0 +1,380 @@
+#!/usr/bin/env bash
+# Rent an M4 Mac mini for the nested-KVM measurement, drive it, and give
+# it back. docs/research/mac-mini-nested-kvm.md §5. Two providers:
+#
+#   MACMINI_PROVIDER=aws        EC2 mac-m4.metal on a Dedicated Host (default)
+#   MACMINI_PROVIDER=scaleway   Scaleway Apple silicon M4-S (out of stock 2026-11-19)
+#
+#   ops/dev/macmini watch       aws: poll the mac-m4 host quota, allocate when granted
+#                               scaleway: poll stock, create when some appears
+#   ops/dev/macmini create      allocate the host and launch macOS (aws) / rent the Mac (scaleway)
+#   ops/dev/macmini wait        until the box is up and sshd answers
+#   ops/dev/macmini status      ids, state, ip, when it can be released, the ssh command
+#   ops/dev/macmini ssh [cmd]   log in
+#   ops/dev/macmini bootstrap   copy and run ops/dev/macmini-bootstrap.sh on the Mac
+#   ops/dev/macmini results     copy ~/repose-lab/results/ back into docs/research/
+#   ops/dev/macmini destroy     terminate and release; retries the release until the 24 h minimum allows it
+#   ops/dev/macmini appliance-push IMAGE.raw.gz REPOSE   copy the appliance image, its checksum and a darwin/arm64 repose binary to the Mac
+#   ops/dev/macmini appliance-install ARG                `repose host add --join ARG` on the Mac against that copy (19f, I-1380)
+#
+# aws: needs aws (~/.local/bin, AWS CLI 2.41+) and jq, a logged-in profile
+# (AWS_PROFILE, default repose-lab; `aws login --remote --profile repose-lab`).
+# Knobs: MACMINI_AWS_REGION (us-east-1), MACMINI_AWS_ZONES (us-east-1a b c d,
+# tried in order on InsufficientCapacity), MACMINI_AWS_MACOS (sequoia; also
+# tahoe, golden_gate), MACMINI_AWS_ROOT_GIB (150).
+# scaleway: needs scw and jq (nix develop ./nix#infra) and SCW_ACCESS_KEY,
+# SCW_SECRET_KEY, SCW_DEFAULT_PROJECT_ID. Knobs: MACMINI_TYPE (M4-S),
+# MACMINI_ZONE (fr-par-1), MACMINI_OS, MACMINI_WATCH_SECONDS (300).
+# Both: MACMINI_NAME (repose-macmini-lab), MACMINI_SSH_PUBKEY (~/.ssh/id_ed25519.pub).
+#
+# Money. An EC2 Mac Dedicated Host bills from the allocation call for a
+# 24 h minimum (about $30 for mac-m4 in us-east-1) whether or not an
+# instance runs, and AWS refuses to release it before the 24 h are up;
+# `destroy` terminates the instance at once and keeps retrying the
+# release. Credentials are operator secrets in the shell or the AWS CLI's
+# own store, never a file in this repository.
+#
+# UNTESTED as of 2026-11-19 beyond `status` on an empty account: written
+# before any host existed. The first run is the test.
+set -euo pipefail
+
+PROVIDER=${MACMINI_PROVIDER:-aws}
+NAME=${MACMINI_NAME:-repose-macmini-lab}
+PUBKEY=${MACMINI_SSH_PUBKEY:-$HOME/.ssh/id_ed25519.pub}
+KNOWN_HOSTS=$HOME/.ssh/known_hosts_macmini
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(cd "$HERE/../.." && pwd)
+DATA_DIR=$REPO/docs/research/mac-mini-nested-kvm-data
+export PATH="$HOME/.local/bin:$PATH"
+
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
+die() { echo "macmini: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null || die "$1 is not on PATH"; }
+need jq
+ssh_opts() { echo -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN_HOSTS" -o ConnectTimeout=10; }
+[ -r "$PUBKEY" ] || die "no public key at $PUBKEY (MACMINI_SSH_PUBKEY)"
+
+# ---------------------------------------------------------------- aws ---
+AWS_REGION_FILE=$HOME/.macmini-aws-region   # written by the allocation that succeeded
+AWS_REGION=${MACMINI_AWS_REGION:-$(cat "$AWS_REGION_FILE" 2>/dev/null || echo us-east-1)}
+AWS_REGIONS=${MACMINI_AWS_REGIONS:-"us-east-1 us-west-2 eu-west-1"}   # watched in this order
+AWS_ZONES=${MACMINI_AWS_ZONES:-}   # empty: every zone of the region that offers the type
+AWS_MACOS=${MACMINI_AWS_MACOS:-sequoia}
+AWS_ROOT_GIB=${MACMINI_AWS_ROOT_GIB:-150}
+AWS_TYPE=mac-m4.metal
+AWS_QUOTA=L-2CBA8B92   # Running Dedicated mac-m4 Hosts
+export AWS_PROFILE=${AWS_PROFILE:-repose-lab}
+aws_() { aws --region "$AWS_REGION" --output json "$@"; }
+
+aws_host_id() {
+  aws_ ec2 describe-hosts --filter "Name=tag:Name,Values=$NAME" \
+    | jq -r '.Hosts[] | select(.State != "released" and .State != "released-permanent-failure") | .HostId' | head -n1
+}
+aws_instance_id() {
+  aws_ ec2 describe-instances --filters "Name=tag:Name,Values=$NAME" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    | jq -r '.Reservations[].Instances[].InstanceId' | head -n1
+}
+aws_instance() { local id; id=$(aws_instance_id); [ -n "$id" ] || die "no instance named $NAME"; aws_ ec2 describe-instances --instance-ids "$id" | jq '.Reservations[0].Instances[0]'; }
+aws_host_ip()   { aws_instance | jq -r '.PublicIpAddress // empty'; }
+aws_host_user() { echo ec2-user; }
+aws_sudo_pass() { echo ""; }   # ec2-user has passwordless sudo
+
+aws_quota_status() {
+  aws_ service-quotas list-requested-service-quota-change-history-by-quota --service-code ec2 --quota-code $AWS_QUOTA \
+    | jq -r '.RequestedQuotas | sort_by(.Created) | last | "\(.Status) \(.DesiredValue)"'
+}
+aws_quota_value() { aws_ service-quotas get-service-quota --service-code ec2 --quota-code $AWS_QUOTA | jq -r '.Quota.Value'; }
+aws_zones() { [ -n "$AWS_ZONES" ] && { echo "$AWS_ZONES"; return; }
+  aws_ ec2 describe-instance-type-offerings --location-type availability-zone --filters "Name=instance-type,Values=$AWS_TYPE" | jq -r '.InstanceTypeOfferings[].Location' | sort | tr '\n' ' '; }
+
+aws_ensure_key() {
+  if ! aws_ ec2 describe-key-pairs --key-names "$NAME" >/dev/null 2>&1; then
+    echo "importing $PUBKEY as key pair $NAME"
+    aws_ ec2 import-key-pair --key-name "$NAME" --public-key-material "fileb://$PUBKEY" >/dev/null
+  fi
+}
+aws_ensure_sg() { # prints the group id; ingress is sshd from this box's public address only
+  local vpc sg me
+  vpc=$(aws_ ec2 describe-vpcs --filters Name=is-default,Values=true | jq -r '.Vpcs[0].VpcId')
+  [ "$vpc" != null ] || die "no default VPC in $AWS_REGION"
+  sg=$(aws_ ec2 describe-security-groups --filters "Name=group-name,Values=$NAME" "Name=vpc-id,Values=$vpc" | jq -r '.SecurityGroups[0].GroupId // empty')
+  if [ -z "$sg" ]; then
+    sg=$(aws_ ec2 create-security-group --group-name "$NAME" --description "repose Mac mini lab: ssh from the operator box" --vpc-id "$vpc" \
+      --tag-specifications "ResourceType=security-group,Tags=[{Key=Name,Value=$NAME}]" | jq -r '.GroupId')
+  fi
+  me=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')
+  aws_ ec2 authorize-security-group-ingress --group-id "$sg" --protocol tcp --port 22 --cidr "$me/32" >/dev/null 2>&1 || true
+  echo "$sg"
+}
+
+aws_create() {
+  if [ -n "$(aws_instance_id)" ]; then echo "instance $NAME already exists"; aws_status; return; fi
+  local q; q=$(aws_quota_value)
+  [ "${q%.*}" -ge 1 ] || die "mac-m4 Dedicated Host quota is $q; wait for the request (ops/dev/macmini watch)"
+  aws_ensure_key
+  local sg; sg=$(aws_ensure_sg)
+  local host; host=$(aws_host_id)
+  if [ -z "$host" ]; then
+    local z
+    for z in $(aws_zones); do
+      echo "allocating a $AWS_TYPE Dedicated Host in $z (billing starts now, 24 h minimum)"
+      if host=$(aws_ ec2 allocate-hosts --instance-type $AWS_TYPE --availability-zone "$z" --quantity 1 \
+          --tag-specifications "ResourceType=dedicated-host,Tags=[{Key=Name,Value=$NAME}]" 2>"$HOME/.macmini-allocate.err" | jq -r '.HostIds[0]'); then
+        [ -n "$host" ] && [ "$host" != null ] && break
+      fi
+      echo "  $z: $(tr -d '\n' < "$HOME/.macmini-allocate.err" | cut -c1-200)"
+      host=
+    done
+    if [ -z "$host" ]; then
+      # Service Quotas can read 1 while EC2 still enforces 0 for up to half
+      # an hour after an approval (seen 2026-11-19); that is a wait, not
+      # a failure, and `watch` keeps going on it.
+      if grep -q HostLimitExceeded "$HOME/.macmini-allocate.err"; then
+        echo "EC2 still enforces the old host limit; the new quota takes up to 30 min to apply"; return 3
+      fi
+      # Mac minis are physical; a region can be out of them for hours
+      # (all four us-east-1 zones were, 2026-11-19 05:50 UTC).
+      if grep -q InsufficientHostCapacity "$HOME/.macmini-allocate.err"; then
+        echo "no $AWS_TYPE capacity in $AWS_REGION right now"; return 4
+      fi
+      die "no zone could allocate a $AWS_TYPE host"
+    fi
+    echo "$AWS_REGION" > "$AWS_REGION_FILE"
+  fi
+  local az subnet ami root
+  az=$(aws_ ec2 describe-hosts --host-ids "$host" | jq -r '.Hosts[0].AvailabilityZone')
+  subnet=$(aws_ ec2 describe-subnets --filters "Name=availability-zone,Values=$az" Name=default-for-az,Values=true | jq -r '.Subnets[0].SubnetId')
+  ami=$(aws_ ssm get-parameter --name "/aws/service/ec2-macos/$AWS_MACOS/arm64_mac/latest/image_id" | jq -r '.Parameter.Value')
+  root=$(aws_ ec2 describe-images --image-ids "$ami" | jq -r '.Images[0].RootDeviceName')
+  echo "launching $AWS_TYPE on $host in $az from $ami ($AWS_MACOS), root ${AWS_ROOT_GIB} GiB"
+  aws_ ec2 run-instances --instance-type $AWS_TYPE --image-id "$ami" --key-name "$NAME" \
+    --security-group-ids "$sg" --subnet-id "$subnet" --associate-public-ip-address \
+    --placement "HostId=$host,Tenancy=host" \
+    --block-device-mappings "[{\"DeviceName\":\"$root\",\"Ebs\":{\"VolumeSize\":$AWS_ROOT_GIB,\"VolumeType\":\"gp3\"}}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME}]" \
+    | jq -r '.Instances[0] | "instance \(.InstanceId) \(.State.Name)"'
+}
+
+aws_wait() {
+  local id; id=$(aws_instance_id); [ -n "$id" ] || die "nothing to wait for (ops/dev/macmini create)"
+  echo "waiting for $id to run (a Mac takes 10 to 20 min to boot the first time)"
+  aws_ ec2 wait instance-running --instance-ids "$id"
+  local ip; ip=$(aws_host_ip); echo "running at $ip; waiting for sshd"
+  for _ in $(seq 1 120); do
+    # shellcheck disable=SC2046
+    if ssh $(ssh_opts) -o BatchMode=yes "ec2-user@$ip" true 2>/dev/null; then echo "ssh ec2-user@$ip answers"; return; fi
+    sleep 15
+  done
+  die "sshd did not answer in 30 min; check the instance's system log in the console"
+}
+
+aws_status() {
+  local host inst
+  host=$(aws_host_id); inst=$(aws_instance_id)
+  if [ -n "$host" ]; then
+    aws_ ec2 describe-hosts --host-ids "$host" | jq -r '.Hosts[0] |
+      "host         \(.HostId)  \(.State)  \(.AvailabilityZone)",
+      "allocated    \(.AllocationTime)",
+      "releasable   \((.AllocationTime | sub("\\.[0-9]+";"") | sub("\\+00:00$";"Z") | fromdate) + 86400 | todate)  (24 h minimum)"'
+  else echo "host         none"; fi
+  if [ -n "$inst" ]; then
+    aws_instance | jq -r '"instance     \(.InstanceId)  \(.State.Name)  \(.InstanceType)", "ip           \(.PublicIpAddress // "none yet")", "ssh          ssh ec2-user@\(.PublicIpAddress // "?")"'
+  else echo "instance     none"; fi
+  echo "quota        mac-m4 hosts $(aws_quota_value), latest request: $(aws_quota_status 2>/dev/null || echo none)"
+}
+
+# Walk the regions in order; the first with quota and capacity gets the
+# host, and only one host is ever allocated (the region is remembered in
+# $AWS_REGION_FILE, and aws_create refuses a second instance).
+aws_watch() {
+  local every=${MACMINI_WATCH_SECONDS:-300} r q
+  echo "watching $AWS_REGIONS for a $AWS_TYPE host (quota, then capacity) every ${every}s"
+  while :; do
+    for r in $AWS_REGIONS; do
+      AWS_REGION=$r
+      q=$(aws_quota_value 2>/dev/null || echo 0)
+      printf '%s %s quota=%s\n' "$(date -u +%FT%TZ)" "$r" "$q"
+      [ "${q%.*}" -ge 1 ] || continue
+      if aws_create; then return; fi
+    done
+    echo "retrying in ${every}s"
+    sleep "$every"
+  done
+}
+
+aws_destroy() {
+  local inst host
+  inst=$(aws_instance_id); host=$(aws_host_id)
+  if [ -n "$inst" ]; then
+    echo "terminating $inst"
+    aws_ ec2 terminate-instances --instance-ids "$inst" >/dev/null
+    aws_ ec2 wait instance-terminated --instance-ids "$inst"
+  fi
+  [ -n "$host" ] || { echo "no host to release"; return; }
+  echo "releasing $host (refused until 24 h after allocation and while the Mac is scrubbed; retrying every 5 min for up to 26 h)"
+  local i
+  for i in $(seq 1 312); do
+    local out
+    out=$(aws_ ec2 release-hosts --host-ids "$host")
+    if [ "$(jq -r '.Successful | length' <<<"$out")" = 1 ]; then echo "released $host"; return; fi
+    [ "$i" = 1 ] && jq -r '.Unsuccessful[0].Error.Message // empty' <<<"$out"
+    [ "${1:-}" = "--once" ] && return 2
+    sleep 300
+  done
+  die "could not release $host; do it in the console"
+}
+
+# ----------------------------------------------------------- scaleway ---
+SCW_TYPE=${MACMINI_TYPE:-M4-S}
+SCW_ZONE=${MACMINI_ZONE:-fr-par-1}
+scw_server_id() { scw apple-silicon server list zone="$SCW_ZONE" -o json | jq -r --arg n "$NAME" '.[] | select(.name == $n) | .id' | head -n1; }
+scw_server_json() { local id; id=$(scw_server_id); [ -n "$id" ] || die "no server named $NAME in $SCW_ZONE (ops/dev/macmini create)"; scw apple-silicon server get "$id" zone="$SCW_ZONE" -o json; }
+scw_field() { scw_server_json | jq -r "$1"; }
+scw_host_ip()   { scw_field .ip; }
+scw_host_user() { scw_field .ssh_username; }
+scw_sudo_pass() { scw_field .sudo_password; }
+
+scw_ensure_key() {
+  local key; key=$(cut -d' ' -f1,2 < "$PUBKEY")
+  scw iam ssh-key list -o json | jq -e --arg k "$key" 'map(select(.public_key | startswith($k))) | length > 0' >/dev/null && return
+  echo "uploading $PUBKEY to the project as $(hostname)-macmini"
+  scw iam ssh-key create name="$(hostname)-macmini" public-key="$(cat "$PUBKEY")" >/dev/null
+}
+scw_create() {
+  if [ -n "$(scw_server_id)" ]; then echo "$NAME already exists in $SCW_ZONE"; scw_status; return; fi
+  scw_ensure_key
+  local os_arg=()
+  if [ -n "${MACMINI_OS:-}" ]; then
+    local os_id
+    os_id=$(scw apple-silicon os list server-type="$SCW_TYPE" zone="$SCW_ZONE" -o json | jq -r --arg n "$MACMINI_OS" '.[] | select(.name == $n or .label == $n) | .id' | head -n1)
+    [ -n "$os_id" ] || die "no OS named $MACMINI_OS for $SCW_TYPE"
+    os_arg=(os-id="$os_id"); echo "note: a non-default OS adds about an hour before the Mac is delivered"
+  fi
+  echo "renting $SCW_TYPE in $SCW_ZONE as $NAME (24 h minimum under Apple's licence)"
+  scw apple-silicon server create name="$NAME" type="$SCW_TYPE" zone="$SCW_ZONE" commitment-type=none "${os_arg[@]}" -o json \
+    | jq -r '"id \(.id)\nstatus \(.status)\ndeletable_at \(.deletable_at)"'
+}
+scw_wait() {
+  local id; id=$(scw_server_id); [ -n "$id" ] || die "nothing to wait for"
+  scw apple-silicon server wait "$id" zone="$SCW_ZONE" timeout=2h >/dev/null
+  local ip user; ip=$(scw_host_ip); user=$(scw_host_user)
+  echo "status $(scw_field .status), delivered $(scw_field .delivered), ip $ip; waiting for sshd"
+  for _ in $(seq 1 60); do
+    # shellcheck disable=SC2046
+    if ssh $(ssh_opts) -o BatchMode=yes "$user@$ip" true 2>/dev/null; then echo "ssh $user@$ip answers"; return; fi
+    sleep 10
+  done
+  die "sshd did not answer in 10 min (fail2ban clears only on a console reboot)"
+}
+scw_status() {
+  scw_server_json | jq -r '"name         \(.name)", "type         \(.type)  os \(.os.label // .os.name // "default")",
+    "status       \(.status)  delivered \(.delivered)", "ip           \(.ip)",
+    "deletable_at \(.deletable_at)  scheduled \(.deletion_scheduled)", "ssh          ssh \(.ssh_username)@\(.ip)", "vnc          \(.vnc_url // "")"'
+}
+scw_watch() {
+  local types=("$@"); [ ${#types[@]} -gt 0 ] || types=(M4-S M4-M)
+  local every=${MACMINI_WATCH_SECONDS:-300}
+  echo "watching ${types[*]} in $SCW_ZONE every ${every}s; renting the first in stock as $NAME"
+  while :; do
+    local stock t st
+    stock=$(scw apple-silicon server-type list zone="$SCW_ZONE" -o json)
+    for t in "${types[@]}"; do
+      st=$(jq -r --arg t "$t" '.[] | select(.name == $t) | .stock' <<<"$stock")
+      printf '%s %s %s\n' "$(date -u +%FT%TZ)" "$t" "${st:-absent}"
+      if [ "$st" = low_stock ] || [ "$st" = high_stock ]; then SCW_TYPE=$t scw_create; return; fi
+    done
+    sleep "$every"
+  done
+}
+scw_destroy() {
+  local id; id=$(scw_server_id); [ -n "$id" ] || die "no server named $NAME"
+  local at; at=$(scw_field .deletable_at)
+  if [ "$at" != null ] && [ "$(date -u -d "$at" +%s)" -gt "$(date -u +%s)" ] && [ "${1:-}" != "--force" ]; then
+    die "deletable from $at (Apple's 24 h minimum); run again then, or --force to try anyway"
+  fi
+  echo "deleting $NAME ($id); Scaleway takes about 30 min to finish"
+  scw apple-silicon server delete "$id" zone="$SCW_ZONE"
+}
+
+# ------------------------------------------------------------- shared ---
+case "$PROVIDER" in
+  aws) need aws; p=aws ;;
+  scaleway) need scw; p=scw ;;
+  *) die "MACMINI_PROVIDER must be aws or scaleway" ;;
+esac
+host_ip()   { "${p}_host_ip"; }
+host_user() { "${p}_host_user"; }
+
+cmd_ssh() { local ip user; ip=$(host_ip); user=$(host_user)
+  # shellcheck disable=SC2046
+  exec ssh $(ssh_opts) "$user@$ip" "$@"; }
+
+cmd_bootstrap() {
+  local ip user os; ip=$(host_ip); user=$(host_user)
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$HERE/macmini-bootstrap.sh" "$HERE/macmini-measure-linux.sh" "$user@$ip:"
+  # shellcheck disable=SC2046
+  os=$(ssh $(ssh_opts) "$user@$ip" uname -s)
+  if [ "$os" = Linux ]; then
+    echo "Linux box ($user@$ip): running the Cloud Hypervisor measurement natively"
+    # shellcheck disable=SC2046
+    ssh $(ssh_opts) -t "$user@$ip" "chmod +x macmini-measure-linux.sh && SUDO_PASS='$("${p}_sudo_pass")' ./macmini-measure-linux.sh"
+  else
+    # No -t: with a controlling tty, macOS hangs up the lab VM when this
+    # session ends (every run on 2026-11-19 lost L1 at exit); without one
+    # the VM outlives the session, and nothing in the script needs a tty.
+    # shellcheck disable=SC2046
+    ssh $(ssh_opts) "$user@$ip" 'chmod +x macmini-bootstrap.sh && ./macmini-bootstrap.sh'
+  fi
+}
+
+cmd_results() {
+  local ip user; ip=$(host_ip); user=$(host_user)
+  mkdir -p "$DATA_DIR"
+  # shellcheck disable=SC2046
+  scp -r $(ssh_opts) "$user@$ip:repose-lab/results/." "$DATA_DIR/" 2>/dev/null \
+    || scp -r $(ssh_opts) "$user@$ip:results/." "$DATA_DIR/"
+  echo "results in $DATA_DIR"; ls -1 "$DATA_DIR"
+}
+
+# The appliance on the lab Mac (19f, DECISIONS I-1376, I-1380): the image
+# built on the aarch64 builder, copied beside its checksum and a repose
+# binary cross-compiled for darwin/arm64 (`GOOS=darwin GOARCH=arm64 go
+# build ./cmd/repose`), and `repose host add --join ARG` run against the
+# copy (`file://` is a URL the download reads). On a headless Mac launchd
+# takes no agent and the VM starts detached, which `host add` does on its
+# own. The argument is what `repose host add` printed. Stop the builder
+# VM first: the appliance wants 18 GiB of the Mac's 24.
+cmd_appliance_push() {
+  local img=$1 bin=${2:-} ip user; ip=$(host_ip); user=$(host_user)
+  [ -s "$img" ] || die "no image at $img (nix build ./nix#packages.aarch64-linux.mac-appliance-image on the builder)"
+  [ -x "$bin" ] || die "no repose binary at '$bin' (GOOS=darwin GOARCH=arm64 go build -o repose-darwin ./cmd/repose)"
+  sha256sum "$img" | sed 's/ .*//' > "$img.sha256"
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$img" "$user@$ip:repose-appliance-aarch64.raw.gz"
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$img.sha256" "$user@$ip:repose-appliance-aarch64.raw.gz.sha256"
+  # shellcheck disable=SC2046
+  scp $(ssh_opts) "$bin" "$user@$ip:repose"
+  echo "image, checksum and repose on $user@$ip"
+}
+cmd_appliance_install() {
+  local arg=$1 ip user; ip=$(host_ip); user=$(host_user)
+  [ -n "$arg" ] || die "appliance-install takes the argument repose host add printed"
+  # shellcheck disable=SC2046
+  ssh $(ssh_opts) "$user@$ip" "REPOSE_APPLIANCE_URL=file://\$HOME/repose-appliance-aarch64.raw.gz ./repose host add --join '$arg'"
+}
+
+case "${1:-}" in
+  create)    "${p}_create" ;;
+  wait)      "${p}_wait" ;;
+  status)    "${p}_status" ;;
+  ssh)       shift; cmd_ssh "$@" ;;
+  bootstrap) cmd_bootstrap ;;
+  results)   cmd_results ;;
+  watch)     shift; "${p}_watch" "$@" ;;
+  destroy)   shift; "${p}_destroy" "$@" ;;
+  appliance-push)    shift; cmd_appliance_push "$@" ;;
+  appliance-install) shift; cmd_appliance_install "$@" ;;
+  *)         usage ;;
+esac

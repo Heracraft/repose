@@ -362,8 +362,11 @@ for (const width of [1440, 390]) {
 		expect(await at(page, submit)).toBe(submitAt);
 		await form.getByRole('button', { name: 'Write it here' }).click();
 
-		// The agent becomes the app: the first row stays; the buttons rise
-		// by the More settings line alone, which the app has no need of.
+		// The agent becomes the app: the first row stays. The buttons do
+		// move (the prompt block goes, 121 px live at 1440), which the
+		// design doc leaves alone: see triggers.md §3, "What a switch adds
+		// or removes still moves what is under it". More settings is gone,
+		// because a forward has none.
 		await form.getByRole('button', { name: 'Forward to your app' }).click();
 		await shot('webhook-forward');
 		expect(await at(page, name)).toBe(nameAt);

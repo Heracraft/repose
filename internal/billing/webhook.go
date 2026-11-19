@@ -382,7 +382,11 @@ func (w *Webhooks) subscription(ctx context.Context, ev *Event) error {
 	if w.m != nil {
 		w.m.BillingSubscriptions.WithLabelValues(plan.ID, status).Inc()
 	}
-	if prev == nil && IsLive(status) && w.Seats != nil {
+	// A subscription that holds a seat takes the user off the waitlist;
+	// one that holds none does not, because it reserved none. A user
+	// waiting for a seat who buys Own hardware meanwhile keeps their
+	// place in the queue they are still in (DECISIONS I-1364).
+	if prev == nil && IsLive(status) && plan.Seats > 0 && w.Seats != nil {
 		if err := w.Seats.Converted(ctx, u.ID.String()); err != nil {
 			return fmt.Errorf("record the seat conversion: %w", err)
 		}

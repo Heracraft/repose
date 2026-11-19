@@ -28,6 +28,11 @@ mitigate. `workstreams/14-security.md` is the work that verifies this doc.
 - **The operator**: root on hosts. Trusted, audited, and (until LUKS) able
   to read volumes.
 - **A stolen laptop**: holds a refresh token and an SSH certificate.
+- **A host you do not own** (DECISIONS I-647, I-1366, I-1368): a
+  machine on a user's own desk that joined the hub with a join token,
+  running the host system repose published, with its owner root on it.
+  It holds a host certificate, a WireGuard peer, and that account's own
+  guests. The section after the boundaries says what it reaches.
 
 The dashboard's browser view (DECISIONS I-1216) adds no actor to this
 list: a project has exactly one owner, so the person watching a desktop
@@ -269,6 +274,77 @@ they stop an actor the component map does not draw.
     above; or a bug in the page's noVNC, which is a parser in the
     dashboard's own origin and is bounded by one project having one
     owner, not by isolation (I-1216 says what reopens it).
+
+## A host you do not own
+
+A host repose runs is the operator's; a host a user added is theirs,
+and root on it is the user, so the hub, the gateway and the api treat
+every host as hostile (DECISIONS I-1368). What holds, and the test that
+proves each:
+
+- **Placement.** An owned host is eligible only for its owner's
+  projects, never for anyone else's; a host repose runs is ineligible
+  for an account whose plan sells no fleet memory, unless the owner asks
+  for the fleet on a project (I-1366). Owned hosts are outside seats,
+  the waitlist and the pool gauges. Proven by
+  `internal/api/scheduler`'s `TestOwnershipPlacesBothWays` and
+  `TestOwnHardwarePlanNeverReachesTheFleet`, each shown red with the
+  ownership filter removed.
+- **The hub.** On the edge's wg0 a packet from the host range
+  (10.255.0.0/22) or the guest range (10.64.0.0/12) is forwarded to one
+  place, the api's gRPC at 10.255.255.1:8443 (I-1382), and to the
+  monitoring peer's Loki push; it reaches the edge itself for ICMP echo
+  and, from a guest address, the hook ingest on 8443. Everything else a
+  host sends is dropped and counted in `host_forward_dropped` or
+  `host_input_dropped`: another host's wg address or guests, the control
+  plane on any other port, Prometheus's remote-write, the operator sshd,
+  the scrapes, the view relay. Proven by the ruleset snapshot
+  `edge-ruleset-snapshot` and the two-peer VM test `edge-hub-isolation`
+  (`nix/edge/tests`), which sends each packet and reads the counter on
+  both sides of it.
+- **The gateway.** A connection to a project whose host is owned by an
+  account other than the certificate's is refused with `foreign_host`;
+  a webhook delivery to it answers 503 without a dial. Proven by
+  `internal/gateway`'s `TestAProjectOnAnotherAccountsHostIsRefused` and
+  `internal/gateway/webhook`'s
+  `TestADeliveryToAProjectOnAnotherAccountsHostIsRefused`.
+- **The api.** Every message a host sends is bound to the host whose
+  stream carried it: a guest it names must be placed on it
+  (`foreign_guest`, I-447), a `Result` or a `BuildLog` must answer a
+  command the api sent to it (`foreign_command`, I-1368). I-1368 lists
+  every message and its check. Proven by the `foreign_test.go` in
+  `internal/api/resting`, `say`, `questions`, `triggers` and `buildlog`.
+
+- **The install step.** `repose host add` prints one line whose
+  argument is the join bundle (DECISIONS I-1380): the single-use join
+  token and the machine's place on the hub, a WireGuard private key
+  with its address and the edge's peer, minted by the api, which keeps
+  the public half only. It crosses the user's terminal, clipboard and
+  shell history as the token always did, and it is worth exactly what
+  the token was worth: before registration, whoever reads it can bring
+  up a tunnel as that host and reach the api's gRPC port, which answers
+  only a Register with that same token, so the bundle grants the power
+  to register a machine as the user's host and nothing more; after
+  registration the token is spent and Register has replaced the key, so
+  the edge no longer peers it and the bundle opens nothing. An unused
+  bundle dies with its token: an unregistered host leaves the edge's
+  peer list when its token expires (24 hours) or the host is removed,
+  and `repose host rm` then `host add` replaces a lost bundle with a new
+  key and kills the old one. Nothing logs it, by test: the api's
+  `TestHostAddPeersTheHubBeforeRegistration` reads its own log for the
+  argument and the key; the appliance's join unit logs events, never
+  values (`host-mac` VM check). What this does not stop: a user who
+  pastes the line somewhere public before running it, who has handed
+  out the right to add a machine to their account, and takes it back
+  with `repose host rm`.
+
+What this does not stop: the owner reading their own guests' memory and
+volumes, which are theirs; a host lying about itself in its samples,
+events and logs, which the api bounds (row 11) and the operator reads
+as that host's word; a host probing the hub, which costs it a counted
+drop and the operator a number to read. A host you do not own is never
+placed with a project that is not its owner's, so there is no tenant on
+it to protect from it.
 
 ## Non-negotiables
 

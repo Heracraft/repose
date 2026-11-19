@@ -63,7 +63,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	POST /unfail     {"method","path"}        -> f.Unfail
 //	POST /billing    api.BillingState as JSON -> f.SetBillingState: {"mode": off|none|trial|active|past_due|suspended|exempt,
 //	                 "plan", "scheduled_plan", "cancelled", "seats": {total, held, waiting},
-//	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices"}; every field optional
+//	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices",
+//	                 "own_for_sale" (the Own hardware plan is sold here, I-1364)}; every field optional
 //	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
 //	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
 //	POST /question   {"project_id","agent","text","options","timeout_s","secret","link","link_label"} -> f.AddQuestion,
@@ -133,6 +134,46 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		if err := f.SetResting(body.ProjectID, since); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		}
+	})
+	// The hosts a user owns (DECISIONS I-1366). A fake host never
+	// registers by itself, because nothing here runs hostd, so the
+	// dashboard's test asks for one that has:
+	// {name} adds a registered, answering host and answers its id;
+	// {id, quiet_minutes} marks one offline that long ago;
+	// {project_id, host_id} places a machine on it;
+	// {limit} is the plan's host count, -1 to let it be the default.
+	mux.HandleFunc("POST /owned-host", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name         string `json:"name"`
+			ID           string `json:"id"`
+			QuietMinutes int    `json:"quiet_minutes"`
+			ProjectID    string `json:"project_id"`
+			HostID       string `json:"host_id"`
+			Limit        *int   `json:"limit"`
+			InstallLine  string `json:"install_line"`
+			SetInstall   bool   `json:"set_install"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Limit != nil {
+			f.SetHostLimit(*body.Limit)
+		}
+		if body.SetInstall {
+			f.SetHostInstall(body.InstallLine)
+		}
+		if body.ID != "" && body.QuietMinutes > 0 {
+			f.SetOwnedHostOffline(body.ID, time.Duration(body.QuietMinutes)*time.Minute)
+		}
+		if body.ProjectID != "" && body.HostID != "" {
+			f.SetProjectHost(body.ProjectID, body.HostID)
+		}
+		id := ""
+		if body.Name != "" {
+			id = f.AddOwnedHost(body.Name)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	})
 	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
 		back, err := f.CompleteCheckout(r.PathValue("id"))

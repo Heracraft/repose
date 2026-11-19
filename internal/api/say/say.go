@@ -28,6 +28,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heracraft/repose/internal/api/metrics"
+
 	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
@@ -152,8 +154,19 @@ type Service struct {
 	// Postgres, which is what `API_MODE=all` and the tests run on.
 	kicks chan struct{}
 
+	// Metrics, when set, counts a result refused because it came from a
+	// host the command was not sent to (DECISIONS I-1368).
+	Metrics *metrics.M
+
 	mu      sync.Mutex
-	waiting map[uuid.UUID]chan *hostdv1.Result
+	waiting map[uuid.UUID]callWait
+}
+
+// callWait is one SayToAgent awaiting its result: the channel the result
+// lands on and the host the command went to (DECISIONS I-1368).
+type callWait struct {
+	ch   chan *hostdv1.Result
+	host uuid.UUID
 }
 
 // New builds the service.
@@ -162,7 +175,7 @@ func New(pool *db.Pool, send Sender, log *slog.Logger) *Service {
 		pool: pool, send: send, log: log.With("component", "api"),
 		Now: time.Now, Interval: deliverInterval, Poll: pollInterval, Wait: Timeout,
 		kicks:   make(chan struct{}, 1),
-		waiting: map[uuid.UUID]chan *hostdv1.Result{},
+		waiting: map[uuid.UUID]callWait{},
 	}
 }
 
@@ -529,7 +542,7 @@ func (s *Service) deliver(ctx context.Context, d delivery) {
 func (s *Service) call(ctx context.Context, hostID, cmdID uuid.UUID, m *hostdv1.SayToAgent) (*hostdv1.Result, error) {
 	ch := make(chan *hostdv1.Result, 1)
 	s.mu.Lock()
-	s.waiting[cmdID] = ch
+	s.waiting[cmdID] = callWait{ch: ch, host: hostID}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -554,19 +567,30 @@ func (s *Service) call(ctx context.Context, hostID, cmdID uuid.UUID, m *hostdv1.
 // OnResult takes the result of a SayToAgent this service sent and
 // reports whether it was one. Wired in app.go beside the other result
 // handlers, which ignore a command_id they do not know.
-func (s *Service) OnResult(_ context.Context, _ uuid.UUID, r *hostdv1.Result) bool {
+func (s *Service) OnResult(_ context.Context, hostID uuid.UUID, r *hostdv1.Result) bool {
 	cmdID, err := uuid.Parse(r.CommandId)
 	if err != nil {
 		return false
 	}
 	s.mu.Lock()
-	ch, ok := s.waiting[cmdID]
+	w, ok := s.waiting[cmdID]
 	s.mu.Unlock()
 	if !ok {
 		return false
 	}
+	// A result counts only from the host the message went to (DECISIONS
+	// I-1368): a host the operator does not own could otherwise tell the
+	// sender their words reached an agent they never reached. The call
+	// keeps waiting for the real host.
+	if w.host != hostID {
+		if s.Metrics != nil {
+			s.Metrics.HostReportsRefused.WithLabelValues("foreign_command").Inc()
+		}
+		s.log.Warn("result from a host the command was not sent to", "event", "foreign_command", "host_id", hostID.String(), "command_id", r.CommandId)
+		return true
+	}
 	select {
-	case ch <- r:
+	case w.ch <- r:
 	default:
 	}
 	return true

@@ -253,6 +253,7 @@ func newRootCmd(version string) *cobra.Command {
 		newSessionHelperCmd(),
 		newSSHPrepareCmd(env),
 		newCodeCmd(env, g),
+		newHostCmd(env, g),
 	)
 	groupCommands(root)
 	return root

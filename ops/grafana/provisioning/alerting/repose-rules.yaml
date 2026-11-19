@@ -2929,7 +2929,7 @@ groups:
           stack: repose
         annotations:
           summary: "the api dropped host reports ({{ $labels.reason }})"
-          description: "{{ if $values.B }}{{ $values.B }}{{ end }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
+          description: "{{ if $values.B }}{{ $values.B }}{{ end }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done|foreign_command\"` names the host and the guest or command."
           runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
         data:
           - refId: A
@@ -2943,7 +2943,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~\"foreign_guest|bad_snapshot\"}[15m]))"
+              expr: "sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~\"foreign_guest|bad_snapshot|foreign_command\"}[15m]))"
               instant: true
               range: false
               intervalMs: 1000

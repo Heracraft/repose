@@ -91,7 +91,9 @@ Tailscale is missing, or the instance's key is not in `authorized_keys`.
    access token), `POLAR_ENVIRONMENT` (`sandbox` or `production`, required
    with the token), `POLAR_WEBHOOK_SECRET`, `POLAR_PRODUCT_SOLO`,
    `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO` and
-   optionally `POLAR_PORTAL_RETURN_URL` (default `DASHBOARD_URL/billing`),
+   optionally `POLAR_PRODUCT_OWN` (the Own hardware plan is sold only
+   where it is set, I-1364) and `POLAR_PORTAL_RETURN_URL` (default
+   `DASHBOARD_URL/billing`),
    the same block on api and api-grpc, printed by `repose-admin billing
    polar-bootstrap`; web needs none. Without `POLAR_ACCESS_TOKEN` billing
    answers `503 billing_disabled`. No pre-deploy command on either: the api applies its own

@@ -14,6 +14,7 @@ import (
 	"github.com/heracraft/repose/internal/admin"
 	"github.com/heracraft/repose/internal/api/apitest"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/billing"
 )
 
 // docs/workstreams/09-billing.md §9 (I-289): `repose-admin billing
@@ -107,9 +108,15 @@ func TestBillingSubcommands(t *testing.T) {
 	if err != nil || !strings.Contains(out, "POLAR_PRODUCT_SOLO=prod_") || !strings.Contains(out, "POLAR_DISCOUNT_INTRO=dsc_") || !strings.Contains(out, "POLAR_WEBHOOK_SECRET=whsec_made") || strings.Contains(out, "polar_oat_admin_test") {
 		t.Fatalf("bootstrap: %s %v", out, err)
 	}
+	// The catalog is one product per plan plus four: the organization,
+	// the overage meter, the introductory discount and the webhook
+	// endpoint. Derived from the plan table, so adding a plan moves this
+	// count with it rather than failing a literal here (the Own hardware
+	// plan did, I-1364).
+	wantFound := fmt.Sprintf("created 0 object(s), found %d", len(billing.Plans)+4)
 	again, err := run(t, e, "billing", "polar-bootstrap", "--webhook-url", "https://api.test/v1/billing/webhook")
-	if err != nil || !strings.Contains(again, "created 0 object(s), found 7") {
-		t.Fatalf("bootstrap rerun: %s %v", again, err)
+	if err != nil || !strings.Contains(again, wantFound) {
+		t.Fatalf("bootstrap rerun: want %q in\n%s\n%v", wantFound, again, err)
 	}
 	t.Setenv("POLAR_ENVIRONMENT", "production")
 	if out, err := run(t, e, "billing", "polar-bootstrap", "--no-webhook"); err == nil || !strings.Contains(err.Error(), "--production") {

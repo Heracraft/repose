@@ -39,12 +39,20 @@ let
   set = xs: "{ ${lib.concatStringsSep ", " xs} }";
   ports = xs: set (map toString xs);
   # Empty when no monitoring peer is declared, so the forward chain keeps
-  # its established-only shape on an edge that nothing scrapes.
+  # its established-only shape on an edge that nothing scrapes. The
+  # monitoring peer's address sits inside the host range (10.255.0.3,
+  # I-170), so these go before the host rules in both chains.
   monitoringForward =
     lib.optionals (cfg.monitoring.peerCIDRs != [ ]) [
       ''iifname "wg0" oifname "wg0" ip saddr ${set cfg.monitoring.peerCIDRs} tcp dport ${ports cfg.monitoring.scrapePorts} accept''
       ''iifname "wg0" oifname "wg0" ip daddr ${set cfg.monitoring.peerCIDRs} tcp dport ${ports cfg.monitoring.logPorts} accept''
+      ''iifname "wg0" oifname "wg0" ip saddr ${cfg.controlWgAddress} ip daddr ${set cfg.monitoring.peerCIDRs} tcp dport ${ports cfg.monitoring.controlPushPorts} accept''
     ];
+  monitoringInput =
+    lib.optionals (cfg.monitoring.peerCIDRs != [ ]) [
+      ''iifname "wg0" ip saddr ${set cfg.monitoring.peerCIDRs} tcp dport { 9100, 9102 } accept''
+    ];
+  hostSources = set [ cfg.hostCIDR cfg.guestCIDR ];
 in
 {
   imports = [ ./disko.nix ../hosts/vm-hardening.nix ];
@@ -107,6 +115,40 @@ in
       type = lib.types.str;
       default = "10.255.0.1";
       description = "The edge's WireGuard address; the hub of the 10.255.0.0/16 plan this workstream owns (§5.1). Hosts get 10.255.0.x; the gateway binds its metrics and hook-ingest listeners here.";
+    };
+
+    hostCIDR = lib.mkOption {
+      type = lib.types.str;
+      default = "10.255.0.0/22";
+      description = ''
+        The hub addresses the api's allocator hands hosts
+        (internal/api/hostmgr `allocate`: 10.255.0.2 upwards, a thousand
+        hosts at most, stepping over the monitoring peer's 10.255.0.3).
+        A packet from this range is a host's, and the hub treats a host
+        as hostile (DECISIONS I-1368): hosts the operator does not own
+        join the same hub (I-647, I-1366). The control plane
+        (10.255.255.1) and the operator peers (10.255.254.0/24) are
+        outside it on purpose.
+      '';
+    };
+
+    guestCIDR = lib.mkOption {
+      type = lib.types.str;
+      default = "10.64.0.0/12";
+      description = "Every host's guest range (host-conventions.md). A guest's packet reaches the hub with its own address, through its host's peer, and is bounded like its host's.";
+    };
+
+    controlGrpcPort = lib.mkOption {
+      type = lib.types.port;
+      default = 8443;
+      description = ''
+        The api's gRPC port for hosts at the control plane's hub address
+        (`API_GRPC_LISTEN`, the `api-grpc` app). The one path a host
+        peer is forwarded through this hub (DECISIONS I-1382): a host
+        the operator does not own has no VNet and reaches the api over
+        WireGuard or not at all. Azure hosts keep dialling the VNet
+        address (I-92) and never use it.
+      '';
     };
 
     wgPort = lib.mkOption {
@@ -178,26 +220,34 @@ in
 
       logPorts = lib.mkOption {
         type = lib.types.listOf lib.types.port;
-        default = [ 3100 9090 ];
+        default = [ 3100 ];
         description = ''
-          Ports peers may push to *on* the monitoring server. The other
-          direction of the same tunnel from scrapePorts, and the reason a
-          host that cannot reach Loki buffers for ever instead of failing
-          (alert FluentBitStuck).
+          Ports every peer, hosts included, may push to *on* the
+          monitoring server. The other direction of the same tunnel from
+          scrapePorts, and the reason a host that cannot reach Loki
+          buffers for ever instead of failing (alert FluentBitStuck).
 
           3100 is Loki's push endpoint, which every host's Fluent Bit
-          writes to. 9090 is Prometheus's remote-write receiver, which the
+          writes to. It is the one port on another peer a host may
+          reach beside the api's gRPC (DECISIONS I-1368), so nothing
+          goes in this list that the monitoring server would mind a
+          stranger's host writing to.
+        '';
+      };
+
+      controlPushPorts = lib.mkOption {
+        type = lib.types.listOf lib.types.port;
+        default = [ 9090 ];
+        description = ''
+          Ports the control plane alone may push to on the monitoring
+          server. 9090 is Prometheus's remote-write receiver, which the
           control VM's Grafana Alloy writes the api processes' series to
           (DECISIONS I-952): the HTTP `api` app publishes no port and
           cannot, so a scrape from the monitoring server has never been
           able to reach it. Prometheus answers that path only with
           `--web.enable-remote-write-receiver`, so until the owner sets
-          that flag the port being open reaches a closed socket.
-
-          Opening a port here lets any peer reach it, hosts included, not
-          only the control VM. That is the same bound 3100 already has and
-          the reason this list is short: nothing goes in it that the
-          monitoring server would mind a host reaching.
+          that flag the port being open reaches a closed socket. Until
+          I-1368 it sat in logPorts, open to every host.
         '';
       };
     };
@@ -285,6 +335,14 @@ in
         set pub_rate4 { type ipv4_addr; flags dynamic,timeout; timeout 1m; size 65535; }
         set pub_rate6 { type ipv6_addr; flags dynamic,timeout; timeout 1m; size 65535; }
 
+        # What the hub refused a host, or a guest behind one (DECISIONS
+        # I-1368): a packet for another peer, and a packet for this
+        # machine outside ICMP echo and the guests' hook ingest. Read
+        # with `nft list counter inet repose-edge host_forward_dropped`;
+        # the edge VM test (nix/edge/tests) asserts on them.
+        counter host_forward_dropped { }
+        counter host_input_dropped { }
+
         chain input {
           type filter hook input priority filter; policy drop;
           iifname "lo" accept
@@ -310,15 +368,25 @@ in
           tcp dport 443 accept
           udp dport ${toString cfg.wgPort} accept
 
-          # Operator sshd: the WireGuard network and the documented operator
-          # addresses only.
+          # A host is hostile (DECISIONS I-1368): from a host's address,
+          # or a guest's behind it, this machine answers ICMP echo and
+          # takes a guest's hook events on 8443, and nothing else: not
+          # the operator sshd, not the scrapes, not the view relay. The
+          # monitoring peer's scrapes go first because its address is
+          # inside the host range (I-170). Dropped packets are counted.
+          ${lib.concatStringsSep ruleSep monitoringInput}
+          iifname "wg0" ip saddr ${cfg.guestCIDR} tcp dport 8443 accept
+          iifname "wg0" ip saddr ${hostSources} icmp type echo-request accept
+          iifname "wg0" ip saddr ${hostSources} counter name host_input_dropped drop
+
+          # Operator sshd: the WireGuard network (hosts are dropped above,
+          # so this is the control plane and the operator peers) and the
+          # documented operator addresses.
           ip saddr 10.255.0.0/16 tcp dport ${toString cfg.operatorSSHPort} accept
           ${lib.concatMapStringsSep "\n          "
             (c: ''ip saddr ${c} tcp dport ${toString cfg.operatorSSHPort} accept'')
             cfg.operatorCIDRs}
 
-          # Hook ingest, from any guest over WireGuard.
-          iifname "wg0" tcp dport 8443 accept
           # The browser view's relay: the control plane only, never a
           # guest (DECISIONS I-1216). Until then 6081 was admitted from
           # every source on wg0 -- every guest on every host, the
@@ -329,7 +397,8 @@ in
           iifname "wg0" ip saddr ${cfg.controlWgAddress} tcp dport 6081 accept
 
           # Scrapes over WireGuard only: node_exporter and the gateway's own
-          # metrics.
+          # metrics, from the peers that are not hosts (the monitoring
+          # peer has its own rule above).
           iifname "wg0" tcp dport { 9100, 9102 } accept
           iifname "wg0" icmp type echo-request accept
 
@@ -342,17 +411,29 @@ in
         chain forward {
           type filter hook forward priority filter; policy drop;
           # The gateway originates every connection to a guest, so its return
-          # traffic is `established`; hosts never route through the edge to
-          # one another (that is enforced by per-host AllowedIPs).
+          # traffic is `established`. A flow a host opens to another peer
+          # never becomes established: its first packet is dropped below
+          # and conntrack confirms no entry for it.
           ct state established,related accept
-          # The one exception, and why it is one: Prometheus is not in Azure
-          # and hosts have no inbound, so a scrape is a packet the edge
-          # forwards from the monitoring peer to a host or to the control
-          # plane, and Fluent Bit's push to Loki is the same packet the
-          # other way. Named ports from named addresses; everything else
-          # between peers stays dropped. With no monitoring peer declared
-          # these lines are absent and the chain is what it was.
+          # Prometheus is not in Azure and hosts have no inbound, so a
+          # scrape is a packet the edge forwards from the monitoring peer
+          # to a host or to the control plane, and Fluent Bit's push to
+          # Loki is the same packet the other way; the control plane's
+          # remote-write to Prometheus is its own line. Named ports from
+          # named addresses. With no monitoring peer declared these lines
+          # are absent.
           ${lib.concatStringsSep ruleSep monitoringForward}
+          # The one path a host is forwarded through the hub (DECISIONS
+          # I-1382): the api's gRPC at the control plane's hub address. A
+          # host the operator does not own has no VNet to reach the api
+          # by; this is how it registers, streams and is commanded.
+          iifname "wg0" oifname "wg0" ip saddr ${cfg.hostCIDR} ip daddr ${cfg.controlWgAddress} tcp dport ${toString cfg.controlGrpcPort} accept
+          # A host, or a guest behind one, reaches no other peer
+          # (DECISIONS I-1368): not another host's wg address or guests,
+          # not the control plane on any other port, not the monitoring
+          # server beyond its push ports above. Counted, so a stranger's
+          # host probing the hub is a number an operator can read.
+          iifname "wg0" oifname "wg0" ip saddr ${hostSources} counter name host_forward_dropped drop
           counter drop
         }
 

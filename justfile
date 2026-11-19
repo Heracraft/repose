@@ -18,6 +18,13 @@ proto:
 check-nix:
     nix flake check ./nix
 
+# The edge ruleset's snapshot (nix/edge/tests/ruleset.golden, DECISIONS
+# I-1368): rules only, comments and blank lines out. Run it after a
+# deliberate change to nix/edge; `nix build ./nix#checks.x86_64-linux.edge-ruleset-snapshot`
+# shows the diff a forgotten run leaves.
+edge-ruleset-golden:
+    nix eval --raw ./nix#nixosConfigurations.edge.config.networking.nftables.ruleset | grep -v '^[[:space:]]*#' | sed '/^[[:space:]]*$/d' > nix/edge/tests/ruleset.golden
+
 # --- observability (docs/workstreams/10-observability.md) ------------------
 
 # Alert rules, their promtool tests, the dashboards and their queries.

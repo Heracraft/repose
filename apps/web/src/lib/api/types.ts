@@ -21,7 +21,9 @@ export type GuestState =
  * `none` is an account with no plan yet, `trial` a trialing one. */
 export type BillingStatus = 'none' | 'trial' | 'active' | 'past_due' | 'suspended' | 'exempt';
 
-export type PlanId = 'solo' | 'plus' | 'pro';
+/** A plan id. `own` is the Own hardware plan: one host the user owns, and
+ *  none of repose's memory, disk or egress (I-1364). */
+export type PlanId = 'solo' | 'plus' | 'pro' | 'own';
 
 /** The subscription's own status, Polar's words (docs/interfaces/api.md GET /billing). */
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'paused' | 'canceled';
@@ -86,6 +88,9 @@ export interface Me {
 		memory_gb: number;
 		disk_gb: number;
 		egress_gb: number;
+		/** How many hosts of their own the account may register (I-1364);
+		 *  absent from an api older than it. */
+		hosts?: number;
 	};
 	notify?: {
 		email: boolean;
@@ -170,6 +175,11 @@ export interface Plan {
 	memory_gb: number;
 	disk_gb: number;
 	egress_gb: number;
+	/** How many hosts of their own the plan allows: 1 on Own hardware, 0 on
+	 *  the hosted plans (I-1364). A plan with hosts > 0 sells none of
+	 *  repose's memory, disk or egress, so those three read 0 and mean
+	 *  "the plan caps nothing"; the host's own memory and disk do. */
+	hosts?: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;
 	/** The introductory price a month and for how many months, Solo's founding
@@ -276,7 +286,54 @@ export interface Project {
 	/** What runs the machine's terminals from its next start (I-502).
 	 * Absent from an older api, which means tmux. */
 	multiplexer?: 'tmux' | 'herdr';
+	/** Where the machine goes when it is placed (I-1366): `own` is a
+	 * host this account owns when it owns any and the hosted fleet when
+	 * it owns none, `hosted` the fleet whatever it owns. Absent from an
+	 * older api, which means own. */
+	placement?: Placement;
 }
+
+export type Placement = 'own' | 'hosted';
+
+/**
+ * One host the account owns, of GET /hosts (DECISIONS I-1366): a machine
+ * of their own that runs their projects and nobody else's. `mem_bytes`,
+ * `vcpus` and `cores` are 0 and `arch`, `last_heartbeat_at` and
+ * `registered_at` are absent until it registers. `join_token` and
+ * `install` come on the POST answer alone.
+ */
+export interface OwnedHost {
+	id: string;
+	name: string;
+	state: HostState;
+	provider?: string;
+	arch?: string;
+	mem_bytes: number;
+	vcpus: number;
+	cores: number;
+	/** The account's live projects placed on it. */
+	projects: number;
+	/** Those of them in a state that holds memory. */
+	running_projects: number;
+	last_heartbeat_at?: string;
+	registered_at?: string;
+	created_at: string;
+	/** The POST answer alone carries these three. */
+	join_token?: string;
+	join_token_expires_at?: string;
+	install?: { command: string; url: string };
+}
+
+/** hosts.state: `registering` is minted and never used, `unreachable` is
+ * 90 seconds without a heartbeat, which for a machine at home is
+ * switched off. */
+export type HostState =
+	| 'registering'
+	| 'ready'
+	| 'draining'
+	| 'unreachable'
+	| 'retired'
+	| 'lost';
 
 /**
  * POST /projects/:id/browser/view (DECISIONS I-1216): the answer to a

@@ -28,6 +28,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://github.com/google-gemini/gemini-cli";
     license = lib.licenses.asl20;
     mainProgram = "gemini";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }

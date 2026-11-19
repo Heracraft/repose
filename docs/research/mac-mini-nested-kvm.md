@@ -1,0 +1,567 @@
+# A repose host inside a Mac mini: nested KVM on a rented M4 (research, 2026-11-19)
+
+**Status: research and an untested automation. No decision here is made;
+the numbers this doc asks for do not exist yet.** The owner wants bring
+your own hardware for launch (I-647 chose shape A), and the hardware
+users own is a Mac mini, which has no x86 and no `/dev/kvm`. The path
+that keeps macOS on the user's machine is a sealed aarch64 NixOS VM on
+Apple's Virtualization framework with hostd inside it, and repose guests
+as Cloud Hypervisor microVMs under that VM's KVM. That needs nested
+virtualization, which Apple added in macOS 15 for M3 and later chips, for
+Linux guests only. Nothing about it can be measured on woker-1 (an Azure
+AMD VM), so the first step is a rented M4 Mac mini for one day.
+
+Outside facts were read on 2026-11-19 from the sources at the end.
+Facts marked *unverified* come from one secondary page or from a tool's
+source code and should be checked on the machine.
+
+## 1. What to rent
+
+| Provider | M4 16 GB | Billing | Fit |
+|---|---|---|---|
+| Scaleway `M4-S` (fr-par-1) | €0.22 an hour, about €149 a month | hourly, 24 h minimum | the lab day: one API call, full macOS, SSH from the start |
+| Scaleway `M4-M` (32 GB, 1 TB) | €0.29 an hour, about €199 a month | hourly, 24 h minimum | the staging Mac later: room for the VM plus several guests |
+| AWS EC2 `mac-m4.metal` (24 GB) | $1.23 an hour, 24 h minimum | hourly | five times Scaleway's price for the same day |
+| OakHost, HostMyApple, MacStadium | €115 to $149 a month | monthly | a second month-long box if Scaleway's zone runs dry |
+
+Scaleway is the one with an API, a CLI in nixpkgs (`scaleway-cli`
+2.62.0) and a Terraform provider, so it is the one the automation
+targets. **On 2026-11-19 every macOS Mac mini there was out of stock**
+(M1-M, M2-M, M2-L, M4-S, M4-M, M4-XL), and a new account must pass
+identity verification before it has any Apple silicon quota at all. The
+server-type API carries `stock` (`no_stock`, `low_stock`, `high_stock`),
+so `ops/dev/macmini watch` polls it and rents the first M4 that appears.
+The one machine in stock was `M2-L-ASAHI` (M2 Pro, Asahi Linux, €0.21 an
+hour, no minimum lease). The M2 and M2 Pro machines are useless here: nested
+virtualization wants an M3 or later. Asahi Linux on the
+M2 Pro is native Linux with native KVM: it runs steps 3, 5, 6 and 8 of
+the protocol (a Cloud Hypervisor guest, freeze and restore, virtiofs,
+the aarch64 base build) today, as an aarch64 box without the nesting.
+It cannot answer steps 2, 4 and 7, which are the Mac path's go or
+no-go, because the chip predates nested virtualization and there is no
+macOS on it. The day on an M4 still has to happen; AWS `mac-m4.metal`
+at about $30 for its 24 h minimum is the fallback if Scaleway's M4
+stock stays empty.
+
+## 2. Scaleway facts the automation relies on
+
+- **API.** `https://api.scaleway.com/apple-silicon/v1alpha1/zones/{zone}/servers`,
+  header `X-Auth-Token: $SCW_SECRET_KEY`. Create takes `name`, `type`,
+  `project_id`, optional `os_id`, `commitment_type` (`none`,
+  `duration_24h`, `renewed_monthly`), `enable_vpc`, `public_bandwidth_bps`,
+  `enable_kext`. A server reports `status` (`starting`, `ready`, `error`,
+  `rebooting`, `updating`, `locking`, `locked`, `unlocking`,
+  `reinstalling`, `busy`), `ip`, `vnc_url`, `vnc_port`, `ssh_username`,
+  `sudo_password`, `delivered`, `deletable_at`, `deletion_scheduled`, `os`.
+  `DELETE` on the server is the only delete; whether a delete before
+  `deletable_at` is refused or scheduled is *unverified* (the console has
+  an "auto-delete after 24 h" switch; the SDK exposes no such field).
+- **CLI.** `scw apple-silicon server create type=M4-S commitment-type=none
+  zone=fr-par-1 -o json`, `server wait`, `server get`, `server delete`,
+  `server ssh`, `os list server-type=M4-S`. Auth from `SCW_ACCESS_KEY`,
+  `SCW_SECRET_KEY`, `SCW_DEFAULT_PROJECT_ID`, `SCW_DEFAULT_ZONE`, or
+  `scw init`. An IAM API key is made at console.scaleway.com/iam/api-keys;
+  give it a policy with `AppleSiliconFullAccess` and the IAM right to
+  create SSH keys (`IAMManager`), scoped to one project made for this.
+- **Login.** macOS user `m1`, `sudo_password` from the API, project SSH
+  keys synced onto the box by Scaleway's `scw-agent`. `fail2ban` guards
+  SSH and VNC; a lockout is cleared only by a reboot from the console.
+  Screen Sharing (VNC) is on by default. No SIP changes, no FileVault,
+  no recovery mode: it is MDM-managed and nobody has physical access.
+- **OS.** macOS 15 (Sequoia), 26 and 27 are installable on every Mac
+  mini (changelogs of 2024-10-09, 2025-09-22, 2026-09-21). Any of them
+  is new enough. Choosing a non-default version adds about an hour to
+  delivery; the default is the fast path. `os list` names them.
+- **Clock.** 24 h minimum lease under Apple's licence, so the day costs
+  €5.28 whatever happens. Delete takes about 30 minutes to complete.
+  Reinstall wipes the disk and resets credentials.
+- **Preinstalled.** Xcode, MacPorts, `fail2ban`, `scw-agent`. No
+  Homebrew; the lab installs nothing system-wide and needs no `sudo`
+  except `pmset` later.
+
+## 3. The stack on the Mac, and why these tools
+
+```
+Mac mini (macOS 15+, M4)                          L0
+└─ one Linux VM on Virtualization.framework       L1  "the appliance": NixOS aarch64, hostd, KVM
+   └─ Cloud Hypervisor microVMs                   L2  repose guests, one per project
+```
+
+- **L1 launcher, lab day: Tart** (`tart run --nested --no-graphics`).
+  Ready Ubuntu arm64 images (`ghcr.io/cirruslabs/ubuntu`, user `admin`,
+  password `admin`), `tart ip`, `--dir` shares, `--disk` attachments,
+  `--serial`. Linux VMs boot by EFI from `~/.tart/vms/<name>/disk.img`
+  (raw) with `nvram.bin` beside it, so a NixOS `raw-efi` image dropped in
+  place of `disk.img` is the next step. Tart runs headless over SSH; CI
+  farms run it that way.
+- **L1 launcher, product: not Tart.** Tart is now `openai/tart` under
+  the Functional Source License (FSL-1.1-ALv2): free on personal
+  computers, a paid licence for organisations past a count of
+  installations, and a competing-use clause. Shipping it inside a repose
+  launcher to every user is the case the licence is written for. vfkit
+  (crc-org, Apache-2.0, v0.6.4) drives the same framework from one Go
+  binary and takes `--nested` on macOS 15 with M3 or later. The lab day
+  boots the same disk with vfkit too, so the measurement is on the
+  product's path and not only on Tart's. The alternative is our own
+  Swift launcher on the framework, which is small but is a signed,
+  notarised macOS program to keep building.
+- **L2: Cloud Hypervisor**, as on x86. It supports aarch64 with KVM,
+  boots an uncompressed arm64 `Image` directly (the serial console is
+  `ttyAMA0`, not `ttyS0`; the runner and hostd pick the console by
+  architecture since I-1374), and has snapshot and restore on aarch64, which
+  is less travelled than on x86 and is what I-652's freeze depends on.
+- **The Lima issue that is not ours.** lima-vm/lima#4498 reports QEMU
+  failing with "host kernel KVM does not support providing Virtualization
+  extensions to the guest CPU" inside a nested VM on an M4. That is a
+  request for a third level (EL2 exposed to the L2 guest). We need two:
+  KVM in L1 running plain guests in L2. `kvm-ok` passing in L1 is the
+  thing that report confirms works.
+
+## 4. The measurement protocol (one day, in order)
+
+Each step has a pass line. The day stops at the first failure, which is
+the finding.
+
+1. **The chip and the OS.** `sw_vers -productVersion` is 15 or later;
+   `sysctl -n machdep.cpu.brand_string` says M4; `sysctl -n
+   kern.hv_support` is 1.
+2. **Nested is offered.** Tart starts the Ubuntu VM with `--nested` and
+   does not warn; inside it `/dev/kvm` exists and `kvm-ok` passes. This
+   is the go or no-go for the whole Mac path. Record `nproc` and
+   `free -g` in L1 at the sizes given (8 vCPU, 12 GiB of the Mac's 16).
+3. **A guest boots in L2.** Cloud Hypervisor (`cloud-hypervisor-static-aarch64`
+   from its release) boots an Ubuntu arm64 cloud image with the L1
+   kernel's `Image`, 2 vCPU, 2 GiB, serial on `ttyAMA0`. Record the time
+   from exec to the `login:` prompt, five runs. x86 reference: the boot
+   figures in `docs/research/boot-speed.md`.
+4. **The nesting tax.** `openssl speed -multi N sha256` and
+   `openssl speed -multi N rsa2048` in L1 and in L2 at equal thread
+   counts; the ratio is the L2 penalty. The same in L1 against the
+   macOS host's `openssl speed` gives L1's own cost. RESEARCH.md §3
+   measured about 10 percent for Intel nested on Azure and 50 to 90 for
+   AMD; the product needs the Mac number to be nearer the first.
+5. **Freeze and restore in L2.** `ch-remote pause`, `snapshot
+   file:///...`, kill, `cloud-hypervisor --api-socket` and `ch-remote
+   restore`. Pass is a guest that answers after restore. Record the
+   snapshot's size and the restore time against I-685's figures.
+6. **virtiofs in L2.** `virtiofsd` (aarch64 build) serving a directory
+   into the guest, mounted and read. The store share and the login share
+   both ride on it.
+7. **vfkit on the same disk.** Boot the Tart VM's `disk.img` with vfkit
+   `--nested` and repeat step 2. Pass means the product launcher can be
+   Apache-licensed.
+8. **Build the aarch64 base, if time allows.** Install Nix in L1, clone
+   the repository, and attempt the guest closure for `aarch64-linux`.
+   The flake used to fix `system = "x86_64-linux"`; since I-1374 it has
+   `aarch64-linux` outputs (§8), so the step is `ops/dev/aarch64-base
+   check` and the closure's size against the 7 GiB limit is the number
+   to carry back.
+
+What the day cannot answer: how a user's own Mac mini behaves with the
+Mac asleep, on Wi-Fi, behind a home NAT, or on a 16 GB machine that is
+also someone's desktop. Those come from the first trusted user's box.
+
+## 5. Automation
+
+**2026-11-19, later the same day: the lab moved to AWS.** Scaleway's M4
+shelf was empty and two other Mac hosts were too, so the day runs on
+EC2 `mac-m4.metal` in us-east-1 (2024 Mac mini, M4, 24 GB, macOS on the
+metal, about $1.23 an hour with the same 24 h minimum, billed per
+Dedicated Host from the allocation call). The driver's default provider
+is now `aws`; `MACMINI_PROVIDER=scaleway` keeps the Scaleway path. New
+accounts have a quota of 0 for "Running Dedicated mac-m4 Hosts"
+(L-2CBA8B92), and the console's quota page lists the x86 "m4" family
+first, which is how the first request on this account went to the wrong
+quota. `ops/dev/macmini watch` polls the right one and allocates when it
+reaches 1. The macOS AMI comes from the SSM parameter
+`/aws/service/ec2-macos/<name>/arm64_mac/latest/image_id` (`sequoia`,
+`tahoe`, `golden_gate` for 15, 26, 27); the login is `ec2-user` with
+passwordless sudo; a stop or terminate puts the host through a scrubbing
+workflow before it can be released. AWS's EC2 Mac page says nothing
+about nested virtualization either way, so step 2 is still the go or
+no-go. Budget: `repose-lab-monthly`, $50 a month, emails at 50, 80 and a
+forecast of 100 percent; Budgets evaluate once a day, so it is an alarm,
+not a kill switch.
+
+`ops/dev/macmini` (this branch) drives the provider from woker-1,
+`ops/dev/macmini-bootstrap.sh` runs on the Mac, and
+`ops/dev/macmini-measure-linux.sh` is the Linux half (Cloud Hypervisor
+boots and the benchmark), which runs inside L1 on a Mac or natively on
+an Asahi box: `bootstrap` looks at `uname` and picks. Both are **untested**
+until the owner's API key exists; what they do is exactly section 4,
+steps 1 to 4 and 7, with the results in `~/repose-lab/results/` on the
+Mac and copied back by `ops/dev/macmini results`. Steps 5, 6 and 8 are
+hand steps on the first day and go into the script once seen to work.
+
+```
+nix develop ./nix#infra
+export SCW_ACCESS_KEY=... SCW_SECRET_KEY=... SCW_DEFAULT_PROJECT_ID=...
+ops/dev/macmini watch             # polls M4-S then M4-M stock every 5 min and creates on the first hit
+ops/dev/macmini create            # M4-S, fr-par-1, no commitment; uploads your SSH key
+ops/dev/macmini wait              # until ready and sshd answers
+ops/dev/macmini bootstrap         # Tart, vfkit, the Ubuntu VM with --nested, steps 1-4 and 7
+ops/dev/macmini ssh               # m1@<ip>
+ops/dev/macmini results           # copies ~/repose-lab/results/ to docs/research/mac-mini-nested-kvm-data/
+ops/dev/macmini destroy           # refuses before deletable_at and prints when
+```
+
+Why a script and not `infra/`: the lab box lives a day and holds no
+state anyone else needs. The staging Mac that follows a go is a tofu
+root (`scaleway_apple_silicon_server`, provider `scaleway/scaleway`)
+beside `infra/azure`, which `infra/README.md` already anticipates for a
+second provider. The API key is an operator secret in the shell on
+woker-1, the way `CLOUDFLARE_API_TOKEN` is; it never enters this
+repository or an agent's output.
+
+## 6. What a go turns into
+
+The work items in `proposals/2026-10-10-bring-your-own-host.md` stay,
+with the `metal` provider replaced by:
+
+- an `aarch64-linux` guest base and host system as second flake outputs,
+  built on the Mac's L1 as a Nix remote builder (woker-1 is x86 and has
+  no `binfmt` to emulate): done as I-1374, §8;
+- a host image for the framework (`raw-efi`, one disk, a partition for
+  `vg-guests`, a host reserve scaled for 16 GB): done as I-1376,
+  `nix/hosts/mac.nix` and `packages.aarch64-linux.mac-appliance-image`;
+- a launcher for macOS on vfkit or our own framework code, started at
+  login, holding the join token for the first registration, with
+  `pmset` keeping the Mac awake: done as I-1380, `repose host add` and
+  `repose host run` in the CLI (a launchd agent over vfkit;
+  `caffeinate`, not `pmset`, so no setting of the Mac's changes), and
+  the join carries the host's place on the hub too, which is how a Mac
+  registers with no route to the api's VNet;
+- the runner's `console=ttyS0` made per-architecture: done as I-1374;
+- freeze and restore gated on step 5's result, x86-only if it fails:
+  step 5 was not run on 2026-11-19 (§7), so the park is off in
+  `mac.nix` and asserted off until it is.
+
+## 7. What the Mac said (AWS mac-m4.metal, eu-west-1a, 2026-11-19)
+
+Host: EC2 Dedicated Host h-0b0c0ac94c35a8e93, instance i-03d94447e3932adfe,
+macOS 15.8.2 (24H232), Apple M4, 10 cores, 24 GB, `kern.hv_support` 1.
+Allocated 06:02 UTC after Virginia reported no capacity in any zone;
+Ireland had capacity on the first try once its quota applied.
+
+| Step | Result | Note |
+|---|---|---|
+| 1 chip and OS | PASS | macOS 15.8.2 on Apple M4 |
+| 2 nested KVM | PASS | `/dev/kvm` in the appliance VM (Tart `--nested`, Ubuntu 24.04 arm64, 8 vCPU, 12 GiB), `kvm-ok` passes; KVM reports "Hyp mode initialized", GICv3 system-register interface, no GICv2 |
+| 3 guest boots | PASS on 6.18.57 and 6.8; FAIL on 7.0 | a stock Ubuntu cloud image: `Run /init` 1.5 s, systemd 4.0 s, login prompt 134 to 139 s (the image waits 120 s for a network the guest has no NIC for; the kernel-to-systemd time is the figure) |
+| 4 nesting tax | PASS, none measurable | one-thread `openssl speed sha256`, 16 KiB blocks: guest 3.12 GB/s, appliance 2.92 GB/s (ratio 1.07, inside core-to-core noise on a chip with P and E cores); the appliance at 8 threads 18.7 GB/s, 6.4x one thread; the Mac itself under LibreSSL 3.23 GB/s at 8 KiB, not like for like |
+| 5 freeze and restore | PASS (19f, §9: parked in 6.1 s, restored in 7.8 s, memory and uptime kept) | |
+| 6 virtiofs | not run | |
+| 7 vfkit | PASS | vfkit 0.6.4 `--nested` booted the Tart disk to a login prompt on the first run; the address lookup was the harness's fault |
+
+Raw files: `mac-mini-nested-kvm-data/` (host facts, kvm-ok, the guest
+console logs under 6.8 and 6.18.57, the hang logs under 7.0, the openssl
+outputs at all three levels). The appliance VM was then resized to 18
+GiB and given nix 2.35.6 as the aarch64 builder for workstream 19e.
+
+**The kernel condition (the finding of the day).** With Ubuntu's
+`7.0.0-43-generic` kernel in the appliance VM, every guest hangs about
+two seconds into boot, right after the initramfs hands over: the guest
+kernel prints `rcu_preempt kthread timer wakeup didn't happen ...
+Possible timer handling issue on cpu=0`, and never reaches a login
+prompt. It is the same under Cloud Hypervisor v54.1 and under QEMU
+8.2.2 with KVM (`-M virt -accel kvm -cpu host`), with one vCPU or two,
+with `idle=poll`, and with `nohz=off highres=off`. With
+`6.8.0-147-generic` in the same VM, on the same macOS and the same
+host, the same guest boots to a login prompt, and so does it with
+**`6.18.57`** (Ubuntu's mainline build of the exact version
+`nix/hosts/kernel.nix` asserts: `versionAtLeast 6.18.57`, the first
+stable kernel with the fix for CVE-2026-99999, a guest-to-host escape
+through a tap's `vnet_hdr`; DECISIONS I-778). So the appliance ships
+6.18.57 or a later 6.18 point release, **never 6.8**, and the pin is a
+product requirement rather than a detail: the `mac` provider's kernel
+(I-1374, I-1376) must be proven by `ops/dev/macmini-l2-try.sh` on
+Apple silicon before any bump, and the bisect window for whoever bumps
+next is 6.18.57 to 7.0.0-43.
+Whether this is a KVM regression between 6.8 and 7.0 in nVHE mode
+under Apple's hypervisor, or an Apple-side bug that newer kernels
+tickle, is *unverified*; the logs are in `mac-mini-nested-kvm-data/`
+(`l2-try-1.log`, `l2-try-2.log`, `l2-qemu.log` for the hang,
+`l2-boot-*.log` for the boots under 6.8). macOS 15 is enough: the
+requirement does not move to 26.
+
+**Harness lessons** (each cost a run): `nohup` under `ssh -t` on macOS
+does not detach and the VM dies with the session, so the driver runs
+the bootstrap without a tty; `/dev/kvm` is root:kvm 0660 in the Ubuntu
+image; Cloud Hypervisor v54 wants `image_type=raw` on every disk;
+Ubuntu's arm64 `vmlinuz` is an EFI zboot PE with the Image compressed
+inside (zstd here), which the measure script now unwraps; a login typed
+at the first prompt of a cloud image fails because cloud-init has not
+set the password yet; `pkill -f` on a name that appears in your own
+command line kills your own shell.
+
+## 8. The aarch64 build (I-1374, 2026-11-19)
+
+Built on the AWS M4's appliance VM (`macmini-l1`: aarch64, Ubuntu
+kernel 6.18.57, 8 vCPU, 17 GiB, nix 2.35.6) on 2026-11-19, from
+2026-11-19T08:32:21Z, with `ops/dev/aarch64-base check` run on the VM
+itself (branch `ws/19e-aarch64` at 3a631e09, cloned there from a git
+bundle, `max-jobs = 4`). The numbers:
+
+| What | Result |
+|---|---|
+| aarch64 guest system closure | **6,670,370,872 bytes (6.21 GiB)**, under the 7 GiB limit (7,516,192,768); the x86 closure was 6,438,215,064 at I-1056, so aarch64 is 232 MB larger |
+| guest system build, wall clock | 169 s for the first pass, which fetched the 979 cached paths (1.9 GiB) and built the 421 derivations, with one failed codex install check (below); the runner then took 13 s and the closure check 4.8 s on the second pass |
+| host system (`host-aarch64`), wall clock | 47 s, after the guest's fetches |
+| installer (`installer-aarch64`) | **did not build**: `tzdata-static-aarch64-unknown-linux-musl` (a `pkgsStatic` dependency of nixos-images' kexec installer) fails its own check phase with exit 2 on aarch64, so the kexec tarball is not made; see below |
+| builder memory | the VM's 17 GiB was never under pressure (2 GiB used at the peak seen); 12 GiB would have done |
+| builder disk | about 9 GB of /nix for the fetches and the build |
+| closure-size check on both architectures | yes: `checks.x86_64-linux.guest-closure-size` and `checks.aarch64-linux.guest-closure-size` are the same 7 GiB rule, and the aarch64 one printed the number above |
+| the aarch64 overlay on Cachix | not yet: the CI job runs on the first push of this to `main`; the recipe's `push` has not run |
+
+What the built runner says, read from its store path: the kernel is the
+arm64 `Image` (6.18.52, nixpkgs' LTS), the base's command line carries
+`console=ttyAMA0`, `bin/run` renders `console=ttyAMA0` first, Cloud
+Hypervisor is v53.0.0 for aarch64 and `virtiofsd` 1.14.0 is an aarch64
+ELF. Nothing has booted this runner: gate 0 step 3 booted an Ubuntu
+guest, not this one, and steps 5 and 6 (freeze and restore, virtiofs)
+were never run (19f's work).
+
+Two findings for whoever builds next:
+
+- **Codex's install check is timing-sensitive on a loaded aarch64
+  builder.** `codex app-server daemon start` (the I-487 check) failed
+  once with "app server did not become ready on
+  .../app-server-control.sock" while four other derivations were
+  building, and passed on the retry a minute later. It is the same
+  check that passes on x86 CI; on the arm64 CI runner, which builds the
+  overlay alone, it should hold, and a red there is this and not a bad
+  binary.
+- **The kexec installer does not build for aarch64** as nixos-images
+  ships it: its static tool set pulls `pkgsStatic.tzdata`, whose check
+  phase fails on `aarch64-unknown-linux-musl`. `installer-aarch64` and
+  `checks.aarch64-linux.installer-aarch64-builds` stay in the flake as
+  the shape, evaluated and never realised; the Mac appliance boots from
+  a disk image (I-1376) and does not need it, and the first aarch64 KVM
+  box installed over the network is the day to fix tzdata's check (a
+  `doCheck = false` override on the static set, or a nixos-images bump).
+
+What exists, from `nix/flake.nix`: `packages.aarch64-linux` (the guest
+runner and system, the Go binaries, the agents), `guestSystems.aarch64-linux`
+(what hostd on an aarch64 host evaluates), `nixosConfigurations.host-aarch64`
+and `installer-aarch64`, and `checks.aarch64-linux` (the closure limit,
+the runner, the host and the installer build; no VM tests, they need KVM
+of the builder's architecture). Every agent's arm64 release is pinned
+beside the x86 one in `versions.json`.
+
+Evaluated on woker-1 before the build (x86, under the shared build
+lock): every aarch64 output evaluates; the x86 guest system's, runner's,
+host-02's, edge's and installer's `.drv` paths are identical to
+`mac-mini`'s, so the restructuring changed no x86 output; the host
+kernel pin resolves to 6.18.57 on aarch64 too. The dry-run before the
+build predicted 979 fetched paths (1.9 GiB download, 5.7 GiB unpacked)
+and 421 built derivations, which is what the build did; the
+`nodejs-24.20.0` derivation in the build list was a wrapper, not a
+compile.
+
+## 9. The appliance day (19f, 2026-11-19)
+
+The production image (`packages.aarch64-linux.mac-appliance-image`,
+DECISIONS I-1376) was built on the appliance VM L1 as the builder:
+`nixosConfigurations.mac` in 3 min 50 s from 19e's cache, closure 1.78
+GB; the image in 12 min 45 s (disko's image builder in a KVM VM, 37 GiB
+sparse raw inside), 2,081,798,905 bytes as `repose-appliance.raw.gz`.
+It boots on the Mac under vfkit 0.6.4 (`--nested`, EFI, virtio-blk,
+NAT, virtio-fs, the console to a file) to the login prompt on the
+6.18.57 pin, with the join, net, pool, grow and register units running.
+
+**A repose guest on the appliance** (a lab image with hostdev through a
+relay on the Mac, the aarch64 guest closure baked in; the VM at 12 GiB,
+8 vCPU): `hostdev create --class large` then `start`; inside the guest
+`findmnt -t virtiofs` lists `/nix/.ro-store ro-store` and
+`/run/repose/claude-auth claude-auth`, `/nix/store` is the overlay over
+the share, `ls /nix/store` of 1225 paths takes 0.18 s, Docker 29.8.0
+runs on overlay2, the tmux session unit is up, ssh with a certificate
+from hostdev's CA logs in. Gate 0 step 6 (virtiofs) therefore passes.
+Timing of the first boot (`systemd-analyze`): kernel 13.4 s, userspace
+3 min 23 s; guestd listening at 56 s, "guest is ready" at 70 s; the
+critical chain is `repose-paths` waiting 1 min 41 s for hostd's
+RegisterPaths (I-232's dump-db of the closure, slow on the appliance),
+then home-manager 26 s. hostd's 60 s ready window closed on it twice,
+reproducibly: `--ready-timeout` and `guestReadyTimeout = "5m"` in
+mac.nix are the fix (I-1376). A stop takes 18 s. A warm start of the
+same guest: kernel 15.6 s, userspace 3 min 43 s, Ready at 90 s,
+`repose-paths` 2 min 4 s; guestd logged `store paths already
+registered` at 185 s, so the wait is hostd's RegisterPaths arriving 95
+s after Ready: the closure's `nix-store -qR` and `--dump-db` on the
+appliance, at every start. Load average 7 on 2 vCPUs during boot. Failing units in the
+aarch64 guest, not fixed here: `repose-zram-swap` (`zramctl: /dev/zram0:
+failed to wait for initialized: No such file or directory`) and Docker's
+first attempt (`timeout waiting for containerd to start`, then it
+starts). Once in three starts SetupProject failed at `start the tmux
+session unit: systemctl exited 1`; unverified.
+
+Hello from the 12 GiB VM: `mem_bytes` 12,492,406,784, `vcpus` 8, `cores`
+8; `free_mem_bytes` 10,344,923,136 before a guest and 1,218,117,632 with
+the large guest placed; `pool_bytes` 11,790,188,544 on a 46 GiB disk
+file (the image's 4 GiB PV grown at first boot).
+
+Disk on the Mac (the sparse file's real blocks): the production image
+installs in 29 s and unpacks to 4.58 GB (apparent 37 GiB, then grown to
+the volume's free space less 20 GB), and sits at 5.65 GB after its
+first boot (the pool's metadata grown to 1 GiB, the caches volume's
+ext4), with the volume's free space down 6 GB in all; that image
+predates the boot-time trim, which gives the build's stale blocks back
+(below); a lab image with the 6.6
+GiB guest closure held 12.7 GB after boot and 9.7 GB after `fstrim -av`
+inside the appliance, which matches root 7.97 GB + /boot 0.1 + the thin
+pool's 1.37 GB allocated (the caches volume's ext4 1.08, the guest
+volume 0.28, metadata 1 GiB), so the 3 GB gap was stale blocks from the
+image build, given back by discard through virtio-blk to APFS. With the
+large guest running: 9.76 GB. vfkit's own RSS: 24 MiB.
+
+**Freeze and restore (step 5), passed.** A lab image with
+`repose.host.park` on and a key file: `repose-appliance stop` parks at
+the appliance's shutdown (`guest parked`, class small, `snapshot_ms`
+306, `duration_ms` 6051, `image_bytes` 672 MB; the stop took 17 s), and
+the next start restores (`restore phases net_ms 28, virtiofsd_ms 49,
+store_view_ms 136, image_read_ms 911, resume_ms 182`, `duration_ms`
+7834, `parked_s` 31); a marker in the guest's tmpfs read back and
+`/proc/uptime` ran on from 144 s to 294 s with no reboot. The first
+attempt was skipped with `no_room`: the pool on a 39 GiB disk file had
+no room for the image, and `repose-appliance grow 60` plus a restart
+gave it 25 GB. hostd's own start breakdown for the small guest:
+`prepare_ms 457, ready_ms 45733, paths_ms 59725, setup_ms 34808,
+total_ms 140725` (2 min 21 s against the large guest's 3 min 36 s, so
+the minutes are not a fixed cost; `paths` is the largest piece either
+way). The appliance ships with the park off: the image key is wrapped
+by Key Vault with the host's Azure identity (I-653) and a Mac has none;
+the key file the lab used is for staging and tests only. Open, and
+for the owner: where an owned host's wrapping key lives when the host
+is a stranger's machine with no cloud identity, and who can read it.
+
+Lessons, each of which cost a run:
+
+- **Apple's NAT isolates VMs from each other at layer 2.** Two VMs on
+  vfkit's or Tart's NAT (bridge100, 192.168.64.0/24) each reach the Mac
+  and the internet, and the Mac reaches both, but ARP between them
+  fails. A two-VM lab (a hostdev in one, the appliance in the other)
+  needs a relay on the Mac: `ssh -N -L 192.168.64.1:8443:127.0.0.1:8443
+  admin@<builder>` and an image that dials the Mac's address. The
+  product is not affected; a real appliance dials the api over the
+  internet.
+- **BSD `dd ... count=0 seek=N` does not extend a file.** The shell
+  launcher of the day used perl's `truncate`; the CLI uses
+  `os.Truncate`.
+- **`gunzip` writes the zeros.** A 37 GiB image whose data is a few GiB
+  costs 37 GiB on the volume unless the unpack seeks over zero blocks;
+  the CLI's `unpackSparse` does.
+- **launchd takes no agent from an ssh session with no login.**
+  `launchctl bootstrap user/<uid>` answers "Bad request" for a
+  LaunchAgent; the GUI domain does not exist. `repose host add` then
+  starts `repose host run` detached with every descriptor off the terminal
+  (`nohup` under a tty says "can't detach from console" and the VM dies
+  with the session). On a Mac with a login session the agent is what a
+  user gets (I-1380).
+- **A reboot of the Ubuntu builder VM resets `/dev/kvm` to 0660**, and
+  nix's build users are not in `kvm`, so an image build after the
+  reboot fell back to TCG without saying so loudly (`qemu-system-aarch64:
+  Could not access KVM kernel module: Permission denied`, then `falling
+  back to tcg`). `chmod 666 /dev/kvm` before any build there.
+- **`pkill -f` with the pattern spelled in the same ssh command kills
+  the ssh session.** `pkill -f 'lab-image[2]'` matches the process and
+  not the shell that carries the pattern.
+
+## 10. The I/O pair: where the nested guest's minutes go (19f, 2026-11-19)
+
+The question was whether a hostd running natively on macOS, one guest
+per Virtualization.framework VM and no appliance, would remove the
+minutes a guest start takes on the Mac (§9: a small guest's `ready` 45.7
+s, `paths` 59.7 s, `setup` 34.8 s against 14 to 16, 4 to 10 and 8 to 15 s
+on x86). §7 step 4 had shown no CPU tax (sha256 ratio 1.07) and step 3
+the same Ubuntu boot nested and native to the tenth of a second, so the
+remaining suspect was I/O. fio 3.36 (libaio, direct=1, 12 s a test) ran
+in L1, the Ubuntu builder VM directly on Virtualization.framework (8
+vCPU, 6 GB, its disk a file on APFS), and in L2, an Ubuntu guest under
+Cloud Hypervisor nested in it (2 vCPU, 2 GiB, the shape of a small
+guest), on the same kinds of target; the raw lines are in `~/fio` on the
+builder. The thin pool was a zeroing pool (chunk 64 KiB, as
+`disko-layout.nix` makes it) over a loop device on L1's ext4, since the
+builder has no spare disk; production has the pool on a partition, and
+the loop is why the pool's sequential write sits at 86 MB/s in both L1
+and L2. The L2 disks were opened `direct=on`, as hostd opens them.
+
+| 4 KiB, queue depth 1 | L1 file on ext4 | L1 thin volume | L2 thin volume | L2 sparse file |
+|---|---|---|---|---|
+| random read | 18.0k iops, 46 us | 17.3k iops, 47 us | 4.8k iops, 172 us | 6.5k iops, 116 us |
+| random write, chunk already allocated | 3.1k iops, 317 us | 1.1k iops, 914 us | 4.9k iops, 168 us | 1.0k iops, 987 us |
+| random write, first touch | 310 iops, 3.2 ms | first I/Os stalled for seconds | 801 iops, 1.2 ms | 1.0k iops, 0.96 ms |
+
+| bulk | L1 file on ext4 | L1 thin volume | L2 thin volume | L2 sparse file |
+|---|---|---|---|---|
+| 1 MiB sequential read, qd 4 | 6.7 GB/s | 14.5 GB/s | 7.7 GB/s | 3.3 GB/s |
+| 1 MiB sequential write, qd 4 | 12.2 GB/s | 86 MB/s | 87 MB/s | 121 MB/s |
+| 4 KiB random read, qd 16 | 117k iops | 230k iops | 52k iops | 69k iops |
+
+The Mac's page cache sits under L1's disk, which is why L1 reads and
+writes in gigabytes a second: a guest disk file on APFS through
+Virtualization.framework's virtio-blk, which is what a native hostd
+would give a guest, behaves the same. Nesting adds 70 to 125 us to a
+4 KiB I/O at depth 1 (three to four times) and halves the depth-16
+rate; sequential reads stay within a factor of two. A sparse file on
+ext4 opened O_DIRECT is pathological for allocation (p99 283 ms on a
+1 MiB write) and is not what hostd uses. None of this is minutes.
+
+The store share is. virtiofsd 1.10 in L1 (`--cache auto`, as hostd's
+store share) serving a directory to L2, read with the guest's cache
+dropped before each pass and L1's before the boot, against the same
+directory read in L1, through Apple's virtiofs in a Tart clone of the
+builder with the directory shared from the Mac, and on the Mac itself
+after `purge`:
+
+| read | L2 through virtiofsd | L1 directly | L1 through Apple's virtiofs | the Mac itself |
+|---|---|---|---|---|
+| 1 GiB file, first pass | 29.2 to 31.7 s (32 MB/s) | 0.09 s | 1.28 s | 1.09 s |
+| 1 GiB file, second pass | 7.8 s (130 MB/s); a third pass with 1 MiB reads 32.4 s | | 0.18 s | 0.06 s |
+| 256 MiB in 4 KiB reads | 6.7 s | | 0.07 s | |
+| a 1288-entry, 29 MB tree, cat every file, first pass | 0.97 to 1.59 s | 0.09 s | 1.23 s | 1.03 s |
+| the same, second pass | 0.69 s | | 0.19 s | 0.02 s |
+| stat every entry | 0.21 to 0.26 s | 0.03 s | 0.08 s | |
+
+A FUSE request through the nested virtiofsd costs 1 to 4 ms whatever
+its size, so the share delivers 32 to 130 MB/s and about half a
+millisecond a file; the cost is per request, not first touch (the
+second pass of the file was four times faster, the third as slow as the
+first). Apple's virtiofs costs nothing measurable over the Mac's own
+SSD (the cold first passes are the SSD at about 1 GB/s; warm, 5 to 6
+GB/s and 0.15 ms a file). A repose guest reads its whole closure
+through the store share at boot: the kernel's 13.4 s, `repose-paths`,
+home-manager, docker and the pin-profile copy-up are all reads of
+`/nix/store` over virtiofs, and at 32 MB/s and half a millisecond a
+file that is the minutes. The nesting tax is real and it is
+concentrated in one device.
+
+What this says for the two shapes. The native shape removes the cost
+by construction, at the price §9's report put on it (about 7,500 lines
+of hostd, a second storage and network model, a signed macOS binary).
+The appliance shape can remove it too, by not reading the closure
+through virtiofs in the nested guest: the store as a read-only
+virtio-blk volume (an erofs or squashfs image of the closure, which
+reads at gigabytes a second nested, above), or virtio-fs DAX if Cloud
+Hypervisor brings it back. Neither has been measured as a boot; a boot
+with the store on virtio-blk in the appliance is the measurement that
+decides between them, and it is a day's work on the Mac. Not measured:
+the Mac's own fio (no fio, no Homebrew there), and hostd's
+RegisterPaths natively on APFS.
+
+## Sources
+
+- Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:
+  create, connect by SSH, FAQ, delete, reinstall, datasheet, concepts;
+  changelogs 2024-10-09, 2025-09-22, 2026-02-23, 2026-09-21).
+- Scaleway CLI `docs/commands/apple-silicon.md`; Go SDK
+  `api/applesilicon/v1alpha1/applesilicon_sdk.go`; Terraform provider
+  `docs/resources/apple_silicon_server.md`.
+- Scaleway pricing page for Apple silicon (M4-S €0.22/h, M4-M €0.29/h, 2026-11-19).
+- Tart `Sources/tart/Commands/Run.swift`, `Create.swift`, `VMDirectory.swift`,
+  `LICENSE` (FSL-1.1-ALv2, copyright OpenAI); Scaleway tutorial
+  "Run and manage Linux VMs on Apple silicon with Tart".
+- vfkit (crc-org) release v0.6.4, Apache-2.0; kubernetes/minikube#22805
+  on `--nested` in vfkit and krunkit on macOS 15 with M3, M4, M5.
+- Parallels forum and UTM issue #6700 on nested virtualization in
+  macOS 15 for M3 and later, Linux guests only; lima-vm/lima#4498.
+- macyou.co, macrent.cloud and Vantage for the other providers' prices (2026-11).

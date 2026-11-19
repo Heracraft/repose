@@ -1,0 +1,3 @@
+The 'numbers' are in 1000s of bytes per second processed.
+type             16 bytes     64 bytes    256 bytes   1024 bytes   8192 bytes  16384 bytes
+sha256          245803.24k   805559.14k  1895346.18k  2798679.86k  3243160.37k  3279755.67k

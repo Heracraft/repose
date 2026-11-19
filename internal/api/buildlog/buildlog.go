@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/db"
 )
 
@@ -42,7 +43,10 @@ type Store struct {
 	pending  map[uuid.UUID][]Line
 	redact   map[uuid.UUID][]string
 	subs     map[uuid.UUID]map[chan Line]struct{}
-	commands map[string]uuid.UUID // command_id -> op_id
+	commands map[string]binding // command_id -> op, host
+	// Metrics, when set, counts a line refused because it came from a
+	// host the build was not sent to (DECISIONS I-1368).
+	Metrics  *metrics.M
 	flushCh  chan struct{}
 	batch    int
 	interval time.Duration
@@ -51,14 +55,46 @@ type Store struct {
 // New makes a store.
 func New(pool *db.Pool, log *slog.Logger) *Store {
 	return &Store{pool: pool, log: log, pending: map[uuid.UUID][]Line{}, redact: map[uuid.UUID][]string{}, subs: map[uuid.UUID]map[chan Line]struct{}{},
-		commands: map[string]uuid.UUID{}, flushCh: make(chan struct{}, 1), batch: 50, interval: 200 * time.Millisecond}
+		commands: map[string]binding{}, flushCh: make(chan struct{}, 1), batch: 50, interval: 200 * time.Millisecond}
 }
 
-// Bind maps a command id to its op so incoming lines find their op.
-func (s *Store) Bind(commandID string, opID uuid.UUID) {
+// binding is the op a build command belongs to and the host it went to.
+type binding struct {
+	op   uuid.UUID
+	host uuid.UUID
+}
+
+// Bind maps a command id to its op, and to the host the command was sent
+// to, so incoming lines find their op and a line from any other host is
+// refused (DECISIONS I-1368).
+func (s *Store) Bind(commandID string, opID, hostID uuid.UUID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.commands[commandID] = opID
+	s.commands[commandID] = binding{op: opID, host: hostID}
+}
+
+// AppendFrom stores one line a host sent for a command, and reports
+// whether it was taken: false for a command nothing is bound to, and for
+// a line from a host the build was not sent to, which is counted in
+// repose_api_host_reports_refused_total{reason="foreign_command"}. A host
+// the operator does not own could otherwise write its own text into
+// another project's build log (DECISIONS I-1368).
+func (s *Store) AppendFrom(hostID uuid.UUID, commandID string, seq int64, line string) bool {
+	s.mu.Lock()
+	b, ok := s.commands[commandID]
+	s.mu.Unlock()
+	if !ok {
+		return false
+	}
+	if b.host != hostID {
+		if s.Metrics != nil {
+			s.Metrics.HostReportsRefused.WithLabelValues("foreign_command").Inc()
+		}
+		s.log.Warn("build line from a host the build was not sent to", "event", "foreign_command", "host_id", hostID.String(), "command_id", commandID)
+		return false
+	}
+	s.Append(b.op, seq, line)
+	return true
 }
 
 // Unbind forgets a command (op finished).
@@ -72,8 +108,8 @@ func (s *Store) Unbind(commandID string) {
 func (s *Store) OpFor(commandID string) (uuid.UUID, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, ok := s.commands[commandID]
-	return id, ok
+	b, ok := s.commands[commandID]
+	return b.op, ok
 }
 
 // MinRedact is the shortest value matched. Shorter values are left alone:

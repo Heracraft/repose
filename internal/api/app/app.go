@@ -165,6 +165,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		return nil, err
 	}
 	a.logs = buildlog.New(a.pool, log)
+	a.logs.Metrics = a.m
 	a.events = events.New(a.pool, a.m, log)
 	a.meterIn = meter.New(a.pool, a.m, log)
 	a.hostMgr = hostmgr.New(a.pool, a.ca.X509(), cfg.ReplicaID, a.m, log)
@@ -173,8 +174,10 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.engine = ops.New(a.pool, a.hostMgr, a.ca, a.sec, a.logs, a.events, a.m, log, ops.Config{BaseRef: cfg.BaseRef})
 	a.abuse = abuse.New(a.pool, a.engine, a.events, a.m, log)
 	a.questions = questions.New(a.pool, a.events, a.hostMgr, log)
+	a.questions.Metrics = a.m
 	a.events.SetQuestions(a.questions)
 	a.say = say.New(a.pool, a.hostMgr, log)
+	a.say.Metrics = a.m
 	a.events.SetSays(a.say)
 	// Triggers (DECISIONS I-1248..I-1262). The store is shared with the
 	// http process through Deps; the clock and the worker run here, in
@@ -182,6 +185,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.routes = webhooks.New(a.pool, a.sec, cfg.WebhookHost)
 	a.triggers = triggers.New(a.pool, a.routes)
 	a.triggerClock = triggers.NewClock(a.triggers, a.hostMgr, log)
+	a.triggerClock.Metrics = a.m
 	a.triggers.SetEvents(a.events)
 	a.triggers.SetMetrics(a.m)
 	a.triggers.SetDone(a.StopAfterRun)
@@ -194,6 +198,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.
 	a.resting = resting.New(a.pool, a.hostMgr, log)
+	a.resting.Metrics = a.m
 	// Counted here, where every caller of Wake passes (I-822).
 	if a.m != nil {
 		a.resting.CountWake = func(reason, result string) {
@@ -242,7 +247,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 			if a.say.OnResult(ctx, hostID, r) { // a `repose say` (I-1144)
 				return
 			}
-			if a.triggerClock.OnResult(ctx, r) { // a RunTrigger (I-1252)
+			if a.triggerClock.OnResult(ctx, hostID, r) { // a RunTrigger (I-1252)
 				return
 			}
 			a.engine.OnResult(ctx, hostID, r)
@@ -253,9 +258,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		},
 		Event: a.events.OnEvent,
 		BuildLog: func(ctx context.Context, hostID uuid.UUID, l *hostdv1.BuildLog) {
-			if opID, ok := a.logs.OpFor(l.CommandId); ok {
-				a.logs.Append(opID, int64(l.Seq), l.Line)
-			}
+			a.logs.AppendFrom(hostID, l.CommandId, int64(l.Seq), l.Line) // a line from another host is refused (I-1368)
 		},
 	})
 	senders := map[string]notify.Sender{"email": &notify.Email{APIKey: cfg.ResendAPIKey, From: cfg.NotifyFrom}, "ntfy": &notify.Ntfy{}, "gchat": &notify.GChat{}}
@@ -282,6 +285,11 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.bcfg = bcfg
 	a.gate = billing.NewGate(a.pool, bcfg, a.m, log)
 	a.resume = resume.New(a.pool, a.engine, a.gate, a.m, log)
+	// Placement asks the plan one question (DECISIONS I-1366): may this
+	// account's machines run on hardware repose bought? An Own hardware
+	// plan sells no memory there, so the answer is no and every
+	// placement of that account stays on its own host.
+	a.engine.SetFleetPolicy(a.gate)
 	// The seat count (I-290, I-739): live subscriptions and unexpired
 	// invitations against what the ready hosts deliver -- the smaller of
 	// their memory in 8 GB blocks and what their physical cores can serve
@@ -345,8 +353,9 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		// The browser view's relay on the edge (DECISIONS I-1216); nil
 		// makes the view's mint route answer `unavailable`. The dashboard
 		// is the one origin its stream route accepts an upgrade from.
-		ViewRelay:   viewRelay,
-		ViewOrigins: viewOrigins(cfg.DashboardURL),
+		ViewRelay:    viewRelay,
+		ViewOrigins:  viewOrigins(cfg.DashboardURL),
+		DashboardURL: cfg.DashboardURL,
 		// The webhook routes the edge serves (DECISIONS I-1110); the
 		// token's envelope is the secrets store's, so it takes it.
 		WebhookRoutes: a.routes,

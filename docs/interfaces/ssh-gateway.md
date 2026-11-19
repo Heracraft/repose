@@ -65,6 +65,12 @@ Two CAs, both ed25519, private keys in the api's secret store:
    Before I-721 both were the unreachable-host banner, which told the
    user something false and unactionable. Neither is a certificate
    refusal: the CLI keeps waiting and spends no re-issue on either. A
+   project whose host is owned by an account other than the
+   certificate's (`host_owner_id`, DECISIONS I-1368) is refused with
+   `todo-app is on a host your account does not own`, reason
+   `foreign_host`; placement never produces it, so it is the api's row
+   being wrong, and the gateway refuses on the certificate rather than
+   on the api's word. A
    `running` project whose answer carries `resting` (DECISIONS I-818) is
    frozen: its vCPUs are stopped and its memory and every process are
    still there. Nothing is refused for it here -- the route answer is
@@ -139,7 +145,10 @@ Two CAs, both ed25519, private keys in the api's secret store:
    seconds after its last use and closes it after that. The login name
    comes from `GET /internal/route?project_id=`, which carries it for
    exactly this reason: a delivery has no login of its own and still
-   has to check the host certificate's principal.
+   has to check the host certificate's principal. For the same reason
+   the owner check reads the route's `host_owner_id` against its
+   `user_id` (I-1368): a project on a host another account owns is
+   answered 503 with outcome `unavailable` and never dialled.
 
 ## Guest sshd
 

@@ -23,7 +23,17 @@ HostInfo { string hostname; string sku; uint64 mem_bytes; uint32 vcpus;
 
 `repose-admin hosts add` mints the join token, and it reaches the host's
 `/run/repose/join-token` **over SSH after the install**, by the `file`
-provisioner in `infra/azure/modules/host`. Not through cloud-init:
+provisioner in `infra/azure/modules/host`.
+
+A token may also be minted for a user's own machine, by `POST /hosts` or
+by `repose-admin hosts add --owner <handle>` (DECISIONS I-1366). Nothing
+on this wire changes: the token already names one host row, and that row
+now carries `owner_account_id`, so the host binds to its owner by
+registering at all. `Register` and `Rotate` neither read nor report it,
+`HostInfo` gains no field, and a host cannot say whose it is. What
+changes is on the api's side of the row: placement puts only that
+account's projects there, and the seat count and the host gauges leave
+it out. Not through cloud-init:
 `custom_data` stays in the Azure VM model and is readable through IMDS,
 so nothing secret goes in it (DECISIONS I-20). hostd calls Register once, stores the
 certificate at `/var/lib/repose/hostd/{cert,key}.pem` and rotates it with
@@ -412,6 +422,10 @@ together.
 for a guest counts only when the guest's project is placed on the host
 whose stream carried it; any other is dropped and counted in
 `repose_api_host_reports_refused_total{reason="foreign_guest"}`. A
+`Result` or a `BuildLog` line counts only from the host the api sent the
+command to, whatever the command (an op's, a `PauseGuest`, `WakeGuest`,
+`SayToAgent`, `AnswerQuestion` or `RunTrigger`); any other is dropped and
+counted under `reason="foreign_command"` (DECISIONS I-1368). A
 `snapshot_done` blob path must be `<user_id>/<project_id>/<name>.img.zst`
 (or `<project_id>/<name>.img.zst`) for that project, and its time is
 clamped to the api's clock.

@@ -1,5 +1,6 @@
 # One-shot registration before hostd: consumes /run/repose/join-token
-# (written by cloud-init from the OpenTofu output, workstream 11) through
+# (written over SSH after the install on Azure, DECISIONS I-20; by the
+# launcher's join unit on the Mac appliance, mac.nix, I-1380) through
 # `hostd register`, which writes host.json, cert.pem and key.pem under
 # /var/lib/repose/hostd and deletes the token. Skipped entirely once
 # host.json exists or when there is no token (hostd then logs `waiting for
@@ -18,7 +19,11 @@ in
     description = "Register this host with the api using the join token";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
-    after = [ "network-online.target" "repose-host-net.service" ]
+    # After wg0 too: a host with no route to the api's VNet address
+    # registers over the bootstrap tunnel repose-host-net renders from
+    # /run/repose/hub.json (network.nix, I-1380). On a VNet host wg0 is
+    # skipped before registration and the ordering costs nothing.
+    after = [ "network-online.target" "repose-host-net.service" "wg-quick-wg0.service" ]
       ++ lib.optional (config.repose.host.provider == "azure") "cloud-final.service";
     before = [ "hostd.service" ];
     unitConfig.ConditionPathExists = [

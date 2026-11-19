@@ -1,0 +1,5 @@
+date 2026-11-19T06:45:44Z
+macos 15.8.2 build 24H232
+chip Apple M4
+cores 10 memory_bytes 25769803776
+hv_support 1

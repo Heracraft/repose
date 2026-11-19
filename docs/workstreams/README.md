@@ -27,6 +27,7 @@ it must handle, and a checklist that is its definition of done. Read
 | 14 | [security](14-security.md) | all | `../SECURITY.md` | everything |
 | 15 | [dev-ergonomics](15-dev-ergonomics.md) | post-M5 | (changes `guest-conventions`, `cli-config`, `host-conventions` per I-195..I-205) | `api`, `ssh-gateway`, `guest-conventions` |
 | 16 | [multiplexer](16-multiplexer.md) | post-M5 | (changes `guest-conventions`, `vsock-guestd`, `grpc-hostd`, `api`, `db-schema`, `cli-config` per I-501..I-511) | the same |
+| 19 | [mac-mini](19-mac-mini.md) | launch | host ownership, the hostile-host hub rules, `repose host`, the Own hardware plan, aarch64 outputs, the Mac appliance | `api`, `db-schema`, `grpc-hostd`, `host-conventions`, `ssh-gateway`, `cli-config` |
 
 ## Dependency graph
 

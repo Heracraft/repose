@@ -135,7 +135,7 @@ component must emit:
   guest's VNC password, a byte of the stream or clipboard text).
 - gateway: `session_open`, `session_close`, `view_relay` refusals through
   `route_fail`, `auth_fail` (reason enum:
-  `bad_cert|expired|revoked|wrong_principal|stopped|not_found`; since
+  `bad_cert|expired|revoked|wrong_principal|stopped|not_found|foreign_host`; since
   I-599 also `counted` and, when it counts towards the source's ban,
   `failures`; at most 2 a second with 60 at once, the dropped ones counted
   in the next line's `suppressed`), `auth_ban` (a source banned:
@@ -254,8 +254,20 @@ Families:
   exists for a host that was created and never registered: that host has
   no exporter to scrape. `HostUnreachable`, `HostUnregistered` and
   `HostNotInTargets` read it),
+  `repose_api_owned_hosts{state}` (the hosts users own, counted apart
+  from the two families above, DECISIONS I-1366: those describe the fleet
+  the operator is on call for and every host alert reads them, so a
+  stranger's Mac mini switched off at night or never copied into the
+  Prometheus targets must not page anybody. Nothing alerts on this one;
+  it is the number that says how many machines joined from outside),
   `repose_api_projects{state,class}`,
-  `repose_api_schedule_total{result}`,
+  `repose_api_schedule_total{result}` (`ok`, `no_capacity`, `no_cpu`,
+  `error`, and `no_own_host` since I-1366: a placement only the account's
+  own hardware could take, refused because that host is full, switched
+  off or not registered yet. `ScheduleRefused` deliberately leaves
+  `no_own_host` out of its matcher: it is somebody's Mac being asleep,
+  which the owner cannot fix and the user already reads in the op's own
+  message),
   `repose_api_resting_wake_total{reason,result}` (every wake the api
   asked for, and the one counter that breaks wakes down by reason, I-818:
   `reason` is what reached the machine (`connect`, `op`, `answer`,
@@ -302,7 +314,8 @@ Families:
   `repose_api_waitlist_invited_total`, `repose_api_waitlist_converted_total`,
   `repose_api_waitlist_expired_total` (I-269, I-290),
   `repose_api_host_reports_refused_total{reason}` (`foreign_guest`,
-  `project_cap`, `bad_snapshot`; I-445, I-447),
+  `project_cap`, `bad_snapshot`; I-445, I-447; `foreign_command`, a
+  result or build line from a host the command was not sent to, I-1368),
   `repose_api_samples_failed_total{reason}` (`guest_fields`, `insert`;
   I-446).
 - Gateway: `repose_gateway_sessions` (gauge), `repose_gateway_sessions_total`,
@@ -382,7 +395,7 @@ to watch the heartbeat from is the one it would be watching (I-944).
 | `GuestWakeFailed` | `sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m])) > 0` for 5m: a frozen guest that would not resume, its memory and processes still intact (I-818) | warn |
 | `GuestWakeSlow` | `histogram_quantile(0.9, sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m]))) > 5` for 15m: past the gateway's 10 s dial budget, so the next wake is a failed ssh (I-818) | warn |
 | `SamplesFailing` | `sum by (reason) (increase(repose_api_samples_failed_total[15m])) > 0` (I-446) | warn |
-| `HostReportsRefused` | `sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest\|bad_snapshot"}[15m])) > 0` (I-447) | warn |
+| `HostReportsRefused` | `sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest\|bad_snapshot\|foreign_command"}[15m])) > 0` (I-447, I-1368) | warn |
 | `MinerStopped` | `sum by (kind) (increase(repose_api_abuse_stops_total[15m])) > 0` (I-239) | warn |
 | `BusyUnattended` | `max(repose_api_abuse_busy_unattended_projects) > 0` for 15m (I-239) | warn |
 | `HostdDown` | `up{job="hostd"} == 0` for 3m (I-648) | page |

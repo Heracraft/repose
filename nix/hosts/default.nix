@@ -28,6 +28,7 @@ in
     ./vm-hardening.nix
     ./park.nix
     ./wg-watchdog.nix
+    ./mac.nix
   ];
 
   options.repose.host = {
@@ -95,11 +96,13 @@ in
     };
 
     provider = lib.mkOption {
-      type = lib.types.enum [ "azure" "none" ];
+      type = lib.types.enum [ "azure" "none" "mac" ];
       default = "azure";
       description = ''
         Where the host runs. `azure` enables waagent, cloud-init for the join
-        token, and the Hyper-V drivers. `none` is for the VM tests and for a
+        token, and the Hyper-V drivers. `mac` is the Mac mini appliance
+        (mac.nix, DECISIONS I-1376): one disk, the join from the launcher's
+        share, the api over the hub. `none` is for the VM tests and for a
         future provider module (DECISIONS R3-20: Hetzner is a second module,
         added when it exists).
       '';
@@ -334,6 +337,33 @@ in
       default = "UTC";
       description = "The host's timezone; `repose-snapshot.timer` fires at 03:00 in it (DESIGN §6).";
     };
+
+    guestReadyTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long a starting guest has to say Ready over vsock before the
+        start fails (hostd --ready-timeout, a Go duration such as "5m").
+        Empty is hostd's 60 s, which every Azure host meets in seconds.
+        The Mac appliance sets minutes (mac.nix, DECISIONS I-1376): under
+        nested virtualization a guest's first boot said Ready at 70 s.
+      '';
+    };
+
+    owned = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        This host belongs to a user, not to repose (DECISIONS I-1366,
+        I-1372). Snapshots of its guests stay on its own disk
+        (`snapshots.localDir`, hostd's `--snapshot-dir`) and repose keeps
+        no copy, which the public docs page says in those words: the
+        alternative is a storage bucket's keys sitting on a machine in
+        someone's house, and secrets have three homes and no fourth
+        (CLAUDE.md). The assertion below is what keeps a future provider
+        module from handing an owned host a bucket by accident.
+      '';
+    };
   };
 
   config = {
@@ -349,6 +379,10 @@ in
       {
         assertion = cfg.apiCA == "" || cfg.apiCAFile == "";
         message = "repose.host.apiCA and repose.host.apiCAFile both set: hostd takes one --api-ca, so name the CA once.";
+      }
+      {
+        assertion = !cfg.owned || (cfg.snapshots.blobUrl == "" && cfg.snapshots.identityClientId == "");
+        message = "repose.host.owned with repose.host.snapshots.blobUrl or identityClientId set: an owned host keeps its snapshots on its own disk and carries no bucket credentials (DECISIONS I-1372).";
       }
     ];
 

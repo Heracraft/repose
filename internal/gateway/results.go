@@ -18,7 +18,12 @@ const (
 	// the api holds no address for the guest (DECISIONS I-721). Separate
 	// from route_error because it is the api's record that is wrong, not
 	// the host or the route lookup.
-	ResultNoAddress   = "no_address"
+	ResultNoAddress = "no_address"
+	// ResultForeignHost: the project is placed on a host owned by an
+	// account that is not the certificate's (DECISIONS I-1368). Separate
+	// from wrong_principal because the certificate is right for the
+	// project; it is the host that is not the user's to reach.
+	ResultForeignHost = "foreign_host"
 	ResultRateLimited = "rate_limited"
 	ResultNotFound    = "not_found"
 	ResultBadLogin    = "bad_login"

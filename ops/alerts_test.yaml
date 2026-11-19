@@ -999,7 +999,7 @@ tests:
               reason: foreign_guest
             exp_annotations:
               summary: "the api dropped host reports (foreign_guest)"
-              description: "1 report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
+              description: "1 report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done|foreign_command\"` names the host and the guest or command."
               runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
 
   # --- ResumeStalled ------------------------------------------------------

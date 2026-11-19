@@ -1,0 +1,4 @@
+-evp e          use EVP e.
+-decrypt        time decryption instead of encryption (only EVP).
+-mr             produce machine readable output.
+-multi n        run n benchmarks in parallel.
