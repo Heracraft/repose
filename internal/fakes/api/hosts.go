@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -95,17 +96,6 @@ func (f *Fake) SetOwnedHostState(name, state string) {
 	}
 }
 
-// SetOwnedHostMachines sets the project counts the list shows for a host.
-func (f *Fake) SetOwnedHostMachines(name string, projects, running int) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, h := range f.ownedHosts {
-		if h.Name == name {
-			h.Projects, h.RunningProjects = projects, running
-		}
-	}
-}
-
 // SetHostInstall replaces the install line the mint answers; "" is an
 // api with none recorded.
 func (f *Fake) SetHostInstall(line string) {
@@ -141,10 +131,30 @@ func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		row := h.OwnedHost
 		row.JoinToken, row.JoinTokenExpiresAt, row.Install = "", nil, nil
+		row.Projects, row.RunningProjects = f.machinesOn(h.ID)
 		out = append(out, &row)
 	}
 	writeJSON(w, 200, out)
 	return nil
+}
+
+// machinesOn counts the live projects placed on a host and those of them
+// in a state that holds memory, as the api's own query does. Counted at
+// every read rather than kept on the row: a project destroyed after it
+// was placed must stop counting, and a stored count said a host still
+// held a machine that was gone.
+func (f *Fake) machinesOn(hostID string) (projects, running int) {
+	for _, p := range f.projects {
+		if p.destroyed || p.HostID != hostID {
+			continue
+		}
+		projects++
+		switch p.State {
+		case "creating", "building", "starting", "running", "stopping", "restoring":
+			running++
+		}
+	}
+	return projects, running
 }
 
 func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
@@ -166,13 +176,20 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 			withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	have := 0
+	var revive *ownedHostRec
 	for _, h := range f.ownedHosts {
-		if h.owner == u.ID && h.State != "retired" && h.State != "lost" {
+		gone := h.State == "retired" || h.State == "lost"
+		if h.owner == u.ID && !gone {
 			have++
 		}
 		if h.owner == u.ID && name != "" && h.Name == name {
-			return errf("conflict", "you already have a host called %s", name).
-				withDetail(map[string]any{"reason": "name_taken"})
+			if !gone {
+				return errf("conflict", "you already have a host called %s", name).
+					withDetail(map[string]any{"reason": "name_taken"})
+			}
+			// A removed host's name is free again and its own row takes
+			// it back, as the api does.
+			revive = h
 		}
 	}
 	if have >= allowed {
@@ -195,6 +212,10 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 		ID: f.nextID(), Name: name, State: "registering", Provider: "metal",
 		CreatedAt: f.now(), JoinToken: base64.RawURLEncoding.EncodeToString(raw), JoinTokenExpiresAt: &expires,
 	}}
+	if revive != nil {
+		// Same row, same id, nothing of the machine it was.
+		h.ID, h.CreatedAt = revive.ID, revive.CreatedAt
+	}
 	line := FakeHostInstall
 	if f.hostInstallSet {
 		line = f.hostInstall
@@ -204,7 +225,11 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 		command = strings.Replace(line, "%s", h.JoinToken, 1)
 	}
 	h.Install = &OwnedHostInstall{Command: command, URL: FakeDashboard + "/docs/own-hardware"}
-	f.ownedHosts = append(f.ownedHosts, h)
+	if revive != nil {
+		*revive = *h
+	} else {
+		f.ownedHosts = append(f.ownedHosts, h)
+	}
 	writeJSON(w, 201, h.OwnedHost)
 	return nil
 }
@@ -220,8 +245,7 @@ func (f *Fake) deleteHost(w http.ResponseWriter, r *http.Request) *apiError {
 			w.WriteHeader(204)
 			return nil
 		}
-		if h.Projects > 0 {
-			slugs := f.slugsOnHost(h.ID, u.ID, h.Projects)
+		if slugs := f.slugsOnHost(h.ID, u.ID); len(slugs) > 0 {
 			word := "machines"
 			if len(slugs) == 1 {
 				word = "machine"
@@ -238,19 +262,16 @@ func (f *Fake) deleteHost(w http.ResponseWriter, r *http.Request) *apiError {
 	return notFound("host " + id)
 }
 
-// slugsOnHost names the account's live projects the list says are on the
-// host. The fake places nothing, so a test that set a count without
-// making projects gets names that stand for them.
-func (f *Fake) slugsOnHost(hostID, owner string, count int) []string {
+// slugsOnHost names the account's live projects placed on the host, in
+// name order so the refusal reads the same twice.
+func (f *Fake) slugsOnHost(hostID, owner string) []string {
 	var slugs []string
 	for _, p := range f.projects {
 		if p.owner == owner && !p.destroyed && p.HostID == hostID {
 			slugs = append(slugs, p.Slug)
 		}
 	}
-	for i := len(slugs); i < count; i++ {
-		slugs = append(slugs, fmt.Sprintf("machine-%d", i+1))
-	}
+	sort.Strings(slugs)
 	return slugs
 }
 
@@ -309,21 +330,5 @@ func (f *Fake) SetProjectHost(projectID, hostID string) {
 	defer f.mu.Unlock()
 	if p := f.projects[projectID]; p != nil {
 		p.HostID = hostID
-	}
-	for _, h := range f.ownedHosts {
-		if h.ID != hostID {
-			continue
-		}
-		h.Projects, h.RunningProjects = 0, 0
-		for _, p := range f.projects {
-			if p.destroyed || p.HostID != hostID {
-				continue
-			}
-			h.Projects++
-			switch p.State {
-			case "creating", "building", "starting", "running", "stopping", "restoring":
-				h.RunningProjects++
-			}
-		}
 	}
 }

@@ -243,13 +243,14 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 		'Notifications',
 		'Secrets',
 		'API tokens',
-		'machine.nix'
+		'machine.nix',
+		'Hosts'
 	]);
 	await expect(tab(page, 'General')).toHaveAttribute('aria-current', 'page');
 
 	// Secrets' head is its count ("2 secrets") and API tokens' likewise;
-	// machine.nix has no head under its own tab (review IA). Five tabs
-	// since I-1322, which amends I-841's four.
+	// machine.nix has no head under its own tab (review IA). Six tabs
+	// since I-1366, which adds Hosts to I-1322's five.
 	for (const [name, url, headings] of [
 		[
 			'Notifications',
@@ -262,7 +263,11 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 		// API tokens' head is its count too ("3 tokens"), and "API tokens"
 		// while the account has none (I-1322).
 		['API tokens', '/settings/tokens', [/^(API tokens|\d+ tokens?)$/]],
-		['machine.nix', '/settings/machine-nix', []]
+		['machine.nix', '/settings/machine-nix', []],
+		// Hosts' head is its count too ("1 host"), and "Your own
+		// hardware" while the account owns none, which is every account
+		// until one adds a machine (I-1366).
+		['Hosts', '/settings/hosts', [/^(Your own hardware|\d+ hosts?)$/]]
 	] as const) {
 		await tab(page, name).click();
 		await expect(page).toHaveURL(url);
@@ -273,15 +278,17 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 });
 
 // The tabs fit at 360 and 390 without sideways scroll, and the title and
-// tabs stay at one y from tab to tab. Five labels are 383px against a
-// 305px column at 360, so below 520 the row wraps to two (I-1322); every
-// tab stays on the screen, which is what this asserts.
+// tabs stay at one y from tab to tab. Six labels since I-1366, where
+// five were 383px against a 305px column at 360, so below 520 the row
+// wraps (I-1322); every tab stays on the screen, which is what this
+// asserts, and the last one is the one that would fall off.
 test('the Settings tabs fit a phone and hold still between tabs', async ({ page }) => {
 	for (const width of [360, 390]) {
 		await page.setViewportSize({ width, height: 800 });
 		await page.goto('/settings');
 		const nav = page.getByRole('navigation', { name: 'Settings' });
 		await expect(nav.getByRole('link', { name: 'machine.nix' })).toBeInViewport({ ratio: 1 });
+		await expect(nav.getByRole('link', { name: 'Hosts' })).toBeInViewport({ ratio: 1 });
 		expect(await nav.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
 	}
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -291,7 +298,8 @@ test('the Settings tabs fit a phone and hold still between tabs', async ({ page 
 		'/settings/notifications',
 		'/settings/secrets',
 		'/settings/tokens',
-		'/settings/machine-nix'
+		'/settings/machine-nix',
+		'/settings/hosts'
 	]) {
 		await page.goto(url);
 		const nav = page.getByRole('navigation', { name: 'Settings' });

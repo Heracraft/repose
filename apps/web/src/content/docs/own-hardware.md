@@ -7,7 +7,7 @@ order: 29
 
 Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing) it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
 
-Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers.
+Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. A project made through the [API](/docs/api) can ask for repose's servers instead, with `placement: "hosted"`, if your plan buys memory there.
 
 ## What a Mac mini needs
 
@@ -53,6 +53,8 @@ mac-mini  online  24 GB   0         0        just now
 
 To name it yourself, `repose host add mac-mini`. A name is 1 to 32 characters of `a-z`, `0-9` and `-`. It is yours alone: another account may use the same one.
 
+On the dashboard, Settings → Hosts does the same three things. **Add a host** takes a name, or none, and shows the step to run on the machine once, with a copy button; it is not shown again, and a host that is still waiting can be removed and added again for a fresh one. The list shows each host's state, its memory and cores, how many of your machines are on it and how many are running, and when it last answered.
+
 ## When your hardware is offline
 
 A Mac that is asleep, rebooting, off, or off the network stops answering repose. After 90 seconds `repose host ls` says `offline` and names how long it has been quiet:
@@ -89,6 +91,10 @@ repose host rm mac-mini
 Repose asks once, then stops placing projects there and retires the host. The machine itself is untouched: nothing of yours on it is deleted, and it keeps running until you turn it off.
 
 A host still holding machines is not removed. A machine moves hardware only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore) elsewhere, so `repose rm` or restore each of them first, and `repose host rm` then tells you which are in the way.
+
+Settings → Hosts has the same Remove, and names the machines that are in the way.
+
+Once a host is off, your new projects go to repose's servers again if your plan buys memory there.
 
 ## What it costs
 

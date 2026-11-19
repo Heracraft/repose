@@ -379,3 +379,31 @@ export async function settledBox(
 	}
 	return prev;
 }
+
+/**
+ * The hosts a user owns (DECISIONS I-1366). A fake host never registers
+ * by itself, because nothing in the fixture runs hostd, so a test about
+ * a working host asks for one: `name` adds a registered, answering host
+ * and answers its id, `id` with `quiet_minutes` marks one offline that
+ * long ago, `project_id` with `host_id` places a machine on it, `limit`
+ * is the plan's host count and `set_install` records (or clears) the
+ * install line.
+ */
+export async function ownedHost(body: {
+	name?: string;
+	id?: string;
+	quiet_minutes?: number;
+	project_id?: string;
+	host_id?: string;
+	limit?: number;
+	set_install?: boolean;
+	install_line?: string;
+}): Promise<string> {
+	const res = await fetch(`${adminURL()}/owned-host`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	if (!res.ok) throw new Error(`/owned-host: ${res.status}`);
+	return ((await res.json()) as { id: string }).id;
+}

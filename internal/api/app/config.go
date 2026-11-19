@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/webhooks"
+	"github.com/heracraft/repose/internal/billing"
 	"os"
 	"strconv"
 	"strings"
@@ -110,7 +111,7 @@ func FromEnv() (Config, error) {
 		WebhookHost:     env("WEBHOOK_HOST", webhooks.DefaultHostname),
 		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
 		NotifyFrom:      env("NOTIFY_FROM", "repose <notify@mailing.repose.run>"),
-		DashboardURL:    env("DASHBOARD_URL", "https://repose.run"),
+		DashboardURL:    env("DASHBOARD_URL", billing.DefaultDashboardURL),
 		BaseRef:         os.Getenv("BASE_REF"),
 		CLIReleasesURL:  os.Getenv("CLI_RELEASES_URL"),
 		ReplicaID:       env("REPLICA_ID", ""),

@@ -80,7 +80,7 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 |---|---|---|
 | GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
 | POST | `/hosts` | `{name?}`, or no body at all, which is the same as no name → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
-| DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials cleared so it cannot come back on them, and a machine that is still dialling is refused. Already retired answers `204` too, so a repeated remove is not an error |
+| DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials and its unused join token cleared so it cannot come back on them, and a machine that is still dialling is refused. Already retired answers `204` too, so a repeated remove is not an error. The row stays, so `GET /hosts` still lists it as `retired`; `repose host ls` and the dashboard leave a removed host out, because it is not hardware the user has |
 
 ```
 Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
@@ -116,7 +116,7 @@ Refusals of `POST /hosts`, beside the envelope's own:
 | Code | Status | When |
 |---|---|---|
 | `invalid` | 400 | `detail.reason = "name"`: a `name` outside `[a-z0-9][a-z0-9-]{0,31}` |
-| `conflict` | 409 | `detail.reason = "name_taken"`: this account already has a host by that name. Names are unique per account, so another account's `mac-mini` is no bar and is never named |
+| `conflict` | 409 | `detail.reason = "name_taken"`: this account already has a host by that name. Names are unique per account, so another account's `mac-mini` is no bar and is never named. A **removed** host's name is not taken: the row it kept for the history takes the name back, with a new token, the same id and nothing of the machine it was |
 | `conflict` | 409 | `detail.reason = "host_limit"`, `detail.limit`: the account already owns as many hosts as its plan allows (one on the Own hardware plan, which 19d of the Mac mini program sells; I-1366). The figure is the plan's, read from `billing.Plan.Hosts`, and lives nowhere else |
 | `payment_required` | 402 | `detail.reason = "own_hardware_plan_required"`: the account's plan sells no host (`limit` 0). A billing-exempt account is allowed one, as it is allowed everything else |
 
