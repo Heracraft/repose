@@ -1232,121 +1232,135 @@ Each written before they confer, as the brief asks.
 
 ### The daily driver — does it work, is it pleasant, what broke
 
-**It does not work.** I did not get a machine. I reached the second step of
-the published instructions and hit a 404, and no page on the site tells me
-what to do about it.
+**It does not work yet, and I want to be precise about what that means,
+because "it does not work" is too blunt for what I saw.**
 
-What I can judge is everything up to that point, and it is *pleasant*. The
-CLI install is 2.1 s and prints four useful lines. `repose host add` answers
-in 61 ms. Every refusal I provoked was correct, fast, and exited with a code
-I could script against. Nothing was slow; nothing was confusing except the
-things in this report.
+Everything around the machine is good. The CLI installs in 2 seconds and
+prints four useful lines. `repose host add` registers a Mac in **61
+seconds**, 2 GB download included. Removal takes **3 seconds** and leaves
+nothing behind. Every refusal I provoked was correct, fast and exited with a
+code I could script against. The appliance takes exactly the memory and
+cores the page promises. When a machine does come up it is a real machine:
+`aarch64`, 1 core, 3890 MB, a 20 G disk, the checkout in place, the commit
+present, `gh` and `git` logged in.
 
-The two faults that would have made me tweet are not the 404 — a 404 reads
-like a bad day — but what follows it: a project in `error` I did not ask
-for, with advice that cannot work, and a host that says `waiting` for ever
-while my install is dead. One is clutter, the other is silence, and silence
-is the one that loses a customer.
+**The machine itself is the part that does not work.** Five start attempts,
+two successes. The failures take six to nine minutes before telling you, and
+then the thing they tell you to run — `repose logs --kind console` — hands
+back the error you already had. One machine said `Ready in 12m15s`, synced
+my checkout, copied my logins, and then refused SSH for eight minutes while
+the dashboard said `running`.
+
+**What I would have tweeted** is not any of that. It is this: my agent asked
+me a question, I answered it on my laptop in 36 seconds, and the agent never
+heard me — it had given up six seconds after asking. I would have spent an
+hour assuming I had misconfigured something.
+
+**And the honest counterweight:** nothing was ever lost. Every failure left
+the disk intact, `repose stop` took its snapshot, and the retry that worked
+produced a machine with all my work on it. This is a product that is
+unreliable, not one that is dangerous.
 
 ### The economist — is it worth $10
 
-**Yes, and the page is honest enough to let me decide.** $10/month buys the
-gateway, the control plane, triggers and notifications, and nothing else;
-the memory and disk are mine. Against Solo at $39 for 8 GB, a 24 GB Mac
-mini I already own is the better deal on the second month and every month
-after, and the four-minute start is the price I pay for it. `/docs/own-
-hardware` puts that four minutes in a heading **next to the hosted 12
-seconds**, which is the sentence that earns the rest of the page.
+**At $10 a month, yes, and the arithmetic is not close.** Own hardware buys
+the gateway, the control plane, triggers and notifications; the memory and
+disk are mine. Against Solo at $39 for 8 GB, a 24 GB Mac mini I already own
+pays for itself in the second month. If it worked, I would buy it.
 
-What I cannot cost is the only thing that might change the answer. The `own`
-plan carries `memory_gb 0, disk_gb 0, egress_gb 0`, and the published egress
-rule is $0.05/GB past the allowance with a stop at four times it. Against
-zero, that reads as a charge on every gigabyte and a stop at the first one.
-The conductor reports the dashboard handles the zeros deliberately; **nobody
-has put an account on the plan to find out what the invoice does**. Until
-someone has, I would not put a card on this. [B2](#b2-the-own-plan-is-zero-memory-zero-disk-zero-egress), ENG-55.
+**What the measurements do to that answer:** the page sells "about four
+minutes" against 12 seconds hosted, and the number is really **5m11s at
+best, 7m05s typical, and 17m 8s** for my first machine end to end with one
+failure. Four minutes is a trade a developer makes happily. **Seventeen
+minutes, twice, is a trade they stop making** — and the third time they go
+back to the hosted plan, which is the one outcome that costs repose both the
+$10 and the goodwill.
+
+**What I could not cost**, and would not guess at: the `own` plan carries
+`memory_gb 0, disk_gb 0, egress_gb 0`, and the published egress rule is
+$0.05/GB past the allowance with a stop at four times it. Against zero that
+reads as a charge on every gigabyte. The conductor reports the dashboard
+handles the zeros deliberately. **Nobody has put an account on the plan to
+see what the invoice does**, and until someone has, that is an open question
+and not a finding.
+
+**One real cost nobody is counting:** every first run on an owned host
+fetches **1.7 GiB** and builds **323 derivations** on the customer's own
+Mac, because an owned host has no warm store. That is the customer's
+electricity, their thermal budget and their seven minutes — and it is a
+recurring cost per project, not a one-off per Mac.
 
 ### The brand skeptic — does any line oversell, does it read like repose
 
-**Almost nothing oversells, and that is unusual enough to say first.** The
-landing page is clean at 1440 and 390, in both schemes, with no gradient, no
-glow and no eyebrow. `/docs/own-hardware` tells a buyer the bad news —
-four minutes, snapshots die with your disk, back it up yourself — before
-they have paid. The quickstart says *"If it fucks up, restore from a
-snapshot"*, which is a voice, not a slogan.
+**The writing is the best thing here and I want that on the record before
+the complaints.** `/docs/own-hardware` puts its feature's worst number —
+four minutes against twelve seconds — **in a heading**, next to the
+competitor it loses to. It tells you snapshots die with your disk, and then
+says why. It promises "nothing of yours is touched… your Mac stays a Mac"
+in the requirements list, where the person deciding will actually read it.
+That page is honest in a way most product pages are not.
 
-What does not read like repose:
+**What oversells is a single number**: "about four minutes… the first time
+and every time after." Three measured boots: 7m05s, 6m30s, 5m11s. None of
+them four.
 
-- **`NAME must match [a-z0-9][a-z0-9-]{0,31}`** — a regex shown to a Mac
-  owner naming their Mac, when the docs have the sentence.
-- **`your plan includes 1 host, remove one before you add another`** — shown
-  to an account with no plan, lowercase, and rendered where it cannot be
-  seen.
-- **`the server answered 404`** — accurate, and it tells a customer nothing
-  about whose fault it is or what to do.
-- **"has not registered yet"** and **"`repose start X` restarts it"** — two
-  promises the product cannot keep.
+**What reads like it was written for someone else:**
 
-Each is one line. Each is on the launch feature's first ten minutes.
+- `NAME must match [a-z0-9][a-z0-9-]{0,31}` — a character class, shown to a
+  Mac owner naming their Mac, when the docs have the sentence in words.
+- `/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1`, captioned under the name
+  they chose, on the dashboard.
+- "did not answer **within a minute** of starting", after the screen has
+  just counted to **6m30s**.
+- "`repose start proj-test` restarts it" and "has not registered **yet**" —
+  two promises the product cannot keep in the state that prints them.
+- `the server answered 404` — accurate, and it tells a customer nothing
+  about whose fault it is.
+
+Each is one line. Each lands in the launch feature's first twenty minutes.
 
 ### The engineer — a stranger's host, idempotency, restart, failure
 
-**The failure path is better than the happy path, which is the right way
-round.** A failed install left 63 MB of cached `vfkit`, no launchd agent, no
-plist, no partial image and no half-made disk; a retry starts clean. Name
-validation happens before anything is minted. Every refusal exits with a
-distinct code. The join argument carries a token that works once within 24
-hours, and `host rm` + `host add` invalidates it — a credential with a short
-life and a revocation story.
+**The failure paths are better than the success paths, which is the right
+way round and is not an accident.** A failed install leaves cached `vfkit`,
+no launchd agent, no plist, no partial image and no half-made disk; a retry
+starts clean. Name validation happens before anything is minted. `repose
+stop` snapshots before stopping even when it cannot reach the guest. The
+join argument is single-use, expires in 24 hours, and `host rm` + `host add`
+invalidates it.
 
-**What I could not test is the whole of the security surface that matters:**
-a stranger's host actually joining, what it can reach, what happens on
-sleep, on Wi-Fi drop, on reboot, on a full disk. None of it was reachable.
+**The one place idempotency fails is the one that matters most**, and it is
+ENG-71: the disk-sizing guard is evaluated on the download path and skipped
+on the path that finds an already-unpacked `disk.raw`. A refusal that leaves
+the artefact it refused to create is a refusal that teaches the next run to
+ignore it. The result registers, reports healthy, and has a guest pool that
+was never grown.
 
-**The credential, and my own failure with it.** The join argument decodes to
-`{v, token(43), wg:{private_key(44), address, edge_pubkey(44),
-edge_endpoint}}` — a live WireGuard private key, which is ENG-42's claim,
-confirmed. No raw value appears in this report, in any card, in any message
-I sent or in any file in this repository.
+**What I could not test, and said so rather than guessing:** a stranger's
+host joining, host-to-host isolation, sleep, Wi-Fi drop, a full disk, and a
+real restart. The restart is **delegated with cause**: an ssh session has no
+GUI login, so the launchd agent never loads here and the appliance runs
+detached. Anything I measured across a reboot would have been the detached
+appliance, not the agent — a result that would look like an answer and be
+none.
 
-It did reach one place it should not have. At 21:48 I ran `repose host add`
-**without the redactor**, because I wanted an exit code, and a live key went
-into my session transcript in plain text. The host was retired seconds
-later — `repose host ls --json` shows `statecheck` `retired`, and the token
-works once — so it opens nothing. I am reporting it because of what it
-demonstrates rather than what it cost:
+**Two numbers an engineer should see.** The guest that was declared
+`guest_unresponsive` after "a minute" shows its first systemd line at
+`[196.433235]` — it was alive and 196 seconds into a healthy boot when the
+control plane gave up. And `guestd` on an idle 1-vCPU guest had burned
+**1 min 21 s of CPU in 9 minutes**.
 
-> I am the hardest case this could have. I was instructed in writing never
-> to let a raw key into a log, a card, a PR or a report. I redacted every
-> capture for ninety minutes. Then I dropped the redaction once, to read an
-> exit code, and leaked one.
-
-A customer has neither the instruction nor the instinct. With
-`host_install_command` recorded, stdout is now a ready-to-paste command line
-whose base64 carries the key, and the only line beside it says "run this on
-the machine you are adding. It works once, before …" — **no "this is a
-secret", no "do not paste it anywhere else"**. `/docs/own-hardware` does say
-*"Treat it as a password until the machine has joined"*, but that sentence
-is on a web page and the key is in a terminal.
-
-Recorded on **ENG-42**, whose own fix — take the argument on stdin or from a
-file, and prefer that in the printed step — I would extend by one line:
-**say, at the moment of printing, that it is a credential.**
-
-The conductor adds a third, for whoever designs the fix to weigh rather than
-as an instruction: **ask whether the credential belongs on stdout at all.**
-19c put `install.command` on stdout verbatim and deliberately, so it pipes
-and so the CLI can never compose a line differing from the operator's — both
-good reasons. But stdout is also what a customer pastes, what a terminal
-scrolls into a screenshot, and what a CI job archives. A shape that keeps
-19c's rule intact: the human sentence on stderr, the credential written to a
-file or a pipe only when asked, and the printed step naming the file rather
-than carrying the key. There is precedent in this repository — `repose-admin
-billing polar-bootstrap` deliberately puts progress on stderr and only the
-pasteable block on stdout, with a comment saying it keeps the token out of
-`ps` and shell history. That thinking has not reached `host add`.
-
----
+**On the credential, including my own failure with it.** The join argument
+decodes to `{v, token(43), wg:{private_key(44), …}}` — a live WireGuard
+private key, confirming ENG-42. At 21:48 I printed one into my own
+transcript by dropping my redactor to read an exit code; the host was
+retired seconds later and the single-use token is spent. The argument it
+supports is stronger than any design critique I could write: **I was
+instructed in writing, I redacted every capture for ninety minutes, and I
+leaked it on the first command where I wanted an exit code rather than a
+value.** A customer has neither the instruction nor the habit. ENG-42's own
+fix — take the argument on stdin or from a file — wants a second half: say,
+at the moment of printing, that it is a credential.
 
 ## Signatures
 
