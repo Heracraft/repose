@@ -87,7 +87,7 @@ Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
        projects, running_projects, last_heartbeat_at?, registered_at?,
        created_at,
        join_token?, join_token_expires_at?,     -- the POST answer only
-       install?: {command, url} }               -- the POST answer only
+       install?: {command, argument, url} }     -- the POST answer only
 ```
 
 `state` is `hosts.state`: `registering` (the token is minted and nothing
@@ -100,16 +100,30 @@ registers; `arch` is the first half of the system it reported
 placed on it and `running_projects` those of them in a state that holds
 memory, which is what the dashboard's list shows.
 
-`install` is the one line to run on the machine, with the token already
-in it, and the address of the page that explains it:
-`command` is the `host_install_command` setting
-(`repose-admin hosts install-command`) with `%s` replaced by the token,
-and `url` is the dashboard's `/docs/own-hardware`. `command` is `""` while
-no setting has been recorded, and a client then shows the token and the
-page instead of a line it made up itself. The setting is a setting and not
-an environment variable for the reason `loki_url` is (DECISIONS I-95): it
-names something outside this deployment, and moving the installer must not
-be a redeploy of the api.
+`install` is the one line to run on the machine, with its argument
+already in it, the argument on its own, and the address of the page that
+explains it. `argument` is the join bundle (DECISIONS I-1380): one
+base64url string, no padding, of `{"v": 1, "token": <join_token>, "wg":
+{"private_key", "address", "edge_pubkey", "edge_endpoint"}}`, where `wg`
+is the machine's place on the hub, minted by this request and absent
+when the deployment has no edge recorded (`repose-admin edge init`).
+`command` is the `host_install_command` setting (`repose-admin hosts
+install-command`) with `%s` replaced by `argument`, and `url` is the
+dashboard's `/docs/own-hardware`. `command` is `""` while no setting has
+been recorded, and a client then shows `argument` and the page instead of
+a line it made up itself. The setting is a setting and not an
+environment variable for the reason `loki_url` is (DECISIONS I-95): it
+names something outside this deployment, and moving the installer must
+not be a redeploy of the api.
+
+What the request does on the hub (I-1380): it allocates the host's guest
+`/22` and WireGuard address (kept on a reissue), mints a bootstrap key
+pair and stores the public half on the row, so `GET /internal/hosts`
+lists the host from this moment and the edge peers it before the machine
+boots. `Register` (`grpc-hostd.md`) keeps the addresses and mints a fresh
+key pair as it always has, so the private key in the bundle is dead after
+registration. The private key is in this answer and nowhere else: not in
+a log line, not in the database.
 
 Refusals of `POST /hosts`, beside the envelope's own:
 
@@ -624,7 +638,7 @@ payment_required` with `detail.reason: suspended` and the same sentence
 | GET | `/internal/revoked?since=` | `[serial]` |
 | GET | `/internal/ca` | `{user_ca_pub, host_ca_pub}` |
 | POST | `/internal/sessions` | `{project_id, event: opened\|closed, cert_serial, session_id}` (gateway reports, feeds signals; `session_id` names the relay, up to 64 of `[A-Za-z0-9-]`, so two connections under one certificate are two sessions; absent from a gateway older than I-176, accepted for one release as one session per certificate) → `{open}` |
-| GET | `/internal/hosts` | `[{host_id, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync |
+| GET | `/internal/hosts` | `[{host_id, name, wg_pubkey, wg_ip, guest_cidr, state}]` for the edge's WireGuard peer sync: every host with a key, including one that has not registered while its join token is live (DECISIONS I-1380), and never an unregistered one whose token expired or that was removed |
 | POST | `/internal/gateway-certs` | `{public_key, project_id}` → `{certificate}`: 5-minute user certificate for the gateway's own key, principal = project id, key_id suffixed `:via-gateway` |
 | GET | `/internal/webhook-routes?since=<version>` | `{version, routes: [{route_id, project_id, name, port, path, allow_start, token_sha256, trigger?, trigger_id?}], tombstones: [sha256], unchanged}` (DECISIONS I-1110; `trigger` and `trigger_id` since I-1250, set when the route is a trigger's, so the edge knows a refused delivery has a run row to write): the table the edge holds in memory, with the hex sha256 of each token and never a token. `since` the caller's version answers `{version, unchanged: true}` and no rows, which is what makes the edge's 5 s poll cheap. `tombstones` are the hashes of tokens rotated or removed inside the 30-day window, which the edge answers 410 for |
 | POST | `/internal/webhook-start` | `{project_id, route_id}` → `{started, reason}` (I-1114): start a stopped machine for a delivery on a route with `--start`, at most once per project per 10 minutes. The owner's own start path, so plan memory and an abuse hold refuse it as they would `repose start`; `started: false` with `reason` `too_soon`, `not_stopped` or `start_refused` is not an error. The edge answers 503 either way |

@@ -27,6 +27,7 @@ import (
 const Usage = `usage: hostdev [--state-dir DIR] <command> [flags]
 
   init      --listen ADDR --names host,ip,...   create the CA, server cert, join token
+            [--edge-pubkey K --edge-endpoint H:P --wg-address A/16]  answer Register with hub material (I-1380)
   serve                                          run the api stand-in (gRPC + control socket)
   status                                         host, guests, last heartbeat
   build     --project P --fragment F --base-ref R   build a fragment on the host

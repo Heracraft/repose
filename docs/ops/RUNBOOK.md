@@ -235,6 +235,29 @@ See `../workstreams/11-infra-opentofu.md` §5 "Adding a host". Then
 `repose-admin hosts list` shows `ready`, and `repose-admin hosts smoke
 <host>` creates, starts, snapshots and destroys a throwaway guest.
 
+### The Mac appliance image and install line (DECISIONS I-1376, I-1380)
+
+Once per appliance release, so `repose host add` prints a line that
+works:
+
+1. Build the image on an aarch64 builder with KVM (the Mac's appliance
+   VM, `docs/ops/DEV-BOX.md` "aarch64 builds"): `nix build
+   ./nix#packages.aarch64-linux.mac-appliance-image`; the result is
+   `repose-appliance.raw.gz`.
+2. Publish it with its checksum where the installer fetches it: the
+   default in `apps/web/static/mac` is a GitHub release of this
+   repository, tag `appliance-<version>`, assets
+   `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
+   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`). Another home
+   is `REPOSE_APPLIANCE_URL` in the installer, one string.
+3. Bump `APPLIANCE_VERSION` in `apps/web/static/mac` to that version; the
+   site deploys it with main.
+4. Record the line once, if it is not recorded:
+   `repose-admin hosts install-command 'curl -fsSL https://repose.run/mac | sh -s -- %s'`.
+   The hub settings `repose-admin edge init` recorded are what let
+   `POST /hosts` mint the machine's place on the hub; without them the
+   bundle is the token alone and a Mac cannot register.
+
 ### Observability
 
 On the personal server, from this repository's `ops/` (its README has the
@@ -4745,3 +4768,42 @@ that host (`auth_share_sweep`). To turn the share off host-wide, set
 `repose.host.claudeLoginShare = false` and switch the host (hostd then
 runs with `--claude-login-share=false`): guests started after that boot
 without it and keep a login of their own.
+
+## A Mac appliance that does not join
+
+`repose host ls` says `waiting` long after the user ran the install
+step. The machine is theirs, so the first reads are theirs too; what to
+ask for, and what each answer means:
+
+1. `repose-appliance status` on the Mac. `stopped`: the VM is not
+   running; `~/Library/Logs/repose/launcher.log` has vfkit's refusal
+   (nested virtualization needs macOS 15 and an M3 or later, which the
+   installer checks; a `disk.raw` missing or truncated is a failed
+   download, run the step again).
+2. `repose-appliance log`: the appliance's console. `repose-launcher-join`
+   logs `join_token_written` and `hub_bootstrap_written` at the first
+   boot; `no_join_file` means the share did not mount or the step's
+   argument was never written (run the step again); `join_invalid` means
+   the argument was damaged in the paste (a new `repose host add` after
+   `host rm`); `join_ignored reason=registered` means this appliance
+   already registered, under this or an earlier name.
+3. `repose-host-net` on that console: `hub.json applied: wg0 configured
+   for registration` is the bootstrap tunnel up. Then `repose-register`
+   every 30 s: a network error is the edge not peering the host yet, or
+   not any more. On the edge, `wg show wg0 peers` has the bundle's public
+   key within 30 s of `repose host add`; `GET /internal/hosts` lists the
+   host while its token is live (24 hours). An expired token is the
+   common cause after a day: `repose host rm`, `repose host add`, the
+   step again. Exit 3 is a token the api refused (used or invalid): the
+   same remedy.
+4. On the api, `host registered` for the host id, then `host connected`
+   within a minute; between them wgsync swaps the peer to the
+   registration's key (`wgsync added peer` and `removed peer` on the
+   edge). A host that registered and never connected is a tunnel that
+   did not come back on the new key: the edge's `wireguard-wg0` restarted
+   (every host peer is gone until wgsync's next pass, I-1382's comment)
+   or the Mac went to sleep, which the launcher's `caffeinate` prevents
+   only while the VM runs.
+
+Nothing here reads anything of the user's: the console log carries the
+appliance's journal, ids and events only.

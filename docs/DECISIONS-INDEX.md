@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1029 entries.
+1031 entries.
 
 ## Scope
 
@@ -1061,3 +1061,5 @@ pointer, not a summary.
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36689
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798
+- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36898
+- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — L36974

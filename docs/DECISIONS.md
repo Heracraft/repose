@@ -36894,3 +36894,206 @@ daemon start, slow and a second thing to debug).
 green; the x86 runner's and agents' `.drv` paths equal to `mac-mini`'s.
 Not checked, owed to §8 of the research doc: the aarch64 closure built,
 its size and its build time, on the Mac.
+
+**I-1376. The Mac mini appliance: one raw EFI image of the aarch64 host
+with provider `mac`, one disk whose third partition is `vg-guests`, the
+fleet's host reserve inside a VM given three quarters of the Mac, the
+join and the hub material from a file the launcher shares in, and a
+kernel that is a product constraint (mac-mini 19f, 2026-11-19).** *Made
+during implementation* (the settled shape of
+`docs/workstreams/19-mac-mini.md` §4, built after gate 0 passed on an AWS
+mac-m4.metal, `docs/research/mac-mini-nested-kvm.md` §7; the owner did
+not override it). The appliance is `nix/hosts/mac.nix`, active when
+`repose.host.provider == "mac"`, and `nixosConfigurations.mac` is the
+aarch64 host built from it (I-1374).
+
+- *One disk.* The launcher attaches one virtio-blk image. The disko
+  layout (`disko-layout.nix`, `oneDisk`) puts the ESP, a 32 GiB root and
+  a third partition that is the PV of `vg-guests` on it; there is no
+  data disk and the pool is the same `lvm_vg` the fleet has. The image
+  is built by disko's image builder inside a VM on the host kernel pin
+  (`packages.aarch64-linux.mac-appliance-image`, `repose-appliance.raw.gz`):
+  37 GiB sparse, the PV partition at its 4 GiB smallest, compressed
+  before it leaves the builder because a NAR has no holes. The launcher
+  inflates it, extends the file to the size the user chose (100 GB, or
+  the volume's free space less 20, as a sparse file APFS fills as the
+  machines write), and `repose-mac-grow` at every boot gives the PV
+  partition, the PV, the pool's metadata (one percent, clamped as at
+  install) and the pool (95 percent of the VG) the difference, doing
+  nothing when there is none. nix's free-space floors are 4 and 8 GiB on
+  the appliance; gc.nix's 50 and 100 would keep a 32 GiB root below the
+  floor from its first boot.
+- *The host reserve.* The launcher gives the VM three quarters of the
+  Mac's memory and all but two cores: 12 GiB of a 16 GB Mac, 18 GiB of a
+  24 GB one, never under 8 GiB, and macOS keeps the rest. Inside, the
+  reserve is the fleet rule unchanged (I-724: an eighth, floor 2 GiB), so
+  a 16 GB Mac places 10 GiB of guests and a 24 GB Mac 15.75 GiB.
+  `repose host ls` shows the VM's memory. The rules are functions in the
+  installer and the `mac-launcher-sizing` check runs them.
+- *No Azure, no cloud-init, the generic KVM.* `azure.nix` is off, the
+  kernel loads no `kvm-intel` (I-1374), the virtio drivers are in the
+  initrd, the console is the framework's `hvc0`, the NAT NIC is named
+  by driver, the park is off (the Mac has no identity for a Key Vault,
+  I-653; freeze and restore stay gated on gate 0 step 5, not run), the
+  operator bootstrap key is off, and `owned = true` keeps snapshots on
+  the disk (I-1372). The join token arrives as the generic host already
+  takes it, `/run/repose/join-token` consumed once by
+  `repose-register.service` (the pinned `host-services` check), from a
+  unit that reads the launcher's share (I-1380).
+- *The kernel.* Under Apple's nested virtualization (macOS 15.8.2, M4,
+  2026-11-19) a Cloud Hypervisor guest inside the appliance boots on
+  Ubuntu's 6.8.0-147 and on mainline 6.18.57 and hangs about two seconds
+  into boot on 7.0.0-43 (`rcu_preempt kthread timer wakeup didn't
+  happen`, research doc §7), and `nix/hosts/kernel.nix` asserts 6.18.57
+  or newer for CVE-2026-99999, so 6.8 is not an option. The appliance
+  must carry a kernel that both boots nested guests on Apple silicon and
+  passes that assertion; the flake's `nixpkgs-host-kernel` pin, 6.18.57,
+  is the one version known to do both, and the bisect window for whoever
+  bumps next is 6.18.57 to 7.0.0-43, proven on Apple silicon with
+  `ops/dev/macmini-l2-try.sh` before it ships. `mac.nix` and `kernel.nix`
+  carry the same note.
+- *Where it is proven.* `checks.x86_64-linux.host-mac` boots the same
+  modules on x86 and holds the bootstrap order and the one-disk growth
+  end to end (I-1380 lists it); `checks.aarch64-linux.mac-builds` and
+  `mac-appliance-image` build the system and the image on an aarch64
+  builder with KVM. The Mac itself is phase 3's: the appliance boots,
+  registers over the hub, hostd says Hello and a project runs.
+
+Rejected: two disks, the fleet's layout as it stands (a second file the
+launcher must create and size, for no gain on a machine with one SSD);
+shipping the image at its final size (a 100 GB download of zeros); a
+root that grows instead of the PV (the partition that grows has to be
+the last, and the pool is the one that needs the room); `pkgs.linuxPackages`
+from `nixpkgs` for the appliance (6.18.56, below the assertion, and
+untested on Apple silicon); 6.8 (below the assertion).
+
+*Checked:* `host-mac` and `mac-launcher-sizing` green under `nix flake
+check` (the 19f report); the aarch64 outputs evaluated. Not done at this
+line: the aarch64 image built, the appliance booted on the Mac.
+
+**I-1380. The Mac launcher is a plist over vfkit, and the install step
+carries the host's place on the hub, minted at `host add` and rotated at
+Register (mac-mini 19f, 2026-11-19).** *Made during implementation*
+(`docs/workstreams/19-mac-mini.md` §4; settles the bootstrap order I-92
+and I-1382 left to 19c and 19f, with 19b's finding that an owned host
+cannot reach the api's VNet address).
+
+*What the launcher is.* One POSIX shell installer served by the site at
+`https://repose.run/mac` (`apps/web/static/mac`), which `repose host add`
+prints as `curl -fsSL https://repose.run/mac | sh -s -- <argument>`
+(the `host_install_command` setting the operator records). It checks the
+Mac (Apple silicon, M3 or newer, macOS 15 or later, 16 GB), fetches
+vfkit 0.6.4 (Apache-2.0, crc-org; the checksum is in the installer)
+and the appliance image with its checksum, writes the argument to a
+directory it shares into the VM, and writes a launcher script and a
+launchd agent (`run.repose.appliance`, RunAtLoad, KeepAlive) that holds
+vfkit in the foreground: `--nested`, EFI with its variable store beside
+the image, the image on virtio-blk, NAT virtio-net with a MAC kept in
+the launcher's config, virtio-rng, the share on virtio-fs, and the
+console to a log file. It wraps vfkit in `caffeinate -s -i`, which holds
+a power assertion while the VM runs: no `pmset` setting, because the docs
+page promises that nothing of the Mac's is changed, and a Mac mini is on
+mains. `repose-appliance start|stop|status|log|grow|uninstall` is the
+rest; `stop` asks the VM to shut down through vfkit's REST socket, which
+the appliance takes as the ACPI power button and stops every guest
+cleanly (I-650), and gives it 120 s before the plug. Everything lives
+under `~/Library/Application Support/repose` and `~/Library/Logs/repose`;
+no sudo anywhere. Not a signed, notarised program: vfkit's release is
+one already, and the rest is shell a user can read. A headless Mac with
+no login session (the lab) starts the VM detached from a subshell with
+every descriptor off the terminal (`REPOSE_LAUNCHD=no`), because `nohup`
+under a tty does not detach on macOS and the VM died with the spark's
+session.
+
+*What it holds and logs.* The argument, once, in a 0600 file in the
+share, which the appliance deletes after reading it. The launcher logs
+its own start and stop lines and the VM's console, which is the
+appliance's journal: ids, states, sizes, and nothing a tenant typed
+(docs/ops/OBSERVABILITY.md). Nothing of the user's.
+
+*The bootstrap order.* The api minted the host's WireGuard key pair at
+Register and the edge admitted a peer only after wgsync read it from
+`/internal/hosts`, which listed registered hosts; a host with no VNet
+could register over nothing (I-92). Now:
+
+- `POST /hosts` allocates the host's guest `/22` and hub address at once
+  (the same `allocate` Register used; kept if the row has them, so a
+  reissue moves no address), mints a bootstrap key pair, and stores the
+  public half on the row while it is still `registering`
+  (`hostmgr.PrepareHub`). `GET /internal/hosts` lists every host with a
+  key, registered or not, so wgsync peers the machine within 30 s of
+  `repose host add`, minutes before it boots.
+- The install step's argument is the join bundle (`hostmgr.JoinBundle`,
+  `install.argument`): one base64url string with `{v: 1, token, wg:
+  {private_key, address, edge_pubkey, edge_endpoint}}`; `install.command`
+  is the recorded line with it where `%s` was. The CLI and the dashboard
+  print the command as before, and the CLI prints the argument where no
+  line is recorded. With no edge recorded the bundle is the token alone.
+- In the appliance, `repose-launcher-join` splits the bundle into
+  `/run/repose/join-token` and `/run/repose/hub.json` and deletes the
+  share's copy; `repose-host-net` renders `wg0` from `hub.json` while
+  there is no `host.json`, so the tunnel is up before `hostd register`;
+  the appliance's `apiAddr` is the control plane's hub address
+  `10.255.255.1:8443`, the one path the edge forwards a host (I-1382).
+- Register keeps the row's addresses and mints a fresh key pair as it
+  always has, so the key that passed through the user's terminal is dead
+  after registration; hostd writes `host.json` unchanged, the unit's
+  restart of `repose-host-net` brings `wg0` up on the new key and removes
+  `hub.json`, and wgsync swaps the peer on its next pass.
+
+*What the bundle is worth, and to whom.* The bundle crosses the user's
+terminal, their clipboard and their shell history, as the join token
+already did, and it carries one thing the token did not: a WireGuard
+private key. Secrets have three homes (CLAUDE.md), and this is not a
+fourth: the key is bootstrap material with the token's own lifetime, not
+a secret repose keeps. Before registration, someone who reads the bundle
+can bring up a tunnel as that host and reach exactly what a host reaches
+through the hub, which is the api's gRPC port at the control plane's hub
+address (I-1382) and nothing else; that port answers a Register with the
+token, which the same bundle carries, or a host certificate, which
+nobody has yet. So the bundle grants what the token alone granted, the
+power to register a machine as the user's host, and no more. After
+registration the token is spent and Register has replaced the key, so
+the edge no longer peers it; the bundle is then a string that opens
+nothing. A bundle nobody uses dies with its token: `GET /internal/hosts`
+stops listing an unregistered host once its token has expired (24 hours)
+or the host was removed, so the edge drops the peer. A user who loses a
+bundle runs `repose host rm` and `repose host add` again, which clears
+the old token and mints a new key, and the old bundle is dead from that
+moment. Nothing logs it: the api's test reads its own log for the
+argument and the key, the CLI prints the step on stdout once and names
+no part of it on an error, the dashboard shows it in a dialog it says is
+not shown again, the installer writes it to a 0600 file and echoes
+nothing, and the appliance logs the events of reading it and never a
+value. `docs/SECURITY.md` "A host you do not own" carries the same
+account.
+
+*What a bad moment looks like.* A Mac that boots before wgsync's next
+pass, or after the edge's `wireguard-wg0` restarted (which drops every
+host peer until that pass, up to 30 s): `wg0` is up with no handshake,
+`hostd register` fails on the network and `repose-register.service`
+retries every 30 s (only a rejected token stops it, exit 3), and the
+user reads `waiting` in `repose host ls` a minute longer. After the key
+swap the same window opens once for hostd's stream, which reconnects on
+its own. No state is lost either way.
+
+Rejected: a public gRPC port for registration (I-1382 said why); the
+host generating its own key and trading it for the hub's details over
+the public HTTPS api with the token (a second use of a single-use token,
+a new public route and Go in the launcher, for the same key in the same
+hands); keeping the bootstrap key as the host's key (hostd's register
+path would learn a new case, and a key that crossed a terminal would
+live for the host's life); `pmset -a sleep 0` (sudo, and a setting
+changed behind the user's back); Tart as the launcher (FSL-licensed,
+research doc §3); our own Swift program (a signed, notarised build to
+keep, for what two files do).
+
+*Checked:* `TestHubBootstrapPeersTheHostBeforeItRegisters`
+(internal/api/hostmgr) and `TestHostAddPeersTheHubBeforeRegistration`
+(internal/api/http) green against Postgres; the `host-mac` VM check: the
+bundle split, `wg0` on the bootstrap key before registration, a
+handshake under that key on the hub, `hostd register` over it to a
+hostdev at `10.255.255.1`, the key swapped and `hub.json` gone, a second
+bundle ignored, hostd's stream connected after the peer swap;
+`mac-launcher-sizing` (shellcheck, dash and the sizing rules). Not done
+at this line: the step run on the AWS Mac, which is phase 3.

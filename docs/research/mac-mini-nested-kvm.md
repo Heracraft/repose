@@ -222,12 +222,18 @@ with the `metal` provider replaced by:
   built on the Mac's L1 as a Nix remote builder (woker-1 is x86 and has
   no `binfmt` to emulate): done as I-1374, §8;
 - a host image for the framework (`raw-efi`, one disk, a partition for
-  `vg-guests`, a host reserve scaled for 16 GB);
+  `vg-guests`, a host reserve scaled for 16 GB): done as I-1376,
+  `nix/hosts/mac.nix` and `packages.aarch64-linux.mac-appliance-image`;
 - a launcher for macOS on vfkit or our own framework code, started at
   login, holding the join token for the first registration, with
-  `pmset` keeping the Mac awake;
+  `pmset` keeping the Mac awake: done as I-1380, `apps/web/static/mac`
+  (a plist over vfkit; `caffeinate`, not `pmset`, so no setting of the
+  Mac's changes), and the join carries the host's place on the hub too,
+  which is how a Mac registers with no route to the api's VNet;
 - the runner's `console=ttyS0` made per-architecture: done as I-1374;
-- freeze and restore gated on step 5's result, x86-only if it fails.
+- freeze and restore gated on step 5's result, x86-only if it fails:
+  step 5 was not run on 2026-11-19 (§7), so the park is off in
+  `mac.nix` and asserted off until it is.
 
 ## 8. The aarch64 build (I-1374, 2026-11-19)
 

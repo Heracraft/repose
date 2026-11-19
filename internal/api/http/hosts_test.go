@@ -333,4 +333,34 @@ func TestHostAddPeersTheHubBeforeRegistration(t *testing.T) {
 	if b.WG.Address != found["wg_ip"].(string)+"/16" {
 		t.Fatalf("bundle address %s, listed wg_ip %v", b.WG.Address, found["wg_ip"])
 	}
+
+	// A bundle nobody used dies with its token: once the token has
+	// expired, or the host was removed, the edge stops peering the key.
+	listed := func() bool {
+		r := e.internalDo(t, "GET", "/internal/hosts", nil)
+		for _, row := range r.list {
+			if m, _ := row.(map[string]any); m != nil && m["name"] == "mac-mini" {
+				return true
+			}
+		}
+		return false
+	}
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set join_token_expires_at = now() - interval '1 minute' where id = $1", r.body["id"]); err != nil {
+		t.Fatal(err)
+	}
+	if listed() {
+		t.Fatal("an unregistered host whose token expired is still a peer")
+	}
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set join_token_expires_at = now() + interval '1 hour' where id = $1", r.body["id"]); err != nil {
+		t.Fatal(err)
+	}
+	if !listed() {
+		t.Fatal("a host with a live token is not a peer")
+	}
+	if rr := e.do(t, tok, "DELETE", "/hosts/"+r.body["id"].(string), nil); rr.status != 204 {
+		t.Fatalf("remove: %d %s", rr.status, rr.raw)
+	}
+	if listed() {
+		t.Fatal("a removed host is still a peer")
+	}
 }

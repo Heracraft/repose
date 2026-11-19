@@ -22,13 +22,18 @@ read (I-994). User-facing documentation is
 **Status.** The hosted half is built: the Own hardware plan, ownership,
 placement, the three routes, `repose host`, the dashboard's Hosts page,
 the hub rules, the offline wording, the snapshot store. The machine half
-is not: there is no aarch64 guest base, no Mac appliance image and no
-launcher, so nothing has joined an account yet and no
-`host_install_command` has been recorded, which means every `repose host
-add` today prints the token and the docs page rather than a line to run
-(§3). Owned hosts do not update themselves; an operator switches them by
-hand, and the timer that would pull a published host system is not built
-and may ship after launch.
+is written and proven on x86 and in the api's tests (§7, I-1374, I-1376,
+I-1380): the aarch64 outputs, the Mac appliance's modules and image
+recipe, the launcher, and the bootstrap order that lets a machine with
+no route to the api register over the hub. Not yet done at this line:
+the aarch64 image built and booted on a Mac, the image published where
+the installer fetches it, and the `host_install_command` recorded
+(`repose-admin hosts install-command 'curl -fsSL https://repose.run/mac
+| sh -s -- %s'`), so `repose host add` on production still prints the
+argument and the docs page rather than the line. Owned hosts do not
+update themselves; an operator switches them by hand, and the timer that
+would pull a published host system is not built and may ship after
+launch.
 
 ## What the user sees
 
@@ -95,12 +100,23 @@ prints the one step to run on the machine being added. The dashboard's
 Hosts page does the same and shows the same step.
 
 The step is the api's, never the CLI's: `install.command` is the
-`host_install_command` setting with `%s` replaced by the token, so the
-install path can change without a CLI release and the user-facing step
-and `repose-admin hosts install-command` cannot drift. While no setting
-is recorded the api sends `command: ""`, and a client then prints the
-token and `install.url`, which is the public docs page. A client never
-composes a line of its own: a line a user pastes has to be true.
+`host_install_command` setting with `%s` replaced by `install.argument`,
+so the install path can change without a CLI release and the user-facing
+step and `repose-admin hosts install-command` cannot drift. While no
+setting is recorded the api sends `command: ""`, and a client then
+prints the argument and `install.url`, which is the public docs page. A
+client never composes a line of its own: a line a user pastes has to be
+true.
+
+The argument is the join bundle (I-1380): the token and the machine's
+place on the hub, a WireGuard key pair's private half with the machine's
+address and the edge's peer, minted by `POST /hosts` so that the edge
+peers the machine before it boots. A machine of the user's has no route
+to the api's VNet address, so without this it could not register at all
+(I-92, I-1382). Register replaces the key, so the bundle is dead once the
+machine has joined, and an unused one dies with its token; the user who
+loses one runs `host rm` and `host add` again. `SECURITY.md` "A host you
+do not own" says what the bundle is worth to someone who reads it.
 
 Without NAME the api names the host `host-1`, `host-2`, … within the
 account. Names are unique **per account**, not globally, so two users may
@@ -191,6 +207,23 @@ host already retired is not an error on the wire (`204`), and the CLI
 says `You have no host named X` because a retired host is not one the
 user has.
 
+## 7. The Mac appliance
+
+One aarch64 NixOS VM on Apple's Virtualization framework runs hostd and
+the user's machines as Cloud Hypervisor microVMs under its KVM
+(`nix/hosts/mac.nix`, `nixosConfigurations.mac`, I-1376). The install
+step fetches vfkit and the appliance image and starts the VM from a
+launchd agent at every login, holding the Mac awake with `caffeinate`
+while it runs (I-1380). One disk, the image grown to the size the user
+chose, with the machines' volumes and snapshots in it; three quarters of
+the Mac's memory to the VM and the fleet's host reserve inside it. The
+kernel is a product constraint: 6.18.57 is the one version known both to
+boot nested guests on Apple silicon and to pass the CVE-2026-99999
+assertion (research doc §7). Freeze and restore across a Mac reboot are
+off until gate 0 step 5 has run; a reboot stops the machines and the api
+starts the ones that were running (I-645). `repose-appliance
+start|stop|status|log|grow|uninstall` is the user's side on the Mac.
+
 ## Behaviour that must hold
 
 Ownership and placement (I-1366):
@@ -249,11 +282,21 @@ An offline host (I-1370):
   `TestLsReadsHostsOnlyWhenOneIsQuiet`, and the read count in
   `own-hardware.spec.ts`.
 
-The host itself (I-1372, I-1368):
+The host itself (I-1372, I-1368, I-1376, I-1380):
 
 - An owned host takes its join token from `/run/repose/join-token` with
   no cloud-init, consumes it once and refuses a second: the
   `host-services` VM check, whose host is `provider = "none"`.
+- `POST /hosts` peers the machine before it boots and Register keeps the
+  addresses and replaces the key: `TestHostAddPeersTheHubBeforeRegistration`
+  (internal/api/http), `TestHubBootstrapPeersTheHostBeforeItRegisters`
+  (internal/api/hostmgr); an unregistered host whose token expired or
+  that was removed is not a peer (the first test).
+- The appliance splits the bundle, brings wg0 up on the bootstrap key,
+  registers over it at the hub address, swaps to the registration's key
+  and ignores a second bundle; the one-disk layout grows to the disk:
+  the `host-mac` VM check. The launcher's sizing and its shell:
+  `mac-launcher-sizing`.
 - An owned host writes snapshots to its own disk and carries no bucket
   credentials; the module refuses to build otherwise: the
   `owned-host-keeps-snapshots-local` flake check.
@@ -266,15 +309,17 @@ The host itself (I-1372, I-1368):
 Workstreams 19a (ownership, placement, the routes, the dashboard's Hosts
 page), 19b (the hub and gateway rules), 19c (`repose host`, the install
 path, the offline wording, the snapshot store), 19d (the plan), 19e (the
-aarch64 outputs), 19f (the Mac appliance and its launcher), 19g
-(unattended updates). Underneath them: 05 (`api`, `db-schema`,
+aarch64 outputs), 19f (the Mac appliance, its launcher and the bootstrap
+order), 19g (unattended updates). Underneath them: 05 (`api`, `db-schema`,
 scheduler), 07 (CLI), 08 (dashboard), 01 and 03 (the host module and
 hostd).
 
 ## Deferred
 
 The x86 `metal` path beyond what the hosted half already allows: the
-one-disk disko layout is the Mac's, and an x86 box still needs two disks.
+one-disk disko layout is the Mac's, and an x86 box still needs two disks
+and a way to place the join bundle (`/run/repose/launcher/join` by hand
+would do; nothing ships it).
 Snapshots to a bucket of the user's own (I-1372, revisit when a user
 asks). More than one host per account, which is a number in `plans.go`
 and nothing else. Unattended updates, which may ship after launch.
