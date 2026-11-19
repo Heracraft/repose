@@ -148,11 +148,15 @@
 	async function hold(q: Question) {
 		try {
 			const res = await holdQuestion(q.project_id, q.id);
-			questions = questions.map((c) =>
-				c.id === res.id && c.expires_at !== res.expires_at
-					? { ...c, expires_at: res.expires_at }
-					: c
-			);
+			if (questions.some((c) => c.id === res.id && c.expires_at !== res.expires_at)) {
+				questions = questions.map((c) =>
+					c.id === res.id ? { ...c, expires_at: res.expires_at } : c
+				);
+				// The api's deadline is five minutes from its own now, so the
+				// row counts it from this moment: against a tick up to 30 s
+				// old it would read "expires in 6m".
+				clock.read();
+			}
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				// Closed elsewhere: nothing left to hold.
