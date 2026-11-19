@@ -94,6 +94,17 @@ so — a second pass with no P0 — not when a column is empty. Closing a card
 is not evidence a finding is fixed, where a checklist item closed with its
 named evidence is.
 
+- **File the cause separately from the symptom and link them.** Closing the
+  symptom's card must not lose what caused it. The worked example is the
+  2026-11-19 review: the released CLI had no `host` command for twenty-one
+  minutes while the docs described it in full, and when the tag landed the
+  symptom's card closed itself — so the reviewer filed the push-versus-tag
+  ordering that caused it as its own card first.
+- **A card's rank follows the report when the two disagree.** A card left at
+  `urgent` while the report says P1 wins the argument by being what the
+  owner looks at first, and the report loses it by being correct. So a
+  re-rank is carried to the card with its reason, not left in the document.
+
 ## The evidence rules a review rests on
 
 These were learned in one day of the Mac mini program, each from a mistake,
