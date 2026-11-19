@@ -1447,11 +1447,17 @@ var hostWaitTimeout = 10 * time.Minute
 // on from the state the machine is in by then.
 func waitHost(ctx context.Context, e *Env, project *Project, pr *progress) error {
 	started := time.Now()
-	pr.Phase("Waiting for "+project.Slug+"'s server to come back", "")
+	// Whose machine the user is waiting for: their own host by name,
+	// because they are the one who turns it back on (DECISIONS I-1370).
+	what := project.Slug + "'s server"
+	if h, ok := hostsOffline(ctx, e.Client)[project.HostID]; ok {
+		what = h.Name
+	}
+	pr.Phase("Waiting for "+what+" to come back", "")
 	for project.HostUnreachable {
 		if time.Since(started) > hostWaitTimeout {
 			pr.Fail()
-			return exitf(ExitGuestNotRunning, "%s's server has not answered for %s. `repose status %s` shows when it is back.", project.Slug, fmtWait(hostWaitTimeout), project.Slug)
+			return exitf(ExitGuestNotRunning, "%s has not answered for %s. `repose status %s` shows when it is back.", what, fmtWait(hostWaitTimeout), project.Slug)
 		}
 		if err := sleepOrDone(ctx, 2*opPollInterval); err != nil {
 			return err

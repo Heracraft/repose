@@ -412,3 +412,26 @@ device defaults to `/dev/disk/repose/data`, resolved at install time by the disk
 `repose.host.dataDevice`. The join token arrives through cloud-init
 `write_files` in the instance user-data as `/run/repose/join-token`
 (workstream 11 passes it); cloud-init on the host runs only that module.
+
+### A host the user owns (DECISIONS I-1366, I-1370, I-1372)
+
+`repose.host.owned = true` says the machine belongs to a user and not to
+repose. Two things follow, and the module asserts the second:
+
+- **The join token arrives without cloud-init.** `repose-register.service`
+  (`nix/hosts/registration.nix`) consumes `/run/repose/join-token`
+  through `hostd register` and deletes it, and it waits on
+  `cloud-final.service` only where `repose.host.provider == "azure"`. So
+  anything that writes that file before `hostd.service` registers the
+  host: the Mac launcher (19f), an installer's `--extra-files`, or a
+  hand `install -m 0600`. The token comes from `repose host add`, is
+  single-use and lasts 24 hours; it is `hosts.join_token_hash` on the
+  host's row and is stored nowhere else.
+- **Snapshots stay on the host's own disk.** `snapshots.blobUrl` and
+  `snapshots.identityClientId` must be empty, which makes hostd take
+  `--snapshot-dir <snapshots.localDir>` and write `FileBlob` under
+  `/var/lib/repose/snapshots`. A dead disk loses every snapshot on it,
+  which `apps/web/src/content/docs/own-hardware.md` says in those words.
+  The alternative, a storage bucket's keys on a machine in someone's
+  house, would be a fourth home for a secret, and there are three
+  (CLAUDE.md, `docs/features/secrets.md`).

@@ -472,6 +472,20 @@ A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a targe
 
 A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a scope that is not one of the six. An account holds 20 live tokens. These three commands take a login, not `REPOSE_TOKEN`. A revoked token stays in the list for 30 days.
 
+## Your own hardware
+
+A Mac mini or x86 box you own joins your account as a host, and your projects run on it instead of repose's servers: [Add your own hardware](/docs/own-hardware).
+
+| Command                | What it does |
+| ---------------------- | ------------ |
+| `repose host add [NAME]` | Add a machine of yours and print, on stdout alone so it pipes, the one step to run on that machine. It carries a token that works once, within 24 hours. Without NAME, repose names it. `--json` prints every field, the step and the token included. |
+| `repose host list`       | Your hardware: its state, memory, how many of your machines are on it, how many are running, and when it last answered. Alias `ls`, and `repose host` alone. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose host rm NAME`    | Take it off your account, after one question. Alias `remove`. `-y`/`--yes` skips the question. The machines on it stop; the machine itself is untouched. A host still holding machines is refused, and the answer names them. |
+
+The STATE column is `waiting` before it has joined, `online`, `offline` when it has not answered for 90 seconds, `removing` while it is being taken off, and `removed`. A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2. A name you do not have exits 1, and a second host on a plan that takes one exits 1. These commands take a login, not `REPOSE_TOKEN`, except `repose host ls`, which a token with `read` may call.
+
+While a host is not answering, `repose ls` and `repose status` name it under each machine on it (`todo-app: mac-mini has not answered for 14m`), and `repose run` waits up to 10 minutes for it.
+
 ## Triggers
 
 A [trigger](/docs/triggers) starts an agent when a webhook arrives or at a time you choose.

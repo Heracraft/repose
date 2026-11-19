@@ -334,6 +334,21 @@ in
       default = "UTC";
       description = "The host's timezone; `repose-snapshot.timer` fires at 03:00 in it (DESIGN §6).";
     };
+
+    owned = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        This host belongs to a user, not to repose (DECISIONS I-1366,
+        I-1372). Snapshots of its guests stay on its own disk
+        (`snapshots.localDir`, hostd's `--snapshot-dir`) and repose keeps
+        no copy, which the public docs page says in those words: the
+        alternative is a storage bucket's keys sitting on a machine in
+        someone's house, and secrets have three homes and no fourth
+        (CLAUDE.md). The assertion below is what keeps a future provider
+        module from handing an owned host a bucket by accident.
+      '';
+    };
   };
 
   config = {
@@ -349,6 +364,10 @@ in
       {
         assertion = cfg.apiCA == "" || cfg.apiCAFile == "";
         message = "repose.host.apiCA and repose.host.apiCAFile both set: hostd takes one --api-ca, so name the CA once.";
+      }
+      {
+        assertion = !cfg.owned || (cfg.snapshots.blobUrl == "" && cfg.snapshots.identityClientId == "");
+        message = "repose.host.owned with repose.host.snapshots.blobUrl or identityClientId set: an owned host keeps its snapshots on its own disk and carries no bucket credentials (DECISIONS I-1372).";
       }
     ];
 

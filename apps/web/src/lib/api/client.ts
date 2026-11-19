@@ -14,6 +14,7 @@ import type {
 	Config,
 	DestroyedProject,
 	EventsPage,
+	Host,
 	Invoice,
 	Me,
 	MenuSelection,
@@ -184,6 +185,11 @@ export const putPersonal = (fragment: string, base: string | null) =>
 		method: 'PUT',
 		body: { fragment, base_revision_id: base ?? '', source: 'dashboard' }
 	});
+
+// Hosts the account owns (I-1366, I-1370).
+/** passive: a side read beside the project list, which must not clear an outage bar of its own. */
+export const listHosts = (opts: { passive?: boolean } = {}) =>
+	request<Host[]>('/hosts', opts);
 
 // Projects.
 /** passive: the rail's background read (I-841), as getMe's. */
