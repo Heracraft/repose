@@ -33,6 +33,12 @@
 # account (DECISIONS I-642), so it shares no line with a production host
 # and keeps all of its own in `host-stg-01.nix`.
 { ... }:
+let
+  # The api's name, its CA and the base repository are platform.nix's:
+  # the Mac appliance (mac.nix) dials the same api by another road and
+  # must trust the same certificate.
+  platform = import ./platform.nix;
+in
 {
   repose.host = {
     # The api's gRPC listener on the control VM's VNet address (infra output
@@ -47,25 +53,17 @@
     # there is nothing here for a host in another region or at another
     # provider to reach (docs/workstreams/11-infra-opentofu.md, "The
     # portability wall").
+    # A host the user owns has no VNet and takes the other road, the
+    # control plane's hub address through the edge's one forward rule
+    # (mac.nix, DECISIONS I-1382, I-1380).
     apiAddr = "10.200.3.4:8443";
-    apiServerName = "api.repose.herakraft.co";
+    apiServerName = platform.apiServerName;
     # The platform x509 host CA (`repose-admin ca show`); public material.
-    apiCA = ''
-      -----BEGIN CERTIFICATE-----
-      MIIBYzCCAQmgAwIBAgIBATAKBggqhkjOPQQDAjAZMRcwFQYDVQQDEw5yZXBvc2Ug
-      aG9zdCBjYTAeFw0yNjA5MjAxNDM1NDRaFw0zNjA5MTcxNTM1NDRaMBkxFzAVBgNV
-      BAMTDnJlcG9zZSBob3N0IGNhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEf0Z
-      a+ShTl8C17TyIihGfxGA8/+LPSztZO7U+1jkulN/0PyP+u0mFtoz1No7eNIsLQdI
-      4XqvAoE1SQ5NJMb9+6NCMEAwDgYDVR0PAQH/BAQDAgKEMA8GA1UdEwEB/wQFMAMB
-      Af8wHQYDVR0OBBYEFJ3mh/uToG0kXZreInW+yRCV7Vv0MAoGCCqGSM49BAMCA0gA
-      MEUCIQD4CrivKkoYjKlkHwnK7Ors2lohLv4cFQ+yUU5IhKmIUgIgRiWHt/xsWPzy
-      pgFYxi/RgOzA9GSronavaaOscYi+Vng=
-      -----END CERTIFICATE-----
-    '';
+    apiCA = platform.apiCA;
 
     # hostd clones the base checkout it builds fragments from (I-28); the
     # repository is public.
-    baseRepo.url = "https://github.com/Heracraft/repose.git";
+    baseRepo.url = platform.baseRepoUrl;
 
     # Operator SSH on the provider NIC with a plain key until the host is
     # registered: the installer's checks and the join-token delivery reach

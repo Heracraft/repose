@@ -472,6 +472,21 @@ A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a targe
 
 A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a scope that is not one of the six. An account holds 20 live tokens. These three commands take a login, not `REPOSE_TOKEN`. A revoked token stays in the list for 30 days.
 
+## Your own hardware
+
+A Mac mini or x86 box you own joins your account as a host, and your projects run on it instead of repose's servers: [Your own hardware](/docs/own-hardware).
+
+| Command                | What it does |
+| ---------------------- | ------------ |
+| `repose host add [NAME]` | Add a machine of yours. On a Mac with Apple silicon it installs repose's virtual machine on that Mac and starts it: it fetches vfkit and the appliance image (about 2 GB), makes the disk file, writes a launchd agent that runs `repose host run` at every login, and says so before it does. Anywhere else it prints, on stdout alone so it pipes, the one step to run on the machine being added, `repose host add --join <argument>`; the argument carries a token that works once, within 24 hours. `--join ARG` installs on this Mac with the argument another machine printed, with no login needed. `--disk GB` is the appliance's disk (default 100, bounded by the volume's free space less 20), `--memory MIB` its memory (default three quarters of the Mac's), `--cpus N` its vCPUs (default all but two). Without NAME, repose names it. `--json` prints every field, the step and the token included. |
+| `repose host run`        | Hold repose's virtual machine on this Mac in the foreground until it is stopped; the launchd agent runs it at every login, and a stop asks the appliance to power off cleanly first. |
+| `repose host list`       | Your hardware: its state, memory, how many of your machines are on it, how many are running, and when it last answered. Alias `ls`, and `repose host` alone. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose host rm [NAME]`  | Take it off your account, after one question. Alias `remove`. `-y`/`--yes` skips the question. On the Mac that runs NAME as its appliance, the appliance goes with it, disk included; elsewhere the machine itself is untouched. `--local` removes the appliance on this Mac and nothing on your account. A host still holding machines is refused, and the answer names them. |
+
+The STATE column is `waiting` before it has joined, `online`, `offline` when it has not answered for 90 seconds, and `removing` while it is being taken off; a host you have removed is not listed. A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2. A name you do not have exits 1, and a second host on a plan that takes one exits 1. These commands take a login, not `REPOSE_TOKEN`, except `repose host ls`, which a token with `read` may call.
+
+While a host is not answering, `repose ls` and `repose status` name it under each machine on it (`todo-app: your host mac-mini has not answered for 14m`), and `repose run` waits up to 10 minutes for it.
+
 ## Triggers
 
 A [trigger](/docs/triggers) starts an agent when a webhook arrives or at a time you choose.

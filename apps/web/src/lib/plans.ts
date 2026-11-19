@@ -43,6 +43,14 @@ export interface PlanFigures {
 	/** Egress a month, after any introductory offer. */
 	egressGB: number;
 	/**
+	 * Hosts of their own the plan allows: 1 on Own hardware, 0 on the
+	 * hosted plans (I-1364). On an own-hardware plan the three figures
+	 * above are 0 and mean "the plan caps nothing" — the host's own
+	 * memory and disk do — so a page draws its own words for them rather
+	 * than a meter against zero.
+	 */
+	hosts?: number;
+	/**
 	 * The introductory offer, for an account's first subscription (I-497).
 	 * `limit` is how many subscriptions may hold it at once (plans.go's
 	 * IntroLimit, Solo's first 30, I-672); the api's plans do not carry it.
@@ -86,6 +94,15 @@ export const PLANS: PlanFigures[] = [
 	}
 ];
 
+/** Whether a plan sells a host the user owns rather than memory on the
+ *  fleet (billing.Plan.OwnHardware). The three cards, the seat count and
+ *  every meter are the hosted plans'. */
+export const isOwnHardware = (p: { hosts?: number }) => (p.hosts ?? 0) > 0;
+
+/** The hosted plans of a list: the ones the cards and the meters are for. */
+export const hostedPlans = <T extends { hosts?: number }>(plans: T[]) =>
+	plans.filter((p) => !isOwnHardware(p));
+
 /** One of GET /billing's plans in the shape the cells draw. */
 export function fromApi(p: ApiPlan): PlanFigures {
 	const intro =
@@ -107,6 +124,7 @@ export function fromApi(p: ApiPlan): PlanFigures {
 		memoryGB: p.memory_gb,
 		diskGB: p.disk_gb,
 		egressGB: p.egress_gb,
+		hosts: p.hosts,
 		intro
 	};
 }

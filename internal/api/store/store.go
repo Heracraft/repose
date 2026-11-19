@@ -106,6 +106,12 @@ type Project struct {
 	// Multiplexer is what the guest's next start runs, tmux or herdr
 	// (0017, DECISIONS I-502); project_json carries it to the guest.
 	Multiplexer string `db:"multiplexer"`
+	// Placement is where the machine goes when it is placed, `own` or
+	// `hosted` (0048, DECISIONS I-1366): `own` is a host this account
+	// owns when it owns any and the hosted fleet when it owns none.
+	// Read at a create and at a re-placement, never after, because a
+	// project is pinned to its host for life.
+	Placement string `db:"placement"`
 	// DiskHeldBytes is the bytes the project's volume holds, the figure
 	// the plan's disk counts (0019, DECISIONS I-585): the thin volume's
 	// allocated blocks from the newest sample, or the estimate a new
@@ -134,7 +140,7 @@ func (p *Project) HeldBytes() int64 {
 	return p.VolumeBytes
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, disk_held_bytes, disk_held_at, resting_since, keep_awake`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake`
 
 // Host is a hosts row. Cores is the host's physical cores, which
 // placement counts committed guest vCPUs against (0027, DECISIONS I-735,
@@ -173,11 +179,16 @@ type Host struct {
 	JoinTokenHash      *string    `db:"join_token_hash"`
 	JoinTokenExpiresAt *time.Time `db:"join_token_expires_at"`
 	RegisteredAt       *time.Time `db:"registered_at"`
-	CreatedAt          time.Time  `db:"created_at"`
-	UpdatedAt          time.Time  `db:"updated_at"`
+	// OwnerAccountID is the account that owns the machine (DECISIONS
+	// I-1366); nil is a host repose runs. Placement puts only that
+	// account's projects on an owned host, and the seat count, the
+	// waitlist and the pool gauges leave it out.
+	OwnerAccountID *uuid.UUID `db:"owner_account_id"`
+	CreatedAt      time.Time  `db:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at"`
 }
 
-const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, cores, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
+const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, cores, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, owner_account_id, created_at, updated_at`
 
 // Op is an ops row.
 type Op struct {
@@ -504,19 +515,53 @@ func SetProjectState(ctx context.Context, q Querier, id uuid.UUID, state string)
 
 // --- hosts ------------------------------------------------------------
 
+// Where a project's machine goes when it is placed (0048, DECISIONS
+// I-1366). `own` is a host the account owns when it owns any and the
+// hosted fleet when it owns none; `hosted` is the fleet whatever it owns.
+const (
+	PlacementOwn    = "own"
+	PlacementHosted = "hosted"
+)
+
+// NormalizePlacement is the value a row carries, with the default for a
+// row written before 0048 or by a client that sent none.
+func NormalizePlacement(p string) string {
+	if p == PlacementHosted {
+		return PlacementHosted
+	}
+	return PlacementOwn
+}
+
 // GetHost fetches a host by id.
 func GetHost(ctx context.Context, q Querier, id uuid.UUID) (*Host, error) {
 	return one[Host](ctx, q, "select "+hostCols+" from hosts where id = $1", id)
 }
 
-// GetHostByName fetches a host by name.
+// GetHostByName fetches one of the operator's own hosts by name. Names
+// are unique per owner since 0048 (DECISIONS I-1366), so a name alone
+// names a host only among the hosts repose runs; an owned host is
+// reached by id, or by name within its account with
+// GetAccountHostByName. That is also the safe default for the operator
+// CLI: `hosts drain mac-mini` must not find a user's Mac.
 func GetHostByName(ctx context.Context, q Querier, name string) (*Host, error) {
-	return one[Host](ctx, q, "select "+hostCols+" from hosts where name = $1", name)
+	return one[Host](ctx, q, "select "+hostCols+" from hosts where name = $1 and owner_account_id is null", name)
+}
+
+// GetAccountHostByName fetches one host the account owns, by the name
+// that account gave it.
+func GetAccountHostByName(ctx context.Context, q Querier, owner uuid.UUID, name string) (*Host, error) {
+	return one[Host](ctx, q, "select "+hostCols+" from hosts where owner_account_id = $1 and name = $2", owner, name)
 }
 
 // ListHosts lists hosts in name order.
 func ListHosts(ctx context.Context, q Querier) ([]Host, error) {
 	return many[Host](ctx, q, "select "+hostCols+" from hosts order by name")
+}
+
+// ListAccountHosts lists the hosts one account owns, oldest first, so a
+// user reads them in the order they added them.
+func ListAccountHosts(ctx context.Context, q Querier, owner uuid.UUID) ([]Host, error) {
+	return many[Host](ctx, q, "select "+hostCols+" from hosts where owner_account_id = $1 order by created_at, name", owner)
 }
 
 // --- ops --------------------------------------------------------------

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -38,7 +39,10 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		out := routeAnswer(p)
+		out, err := s.routeAnswer(r.Context(), p)
+		if err != nil {
+			return err
+		}
 		out["login"] = p.Slug + "." + u.Handle
 		writeJSON(w, http.StatusOK, out)
 		return nil
@@ -53,7 +57,10 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := routeAnswer(p)
+	out, err := s.routeAnswer(r.Context(), p)
+	if err != nil {
+		return err
+	}
 	out["login"] = login
 	// resting (DECISIONS I-818) tells the gateway to ask for a wake
 	// before it dials. The state stays `running`, so nothing in the
@@ -65,13 +72,28 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 }
 
 // routeAnswer is the body both forms of GET /internal/route return.
-func routeAnswer(p *store.Project) map[string]any {
+// `host_owner_id` is the account that owns the project's host, null for
+// a host repose runs, and `user_id` the project's owner (DECISIONS
+// I-1368): the gateway routes a connection to an owned host only for its
+// owner, checked against the certificate on a login and against these
+// two ids on a webhook delivery.
+func (s *Server) routeAnswer(ctx context.Context, p *store.Project) (map[string]any, error) {
 	out := map[string]any{"project_id": p.ID, "guest_ip": nil, "state": p.State, "principals": []string{p.ID.String()},
-		"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.RestingSince != nil}
+		"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.RestingSince != nil,
+		"host_owner_id": nil, "user_id": p.UserID}
 	if p.GuestIP != nil {
 		out["guest_ip"] = p.GuestIP.String()
 	}
-	return out
+	if p.HostID != nil {
+		h, err := store.GetHost(ctx, s.d.Pool, *p.HostID)
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil && h.OwnerAccountID != nil {
+			out["host_owner_id"] = *h.OwnerAccountID
+		}
+	}
+	return out, nil
 }
 
 // internalWake resumes a machine that rests and answers when it is awake
@@ -194,8 +216,19 @@ func (s *Server) internalHosts(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := []map[string]any{}
+	now := time.Now()
 	for _, h := range hosts {
-		if h.RegisteredAt == nil || h.WGPubkey == nil {
+		// A host with a public key is a peer, registered or not: a host
+		// the user owns gets its key at `host add` (hostmgr.PrepareHub,
+		// DECISIONS I-1380) and registers over the tunnel the edge builds
+		// from this list. A row with no key has nothing to peer, and one
+		// that never registered before its token expired is not kept on
+		// the hub for a registration that can no longer happen: the
+		// bootstrap key in a lost install bundle dies with its token.
+		if h.WGPubkey == nil {
+			continue
+		}
+		if h.RegisteredAt == nil && (h.JoinTokenHash == nil || (h.JoinTokenExpiresAt != nil && now.After(*h.JoinTokenExpiresAt))) {
 			continue
 		}
 		row := map[string]any{"host_id": h.ID, "name": h.Name, "wg_pubkey": *h.WGPubkey, "state": h.State}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/triggerrun"
@@ -71,6 +72,9 @@ type Clock struct {
 	// Interval and Batch are the pass; tests shorten them.
 	Interval time.Duration
 	Batch    int
+	// Metrics, when set, counts a result refused because it came from a
+	// host the run was not sent to (DECISIONS I-1368).
+	Metrics *metrics.M
 
 	kicks chan struct{}
 }
@@ -305,7 +309,7 @@ func (c *Clock) dispatch(ctx context.Context, run Run) error {
 
 // OnResult is the host's answer to a RunTrigger, which app.go hands every
 // result to. It reports whether the result was one of ours.
-func (c *Clock) OnResult(ctx context.Context, res *hostdv1.Result) bool {
+func (c *Clock) OnResult(ctx context.Context, hostID uuid.UUID, res *hostdv1.Result) bool {
 	id, err := uuid.Parse(res.GetCommandId())
 	if err != nil {
 		return false
@@ -313,6 +317,25 @@ func (c *Clock) OnResult(ctx context.Context, res *hostdv1.Result) bool {
 	payload, ok := res.GetPayload().(*hostdv1.Result_TriggerRun)
 	if !ok {
 		return false
+	}
+	// A result counts only from the host the run went to (DECISIONS
+	// I-1368): a host the operator does not own could otherwise write a
+	// state and a summary onto another project's run. The run's project
+	// is pinned to its host, so the project's host is the one that was
+	// sent the command.
+	sentTo, err := c.store.hostOfRun(ctx, id)
+	if err != nil {
+		if ctx.Err() == nil {
+			c.log.Error("trigger run host lookup", "event", "trigger_run", "run_id", id.String(), "err", err.Error())
+		}
+		return true
+	}
+	if sentTo == nil || *sentTo != hostID {
+		if c.Metrics != nil {
+			c.Metrics.HostReportsRefused.WithLabelValues("foreign_command").Inc()
+		}
+		c.log.Warn("result from a host the run was not sent to", "event", "foreign_command", "host_id", hostID.String(), "command_id", res.GetCommandId())
+		return true
 	}
 	state, window, reason := payload.TriggerRun.GetState(), payload.TriggerRun.GetWindow(), payload.TriggerRun.GetReason()
 	if !triggerrun.GuestStates[state] {
@@ -336,6 +359,18 @@ func (c *Clock) OnResult(ctx context.Context, res *hostdv1.Result) bool {
 			"run_id", id.String(), "state", state, "reason", triggerrun.LogReason(reason))
 	}
 	return true
+}
+
+// hostOfRun is the host of the run's project: the one host a result for
+// the run may come from. nil when the run is unknown or the project has
+// no host.
+func (s *Store) hostOfRun(ctx context.Context, runID uuid.UUID) (*uuid.UUID, error) {
+	var host *uuid.UUID
+	err := s.pool.QueryRow(ctx, `select p.host_id from trigger_runs r join projects p on p.id = r.project_id where r.id = $1`, runID).Scan(&host)
+	if db.IsNoRows(err) {
+		return nil, nil
+	}
+	return host, err
 }
 
 // byID reads one trigger without its project, for the worker.

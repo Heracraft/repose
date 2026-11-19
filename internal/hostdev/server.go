@@ -2,7 +2,9 @@ package hostdev
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/curve25519"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -139,6 +142,18 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 		st.Host.Registered = time.Now().UTC()
 		st.Host.Info = rawProto(req.Info)
 		resp = &hostdv1.RegisterResponse{HostId: hostID, ClientCert: cert, ClientKey: key, GuestCidr: st.GuestCIDR, HostCaPub: s.hostCAPub()}
+		if st.EdgePubkey != "" {
+			// As the api does (hostmgr.Register): a key pair minted here,
+			// the public half kept, the private half answered once.
+			priv, pub, err := wgKeypair()
+			if err != nil {
+				rerr = status.Error(codes.Internal, err.Error())
+				return
+			}
+			st.HostWGPubkey = pub
+			resp.WgPrivateKey = priv
+			resp.Edge = &hostdv1.WireguardPeer{Endpoint: st.EdgeEndpoint, PublicKey: st.EdgePubkey, Address: st.WGAddress, AllowedIps: []string{"10.255.0.0/16"}}
+		}
 	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -667,4 +682,21 @@ func (c *Client) Logs(ctx context.Context, id string, follow bool, w io.Writer) 
 	defer func() { _ = resp.Body.Close() }() // body read below
 	_, err = io.Copy(w, resp.Body)
 	return err
+}
+
+// wgKeypair generates a WireGuard key pair, base64 encoded; the api's
+// hostmgr has the same function.
+func wgKeypair() (priv, pub string, err error) {
+	var k [32]byte
+	if _, err := rand.Read(k[:]); err != nil {
+		return "", "", err
+	}
+	k[0] &= 248
+	k[31] &= 127
+	k[31] |= 64
+	p, err := curve25519.X25519(k[:], curve25519.Basepoint)
+	if err != nil {
+		return "", "", err
+	}
+	return base64.StdEncoding.EncodeToString(k[:]), base64.StdEncoding.EncodeToString(p), nil
 }

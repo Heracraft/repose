@@ -99,6 +99,10 @@ type limitsView struct {
 	MemoryGB int `json:"memory_gb"`
 	DiskGB   int `json:"disk_gb"`
 	EgressGB int `json:"egress_gb"`
+	// Hosts is how many hosts of their own the account may register
+	// (billing.Gate.HostsAllowed, I-1364), which POST /hosts refuses
+	// past (I-1366).
+	Hosts int `json:"hosts"`
 }
 
 type notifyView struct {
@@ -443,7 +447,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	p := &project{
 		Project: Project{
 			ID: f.nextID(), Name: name, Slug: slug, RemoteURL: remoteURL, Class: class,
-			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux,
+			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux, Placement: "own",
 			VolumeBytes: classes[class], DiskUsedBytes: 1 << 30, CreatedAt: now,
 			RootUsedBytes: 1 << 30, RootSizeBytes: classes[class] - classes[class]/40,
 		},
@@ -486,6 +490,8 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		PersonalOptOut bool `json:"personal_opt_out"`
 		// Multiplexer is tmux (the default) or herdr (I-502).
 		Multiplexer *string `json:"multiplexer"`
+		// Placement is own (the default) or hosted (I-1366).
+		Placement *string `json:"placement"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -498,6 +504,19 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 			if e := f.herdrGate(slugOf(body.Name), "", true); e != nil {
 				return e
 			}
+		}
+	}
+	if body.Placement != nil {
+		if *body.Placement != "own" && *body.Placement != "hosted" {
+			return invalid("placement must be own or hosted").withDetail(map[string]any{"reason": "placement"})
+		}
+		// A plan that sells no fleet memory cannot ask for a machine on
+		// repose's own hosts (I-1366); the fake's own-hardware account
+		// is one whose host limit a test set above zero and whose
+		// memory it set to none.
+		if *body.Placement == "hosted" && f.hostLimit != nil && *f.hostLimit > 0 {
+			return errf("payment_required", "Your plan runs machines on your own host. Choose a plan at %s/billing to run one on repose's servers.", FakeDashboard).
+				withDetail(map[string]any{"reason": "hosted_plan_required"})
 		}
 	}
 	if body.TZ != "" {
@@ -531,6 +550,9 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p.PersonalOptOut = body.PersonalOptOut
 	if body.Multiplexer != nil {
 		p.Multiplexer = *body.Multiplexer
+	}
+	if body.Placement != nil {
+		p.Placement = *body.Placement
 	}
 	if cur := f.currentPersonal(u); cur != nil && cur.Fragment != "" && !body.PersonalOptOut {
 		if rev := p.revision(p.ConfigRevisionID); rev != nil {
@@ -2036,7 +2058,8 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"project_id": p.ID, "login": p.Slug + "." + u.Handle, "guest_ip": p.GuestIP, "state": p.State,
 			"principals": []string{p.ID}, "host_unreachable": p.HostUnreachable,
-			"resting": p.State == "running" && p.Resting != nil,
+			"resting":       p.State == "running" && p.Resting != nil,
+			"host_owner_id": nilIfEmpty(p.hostOwner), "user_id": p.owner,
 		})
 		return nil
 	}
@@ -2064,6 +2087,7 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 			// fake that left it out would make the whole wake untestable.
 			"project_id": p.ID, "login": login, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
 			"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.Resting != nil,
+			"host_owner_id": nilIfEmpty(p.hostOwner), "user_id": p.owner,
 		})
 		return nil
 	}
@@ -2226,4 +2250,13 @@ func (f *Fake) internalEvents(w http.ResponseWriter, r *http.Request) *apiError 
 		return nil
 	}
 	return notFound("project for source_ip")
+}
+
+// nilIfEmpty is a JSON null for "", the shape the real api gives a
+// nullable id.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

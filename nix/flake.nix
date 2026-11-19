@@ -37,6 +37,14 @@
       url = "github:microvm-nix/microvm.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # At 2026-11-10 or later: the Mac appliance image is disko's image
+    # builder (I-1376), and before disko's 2026-10-19 fix it handed
+    # nixpkgs's vmTools a module tree as the kernel, which this nixpkgs
+    # refuses ("the `kernel` argument has no `target` attribute"). The
+    # bump was shown inert for every host and the edge by evaluating one
+    # tree with `--override-input disko <old rev>` and walking the
+    # derivations to the leaves that differ (only the version stamps);
+    # I-1376 has the method, which is the one to repeat for the next bump.
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -60,31 +68,211 @@
 
   outputs = { self, nixpkgs, nixpkgs-host-kernel, home-manager, microvm, disko, nix-index-database, nixos-images, fragment }:
     let
-      system = "x86_64-linux";
       lib = nixpkgs.lib;
       overlay = import ./overlay/agents;
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ overlay ];
-        config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) (import ./guest/unfree-allowlist.nix);
-      };
 
       # The platform base version: the revision of this repository. The api's
       # base_versions row and /etc/repose/base-version carry the same string.
       baseVersion = self.shortRev or self.dirtyShortRev or "dirty";
 
-      # Every Go binary in the repository (guestd, repose-hook, hostd,
-      # hostdev), built from the repository root one level above this flake.
-      # From `./nix` alone the parent is not in the flake source, so build with
-      # `nix build '.?dir=nix#hostd'` from the repository root.
-      goPkgs = import ./packages.nix { inherit pkgs lib; version = baseVersion; };
-      guestd = goPkgs.guestd;
-      reposeHook = goPkgs.repose-hook;
+      # The two architectures a repose host runs on (DECISIONS I-1374):
+      # x86_64 for the Azure hosts and any x86 box a user brings, aarch64
+      # for the Mac mini appliance (docs/workstreams/19-mac-mini.md). Every
+      # per-architecture value below is a function of the system, built
+      # once per entry here, so a guest base, a runner, a host system and
+      # an installer exist for both and nothing is spelled twice. The
+      # VM tests stay x86_64: they need KVM of the builder's own
+      # architecture, and woker-1 is an x86 box with no binfmt.
+      systems = [ "x86_64-linux" "aarch64-linux" ];
 
-      mkGuestRunner = import ./guest/microvm.nix {
-        inherit nixpkgs home-manager microvm system overlay self;
+      perSystem = system: rec {
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ overlay ];
+          config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) (import ./guest/unfree-allowlist.nix);
+        };
+
+        # Every Go binary in the repository (guestd, repose-hook, hostd,
+        # hostdev), built from the repository root one level above this flake.
+        # From `./nix` alone the parent is not in the flake source, so build with
+        # `nix build '.?dir=nix#hostd'` from the repository root.
+        goPkgs = import ./packages.nix { inherit pkgs lib; version = baseVersion; };
+        guestd = goPkgs.guestd;
+        reposeHook = goPkgs.repose-hook;
+
+        mkGuestRunner = import ./guest/microvm.nix {
+          inherit nixpkgs home-manager microvm system overlay self;
+        };
+        composeGuest = import ./guest/compose.nix { inherit mkGuestRunner; };
+
+        # The host kernel from its own pin (I-778), not from `nixpkgs`. Shared
+        # by the hosts and by the kexec installer they are installed through,
+        # so a driver behaves the same way during the install as it does on
+        # the installed machine. One pin, read per architecture: the rev is
+        # the same for both, so the 6.18.57 assertion in nix/hosts/kernel.nix
+        # holds on aarch64 as on x86 (I-1374).
+        #
+        # Before moving this pin, read nix/hosts/kernel.nix's note on
+        # aarch64: nested guests on an Apple silicon appliance run on
+        # 6.18.57 and hang on 7.0.0-43 (gate 0 step 3, 2026-11-19), so a
+        # bump is proven on the Mac with ops/dev/macmini-l2-try.sh first.
+        hostKernelPackages = (import nixpkgs-host-kernel { inherit system; }).linuxPackages;
+
+        hostModules = [
+          disko.nixosModules.disko
+          ./hosts
+          { repose.host.hostdPackage = goPkgs.hostd; }
+          # In hostModules so the host VM tests boot the kernel the hosts run.
+          { repose.host.kernelPackages = hostKernelPackages; }
+        ];
+        mkHost = { hostName, provider ? "azure", modules ? [ ] }:
+          lib.nixosSystem {
+            inherit system;
+            specialArgs = { inherit self; };
+            modules = hostModules ++ [ { repose.host = { inherit hostName provider; }; } ] ++ modules;
+          };
+
+        # The kexec installer every machine is installed through
+        # (`nix/installer`). Not a target of nixos-anywhere: it is the
+        # system nixos-anywhere kexecs *into*, handed to it as `--kexec
+        # packages.kexec-installer`'s tarball (infra/azure/modules/
+        # nixos_anywhere). One image per architecture for every machine,
+        # because the defect it exists to fix is in the provider's NIC
+        # shape and not in anything a particular host does.
+        installer = lib.nixosSystem {
+          inherit system;
+          modules = [
+            nixos-images.nixosModules.kexec-installer
+            ./installer
+            { repose.installer.kernelPackages = hostKernelPackages; }
+          ];
+        };
+
+        # What hostd evaluates for a Build (docs/interfaces/nix-build-contract.md):
+        # the base plus the fragment at "${fragment}/fragment.nix" (and the
+        # personal layer at "${fragment}/personal.nix" when present) applied to
+        # dev. `config.system.build.toplevel` is the system closure; the class
+        # is not baked in (DECISIONS I-34, I-43).
+        guestSystem = (composeGuest {
+          fragmentPath = "${fragment}/fragment.nix";
+          # The account's personal layer, when hostd wrote one beside the
+          # fragment (Build.personal, DECISIONS I-490). hostd looks for the
+          # string personal.nix in this file to know a base reads it.
+          personalPath =
+            if builtins.pathExists "${fragment}/personal.nix"
+            then "${fragment}/personal.nix"
+            else null;
+          inherit guestd;
+          # The label hostd writes next to the fragment (Build.base_version,
+          # DECISIONS I-118): under `--override-input fragment` this flake
+          # has no shortRev, so the stamp would read "dirty" for every guest.
+          baseVersion =
+            if builtins.pathExists "${fragment}/base-version"
+            then lib.removeSuffix "\n" (builtins.readFile "${fragment}/base-version")
+            else baseVersion;
+          hook = reposeHook;
+        }).guestSystem;
+
+        # A runner with an empty fragment: what `nix build .#guest-runner`
+        # produces and what the local Cloud Hypervisor boot test uses.
+        guestRunner = mkGuestRunner {
+          inherit guestd;
+          hook = reposeHook;
+          baseVersion = baseVersion;
+          class = "large";
+        };
+
+        packages = {
+          inherit (goPkgs) guestd repose-hook hostd hostdev api repose-admin repose gateway;
+          # Workstream 01's stand-in, kept for the host VM tests.
+          hostd-stub = pkgs.callPackage ./hosts/hostd-stub.nix { };
+          # The kexec installer's tarball: a directory holding
+          # repose-kexec-installer-<system>.tar.gz (the name is ours, set
+          # by `system.kexec-installer.name` in nix/installer, so a path on
+          # an operator's disk says whose image it is). nixos-anywhere's
+          # `--kexec` wants the file, not the directory, and picks its
+          # decompression from the name's extension, so the path infra
+          # passes ends in that filename.
+          kexec-installer = installer.config.system.build.kexecInstallerTarball;
+          guest-runner = guestRunner;
+          guest-system = guestRunner.toplevel;
+          claude-code = pkgs.reposeAgents.claude-code;
+          opencode = pkgs.reposeAgents.opencode;
+          codex = pkgs.reposeAgents.codex;
+          gemini-cli = pkgs.reposeAgents.gemini-cli;
+          pi-coding-agent = pkgs.reposeAgents.pi-coding-agent;
+          herdr = pkgs.reposeHerdr;
+          playwright-mcp = pkgs.reposeMcp.playwright-mcp;
+          chrome-devtools-mcp = pkgs.reposeMcp.chrome-devtools-mcp;
+          default = guestRunner;
+        };
+
+
+        # The base closure must stay under 7 GiB (02 §7, raised from 6 by
+        # DECISIONS I-1056): every host's store grows by it, and every
+        # first boot registers its metadata. The margin is the point --
+        # `main` sat 4 MiB under the old number, where any agent bump
+        # failed the base build. The same limit on both architectures
+        # (I-1374): an aarch64 host's store is the Mac's own disk.
+        guestClosureSize = pkgs.runCommand "guest-closure-size" {
+          closureInfo = pkgs.closureInfo { rootPaths = [ packages.guest-system ]; };
+        } ''
+          size=$(cut -f2 $closureInfo/total-nar-size 2>/dev/null || true)
+          [ -n "$size" ] || size=$(cat $closureInfo/total-nar-size)
+          limit=$((7 * 1024 * 1024 * 1024))
+          echo "guest system closure (${system}): $size bytes (limit $limit)"
+          if [ "$size" -gt "$limit" ]; then
+            echo "over the limit printed above; largest paths:" >&2
+            # closureInfo's registration is one record per path: the path,
+            # its hash, its NAR size, its deriver, then the number of
+            # references and that many lines. The sizes add up to
+            # total-nar-size, so the largest records are the paths to cut.
+            # It used to print the heading and exit, which named the
+            # problem and nothing to do about it (2026-10-15).
+            awk '{ p = $0; getline h; getline s; getline d; getline n; for (i = 0; i < n; i++) getline r; print s "\t" p }' \
+              "$closureInfo/registration" | sort -rn | head -20 |
+              awk -F'\t' '{ printf "  %8.1f MB  %s\n", $1 / 1048576, $2 }' >&2
+            exit 1
+          fi
+          echo "$size" > $out
+        '';
+
+        devShells = {
+          default = pkgs.mkShell {
+            packages = (import ./guest/base/tool-list.nix pkgs) ++ (with pkgs; [
+              reposeAgents.claude-code reposeAgents.opencode
+              go_1_26 gopls golangci-lint buf protoc-gen-go protoc-gen-go-grpc
+              opentofu azure-cli just nixos-anywhere nixos-rebuild
+              postgresql_16 sqlc wireguard-tools
+              # Observability (docs/workstreams/10-observability.md): promtool
+              # checks and tests ops/alerts.yaml, python3 generates and
+              # validates the dashboards, docker compose runs the local stack.
+              prometheus.cli python3 docker-compose
+            ]);
+          };
+
+          # `nix develop ./nix#infra`. tfsec runs the policies in
+          # infra/policy/tfsec; it is here rather than in the default shell
+          # because only workstream 11 needs it.
+          # docs/workstreams/11-infra-opentofu.md §7.
+          infra = pkgs.mkShell {
+            packages = with pkgs; [
+              opentofu azure-cli tfsec just jq nixos-anywhere wireguard-tools
+              scaleway-cli # ops/dev/macmini, docs/research/mac-mini-nested-kvm.md
+            ];
+          };
+        };
       };
-      composeGuest = import ./guest/compose.nix { inherit mkGuestRunner; };
+
+      forAllSystems = f: lib.genAttrs systems (system: f (perSystem system));
+
+      # The x86_64 bindings, by their old names: the hosts, the edge and
+      # every VM test below are x86_64 and read them as before.
+      system = "x86_64-linux";
+      x86 = perSystem system;
+      aarch64 = perSystem "aarch64-linux";
+      inherit (x86) pkgs goPkgs guestd reposeHook mkGuestRunner composeGuest hostModules mkHost hostKernelPackages;
+
       # The fragment pipeline's checks: every example fragment composes and
       # builds, and the contract's refusals refuse (nix/guest/checks.nix).
       fragmentChecks = import ./guest/checks.nix {
@@ -101,29 +289,18 @@
         homeManagerModule = home-manager.nixosModules.home-manager;
       };
 
-      # The host kernel from its own pin (I-778), not from `nixpkgs`. Shared
-      # by the hosts and by the kexec installer they are installed through,
-      # so a driver behaves the same way during the install as it does on
-      # the installed machine.
-      hostKernelPackages = (import nixpkgs-host-kernel { inherit system; }).linuxPackages;
-
-      hostModules = [
-        disko.nixosModules.disko
-        ./hosts
-        { repose.host.hostdPackage = goPkgs.hostd; }
-        # In hostModules so the host VM tests boot the kernel the hosts run.
-        { repose.host.kernelPackages = hostKernelPackages; }
-      ];
-      mkHost = { hostName, provider ? "azure", modules ? [ ] }:
-        lib.nixosSystem {
-          inherit system;
-          specialArgs = { inherit self; };
-          modules = hostModules ++ [ { repose.host = { inherit hostName provider; }; } ] ++ modules;
-        };
       hostChecks = import ./hosts/tests {
         inherit pkgs nixpkgs disko hostModules;
         # host-services registers against a real hostdev (DECISIONS I-17).
         hostdev = goPkgs.hostdev;
+      };
+      # The edge's hub rules with real packets: two host peers, the
+      # control plane and the monitoring peer on a real WireGuard hub
+      # (nix/edge/tests, DECISIONS I-1368, I-1382).
+      edgeChecks = import ./edge/tests {
+        inherit pkgs disko;
+        edgeModule = ./edge;
+        gateway = goPkgs.gateway;
       };
     in {
       overlays.agents = overlay;
@@ -143,21 +320,30 @@
       # control plane (DECISIONS I-642).
       nixosConfigurations.host-stg-01 = mkHost { hostName = "host-stg-01"; modules = [ ./hosts/host-stg-01.nix ]; };
 
+      # The generic host on aarch64 (DECISIONS I-1374): the same modules
+      # as `host`, with no provider, because the one aarch64 machine so far
+      # is the Mac mini appliance (19f's `mac` provider builds on this) and
+      # Azure has no aarch64 size a repose host may run on (DESIGN §4).
+      # `nix build ./nix#nixosConfigurations.host-aarch64.config.system.build.toplevel`
+      # on an aarch64 builder is the host half of the item's evidence.
+      nixosConfigurations.host-aarch64 = aarch64.mkHost { hostName = "repose-host"; provider = "none"; };
+
+      # The Mac mini appliance (DECISIONS I-1376, nix/hosts/mac.nix): the
+      # aarch64 host with provider `mac`, built into one raw EFI image
+      # (`packages.aarch64-linux.mac-appliance-image`, disko's image
+      # builder; needs KVM on an aarch64 builder) that `repose host add`
+      # on a Mac boots under vfkit (I-1380). `mac-x86` is the same
+      # modules on x86: nobody installs it, it is what the dev box can
+      # build and boot (the `host-mac` VM test, and the image builder's
+      # own proof) before a Mac day.
+      nixosConfigurations.mac = aarch64.mkHost { hostName = "repose-mac"; provider = "mac"; };
+      nixosConfigurations.mac-x86 = mkHost { hostName = "repose-mac"; provider = "mac"; };
+
       # The kexec installer every machine above is installed through
-      # (`nix/installer`), and the edge with them. Not a target of
-      # nixos-anywhere: it is the system nixos-anywhere kexecs *into*,
-      # handed to it as `--kexec packages.kexec-installer`'s tarball
-      # (infra/azure/modules/nixos_anywhere). One image for every machine,
-      # because the defect it exists to fix is in the provider's NIC shape
-      # and not in anything a particular host does.
-      nixosConfigurations.installer = lib.nixosSystem {
-        inherit system;
-        modules = [
-          nixos-images.nixosModules.kexec-installer
-          ./installer
-          { repose.installer.kernelPackages = hostKernelPackages; }
-        ];
-      };
+      # (`nix/installer`), and the edge with them; one per architecture
+      # (perSystem.installer says why it exists at all).
+      nixosConfigurations.installer = x86.installer;
+      nixosConfigurations.installer-aarch64 = aarch64.installer;
 
       # Edge: gateway + WireGuard hub. docs/workstreams/06-gateway-edge.md
       # The production values (operator addresses, the control plane's
@@ -173,7 +359,7 @@
       # Guest base as a module, and the function hostd's build step calls with
       # a user fragment to produce a runner. docs/workstreams/02-guest-base.md
       # and docs/workstreams/12-nix-config-pipeline.md
-      nixosModules.guestBase = {
+      nixosModules.guestBase = { pkgs, ... }: {
         imports = [ ./guest/base ];
         # What lib.nixosSystem sets for the runner, for users of the module
         # outside it (the VM tests): `nixpkgs` in the guest's registry is
@@ -182,79 +368,103 @@
         # The same nixpkgs as a locked github: input for the global
         # registry (DECISIONS I-531).
         repose.nixpkgsLocked = lib.mkDefault { inherit (nixpkgs) rev narHash lastModified; };
-        repose.nixIndexPackage = lib.mkDefault nix-index-database.packages.${system}.nix-index-with-small-db;
+        # The index for the architecture the module is evaluated on, so
+        # one module serves both (I-1374).
+        repose.nixIndexPackage = lib.mkDefault nix-index-database.packages.${pkgs.stdenv.hostPlatform.system}.nix-index-with-small-db;
         repose.baseVersion = lib.mkDefault baseVersion;
-        repose.guestd.package = lib.mkDefault guestd;
-        repose.hookPackage = lib.mkDefault reposeHook;
+        repose.guestd.package = lib.mkDefault (perSystem pkgs.stdenv.hostPlatform.system).guestd;
+        repose.hookPackage = lib.mkDefault (perSystem pkgs.stdenv.hostPlatform.system).reposeHook;
       };
 
       lib = {
+        # The x86_64 functions under their old names; `forSystem
+        # "<system>"` has the same set for the other architecture.
         inherit mkGuestRunner mkHost baseVersion composeGuest;
         # Name used by the scaffold; same function.
         mkGuest = mkGuestRunner;
+        forSystem = perSystem;
+        inherit systems;
       };
 
-      # What hostd evaluates for a Build (docs/interfaces/nix-build-contract.md):
-      # the base plus the fragment at "${fragment}/fragment.nix" (and the
-      # personal layer at "${fragment}/personal.nix" when present) applied to
-      # dev. `config.system.build.toplevel` is the system closure; the class
-      # is not baked in (DECISIONS I-34, I-43).
-      guestSystem = (composeGuest {
-        fragmentPath = "${fragment}/fragment.nix";
-        # The account's personal layer, when hostd wrote one beside the
-        # fragment (Build.personal, DECISIONS I-490). hostd looks for the
-        # string personal.nix in this file to know a base reads it.
-        personalPath =
-          if builtins.pathExists "${fragment}/personal.nix"
-          then "${fragment}/personal.nix"
-          else null;
-        inherit guestd;
-        # The label hostd writes next to the fragment (Build.base_version,
-        # DECISIONS I-118): under `--override-input fragment` this flake
-        # has no shortRev, so the stamp would read "dirty" for every guest.
-        baseVersion =
-          if builtins.pathExists "${fragment}/base-version"
-          then lib.removeSuffix "\n" (builtins.readFile "${fragment}/base-version")
-          else baseVersion;
-        hook = reposeHook;
-      }).guestSystem;
+      # What hostd evaluates for a Build (docs/interfaces/nix-build-contract.md),
+      # per architecture (I-1374): hostd on an aarch64 host evaluates
+      # `guestSystems.aarch64-linux`, since a flake cannot read the
+      # builder's own system and the one baked into `guestSystem` is x86_64.
+      # `guestSystem` stays the x86_64 one, byte for byte: every base
+      # revision an x86 host may still build names it, and so does every
+      # hostd release before this one.
+      guestSystems = lib.genAttrs systems (system: (perSystem system).guestSystem);
+      guestSystem = self.guestSystems.x86_64-linux;
 
-      packages.${system} = {
-        inherit (goPkgs) guestd repose-hook hostd hostdev api repose-admin repose gateway;
-        # Workstream 01's stand-in, kept for the host VM tests.
-        hostd-stub = pkgs.callPackage ./hosts/hostd-stub.nix { };
-        # The kexec installer's tarball: a directory holding
-        # repose-kexec-installer-x86_64-linux.tar.gz (the name is ours,
-        # set by `system.kexec-installer.name` in nix/installer, so a path
-        # on an operator's disk says whose image it is). nixos-anywhere's
-        # `--kexec` wants the file, not the directory, and picks its
-        # decompression from the name's extension, so the path infra
-        # passes ends in that filename.
-        kexec-installer = self.nixosConfigurations.installer.config.system.build.kexecInstallerTarball;
-        # A runner with an empty fragment: what `nix build .#guest-runner`
-        # produces and what the local Cloud Hypervisor boot test uses.
-        guest-runner = mkGuestRunner {
-          inherit guestd;
-          hook = reposeHook;
-          baseVersion = baseVersion;
-          class = "large";
-        };
-        guest-system = self.packages.${system}.guest-runner.toplevel;
-        claude-code = pkgs.reposeAgents.claude-code;
-        opencode = pkgs.reposeAgents.opencode;
-        codex = pkgs.reposeAgents.codex;
-        gemini-cli = pkgs.reposeAgents.gemini-cli;
-        pi-coding-agent = pkgs.reposeAgents.pi-coding-agent;
-        herdr = pkgs.reposeHerdr;
-        playwright-mcp = pkgs.reposeMcp.playwright-mcp;
-        chrome-devtools-mcp = pkgs.reposeMcp.chrome-devtools-mcp;
-        default = self.packages.${system}.guest-runner;
+      packages = lib.recursiveUpdate (forAllSystems (s: s.packages)) {
+        # repose-appliance.raw.gz: the one disk the Mac launcher boots.
+        aarch64-linux.mac-appliance-image = self.nixosConfigurations.mac.config.system.build.diskoImages;
+        x86_64-linux.mac-appliance-image = self.nixosConfigurations.mac-x86.config.system.build.diskoImages;
       };
 
       # NixOS VM tests for the host (nix/hosts/tests) and the guest
       # (nix/guest/tests). They need KVM on the builder: `system-features =
       # kvm` in nix.conf.
-      checks.${system} = hostChecks // guestTests // fragmentChecks // {
+      checks.${system} = hostChecks // guestTests // fragmentChecks // edgeChecks // {
+        # An owned host keeps its snapshots on its own disk and carries no
+        # bucket credentials (DECISIONS I-1372). Reads the two configurations'
+        # assertions and the hostd unit's argv, so it builds no system.
+        owned-host-keeps-snapshots-local =
+          let
+            owned = (mkHost {
+              hostName = "mac-check";
+              provider = "none";
+              modules = [{ repose.host.owned = true; }];
+            }).config;
+            withBucket = (mkHost {
+              hostName = "mac-check";
+              provider = "none";
+              modules = [{
+                repose.host.owned = true;
+                repose.host.snapshots.blobUrl = "https://example.blob.core.windows.net";
+              }];
+            }).config;
+            failed = cfg: lib.filter (a: !a.assertion) cfg.assertions;
+            argv = owned.systemd.services.hostd.serviceConfig.ExecStart;
+          in
+          pkgs.runCommand "owned-host-keeps-snapshots-local"
+            {
+              ownedFailures = toString (lib.length (failed owned));
+              bucketFailures = builtins.concatStringsSep "\n" (map (a: a.message) (failed withBucket));
+              hostdArgv = builtins.unsafeDiscardStringContext argv;
+            } ''
+            fail() { echo "$1" >&2; exit 1; }
+            [ "$ownedFailures" = 0 ] || fail "an owned host with no bucket should evaluate, got $ownedFailures failed assertions"
+            echo "$bucketFailures" | grep -q 'I-1372' || fail "an owned host given a blobUrl is accepted: $bucketFailures"
+            case "$hostdArgv" in
+              *--snapshot-dir\ /var/lib/repose/snapshots*) ;;
+              *) fail "hostd on an owned host does not write snapshots to its own disk: $hostdArgv" ;;
+            esac
+            echo ok > $out
+          '';
+        # The edge ruleset's snapshot (DECISIONS I-1368): the production
+        # edge's rendered nftables rules, comments and blank lines out,
+        # against nix/edge/tests/ruleset.golden. A change to nix/edge is
+        # a change to this file, made on purpose with
+        # `just edge-ruleset-golden`; a change nobody meant fails here
+        # with the diff.
+        edge-ruleset-snapshot =
+          let
+            edgeRules = builtins.unsafeDiscardStringContext
+              self.nixosConfigurations.edge.config.networking.nftables.ruleset;
+          in
+          pkgs.runCommand "edge-ruleset-snapshot"
+            {
+              rendered = pkgs.writeText "edge-nftables.conf" edgeRules;
+              golden = ./edge/tests/ruleset.golden;
+            } ''
+            grep -v '^[[:space:]]*#' "$rendered" | sed '/^[[:space:]]*$/d' > rendered.rules
+            if ! diff -u "$golden" rendered.rules; then
+              echo "the edge ruleset differs from nix/edge/tests/ruleset.golden; if the change is meant, run: just edge-ruleset-golden" >&2
+              exit 1
+            fi
+            echo ok > $out
+          '';
         # The browser view's port (DECISIONS I-1216). 6081 carries the
         # view relay, which the api dials; it was admitted from every
         # source on wg0 before, for a listener that did not exist, and a
@@ -281,41 +491,17 @@
             # from nothing else.
             grep -q 'iifname "wg0" ip saddr 10.255.255.1 tcp dport 6081 accept' edge.rules || fail "the edge has no control-plane-only rule for 6081"
             if grep -n '6081' edge.rules | grep -v 'ip saddr'; then fail "the edge admits 6081 without a source restriction"; fi
-            # Hook ingest keeps its own rule, from any guest.
-            grep -q 'iifname "wg0" tcp dport 8443 accept' edge.rules || fail "the edge lost the hook-ingest rule for 8443"
+            # Hook ingest keeps its own rule, from any guest and from a
+            # guest only (I-1368).
+            grep -q 'iifname "wg0" ip saddr 10.64.0.0/12 tcp dport 8443 accept' edge.rules || fail "the edge lost the hook-ingest rule for 8443"
             # A host lets a guest reach the edge's 8443 and nothing else:
             # the relay dials the guest now.
             grep -q 'tcp dport 8443 accept' host.rules || fail "the host lost the guest's hook-ingest rule"
             if grep -n '6081' host.rules; then fail "a guest may still reach the edge on 6081"; fi
             echo ok > $out
           '';
-        # The base closure must stay under 7 GiB (02 §7, raised from 6 by
-        # DECISIONS I-1056): every host's store grows by it, and every
-        # first boot registers its metadata. The margin is the point --
-        # `main` sat 4 MiB under the old number, where any agent bump
-        # failed the base build.
-        guest-closure-size = pkgs.runCommand "guest-closure-size" {
-          closureInfo = pkgs.closureInfo { rootPaths = [ self.packages.${system}.guest-system ]; };
-        } ''
-          size=$(cut -f2 $closureInfo/total-nar-size 2>/dev/null || true)
-          [ -n "$size" ] || size=$(cat $closureInfo/total-nar-size)
-          limit=$((7 * 1024 * 1024 * 1024))
-          echo "guest system closure: $size bytes (limit $limit)"
-          if [ "$size" -gt "$limit" ]; then
-            echo "over the limit printed above; largest paths:" >&2
-            # closureInfo's registration is one record per path: the path,
-            # its hash, its NAR size, its deriver, then the number of
-            # references and that many lines. The sizes add up to
-            # total-nar-size, so the largest records are the paths to cut.
-            # It used to print the heading and exit, which named the
-            # problem and nothing to do about it (2026-10-15).
-            awk '{ p = $0; getline h; getline s; getline d; getline n; for (i = 0; i < n; i++) getline r; print s "\t" p }' \
-              "$closureInfo/registration" | sort -rn | head -20 |
-              awk -F'\t' '{ printf "  %8.1f MB  %s\n", $1 / 1048576, $2 }' >&2
-            exit 1
-          fi
-          echo "$size" > $out
-        '';
+        # The base closure limit, on this architecture (perSystem.guestClosureSize).
+        guest-closure-size = x86.guestClosureSize;
         # A base switch must never restart a session unit: the tmux or
         # herdr unit's cgroup holds every pane, so a restart ends every
         # agent on a running guest (DECISIONS I-496, I-503). It reads the
@@ -873,32 +1059,24 @@
         };
       };
 
-      devShells.${system} = {
-        default = pkgs.mkShell {
-          packages = (import ./guest/base/tool-list.nix pkgs) ++ (with pkgs; [
-            reposeAgents.claude-code reposeAgents.opencode
-            go_1_26 gopls golangci-lint buf protoc-gen-go protoc-gen-go-grpc
-            opentofu azure-cli just nixos-anywhere nixos-rebuild
-            postgresql_16 sqlc wireguard-tools
-            # Observability (docs/workstreams/10-observability.md): promtool
-            # checks and tests ops/alerts.yaml, python3 generates and
-            # validates the dashboards, docker compose runs the local stack.
-            prometheus.cli python3 docker-compose
-          ]);
-        };
-
-        # `nix develop ./nix#infra`. tfsec runs the policies in
-        # infra/policy/tfsec; it is here rather than in the default shell
-        # because only workstream 11 needs it.
-        # docs/workstreams/11-infra-opentofu.md §7.
-        infra = pkgs.mkShell {
-          packages = with pkgs; [
-            opentofu azure-cli tfsec just jq nixos-anywhere wireguard-tools
-            scaleway-cli # ops/dev/macmini, docs/research/mac-mini-nested-kvm.md
-          ];
-        };
+      # The aarch64 checks (I-1374): the ones that need no KVM of their
+      # own architecture, so an aarch64 builder with no nested KVM (the
+      # Mac appliance VM while it is only a builder) runs them, and an x86
+      # box with an aarch64 remote builder does too. The VM tests above
+      # are x86_64 only. `nix build ./nix#checks.aarch64-linux.guest-closure-size`
+      # prints the aarch64 closure's size against the same 7 GiB limit.
+      checks.aarch64-linux = {
+        guest-closure-size = aarch64.guestClosureSize;
+        guest-runner-builds = self.packages.aarch64-linux.guest-runner;
+        host-aarch64-builds = self.nixosConfigurations.host-aarch64.config.system.build.toplevel;
+        installer-aarch64-builds = self.packages.aarch64-linux.kexec-installer;
+        # The appliance system and its image (I-1376); the image needs KVM
+        # on the builder, which the Mac's appliance VM has.
+        mac-builds = self.nixosConfigurations.mac.config.system.build.toplevel;
+        mac-appliance-image = self.packages.aarch64-linux.mac-appliance-image;
       };
 
-      formatter.${system} = pkgs.nixfmt;
+      devShells = forAllSystems (s: s.devShells);
+      formatter = forAllSystems (s: s.pkgs.nixfmt);
     };
 }

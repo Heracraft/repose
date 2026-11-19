@@ -19,11 +19,20 @@ type Config struct {
 	Env           string
 	WebhookSecret string
 	// ProductSolo, ProductPlus and ProductPro are the Polar product ids of
-	// the three plans; each carries the plan's monthly price, the metered
-	// egress overage price and the trial.
+	// the three hosted plans; each carries the plan's monthly price, the
+	// metered egress overage price and the trial.
 	ProductSolo string
 	ProductPlus string
 	ProductPro  string
+	// ProductOwn is the Polar product of the Own hardware plan (DECISIONS
+	// I-1364): the monthly price and the trial, and no overage price,
+	// because the plan meters no egress. It is the only optional product
+	// id, and that is the switch that decides where the plan is sold: a
+	// plan whose product is unset is not listed by GET /billing and a
+	// checkout for it is refused (ForSale). The api sells Own hardware
+	// where the operator has pasted this, and nowhere else, so the
+	// deployment that has no Mac behind it offers nothing it cannot keep.
+	ProductOwn string
 	// DiscountIntro is the id of the introductory discount that a first
 	// checkout of the intro plan carries (DECISIONS I-497).
 	DiscountIntro string
@@ -56,7 +65,8 @@ func (c Config) Environment() string { return c.Env }
 // Enabled reports whether Polar is configured at all.
 func (c Config) Enabled() bool { return c.AccessToken != "" }
 
-// PlanProduct is the Polar product id for a plan.
+// PlanProduct is the Polar product id for a plan, empty when the plan has
+// none configured.
 func (c Config) PlanProduct(plan string) string {
 	switch plan {
 	case Solo.ID:
@@ -65,8 +75,27 @@ func (c Config) PlanProduct(plan string) string {
 		return c.ProductPlus
 	case Pro.ID:
 		return c.ProductPro
+	case Own.ID:
+		return c.ProductOwn
 	}
 	return ""
+}
+
+// ForSale reports whether a plan can be checked out here: it has a Polar
+// product id. The three hosted plans always do (Validate), so this is
+// what keeps the Own hardware plan out of a deployment that has not
+// pasted POLAR_PRODUCT_OWN (DECISIONS I-1364).
+func (c Config) ForSale(plan string) bool { return c.PlanProduct(plan) != "" }
+
+// PlansForSale are the plans this deployment sells, in Plans' order.
+func (c Config) PlansForSale() []Plan {
+	out := make([]Plan, 0, len(Plans))
+	for _, p := range Plans {
+		if c.ForSale(p.ID) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // PlanForProduct is the plan a Polar product sells; "" for an unknown one.
@@ -80,6 +109,8 @@ func (c Config) PlanForProduct(productID string) string {
 		return Plus.ID
 	case c.ProductPro:
 		return Pro.ID
+	case c.ProductOwn:
+		return Own.ID
 	}
 	return ""
 }
@@ -93,7 +124,7 @@ func env(name, def string) string {
 
 // ConfigFromEnv reads the billing configuration; enabled is Enabled().
 func ConfigFromEnv() (cfg Config, enabled bool) {
-	dash := env("DASHBOARD_URL", "https://repose.run")
+	dash := env("DASHBOARD_URL", DefaultDashboardURL)
 	cfg = Config{
 		AccessToken:     strings.TrimSpace(os.Getenv("POLAR_ACCESS_TOKEN")),
 		Env:             strings.TrimSpace(os.Getenv("POLAR_ENVIRONMENT")),
@@ -101,6 +132,7 @@ func ConfigFromEnv() (cfg Config, enabled bool) {
 		ProductSolo:     strings.TrimSpace(os.Getenv("POLAR_PRODUCT_SOLO")),
 		ProductPlus:     strings.TrimSpace(os.Getenv("POLAR_PRODUCT_PLUS")),
 		ProductPro:      strings.TrimSpace(os.Getenv("POLAR_PRODUCT_PRO")),
+		ProductOwn:      strings.TrimSpace(os.Getenv("POLAR_PRODUCT_OWN")),
 		DiscountIntro:   strings.TrimSpace(os.Getenv("POLAR_DISCOUNT_INTRO")),
 		PortalReturnURL: env("POLAR_PORTAL_RETURN_URL", dash+"/billing"),
 		DashboardURL:    dash,
@@ -154,17 +186,35 @@ func (c Config) Validate() error {
 		sort.Strings(missing)
 		return errors.New("POLAR_ACCESS_TOKEN is set but " + strings.Join(missing, ", ") + " is not")
 	}
-	if c.ProductSolo == c.ProductPlus || c.ProductSolo == c.ProductPro || c.ProductPlus == c.ProductPro {
-		return errors.New("POLAR_PRODUCT_SOLO, POLAR_PRODUCT_PLUS and POLAR_PRODUCT_PRO are not three different products")
+	// One product per plan, so PlanForProduct answers one plan per
+	// product: two plans on the same product would sell one price as the
+	// other. POLAR_PRODUCT_OWN joins the check when it is set.
+	seen := map[string]string{}
+	for _, p := range Plans {
+		id := c.PlanProduct(p.ID)
+		if id == "" {
+			continue
+		}
+		name := "POLAR_PRODUCT_" + strings.ToUpper(p.ID)
+		if other, dup := seen[id]; dup {
+			return errors.New(other + " and " + name + " are the same product")
+		}
+		seen[id] = name
 	}
 	return nil
 }
+
+// DefaultDashboardURL is where the dashboard lives when DASHBOARD_URL
+// says nothing: the one default, which the api's config and
+// `internal/api/http`'s host refusals read too (DECISIONS I-1366), so
+// three places cannot disagree about the address a user is sent to.
+const DefaultDashboardURL = "https://repose.run"
 
 // BillingURL is the dashboard page every refusal points at.
 func (c Config) BillingURL() string {
 	dash := c.DashboardURL
 	if dash == "" {
-		dash = "https://repose.run"
+		dash = DefaultDashboardURL
 	}
 	return strings.TrimRight(dash, "/") + "/billing"
 }

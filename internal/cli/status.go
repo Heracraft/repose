@@ -85,7 +85,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 		mux = multiplexer.Normalize(project.Multiplexer)
 	}
 	writeStatus(e.Out, statusView{
-		p: project, route: route, snaps: snaps, events: events, mux: mux,
+		p: project, route: route, snaps: snaps, events: events, mux: mux, own: e.ownHostsFor(ctx, []Project{*project}),
 		disk: g.disk, procs: g.procs, forwards: g.forwards, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, probeWaited: g.waited, bill: <-bill, now: time.Now(),
 		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent, hooks: <-hooks,
 		triggers: <-trigs,
@@ -138,7 +138,7 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 		return nil
 	}
 	noteWaitsOf(ctx, e.Client, projects)
-	writeProjectsTableHere(e.Out, projects, e.hereProjectID(projects))
+	writeProjectsTableHere(e.Out, projects, e.hereProjectID(projects), e.ownHostsFor(ctx, projects))
 	b := <-bill
 	pl := planLine(b)
 	if pl != "" {
@@ -292,13 +292,27 @@ func diskOverPlanLine(b *Billing) string {
 }
 
 func writeProjectsTable(w io.Writer, projects []Project) {
-	writeProjectsTableHere(w, projects, "")
+	writeProjectsTableHere(w, projects, "", nil)
+}
+
+// ownHostsFor is the account's own hosts by id, read only when a project
+// says its host has stopped answering (DECISIONS I-1370): then the line
+// under the table can name the machine the user owns and turns back on,
+// instead of calling it a server of repose's. nil the rest of the time,
+// so the common listing still costs one round trip.
+func (e *Env) ownHostsFor(ctx context.Context, projects []Project) map[string]Host {
+	for i := range projects {
+		if projects[i].HostUnreachable {
+			return hostsOffline(ctx, e.Client)
+		}
+	}
+	return nil
 }
 
 // writeProjectsTableHere is the table with the row of here, the project
 // a command run in this folder acts on, marked `*` after its name, as
 // `docker context ls` marks the current context (I-616).
-func writeProjectsTableHere(w io.Writer, projects []Project, here string) {
+func writeProjectsTableHere(w io.Writer, projects []Project, here string, own map[string]Host) {
 	now := time.Now()
 	// The STATE cell carries `frozen` for a machine the api has paused
 	// (I-826); it is not a column of its own, and the UP cell keeps the
@@ -345,7 +359,13 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string) {
 		if l := idleLine(p, now); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
 		}
-		if p.State == "error" {
+		// A host that is not answering is the whole account of the row,
+		// in whatever state it left the machine, and it is the line in
+		// place of the error reason: nothing can start there yet, so the
+		// error line's `repose start` would be a command that fails.
+		if off := hostUnreachableLine(p, own, now); off != "" {
+			_, _ = fmt.Fprintf(w, "%s: %s.\n", p.Slug, off)
+		} else if p.State == "error" {
 			reason := projectReason(p)
 			if reason == "" {
 				reason = "its last operation failed"
@@ -367,7 +387,10 @@ func orDash(s string) string {
 
 // statusView is what `repose status` prints, read.
 type statusView struct {
-	p      *Project
+	p *Project
+	// own is the account's own hosts by id, read only when the machine's
+	// host has stopped answering (I-1370).
+	own    map[string]Host
 	route  *Route // only under -v: the host and the machine's address
 	snaps  []Snapshot
 	events []Event
@@ -451,7 +474,12 @@ func writeStatus(w io.Writer, v statusView) {
 	if l := setupLine(p, v.defaultAgent); l != "" {
 		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
-	if p.State == "error" {
+	// The host, not the machine (DECISIONS I-1370): said here as `repose
+	// ls` says it, and in place of the error reason, whose `repose start`
+	// cannot work while the host is quiet.
+	if off := hostUnreachableLine(p, v.own, v.now); off != "" {
+		_, _ = fmt.Fprintf(w, "  %s\n", off)
+	} else if p.State == "error" {
 		reason := projectReason(p)
 		if reason == "" {
 			reason = "its last operation failed"

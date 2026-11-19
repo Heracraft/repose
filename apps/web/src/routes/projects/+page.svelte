@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { listDestroyed, listProjects, listQuestions } from '$lib/api/client';
+	import { listDestroyed, listHosts, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { billingStore } from '$lib/billing.svelte';
 	import { projectsStore } from '$lib/projects.svelte';
@@ -30,6 +30,7 @@
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { splitTicks } from '$lib/components/project/ticks';
 	import { abuseStopReason } from '$lib/abuse';
+	import { offlineHostLine } from '$lib/offlinehost';
 	import { bootFallbackReason } from '$lib/bootfail';
 	import { DISK_FULL_PERCENT, diskPercent } from '$lib/disk';
 	import { DESTROYED_PAGE } from '$lib/destroyed';
@@ -62,7 +63,7 @@
 		type Band,
 		type Filter
 	} from '$lib/projectList';
-	import type { DestroyedProject, Project, Question } from '$lib/api/types';
+	import type { DestroyedProject, OwnedHost, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -127,6 +128,14 @@
 	});
 	$effect(() => release);
 
+	/**
+	 * The account's own hosts by id, read only while a machine says its
+	 * host has stopped answering (I-1370): then the row can name the Mac
+	 * the user turns back on instead of calling it a server of repose's.
+	 * Empty the rest of the time, so the common poll costs no extra read.
+	 */
+	let ownHosts = $state(new Map<string, OwnedHost>());
+
 	/** Questions agents are waiting on, across every project (I-245). */
 	let questions = $state<Question[]>([]);
 	let questionsFor = $derived(
@@ -138,6 +147,24 @@
 
 	// A failing refresh toasts once, not on every poll (I-393).
 	const listFailure = new PollFailure('Could not load projects.');
+
+	/**
+	 * Reads /hosts when, and only when, a machine's host is quiet. A side
+	 * read: passive, so its failure never clears the outage bar, and a
+	 * failure leaves the row with the line it has without the name.
+	 */
+	async function readOwnHosts(list: Project[]) {
+		if (!list.some((p) => p.host_unreachable)) {
+			if (ownHosts.size > 0) ownHosts = new Map();
+			return;
+		}
+		try {
+			const hosts = await listHosts({ passive: true });
+			ownHosts = new Map(hosts.map((h) => [h.id, h]));
+		} catch {
+			// Nothing to say: the row keeps the unnamed line.
+		}
+	}
 
 	async function refresh() {
 		const first = projects === undefined;
@@ -170,6 +197,7 @@
 			// The rail lists the same projects: it follows this poll with no
 			// read of its own (I-841).
 			projectsStore.set(projects);
+			await readOwnHosts(projects);
 			loadFailed = false;
 			listFailure.ok();
 		} catch (err) {
@@ -502,8 +530,10 @@
 		<span class="sub">unused {uptime(p.idle.since)}</span>
 	{/if}
 	{#if p.host_unreachable}
-		<!-- A host going unreachable takes every machine on it at once. -->
-		<span class="sub">server not answering</span>
+		<!-- A host going unreachable takes every machine on it at once.
+		     A host the user owns is named, with how long it has been
+		     quiet: they are the one who turns it back on (I-1370). -->
+		<span class="sub">{offlineHostLine(p, ownHosts, clock.now)}</span>
 	{/if}
 	{#if p.expires_at}
 		<span class="sub">{tempLeft(p.expires_at)}</span>
@@ -872,7 +902,9 @@
 										     carries them as the table's state cell does. -->
 										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p)}
 											<div class="mrow-sub">
-												{#if p.host_unreachable}<span>server not answering</span>{/if}
+												{#if p.host_unreachable}<span
+														>{offlineHostLine(p, ownHosts, clock.now)}</span
+													>{/if}
 												{#if p.state === 'running' && p.idle && !frozen}<span
 														>unused {uptime(p.idle.since)}</span
 													>{/if}

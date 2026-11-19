@@ -134,7 +134,7 @@ func TestLsMarksHereAndDropsHours(t *testing.T) {
 		{ID: "b", Slug: "web", Class: "small", State: "stopped"},
 	}
 	var b strings.Builder
-	writeProjectsTableHere(&b, ps, "a")
+	writeProjectsTableHere(&b, ps, "a", nil)
 	want := "PROJECT     SIZE   STATE    UP  AGENTS\ntodo-app *  large  running  -   codex: needs input\nweb         small  stopped  -   -\n"
 	if b.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", b.String(), want)
@@ -214,6 +214,34 @@ func TestPlanLineAndWarnings(t *testing.T) {
 	}
 	if got := planWarningsAfter(b, true); len(got) != 2 || got[0] != "egress past the plan: each GB past 250 GB adds $0.05, and your machines stop at 1000 GB" {
 		t.Errorf("warnings under the plan line %q", got)
+	}
+}
+
+// An own-hardware account has no plan figures to print, so `repose ls`
+// prints no plan line for it: the plan caps no memory, no disk and no
+// egress, and a line reading "0 of 0 GB running" would be a lie about
+// what refuses a start (DECISIONS I-1364). What the host holds is the
+// host's row, not the plan's.
+func TestPlanLineIsEmptyOnOwnHardware(t *testing.T) {
+	held := 612.5
+	b := &Billing{}
+	b.Subscription = &struct {
+		Plan   string `json:"plan"`
+		Status string `json:"status"`
+	}{Plan: "own", Status: "active"}
+	b.Plans = append(b.Plans, struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}{"own", "Own hardware"})
+	// What the account holds on its own machine, against a plan whose
+	// every figure is zero.
+	b.Usage.RunningGB, b.Usage.MemoryGB, b.Usage.DiskHeldGB, b.Usage.DiskGB = 48, 0, &held, 0
+	b.Usage.EgressGB, b.Usage.EgressIncludedGB = 4000, 0
+	if got := planLine(b); got != "" {
+		t.Errorf("plan line on own hardware: %q", got)
+	}
+	if got := planWarnings(b); len(got) != 0 {
+		t.Errorf("warnings on own hardware: %q", got)
 	}
 }
 

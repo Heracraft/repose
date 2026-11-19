@@ -55,7 +55,8 @@ var allowedLabels = map[string]bool{
 	// (set, get, rm, rewrap; create, start, stop, ...): a bounded enum from
 	// docs/interfaces/api.md, not an identifier.
 	"op": true,
-	// The plan a subscription is on: solo, plus or pro (DECISIONS I-289, I-362).
+	// The plan a subscription is on: solo, plus, pro or own (DECISIONS
+	// I-289, I-362, I-1364).
 	"plan": true,
 }
 

@@ -121,8 +121,8 @@ export const unfail = (method: string, path: string) => adminCall('/unfail', { m
 /** The fake's billing knobs (internal/fakes/api.BillingState, cmd/fakeapi POST /billing). */
 export interface BillingState {
 	mode?: 'off' | 'none' | 'trial' | 'active' | 'past_due' | 'suspended' | 'exempt';
-	plan?: 'solo' | 'plus' | 'pro';
-	scheduled_plan?: 'solo' | 'plus' | 'pro' | '';
+	plan?: 'solo' | 'plus' | 'pro' | 'own';
+	scheduled_plan?: 'solo' | 'plus' | 'pro' | 'own' | '';
 	cancelled?: boolean;
 	seats?: { total: number; held: number; waiting: number };
 	waitlist?: { position: number; invited?: boolean; hold_hours?: number };
@@ -134,6 +134,10 @@ export interface BillingState {
 	intro_used?: boolean;
 	/** GET /public/seats's founding_left (I-672); negative serves null, no offer. */
 	founding_left?: number;
+	/** This deployment sells the Own hardware plan: the fake's stand-in for
+	 *  POLAR_PRODUCT_OWN being set (I-1364). Off by default, as production
+	 *  is, so the plan is listed and offered only where a test turns it on. */
+	own_for_sale?: boolean;
 }
 
 function adminURL(): string {
@@ -163,7 +167,8 @@ export async function resetBilling(): Promise<void> {
 		scheduled_plan: '',
 		cancelled: false,
 		intro_used: false,
-		founding_left: 30
+		founding_left: 30,
+		own_for_sale: false
 	});
 }
 
@@ -320,6 +325,25 @@ export async function setResting(projectID: string, minutes: number): Promise<vo
 	if (!res.ok) throw new Error(`setResting: ${res.status}`);
 }
 
+/**
+ * Puts a project on a host the account owns and makes that host quiet,
+ * as a Mac mini that is asleep or off the network is (I-1370). Returns
+ * the host's id. Three calls to `ownedHost` below: add it, place the
+ * project, make it quiet. The host going quiet is what marks its
+ * machines unreachable, as the api's sweep does, so nothing here sets
+ * that flag by hand.
+ */
+export async function setOfflineOwnHost(
+	projectID: string,
+	name: string,
+	quietMinutes: number
+): Promise<string> {
+	const hostID = await ownedHost({ name });
+	await ownedHost({ project_id: projectID, host_id: hostID });
+	await ownedHost({ id: hostID, quiet_minutes: quietMinutes });
+	return hostID;
+}
+
 /** Stops a project straight against the fake api (no CLI in this suite). */
 export async function stopProject(apiURL: string, id: string): Promise<void> {
 	const res = await fetch(`${apiURL}/projects/${id}/stop`, {
@@ -378,4 +402,32 @@ export async function settledBox(
 		prev = box;
 	}
 	return prev;
+}
+
+/**
+ * The hosts a user owns (DECISIONS I-1366). A fake host never registers
+ * by itself, because nothing in the fixture runs hostd, so a test about
+ * a working host asks for one: `name` adds a registered, answering host
+ * and answers its id, `id` with `quiet_minutes` marks one offline that
+ * long ago, `project_id` with `host_id` places a machine on it, `limit`
+ * is the plan's host count and `set_install` records (or clears) the
+ * install line.
+ */
+export async function ownedHost(body: {
+	name?: string;
+	id?: string;
+	quiet_minutes?: number;
+	project_id?: string;
+	host_id?: string;
+	limit?: number;
+	set_install?: boolean;
+	install_line?: string;
+}): Promise<string> {
+	const res = await fetch(`${adminURL()}/owned-host`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	if (!res.ok) throw new Error(`/owned-host: ${res.status}`);
+	return ((await res.json()) as { id: string }).id;
 }

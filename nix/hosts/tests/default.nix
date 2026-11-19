@@ -28,6 +28,11 @@
 #                  (idempotent), sshd on wg0 with a CA certificate and the
 #                  PAM audit hook, and a host restart (graceful and a
 #                  crash) marking the guests that were running (I-645)
+#   host-mac       the Mac appliance's modules on x86 (mac.nix): the join
+#                  bundle from the launcher's share, wg0 on the bootstrap
+#                  key before registration, hostd register over it to a
+#                  hostdev at the hub address, the key swapped after, the
+#                  one-disk layout and repose-mac-grow (I-1376, I-1380)
 { pkgs, nixpkgs, disko, hostModules, hostdev }:
 let
   lib = pkgs.lib;
@@ -920,6 +925,8 @@ in
 
   # The tunnel watchdog (DECISIONS I-1068): wg-watchdog.nix.
   host-wg-watchdog = import ./wg-watchdog.nix { inherit pkgs hostNode; };
+
+  host-mac = import ./mac.nix { inherit pkgs nixpkgs disko hostModules hostdev; };
 
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";

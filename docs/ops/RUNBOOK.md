@@ -235,6 +235,29 @@ See `../workstreams/11-infra-opentofu.md` §5 "Adding a host". Then
 `repose-admin hosts list` shows `ready`, and `repose-admin hosts smoke
 <host>` creates, starts, snapshots and destroys a throwaway guest.
 
+### The Mac appliance image and install line (DECISIONS I-1376, I-1380)
+
+Once per appliance release, so `repose host add` prints a line that
+works:
+
+1. Build the image on an aarch64 builder with KVM (the Mac's appliance
+   VM, `docs/ops/DEV-BOX.md` "aarch64 builds"): `nix build
+   ./nix#packages.aarch64-linux.mac-appliance-image`; the result is
+   `repose-appliance.raw.gz`.
+2. Publish it with its checksum where `repose host add` fetches it: a
+   GitHub release of this repository, tag `appliance-<version>`, assets
+   `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
+   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`). Another home
+   is a CLI release with `applianceURL` changed in
+   `internal/cli/appliance.go`, or `REPOSE_APPLIANCE_URL` on the Mac.
+3. Bump `applianceVersion` in `internal/cli/appliance.go` to that
+   version; it ships with the next CLI release.
+4. Record the line once, if it is not recorded:
+   `repose-admin hosts install-command 'repose host add --join %s'`.
+   The hub settings `repose-admin edge init` recorded are what let
+   `POST /hosts` mint the machine's place on the hub; without them the
+   bundle is the token alone and a Mac cannot register.
+
 ### Observability
 
 On the personal server, from this repository's `ops/` (its README has the
@@ -274,6 +297,8 @@ copy-paste version):
 |---|---|
 | List hosts with capacity | `repose-admin hosts list` |
 | Add a host | `repose-admin hosts add --name host-NN` (prints a join token), then `make -C infra apply ENV=prod` (`infra/README.md` "Adding a host") |
+| Add a host for a user who owns it | `repose-admin hosts add --name <name> --owner <handle>` (I-1366); the user's own way is the dashboard's Hosts page or `repose host add` |
+| Record the install line a user pastes | `repose-admin hosts install-command '<line with %s where the token goes>'`; no line recorded means `POST /hosts` answers an empty `install.command` and the user is shown the token and the docs page |
 | Drain a host (no new placements) | `repose-admin hosts drain host-NN` |
 | Retire a host (after all projects moved) | `repose-admin hosts retire host-NN`; refused while it holds any project, stopped ones included ("Retiring a host once its projects are moved") |
 | Move a project to another host | `repose-admin projects move <id> --to host-NN` (stop, snapshot, restore, start) |
@@ -903,6 +928,11 @@ More than one auth failure per second at the gateway.
    Logto token endpoint.
 3. `wrong_principal` from one user repeatedly is someone probing other
    projects; `repose-admin audit --user`.
+4. `foreign_host` (DECISIONS I-1368) is a project placed on a host owned
+   by an account that is not the one connecting, which placement never
+   produces: the gateway refused the route and logged `event=foreign_host`
+   with the project id. Read the project's `host_id` and that host's
+   `owner_account_id`; the row is wrong, not the user.
 
 ## Gateway relay failures
 
@@ -1010,10 +1040,14 @@ webhook marks the channel broken and mails the user (I-692).
 The api dropped a host's report (DECISIONS I-447). `foreign_guest`: an
 event, a `Hello` entry or a sample named a guest whose project is placed on
 another host or on none. `bad_snapshot`: a `snapshot_done` path outside the
-project's prefix. hostd sends neither.
+project's prefix. `foreign_command` (I-1368): a `Result` or a `BuildLog`
+line for a command the api sent to another host (a pause, a wake, a
+message, an answer, a trigger run, a build). hostd sends none of them;
+a host that does is lying, and on a host repose does not run that is
+the owner's root, not a bug.
 
-1. Loki `{component="api"} | json | event="foreign_guest"` gives `host_id`
-   and `guest_id`; `repose-admin projects list --host <host>` and the
+1. Loki `{component="api"} | json | event=~"foreign_guest|foreign_command"` gives `host_id`
+   and `guest_id` or `command_id`; `repose-admin projects list --host <host>` and the
    project's `host_id` show where the api thinks it is.
 2. One line right after a failed placement or a move is a late report from
    the old host for a guest it has just let go; nothing to do.
@@ -4118,8 +4152,9 @@ the CLI printed `no capacity right now; you have not been charged`.
 
 1. Which term refused is in the api's `schedule_fail` line: `reason` is
    `no_cpu` when a host had the memory and the pool room but was already
-   committed past 1.5 guest vCPUs per physical core, and `no_capacity`
-   for every other full fleet.
+   committed past 1.5 guest vCPUs per physical core, `no_own_host` when
+   the account owns its host and that host could not take the machine
+   (below), and `no_capacity` for every other full fleet.
 2. `repose-admin hosts list`: no host is `ready` with free memory above
    the reserve for the class, pool room for the volume, and cores for the
    class's guest vCPUs. Draining, unreachable and stale-heartbeat hosts
@@ -4132,6 +4167,34 @@ the CLI printed `no capacity right now; you have not been charged`.
    for life, so only a guest on that host stopping, or another host,
    frees the cores (`HostCPUSaturated` is the same wall seen from the
    other side).
+
+## api: a user's own host could not take their machine
+
+An op ended `capacity` with the message `your host <name> is <state>` or
+`you own no host yet`, and `repose_api_schedule_total{result}` rose on
+`no_own_host` (DECISIONS I-1366). This is not a fleet problem and not
+yours to fix: the account owns its hardware, and placement will not put
+its projects on a host repose runs, so the machine waits for the user's
+own host.
+
+1. `repose-admin hosts list` shows the host under the account's handle in
+   the OWNER column. Its state is the whole answer: `registering` means
+   the join token was minted and the machine has never called `Register`
+   (the install step was not run, or it failed); `unreachable` means it
+   registered once and has missed heartbeats for 90 seconds, which for a
+   machine at home is switched off, asleep or off the network;
+   `draining` means a removal is in progress; `ready` means it answered
+   and had no room for the class.
+2. Nothing to do on our side in the first three cases. The user's own
+   surfaces say it: the dashboard's Hosts page and `repose host ls` show
+   the state and the last heartbeat, and the op's message names the host.
+3. `ready` with no room is the user's machine being full. `select slug,
+   class, state from projects where host_id = '<id>'` is what is on it;
+   they stop one, or take a smaller class.
+4. There is no alert on this and there should not be: a Mac mini asleep
+   at 3 a.m. is not an incident. `repose_api_owned_hosts{state}` is the
+   fleet-wide count of owned hosts by state if you want to see how many
+   are quiet.
 
 ## dashboard: up but the "Cannot reach the API" bar is showing
 
@@ -4588,6 +4651,58 @@ too, and the webhook follows.
 Nothing in `usage_hours` or `overage_charges` is edited: they are the
 record of what was used and what was sent.
 
+## `polar-bootstrap` answers 401 Unauthorized
+
+*Symptom.* `repose-admin billing polar-bootstrap` fails on its first
+call with Polar's `401`, whatever the token.
+
+Polar's tokens do not say which environment they belong to (I-604), and
+the two environments are separate installations with separate tokens: a
+**production** organization access token is not a credential in the
+sandbox and gets 401 there, and a sandbox token gets 401 in production.
+Nothing in the token's text distinguishes them, so this is not
+something to work out by looking at it.
+
+1. `POLAR_ENVIRONMENT` says which API the token is used against
+   (`sandbox` is `https://sandbox-api.polar.sh/v1`, `production` is
+   `https://api.polar.sh/v1`). Check which one is set where the command
+   runs.
+2. A token is made in the dashboard of its own environment:
+   `sandbox.polar.sh` for a sandbox token, `polar.sh` for a production
+   one. The owner holds both; using the wrong one is the usual cause.
+3. Production needs `--production` as well, which is a separate guard
+   against bootstrapping the real catalog by accident, and answers
+   "this is Polar's production environment" rather than 401.
+
+(Hit on 2026-11-19: the first token handed over for the sandbox was a
+production token.)
+
+## The Own hardware plan is not offered, or a checkout for it is refused
+
+*Symptom.* The Billing page shows the three plans and no Own hardware
+row, or `POST /billing/checkout` with `{"plan": "own"}` answers `400
+invalid` `plan must be solo, plus and pro`.
+
+That is the plan's switch working (DECISIONS I-1364): the api sells a
+plan only where it has a Polar product id for it, and
+`POLAR_PRODUCT_OWN` is the only optional one. The deployment has not
+pasted it.
+
+1. `repose-admin billing polar-bootstrap` against that environment's
+   Polar organization prints the whole `POLAR_*` block, including
+   `POLAR_PRODUCT_OWN=prod_...`. It creates the product if it is
+   missing and finds it on every rerun.
+2. Paste that one line into both api apps' environment (`api` and
+   `api-grpc`) in Coolify. Coolify restarts them itself.
+3. `GET /billing` then lists the plan and the dashboard draws its row;
+   nothing else changes, because the hosted plans' ids did not move.
+
+A subscription that already exists on the plan keeps working where the
+id is unset: the webhook needs the id to map the product, so a
+deployment that has never had it set records such an event as foreign
+(`billing_events.error` naming the product). Set the id and redeliver
+the event from Polar's delivery list.
+
 ## Move a user between plans by hand
 
 The dashboard's plan page (`POST /billing/plan`) is the only path a user
@@ -4610,6 +4725,13 @@ refused the change:
 3. If the webhook is down (BillingWebhookRejected), the row lags Polar.
    Do not edit `subscriptions.plan` by hand: fix the webhook and redeliver
    the event from the endpoint's delivery list; the row follows.
+
+A change between the Own hardware plan and a hosted one is refused by
+the api (`409 conflict`, `detail.reason = plan_kind`) and must not be
+made by hand in Polar either: the two sell different things, and the
+webhook would write a plan whose figures do not match what the account
+is running (I-1364). The user cancels and checks out the other plan
+when the period ends.
 
 A downgrade that Polar accepts while the user runs more than the smaller
 plan allows is not a problem for the api: the next start is refused with
@@ -4672,3 +4794,43 @@ that host (`auth_share_sweep`). To turn the share off host-wide, set
 `repose.host.claudeLoginShare = false` and switch the host (hostd then
 runs with `--claude-login-share=false`): guests started after that boot
 without it and keep a login of their own.
+
+## A Mac appliance that does not join
+
+`repose host ls` says `waiting` long after the user ran the install
+step. The machine is theirs, so the first reads are theirs too; what to
+ask for, and what each answer means:
+
+1. `launchctl print gui/$(id -u)/run.repose.appliance` on the Mac, or
+   `pgrep -x vfkit`: the VM is not running when neither answers;
+   `~/Library/Logs/repose/launcher.log` has vfkit's refusal (nested
+   virtualization needs macOS 15 and an M3 or later, which `repose host
+   add` checks; a `disk.raw` missing or truncated is a failed download,
+   run `repose host add` again).
+2. `~/Library/Logs/repose/console.log`: the appliance's console. `repose-launcher-join`
+   logs `join_token_written` and `hub_bootstrap_written` at the first
+   boot; `no_join_file` means the share did not mount or the step's
+   argument was never written (run the step again); `join_invalid` means
+   the argument was damaged in the paste (a new `repose host add` after
+   `host rm`); `join_ignored reason=registered` means this appliance
+   already registered, under this or an earlier name.
+3. `repose-host-net` on that console: `hub.json applied: wg0 configured
+   for registration` is the bootstrap tunnel up. Then `repose-register`
+   every 30 s: a network error is the edge not peering the host yet, or
+   not any more. On the edge, `wg show wg0 peers` has the bundle's public
+   key within 30 s of `repose host add`; `GET /internal/hosts` lists the
+   host while its token is live (24 hours). An expired token is the
+   common cause after a day: `repose host rm`, `repose host add`, the
+   step again. Exit 3 is a token the api refused (used or invalid): the
+   same remedy.
+4. On the api, `host registered` for the host id, then `host connected`
+   within a minute; between them wgsync swaps the peer to the
+   registration's key (`wgsync added peer` and `removed peer` on the
+   edge). A host that registered and never connected is a tunnel that
+   did not come back on the new key: the edge's `wireguard-wg0` restarted
+   (every host peer is gone until wgsync's next pass, I-1382's comment)
+   or the Mac went to sleep, which `repose host run`'s `caffeinate`
+   prevents only while the VM runs.
+
+Nothing here reads anything of the user's: the console log carries the
+appliance's journal, ids and events only.

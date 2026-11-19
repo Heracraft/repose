@@ -90,8 +90,10 @@ func (s *Server) billingCheckout(w http.ResponseWriter, r *http.Request) error {
 	url, err := svc.Checkout(r.Context(), u, body.Plan, customerIP(r))
 	var wl *billing.WaitlistedError
 	switch {
-	case errors.Is(err, billing.ErrUnknownPlan):
-		return errf("invalid", "plan must be solo, plus or pro")
+	// A plan this deployment does not sell (no Polar product id) reads as
+	// an unknown plan, because to the client it is one (I-1364).
+	case errors.Is(err, billing.ErrUnknownPlan), errors.Is(err, billing.ErrNotForSale):
+		return errf("invalid", "plan must be %s", billing.PlanChoices(svc.PlansForSale()))
 	case errors.Is(err, billing.ErrSubscribed):
 		return withDetail(errf("conflict", "you already have a plan; change it from the billing page"), map[string]any{"reason": "subscribed"})
 	case errors.Is(err, billing.ErrExempt):
@@ -138,8 +140,10 @@ func (s *Server) billingPlan(w http.ResponseWriter, r *http.Request) error {
 	ch, err := svc.ChangePlan(r.Context(), userFrom(r.Context()), body.Plan)
 	var over *billing.OverPlanError
 	switch {
-	case errors.Is(err, billing.ErrUnknownPlan):
-		return errf("invalid", "plan must be solo, plus or pro")
+	case errors.Is(err, billing.ErrUnknownPlan), errors.Is(err, billing.ErrNotForSale):
+		return errf("invalid", "plan must be %s", billing.PlanChoices(svc.PlansForSale()))
+	case errors.Is(err, billing.ErrPlanKind):
+		return withDetail(errf("conflict", "%s", billing.MsgPlanKind), map[string]any{"reason": "plan_kind"})
 	case errors.Is(err, billing.ErrNoSubscription):
 		return withDetail(errf("conflict", "you have no plan yet; choose one with a checkout"), map[string]any{"reason": "no_subscription"})
 	case errors.Is(err, billing.ErrSamePlan):

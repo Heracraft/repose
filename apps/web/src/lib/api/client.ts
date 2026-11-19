@@ -32,6 +32,7 @@ import type {
 	AccountSecretPut,
 	ApiToken,
 	CreateTokenRequest,
+	OwnedHost,
 	Samples,
 	SampleWindow,
 	Say,
@@ -353,6 +354,17 @@ export const createToken = (body: CreateTokenRequest) =>
 	request<ApiToken>('/me/tokens', { method: 'POST', body });
 export const deleteToken = (name: string) =>
 	request<void>(`/me/tokens/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// The hosts the account owns (DECISIONS I-1366). The POST answer is the
+// one that carries the join token, as a minted API token's is.
+/** passive: a side read beside the project list, which must not clear an
+ *  outage bar of its own (I-1370). */
+export const listHosts = (opts: { passive?: boolean } = {}) =>
+	request<OwnedHost[]>('/hosts', opts);
+export const createHost = (body: { name?: string }) =>
+	request<OwnedHost>('/hosts', { method: 'POST', body });
+export const deleteHost = (id: string) =>
+	request<void>(`/hosts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 // Snapshots.
 export const getSamples = (id: string, window: SampleWindow) =>

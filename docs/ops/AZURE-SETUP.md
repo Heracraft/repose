@@ -150,7 +150,9 @@ a day.
     production organization unless given `--production`. `/tmp/polar.env`
     is the block to paste into the api's Coolify environment (both `api`
     and `api-grpc`): `POLAR_ENVIRONMENT`, `POLAR_PRODUCT_SOLO`,
-    `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO` and,
+    `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_PRODUCT_OWN` (the Own
+    hardware plan; paste it only where that plan is to be sold, I-1364),
+    `POLAR_DISCOUNT_INTRO` and,
     on the run that creates the endpoint, `POLAR_WEBHOOK_SECRET` (a rerun
     names the endpoint's page in Polar, which shows it); add
     `POLAR_ACCESS_TOKEN` beside them. Coolify restarts the app itself. Delete the file afterwards: it holds the webhook secret.

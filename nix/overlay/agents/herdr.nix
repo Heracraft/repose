@@ -1,4 +1,5 @@
-# herdr from its GitHub release: a static-pie x86-64 binary, so nothing is
+# herdr from its GitHub release: a static-pie binary (herdr-linux-x86_64
+# or herdr-linux-aarch64, one slot per architecture), so nothing is
 # patched. Pinned in versions.json and moved by scripts/bump-agents.sh like
 # the agents (R3-19), though herdr is a multiplexer, not an agent
 # (DECISIONS I-501): it is not wrapped and has no /etc/repose/agents.json
@@ -38,7 +39,7 @@ in
 stdenvNoCC.mkDerivation {
   pname = "herdr";
   inherit (v) version;
-  src = fetchurl { inherit (v.x86_64-linux) url hash; };
+  src = fetchurl { inherit (v.${stdenvNoCC.hostPlatform.system}) url hash; };
   dontUnpack = true;
   dontBuild = true;
   dontStrip = true;
@@ -60,6 +61,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://herdr.dev";
     license = lib.licenses.asl20;
     mainProgram = "herdr";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }

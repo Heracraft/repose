@@ -41,17 +41,22 @@ runs the production organization.
    POLAR_ACCESS_TOKEN=... POLAR_ENVIRONMENT=sandbox ops/polar/bootstrap.sh > /tmp/polar.env
    ```
 
-   It creates the meter "Egress overage", the three products (Solo $49,
+   It creates the meter "Egress overage", one product per plan (Solo $49,
    Plus $89, Pro $169, each with the metered overage price at 5 cents a GB
-   and a seven-day trial), Solo's founding discount ($10 off the first
+   and a seven-day trial, and Own hardware $10 with the trial and no
+   metered price, I-1364), Solo's founding discount ($10 off the first
    twelve charges, I-672), and the webhook endpoint at
    `https://api.repose.run/v1/billing/webhook`; it sets the
    organization (one subscription per customer, trial abuse prevention,
    plan changes off in the customer portal, prices exclusive of tax) and
    prints the env block: `POLAR_ENVIRONMENT`, `POLAR_PRODUCT_SOLO`,
-   `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO`,
-   `POLAR_WEBHOOK_SECRET`. Paste it into both api apps and redeploy, then
-   delete the file. It is idempotent: run it again and it creates nothing
+   `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_PRODUCT_OWN`,
+   `POLAR_DISCOUNT_INTRO`, `POLAR_WEBHOOK_SECRET`. Paste it into both api
+   apps and redeploy, then delete the file. Leave `POLAR_PRODUCT_OWN` out
+   where the Own hardware plan is not to be sold: the api starts without
+   it and offers the plan nowhere (I-1364). The product is made in the
+   catalog either way, which costs nothing and sells nothing, because a
+   product whose id no deployment carries is never checked out. It is idempotent: run it again and it creates nothing
    and prints the same ids.
 4. Check Settings > Notifications in Polar: the bootstrap turned off the
    customer emails repose sends itself (trial ending, payment failed,

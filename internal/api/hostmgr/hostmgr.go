@@ -13,6 +13,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -147,34 +148,191 @@ func (s *Server) GRPCServer(tlsCfg *tls.Config) *grpc.Server {
 
 // --- join tokens --------------------------------------------------------
 
+// JoinTokenRequest is one mint. Owner is the account that owns the
+// machine (DECISIONS I-1366); nil mints for a host repose runs, which is
+// what `repose-admin hosts add` does.
+type JoinTokenRequest struct {
+	Name     string
+	Provider string
+	SKU      string
+	Region   string
+	Reissue  bool
+	Owner    *uuid.UUID
+}
+
 // MintJoinToken creates a host row (or reissues for an existing
 // unregistered host) and returns the single-use token; only its hash is
 // stored.
 func MintJoinToken(ctx context.Context, pool *db.Pool, name, provider, sku, region string, reissue bool) (string, error) {
+	var token string
+	err := db.InTx(ctx, pool, func(tx db.Tx) error {
+		var err error
+		token, _, err = MintJoinTokenIn(ctx, tx, JoinTokenRequest{Name: name, Provider: provider, SKU: sku, Region: region, Reissue: reissue})
+		return err
+	})
+	return token, err
+}
+
+// MintJoinTokenIn is MintJoinToken inside a transaction the caller owns,
+// and returns the host's id with the token. `POST /hosts` uses it so the
+// plan's host limit is counted and the row inserted in one transaction:
+// two requests at once must not both see room for the last host.
+func MintJoinTokenIn(ctx context.Context, tx db.Tx, req JoinTokenRequest) (string, uuid.UUID, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", err
+		return "", uuid.Nil, err
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(token))
 	hash := hex.EncodeToString(sum[:])
 	expires := time.Now().Add(JoinTokenValidity)
-	return token, db.InTx(ctx, pool, func(tx db.Tx) error {
-		h, err := store.GetHostByName(ctx, tx, name)
-		if err != nil && !errors.Is(err, db.ErrNotFound) {
-			return err
+	h, err := hostByName(ctx, tx, req)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		return "", uuid.Nil, err
+	}
+	if h != nil {
+		if h.RegisteredAt != nil && !req.Reissue {
+			return "", uuid.Nil, fmt.Errorf("host %s is already registered; pass --reissue to mint a new token for a re-imaged host", req.Name)
 		}
-		if h != nil {
-			if h.RegisteredAt != nil && !reissue {
-				return fmt.Errorf("host %s is already registered; pass --reissue to mint a new token for a re-imaged host", name)
-			}
-			_, err := tx.Exec(ctx, "update hosts set join_token_hash = $2, join_token_expires_at = $3, registered_at = null, state = 'registering' where id = $1", h.ID, hash, expires)
-			return err
+		// `draining` and the old serials go with the state. A retired or
+		// lost host is reissued by exactly this path (`hosts rotate-cert`
+		// sends you here, I-432), and `hosts retire` left draining set,
+		// so without this the machine would register, reach `ready` and
+		// still take no placement.
+		_, err := tx.Exec(ctx, `update hosts set join_token_hash = $2, join_token_expires_at = $3,
+			registered_at = null, state = 'registering', draining = false,
+			cert_serial = null, prev_cert_serial = null
+			where id = $1`, h.ID, hash, expires)
+		return token, h.ID, err
+	}
+	id := store.NewID()
+	_, err = tx.Exec(ctx, "insert into hosts (id, name, provider, sku, region, state, join_token_hash, join_token_expires_at, owner_account_id) values ($1, $2, $3, $4, $5, 'registering', $6, $7, $8)",
+		id, req.Name, nilIfEmpty(req.Provider), nilIfEmpty(req.SKU), nilIfEmpty(req.Region), hash, expires, req.Owner)
+	return token, id, err
+}
+
+// HubBootstrap is the WireGuard material a host that has no route to the
+// api's VNet address needs before its first Register (DECISIONS I-1380,
+// settling what I-92 and I-1382 left open): its own private key, its hub
+// address, and the edge's public key and endpoint. The api mints it at
+// `repose host add`, stores the public half on the host's row, and the
+// edge's wgsync peers the host from GET /internal/hosts within its next
+// pass, so the tunnel exists before the machine first boots. Register then
+// travels over it, to the api's gRPC at the control plane's hub address
+// (I-1382), and mints a fresh key pair as it always has: the key that
+// passed through the user's terminal in the install step is dead after
+// registration. The api keeps no copy of PrivateKey.
+type HubBootstrap struct {
+	PrivateKey   string `json:"private_key"`
+	Address      string `json:"address"`
+	EdgePubkey   string `json:"edge_pubkey"`
+	EdgeEndpoint string `json:"edge_endpoint"`
+}
+
+// JoinBundle is what the install step's `%s` carries for a host the user
+// owns (`install.argument` of POST /hosts): the join token and, when the
+// deployment has a hub, the bootstrap material. One base64url string, so
+// it survives a shell line, a copy button and a plist.
+type JoinBundle struct {
+	Version int           `json:"v"`
+	Token   string        `json:"token"`
+	WG      *HubBootstrap `json:"wg,omitempty"`
+}
+
+// JoinBundleVersion is the `v` of every bundle this api writes; a reader
+// refuses what it does not know rather than guessing at the fields.
+const JoinBundleVersion = 1
+
+// EncodeJoinBundle renders the bundle the install step carries.
+func EncodeJoinBundle(b JoinBundle) (string, error) {
+	if b.Version == 0 {
+		b.Version = JoinBundleVersion
+	}
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// DecodeJoinBundle reads a bundle back; the appliance's join unit does
+// the same in shell (nix/hosts/mac.nix), and this is the reference.
+func DecodeJoinBundle(s string) (JoinBundle, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(s))
+	if err != nil {
+		return JoinBundle{}, fmt.Errorf("join bundle: %w", err)
+	}
+	var b JoinBundle
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return JoinBundle{}, fmt.Errorf("join bundle: %w", err)
+	}
+	if b.Version != JoinBundleVersion {
+		return JoinBundle{}, fmt.Errorf("join bundle: version %d, want %d", b.Version, JoinBundleVersion)
+	}
+	if b.Token == "" {
+		return JoinBundle{}, errors.New("join bundle: no token")
+	}
+	return b, nil
+}
+
+// PrepareHub gives a host row that has not registered yet its place on
+// the hub: the guest /22 and wg address Register would otherwise allocate
+// (kept if the row already has them, so a reissued token changes no
+// address), and a bootstrap key pair whose public half goes on the row.
+// From this moment GET /internal/hosts lists the host and the edge peers
+// it. nil, nil when the deployment has recorded no edge (`repose-admin
+// edge init`): the install step then carries the token alone, which is
+// what a host on the api's own VNet needs anyway.
+func PrepareHub(ctx context.Context, tx db.Tx, hostID uuid.UUID) (*HubBootstrap, error) {
+	edgePub, err := store.Setting(ctx, tx, SettingEdgeWGPubkey)
+	if err != nil {
+		return nil, err
+	}
+	edgeEndpoint, err := store.Setting(ctx, tx, SettingEdgeWGEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	if edgePub == "" || edgeEndpoint == "" {
+		return nil, nil
+	}
+	var registered *time.Time
+	var cidr *netip.Prefix
+	var wgIP *netip.Addr
+	if err := tx.QueryRow(ctx, "select registered_at, guest_cidr, wg_ip from hosts where id = $1 for update", hostID).Scan(&registered, &cidr, &wgIP); err != nil {
+		return nil, err
+	}
+	if registered != nil {
+		return nil, fmt.Errorf("host %s is registered; a hub bootstrap is for a host that has not", hostID)
+	}
+	if cidr == nil || wgIP == nil {
+		var seq int64
+		if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
+			return nil, err
 		}
-		_, err = tx.Exec(ctx, "insert into hosts (id, name, provider, sku, region, state, join_token_hash, join_token_expires_at) values ($1, $2, $3, $4, $5, 'registering', $6, $7)",
-			store.NewID(), name, nilIfEmpty(provider), nilIfEmpty(sku), nilIfEmpty(region), hash, expires)
-		return err
-	})
+		c, ip, err := allocate(seq)
+		if err != nil {
+			return nil, err
+		}
+		cidr, wgIP = &c, &ip
+	}
+	priv, pub, err := wgKeypair()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, "update hosts set guest_cidr = $2, wg_ip = $3, wg_pubkey = $4 where id = $1", hostID, *cidr, *wgIP, pub); err != nil {
+		return nil, err
+	}
+	return &HubBootstrap{PrivateKey: priv, Address: wgIP.String() + "/16", EdgePubkey: edgePub, EdgeEndpoint: edgeEndpoint}, nil
+}
+
+// hostByName resolves the row a mint would reuse: among the hosts repose
+// runs for an operator mint, and among the account's own for an owner's,
+// because names are unique per owner since migration 0048.
+func hostByName(ctx context.Context, tx db.Tx, req JoinTokenRequest) (*store.Host, error) {
+	if req.Owner != nil {
+		return store.GetAccountHostByName(ctx, tx, *req.Owner, req.Name)
+	}
+	return store.GetHostByName(ctx, tx, req.Name)
 }
 
 func nilIfEmpty(s string) *string {
@@ -298,13 +456,13 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 	var refused error
 	err := db.InTx(ctx, s.pool, func(tx db.Tx) error {
 		var h store.Host
-		row, err := tx.Query(ctx, "select id, name, registered_at, join_token_expires_at from hosts where join_token_hash = $1 for update", hash)
+		row, err := tx.Query(ctx, "select id, name, registered_at, join_token_expires_at, guest_cidr, wg_ip from hosts where join_token_hash = $1 for update", hash)
 		if err != nil {
 			return err
 		}
 		found := row.Next()
 		if found {
-			if err := row.Scan(&h.ID, &h.Name, &h.RegisteredAt, &h.JoinTokenExpiresAt); err != nil {
+			if err := row.Scan(&h.ID, &h.Name, &h.RegisteredAt, &h.JoinTokenExpiresAt, &h.GuestCIDR, &h.WGIP); err != nil {
 				row.Close()
 				return err
 			}
@@ -322,13 +480,22 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 			refused = status.Error(codes.PermissionDenied, "join token expired")
 			return nil
 		}
-		var seq int64
-		if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
-			return err
-		}
-		cidr, wgIP, err := allocate(seq)
-		if err != nil {
-			return err
+		// A host PrepareHub placed on the hub at `host add` keeps its
+		// addresses: the edge already routes its guest range and peers
+		// its wg address, and a fresh allocation would leave that peer
+		// pointing at a range nobody uses. The key pair is always new.
+		var cidr netip.Prefix
+		var wgIP netip.Addr
+		if h.GuestCIDR != nil && h.WGIP != nil {
+			cidr, wgIP = *h.GuestCIDR, *h.WGIP
+		} else {
+			var seq int64
+			if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
+				return err
+			}
+			if cidr, wgIP, err = allocate(seq); err != nil {
+				return err
+			}
 		}
 		wgPriv, wgPub, err := wgKeypair()
 		if err != nil {
@@ -696,22 +863,41 @@ func (s *Server) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 // state a host is not in reads 0 rather than going absent.
 var hostStates = []string{"registering", "ready", "draining", "unreachable", "retired", "lost"}
 
+// refreshGauges publishes the host tables.
+//
+// The hosts users own are counted apart from the hosts repose runs
+// (DECISIONS I-1366). `repose_api_hosts` and `repose_api_host_state`
+// describe the fleet an operator is on call for, and every host alert
+// reads them: HostUnreachable, HostUnregistered and HostNotInTargets
+// would page the owner because a stranger's Mac mini was switched off or
+// was never copied into the Prometheus targets, which is not an
+// incident and not something the owner can fix. The owner still gets a
+// number for them, `repose_api_owned_hosts{state}`, with no alert on it;
+// what a user needs to know about their own machine is the dashboard's
+// Hosts page and `repose ls`.
 func (s *Server) refreshGauges(ctx context.Context) {
-	rows, err := s.pool.Query(ctx, "select state, count(*) from hosts group by state")
+	rows, err := s.pool.Query(ctx, "select state, owner_account_id is not null as owned, count(*) from hosts group by state, owned")
 	if err != nil {
 		return
 	}
 	counts := map[string]float64{}
+	owned := map[string]float64{}
 	for rows.Next() {
 		var st string
+		var isOwned bool
 		var n int64
-		if err := rows.Scan(&st, &n); err == nil {
-			counts[st] = float64(n)
+		if err := rows.Scan(&st, &isOwned, &n); err == nil {
+			if isOwned {
+				owned[st] += float64(n)
+			} else {
+				counts[st] += float64(n)
+			}
 		}
 	}
 	rows.Close()
 	for _, st := range hostStates {
 		s.m.Hosts.WithLabelValues(st).Set(counts[st])
+		s.m.OwnedHosts.WithLabelValues(st).Set(owned[st])
 	}
 	// The same rows by identity (I-786). A count says two hosts are ready
 	// and names neither, so an alert on it cannot name the host that is
@@ -719,7 +905,7 @@ func (s *Server) refreshGauges(ctx context.Context) {
 	// to the monitoring server, and cannot be held back per host by an
 	// inhibition. The host's own exporters are no answer: a host that was
 	// created and never registered has no exporter to scrape.
-	byHost, err := s.pool.Query(ctx, "select name, state from hosts")
+	byHost, err := s.pool.Query(ctx, "select name, state from hosts where owner_account_id is null")
 	if err != nil {
 		return
 	}

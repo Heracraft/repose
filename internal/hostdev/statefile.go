@@ -83,6 +83,14 @@ type State struct {
 	Events     []json.RawMessage         `json:"events"`
 	UserHandle string                    `json:"user_handle"`
 	UserID     string                    `json:"user_id"`
+	// The hub, when `init` was given one (DECISIONS I-1380): Register
+	// then answers the edge's peer, the host's address and a key pair it
+	// mints, as the api does, and records the public half here so the
+	// test that plays the edge can peer the host (the role wgsync has).
+	EdgePubkey   string `json:"edge_pubkey,omitempty"`
+	EdgeEndpoint string `json:"edge_endpoint,omitempty"`
+	WGAddress    string `json:"wg_address,omitempty"`
+	HostWGPubkey string `json:"host_wg_pubkey,omitempty"`
 }
 
 // Store is the file with a lock.

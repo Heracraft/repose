@@ -123,6 +123,7 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// What the next start runs (I-502); a running machine may still
 		// run the other one until it stops.
 		"multiplexer": multiplexer.Normalize(p.Multiplexer),
+		"placement":   store.NormalizePlacement(p.Placement),
 	}
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no
@@ -259,9 +260,18 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		PersonalOptOut bool `json:"personal_opt_out"`
 		// Multiplexer is tmux (the default) or herdr (DECISIONS I-502).
 		Multiplexer *string `json:"multiplexer"`
+		// Placement is own (the default) or hosted (DECISIONS I-1366).
+		Placement *string `json:"placement"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
+	}
+	placement := store.PlacementOwn
+	if body.Placement != nil {
+		if *body.Placement != store.PlacementOwn && *body.Placement != store.PlacementHosted {
+			return withDetail(errf("invalid", "placement must be own or hosted"), map[string]any{"reason": "placement"})
+		}
+		placement = *body.Placement
 	}
 	mux := multiplexer.Tmux
 	if body.Multiplexer != nil {
@@ -317,6 +327,13 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: scheduler.DefaultVolume(body.Class)}); err != nil {
 		return err
 	}
+	// A plan that sells no memory on repose's own hosts cannot ask for
+	// one (DECISIONS I-1366): placement would refuse it as `capacity`,
+	// which is a sentence about the fleet and no answer to a user who
+	// asked for the fleet on purpose.
+	if err := s.checkHostedAllowed(r, u, placement); err != nil {
+		return err
+	}
 	if u.CancelledAt != nil {
 		return errf("forbidden", "account is cancelled")
 	}
@@ -340,8 +357,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if count >= limits.Projects {
 			return projectLimitError(count, limits.Projects, 1)
 		}
-		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, disk_held_bytes) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, billing.NewProjectHeldBytes)
+		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, billing.NewProjectHeldBytes)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {

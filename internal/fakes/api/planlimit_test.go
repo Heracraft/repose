@@ -40,3 +40,12 @@ func TestPlanLimitMessageIsTheGates(t *testing.T) {
 		}
 	}
 }
+
+// The fake's plan_kind sentence is the api's, word for word, for the same
+// reason: a user who tries to move between the hosted plans and Own
+// hardware reads one sentence, whichever api answered (I-1364).
+func TestPlanKindMessageIsTheApis(t *testing.T) {
+	if MsgPlanKind != billing.MsgPlanKind {
+		t.Errorf("fake %q\n api %q", MsgPlanKind, billing.MsgPlanKind)
+	}
+}

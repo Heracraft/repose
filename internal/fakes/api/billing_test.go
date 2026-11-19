@@ -83,7 +83,7 @@ func TestBillingNoSubscription(t *testing.T) {
 	}
 	// The GET /me projection.
 	r = call(t, f, "GET", "/v1/me", tok, nil)
-	if !strings.Contains(string(r.body), `"status":"none"`) || !strings.Contains(string(r.body), `"limits":{"projects":0,"xl":0,"memory_gb":0,"disk_gb":0,"egress_gb":0}`) {
+	if !strings.Contains(string(r.body), `"status":"none"`) || !strings.Contains(string(r.body), `"limits":{"projects":0,"xl":0,"memory_gb":0,"disk_gb":0,"egress_gb":0,"hosts":0}`) {
 		t.Fatalf("me: %s", r.body)
 	}
 }
@@ -174,7 +174,7 @@ func TestBillingWaitlist(t *testing.T) {
 	// Invited: the hold is the user's seat.
 	f.SetWaitlist(1, time.Now().Add(70*time.Hour))
 	r = call(t, f, "GET", "/v1/billing", tok, nil)
-	if !strings.Contains(string(r.body), `"invited_at":"`) || !strings.Contains(string(r.body), `"hold_until":"`) || !strings.Contains(string(r.body), `"id":"solo","name":"Solo","price_cents":4900,"currency":"USD","trial_days":7,"seats":1,"memory_gb":8,"disk_gb":100,"egress_gb":250,"project_limit":100,"intro_price_cents":3900,"intro_months":12,"intro_egress_gb":0,"available":true`) || !strings.Contains(string(r.body), `"intro_eligible":true`) {
+	if !strings.Contains(string(r.body), `"invited_at":"`) || !strings.Contains(string(r.body), `"hold_until":"`) || !strings.Contains(string(r.body), `"id":"solo","name":"Solo","price_cents":4900,"currency":"USD","trial_days":7,"seats":1,"memory_gb":8,"disk_gb":100,"egress_gb":250,"hosts":0,"project_limit":100,"intro_price_cents":3900,"intro_months":12,"intro_egress_gb":0,"available":true`) || !strings.Contains(string(r.body), `"intro_eligible":true`) {
 		t.Fatalf("invited billing: %s", r.body)
 	}
 	r = call(t, f, "POST", "/v1/billing/checkout", tok, map[string]string{"plan": "solo"})
@@ -284,7 +284,7 @@ func TestBillingCheckoutPro(t *testing.T) {
 		t.Fatalf("after a Pro checkout: %s", r.body)
 	}
 	r = call(t, f, "GET", "/v1/me", tok, nil)
-	if !strings.Contains(string(r.body), `"limits":{"projects":100,"xl":1,"memory_gb":32,"disk_gb":500,"egress_gb":1000}`) {
+	if !strings.Contains(string(r.body), `"limits":{"projects":100,"xl":1,"memory_gb":32,"disk_gb":500,"egress_gb":1000,"hosts":0}`) {
 		t.Fatalf("me: %s", r.body)
 	}
 }
@@ -514,10 +514,10 @@ func TestBillingStateKnob(t *testing.T) {
 		t.Fatalf("invoices: %s", r.body)
 	}
 	bad := "gold"
-	if err := f.SetBillingState(BillingState{Plan: &bad}); err == nil || err.Error() != "plan: solo, plus or pro" {
+	if err := f.SetBillingState(BillingState{Plan: &bad}); err == nil || err.Error() != "plan: solo, plus, pro or own" {
 		t.Fatalf("accepted an unknown plan: %v", err)
 	}
-	if err := f.SetBillingState(BillingState{ScheduledPlan: &bad}); err == nil || err.Error() != "scheduled_plan: solo, plus, pro or empty" {
+	if err := f.SetBillingState(BillingState{ScheduledPlan: &bad}); err == nil || err.Error() != "scheduled_plan: solo, plus, pro, own or empty" {
 		t.Fatalf("accepted an unknown scheduled plan: %v", err)
 	}
 	plus := "plus"

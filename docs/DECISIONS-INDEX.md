@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1022 entries.
+1031 entries.
 
 ## Scope
 
@@ -177,7 +177,7 @@ pointer, not a summary.
 - **I-89** The Postgres compose file joins the `coolify` network itself; the api reaches it as `repose-postgres`. Supersedes I-88 — 2026-09-20; L1965
 - **I-90** The api bootstraps itself: it applies pending migrations at start and generates the platform CA when none exists, both idempotent and serialised across replicas on advisory locks — 2026-09-20; L1982
 - **I-91** The api's Key Vault policy is Get, WrapKey and UnwrapKey — 2026-09-20; L2009
-- **I-92** Hosts dial the api at the control plane's VNet address and get WireGuard from registration; the edge reaches `/internal` over a static tunnel peer that `wgsync` keeps; the production edge's facts live in `nix/edge/edge-01.nix` — 2026-09-20; L2022
+- **I-92** Hosts dial the api at the control plane's VNet address and get WireGuard from registration; the edge reaches `/internal` over a static tunnel peer that `wgsync` keeps; the production edge's facts live in `nix/edge/edge-01.nix` — 2026-09-20; amended by I-1368; amended by I-1382; L2022
 - **I-93** hostd hands the base checkout to the build user — 2026-09-20; L2084
 - **I-97** `/run/repose` is 0755; the join-token delivery no longer makes it 0700 — 2026-09-20; L2103
 - **I-94** A scrape is a forwarded packet, so the edge needs a forward rule; the control plane is `10.255.255.1` on the hub, and its two applications are two scrape targets — 2026-09-20; L2121
@@ -1054,3 +1054,12 @@ pointer, not a summary.
 - **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36119
 - **I-1354** A project made on the dashboard is an empty machine, and its repository is what the laptop's `repose run` looks it up by, not a clone (dash-create, 2026-11-19) — L36193
 - **I-1360** One door, two receivers: the Triggers tab lists every way the outside reaches a machine with what answers it, and Config's Webhooks section is gone (doors, 2026-11-19) — L36270
+- **I-1370** `repose host` is the noun for hardware you own: `host add` prints the install step, `host ls` is the one table, `host rm` takes it off; an owned host that has stopped answering is named wherever it shows (mac-mini 19c, 2026-11-19) — L36324
+- **I-1372** Snapshots of an owned host's machines stay on that host's own disk, and the docs say a dead disk loses them (mac-mini 19c, 2026-11-19) — L36388
+- **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — L36424
+- **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36529
+- **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36689
+- **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798
+- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
+- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — L37067

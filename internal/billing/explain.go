@@ -116,9 +116,17 @@ func (e Explanation) WriteTo(w io.Writer) (int64, error) {
 		row("price version", e.PriceVersion+" (no hourly price: the plan is charged by Polar, egress over the allowance per period)")
 	}
 	row("period", e.Period.Start.Format(time.RFC3339)+" to "+e.Period.End.Format(time.RFC3339))
-	row("plan", fmt.Sprintf("%s: %d GB egress included, $0.%02d a GB over, machines stop at %d GB", e.Plan.Name, e.Plan.EgressGB, OveragePerGBCents, e.Plan.EgressHardStopBytes()>>30))
+	if e.Plan.EgressMetered() {
+		row("plan", fmt.Sprintf("%s: %d GB egress included, $0.%02d a GB over, machines stop at %d GB", e.Plan.Name, e.Plan.EgressGB, OveragePerGBCents, e.Plan.EgressHardStopBytes()>>30))
+	} else {
+		row("plan", fmt.Sprintf("%s: egress is not metered (it leaves the user's own network), so there is no allowance, no overage and no stop", e.Plan.Name))
+	}
 	row("period egress", fmt.Sprintf("%.3f GB over every project of the account", float64(e.PeriodEgress)/(1<<30)))
-	row("overage", fmt.Sprintf("ceil(%.3f - %d) = %d GB x %d cents = %d cents", float64(e.PeriodEgress)/(1<<30), e.Plan.EgressGB, e.OverageGB, OveragePerGBCents, e.OverageCents))
+	if e.Plan.EgressMetered() {
+		row("overage", fmt.Sprintf("ceil(%.3f - %d) = %d GB x %d cents = %d cents", float64(e.PeriodEgress)/(1<<30), e.Plan.EgressGB, e.OverageGB, OveragePerGBCents, e.OverageCents))
+	} else {
+		row("overage", "none: the plan meters no egress")
+	}
 	if e.Charged != nil {
 		row("overage line sent", fmt.Sprintf("%d GB, %d cents, recorded %s, sent %s", e.Charged.EgressGB, e.Charged.Cents, e.Charged.CreatedAt.UTC().Format(time.RFC3339), orDash(e.Charged.SentRef)))
 	} else {

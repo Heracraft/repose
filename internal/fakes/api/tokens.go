@@ -200,6 +200,8 @@ func (f *Fake) tokenAuth(r *http.Request, pattern, bearer string) (*userRec, *fa
 		never = "the browser view"
 	case path == "/me/notify-test":
 		never = "your notification channels"
+	case strings.HasPrefix(path, "/hosts") && r.Method != http.MethodGet:
+		never = "the hardware on your account"
 	}
 	if never != "" {
 		return nil, nil, errf("forbidden", "an API token cannot reach %s; log in for that", never).withDetail(map[string]any{"reason": "token_never"})

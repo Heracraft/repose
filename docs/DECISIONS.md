@@ -36320,3 +36320,911 @@ Forward to your app makes a route the api holds with no trigger; Edit,
 Rotate and Remove in the row; a trigger and a forward share the list and
 the count), `config.spec.ts`'s order test without Webhooks; the shots at
 1440 and 390 in both schemes are in the PR.
+
+**I-1370. `repose host` is the noun for hardware you own: `host add`
+prints the install step, `host ls` is the one table, `host rm` takes it
+off; an owned host that has stopped answering is named wherever it
+shows (mac-mini 19c, 2026-11-19).** *Made during implementation* (the
+settled shape of `docs/workstreams/19-mac-mini.md` §4).
+
+Bring your own hardware (I-647 shape A, I-1366) gives an account a host
+of its own. The user-facing half is one noun and one page.
+
+(1) **`repose host`**, singular, because the Own hardware plan sells one
+and every line of output is about one machine. `host add [NAME]` mints
+the single-use join token through `POST /hosts` and prints, on stdout
+alone so it pipes, the install step the api composed with the token in
+it; stderr says to run it on the machine being added and when it stops
+working. The CLI never builds that line itself: the install path is
+19f's and the api's `host_install_command` setting, so changing it needs
+no CLI release. An api with no step recorded prints the token and the
+docs page instead, which is the honest state until 19f records the Mac's
+line. `host ls` (and bare `repose host`) is `HOST STATE MEMORY MACHINES
+RUNNING LAST SEEN`; `host rm NAME` asks once and retires it. Without
+NAME the api names the host: names are unique per account, not globally
+(19a's migration 0048), so the CLI resolves a name only within the
+account's own listing and never shows another account's.
+
+(2) **The states in a user's words**: `registering` is `waiting`, `ready`
+is `online`, `unreachable` is `offline`, `draining` is `removing`,
+`retired` and `lost` are `removed`. The api's enum is unchanged;
+`hostStateWord` in `internal/cli/hosts.go` and its twin in
+`apps/web/src/lib/offlinehost.ts` are the only places the words live.
+
+(3) **An offline host is named, not described.** A Mac mini on a desk is
+asleep, rebooting or off the Wi-Fi for much of the day, so `host_
+unreachable` is the line its owner reads most after the first day.
+Where the quiet host belongs to the account, `repose ls`, `repose
+status`, `repose run`'s wait and the dashboard say `mac-mini has not
+answered for 14m`; where it is one of repose's, they say `its server is
+not answering`, because that one is not the user's to fix. The CLI and
+the dashboard read `GET /hosts` for the name only when a machine says
+its host is quiet, so the common listing keeps its one round trip
+(`TestLsReadsHostsOnlyWhenOneIsQuiet`). No field was added to `Project`
+for this.
+
+(4) **The one question `host rm` asks** names the loss the user cannot
+discover later: snapshots taken on that host stay on its disk and repose
+has no copy (I-1372). The api refuses to retire a host that still holds
+machines (`host_has_projects`), since a machine moves host only by
+restore, and the CLI prints the machines in the way.
+
+Rejected: `hosts` plural (one per account, and `repose host ls` reads
+better than `repose hosts ls`); a `--open` flag that opens the install
+page in a browser (the printed step is the whole of it, and a second way
+to get it is a second thing to document); a `host_owned` boolean on
+`Project` (the name is what the line needs, and `GET /hosts` has it);
+composing the install line in the CLI (it would pin the Mac installer to
+a CLI release).
+
+*Checked:* `TestHostAddListRm`, `TestHostRmRefusedWhileMachinesAreOnIt`,
+`TestOfflineOwnHostIsNamedEverywhereItShows`,
+`TestLsReadsHostsOnlyWhenOneIsQuiet`, `TestHostStateWords`
+(internal/cli); `apps/web/src/lib/offlinehost.test.ts`;
+`apps/web/tests/own-hardware.spec.ts` with shots at 1440 and 390 in both
+schemes; `internal/cli/docs_test.go` against
+`apps/web/src/content/docs/cli.md`.
+
+**I-1372. Snapshots of an owned host's machines stay on that host's own
+disk, and the docs say a dead disk loses them (mac-mini 19c,
+2026-11-19).** *Made during implementation* (the settled shape of
+`docs/workstreams/19-mac-mini.md` §4; revisit when a user asks).
+
+hostd reaches Azure Blob with the host VM's managed identity, which a
+Mac mini in someone's house does not have. The alternatives were an
+S3-compatible backend with the user's own bucket, or the `FileBlob`
+backend hostd already has (`internal/hostd/snapshot/blob.go`,
+`--snapshot-dir`).
+
+`FileBlob`. A bucket means the bucket's keys live on a machine repose
+does not control, which is a fourth home for a secret where CLAUDE.md
+and `docs/features/secrets.md` allow three. `repose.host.owned = true`
+(`nix/hosts/default.nix`) says the machine belongs to a user, and the
+module asserts that `snapshots.blobUrl` and `snapshots.identityClientId`
+are empty there, so a future provider module cannot hand an owned host a
+bucket by accident. 19f sets it in `nix/hosts/mac.nix`.
+
+The cost is real and is the user's to carry, so it is said in plain
+words rather than implied: `apps/web/src/content/docs/own-hardware.md`
+has a section of its own saying that if the disk dies, every snapshot on
+it dies with it, and `repose host rm`'s question says the same in one
+line. `docs/interfaces/host-conventions.md` records both halves of an
+owned host, the snapshot store and the join token that arrives without
+cloud-init.
+
+Rejected: an S3-compatible backend now (the keys are the problem, not
+the code); uploading an owned host's snapshots to repose's own Blob (the
+plan sells no storage, and a user's machine images on repose's account
+is a promise nobody made); silence about the risk (it is the one thing
+on this page a user cannot undo and cannot discover any other way).
+
+*Checked:* `nix flake check` with `repose.host.owned` on and a blobUrl
+set fails on the assertion; the docs page's section and
+`TestHostAddListRm`'s prompt assertion.
+**I-1364. The Own hardware plan: $10 a month for one host the user owns,
+and it sells none of repose's compute (19d, 2026-11-19).** *Made during
+implementation; settles the "free or a price per host" that I-647 left
+open; the hosted plans of I-672 are unchanged.*
+
+The plan a Mac mini owner buys (`workstreams/19-mac-mini.md` §4): id
+`own`, name "Own hardware", $10 a month in USD, the same seven-day
+trial as every plan, one host, and no memory, disk, egress, seat or
+burst allowance of ours at all.
+
+- *Why $10 and not free.* What it costs us is the edge relaying that
+  user's SSH, attach and sync traffic, a share of the control plane and
+  the Cachix the host pulls from; their guests' traffic and any abuse
+  leave through their own network
+  (`proposals/2026-10-10-bring-your-own-host.md`). Polar keeps 5% plus
+  50¢, so $1.00 of the $10. Free would have made the relay a gift with
+  no ceiling and no signal of who is using it; $49 would have priced a
+  machine we do not own. Nobody has measured the relay's bytes per user,
+  and that measurement, not this entry, is what decides whether $10
+  holds.
+- *The zeros mean "sells none of ours", not "may do nothing".* The plan
+  carries `MemoryGB`, `DiskGB` and `EgressGB` of 0 and `Hosts` of 1. The
+  gate therefore returns early and runs none of its three resource
+  checks, because every one of them reads a zero as a ceiling: the
+  egress hard stop is four times zero, so an account that has sent
+  nothing is already past it; the memory check refuses any class at all;
+  the disk check refuses any volume. A plan whose caps are the user's
+  own machine has to skip them, not meet them. Everything before those
+  checks still applies: no subscription, a past-due payment, a suspended
+  account and the three-day stop behave as on any plan, and day 3
+  snapshots and stops the machines on the user's own host too.
+- *The skip is keyed on the memory the plan sells, not on its host
+  count, and it is the same predicate placement reads.*
+  `Plan.SellsFleetMemory` (`MemoryGB > 0`) is asked by `Gate.check`,
+  which skips the three checks when it is false, and by
+  `Gate.FleetAllowed` (I-1366), which refuses the fleet when it is
+  false. Keying the gate off `OwnHardware` (`Hosts > 0`) instead, as it
+  first did, agrees on every plan that exists and diverges on the first
+  plan that sells a host *and* fleet memory -- the obvious upsell:
+  placement would put that account on repose's hosts and the gate would
+  meter it with nothing. `OwnHardware` stays for the questions it
+  answers well: which Polar product, which proration kind (`SameKind`),
+  which plan the three cards leave out. The skip is safe only while
+  placement holds, so relaxing the placement term silently stops the
+  metering; `TestAPlanThatSellsFleetMemoryIsGatedOnIt` gives the
+  own-hardware plan fleet memory and expects every refusal, the disk
+  email and the overage back. The same rule keyed `Usage.DiskOver` and
+  the `disk_over_plan` sweep on the plan's disk, and the dashboard's
+  meters on the memory the api reports. (Found by 19a's reading of the
+  two files before the merge.)
+- *Egress is not metered on it.* A guest on the user's host sends its
+  traffic over the user's connection; none of it is ours to count. So
+  there is no allowance, no $0.05 a GB line, no `egress_stopped` and no
+  metered price on the Polar product — a metered price there would show
+  "Additional metered charges may apply" at a checkout where no charge
+  can arrive.
+- *No seat.* `Seats` is 0, so the subscription holds none of the fleet's
+  seats, a checkout is never waitlisted, and a full fleet does not block
+  it (with I-1366, which leaves owned hosts out of the seat count).
+- *One host, counted in one place.* `Plan.Hosts` is the number;
+  `billing.HostsAllowed` is the function, which also gives a
+  billing-exempt account one host so an operator can add a machine of
+  their own without selling a plan to themselves; `GET /me` reports it
+  as `limits.hosts`; `POST /hosts` refuses past it (19a). Two numbers
+  would have drifted the moment one changed.
+- *A plan cannot be changed between the kinds.* `POST /billing/plan`
+  from or to `own` is `409 conflict`, `detail.reason = plan_kind`, and
+  says to cancel and choose the other when it ends. Polar prorates
+  between products, not between kinds, and the two directions are both
+  wrong: a move to Own hardware leaves machines on a repose host under a
+  plan that sells no memory, and a move away leaves a host the user owns
+  under a plan that sells none. Cancel-and-rebuy costs the user the rest
+  of a period and is honest; revisit when a user asks.
+- *The founding price stays Solo's.* One plan has an introductory price
+  (`IntroPlan`), the landing's three cards keep theirs, and nothing of
+  `GET /public/seats` moves.
+- *Where it is sold is `POLAR_PRODUCT_OWN`, and that is the switch.* It
+  is the one optional product id: with it set the api lists the plan in
+  `GET /billing` and accepts a checkout for it, without it the plan is
+  not listed and a checkout is refused as an unknown plan, while a
+  subscription that already exists on it is still honoured. So the
+  dashboard's offer follows the api with no flag of its own, the
+  sandbox can sell the plan to the user council before any Mac is
+  proven, and production ships the plan dormant until the appliance
+  works. Rejected: a `PUBLIC_*` build flag in the web (a switch someone
+  forgets to check, and the prerendered landing is the only thing that
+  needs one anyway) and shipping the plan on sale everywhere (a visitor
+  could pay $10 for hardware support that ships nothing).
+- *Not done here.* Nothing keeps an own-hardware account's project off a
+  repose host; that is placement (I-1366, 19a), which refuses
+  `placement: "hosted"` from such an account with
+  `detail.reason = hosted_plan_required`. The gate cannot do it: it
+  never sees which host a project would land on.
+
+*Checked:* `TestAPlanThatSellsFleetMemoryIsGatedOnIt` (a plan with a host
+and fleet memory is gated on memory, disk and egress; red with the gate
+keyed on the host count, "want a refusal, got <nil>", and red again at
+the disk email with the sweep keyed the same way),
+`TestOwnHardwareStartsOnItsOwnTerms` (an Own hardware account
+starts an `xl` with 32 GB already running and a 200 GB volume and is
+refused nothing; red before the gate's early return, with
+`egress_limit`), `TestPlansMatchPricingDoc` (the $10 and the one host
+against `PRICING.md`), `TestOwnPlanProductHasNoMeteredPrice`,
+`TestPlanKindRefusal`, `TestOwnPlanIsSoldOnlyWhereItsProductIs`,
+`TestPlanKindMessageIsTheApis`, and the fake api's own-plan tests.
+**I-1368. The hub, the gateway and the api treat a host as hostile: a
+host reaches no other host, from a host only the api's gRPC, Loki's
+push and the hub's own echo and hook ingest, the gateway routes a
+project on an owned host to its owner alone, and every host report is
+bound to the host whose stream carried it (mac-mini 19b, 2026-11-19).**
+*Made during implementation.* Amends I-92 (what a host reaches over the
+hub), I-170 and I-359 (the monitoring peer's rules), I-447 (host scope),
+I-952 (the control plane's remote-write). Follows I-647 and I-1366: a
+host the operator does not own joins the same WireGuard hub as the
+fleet, so a host is now a tenant's machine, and root on it is the
+tenant. Until this entry the hub trusted a host as it trusts the
+operator: the forward chain let no host-originated flow through, but
+the input chain admitted a host to the operator sshd on 2222, to the
+scrapes on 9100 and 9102, to the view relay on 6081 and to the hook
+ingest; Prometheus's remote-write on the monitoring server was open to
+every host; the gateway dialled whatever host a project's row named;
+and five api handlers took a `Result` or a `BuildLog` by command id
+alone. Three layers, each its own test:
+
+(1) *The edge* (`nix/edge/default.nix`). Three options name the
+ranges: `hostCIDR` 10.255.0.0/22 (the allocator's thousand hosts from
+10.255.0.2, `internal/api/hostmgr` `allocate`; the control plane at
+10.255.255.1 and the operator peers in 10.255.254.0/24 are outside
+it), `guestCIDR` 10.64.0.0/12 (a guest's packet reaches the hub with its
+own address, through its host's peer, and is bounded like its host),
+and `controlGrpcPort` 8443. In the forward chain a packet from either
+range is accepted for one destination, the api's gRPC at the control
+plane's hub address (I-1382), and otherwise dropped and counted in the
+named counter `host_forward_dropped`: not another host's address or
+guests, not the control plane on any other port, not the monitoring
+server beyond its push port. The monitoring peer's lines go first, its
+address being inside the host range (I-170): it scrapes hosts, every
+peer pushes to Loki on 3100 (`logPorts`), and Prometheus's remote-write
+9090 moves to a new `controlPushPorts` list admitted from the control
+plane's address alone. In the input chain a packet from either range
+is accepted for the monitoring peer's scrapes, for a guest's hook
+ingest on 8443 (the rule was `iifname "wg0" tcp dport 8443` from any
+peer and is now from `guestCIDR`), and for ICMP echo; the rest is
+dropped and counted in `host_input_dropped` before the operator sshd,
+the view relay and the scrape rules are reached. `nft list counter inet
+repose-edge host_forward_dropped` reads what a host probed. Two checks
+hold the shape: `edge-ruleset-snapshot` compares the production edge's
+rendered ruleset, comments and blank lines out, against
+`nix/edge/tests/ruleset.golden`, so any change to `nix/edge` is a change
+to that file made on purpose with `just edge-ruleset-golden`; and the
+VM test `edge-hub-isolation` (`nix/edge/tests/default.nix`) runs the
+same module with two host peers, the control plane and the monitoring
+peer on a real hub and sends the packets: a host to another host's wg
+address and to its guests, as itself and as one of its guests; a host
+to the control plane's 8443 (reached) and 8444 (dropped); a guest to
+8443 (dropped); a host to Loki (reached) and to remote-write (dropped),
+the control plane to both (reached); the monitoring peer to a host's
+node_exporter (reached) and a host back to it (dropped); a host to the
+edge's 2222, 6081, 9102 and 8443 (dropped, echo reached) and a guest to
+8443 (reached) and 6081 (dropped); each refusal read off the counter on
+both sides of the probe. It stands in for §7's packet test on staging,
+whose fleet is one host (`staging.tfvars` hosts = [], `prod.tfvars`
+hosts = ["host-02"]) and so has no second host to send from; the live
+confirmation is phase 3, when the Mac registers against prod.
+
+(2) *The gateway.* `GET /internal/route` carries `host_owner_id` (the
+account that owns the project's host, `null` for a host repose runs)
+and `user_id`. A login to a project whose host another account owns is
+refused with `<slug> is on a host your account does not own`, reason
+`foreign_host`, checked against the certificate's `key_id` and not
+against the api's word alone; a webhook delivery, which has no
+certificate, compares the two fields and answers 503 without a dial.
+Placement never produces the case (I-1366), so a hit is a wrong row,
+not a user: RUNBOOK "GatewayAuthSpike" step 4.
+
+(3) *The api, the audit of every message a host sends.* `Register` and
+`Rotate` are bound by the join token and then by the certificate serial
+(I-432) and name no project. `Hello` resolves each guest with
+`GetProjectOnHost` in the ops engine's reconcile, in resume and in
+resting; one on another host is `foreign_guest` (I-447). `Heartbeat`
+names no project. `Samples` go through the meter's `foreign_guest`
+check (I-447). Of `Event`, `GuestStateChanged`, `AgentEvent`,
+`AgentQuestion`, `TriggerRun` and `SnapshotDone` resolve the guest on
+the sending host (`foreign_guest`), `SnapshotDone`'s path is also held
+to the project's prefix (`bad_snapshot`), `GuestResting` goes through
+resting's `GetProjectOnHost`, and `HostWarning` and `OperatorLogin`
+name the host alone. `Result`: the ops engine matched `command_id` and
+`host_id` on the `ops` row already; `resting.OnResult` (PauseGuest,
+WakeGuest), `say.OnResult` (SayToAgent), `questions.OnResult`
+(AnswerQuestion and the I-1242 hold) and `triggers.Clock.OnResult`
+(RunTrigger) matched the command id alone and now record the host the
+command went to and drop a mismatch. `BuildLog`: `logs.Bind` carries
+the host and a line from any other is dropped. Every drop is
+`repose_api_host_reports_refused_total{reason="foreign_command"}` and a
+log line `event=foreign_command` with `host_id` and `command_id` only;
+`HostReportsRefused` alerts on it with the other reasons.
+
+Rejected: one nftables rule per host that wgsync writes (the range
+needs no sync and holds for a peer wgsync has not yet seen, which is
+the moment a stranger's host is most interesting); dropping a host's
+Loki push (it is how a host's logs reach the operator, the monitoring
+server holds no tenant data, and what a hostile host writes there is
+its own lies about itself); the gateway trusting `host_owner_id` alone
+(it refuses on the certificate, so a wrong row cannot route a stranger
+in either direction); checks in hostd for the commands it receives (the
+api chooses the host a command goes to, and on a hostile host hostd is
+the attacker's own program); a drop without a counter (a probe that is
+invisible is a probe nobody looks at).
+
+*Checked:* `nix build ./nix#checks.x86_64-linux.edge-ruleset-snapshot`
+and `edge-view-firewall` pass; the snapshot shown red by removing one
+line of the golden; `edge-hub-isolation` passes on this box's KVM; the
+Go tests red first, named in the commits: `TestAPauseResultFromAnotherHostWritesNothing`,
+`TestAWakeResultFromAnotherHostIsNotTheAnswer`,
+`TestASayResultFromAnotherHostIsNotTheAnswer`,
+`TestAnAnswerResultFromAnotherHostIsDropped`,
+`TestARunResultFromAnotherHostIsDropped`,
+`TestABuildLineFromAnotherHostIsDropped`,
+`TestAProjectOnAnotherAccountsHostIsRefused`,
+`TestADeliveryToAProjectOnAnotherAccountsHostIsRefused`,
+`TestRouteCarriesTheHostOwner`. Not done: `nft list ruleset` on the
+deployed edge and the two counters read there, which is the release's
+`--live` line.
+
+**I-1382. The one path a host is forwarded through the hub: the api's
+gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from
+the host range alone (mac-mini 19b, 2026-11-19).** *Made during
+implementation.* Amends I-92, which has hosts dial the api at the
+control VM's VNet address (`nix/hosts/prod.nix` `apiAddr =
+"10.200.3.4:8443"`) and the edge forward nothing a host originates. A
+Mac on somebody's desk has no route to an Azure VNet, so as the hub
+stood the appliance could not register, stream or be commanded: the
+conductor's finding that blocked phase 3. The edge's forward chain now
+has one rule for it, `iifname "wg0" oifname "wg0" ip saddr <hostCIDR> ip
+daddr <controlWgAddress> tcp dport <controlGrpcPort> accept`, before the
+I-1368 drop. The api already answers there: Docker publishes
+`api-grpc`'s 8443 on every interface of the control VM
+(`ops/coolify/README.md`), which is how the edge reaches `/internal` on
+8444 over the same tunnel, and the control VM filters nothing on wg0,
+so the edge is the filter. The guest range is excluded on purpose: a
+guest is not a host and gets no gRPC; the VM test sends that packet and
+reads the drop. Azure hosts keep dialling the VNet and never use the
+path. What this does not settle, and 19c and 19f must: I-92's order,
+in which a host registers before it has a tunnel and the edge admits a
+peer only after wgsync read it from `/internal/hosts`, which lists a
+host after it registered. A host with no VNet needs its WireGuard key,
+its hub address and the edge's peer before its first `Register`, so
+either the install `repose host add` writes (I-1370) carries them,
+minted by the api at `host add` and handed to wgsync then, or
+`Register` reaches the api by another road. The hub rule here serves
+either; the appliance's `apiAddr` is `10.255.255.1:8443` with
+`apiServerName` naming the certificate's host part if it differs.
+
+Rejected: forwarding a host to 8444 as well (`/internal` admits the
+gateway's certificate only, I-431, and a host has no business there);
+a public gRPC port on the edge for hosts (an internet-facing mTLS
+listener for the control plane, reachable by anyone with a stolen
+token, where the hub already gives every registered host a path); a
+route from the hub into the VNet (a host inside the control VM's
+network is the thing I-92 kept out).
+
+*Checked:* `edge-hub-isolation`, subtest "a host reaches the api's gRPC
+at the control plane and nothing else there"; the rule's line in
+`nix/edge/tests/ruleset.golden`. Not done: a Mac registering over it,
+which is phase 3.
+**I-1366. A host has an owning account: placement puts only that
+account's projects on it, and the seat count, the waitlist and the host
+gauges leave it out (19a mac-mini-ownership, 2026-11-19).** *Made during
+implementation* (`docs/workstreams/19-mac-mini.md` §4, the settled shape
+the owner was given; the business shape is I-647 shape A and the plan is
+I-1364).
+
+- *The column.* `hosts.owner_account_id` (migration 0048), nullable;
+  null is a host repose runs, which is every host that existed before
+  this. There is no `host_join_tokens` table, on this branch or before
+  it: the single-use token has always been `hosts.join_token_hash` on the
+  row, so "the join token carries the owner" is this column being set at
+  the mint (`hostmgr.MintJoinTokenIn`), and the host binds to its owner
+  by the id the token already names. The item's §5 wording reads as if a
+  table existed; it does not, and inventing one would have put the same
+  fact in two places.
+- *Host names are unique per owner, not globally* (19c found it before
+  any code ran). `hosts_name_key` is replaced by two partial unique
+  indexes, `(name) where owner_account_id is null` and
+  `(owner_account_id, name) where owner_account_id is not null`, because
+  Postgres counts nulls as distinct and every operator host carries the
+  null. `store.GetHostByName` therefore resolves the operator's own hosts
+  only -- `repose-admin hosts drain mac-mini` must not find a user's Mac
+  -- and `GetAccountHostByName` is the account-scoped read. Two users may
+  both call their machine `mac-mini`, and neither is ever told the other
+  exists.
+- *Placement.* `scheduler.PickHost` and `scheduler.Freeing` take a
+  `Target` (the account, what the project asked for, whether the
+  account's plan sells memory on repose's own hosts) and answer one more
+  term, `ownedSQL`: a host the account owns is eligible unless the
+  project asked for the fleet and may have it; a host repose runs is
+  eligible only when the plan sells fleet memory, and then only when the
+  project asked for it or the account owns no host at all. A user who
+  bought a Mac gets their machines on the Mac without saying so per
+  project, and a stranger's project never reaches it.
+- *`projects.placement`* (`own`, the default, or `hosted`) is the escape
+  hatch the item asks for. It is read at a create and at a re-placement
+  and never after, because a project is pinned to its host for life, so
+  `PATCH /projects/:id` does not take it: a field nothing would honour is
+  worse than no field. `placement: "hosted"` from an account whose plan
+  sells no fleet memory is `402 payment_required`
+  `detail.reason = "hosted_plan_required"` at the route, not a placement
+  failure, because `capacity` is a sentence about repose's fleet and no
+  answer to a user who asked for the fleet on purpose.
+- *`retired` and `lost` do not count as owning a host.* A user whose only
+  machine is gone is released to the fleet rather than trapped on it;
+  every other state counts, so a Mac that is merely switched off answers
+  "your host is not answering" and never a silent placement on hardware
+  the user is not paying for. That sentence is why
+  `scheduler.ErrNoOwnHost` exists beside `ErrNoCapacity` (the shape of
+  `ErrNoCPUCapacity`, I-736): the code stays `capacity`, so the api still
+  answers 503 and the op can be retried when the machine is back, and the
+  message names the host and its state.
+- *The three routes.* `GET /hosts` (the account's own, oldest first),
+  `POST /hosts` (`{name?}`, 201 with the host plus `join_token`,
+  `join_token_expires_at` and `install`, the one answer that carries
+  them), `DELETE /hosts/{id}` (204; drain, retire, clear the certificate
+  serials and the unused join token). Refusals: `400 invalid` `name`,
+  `409 conflict` `name_taken`, `409 conflict` `host_limit` with
+  `detail.limit`, `402 payment_required` `own_hardware_plan_required`,
+  `404 not_found` for a host that is not the account's, and `409
+  conflict` `host_has_projects` with the slugs while machines are still
+  placed there -- a machine moves host only by restore (DESIGN.md §6), so
+  retiring a host under three of them would orphan them. A repeated
+  DELETE answers 204: a client that lost the first answer must be able to
+  ask again.
+- *`install` is `{command, url}`, and `command` may be empty.* It is the
+  `host_install_command` setting (`repose-admin hosts install-command`)
+  with `%s` replaced by the token, and the docs page's address. A setting
+  rather than an environment variable for the reason `loki_url` is one
+  (I-95): the installer lives outside this deployment, 19f ships it, and
+  moving it must not be a redeploy of the api. Nothing is recorded yet,
+  so the api sends an empty `command` and the CLI and the dashboard show
+  the token and the page instead of a curl line nobody serves. An
+  invented line would have been the first thing a Mac mini owner pasted.
+- *The host count is the plan's.* `billing.Plan.Hosts` is 1 on Own
+  hardware (19d's row) and the zero value on Solo, Plus and Pro;
+  `Gate.HostsAllowed` reads it, and a billing-exempt account is allowed
+  one whatever the plans say (`billing.ExemptHosts`), so the owner can
+  add their own Mac without selling themselves a plan. A second place
+  that knew "one host" would be a second place to change when the owner
+  sells two.
+- *Seats and the gauges.* The seat count's query gains
+  `owner_account_id is null`: a seat is a place on hardware repose
+  bought, so a Mac somebody added must not raise the number of plans the
+  fleet will sell, and its owner holds no seat for the machines they run
+  on it. `repose_api_hosts` and `repose_api_host_state` likewise count
+  only the fleet, because every host alert reads them and
+  `HostUnreachable`, `HostUnregistered` and `HostNotInTargets` would
+  otherwise page the owner because a stranger's Mac mini was switched off
+  at night or was never copied into the Prometheus targets. The owner
+  still gets a number for them, `repose_api_owned_hosts{state}`, with no
+  alert on it, and `repose_api_schedule_total{result="no_own_host"}` is
+  outside `ScheduleRefused` for the same reason.
+- *Not here, on purpose.* The plan's **memory** gate still counts every
+  running machine, including one on the account's own host, so 19d has to
+  make it not (I-1364); nothing in I-1366 touches
+  `internal/billing/gate.go`. `limits.hosts` on `GET /me` is 19d's.
+  `docs/SECURITY.md` "A host you do not own" is 19b's (I-1368) and the
+  placement rule belongs in it. `repose host`, the public page's install
+  half and the offline wording in `repose ls` are 19c's (I-1370).
+- *Evidence.* `internal/api/scheduler`'s five ownership tests, shown red
+  with `ownedSQL` replaced by a term that is always true: the owner's
+  project went to `fleet-01` instead of `mac-mini`, a stranger's project
+  went to `mac-mini` once the fleet host was retired, an Own hardware
+  account reached `fleet-01`, an owner with an unreachable Mac reached
+  `fleet-01`, and `Freeing` answered true for a stranger waiting on a
+  guest stopping on somebody else's Mac. The route tests and the
+  dashboard's are in the commit messages.
+**I-1374. The flake has `aarch64-linux` outputs: the guest base, the
+runner, the host system and the installer, with the kernel pin and the
+console per architecture and the closure limit on both (mac-mini-aarch64,
+2026-11-19).** *Made during implementation* (docs/workstreams/19-mac-mini.md
+item 19e; the shape was settled in §4 and the owner did not override it).
+The Mac mini appliance (I-1362, I-1376) is an aarch64 NixOS VM running
+hostd, and its guests are aarch64 microVMs, so everything a host and a
+guest are built from has to exist for a second architecture without a
+second copy of any of it.
+
+- *The flake.* `nix/flake.nix` used to fix `system = "x86_64-linux"` at
+  its top. Now a function `perSystem` builds, for each of `systems =
+  [ "x86_64-linux" "aarch64-linux" ]`, the pkgs with the agent overlay,
+  the Go binaries, `mkGuestRunner` and `composeGuest`, the host kernel
+  pin, `hostModules` and `mkHost`, the installer, the per-architecture
+  `guestSystem`, the packages set, the closure-limit check and the dev
+  shells. The x86_64 set is bound under the old names, so the hosts,
+  the edge and every VM test read exactly what they read before; the
+  x86_64 derivations are unchanged (the runner's and the agents' `.drv`
+  paths equal `mac-mini`'s). New outputs: `packages.aarch64-linux.*`,
+  `guestSystems.<system>`, `nixosConfigurations.host-aarch64` (the
+  generic host with `provider = "none"`; 19f's `mac` provider builds on
+  it) and `installer-aarch64`, `checks.aarch64-linux` (the closure
+  limit, and that the runner, the host and the installer build; no VM
+  tests, which need KVM of the builder's own architecture),
+  `devShells.aarch64-linux`, `lib.forSystem` and `lib.systems`.
+- *What hostd evaluates.* A flake cannot read the builder's system, and
+  `guestSystem` has x86_64 baked in, so the base carries one guest
+  system per architecture under `guestSystems.<system>` and hostd picks
+  the attribute by its own `GOARCH` (`nixbuild.DefaultEvalAttr`):
+  `guestSystem...` on amd64, `guestSystems.aarch64-linux...` on arm64.
+  `guestSystem` stays `guestSystems.x86_64-linux` under its old name,
+  which is what keeps every base revision before this one buildable by
+  an x86 host and every earlier hostd release working against this one.
+  The contract (`docs/interfaces/nix-build-contract.md`) records both.
+- *The console.* Cloud Hypervisor's serial device is a 16550 at `ttyS0`
+  on x86_64 and a PL011 at `ttyAMA0` on aarch64. The runner's `bin/run`
+  and the base's `boot.kernelParams` (`nix/guest/microvm.nix`) and
+  hostd's command line (`ch.ConsoleTTY`) each pick by architecture; the
+  three must agree, and the comments at each say so. `earlyprintk=` is
+  x86-only and is not rendered on aarch64. The kernel the runner hands
+  Cloud Hypervisor is the ELF `vmlinux` on x86_64 and the arm64 `Image`
+  on aarch64, as microvm.nix's own runner does.
+- *The kernel pin.* `nixpkgs-host-kernel` is one revision read per
+  architecture (`import nixpkgs-host-kernel { inherit system; }`), so
+  the aarch64 host kernel is 6.18.57 too and `nix/hosts/kernel.nix`'s
+  CVE-2026-99999 assertion (I-778) holds unchanged. `kvm-intel` is
+  loaded on x86_64 only: on arm64 KVM is built into the kernel
+  (CONFIG_KVM is a bool), so `/dev/kvm` needs no module and a
+  `kvm-intel` line would be one failed modprobe in every boot's journal.
+  The pin carries a second constraint on aarch64, from gate 0 step 3
+  (2026-11-19, `docs/research/mac-mini-nested-kvm.md` §7): under
+  nested KVM on the M4, guests boot on 6.18.57 and on 6.8 and hang two
+  seconds in on 7.0.0-43 (`rcu_preempt kthread timer wakeup didn't
+  happen`, under Cloud Hypervisor and QEMU alike, at one and two vCPUs,
+  with `idle=poll` and `nohz=off highres=off`). The appliance ships
+  6.18.57 or a later 6.18 point release, never 6.8 (below I-778's
+  patched version), and a bump of the pin is proven on Apple silicon
+  with `ops/dev/macmini-l2-try.sh` before it lands; the bisect window
+  for whoever bumps next is 6.18.57 to 7.0.0-43. The constraint is
+  written at the pin in `nix/flake.nix` and in `nix/hosts/kernel.nix`,
+  where that person will be standing.
+- *The agents.* `versions.json` has one slot per architecture for each
+  binary agent (`x86_64-linux`, `aarch64-linux`), and Codex's
+  `code-mode-host` and `bwrap` moved under each slot, since they are
+  per-target assets; `gemini-cli` and `chrome-devtools-mcp` are
+  architecture-neutral bundles and keep their shape. Each derivation
+  reads the slot of the architecture it is built for.
+  `scripts/bump-agents.sh` resolves and prefetches both slots per bump
+  and builds the package for the machine it runs on; the other
+  architecture is built by `ci.yml`'s `nix-aarch64-overlay` job, on a
+  GitHub arm64 runner (free for a public repository), which pushes the
+  aarch64 overlay to Cachix the way the x86 job does. Every upstream
+  (Anthropic, opencode on npm, OpenAI's release, pi, herdr) publishes
+  an arm64 Linux build of the same version, checked on 2026-11-19.
+- *The closure limit.* `checks.<system>.guest-closure-size` is the one
+  7 GiB rule (I-1056) on both; the aarch64 number is owed to
+  `docs/research/mac-mini-nested-kvm.md` §8 by the Mac build day.
+- *Cachix.* The aarch64 overlay is pushed by CI. The base closure is not
+  pushed on either architecture: it is 6 GiB of mostly cache.nixos.org
+  paths and the cache is the free 5 GB tier (I-46). An aarch64 host
+  builds its base as an x86 host does, from cache.nixos.org plus the
+  overlay; publishing a whole host system for owned hosts is I-1378.
+- *The installer.* `nixosConfigurations.installer-aarch64` is the same
+  kexec image on the aarch64 kernel pin, for an aarch64 KVM box
+  installed over the network; its uplink unit also matches `virtio_net`,
+  which such a VM has in place of Azure's `hv_netvsc`. The Mac appliance
+  boots from a disk image (I-1376) and never uses it.
+- *Where it builds.* woker-1 is x86 with no binfmt: it evaluates every
+  aarch64 output (under the build lock, like any evaluation) and builds
+  none. `ops/dev/aarch64-base check|build|push` runs with `--builder
+  ssh-ng://…` (evaluate here, build there) or on the aarch64 machine
+  itself; `docs/ops/DEV-BOX.md` "aarch64 builds". The VM tests stay
+  x86_64 until there is an aarch64 builder with KVM in the loop.
+
+*Rejected:* a second flake for aarch64 (two copies of every module, and
+the first drift at the next bump); `builtins.currentSystem` in
+`guestSystem` (impure, and hostd's evaluation is `pure-eval`);
+`flake-utils`-style `eachSystem` over every output (the hosts and the
+edge are x86_64 by name, and the VM tests cannot run on the other
+architecture, so a per-output split says what is true); pushing the
+aarch64 base closure to Cachix (the tier); building the aarch64 agents
+on x86 CI through binfmt (qemu-user under autoPatchelfHook and Codex's
+daemon start, slow and a second thing to debug).
+
+*Checked:* `nix eval` of every aarch64 output on woker-1 under the lock
+(the derivation paths in the 19e report and STATUS line);
+`go test ./internal/hostd/ch ./internal/hostd/nixbuild ./test/supplychain`
+green; the x86 runner's and agents' `.drv` paths equal to `mac-mini`'s.
+Not checked, owed to §8 of the research doc: the aarch64 closure built,
+its size and its build time, on the Mac.
+
+**I-1376. The Mac mini appliance: one raw EFI image of the aarch64 host
+with provider `mac`, one disk whose third partition is `vg-guests`, the
+fleet's host reserve inside a VM given three quarters of the Mac, the
+join and the hub material from a file the launcher shares in, and a
+kernel that is a product constraint (mac-mini 19f, 2026-11-19).** *Made
+during implementation* (the settled shape of
+`docs/workstreams/19-mac-mini.md` §4, built after gate 0 passed on an AWS
+mac-m4.metal, `docs/research/mac-mini-nested-kvm.md` §7; the owner did
+not override it). The appliance is `nix/hosts/mac.nix`, active when
+`repose.host.provider == "mac"`, and `nixosConfigurations.mac` is the
+aarch64 host built from it (I-1374).
+
+- *One disk.* The launcher attaches one virtio-blk image. The disko
+  layout (`disko-layout.nix`, `oneDisk`) puts the ESP, a 32 GiB root and
+  a third partition that is the PV of `vg-guests` on it; there is no
+  data disk and the pool is the same `lvm_vg` the fleet has. The image
+  is built by disko's image builder inside a VM on the host kernel pin
+  (`packages.aarch64-linux.mac-appliance-image`, `repose-appliance.raw.gz`):
+  37 GiB sparse, the PV partition at its 4 GiB smallest, compressed
+  before it leaves the builder because a NAR has no holes. The launcher
+  inflates it, extends the file to the size the user chose (100 GB, or
+  the volume's free space less 20, as a sparse file APFS fills as the
+  machines write), and `repose-mac-grow` at every boot gives the PV
+  partition, the PV, the pool's metadata (one percent, clamped as at
+  install) and the pool (95 percent of the VG) the difference, doing
+  nothing when there is none. nix's free-space floors are 4 and 8 GiB on
+  the appliance; gc.nix's 50 and 100 would keep a 32 GiB root below the
+  floor from its first boot.
+- *The host reserve.* The launcher gives the VM three quarters of the
+  Mac's memory and all but two cores: 12 GiB of a 16 GB Mac, 18 GiB of a
+  24 GB one, never under 8 GiB, and macOS keeps the rest. Inside, the
+  reserve is the fleet rule unchanged (I-724: an eighth, floor 2 GiB), so
+  a 16 GB Mac places 10 GiB of guests and a 24 GB Mac 15.75 GiB.
+  `repose host ls` shows the VM's memory. The rules are functions in the
+  installer and the `mac-launcher-sizing` check runs them.
+- *No Azure, no cloud-init, the generic KVM.* `azure.nix` is off, the
+  kernel loads no `kvm-intel` (I-1374), the virtio drivers are in the
+  initrd, the console is the framework's `hvc0`, the NAT NIC is named
+  by driver, the park is off (the Mac has no identity for a Key Vault,
+  I-653; freeze and restore stay gated on gate 0 step 5, not run), the
+  operator bootstrap key is off, and `owned = true` keeps snapshots on
+  the disk (I-1372). The join token arrives as the generic host already
+  takes it, `/run/repose/join-token` consumed once by
+  `repose-register.service` (the pinned `host-services` check), from a
+  unit that reads the launcher's share (I-1380).
+- *The kernel.* Under Apple's nested virtualization (macOS 15.8.2, M4,
+  2026-11-19) a Cloud Hypervisor guest inside the appliance boots on
+  Ubuntu's 6.8.0-147 and on mainline 6.18.57 and hangs about two seconds
+  into boot on 7.0.0-43 (`rcu_preempt kthread timer wakeup didn't
+  happen`, research doc §7), and `nix/hosts/kernel.nix` asserts 6.18.57
+  or newer for CVE-2026-99999, so 6.8 is not an option. The appliance
+  must carry a kernel that both boots nested guests on Apple silicon and
+  passes that assertion; the flake's `nixpkgs-host-kernel` pin, 6.18.57,
+  is the one version known to do both, and the bisect window for whoever
+  bumps next is 6.18.57 to 7.0.0-43, proven on Apple silicon with
+  `ops/dev/macmini-l2-try.sh` before it ships. `mac.nix` and `kernel.nix`
+  carry the same note.
+- *Where it is proven.* `checks.x86_64-linux.host-mac` boots the same
+  modules on x86 and holds the bootstrap order and the one-disk growth
+  end to end (I-1380 lists it); `checks.aarch64-linux.mac-builds` and
+  `mac-appliance-image` build the system and the image on an aarch64
+  builder with KVM. The Mac itself is phase 3's: the appliance boots,
+  registers over the hub, hostd says Hello and a project runs.
+
+- *The disko input moved*, from ff8702b4 (2026-06-11) to 1dd30c29
+  (2026-11-10), because the old pin's image builder hands nixpkgs's
+  vmTools a module tree as the kernel, which this nixpkgs refuses;
+  upstream fixed it on 2026-10-19. disko's module is in `hostModules`,
+  so the bump was measured rather than assumed, and the method matters:
+  not a diff across two commits, because every commit changes
+  `self.shortRev`, which is baked into hostd's and gateway's version
+  strings and would show differences that mean nothing. Instead the one
+  tree was evaluated twice, as is and with `--override-input disko
+  github:nix-community/disko/ff8702b4de27f72b4c78573dfb89ec74e36abdf1`,
+  each `nixosConfigurations.<name>.config.system.build.toplevel.drvPath`
+  taken, and `nix derivation show` walked recursively from both until
+  the leaves that differ. For host-01, host-02, host-stg-01 and the edge
+  the only differing leaf is `hostd-<stamp>.drv` or
+  `gateway-<stamp>.drv` (the stamp reads `dirty` under the override),
+  and the installer's derivation path is identical. The bump is inert
+  for every host and the edge. This is how to show the next input bump
+  inert too.
+
+Rejected: two disks, the fleet's layout as it stands (a second file the
+launcher must create and size, for no gain on a machine with one SSD);
+shipping the image at its final size (a 100 GB download of zeros); a
+root that grows instead of the PV (the partition that grows has to be
+the last, and the pool is the one that needs the room); `pkgs.linuxPackages`
+from `nixpkgs` for the appliance (6.18.56, below the assertion, and
+untested on Apple silicon); 6.8 (below the assertion).
+
+- *What the Mac said on 2026-11-19* (the AWS mac-m4.metal, macOS 15.8.2,
+  24 GB; `docs/research/mac-mini-nested-kvm.md` §9 has the raw numbers).
+  The image builds in 12 min 45 s and ships as 2.08 GB; it boots under
+  vfkit to the login prompt on 6.18.57; the join, hub, grow and register
+  units run; registration, Hello and hostd's stream work (against a
+  hostdev stand-in through a relay, since production's api does not
+  carry I-1380 yet). A repose guest runs on it with both virtiofs shares
+  mounted, read from inside the guest. Three findings that change the
+  product: (1) **a guest's first boot says Ready at 70 s and reaches
+  multi-user at 3 min 36 s** (two nested vCPUs, and hostd's RegisterPaths
+  of the 1225-path closure takes 1 min 41 s on the appliance), so
+  hostd's 60 s ready window closed on it twice; hostd now takes
+  `--ready-timeout`, `mac.nix` sets `guestReadyTimeout = "5m"`, and the
+  Azure hosts keep 60 s unchanged. The Mac's value is minutes because a
+  first boot there is minutes, not a figure to tune away later: a
+  shorter window turns a slow first boot into a failed one. A warm
+  start of the same guest is no faster, 3 min 59 s, Ready at 90 s: the
+  guest skips its registration (`store paths already registered`,
+  I-225) but waits for hostd's RegisterPaths message, which arrives 95
+  s after Ready because the `nix-store -qR` and `--dump-db` of the
+  closure run on the appliance at every start. So the wait is per
+  start, not per guest or per closure, and the next thing for a Mac's
+  start time is hostd caching the closure's dump-db per closure (03's
+  change, not made here); the rest is the nested CPU. (2) The
+  image carries stale blocks from its own build (12.7 GB real on the
+  Mac for a lab image, 9.7 after `fstrim`), so the appliance trims at
+  every boot and the installer unpacks sparse; the production image
+  costs 4.58 GB after unpack and 5.65 GB after its first boot (the
+  pool's metadata and the caches volume's filesystem), measured on the
+  image built before the trim. (3) hostd's
+  Hello on a 12 GiB VM: 12,492,406,784 bytes visible, 10,344,923,136
+  placeable, 8 vCPUs; the plan's "your Mac's memory is the cap" is
+  those figures. Two guest-base findings on aarch64, recorded and not
+  fixed here: `repose-zram-swap` fails (`/dev/zram0` not there when
+  `zramctl` waits for it) and Docker's first attempt times out on
+  containerd and succeeds on its retry; and once in three starts
+  SetupProject's `systemctl --user start` of the tmux session unit
+  exited 1 under the slow boot, cause unverified.
+- *Freeze and restore pass on Apple silicon* (gate 0 step 5, run on the
+  same day with a lab image whose park used a key file): a small guest
+  parked at the appliance's shutdown in 6.1 s (snapshot 306 ms, image
+  672 MB) and was restored 31 s later in 7.8 s (image read 911 ms, resume
+  182 ms), with a marker in its tmpfs and its uptime continuous across
+  the restart. The appliance still ships with the park off: the image
+  key is wrapped by Key Vault with the host's Azure identity (I-653),
+  which a Mac has not, and `park.keyFile` is for staging and tests;
+  using it in the product would be the fourth home for a secret that
+  CLAUDE.md forbids. **Open question, not settled here and with no id
+  reserved:** where an owned host's image-wrapping key lives when the
+  host is a stranger's machine with no cloud identity, and who can read
+  it. Until it is settled a Mac reboot stops the machines and the api
+  restarts them (I-645), which the docs page says. A park also needs
+  room on the pool for the image, which a lab disk at the installer's
+  minimum lacked (`no_room`, the guest started cold).
+
+*Checked:* `nix build ./nix#checks.x86_64-linux.host-mac` green
+(/nix/store/pm880cbmxw1bf4gd7vcbnyf35aildn2r-vm-test-run-repose-host-mac,
+2026-11-19 13:44 UTC: the five subtests, the join bundle split, wg0 on
+the bootstrap key and registration over it, the key swapped and
+hub.json gone, hostd's stream after the peer swap, the one-disk format
+and grow) and `mac-launcher-sizing`; the test caught a wrong jq prefix
+in repose-host-net's hub.json branch that the Mac runs, which used
+token-only bundles, never exercised. The aarch64 outputs built on the
+Mac's builder; the Mac day above. Not done at this line: a Mac joining a real account, which waits
+on the api release that carries I-1380 (the council's checkout too).
+
+**I-1380. The Mac launcher is a plist over vfkit, and the install step
+carries the host's place on the hub, minted at `host add` and rotated at
+Register (mac-mini 19f, 2026-11-19).** *Made during implementation*
+(`docs/workstreams/19-mac-mini.md` §4; settles the bootstrap order I-92
+and I-1382 left to 19c and 19f, with 19b's finding that an owned host
+cannot reach the api's VNet address).
+
+*What the launcher is.* The CLI. `repose host add` on a Mac with Apple
+silicon, after the mint (or with `--join <argument>` for an argument
+minted elsewhere, with no login), checks the Mac (M3 or newer, macOS 15
+or later, 16 GB), says what it is about to do, fetches vfkit 0.6.4
+(Apache-2.0, crc-org; the checksum is pinned in
+`internal/cli/appliance.go`) and the appliance image with its checksum,
+unpacks the image sparse, extends the disk file to the size chosen,
+writes the argument to a directory it shares into the VM, writes a
+launchd agent (`run.repose.appliance`, RunAtLoad, KeepAlive) whose
+program is `repose host run`, and starts it. `repose host run` holds
+vfkit in the foreground: `--nested`, EFI with its variable store beside
+the image, the image on virtio-blk, NAT virtio-net with a MAC kept in
+the launcher's config, virtio-rng, the share on virtio-fs, and the
+console to a log file; wrapped in `caffeinate -s -i`, which holds a
+power assertion while the VM runs and changes no `pmset` setting, since
+the docs page promises nothing of the Mac's changes and a Mac mini is on
+mains. A stop (launchd's SIGTERM) asks the VM to shut down through
+vfkit's REST socket, which the appliance takes as the ACPI power button
+and stops every machine cleanly (I-650), with 120 s before the plug.
+`repose host rm NAME` on the Mac whose appliance is NAME removes the
+appliance with the host; on a Mac that runs another host it says which
+and leaves it; `repose host rm --local` removes this Mac's appliance
+alone. The step a laptop prints is the `host_install_command` setting,
+`repose host add --join %s`, a setting rather than a constant so an
+operator changes it without a release (I-1370). Everything lives under
+`~/Library/Application Support/repose` and `~/Library/Logs/repose`; no
+sudo anywhere.
+
+Why the CLI and not an app or a script, chosen by 19f after installing
+on the real Mac: a Mac mini owner on this plan has `repose` installed
+and is logged in, because that is how they add a host from anywhere, so
+the smoothest install is the command they know, run on the Mac, with
+no second artefact and no `curl | sh`, the one line that reads like a
+malware tutorial. A signed, notarised app is the Mac-native answer to
+the same discomfort and is also an Apple developer account,
+notarisation and a macOS runner nobody has, so it cannot ship first.
+The CLI's darwin build is cross-compiled without cgo (`ci.yml`,
+`dist/repose_darwin_arm64`), and driving the Virtualization framework
+from Go needs cgo (the `vz` library vfkit uses, MIT) plus an ad-hoc
+codesign with the `com.apple.security.virtualization` entitlement on a
+macOS runner; so the first ship keeps the build as it is and fetches
+vfkit as the helper, and folding `vz` into the binary is a later step,
+once the darwin build runs on a macOS runner. The shell launcher that
+proved the path on the lab Mac (`apps/web/static/mac`, 2026-11-19) was
+replaced by this the same day; its two hard-won fixes moved with it: a
+file is extended by `truncate` and not by BSD `dd count=0`, and the VM
+starts detached when launchd takes no agent in a session-less domain. A
+Mac with a login session gets the agent: that is the user's path. A Mac
+reached over ssh with no login session (the lab) has no GUI domain and
+its user domain refuses an agent ("Bad request"), so `host add` then
+starts `host run` detached with every descriptor off the terminal,
+because `nohup` under a tty does not detach on macOS and the VM died
+with the spark's session; the agent takes over at the next login.
+
+*What it holds and logs.* The argument, once, in a 0600 file in the
+share, which the appliance deletes after reading it. The launcher logs
+its own start and stop lines and the VM's console, which is the
+appliance's journal: ids, states, sizes, and nothing a tenant typed
+(docs/ops/OBSERVABILITY.md). Nothing of the user's.
+
+*The bootstrap order.* The api minted the host's WireGuard key pair at
+Register and the edge admitted a peer only after wgsync read it from
+`/internal/hosts`, which listed registered hosts; a host with no VNet
+could register over nothing (I-92). Now:
+
+- `POST /hosts` allocates the host's guest `/22` and hub address at once
+  (the same `allocate` Register used; kept if the row has them, so a
+  reissue moves no address), mints a bootstrap key pair, and stores the
+  public half on the row while it is still `registering`
+  (`hostmgr.PrepareHub`). `GET /internal/hosts` lists every host with a
+  key, registered or not, so wgsync peers the machine within 30 s of
+  `repose host add`, minutes before it boots.
+- The install step's argument is the join bundle (`hostmgr.JoinBundle`,
+  `install.argument`): one base64url string with `{v: 1, token, wg:
+  {private_key, address, edge_pubkey, edge_endpoint}}`; `install.command`
+  is the recorded line with it where `%s` was. The CLI and the dashboard
+  print the command as before, and the CLI prints the argument where no
+  line is recorded. With no edge recorded the bundle is the token alone.
+- In the appliance, `repose-launcher-join` splits the bundle into
+  `/run/repose/join-token` and `/run/repose/hub.json` and deletes the
+  share's copy; `repose-host-net` renders `wg0` from `hub.json` while
+  there is no `host.json`, so the tunnel is up before `hostd register`;
+  the appliance's `apiAddr` is the control plane's hub address
+  `10.255.255.1:8443`, the one path the edge forwards a host (I-1382).
+- Register keeps the row's addresses and mints a fresh key pair as it
+  always has, so the key that passed through the user's terminal is dead
+  after registration; hostd writes `host.json` unchanged, the unit's
+  restart of `repose-host-net` brings `wg0` up on the new key and removes
+  `hub.json`, and wgsync swaps the peer on its next pass.
+
+*What the bundle is worth, and to whom.* The bundle crosses the user's
+terminal, their clipboard and their shell history, as the join token
+already did, and it carries one thing the token did not: a WireGuard
+private key. Secrets have three homes (CLAUDE.md), and this is not a
+fourth: the key is bootstrap material with the token's own lifetime, not
+a secret repose keeps. Before registration, someone who reads the bundle
+can bring up a tunnel as that host and reach exactly what a host reaches
+through the hub, which is the api's gRPC port at the control plane's hub
+address (I-1382) and nothing else; that port answers a Register with the
+token, which the same bundle carries, or a host certificate, which
+nobody has yet. So the bundle grants what the token alone granted, the
+power to register a machine as the user's host, and no more. After
+registration the token is spent and Register has replaced the key, so
+the edge no longer peers it; the bundle is then a string that opens
+nothing. A bundle nobody uses dies with its token: `GET /internal/hosts`
+stops listing an unregistered host once its token has expired (24 hours)
+or the host was removed, so the edge drops the peer. A user who loses a
+bundle runs `repose host rm` and `repose host add` again, which clears
+the old token and mints a new key, and the old bundle is dead from that
+moment. Nothing logs it: the api's test reads its own log for the
+argument and the key, the CLI prints the step on stdout once and names
+no part of it on an error, the dashboard shows it in a dialog it says is
+not shown again, `host add` writes it to a 0600 file and echoes nothing, and the
+appliance logs the events of reading it and never a value. `docs/SECURITY.md` "A host you do not own" carries the same
+account.
+
+*What a bad moment looks like.* A Mac that boots before wgsync's next
+pass, or after the edge's `wireguard-wg0` restarted (which drops every
+host peer until that pass, up to 30 s): `wg0` is up with no handshake,
+`hostd register` fails on the network and `repose-register.service`
+retries every 30 s (only a rejected token stops it, exit 3), and the
+user reads `waiting` in `repose host ls` a minute longer. After the key
+swap the same window opens once for hostd's stream, which reconnects on
+its own. No state is lost either way.
+
+Rejected: a signed, notarised app as the first ship (above); `curl |
+sh` as the user's step (above); a public gRPC port for registration
+(I-1382 said why); the
+host generating its own key and trading it for the hub's details over
+the public HTTPS api with the token (a second use of a single-use token,
+a new public route and Go in the launcher, for the same key in the same
+hands); keeping the bootstrap key as the host's key (hostd's register
+path would learn a new case, and a key that crossed a terminal would
+live for the host's life); `pmset -a sleep 0` (sudo, and a setting
+changed behind the user's back); Tart as the launcher (FSL-licensed,
+research doc §3); our own Swift program (a signed, notarised build to
+keep, for what two files do).
+
+*Checked:* `TestHubBootstrapPeersTheHostBeforeItRegisters`
+(internal/api/hostmgr) and `TestHostAddPeersTheHubBeforeRegistration`
+(internal/api/http) green against Postgres; the `host-mac` VM check: the
+bundle split, `wg0` on the bootstrap key before registration, a
+handshake under that key on the hub, `hostd register` over it to a
+hostdev at `10.255.255.1`, the key swapped and `hub.json` gone, a second
+bundle ignored, hostd's stream connected after the peer swap;
+`TestAppliance*` in internal/cli (the sizing rules, the sparse unpack,
+the bundle, the config, the agent, vfkit's arguments, the Mac refusals).
+The shell launcher it replaced ran on the AWS Mac three times (research
+doc §9); the CLI ran there once, cross-compiled for darwin/arm64 from
+the dev box: `repose host add --join <argument> --memory 12288` against
+a local copy of the production image installed in 37 s (vfkit fetched
+and checksummed, the image unpacked sparse, the disk extended to 56 GiB,
+config and agent written, launchd refused over ssh and the VM started
+detached under `repose host run`), the appliance booted to its login
+prompt and consumed the bundle from the share; `repose host rm --local
+--yes` pressed the power button and removed it in 3 s ("System Power
+Off" on the console, no vfkit left, the directory and the agent gone).

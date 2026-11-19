@@ -139,7 +139,13 @@ func LoadUsage(ctx context.Context, q store.Querier, userID uuid.UUID, plan Plan
 func (u Usage) DiskHeldGB() float64 { return gbTenths(u.DiskHeldBytes) }
 
 // DiskOver reports whether the projects hold more than the plan's disk.
-func (u Usage) DiskOver() bool { return u.DiskHeldBytes > int64(u.Plan.DiskGB)<<30 }
+// A plan that sells no disk has nothing to be over: the host the user
+// owns has the disk, and its own size is the limit (DECISIONS I-1364).
+// The question is the plan's disk, not its host count, so a plan that
+// sold both a host and fleet disk is still measured against that disk.
+func (u Usage) DiskOver() bool {
+	return u.Plan.DiskGB > 0 && u.DiskHeldBytes > int64(u.Plan.DiskGB)<<30
+}
 
 // gbTenths is bytes in GB rounded up to a tenth, so a figure over the
 // plan never reads as equal to it.
@@ -151,8 +157,11 @@ func gbTenths(bytes int64) float64 {
 }
 
 // EgressStopped reports whether the period's egress passed the plan's
-// hard stop (PRICING.md "Egress": four times the allowance).
-func (u Usage) EgressStopped() bool { return u.EgressBytes >= u.Plan.EgressHardStopBytes() }
+// hard stop (PRICING.md "Egress": four times the allowance). A plan that
+// meters no egress never stops: the bytes left the user's own network.
+func (u Usage) EgressStopped() bool {
+	return u.Plan.EgressMetered() && u.EgressBytes >= u.Plan.EgressHardStopBytes()
+}
 
 // JSON is the `usage` object of GET /billing (api.md).
 func (u Usage) JSON() map[string]any {

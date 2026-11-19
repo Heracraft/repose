@@ -581,23 +581,39 @@ func (p *Polar) ListProducts(ctx context.Context) ([]Product, error) {
 }
 
 // CreatePlanProduct creates a plan's monthly product: the fixed price,
-// the metered overage price on the meter, and the trial.
+// the metered overage price on the meter, and the trial. A plan that
+// meters no egress gets the fixed price and the trial alone (DECISIONS
+// I-1364): a metered price on the Own hardware product would show
+// "Additional metered charges may apply" at a checkout where no charge
+// can ever arrive.
 func (p *Polar) CreatePlanProduct(ctx context.Context, plan Plan, meterID, key string) (Product, error) {
+	prices := []map[string]any{
+		{"amount_type": "fixed", "price_currency": strings.ToLower(plan.Currency), "price_amount": plan.PriceCents, "tax_behavior": TaxBehavior},
+	}
+	if plan.EgressMetered() {
+		prices = append(prices, map[string]any{"amount_type": "metered_unit", "price_currency": strings.ToLower(plan.Currency), "meter_id": meterID, "unit_amount": strconv.FormatInt(OveragePerGBCents, 10), "tax_behavior": TaxBehavior})
+	}
 	var out Product
 	err := p.do(ctx, http.MethodPost, "/products/", map[string]any{
 		"name":                     "repose " + plan.Name,
-		"description":              fmt.Sprintf("%d GB of memory for running machines, %d GB disk, %d GB egress a month; egress past the allowance $0.05 a GB.", plan.MemoryGB, plan.DiskGB, plan.EgressGB),
+		"description":              PlanProductDescription(plan),
 		"recurring_interval":       "month",
 		"recurring_interval_count": 1,
 		"trial_interval":           "day",
 		"trial_interval_count":     plan.TrialDays,
-		"prices": []map[string]any{
-			{"amount_type": "fixed", "price_currency": strings.ToLower(plan.Currency), "price_amount": plan.PriceCents, "tax_behavior": TaxBehavior},
-			{"amount_type": "metered_unit", "price_currency": strings.ToLower(plan.Currency), "meter_id": meterID, "unit_amount": strconv.FormatInt(OveragePerGBCents, 10), "tax_behavior": TaxBehavior},
-		},
-		"metadata": map[string]any{"repose": key},
+		"prices":                   prices,
+		"metadata":                 map[string]any{"repose": key},
 	}, &out)
 	return out, err
+}
+
+// PlanProductDescription is what Polar's checkout, portal and receipts
+// say the product is.
+func PlanProductDescription(plan Plan) string {
+	if plan.OwnHardware() {
+		return fmt.Sprintf("%d host you own, in your repose account: your projects run on your own machine, and its memory and disk are the limits.", plan.Hosts)
+	}
+	return fmt.Sprintf("%d GB of memory for running machines, %d GB disk, %d GB egress a month; egress past the allowance $0.05 a GB.", plan.MemoryGB, plan.DiskGB, plan.EgressGB)
 }
 
 // Discount is a Polar discount as the bootstrap reads it.

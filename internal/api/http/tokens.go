@@ -31,6 +31,7 @@ var tokenRouteScope = map[string]string{
 	"GET /v1/me/config":                           tokens.ScopeRead,
 	"GET /v1/me/config/revisions":                 tokens.ScopeRead,
 	"GET /v1/me/secrets":                          tokens.ScopeRead,
+	"GET /v1/hosts":                               tokens.ScopeRead,
 	"GET /v1/projects":                            tokens.ScopeRead,
 	"GET /v1/projects/destroyed":                  tokens.ScopeRead,
 	"GET /v1/projects/{id}":                       tokens.ScopeRead,
@@ -90,7 +91,9 @@ var tokenRouteScope = map[string]string{
 
 // tokenNever lists the user routes no token opens, with the reason the
 // refusal prints: the account itself, money, SSH, the browser view, and
-// tokens (a token that mints tokens has no end).
+// tokens (a token that mints tokens has no end). Adding a host hands
+// out a join token, which is control of a machine, and removing one
+// retires it, so both take a login (I-1366); listing them is a read.
 var tokenNever = map[string]string{
 	"PATCH /v1/me":                        "your account's settings",
 	"DELETE /v1/me":                       "your account",
@@ -107,6 +110,8 @@ var tokenNever = map[string]string{
 	"POST /v1/billing/portal":             "billing",
 	"GET /v1/billing/invoices":            "billing",
 	"POST /v1/billing/waitlist":           "billing",
+	"POST /v1/hosts":                      "your hosts",
+	"DELETE /v1/hosts/{id}":               "your hosts",
 	"GET /v1/me/tokens":                   "API tokens",
 	"POST /v1/me/tokens":                  "API tokens",
 	"DELETE /v1/me/tokens/{name}":         "API tokens",

@@ -45,7 +45,8 @@
 		listProjectQuestions,
 		getUsage,
 		patchProject,
-		listEventsPage
+		listEventsPage,
+		listHosts
 	} from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
@@ -64,15 +65,44 @@
 	import { useProject } from '$lib/components/project/context.svelte';
 	import { abuseStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
+	import { offlineHostLine } from '$lib/offlinehost';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { latest, type Pt } from '$lib/usage';
-	import type { ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
+	import type { OwnedHost, ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
 
 	const ctx = useProject();
 	const id = ctx.id;
 	let project = $derived(ctx.project);
 
 	let ready = $state(false);
+	/**
+	 * The account's own hosts by id, read only while this machine's host
+	 * is quiet (I-1370), so the banner can name the Mac the user turns
+	 * back on. Empty otherwise.
+	 */
+	let ownHosts = $state(new Map<string, OwnedHost>());
+	// Deliberately not $state: the effect writes ownHosts and must not
+	// read it, or an account that owns no host answers the read with an
+	// empty map, the map is a new reference, the effect runs again and
+	// the page reads /hosts in a loop.
+	let hostsAsked = false;
+	$effect(() => {
+		if (!project?.host_unreachable) {
+			if (hostsAsked) {
+				hostsAsked = false;
+				ownHosts = new Map();
+			}
+			return;
+		}
+		if (hostsAsked) return;
+		hostsAsked = true;
+		listHosts({ passive: true })
+			.then((hosts) => {
+				ownHosts = new Map(hosts.map((h) => [h.id, h]));
+			})
+			// Nothing to say: the banner keeps the unnamed line.
+			.catch(() => {});
+	});
 	let questions = $state<Question[]>([]);
 	let events = $state<ProjectEvent[] | undefined>(undefined);
 	const cache = keep(id);
@@ -320,7 +350,13 @@
 			{/if}
 			{#if project.host_unreachable}
 				<div class="hk-banner" role="status" data-testid="host-unreachable">
-					<p>The server running this machine is not answering.</p>
+					<p>
+						{#if ownHosts.get(project.host_id ?? '')}
+							{offlineHostLine(project, ownHosts)}.
+						{:else}
+							The server running this machine is not answering.
+						{/if}
+					</p>
 				</div>
 			{/if}
 			{#if abuseStopReason(project)}
