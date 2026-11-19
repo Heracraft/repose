@@ -24,6 +24,36 @@ The reusable form of this, for any project, is the `customer-review` skill.
 This file is the repose-specific version: the surfaces, the comparisons and
 the gate.
 
+## Two sizes of review, and they are not interchangeable
+
+The full review below is for a thing that is **built** and about to meet
+users. The owner asked for a second, lighter pass on 2026-11-19, for work
+that is **designed and not yet built**, and it is a different job:
+
+> Not a full usability review — a customer-perspective critique and a
+> user-experience review that finds gaps, then re-implement them.
+
+**The design critique.** Its subject is a proposal and a set of work items,
+not a running product. It has no measurements to take, so its evidence is
+different: it walks the proposed experience as a named person with named
+ignorance, and it reports what that person cannot do, cannot find, or would
+get wrong. It may not say "this is fine"; it either names gaps or says
+plainly that it looked for them and found none, with what it tried.
+
+**Its pass test is written by whoever commissions it, in one sentence, before
+it starts.** For the owned-hardware sizing work that sentence is the owner's:
+*a newcomer who knows nothing about cores or disks gets a good machine
+without deciding anything, and finds the freedom when they want it.* A
+critique without such a sentence turns into taste, and taste cannot be
+re-implemented against.
+
+**Why it comes before the build and not after.** The findings are meant to be
+re-implemented, which is cheap while the work is a proposal and expensive
+once it is merged. This is the "critique them, experience them as real users,
+fail, fix" middle of the loop in `docs/workstreams/CONDUCTING.md`, and
+skipping it is how a design that reads well ships as a product nobody can
+use.
+
 ## Split by surface
 
 One session per surface a customer touches, each in its own worktree and
