@@ -197,7 +197,7 @@ pkgs.testers.runNixOSTest {
         assert hj["wg"]["private_key"] != bundle["wg"]["private_key"], "host.json kept the bootstrap key"
         host.wait_until_succeeds("test ! -e /run/repose/hub.json")
         host.wait_until_succeeds("wg show wg0 public-key", timeout=60)
-        new_pub = api.succeed(f"jq -r .host_wg_pubkey ${hostdevDir}/state.json").strip()
+        new_pub = api.succeed("jq -r .host_wg_pubkey ${hostdevDir}/state.json").strip()
         assert new_pub and new_pub != bootstrap_pub, new_pub
         host.wait_until_succeeds(f"wg show wg0 public-key | grep -qx '{new_pub}'", timeout=60)
         # A second bundle on the share, after registration, is ignored.
