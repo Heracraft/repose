@@ -990,6 +990,54 @@ the same thing.
 **Raised from candidate to confirmed P0: machines do not reliably start on
 owned hardware**, which is the whole feature. **Card ENG-80.**
 
+**Then it got worse, and the shape of it only became clear from the event
+log.**
+
+A machine that was **working** — ssh in 11.5 s at 23:18, checkout present,
+logins copied — was stopped normally at 23:25, exactly as the quickstart
+instructs ("Stop the machine when you're done"). **It never came back.**
+
+| # | What | Result |
+|---|---|---|
+| 1 | `firstmachine`, first run (broken appliance) | **ok** 7m05s, then unreachable |
+| 2 | `secondmachine`, first run (broken appliance) | fail, `guest_unresponsive` |
+| 3 | `clean1`, first run (clean appliance) | fail, 567 s |
+| 4 | `clean1`, `repose start` | **ok** 311 s, genuinely usable |
+| 5 | `clean1`, `start` after a clean `stop` | fail, 332 s |
+| 6 | `clean1`, `start` again | fail, 307 s |
+| 7 | `clean1`, `start` again | fail, 283 s |
+| 8 | `clean1`, `snapshots restore` → start | fail, 253 s |
+
+**Two successes in eight guest starts.** Sharper and more testable than the
+raw tally: **after a clean `repose stop`, four attempts have failed and none
+has succeeded**, while both successes were the first start of a fresh
+machine.
+
+**The event log shows every failure is the same step.** For the restore:
+
+```
+23:47:32  machine  destroying
+23:47:33  machine  restoring
+23:47:33  machine  destroyed
+23:47:35  machine  stopped
+23:47:36  machine  starting
+23:51:44  machine  error
+```
+
+The snapshot, the destroy and the disk restore all succeed **in three
+seconds**. Only the start fails, four minutes later. The snapshot survives
+intact and is still listed.
+
+**So what a customer loses is not their data.** It is safe in a snapshot
+that demonstrably restores. What they lose is the ability to run anything on
+the hardware they bought — **and on the Own hardware plan there is nowhere
+else to run it**: the plan buys no fleet memory
+([B2](#b2-the-own-plan-is-zero-memory-zero-disk-zero-egress): `memory_gb 0`)
+and the CLI offers no placement flag
+([B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere)). A
+Mac that will not start guests leaves the account with **no working machine
+anywhere**.
+
 **Two lines a customer reads at that moment, both wrong** (card ENG-100, P1):
 
 - `repose run` counted **"Booting clean1… 6m30s"** and then refused with
