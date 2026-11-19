@@ -8,6 +8,11 @@
 # the pool into (storage.nix). Pool metadata is 1 percent of the disk,
 # clamped to [1 GiB, 16 GiB] (LVM's ceiling), computed in the disko script
 # because the disk size is only known at install time.
+# One disk (`oneDisk`, the Mac appliance, DECISIONS I-1376): the OS disk
+# carries the ESP, a root of `rootSize`, and a third partition that is the
+# PV; there is no data disk. The pool is the same `lvm_vg` either way, and
+# the image ships with the PV partition at its smallest: mac.nix's
+# repose-mac-grow gives it the rest of the disk at first boot.
 {
   lib,
   osDevice,
@@ -17,6 +22,10 @@
   withData ? true,
   # Directory of udev rules that create /dev/disk/azure/*; null outside Azure.
   azureUdevRules ? null,
+  # The PV is the OS disk's third partition and there is no data disk.
+  oneDisk ? false,
+  # The root's size when it does not take the rest of the disk.
+  rootSize ? "32G",
 }:
 let
   # One percent of the PV, clamped to 1 to 16 GiB, in whole MiB: lvcreate
@@ -172,11 +181,21 @@ let
           };
         };
         root = {
-          size = "100%";
+          size = if oneDisk then rootSize else "100%";
           content = {
             type = "filesystem";
             format = "ext4";
             mountpoint = "/";
+          };
+        };
+      } // lib.optionalAttrs oneDisk {
+        # Third, after the ESP and the root, which is what mac.nix's
+        # `guestsPartition` and repose-mac-grow count on.
+        guests = {
+          size = "100%";
+          content = {
+            type = "lvm_pv";
+            vg = "vg-guests";
           };
         };
       };
@@ -200,7 +219,7 @@ let
   };
 in
 {
-  disk = (lib.optionalAttrs withOs { inherit os; }) // (lib.optionalAttrs withData { inherit data; });
+  disk = (lib.optionalAttrs withOs { inherit os; }) // (lib.optionalAttrs (withData && !oneDisk) { inherit data; });
 }
 // lib.optionalAttrs withData {
   lvm_vg.vg-guests = {

@@ -150,6 +150,15 @@ let
 
   # CVE-2026-99999: the first stable kernel carrying the backport of
   # 6785011f8b16, "ipv4: validate checksum_start before completing checksum".
+  #
+  # On the Mac appliance this floor meets a ceiling (DECISIONS I-1376,
+  # docs/research/mac-mini-nested-kvm.md §7): under Apple's nested
+  # virtualization a Cloud Hypervisor guest boots on 6.8.0-147 and on
+  # 6.18.57 and hangs two seconds into boot on 7.0.0-43 (rcu_preempt timer
+  # wakeup). 6.8 is below this assertion, so the one kernel known to do
+  # both is the 6.18.57 the flake pins, and the bisect window for whoever
+  # bumps next is 6.18.57 to 7.0.0-43, proven on Apple silicon with
+  # ops/dev/macmini-l2-try.sh before it ships.
   patchedKernel = "6.18.57";
 in
 {

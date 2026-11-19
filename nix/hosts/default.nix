@@ -28,6 +28,7 @@ in
     ./vm-hardening.nix
     ./park.nix
     ./wg-watchdog.nix
+    ./mac.nix
   ];
 
   options.repose.host = {
@@ -95,11 +96,13 @@ in
     };
 
     provider = lib.mkOption {
-      type = lib.types.enum [ "azure" "none" ];
+      type = lib.types.enum [ "azure" "none" "mac" ];
       default = "azure";
       description = ''
         Where the host runs. `azure` enables waagent, cloud-init for the join
-        token, and the Hyper-V drivers. `none` is for the VM tests and for a
+        token, and the Hyper-V drivers. `mac` is the Mac mini appliance
+        (mac.nix, DECISIONS I-1376): one disk, the join from the launcher's
+        share, the api over the hub. `none` is for the VM tests and for a
         future provider module (DECISIONS R3-20: Hetzner is a second module,
         added when it exists).
       '';

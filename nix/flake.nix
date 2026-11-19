@@ -315,6 +315,17 @@
       # on an aarch64 builder is the host half of the item's evidence.
       nixosConfigurations.host-aarch64 = aarch64.mkHost { hostName = "repose-host"; provider = "none"; };
 
+      # The Mac mini appliance (DECISIONS I-1376, nix/hosts/mac.nix): the
+      # aarch64 host with provider `mac`, built into one raw EFI image
+      # (`packages.aarch64-linux.mac-appliance-image`, disko's image
+      # builder; needs KVM on an aarch64 builder) that the launcher at
+      # apps/web/static/mac boots under vfkit. `mac-x86` is the same
+      # modules on x86: nobody installs it, it is what the dev box can
+      # build and boot (the `host-mac` VM test, and the image builder's
+      # own proof) before a Mac day.
+      nixosConfigurations.mac = aarch64.mkHost { hostName = "repose-mac"; provider = "mac"; };
+      nixosConfigurations.mac-x86 = mkHost { hostName = "repose-mac"; provider = "mac"; };
+
       # The kexec installer every machine above is installed through
       # (`nix/installer`), and the edge with them; one per architecture
       # (perSystem.installer says why it exists at all).
@@ -372,7 +383,11 @@
       guestSystems = lib.genAttrs systems (system: (perSystem system).guestSystem);
       guestSystem = self.guestSystems.x86_64-linux;
 
-      packages = forAllSystems (s: s.packages);
+      packages = lib.recursiveUpdate (forAllSystems (s: s.packages)) {
+        # repose-appliance.raw.gz: the one disk the Mac launcher boots.
+        aarch64-linux.mac-appliance-image = self.nixosConfigurations.mac.config.system.build.diskoImages;
+        x86_64-linux.mac-appliance-image = self.nixosConfigurations.mac-x86.config.system.build.diskoImages;
+      };
 
       # NixOS VM tests for the host (nix/hosts/tests) and the guest
       # (nix/guest/tests). They need KVM on the builder: `system-features =
@@ -1019,6 +1034,34 @@
             touch $out
           '';
         guest-runner-builds = self.packages.${system}.guest-runner;
+        # The Mac launcher's sizing rules and its shell (I-1376, I-1380):
+        # three quarters of the Mac's memory for the VM, 12 GiB of 16 and
+        # 18 GiB of 24, all but two cores, a disk of 100 GB bounded by the
+        # volume's free space. The script is /bin/sh on macOS, so it is
+        # checked as POSIX sh and run by dash here, which is stricter than
+        # bash in POSIX mode.
+        mac-launcher-sizing = pkgs.runCommand "mac-launcher-sizing" {
+          script = ../apps/web/static/mac;
+          nativeBuildInputs = [ pkgs.shellcheck pkgs.dash pkgs.bash ];
+        } ''
+          shellcheck -s sh -e SC2016,SC1090 "$script"
+          dash -n "$script"
+          bash -n "$script"
+          got() { REPOSE_SIZING_TEST=1 dash "$script" "$@"; }
+          want() { exp=$1; shift; out=$(got "$@"); [ "$out" = "$exp" ] || { echo "$*: got $out, want $exp" >&2; exit 1; }; }
+          want 12288 vm_memory_mib 17179869184   # a 16 GB Mac
+          want 18432 vm_memory_mib 25769803776   # a 24 GB Mac
+          want 24576 vm_memory_mib 34359738368   # 32 GB
+          want 8192  vm_memory_mib 8589934592    # 8 GB would be under the floor
+          want 8 vm_cpus 10                      # the M4's ten cores
+          want 4 vm_cpus 4
+          want 100 disk_gb 500
+          want 40  disk_gb 60
+          want 200 disk_gb 500 200
+          want 20  disk_gb 25 200
+          echo "launcher sizing: 16 GB -> 12 GiB, 24 GB -> 18 GiB, cores - 2, disk 100 GB bounded by free - 20"
+          touch $out
+        '';
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.
         guestd = import ./guest/tests/guestd.nix {
@@ -1042,6 +1085,10 @@
         guest-runner-builds = self.packages.aarch64-linux.guest-runner;
         host-aarch64-builds = self.nixosConfigurations.host-aarch64.config.system.build.toplevel;
         installer-aarch64-builds = self.packages.aarch64-linux.kexec-installer;
+        # The appliance system and its image (I-1376); the image needs KVM
+        # on the builder, which the Mac's appliance VM has.
+        mac-builds = self.nixosConfigurations.mac.config.system.build.toplevel;
+        mac-appliance-image = self.packages.aarch64-linux.mac-appliance-image;
       };
 
       devShells = forAllSystems (s: s.devShells);

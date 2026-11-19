@@ -11,5 +11,10 @@ in
     inherit lib;
     inherit (cfg) osDevice dataDevice;
     azureUdevRules = if cfg.provider == "azure" then "${pkgs.waagent}/etc/udev/rules.d" else null;
+    # The Mac appliance has one disk (mac.nix, DECISIONS I-1376): the PV
+    # of vg-guests is a third partition of the OS disk and there is no
+    # data disk.
+    oneDisk = cfg.provider == "mac";
+    rootSize = cfg.mac.rootSize;
   };
 }

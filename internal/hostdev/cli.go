@@ -179,8 +179,14 @@ func initCmd(dir string, args []string) error {
 	names := fs.String("names", "", "comma-separated names and IPs the host will dial (server certificate SANs)")
 	cidr := fs.String("guest-cidr", "10.64.4.0/22", "the host's guest /22")
 	handle := fs.String("handle", "operator", "user handle for SSH host-certificate principals")
+	edgePub := fs.String("edge-pubkey", "", "the hub's WireGuard public key; with --edge-endpoint and --wg-address, Register answers the tunnel material as the api does (I-1380)")
+	edgeEndpoint := fs.String("edge-endpoint", "", "the hub's WireGuard endpoint, host:port")
+	wgAddress := fs.String("wg-address", "", "the host's address on the hub, CIDR (10.255.0.7/16)")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if (*edgePub != "" || *edgeEndpoint != "" || *wgAddress != "") && (*edgePub == "" || *edgeEndpoint == "" || *wgAddress == "") {
+		return errors.New("--edge-pubkey, --edge-endpoint and --wg-address go together")
 	}
 	if *names == "" {
 		return errors.New("--names is required: every hostname or IP hostd will use in --api-addr")
@@ -220,7 +226,8 @@ func initCmd(dir string, args []string) error {
 		return err
 	}
 	token := "rjt_" + hex.EncodeToString(tok)
-	st := &State{Listen: *listen, GuestCIDR: *cidr, JoinToken: token, Projects: map[string]*Project{}, Commands: map[string]*CommandRecord{}, UserHandle: *handle, UserID: "user-" + newID()[:8]}
+	st := &State{Listen: *listen, GuestCIDR: *cidr, JoinToken: token, Projects: map[string]*Project{}, Commands: map[string]*CommandRecord{}, UserHandle: *handle, UserID: "user-" + newID()[:8],
+		EdgePubkey: *edgePub, EdgeEndpoint: *edgeEndpoint, WGAddress: *wgAddress}
 	if err := Write(dir, st); err != nil {
 		return err
 	}

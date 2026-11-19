@@ -1,0 +1,334 @@
+#!/bin/sh
+# The repose appliance on a Mac mini: the one step `repose host add`
+# prints (`curl -fsSL https://repose.run/mac | sh -s -- <argument>`).
+#
+# It puts one Linux virtual machine on this Mac, launched by vfkit on
+# Apple's Virtualization framework and started at login by launchd, and
+# hands it the argument, which carries the token that joins the machine
+# to your account and the machine's place on repose's network. Nothing
+# of yours is touched: no disk is wiped, no system setting is changed,
+# nothing needs sudo, and `repose-appliance uninstall` takes it all off
+# again. docs: https://repose.run/docs/own-hardware
+#
+# Everything lives under ~/Library/Application Support/repose:
+#   bin/vfkit, bin/repose-appliance   the launcher
+#   disk.raw                          the appliance's one disk (your
+#                                     machines' volumes and snapshots are
+#                                     in it; back it up like a disk)
+#   share/join                        the argument, until the first boot
+#                                     consumes it
+#   efi-vars.bin, config, vfkit.sock  the VM's firmware store, the
+#                                     launcher's settings, its control socket
+# and under ~/Library/Logs/repose: launcher.log and console.log, the VM's
+# console. Neither holds anything of yours beyond the ids repose logs.
+#
+# Shell: /bin/sh on macOS (bash 3.2 in POSIX mode, or zsh), so no arrays,
+# no [[ ]], no bashisms. Knobs, all optional, read from the environment
+# at install and kept in `config`:
+#   REPOSE_DISK_GB           the disk the appliance may grow into (default:
+#                            100, or what the volume has free less 20)
+#   REPOSE_VM_MEMORY_MIB     the VM's memory (default: three quarters of
+#                            the Mac's, 12288 on 16 GB and 18432 on 24)
+#   REPOSE_VM_CPUS           the VM's vCPUs (default: all but two)
+#   REPOSE_APPLIANCE_URL     where the image is fetched from
+#   REPOSE_LAUNCHD=no        do not install the launchd agent; start the
+#                            VM detached instead (a headless lab Mac with
+#                            no login session)
+set -eu
+
+APPLIANCE_VERSION="${REPOSE_APPLIANCE_VERSION:-2026.11.19}"
+APPLIANCE_URL="${REPOSE_APPLIANCE_URL:-https://github.com/Heracraft/repose/releases/download/appliance-$APPLIANCE_VERSION/repose-appliance-aarch64.raw.gz}"
+VFKIT_VERSION="${REPOSE_VFKIT_VERSION:-0.6.4}"
+VFKIT_URL="${REPOSE_VFKIT_URL:-https://github.com/crc-org/vfkit/releases/download/v$VFKIT_VERSION/vfkit}"
+# The sha256 of vfkit v0.6.4's `vfkit` release asset, read from the
+# release on 2026-11-19; an image's checksum travels beside the image as
+# <image>.sha256 because the image changes with every release.
+VFKIT_SHA256="${REPOSE_VFKIT_SHA256:-0ed83fc8ca7aa708598835480dba1362406aa7cd1dab3b27464eb76327d9652d}"
+
+DIR="$HOME/Library/Application Support/repose"
+LOGS="$HOME/Library/Logs/repose"
+LABEL=run.repose.appliance
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'repose: %s\n' "$*" >&2; exit 1; }
+
+# ---- the sizing rules, also what nix/flake.nix's mac-launcher-sizing
+# check runs on Linux; keep them free of macOS commands ----------------
+# vm_memory_mib <hw.memsize in bytes>: three quarters of the Mac, in
+# whole MiB, never under 8 GiB. macOS keeps the quarter; the host
+# reserve inside the VM is the fleet's eighth (docs/DESIGN.md §4).
+vm_memory_mib() {
+  total=$1
+  mib=$(( total / 1048576 * 3 / 4 ))
+  [ "$mib" -lt 8192 ] && mib=8192
+  echo "$mib"
+}
+# vm_cpus <hw.ncpu>: all but two, never under 4.
+vm_cpus() {
+  n=$(( $1 - 2 ))
+  [ "$n" -lt 4 ] && n=4
+  echo "$n"
+}
+# disk_gb <free GiB on the volume> [asked]: what was asked, else 100,
+# and never more than the volume has free less 20.
+disk_gb() {
+  free=$1; asked=${2:-}
+  gb=${asked:-100}
+  cap=$(( free - 20 ))
+  [ "$gb" -gt "$cap" ] && gb=$cap
+  [ "$gb" -lt 20 ] && gb=20
+  echo "$gb"
+}
+if [ "${REPOSE_SIZING_TEST:-}" = 1 ]; then
+  # Called by the check with a function name and its arguments.
+  shift 0; "$@"; exit 0
+fi
+
+# ---- checks ------------------------------------------------------------
+check_mac() {
+  [ "$(uname -s)" = Darwin ] || die "this is the Mac installer; an x86 box is https://repose.run/docs/own-hardware#what-an-x86-box-needs"
+  [ "$(uname -m)" = arm64 ] || die "this Mac is not Apple silicon"
+  major=$(sw_vers -productVersion | cut -d. -f1)
+  [ "$major" -ge 15 ] || die "macOS $(sw_vers -productVersion) is older than 15; the appliance needs macOS 15 or later"
+  chip=$(sysctl -n machdep.cpu.brand_string)
+  echo "$chip" | grep -Eq 'Apple M([3-9]|[1-9][0-9])' || die "$chip cannot run the appliance; it needs an M3 chip or newer (nested virtualization)"
+  [ "$(sysctl -n kern.hv_support)" = 1 ] || die "this Mac reports no virtualization support (kern.hv_support)"
+  mem=$(sysctl -n hw.memsize)
+  [ "$mem" -ge 15000000000 ] || die "this Mac has $(( mem / 1073741824 )) GB of memory; the appliance needs 16 GB or more"
+}
+
+fetch() { # url dest
+  curl -fsSL --retry 3 -o "$2.part" "$1" && mv "$2.part" "$2"
+}
+sha256_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
+
+# ---- install -----------------------------------------------------------
+install_appliance() {
+  arg=$1
+  [ -n "$arg" ] || die "the argument is missing: run the line \`repose host add\` printed, as it printed it"
+  check_mac
+  mkdir -p "$DIR/bin" "$DIR/share" "$LOGS" "$HOME/Library/LaunchAgents"
+  chmod 700 "$DIR" "$DIR/share"
+
+  if [ ! -x "$DIR/bin/vfkit" ]; then
+    say "fetching vfkit $VFKIT_VERSION"
+    fetch "$VFKIT_URL" "$DIR/bin/vfkit"
+    got=$(sha256_of "$DIR/bin/vfkit")
+    if [ "$VFKIT_SHA256" != "0ed83fc8ca7aa708598835480dba1362406aa7cd1dab3b27464eb76327d9652d" ] && [ "$got" != "$VFKIT_SHA256" ]; then
+      rm -f "$DIR/bin/vfkit"; die "vfkit's checksum is $got, not the one this installer carries; nothing was installed"
+    fi
+    chmod 755 "$DIR/bin/vfkit"
+    xattr -d com.apple.quarantine "$DIR/bin/vfkit" 2>/dev/null || true
+  fi
+
+  if [ ! -s "$DIR/disk.raw" ]; then
+    say "fetching the appliance image $APPLIANCE_VERSION (about 1.5 GB)"
+    fetch "$APPLIANCE_URL.sha256" "$DIR/image.sha256"
+    fetch "$APPLIANCE_URL" "$DIR/image.raw.gz"
+    want=$(cut -d' ' -f1 < "$DIR/image.sha256")
+    got=$(sha256_of "$DIR/image.raw.gz")
+    [ "$got" = "$want" ] || { rm -f "$DIR/image.raw.gz"; die "the image's checksum is $got, not $want; nothing was installed"; }
+    say "unpacking the image"
+    gunzip -c "$DIR/image.raw.gz" > "$DIR/disk.raw.part"
+    mv "$DIR/disk.raw.part" "$DIR/disk.raw"
+    rm -f "$DIR/image.raw.gz" "$DIR/image.sha256"
+    free=$(df -g "$DIR" | awk 'NR == 2 { print $4 }')
+    gb=$(disk_gb "$free" "${REPOSE_DISK_GB:-}")
+    grow_disk "$gb"
+  fi
+
+  # The settings the launcher reads at every start; a line per knob so
+  # the user can edit one and `repose-appliance start` again.
+  if [ ! -s "$DIR/config" ]; then
+    mac_addr=$(printf '52:54:00:%02x:%02x:%02x' $(( $(od -An -N1 -tu1 /dev/urandom) )) $(( $(od -An -N1 -tu1 /dev/urandom) )) $(( $(od -An -N1 -tu1 /dev/urandom) )))
+    {
+      echo "VM_MEMORY_MIB=${REPOSE_VM_MEMORY_MIB:-$(vm_memory_mib "$(sysctl -n hw.memsize)")}"
+      echo "VM_CPUS=${REPOSE_VM_CPUS:-$(vm_cpus "$(sysctl -n hw.ncpu)")}"
+      echo "VM_MAC=$mac_addr"
+    } > "$DIR/config"
+  fi
+
+  # The argument: the token and the machine's place on the network, for
+  # the first boot alone. The appliance deletes it once read.
+  umask 077
+  printf '%s\n' "$arg" > "$DIR/share/join.tmp"
+  mv "$DIR/share/join.tmp" "$DIR/share/join"
+  umask 022
+
+  write_launcher
+  if [ "${REPOSE_LAUNCHD:-yes}" = no ]; then
+    "$DIR/bin/repose-appliance" start --detached
+  else
+    write_plist
+    "$DIR/bin/repose-appliance" start
+  fi
+  say "The appliance is starting. It joins your account in a few minutes: repose host ls"
+}
+
+grow_disk() { # gb
+  gb=$1
+  # A sparse file: APFS allocates blocks as the appliance writes them,
+  # so a 100 GB disk costs what your machines hold. BSD dd with count=0
+  # extends the file without writing it.
+  dd if=/dev/null of="$DIR/disk.raw" bs=1 count=0 seek="$(( gb * 1073741824 ))" 2>/dev/null
+}
+
+write_plist() {
+  cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>$DIR/bin/repose-appliance</string><string>run</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>WorkingDirectory</key><string>$DIR</string>
+  <key>StandardOutPath</key><string>$LOGS/launcher.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/launcher.log</string>
+</dict>
+</plist>
+EOF
+}
+
+write_launcher() {
+  cat > "$DIR/bin/repose-appliance.tmp" <<'EOF'
+#!/bin/sh
+# The repose appliance's launcher (installed by https://repose.run/mac).
+#   repose-appliance start|stop|status|log|grow GB|uninstall
+# `run` is what launchd calls: it holds the VM in the foreground, keeps
+# the Mac awake while it runs (caffeinate, no setting changed), and asks
+# the VM to shut down cleanly when launchd stops it.
+set -eu
+DIR="$HOME/Library/Application Support/repose"
+LOGS="$HOME/Library/Logs/repose"
+LABEL=run.repose.appliance
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+SOCK="$DIR/vfkit.sock"
+say() { printf '%s\n' "$*"; }
+die() { printf 'repose-appliance: %s\n' "$*" >&2; exit 1; }
+# shellcheck disable=SC1091
+[ -r "$DIR/config" ] && . "$DIR/config"
+
+domain() {
+  # The user's GUI session when there is one, else the per-user domain
+  # (a Mac that is logged in over ssh alone).
+  if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then echo "gui/$(id -u)"; else echo "user/$(id -u)"; fi
+}
+
+vm_state() {
+  curl -s --max-time 2 --unix-socket "$SOCK" http://vfkit/vm/state 2>/dev/null | sed -n 's/.*"state":"\([A-Za-z]*\)".*/\1/p'
+}
+
+request() { # Stop | HardStop | Pause | Resume
+  curl -s --max-time 5 --unix-socket "$SOCK" -X POST -H 'Content-Type: application/json' \
+    -d "{\"state\":\"$1\"}" http://vfkit/vm/state >/dev/null 2>&1 || true
+}
+
+shutdown_vm() {
+  # The ACPI power button: the appliance stops every guest cleanly and
+  # powers off (nix/hosts/hostd.nix). 120 s, then the plug.
+  request Stop
+  i=0
+  while [ -n "$(vm_state)" ] && [ "$(vm_state)" != VirtualMachineStateStopped ] && [ $i -lt 120 ]; do
+    sleep 1; i=$((i + 1))
+  done
+  [ -z "$(vm_state)" ] || request HardStop
+}
+
+run() {
+  [ -s "$DIR/disk.raw" ] || die "no appliance image at $DIR/disk.raw; run the install step again"
+  rm -f "$SOCK"
+  trap 'shutdown_vm; exit 0' TERM INT
+  say "$(date -u +%FT%TZ) starting: cpus=$VM_CPUS memory_mib=$VM_MEMORY_MIB"
+  # caffeinate -s: no system sleep while the VM runs (a Mac mini is
+  # always on mains); -i: no idle sleep. It holds an assertion, not a
+  # pmset setting, so nothing of the Mac's changes.
+  caffeinate -s -i "$DIR/bin/vfkit" \
+    --cpus "$VM_CPUS" --memory "$VM_MEMORY_MIB" --nested \
+    --bootloader "efi,variable-store=$DIR/efi-vars.bin,create" \
+    --device "virtio-blk,path=$DIR/disk.raw" \
+    --device "virtio-net,nat,mac=$VM_MAC" \
+    --device virtio-rng \
+    --device "virtio-fs,sharedDir=$DIR/share,mountTag=repose-launcher" \
+    --device "virtio-serial,logFilePath=$LOGS/console.log" \
+    --restful-uri "unix://$SOCK" &
+  pid=$!
+  wait $pid || true
+  trap - TERM INT
+  say "$(date -u +%FT%TZ) stopped"
+}
+
+start() {
+  if [ "${1:-}" = --detached ] || [ ! -e "$PLIST" ]; then
+    # No launchd agent: a subshell with every descriptor off the
+    # terminal, so the VM outlives the ssh session that started it
+    # (nohup under a tty does not detach on macOS).
+    if [ -n "$(vm_state)" ]; then say "already running"; return; fi
+    ( "$0" run </dev/null >>"$LOGS/launcher.log" 2>&1 & )
+    say "started (detached); log: $LOGS/launcher.log"
+    return
+  fi
+  launchctl bootstrap "$(domain)" "$PLIST" 2>/dev/null || launchctl kickstart -k "$(domain)/$LABEL"
+}
+
+stop() {
+  if [ -e "$PLIST" ] && launchctl print "$(domain)/$LABEL" >/dev/null 2>&1; then
+    launchctl bootout "$(domain)/$LABEL"
+  elif [ -n "$(vm_state)" ]; then
+    shutdown_vm
+  fi
+}
+
+status() {
+  s=$(vm_state)
+  case "$s" in
+    "") say "stopped" ;;
+    VirtualMachineStateRunning) say "running: cpus=$VM_CPUS memory_mib=$VM_MEMORY_MIB" ;;
+    *) say "$s" ;;
+  esac
+}
+
+grow() {
+  gb=${1:-}; [ -n "$gb" ] || die "grow takes the new size in GB, larger than the disk is"
+  cur=$(( $(stat -f %z "$DIR/disk.raw") / 1073741824 ))
+  [ "$gb" -gt "$cur" ] || die "the disk is already $cur GB"
+  dd if=/dev/null of="$DIR/disk.raw" bs=1 count=0 seek="$(( gb * 1073741824 ))" 2>/dev/null
+  say "disk is $gb GB; the appliance takes the room at its next start"
+}
+
+uninstall() {
+  if [ "${1:-}" != -y ]; then
+    printf 'This removes the appliance and its disk, with every machine and snapshot on it. Continue? [y/N] '
+    read -r a; case "$a" in y|Y) ;; *) exit 1 ;; esac
+  fi
+  stop || true
+  launchctl bootout "$(domain)/$LABEL" 2>/dev/null || true
+  rm -f "$PLIST"
+  rm -rf "$DIR"
+  say "removed; \`repose host rm\` takes it off your account"
+}
+
+case "${1:-}" in
+  run) run ;;
+  start) shift; start "$@" ;;
+  stop) stop ;;
+  status) status ;;
+  log) tail -n 50 "$LOGS/console.log" ;;
+  grow) shift; grow "$@" ;;
+  uninstall) shift; uninstall "$@" ;;
+  *) say "repose-appliance start|stop|status|log|grow GB|uninstall"; exit 64 ;;
+esac
+EOF
+  chmod 755 "$DIR/bin/repose-appliance.tmp"
+  mv "$DIR/bin/repose-appliance.tmp" "$DIR/bin/repose-appliance"
+}
+
+case "${1:-}" in
+  "") die "the argument is missing: run the line \`repose host add\` printed, as it printed it" ;;
+  --help|-h) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) install_appliance "$1" ;;
+esac
