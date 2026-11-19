@@ -209,6 +209,17 @@ func (f *Fake) SetHostUnreachable(projectID string, on bool) {
 	}
 }
 
+// SetHostOwner sets the account that owns the project's host, or "" for
+// a host repose runs (DECISIONS I-1368); GET /internal/route carries it
+// as host_owner_id.
+func (f *Fake) SetHostOwner(projectID, owner string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.projects[projectID]; ok {
+		p.hostOwner = owner
+	}
+}
+
 // SetLastError sets a project's last_error ("code: message"), or clears
 // it with "".
 func (f *Fake) SetLastError(projectID, lastError string) {

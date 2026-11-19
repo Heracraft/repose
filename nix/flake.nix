@@ -125,6 +125,14 @@
         # host-services registers against a real hostdev (DECISIONS I-17).
         hostdev = goPkgs.hostdev;
       };
+      # The edge's hub rules with real packets: two host peers, the
+      # control plane and the monitoring peer on a real WireGuard hub
+      # (nix/edge/tests, DECISIONS I-1368, I-1382).
+      edgeChecks = import ./edge/tests {
+        inherit pkgs disko;
+        edgeModule = ./edge;
+        gateway = goPkgs.gateway;
+      };
     in {
       overlays.agents = overlay;
 
@@ -254,7 +262,7 @@
       # NixOS VM tests for the host (nix/hosts/tests) and the guest
       # (nix/guest/tests). They need KVM on the builder: `system-features =
       # kvm` in nix.conf.
-      checks.${system} = hostChecks // guestTests // fragmentChecks // {
+      checks.${system} = hostChecks // guestTests // fragmentChecks // edgeChecks // {
         # An owned host keeps its snapshots on its own disk and carries no
         # bucket credentials (DECISIONS I-1372). Reads the two configurations'
         # assertions and the hostd unit's argv, so it builds no system.
@@ -291,6 +299,29 @@
             esac
             echo ok > $out
           '';
+        # The edge ruleset's snapshot (DECISIONS I-1368): the production
+        # edge's rendered nftables rules, comments and blank lines out,
+        # against nix/edge/tests/ruleset.golden. A change to nix/edge is
+        # a change to this file, made on purpose with
+        # `just edge-ruleset-golden`; a change nobody meant fails here
+        # with the diff.
+        edge-ruleset-snapshot =
+          let
+            edgeRules = builtins.unsafeDiscardStringContext
+              self.nixosConfigurations.edge.config.networking.nftables.ruleset;
+          in
+          pkgs.runCommand "edge-ruleset-snapshot"
+            {
+              rendered = pkgs.writeText "edge-nftables.conf" edgeRules;
+              golden = ./edge/tests/ruleset.golden;
+            } ''
+            grep -v '^[[:space:]]*#' "$rendered" | sed '/^[[:space:]]*$/d' > rendered.rules
+            if ! diff -u "$golden" rendered.rules; then
+              echo "the edge ruleset differs from nix/edge/tests/ruleset.golden; if the change is meant, run: just edge-ruleset-golden" >&2
+              exit 1
+            fi
+            echo ok > $out
+          '';
         # The browser view's port (DECISIONS I-1216). 6081 carries the
         # view relay, which the api dials; it was admitted from every
         # source on wg0 before, for a listener that did not exist, and a
@@ -317,8 +348,9 @@
             # from nothing else.
             grep -q 'iifname "wg0" ip saddr 10.255.255.1 tcp dport 6081 accept' edge.rules || fail "the edge has no control-plane-only rule for 6081"
             if grep -n '6081' edge.rules | grep -v 'ip saddr'; then fail "the edge admits 6081 without a source restriction"; fi
-            # Hook ingest keeps its own rule, from any guest.
-            grep -q 'iifname "wg0" tcp dport 8443 accept' edge.rules || fail "the edge lost the hook-ingest rule for 8443"
+            # Hook ingest keeps its own rule, from any guest and from a
+            # guest only (I-1368).
+            grep -q 'iifname "wg0" ip saddr 10.64.0.0/12 tcp dport 8443 accept' edge.rules || fail "the edge lost the hook-ingest rule for 8443"
             # A host lets a guest reach the edge's 8443 and nothing else:
             # the relay dials the guest now.
             grep -q 'tcp dport 8443 accept' host.rules || fail "the host lost the guest's hook-ingest rule"

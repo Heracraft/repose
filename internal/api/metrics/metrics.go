@@ -287,7 +287,7 @@ func New(reg prometheus.Registerer) *M {
 var BrowserViewOutcomes = []string{"closed", "idle", "cap", "budget", "too_large", "error", "refused"}
 
 // RefusedReasons is the reason enum of repose_api_host_reports_refused_total.
-var RefusedReasons = []string{"foreign_guest", "project_cap", "bad_snapshot"}
+var RefusedReasons = []string{"foreign_guest", "project_cap", "bad_snapshot", "foreign_command"}
 
 // NewNop returns metrics on a private registry (tests). It is the checked
 // registry of internal/obs/metrics, so a series that breaks the naming rules

@@ -36526,6 +36526,166 @@ refused nothing; red before the gate's early return, with
 against `PRICING.md`), `TestOwnPlanProductHasNoMeteredPrice`,
 `TestPlanKindRefusal`, `TestOwnPlanIsSoldOnlyWhereItsProductIs`,
 `TestPlanKindMessageIsTheApis`, and the fake api's own-plan tests.
+**I-1368. The hub, the gateway and the api treat a host as hostile: a
+host reaches no other host, from a host only the api's gRPC, Loki's
+push and the hub's own echo and hook ingest, the gateway routes a
+project on an owned host to its owner alone, and every host report is
+bound to the host whose stream carried it (mac-mini 19b, 2026-11-19).**
+*Made during implementation.* Amends I-92 (what a host reaches over the
+hub), I-170 and I-359 (the monitoring peer's rules), I-447 (host scope),
+I-952 (the control plane's remote-write). Follows I-647 and I-1366: a
+host the operator does not own joins the same WireGuard hub as the
+fleet, so a host is now a tenant's machine, and root on it is the
+tenant. Until this entry the hub trusted a host as it trusts the
+operator: the forward chain let no host-originated flow through, but
+the input chain admitted a host to the operator sshd on 2222, to the
+scrapes on 9100 and 9102, to the view relay on 6081 and to the hook
+ingest; Prometheus's remote-write on the monitoring server was open to
+every host; the gateway dialled whatever host a project's row named;
+and five api handlers took a `Result` or a `BuildLog` by command id
+alone. Three layers, each its own test:
+
+(1) *The edge* (`nix/edge/default.nix`). Three options name the
+ranges: `hostCIDR` 10.255.0.0/22 (the allocator's thousand hosts from
+10.255.0.2, `internal/api/hostmgr` `allocate`; the control plane at
+10.255.255.1 and the operator peers in 10.255.254.0/24 are outside
+it), `guestCIDR` 10.64.0.0/12 (a guest's packet reaches the hub with its
+own address, through its host's peer, and is bounded like its host),
+and `controlGrpcPort` 8443. In the forward chain a packet from either
+range is accepted for one destination, the api's gRPC at the control
+plane's hub address (I-1382), and otherwise dropped and counted in the
+named counter `host_forward_dropped`: not another host's address or
+guests, not the control plane on any other port, not the monitoring
+server beyond its push port. The monitoring peer's lines go first, its
+address being inside the host range (I-170): it scrapes hosts, every
+peer pushes to Loki on 3100 (`logPorts`), and Prometheus's remote-write
+9090 moves to a new `controlPushPorts` list admitted from the control
+plane's address alone. In the input chain a packet from either range
+is accepted for the monitoring peer's scrapes, for a guest's hook
+ingest on 8443 (the rule was `iifname "wg0" tcp dport 8443` from any
+peer and is now from `guestCIDR`), and for ICMP echo; the rest is
+dropped and counted in `host_input_dropped` before the operator sshd,
+the view relay and the scrape rules are reached. `nft list counter inet
+repose-edge host_forward_dropped` reads what a host probed. Two checks
+hold the shape: `edge-ruleset-snapshot` compares the production edge's
+rendered ruleset, comments and blank lines out, against
+`nix/edge/tests/ruleset.golden`, so any change to `nix/edge` is a change
+to that file made on purpose with `just edge-ruleset-golden`; and the
+VM test `edge-hub-isolation` (`nix/edge/tests/default.nix`) runs the
+same module with two host peers, the control plane and the monitoring
+peer on a real hub and sends the packets: a host to another host's wg
+address and to its guests, as itself and as one of its guests; a host
+to the control plane's 8443 (reached) and 8444 (dropped); a guest to
+8443 (dropped); a host to Loki (reached) and to remote-write (dropped),
+the control plane to both (reached); the monitoring peer to a host's
+node_exporter (reached) and a host back to it (dropped); a host to the
+edge's 2222, 6081, 9102 and 8443 (dropped, echo reached) and a guest to
+8443 (reached) and 6081 (dropped); each refusal read off the counter on
+both sides of the probe. It stands in for §7's packet test on staging,
+whose fleet is one host (`staging.tfvars` hosts = [], `prod.tfvars`
+hosts = ["host-02"]) and so has no second host to send from; the live
+confirmation is phase 3, when the Mac registers against prod.
+
+(2) *The gateway.* `GET /internal/route` carries `host_owner_id` (the
+account that owns the project's host, `null` for a host repose runs)
+and `user_id`. A login to a project whose host another account owns is
+refused with `<slug> is on a host your account does not own`, reason
+`foreign_host`, checked against the certificate's `key_id` and not
+against the api's word alone; a webhook delivery, which has no
+certificate, compares the two fields and answers 503 without a dial.
+Placement never produces the case (I-1366), so a hit is a wrong row,
+not a user: RUNBOOK "GatewayAuthSpike" step 4.
+
+(3) *The api, the audit of every message a host sends.* `Register` and
+`Rotate` are bound by the join token and then by the certificate serial
+(I-432) and name no project. `Hello` resolves each guest with
+`GetProjectOnHost` in the ops engine's reconcile, in resume and in
+resting; one on another host is `foreign_guest` (I-447). `Heartbeat`
+names no project. `Samples` go through the meter's `foreign_guest`
+check (I-447). Of `Event`, `GuestStateChanged`, `AgentEvent`,
+`AgentQuestion`, `TriggerRun` and `SnapshotDone` resolve the guest on
+the sending host (`foreign_guest`), `SnapshotDone`'s path is also held
+to the project's prefix (`bad_snapshot`), `GuestResting` goes through
+resting's `GetProjectOnHost`, and `HostWarning` and `OperatorLogin`
+name the host alone. `Result`: the ops engine matched `command_id` and
+`host_id` on the `ops` row already; `resting.OnResult` (PauseGuest,
+WakeGuest), `say.OnResult` (SayToAgent), `questions.OnResult`
+(AnswerQuestion and the I-1242 hold) and `triggers.Clock.OnResult`
+(RunTrigger) matched the command id alone and now record the host the
+command went to and drop a mismatch. `BuildLog`: `logs.Bind` carries
+the host and a line from any other is dropped. Every drop is
+`repose_api_host_reports_refused_total{reason="foreign_command"}` and a
+log line `event=foreign_command` with `host_id` and `command_id` only;
+`HostReportsRefused` alerts on it with the other reasons.
+
+Rejected: one nftables rule per host that wgsync writes (the range
+needs no sync and holds for a peer wgsync has not yet seen, which is
+the moment a stranger's host is most interesting); dropping a host's
+Loki push (it is how a host's logs reach the operator, the monitoring
+server holds no tenant data, and what a hostile host writes there is
+its own lies about itself); the gateway trusting `host_owner_id` alone
+(it refuses on the certificate, so a wrong row cannot route a stranger
+in either direction); checks in hostd for the commands it receives (the
+api chooses the host a command goes to, and on a hostile host hostd is
+the attacker's own program); a drop without a counter (a probe that is
+invisible is a probe nobody looks at).
+
+*Checked:* `nix build ./nix#checks.x86_64-linux.edge-ruleset-snapshot`
+and `edge-view-firewall` pass; the snapshot shown red by removing one
+line of the golden; `edge-hub-isolation` passes on this box's KVM; the
+Go tests red first, named in the commits: `TestAPauseResultFromAnotherHostWritesNothing`,
+`TestAWakeResultFromAnotherHostIsNotTheAnswer`,
+`TestASayResultFromAnotherHostIsNotTheAnswer`,
+`TestAnAnswerResultFromAnotherHostIsDropped`,
+`TestARunResultFromAnotherHostIsDropped`,
+`TestABuildLineFromAnotherHostIsDropped`,
+`TestAProjectOnAnotherAccountsHostIsRefused`,
+`TestADeliveryToAProjectOnAnotherAccountsHostIsRefused`,
+`TestRouteCarriesTheHostOwner`. Not done: `nft list ruleset` on the
+deployed edge and the two counters read there, which is the release's
+`--live` line.
+
+**I-1382. The one path a host is forwarded through the hub: the api's
+gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from
+the host range alone (mac-mini 19b, 2026-11-19).** *Made during
+implementation.* Amends I-92, which has hosts dial the api at the
+control VM's VNet address (`nix/hosts/prod.nix` `apiAddr =
+"10.200.3.4:8443"`) and the edge forward nothing a host originates. A
+Mac on somebody's desk has no route to an Azure VNet, so as the hub
+stood the appliance could not register, stream or be commanded: the
+conductor's finding that blocked phase 3. The edge's forward chain now
+has one rule for it, `iifname "wg0" oifname "wg0" ip saddr <hostCIDR> ip
+daddr <controlWgAddress> tcp dport <controlGrpcPort> accept`, before the
+I-1368 drop. The api already answers there: Docker publishes
+`api-grpc`'s 8443 on every interface of the control VM
+(`ops/coolify/README.md`), which is how the edge reaches `/internal` on
+8444 over the same tunnel, and the control VM filters nothing on wg0,
+so the edge is the filter. The guest range is excluded on purpose: a
+guest is not a host and gets no gRPC; the VM test sends that packet and
+reads the drop. Azure hosts keep dialling the VNet and never use the
+path. What this does not settle, and 19c and 19f must: I-92's order,
+in which a host registers before it has a tunnel and the edge admits a
+peer only after wgsync read it from `/internal/hosts`, which lists a
+host after it registered. A host with no VNet needs its WireGuard key,
+its hub address and the edge's peer before its first `Register`, so
+either the install `repose host add` writes (I-1370) carries them,
+minted by the api at `host add` and handed to wgsync then, or
+`Register` reaches the api by another road. The hub rule here serves
+either; the appliance's `apiAddr` is `10.255.255.1:8443` with
+`apiServerName` naming the certificate's host part if it differs.
+
+Rejected: forwarding a host to 8444 as well (`/internal` admits the
+gateway's certificate only, I-431, and a host has no business there);
+a public gRPC port on the edge for hosts (an internet-facing mTLS
+listener for the control plane, reachable by anyone with a stolen
+token, where the hub already gives every registered host a path); a
+route from the hub into the VNet (a host inside the control VM's
+network is the thing I-92 kept out).
+
+*Checked:* `edge-hub-isolation`, subtest "a host reaches the api's gRPC
+at the control plane and nothing else there"; the rule's line in
+`nix/edge/tests/ruleset.golden`. Not done: a Mac registering over it,
+which is phase 3.
 **I-1366. A host has an owning account: placement puts only that
 account's projects on it, and the seat count, the waitlist and the host
 gauges leave it out (19a mac-mini-ownership, 2026-11-19).** *Made during

@@ -82,6 +82,10 @@ Snapshots of machines on repose's servers go to cloud storage. **Snapshots of ma
 
 This is on purpose. The alternative is the keys to a storage bucket sitting on a machine in your house, which is a kind of credential repose does not keep anywhere ([secrets](/docs/secrets)).
 
+## What runs on it, and what it reaches
+
+Only your own projects run on your hardware; nobody else's is ever placed there. On repose's network it reaches the control plane and nothing else: not another host, not the gateway's own services. Repose reaches it over the tunnel the install sets up, the same way it reaches its own servers, with no port open on your side.
+
 ## Taking it off
 
 ```shell

@@ -235,7 +235,10 @@ type userRec struct {
 
 type project struct {
 	Project
-	owner       string
+	owner string
+	// hostOwner is the account that owns the project's host, "" for a
+	// host repose runs (DECISIONS I-1368).
+	hostOwner   string
 	destroyed   bool
 	destroyedAt time.Time
 	retained    time.Time // destroyed projects keep their last snapshot until then

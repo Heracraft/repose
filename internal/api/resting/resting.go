@@ -34,6 +34,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/heracraft/repose/internal/api/idle"
+	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -134,11 +135,15 @@ type Service struct {
 	log  *slog.Logger
 	// Now is the clock (tests).
 	Now func() time.Time
+	// Metrics, when set, counts a result the service refused because it
+	// came from a host the command was not sent to (DECISIONS I-1368,
+	// repose_api_host_reports_refused_total{reason="foreign_command"}).
+	Metrics *metrics.M
 
 	mu sync.Mutex
 	// waiting maps a wake's command_id to the channel its result lands
 	// on; pauses maps a pause's command_id to the project it was for.
-	waiting map[uuid.UUID]chan *hostdv1.Result
+	waiting map[uuid.UUID]wakeWait
 	pauses  map[uuid.UUID]pauseRec
 	// flight shares one in-flight wake per project, so an editor opening
 	// several connections at once is one wake.
@@ -183,6 +188,16 @@ type refusal struct {
 type pauseRec struct {
 	project uuid.UUID
 	at      time.Time
+	// host is the host the pause went to; a result from any other host is
+	// not its answer (DECISIONS I-1368).
+	host uuid.UUID
+}
+
+// wakeWait is one wake awaiting its result: the channel the result lands
+// on and the host the command went to.
+type wakeWait struct {
+	ch   chan *hostdv1.Result
+	host uuid.UUID
 }
 
 // wake is one shared wake: every caller waits on done and reads res/err.
@@ -195,7 +210,7 @@ type wake struct {
 // New builds the service.
 func New(pool *db.Pool, send Sender, log *slog.Logger) *Service {
 	return &Service{pool: pool, send: send, log: log.With("component", "api"), Now: time.Now,
-		waiting: map[uuid.UUID]chan *hostdv1.Result{}, pauses: map[uuid.UUID]pauseRec{}, flight: map[uuid.UUID]*wake{},
+		waiting: map[uuid.UUID]wakeWait{}, pauses: map[uuid.UUID]pauseRec{}, flight: map[uuid.UUID]*wake{},
 		lastFail: map[uuid.UUID]failedWake{}, refusals: map[uuid.UUID]refusal{}, months: map[string]bool{}}
 }
 
@@ -383,7 +398,7 @@ func (s *Service) report(sent, would, total int) {
 func (s *Service) sendPause(ctx context.Context, c Candidate, now time.Time) error {
 	cmdID := store.NewID()
 	s.mu.Lock()
-	s.pauses[cmdID] = pauseRec{project: c.ProjectID, at: now}
+	s.pauses[cmdID] = pauseRec{project: c.ProjectID, at: now, host: c.HostID}
 	s.mu.Unlock()
 	cmd := &hostdv1.Command{CommandId: cmdID.String(), Cmd: &hostdv1.Command_PauseGuest{
 		PauseGuest: &hostdv1.PauseGuest{GuestId: c.GuestID.String(), Reason: ReasonIdle}}}
@@ -533,7 +548,7 @@ func (s *Service) wake(ctx context.Context, projectID uuid.UUID, reason string) 
 	cmdID := store.NewID()
 	ch := make(chan *hostdv1.Result, 1)
 	s.mu.Lock()
-	s.waiting[cmdID] = ch
+	s.waiting[cmdID] = wakeWait{ch: ch, host: *hostID}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -583,8 +598,18 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 		return false
 	}
 	s.mu.Lock()
-	ch, waiting := s.waiting[cmdID]
+	w, waiting := s.waiting[cmdID]
 	rec, paused := s.pauses[cmdID]
+	// A result counts only from the host the command went to (DECISIONS
+	// I-1368): a host the operator does not own could otherwise answer
+	// another host's command and mark a stranger's machine resting, or
+	// tell a dial a frozen machine is awake. The record stays for the
+	// real host's answer.
+	if (waiting && w.host != hostID) || (paused && rec.host != hostID) {
+		s.mu.Unlock()
+		s.foreign(hostID, r.CommandId)
+		return true
+	}
 	if paused {
 		delete(s.pauses, cmdID)
 	}
@@ -592,7 +617,7 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 	switch {
 	case waiting:
 		select {
-		case ch <- r:
+		case w.ch <- r:
 		default:
 		}
 		return true
@@ -601,6 +626,15 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 		return true
 	}
 	return false
+}
+
+// foreign logs and counts a result from a host the command was not sent
+// to; the ids are the whole line (DECISIONS I-1368).
+func (s *Service) foreign(hostID uuid.UUID, commandID string) {
+	if s.Metrics != nil {
+		s.Metrics.HostReportsRefused.WithLabelValues("foreign_command").Inc()
+	}
+	s.log.Warn("result from a host the command was not sent to", "event", "foreign_command", "host_id", hostID.String(), "command_id", commandID)
 }
 
 // onPauseResult records what the host did with a pause. hostd raises

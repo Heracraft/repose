@@ -2058,7 +2058,8 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"project_id": p.ID, "login": p.Slug + "." + u.Handle, "guest_ip": p.GuestIP, "state": p.State,
 			"principals": []string{p.ID}, "host_unreachable": p.HostUnreachable,
-			"resting": p.State == "running" && p.Resting != nil,
+			"resting":       p.State == "running" && p.Resting != nil,
+			"host_owner_id": nilIfEmpty(p.hostOwner), "user_id": p.owner,
 		})
 		return nil
 	}
@@ -2086,6 +2087,7 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 			// fake that left it out would make the whole wake untestable.
 			"project_id": p.ID, "login": login, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
 			"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.Resting != nil,
+			"host_owner_id": nilIfEmpty(p.hostOwner), "user_id": p.owner,
 		})
 		return nil
 	}
@@ -2248,4 +2250,13 @@ func (f *Fake) internalEvents(w http.ResponseWriter, r *http.Request) *apiError 
 		return nil
 	}
 	return notFound("project for source_ip")
+}
+
+// nilIfEmpty is a JSON null for "", the shape the real api gives a
+// nullable id.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

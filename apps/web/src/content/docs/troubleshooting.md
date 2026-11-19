@@ -47,6 +47,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`repose gateway: certificate not valid for this project`.** The certificate on your laptop is for another project or another account handle: a project removed and made again has a new id, and so does a renamed handle. Any `repose` command gets a new certificate and connects; plain `ssh` and your editor don't, so run `repose ssh todo-app` once first.
 
+**`todo-app is on a host your account does not own`.** The machine is placed on hardware another account added, which repose never does on its own. Nothing on your side fixes it; write to support with the project's name.
+
 **`repose gateway: gateway cannot reach control plane; try again shortly`.** repose can't reach the service that checks your certificate, so it can't let anyone in. Your machine keeps running and connections already open keep working. Connect again in a few minutes.
 
 **`repose gateway: gateway busy`.** The gateway is at its limit for connections being set up, which has nothing to do with your account or your certificate. Connect again.

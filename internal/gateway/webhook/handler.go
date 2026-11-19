@@ -186,6 +186,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	outcome := "delivered"
 	switch {
+	case state.HostOwnerID != "" && state.HostOwnerID != state.UserID:
+		// A host the operator does not run carries only its owner's
+		// projects (DECISIONS I-1368). A delivery has no certificate, so
+		// the route's two ids are the check; the api's placement never
+		// produces this, and a row that does is not dialled.
+		h.cfg.Log.Warn("project on a host another account owns", "event", "foreign_host", "project_id", route.ProjectID)
+		h.refuse(w, d, http.StatusServiceUnavailable, "unavailable", "repose: the machine is on a host its owner does not own", 300)
+		return
 	case state.HostUnreachable:
 		h.refuse(w, d, http.StatusServiceUnavailable, "unavailable", "repose: the machine's server cannot be reached right now", 300)
 		return

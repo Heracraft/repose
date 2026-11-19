@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -115,14 +116,18 @@ func New(t *testing.T, o Options) *Harness {
 	}
 	h.HostMgr = hostmgr.New(pool, h.CA.X509(), "replica-1", h.Metrics, log)
 	h.Logs = buildlog.New(pool, log)
+	h.Logs.Metrics = h.Metrics
 	h.Events = events.New(pool, h.Metrics, log)
 	h.Meter = meter.New(pool, h.Metrics, log)
 	h.Questions = questions.New(pool, h.Events, h.HostMgr, log)
+	h.Questions.Metrics = h.Metrics
 	h.Events.SetQuestions(h.Questions)
 	h.Resting = resting.New(pool, h.HostMgr, log)
+	h.Resting.Metrics = h.Metrics
 	h.Events.SetResting(h.Resting)
 	h.Questions.Waker = h.Resting
 	h.Say = say.New(pool, h.HostMgr, log)
+	h.Say.Metrics = h.Metrics
 	h.Events.SetSays(h.Say)
 	h.Say.Waker = h.Resting
 	// Triggers, with the webhooks store a route trigger needs. Its
@@ -160,9 +165,7 @@ func New(t *testing.T, o Options) *Harness {
 		Samples: h.Meter.OnSamples,
 		Event:   h.Events.OnEvent,
 		BuildLog: func(ctx context.Context, hostID uuid.UUID, l *hostdv1.BuildLog) {
-			if opID, ok := h.Logs.OpFor(l.CommandId); ok {
-				h.Logs.Append(opID, int64(l.Seq), l.Line)
-			}
+			h.Logs.AppendFrom(hostID, l.CommandId, int64(l.Seq), l.Line)
 		},
 	})
 	tlsCfg, err := h.HostMgr.TLSConfig(nil, "127.0.0.1")
@@ -198,6 +201,12 @@ func New(t *testing.T, o Options) *Harness {
 		h.ConnectHost(t, "host-01", fo)
 	}
 	return h
+}
+
+// Refused is the current value of
+// repose_api_host_reports_refused_total for one reason.
+func (h *Harness) Refused(reason string) int {
+	return int(testutil.ToFloat64(h.Metrics.HostReportsRefused.WithLabelValues(reason)))
 }
 
 // StartEngine replaces the ops engine (simulating an api restart).

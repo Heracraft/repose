@@ -905,6 +905,11 @@ More than one auth failure per second at the gateway.
    Logto token endpoint.
 3. `wrong_principal` from one user repeatedly is someone probing other
    projects; `repose-admin audit --user`.
+4. `foreign_host` (DECISIONS I-1368) is a project placed on a host owned
+   by an account that is not the one connecting, which placement never
+   produces: the gateway refused the route and logged `event=foreign_host`
+   with the project id. Read the project's `host_id` and that host's
+   `owner_account_id`; the row is wrong, not the user.
 
 ## Gateway relay failures
 
@@ -1012,10 +1017,14 @@ webhook marks the channel broken and mails the user (I-692).
 The api dropped a host's report (DECISIONS I-447). `foreign_guest`: an
 event, a `Hello` entry or a sample named a guest whose project is placed on
 another host or on none. `bad_snapshot`: a `snapshot_done` path outside the
-project's prefix. hostd sends neither.
+project's prefix. `foreign_command` (I-1368): a `Result` or a `BuildLog`
+line for a command the api sent to another host (a pause, a wake, a
+message, an answer, a trigger run, a build). hostd sends none of them;
+a host that does is lying, and on a host repose does not run that is
+the owner's root, not a bug.
 
-1. Loki `{component="api"} | json | event="foreign_guest"` gives `host_id`
-   and `guest_id`; `repose-admin projects list --host <host>` and the
+1. Loki `{component="api"} | json | event=~"foreign_guest|foreign_command"` gives `host_id`
+   and `guest_id` or `command_id`; `repose-admin projects list --host <host>` and the
    project's `host_id` show where the api thinks it is.
 2. One line right after a failed placement or a move is a late report from
    the old host for a guest it has just let go; nothing to do.
