@@ -268,13 +268,27 @@ the next, and Config has no Webhooks section.
   are as wide as their words, so dropping Then for a schedule leaves a
   gap and moves nothing; the schedule's row is four tracks with the
   time zone always in the last, so monthly's day field fills the middle
-  instead of wrapping the zone; and the receiver's fields sit in a slot
-  with one minimum height (the written prompt's), so a prompt that
-  becomes a path, or an agent that becomes the app, leaves the buttons
-  under it where they were. The cost is blank space under a short
-  variant, which is cheaper than a button that moves as the hand reaches
-  for it. `the form keeps its controls in place across every switch` in
-  apps/web/tests/triggers.spec.ts holds it at 1440 and 390.
+  instead of wrapping the zone; and the prompt sits in a slot with one
+  minimum height, the written prompt's, so a prompt that becomes a path
+  leaves the buttons under it where they were. The cost is blank space
+  under the path, which is cheaper than a button that moves as the
+  hand reaches for it. `the form keeps its controls in place across
+  every switch` in apps/web/tests/triggers.spec.ts holds it at 1440
+  and 390.
+- **What a switch adds or removes still moves what is under it**, and
+  that is left alone. Measured live after r20261119-4 (the conductor,
+  1440): the buttons rise 121 px when the agent becomes the app,
+  because the prompt block (its switch, the textarea, the line under
+  it, More settings) is gone and the app's two fields are shorter even
+  in the slot; and they drop 112 px when a webhook becomes a schedule,
+  because the When, At and Time zone row appears. Holding the buttons
+  still through those would mean a 112 px hole under the first row of
+  the default form, and about 170 px of nothing under the app's two
+  fields, on every visit, to spare a one-time move on a switch the user
+  made with the control above it, which stays put. The first draft of
+  the bullet above said the buttons rise by the More settings line
+  alone on the app switch; the live number is 121 px, and the test
+  never asserted otherwise.
 - **The prompt the browser types reaches the machine through the api**
   (I-1268). The first draft of this section said a browser could not
   write a prompt and therefore could not make a trigger; the answer is
