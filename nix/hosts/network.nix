@@ -85,14 +85,15 @@ let
 
       write_wg0() {
         # $1: a JSON file with private_key, address, edge_pubkey and
-        # edge_endpoint under the key $2 (`.wg` of host.json, `.` of
-        # hub.json). Prints 1 when it wrote the file, 0 when the material
-        # is incomplete and the file was removed.
+        # edge_endpoint under the jq prefix $2 (`.wg` for host.json, empty
+        # for hub.json, whose top level is the material). Prints 1 when it
+        # wrote the file, 0 when the material is incomplete and the file
+        # was removed.
         local key address edge_pubkey endpoint
-        key=$(jq -r "$2.private_key // empty" "$1")
-        address=$(jq -r "$2.address // empty" "$1")
-        edge_pubkey=$(jq -r "$2.edge_pubkey // empty" "$1")
-        endpoint=$(jq -r "$2.edge_endpoint // empty" "$1")
+        key=$(jq -r "''${2}.private_key // empty" "$1")
+        address=$(jq -r "''${2}.address // empty" "$1")
+        edge_pubkey=$(jq -r "''${2}.edge_pubkey // empty" "$1")
+        endpoint=$(jq -r "''${2}.edge_endpoint // empty" "$1")
         if [ -n "$key" ] && [ -n "$address" ] && [ -n "$edge_pubkey" ] && [ -n "$endpoint" ]; then
           (
             umask 077
@@ -125,7 +126,7 @@ let
         rm -rf /run/systemd/network/20-br-guests.network.d
         networkctl reload
         systemctl --no-block reload-or-restart sshd.service
-        if [ -s "${hubJson}" ] && [ "$(write_wg0 "${hubJson}" .)" = 1 ]; then
+        if [ -s "${hubJson}" ] && [ "$(write_wg0 "${hubJson}" "")" = 1 ]; then
           # The bootstrap tunnel (I-1380): up before registration so
           # hostd register can reach the hub; nothing else binds it.
           echo "hub.json applied: wg0 configured for registration"
@@ -172,7 +173,7 @@ let
       ENV
       mv "$run/host.env.tmp" "$run/host.env"
 
-      if [ "$(write_wg0 "$hostJson" .wg)" != 1 ]; then
+      if [ "$(write_wg0 "$hostJson" ".wg")" != 1 ]; then
         # wg-quick-wg0.service is conditioned on this file; without it the
         # tunnel stays down and sshd listens on every interface behind the
         # nftables input chain (operator ssh only while bootstrap is on).
