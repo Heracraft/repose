@@ -37228,3 +37228,51 @@ detached under `repose host run`), the appliance booted to its login
 prompt and consumed the bundle from the share; `repose host rm --local
 --yes` pressed the power button and removed it in 3 s ("System Power
 Off" on the console, no vfkit left, the directory and the agent gone).
+
+**I-1386. On a host the customer owns, the parked image's wrapping key is
+held by the macOS Keychain, so a Mac restart keeps a customer's work
+(owner, 2026-11-19).** *Made during implementation* (the open question
+I-1376 left when it switched the park off on `provider == "mac"` because
+"the Mac has no identity for a Key Vault, I-653"; the owner settled it
+and asked not to be asked again unless it does not work).
+
+- *Why it had to be answered.* I-653's exception keeps a guest's memory,
+  secrets included, as a dm-crypt image on the host across a restart, with
+  the image's key wrapped by Key Vault and unwrapped only by that host's
+  managed identity. A Mac on a customer's desk has no such identity, so
+  I-1376 switched the park off there — and a Mac restart then stops every
+  machine on it and loses what each was doing. Measured on the AWS M4
+  the same day: a park costs 6.5 s a guest (snapshot 203 ms, an 824 MB
+  image) and an unpark 3.8 s, against 57.9 s to start a guest cold and
+  lose its work. So the park is not a luxury on owned hardware; it is the
+  difference between a restart costing 25 seconds and costing a day.
+- *The custodian, and why this is not a fourth home.* The Keychain holds
+  **the wrapping key only** — one key per host, created on first park,
+  non-exportable, in the System keychain under the launcher's own access
+  group, used to wrap and unwrap the per-image key. No named secret, no
+  tenant data and no token is ever written to it, so CLAUDE.md's "three
+  homes and nothing else" is unchanged and this remains I-653's single
+  exception with a second custodian for hardware we do not own. The image
+  itself is unchanged: dm-crypt, on the host, removed once read and after
+  6 hours whether read or not, never leaving the host.
+- *Not hardware-backed, on purpose, for now.* The owner's words: "It's
+  not hardware backed of course, but we can fix that later." A Secure
+  Enclave key (`kSecAttrTokenIDSecureEnclave`) cannot wrap arbitrary
+  bytes directly and needs an ECIES envelope and a signed, entitled
+  binary, which is the work I-1380 deliberately avoided by launching
+  over a plist and vfkit. So: Keychain now, Secure Enclave as its own
+  decision, and the docs say which it is rather than implying hardware
+  protection the build does not have.
+- *What it does not promise.* A park runs on a restart the customer
+  asks for, and on a `repose host run` stop. It cannot run on a power
+  cut, a panic or a force-off, and the public docs say "restart your Mac
+  and your work survives", never "your work always survives".
+- *The threat it does and does not cover.* An attacker with the Mac's
+  disk alone reads ciphertext. An attacker with the unlocked Mac and
+  root reads the Keychain item and therefore the image, which is weaker
+  than the fleet's Key Vault custody and is the price of the customer
+  owning the machine; it is stated in `docs/features/secrets.md` rather
+  than left for a reader to work out.
+
+*Not done:* the implementation. This entry settles where the key lives;
+the code still has the park off on `provider == "mac"` (ENG-2).
