@@ -238,6 +238,20 @@ async function busy(name: string) {
 	return p;
 }
 
+// Connect leads with the one command that reaches any machine, temporary
+// or not, from any folder (DECISIONS I-1350); run is for making one.
+test('Connect offers repose attach first and never repose run', async ({ page }) => {
+	const p = await project('connect-attach', 0);
+	await page.goto(`/projects/${p.id}`);
+	const rows = page.getByRole('list', { name: 'Connect' }).getByRole('listitem');
+	await expect(rows).toHaveCount(3);
+	await expect(rows.nth(0)).toContainText(`repose attach ${p.slug}`);
+	await expect(rows.nth(0).getByRole('button', { name: 'Copy the repose attach command' })).toBeVisible();
+	await expect(rows.nth(1)).toContainText(`ssh ${p.slug}.repose`);
+	await expect(rows.nth(2)).toContainText(`repose code ${p.slug}`);
+	await expect(page.getByRole('list', { name: 'Connect' })).not.toContainText('repose run');
+});
+
 // From a 760px column (1440: 872px) the newest events sit on the left and
 // Agents and Machine in an 18rem column on the right; the rest spans it.
 test('the Overview sits in two columns at 1440, questions and Connect first', async ({ page }) => {

@@ -4,8 +4,9 @@ Several agents build on this repository at once. Each one works on its own
 worktree branch and queues the branch when it is done; one session, the
 conductor, merges the queue into main in verified batches, and ships
 what main holds when the owner asks for a release. DECISIONS I-416
-records why. `ORCHESTRATION.md` covers the rest of the conductor's job;
-this file is the part between "a branch is done" and "it is live".
+records why. `ORCHESTRATION.md` covers the rest of the conductor's job and
+`CONDUCTOR-HANDOFF.md` is where the last conductor left it; this file is
+the part between "a branch is done" and "it is live".
 
 ## For an agent building a change
 
@@ -28,14 +29,27 @@ this file is the part between "a branch is done" and "it is live".
    `band 1/2` on kanali — at the cost of gaps in the sequence. `band` with
    no argument says what this machine draws from, `band none` goes back to
    dense numbering (DECISIONS I-760).
-4. Finish the change with the evidence its checklist names. Then commit,
-   `git merge main`, rerun the checks the merge touches, and queue:
+4. Finish the change with the evidence its checklist names. Write the
+   pull request body in the shape `docs/PR.md` gives (five sentences on
+   what changes, three lines of why, the two folded parts; the record is
+   filled by the tool) into a file. Then commit, `git merge main`, rerun
+   the checks the merge touches, and queue:
 
    ```
-   ops/dev/release-queue add --live "repose start of a stopped e2e project: under 12 s"
+   ops/dev/release-queue add --body pr.md --live "repose start of a stopped e2e project: under 12 s"
    ```
 
-   `add` refuses a dirty tree, a branch whose CLI output or web text
+   `add` pushes the branch and opens its pull request against
+   `integrated`, labelled `queued` and `ships:<target>` for each target,
+   with the record filled in; a later `add` updates the same PR and its
+   body (`--body` again, or the body it has). A branch that builds on a
+   queued branch not yet merged stacks on it: `add --on <that branch>`
+   makes that PR the base, and GitHub moves the base to `integrated`
+   when it merges. From a box with no `gh` the entry is local to that
+   machine and the conductor fetches the branch by hand (DECISIONS
+   I-1352).
+
+   `add` refuses a body that fails `ops/dev/pr-record check`, a dirty tree, a branch whose CLI output or web text
    fails the trust-the-reader guards (DECISIONS I-484, I-485; it runs
    them for a branch that ships as `cli` or `web`), a branch with nothing
    the integration tip lacks, and a branch that conflicts with the tip
@@ -58,20 +72,28 @@ this file is the part between "a branch is done" and "it is live".
    `ops/dev/release-queue live <branch> --ran "<output>"`, or
    `--not-done "<why>"`. Until then `done` and `record` say the result is
    owed (I-760).
-6. Stop there. Don't merge into `main`, push, tag, publish a base or switch
-   a host. If the conductor asks for a change, make it on the same branch
-   and `add` again. `ops/dev/release-queue inbox` is where a message about
-   this branch arrives; `ls` marks an entry that has one unread.
+6. Stop there. Don't merge the PR, merge into `main`, push `main`, tag,
+   publish a base or switch a host. The conductor merges; nobody asks the
+   owner to merge a pull request unless the owner says so for that one.
+   If the conductor sends the branch back, the PR loses `queued` and the
+   reason is a comment on it: make the change on the same branch and
+   `add` again. `ops/dev/release-queue inbox` is where a message about
+   this branch arrives on this machine; `ls` marks an entry that has one
+   unread.
 
 `ops/dev/release-queue ls` shows the queue. A branch that moved after it
 was queued is marked; queue it again or the release takes the old commit.
 A row also says which machine queued it, when that is not this one, and
 whether its commit is in this clone.
 
-**The queue state is one machine's.** It lives in that clone's common git
-dir, so a branch queued on woker-1 is queued nowhere kanali looks, and
-kanali's queue is the authoritative one. The cross-machine question is
-`ops/dev/release-queue where <branch>`, which answers from refs instead:
+**The queue is the open pull requests labelled `queued`** (docs/PR.md,
+DECISIONS I-1352), so a branch queued on any machine with `gh` is in the
+one queue; `ls` and `cut` read the PRs first and keep this clone's
+entries as the record under them. The entries are one machine's: with
+no `gh` (a repose guest) `add` writes an entry here and nowhere else, and
+the conductor takes that branch by fetching it. The cross-machine
+question is `ops/dev/release-queue where <branch>`, which answers from
+refs and the PR:
 the local entry, else the merge commit `cut` wrote, else the branch's own
 ref. It works for a branch this machine has never had — `where
 test-hygiene` from woker-1 answers "merged in r20261015-4, on main, not
@@ -147,9 +169,12 @@ branch, which deploys nothing ("The integrated branch" below).
 
 Integrate whenever branches are queued; it needs no owner approval.
 
-1. **See what is waiting.** `ops/dev/release-queue ls`. Ask each agent
-   with a branch in flight (`ListAgents`, `SendMessage`) whether it is
-   about to queue. Sessions get renamed: a send that fails with "no agent
+1. **See what is waiting.** `ops/dev/release-queue ls` reads the open
+   PRs labelled `queued` against `integrated`, in stack order, and fetches
+   each one's branch; a PR stacked on a branch that is not queued waits
+   and is named. Ask each agent with a branch in flight (`ListAgents`,
+   `SendMessage`) whether it is about to queue; a session on the other
+   machine queues by opening its PR, and nothing else is needed from it. Sessions get renamed: a send that fails with "no agent
    named" means the name changed, not that the session ended. Run
    `ListAgents` again and match the `[ref]`, and tell agents your current
    name, since their replies to an old one are lost.
@@ -161,9 +186,13 @@ Integrate whenever branches are queued; it needs no owner approval.
    release loses a change quietly (DECISIONS I-759). A conflict that is only the
    decisions index is settled by regenerating it. Any other conflict
    stops the cut: resolve it in the batch worktree (or send it back to
-   the branch's agent and `drop` the branch), commit, then
-   `ops/dev/release-queue resume <batch>`. `abandon <batch>` undoes a cut
-   and puts its branches back in the queue.
+   the branch's agent with `drop <branch> --why "<what to fix>"`, which
+   takes `queued` off its PR and leaves the reason as a comment), commit,
+   then `ops/dev/release-queue resume <batch>`. `abandon <batch>` undoes
+   a cut and puts its branches back in the queue. **The conductor merges
+   the PRs** by this cut and the `done` below; it never asks the owner to
+   press merge on GitHub, and nobody merges a PR there by hand: a merge
+   into `main` on GitHub is a deploy.
 3. **Freeze when you verify.** Commits that arrive after the cut wait for
    the next batch unless they fix this one; each one taken in means
    verifying again.
@@ -247,10 +276,12 @@ Integrate whenever branches are queued; it needs no owner approval.
    conductor checkout> merge --ff-only release/<batch>` (the main checkout
    must be clean), then
    `ops/dev/release-queue done <batch>`, which removes the batch
-   worktree and pushes main to `origin integrated` (and nothing else). Do
-   not push `main`. `ls` now lists those branches as `on-main` and
-   ends with what the next release ships as. Tell each agent its branch
-   is on main, so it merges main before its next `add`.
+   worktree and pushes main to `origin integrated` (and nothing else):
+   that push closes each PR in the batch as merged, and `done` takes
+   `queued` off it and leaves the batch name as a comment. Do not push
+   `main`. `ls` now lists those branches as `on-main` and ends with what
+   the next release ships as. Tell each agent its branch is on main, so
+   it merges main before its next `add`.
 
 ## For the conductor: releasing
 
@@ -301,7 +332,9 @@ else integrated with it.
    release signing key" below).
 5. **Check it live.** Run each released branch's `--live` check on
    throwaway `e2e-*` projects, never on the owner's projects, at most two
-   alive at once. Paste the output into the release record.
+   alive at once. A check that needs a signed-in dashboard gets one from
+   `ops/dev/dashboard-session` (`DEV-BOX.md`, "Things the 2026-11-18
+   conductor had to find out"), as the owner, for an hour. Paste the output into the release record.
 6. **Record.** `ops/dev/release-queue record <release>` prints the line for
    `docs/workstreams/STATUS.md` and the detail that does not fit in it,
    from what the queue already holds — the branches with the decision ids

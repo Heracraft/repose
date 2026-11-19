@@ -173,3 +173,62 @@ export PLAYWRIGHT_CHROMIUM_PATH=$(nix build --no-link --print-out-paths nixpkgs#
 - **Switch from a clean checkout.** A switch evaluated in a dirty checkout
   stamps `-dirty` into hostd's version (host-02 said `374aeab-dirty` for two
   minutes on 2026-11-11). `git worktree add --detach ~/kanali-release-<sha> <sha>`.
+
+## Things the 2026-11-18 conductor had to find out (keep current)
+
+The conductor session on this box is named `conductor`; its log is in
+its scratchpad (`CONDUCTOR-LOG.md` under
+`/tmp/claude-1000/-home-azureuser-projects-factory/8fd79c42-.../scratchpad/`),
+one section per batch and release from 2026-11-11 to 2026-11-18.
+
+- **A signed-in dashboard session, without the owner's browser.**
+  `ops/dev/dashboard-session [logto-user-id] [out]` mints one as the
+  owner (Logto id `c7fh26yzrl93`): the M2M app `t9ogvrzosgfpq1361ua4z`
+  (now holding the Management API role) asks Logto for a subject token for
+  the user, the dashboard's client `osfcu4s5rg0p6tn91lpb8` exchanges it for
+  an api token (its `allowTokenExchange` was set true on 2026-11-18), and
+  the tool writes Playwright's storage state in the `@logto/browser` keys
+  to `apps/web/tests-live/.auth/state.json` (0600). The M2M secret lives
+  in `~/.config/repose-ops/logto-m2m-secret` (0600, written with
+  `read -rs`, never pasted in chat). The session lasts an hour and has no
+  refresh token, so `account.spec.ts`'s refresh test and its "lands on
+  /projects" test fail by design; every project page, Settings and the
+  api work. Logto's token endpoint answers 403 to Python's default
+  User-Agent; the tool sends its own.
+- **The queue is the pull requests since I-1352** (`docs/PR.md`): agents
+  queue with `release-queue add --body pr.md`, which pushes the branch and
+  opens a PR against `integrated`; `RQ_PR_OFF=1` keeps the old local
+  entry. A batch cut by the old script does not unlabel its PR when
+  `done` pushes `integrated`; take `queued` off by hand.
+- **Never record a check's exit through a pipe.** `cmd | tail -1; echo
+  $?` records tail's exit; a red eslint and a failed build hid behind it
+  on 2026-11-15. Write each check to its own file and read the status
+  from the command itself.
+- **The throwaway Postgres leaves an anonymous volume** on `docker rm
+  -f`; 13 of them held 4 GB by 2026-11-18. Use `docker rm -f -v`.
+- **The queue's path analysis and `closure-equiv.py` disagree** about
+  what reaches hostd and the gateway: a branch that changed only
+  `internal/cli` queued as `base,cli,web` while the closure comparison said
+  the host-02 and edge systems really change (their units embed the
+  binaries). Both switches were done; which of the two is wrong is open.
+- **VM checks that are red for reasons that are not the batch's**:
+  `guest-base`'s I-264 keys probe under load (green alone);
+  `guest-keystroke-path` on this box's single-user nix (CI's gate);
+  `guest-tools-carry`'s I-417 subtest, fixed on 2026-11-18 (the harness's
+  /tmp mounts and a boot longer than the purge timer).
+- **Burst on host-02 (I-1326)**: a guest's cap rises a core a tick while
+  it is hungry and is lowered only when the gate shuts, so a quiet guest
+  keeps the cores it earned; a new small reads `cpu.max 400000 100000`
+  after its tools install. Not a defect.
+- **Owed live checks that need a signed-in dashboard** (the tool above
+  now gives one): dash-acts' say field and Revoke certificates (revoking
+  cuts the owner's own SSH, so do it on a throwaway account or not at
+  all), browser-view's frames and clipboard on a live machine,
+  notify-hold's typing hold.
+- **The owner's product rules of this week** are in the conductor's
+  memory and in DECISIONS I-1266: a feature is not done until the
+  dashboard can create, change, run and remove it; and on 2026-11-18 the
+  owner called `repose say`'s mechanism and UI ugly and wants it
+  redesigned as a conversation, not polished.
+- `tmp-wyyd` and the stopped `e2e-*` snapshots are the owner's; the
+  conductor's throwaways are destroyed after each check.

@@ -28,6 +28,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [workstreams/](workstreams/README.md) | You are an agent picking up a chunk of work. Each workstream is self-contained: scope, non-goals, interfaces it owns and consumes, and a checklist. |
 | [interfaces/](interfaces/README.md) | Two workstreams meet here. gRPC between API and hostd, vsock between hostd and guestd, the HTTP API, the database schema, the SSH gateway login contract, the CLI config file. |
 | [features/](features/README.md) | User-facing behaviour, one feature per file, written as the behaviour a user sees and the edge cases that must hold. |
+| [ops/CONDUCTOR-HANDOFF.md](ops/CONDUCTOR-HANDOFF.md) | You are the new conductor: where things stand, the owner's standing rules, the commands that worked on this box, the traps, and what is owed. Read it before RELEASE.md. |
 | [ops/ORCHESTRATION.md](ops/ORCHESTRATION.md) | You are running the waves: conductor and worker roles, the wave cycle, merge rules learned by doing, how applies and stalls are handled. |
 | [ops/RELEASE.md](ops/RELEASE.md) | Your branch is done and you want it on main, or you are the conductor cutting a release: the release queue, what a branch ships as, the verify-ship-check-record steps. |
 | [ops/LAUNCH.md](ops/LAUNCH.md) | You are the owner and the round is merged: the Polar organization, the Resend key, the seat count, the host, the deploy order and the tweet. |

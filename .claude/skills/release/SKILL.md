@@ -10,16 +10,18 @@ for the rest of the conductor's role.
 Two jobs; `$ARGUMENTS` says which (`integrate`, the default, or `ship`).
 
 **integrate** (no owner approval needed):
-1. `ops/dev/release-queue ls`. `ListAgents`, then ask each session with a
-   branch in flight whether it is about to queue.
-2. `ops/dev/release-queue cut`, and `resume` after resolving any conflict.
+1. `ops/dev/release-queue ls`: the open PRs labelled `queued` against
+   `integrated`, in stack order (docs/PR.md). `ListAgents`, then ask each
+   session with a branch in flight whether it is about to queue.
+2. `ops/dev/release-queue cut`, and `resume` after resolving any conflict;
+   `drop <branch> --why "..."` sends one back (its PR loses `queued`).
 3. Run every check RELEASE.md "integrating" step 4 names for the batch's
    targets, in the batch worktree; `docs/ops/DEV-BOX.md` says how each one
    runs on this box (Postgres, memory, disk, no lighthouse). "Tests pass"
    closes nothing.
 4. Read every check's result before this step; never chain the merge onto
    an unread check. `git -C ~/kanali merge --ff-only release/<batch>`, then
-   `ops/dev/release-queue done <batch>`, which also pushes main to the non-deploying `integrated` branch (I-651). Do not push `main`. Tell each agent.
+   `ops/dev/release-queue done <batch>`, which also pushes main to the non-deploying `integrated` branch (I-651); that push closes the batch's PRs as merged. You merge the PRs this way and no other: never ask the owner to merge a PR, and never merge one on GitHub (a merge into `main` there deploys). Do not push `main`. Tell each agent.
 
 **ship** (only when the owner asked for a release):
 1. `ops/dev/release-queue ls` for what main holds unreleased; ask the owner

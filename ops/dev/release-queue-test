@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The queue under test is this machine's state alone: no GitHub (docs/PR.md).
+export REPOSE_QUEUE_LOCAL=1
 # Tests for ops/dev/release-queue, against a scratch world instead of this
 # repository. `release-queue` reserves decision ids, reads the deploy
 # targets out of a diff and merges branches; every one of those was

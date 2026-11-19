@@ -19,6 +19,10 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		{[]string{"destory"}, "`repose rm`"},
 		{[]string{"delete", "izma"}, "Did you mean `repose rm`?"},
 		{[]string{"atach"}, "Did you mean `repose attach`?"},
+		// `connect` is attach, the one command that reaches any machine
+		// (I-1350); `shell` stays ssh.
+		{[]string{"connect", "izma"}, "Did you mean `repose attach`?"},
+		{[]string{"shell", "izma"}, "Did you mean `repose ssh`?"},
 		{[]string{"--project", "izma", "stauts"}, "`repose status`"},
 		{[]string{"secrets", "lsit"}, "Did you mean `repose secrets list`?"},
 		{[]string{"secrets", "--project", "izma", "imprt"}, "Did you mean `repose secrets import`?"},

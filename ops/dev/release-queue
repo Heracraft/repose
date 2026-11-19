@@ -3,8 +3,12 @@
 # branch and queue it here when it is done; one release session merges the
 # queue onto main and ships it. docs/ops/RELEASE.md is the procedure.
 #
-#   release-queue add [--live TEXT] [--note TEXT]  queue this worktree's branch
-#   release-queue ls [--all]                       the queue and what main holds unreleased
+#   release-queue add [--live TEXT] [--note TEXT] [--body FILE] [--on BRANCH] [--title TEXT]
+#                                                  queue this worktree's branch: push it and open
+#                                                  (or update) its pull request against `integrated`
+#                                                  (docs/PR.md); --on stacks it on another queued branch
+#   release-queue ls [--all]                       the queue (the open PRs labelled `queued`) and what
+#                                                  main holds unreleased
 #   release-queue id [N]                           reserve N decision ids (default 1)
 #   release-queue band [SLOT/TOTAL|none]           which ids this machine may reserve
 #   release-queue where BRANCH                     queued, merged, released, or unknown
@@ -13,7 +17,7 @@
 #   release-queue say BRANCH TEXT                  leave a line for the branch's author
 #   release-queue inbox [BRANCH]                   what was said about this branch
 #   release-queue worktrees                        worktrees whose branch is wholly released
-#   release-queue drop BRANCH                      take a branch off the queue
+#   release-queue drop BRANCH [--why TEXT]         take a branch off the queue (and `queued` off its PR)
 #   release-queue cut                              release session: merge the queue
 #   release-queue resume RELEASE                   release session: after a conflict
 #   release-queue done RELEASE                     after main holds it: on main, unreleased,
@@ -21,8 +25,14 @@
 #                                                  (REPOSE_INTEGRATED_REMOTE=none: not pushed)
 #   release-queue abandon RELEASE                  release session: undo a cut, requeue
 #
-# State is not on any branch: it lives in the repository's common git dir,
-# shared by every worktree of this checkout, under one flock.
+# The queue is the set of open pull requests against `integrated` that carry
+# the label `queued` (docs/PR.md, DECISIONS I-1352): `add` pushes the branch
+# and opens or updates the PR, `ls` and `cut` read the PRs, `done` pushes
+# `integrated`, which closes them as merged. The conductor merges; the owner
+# is never asked to merge a PR. The state below the PRs lives in this
+# repository's common git dir, shared by every worktree of this checkout,
+# under one flock; with no `gh` (a repose guest, the test harness,
+# REPOSE_QUEUE_LOCAL=1) the queue is that state alone, one machine's.
 set -euo pipefail
 
 common=$(git rev-parse --path-format=absolute --git-common-dir)
@@ -34,6 +44,142 @@ main_wt=$(git worktree list --porcelain | awk 'NR == 1 { print $2 }')
 # Every branch that adds a decision regenerates this file, so two such
 # branches always conflict in it; the generator settles it.
 index=docs/DECISIONS-INDEX.md
+record_tool=$(dirname "$(readlink -f "$0")")/pr-record
+integrated_branch=${REPOSE_INTEGRATED_BRANCH:-integrated}
+
+# gh_on: the pull requests are the queue when GitHub can be reached. Off
+# for the test harness (REPOSE_QUEUE_SKIP_RED_MAIN), a guest with no gh, or
+# REPOSE_QUEUE_LOCAL=1; the local entries then are the whole queue.
+GH_ON=
+gh_on() {
+  if [ -z "$GH_ON" ]; then
+    if [ "${REPOSE_QUEUE_LOCAL:-}" = 1 ] || [ "${RQ_PR_OFF:-}" = 1 ] || [ "${REPOSE_QUEUE_SKIP_RED_MAIN:-}" = 1 ] \
+       || ! command -v gh >/dev/null || ! gh auth status >/dev/null 2>&1; then GH_ON=no; else GH_ON=yes; fi
+  fi
+  [ "$GH_ON" = yes ]
+}
+
+# pr_of BRANCH: the open PR's number for a head branch, or nothing.
+pr_of() { gh pr list --head "$1" --state open --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true; }
+
+# pr_sync: the open PRs labelled `queued` become local entries (one per
+# branch, the commit fetched into refs/remotes/origin), in stack order: a PR
+# based on `integrated` in number order, then a PR based on a queued PR's
+# branch after that one. A queued PR whose base is neither is left out and
+# said. A local entry already in a cut is not touched. This is what lets a
+# branch queued on the other machine reach this one's cut.
+pr_sync() {
+  gh_on || return 0
+  local json
+  json=$(gh pr list --state open --label queued --limit 200 \
+    --json number,headRefName,headRefOid,baseRefName,labels,body,createdAt 2>/dev/null) || return 0
+  local line n head sha base ships live order=0
+  while IFS=$'\t' read -r n head sha base ships live; do
+    [ -n "$n" ] || continue
+    order=$((order + 1))
+    if [ "$base" = skip ]; then
+      echo "release-queue: PR #$n ($head) is queued on $live, which is not queued; it waits" >&2
+      continue
+    fi
+    git fetch -q origin "+refs/heads/$head:refs/remotes/origin/$head" 2>/dev/null || {
+      echo "release-queue: PR #$n ($head): its branch could not be fetched" >&2; continue; }
+    git cat-file -e "$sha^{commit}" 2>/dev/null || { echo "release-queue: PR #$n ($head): $sha is not on origin/$head" >&2; continue; }
+    local f tmpf prev=""
+    f=$(entry_file "$head")
+    [ -f "$f" ] && prev=$(field "$f" state)
+    case $prev in cut:* | merged:*) [ "$(field "$f" sha)" = "$sha" ] && continue ;; esac
+    tmpf=$(mktemp "$state/tmp/$(basename "$f").XXXX")
+    {
+      echo "branch=$head"
+      echo "sha=$sha"
+      echo "worktree=$( [ -f "$f" ] && field "$f" worktree )"
+      echo "needs=${ships:-none}"
+      echo "base=$(git merge-base "$sha" "refs/remotes/origin/$integrated_branch" 2>/dev/null || git rev-parse main)"
+      echo "exact=yes"
+      echo "live=$live"
+      echo "note=$( [ -f "$f" ] && field "$f" note )"
+      echo "machine=$( [ -f "$f" ] && field "$f" machine || echo github)"
+      echo "queued=$( [ -f "$f" ] && field "$f" queued || date -u +%Y-%m-%dT%H:%M:%SZ)"
+      echo "pr=$n"
+      echo "stack=$base"
+      echo "seq=$order"
+      echo "state=queued"
+      [ -f "$f" ] && grep -E '^(said|read_through|live_state|live_result|live_at)=' "$f" || true
+    } > "$tmpf"
+    mv "$tmpf" "$f"
+  done < <(python3 - "$integrated_branch" <<'EOF' <<<"$json"
+import json, sys
+prs = json.load(sys.stdin)
+integ = sys.argv[1]
+by_head = {p["headRefName"]: p for p in prs}
+done, out = set(), []
+def ships(p): return ",".join(sorted(l["name"][6:] for l in p.get("labels", []) if l["name"].startswith("ships:")))
+def live(p):
+    import re
+    m = re.search(r"^```record[ 	]*
+(.*?)^```", p.get("body") or "", re.S | re.M)
+    if not m: return ""
+    for l in m.group(1).splitlines():
+        if l.startswith("live:"): return l[5:].strip().replace("	", " ")
+    return ""
+def emit(p):
+    out.append("	".join([str(p["number"]), p["headRefName"], p["headRefOid"], p["baseRefName"], ships(p), live(p)]))
+for p in sorted(prs, key=lambda p: p["number"]):
+    if p["baseRefName"] == integ: emit(p); done.add(p["headRefName"])
+changed = True
+while changed:
+    changed = False
+    for p in sorted(prs, key=lambda p: p["number"]):
+        h = p["headRefName"]
+        if h in done: continue
+        if p["baseRefName"] in done: emit(p); done.add(h); changed = True
+for p in sorted(prs, key=lambda p: p["number"]):
+    if p["headRefName"] not in done:
+        out.append("	".join([str(p["number"]), p["headRefName"], p["headRefOid"], "skip", "", p["baseRefName"]]))
+print("
+".join(out))
+EOF
+)
+}
+
+# pr_upsert BRANCH NEEDS LIVE BODYFILE BASE TITLE: push the branch and open
+# or update its pull request with the record filled in and the labels set.
+pr_upsert() {
+  local branch=$1 needs=$2 live=$3 bodyfile=$4 base=$5 title=$6 tip=$7
+  git push -q -u origin "HEAD:refs/heads/$branch" || die "add: could not push $branch to origin"
+  local n body tmp decisions migrations labels=(--add-label queued) x
+  n=$(pr_of "$branch")
+  if [ -n "$bodyfile" ]; then body=$(cat "$bodyfile")
+  elif [ -n "$n" ]; then body=$(gh pr view "$n" --json body --jq .body)
+  else die "add: $branch has no pull request yet; write its body (docs/PR.md, .github/pull_request_template.md) and pass --body FILE"; fi
+  decisions=$(decisions_of HEAD "$tip")
+  migrations=$(git diff --name-only "$tip..HEAD" -- internal/db/migrations 2>/dev/null | sed 's#.*/##' | cut -c1-4 | sort -u | paste -sd, -)
+  tmp=$(mktemp "$state/tmp/body.XXXX")
+  printf '%s\n' "$body" | "$record_tool" render --branch "$branch" --commit "$(git rev-parse --short HEAD)" \
+    --stack "$base" --decisions "${decisions:-}" --migrations "${migrations:-}" \
+    --ships "$( [ "$needs" = none ] && echo '' || echo "$needs")" --live "$live" > "$tmp"
+  "$record_tool" check "$tmp" || { rm -f "$tmp"; die "add: the pull request body does not have the shape docs/PR.md asks for (above)"; }
+  for x in api web cli base host edge infra; do
+    case ",$needs," in *",$x,"*) labels+=(--add-label "ships:$x") ;; *) [ -n "$n" ] && labels+=(--remove-label "ships:$x") ;; esac
+  done
+  if [ -n "$n" ]; then
+    gh pr edit "$n" --base "$base" --body-file "$tmp" "${labels[@]}" >/dev/null || die "add: gh pr edit $n failed"
+  else
+    gh pr create --base "$base" --head "$branch" --title "${title:-$(git log -1 --format=%s)}" --body-file "$tmp" >/dev/null || die "add: gh pr create failed"
+    n=$(pr_of "$branch")
+    [ -n "$n" ] && gh pr edit "$n" "${labels[@]}" >/dev/null
+  fi
+  rm -f "$tmp"
+  echo "$n"
+}
+
+# pr_unqueue N TEXT: `queued` comes off and the reason is a comment.
+pr_unqueue() {
+  gh_on || return 0
+  [ -n "$1" ] || return 0
+  gh pr edit "$1" --remove-label queued >/dev/null 2>&1 || true
+  [ -z "${2:-}" ] || gh pr comment "$1" --body "$2" >/dev/null 2>&1 || true
+}
 
 die() { echo "release-queue: $*" >&2; exit 1; }
 
@@ -346,14 +492,19 @@ trust_reader() {
 }
 
 cmd_add() {
-  local live="" note=""
+  local live="" note="" bodyfile="" on="" title=""
   while [ $# -gt 0 ]; do
     case $1 in
       --live) live=$2; shift 2 ;;
       --note) note=$2; shift 2 ;;
+      --body) bodyfile=$2; shift 2 ;;
+      --on) on=$2; shift 2 ;;
+      --title) title=$2; shift 2 ;;
       *) die "add: unknown argument $1" ;;
     esac
   done
+  [ -z "$bodyfile" ] || [ -f "$bodyfile" ] || die "add: no file $bodyfile"
+  [ -z "$on" ] || [ "$on" != "$(git branch --show-current)" ] || die "add: --on names this branch"
   # A --live or --note value with a newline in it used to be written into the
   # entry raw. The entry is flat key=value, so the lines after the first
   # parsed as nothing -- and a line that looked like a key won over the real
@@ -391,6 +542,14 @@ cmd_add() {
     [ -n "$needs" ] || needs=none
   fi
   trust_reader "$needs"
+  # The pull request, when GitHub is there: pushed, opened or updated,
+  # labelled, its record filled from what was computed above.
+  local pr="" base_branch=$integrated_branch
+  [ -z "$on" ] || base_branch=$on
+  if gh_on; then
+    [ -z "$on" ] || [ -n "$(pr_of "$on")" ] || die "add: --on $on: that branch has no open pull request to stack on"
+    pr=$(pr_upsert "$branch" "$needs" "$live" "$bodyfile" "$base_branch" "$title" "$tip" | tail -n1)
+  fi
   locked
   local f prev="" tmpf
   f=$(entry_file "$branch")
@@ -413,11 +572,13 @@ cmd_add() {
     echo "note=$note"
     echo "machine=$(hostname)"
     echo "queued=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "pr=$pr"
+    echo "stack=$base_branch"
     echo "seq=$( [ -f "$f" ] && field "$f" seq || date +%s%N)"
     echo "state=queued"
   } > "$tmpf"
   mv "$tmpf" "$f"
-  echo "queued $branch at $(git rev-parse --short HEAD) ($ahead commits; ships as: $needs)"
+  echo "queued $branch at $(git rev-parse --short HEAD) ($ahead commits; ships as: $needs)${pr:+; PR #$pr on $base_branch}"
   [ -z "$held" ] || echo "  release $held holds an earlier commit of $branch; the conductor takes this one with 'release-queue resume $held', or the next cut does"
 }
 
@@ -428,6 +589,7 @@ released() { git merge-base --is-ancestor "$1" refs/remotes/origin/main 2>/dev/n
 cmd_ls() {
   local f all=0 out pending="" st
   [ "${1:-}" != --all ] || all=1
+  pr_sync
   out=$(entries | while IFS= read -r f; do
     st=$(field "$f" state)
     case $st in
@@ -453,6 +615,8 @@ cmd_ls() {
     if [ -n "$last" ] && { [ -z "$read_t" ] || [ "$last" \> "$read_t" ]; }; then
       where="$where (unread: release-queue inbox $b)"
     fi
+    local pr; pr=$(field "$f" pr)
+    [ -z "$pr" ] || where=" PR #$pr${where}"
     printf '%s\t%-10s %-28s %s  ships as %-14s %s%s%s\n' "$(field "$f" seq)" "$st" "$b" "${sha:0:9}" "$(field "$f" needs)" "$(field "$f" queued)" "$where" "$moved"
   done | sort -n | cut -f2-)
   if [ -n "$out" ]; then echo "$out"; else echo "the queue is empty"; fi
@@ -492,6 +656,9 @@ ids_in_use() {
       grep -oE '[0-9]+' || true
   done
   grep -oE '^I-[0-9]+' "$state/ids" 2>/dev/null | grep -oE '[0-9]+' || true
+  # The record of every pull request, open or closed in the last while: an
+  # id written into a PR on the other machine is taken here too (docs/PR.md).
+  if gh_on; then "$record_tool" decisions --all 2>/dev/null | grep -oE '[0-9]+' || true; fi
 }
 
 # A machine's band. The reservations file lives in each machine's own git
@@ -603,6 +770,11 @@ cmd_where() {
   wt=$(git worktree list --porcelain | awk -v b="$b" '
     /^worktree /{w=$2} /^branch /{ if ($2 == "refs/heads/" b) print w }')
   [ -z "$wt" ] || echo "  worktree $wt"
+  if gh_on; then
+    local pr; pr=$(gh pr list --head "$b" --state all --limit 1 --json number,state,baseRefName,url \
+      --jq '.[0] | "PR #\(.number) \(.state | ascii_downcase) on \(.baseRefName)  \(.url)"' 2>/dev/null || true)
+    [ -z "$pr" ] || echo "  $pr"
+  fi
 }
 
 # worktrees names the ones whose branch is wholly on origin/main, which is
@@ -771,13 +943,22 @@ cmd_inbox() {
   mv "$state/tmp/$(basename "$f").read" "$f"
 }
 
+cmd_drop_pr() { # branch why
+  local f pr; f=$(entry_file "$1"); pr=""
+  [ -f "$f" ] && pr=$(field "$f" pr)
+  [ -n "$pr" ] || pr=$(gh_on && pr_of "$1" || true)
+  pr_unqueue "$pr" "${2:-Taken off the queue by the conductor.}"
+}
 cmd_drop() {
-  local b=${1:?drop: which branch}
+  local b=${1:?drop: which branch} why=""
+  shift || true
+  [ "${1:-}" != --why ] || why=${2:-}
   locked
   local f
   f=$(entry_file "$b")
   [ -f "$f" ] || die "drop: $b is not queued"
   setfield "$f" state dropped
+  cmd_drop_pr "$b" "$why"
   echo "dropped $b"
 }
 
@@ -910,6 +1091,7 @@ cmd_ci() {
 cmd_cut() {
   locked
   red_main
+  pr_sync
   # A cut from a stale main re-merges everything integrated since, through
   # --no-ff merges, which is how a release quietly loses a change. On
   # woker-1 refs/heads/main sat 132 commits behind for weeks and nothing
@@ -990,6 +1172,16 @@ cmd_done() {
   done < <(sed -n 's/^merged=//p' "$state/releases/$rel")
   [ -z "$owed" ] || echo "  live checks with no result yet:$owed (release-queue live <branch> --ran ...)"
   push_integrated
+  # The push of `integrated` closes each PR as merged; the label and a line
+  # saying which batch are what is left to do.
+  if gh_on; then
+    while read -r b sha needs; do
+      [ -n "$b" ] || continue
+      local ef pr; ef=$(entry_file "$b"); [ -f "$ef" ] || continue
+      pr=$(field "$ef" pr); [ -n "$pr" ] || continue
+      pr_unqueue "$pr" "Merged in $rel; on \`$integrated_branch\`, released when main is pushed."
+    done < <(sed -n 's/^merged=//p' "$state/releases/$rel")
+  fi
 }
 
 # DECISIONS I-651: integrated main also lives on GitHub, as the branch
