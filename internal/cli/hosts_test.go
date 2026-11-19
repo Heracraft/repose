@@ -58,7 +58,7 @@ func TestHostAddListRm(t *testing.T) {
 	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
 		t.Fatalf("limit: %v", err)
 	}
-	fake.SetHostLimit(-1)
+	fake.SetHostLimit(0)
 	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
 		t.Fatalf("no plan: %v", err)
 	}
