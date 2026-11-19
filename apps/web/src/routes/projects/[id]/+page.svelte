@@ -81,12 +81,21 @@
 	 * back on. Empty otherwise.
 	 */
 	let ownHosts = $state(new Map<string, Host>());
+	// Deliberately not $state: the effect writes ownHosts and must not
+	// read it, or an account that owns no host answers the read with an
+	// empty map, the map is a new reference, the effect runs again and
+	// the page reads /hosts in a loop.
+	let hostsAsked = false;
 	$effect(() => {
 		if (!project?.host_unreachable) {
-			if (ownHosts.size > 0) ownHosts = new Map();
+			if (hostsAsked) {
+				hostsAsked = false;
+				ownHosts = new Map();
+			}
 			return;
 		}
-		if (ownHosts.size > 0) return;
+		if (hostsAsked) return;
+		hostsAsked = true;
 		listHosts({ passive: true })
 			.then((hosts) => {
 				ownHosts = new Map(hosts.map((h) => [h.id, h]));

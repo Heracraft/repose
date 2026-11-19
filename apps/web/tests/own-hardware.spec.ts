@@ -77,18 +77,34 @@ test("a host of repose's that is quiet still says whose it is", async ({ page })
 	try {
 		// host_unreachable with no host of the user's behind it: the
 		// account owns nothing, so there is no name to give.
-		await page.route(/\/v1\/projects$/, async (route) => {
+		await page.route(new RegExp(`/v1/projects(/${p.id})?$`), async (route) => {
 			if (route.request().method() !== 'GET') return route.fallback();
 			const res = await route.fetch();
-			const list = (await res.json()) as Record<string, unknown>[];
-			for (const q of list) if (q.id === p.id) q.host_unreachable = true;
-			await route.fulfill({ response: res, json: list });
+			const body = await res.json();
+			const rows = (Array.isArray(body) ? body : [body]) as Record<string, unknown>[];
+			for (const q of rows) if (q.id === p.id) q.host_unreachable = true;
+			await route.fulfill({ response: res, json: Array.isArray(body) ? rows : rows[0] });
+		});
+		// The page asks /hosts once per quiet machine and stops. An
+		// account that owns none answers with an empty list, and a page
+		// that treated that as "not read yet" would ask again for ever.
+		let reads = 0;
+		await page.route(/\/v1\/hosts$/, async (route) => {
+			if (route.request().method() === 'GET') reads++;
+			await route.fallback();
 		});
 		await page.goto('/projects');
 		const row = page
 			.locator('table.ptable tbody tr')
 			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
 		await expect(row).toContainText('server not answering');
+
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('host-unreachable')).toContainText(
+			'The server running this machine is not answering'
+		);
+		await page.waitForTimeout(2000);
+		expect(reads, 'reads of /hosts').toBeLessThanOrEqual(3);
 	} finally {
 		await destroyProject(api, p.id);
 	}
