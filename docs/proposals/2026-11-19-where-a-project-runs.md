@@ -119,7 +119,10 @@ the order they should ship:
 1. `--host NAME|repose` on `repose run`. This is the missing escape hatch, and
    it is a bug, not a design question: today a customer with a dead install can
    create nothing anywhere.
-2. The HOST column whenever the account owns a host.
+2. The HOST column whenever the account owns a host. This comes after (1) and
+   not before it. The column tells a customer where they are; only the flag
+   lets them act, so shipping the readout first would make the trap visible
+   and still inescapable.
 3. `default_host` in config.toml, asked for and written by `repose host add`.
 4. The ambiguity refusal, only where both answers are possible.
 
@@ -169,7 +172,15 @@ Small, because the field already exists and is read in only two places.
   bigger one: the row exists before placement runs, so a refusal leaves
   `error` behind. Either placement answers before the row is written, or the
   failed create removes its own row. Until then every retry strands another
-  project, and that is the part a customer meets tonight.
+  project, and that is the part a customer meets tonight (ENG-66 holds the
+  cause, ENG-28 the symptom).
+- **The machinery underneath is fine, which is why this is a proposal about a
+  choice and a readout rather than about placement.** The dashboard customer
+  review of 2026-11-19 measured the recovery: a stranded project starts and
+  runs within 17.0 seconds once the host is removed. Nothing is slow and
+  nothing is broken below this; what is missing is the question nobody was
+  asked and the answer nobody can see. The measurement is that review's, not
+  this file's.
 - Docs in the same commit: `own-hardware.md` (the paragraph that says new
   projects go to your hardware says who decided), the `repose run` flag table
   and the `repose host` rows in `cli.md`, and `internal/cli/docs_test.go`
