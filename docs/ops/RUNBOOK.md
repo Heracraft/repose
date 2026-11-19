@@ -4588,6 +4588,32 @@ too, and the webhook follows.
 Nothing in `usage_hours` or `overage_charges` is edited: they are the
 record of what was used and what was sent.
 
+## `polar-bootstrap` answers 401 Unauthorized
+
+*Symptom.* `repose-admin billing polar-bootstrap` fails on its first
+call with Polar's `401`, whatever the token.
+
+Polar's tokens do not say which environment they belong to (I-604), and
+the two environments are separate installations with separate tokens: a
+**production** organization access token is not a credential in the
+sandbox and gets 401 there, and a sandbox token gets 401 in production.
+Nothing in the token's text distinguishes them, so this is not
+something to work out by looking at it.
+
+1. `POLAR_ENVIRONMENT` says which API the token is used against
+   (`sandbox` is `https://sandbox-api.polar.sh/v1`, `production` is
+   `https://api.polar.sh/v1`). Check which one is set where the command
+   runs.
+2. A token is made in the dashboard of its own environment:
+   `sandbox.polar.sh` for a sandbox token, `polar.sh` for a production
+   one. The owner holds both; using the wrong one is the usual cause.
+3. Production needs `--production` as well, which is a separate guard
+   against bootstrapping the real catalog by accident, and answers
+   "this is Polar's production environment" rather than 401.
+
+(Hit on 2026-11-19: the first token handed over for the sandbox was a
+production token.)
+
 ## The Own hardware plan is not offered, or a checkout for it is refused
 
 *Symptom.* The Billing page shows the three plans and no Own hardware

@@ -57,7 +57,9 @@ func (s *Service) PlansForSale() []Plan { return s.cfg.PlansForSale() }
 // (as plan_limit's did, I-633).
 const MsgPlanKind = "the Own hardware plan and the hosted plans sell different things; cancel this plan, then choose the other one when it ends"
 
-// PlanChoices lists plan ids as a refusal names them: "solo, plus or pro".
+// PlanChoices lists the plan ids this deployment sells as a refusal
+// names them: "solo, plus and pro", or with the fourth product
+// configured, "solo, plus, pro and own".
 func PlanChoices(plans []Plan) string {
 	ids := make([]string, 0, len(plans))
 	for _, p := range plans {
