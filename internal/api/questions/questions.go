@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/heracraft/repose/internal/api/events"
+	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
@@ -176,6 +177,10 @@ type Service struct {
 	// holds are the AnswerQuestion commands Hold sent and has heard no
 	// result of yet, command id to question id and send time, so the
 	// result's code reaches a log line (I-1242).
+	// Metrics, when set, counts a result refused because it came from a
+	// host the command was not sent to (DECISIONS I-1368).
+	Metrics *metrics.M
+
 	mu    sync.Mutex
 	holds map[uuid.UUID]holdSent
 }
@@ -183,6 +188,8 @@ type Service struct {
 type holdSent struct {
 	question uuid.UUID
 	at       time.Time
+	// host is the host the hold went to (DECISIONS I-1368).
+	host uuid.UUID
 }
 
 // New builds the service.
@@ -664,7 +671,7 @@ func (s *Service) tellGuest(ctx context.Context, id uuid.UUID, until time.Time) 
 			delete(s.holds, k) // a result that never came
 		}
 	}
-	s.holds[cmdID] = holdSent{question: id, at: s.Now()}
+	s.holds[cmdID] = holdSent{question: id, at: s.Now(), host: *hostID}
 	s.mu.Unlock()
 	cmd := &hostdv1.Command{CommandId: cmdID.String(), Cmd: &hostdv1.Command_AnswerQuestion{AnswerQuestion: &hostdv1.AnswerQuestion{
 		GuestId: guestID.String(), QuestionId: id.String(), Status: StatusExtended, ExpiresUnix: until.Unix(),
@@ -845,8 +852,18 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 	}
 	s.mu.Lock()
 	h, held := s.holds[cmdID]
-	delete(s.holds, cmdID)
+	if held && h.host == hostID {
+		delete(s.holds, cmdID)
+	}
 	s.mu.Unlock()
+	// A result counts only from the host the command went to (DECISIONS
+	// I-1368): a host the operator does not own could otherwise mark
+	// another project's answer delivered, and the worker would never send
+	// it again.
+	if held && h.host != hostID {
+		s.foreign(hostID, r.CommandId)
+		return true
+	}
 	if held {
 		// A hold's result (I-1242): nothing to store, the code to log.
 		code := r.GetError().GetCode()
@@ -857,13 +874,18 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 		return true
 	}
 	var qid uuid.UUID
-	err = s.pool.QueryRow(ctx, "select id from questions where deliver_command_id = $1", cmdID).Scan(&qid)
+	var sentTo *uuid.UUID
+	err = s.pool.QueryRow(ctx, "select q.id, p.host_id from questions q join projects p on p.id = q.project_id where q.deliver_command_id = $1", cmdID).Scan(&qid, &sentTo)
 	if db.IsNoRows(err) {
 		return false
 	}
 	if err != nil {
 		s.log.Error("question result lookup", "event", "command_result", "command_id", r.CommandId, "err", err.Error())
 		return false
+	}
+	if sentTo == nil || *sentTo != hostID {
+		s.foreign(hostID, r.CommandId)
+		return true
 	}
 	code := r.GetError().GetCode()
 	switch {
@@ -878,6 +900,15 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 	}
 	s.log.Info("question delivery result", "event", "command_result", "command_id", r.CommandId, "question_id", qid.String(), "host_id", hostID.String(), "result", code)
 	return true
+}
+
+// foreign logs and counts a result from a host the command was not sent
+// to; the ids are the whole line (DECISIONS I-1368).
+func (s *Service) foreign(hostID uuid.UUID, commandID string) {
+	if s.Metrics != nil {
+		s.Metrics.HostReportsRefused.WithLabelValues("foreign_command").Inc()
+	}
+	s.log.Warn("result from a host the command was not sent to", "event", "foreign_command", "host_id", hostID.String(), "command_id", commandID)
 }
 
 // Describe is a one-line state for messages (the reply page, the CLI).

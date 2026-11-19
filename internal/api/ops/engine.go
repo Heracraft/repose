@@ -560,7 +560,7 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			return
 		}
 		if ph == "build" {
-			e.logs.Bind(cmd.CommandId, op.ID)
+			e.logs.Bind(cmd.CommandId, op.ID, hostID)
 		}
 		if ph == PhaseApplyConfig && op.Kind == KindBuild {
 			// The build's log goes on into its apply, so a client
@@ -711,7 +711,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		}
 		cmd.CommandId = op.CommandID.String()
 		if currentPhase(op) == "build" {
-			e.logs.Bind(cmd.CommandId, op.ID)
+			e.logs.Bind(cmd.CommandId, op.ID, hostID)
 		}
 		e.log.Info("re-sending unfinished command after Hello", "event", "command_resend", "op_id", op.ID.String(), "command_id", cmd.CommandId)
 		_ = e.send.Send(ctx, hostID, cmd) // a failed send is retried on the next Hello
