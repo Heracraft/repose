@@ -11,9 +11,9 @@ The three reports are the evidence and this file never replaces them:
 |---|---|---|
 | The command line | `docs/reports/2026-11-19-mac-mini-council-cli.md` | `council/cli` at `a057f6c1` |
 | The dashboard | `docs/reports/2026-11-19-mac-mini-council-dashboard.md` | `council/dash` at `beaa0245` |
-| The Mac itself | not yet run | held, see [The surface nobody has reviewed](#held) |
+| The Mac itself | in progress, `council/mac` | one P0 filed before the review could start |
 
-Counts, conferred: **2 P0, 8 P1**, with the Mac surface unreviewed. The
+Counts, conferred: **3 P0, 8 P1**, with the Mac surface still being reviewed. The
 command line filed eighteen findings and ranked one P0 and seven P1; the
 dashboard filed fifteen and ranked two P0, three P1 and ten P2. Where the two
 disagreed on a rank, both ranks are shown below with what separates them.
@@ -24,7 +24,46 @@ The review's gate is a second pass that finds no P0. **It has not been run and
 cannot pass today**: two P0 are open, and a third of the product has not been
 looked at. Nothing in this report clears the branch to ship.
 
-## The two P0
+## The three P0
+
+### 0. No customer on any Mac can finish the first command
+
+Measured on a real M4 Mac at 21:38:44 UTC with **published v0.1.51** and a
+join argument minted 13 minutes earlier. The whole customer path, with no
+unusual step in it: buy a Mac mini, pay for Own hardware, install the
+published CLI from `install.sh`, mint a credential, run `repose host add`.
+
+```
+fetching vfkit 0.6.4
+fetching the appliance image 2026.11.19 (about 2 GB)
+the image's checksum: .../appliance-2026.11.19/repose-appliance-aarch64.raw.gz.sha256: the server answered 404
+exit 1
+```
+
+Verified three ways so it is not a mirror fault: `curl -sIL` answers
+`HTTP/2 404`, `gh release list --limit 30` shows no `appliance-*` release,
+and `git ls-remote --tags origin` shows no appliance tag. Still 404 at 22:25.
+
+**This is upstream of the other two and independent of them.** Both of those
+describe a customer who has a working install and then cannot steer or is
+measured wrongly; this one means they never reach that state. Publishing the
+image fixes nothing about placement or billing, and fixing those publishes no
+image.
+
+**The cause is a process gap, not a mistake in the code** (ENG-62): a CLI
+release shipped pointing at an artefact that was never published, and nothing
+in the release machinery checks that a release's assets exist. The next
+release can do the same thing on any Monday. The image was rebuilt tonight
+and is in verification; the gap it came through is still open.
+
+A second consequence worth naming: **the ENG-41 disk refusal has never been
+exercised by a customer path**, because sizing happens after the image is
+unpacked and nothing unpacks. Its fix is merged at `38f5b797` and its
+behaviour is unverified by anyone.
+
+ENG-58, cause ENG-62.
+
+## The other two P0
 
 ### 1. Nothing lets a customer say where a project runs, and the documented way out does not exist
 
@@ -199,10 +238,18 @@ Each of these came from a mistake made tonight, and they are now in
 - **The report carries a method section** — what was run, what could not be,
   and which of these rules bit.
 
-## The surface nobody has reviewed {#held}
+## The surface still being reviewed {#held}
 
 The Mac itself. A customer's first hour — unbox, install, add the host, start
-a project, reboot — is the one surface that cannot be reviewed from this
-machine, and it is held behind the appliance image, which was rebuilt tonight
-and is not yet published. Until it runs, this report describes two thirds of
-what a customer meets. The review is not finished and the gate is not passed.
+a project, reboot — cannot be reviewed from this machine, and most of it is
+held behind the appliance image, which was rebuilt tonight and is in
+verification. The reviewer got far enough to find P0 zero above and no
+further, because the first command is where it stops.
+
+What nobody has measured and only that surface can: the timed first hour, and
+what a Mac restart does to a running guest. The figures to confirm are a cold
+guest start **57.9 s**, a park **6.5 s** a guest, an unpark **3.8 s** and the
+appliance back at its login in **21 s**. The owner has said 57.9 s is too slow
+and will trigger that work separately (ENG-70).
+
+**The review is not finished and the gate is not passed.**
