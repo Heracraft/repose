@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/heracraft/repose/internal/api/store"
 )
 
 // TestStartCreatesAProjectWhoseCreateFailed is I-406: a create that failed
@@ -12,6 +14,11 @@ import (
 // guest; create it first" for ever (dogfood 2026-10-01, recruiting-2). It
 // now runs the create again ({op_id, create: true}) and the project ends
 // running.
+//
+// Since I-1390 a create that no host can take is refused at the request
+// and writes no row, so the first half of this test is that refusal, and
+// the project whose create failed is written the way the old shape left
+// it (a row in error with no host), which a start must still repair.
 func TestStartCreatesAProjectWhoseCreateFailed(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
@@ -25,19 +32,29 @@ func TestStartCreatesAProjectWhoseCreateFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "recruiting-2", "class": "large"})
-	if r.status/100 != 2 {
-		t.Fatalf("create: %d %s", r.status, r.raw)
+	if r.status != 503 || detailOf(t, r)["reason"] != "no_capacity" {
+		t.Fatalf("create while full: %d %s, want 503 capacity no_capacity", r.status, r.raw)
 	}
-	pid := r.body["id"].(string)
-	var createOp string
-	if err := e.h.Pool.QueryRow(ctx, "select id::text from ops where project_id = $1 and kind = 'create'", pid).Scan(&createOp); err != nil {
+	var uid string
+	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-gus'").Scan(&uid); err != nil {
 		t.Fatal(err)
 	}
-	if op := e.h.WaitOp(uuid.MustParse(createOp)); op.State != "error" || op.Error["code"] != "capacity" {
-		t.Fatalf("create op: %s %+v", op.State, op.Error)
+	var rows int
+	if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects where user_id = $1", uid).Scan(&rows); err != nil {
+		t.Fatal(err)
 	}
-	if p := e.h.Project(uuid.MustParse(pid)); p.State != "error" || p.GuestID != nil {
-		t.Fatalf("after the failed create: %s guest %v", p.State, p.GuestID)
+	if rows != 0 {
+		t.Fatalf("a refused create left %d project row(s) behind", rows)
+	}
+	// The row the old shape left behind: in error, placed nowhere, no
+	// guest. A start must still turn it into a create (I-406).
+	u, err := store.GetUser(ctx, e.h.Pool, uuid.MustParse(uid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := e.h.NewProject(u, "recruiting-2", "large").ID.String()
+	if _, err := e.h.Pool.Exec(ctx, "update projects set state = 'error', last_error = 'capacity: no host with capacity' where id = $1", pid); err != nil {
+		t.Fatal(err)
 	}
 	// Still full: start runs the create, which fails the same way and
 	// says so, not "create it first".

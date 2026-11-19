@@ -1509,6 +1509,16 @@ func bootTimings(b *hostdv1.BootTimings) map[string]any {
 // The code is still `capacity`, so the api answers 503 and the op can be
 // retried once the machine is back, exactly as a fleet placement can.
 func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
+	msg, _ := e.ownHostRefusalDetail(ctx, p)
+	return &opError{code: "capacity", msg: msg}
+}
+
+// ownHostRefusalDetail is ownHostRefusal's sentence with the detail a
+// request-time refusal carries (PlaceNew, I-1390): `reason`
+// `no_own_host`, and the host's name and state when there is one, so a
+// client can name the way out without parsing the sentence.
+func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project) (string, map[string]any) {
+	detail := map[string]any{"reason": "no_own_host"}
 	hosts, err := store.ListAccountHosts(ctx, e.pool, p.UserID)
 	if err != nil {
 		// The sentence is the only thing lost; the refusal stands.
@@ -1520,9 +1530,10 @@ func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
 			// does not count these either, so they explain nothing.
 			continue
 		}
+		detail["host"], detail["host_state"] = h.Name, h.State
 		switch h.State {
 		case "registering":
-			return &opError{code: "capacity", msg: "your host " + h.Name + " has not registered yet"}
+			return "your host " + h.Name + " has not registered yet", detail
 		case "unreachable":
 			// How long it has been quiet, not just that it is: a user
 			// reading "14m" knows their Mac went to sleep, and one
@@ -1531,14 +1542,14 @@ func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
 			// and the dashboard (19c); a host of repose's reads "its
 			// server is not answering" instead, because that one is not
 			// the user's to fix.
-			return &opError{code: "capacity", msg: "your host " + h.Name + " has not answered for " + quietFor(h.LastHeartbeatAt, e.now())}
+			return "your host " + h.Name + " has not answered for " + quietFor(h.LastHeartbeatAt, e.now()), detail
 		case "draining":
-			return &opError{code: "capacity", msg: "your host " + h.Name + " is being removed, so nothing can be placed on it"}
+			return "your host " + h.Name + " is being removed, so nothing can be placed on it", detail
 		default:
-			return &opError{code: "capacity", msg: "your host " + h.Name + " has no room for a " + p.Class + " machine"}
+			return "your host " + h.Name + " has no room for a " + p.Class + " machine", detail
 		}
 	}
-	return &opError{code: "capacity", msg: "you own no host yet; `repose host add` prints the step that adds one"}
+	return "you own no host yet; `repose host add` prints the step that adds one", detail
 }
 
 // quietFor is how long a host has been silent, in the shortest true

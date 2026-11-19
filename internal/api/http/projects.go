@@ -357,8 +357,20 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if count >= limits.Projects {
 			return projectLimitError(count, limits.Projects, 1)
 		}
-		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, billing.NewProjectHeldBytes)
+		// Placement answers before the row is written (DECISIONS
+		// I-1390): a refusal is this request's 503 and leaves nothing
+		// behind. Until this the op placed the row afterwards, and a
+		// customer whose own host had not registered yet stranded one
+		// project in `error` per attempt. The pick is recorded on the
+		// row in this transaction, which is PickHost's contract.
+		held := billing.NewProjectHeldBytes
+		hostID, err := s.d.Engine.PlaceNew(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
+			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held})
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, host_id) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, held, hostID)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -391,6 +403,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		p, err = store.GetProject(ctx, tx, pid)
 		return err
 	})
+	var refused *ops.PlacementRefusal
+	if errors.As(err, &refused) {
+		return withDetail(errf(refused.Code, "%s", refused.Message), refused.Detail)
+	}
 	if err != nil {
 		return err
 	}

@@ -66,14 +66,18 @@ func (m *Me) ghLoginCopy() bool {
 }
 
 type Project struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Slug             string     `json:"slug"`
-	RemoteURL        string     `json:"remote_url"`
-	Class            string     `json:"class"`
-	State            string     `json:"state"`
-	OpID             string     `json:"op_id,omitempty"` // the op a create or start left in flight
-	HostID           string     `json:"host_id,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	RemoteURL string `json:"remote_url"`
+	Class     string `json:"class"`
+	State     string `json:"state"`
+	OpID      string `json:"op_id,omitempty"` // the op a create or start left in flight
+	HostID    string `json:"host_id,omitempty"`
+	// Placement is what the project asked for (I-1366): `own`, a host
+	// the account owns when it owns one, or `hosted`, repose's servers.
+	// Absent from an older api, which the CLI reads as own.
+	Placement        string     `json:"placement,omitempty"`
 	GuestIP          string     `json:"guest_ip,omitempty"`
 	AgentDefault     string     `json:"agent_default"`
 	HoldBaseUpdates  bool       `json:"hold_base_updates"`

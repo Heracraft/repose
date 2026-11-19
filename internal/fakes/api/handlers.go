@@ -371,7 +371,11 @@ func opResult(w http.ResponseWriter, o *op) *apiError {
 func (f *Fake) run(p *project) {
 	now := f.now()
 	p.State = "running"
-	p.HostID = hostID
+	if p.HostID == "" {
+		// A project placed on a host the account owns stays there; one
+		// placed nowhere yet runs on the fleet's host.
+		p.HostID = hostID
+	}
 	if p.GuestIP == "" {
 		f.ipSeq++
 		p.GuestIP = fmt.Sprintf("10.64.4.%d", 10+f.ipSeq)
@@ -532,9 +536,25 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		return invalid("a temporary project has no remote_url")
 	}
 	u := userFrom(r)
+	placement := "own"
+	if body.Placement != nil {
+		placement = *body.Placement
+	}
+	// Placement answers before the row is kept (DECISIONS I-1390): a
+	// host the account owns takes an `own` project when it is online and
+	// refuses it in the api's words when it is not, so a refused create
+	// strands nothing.
+	ownHostID, e := f.placeNew(u, body.Class, placement)
+	if e != nil {
+		return e
+	}
 	p, e := f.create(u, body.Name, body.RemoteURL, body.Class)
 	if e != nil {
 		return e
+	}
+	p.Placement = placement
+	if ownHostID != "" {
+		p.HostID = ownHostID
 	}
 	if body.ExpiresIn != nil {
 		t := f.now().Add(time.Duration(*body.ExpiresIn) * time.Second)
@@ -550,9 +570,6 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p.PersonalOptOut = body.PersonalOptOut
 	if body.Multiplexer != nil {
 		p.Multiplexer = *body.Multiplexer
-	}
-	if body.Placement != nil {
-		p.Placement = *body.Placement
 	}
 	if cur := f.currentPersonal(u); cur != nil && cur.Fragment != "" && !body.PersonalOptOut {
 		if rev := p.revision(p.ConfigRevisionID); rev != nil {
