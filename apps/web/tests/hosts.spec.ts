@@ -89,7 +89,7 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	await expect(install).toBeVisible();
 	await shots(page, 'hosts-added');
 	const line = (await install.innerText()).trim();
-	expect(line).toContain('REPOSE_JOIN_TOKEN=');
+	expect(line).toContain('repose host add --join ');
 	await dialog.getByRole('button', { name: 'Done' }).click();
 	await expect(dialog).not.toBeVisible();
 
@@ -98,7 +98,7 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	const row = table.getByRole('row').filter({ hasText: 'mac-mini' });
 	await expect(row).toContainText('waiting');
 	await expect(section.getByRole('heading', { name: '1 host' })).toBeVisible();
-	const token = line.split('REPOSE_JOIN_TOKEN=')[1].split(' ')[0];
+	const token = line.split('--join ')[1].split(/\s/)[0];
 	await expect(page.locator('body')).not.toContainText(token);
 
 	// A second host is refused by the plan, in the api's own sentence.
