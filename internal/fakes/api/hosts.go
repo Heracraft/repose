@@ -354,8 +354,19 @@ func (f *Fake) SetProjectHost(projectID, hostID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if p := f.projects[projectID]; p != nil {
-		p.HostID = hostID
+		p.HostID, p.HostName = hostID, f.ownedHostName(hostID)
 	}
+}
+
+// ownedHostName is the name of an owned host by id, "" for a host
+// repose runs (I-1392): what Project.host_name carries.
+func (f *Fake) ownedHostName(hostID string) string {
+	for _, h := range f.ownedHosts {
+		if h.ID == hostID {
+			return h.Name
+		}
+	}
+	return ""
 }
 
 // placeNew is where an `own` project goes (DECISIONS I-1366, I-1390),

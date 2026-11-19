@@ -160,7 +160,7 @@ the machines go first: destroy them, or restore them onto another host.
 | GET | `/projects/:id/samples?window=1h\|24h\|7d` | `{window, step_s, vcpus, memory_bytes, points: [{ts, cpu, mem_used_bytes, cpu_pressure, host_cpu_wait, disk_used_bytes}], procs: [{comm, cpu_s, rss_max_bytes}]}`: the machine over the window from its minute samples while running (I-492, I-493). `window` defaults to `1h`; `step_s` is 60, 300 or 3600. `vcpus` is the cores the class sells and is fractional on `tiny` (0.5, I-1168); `cpu` is the share of the class's vCPUs used, `cpu_pressure` the share of the time a task in the guest waited for a vCPU, `host_cpu_wait` the share of the time the machine waited for a host CPU (all 0 to 1). `mem_used_bytes` is memory in use as the guest sees it. `mem_used_bytes` and `cpu_pressure` are null in a bucket whose samples came from a guest older than I-493. `procs` is the eight process names with the most CPU in the window, their CPU seconds and largest RSS. Any other `window` is `invalid` |
 
 ```
-Project { id, name, slug, remote_url, class, state, host_id?, guest_ip?,
+Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_ip?,
           agent_default, hold_base_updates, base_version, config_revision_id,
           volume_bytes, disk_used_bytes?, created_at, started_at?,
           root_used_bytes?, root_size_bytes?,          -- the guest's root filesystem (I-567)
@@ -176,6 +176,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, guest_ip?,
           personal_opt_out,                            -- machine.nix kept off (I-490)
           multiplexer,                                 -- tmux|herdr, from the next start (I-502)
           placement }                                  -- own|hosted, where it is placed (I-1366)
+                                                       -- host_name: the owned host's name beside host_id,
+                                                       -- absent on a host repose runs (I-1392)
 
 DestroyedProject { id, name, slug, class, remote_url?, volume_bytes,
           destroyed_at, name_free, restorable_until?,

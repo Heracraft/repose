@@ -16,14 +16,17 @@ type User struct {
 
 // Project is the documented Project object.
 type Project struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Slug             string     `json:"slug"`
-	RemoteURL        string     `json:"remote_url"`
-	Class            string     `json:"class"`
-	State            string     `json:"state"`
-	OpID             string     `json:"op_id,omitempty"` // the op pending or running (I-722)
-	HostID           string     `json:"host_id,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	RemoteURL string `json:"remote_url"`
+	Class     string `json:"class"`
+	State     string `json:"state"`
+	OpID      string `json:"op_id,omitempty"` // the op pending or running (I-722)
+	HostID    string `json:"host_id,omitempty"`
+	// HostName is the owned host's name, beside its id (I-1392); a host
+	// repose runs has none.
+	HostName         string     `json:"host_name,omitempty"`
 	GuestIP          string     `json:"guest_ip,omitempty"`
 	AgentDefault     string     `json:"agent_default"`
 	HoldBaseUpdates  bool       `json:"hold_base_updates"`
