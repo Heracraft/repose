@@ -90,6 +90,10 @@ type CreateProjectRequest struct {
 	// Multiplexer is tmux or herdr (DECISIONS I-502); empty leaves the
 	// api's default, tmux.
 	Multiplexer string `json:"multiplexer,omitempty"`
+	// Placement is where the machine is made (repose run --host,
+	// DECISIONS I-1390): `own` for a host of the account's, `hosted` for
+	// repose's servers; empty leaves the api's default, own.
+	Placement string `json:"placement,omitempty"`
 }
 
 func (c *Client) CreateProject(ctx context.Context, req CreateProjectRequest) (*Project, error) {

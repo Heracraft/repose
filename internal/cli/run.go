@@ -52,6 +52,11 @@ type RunOptions struct {
 	// prompt it is `run -w`: the prompt is typed there instead of into
 	// a new agent, and the attach opens on it (I-639).
 	Window string
+	// Host is --host: where a new machine is made, one of the account's
+	// hosts by name or `repose` for repose's servers (DECISIONS I-1390).
+	// A machine is pinned to its host for life, so on a project that
+	// exists it exits 2.
+	Host string
 	// Session is --session: one Claude Code conversation of this laptop
 	// comes to the machine and a claude starts with `--resume` on it
 	// (DECISIONS I-1328). sessionLast is this checkout's newest;
@@ -237,6 +242,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if err := startOver(ctx, e, res, &opts, pr); err != nil {
 			return err
 		}
+	}
+	if !attachOnly && res.Project != nil && opts.Host != "" {
+		// A machine is pinned to its host for life (DESIGN.md §3): the
+		// flag chooses where a new one is made and can do nothing here.
+		return exitf(ExitUsage, "%s exists and stays on its host; --host chooses where a new machine is made. A machine moves host only by restoring a snapshot.", res.Project.Slug)
 	}
 	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
 		if err := waitOutStop(ctx, e, res.Project, pr); err != nil {
@@ -2036,6 +2046,13 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 	if mux != multiplexer.Tmux {
 		req.Multiplexer = mux
 	}
+	if opts.Host != "" {
+		placement, err := placementFor(ctx, e, opts.Host)
+		if err != nil {
+			return nil, err
+		}
+		req.Placement = placement
+	}
 
 	waited := map[string]bool{}
 	waitedPlan, stoppedForPlan := false, false
@@ -2103,6 +2120,9 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		if errors.As(err, &apiErr) && apiErr.Code == "payment_required" {
 			return nil, exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(apiErr))
 		}
+		if errors.As(err, &apiErr) && apiErr.Code == "capacity" {
+			return nil, exitf(ExitCapacity, "%s", createRefusal(apiErr, opts.Host))
+		}
 		if errors.As(err, &apiErr) && apiErr.Code == "conflict" {
 			// A name held by a project still being destroyed (`repose rm`
 			// a moment ago, from another checkout or with no remote, so
@@ -2125,6 +2145,48 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		return nil, err
 	}
 	return nil, exitf(ExitGeneric, "Could not find a free project name after 10 attempts. Name one: `repose run NAME`.")
+}
+
+// placementFor is what --host asks the api for (DECISIONS I-1390):
+// `repose` is repose's servers (`hosted`), anything else is one of the
+// account's own hosts by name (`own`). A name the account has no host
+// under exits 2, before anything is created.
+func placementFor(ctx context.Context, e *Env, host string) (string, error) {
+	if host == hostRepose {
+		return "hosted", nil
+	}
+	hosts, err := e.Client.ListHosts(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, h := range hosts {
+		if h.Name == host && h.State != "retired" && h.State != "lost" {
+			return "own", nil
+		}
+	}
+	return "", exitf(ExitUsage, "You have no host called %s. `repose host ls` lists yours; `--host repose` is repose's servers.", host)
+}
+
+// hostRepose is --host's name for repose's own servers.
+const hostRepose = "repose"
+
+// createRefusal is the sentence for a create the api refused with
+// `capacity` (DECISIONS I-1390). The api's own words name the cause: a
+// host of the user's that has not registered or answered, or a fleet
+// with no room. When it is the user's host and their plan sells memory
+// on repose's servers, the way out is named, unless --host already
+// chose; a fleet with no room keeps I-724's sentence, the one lever that
+// works for it.
+func createRefusal(apiErr *APIError, host string) string {
+	reason, _ := apiErr.Detail["reason"].(string)
+	if reason != "no_own_host" {
+		return "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it."
+	}
+	next := ""
+	if allowed, _ := apiErr.Detail["hosted_allowed"].(bool); allowed && host == "" {
+		next = "`repose run --host " + hostRepose + "` makes it on repose's servers instead."
+	}
+	return withNext(apiErr.Message, next)
 }
 
 // runDestroyWait bounds how long `repose run` waits for the destroy of

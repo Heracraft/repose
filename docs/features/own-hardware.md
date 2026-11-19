@@ -188,9 +188,15 @@ are outside the seat count, the waitlist and the pool gauges, because
 repose did not buy them.
 
 A create for `own` while the account's host has not registered yet, or
-cannot take the machine, fails the create op with `capacity` and a
+cannot take the machine, is refused at the request with `capacity` and a
 message that names the host and its state, rather than quietly using the
-fleet and billing for it.
+fleet and billing for it, and nothing is written (I-1390). Until I-1390
+the row went in first and the op refused it afterwards, so a customer
+whose Mac had not finished installing stranded one project in `error`
+per attempt and could make one nowhere: the CLI had no flag for the
+other answer. `repose run --host NAME|repose` is that flag; the api's
+refusal carries `detail.hosted_allowed` so the CLI names `--host repose`
+only when the plan would honour it.
 
 ## 4. How long a machine takes to start
 
@@ -323,6 +329,12 @@ Ownership and placement (I-1366):
   (internal/api/http).
 - An account whose plan sells no memory on repose's hosts never lands on
   the fleet, whatever the field says.
+- A create no host can take is refused before the row is written, twice
+  in a row with nothing stranded, and `placement: "hosted"` is the way
+  out: `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http);
+  `repose run --host` sends it and names it in the refusal:
+  `TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut`,
+  `TestRunHostChoosesWhereTheMachineIsMade` (internal/cli). I-1390.
 
 The routes (I-1366):
 

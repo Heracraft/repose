@@ -37340,3 +37340,72 @@ exempt account is refused nothing.)
   after), `TestLoginStatus` (`billing-exempt`, `no plan`, `Plus plan`),
   and the two dashboard tests, which set an exempt account past every
   plan's disk, read no meter and no banner, and create a project.
+**I-1390. Where a project runs is chosen per command with `repose run
+--host NAME|repose`, placement is answered before the project row is
+written, and the api reference documents the field (fix-placement,
+2026-11-19).** *Made during implementation* (the customer reviews of
+2026-11-19, ENG-67, ENG-28 and ENG-66; the prior art is
+`docs/proposals/2026-11-19-where-a-project-runs.md` on PR #82, which
+studied twelve tools and found every one that works has a named default,
+a per-command override and a readout; amends I-1366's placement).
+
+- *The defect.* I-1366 made every new project of an account that owns a
+  host go to that host, and the one escape it named, `placement:
+  "hosted"`, was API-only: the CLI could not send it, the dashboard's
+  form did not send it, and `/docs/api` did not contain the word. A
+  customer whose Mac had not finished installing (the host `waiting`)
+  could therefore create a working project nowhere, on their hardware or
+  ours, by any route either client offers; the only recovery was
+  `repose host rm` on the Mac they had bought, which nothing told them.
+  Reproduced four times by the CLI review and measured by the dashboard
+  review (201, then `error` 8.0 s later, Restart the only control).
+- *The override.* `repose run --host NAME` names one of the account's
+  hosts, `--host repose` names repose's servers; the shape of `--size`
+  and `--agent`. The CLI resolves a name against `GET /hosts` and sends
+  `placement` (`own` for a name, `hosted` for `repose`): the api's field
+  is unchanged, because the Own hardware plan sells one host per account
+  (I-1366), so a name and `own` are the same answer today. A name the
+  account has no host under exits 2 before anything is created. On a
+  project that exists the flag exits 2 whatever it names, as `--size`
+  does on a running one: a machine is pinned to its host for life
+  (DESIGN.md §3), so a flag that cannot act must say so rather than be
+  ignored. The naming-scheme alternative (`mac-mini/todo-app`) lost
+  because a project's slug is already its SSH hostname and webhook path;
+  the ambient-context alternative (a current host, as kubectl and docker
+  have) lost on the prior art's own complaints. A per-host pin in the
+  api (`host` beside `placement`) is deferred to the day a plan sells
+  two hosts.
+- *Placement answers before the row is written.* The create wrote the
+  row as `creating` in its transaction and the op placed it afterwards,
+  so a refusal had a row to leave behind and every retry stranded
+  another. Of the two shapes named (place first, or the failed create
+  removes its own row), the first won: the op's refusal is read through
+  `GET /projects/:id/ops/:op_id`, which needs the project row, so a
+  create that deleted its row would also delete the sentence the client
+  was waiting to read. `ops.Engine.PlaceNew` runs `scheduler.PickHost`
+  inside the create's transaction and the row goes in with `host_id`
+  set, which is PickHost's own contract (the placement lock is held to
+  the commit). The one case the op still places: no host fits now and a
+  guest being stopped is about to free the room (I-408), where the row
+  is written and the op waits as before. A final refusal is this
+  request's `503 capacity` with the sentence the op would have failed
+  with and `detail.reason`, `host`, `host_state` and `hosted_allowed`,
+  so the CLI names `--host repose` only when the plan would honour it.
+  I-406 (a start re-creates a project whose create failed) stays for
+  the rows the old shape left and for a create that fails after
+  placement.
+- *The api reference.* `/docs/api` gains "Where a project runs": the
+  field, the 201, and each refusal with its `detail.reason`. Its rule
+  that bodies are what the CLI sends held only while every field had a
+  flag; this one had none, which is how the documented way out pointed
+  at a page that did not document it.
+- *The account-level default and the readout are the other two parts
+  of the pattern.* The default (`default_host`, asked once at `repose
+  host add`, read by both clients) is not built and is this entry's
+  next part; the readout (`host_name` beside `host_id`, the HOST
+  column) is I-1392, because it reverses I-616's premise rather than
+  amending I-1366.
+
+*Not done:* the dashboard's control (the parity rule, I-1354 under
+I-1266), the account-level default, `host_name` in the project JSON
+and the HOST column, each its own commit on this branch.
