@@ -100,7 +100,14 @@ arithmetic to the cent.
 
 An account an operator has marked billing-exempt (`repose-admin users
 exempt`) passes all of these; it still records hours and egress, so the
-numbers below are still real for it (DECISIONS I-16).
+numbers below are still real for it (DECISIONS I-16). It is measured
+against no plan: GET /billing's `usage` for it, as for any account with
+no subscription, carries 0 for `memory_gb`, `disk_gb` and
+`egress_included_gb` and 0 overage, the dashboard's Billing page lists
+what it holds with no limit beside it and no refusal, and `repose login
+--status` says `billing-exempt` where it would name the plan (I-1396).
+Until I-1396 the api sent Solo's figures there, and the page said such an
+account was over and that creating was refused, then created.
 
 ## Own hardware
 
