@@ -28,7 +28,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var ao applianceOptions
 	add := &cobra.Command{
 		Use:   "add [NAME]",
-		Short: "Add hardware of your own: on a Mac, install the appliance; elsewhere, print the step",
+		Short: "Add a machine of your own",
 		Long: "Add a machine of yours. On a Mac with Apple silicon this installs repose's\n" +
 			"virtual machine here and starts it: vfkit and the appliance image are\n" +
 			"fetched, the disk file is made, and a launchd agent runs `repose host run`\n" +
@@ -38,7 +38,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"https://repose.run/docs/own-hardware has what the machine needs first.",
 		Example: "  repose host add\n" +
 			"  repose host add mac-mini\n" +
-			"  repose host add --join eyJ2IjoxLC...   # on the Mac, with the argument another machine printed",
+			"  repose host add --join eyJ2IjoxLC...   # on the Mac",
 		Args: argsN(0, 1, "at most one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
