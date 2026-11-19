@@ -255,8 +255,18 @@ further, because the first command is where it stops.
 
 What nobody has measured and only that surface can: the timed first hour, and
 what a Mac restart does to a running guest. The figures to confirm are a cold
-guest start **57.9 s**, a park **6.5 s** a guest, an unpark **3.8 s** and the
-appliance back at its login in **21 s**. The owner has said 57.9 s is too slow
-and will trigger that work separately (ENG-70).
+park **6.5 s** a guest, an unpark **3.8 s** and the appliance back at its
+login in **21 s** — all measured on an ordinary guest with no experiment, and
+freeze-and-wake is the only fast path that currently exists.
+
+**A correction the conductor owes this report.** A cold guest start on the
+published image is about **289 s**, not the 57.9 s quoted elsewhere tonight.
+The 57.9 s was a hand-built experimental guest: `storeOnDisk` defaults to
+false, **no caller in the tree passes it true**, the mechanism exists only on
+the program branch, the published image is built from `main` which has none of
+it, and the research section says the product shape "is not designed here".
+The cause of the four minutes is found; the fix is not shipped. ENG-70 is two
+pieces of work — make the measured path the product's, then make it faster —
+and the owner's instruction that this is far too slow stands against 289 s.
 
 **The review is not finished and the gate is not passed.**
