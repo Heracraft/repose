@@ -34,13 +34,30 @@ and may ship after launch.
 Mac and not on anyone's desk: an appliance given 12 GiB, which is what a
 16 GB Mac's share is sized at, reports 11.6 GiB and 8 vCPU in its Hello
 and leaves 9.6 GiB placeable after the eighth-with-a-2-GiB-floor reserve
-(I-724). The image unpacks sparse in 21 s to 4.4 GB of real blocks (37
-GiB apparent), peaking at about 6.5 GB while the 2.0 GB download is
-still on disk, and the lab disk held 21 GB with the guest closure built
-and one `large` volume created, before that machine had written
-anything. The caveats the page does not carry: the appliance was 12 GiB
-on a 24 GB Mac, and no guest had booted, so the cost of a machine that
-is actually working is not measured yet.
+(I-724). On disk, from the **production** image: the install step runs in 29 s
+with the image local, the sparse unpack leaves 4.58 GB of real blocks
+(37 GiB apparent, then extended into the volume's free space less 20
+GB), the peak is about 6.6 GB with the 2.08 GB download still beside
+it, and **at rest after first boot it is 5.65 GB** (the pool's metadata
+grown to 1 GiB, plus the caches volume's ext4).
+
+The caveats the page does not carry. The appliance was 12 GiB on a 24
+GB M4, not a 16 GB Mac on a desk. The 5.65 GB is from an image built
+**before** 19f's boot-time trim, which on the lab image gave back 3 GB
+of the build's stale blocks, so the shipping image's at-rest figure
+will be a little lower and nobody has measured it; the page says "under
+6 GB", which is true before the trim and after it.
+
+What a running machine costs is **not** established. The one
+measurement, 9.76 GB with a `large` machine running, is on the lab
+image, whose closure is 6.6 GiB larger, and the two do not reconcile:
+6.6 GiB is 7.09 GB, so 9.76 less that is 2.67 GB, which is below the
+5.65 GB at-rest figure the lab image cannot be smaller than. So the
+closure difference is not additive in real blocks, or the two readings
+are from different points, and until that is resolved no per-machine
+figure belongs on the page. The page says a machine costs what it
+writes, up to the size of its disk, which is the thin volume's actual
+behaviour and needs no arithmetic.
 
 ## What the user sees
 

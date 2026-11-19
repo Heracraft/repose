@@ -14,7 +14,7 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
 - 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest. On a 16 GB Mac that share is about 12 GB, of which about 9.6 GB is what your machines may hold at once; repose keeps the rest for itself. `repose host ls` shows the share.
-- About 21 GB of free disk to begin with, and room to grow. Installing repose peaks at about 6.5 GB and settles at 4.4 GB; building the system your machines run takes it to about 21 GB, once, however many machines you have. After that a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
+- About 10 GB of free disk to begin with, and room to grow. Installing repose peaks at about 6.6 GB while the download is still on disk, and settles under 6 GB. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
 
