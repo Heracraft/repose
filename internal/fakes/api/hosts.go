@@ -316,9 +316,21 @@ func (f *Fake) SetOwnedHostOffline(id string, quiet time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, h := range f.ownedHosts {
-		if h.ID == id {
-			at := f.now().Add(-quiet)
-			h.State, h.LastHeartbeatAt = "unreachable", &at
+		if h.ID != id {
+			continue
+		}
+		at := f.now().Add(-quiet)
+		h.State, h.LastHeartbeatAt = "unreachable", &at
+		// A host that stops answering takes every machine on it with
+		// it: the api's sweep sets `host_unreachable` on each, which is
+		// the field `repose ls`, `repose status` and the dashboard read
+		// (I-1370). Without this a test of an offline host would have to
+		// set the flag by hand and could set it on a project that is not
+		// even on the host.
+		for _, p := range f.projects {
+			if !p.destroyed && p.HostID == id {
+				p.HostUnreachable = true
+			}
 		}
 	}
 }

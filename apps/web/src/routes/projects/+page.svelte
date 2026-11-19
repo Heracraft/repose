@@ -63,7 +63,7 @@
 		type Band,
 		type Filter
 	} from '$lib/projectList';
-	import type { DestroyedProject, Host, Project, Question } from '$lib/api/types';
+	import type { DestroyedProject, OwnedHost, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -134,7 +134,7 @@
 	 * the user turns back on instead of calling it a server of repose's.
 	 * Empty the rest of the time, so the common poll costs no extra read.
 	 */
-	let ownHosts = $state(new Map<string, Host>());
+	let ownHosts = $state(new Map<string, OwnedHost>());
 
 	/** Questions agents are waiting on, across every project (I-245). */
 	let questions = $state<Question[]>([]);

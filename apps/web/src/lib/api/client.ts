@@ -14,7 +14,6 @@ import type {
 	Config,
 	DestroyedProject,
 	EventsPage,
-	Host,
 	Invoice,
 	Me,
 	MenuSelection,
@@ -187,10 +186,6 @@ export const putPersonal = (fragment: string, base: string | null) =>
 		body: { fragment, base_revision_id: base ?? '', source: 'dashboard' }
 	});
 
-// Hosts the account owns (I-1366, I-1370).
-/** passive: a side read beside the project list, which must not clear an outage bar of its own. */
-export const listHosts = (opts: { passive?: boolean } = {}) => request<Host[]>('/hosts', opts);
-
 // Projects.
 /** passive: the rail's background read (I-841), as getMe's. */
 export const listProjects = (opts: { passive?: boolean } = {}) =>
@@ -362,7 +357,10 @@ export const deleteToken = (name: string) =>
 
 // The hosts the account owns (DECISIONS I-1366). The POST answer is the
 // one that carries the join token, as a minted API token's is.
-export const listHosts = () => request<OwnedHost[]>('/hosts');
+/** passive: a side read beside the project list, which must not clear an
+ *  outage bar of its own (I-1370). */
+export const listHosts = (opts: { passive?: boolean } = {}) =>
+	request<OwnedHost[]>('/hosts', opts);
 export const createHost = (body: { name?: string }) =>
 	request<OwnedHost>('/hosts', { method: 'POST', body });
 export const deleteHost = (id: string) =>

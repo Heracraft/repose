@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { hostStateWord, offlineHostLine } from './offlinehost';
-import type { Host } from './api/types';
+import type { OwnedHost } from './api/types';
 
-const host = (over: Partial<Host> = {}): Host => ({
+const host = (over: Partial<OwnedHost> = {}): OwnedHost => ({
 	id: 'h1',
 	name: 'mac-mini',
 	state: 'unreachable',
@@ -34,7 +34,7 @@ describe('a host that has stopped answering', () => {
 	});
 
 	it('leaves out a time it does not have', () => {
-		const hosts = new Map([['h1', host({ last_heartbeat_at: null })]]);
+		const hosts = new Map([['h1', host({ last_heartbeat_at: undefined })]]);
 		expect(offlineHostLine({ host_id: 'h1', host_unreachable: true }, hosts, now)).toBe(
 			'your host mac-mini has not answered'
 		);

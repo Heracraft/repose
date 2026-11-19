@@ -68,7 +68,7 @@
 	import { offlineHostLine } from '$lib/offlinehost';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { latest, type Pt } from '$lib/usage';
-	import type { Host, ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
+	import type { OwnedHost, ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
 
 	const ctx = useProject();
 	const id = ctx.id;
@@ -80,7 +80,7 @@
 	 * is quiet (I-1370), so the banner can name the Mac the user turns
 	 * back on. Empty otherwise.
 	 */
-	let ownHosts = $state(new Map<string, Host>());
+	let ownHosts = $state(new Map<string, OwnedHost>());
 	// Deliberately not $state: the effect writes ownHosts and must not
 	// read it, or an account that owns no host answers the read with an
 	// empty map, the map is a new reference, the effect runs again and

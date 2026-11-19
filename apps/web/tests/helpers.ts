@@ -328,20 +328,20 @@ export async function setResting(projectID: string, minutes: number): Promise<vo
 /**
  * Puts a project on a host the account owns and makes that host quiet,
  * as a Mac mini that is asleep or off the network is (I-1370). Returns
- * the host's id.
+ * the host's id. Three calls to `ownedHost` below: add it, place the
+ * project, make it quiet. The host going quiet is what marks its
+ * machines unreachable, as the api's sweep does, so nothing here sets
+ * that flag by hand.
  */
 export async function setOfflineOwnHost(
 	projectID: string,
 	name: string,
 	quietMinutes: number
 ): Promise<string> {
-	const res = await fetch(`${adminURL()}/offline-host`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ project_id: projectID, name, quiet_minutes: quietMinutes })
-	});
-	if (!res.ok) throw new Error(`setOfflineOwnHost: ${res.status}`);
-	return ((await res.json()) as { host_id: string }).host_id;
+	const hostID = await ownedHost({ name });
+	await ownedHost({ project_id: projectID, host_id: hostID });
+	await ownedHost({ id: hostID, quiet_minutes: quietMinutes });
+	return hostID;
 }
 
 /** Stops a project straight against the fake api (no CLI in this suite). */

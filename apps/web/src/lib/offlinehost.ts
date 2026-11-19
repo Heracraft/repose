@@ -1,4 +1,4 @@
-import type { Host, Project } from '$lib/api/types';
+import type { OwnedHost, Project } from '$lib/api/types';
 import { uptime } from '$lib/format';
 
 /**
@@ -14,7 +14,7 @@ import { uptime } from '$lib/format';
  */
 export function offlineHostLine(
 	p: Pick<Project, 'host_id' | 'host_unreachable'>,
-	hosts: Map<string, Host>,
+	hosts: Map<string, OwnedHost>,
 	now = Date.now()
 ): string {
 	if (!p.host_unreachable) return '';

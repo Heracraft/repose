@@ -715,31 +715,3 @@ export interface Route {
 	guest_ip: string;
 	state: GuestState;
 }
-
-/**
- * A host the account owns: a Mac mini or an x86 box of the user's that
- * their projects run on instead of repose's servers (I-1366, I-1370).
- * `state` is the host state (`registering`, `ready`, `unreachable`,
- * `draining`, `retired`, `lost`); `mem_bytes`, `vcpus`, `cores`,
- * `provider` and `arch` are empty or 0 until it has registered.
- * `join_token` and `install` come back from POST /hosts alone.
- */
-export interface Host {
-	id: string;
-	name: string;
-	state: string;
-	provider?: string;
-	arch?: string;
-	mem_bytes: number;
-	vcpus: number;
-	cores: number;
-	/** The account's live machines placed on it, and those holding memory. */
-	projects: number;
-	running_projects: number;
-	last_heartbeat_at?: string | null;
-	registered_at?: string | null;
-	created_at: string;
-	join_token?: string;
-	join_token_expires_at?: string;
-	install?: { command: string; url: string };
-}

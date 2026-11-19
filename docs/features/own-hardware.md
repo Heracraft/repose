@@ -9,24 +9,26 @@ cupboard, and it takes that account's projects and nobody else's, ever.
 The business shape is `docs/proposals/2026-10-10-bring-your-own-host.md`
 and DECISIONS I-647 (shape A: the hosted control plane, hosts the user
 owns). The program that builds it is `docs/workstreams/19-mac-mini.md`;
-the decisions are I-1362 (the Mac first, x86 metal second), I-1364 (the
-plan), I-1366 (ownership, placement and the three routes), I-1368 (the
-hub treats a host as hostile), I-1370 (`repose host` and what an offline
-host says), I-1372 (snapshots on the host's own disk), I-1374 and I-1376
-(the aarch64 outputs and the Mac appliance) and I-1378 (unattended
-updates). User-facing documentation is
+the decisions behind what is built are I-1364 (the plan), I-1366
+(ownership, placement and the three routes), I-1368 (the hub treats a
+host as hostile), I-1370 (`repose host` and what an offline host says)
+and I-1372 (snapshots on the host's own disk). The order of the hardware,
+the aarch64 outputs, the Mac appliance and unattended updates have ids
+reserved in the program doc and no entries yet; this doc describes their
+absence in words rather than pointing a reader at something they cannot
+read (I-994). User-facing documentation is
 `apps/web/src/content/docs/own-hardware.md`.
 
-**Status.** The hosted half is built: ownership, placement, the three
-routes, `repose host`, the dashboard's Hosts page, the hub rules, the
-offline wording, the snapshot store. The machine half is not: there is no
-aarch64 guest base, no Mac appliance image and no launcher, so nothing
-has joined an account yet and no `host_install_command` has been
-recorded, which means every `repose host add` today prints the token and
-the docs page rather than a line to run (§3). The Own hardware plan is
-not in `internal/billing/plans.go` either, so the only account that may
-own a host today is a billing-exempt one (`billing.ExemptHosts`).
-Unattended updates (I-1378) are not built and may ship after launch.
+**Status.** The hosted half is built: the Own hardware plan, ownership,
+placement, the three routes, `repose host`, the dashboard's Hosts page,
+the hub rules, the offline wording, the snapshot store. The machine half
+is not: there is no aarch64 guest base, no Mac appliance image and no
+launcher, so nothing has joined an account yet and no
+`host_install_command` has been recorded, which means every `repose host
+add` today prints the token and the docs page rather than a line to run
+(§3). Owned hosts do not update themselves; an operator switches them by
+hand, and the timer that would pull a published host system is not built
+and may ship after launch.
 
 ## What the user sees
 
@@ -275,6 +277,6 @@ The x86 `metal` path beyond what the hosted half already allows: the
 one-disk disko layout is the Mac's, and an x86 box still needs two disks.
 Snapshots to a bucket of the user's own (I-1372, revisit when a user
 asks). More than one host per account, which is a number in `plans.go`
-and nothing else. Unattended updates (I-1378), which may ship after
-launch. Moving a running machine between hosts, which restore already
-does and nothing else will.
+and nothing else. Unattended updates, which may ship after launch.
+Moving a running machine between hosts, which restore already does and
+nothing else will.
