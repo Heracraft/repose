@@ -53,6 +53,45 @@ func TestSayToAgentOverTheWire(t *testing.T) {
 	}
 }
 
+// I-1356: the machine's one agent takes the message with no --agent even
+// when the window is a trigger run's. This is the live defect of
+// 2026-11-18: one Claude Code agent, in `t-dash1`, the dashboard's agents
+// list showing it, and `repose say` answering "no agent is running on
+// this machine".
+func TestSayReachesTheOneAgentWhenItIsATriggerRun(t *testing.T) {
+	h := newHarness(t, func(h *harness) {
+		// The sampler's list-windows and the runner's are told apart by
+		// their format: the longer key wins.
+		h.runner.Match["#{window_name}\t#{pane_pid}"] = sysdep.RunResult{Stdout: []byte("t-dash1\t101\tclaude\t0\n")}
+		h.runner.Match["list-windows"] = sysdep.RunResult{Stdout: []byte("t-dash1\n")}
+	})
+	writeSayProcs(t, h)
+	if err := h.srv.project.Setup(t.Context(), &guestdv1.SetupProject{ProjectSlug: "todo-app"}); err != nil {
+		t.Fatal(err)
+	}
+	// A run of the trigger `dash1`, in the registry the way a run that
+	// outlived a guestd restart is (trigger.Runner.Reconcile).
+	dir := filepath.Join(h.paths.RunDir(), "triggers")
+	mustMkdir(t, dir)
+	mustWrite(t, filepath.Join(dir, "0199bbbb-0000-7000-8000-00000000001c"),
+		`{"trigger":"dash1","window":"t-dash1","source":"hand","started_unix":1,"timeout_s":3600}`)
+	h.srv.triggers.Reconcile(t.Context())
+	if !h.srv.triggers.RunWindows()["t-dash1"] {
+		t.Fatalf("the registry does not hold the run: %v", h.srv.triggers.RunWindows())
+	}
+	h.srv.watcher.Refresh(t.Context())
+
+	resp := h.do(t, &guestdv1.Request{Req: &guestdv1.Request_SayToAgent{SayToAgent: &guestdv1.SayToAgent{
+		SayId: "0199aaaa-0000-7000-8000-00000000001d", Text: "stop there", Sender: "heracraft", FromOwner: true,
+	}}})
+	if !resp.GetOk() {
+		t.Fatalf("error: %+v", resp.GetError())
+	}
+	if got := resp.GetSay(); got.GetState() != "delivered" || got.GetWindow() != "t-dash1" {
+		t.Fatalf("say result = %+v, want delivered in t-dash1", got)
+	}
+}
+
 // I-1144: a guest with no agent refuses rather than typing into
 // whatever window is there.
 func TestSayWithNoAgentIsNotFound(t *testing.T) {

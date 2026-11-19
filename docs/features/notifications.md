@@ -315,8 +315,10 @@ The owner can speak first (DECISIONS I-1144):
   and the answer says `replaced`, which the CLI prints. This is not a
   backlog: nothing drains a queue of messages.
 - `--agent <window>` picks a window. Without it a machine with one agent
-  window uses it; with several the refusal names them, and with none it
-  says so.
+  window uses it, whatever the window is named; with several the refusal
+  names them, and with none it says so. A trigger's run is out of that
+  pick while the user has an agent of their own, and is the machine's one
+  agent when it is the only one (I-1256, I-1356).
 - The text reaches the agent as it was typed when the sender is the
   project's owner, and prefixed `[from <name>]` when it is not. Today it
   is always the owner, so there is no prefix; the field is kept.

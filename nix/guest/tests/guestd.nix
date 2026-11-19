@@ -482,6 +482,32 @@ pkgs.testers.runNixOSTest {
         guest.succeed("sudo -u dev tmux kill-window -t '=todo-app:=claude-2'")
         guest.wait_until_succeeds("test $(pgrep -xc claude) -eq 1", timeout=30)
 
+        # I-1356: a window the user named `t-...` holds an agent of the
+        # user's, so it is in the pick with no --agent, and with the
+        # session's own `claude` beside it the refusal names both. Only
+        # the run registry makes a window a run's, and it holds no run
+        # here.
+        guest.succeed(
+            "sudo -u dev tmux new-window -t todo-app -n t-dash1 -c /home/dev/factory "
+            "'${sayClaude}/libexec/claude'"
+        )
+        for _ in range(30):
+            if "t-dash1" in [a["tmuxWindow"] for a in agents()]:
+                break
+            guest.sleep(2)
+        assert "t-dash1" in [a["tmuxWindow"] for a in agents()], agents()
+        status, out = guest.execute(
+            "guestd call say-to-agent '{\"sayId\": \"0199ffff-0000-7000-8000-00000000000d\", "
+            "\"text\": \"pick one\", \"sender\": \"heracraft\", \"fromOwner\": true}' "
+            "--dev-socket /run/repose/guestd.sock"
+        )
+        assert status != 0 and "claude" in out and "t-dash1" in out, (status, out)
+        pane = guest.succeed("sudo -u dev tmux capture-pane -p -t '=todo-app:=t-dash1'")
+        assert "TOOK pick one" not in pane, pane
+
+        guest.succeed("sudo -u dev tmux kill-window -t '=todo-app:=t-dash1'")
+        guest.wait_until_succeeds("test $(pgrep -xc claude) -eq 1", timeout=30)
+
     with subtest("I-200: the agent and the tmux server are protected, what they start is not"):
         claude = guest.succeed("pgrep -x claude").strip()
         server = guest.succeed("pgrep -x 'tmux: server'").strip().split()[0]

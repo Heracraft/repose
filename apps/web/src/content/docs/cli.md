@@ -422,7 +422,7 @@ claude is working. Your message goes in at the end of the turn.
 
 The message is one quoted argument; several words unquoted exit 2. An agent at its prompt, or waiting at a permission prompt, gets it at once. An agent in the middle of a turn gets it when the turn ends, because the five agents do not all take input typed mid-turn. One message waits per agent: a second while one waits replaces it, and the line says so.
 
-`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several agents exits 1 and names their windows, as `repose ps` does. A machine that is not running, or that runs no agent, exits 1. `--json` prints the message with the window it went to and its state, `delivered` or `waiting`.
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several agents exits 1 and names their windows, as `repose ps` does. A [trigger's run](/docs/triggers) is left out of that pick while an agent of your own is running, so a 03:00 run can't take a message meant for your session; on a machine whose only agent is a run, that run gets the message, and `--agent t-apply` reaches one either way. A machine that is not running, or that runs no agent, exits 1. `--json` prints the message with the window it went to and its state, `delivered` or `waiting`.
 
 A delivered message is an event, so `repose events` and the project page show that the agent got one, with who sent it and which window. The message itself is never in an event, a log line or a notification.
 
