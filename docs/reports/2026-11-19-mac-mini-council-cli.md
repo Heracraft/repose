@@ -27,17 +27,22 @@ projects were never stopped, started, resized or removed.
    least 21 minutes this evening the published install path served a CLI with
    no `host` command while the live docs documented four of them in full.
    Closed at 21:00 UTC. **F1, P0, ENG-23.**
-2. **"I handed my Mac to repose and it never told me what it costs."** The
+2. **"I bought a Mac for this and now every project goes to it whether I
+   want it to or not."** No CLI command can choose where a project runs, and
+   the one escape the docs name is an API field the API reference does not
+   document. **F17, P1 here, P0 on the dashboard session's end-to-end
+   measurement, ENG-67.**
+3. **"I handed my Mac to repose and it never told me what it costs."** The
    command that commits hardware names no plan, no price, no trial and no
    charge, and no command anywhere in the CLI names a price. **F2, P1,
    ENG-39.**
-3. **"Adding a trigger took over my Stripe URL and my app stopped getting
+4. **"Adding a trigger took over my Stripe URL and my app stopped getting
    deliveries."** Proven with the same URL answering 502 before and 202
    after. **F5, P1, ENG-32.**
-4. **"My first `repose run` printed 70 lines of nix and I thought it had
+5. **"My first `repose run` printed 70 lines of nix and I thought it had
    broken."** And so does every `repose config add` after it. **F4, P1,
    ENG-27.**
-5. **"`repose host ls` says I own nothing and its own `--json` says I own
+6. **"`repose host ls` says I own nothing and its own `--json` says I own
    four."** **F6, P1, ENG-37.**
 
 ---
@@ -355,6 +360,71 @@ cancelled it.
     $ repose --api-url notaurl ls
     Could not reach the api: unsupported protocol scheme ""
 
+### F17 — Nothing lets a customer say where a project runs (P1 here, P0 on the dashboard's evidence, ENG-67)
+
+No command in the CLI can choose placement. `repose run --help` has no
+`placement`, `hosted` or `fleet` flag, and neither do `start`, `resize`,
+`restore` or `snapshots restore`. Once an account owns a host, every new
+project goes there (intended, I-1366) and there is no way to ask for repose's
+servers.
+
+The docs do offer one escape, at `/docs/own-hardware` line 7:
+
+> A project made through the [API](https://repose.run/docs/api.md) can ask for
+> repose's servers instead, with `placement: "hosted"`, if your plan buys
+> memory there.
+
+`https://repose.run/docs/api.md` returns HTTP 200 and 11,553 bytes, and
+contains the word `placement` **zero times**. So the one documented way out is
+an API field that the API reference does not document and that the CLI cannot
+send.
+
+**Rank, and whose evidence it rests on.** On my surface this is P1: it costs
+the customer a choice, not their work. The `19-council-dash` session measured
+the same dead end end to end — identical New project form with and without a
+host, no placement field in the request body, the server defaulting to the
+waiting host, failure to `error` in 8.0 s with Restart the only control, and a
+working recovery at 17.0 s reachable only by deleting the host the customer
+bought the Mac for — and ranks it P0. **That measurement is theirs, not mine,
+and I have not repeated it.** I did not check whether the absent CLI flag is
+deliberate; `own-hardware` implies the API is the intended route, so it may
+be. The api.md omission is not deliberate either way.
+
+### F18 — A customer cannot tell which machines are on their own Mac (P2, ENG-68)
+
+A separate research session reported that `repose ls` names the host only
+while it is **not** answering, so an online Mac is invisible. **That finding
+and that mechanism are theirs.** My own measurement of the CLI half refines
+it rather than repeating it:
+
+- plain `repose status` on a running project does not name the host at all;
+- `repose status -v` does — `host       host-02, ip 10.64.4.10` — and cli.md
+  documents that row ("`-v` adds a `host` row with the server and the
+  machine's address"). But `-v` also logs every api request to stderr, so the
+  only readout is behind a debugging flag;
+- `repose ls --json` carries `host_id`, an opaque uuid, and **no host name
+  field**, so a script gets an id and never the name the customer gave their
+  Mac.
+
+So there is an indicator, in an awkward place — not "nothing anywhere".
+
+---
+
+## A note on absences
+
+Three of this review's findings are things that are not there, and an absence
+is only a finding once you have asked whether it is on purpose. Which ones I
+checked:
+
+| Absence | Checked? | Answer |
+|---|---|---|
+| the `host` command (F1) | yes | not deliberate — v0.1.50 shipped it 21 minutes later |
+| a CLI billing or price command (F2) | yes | plausibly deliberate: billing is the dashboard's surface and the CLI cannot take a card. So the finding is narrowed to **naming** the price, not taking payment |
+| any price in `host add`'s own output (F2) | **no** | I do not know whether that silence is deliberate. Stated here rather than assumed either way |
+| a placement flag (F17) | **no** | `own-hardware` implies the API is the intended route, so the flag may be deliberately absent. `api.md` documenting the field nowhere is not deliberate either way |
+| `snapshots take` (F9) | yes | not deliberate — the CLI's own help uses the word "take" |
+| the Own hardware plan on the pricing page | yes | **deliberately held** out of the release until this review passes, per the conductor. Excluded, and not counted as a finding |
+
 ---
 
 ## Which error lines tell a customer what to do, and which leave them guessing
@@ -463,20 +533,106 @@ These leave them guessing:
 
 ---
 
+---
+
+## Final ranking, and what moved
+
+The order I stand behind, most severe first. Where a rank changed during the
+review, the thing that changed it is named — in three cases it was evidence
+that made a finding *smaller*.
+
+**P0**
+
+1. **ENG-23 — the docs promised four commands the released CLI did not have.**
+   Found P0, and **closed during the review**: v0.1.50 at 21:00:03 UTC, close
+   verified from a customer's seat, card `Done` with that evidence. Its root
+   cause is open as **ENG-43** (docs ship on a push, the CLI ships on a tag).
+   F1.
+
+**P1**, in order
+
+2. **ENG-39 — `host add` never says what it costs.** My pick of the lot: the
+   one to fix before the plan goes on sale, because it is a missing sentence
+   rather than a bug, and the same silence is what a paying customer sees. F2.
+3. **ENG-67 — nothing lets a customer say where a project runs**, and the one
+   documented escape is an API field the API reference does not document. P1
+   on my evidence; **P0 on the dashboard session's**, which measured the path
+   end to end. F17.
+4. **ENG-32 — adding a trigger takes over a live webhook URL.** The only P1
+   that silently breaks something a customer already had working. F5.
+5. **ENG-40 — "no plan" for a billing-exempt account.** Ranked here and not
+   lower because it cost a reviewer a false P0 tonight; a line that misleads
+   the people who read it most. F3.
+6. **ENG-27 — the nix build log over the summary that already says it.**
+   Every `config add`, not just a first run. F4.
+7. **ENG-37 — `host ls` says I own nothing, its own `--json` says four.** F6.
+8. **ENG-28 — nothing warns at creation, and exit 8 does not mean this.**
+   Last of the P1s on my own measurement of the recovery. F7.
+
+**P2**: ENG-68 the host readout only under `-v` (F18) · ENG-38 `--cpus 0`
+adds a host (F8) · F9 `snapshots take` refused though the help says take ·
+ENG-30 a scripted `run` in the wrong folder (F10) · F11 `Guestd SayToAgent`
+leaked · F12 raw ssh/scp output and exit 255 · F13 lists that are not tables,
+and a blank `secrets ls` · F14 revoked tokens listed for good · F15
+"Interrupted." does not say the machine is still starting · F16 a bad
+`--api-url` leaks a Go error.
+
+### Dropped, and what dropped each one
+
+Kept here because a finding dropped in silence is one the next review
+rediscovers.
+
+1. **"A restore lost a file that was in the snapshot."** Dropped: **my own
+   harness**, not the product. A subshell without `~/.local/bin` on `PATH`
+   had silently failed to take the snapshot I then restored. Verified correct
+   afterwards with a flushed write and a 10 s gap, and with an unflushed write
+   snapshotted immediately. No finding.
+2. **"`repose host add` is not gated by the plan, so a customer can use the
+   product free."** Filed P0, **withdrawn and parked (ENG-36)**. The owner's
+   account is billing-exempt and an exempt account is deliberately allowed one
+   host whatever the plans say. The design fact came from the mac-mini
+   conductor (`internal/billing/ownhardware.go`, `HostsAllowed`) and the
+   exempt status from the dashboard session's reading of `/billing` — **both
+   theirs, neither mine**. What survived the withdrawal is ENG-39 and ENG-40.
+3. **"`repose run` in a non-repo folder silently builds and charges for a
+   `large` machine."** Filed P1, **dropped to P2 as ENG-30** by my own retest
+   under a pty: interactively it asks. ENG-26 parked as wrongly titled.
+4. **The four restore readings against "about 8 s."** Withdrawn from ENG-13:
+   the 8 s is the park and restore of a guest's live memory on a host restart,
+   a different operation with no command behind it. The conductor supplied
+   that distinction. Numbers kept in "The numbers" as what they actually are.
+5. **"`repose open` prints nothing and hangs."** Dropped: it prints three good
+   lines. My 5-second timeout raced its output.
+6. **"`triggers add --route <typo>` mints a public URL instead of erroring."**
+   Not filed: documented in cli.md ("created and aimed at the machine if it
+   isn't there"). Still a trap, recorded so the next review does not re-raise
+   it.
+7. **"`sync` starts a stopped machine without asking."** Not filed:
+   documented in sync.md ("It creates or starts the machine first if it needs
+   to"). It is the one command that bills you without asking while three
+   siblings refuse, which is worth knowing and is not a defect.
+8. **"The Own hardware plan is missing from the pricing page."** Not filed:
+   deliberately held out of the release until this review passes.
+
+Of eight dropped or demoted items, five were dropped by my own re-measurement
+and three by a fact another session held. That ratio is the argument for
+conferring.
+
 ## Verdict
 
 **The command line is in good shape and should not be what holds the launch.**
-Sixteen findings, one P0 and six P1, and the P0 closed itself at 21:00 UTC
+Eighteen findings, one P0 and seven P1, and the P0 closed itself at 21:00 UTC
 while I was writing. Nothing I did lost a customer's work; the paths that
 could — snapshot, restore, stop, resize, destroy — are correct, fast and
 honest about what they keep and for how long. The error lines are, with the
 eight exceptions tabled above, better than most products ship.
 
-What is not ready is the **seam around the thing being launched**. Three of
-the six P1s are in `repose host` and its billing: the command names no price,
-the CLI calls an exempt account "no plan", and `host ls` contradicts its own
-`--json`. `repose host` had its first customer contact 21 minutes ago. It
-shows.
+What is not ready is the **seam around the thing being launched**. Four of
+the seven P1s are in `repose host` and its billing: the command names no
+price, nothing lets a customer place a project anywhere else, the CLI calls an
+exempt account "no plan", and `host ls` contradicts its own `--json`.
+`repose host` had its first customer contact 21 minutes before I tested it.
+It shows.
 
 **My rank, if one P1 is fixed before the plan goes on sale, it is F2:** a
 customer should not be able to hand over their hardware without being told
