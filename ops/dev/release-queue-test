@@ -663,7 +663,16 @@ t_add_refuses_an_unpublished_asset() {
   commit "$wt2" "docs"
   o=$(cd "$wt2" && REPOSE_FIXTURE_ASSETS_FAIL=1 PATH="$root/bin:$PATH" \
     REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" REPOSE_QUEUE_SKIP_RED_MAIN=1 ops/dev/release-queue add 2>&1)
-  assert_has "a branch that ships no CLI is queued without the check" "$o" "queued docs-only-no-assets"
+  assert_has "a branch that ships no CLI is queued without the check" "$o" "queued docs-only-no-assets" || return 1
+  # a bypass that is used is seen: the stubbed run says so, and the entry
+  # records which script answered, so a stub left in a profile cannot
+  # pass a release quietly
+  local wt3; wt3=$(branch woker stubbed-assets)
+  echo 'const More = 1' >> "$wt3/internal/clipkg/clipkg.go"
+  commit "$wt3" "cli"
+  o=$(q "$wt3" add)
+  assert_has "a run against a stub names it" "$o" "the asset check was $root/bin/assets-stub, not this tree's" || return 1
+  assert_has "the entry records the script" "$(cat "$(state_of woker)/release-queue/entries/stubbed-assets")" "assets=$root/bin/assets-stub"
 }
 
 # The gate has one way around it, REPOSE_QUEUE_ASSETS, and no ambient one:
