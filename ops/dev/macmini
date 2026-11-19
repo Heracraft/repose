@@ -119,7 +119,15 @@ aws_create() {
       echo "  $z: $(tr -d '\n' < "$HOME/.macmini-allocate.err" | cut -c1-200)"
       host=
     done
-    [ -n "$host" ] || die "no zone could allocate a $AWS_TYPE host"
+    if [ -z "$host" ]; then
+      # Service Quotas can read 1 while EC2 still enforces 0 for up to half
+      # an hour after an approval (seen 2026-11-19); that is a wait, not
+      # a failure, and `watch` keeps going on it.
+      if grep -q HostLimitExceeded "$HOME/.macmini-allocate.err"; then
+        echo "EC2 still enforces the old host limit; the new quota takes up to 30 min to apply"; return 3
+      fi
+      die "no zone could allocate a $AWS_TYPE host"
+    fi
   fi
   local az subnet ami root
   az=$(aws_ ec2 describe-hosts --host-ids "$host" | jq -r '.Hosts[0].AvailabilityZone')
@@ -169,7 +177,10 @@ aws_watch() {
   while :; do
     local q; q=$(aws_quota_value)
     printf '%s quota=%s request=%s\n' "$(date -u +%FT%TZ)" "$q" "$(aws_quota_status 2>/dev/null || echo none)"
-    if [ "${q%.*}" -ge 1 ]; then aws_create; return; fi
+    if [ "${q%.*}" -ge 1 ]; then
+      if aws_create; then return; fi
+      echo "retrying in ${every}s"
+    fi
     sleep "$every"
   done
 }
