@@ -296,7 +296,7 @@ func (f *Fake) setMode(mode string) {
 	}
 }
 
-// SetPlan puts the subscription on solo, plus or pro.
+// SetPlan puts the subscription on solo, plus, pro or own.
 func (f *Fake) SetPlan(plan string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

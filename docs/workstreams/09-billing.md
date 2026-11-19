@@ -659,7 +659,7 @@ Postgres; rows whose evidence is Polar's sandbox name the
       `TestBillingRoutes`, `TestCheckout` (plans, seats),
       `TestPortalAndInvoices` (every invoice key, Polar's orders),
       `TestProjectCarriesRunningSeconds`.
-- [x] `polar-bootstrap` creates the meter, the three products, the
+- [x] `polar-bootstrap` creates the meter, one product per plan, the
       introductory discount and the webhook endpoint once, finds them on a
       rerun, sets the organization, prints the block without the token,
       refuses production without `--production`. Evidence (I-604): `--- PASS` on 2026-10-08 in ws/polar.
