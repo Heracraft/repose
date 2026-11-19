@@ -118,11 +118,15 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 // two requests at once must not both see room for the last host.
 func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 	u := userFrom(r.Context())
+	// `{name?}`: no body at all is how the dashboard's Add and
+	// `repose host add` without a name ask for one.
 	var body struct {
 		Name string `json:"name"`
 	}
-	if err := decode(r, &body); err != nil {
-		return err
+	if r.ContentLength != 0 {
+		if err := decode(r, &body); err != nil {
+			return err
+		}
 	}
 	name := strings.TrimSpace(body.Name)
 	if name != "" && !hostNameRe.MatchString(name) {
@@ -139,14 +143,9 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 	}
 	token, hostID := "", uuid.Nil
 	err = db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
-		var have int
-		if err := tx.QueryRow(r.Context(), "select count(*) from hosts where owner_account_id = $1 and state not in ('retired', 'lost')", u.ID).Scan(&have); err != nil {
-			return err
-		}
-		if have >= allowed {
-			return withDetail(errf("conflict", "your plan includes %s; remove one before you add another", plural(allowed, "host")),
-				map[string]any{"reason": "host_limit", "limit": allowed})
-		}
+		// The name before the count: an account at its one-host limit
+		// asking for the name it already uses is told about the name,
+		// which is the mistake it made, and not about the limit.
 		if name == "" {
 			// The api names it rather than the caller inventing one, so
 			// `repose host add` and the dashboard's button agree.
@@ -160,7 +159,16 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 		} else if err != nil && !errors.Is(err, db.ErrNotFound) {
 			return err
 		}
+		var have int
+		if err := tx.QueryRow(r.Context(), "select count(*) from hosts where owner_account_id = $1 and state not in ('retired', 'lost')", u.ID).Scan(&have); err != nil {
+			return err
+		}
+		if have >= allowed {
+			return withDetail(errf("conflict", "your plan includes %s; remove one before you add another", plural(allowed, "host")),
+				map[string]any{"reason": "host_limit", "limit": allowed})
+		}
 		owner := u.ID
+		var err error
 		token, hostID, err = hostmgr.MintJoinTokenIn(r.Context(), tx, hostmgr.JoinTokenRequest{Name: name, Provider: "metal", Owner: &owner})
 		return err
 	})
@@ -246,7 +254,8 @@ func (s *Server) accountHost(r *http.Request, u *store.User) (*store.Host, error
 }
 
 // hostsAllowed is how many hosts of their own the account may have: the
-// plan's figure (DECISIONS I-1364), which lives in internal/billing and
+// plan's figure for the Own hardware plan (I-1366), which lives in
+// internal/billing and
 // nowhere else. An api built without a gate allows one, as it lets every
 // other compute gate through.
 func (s *Server) hostsAllowed(r *http.Request, u *store.User) (int, error) {
@@ -310,8 +319,8 @@ func (s *Server) dashboard() string {
 }
 
 // checkHostedAllowed refuses a project that asked for the hosted fleet
-// when the account's plan sells no memory there (DECISIONS I-1366,
-// I-1364). `own` is never refused: an account with no host of its own
+// when the account's plan sells no memory there (DECISIONS I-1366).
+// `own` is never refused: an account with no host of its own
 // goes to the fleet as every account always has.
 func (s *Server) checkHostedAllowed(r *http.Request, u *store.User, placement string) error {
 	if placement != store.PlacementHosted || s.d.Gate == nil {

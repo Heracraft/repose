@@ -27,8 +27,8 @@ import (
 // a test takes it away again.
 const FakeHostInstall = "curl -fsSL https://repose.test/host.sh | REPOSE_JOIN_TOKEN=%s sh"
 
-// maxFakeHosts is the host count the plans allow: one on Own hardware
-// (DECISIONS I-1364).
+// maxFakeHosts is the host count the plans allow: one on the Own
+// hardware plan (DECISIONS I-1366).
 const maxFakeHosts = 1
 
 // FakeDashboard is the origin the fake builds the refusals' and the
@@ -265,6 +265,65 @@ func (f *Fake) nextHostName(owner string) string {
 		}
 		if !taken {
 			return name
+		}
+	}
+}
+
+// AddOwnedHost adds a host of the canned user's that has already
+// registered and is answering, and returns its id. `POST /hosts` only
+// ever makes a `registering` one, because in the real api a host
+// becomes `ready` by running hostd, which nothing here does; a test
+// about what a working host looks like starts from this.
+func (f *Fake) AddOwnedHost(name string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := f.now()
+	h := &ownedHostRec{owner: CannedUser.ID, OwnedHost: OwnedHost{
+		ID: f.nextID(), Name: name, State: "ready", Provider: "mac", Arch: "aarch64",
+		MemBytes: 24 << 30, VCPUs: 8, Cores: 8,
+		LastHeartbeatAt: &now, RegisteredAt: &now, CreatedAt: now,
+	}}
+	f.ownedHosts = append(f.ownedHosts, h)
+	return h.ID
+}
+
+// SetOwnedHostOffline marks a host unreachable and puts its last
+// heartbeat quiet ago, which is what a machine switched off looks like.
+// The duration is the point: a surface that says how long it has been
+// quiet reads `last_heartbeat_at` and not the state.
+func (f *Fake) SetOwnedHostOffline(id string, quiet time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range f.ownedHosts {
+		if h.ID == id {
+			at := f.now().Add(-quiet)
+			h.State, h.LastHeartbeatAt = "unreachable", &at
+		}
+	}
+}
+
+// SetProjectHost places a project on a host, which the real api's
+// scheduler does at the create and the fake does not do at all.
+func (f *Fake) SetProjectHost(projectID, hostID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p := f.projects[projectID]; p != nil {
+		p.HostID = hostID
+	}
+	for _, h := range f.ownedHosts {
+		if h.ID != hostID {
+			continue
+		}
+		h.Projects, h.RunningProjects = 0, 0
+		for _, p := range f.projects {
+			if p.destroyed || p.HostID != hostID {
+				continue
+			}
+			h.Projects++
+			switch p.State {
+			case "creating", "building", "starting", "running", "stopping", "restoring":
+				h.RunningProjects++
+			}
 		}
 	}
 }

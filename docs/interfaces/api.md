@@ -79,7 +79,7 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
-| POST | `/hosts` | `{name?}` → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
+| POST | `/hosts` | `{name?}`, or no body at all, which is the same as no name → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
 | DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials cleared so it cannot come back on them, and a machine that is still dialling is refused. Already retired answers `204` too, so a repeated remove is not an error |
 
 ```
