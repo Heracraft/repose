@@ -324,9 +324,28 @@ drawing, the way the plans are done (I-663):
   table.
 - **The shape of the drawing** is three rows at most, each a Mac's memory
   and what runs, and one row for disk, in the cells' own faces: no table
-  header a reader has to learn, no footnote. "16 GB: one large machine. 24
-  GB: ... 256 GB disk: ..." The exact wording comes from the sizing
-  session's page-safe sentences, which it has undertaken to send.
+  header a reader has to learn, no footnote.
+- **The figures, if the council keeps the sizing recommendation.** The
+  sizing proposal landed later the same night
+  (`proposals/2026-11-19-sizing-on-hardware-you-own.md`, branch
+  `owned-sizing` at `1d751125`): on an owned host a size is a memory
+  figure, not a class; the default is one function of the Mac's memory
+  (the appliance three quarters, the reserve an eighth with a 2 GiB floor,
+  less the 512 MiB hold, floored to whole GiB); cores are all of the
+  appliance's. Its page-safe sentences, on ENG-84 as a note, give the rows
+  their words: a 16 GB Mac mini, repose keeps 12 GB of it for your
+  machines and one machine gets all but two of the chip's cores and about
+  9 GB; 24 GB, it keeps 18 and the machine gets about 15; 32 GB, 24 and
+  about 20. Two machines at once share it, and `--memory` sizes each. A
+  256 or 512 GB disk: a 100 GB file that takes space only as machines
+  write, shared by them. The word "about" stays until the function is run
+  against a real Hello on the lab Mac, which ENG-91 requires before any
+  page quotes a figure. None of this is the owner's three sentences; it is
+  what the hardware does.
+- **Two cards, one mechanism.** The function, the generated table, the
+  drift test and the lab Hello are ENG-91 (the sizing proposal's). ENG-84
+  is the drawing alone: the component that reads ENG-91's table on the
+  landing and in `/docs/own-hardware`.
 - **Placeholders are marked in code, not on the page.** The component's
   data file carries today's figures under a `PLACEHOLDER` comment naming
   this proposal and the owned-sizing branch, and the band that draws it is
@@ -448,10 +467,11 @@ One card per piece, in Open unless gated, each pointing here:
    the Orbit, judged at 1440 and 390 in both schemes before the council.
    Open, separate from the copy so the council can take one without the
    other.
-3. **ENG-84, the figures' source:** one Go function from the share, reserve
-   and class rules, a generated table the web reads, a drift test, one
-   component drawn on the landing and in `/docs/own-hardware`. Open; its
-   figures come from the owned-sizing decision, its mechanism does not.
+3. **ENG-84, the figures' drawing:** one component that reads the
+   generated table on the landing and in `/docs/own-hardware`. Open. The
+   function, the table, the drift test and the lab Hello are ENG-91, the
+   sizing proposal's card; the two share one mechanism and are not
+   duplicated.
 4. **ENG-85, piece B, the Mac mini on the page:** the hero's second
    sentence and action, 01 Where it runs, the Install row, the Pricing row
    (ENG-16), the two questions. Blocked on the mac-mini gate, ENG-16, the
