@@ -28,12 +28,11 @@ one of the three the council confers from.
 5. **"I was signed in a minute ago and now I'm on the marketing page."** An
    expired session drops you on `/` with no message and no way back to the page
    you asked for. [P1-4](#p1-4)
-6. **"I read the page about the plan, clicked the link to the price, and the
-   price page says there are only three plans."** No price for the Own hardware
-   plan on the landing page, on Pricing, or anywhere in the dashboard.
-   [P1-5](#p1-5)
+6. **"I read the page about the plan, clicked its own link to the price, and
+   that page says there are only three plans."** The dashboard sells it fine;
+   the docs do not name the number. [P1-5](#p1-5)
 
-Counts at the close of the review: **2 P0, 4 P1, 9 P2** — the ranking and what
+Counts at the close of the review: **2 P0, 3 P1, 10 P2** — the ranking and what
 moved are in [Final ranking](#final-ranking-and-what-moved). P0-1 was a P0 when
 measured and was fixed on production before this report was filed; the silent
 fallback behind it is still open.
@@ -403,27 +402,51 @@ until this review passes, and is also absent from the dashboard. **On 19 Novembe
 2026 there is no surface anywhere that tells a customer what it costs.** If the
 dashboard is meant to be the door while Pricing is held, the door is not there.
 
-**And the public side is no better.** I checked the live pages signed out, as
-myself:
+#### Measured at 22:15 UTC: a normal account does see the picker, so this half is disproven
 
-| Page | Says |
+The conductor refused to rank this from an exempt reading and was right to. I
+built the dashboard and drove it against `internal/fakes/api` with
+`{ mode: 'none', own_for_sale: true }` — a **non-exempt** account with the Own
+hardware plan for sale, which is the state a real customer is in.
+
+`/billing` then renders four plans:
+
+| | |
 |---|---|
-| the landing page | no "own hardware", no "mac mini", no "$10" |
-| `/docs/billing` — **titled "Pricing"** | subtitle: *"**The three plans**, what each one buys, the free week…"*. Prices named in the body: **$49, $39, $89, $169, $39, $49, $0**. No $10. |
-| `/docs/own-hardware` | links the words **"Own hardware plan"** to `/docs/billing` — the page that says there are three |
+| SOLO | **$39** a month, "For 12 months, then $49" — 8 GB, 100 GB disk, 250 GB egress |
+| PLUS | **$89** a month — 16 GB, 250 GB disk, 500 GB egress |
+| PRO | **$169** a month — 32 GB, 500 GB disk, 1 TB egress |
+| OWN HARDWARE | **$10** a month — *"A Mac mini or an x86 box you own, in your account. One host; its memory and disk are the limits."* |
 
-So a customer who reads the one page that documents the product, and follows
-its own link to find the price, lands on a page that tells them the plan they
-just read about does not exist. There is no route to the price: not the
-landing page, not Pricing, not the dashboard. (The Mac reviewer found the same
-on the served HTML and across all 26 live docs pages; the table above is my own
-measurement of the rendered pages.)
+with buttons **Choose Solo / Choose Plus / Choose Pro / Choose Own hardware**,
+the line "7 days free, card at checkout, cancel any time.", a seat count, and
+"Prices in USD, before tax. Refunds".
 
-**One caveat I want kept with this.** The plan surface in the dashboard is very
-likely gated on `status: "exempt"` and a normal account probably sees a picker.
-I could not test that; I had one account and it is exempt. What is certain is
-that the account I had was given no way to see a plan, a price or a change
-control, and that no public page carries the price at all.
+**So the dashboard half of this finding is wrong and I withdraw it.** A normal
+customer can find out what the Own hardware plan costs and buy it, in one
+screen, and the screen is good. What I measured was the `accountStatus ===
+'exempt'` branch, which replaces the whole plan surface with a banner — and the
+only account I had was exempt.
+
+**Provenance, because this one needs it:** that render is the real dashboard
+build against the *fake* api, not production. What I can say about production is
+narrower and comes from the live response: `GET /v1/billing` on repose.run
+returns `own` among the plans with `available: true`, and the page's branch
+turns on the account's status rather than on the plan list. I did not see a
+live non-exempt account.
+
+**What survives, and it is a P2 rather than a P1:** the docs. The landing page's
+silence is deliberate — the commit putting the plan on public sale is held
+pending this review — so that absence is not a defect. These two are:
+
+- `/docs/own-hardware` has a "What it costs" section that names **no number**;
+- it links the words **"the Own hardware plan"** to `/docs/billing`, which is
+  titled **Pricing**, opens *"**The three plans**…"*, and names $49, $39, $89,
+  $169 and $0 — never the plan the reader clicked through for.
+
+The price exists: **$10.00 a month, no overage**, confirmed by the conductor
+against the live payment catalogue at 22:08 UTC. The defect is only that the
+page a reader is sent to for it does not say so.
 
 ---
 
@@ -632,9 +655,10 @@ the dashboard has the control and the control does not work.
 
 ## Final ranking, and what moved
 
-At the close of the review, on the dashboard surface: **2 P0, 4 P1, 9 P2.**
-Three findings changed rank during the review and every one of them moved
-because of a measurement, not an argument.
+At the close of the review, on the dashboard surface: **2 P0, 3 P1, 10 P2.**
+Four findings changed rank during the review and every one of them moved
+because of a measurement, not an argument. One of the four — the last — was
+disproven by its own measurement rather than merely re-weighted.
 
 ### P0
 
@@ -657,7 +681,6 @@ a judgement about it.
 | 3 | A temporary machine lists six `kept` restore points and discards all of them | ENG-50 | no — argued P1, flagged that the council may read it as P0 |
 | 4 | The Projects table clips the Disk column at 1440 | ENG-24 | no |
 | 5 | An expired session drops you on the marketing page with no word and no return | ENG-44 | no |
-| 6 | No route anywhere — dashboard, landing or Pricing — tells a customer what the plan costs | ENG-51 | no (overlaps the Mac reviewer's ENG-47; merge them) |
 
 ### P2
 
@@ -672,8 +695,11 @@ a judgement about it.
 | 13 | The join command is about one eighth visible | ENG-63 | no |
 | 14 | The machine's own page says less than the list it came from | ENG-65 | no |
 | 15 | A grey smear under the frozen project row | ENG-48 | no |
+| 16 | The own-hardware docs page names no price and sends the reader to a page that says there are three plans | ENG-47 (merged; ENG-51 parked) | **P1 → P2** |
 
-**What moved #7:** the symptom was fixed on production at 21:50 by recording
+**What moved #16:** I measured a non-exempt account and it sees the plan
+picker, the Own hardware row and its $10, so the dashboard half of that finding
+is withdrawn and only the docs half survives. **What moved #7:** the symptom was fixed on production at 21:50 by recording
 `host_install_command`, with nothing deployed, which proved my diagnosis wrong —
 the dialog reads `install.command` and fell back, it does not choose the wrong
 field. **What moved #8:** I measured that the toast is drawn rather than absent.
