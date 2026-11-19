@@ -314,6 +314,61 @@ be correct. What is not designed is the dead end around it:
 Those five projects were the command-line session's, landing on **my** test host
 at 20:46–20:53 UTC. Nothing here was a production fault. Card: ENG-33.
 
+#### Re-measured at 22:00 UTC, because I doubted my own finding
+
+While measuring the fleet question below I saw a stranded project whose row
+carried no host line, and I was no longer sure the stale naming was real rather
+than a propagation window I had caught at 20:52. So I built the controlled
+version: add `stalehost`, create one project on it, remove the host, then read
+the `/projects` row at fixed intervals.
+
+| When | The row says |
+|---|---|
+| host present | `your host stalehost has not registered yet` |
+| Hosts tab, after removal | **"No hosts of your own."** |
+| removal + 0 s | `your host stalehost has not registered yet` |
+| removal + 30 s | `your host stalehost has not registered yet` |
+| removal + 60 s | `your host stalehost has not registered yet` |
+
+**It stands, and it is not a propagation window.** My doubt came from looking in
+the wrong place: the reason is carried on the `/projects` row and **not** on the
+machine's own page, which shows `error` and a Restart button and never says why.
+That is a second, smaller finding — a customer who clicks into the broken
+project to find out what is wrong is told less than the list they came from.
+
+#### Measured at 21:55 UTC: the dashboard cannot send a project to the fleet while a host waits
+
+The conductor asked me to measure this rather than agree to a rank, and it
+decides whether ENG-28 is a P0 or a P1. It is a P0, and as a description rather
+than a judgement.
+
+I added a host, left it in `waiting`, and created a project from the dashboard.
+
+- **The New project form is identical with and without a host.** Name, Size,
+  Keep it, Repository. I diffed the fields and the `<select>` options in both
+  states: the size list and the keep-for list, nothing else. No placement
+  control, no host picker, and no sentence anywhere on the form saying where the
+  machine will run — I searched the form text for *fleet*, *placement*, *host*,
+  *where it runs* and *repose's servers* and matched none of them.
+- **The dashboard does not send the field.** The request body, verbatim:
+  `{"name":"fleetcheck-1","class":"large","expires_in_s":3600,"tz":"UTC"}`.
+- **The server defaults it to the waiting host.** `POST /v1/projects` → **201**
+  with `placement: "own"`, `host: null`, `state: "creating"`.
+- **8.0 s later the project is in `error`**, and the only control on it is
+  **Restart**, which cannot work while the host is waiting.
+
+`own-hardware.md` says a project can ask for repose's servers with
+`placement: "hosted"` — and names the API as the way to do it. There is no such
+control on the dashboard, so a customer whose install never completes has a paid
+account and no way to make a working machine by any route the dashboard offers.
+
+**The recovery exists, and only in a state the customer has not reached.** With
+the host removed, I pressed **Restart** on the same stranded project:
+`POST …/start` → 202, and it reached `running` in **17.0 s**. So the project is
+recoverable — but only after the customer works out, unaided, that the fix for
+"your host has not registered yet" is to delete the host they just bought a Mac
+for. Nothing on either page says so.
+
 ### P1-4 — An expired session drops you on the marketing page without a word {#p1-4}
 
 **Reproduce.** Take a signed-in browser state, expire its access token by 60
