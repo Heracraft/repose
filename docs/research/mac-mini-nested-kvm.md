@@ -250,6 +250,16 @@ number below is from `nix eval` under the shared build lock):
 - The host kernel pin resolves to 6.18.57 on aarch64 too (the same
   nixpkgs revision), so `nix/hosts/kernel.nix`'s CVE-2026-99999
   assertion holds.
+- `nix build --dry-run ./nix#packages.aarch64-linux.guest-system` on
+  2026-11-19: 979 paths fetched from cache.nixos.org (1.9 GiB download,
+  5.7 GiB unpacked) and 421 derivations built. The built ones are the
+  guest's own configuration (unit files, etc files, the initrd and the
+  shrunk module set), the Go binaries, the agents (prebuilt binaries
+  patched on the builder) and the playwright set with its chromium
+  override; the kernel, chromium and node itself are fetched. One
+  `nodejs-24.20.0` derivation is in the build list beside the fetched
+  one, so the day may include one node compile: budget an hour for it
+  on 8 vCPU before reading the closure number.
 
 Not measured yet, owed to this section by the Mac build day:
 
