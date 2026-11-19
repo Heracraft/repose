@@ -1,0 +1,9 @@
+spawn ./cloud-hypervisor --api-socket /tmp/ch-2.sock --kernel Image --initramfs initrd.img --disk path=root.raw path=seed.img --cmdline console=ttyAMA0 root=/dev/vda1 rw --cpus boot=2 --memory size=2048M --serial tty --console off
+cloud-hypervisor:   0.000015s: <main> ERROR:/project/cloud-hypervisor/src/lib.rs:24 -- Fatal error: CreateHypervisor(VmCreate(Permission denied (os error 13)))
+Error: Cloud Hypervisor exited with the following chain of errors:
+  0: Failed to open hypervisor interface (is hypervisor interface available?)
+  1: Failed to create Vm
+  2: Permission denied (os error 13)
+send: spawn id exp3 not open
+    while executing
+"send "ubuntu\r""

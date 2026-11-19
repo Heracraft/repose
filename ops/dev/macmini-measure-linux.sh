@@ -108,10 +108,10 @@ EXP
   grep BOOT_MS "$log" | awk '{print $2}'
 }
 : > ../results/l2-boot-ms.txt
-for n in 1 2 3 4 5; do
+for n in $(seq 1 "${RUNS:-5}"); do
   ms=$(run_l2 $n); echo "$ms" | tee -a ../results/l2-boot-ms.txt
 done
-sed -n '/sha256/,/OPENSSL_DONE/p' ../results/l2-boot-5.log > ../results/openssl-l2-1thread.txt
+sed -n '/sha256/,/OPENSSL_DONE/p' "../results/l2-boot-${RUNS:-5}.log" > ../results/openssl-l2-1thread.txt
 # one thread at every level is the like-for-like number; all threads shows the VM's ceiling
 openssl speed -seconds 5 sha256 2>&1 | tail -n 3 > ../results/openssl-l1-1thread.txt
 openssl speed -multi "$(nproc)" -seconds 5 sha256 2>&1 | tail -n 4 > ../results/openssl-l1-all.txt
