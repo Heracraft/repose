@@ -8,10 +8,30 @@ import {
 	signIn,
 	apiURLFromEnv,
 	destroyProject,
+	ownedHost,
 	pruneProjects,
 	resetBilling,
 	setBilling
 } from './helpers';
+
+/**
+ * The viewport at 1440 and 390 in both schemes, at 1x, for the review
+ * CLAUDE.md asks for ("Judge visuals at real size"). Written only with
+ * REPOSE_SHOTS_DIR set, as own-hardware.spec.ts does.
+ */
+async function shots(page: Page, name: string): Promise<void> {
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (!dir) return;
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
+		}
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: null });
+}
 
 const litter: string[] = [];
 
@@ -62,6 +82,7 @@ async function fromApi(name: string) {
 		class: string;
 		remote_url: string;
 		expires_at?: string;
+		placement?: string;
 	}[];
 	return list.find((p) => p.name === name);
 }
@@ -233,4 +254,62 @@ test('Cancel closes the form and puts focus back on New project', async ({ page 
 	await form(page).getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByTestId('new-project-form')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
+});
+
+// Runs on (DECISIONS I-1390): the dashboard's `repose run --host`. The
+// control shows only when the account owns a host; a host that is still
+// waiting refuses the create in the api's own words and strands nothing,
+// and repose's servers is the way out. The 2026-11-19 dashboard review
+// measured the shape this replaces: 201, then `error` 8.0 s later, with
+// Restart as the only control.
+test('Runs on lets a customer whose host is waiting make the machine on repose instead', async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	// Without a host there is nothing to choose, so no control.
+	await openForm(page);
+	await expect(form(page).getByLabel('Runs on')).toHaveCount(0);
+
+	// The default plan: one host, and memory on repose's servers too, so
+	// repose's servers is a way out. hosts.spec.ts sets a limit of its
+	// own, which the fake reads as the Own hardware plan, and the files
+	// run in name order whatever the command line says.
+	await ownedHost({ limit: -1 });
+	await ownedHost({ name: 'mac-mini' });
+	await ownedHost({ state_host: 'mac-mini', state: 'registering' });
+	const name = unique('on-mac');
+	try {
+		await openForm(page);
+		const runsOn = form(page).getByLabel('Runs on');
+		await expect(runsOn).toBeVisible();
+		// Your host is the default, and its state is on the option.
+		await expect(runsOn).toHaveValue('own');
+		await expect(runsOn.locator('option[value="own"]')).toHaveText('mac-mini · waiting');
+		await form(page).getByLabel('Name').fill(name);
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		const error = form(page).getByTestId('new-project-error');
+		await expect(error).toContainText('your host mac-mini has not registered yet');
+		// Nothing was made: the form is still here with the name typed,
+		// and the api holds no such project.
+		await expect(form(page).getByLabel('Name')).toHaveValue(name);
+		expect(await fromApi(name)).toBeUndefined();
+		await shots(page, 'new-project-runs-on-refused');
+
+		await runsOn.selectOption('hosted');
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		await page.waitForURL(/\/projects\/[^/]+$/);
+		const made = await fromApi(name);
+		expect(made).toBeTruthy();
+		litter.push(made!.id);
+		expect(made!.placement).toBe('hosted');
+	} finally {
+		// The host would refuse every other file's creates.
+		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
+		for (const h of (await res.json()) as { id: string }[]) {
+			await fetch(`${api}/hosts/${h.id}`, {
+				method: 'DELETE',
+				headers: { Authorization: 'Bearer playwright' }
+			});
+		}
+	}
 });

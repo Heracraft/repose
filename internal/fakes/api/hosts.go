@@ -106,10 +106,18 @@ func (f *Fake) SetHostInstall(line string) {
 }
 
 // SetHostLimit replaces the hosts an account may own, which is the
-// plan's figure in the real api; 0 is a plan that sells none.
+// plan's figure in the real api; 0 is a plan that sells none, and a
+// figure below 0 puts the default back (one host, and memory on
+// repose's servers too). A figure a test set above 0 is read as the
+// Own hardware plan, which sells no fleet memory, so `hosted` is
+// refused on it (createProject).
 func (f *Fake) SetHostLimit(n int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if n < 0 {
+		f.hostLimit = nil
+		return
+	}
 	f.hostLimit = &n
 }
 
