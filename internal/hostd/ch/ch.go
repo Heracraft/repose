@@ -153,12 +153,16 @@ func (s Spec) Args() []string {
 		// The rate limiter is Cloud Hypervisor's own, applied before the
 		// request reaches the volume, so it holds with direct=on and covers
 		// nothing the host does to the volume itself (snapshots, restores).
-		"--disk", "path=" + s.VolumeDev + ",image_type=raw,direct=on" + s.diskLimits(),
 	}
+	// The store disk goes first: the guest's drive letters follow
+	// microvm.nix's order, store disk then volumes, so with a store disk
+	// the volume is /dev/vdb; the other way round stage 1 fscks the erofs
+	// as its root (lab image 6, 2026-11-19).
 	if s.StoreDisk != "" {
 		args = append(args, "--disk", "path="+s.StoreDisk+",image_type=raw,readonly=on")
 	}
 	args = append(args,
+		"--disk", "path="+s.VolumeDev+",image_type=raw,direct=on"+s.diskLimits(),
 		"--net", fmt.Sprintf("tap=%s,mac=%s", s.Tap, s.MAC),
 		"--fs", fmt.Sprintf("tag=%s,socket=%s", s.StoreTag, VirtiofsSocket(s.GuestDir)),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", s.CID, VsockSocket(s.GuestDir)),

@@ -313,8 +313,8 @@ let
       --console null \
       --serial "$serial" \
       --vsock "cid=$cid,socket=$vsock_socket" \
-      --disk "path=$volume,image_type=raw,direct=on,num_queues=$vcpu" \
       ${lib.optionalString storeOnDisk "--disk path=${cfg.microvm.storeDisk},image_type=raw,readonly=on"} \
+      --disk "path=$volume,image_type=raw,direct=on,num_queues=$vcpu" \
       --fs "tag=ro-store,socket=$virtiofs_socket,num_queues=1,queue_size=1024" \
       --net "tap=$tap,mac=$mac" \
       --api-socket "$api_socket" \
