@@ -1,0 +1,257 @@
+package httpapi_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/heracraft/repose/internal/api/store"
+)
+
+// The three routes of api.md "Hosts you own" (DECISIONS I-1366).
+//
+// Every test runs as a billing-exempt account, because the three hosted
+// plans sell no host (`billing.Plan.Hosts` is the zero value on Solo,
+// Plus and Pro) and 19d's Own hardware plan is not on this branch: an
+// exempt account is allowed one host whatever the plans say, which is
+// also how the owner adds their own Mac without selling themselves a
+// plan.
+
+// detailOf is the error envelope's detail object.
+func detailOf(t *testing.T, r resp) map[string]any {
+	t.Helper()
+	d, _ := r.body["error"].(map[string]any)["detail"].(map[string]any)
+	return d
+}
+
+// exempt makes the signed-in account billing-exempt and returns its id.
+func (e *env) exempt(t *testing.T, sub string) string {
+	t.Helper()
+	var uid string
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "update users set billing_status = 'exempt' where logto_sub = $1 returning id", sub).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	return uid
+}
+
+// TestHostAddListRemove is the whole loop a Mac mini owner walks: add,
+// read it back, remove it.
+func TestHostAddListRemove(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	e.exempt(t, "sub-mac")
+
+	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 0 {
+		t.Fatalf("an account that owns nothing: %d %s, want an empty list", r.status, r.raw)
+	}
+
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	if r.body["name"] != "mac-mini" || r.body["state"] != "registering" {
+		t.Fatalf("add answered %v, want mac-mini registering", r.body)
+	}
+	token, _ := r.body["join_token"].(string)
+	if token == "" || r.body["join_token_expires_at"] == nil {
+		t.Fatalf("add answered no join token: %s", r.raw)
+	}
+	// The install object is always there, and its command is empty until
+	// an operator records a line: a client shows the token and the page
+	// rather than a line nobody serves.
+	install, ok := r.body["install"].(map[string]any)
+	if !ok || install["command"] != "" || install["url"] != "https://repose.run/docs/own-hardware" {
+		t.Fatalf("add answered install %v, want an empty command and the docs page", r.body["install"])
+	}
+	id, _ := r.body["id"].(string)
+
+	// Only the hash is kept, and the token is never in a log line.
+	var stored string
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "select coalesce(join_token_hash, '') from hosts where id = $1", id).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == "" || stored == token {
+		t.Fatalf("join token stored as %q, want a hash that is not the token", stored)
+	}
+	if strings.Contains(e.logText(), token) {
+		t.Fatal("the join token reached a log line")
+	}
+
+	// The list carries the host and never the token.
+	r = e.do(t, tok, "GET", "/hosts", nil)
+	if r.status != 200 || len(r.list) != 1 {
+		t.Fatalf("list: %d %s", r.status, r.raw)
+	}
+	row, _ := r.list[0].(map[string]any)
+	if row["name"] != "mac-mini" || row["projects"] != float64(0) || row["running_projects"] != float64(0) {
+		t.Fatalf("list row %v", row)
+	}
+	if _, ok := row["join_token"]; ok {
+		t.Fatalf("the list carries the join token: %v", row)
+	}
+	if _, ok := row["last_heartbeat_at"]; ok {
+		t.Fatalf("a host that never registered has a heartbeat: %v", row)
+	}
+
+	// A second host is refused: the plan allows one.
+	r = e.do(t, tok, "POST", "/hosts", map[string]any{"name": "spare"})
+	if r.status != 409 || detailOf(t, r)["reason"] != "host_limit" || detailOf(t, r)["limit"] != float64(1) {
+		t.Fatalf("second host: %d %s, want conflict host_limit limit 1", r.status, r.raw)
+	}
+
+	// Remove, then remove again: the second answers 204 so a client that
+	// lost the first answer can ask again.
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
+		t.Fatalf("remove: %d %s", r.status, r.raw)
+	}
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
+		t.Fatalf("remove again: %d %s, want 204", r.status, r.raw)
+	}
+	// Retired, with its serials and its unused token cleared, so nothing
+	// that machine holds registers it again (I-432).
+	var state, serials string
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "select state, coalesce(cert_serial, '') || coalesce(join_token_hash, '') from hosts where id = $1", id).Scan(&state, &serials); err != nil {
+		t.Fatal(err)
+	}
+	if state != "retired" || serials != "" {
+		t.Fatalf("after remove: state %q, serials+token %q", state, serials)
+	}
+	// The row stays, so the list is empty but the history is not lost.
+	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 1 || r.list[0].(map[string]any)["state"] != "retired" {
+		t.Fatalf("list after remove: %d %s", r.status, r.raw)
+	}
+	// And the slot is free again.
+	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini-2"}); r.status != 201 {
+		t.Fatalf("add after remove: %d %s, want 201", r.status, r.raw)
+	}
+}
+
+// TestHostNames: the api names a host the caller did not name, a bad
+// name is refused, and a name is free per account rather than globally
+// (migration 0048) -- two users may both call their machine mac-mini and
+// neither is told the other exists.
+func TestHostNames(t *testing.T) {
+	e := newEnv(t)
+	a := e.signIn(t, "sub-a", "ana")
+	e.exempt(t, "sub-a")
+	b := e.signIn(t, "sub-b", "bo")
+	e.exempt(t, "sub-b")
+
+	if r := e.do(t, a, "POST", "/hosts", map[string]any{"name": "Mac Mini"}); r.status != 400 || detailOf(t, r)["reason"] != "name" {
+		t.Fatalf("a bad name: %d %s, want invalid name", r.status, r.raw)
+	}
+	r := e.do(t, a, "POST", "/hosts", nil)
+	if r.status != 201 || r.body["name"] != "host-1" {
+		t.Fatalf("no name: %d %s, want host-1", r.status, r.raw)
+	}
+	if r := e.do(t, a, "POST", "/hosts", map[string]any{"name": "host-1"}); r.status != 409 || detailOf(t, r)["reason"] != "name_taken" {
+		t.Fatalf("the same name twice: %d %s, want conflict name_taken", r.status, r.raw)
+	}
+	// Another account may take the name, and its first unnamed host is
+	// host-1 too.
+	r = e.do(t, b, "POST", "/hosts", map[string]any{"name": "host-1"})
+	if r.status != 201 {
+		t.Fatalf("another account's host-1: %d %s, want 201", r.status, r.raw)
+	}
+}
+
+// TestHostIsNotAnotherAccounts: a host that is not the caller's is not
+// found, so the route says nothing at all about another account's
+// machines, and cannot be removed by its id.
+func TestHostIsNotAnotherAccounts(t *testing.T) {
+	e := newEnv(t)
+	a := e.signIn(t, "sub-a", "ana")
+	e.exempt(t, "sub-a")
+	b := e.signIn(t, "sub-b", "bo")
+	e.exempt(t, "sub-b")
+	r := e.do(t, a, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+	if r := e.do(t, b, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 0 {
+		t.Fatalf("another account's list: %d %s, want empty", r.status, r.raw)
+	}
+	if r := e.do(t, b, "DELETE", "/hosts/"+id, nil); r.status != 404 {
+		t.Fatalf("another account's remove: %d %s, want 404", r.status, r.raw)
+	}
+	// The host that repose runs is on nobody's list either: these routes
+	// are about hardware a user owns, and the fleet is the operator's.
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "insert into hosts (id, name, state) values ($1, 'fleet-01', 'ready')", store.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, a, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 1 {
+		t.Fatalf("list with a fleet host present: %d %s, want only the owned one", r.status, r.raw)
+	}
+}
+
+// TestHostWithMachinesIsNotRemoved: a machine moves host only by
+// restoring a snapshot (DESIGN.md §6), so retiring a host under its
+// machines would orphan them. The refusal names them.
+func TestHostWithMachinesIsNotRemoved(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+	if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes)
+		values ($1, $2, 'todo', 'todo', 'large', 'running', $3, 1)`, store.NewID(), uid, id); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "DELETE", "/hosts/"+id, nil)
+	if r.status != 409 || detailOf(t, r)["reason"] != "host_has_projects" {
+		t.Fatalf("remove with a machine on it: %d %s, want conflict host_has_projects", r.status, r.raw)
+	}
+	slugs, _ := detailOf(t, r)["projects"].([]any)
+	if len(slugs) != 1 || slugs[0] != "todo" {
+		t.Fatalf("the refusal named %v, want [todo]", detailOf(t, r)["projects"])
+	}
+	// The list says so too, which is what the dashboard's Remove button
+	// reads before it offers to remove anything.
+	if r := e.do(t, tok, "GET", "/hosts", nil); r.list[0].(map[string]any)["running_projects"] != float64(1) {
+		t.Fatalf("list %v, want running_projects 1", r.list[0])
+	}
+}
+
+// TestHostNeedsAPlanThatSellsOne: the three hosted plans sell no host,
+// so a subscriber on one of them is refused, and the figure comes from
+// the plan rather than from this route (DECISIONS I-1366).
+func TestHostNeedsAPlanThatSellsOne(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-plus", "plus") // signIn subscribes to Plus
+	r := e.do(t, tok, "POST", "/hosts", nil)
+	if r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" {
+		t.Fatalf("a Plus subscriber: %d %s, want payment_required own_hardware_plan_required", r.status, r.raw)
+	}
+	if detailOf(t, r)["limit"] != float64(0) {
+		t.Fatalf("the refusal's limit is %v, want 0", detailOf(t, r)["limit"])
+	}
+	// An account with no plan at all is refused the same way: there is
+	// nothing to read a host count off.
+	e.subscribe(t, "sub-plus", "")
+	if r := e.do(t, tok, "POST", "/hosts", nil); r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" {
+		t.Fatalf("no plan: %d %s", r.status, r.raw)
+	}
+}
+
+// TestPlacementField: POST /projects takes it, the project carries it,
+// and a bad value is refused. Where it sends a machine is
+// internal/api/scheduler's test; this is the contract api.md states.
+func TestPlacementField(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "one", "class": "small"})
+	if r.status != 201 || r.body["placement"] != "own" {
+		t.Fatalf("default placement: %d %s, want own", r.status, r.raw)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "two", "class": "small", "placement": "hosted"})
+	if r.status != 201 || r.body["placement"] != "hosted" {
+		t.Fatalf("placement hosted: %d %s", r.status, r.raw)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "three", "class": "small", "placement": "somewhere"})
+	if r.status != 400 || detailOf(t, r)["reason"] != "placement" {
+		t.Fatalf("a bad placement: %d %s, want invalid placement", r.status, r.raw)
+	}
+}
