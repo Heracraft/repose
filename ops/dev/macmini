@@ -53,8 +53,10 @@ ssh_opts() { echo -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KN
 [ -r "$PUBKEY" ] || die "no public key at $PUBKEY (MACMINI_SSH_PUBKEY)"
 
 # ---------------------------------------------------------------- aws ---
-AWS_REGION=${MACMINI_AWS_REGION:-us-east-1}
-AWS_ZONES=${MACMINI_AWS_ZONES:-"us-east-1a us-east-1b us-east-1c us-east-1d"}
+AWS_REGION_FILE=$HOME/.macmini-aws-region   # written by the allocation that succeeded
+AWS_REGION=${MACMINI_AWS_REGION:-$(cat "$AWS_REGION_FILE" 2>/dev/null || echo us-east-1)}
+AWS_REGIONS=${MACMINI_AWS_REGIONS:-"us-east-1 us-west-2 eu-west-1"}   # watched in this order
+AWS_ZONES=${MACMINI_AWS_ZONES:-}   # empty: every zone of the region that offers the type
 AWS_MACOS=${MACMINI_AWS_MACOS:-sequoia}
 AWS_ROOT_GIB=${MACMINI_AWS_ROOT_GIB:-150}
 AWS_TYPE=mac-m4.metal
@@ -80,6 +82,8 @@ aws_quota_status() {
     | jq -r '.RequestedQuotas | sort_by(.Created) | last | "\(.Status) \(.DesiredValue)"'
 }
 aws_quota_value() { aws_ service-quotas get-service-quota --service-code ec2 --quota-code $AWS_QUOTA | jq -r '.Quota.Value'; }
+aws_zones() { [ -n "$AWS_ZONES" ] && { echo "$AWS_ZONES"; return; }
+  aws_ ec2 describe-instance-type-offerings --location-type availability-zone --filters "Name=instance-type,Values=$AWS_TYPE" | jq -r '.InstanceTypeOfferings[].Location' | sort | tr '\n' ' '; }
 
 aws_ensure_key() {
   if ! aws_ ec2 describe-key-pairs --key-names "$NAME" >/dev/null 2>&1; then
@@ -110,7 +114,7 @@ aws_create() {
   local host; host=$(aws_host_id)
   if [ -z "$host" ]; then
     local z
-    for z in $AWS_ZONES; do
+    for z in $(aws_zones); do
       echo "allocating a $AWS_TYPE Dedicated Host in $z (billing starts now, 24 h minimum)"
       if host=$(aws_ ec2 allocate-hosts --instance-type $AWS_TYPE --availability-zone "$z" --quantity 1 \
           --tag-specifications "ResourceType=dedicated-host,Tags=[{Key=Name,Value=$NAME}]" 2>"$HOME/.macmini-allocate.err" | jq -r '.HostIds[0]'); then
@@ -126,8 +130,14 @@ aws_create() {
       if grep -q HostLimitExceeded "$HOME/.macmini-allocate.err"; then
         echo "EC2 still enforces the old host limit; the new quota takes up to 30 min to apply"; return 3
       fi
+      # Mac minis are physical; a region can be out of them for hours
+      # (all four us-east-1 zones were, 2026-11-19 05:50 UTC).
+      if grep -q InsufficientHostCapacity "$HOME/.macmini-allocate.err"; then
+        echo "no $AWS_TYPE capacity in $AWS_REGION right now"; return 4
+      fi
       die "no zone could allocate a $AWS_TYPE host"
     fi
+    echo "$AWS_REGION" > "$AWS_REGION_FILE"
   fi
   local az subnet ami root
   az=$(aws_ ec2 describe-hosts --host-ids "$host" | jq -r '.Hosts[0].AvailabilityZone')
@@ -171,16 +181,21 @@ aws_status() {
   echo "quota        mac-m4 hosts $(aws_quota_value), latest request: $(aws_quota_status 2>/dev/null || echo none)"
 }
 
+# Walk the regions in order; the first with quota and capacity gets the
+# host, and only one host is ever allocated (the region is remembered in
+# $AWS_REGION_FILE, and aws_create refuses a second instance).
 aws_watch() {
-  local every=${MACMINI_WATCH_SECONDS:-300}
-  echo "watching the mac-m4 Dedicated Host quota in $AWS_REGION every ${every}s; allocating when it is 1 or more"
+  local every=${MACMINI_WATCH_SECONDS:-300} r q
+  echo "watching $AWS_REGIONS for a $AWS_TYPE host (quota, then capacity) every ${every}s"
   while :; do
-    local q; q=$(aws_quota_value)
-    printf '%s quota=%s request=%s\n' "$(date -u +%FT%TZ)" "$q" "$(aws_quota_status 2>/dev/null || echo none)"
-    if [ "${q%.*}" -ge 1 ]; then
+    for r in $AWS_REGIONS; do
+      AWS_REGION=$r
+      q=$(aws_quota_value 2>/dev/null || echo 0)
+      printf '%s %s quota=%s\n' "$(date -u +%FT%TZ)" "$r" "$q"
+      [ "${q%.*}" -ge 1 ] || continue
       if aws_create; then return; fi
-      echo "retrying in ${every}s"
-    fi
+    done
+    echo "retrying in ${every}s"
     sleep "$every"
   done
 }
