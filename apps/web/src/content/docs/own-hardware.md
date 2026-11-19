@@ -13,7 +13,7 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
-- 16 GB of memory or more. Repose keeps an eighth of it, and never less than 2 GB, for itself; the rest is what your machines may hold at once. A 16 GB Mac runs one `large` and one `small`, a 24 GB Mac two `large` and one `small`.
+- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest; `repose host ls` shows that share.
 - Free disk for your machines' volumes and their snapshots. A `large` machine's disk is 40 GB ([the sizes](/docs/machine)), and repose's own system takes a few gigabytes more.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
@@ -25,7 +25,7 @@ Repose runs on your Mac as one virtual machine, and nothing of yours is touched:
 - x86_64 with hardware virtualization and `/dev/kvm`. Bare metal, Intel or AMD. A virtual machine works only if its own host passes virtualization through, which on Proxmox or libvirt is one setting; most cheap VPSes do not.
 - A machine you are willing to give away whole. Repose installs NixOS over what is there and wipes the disks it is given.
 - Two disks, or one disk with a spare partition for your machines' volumes.
-- 16 GB of memory or more, and the same reserve as above.
+- 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once.
 - Outbound UDP 51820 and TCP 443. No inbound port.
 
 ## Adding it

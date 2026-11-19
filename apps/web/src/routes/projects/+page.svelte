@@ -903,8 +903,8 @@
 										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p)}
 											<div class="mrow-sub">
 												{#if p.host_unreachable}<span
-													>{offlineHostLine(p, ownHosts, clock.now)}</span
-												>{/if}
+														>{offlineHostLine(p, ownHosts, clock.now)}</span
+													>{/if}
 												{#if p.state === 'running' && p.idle && !frozen}<span
 														>unused {uptime(p.idle.since)}</span
 													>{/if}
