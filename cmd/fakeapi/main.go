@@ -63,7 +63,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	POST /unfail     {"method","path"}        -> f.Unfail
 //	POST /billing    api.BillingState as JSON -> f.SetBillingState: {"mode": off|none|trial|active|past_due|suspended|exempt,
 //	                 "plan", "scheduled_plan", "cancelled", "seats": {total, held, waiting},
-//	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices"}; every field optional
+//	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices",
+//	                 "own_for_sale" (the Own hardware plan is sold here, I-1364)}; every field optional
 //	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
 //	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
 //	POST /question   {"project_id","agent","text","options","timeout_s","secret","link","link_label"} -> f.AddQuestion,

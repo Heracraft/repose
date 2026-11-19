@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1025 entries.
+1026 entries.
 
 ## Scope
 
@@ -1056,4 +1056,5 @@ pointer, not a summary.
 - **I-1360** One door, two receivers: the Triggers tab lists every way the outside reaches a machine with what answers it, and Config's Webhooks section is gone (doors, 2026-11-19) — L36270
 - **I-1370** `repose host` is the noun for hardware you own: `host add` prints the install step, `host ls` is the one table, `host rm` takes it off; an owned host that has stopped answering is named wherever it shows (mac-mini 19c, 2026-11-19) — L36324
 - **I-1372** Snapshots of an owned host's machines stay on that host's own disk, and the docs say a dead disk loses them (mac-mini 19c, 2026-11-19) — L36388
-- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36424
+- **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — L36424
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36529

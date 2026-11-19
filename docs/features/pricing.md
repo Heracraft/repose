@@ -20,7 +20,7 @@ The CLI prints the api's sentence for every `payment_required` and exits
 and restoring a project all answer `payment_required` with
 `detail.reason = subscription_required` until one is chosen.
 
-The dashboard's billing page shows the three plans, Solo at $49 (shown as
+The dashboard's billing page shows the plans the api lists, Solo at $49 (shown as
 $39 "for 12 months, then $49" to an account that never had a
 subscription while founding places are left, DECISIONS I-672), Plus at
 $89 and Pro at $169 a month, and how many seats are left. "Choose" sends
@@ -60,6 +60,7 @@ passes its row over (I-1090).
 | Solo | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB |
 | Plus | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB |
 | Pro | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB |
+| Own hardware | the host's memory | the host's disk | not counted |
 
 A plan sells no project count: projects cost nothing but their disk
 while stopped, and every account may have 100, running or stopped
@@ -100,6 +101,36 @@ arithmetic to the cent.
 An account an operator has marked billing-exempt (`repose-admin users
 exempt`) passes all of these; it still records hours and egress, so the
 numbers below are still real for it (DECISIONS I-16).
+
+## Own hardware
+
+$10 a month for one host the user owns: a Mac mini with the repose
+appliance, or an x86 box with the host system (DECISIONS I-1364,
+`../PRICING.md` "Own hardware"). It buys none of repose's compute, so
+none of the refusals above can come from it: there is no memory figure
+to pass, no disk figure, and egress is not counted at all, because a
+guest on the user's own host sends its traffic over the user's own
+connection. The host's memory is what may run at once, and `repose ls`
+prints no plan line for such an account, because the plan has no figure
+to print. The subscription holds no seat, so a checkout for it is never
+waitlisted even while the fleet is full, and `limits.hosts` on `GET /me`
+is 1 (a billing-exempt account has 1 too, so an operator can add a
+machine of their own without buying a plan from themselves).
+
+A plan cannot be changed between Own hardware and the hosted plans:
+`POST /billing/plan` answers `409 conflict`, `detail.reason =
+plan_kind`, `the Own hardware plan and the hosted plans sell different
+things; cancel this plan, then choose the other one when it ends`.
+Everything else is the same plan machinery: the seven-day trial, the
+card at checkout, Polar's tax, the invoice, and the three-day stop
+after a failed payment, which snapshots and stops the machines on the
+user's own host like any others.
+
+The plan is offered only where the api has a Polar product id for it
+(`POLAR_PRODUCT_OWN`): elsewhere `GET /billing` does not list it and a
+checkout for it is refused as an unknown plan, while a subscription that
+already exists on it keeps working. The dashboard draws the plans the
+api sends, so it follows that one variable.
 
 ## Seeing the plan
 

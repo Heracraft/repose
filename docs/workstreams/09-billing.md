@@ -290,11 +290,13 @@ table in `PRICING.md`.
 access token), `POLAR_ENVIRONMENT` (`sandbox` or `production`, required
 with the token because Polar's tokens do not say which they belong to),
 `POLAR_WEBHOOK_SECRET`, `POLAR_PRODUCT_SOLO`, `POLAR_PRODUCT_PLUS`,
-`POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO` (I-497),
+`POLAR_PRODUCT_PRO`, `POLAR_PRODUCT_OWN` (optional; the Own hardware plan
+is sold only where it is set, I-1364), `POLAR_DISCOUNT_INTRO` (I-497),
 `POLAR_PORTAL_RETURN_URL` (default `DASHBOARD_URL/billing`),
 `BILLING_ENFORCE`, `SEATS_TOTAL`. `Validate` refuses a token without the
-environment, the secret, all three products (three different ones) and
-the introductory discount. No token: the routes answer `503
+environment, the secret, all three hosted products (each a different
+one, and `POLAR_PRODUCT_OWN` joins the distinctness check when it is set)
+and the introductory discount. No token: the routes answer `503
 billing_disabled` and the gate refuses every non-exempt account with
 `subscription_required`. No `PADDLE_*` variable is read.
 

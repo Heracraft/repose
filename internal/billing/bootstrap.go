@@ -41,6 +41,7 @@ type BootstrapResult struct {
 	ProductSolo   string
 	ProductPlus   string
 	ProductPro    string
+	ProductOwn    string
 	DiscountIntro string
 	WebhookID     string
 	// WebhookSecret is the endpoint's signing secret, read back from the
@@ -62,7 +63,9 @@ func planProductKey(plan Plan) string {
 
 // productFits reports whether a found product sells the plan as repose
 // sells it: the fixed monthly price, the overage price on the meter, the
-// trial.
+// trial. A plan that meters no egress must have no metered price at all,
+// so a product that grew one is replaced rather than reused (DECISIONS
+// I-1364).
 func productFits(pr Product, plan Plan, meterID string) bool {
 	fixed, metered := false, false
 	for _, price := range pr.Prices {
@@ -76,7 +79,10 @@ func productFits(pr Product, plan Plan, meterID string) bool {
 			metered = price.MeterID == meterID && strings.TrimRight(strings.TrimRight(price.UnitAmount, "0"), ".") == fmt.Sprint(OveragePerGBCents)
 		}
 	}
-	return fixed && metered && pr.RecurringInterval == "month" && pr.TrialInterval == "day" && pr.TrialIntervalCount == plan.TrialDays
+	if metered != plan.EgressMetered() {
+		return false
+	}
+	return fixed && pr.RecurringInterval == "month" && pr.TrialInterval == "day" && pr.TrialIntervalCount == plan.TrialDays
 }
 
 // Bootstrap runs against the client's environment.
@@ -154,7 +160,11 @@ func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapRes
 				return nil, fmt.Errorf("create the %s product: %w", plan.ID, err)
 			}
 			id = pr.ID
-			created("product "+plan.ID, id, fmt.Sprintf(" (%d %s a month, %d-day trial, egress overage %d cents a GB)", plan.PriceCents, plan.Currency, plan.TrialDays, OveragePerGBCents))
+			note := fmt.Sprintf(" (%d %s a month, %d-day trial, egress overage %d cents a GB)", plan.PriceCents, plan.Currency, plan.TrialDays, OveragePerGBCents)
+			if !plan.EgressMetered() {
+				note = fmt.Sprintf(" (%d %s a month, %d-day trial, %d host, no metered price)", plan.PriceCents, plan.Currency, plan.TrialDays, plan.Hosts)
+			}
+			created("product "+plan.ID, id, note)
 		}
 		switch plan.ID {
 		case Solo.ID:
@@ -163,11 +173,13 @@ func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapRes
 			res.ProductPlus = id
 		case Pro.ID:
 			res.ProductPro = id
+		case Own.ID:
+			res.ProductOwn = id
 		}
 	}
 
 	if plan, ok := IntroPlan(); ok {
-		productID := Config{ProductSolo: res.ProductSolo, ProductPlus: res.ProductPlus, ProductPro: res.ProductPro}.PlanProduct(plan.ID)
+		productID := res.config().PlanProduct(plan.ID)
 		discounts, err := p.ListDiscounts(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list discounts: %w", err)
@@ -233,6 +245,12 @@ func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapRes
 	return res, nil
 }
 
+// config is the product ids this run found, as the api's Config reads
+// them.
+func (r *BootstrapResult) config() Config {
+	return Config{ProductSolo: r.ProductSolo, ProductPlus: r.ProductPlus, ProductPro: r.ProductPro, ProductOwn: r.ProductOwn}
+}
+
 // settingsMatch reports whether every key of want has that value in have.
 func settingsMatch(have, want map[string]any) bool {
 	for k, w := range want {
@@ -274,6 +292,9 @@ func (r *BootstrapResult) EnvBlock() string {
 	fmt.Fprintf(&b, "POLAR_PRODUCT_SOLO=%s\n", r.ProductSolo)
 	fmt.Fprintf(&b, "POLAR_PRODUCT_PLUS=%s\n", r.ProductPlus)
 	fmt.Fprintf(&b, "POLAR_PRODUCT_PRO=%s\n", r.ProductPro)
+	// The Own hardware plan is sold only where this line is pasted
+	// (DECISIONS I-1364), so the block says what leaving it out means.
+	fmt.Fprintf(&b, "POLAR_PRODUCT_OWN=%s\n", r.ProductOwn)
 	if r.DiscountIntro != "" {
 		fmt.Fprintf(&b, "POLAR_DISCOUNT_INTRO=%s\n", r.DiscountIntro)
 	}

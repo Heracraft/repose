@@ -2,10 +2,12 @@
 
 A monthly plan through Polar (DECISIONS I-604, which moved billing off
 Paddle), chosen before the first machine starts, with a card at checkout
-and a week free. A plan buys memory that may run at once,
+and a week free. A hosted plan buys memory that may run at once,
 disk for the bytes its projects hold, and egress for the month; a plan
 sells no project count, and a stopped project costs only the disk it holds
-(DECISIONS I-569, I-585). The shape is flat because the pitch is "the agent
+(DECISIONS I-569, I-585). One plan buys none of those: "Own hardware"
+buys a host the user owns, and the machine's own memory and disk are
+what it may run (DECISIONS I-1364). The shape is flat because the pitch is "the agent
 keeps working after the laptop closes", and an hourly meter told people to
 stop machines at night (DECISIONS I-289, superseding R2-12, R4-7, R4-8,
 I-77, I-179 to I-185 and I-205; the hourly design is kept in
@@ -18,6 +20,10 @@ I-77, I-179 to I-185 and I-205; the hourly design is kept in
 | Solo | $49 a month | 8 GB: one `large`, two `small`, or four `tiny` | 100 GB | 250 GB | 1 |
 | Plus | $89 a month | 16 GB: one `xl`, two `large`, any mix | 250 GB | 500 GB | 2 |
 | Pro | $169 a month | 32 GB: two `xl`, four `large`, any mix | 500 GB | 1000 GB | 4 |
+
+These three are the hosted plans: they sell memory, disk and egress on
+repose's own fleet. A user who runs their projects on a machine of their
+own buys "Own hardware" instead, below.
 
 **The `tiny` line is *proposed*, not the owner's yet (DECISIONS I-1168).**
 A plan sells memory that may run at once and no machine count, so `tiny`
@@ -138,6 +144,66 @@ Example: a Solo user with a `large` running all month, a 40 GB disk, and
 20 GB of egress pays $49, or $39 in the founding months. The same user
 with 300 GB of egress pays $49 plus $2.50. Two `large` machines at once need Plus; three or four need Pro.
 
+## Own hardware
+
+**Own hardware is $10 a month for one host.** The host is the user's own
+machine: a Mac mini running the repose appliance, or an x86 box running
+the host system (`workstreams/19-mac-mini.md`, DECISIONS I-1364, which
+settles the price I-647 left open). Everything else is the hosted control
+plane they already had: the dashboard, the CLI, the gateway, triggers,
+notifications and snapshots.
+
+The plan sells none of repose's compute, so it caps none of it:
+
+- **Memory.** The host's. The plan has no figure to refuse a start
+  against, and the only thing that limits what runs at once is how much
+  memory the machine has. A `tiny` and an `xl` are alike here: both fit
+  if the host fits them.
+- **Disk.** The host's disk, which is also where that host's snapshots
+  stay (I-1372). No plan disk, no `disk_limit`, and no disk email.
+- **Egress.** Not counted. A guest on the user's own host sends its
+  traffic over the user's own connection and none of it reaches our
+  edge, so there is no allowance, no $0.05 a GB and no stop at four
+  times nothing. The relay traffic the gateway does carry is what the
+  $10 pays for.
+- **Seats.** None. An owned host is outside the seat count, the waitlist
+  and the pool gauges (I-1366), so a checkout for this plan is never
+  waitlisted and a full fleet does not block it.
+- **Hosts.** One per account. `GET /me` reports it as `limits.hosts`
+  and `POST /hosts` refuses past it. A billing-exempt account gets one
+  host too, so an operator can add a machine of their own without
+  selling a plan to themselves.
+- **Projects.** The same 100 abuse bound as every account.
+
+What does not change: the week free is the same seven days; the
+founding price is Solo's alone; prices are in USD and exclude tax, which
+Polar adds as merchant of record; a failed payment runs the same course,
+and on day 3 the machines on the user's own host are snapshotted and
+stopped like any others.
+
+**A plan cannot be changed between the two kinds.** Solo, Plus and Pro
+move between each other as before; from or to Own hardware the api
+refuses with `409 conflict`, `detail.reason = plan_kind`, and says to
+cancel the plan and choose the other one when it ends. The two sell
+different things, and Polar prorates between products, not between
+kinds: an upgrade across would leave machines on a repose host under a
+plan that sells no memory, or a host the user owns under a plan that
+sells none. It is a launch rule, to revisit when a user asks for it.
+
+**Where it is sold.** The plan is listed and checked out only where the
+api has a Polar product id for it (`POLAR_PRODUCT_OWN`). That is one
+line of the api's environment, and it is deliberately the switch: a
+deployment with no appliance behind it does not offer the plan at all,
+rather than offering it and hoping nobody buys.
+
+**What it costs us** (`proposals/2026-10-10-bring-your-own-host.md`): the
+edge relaying that user's SSH, attach and sync traffic, a share of the
+control plane, and the Cachix the host pulls its system from. Their
+guests' own internet traffic and any abuse leave through their network,
+not ours. Polar takes 5% plus 50¢, so $1.00 of the $10, leaving $9
+against a relay cost nobody has measured yet; measuring it is what
+decides whether $10 holds.
+
 ## The trial
 
 Seven days free on any plan, card at checkout, first charge on day eight
@@ -159,7 +225,8 @@ needs that changed first.
 ## Seats and the waitlist
 
 A seat is 8 GB of memory that may run at once on the fleet: Solo holds one,
-Plus two, Pro four. A seat is also 2 guest vCPUs, since every class is 4 GB
+Plus two, Pro four, and Own hardware none, because it buys no memory of
+ours (I-1364). A seat is also 2 guest vCPUs, since every class is 4 GB
 per vCPU (I-784, I-1168), so a host delivers the smaller of two ceilings: the usable
 8 GB blocks its memory divides into (RAM minus the host reserve) and the
 seats its physical cores can serve while typing still feels immediate. The
@@ -191,7 +258,9 @@ machines again (DECISIONS R4-11 stands).
 
 ## Cancelling and changing plans
 
-A plan is cancelled from the dashboard or Polar's customer portal and ends at the
+Plan changes are within a kind: between Solo, Plus and Pro as below, and
+never between those and Own hardware ("Own hardware"). A plan is
+cancelled from the dashboard or Polar's customer portal and ends at the
 period's end; machines run until then and stop at it, with the 30-day
 retention from that day. Upgrading (to a plan with more seats) takes effect at once,
 with Polar charging the prorated difference that day. Downgrading takes effect at the next renewal and is

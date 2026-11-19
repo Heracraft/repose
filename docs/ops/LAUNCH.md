@@ -49,9 +49,11 @@ runs the production organization.
    organization (one subscription per customer, trial abuse prevention,
    plan changes off in the customer portal, prices exclusive of tax) and
    prints the env block: `POLAR_ENVIRONMENT`, `POLAR_PRODUCT_SOLO`,
-   `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_DISCOUNT_INTRO`,
-   `POLAR_WEBHOOK_SECRET`. Paste it into both api apps and redeploy, then
-   delete the file. It is idempotent: run it again and it creates nothing
+   `POLAR_PRODUCT_PLUS`, `POLAR_PRODUCT_PRO`, `POLAR_PRODUCT_OWN`,
+   `POLAR_DISCOUNT_INTRO`, `POLAR_WEBHOOK_SECRET`. Paste it into both api
+   apps and redeploy, then delete the file. Leave `POLAR_PRODUCT_OWN` out
+   where the Own hardware plan is not to be sold: the api starts without
+   it and offers the plan nowhere (I-1364). It is idempotent: run it again and it creates nothing
    and prints the same ids.
 4. Check Settings > Notifications in Polar: the bootstrap turned off the
    customer emails repose sends itself (trial ending, payment failed,

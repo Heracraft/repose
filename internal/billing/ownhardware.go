@@ -40,6 +40,23 @@ const (
 // must not have to sell themselves a plan first.
 const ExemptHosts = 1
 
+// planHosts is the plan's own answer: the hosts an account's live
+// subscription sells it, and ExemptHosts for a billing-exempt account,
+// which pays for nothing and is refused nothing (I-1090). It is the one
+// implementation of the number: Gate.HostsAllowed adds what only the
+// gate knows (billing off, enforcement off) and `POST /hosts` refuses
+// past it, LimitsFor reports the same figure as /me's `limits.hosts`,
+// and the two therefore cannot tell a user different things.
+func planHosts(u *store.User, sub *Sub) int {
+	if u != nil && u.BillingStatus == "exempt" {
+		return ExemptHosts
+	}
+	if sub != nil && sub.Live() {
+		return sub.PlanOrSolo().Hosts
+	}
+	return 0
+}
+
 // HostsAllowed is how many hosts of their own the account may have now:
 // the plan's figure, ExemptHosts for a billing-exempt account or an api
 // that does not enforce billing, and none for an account with no live
@@ -55,11 +72,13 @@ func (g *Gate) HostsAllowed(ctx context.Context, q store.Querier, u *store.User)
 	if sub == nil || !g.Enabled {
 		return 0, nil
 	}
-	return sub.PlanFor(sub.Period(g.Now()).Start).Hosts, nil
+	return planHosts(u, sub), nil
 }
 
 // FleetAllowed is whether the account's machines may be placed on the
-// hosts repose runs: true unless its plan sells no memory there. It
+// hosts repose runs: true unless its plan sells no memory there
+// (Plan.SellsFleetMemory, which Gate.check reads for the same decision
+// on its own side). It
 // implements ops.FleetPolicy, which is how the ops engine asks without
 // importing this package.
 //
@@ -86,7 +105,10 @@ func (g *Gate) FleetAllowed(ctx context.Context, q store.Querier, userID uuid.UU
 	if sub == nil || !g.Enabled {
 		return true, nil
 	}
-	return sub.PlanFor(sub.Period(g.Now()).Start).MemoryGB > 0, nil
+	// The same predicate the gate's skip reads (Plan.SellsFleetMemory):
+	// a plan with no fleet memory is neither placed on the fleet nor
+	// gated by it, and one predicate asked twice cannot drift.
+	return sub.PlanFor(sub.Period(g.Now()).Start).SellsFleetMemory(), nil
 }
 
 // HostedRefusal is the refusal a project that asked for the hosted fleet

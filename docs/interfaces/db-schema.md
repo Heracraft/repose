@@ -276,7 +276,8 @@ subscriptions (id text pk,  -- the provider's subscription id (0008, I-289; Pola
                                        -- (lifting a billing suspension) and clears Paddle's ctm_ customer ids
               source_modified_at timestamptz null,  -- Polar's modified_at of the newest payload applied (0020, I-604);
                                        -- an older payload delivered late is skipped
-              plan text,  -- solo|plus|pro (0011, I-362)
+              plan text,  -- solo|plus|pro (0011, I-362), own (0049, I-1364); the check constraint
+                                       -- on plan and scheduled_plan lists them, so a new plan needs a migration
               status text,  -- trialing|active|past_due|paused|canceled; at most one live per user
               seats int, period_start, period_end, next_billed_at, trial_end,
               cancel_at null,          -- a scheduled cancellation takes effect here
@@ -479,7 +480,7 @@ per-account listing), and the two partial unique indexes on host names,
 name) where owner_account_id is not null` (0048, I-1366).
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0048_host_owner`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0049_plan_own`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

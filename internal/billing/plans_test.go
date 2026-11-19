@@ -33,12 +33,44 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 			t.Errorf("%s: PRICING.md says $%s, %s GB, %s GB disk, %s GB egress, %s seats; plans.go has %+v", plan.Name, m[2], m[3], m[4], m[5], m[6], plan)
 		}
 	}
-	for _, p := range billing.Plans {
+	for _, p := range billing.HostedPlans() {
 		if !found[p.ID] {
 			t.Errorf("PRICING.md's table has no row for %s", p.Name)
 		}
 	}
 	doc := string(b)
+	// The Own hardware plan is not a row of that table: it sells no
+	// memory, disk, egress or seat, so every column of it would be a
+	// dash. Its own section carries the two figures it has (I-1364).
+	own, hasOwn := billing.OwnPlan()
+	if !hasOwn {
+		t.Fatal("plans.go has no own-hardware plan")
+	}
+	if found[own.ID] {
+		t.Errorf("PRICING.md's hosted plan table has a row for %s", own.Name)
+	}
+	if m := regexp.MustCompile(`\*\*Own hardware is \$(\d+) a month for (one) host\.\*\*`).FindStringSubmatch(doc); m == nil {
+		t.Errorf("PRICING.md no longer states the Own hardware price and host count in one sentence")
+	} else {
+		if n, _ := strconv.Atoi(m[1]); int64(n)*100 != own.PriceCents {
+			t.Errorf("PRICING.md's Own hardware price $%s; plans.go has %d cents", m[1], own.PriceCents)
+		}
+		if own.Hosts != 1 {
+			t.Errorf("PRICING.md says one host; plans.go has %d", own.Hosts)
+		}
+	}
+	if own.MemoryGB != 0 || own.DiskGB != 0 || own.EgressGB != 0 || own.Seats != 0 || own.BurstCoreHours != 0 || own.HasIntro() {
+		t.Errorf("the own-hardware plan sells none of repose's compute and has no founding price: %+v", own)
+	}
+	if own.TrialDays != billing.Solo.TrialDays {
+		t.Errorf("Own hardware's trial is %d days; every plan has %d", own.TrialDays, billing.Solo.TrialDays)
+	}
+	if own.EgressMetered() || own.EgressHardStopBytes() != 0 || !own.AllowsXL() {
+		t.Errorf("the own-hardware plan meters no egress, stops at nothing and allows every class: %+v", own)
+	}
+	if gb, cents := billing.OverageCents(own, 900<<30); gb != 0 || cents != 0 {
+		t.Errorf("900 GB on the own-hardware plan: %d GB %d cents, want nothing", gb, cents)
+	}
 	for _, want := range []string{"$0.05 a GB", fmt.Sprintf("%d projects per account", billing.ProjectCap), "four times the", "Seven days free"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("PRICING.md no longer says %q", want)
@@ -66,7 +98,7 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 	} else if n, _ := strconv.Atoi(m[1]); n != billing.Solo.IntroLimit {
 		t.Errorf("PRICING.md's founding limit %s; plans.go has %d", m[1], billing.Solo.IntroLimit)
 	}
-	if billing.Plus.HasIntro() || billing.Pro.HasIntro() {
+	if billing.Plus.HasIntro() || billing.Pro.HasIntro() || billing.Own.HasIntro() {
 		t.Errorf("only Solo has an introductory price")
 	}
 	if billing.Solo.IntroDiscountCents() != 1000 {

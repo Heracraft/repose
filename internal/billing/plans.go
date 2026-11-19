@@ -15,15 +15,27 @@ package billing
 // TestPlansMatchPricingDoc parses the doc's table and fails when they
 // disagree.
 type Plan struct {
-	ID         string // solo | plus | pro
+	ID         string // solo | plus | pro | own
 	Name       string
 	PriceCents int64
 	Currency   string
 	TrialDays  int
 	Seats      int
-	MemoryGB   int // may run at once
-	DiskGB     int // may be allocated
-	EgressGB   int // a period
+	MemoryGB   int // may run at once; 0 on an own-hardware plan
+	DiskGB     int // may be allocated; 0 on an own-hardware plan
+	EgressGB   int // a period; 0 on an own-hardware plan
+	// Hosts is how many hosts of their own the plan lets the account add
+	// (DECISIONS I-1364, I-1366): one on Own hardware, none on the plans
+	// that sell memory on repose's own fleet. `POST /hosts` and /me's
+	// `limits.hosts` read this and nothing else holds the figure, so
+	// selling a second host is one number here.
+	//
+	// A plan with Hosts > 0 sells no fleet memory, disk or egress at all:
+	// the host the user owns is the only limit, so MemoryGB, DiskGB and
+	// EgressGB are 0 and none of the gate's three resource checks runs
+	// (Gate.check). What keeps such an account off a host repose bought
+	// is placement, through Gate.FleetAllowed, not the gate's refusals.
+	Hosts int
 	// BurstCoreHours is the CPU time above a machine's base cores that
 	// the plan includes in a period (DECISIONS I-1128). Past it, with
 	// overage off, the account's machines run on their base cores until
@@ -44,24 +56,74 @@ type Plan struct {
 	// price at once: the founding offer's first 30 (DECISIONS I-672). Zero
 	// is no limit.
 	IntroLimit int
-	// Hosts is how many hosts of their own the plan lets the account
-	// add (DECISIONS I-1366): one on Own hardware, none on the
-	// plans that sell memory on repose's own fleet. `POST /hosts` reads
-	// this and nothing else holds the figure, so selling a second host
-	// is one number here.
-	Hosts int
 }
 
-// The three plans (DECISIONS I-362) at ladder C's prices, and Solo's
-// founding price for the first 30 subscribers (DECISIONS I-672).
+// The three hosted plans (DECISIONS I-362) at ladder C's prices, Solo's
+// founding price for the first 30 subscribers (DECISIONS I-672), and the
+// plan for a host the user owns (DECISIONS I-1364).
 var (
 	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, BurstCoreHours: 20, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
 	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, BurstCoreHours: 50}
 	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, BurstCoreHours: 120}
+	// Own is the Mac mini or x86 box the user owns: one host, no seat on
+	// the fleet, and no memory, disk or egress of ours to sell, because
+	// the machine is theirs. The hosted plans are untouched by it.
+	Own = Plan{ID: "own", Name: "Own hardware", PriceCents: 1000, Currency: "USD", TrialDays: 7, Hosts: 1}
 )
 
-// Plans lists the plans in the order the dashboard shows them.
-var Plans = []Plan{Solo, Plus, Pro}
+// Plans lists the plans in the order the dashboard shows them: the three
+// hosted ones, then Own hardware.
+var Plans = []Plan{Solo, Plus, Pro, Own}
+
+// HostedPlans are the plans that sell memory on repose's own fleet: every
+// plan but the own-hardware ones. The seat count, the waitlist and the
+// landing's three cards are theirs.
+func HostedPlans() []Plan {
+	out := make([]Plan, 0, len(Plans))
+	for _, p := range Plans {
+		if !p.OwnHardware() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// OwnHardware reports whether the plan sells a host the user owns
+// (DECISIONS I-1364). It answers "which product is this", and nothing
+// else: the Polar product and its description, the proration kind
+// (SameKind), and which plan the three cards leave out. It is the wrong
+// question for "does this plan sell repose's compute", which is
+// SellsFleetMemory, and keying a resource gate off it is what let a
+// plan with a host and fleet memory skip the gate while placement let
+// it onto the fleet.
+func (p Plan) OwnHardware() bool { return p.Hosts > 0 }
+
+// SellsFleetMemory reports whether the plan sells memory on the hosts
+// repose runs. It is the one predicate for the fleet, asked twice: the
+// gate skips its memory, disk and egress checks when it is false
+// (Gate.check), and placement refuses the fleet when it is false
+// (Gate.FleetAllowed, DECISIONS I-1366). The two must answer the same
+// question, because the gate's skip is only safe while placement keeps
+// such an account off the fleet; a plan that sold both a host and fleet
+// memory would otherwise be placed on repose's hosts and metered by
+// nothing.
+func (p Plan) SellsFleetMemory() bool { return p.MemoryGB > 0 }
+
+// OwnPlan is the own-hardware plan, if the table has one.
+func OwnPlan() (Plan, bool) {
+	for _, p := range Plans {
+		if p.OwnHardware() {
+			return p, true
+		}
+	}
+	return Plan{}, false
+}
+
+// SameKind reports whether two plans sell the same kind of thing: both
+// hosted, or both own-hardware. A change across the two is refused
+// (service.ErrPlanKind), because Polar would prorate between products
+// that buy nothing alike (DECISIONS I-1364).
+func SameKind(a, b Plan) bool { return a.OwnHardware() == b.OwnHardware() }
 
 // ProjectCap is how many live projects, running or stopped, an account
 // may have, on every plan and without one (DECISIONS I-569). It is an
@@ -99,7 +161,8 @@ const (
 // are never repriced).
 const PriceVersion = "plan-v1"
 
-// PlanByID finds a plan; ok is false for anything but solo, plus and pro.
+// PlanByID finds a plan; ok is false for anything but solo, plus, pro
+// and own.
 func PlanByID(id string) (Plan, bool) {
 	for _, p := range Plans {
 		if p.ID == id {
@@ -136,17 +199,28 @@ func IntroPlan() (Plan, bool) {
 // time above a machine's base cores.
 func (p Plan) BurstAllowanceNs() int64 { return int64(p.BurstCoreHours) * 3600 * 1_000_000_000 }
 
+// EgressMetered reports whether the plan counts egress at all. An
+// own-hardware plan does not: a guest on the user's own host sends its
+// traffic over the user's own connection, so there is no allowance, no
+// overage line and no hard stop (DECISIONS I-1364).
+func (p Plan) EgressMetered() bool { return p.EgressGB > 0 }
+
 // EgressAllowanceBytes is the plan's egress allowance in bytes.
 func (p Plan) EgressAllowanceBytes() int64 { return int64(p.EgressGB) << 30 }
 
-// EgressHardStopBytes is where the machines stop for the period.
+// EgressHardStopBytes is where the machines stop for the period; 0 on a
+// plan that meters no egress, where nothing stops (EgressMetered).
 func (p Plan) EgressHardStopBytes() int64 {
 	return p.EgressAllowanceBytes() * EgressHardStopMultiplier
 }
 
 // AllowsXL reports whether an xl machine (16 GB) can run on the plan at
-// all, which is what /me's `limits.xl` says.
-func (p Plan) AllowsXL() bool { return p.MemoryGB >= ClassMemoryGB("xl") }
+// all, which is what /me's `limits.xl` says. A plan with a host of the
+// user's own allows every class whatever its fleet memory, because what
+// fits on that host is the host's memory; on a plan that sells both,
+// the gate still refuses an xl that does not fit the fleet memory, so
+// the generous answer here is right for either shape.
+func (p Plan) AllowsXL() bool { return p.OwnHardware() || p.MemoryGB >= ClassMemoryGB("xl") }
 
 // ClassMemoryGB is the memory a size class takes while it runs
 // (docs/DESIGN.md §5: tiny 0.5 vCPU 2 GB, small 1 vCPU 4 GB, large 2 vCPU
@@ -173,8 +247,11 @@ func ClassMemoryGB(class string) int {
 
 // OverageCents is the egress line for a period: whole GB past the
 // allowance, rounded up, at OveragePerGBCents. Nothing under the
-// allowance.
+// allowance, and nothing at all on a plan that meters no egress.
 func OverageCents(plan Plan, egressBytes int64) (overGB int64, cents int64) {
+	if !plan.EgressMetered() {
+		return 0, 0
+	}
 	over := egressBytes - plan.EgressAllowanceBytes()
 	if over <= 0 {
 		return 0, 0
@@ -224,10 +301,11 @@ func Price(in Inputs) Result {
 	return r
 }
 
-// SmallestFor is the cheapest plan whose memory holds a machine of the
-// class, which is what "an xl needs ..." names; Pro when none does.
+// SmallestFor is the cheapest hosted plan whose memory holds a machine of
+// the class, which is what "an xl needs ..." names; Pro when none does.
+// An own-hardware plan is never the answer: it sells no memory.
 func SmallestFor(class string) Plan {
-	for _, p := range Plans {
+	for _, p := range HostedPlans() {
 		if p.MemoryGB >= ClassMemoryGB(class) {
 			return p
 		}

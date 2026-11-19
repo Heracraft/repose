@@ -156,6 +156,26 @@ func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Re
 	if (sub.Status == StatusPastDue || u.BillingStatus == "past_due") && !req.Resume {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
+	if !plan.SellsFleetMemory() {
+		// A plan that sells no memory on repose's hosts refuses nothing
+		// by memory, disk or egress: the machine runs on the user's own
+		// host, whose memory and disk are the limits, and whose traffic
+		// leaves their own network (DECISIONS I-1364). Everything above
+		// this line still applies: a suspended account, no subscription
+		// and a failed payment refuse a start as they do on any plan.
+		//
+		// This skip is safe only because placement keeps such an account
+		// off the hosts repose bought (Gate.FleetAllowed, DECISIONS
+		// I-1366), and the two read one predicate so they cannot drift:
+		// relax the placement term and this gate silently stops metering
+		// the fleet, with no test failing. The test that does fail is
+		// TestAPlanThatSellsFleetMemoryIsGatedOnIt, which gives the
+		// own-hardware plan fleet memory and expects every refusal back.
+		// The condition is the plan's memory, not its host count: a plan
+		// that sold a host and fleet memory both is placed on the fleet
+		// and must be metered there.
+		return nil, nil
+	}
 	egress, err := PeriodEgress(ctx, q, u.ID, period)
 	if err != nil {
 		return nil, err
@@ -258,7 +278,11 @@ type Limits struct {
 	MemoryGB int
 	DiskGB   int
 	EgressGB int
-	Plan     *Plan
+	// Hosts is how many hosts of their own the account may register: the
+	// plan's (DECISIONS I-1364), 0 on the hosted plans and without a
+	// plan. POST /hosts refuses past it (item 19a).
+	Hosts int
+	Plan  *Plan
 }
 
 // LimitsFor computes a user's limits from their live subscription, with
@@ -270,7 +294,11 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 		if p.AllowsXL() {
 			xl = 1
 		}
-		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Plan: &p}
+		// An own-hardware plan's memory, disk and egress are 0, which is
+		// what "no limit from the plan" looks like here: the client reads
+		// 0 as "the plan does not cap this" and prints no figure against
+		// it (internal/cli's planLine), and hosts is the one limit it has.
+		return Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: xl, MemoryGB: p.MemoryGB, DiskGB: p.DiskGB, EgressGB: p.EgressGB, Hosts: planHosts(u, sub), Plan: &p}
 	}
 	l := Limits{Projects: AccountProjectCap(u.ProjectLimit), XL: u.XLLimit, MemoryGB: Solo.MemoryGB, DiskGB: Solo.DiskGB, EgressGB: Solo.EgressGB}
 	if u.BillingStatus == "exempt" {
@@ -281,12 +309,13 @@ func LimitsFor(u *store.User, sub *Sub) Limits {
 			l.XL = 1
 		}
 	}
+	l.Hosts = planHosts(u, sub)
 	return l
 }
 
 // JSON is the /me limits object.
 func (l Limits) JSON() map[string]any {
-	return map[string]any{"projects": l.Projects, "xl": l.XL, "memory_gb": l.MemoryGB, "disk_gb": l.DiskGB, "egress_gb": l.EgressGB}
+	return map[string]any{"projects": l.Projects, "xl": l.XL, "memory_gb": l.MemoryGB, "disk_gb": l.DiskGB, "egress_gb": l.EgressGB, "hosts": l.Hosts}
 }
 
 // Place is a user's waitlist row as /me, /billing and the gate report it.

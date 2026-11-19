@@ -121,8 +121,8 @@ export const unfail = (method: string, path: string) => adminCall('/unfail', { m
 /** The fake's billing knobs (internal/fakes/api.BillingState, cmd/fakeapi POST /billing). */
 export interface BillingState {
 	mode?: 'off' | 'none' | 'trial' | 'active' | 'past_due' | 'suspended' | 'exempt';
-	plan?: 'solo' | 'plus' | 'pro';
-	scheduled_plan?: 'solo' | 'plus' | 'pro' | '';
+	plan?: 'solo' | 'plus' | 'pro' | 'own';
+	scheduled_plan?: 'solo' | 'plus' | 'pro' | 'own' | '';
 	cancelled?: boolean;
 	seats?: { total: number; held: number; waiting: number };
 	waitlist?: { position: number; invited?: boolean; hold_hours?: number };
@@ -134,6 +134,10 @@ export interface BillingState {
 	intro_used?: boolean;
 	/** GET /public/seats's founding_left (I-672); negative serves null, no offer. */
 	founding_left?: number;
+	/** This deployment sells the Own hardware plan: the fake's stand-in for
+	 *  POLAR_PRODUCT_OWN being set (I-1364). Off by default, as production
+	 *  is, so the plan is listed and offered only where a test turns it on. */
+	own_for_sale?: boolean;
 }
 
 function adminURL(): string {
@@ -163,7 +167,8 @@ export async function resetBilling(): Promise<void> {
 		scheduled_plan: '',
 		cancelled: false,
 		intro_used: false,
-		founding_left: 30
+		founding_left: 30,
+		own_for_sale: false
 	});
 }
 

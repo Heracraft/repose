@@ -36421,6 +36421,111 @@ on this page a user cannot undo and cannot discover any other way).
 *Checked:* `nix flake check` with `repose.host.owned` on and a blobUrl
 set fails on the assertion; the docs page's section and
 `TestHostAddListRm`'s prompt assertion.
+**I-1364. The Own hardware plan: $10 a month for one host the user owns,
+and it sells none of repose's compute (19d, 2026-11-19).** *Made during
+implementation; settles the "free or a price per host" that I-647 left
+open; the hosted plans of I-672 are unchanged.*
+
+The plan a Mac mini owner buys (`workstreams/19-mac-mini.md` §4): id
+`own`, name "Own hardware", $10 a month in USD, the same seven-day
+trial as every plan, one host, and no memory, disk, egress, seat or
+burst allowance of ours at all.
+
+- *Why $10 and not free.* What it costs us is the edge relaying that
+  user's SSH, attach and sync traffic, a share of the control plane and
+  the Cachix the host pulls from; their guests' traffic and any abuse
+  leave through their own network
+  (`proposals/2026-10-10-bring-your-own-host.md`). Polar keeps 5% plus
+  50¢, so $1.00 of the $10. Free would have made the relay a gift with
+  no ceiling and no signal of who is using it; $49 would have priced a
+  machine we do not own. Nobody has measured the relay's bytes per user,
+  and that measurement, not this entry, is what decides whether $10
+  holds.
+- *The zeros mean "sells none of ours", not "may do nothing".* The plan
+  carries `MemoryGB`, `DiskGB` and `EgressGB` of 0 and `Hosts` of 1. The
+  gate therefore returns early and runs none of its three resource
+  checks, because every one of them reads a zero as a ceiling: the
+  egress hard stop is four times zero, so an account that has sent
+  nothing is already past it; the memory check refuses any class at all;
+  the disk check refuses any volume. A plan whose caps are the user's
+  own machine has to skip them, not meet them. Everything before those
+  checks still applies: no subscription, a past-due payment, a suspended
+  account and the three-day stop behave as on any plan, and day 3
+  snapshots and stops the machines on the user's own host too.
+- *The skip is keyed on the memory the plan sells, not on its host
+  count, and it is the same predicate placement reads.*
+  `Plan.SellsFleetMemory` (`MemoryGB > 0`) is asked by `Gate.check`,
+  which skips the three checks when it is false, and by
+  `Gate.FleetAllowed` (I-1366), which refuses the fleet when it is
+  false. Keying the gate off `OwnHardware` (`Hosts > 0`) instead, as it
+  first did, agrees on every plan that exists and diverges on the first
+  plan that sells a host *and* fleet memory -- the obvious upsell:
+  placement would put that account on repose's hosts and the gate would
+  meter it with nothing. `OwnHardware` stays for the questions it
+  answers well: which Polar product, which proration kind (`SameKind`),
+  which plan the three cards leave out. The skip is safe only while
+  placement holds, so relaxing the placement term silently stops the
+  metering; `TestAPlanThatSellsFleetMemoryIsGatedOnIt` gives the
+  own-hardware plan fleet memory and expects every refusal, the disk
+  email and the overage back. The same rule keyed `Usage.DiskOver` and
+  the `disk_over_plan` sweep on the plan's disk, and the dashboard's
+  meters on the memory the api reports. (Found by 19a's reading of the
+  two files before the merge.)
+- *Egress is not metered on it.* A guest on the user's host sends its
+  traffic over the user's connection; none of it is ours to count. So
+  there is no allowance, no $0.05 a GB line, no `egress_stopped` and no
+  metered price on the Polar product — a metered price there would show
+  "Additional metered charges may apply" at a checkout where no charge
+  can arrive.
+- *No seat.* `Seats` is 0, so the subscription holds none of the fleet's
+  seats, a checkout is never waitlisted, and a full fleet does not block
+  it (with I-1366, which leaves owned hosts out of the seat count).
+- *One host, counted in one place.* `Plan.Hosts` is the number;
+  `billing.HostsAllowed` is the function, which also gives a
+  billing-exempt account one host so an operator can add a machine of
+  their own without selling a plan to themselves; `GET /me` reports it
+  as `limits.hosts`; `POST /hosts` refuses past it (19a). Two numbers
+  would have drifted the moment one changed.
+- *A plan cannot be changed between the kinds.* `POST /billing/plan`
+  from or to `own` is `409 conflict`, `detail.reason = plan_kind`, and
+  says to cancel and choose the other when it ends. Polar prorates
+  between products, not between kinds, and the two directions are both
+  wrong: a move to Own hardware leaves machines on a repose host under a
+  plan that sells no memory, and a move away leaves a host the user owns
+  under a plan that sells none. Cancel-and-rebuy costs the user the rest
+  of a period and is honest; revisit when a user asks.
+- *The founding price stays Solo's.* One plan has an introductory price
+  (`IntroPlan`), the landing's three cards keep theirs, and nothing of
+  `GET /public/seats` moves.
+- *Where it is sold is `POLAR_PRODUCT_OWN`, and that is the switch.* It
+  is the one optional product id: with it set the api lists the plan in
+  `GET /billing` and accepts a checkout for it, without it the plan is
+  not listed and a checkout is refused as an unknown plan, while a
+  subscription that already exists on it is still honoured. So the
+  dashboard's offer follows the api with no flag of its own, the
+  sandbox can sell the plan to the user council before any Mac is
+  proven, and production ships the plan dormant until the appliance
+  works. Rejected: a `PUBLIC_*` build flag in the web (a switch someone
+  forgets to check, and the prerendered landing is the only thing that
+  needs one anyway) and shipping the plan on sale everywhere (a visitor
+  could pay $10 for hardware support that ships nothing).
+- *Not done here.* Nothing keeps an own-hardware account's project off a
+  repose host; that is placement (I-1366, 19a), which refuses
+  `placement: "hosted"` from such an account with
+  `detail.reason = hosted_plan_required`. The gate cannot do it: it
+  never sees which host a project would land on.
+
+*Checked:* `TestAPlanThatSellsFleetMemoryIsGatedOnIt` (a plan with a host
+and fleet memory is gated on memory, disk and egress; red with the gate
+keyed on the host count, "want a refusal, got <nil>", and red again at
+the disk email with the sweep keyed the same way),
+`TestOwnHardwareStartsOnItsOwnTerms` (an Own hardware account
+starts an `xl` with 32 GB already running and a 200 GB volume and is
+refused nothing; red before the gate's early return, with
+`egress_limit`), `TestPlansMatchPricingDoc` (the $10 and the one host
+against `PRICING.md`), `TestOwnPlanProductHasNoMeteredPrice`,
+`TestPlanKindRefusal`, `TestOwnPlanIsSoldOnlyWhereItsProductIs`,
+`TestPlanKindMessageIsTheApis`, and the fake api's own-plan tests.
 **I-1366. A host has an owning account: placement puts only that
 account's projects on it, and the seat count, the waitlist and the host
 gauges leave it out (19a mac-mini-ownership, 2026-11-19).** *Made during
