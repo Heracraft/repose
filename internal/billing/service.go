@@ -152,7 +152,11 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 	plans := make([]map[string]any, 0, len(forSale))
 	for _, p := range forSale {
 		available := true
-		if sub == nil {
+		switch {
+		case p.Seats == 0:
+			// A plan that holds no seat is always available, whatever the
+			// fleet is doing (I-1364).
+		case sub == nil:
 			// Fits, never Reserve: reading the page puts nobody on the
 			// waitlist and undoes nobody's lapse (I-1033).
 			ok, err := s.seats.Fits(ctx, u.ID.String(), p.Seats)
@@ -160,9 +164,10 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 				return nil, err
 			}
 			available = ok
-		} else if p.Seats > sub.Seats {
+		case p.Seats > sub.Seats:
 			available = count.Total == 0 || count.Free >= p.Seats-sub.Seats
 		}
+
 		plans = append(plans, map[string]any{"id": p.ID, "name": p.Name, "price_cents": p.PriceCents, "currency": p.Currency, "trial_days": p.TrialDays,
 			"seats": p.Seats, "memory_gb": p.MemoryGB, "disk_gb": p.DiskGB, "egress_gb": p.EgressGB, "hosts": p.Hosts, "project_limit": ProjectCap, "available": available,
 			"intro_price_cents": p.IntroCents, "intro_months": p.IntroMonths, "intro_egress_gb": p.IntroEgressGB})
@@ -261,9 +266,18 @@ func (s *Service) Checkout(ctx context.Context, u *store.User, planID, customerI
 	if sub != nil {
 		return "", ErrSubscribed
 	}
-	free, place, err := s.seats.Reserve(ctx, u.ID.String(), plan.Seats)
-	if err != nil {
-		return "", err
+	// A plan that holds no seat does not ask for one: an owned host is
+	// outside the seat count and the waitlist (DECISIONS I-1364), and
+	// asking anyway would both refuse the checkout on a full fleet and
+	// put the user on the waitlist, because waitlist.Service.fits reads a
+	// request for 0 seats as a request for 1.
+	free, place := true, (*waitlist.Place)(nil)
+	if plan.Seats > 0 {
+		var err error
+		free, place, err = s.seats.Reserve(ctx, u.ID.String(), plan.Seats)
+		if err != nil {
+			return "", err
+		}
 	}
 	if !free {
 		p := waitlist.Place{}

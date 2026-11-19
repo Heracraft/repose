@@ -224,8 +224,12 @@ func TestOwnPlanIsSoldOnlyWhereItsProductIs(t *testing.T) {
 	}
 }
 
-// A full fleet does not block the plan: it holds no seat, so a checkout
-// for it is never waitlisted while every hosted plan is.
+// A full fleet does not block the plan: it holds no seat, so the
+// checkout never asks the seat service at all. Asking would both refuse
+// it and put the user on the waitlist, because the real
+// waitlist.Service reads a request for 0 seats as a request for 1
+// (fits clamps seats < 1), which no stub in this package does: the
+// refusing stand-in below is the one that catches it.
 func TestOwnPlanNeedsNoSeat(t *testing.T) {
 	pool := testdb.Open(t)
 	f := newFakePolar()
@@ -233,12 +237,8 @@ func TestOwnPlanNeedsNoSeat(t *testing.T) {
 	ctx := context.Background()
 	p := billing.NewPolar(withOwn(testConfig(f)), quiet())
 	o := billing.NewOverage(pool, p, withOwn(testConfig(f)), &stopRecorder{}, nop(), quiet())
-	// SubscriptionSeats with every seat held: Reserve answers free only
-	// for a plan that needs none.
-	seats := &billing.SubscriptionSeats{Pool: pool, Total: 1}
-	full := seedAccount(t, pool, "solo", "active", "", "")
-	_ = full
-	s := billing.NewService(pool, p, withOwn(testConfig(f)), seats, o, quiet())
+	// fullSeats refuses every Reserve and every Fits, whatever the count.
+	s := billing.NewService(pool, p, withOwn(testConfig(f)), fullSeats{}, o, quiet())
 
 	a := seedAccount(t, pool, "", "none", "", "")
 	u := user(t, pool, a)
@@ -248,6 +248,17 @@ func TestOwnPlanNeedsNoSeat(t *testing.T) {
 	}
 	if _, err := s.Checkout(ctx, u, "own", ""); err != nil {
 		t.Fatalf("own hardware with no seat free: %v", err)
+	}
+	// And the page offers it: available, where the hosted three are not.
+	out, err := s.Overview(ctx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planRow(out, "own")["available"] != true {
+		t.Fatalf("the own-hardware row on a full fleet: %v", planRow(out, "own"))
+	}
+	if planRow(out, "solo")["available"] != false {
+		t.Fatalf("Solo is available on a full fleet: %v", planRow(out, "solo"))
 	}
 	// The subscription a webhook writes for it holds no seat, so the
 	// fleet's count does not move.

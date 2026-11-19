@@ -162,10 +162,9 @@ func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Re
 		// memory and disk are the limits (DECISIONS I-1364). Everything
 		// above this line still applies: a suspended account, no
 		// subscription and a failed payment refuse a start as they do on
-		// any plan. What keeps such an account off a repose host is
-		// placement (host ownership, item 19a of
-		// docs/workstreams/19-mac-mini.md), not this gate, which cannot
-		// see whose host a project would land on.
+		// any plan. What keeps such an account off a host repose bought is
+		// placement, through Gate.FleetAllowed (ownhardware.go), not this
+		// gate, which never sees which host a project would land on.
 		return nil, nil
 	}
 	egress, err := PeriodEgress(ctx, q, u.ID, period)
