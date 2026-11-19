@@ -223,8 +223,13 @@ func hostErr(err error, name string) error {
 		return exitf(ExitPaymentRequired, "Hardware of your own needs the Own hardware plan: https://repose.run/billing")
 	case reason == "host_has_projects":
 		// A machine moves host only by restore (DESIGN §3), so the api
-		// refuses rather than leave them with nowhere to run.
-		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` or `repose snapshots restore` each of them first.", name, joinNames(detailStrings(apiErr.Detail["projects"])))
+		// refuses rather than leave them with nowhere to run. It names
+		// them; this says it in the commands that clear them.
+		on := detailStrings(apiErr.Detail["projects"])
+		if len(on) == 0 {
+			break
+		}
+		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` or `repose snapshots restore` each of them first.", name, joinNames(on))
 	}
 	return err
 }
