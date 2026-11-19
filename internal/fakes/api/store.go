@@ -223,7 +223,7 @@ type userRec struct {
 	// GitHub said about its GH_TOKEN (I-1342).
 	GhLoginCopy      bool
 	GhTokenExpiresAt *time.Time
-	Cancelling    bool
+	Cancelling       bool
 	// personal is the account's machine.nix saves, oldest first (I-490).
 	personal []*personalRev
 	// secrets is the account's secrets, for every project (I-697).
@@ -232,7 +232,10 @@ type userRec struct {
 
 type project struct {
 	Project
-	owner       string
+	owner string
+	// hostOwner is the account that owns the project's host, "" for a
+	// host repose runs (DECISIONS I-1368).
+	hostOwner   string
 	destroyed   bool
 	destroyedAt time.Time
 	retained    time.Time // destroyed projects keep their last snapshot until then

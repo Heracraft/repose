@@ -799,16 +799,18 @@ groups:
           runbook: "docs/ops/RUNBOOK.md#notifyfailing"
 
       - alert: HostReportsRefused
-        # A host reported a guest of a project placed elsewhere, or a
-        # snapshot outside the project's prefix (I-447). hostd never does
-        # either, so this is a bug in a reconcile or a host to look at.
-        expr: sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest|bad_snapshot"}[15m])) > 0
+        # A host reported a guest of a project placed elsewhere, a
+        # snapshot outside the project's prefix (I-447), or a result or
+        # build line for a command sent to another host (I-1368). hostd
+        # never does any of these, so this is a bug in a reconcile or a
+        # host to look at.
+        expr: sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest|bad_snapshot|foreign_command"}[15m])) > 0
         for: 0m
         labels:
           severity: warn
         annotations:
           summary: "the api dropped host reports ({{ $labels.reason }})"
-          description: "{{ $value }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
+          description: "{{ $value }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done|foreign_command\"` names the host and the guest or command."
           runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
 
       - alert: ResumeStalled

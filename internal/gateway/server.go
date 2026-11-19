@@ -55,6 +55,9 @@ const (
 	// away (DECISIONS I-721). Nothing the user can wait for fixes it, so
 	// the banner names the two commands that do.
 	MsgNoAddressFmt = "%s is running but repose has no address for it; run `repose stop %s` then `repose start %s`"
+	// MsgForeignHostFmt takes the slug: the project's host is owned by
+	// an account that is not the one connecting (DECISIONS I-1368).
+	MsgForeignHostFmt = "%s is on a host your account does not own"
 )
 
 // stateMessage is the banner for a project that is not running (I-189).
@@ -677,6 +680,16 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	}
 	if len(cert.ValidPrincipals) == 0 || !contains(cert.ValidPrincipals, route.ProjectID) {
 		return g.fail(st, ResultWrongPrincipal, MsgWrongPrincipal)
+	}
+	// A host the operator does not run carries only its owner's projects
+	// (DECISIONS I-1368). The api's placement never puts a project on
+	// another account's host; this is the gateway's own check of it,
+	// against the account the certificate was issued to rather than the
+	// api's word, so a wrong row in the api cannot route a stranger into
+	// a user's machine, or a user into a stranger's.
+	if route.HostOwnerID != "" && route.HostOwnerID != userID {
+		g.log.Warn("project on a host another account owns", "event", "foreign_host", "project_id", route.ProjectID)
+		return g.fail(st, ResultForeignHost, fmt.Sprintf(MsgForeignHostFmt, slug))
 	}
 	switch route.State {
 	case "running":

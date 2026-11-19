@@ -69,6 +69,14 @@ type Route struct {
 	// directions, so the wake is idempotent and the dial asks for one
 	// whenever the flag is set. False from an api older than I-818.
 	Resting bool `json:"resting"`
+	// HostOwnerID is the account that owns the project's host, empty for
+	// a host repose runs (DECISIONS I-1368). A connection is routed to an
+	// owned host only for that account's certificate. Empty from an api
+	// older than I-1368, which has no owned hosts.
+	HostOwnerID string `json:"host_owner_id"`
+	// UserID is the project's owner, for the paths that have no
+	// certificate to read it from (a webhook delivery).
+	UserID string `json:"user_id"`
 }
 
 // WakeResult is POST /internal/wake. WasResting says whether that call

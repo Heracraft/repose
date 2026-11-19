@@ -82,6 +82,12 @@ type ProjectState struct {
 	State           string `json:"state"`
 	HostUnreachable bool   `json:"host_unreachable"`
 	Resting         bool   `json:"resting"`
+	// HostOwnerID is the account that owns the project's host, empty for
+	// a host repose runs; UserID is the project's owner. A delivery is
+	// dialled into an owned host only when the two agree (DECISIONS
+	// I-1368).
+	HostOwnerID string `json:"host_owner_id"`
+	UserID      string `json:"user_id"`
 }
 
 // Delivery is one record for POST /internal/webhook-deliveries.
