@@ -37219,4 +37219,12 @@ bundle ignored, hostd's stream connected after the peer swap;
 `TestAppliance*` in internal/cli (the sizing rules, the sparse unpack,
 the bundle, the config, the agent, vfkit's arguments, the Mac refusals).
 The shell launcher it replaced ran on the AWS Mac three times (research
-doc §9); the CLI's own run there is in the 19f report.
+doc §9); the CLI ran there once, cross-compiled for darwin/arm64 from
+the dev box: `repose host add --join <argument> --memory 12288` against
+a local copy of the production image installed in 37 s (vfkit fetched
+and checksummed, the image unpacked sparse, the disk extended to 56 GiB,
+config and agent written, launchd refused over ssh and the VM started
+detached under `repose host run`), the appliance booted to its login
+prompt and consumed the bundle from the share; `repose host rm --local
+--yes` pressed the power button and removed it in 3 s ("System Power
+Off" on the console, no vfkit left, the directory and the agent gone).

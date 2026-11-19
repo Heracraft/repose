@@ -382,28 +382,43 @@ func unpackSparse(r io.Reader, dest string) (written int64, err error) {
 	return written, nil
 }
 
-// fetchTo downloads url to dest, verifying its SHA-256 when want is set,
-// and reports the hex digest.
-func fetchTo(ctx context.Context, c *http.Client, url, dest, want string) (string, error) {
+// openURL is the body at url: over HTTP, or a local file for a `file://`
+// URL, which the lab uses for an image copied beside the Mac
+// (ops/dev/macmini appliance-install).
+func openURL(ctx context.Context, c *http.Client, url string) (io.ReadCloser, error) {
+	if path, ok := strings.CutPrefix(url, "file://"); ok {
+		return os.Open(path)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	resp, err := c.Do(req)
 	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%s: the server answered %d", url, resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
+// fetchTo downloads url to dest, verifying its SHA-256 when want is set,
+// and reports the hex digest.
+func fetchTo(ctx context.Context, c *http.Client, url, dest, want string) (string, error) {
+	body, err := openURL(ctx, c, url)
+	if err != nil {
 		return "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: the server answered %d", url, resp.StatusCode)
-	}
+	defer func() { _ = body.Close() }()
 	part := dest + ".part"
 	f, err := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
-	_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
+	_, err = io.Copy(io.MultiWriter(f, h), body)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -421,19 +436,12 @@ func fetchTo(ctx context.Context, c *http.Client, url, dest, want string) (strin
 
 // fetchText is a small file (a checksum) as a string.
 func fetchText(ctx context.Context, c *http.Client, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	body, err := openURL(ctx, c, url)
 	if err != nil {
 		return "", err
 	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: the server answered %d", url, resp.StatusCode)
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	defer func() { _ = body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(body, 4096))
 	return strings.TrimSpace(string(b)), err
 }
 
@@ -486,8 +494,8 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 	client := e.applianceHTTP()
 
 	if _, err := os.Stat(p.Vfkit); err != nil {
-		url, want := envOr("REPOSE_VFKIT_URL", vfkitURL), envOr("REPOSE_VFKIT_SHA256", vfkitSHA256)
-		fmt.Fprintf(e.ErrOut, "fetching vfkit %s\n", vfkitVersion)
+		url, want := envOr(envVfkitURL, vfkitURL), envOr(envVfkitSHA256, vfkitSHA256)
+		_, _ = fmt.Fprintf(e.ErrOut, "fetching vfkit %s\n", vfkitVersion)
 		if _, err := fetchTo(ctx, client, url, p.Vfkit, want); err != nil {
 			return exitf(ExitGeneric, "vfkit: %v", err)
 		}
@@ -498,8 +506,8 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 	}
 
 	if st, err := os.Stat(p.Disk); err != nil || st.Size() < applianceImageApparentBytes {
-		url := envOr("REPOSE_APPLIANCE_URL", applianceURL)
-		fmt.Fprintf(e.ErrOut, "fetching the appliance image %s (about 2 GB)\n", applianceVersion)
+		url := envOr(envApplianceURL, applianceURL)
+		_, _ = fmt.Fprintf(e.ErrOut, "fetching the appliance image %s (about 2 GB)\n", applianceVersion)
 		sum, err := fetchText(ctx, client, url+".sha256")
 		if err != nil {
 			return exitf(ExitGeneric, "the image's checksum: %v", err)
@@ -511,7 +519,7 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 		if _, err := fetchTo(ctx, client, url, gz, sum); err != nil {
 			return exitf(ExitGeneric, "the image: %v", err)
 		}
-		fmt.Fprintln(e.ErrOut, "unpacking the image")
+		_, _ = fmt.Fprintln(e.ErrOut, "unpacking the image")
 		in, err := os.Open(gz)
 		if err != nil {
 			return err
@@ -613,7 +621,7 @@ func applianceStart(e *Env, p appliancePaths, self string) error {
 	if applianceRunning(p) {
 		return nil
 	}
-	fmt.Fprintln(e.ErrOut, "launchd took no agent for this session; the appliance starts detached and the agent takes over at the next login")
+	_, _ = fmt.Fprintln(e.ErrOut, "launchd took no agent for this session; the appliance starts detached and the agent takes over at the next login")
 	log, err := os.OpenFile(p.LauncherLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -649,7 +657,7 @@ func applianceRun(ctx context.Context, e *Env) error {
 		return exitf(ExitGeneric, "No appliance image at %s; run `repose host add` again.", p.Disk)
 	}
 	_ = os.Remove(p.Sock)
-	fmt.Fprintf(e.Out, "%s starting: cpus=%d memory_mib=%d\n", time.Now().UTC().Format(time.RFC3339), c.CPUs, c.MemoryMiB)
+	_, _ = fmt.Fprintf(e.Out, "%s starting: cpus=%d memory_mib=%d\n", time.Now().UTC().Format(time.RFC3339), c.CPUs, c.MemoryMiB)
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	args := append([]string{"-s", "-i", p.Vfkit}, vfkitArgs(p, c)...)
@@ -662,7 +670,7 @@ func applianceRun(ctx context.Context, e *Env) error {
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
-		fmt.Fprintf(e.Out, "%s stopped\n", time.Now().UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(e.Out, "%s stopped\n", time.Now().UTC().Format(time.RFC3339))
 		if err != nil {
 			return exitf(ExitGeneric, "vfkit: %v", err)
 		}
@@ -670,7 +678,7 @@ func applianceRun(ctx context.Context, e *Env) error {
 	case <-ctx.Done():
 		applianceShutdown(p, 120*time.Second)
 		<-done
-		fmt.Fprintf(e.Out, "%s stopped\n", time.Now().UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(e.Out, "%s stopped\n", time.Now().UTC().Format(time.RFC3339))
 		return nil
 	}
 }

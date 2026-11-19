@@ -69,11 +69,11 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 		if argument == "" {
 			argument = encodeTokenBundle(h.JoinToken)
 		}
-		fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
+		_, _ = fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
 		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
 			return err
 		}
-		fmt.Fprintf(e.ErrOut, "%s is starting. It joins your account in a few minutes: repose host ls\n", h.Name)
+		_, _ = fmt.Fprintf(e.ErrOut, "%s is starting and joins your account in a few minutes.\n", h.Name)
 		return nil
 	}
 	// stdout is the one thing to carry to the machine, so it pipes: the
@@ -219,9 +219,9 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 			return exitf(ExitGeneric, "%s is off your account, but the appliance on this Mac could not be removed: %v", h.Name, err)
 		}
 	case local != "":
-		fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; its appliance stays.\n", local, h.Name)
+		_, _ = fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; its appliance stays.\n", local, h.Name)
 	default:
-		fmt.Fprintf(e.ErrOut, "This Mac runs an appliance added with --join; `repose host rm --local` removes it.\n")
+		_, _ = fmt.Fprintf(e.ErrOut, "This Mac's appliance was added with --join and stays.\n")
 	}
 	return nil
 }
