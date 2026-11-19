@@ -714,6 +714,121 @@ exactly what the P0 says is wrong. The conductor is pursuing a published
 release; if one lands I will install from it like a customer, and the whole
 sequence including the download becomes real.
 
+## F. The install, once the image was published
+
+The appliance release `appliance-2026.11.19` was published at **22:28:08
+UTC**, forty-nine minutes after my P0. I verified it the way a customer's
+CLI does, anonymously, before trusting it: `isDraft: false`, tag
+`appliance-2026.11.19` on the remote at `a3ecdc45`, both assets HTTP 200,
+image `content-length 2081526806`, sha256
+`fce986ce…a0ed567b`.
+
+**A note on the one guard I was given.** I was told to stop if the published
+image was not **2,081,798,905** bytes. It was **2,081,526,806** — 272,099
+bytes smaller. I stopped and asked rather than assuming a rebuild explained
+it. It did: the guard figure was an earlier build from a branch tree, and
+this one is `main` at `a3ecdc45`. The spark confirmed the sha256 matches in
+three places and read the identity out of the mounted image — the hostd unit
+runs `--api-addr 10.255.255.1:8443 --api-server-name api.repose.herakraft.co`
+with the production CA, and the lab twin's `192.168.64.1` appears nowhere.
+Only then did I let an appliance register.
+
+### F1 (P0 candidate). The disk guard refuses once, then lets you past
+
+**This is ENG-41's fix defeated by the most likely thing a customer does
+after a refusal: running the command again.**
+
+Volume at **46.67 GiB / 50.11 GB free**, unchanged throughout.
+
+**22:32:45** — run the printed install line:
+
+```
+fetching the appliance image 2026.11.19 (about 2 GB)
+unpacking the image
+this volume has 46 GB free; the appliance needs a 40 GB disk and leaves 20 GB free, so free up 14 GB first
+exit 2
+```
+
+A good refusal: it names the shortfall, the arithmetic is right
+(40 + 20 − 46 = 14), and it tells the customer exactly what to do. **This is
+the sentence the release conductor asked for and it is correct.**
+
+**22:34** — run the *same* line again, having freed nothing, `df` identical:
+
+```
+launchd took no agent for this session; the appliance starts detached and the agent takes over at the next login
+exit 0
+```
+
+in **under a second**, and the appliance installs and starts.
+
+**Why.** The unpack writes straight into `disk.raw`, and the refusal **leaves
+that file behind**: 39,728,447,488 bytes, which is exactly **37.00 GiB** —
+the image's own size. The retry finds it present, skips both the download
+and the sizing rule, writes the config and the launchd plist, and launches
+vfkit.
+
+So the installed disk is sized to **the image**, not to the 40 GB floor and
+not to free-space-less-20, on a volume the product had just said could not
+hold it. If that guest fills its disk, the Mac's boot volume reaches 100%,
+which is the outcome the guard exists to prevent.
+
+**Two defects in one sequence**: the refusal is not atomic — it leaves the
+artefact it refused to create — and the guard is not re-evaluated on the path
+that finds that artefact. **Card ENG-71**, observed once, with a clean
+reproduction owed before the rank is confirmed.
+
+### F2. What the install got right
+
+Measured from the running process and the api, not from the page:
+
+| `/docs/own-hardware` promises | What I measured |
+|---|---|
+| "three quarters of the Mac's memory … 18 GB of 24" | `vfkit --memory 18432`; `host ls` prints **18 GB**; api `mem_bytes 18796412928` |
+| "all but two cores" | `vfkit --cpus 8` on a 10-core M4; api `vcpus 8` |
+| "`repose host ls` shows the share" | it does |
+| "While the machine runs, the Mac does not sleep" | the appliance runs under `caffeinate -s -i` |
+| "a launchd agent that starts it again at every login" | `~/Library/LaunchAgents/run.repose.appliance.plist` written |
+| "Nothing needs your password" | nothing did |
+
+**The host registered in about 60 seconds** from vfkit starting (disk and
+socket stamped 22:34; first heartbeat **22:35:07.694**) and `repose host ls`
+showed `online` with `just now`.
+
+**And one good message I did not expect.** Installing over SSH with no GUI
+session, the CLI said: *"launchd took no agent for this session; the
+appliance starts detached and the agent takes over at the next login."* It
+noticed the situation, did the right thing anyway, and said so in one line.
+
+### F3. A third text-versus-JSON state split
+
+Same family as ENG-37, now across every state I have seen:
+
+| `repose host ls` | `repose host ls --json` |
+|---|---|
+| `waiting` | `registering` |
+| `online` | `ready` |
+
+`/docs/own-hardware` defines the column as `waiting`, `online`, `offline`,
+`removing`. Neither `registering` nor `ready` is defined anywhere, and
+`--json` is the documented scripting surface.
+
+### F4. The first machine on owned hardware
+
+The headline number nobody had. `repose run --no-attach --size small`, in a
+fresh one-commit checkout, against a host that had been `online` for about
+a minute.
+
+**Boot alone: 7 min 05 s.** The CLI counted up in 30-second steps the whole
+way — `Booting firstmachine… 3m00s`, `… 4m00s`, `… 7m00s`, `✓ Booted
+firstmachine 7m05s` — which is the right way to spend seven minutes of a
+customer's attention: never silent, never a spinner with no number.
+
+Against the comparisons I was given: `/docs/own-hardware` promises **"about
+four minutes"**, and the phases measured on the program branch totalled
+**289 s**. The published build took **425 s to boot** — **77% longer than
+the page promises.**
+
 ---
 
 ## The four hats
