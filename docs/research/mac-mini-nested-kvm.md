@@ -231,62 +231,67 @@ with the `metal` provider replaced by:
 
 ## 8. The aarch64 build (I-1374, 2026-11-19)
 
-**Nothing aarch64 has been built. Every number a build would give is
-below as a placeholder, and every aarch64 output in the flake has only
-ever been evaluated, never realised.** A flake output nobody has built
-is the same class of thing as a migration written and never registered;
-this section exists so that the reader does not take the evaluation
-evidence for a build.
+Built on the AWS M4's appliance VM (`macmini-l1`: aarch64, Ubuntu
+kernel 6.18.57, 8 vCPU, 17 GiB, nix 2.35.6) on 2026-11-19, from
+2026-11-19T08:32:21Z, with `ops/dev/aarch64-base check` run on the VM
+itself (branch `ws/19e-aarch64` at 3a631e09, cloned there from a git
+bundle, `max-jobs = 4`). The numbers:
+
+| What | Result |
+|---|---|
+| aarch64 guest system closure | **6,670,370,872 bytes (6.21 GiB)**, under the 7 GiB limit (7,516,192,768); the x86 closure was 6,438,215,064 at I-1056, so aarch64 is 232 MB larger |
+| guest system build, wall clock | 169 s for the first pass, which fetched the 979 cached paths (1.9 GiB) and built the 421 derivations, with one failed codex install check (below); the runner then took 13 s and the closure check 4.8 s on the second pass |
+| host system (`host-aarch64`), wall clock | 47 s, after the guest's fetches |
+| installer (`installer-aarch64`) | **did not build**: `tzdata-static-aarch64-unknown-linux-musl` (a `pkgsStatic` dependency of nixos-images' kexec installer) fails its own check phase with exit 2 on aarch64, so the kexec tarball is not made; see below |
+| builder memory | the VM's 17 GiB was never under pressure (2 GiB used at the peak seen); 12 GiB would have done |
+| builder disk | about 9 GB of /nix for the fetches and the build |
+| closure-size check on both architectures | yes: `checks.x86_64-linux.guest-closure-size` and `checks.aarch64-linux.guest-closure-size` are the same 7 GiB rule, and the aarch64 one printed the number above |
+| the aarch64 overlay on Cachix | not yet: the CI job runs on the first push of this to `main`; the recipe's `push` has not run |
+
+What the built runner says, read from its store path: the kernel is the
+arm64 `Image` (6.18.52, nixpkgs' LTS), the base's command line carries
+`console=ttyAMA0`, `bin/run` renders `console=ttyAMA0` first, Cloud
+Hypervisor is v53.0.0 for aarch64 and `virtiofsd` 1.14.0 is an aarch64
+ELF. Nothing has booted this runner: gate 0 step 3 booted an Ubuntu
+guest, not this one, and steps 5 and 6 (freeze and restore, virtiofs)
+were never run (19f's work).
+
+Two findings for whoever builds next:
+
+- **Codex's install check is timing-sensitive on a loaded aarch64
+  builder.** `codex app-server daemon start` (the I-487 check) failed
+  once with "app server did not become ready on
+  .../app-server-control.sock" while four other derivations were
+  building, and passed on the retry a minute later. It is the same
+  check that passes on x86 CI; on the arm64 CI runner, which builds the
+  overlay alone, it should hold, and a red there is this and not a bad
+  binary.
+- **The kexec installer does not build for aarch64** as nixos-images
+  ships it: its static tool set pulls `pkgsStatic.tzdata`, whose check
+  phase fails on `aarch64-unknown-linux-musl`. `installer-aarch64` and
+  `checks.aarch64-linux.installer-aarch64-builds` stay in the flake as
+  the shape, evaluated and never realised; the Mac appliance boots from
+  a disk image (I-1376) and does not need it, and the first aarch64 KVM
+  box installed over the network is the day to fix tzdata's check (a
+  `doCheck = false` override on the static set, or a nixos-images bump).
 
 What exists, from `nix/flake.nix`: `packages.aarch64-linux` (the guest
 runner and system, the Go binaries, the agents), `guestSystems.aarch64-linux`
 (what hostd on an aarch64 host evaluates), `nixosConfigurations.host-aarch64`
 and `installer-aarch64`, and `checks.aarch64-linux` (the closure limit,
 the runner, the host and the installer build; no VM tests, they need KVM
-of the builder's architecture). The runner boots the kernel's `Image`
-with `console=ttyAMA0`; hostd renders the same console on arm64. Every
-agent's arm64 release is pinned beside the x86 one in `versions.json`.
-The CI job `nix-aarch64-overlay` and `ops/dev/aarch64-base` are written
-and have never run.
+of the builder's architecture). Every agent's arm64 release is pinned
+beside the x86 one in `versions.json`.
 
-Measured on woker-1 (x86, evaluation only, no aarch64 builder; every
-number below is from `nix eval` under the shared build lock):
-
-- The aarch64 guest system, host system, installer and closure check all
-  evaluate to derivations; the x86 derivations are unchanged by the
-  restructuring (the guest system's, runner's, host-02's, edge's and
-  installer's `.drv` paths are identical to `mac-mini`'s).
-- The host kernel pin resolves to 6.18.57 on aarch64 too (the same
-  nixpkgs revision), so `nix/hosts/kernel.nix`'s CVE-2026-99999
-  assertion holds.
-- `nix build --dry-run ./nix#packages.aarch64-linux.guest-system` on
-  2026-11-19: 979 paths fetched from cache.nixos.org (1.9 GiB download,
-  5.7 GiB unpacked) and 421 derivations built. The built ones are the
-  guest's own configuration (unit files, etc files, the initrd and the
-  shrunk module set), the Go binaries, the agents (prebuilt binaries
-  patched on the builder) and the playwright set with its chromium
-  override; the kernel, chromium and node itself are fetched. One
-  `nodejs-24.20.0` derivation is in the build list beside the fetched
-  one, so the day may include one node compile: budget an hour for it
-  on 8 vCPU before reading the closure number.
-
-Owed by the first aarch64 build day (the Mac's appliance VM, or any
-aarch64 Linux box with nix), each line replaced by its number:
-
-- aarch64 guest closure size: **NOT BUILT**, from
-  `ops/dev/aarch64-base check` (the x86 closure is about 6.0 GiB
-  against the 7 GiB limit).
-- guest system build time, wall clock on the builder: **NOT BUILT**.
-- host system build time (`host-aarch64`): **NOT BUILT**.
-- paths substituted against built, and whether the node compile
-  happened: **NOT BUILT**.
-- builder memory: **NOT BUILT** (asked for 16 GiB, 24 comfortable, with
-  about 15 GB free in `/nix`, before the first attempt).
-- the aarch64 overlay on Cachix: **NOT PUSHED** (the CI job runs on the
-  first push of this to `main`; the recipe's `push` has never run).
-
-`ops/dev/aarch64-base` is the recipe for the day (`check`, `build`,
-`push`), and `docs/ops/DEV-BOX.md` "aarch64 builds" says where it runs.
+Evaluated on woker-1 before the build (x86, under the shared build
+lock): every aarch64 output evaluates; the x86 guest system's, runner's,
+host-02's, edge's and installer's `.drv` paths are identical to
+`mac-mini`'s, so the restructuring changed no x86 output; the host
+kernel pin resolves to 6.18.57 on aarch64 too. The dry-run before the
+build predicted 979 fetched paths (1.9 GiB download, 5.7 GiB unpacked)
+and 421 built derivations, which is what the build did; the
+`nodejs-24.20.0` derivation in the build list was a wrapper, not a
+compile.
 
 ## Sources
 
