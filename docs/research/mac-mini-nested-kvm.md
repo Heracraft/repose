@@ -107,8 +107,8 @@ Mac mini (macOS 15+, M4)                          L0
   notarised macOS program to keep building.
 - **L2: Cloud Hypervisor**, as on x86. It supports aarch64 with KVM,
   boots an uncompressed arm64 `Image` directly (the serial console is
-  `ttyAMA0`, not `ttyS0`; our runner hard-codes `console=ttyS0` in
-  `nix/guest/microvm.nix`), and has snapshot and restore on aarch64, which
+  `ttyAMA0`, not `ttyS0`; the runner and hostd pick the console by
+  architecture since I-1374), and has snapshot and restore on aarch64, which
   is less travelled than on x86 and is what I-652's freeze depends on.
 - **The Lima issue that is not ours.** lima-vm/lima#4498 reports QEMU
   failing with "host kernel KVM does not support providing Virtualization
@@ -152,9 +152,10 @@ the finding.
    Apache-licensed.
 8. **Build the aarch64 base, if time allows.** Install Nix in L1, clone
    the repository, and attempt the guest closure for `aarch64-linux`.
-   The flake fixes `system = "x86_64-linux"` (`nix/flake.nix:63`), so
-   this is where the first code change shows itself; the closure's size
-   against the 7 GiB limit is the number to carry back.
+   The flake used to fix `system = "x86_64-linux"`; since I-1374 it has
+   `aarch64-linux` outputs (§8), so the step is `ops/dev/aarch64-base
+   check` and the closure's size against the 7 GiB limit is the number
+   to carry back.
 
 What the day cannot answer: how a user's own Mac mini behaves with the
 Mac asleep, on Wi-Fi, behind a home NAT, or on a 16 GB machine that is
@@ -219,13 +220,13 @@ with the `metal` provider replaced by:
 
 - an `aarch64-linux` guest base and host system as second flake outputs,
   built on the Mac's L1 as a Nix remote builder (woker-1 is x86 and has
-  no `binfmt` to emulate);
+  no `binfmt` to emulate): done as I-1374, §8;
 - a host image for the framework (`raw-efi`, one disk, a partition for
   `vg-guests`, a host reserve scaled for 16 GB);
 - a launcher for macOS on vfkit or our own framework code, started at
   login, holding the join token for the first registration, with
   `pmset` keeping the Mac awake;
-- the runner's `console=ttyS0` made per-architecture;
+- the runner's `console=ttyS0` made per-architecture: done as I-1374;
 - freeze and restore gated on step 5's result, x86-only if it fails.
 
 ## 7. What the Mac said (AWS mac-m4.metal, eu-west-1a, 2026-11-19)
@@ -285,6 +286,70 @@ inside (zstd here), which the measure script now unwraps; a login typed
 at the first prompt of a cloud image fails because cloud-init has not
 set the password yet; `pkill -f` on a name that appears in your own
 command line kills your own shell.
+
+## 8. The aarch64 build (I-1374, 2026-11-19)
+
+Built on the AWS M4's appliance VM (`macmini-l1`: aarch64, Ubuntu
+kernel 6.18.57, 8 vCPU, 17 GiB, nix 2.35.6) on 2026-11-19, from
+2026-11-19T08:32:21Z, with `ops/dev/aarch64-base check` run on the VM
+itself (branch `ws/19e-aarch64` at 3a631e09, cloned there from a git
+bundle, `max-jobs = 4`). The numbers:
+
+| What | Result |
+|---|---|
+| aarch64 guest system closure | **6,670,370,872 bytes (6.21 GiB)**, under the 7 GiB limit (7,516,192,768); the x86 closure was 6,438,215,064 at I-1056, so aarch64 is 232 MB larger |
+| guest system build, wall clock | 169 s for the first pass, which fetched the 979 cached paths (1.9 GiB) and built the 421 derivations, with one failed codex install check (below); the runner then took 13 s and the closure check 4.8 s on the second pass |
+| host system (`host-aarch64`), wall clock | 47 s, after the guest's fetches |
+| installer (`installer-aarch64`) | **did not build**: `tzdata-static-aarch64-unknown-linux-musl` (a `pkgsStatic` dependency of nixos-images' kexec installer) fails its own check phase with exit 2 on aarch64, so the kexec tarball is not made; see below |
+| builder memory | the VM's 17 GiB was never under pressure (2 GiB used at the peak seen); 12 GiB would have done |
+| builder disk | about 9 GB of /nix for the fetches and the build |
+| closure-size check on both architectures | yes: `checks.x86_64-linux.guest-closure-size` and `checks.aarch64-linux.guest-closure-size` are the same 7 GiB rule, and the aarch64 one printed the number above |
+| the aarch64 overlay on Cachix | not yet: the CI job runs on the first push of this to `main`; the recipe's `push` has not run |
+
+What the built runner says, read from its store path: the kernel is the
+arm64 `Image` (6.18.52, nixpkgs' LTS), the base's command line carries
+`console=ttyAMA0`, `bin/run` renders `console=ttyAMA0` first, Cloud
+Hypervisor is v53.0.0 for aarch64 and `virtiofsd` 1.14.0 is an aarch64
+ELF. Nothing has booted this runner: gate 0 step 3 booted an Ubuntu
+guest, not this one, and steps 5 and 6 (freeze and restore, virtiofs)
+were never run (19f's work).
+
+Two findings for whoever builds next:
+
+- **Codex's install check is timing-sensitive on a loaded aarch64
+  builder.** `codex app-server daemon start` (the I-487 check) failed
+  once with "app server did not become ready on
+  .../app-server-control.sock" while four other derivations were
+  building, and passed on the retry a minute later. It is the same
+  check that passes on x86 CI; on the arm64 CI runner, which builds the
+  overlay alone, it should hold, and a red there is this and not a bad
+  binary.
+- **The kexec installer does not build for aarch64** as nixos-images
+  ships it: its static tool set pulls `pkgsStatic.tzdata`, whose check
+  phase fails on `aarch64-unknown-linux-musl`. `installer-aarch64` and
+  `checks.aarch64-linux.installer-aarch64-builds` stay in the flake as
+  the shape, evaluated and never realised; the Mac appliance boots from
+  a disk image (I-1376) and does not need it, and the first aarch64 KVM
+  box installed over the network is the day to fix tzdata's check (a
+  `doCheck = false` override on the static set, or a nixos-images bump).
+
+What exists, from `nix/flake.nix`: `packages.aarch64-linux` (the guest
+runner and system, the Go binaries, the agents), `guestSystems.aarch64-linux`
+(what hostd on an aarch64 host evaluates), `nixosConfigurations.host-aarch64`
+and `installer-aarch64`, and `checks.aarch64-linux` (the closure limit,
+the runner, the host and the installer build; no VM tests, they need KVM
+of the builder's architecture). Every agent's arm64 release is pinned
+beside the x86 one in `versions.json`.
+
+Evaluated on woker-1 before the build (x86, under the shared build
+lock): every aarch64 output evaluates; the x86 guest system's, runner's,
+host-02's, edge's and installer's `.drv` paths are identical to
+`mac-mini`'s, so the restructuring changed no x86 output; the host
+kernel pin resolves to 6.18.57 on aarch64 too. The dry-run before the
+build predicted 979 fetched paths (1.9 GiB download, 5.7 GiB unpacked)
+and 421 built derivations, which is what the build did; the
+`nodejs-24.20.0` derivation in the build list was a wrapper, not a
+compile.
 
 ## Sources
 

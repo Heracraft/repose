@@ -59,7 +59,7 @@ func TestArgsWithoutDiskLimits(t *testing.T) {
 // systemd.hostname= (I-550).
 func TestCmdlineHostname(t *testing.T) {
 	s := Spec{Init: "/init", IP: "10.64.0.8", Gateway: "10.64.0.1", Netmask: "255.255.252.0", Hostname: "todo-app"}
-	want := "init=/init console=ttyS0 ip=10.64.0.8::10.64.0.1:255.255.252.0:todo-app:eth0:off systemd.hostname=todo-app"
+	want := "init=/init console=" + ConsoleTTY() + " ip=10.64.0.8::10.64.0.1:255.255.252.0:todo-app:eth0:off systemd.hostname=todo-app"
 	if got := s.Cmdline(); got != want {
 		t.Fatalf("cmdline\n got %s\nwant %s", got, want)
 	}
@@ -68,7 +68,7 @@ func TestCmdlineHostname(t *testing.T) {
 // No slug, or one that is not a DNS label, leaves the name field empty and
 // adds no systemd.hostname=, so the closure's repose-guest stays.
 func TestCmdlineHostnameFallback(t *testing.T) {
-	want := "init=/init console=ttyS0 ip=10.64.0.8::10.64.0.1:255.255.252.0::eth0:off"
+	want := "init=/init console=" + ConsoleTTY() + " ip=10.64.0.8::10.64.0.1:255.255.252.0::eth0:off"
 	for _, name := range []string{"", "-lead", "trail-", "Upper", "has space", "a.b", "a:b", strings.Repeat("a", 64)} {
 		s := Spec{Init: "/init", IP: "10.64.0.8", Gateway: "10.64.0.1", Netmask: "255.255.252.0", Hostname: name}
 		if got := s.Cmdline(); got != want {

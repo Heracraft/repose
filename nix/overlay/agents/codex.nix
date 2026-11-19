@@ -20,9 +20,16 @@
 { lib, stdenvNoCC, fetchurl, ripgrep, procps, coreutils }:
 let
   v = (builtins.fromJSON (builtins.readFile ./versions.json)).codex;
-  host = fetchurl { inherit (v.code-mode-host) url hash; };
-  bwrap = fetchurl { inherit (v.bwrap) url hash; };
-  target = "x86_64-unknown-linux-musl";
+  # The architecture's slot: the binary, code-mode-host and bwrap are one
+  # release asset each per target, so the three move together under it
+  # (DECISIONS I-1374).
+  slot = v.${stdenvNoCC.hostPlatform.system};
+  host = fetchurl { inherit (slot.code-mode-host) url hash; };
+  bwrap = fetchurl { inherit (slot.bwrap) url hash; };
+  target = {
+    x86_64-linux = "x86_64-unknown-linux-musl";
+    aarch64-linux = "aarch64-unknown-linux-musl";
+  }.${stdenvNoCC.hostPlatform.system};
   manifest = builtins.toJSON {
     layoutVersion = 1;
     inherit (v) version;
@@ -36,7 +43,7 @@ in
 stdenvNoCC.mkDerivation {
   pname = "codex";
   inherit (v) version;
-  src = fetchurl { inherit (v.x86_64-linux) url hash; };
+  src = fetchurl { inherit (v.${stdenvNoCC.hostPlatform.system}) url hash; };
   sourceRoot = ".";
   dontBuild = true;
   # The binaries are static and already stripped; patchelf has nothing to do.
@@ -102,6 +109,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://github.com/openai/codex";
     license = lib.licenses.asl20;
     mainProgram = "codex";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }

@@ -155,6 +155,18 @@ in
 {
   # Not `pkgs.linuxPackages`: the flake pins the host kernel separately until
   # `nixpkgs` reaches patchedKernel (DECISIONS I-778).
+  #
+  # On aarch64 the pin carries a second constraint (DECISIONS I-1374,
+  # docs/research/mac-mini-nested-kvm.md §7): the Mac mini appliance runs
+  # its guests under nested KVM, and on the AWS M4 on 2026-11-19 every
+  # guest hung two seconds into boot on 7.0.0-43 ("rcu_preempt kthread
+  # timer wakeup didn't happen", Cloud Hypervisor and QEMU alike, one and
+  # two vCPUs, idle=poll, nohz=off) while 6.18.57, this pin, and 6.8 ran
+  # them. So the appliance ships 6.18.57 or a later 6.18 point release,
+  # never 6.8 (below patchedKernel), and nobody moves the pin past 6.18
+  # for aarch64 without `ops/dev/macmini-l2-try.sh` passing on Apple
+  # silicon first. The bisect window for that person is 6.18.57 to
+  # 7.0.0-43.
   boot.kernelPackages = config.repose.host.kernelPackages;
 
   # A host's kernel is the guest-to-host boundary, not a dependency like any
@@ -180,8 +192,12 @@ in
     }
   ];
 
-  boot.kernelModules = [
-    "kvm-intel"
+  # KVM itself. On x86_64 the hosts are Intel (DESIGN §4), so it is the
+  # Intel module; on aarch64 KVM is built into the kernel (arm64's
+  # CONFIG_KVM is a bool, not a tristate), so there is nothing to load and
+  # /dev/kvm is there from boot (DECISIONS I-1374). A `kvm-intel` line on
+  # an aarch64 host would be one failed modprobe in every boot's journal.
+  boot.kernelModules = lib.optional pkgs.stdenv.hostPlatform.isx86_64 "kvm-intel" ++ [
     "vhost_vsock"
     "vhost_net"
     "tun"

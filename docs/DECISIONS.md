@@ -36795,3 +36795,114 @@ I-1364).
   `fleet-01`, and `Freeing` answered true for a stranger waiting on a
   guest stopping on somebody else's Mac. The route tests and the
   dashboard's are in the commit messages.
+**I-1374. The flake has `aarch64-linux` outputs: the guest base, the
+runner, the host system and the installer, with the kernel pin and the
+console per architecture and the closure limit on both (mac-mini-aarch64,
+2026-11-19).** *Made during implementation* (docs/workstreams/19-mac-mini.md
+item 19e; the shape was settled in §4 and the owner did not override it).
+The Mac mini appliance (I-1362, I-1376) is an aarch64 NixOS VM running
+hostd, and its guests are aarch64 microVMs, so everything a host and a
+guest are built from has to exist for a second architecture without a
+second copy of any of it.
+
+- *The flake.* `nix/flake.nix` used to fix `system = "x86_64-linux"` at
+  its top. Now a function `perSystem` builds, for each of `systems =
+  [ "x86_64-linux" "aarch64-linux" ]`, the pkgs with the agent overlay,
+  the Go binaries, `mkGuestRunner` and `composeGuest`, the host kernel
+  pin, `hostModules` and `mkHost`, the installer, the per-architecture
+  `guestSystem`, the packages set, the closure-limit check and the dev
+  shells. The x86_64 set is bound under the old names, so the hosts,
+  the edge and every VM test read exactly what they read before; the
+  x86_64 derivations are unchanged (the runner's and the agents' `.drv`
+  paths equal `mac-mini`'s). New outputs: `packages.aarch64-linux.*`,
+  `guestSystems.<system>`, `nixosConfigurations.host-aarch64` (the
+  generic host with `provider = "none"`; 19f's `mac` provider builds on
+  it) and `installer-aarch64`, `checks.aarch64-linux` (the closure
+  limit, and that the runner, the host and the installer build; no VM
+  tests, which need KVM of the builder's own architecture),
+  `devShells.aarch64-linux`, `lib.forSystem` and `lib.systems`.
+- *What hostd evaluates.* A flake cannot read the builder's system, and
+  `guestSystem` has x86_64 baked in, so the base carries one guest
+  system per architecture under `guestSystems.<system>` and hostd picks
+  the attribute by its own `GOARCH` (`nixbuild.DefaultEvalAttr`):
+  `guestSystem...` on amd64, `guestSystems.aarch64-linux...` on arm64.
+  `guestSystem` stays `guestSystems.x86_64-linux` under its old name,
+  which is what keeps every base revision before this one buildable by
+  an x86 host and every earlier hostd release working against this one.
+  The contract (`docs/interfaces/nix-build-contract.md`) records both.
+- *The console.* Cloud Hypervisor's serial device is a 16550 at `ttyS0`
+  on x86_64 and a PL011 at `ttyAMA0` on aarch64. The runner's `bin/run`
+  and the base's `boot.kernelParams` (`nix/guest/microvm.nix`) and
+  hostd's command line (`ch.ConsoleTTY`) each pick by architecture; the
+  three must agree, and the comments at each say so. `earlyprintk=` is
+  x86-only and is not rendered on aarch64. The kernel the runner hands
+  Cloud Hypervisor is the ELF `vmlinux` on x86_64 and the arm64 `Image`
+  on aarch64, as microvm.nix's own runner does.
+- *The kernel pin.* `nixpkgs-host-kernel` is one revision read per
+  architecture (`import nixpkgs-host-kernel { inherit system; }`), so
+  the aarch64 host kernel is 6.18.57 too and `nix/hosts/kernel.nix`'s
+  CVE-2026-99999 assertion (I-778) holds unchanged. `kvm-intel` is
+  loaded on x86_64 only: on arm64 KVM is built into the kernel
+  (CONFIG_KVM is a bool), so `/dev/kvm` needs no module and a
+  `kvm-intel` line would be one failed modprobe in every boot's journal.
+  The pin carries a second constraint on aarch64, from gate 0 step 3
+  (2026-11-19, `docs/research/mac-mini-nested-kvm.md` §7): under
+  nested KVM on the M4, guests boot on 6.18.57 and on 6.8 and hang two
+  seconds in on 7.0.0-43 (`rcu_preempt kthread timer wakeup didn't
+  happen`, under Cloud Hypervisor and QEMU alike, at one and two vCPUs,
+  with `idle=poll` and `nohz=off highres=off`). The appliance ships
+  6.18.57 or a later 6.18 point release, never 6.8 (below I-778's
+  patched version), and a bump of the pin is proven on Apple silicon
+  with `ops/dev/macmini-l2-try.sh` before it lands; the bisect window
+  for whoever bumps next is 6.18.57 to 7.0.0-43. The constraint is
+  written at the pin in `nix/flake.nix` and in `nix/hosts/kernel.nix`,
+  where that person will be standing.
+- *The agents.* `versions.json` has one slot per architecture for each
+  binary agent (`x86_64-linux`, `aarch64-linux`), and Codex's
+  `code-mode-host` and `bwrap` moved under each slot, since they are
+  per-target assets; `gemini-cli` and `chrome-devtools-mcp` are
+  architecture-neutral bundles and keep their shape. Each derivation
+  reads the slot of the architecture it is built for.
+  `scripts/bump-agents.sh` resolves and prefetches both slots per bump
+  and builds the package for the machine it runs on; the other
+  architecture is built by `ci.yml`'s `nix-aarch64-overlay` job, on a
+  GitHub arm64 runner (free for a public repository), which pushes the
+  aarch64 overlay to Cachix the way the x86 job does. Every upstream
+  (Anthropic, opencode on npm, OpenAI's release, pi, herdr) publishes
+  an arm64 Linux build of the same version, checked on 2026-11-19.
+- *The closure limit.* `checks.<system>.guest-closure-size` is the one
+  7 GiB rule (I-1056) on both; the aarch64 number is owed to
+  `docs/research/mac-mini-nested-kvm.md` §8 by the Mac build day.
+- *Cachix.* The aarch64 overlay is pushed by CI. The base closure is not
+  pushed on either architecture: it is 6 GiB of mostly cache.nixos.org
+  paths and the cache is the free 5 GB tier (I-46). An aarch64 host
+  builds its base as an x86 host does, from cache.nixos.org plus the
+  overlay; publishing a whole host system for owned hosts is I-1378.
+- *The installer.* `nixosConfigurations.installer-aarch64` is the same
+  kexec image on the aarch64 kernel pin, for an aarch64 KVM box
+  installed over the network; its uplink unit also matches `virtio_net`,
+  which such a VM has in place of Azure's `hv_netvsc`. The Mac appliance
+  boots from a disk image (I-1376) and never uses it.
+- *Where it builds.* woker-1 is x86 with no binfmt: it evaluates every
+  aarch64 output (under the build lock, like any evaluation) and builds
+  none. `ops/dev/aarch64-base check|build|push` runs with `--builder
+  ssh-ng://…` (evaluate here, build there) or on the aarch64 machine
+  itself; `docs/ops/DEV-BOX.md` "aarch64 builds". The VM tests stay
+  x86_64 until there is an aarch64 builder with KVM in the loop.
+
+*Rejected:* a second flake for aarch64 (two copies of every module, and
+the first drift at the next bump); `builtins.currentSystem` in
+`guestSystem` (impure, and hostd's evaluation is `pure-eval`);
+`flake-utils`-style `eachSystem` over every output (the hosts and the
+edge are x86_64 by name, and the VM tests cannot run on the other
+architecture, so a per-output split says what is true); pushing the
+aarch64 base closure to Cachix (the tier); building the aarch64 agents
+on x86 CI through binfmt (qemu-user under autoPatchelfHook and Codex's
+daemon start, slow and a second thing to debug).
+
+*Checked:* `nix eval` of every aarch64 output on woker-1 under the lock
+(the derivation paths in the 19e report and STATUS line);
+`go test ./internal/hostd/ch ./internal/hostd/nixbuild ./test/supplychain`
+green; the x86 runner's and agents' `.drv` paths equal to `mac-mini`'s.
+Not checked, owed to §8 of the research doc: the aarch64 closure built,
+its size and its build time, on the Mac.

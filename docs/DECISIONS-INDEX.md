@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1028 entries.
+1029 entries.
 
 ## Scope
 
@@ -1060,3 +1060,4 @@ pointer, not a summary.
 - **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36529
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36689
+- **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798

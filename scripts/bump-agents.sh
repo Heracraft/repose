@@ -3,8 +3,12 @@
 # (docs/workstreams/12-nix-config-pipeline.md "Agent overlay").
 #
 # For each agent in nix/overlay/agents/versions.json: ask upstream for its
-# latest version, prefetch the release asset, rewrite the entry, build the
-# package and run `<agent> --version` with an empty environment. It leaves
+# latest version, prefetch the release asset for each architecture
+# (x86_64-linux and aarch64-linux, DECISIONS I-1374), rewrite the entry,
+# build the package for this machine's architecture and run `<agent>
+# --version` with an empty environment. The other architecture's asset
+# is downloaded and hashed here and built by ci.yml's aarch64 overlay
+# job, which runs on an arm64 runner. It leaves
 # the rewritten versions.json in the tree and commits nothing:
 # scripts/bump-agents-pr.sh checks that file and opens the pull request,
 # in a separate CI job that runs nothing this script downloaded
@@ -38,53 +42,70 @@ curl_gh() {
   fi
 }
 
-# latest <agent> prints "<version> <url>" for the linux x86_64 asset.
+# The architectures a binary agent is pinned for (DECISIONS I-1374): one
+# versions.json slot each, named by the Nix system.
+archs="x86_64-linux aarch64-linux"
+
+# latest <agent> <system> prints "<version> <url>" for that architecture's
+# Linux asset; the version is the same for both, upstream publishes them
+# together. Each upstream names the architecture its own way.
 latest() {
-  case "$1" in
+  local a=$1 sys=${2:-x86_64-linux}
+  # upstream's name for the architecture: node's (x64, arm64), Rust's
+  # target triple, or uname -m.
+  local node rust uname
+  case "$sys" in
+    x86_64-linux) node=x64; rust=x86_64-unknown-linux-musl; uname=x86_64 ;;
+    aarch64-linux) node=arm64; rust=aarch64-unknown-linux-musl; uname=aarch64 ;;
+    *) echo "unknown system $sys" >&2; return 1 ;;
+  esac
+  case "$a" in
     claude-code)
       local v; v=$(curl -fsSL https://downloads.claude.ai/claude-code-releases/latest)
-      echo "$v https://downloads.claude.ai/claude-code-releases/$v/linux-x64/claude" ;;
+      echo "$v https://downloads.claude.ai/claude-code-releases/$v/linux-$node/claude" ;;
     opencode)
       # Version 2 ships on npm, not as a GitHub release asset, and the
       # GitHub "latest" release is still version 1 (DECISIONS I-1050). The
       # channel's metadata names the scope, which has moved once already
-      # (@opencode-ai -> @opencode). A guest is glibc on an Intel host, so
-      # the plain linux-x64 package is the one it wants, not -baseline
-      # (no avx2) or -musl.
+      # (@opencode-ai -> @opencode). A guest is glibc, so the plain
+      # linux-x64 or linux-arm64 package is the one it wants, not
+      # -baseline (no avx2) or -musl.
       local m v scope
       m=$(curl -fsSL https://opencode.ai/update/api/latest/cli/npm)
       v=$(jq -r '.version // empty' <<<"$m")
       scope=$(jq -r '.metadata.package // empty | sub("/cli$"; "")' <<<"$m")
       [ -n "$v" ] && [ -n "$scope" ] || return 0
-      echo "$v https://registry.npmjs.org/$scope/cli-linux-x64/-/cli-linux-x64-$v.tgz" ;;
+      echo "$v https://registry.npmjs.org/$scope/cli-linux-$node/-/cli-linux-$node-$v.tgz" ;;
     codex)
       curl_gh https://api.github.com/repos/openai/codex/releases/latest \
-        | jq -r '"\(.tag_name | ltrimstr("rust-v")) \(.assets[] | select(.name == "codex-x86_64-unknown-linux-musl.tar.gz") | .browser_download_url)"' ;;
+        | jq -r --arg n "codex-$rust.tar.gz" '"\(.tag_name | ltrimstr("rust-v")) \(.assets[] | select(.name == $n) | .browser_download_url)"' ;;
     gemini-cli)
       local v; v=$(curl -fsSL https://registry.npmjs.org/@google/gemini-cli/latest | jq -r .version)
       echo "$v https://registry.npmjs.org/@google/gemini-cli/-/gemini-cli-$v.tgz" ;;
     pi-coding-agent)
       curl_gh https://api.github.com/repos/earendil-works/pi/releases/latest \
-        | jq -r '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == "pi-linux-x64.tar.gz") | .browser_download_url)"' ;;
+        | jq -r --arg n "pi-linux-$node.tar.gz" '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == $n) | .browser_download_url)"' ;;
     herdr)
       # herdr, the second multiplexer (DECISIONS I-501): not an agent, but
       # pinned and moved the same way. herdr.nix's install check refuses a
       # release with another socket protocol generation.
       curl_gh https://api.github.com/repos/herdrdev/herdr/releases/latest \
-        | jq -r '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == "herdr-linux-x86_64") | .browser_download_url)"' ;;
+        | jq -r --arg n "herdr-linux-$uname" '"\(.tag_name | ltrimstr("v")) \(.assets[] | select(.name == $n) | .browser_download_url)"' ;;
     chrome-devtools-mcp)
       local v; v=$(curl -fsSL https://registry.npmjs.org/chrome-devtools-mcp/latest | jq -r .version)
       echo "$v https://registry.npmjs.org/chrome-devtools-mcp/-/chrome-devtools-mcp-$v.tgz" ;;
-    *) echo "unknown agent $1" >&2; return 1 ;;
+    *) echo "unknown agent $a" >&2; return 1 ;;
   esac
 }
 
-# The versions.json key that holds url and hash for an agent.
-slot() {
+# The versions.json keys that hold url and hash for an agent: one per
+# architecture for a binary, `npm` for an architecture-neutral bundle,
+# none (url and hash at the top) for chrome-devtools-mcp.
+slots() {
   case "$1" in
     gemini-cli) echo npm ;;
     chrome-devtools-mcp) echo "" ;;
-    *) echo x86_64-linux ;;
+    *) echo "$archs" ;;
   esac
 }
 
@@ -120,33 +141,49 @@ for a in $agents; do
     continue
   fi
   echo "$a: $cur -> $new ($url)"
-  hash=$(nix store prefetch-file --json "$url" | jq -r .hash)
-  s=$(slot "$a")
   tmp=$(mktemp)
-  if [ -n "$s" ]; then
-    jq --arg a "$a" --arg v "$new" --arg s "$s" --arg u "$url" --arg h "$hash" \
-      '.[$a].version = $v | .[$a][$s] = {url: $u, hash: $h}' "$versions" > "$tmp"
-  else
-    jq --arg a "$a" --arg v "$new" --arg u "$url" --arg h "$hash" \
-      '.[$a].version = $v | .[$a].url = $u | .[$a].hash = $h' "$versions" > "$tmp"
-  fi
+  jq --arg a "$a" --arg v "$new" '.[$a].version = $v' "$versions" > "$tmp"
   mv "$tmp" "$versions"
-  # Codex runs shell commands through a second release asset, pinned
-  # beside the binary at the same version (DECISIONS I-426).
-  if [ "$a" = codex ]; then
-    hurl=${url/codex-x86_64/codex-code-mode-host-x86_64}
-    hhash=$(nix store prefetch-file --json "$hurl" | jq -r .hash)
+  if [ -z "$(slots "$a")" ]; then
+    hash=$(nix store prefetch-file --json "$url" | jq -r .hash)
     tmp=$(mktemp)
-    jq --arg u "$hurl" --arg h "$hhash" '.codex["code-mode-host"] = {url: $u, hash: $h}' "$versions" > "$tmp"
-    mv "$tmp" "$versions"
-    # And its bundled bwrap, which it checks against a digest built into
-    # the binary, so it moves with the version too (DECISIONS I-495).
-    burl=${url/codex-x86_64/bwrap-x86_64}
-    bhash=$(nix store prefetch-file --json "$burl" | jq -r .hash)
-    tmp=$(mktemp)
-    jq --arg u "$burl" --arg h "$bhash" '.codex.bwrap = {url: $u, hash: $h}' "$versions" > "$tmp"
+    jq --arg a "$a" --arg u "$url" --arg h "$hash" \
+      '.[$a].url = $u | .[$a].hash = $h' "$versions" > "$tmp"
     mv "$tmp" "$versions"
   fi
+  for s in $(slots "$a"); do
+    if [ "$s" = npm ]; then
+      surl=$url
+    else
+      read -r _ surl < <(latest "$a" "$s")
+      if [ -z "$surl" ] || [ "$surl" = null ]; then
+        echo "$a: upstream has no $s asset for $new" >&2
+        exit 1
+      fi
+    fi
+    hash=$(nix store prefetch-file --json "$surl" | jq -r .hash)
+    tmp=$(mktemp)
+    jq --arg a "$a" --arg s "$s" --arg u "$surl" --arg h "$hash" \
+      '.[$a][$s].url = $u | .[$a][$s].hash = $h' "$versions" > "$tmp"
+    mv "$tmp" "$versions"
+    # Codex runs shell commands through a second release asset, pinned
+    # beside the binary at the same version and under the same
+    # architecture's slot (DECISIONS I-426, I-1374).
+    if [ "$a" = codex ]; then
+      hurl=${surl/\/codex-/\/codex-code-mode-host-}
+      hhash=$(nix store prefetch-file --json "$hurl" | jq -r .hash)
+      tmp=$(mktemp)
+      jq --arg s "$s" --arg u "$hurl" --arg h "$hhash" '.codex[$s]["code-mode-host"] = {url: $u, hash: $h}' "$versions" > "$tmp"
+      mv "$tmp" "$versions"
+      # And its bundled bwrap, which it checks against a digest built into
+      # the binary, so it moves with the version too (DECISIONS I-495).
+      burl=${surl/\/codex-/\/bwrap-}
+      bhash=$(nix store prefetch-file --json "$burl" | jq -r .hash)
+      tmp=$(mktemp)
+      jq --arg s "$s" --arg u "$burl" --arg h "$bhash" '.codex[$s].bwrap = {url: $u, hash: $h}' "$versions" > "$tmp"
+      mv "$tmp" "$versions"
+    fi
+  done
   changed+=("$a $new")
 done
 
@@ -163,7 +200,10 @@ if [ ${#changed[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Build what changed and prove each binary starts.
+# Build what changed for this machine's architecture and prove each
+# binary starts. The other architecture's package is built by ci.yml's
+# aarch64 overlay job (or the x86 one, on an arm64 machine) once the
+# bump is merged; the download above already checked its hash.
 for c in "${changed[@]}"; do
   a=${c%% *}
   case "$a" in

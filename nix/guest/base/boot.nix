@@ -139,8 +139,8 @@ in
   boot.loader.systemd-boot.enable = false;
   boot.loader.efi.canTouchEfiVariables = false;
 
-  # The runner adds console=ttyS0 and the ip= line; these are the same for
-  # every guest so they live here.
+  # The runner adds the console (ttyS0 on x86_64, ttyAMA0 on aarch64) and
+  # the ip= line; these are the same for every guest so they live here.
   boot.kernelParams = [
     "panic=-1"
     "reboot=t"

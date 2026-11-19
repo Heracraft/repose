@@ -3,7 +3,9 @@
 # versions.json (docs/workstreams/12-nix-config-pipeline.md "Agent
 # overlay", DECISIONS R3-19). Same environment as nixpkgs's package: no
 # self-update, no installation checks, the store's ripgrep, and bubblewrap
-# and socat on PATH for its sandbox.
+# and socat on PATH for its sandbox. versions.json holds one slot per
+# architecture (x86_64-linux, aarch64-linux), and the derivation takes
+# the one it is built for (DECISIONS I-1374).
 { lib, stdenvNoCC, fetchurl, autoPatchelfHook, makeBinaryWrapper, alsa-lib, procps, ripgrep, bubblewrap, socat }:
 let
   v = (builtins.fromJSON (builtins.readFile ./versions.json))."claude-code";
@@ -11,7 +13,7 @@ in
 stdenvNoCC.mkDerivation {
   pname = "claude-code";
   inherit (v) version;
-  src = fetchurl { inherit (v.x86_64-linux) url hash; };
+  src = fetchurl { inherit (v.${stdenvNoCC.hostPlatform.system}) url hash; };
   dontUnpack = true;
   dontBuild = true;
   dontStrip = true; # stripping a bun binary breaks it
@@ -33,6 +35,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://code.claude.com";
     license = lib.licenses.unfree;
     mainProgram = "claude";
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }
