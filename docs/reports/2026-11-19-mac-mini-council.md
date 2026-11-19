@@ -53,7 +53,19 @@ image.
 **The cause is a process gap, not a mistake in the code** (ENG-62): a CLI
 release shipped pointing at an artefact that was never published, and nothing
 in the release machinery checks that a release's assets exist. The next
-release can do the same thing on any Monday. The image was rebuilt tonight
+release can do the same thing on any Monday.
+
+**And fixing it broke the installer for every platform, which is the same
+gap from the other side.** Publishing the appliance release made it GitHub's
+`latest`, and `install.sh` resolves `latest` by following that redirect and
+building the archive name from the tag — so every install on every platform
+asked for a CLI archive under the appliance tag, which has none. 404 from
+22:28 to 22:54 UTC, found and reverted by the session building the check,
+and verified afterwards (`releases/latest` → `v0.1.51`, all six assets 200
+anonymously). The conductor's publish instruction omitted `--latest=false`.
+Two live breaks of one class in one evening, neither announced by any alert,
+test or customer, each found only because somebody happened to look — which
+is why the check runs periodically and not only at release time. The image was rebuilt tonight
 and **published at 22:28:37 UTC** — `appliance-2026.11.19`, tag `a3ecdc45`,
 both assets answering 200 anonymously, sha256
 `fce986ce2215326863ae233dfda84b4a4b840715516da5ede2bec296a0ed567b` identical
