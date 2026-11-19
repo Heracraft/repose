@@ -47,16 +47,20 @@ elif [ "$(uname -m)" != aarch64 ]; then
 fi
 
 run() {
-  # Under the lock when it exists (woker-1); plain anywhere else.
-  local t0 t1
+  # Under the lock when it exists (woker-1); plain anywhere else. The
+  # command's own exit status is the function's: the first run on the
+  # Mac (2026-11-19) swallowed a failed build behind the timing line and
+  # went on to the next step as though it had passed.
+  local t0 t1 rc=0
   t0=$(date +%s)
   if [ -e "$lock" ]; then
-    flock "$lock" "$@"
+    flock "$lock" "$@" || rc=$?
   else
-    "$@"
+    "$@" || rc=$?
   fi
   t1=$(date +%s)
-  echo "$0: $((t1 - t0)) s: ${*: -1}" >&2
+  echo "$0: $((t1 - t0)) s, exit $rc: ${*: -1}" >&2
+  return "$rc"
 }
 
 overlay=(claude-code opencode codex gemini-cli pi-coding-agent chrome-devtools-mcp playwright-mcp)

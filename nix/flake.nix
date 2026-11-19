@@ -111,6 +111,11 @@
         # the installed machine. One pin, read per architecture: the rev is
         # the same for both, so the 6.18.57 assertion in nix/hosts/kernel.nix
         # holds on aarch64 as on x86 (I-1374).
+        #
+        # Before moving this pin, read nix/hosts/kernel.nix's note on
+        # aarch64: nested guests on an Apple silicon appliance run on
+        # 6.18.57 and hang on 7.0.0-43 (gate 0 step 3, 2026-11-19), so a
+        # bump is proven on the Mac with ops/dev/macmini-l2-try.sh first.
         hostKernelPackages = (import nixpkgs-host-kernel { inherit system; }).linuxPackages;
 
         hostModules = [

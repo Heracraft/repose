@@ -409,7 +409,9 @@ provides one.
 ```
 Workstream: docs/workstreams/19-mac-mini.md. You are the mini-conductor
 of the Mac mini program, not a builder: you never build an item
-yourself. You are in ~/kanali-mac-mini on branch mac-mini. Read the
+yourself. Run /rc before the brief, so the owner can reach you from a
+phone, and run it again first thing if you are ever relaunched. You are
+in ~/kanali-mac-mini on branch mac-mini. Read the
 program doc, docs/research/mac-mini-nested-kvm.md, the BYO host
 proposal and I-647, then docs/ops/ORCHESTRATION.md "Sessions in tmux
 windows". First message to the owner: the budget envelope for Mac days

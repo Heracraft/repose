@@ -35,6 +35,49 @@ update themselves; an operator switches them by hand, and the timer that
 would pull a published host system is not built and may ship after
 launch.
 
+**The two figures the public page quotes**, measured by 19f on the lab
+Mac and not on anyone's desk: an appliance given 12 GiB, which is what a
+16 GB Mac's share is sized at, reports 11.6 GiB and 8 vCPU in its Hello
+and leaves 9.6 GiB placeable after the eighth-with-a-2-GiB-floor reserve
+(I-724). On disk, from the **production** image: the install step runs in 29 s
+with the image local, the sparse unpack leaves 4.58 GB of real blocks
+(37 GiB apparent, then extended into the volume's free space less 20
+GB), the peak is about 6.6 GB with the 2.08 GB download still beside
+it, and **at rest after first boot it is 5.65 GB** (the pool's metadata
+grown to 1 GiB, plus the caches volume's ext4).
+
+The caveats the page does not carry. The appliance was 12 GiB on a 24
+GB M4, not a 16 GB Mac on a desk. The 5.65 GB is from an image built
+**before** 19f's boot-time trim, which on the lab image gave back 3 GB
+of the build's stale blocks, so the shipping image's at-rest figure
+will be a little lower and nobody has measured it; the page says "under
+6 GB", which is true before the trim and after it.
+
+What a machine costs, from one image minutes apart with nothing else
+changed: 9.71 GB with a `large` machine's 40 GiB volume created and the
+machine stopped, 9.76 GB with it running, and the thin volume 0.66
+percent of 40 GiB allocated, which is 0.28 GB. So a machine costs about
+0.3 GB when it is created, the volume's own filesystem, and from there
+what it writes. The 0.05 GB between stopped and running is the guest's
+first minutes of writes.
+
+The public page does not carry the 0.3 GB. It says a machine costs what
+it writes up to the size of its disk, which is the thin volume's
+behaviour and answers the question a reader is actually asking, which is
+whether three machines need three times 40 GB. 0.3 GB is close enough to
+nothing that quoting it would be one more number to carry and no
+decision changed.
+
+**Why two earlier figures appeared to disagree**, recorded because the
+next person will meet the same trap: 19f's lab reading of 9.71 GB was
+taken after a boot-time trim and the production reading of 5.65 GB
+before one, since that image predates the trim. Across that boundary the
+closure difference is not additive and a subtraction gives a figure
+below the at-rest floor. On the same side of a trim it reconciles:
+observed 9.71 less 5.65 is 4.06 GB, predicted 7.09 for the closure less
+the trim's 3.0 is 4.09 GB, within 0.03 GB. Two real-block readings are
+comparable only when both are on the same side of a trim.
+
 ## What the user sees
 
 ```
@@ -149,7 +192,41 @@ cannot take the machine, fails the create op with `capacity` and a
 message that names the host and its state, rather than quietly using the
 fleet and billing for it.
 
-## 4. When the host is offline
+## 4. How long a machine takes to start
+
+A machine on an owned Mac takes about **four minutes** to start, the first
+time and every time after. The hosted fleet starts the same machine in
+about 12 seconds (`/docs`, "Come back and stop"), so this is the one
+number on this feature where a user's experience is twenty times worse
+than the thing they already know, and the page says it in those words
+rather than "a few minutes".
+
+Measured by 19f on the real Mac, the same guest stopped and started:
+cold 3 min 36 s to multi-user, warm 3 min 59 s; Ready at 70 s cold and
+90 s warm; `hostd stop` 18 s. Load average inside the guest was 7 on 2
+vCPUs during boot, so everything in the boot path is two to three times
+slower than on x86.
+
+It is every start and not the first, which is the part that surprises.
+The guest skips its own registration the second time (`store paths
+already registered`, I-225), but only once hostd's `RegisterPaths`
+arrives, and that waits on hostd computing `nix-store -qR` and
+`--dump-db` of the closure on the appliance, per start. So it is neither
+once per guest nor once per closure: a second machine on the same
+closure pays it again.
+
+What is **not** slow: running. Gate 0 measured no nesting tax worth the
+name (a ratio of 1.07, inside noise), so once a machine is up the
+agents, builds and tests go at the Mac's own speed. A reader who takes
+four minutes to mean "everything is four times slower" has been misled
+by a true sentence, which is why the public page says both.
+
+Known and not built: hostd caching the closure's `dump-db` per closure
+rather than recomputing it per start, which 19f expects would halve the
+figure. It is recorded as the next thing and is not on the public page,
+because the page says what happens today.
+
+## 5. When the host is offline
 
 A Mac that is asleep, rebooting, switched off or off the network stops
 answering. After 90 seconds of no heartbeat its state is `unreachable`,
@@ -175,7 +252,7 @@ meanwhile. A host that was switched off or rebooted stops its machines,
 and the api starts the ones that were running again once it is back
 (I-645).
 
-## 5. Snapshots stay on the host's own disk
+## 6. Snapshots stay on the host's own disk
 
 Snapshots of machines on repose's servers go to Azure Blob. Snapshots of
 machines on hardware the user owns are written to that machine's own disk
@@ -193,7 +270,7 @@ fourth home for a secret where CLAUDE.md and `secrets.md` allow three.
 future provider module cannot hand an owned host a bucket by accident
 (I-1372).
 
-## 6. Removing a host
+## 7. Removing a host
 
 `repose host rm NAME` asks one question, then drains and retires the
 host and clears its certificate serials so it cannot come back on them.

@@ -36845,6 +36845,18 @@ second copy of any of it.
   loaded on x86_64 only: on arm64 KVM is built into the kernel
   (CONFIG_KVM is a bool), so `/dev/kvm` needs no module and a
   `kvm-intel` line would be one failed modprobe in every boot's journal.
+  The pin carries a second constraint on aarch64, from gate 0 step 3
+  (2026-11-19, `docs/research/mac-mini-nested-kvm.md` §7): under
+  nested KVM on the M4, guests boot on 6.18.57 and on 6.8 and hang two
+  seconds in on 7.0.0-43 (`rcu_preempt kthread timer wakeup didn't
+  happen`, under Cloud Hypervisor and QEMU alike, at one and two vCPUs,
+  with `idle=poll` and `nohz=off highres=off`). The appliance ships
+  6.18.57 or a later 6.18 point release, never 6.8 (below I-778's
+  patched version), and a bump of the pin is proven on Apple silicon
+  with `ops/dev/macmini-l2-try.sh` before it lands; the bisect window
+  for whoever bumps next is 6.18.57 to 7.0.0-43. The constraint is
+  written at the pin in `nix/flake.nix` and in `nix/hosts/kernel.nix`,
+  where that person will be standing.
 - *The agents.* `versions.json` has one slot per architecture for each
   binary agent (`x86_64-linux`, `aarch64-linux`), and Codex's
   `code-mode-host` and `bwrap` moved under each slot, since they are
