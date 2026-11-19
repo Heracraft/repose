@@ -569,7 +569,20 @@ nothing is unpacked. I had the volume filled to 54 GiB free specifically to
 trigger it. That rule has never been exercised by a customer path and is
 still unverified by anyone.
 
-**Card ENG-58. P0: it blocks launch outright.**
+**Card ENG-58. P0, and in the conferred report (`1fd3b535`) it is ranked
+P0 zero — ahead of the other two**, on the argument that both of those
+describe a customer who has a working install and then cannot steer or is
+measured wrongly, while this one means they never reach that state.
+Independent in both directions: publishing the image fixes nothing about
+placement or billing, and fixing those publishes no image.
+
+**The cause outlives the fix, and is the thing to carry out of tonight.**
+This P0 closes by a publish rather than a code change — the image was
+rebuilt from main's head and the owner has approved releasing it. What does
+not close is **ENG-62**: a CLI release went out naming an artefact that was
+never published, and nothing in the release machinery checks that a
+release's assets exist. That can happen again on any Monday, and no amount
+of individual care prevents it.
 
 ### E2. A refused run leaves a project in `error`, and prints advice that cannot work
 
