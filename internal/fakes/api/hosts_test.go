@@ -64,6 +64,15 @@ func TestFakeHostsWalkthrough(t *testing.T) {
 	// Remove, and remove again.
 	want(t, call(t, f, "DELETE", "/v1/hosts/"+h.ID, tok, nil), 204)
 	want(t, call(t, f, "DELETE", "/v1/hosts/"+h.ID, tok, nil), 204)
+	// The removed host's name is free again, on the row it kept.
+	var again OwnedHost
+	r = call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "mac-mini"})
+	want(t, r, 201)
+	r.json(t, &again)
+	if again.ID != h.ID || again.State != "registering" {
+		t.Fatalf("adding the removed name again gave %+v, want the kept row %s registering", again, h.ID)
+	}
+	want(t, call(t, f, "DELETE", "/v1/hosts/"+h.ID, tok, nil), 204)
 	wantErr(t, call(t, f, "DELETE", "/v1/hosts/01900000-0000-7000-8000-00000000ffff", tok, nil), 404, "not_found")
 }
 

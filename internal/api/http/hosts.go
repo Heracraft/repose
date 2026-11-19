@@ -146,6 +146,7 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 		// The name before the count: an account at its one-host limit
 		// asking for the name it already uses is told about the name,
 		// which is the mistake it made, and not about the limit.
+		reissue := false
 		if name == "" {
 			// The api names it rather than the caller inventing one, so
 			// `repose host add` and the dashboard's button agree.
@@ -154,8 +155,17 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		} else if h, err := store.GetAccountHostByName(r.Context(), tx, u.ID, name); err == nil && h != nil {
-			return withDetail(errf("conflict", "you already have a host called %s", name),
-				map[string]any{"reason": "name_taken"})
+			if h.State != "retired" && h.State != "lost" {
+				return withDetail(errf("conflict", "you already have a host called %s", name),
+					map[string]any{"reason": "name_taken"})
+			}
+			// A removed host's name is free again, and the row it kept
+			// for the history is the row that takes it: the name is
+			// unique per account whatever a host's state, so a new row
+			// could not have it, and telling a user the name of the
+			// machine they just removed is taken would be a refusal they
+			// cannot act on.
+			reissue = true
 		} else if err != nil && !errors.Is(err, db.ErrNotFound) {
 			return err
 		}
@@ -169,7 +179,8 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 		}
 		owner := u.ID
 		var err error
-		token, hostID, err = hostmgr.MintJoinTokenIn(r.Context(), tx, hostmgr.JoinTokenRequest{Name: name, Provider: "metal", Owner: &owner})
+		token, hostID, err = hostmgr.MintJoinTokenIn(r.Context(), tx,
+			hostmgr.JoinTokenRequest{Name: name, Provider: "metal", Owner: &owner, Reissue: reissue})
 		return err
 	})
 	if err != nil {

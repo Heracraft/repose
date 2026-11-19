@@ -119,9 +119,27 @@ func TestHostAddListRemove(t *testing.T) {
 	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 1 || r.list[0].(map[string]any)["state"] != "retired" {
 		t.Fatalf("list after remove: %d %s", r.status, r.raw)
 	}
-	// And the slot is free again.
-	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini-2"}); r.status != 201 {
-		t.Fatalf("add after remove: %d %s, want 201", r.status, r.raw)
+	// And the slot is free again, under the same name: the row the api
+	// kept for the history is the row that takes it, because the name is
+	// unique per account whatever a host's state, and telling a user the
+	// name of the machine they just removed is taken is a refusal they
+	// cannot act on.
+	r = e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 || r.body["name"] != "mac-mini" || r.body["state"] != "registering" {
+		t.Fatalf("adding the removed host's name again: %d %s, want 201 registering", r.status, r.raw)
+	}
+	if r.body["id"] != id {
+		t.Fatalf("the name came back on a new row %v, want the row it kept (%s)", r.body["id"], id)
+	}
+	// `hosts retire` sets draining, and a revived row that kept it would
+	// register, reach `ready` and take no placement.
+	var draining bool
+	var revivedSerial string
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "select draining, coalesce(cert_serial, '') from hosts where id = $1", id).Scan(&draining, &revivedSerial); err != nil {
+		t.Fatal(err)
+	}
+	if draining || revivedSerial != "" {
+		t.Fatalf("the revived host is draining=%v with serial %q", draining, revivedSerial)
 	}
 }
 

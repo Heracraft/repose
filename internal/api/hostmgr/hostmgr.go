@@ -193,7 +193,15 @@ func MintJoinTokenIn(ctx context.Context, tx db.Tx, req JoinTokenRequest) (strin
 		if h.RegisteredAt != nil && !req.Reissue {
 			return "", uuid.Nil, fmt.Errorf("host %s is already registered; pass --reissue to mint a new token for a re-imaged host", req.Name)
 		}
-		_, err := tx.Exec(ctx, "update hosts set join_token_hash = $2, join_token_expires_at = $3, registered_at = null, state = 'registering' where id = $1", h.ID, hash, expires)
+		// `draining` and the old serials go with the state. A retired or
+		// lost host is reissued by exactly this path (`hosts rotate-cert`
+		// sends you here, I-432), and `hosts retire` left draining set,
+		// so without this the machine would register, reach `ready` and
+		// still take no placement.
+		_, err := tx.Exec(ctx, `update hosts set join_token_hash = $2, join_token_expires_at = $3,
+			registered_at = null, state = 'registering', draining = false,
+			cert_serial = null, prev_cert_serial = null
+			where id = $1`, h.ID, hash, expires)
 		return token, h.ID, err
 	}
 	id := store.NewID()

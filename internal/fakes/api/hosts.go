@@ -176,13 +176,20 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 			withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	have := 0
+	var revive *ownedHostRec
 	for _, h := range f.ownedHosts {
-		if h.owner == u.ID && h.State != "retired" && h.State != "lost" {
+		gone := h.State == "retired" || h.State == "lost"
+		if h.owner == u.ID && !gone {
 			have++
 		}
 		if h.owner == u.ID && name != "" && h.Name == name {
-			return errf("conflict", "you already have a host called %s", name).
-				withDetail(map[string]any{"reason": "name_taken"})
+			if !gone {
+				return errf("conflict", "you already have a host called %s", name).
+					withDetail(map[string]any{"reason": "name_taken"})
+			}
+			// A removed host's name is free again and its own row takes
+			// it back, as the api does.
+			revive = h
 		}
 	}
 	if have >= allowed {
@@ -205,6 +212,10 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 		ID: f.nextID(), Name: name, State: "registering", Provider: "metal",
 		CreatedAt: f.now(), JoinToken: base64.RawURLEncoding.EncodeToString(raw), JoinTokenExpiresAt: &expires,
 	}}
+	if revive != nil {
+		// Same row, same id, nothing of the machine it was.
+		h.ID, h.CreatedAt = revive.ID, revive.CreatedAt
+	}
 	line := FakeHostInstall
 	if f.hostInstallSet {
 		line = f.hostInstall
@@ -214,7 +225,11 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 		command = strings.Replace(line, "%s", h.JoinToken, 1)
 	}
 	h.Install = &OwnedHostInstall{Command: command, URL: FakeDashboard + "/docs/own-hardware"}
-	f.ownedHosts = append(f.ownedHosts, h)
+	if revive != nil {
+		*revive = *h
+	} else {
+		f.ownedHosts = append(f.ownedHosts, h)
+	}
 	writeJSON(w, 201, h.OwnedHost)
 	return nil
 }
