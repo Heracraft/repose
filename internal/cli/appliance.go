@@ -49,15 +49,22 @@ import (
 // the user's.
 
 const (
-	applianceVersion   = "2026.11.19"
-	applianceURL       = "https://github.com/Heracraft/repose/releases/download/appliance-" + applianceVersion + "/repose-appliance-aarch64.raw.gz"
-	vfkitVersion       = "0.6.4"
-	vfkitURL           = "https://github.com/crc-org/vfkit/releases/download/v" + vfkitVersion + "/vfkit"
-	vfkitSHA256        = "0ed83fc8ca7aa708598835480dba1362406aa7cd1dab3b27464eb76327d9652d"
-	applianceLabel     = "run.repose.appliance"
-	applianceShareTag  = "repose-launcher"
-	applianceDiskGB    = 100
-	applianceDiskMinGB = 20
+	applianceVersion  = "2026.11.19"
+	applianceURL      = "https://github.com/Heracraft/repose/releases/download/appliance-" + applianceVersion + "/repose-appliance-aarch64.raw.gz"
+	vfkitVersion      = "0.6.4"
+	vfkitURL          = "https://github.com/crc-org/vfkit/releases/download/v" + vfkitVersion + "/vfkit"
+	vfkitSHA256       = "0ed83fc8ca7aa708598835480dba1362406aa7cd1dab3b27464eb76327d9652d"
+	applianceLabel    = "run.repose.appliance"
+	applianceShareTag = "repose-launcher"
+	applianceDiskGB   = 100
+	// applianceDiskMinGB is the smallest disk the image fits: the raw
+	// image is 37 GiB as built (its root partition ends there), so a disk
+	// file truncated below it loses the root partition's end and the
+	// pool's partition, and the appliance never finds its root (the lab
+	// image 6 install, 2026-11-19, on a Mac with 52 GB free).
+	applianceDiskMinGB = 40
+	// applianceDiskKeepGB stays free on the volume for the user.
+	applianceDiskKeepGB = 20
 	// applianceImageApparentBytes is the raw image's size as built (37
 	// GiB): a disk file smaller than that is a broken unpack.
 	applianceImageApparentBytes = 37 << 30
@@ -109,18 +116,19 @@ func vmCPUs(n int) int {
 	return n - 2
 }
 
-func diskGB(freeGB, asked int) int {
+func diskGB(freeGB, asked int) (int, error) {
 	gb := asked
 	if gb <= 0 {
 		gb = applianceDiskGB
 	}
-	if cap := freeGB - 20; gb > cap {
+	if cap := freeGB - applianceDiskKeepGB; gb > cap {
 		gb = cap
 	}
 	if gb < applianceDiskMinGB {
-		gb = applianceDiskMinGB
+		return 0, fmt.Errorf("this volume has %d GB free; the appliance needs a %d GB disk and leaves %d GB free, so free up %d GB first",
+			freeGB, applianceDiskMinGB, applianceDiskKeepGB, applianceDiskMinGB+applianceDiskKeepGB-freeGB)
 	}
-	return gb
+	return gb, nil
 }
 
 // ---- the Mac ----------------------------------------------------------
@@ -535,7 +543,10 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 		_ = os.Remove(gz)
 		// The disk the user chose, as a sparse file APFS fills as the
 		// machines write; the appliance grows its pool into it at boot.
-		gb := diskGB(freeGBOf(p.Dir), o.DiskGB)
+		gb, err := diskGB(freeGBOf(p.Dir), o.DiskGB)
+		if err != nil {
+			return exitf(ExitUsage, "%v", err)
+		}
 		if err := os.Truncate(p.Disk, int64(gb)<<30); err != nil {
 			return err
 		}

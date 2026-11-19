@@ -35,10 +35,17 @@ func TestApplianceSizing(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ free, asked, want int }{
-		{500, 0, 100}, {60, 0, 40}, {500, 200, 200}, {25, 200, 20}, {10, 0, 20},
+		{500, 0, 100}, {60, 0, 40}, {500, 200, 200}, {62, 200, 42},
 	} {
-		if got := diskGB(c.free, c.asked); got != c.want {
-			t.Errorf("diskGB(%d, %d) = %d, want %d", c.free, c.asked, got, c.want)
+		if got, err := diskGB(c.free, c.asked); got != c.want || err != nil {
+			t.Errorf("diskGB(%d, %d) = %d, %v, want %d", c.free, c.asked, got, err, c.want)
+		}
+	}
+	// Below the image's own size the disk would lose its root partition
+	// (lab image 6, 2026-11-19): refuse, naming the shortfall.
+	for _, c := range []struct{ free, asked int }{{52, 0}, {59, 45}, {10, 0}} {
+		if gb, err := diskGB(c.free, c.asked); err == nil || !strings.Contains(err.Error(), "free up") {
+			t.Errorf("diskGB(%d, %d) = %d, %v; want a refusal", c.free, c.asked, gb, err)
 		}
 	}
 }
