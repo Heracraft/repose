@@ -556,6 +556,17 @@ Rules all three share, and the conductor puts them in each brief:
   report section the card links to. The report is the document, the cards
   are the work, and the gate is the second pass with no P0 rather than an
   empty column.
+- **A finding that needs the owner goes to the `Needs you` column and never
+  to their assignee field.** That rule is enforced by you, not by a
+  permission: the agent account can see the workspace's members, so nothing
+  stops you except this line. The owner looks at that column when they
+  choose; an assignment notifies them whether they chose to look or not.
+- **File findings as you go, not in one burst at the end.** The board's
+  instance rate-limits, and a seed of nineteen cards in a row exhausted it
+  and silently lost three field writes before anyone noticed. The tool now
+  backs off on 429, but three sessions filing twenty findings each is the
+  same wall, and the report is the record regardless — the cards are the
+  work, so a card that failed to write is work nobody does.
 
 **19-council-cli** — every command, every flag, every refusal. `run`,
 `attach`, `ls`, `status`, `logs`, `stop`, `start`, `destroy`, `code`, `say`,
