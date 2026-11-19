@@ -239,7 +239,7 @@ Ireland had capacity on the first try once its quota applied.
 |---|---|---|
 | 1 chip and OS | PASS | macOS 15.8.2 on Apple M4 |
 | 2 nested KVM | PASS | `/dev/kvm` in the appliance VM (Tart `--nested`, Ubuntu 24.04 arm64, 8 vCPU, 12 GiB), `kvm-ok` passes; KVM reports "Hyp mode initialized", GICv3 system-register interface, no GICv2 |
-| 3 guest boots | PASS, with a kernel condition | see below; numbers pending at this line |
+| 3 guest boots | PASS on 6.18.57 and 6.8; FAIL on 7.0 | a stock Ubuntu cloud image: `Run /init` 1.5 s, systemd 4.0 s, login prompt 134 to 139 s (the image waits 120 s for a network the guest has no NIC for; the kernel-to-systemd time is the figure) |
 | 4 nesting tax | pending | |
 | 5 freeze and restore | not run | |
 | 6 virtiofs | not run | |
@@ -254,10 +254,16 @@ prompt. It is the same under Cloud Hypervisor v54.1 and under QEMU
 8.2.2 with KVM (`-M virt -accel kvm -cpu host`), with one vCPU or two,
 with `idle=poll`, and with `nohz=off highres=off`. With
 `6.8.0-147-generic` in the same VM, on the same macOS and the same
-host, the same guest boots to a login prompt. So the appliance's
-kernel pin is a product requirement, not a detail: the pin in
-`nix/hosts` for the `mac` provider (I-1374, I-1376) must be a kernel
-proven by `ops/dev/macmini-l2-try.sh` on Apple silicon before any bump.
+host, the same guest boots to a login prompt, and so does it with
+**`6.18.57`** (Ubuntu's mainline build of the exact version
+`nix/hosts/kernel.nix` asserts: `versionAtLeast 6.18.57`, the first
+stable kernel with the fix for CVE-2026-99999, a guest-to-host escape
+through a tap's `vnet_hdr`; DECISIONS I-778). So the appliance ships
+6.18.57 or a later 6.18 point release, **never 6.8**, and the pin is a
+product requirement rather than a detail: the `mac` provider's kernel
+(I-1374, I-1376) must be proven by `ops/dev/macmini-l2-try.sh` on
+Apple silicon before any bump, and the bisect window for whoever bumps
+next is 6.18.57 to 7.0.0-43.
 Whether this is a KVM regression between 6.8 and 7.0 in nVHE mode
 under Apple's hypervisor, or an Apple-side bug that newer kernels
 tickle, is *unverified*; the logs are in `mac-mini-nested-kvm-data/`
