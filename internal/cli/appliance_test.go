@@ -141,6 +141,8 @@ func TestApplianceConfigAndPlist(t *testing.T) {
 		"<string>run.repose.appliance</string>",
 		"<string>/usr/local/bin/repose</string><string>host</string><string>run</string>",
 		"<key>RunAtLoad</key><true/>", "<key>KeepAlive</key><true/>",
+		// launchd's default is 20 s, which no park fits in (I-1386).
+		"<key>ExitTimeOut</key><integer>300</integer>",
 		"<string>/Users/dev/Library/Logs/repose/launcher.log</string>",
 	} {
 		if !strings.Contains(plist, want) {
@@ -154,6 +156,7 @@ func TestApplianceConfigAndPlist(t *testing.T) {
 		"virtio-blk,path=/Users/dev/Library/Application Support/repose/disk.raw",
 		"virtio-net,nat,mac=52:54:aa:2e:43:de", "virtio-rng",
 		"virtio-fs,sharedDir=/Users/dev/Library/Application Support/repose/share,mountTag=repose-launcher",
+		"virtio-vsock,port=1386,socketURL=/Users/dev/Library/Application Support/repose/park-key.sock",
 		"virtio-serial,logFilePath=/Users/dev/Library/Logs/repose/console.log",
 		"--restful-uri unix:///Users/dev/Library/Application Support/repose/vfkit.sock",
 	} {

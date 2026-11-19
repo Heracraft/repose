@@ -299,7 +299,11 @@ the queue.
       session transcript's first line.
 - [ ] Restart: the Mac reboots, the launcher brings the appliance back,
       hostd reconciles, the project is reachable again without a
-      command.
+      command, and with what it was doing (I-1386, ENG-2, branch
+      `fix-park`: a park at the shutdown, an unpark at the login).
+      Evidence: the launcher log's `park-key:` lines and the appliance
+      journal's `guest_park` and `guest_restored` lines with their
+      phase timings, from a real restart of the Mac.
 - [ ] Council report exists, second pass has no P0.
 - [ ] `just done-check`, `just lint`, `go test -race`, `golangci-lint`
       on `mac-mini`; `docs/CHECKLIST.md` greps clean.

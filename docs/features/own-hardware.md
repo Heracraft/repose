@@ -302,12 +302,20 @@ assertion (research doc §7). A machine's boot on a Mac is minutes, not
 seconds (3 min 36 s cold and 3 min 59 s warm to multi-user on an M4 at 2
 vCPU, research doc §9; hostd's per-start dump-db of the closure is half
 of it), so hostd's ready window is five minutes there
-(`guestReadyTimeout`) where the Azure hosts keep 60 s. Freeze and restore work on Apple silicon
-(gate 0 step 5, research doc §9) and stay off on the appliance until an
-owned host has a way to wrap the image key that is not Key Vault
-(I-653); a reboot stops the machines and the api starts the ones that
-were running (I-645). `repose host add`, `repose host run` and `repose host rm` are the
-user's side on the Mac.
+(`guestReadyTimeout`) where the Azure hosts keep 60 s. The park is on
+(I-1386, I-1394): a restart, a shutdown or a logout the user asks for
+parks every running machine to an encrypted image on the appliance's
+disk (6.5 s a guest on the M4, snapshot 203 ms, an 824 MB image) and the
+next login unparks it (3.8 s), against about 289 s to start a guest cold
+and lose its work. The image's key is wrapped not by Key Vault, which a
+Mac has no identity for, but by the launcher, asked over a vsock vfkit
+forwards to `park-key.sock` (`internal/parkkey`); the launcher keeps the
+one wrapping key as a generic-password item in the user's login keychain
+(`internal/cli/keychain.go`, through `security`, since the darwin build
+has no cgo) and the VM never sees it. Not hardware-backed, and the docs
+say so. A power cut, a panic or a forced power-off parks nothing: the api
+starts the machines that were running (I-645), cold. `repose host add`,
+`repose host run` and `repose host rm` are the user's side on the Mac.
 
 ## Behaviour that must hold
 
@@ -390,6 +398,27 @@ The host itself (I-1372, I-1368, I-1376, I-1380):
 - A host cannot reach another host or the control plane beyond its own
   ports, and the gateway routes to a host only its owner's projects
   (I-1368, `SECURITY.md` "A host you do not own").
+
+The park on the Mac (I-1386, I-1394):
+
+- hostd asks the launcher to wrap and unwrap image keys, what crosses is
+  never the key, and the record's key id names the launcher's key:
+  `TestWrapUnwrapThroughTheLauncher` (internal/parkkey). A record from a
+  replaced keychain item is refused by name, and a tampered one does not
+  open: `TestUnwrapRefusesAnotherKey`. A locked keychain is a plain
+  error, so the park skips its guests with `no_key` rather than writing
+  images nobody can read: `TestALockedKeychainIsAPlainError`; no launcher
+  at the socket fails within its timeout: `TestNoLauncher`.
+- The launcher makes one keychain item the first time, reads it back
+  rather than trusting the add, never logs the value, tries no add
+  against a locked keychain and refuses a value that is not a key:
+  `TestKeychainKeeper*` (internal/cli). The agent's `ExitTimeOut` and the
+  vsock device are in the plist and vfkit's arguments:
+  `TestApplianceConfigAndPlist`; the port is the same on both sides of
+  the VM boundary: `TestMacNixAgreesOnThePort`.
+- On the Mac itself: a park at a stop, a real restart, and an unpark
+  with the `guest_restored` phase timings. Run by whoever holds the Mac;
+  not run at this line.
 
 ## Depends on
 

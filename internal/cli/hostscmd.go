@@ -69,7 +69,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Hold the appliance on this Mac (what launchd runs)",
 		Long: "Run repose's virtual machine on this Mac in the foreground, until it is\n" +
 			"stopped. The launchd agent `repose host add` installs runs this at every\n" +
-			"login; a stop asks the appliance to power off cleanly first.",
+			"login. A stop asks the appliance to keep every running machine's memory\n" +
+			"in an encrypted image on its disk and power off, and the next run brings\n" +
+			"the machines back where they were; the key for those images is one item\n" +
+			"in your keychain, made the first time it is needed.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()

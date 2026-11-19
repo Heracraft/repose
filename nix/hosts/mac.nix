@@ -19,7 +19,13 @@
 #                  forwards a host (I-1382), over a tunnel that exists
 #                  before the first Register (I-1380, network.nix hub.json).
 #   owned          The user's machine: snapshots stay on its disk (I-1372),
-#                  no operator bootstrap key, no park vault, no Blob.
+#                  no operator bootstrap key, no Blob.
+#   the park       On, so a restart of the Mac keeps what every machine
+#                  was doing (I-1386). The image key is wrapped not by Key
+#                  Vault, which a Mac has no identity for, but by the
+#                  launcher on the Mac, asked over a vsock vfkit forwards
+#                  (internal/parkkey); the launcher keeps the one wrapping
+#                  key in the Mac's Keychain, and the VM never sees it.
 #   the kernel     The same pin as every host, and here it is a product
 #                  constraint, not a detail: see the note at `boot.kernelParams`.
 #
@@ -253,8 +259,8 @@ in
         message = "repose.host.bootstrap on a Mac appliance: there is no operator on the user's LAN, and the plain key would be the one way in from it.";
       }
       {
-        assertion = !cfg.park.enable;
-        message = "repose.host.park on a Mac appliance: the park wraps its image keys with an Azure Key Vault the Mac has no identity for (I-653). The mechanism itself passed on Apple silicon (I-1376); a key design for owned hosts is what is missing.";
+        assertion = cfg.park.enable -> (cfg.park.launcherPort != 0 && cfg.park.keyVaultUrl == "");
+        message = "repose.host.park on a Mac appliance wraps its image keys through the launcher (park.launcherPort, I-1386), never through a Key Vault the Mac has no identity for (I-653).";
       }
     ];
 
@@ -276,6 +282,21 @@ in
       # nested vCPUs, and hostd's RegisterPaths of the closure takes over
       # a minute on the appliance. hostd's 60 s window closed on it twice.
       guestReadyTimeout = lib.mkDefault "5m";
+      # The park (park.nix) through the launcher: the port is
+      # internal/parkkey's, and the launcher's vfkit forwards it to the
+      # unix socket `repose host run` listens on (TestMacNixAgreesOnThePort
+      # holds the two together). The deadline is under the launcher's
+      # grace: a stop or a restart of the Mac gives the appliance 270 s
+      # before the plug (internal/cli/appliance.go), and hostd's own wall
+      # is this plus 150 (park.nix), so the park ends before the plug,
+      # and a guest that does not fit in 120 s at the assumed rate is
+      # stopped as before rather than written for nothing. 120 s at the
+      # 100 MB/s floor admits 12 GB, more than a 16 GB Mac places.
+      park = {
+        enable = lib.mkDefault true;
+        launcherPort = lib.mkDefault 1386;
+        deadline = lib.mkDefault 120;
+      };
     };
 
     # ---- boot ------------------------------------------------------------
@@ -284,7 +305,10 @@ in
     # initrd so the root is found whatever order they enumerate in.
     boot.initrd.availableKernelModules = [ "virtio_pci" "virtio_blk" "virtio_mmio" "virtio_net" "virtio_console" "virtiofs" ];
     boot.initrd.kernelModules = [ "virtio_pci" "virtio_blk" ];
-    boot.kernelModules = [ "virtiofs" ];
+    # vmw_vsock_virtio_transport is the VM's side of the vsock the launcher
+    # answers park-key requests on (I-1386); it sits beside vhost_vsock,
+    # which the nested guests use, and the kernel routes CID 2 to it.
+    boot.kernelModules = [ "virtiofs" "vmw_vsock_virtio_transport" ];
     # The framework's console is a virtio console, hvc0; the launcher
     # writes it to a log file beside the image (I-1380). No `rootdelay`:
     # the disk is there from the first microsecond.
