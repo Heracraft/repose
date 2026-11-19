@@ -97,7 +97,24 @@ jobs:
             exit 1
           fi
           echo "$TAG has $n bytes of release notes."
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: what this CLI fetches at run time is published
+        # The appliance image this tag's code pins, its checksum and vfkit,
+        # fetched with no credentials as a customer's Mac fetches them.
+        # v0.1.51 was published pinning an image whose release did not
+        # exist, and `repose host add` answered 404 on every Mac for 47
+        # minutes (DECISIONS I-1398). The CLI's own assets are still a
+        # draft here, so --cli none; they are checked once published, below.
+        run: ops/dev/release-assets --cli none
       - name: upload the signature and publish
         run: |
           gh release upload "$TAG" dist/checksums.txt.sig --repo "$GITHUB_REPOSITORY"
           gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+      - name: the published release answers anonymously
+        # releases/latest resolves to this tag and its six assets answer
+        # 200 with no credentials: what install.sh and `repose version
+        # update` fetch. The redirect lags the publish by up to a minute;
+        # the check waits for it.
+        run: ops/dev/release-assets --cli "$TAG"
