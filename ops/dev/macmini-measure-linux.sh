@@ -13,8 +13,8 @@ sudo_() { echo "$SUDO_PASS" | sudo -S -p "" "$@"; }
 cd "$HOME"; mkdir -p l2 results; cd l2
 # tools, on Ubuntu (L1) or Fedora (Asahi)
 if ! command -v cloud-localds >/dev/null || ! command -v qemu-img >/dev/null || ! command -v expect >/dev/null; then
-  if command -v apt-get >/dev/null; then export DEBIAN_FRONTEND=noninteractive; sudo_ apt-get -qq update >/dev/null; sudo_ apt-get -qq install -y cpu-checker qemu-utils cloud-image-utils expect openssl file >/dev/null
-  elif command -v dnf >/dev/null; then sudo_ dnf -q -y install qemu-img cloud-utils expect openssl file >/dev/null; fi
+  if command -v apt-get >/dev/null; then export DEBIAN_FRONTEND=noninteractive; sudo_ apt-get -qq update >/dev/null; sudo_ apt-get -qq install -y cpu-checker qemu-utils cloud-image-utils expect openssl file zstd python3 >/dev/null
+  elif command -v dnf >/dev/null; then sudo_ dnf -q -y install qemu-img cloud-utils expect openssl file zstd python3 >/dev/null; fi
 fi
 { echo "kernel $(uname -r)"; nproc; free -g; ls -l /dev/kvm; } > ../results/linux-facts.txt 2>&1
 [ -e /dev/kvm ] || { echo "no /dev/kvm"; exit 1; }
@@ -29,15 +29,35 @@ CH=https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download
 if [ ! -s Image ]; then
   k=/boot/vmlinuz-$(uname -r)
   # Cloud Hypervisor wants the uncompressed arm64 Image (magic "ARM\x64" at
-  # byte 56); Ubuntu compresses vmlinuz with gzip or zstd depending on the
-  # release (CH said UefiTooBig when handed the compressed file, 2026-11-19).
-  case "$(sudo_ file -Lb "$k")" in
-    *gzip*) sudo_ zcat "$k" > Image ;;
-    *Zstandard*|*zstd*) command -v zstd >/dev/null || { if command -v apt-get >/dev/null; then sudo_ apt-get -qq install -y zstd >/dev/null; else sudo_ dnf -q -y install zstd >/dev/null; fi; }
-      sudo_ zstd -dc "$k" > Image ;;
-    *) sudo_ cp "$k" Image ;;
-  esac
-  echo "kernel $(sudo_ file -Lb "$k" | cut -c1-80); Image magic $(od -A n -t x1 -j 56 -N 4 Image | tr -d ' ') (41524d64 is ARM64)" | tee -a ../results/linux-facts.txt
+  # byte 56). Ubuntu ships vmlinuz as an EFI "zboot" PE with the Image
+  # compressed inside (header: "zimg" at 4, payload offset and size at 8
+  # and 12, the compressor's name at 24); older releases ship a plain gzip.
+  sudo_ cp "$k" vmlinuz.copy; sudo_ chown "$USER" vmlinuz.copy
+  python3 - vmlinuz.copy Image <<'PYX'
+import sys, gzip, lzma, subprocess
+src, dst = sys.argv[1], sys.argv[2]
+d = open(src, 'rb').read()
+def decomp(payload, comp):
+    if comp.startswith('gzip'): return gzip.decompress(payload)
+    if comp.startswith('xz') or comp.startswith('lzma'): return lzma.decompress(payload)
+    if comp.startswith('zstd'):
+        return subprocess.run(['zstd', '-dc'], input=payload, capture_output=True, check=True).stdout
+    raise SystemExit('unknown compressor ' + comp)
+if d[56:60] == b'ARM\x64':
+    out = d; how = 'already an Image'
+elif d[4:8] == b'zimg':
+    off = int.from_bytes(d[8:12], 'little'); size = int.from_bytes(d[12:16], 'little')
+    comp = d[24:60].split(b'\0')[0].decode()
+    out = decomp(d[off:off + size], comp); how = 'zboot ' + comp
+elif d[:2] == b'\x1f\x8b':
+    out = gzip.decompress(d); how = 'gzip'
+else:
+    raise SystemExit('vmlinuz is neither Image, zboot nor gzip')
+assert out[56:60] == b'ARM\x64', 'extracted payload has no ARM64 magic'
+open(dst, 'wb').write(out); print('kernel: %s, Image %d bytes' % (how, len(out)))
+PYX
+  rm -f vmlinuz.copy
+  echo "Image magic $(od -A n -t x1 -j 56 -N 4 Image | tr -d ' ') (41524d64 is ARM64)" | tee -a ../results/linux-facts.txt
   sudo_ cp "/boot/initrd.img-$(uname -r)" initrd.img
   sudo_ chown "$USER" Image initrd.img
 fi
