@@ -95,7 +95,7 @@ A Mac that is only off the network keeps running your machines, and they are rea
 
 When you restart or shut down your Mac, or log out, each running machine's memory is written to an encrypted image on the appliance's disk before the Mac goes down, and at your next login each machine carries on where it was: programs, tmux windows and agents included, with its clock set when it is back. The shutdown waits for the images, a few seconds a machine, and the machines come back when you log in, because that is when the appliance starts.
 
-An image is removed once its machine is back, and after 6 hours either way. A machine that can't come back from its image starts cold instead, with its disk as it was: [When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts) lists the cases, and they are the same here.
+An image is removed once its machine is back, and after 6 hours either way, so log in again within 6 hours of the restart: after that the saved memory is discarded and the machines start fresh. A machine that can't come back from its image starts cold instead, with its disk as it was: [When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts) lists the cases, and they are the same here.
 
 This covers a restart, a shutdown and a logout you ask for. It can't cover a power cut, a kernel panic or holding the power button down: there is no time to write anything, and those machines start cold.
 

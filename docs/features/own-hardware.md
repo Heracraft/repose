@@ -314,7 +314,14 @@ one wrapping key as a generic-password item in the user's login keychain
 (`internal/cli/keychain.go`, through `security`, since the darwin build
 has no cgo) and the VM never sees it. Not hardware-backed, and the docs
 say so. A power cut, a panic or a forced power-off parks nothing: the api
-starts the machines that were running (I-645), cold. `repose host add`,
+starts the machines that were running (I-645), cold. The image's six
+hours (I-653) count against the user here, because hostd exists only once
+someone logs in: a restart with no login for six hours discards the image
+unread, and the docs say so beside the power-cut case. A stuck snapshot
+holds the shutdown at most 240 s (the deadline plus the park's own stop
+grace), the unit's wall is 270, the launcher's plug 330 and launchd's kill
+360; what macOS itself allows an agent at a restart is only the Mac's to
+show. `repose host add`,
 `repose host run` and `repose host rm` are the user's side on the Mac.
 
 ## Behaviour that must hold

@@ -60,7 +60,7 @@ func TestKeychainKeeperMakesOneItemAndReadsItBack(t *testing.T) {
 	macExec = f.exec
 	t.Cleanup(func() { macExec = old })
 	var logged []string
-	k := &keychainKeeper{log: func(format string, a ...any) { logged = append(logged, format) }}
+	k := &parkKeychainKeeper{log: func(format string, a ...any) { logged = append(logged, format) }}
 	k1, err := k.WrappingKey(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestKeychainKeeperMakesOneItemAndReadsItBack(t *testing.T) {
 	for _, c := range f.calls {
 		if strings.Contains(c, "add-generic-password") {
 			adds++
-			for _, want := range []string{"-s " + keychainService, "-a " + keychainAccount, "-l " + keychainLabel, "-j " + keychainComment} {
+			for _, want := range []string{"-s " + parkKeychainService, "-a " + parkKeychainAccount, "-l " + parkKeychainLabel, "-j " + parkKeychainComment} {
 				if !strings.Contains(c, want) {
 					t.Errorf("add lacks %q", want)
 				}
@@ -101,7 +101,7 @@ func TestKeychainKeeperReportsALockedKeychain(t *testing.T) {
 	old := macExec
 	macExec = f.exec
 	t.Cleanup(func() { macExec = old })
-	k := &keychainKeeper{log: func(string, ...any) {}}
+	k := &parkKeychainKeeper{log: func(string, ...any) {}}
 	_, err := k.WrappingKey(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "exit 36") || !strings.Contains(err.Error(), "User interaction is not allowed") {
 		t.Fatalf("locked keychain: %v", err)
@@ -120,7 +120,7 @@ func TestKeychainKeeperRefusesAForeignValue(t *testing.T) {
 	old := macExec
 	macExec = f.exec
 	t.Cleanup(func() { macExec = old })
-	k := &keychainKeeper{log: func(string, ...any) {}}
+	k := &parkKeychainKeeper{log: func(string, ...any) {}}
 	if _, err := k.WrappingKey(context.Background()); err == nil || !strings.Contains(err.Error(), "does not hold a wrapping key") {
 		t.Fatalf("foreign value: %v", err)
 	}

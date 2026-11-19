@@ -142,7 +142,7 @@ func TestApplianceConfigAndPlist(t *testing.T) {
 		"<string>/usr/local/bin/repose</string><string>host</string><string>run</string>",
 		"<key>RunAtLoad</key><true/>", "<key>KeepAlive</key><true/>",
 		// launchd's default is 20 s, which no park fits in (I-1386).
-		"<key>ExitTimeOut</key><integer>300</integer>",
+		"<key>ExitTimeOut</key><integer>360</integer>",
 		"<string>/Users/dev/Library/Logs/repose/launcher.log</string>",
 	} {
 		if !strings.Contains(plist, want) {

@@ -51,7 +51,7 @@ import (
 // under ~/Library/Logs/repose: launcher.log and console.log, the VM's
 // console, which carries the appliance's journal (ids and states) and
 // nothing of the user's. One thing lives outside: the wrapping key of
-// the parked images, an item in the user's keychain (keychain.go,
+// the parked images, an item in the user's keychain (parkkeychain.go,
 // DECISIONS I-1386), which is what lets a restart of the Mac keep what
 // every machine was doing.
 
@@ -77,12 +77,19 @@ const (
 	applianceImageApparentBytes = 37 << 30
 	// applianceStopGrace is how long a stop (launchd's SIGTERM at a
 	// restart or a logout, `repose host rm`) gives the appliance to park
-	// its machines and power off before the plug is pulled. Inside, the
-	// park's own wall is its 120 s deadline plus 150 (nix/hosts/mac.nix,
-	// park.nix), so hostd gives up before the launcher does and an image
-	// is never cut mid-write by this side. The agent's ExitTimeOut is this
-	// plus 30, so launchd's SIGKILL comes after the plug, never before.
-	applianceStopGrace = 270 * time.Second
+	// its machines and power off before the plug is pulled. The worst
+	// case inside is a guest that will not snapshot: the park holds the
+	// shutdown for its 120 s deadline plus its own 120 s stop grace
+	// (nix/hosts/mac.nix, internal/hostd/guest/park.go), the unit's wall
+	// cuts it at 270 (park.nix, deadline + 150), and the rest of the
+	// shutdown (the guests' clean stops, the shares, LVM) takes its share
+	// after that; 330 leaves it 60 s. So hostd gives up before the
+	// launcher does and an image is never cut mid-write by this side,
+	// while a plug at 330 catches a shutdown that is hung for another
+	// reason. The agent's ExitTimeOut is this plus 30, so launchd's
+	// SIGKILL comes after the plug, never before. How long macOS itself
+	// waits for an agent at a restart is the part only the Mac shows.
+	applianceStopGrace = 330 * time.Second
 )
 
 // appliancePaths is where the launcher keeps everything on a Mac.
@@ -704,7 +711,7 @@ func applianceRun(ctx context.Context, e *Env) error {
 	_ = os.Chmod(p.ParkKeySock, 0o600)
 	serveCtx, stopServe := context.WithCancel(context.Background())
 	defer stopServe()
-	go parkkey.Serve(serveCtx, ln, &keychainKeeper{log: logf}, logf)
+	go parkkey.Serve(serveCtx, ln, &parkKeychainKeeper{log: logf}, logf)
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	args := append([]string{"-s", "-i", p.Vfkit}, vfkitArgs(p, c)...)

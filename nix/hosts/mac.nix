@@ -286,7 +286,7 @@ in
       # internal/parkkey's, and the launcher's vfkit forwards it to the
       # unix socket `repose host run` listens on (TestMacNixAgreesOnThePort
       # holds the two together). The deadline is under the launcher's
-      # grace: a stop or a restart of the Mac gives the appliance 270 s
+      # grace: a stop or a restart of the Mac gives the appliance 330 s
       # before the plug (internal/cli/appliance.go), and hostd's own wall
       # is this plus 150 (park.nix), so the park ends before the plug,
       # and a guest that does not fit in 120 s at the assumed rate is

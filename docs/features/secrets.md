@@ -455,7 +455,12 @@ not, stated plainly: an attacker with the Mac's disk alone reads
 ciphertext; an attacker with the unlocked Mac and root reads the keychain
 item and therefore the image. That is weaker than the fleet's Key Vault
 custody and is the price of the customer owning the machine. The item is
-not hardware-backed; a Secure Enclave key is its own future decision.
+not hardware-backed; a Secure Enclave key is its own future decision. The
+same six hours apply, and on a Mac they count against the user: hostd
+exists there only once someone logs in, so a restart followed by no login
+for six hours leaves the image past its age at the next start, and it is
+discarded unread. The docs say "log in again within 6 hours" in the same
+breath as the power-cut case.
 
 ## Depends on
 

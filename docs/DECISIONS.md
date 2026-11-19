@@ -37327,15 +37327,31 @@ entry).
   `key_id` where Key Vault's key version goes, so an image from a
   replaced item is refused by name (`unwrap_failed`, that guest starts
   cold) rather than opened to garbage for the image's key check to catch.
-- *Time.* The park's deadline on the Mac is 120 s (mac.nix), hostd's
-  own wall that plus 150 (park.nix), and the launcher's grace before the
-  plug 270 s, so hostd gives up before the launcher does. The agent's
-  `ExitTimeOut` is 300 s where launchd's default is 20, which no park
-  fits in; `repose host rm` and a logout wait the same. 120 s at the
-  100 MB/s floor admits 12 GB, more than a 16 GB Mac places; the park
-  measures the real rate from its first snapshot as everywhere. The
-  park-key service runs past the launcher's SIGTERM on purpose: the park
-  that the stop triggers wraps through it.
+- *Time.* The park's deadline on the Mac is 120 s (mac.nix). The worst
+  case is a guest that will not snapshot: the park holds the shutdown for
+  the deadline plus its own 120 s stop grace (park.go), 240 s; the unit's
+  wall cuts it at 270 (park.nix); the launcher pulls the plug at 330, 60
+  s for the rest of the shutdown after that wall; the agent's
+  `ExitTimeOut` is 360 where launchd's default is 20, which no park fits
+  in; `repose host rm` and a logout wait the same. So hostd gives up
+  before the launcher does, and an image is never cut mid-write from the
+  Mac's side; what macOS itself allows an agent at a restart is only the
+  Mac's to show. 120 s at the 100 MB/s floor admits 12 GB, more than a
+  16 GB Mac places; the park measures the real rate from its first
+  snapshot as everywhere. The park-key service runs past the launcher's
+  SIGTERM on purpose: the park that the stop triggers wraps through it.
+- *Six hours, counted against the user.* I-653 removes an image six
+  hours after it was written, read or not. On the fleet hostd starts
+  with the host; on a Mac it starts when someone logs in, so a restart
+  followed by no login for six hours loses the work anyway. Not changed
+  here (the limit is I-653's); said on the docs page in the same breath
+  as the power cut: "log in again within 6 hours".
+- *The keychain, corrected.* I-1386's text said the System keychain
+  under an access group; the appliance is a user LaunchAgent that cannot
+  run before a login, so the login keychain is the home and the System
+  keychain would buy nothing at the cost of the root install I-1380
+  avoided. The conductor amends I-1386's wording; this entry is the
+  mechanics.
 - *Observed and not.* The launcher log carries `park-key:` lines with
   events and key ids, never a value; the appliance's journal carries the
   park's `guest_park` and `guest_restored` lines unchanged, the unwrap
