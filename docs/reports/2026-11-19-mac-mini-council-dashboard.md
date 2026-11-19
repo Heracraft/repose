@@ -27,8 +27,10 @@ one of the three the council confers from.
 5. **"I was signed in a minute ago and now I'm on the marketing page."** An
    expired session drops you on `/` with no message and no way back to the page
    you asked for. [P1-4](#p1-4)
-6. **"I can see the plan exists but not what it costs."** No plan name, no price,
-   no change control anywhere on `/billing`. [P1-5](#p1-5)
+6. **"I read the page about the plan, clicked the link to the price, and the
+   price page says there are only three plans."** No price for the Own hardware
+   plan on the landing page, on Pricing, or anywhere in the dashboard.
+   [P1-5](#p1-5)
 
 Counts: **2 P0, 5 P1, 7 P2.**
 
@@ -157,10 +159,28 @@ creating is blocked will delete projects to get under a line they were never
 near. That is a page causing a customer to destroy their own work. Size is
 irrelevant; the brief's rule decides it.
 
-**Unverified, and worth checking before launch:** the `own` plan carries
-`memory_gb: 0` and `disk_gb: 0` by design. An Own-hardware customer measured the
-same way would read "X GB of 0 GB · over" and carry that red banner permanently.
-I could not test this — I had one account, and it is exempt.
+**A prediction I made here was wrong, and I am striking it rather than hiding
+it.** I first wrote that an Own-hardware customer, whose plan carries
+`memory_gb: 0` and `disk_gb: 0`, would be measured the same way and would read
+"X GB of 0 GB · over" permanently. **That does not happen.** The conductor
+checked the page against the code: `billing/+page.svelte` derives
+`noFleetLimits` from `limits.memory === 0` and takes a different branch
+entirely, and `diskOver` requires `limits.disk > 0`, so the red bar cannot fire
+on a plan whose disk limit is zero (I-1364). I did not read that code myself —
+I am reporting the conductor's check, not my own.
+
+I am naming the mistake because it is the inverse of the trap this review is
+built to avoid: a reviewer *not seeing* something is a gap, and belongs in
+"what I could not run"; a reviewer *predicting* something is a claim, and this
+one was checkable and false. Left in, it would have sent whoever fixes this
+hunting a bug the code already prevents, and the card would have read as
+evidence that the plan is unusable when it is not.
+
+**What survives is the whole of the P0 and none of the prediction:** on *this*
+account `/billing` measures against one set of numbers while `GET /v1/me`
+reports another, prints "over" in red, says creating is refused, and then
+creates in 6.0 s. A real customer can be billing-exempt — the owner is — so a
+real customer can see exactly this.
 
 Measured 20:54–21:00 UTC. Card: ENG-34.
 
@@ -278,11 +298,27 @@ until this review passes, and is also absent from the dashboard. **On 19 Novembe
 2026 there is no surface anywhere that tells a customer what it costs.** If the
 dashboard is meant to be the door while Pricing is held, the door is not there.
 
-**This is the weakest-evidenced item in the report and I want that said.**
-The plan surface is very likely gated on `status: "exempt"` and a normal account
-probably sees a picker. I could not test that; I had one account and it is
-exempt. What is certain is that the account I had was given no way to see a plan,
-a price or a change control.
+**And the public side is no better.** I checked the live pages signed out, as
+myself:
+
+| Page | Says |
+|---|---|
+| the landing page | no "own hardware", no "mac mini", no "$10" |
+| `/docs/billing` — **titled "Pricing"** | subtitle: *"**The three plans**, what each one buys, the free week…"*. Prices named in the body: **$49, $39, $89, $169, $39, $49, $0**. No $10. |
+| `/docs/own-hardware` | links the words **"Own hardware plan"** to `/docs/billing` — the page that says there are three |
+
+So a customer who reads the one page that documents the product, and follows
+its own link to find the price, lands on a page that tells them the plan they
+just read about does not exist. There is no route to the price: not the
+landing page, not Pricing, not the dashboard. (The Mac reviewer found the same
+on the served HTML and across all 26 live docs pages; the table above is my own
+measurement of the rendered pages.)
+
+**One caveat I want kept with this.** The plan surface in the dashboard is very
+likely gated on `status: "exempt"` and a normal account probably sees a picker.
+I could not test that; I had one account and it is exempt. What is certain is
+that the account I had was given no way to see a plan, a price or a change
+control, and that no public page carries the price at all.
 
 ---
 
