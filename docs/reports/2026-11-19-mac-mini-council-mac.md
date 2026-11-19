@@ -829,6 +829,144 @@ four minutes"**, and the phases measured on the program branch totalled
 **289 s**. The published build took **425 s to boot** — **77% longer than
 the page promises.**
 
+### F5. 3,664 lines of nix, and 42 lines for the customer
+
+The first `repose run` on owned hardware wrote **3,706 lines to stderr**, of
+which **3,664 — 98.9% — begin `nix ›`**: 655 `copying`, 322 `building`, and
+the rest per-package build logs (176 `udev-rules`, 153 `jwcrypto`, 130
+`websockify`, 106 `linux`, 84 `fc-cache`, 83 `pi-coding-agent`).
+
+The summary the customer is meant to read is **42 lines**, and it is good:
+
+```
+✓ Created clean1 (small)  0.5s
+✓ Fetched the base  4.0s
+✓ Evaluated your config  15s
+✓ Fetched 655 paths (1.7 GiB)  60s
+✓ Built 323 derivations  57s
+✓ Booted firstmachine  7m05s
+Ready in 12m15s.
+```
+
+It is buried under the other 3,664. ENG-27 records this at **70 lines** on
+the hosted fleet; on owned hardware it is **fifty times worse**, because an
+owned host has no warm store, so a first run fetches 1.7 GiB and builds 323
+derivations on the Mac itself and every line reaches the terminal. Own
+hardware is the launch feature, so this is the shape most new customers will
+meet. Noted on **ENG-27** rather than filed again.
+
+### F6. The appliance boots with a failed unit and the account is never told
+
+The appliance installed by the [F1](#f1-p0-candidate-the-disk-guard-refuses-once-then-lets-you-past)
+retry path booted with exactly one failure, in its own console log at the
+path `/docs/own-hardware` names:
+
+```
+         Starting Grow the guest partition,…ool to the disk at boot (I-1376)...
+[FAILED] Failed to start Grow the guest par… pool to the disk at boot (I-1376).
+See 'systemctl status repose-mac-grow.service' for details.
+```
+
+Everything else reached `OK`, the appliance registered, and from the
+account's side it looked perfect: `repose host ls` said `online  18 GB  …
+just now`, and so did the dashboard. **Nothing anywhere told the customer a
+unit had failed.**
+
+And the one diagnostic offered — `systemctl status repose-mac-grow.service`
+— runs **inside a virtual machine the customer has no shell on and no
+documented way to reach**. It is advice that cannot be followed by the
+person who owns the Mac.
+
+**The cause is F1**, established by controlled comparison on the same Mac
+with the same CLI and the same image, differing only in the disk:
+
+| install | `disk.raw` | the grow unit |
+|---|---|---|
+| retry path, 22:34 | 39,728,447,488 B = **37.00 GiB** (= image size) | `[FAILED]` |
+| clean, 23:00:53 | 55,834,574,848 B = **52.00 GiB** | `[ OK ] Finished`, **no FAILED line in the boot** |
+
+The image is 37 GiB with "root partition to 32 GiB, pool partition after"
+(ENG-41's own words), so a disk file of exactly image size leaves nothing
+after the pool for a boot-time grow to claim.
+
+Two things still want fixing whatever happens to F1: **a failed unit on an
+owned host should reach the account**, not only a local log file; and a
+message should not tell a customer to run a command they cannot run.
+**Card ENG-79, P1.**
+
+### F7. Both machines on the broken appliance died
+
+On the appliance of [F6](#f6-the-appliance-boots-with-a-failed-unit-and-the-account-is-never-told).
+
+**Machine 1 worked, then stopped.** `repose run --no-attach --size small`
+completed: `Ready in 12m15s`, `Checkout: ~/firstmachine on the machine`,
+`Logins copied: gh, git`. Then from 22:50 to 22:57 — **eighteen SSH attempts
+over 355 s, plus three more after** — every one answered:
+
+```
+environment is not accepting connections yet
+```
+
+Throughout, `repose ls` said `running` and `repose status` said `running
+12m` with `checkout unknown (no ssh answer in 4 s)`. And the customer's one
+diagnostic is closed to them:
+
+```
+$ repose logs --kind console
+firstmachine has no console output: repose keeps a machine's console only from a boot that failed.
+```
+
+**So for a machine that booted and then died, there is nothing to read.**
+
+**Machine 2 never started.** `Creating secondmachine… 5m00s`, then exit 1:
+*"the machine did not answer within a minute of starting … (guest_unresponsive)"*.
+Its console does exist, and shows a **healthy** boot — modules loaded, `fsck`
+clean, overlay mounted, `0 whiteouts removed`, systemd starting — with the
+first systemd line stamped **`[ 196.433235]`**. The guest was alive and 196
+seconds into its own boot when the control plane gave up after *a minute*.
+
+**Ruled out by measurement, not assumed:** memory. `/docs/machine.md` gives
+`small` = 4 GB, so two of them are 8 GB of an 18 GB appliance, and the Mac's
+load average was 3.72 across 10 cores. I had assumed OOM and was wrong.
+
+**Card ENG-80, P0 candidate**, with the rank resting on whether machines
+work on the clean appliance — the measurement running as this is written.
+
+### F8. The CLI counts in GiB and says GB
+
+Two consistent measurements:
+
+- `df` reporting **46.67 GiB = 50.11 GB** free → the CLI printed *"this
+  volume has **46 GB** free"*. It said the GiB figure.
+- On a volume with **72.65 GiB** free after unpacking → `disk.raw` was
+  **exactly 52.00 GiB**, which is `72.65 − 20` floored **in GiB**. In GB the
+  same rule gives about 58 GiB.
+
+So the rule is `free_GiB − 20 GiB`, floored, with a "40 GB" floor that is
+really 40 GiB — every disk figure the CLI states is about **7% larger than
+the unit it names**.
+
+**What it costs a customer:** `/docs/own-hardware` says *"About 60 GB of free
+disk to begin with"*. Someone who reads that, frees **62 GB**, and runs the
+install has 57.7 GiB; `57.7 − 20 = 37.7`, below the 40 floor, so they are
+**refused after downloading 2 GB**, having done exactly what the page asked.
+
+Derived from two measurements rather than triggered deliberately, and the
+card says so. **Card ENG-87, P2.**
+
+### F9. Taking it off works, and quickly
+
+The one part of the lifecycle that behaved exactly as documented:
+
+| | |
+|---|---|
+| `repose host rm mac-council --yes` from the laptop | exit 0, **under a second**, silent; `host ls` then "You have no hardware of your own." |
+| `repose host rm --local --yes` on the Mac | exit 0, **3 s** |
+| after it | appliance directory **gone**, no `vfkit`, no launchd plist, volume back to **78.75 GiB** free |
+
+`/docs/own-hardware` promises *"Remove the host and the virtual machine goes
+with it"*, and it does, including the disk. No finding.
+
 ---
 
 ## The four hats
