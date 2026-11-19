@@ -18,6 +18,22 @@ command line filed eighteen findings and ranked one P0 and seven P1; the
 dashboard filed fifteen and ranked two P0, three P1 and ten P2. Where the two
 disagreed on a rank, both ranks are shown below with what separates them.
 
+## What has never been checked, said out loud
+
+A builder asked for this to be stated rather than assumed, and it is right:
+**the full `nix flake check` has never passed on this branch, anywhere, at
+any point.** It was abandoned deliberately — a whole-flake evaluation takes
+8.5 to 12 GB on the 16 GB machine this program ran on, and it was OOM-killed
+twice — so the checks were built one at a time under a lock instead. That is
+weaker evidence than a full check and it is what we have. **An idle box is
+not evidence that a check passed.** Whoever cuts the queue should say this
+out loud rather than let a reader assume the usual gate ran.
+
+Also never exercised by a customer path: the disk-floor refusal (ENG-41),
+because sizing happens after the image is unpacked and until 22:28 UTC
+nothing unpacked. Its fix is merged at `38f5b797` and its behaviour is
+unverified by anyone.
+
 ## The gate, and where it stands
 
 The review's gate is a second pass that finds no P0. **It has not been run and
