@@ -894,6 +894,7 @@
         infra = pkgs.mkShell {
           packages = with pkgs; [
             opentofu azure-cli tfsec just jq nixos-anywhere wireguard-tools
+            scaleway-cli # ops/dev/macmini, docs/research/mac-mini-nested-kvm.md
           ];
         };
       };

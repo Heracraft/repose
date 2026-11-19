@@ -403,3 +403,134 @@ forward and cache rows need a real guest, and the conductor or owner
 provides one.
 ```
 
+
+### 19 mac-mini-conductor
+
+```
+Workstream: docs/workstreams/19-mac-mini.md. You are the mini-conductor
+of the Mac mini program, not a builder: you never build an item
+yourself. You are in ~/kanali-mac-mini on branch mac-mini. Read the
+program doc, docs/research/mac-mini-nested-kvm.md, the BYO host
+proposal and I-647, then docs/ops/ORCHESTRATION.md "Sessions in tmux
+windows". First message to the owner: the budget envelope for Mac days
+(§2 Money) and the four settled-shape assumptions in §4 that are theirs
+(the plan price, the CLI noun, snapshots on the host's disk, appliance
+first), in one message; proceed on the assumptions unless they answer.
+Then: create worktrees ~/kanali-mac-mini-19a..19d on branches
+ws/19a-ownership, ws/19b-hub, ws/19c-host-cli, ws/19d-plan from
+mac-mini; launch one Claude session per item in a tmux window of a new
+session named mac-mini on the default socket (claude --permission-mode
+bypassPermissions --model <per the doc>; trust dialog: Down Enter; the
+prompt as one send-keys, C-m as a second), with `/ws 19a` etc.;
+subscribe with notify_when_idle. Merge each finished branch into
+mac-mini in dependency order (19a before 19c; 19b alone; 19d alone),
+run go build, go vet, go test -race with Postgres, nix flake check,
+just done-check, just lint after every merge. Wait for the spark's gate
+0 message (the session named in STATUS.md's macmini-research line);
+on pass, launch 19e then 19f with the Mac alive (ask the spark for
+`ops/dev/macmini status` and the ssh command; the spark owns the AWS
+lab and destroys it when you say the day is done). Run phase 3 with
+19f's builder. Then launch the council (`/ws 19-council`), fix P0 and
+P1 by relaunching builders with the findings, run the council again,
+and when its P0 list is empty write the PR body per docs/PR.md and
+`release-queue add` the mac-mini branch. Never push main, never merge
+a PR, never allocate a Mac yourself. Keep STATUS.md current for the
+program as a whole; each builder keeps its own line.
+```
+
+### 19a mac-mini-ownership
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19a, decision I-1366.
+Hosts get an owning account; placement, seats, the waitlist and the
+pool gauges respect it; api routes POST/GET/DELETE /hosts; the
+dashboard's Hosts page with add, list, remove (dashboard parity).
+Interfaces: api.md, db-schema.md, grpc-hostd.md. The placement test is
+shown red with the ownership filter removed, in both directions.
+Branch ws/19a-ownership.
+```
+
+### 19b mac-mini-hub
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19b, decision I-1368.
+The hub, the gateway and hostd treat a host as hostile: nftables drops
+host-to-host on wg0 and limits a host to its ports; the gateway routes
+to a host only its owner's projects; every project-naming hostd RPC
+checks the project lives on the calling host. docs/SECURITY.md gains
+"A host you do not own". Tests red first; the edge ruleset snapshot
+test. Branch ws/19b-hub.
+```
+
+### 19c mac-mini-host-cli
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19c, decisions I-1370
+and I-1372. `repose host add|ls|rm`, cli.md and docs_test.go green,
+the public docs page "Add your own hardware", registration without
+cloud-init, FileBlob snapshots on an owned host, offline hosts shown
+plainly in `repose ls` and the dashboard. Consumes 19a's routes (use
+the fake until merged). Branch ws/19c-host-cli.
+```
+
+### 19d mac-mini-plan
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19d, decision I-1364.
+The "Own hardware" plan: Polar product at $10 a month, one host;
+PRICING.md, billing.md, the landing's plans; hosted plans untouched;
+billing fakes and the webhook accept the product. Branch ws/19d-plan.
+```
+
+### 19e mac-mini-aarch64
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19e, decision I-1374.
+aarch64-linux outputs for guest base, runner, host system, installer;
+kernel pin and console per architecture; closure limit on both; Cachix
+push. Build on the Mac's appliance VM as a remote builder (ask the
+conductor for the ssh command). Record size and time in
+docs/research/mac-mini-nested-kvm.md. Branch ws/19e-aarch64.
+```
+
+### 19f mac-mini-appliance
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19f, decisions I-1376
+and I-1380. nix/hosts/mac.nix, the raw-efi image, the vfkit launcher
+with launchd and pmset, token from a file; proven on the AWS Mac:
+appliance boots, registers, Hello, a project runs; the docs page's
+install step. Consumes 19e. Branch ws/19f-appliance.
+```
+
+### 19g mac-mini-updates
+
+```
+Workstream: docs/workstreams/19-mac-mini.md item 19g, decision I-1378.
+Owned hosts pull a published host system from Cachix on a timer and
+switch; the api accepts the previous hostd release for one release;
+RUNBOOK section. Branch ws/19g-updates.
+```
+
+### 19-council mac-mini-council
+
+```
+You are not building. You are a developer who just bought an M4 Mac
+mini and heard about repose; the owner has no Mac and you are the user
+they cannot be. You have ~/kanali-mac-mini-council on branch
+council/mac-mini for the report only. Follow
+docs/workstreams/19-mac-mini.md §6 as a genuine use, start to finish,
+with a stopwatch: the landing, sign-up, paying for the Own hardware
+plan in the Polar sandbox, the docs page, the install on the real Mac
+the conductor names, the host appearing, `repose run`, how long the
+first guest takes to answer and how the second feels, the phone ask,
+laptop closed and reopened, a Mac reboot, `repose host rm`, cancel.
+Note every second waited, every line read, every guess, every error,
+every moment you would have tweeted. Then judge with the four hats, each a separate short verdict
+written before they confer, and write
+docs/reports/<date>-mac-mini-council.md: first "What would make a user
+scream", ranked; then findings P0/P1/P2 with exact reproductions and
+the stopwatch numbers, the economist's cost line with its numbers, the
+brand skeptic's line-by-line copy notes. Commit the report and message
+the conductor with the P0 count.
+```

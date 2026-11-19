@@ -1,0 +1,10 @@
+spawn ./cloud-hypervisor --api-socket /tmp/ch-4.sock --kernel Image --initramfs initrd.img --disk path=root.raw,image_type=raw path=seed.img,image_type=raw --cmdline console=ttyAMA0 root=/dev/vda1 rw --cpus boot=2 --memory size=2048M --serial tty --console off
+cloud-hypervisor:   0.007776s: <main> ERROR:/project/cloud-hypervisor/src/lib.rs:24 -- Fatal error: VmBoot(VmBoot(UefiLoad(UefiTooBig)))
+Error: Cloud Hypervisor exited with the following chain of errors:
+  0: Error booting VM
+  1: The VM could not boot
+  2: Cannot load the UEFI binary in memory
+  3: UEFI image too big
+send: spawn id exp3 not open
+    while executing
+"send "ubuntu\r""
