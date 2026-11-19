@@ -123,6 +123,8 @@ pkgs.testers.runNixOSTest {
         renameUplink = false;
         launcherMount = false;
         growDisk = false;
+        # The test driver's backdoor shell is on hvc0.
+        console = "";
       };
       dataDisk.enable = false;
       # hostdev's CA instead of the platform's; both set is an error. The

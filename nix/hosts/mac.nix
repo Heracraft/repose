@@ -233,6 +233,11 @@ in
       default = true;
       description = "Run repose-mac-grow at boot (the VM test runs the script on a disk of its own instead).";
     };
+    console = lib.mkOption {
+      type = lib.types.str;
+      default = "hvc0";
+      description = "The kernel console: the framework's virtio console under vfkit. Empty leaves the kernel's default; the VM test needs that, because the test driver's own shell is on hvc0.";
+    };
     renameUplink = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -297,7 +302,7 @@ in
     # to satisfy both; the bisect window for whoever bumps next is
     # 6.18.57 to 7.0.0-43, and a bump is proven on Apple silicon with
     # `ops/dev/macmini-l2-try.sh` before it ships (I-1376).
-    boot.kernelParams = [ "console=hvc0" ];
+    boot.kernelParams = lib.optional (mac.console != "") "console=${mac.console}";
 
     # ---- the disk --------------------------------------------------------
     disko.devices.disk.os = {
