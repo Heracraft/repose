@@ -339,7 +339,7 @@ in
         # I-1368): a packet for another peer, and a packet for this
         # machine outside ICMP echo and the guests' hook ingest. Read
         # with `nft list counter inet repose-edge host_forward_dropped`;
-        # the edge VM test and the staging check read them.
+        # the edge VM test (nix/edge/tests) asserts on them.
         counter host_forward_dropped { }
         counter host_input_dropped { }
 

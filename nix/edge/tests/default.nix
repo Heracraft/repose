@@ -130,7 +130,9 @@ in
 
       def counter(name):
           out = edge.succeed(f"nft list counter inet repose-edge {name}")
-          return int(re.search(r"packets (\d+)", out).group(1))
+          m = re.search(r"packets (\d+)", out)
+          assert m is not None, f"no packet count in: {out}"
+          return int(m.group(1))
 
       def refused(m, target, port, ctr, src=None):
           # The probe must time out, not be refused by a closed port, so
