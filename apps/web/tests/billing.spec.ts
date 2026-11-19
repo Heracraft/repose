@@ -791,3 +791,111 @@ test.describe('the plan outside /billing', () => {
 		await expect(foot).toContainText(/GB of 8 GB running/, { timeout: 2000 });
 	});
 });
+
+// The Own hardware plan (DECISIONS I-1364): $10 a month for one host the
+// user owns. It is a row beside the three cards, not a fourth card, it is
+// offered only where the api lists it (where POLAR_PRODUCT_OWN is set),
+// and on it the page has no meters to draw, because the plan caps
+// nothing.
+/**
+ * The viewport at 1440 and 390 in both schemes, at 1x, for the review
+ * CLAUDE.md asks for ("Judge visuals at real size"). Written only with
+ * REPOSE_SHOTS_DIR set, as triggers.spec.ts does.
+ */
+async function shots(
+	page: import('@playwright/test').Page,
+	name: string,
+	into: string
+): Promise<void> {
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (!dir) return;
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			// At 390 what is being judged is below the fold: a viewport shot
+			// of the top of the page says nothing about it (CLAUDE.md
+			// "Judge visuals at real size").
+			await page.getByTestId(into).scrollIntoViewIfNeeded();
+			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
+		}
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: null });
+}
+
+test.describe('the Own hardware plan', () => {
+	test('is absent where the api does not sell it, and a row beside the cards where it does', async ({
+		page
+	}) => {
+		await setBilling({ mode: 'none' });
+		await page.goto('/billing');
+		await expect(page.getByTestId('plan-solo')).toBeVisible();
+		await expect(page.getByTestId('plan-own')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: /Own hardware/ })).toHaveCount(0);
+
+		await setBilling({ own_for_sale: true });
+		await page.goto('/billing');
+		const own = page.getByTestId('plan-own');
+		await expect(own.getByRole('heading', { level: 2, name: 'Own hardware' })).toBeVisible();
+		await expect(own.locator('.pr .n')).toHaveText('$10');
+		await expect(own).toContainText('One host; its memory and disk are the limits.');
+		// The three cards are untouched: still three, still their figures.
+		await expect(page.locator('.plans .plan')).toHaveCount(3);
+		await expect(page.getByTestId('plan-solo')).toContainText('8 GB running at once');
+		await shots(page, 'billing-own-offer', 'plan-own');
+	});
+
+	test('is for sale while every seat is held, because it needs none', async ({ page }) => {
+		await setBilling({
+			mode: 'none',
+			own_for_sale: true,
+			seats: { total: 30, held: 30, waiting: 2 }
+		});
+		await page.goto('/billing');
+		// The fleet is full and says so: the hosted plans cannot be bought.
+		await expect(page.getByTestId('full').getByRole('heading', { name: 'repose is full' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveCount(0);
+		// Own hardware is still buyable, and its checkout opens.
+		const choose = page.getByRole('button', { name: 'Choose Own hardware' });
+		await expect(choose).toBeEnabled();
+		const checkout = page.waitForRequest(/\/polar\/checkout\/chk_fake_\d+$/);
+		await choose.click();
+		await checkout;
+		await page.waitForURL(/\/billing(\?checkout=done)?$/);
+		await expect(
+			page.getByTestId('plan').getByRole('heading', { name: 'Own hardware' })
+		).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $10 on');
+	});
+
+	test('on the plan: no meters, no plan picker, and the cancel path is the usual one', async ({
+		page
+	}) => {
+		await setBilling({ mode: 'active', plan: 'own', own_for_sale: true });
+		await page.goto('/billing');
+		const card = page.getByTestId('plan');
+		await expect(card.getByRole('heading', { level: 2, name: 'Own hardware' })).toBeVisible();
+		await expect(card.locator('.plan-price .n')).toHaveText('$10');
+		// What the machines hold, with no limit beside it: a plan that caps
+		// nothing has nothing to meter.
+		await expect(page.getByTestId('own-usage')).toBeVisible();
+		await expect(page.getByText("Your host's memory and disk are the limits.")).toBeVisible();
+		await expect(page.getByRole('progressbar')).toHaveCount(0);
+		// No change between the kinds: the api refuses it (plan_kind), so
+		// the page does not offer it.
+		await expect(page.getByRole('button', { name: 'Change plan' })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Card and receipts' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Cancel plan' })).toBeVisible();
+		await shots(page, 'billing-own-current', 'own-usage');
+	});
+
+	test('a hosted plan is not offered a change to it', async ({ page }) => {
+		await setBilling({ mode: 'active', plan: 'solo', own_for_sale: true });
+		await page.goto('/billing');
+		await page.getByRole('button', { name: 'Change plan' }).click();
+		const picker = page.getByTestId('change-plan');
+		await expect(picker.getByTestId('plan-plus')).toBeVisible();
+		await expect(picker.getByTestId('plan-own')).toHaveCount(0);
+	});
+});

@@ -31,10 +31,18 @@
 		timeUntil,
 		classMemoryGB
 	} from '$lib/format';
-	import { HOLD_HOURS, fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
+	import {
+		HOLD_HOURS,
+		fromApi,
+		holdsMemory,
+		isOwnHardware,
+		ordinal,
+		type PlanFigures
+	} from '$lib/plans';
 	import { SUPPORT_MAILTO } from '$lib/links';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
+	import OwnHardwarePlan from '$lib/components/OwnHardwarePlan.svelte';
 	import Meter from '$lib/components/Meter.svelte';
 	import MemoryMeter from '$lib/components/MemoryMeter.svelte';
 	import { frozenSince } from '$lib/frozen';
@@ -78,7 +86,18 @@
 	let plan = $derived<Plan | undefined>(
 		billing && sub ? billing.plans.find((p) => p.id === sub.plan) : undefined
 	);
-	let figures = $derived<PlanFigures[]>(billing ? billing.plans.map(fromApi) : []);
+	// The cards are the hosted plans; the Own hardware plan is a row of its
+	// own, and only where the api lists it (I-1364: it is listed where its
+	// Polar product id is configured, so the page follows the api with no
+	// flag of its own).
+	let figures = $derived<PlanFigures[]>(
+		billing ? billing.plans.filter((p) => !isOwnHardware(p)).map(fromApi) : []
+	);
+	let ownApi = $derived<Plan | undefined>(billing?.plans.find(isOwnHardware));
+	let own = $derived<PlanFigures | undefined>(ownApi ? fromApi(ownApi) : undefined);
+	/** The account is on the Own hardware plan: it caps nothing, so the
+	 *  meters and the plan cards are not its page. */
+	let onOwn = $derived(!!plan && isOwnHardware(plan));
 	let scheduledPlan = $derived<Plan | undefined>(
 		billing && sub?.scheduled_plan
 			? billing.plans.find((p) => p.id === sub.scheduled_plan)
@@ -90,7 +109,11 @@
 	/** Free seats as this user can count them: the fleet's, plus the one
 	 * their invitation holds, so the counts agree with the held-seat banner. */
 	let seatsFree = $derived(billing ? billing.seats.free + (holdActive ? 1 : 0) : 0);
-	let anyAvailable = $derived(!!billing?.plans.some((p) => p.available));
+	// The hosted plans only: Own hardware needs no seat, so counting it
+	// here would hide "repose is full" from a user who cannot buy one.
+	let anyAvailable = $derived(
+		!!billing?.plans.some((p) => !isOwnHardware(p) && p.available)
+	);
 	let accountStatus = $derived(me?.billing.status);
 	// What the projects hold, which the plan's disk counts (I-585); an api
 	// older than that sends only disk_allocated_gb.
@@ -136,9 +159,12 @@
 	let priceNow = $derived(
 		sub && plan ? (introCharge ? sub.next_charge_cents! : plan.price_cents) : 0
 	);
-	/** Change plan's cards, the current one at the price the account pays. */
+	/** Change plan's cards, the current one at the price the account pays.
+	 *  A change never crosses between the hosted plans and Own hardware
+	 *  (the api refuses it with plan_kind, I-1364), so the picker shows
+	 *  only the kind the account is on. */
 	let changeFigures = $derived(
-		figures.map((f) => (f.id === sub?.plan ? { ...f, priceCents: priceNow } : f))
+		onOwn ? [] : figures.map((f) => (f.id === sub?.plan ? { ...f, priceCents: priceNow } : f))
 	);
 
 	async function load() {
@@ -534,6 +560,26 @@
 					</p>
 				{/if}
 			</div>
+			{#if onOwn}
+				<!-- The plan caps nothing, so there is nothing to meter: what
+				     the machines on the user's own host hold, and the one line
+				     that says what bounds it (I-1364). -->
+				<dl class="hk-facts hk-facts--row own-facts" data-testid="own-usage">
+					<div>
+						<dt>Running</dt>
+						<dd>{gbs(billing.usage.running_gb)}</dd>
+					</div>
+					<div>
+						<dt>Disk held</dt>
+						<dd>{gbs(diskHeld)}</dd>
+					</div>
+					<div>
+						<dt>Machines</dt>
+						<dd>{billing.usage.projects}</dd>
+					</div>
+				</dl>
+				<p class="own-note">Your host's memory and disk are the limits.</p>
+			{:else}
 			<div class="month">
 				<div class="cell">
 					<MemoryMeter running={memRunning} frozen={memFrozen} limit={limits.memory}>
@@ -579,6 +625,7 @@
 					{/if}
 				</div>
 			</div>
+			{/if}
 			{#if diskOver}
 				<div class="hk-banner month-banner" role="status" data-testid="disk-over">
 					<p>
@@ -645,6 +692,7 @@
 			{/if}
 			{@render buyLine()}
 			<PlanCells plans={figures} introEligible={!!billing.intro_eligible} action={chooseAction} />
+			{#if own}<OwnHardwarePlan plan={own} action={chooseAction} />{/if}
 			{@render pricesNote()}
 		{:else}
 			{#if billing.waitlist}
@@ -688,6 +736,9 @@
 				</section>
 			{/if}
 			<PlanCells plans={figures} introEligible={!!billing.intro_eligible} action={waitingAction} />
+			<!-- Own hardware holds no seat, so it is for sale while the fleet
+			     is full and keeps its own action here (I-1364). -->
+			{#if own}<OwnHardwarePlan plan={own} action={chooseAction} />{/if}
 			{@render pricesNote()}
 		{/if}
 	{:else if plan}
@@ -801,7 +852,7 @@
 					>
 						{busy === 'resume' ? 'Resuming…' : 'Resume plan'}
 					</button>
-				{:else}
+				{:else if !onOwn}
 					<button
 						type="button"
 						id="change-plan-toggle"
@@ -1172,6 +1223,19 @@
 	}
 	.month-banner {
 		margin: 1rem 0 0;
+	}
+	/* On the Own hardware plan the month is figures, not meters: nothing
+	   caps them (I-1364). */
+	.own-facts {
+		padding: 1.25rem 0;
+		border-top: 1px solid var(--hk-hairline);
+		border-bottom: 1px solid var(--hk-hairline);
+	}
+	.own-note {
+		margin: 0.75rem 0 0;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
 	}
 	/* Invoices. */
 	.pager {

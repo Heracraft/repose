@@ -1,0 +1,152 @@
+<!--
+  The Own hardware plan (I-1364), beside the three plan cards rather than
+  among them: it sells one host the user owns and none of repose's
+  memory, disk or egress, so its figures are not the cards' figures and a
+  fourth card would hold three blank rows where they are.
+
+  One row on the page's hairline: the name, the price, what it is in one
+  line, and the page's action at the end. The three cards are untouched.
+
+  variant 'public' (the landing, the docs): no action, a link instead.
+  variant 'app' (/billing): the action the page gives.
+-->
+<script lang="ts">
+	import type { Snippet } from 'svelte';
+	import { price } from '$lib/format';
+	import type { PlanFigures } from '$lib/plans';
+
+	let {
+		plan,
+		current = false,
+		action,
+		variant = 'app',
+		level = 2
+	}: {
+		plan: PlanFigures;
+		/** The account is on this plan: the stronger edge and a badge. */
+		current?: boolean;
+		action?: Snippet<[PlanFigures]>;
+		variant?: 'public' | 'app';
+		level?: 2 | 3;
+	} = $props();
+</script>
+
+<div class="own" class:current data-testid="plan-{plan.id}">
+	<div class="head">
+		<svelte:element this={`h${level}`} class="name">{plan.name}</svelte:element>
+		{#if current}<span class="hk-badge hk-badge--outline">Current</span>{/if}
+	</div>
+	<p class="pr">
+		<span class="n">{price(plan.priceCents)}</span>
+		<span class="per">a month</span>
+	</p>
+	<p class="what">
+		A Mac mini or an x86 box you own, in your account. {plan.hosts === 1
+			? 'One host'
+			: `${plan.hosts} hosts`}; its memory and disk are the limits.
+	</p>
+	{#if action && variant === 'app'}
+		<div class="act">{@render action(plan)}</div>
+	{/if}
+</div>
+
+<style>
+	.own {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.25rem;
+		align-items: start;
+		margin-top: 1rem;
+		padding: 1.5rem;
+		border: 1px solid var(--hk-border);
+		border-radius: var(--hk-radius-lg);
+	}
+	.own.current {
+		border-color: var(--hk-border-strong);
+		background: var(--hk-surface);
+	}
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.375rem 0.625rem;
+		min-height: 1.25rem;
+	}
+	/* The cards' name: a heading element for the outline, drawn as the
+	   kit's small-caps label, so the row reads as one of them. */
+	.name {
+		margin: 0;
+		font-family: var(--hk-font-sans);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		line-height: 1.25rem;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--hk-text-3);
+	}
+	.pr {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.375rem;
+		margin: 0;
+		padding-top: 0.5rem;
+	}
+	.pr .n {
+		font-family: var(--hk-font-display);
+		font-size: 1.75rem;
+		font-weight: 400;
+		line-height: 2rem;
+		letter-spacing: -0.02em;
+		font-variant-numeric: tabular-nums;
+		color: var(--hk-text);
+	}
+	.pr .per {
+		font-size: 0.875rem;
+		color: var(--hk-text-3);
+		white-space: nowrap;
+	}
+	.what {
+		margin: 0;
+		font-size: 0.875rem;
+		line-height: 1.375rem;
+		color: var(--hk-text-2);
+		text-wrap: pretty;
+	}
+	.act {
+		padding-top: 1rem;
+	}
+	/* From 900px the row reads as a row: the name and price at the left,
+	   the line beside them, the action at the right, which is what keeps
+	   it from looking like a fourth card. */
+	@media (min-width: 900px) {
+		.own {
+			grid-template-columns: 12rem minmax(0, 1fr) auto;
+			column-gap: 2rem;
+			align-items: center;
+		}
+		.head {
+			grid-column: 1;
+			grid-row: 1;
+		}
+		.pr {
+			grid-column: 1;
+			grid-row: 2;
+			padding-top: 0.25rem;
+		}
+		.what {
+			grid-column: 2;
+			grid-row: 1 / span 2;
+		}
+		.act {
+			grid-column: 3;
+			grid-row: 1 / span 2;
+			padding-top: 0;
+		}
+	}
+	@media (forced-colors: active) {
+		.own.current {
+			border-width: 2px;
+		}
+	}
+</style>

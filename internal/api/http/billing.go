@@ -31,13 +31,6 @@ const msgNoSeat = "no seat is free for the upgrade; each seat that frees goes to
 // and no waitlist button, so only a hand-made request reaches it.
 const msgExempt = "This account is billing-exempt, so it has no plan to choose and no place to wait for."
 
-// msgPlanKind refuses a change between the Own hardware plan and a hosted
-// plan (I-1364). The two sell different things: a hosted plan sells
-// memory on the fleet, Own hardware sells a host of the user's own, and
-// Polar prorates between products, not between kinds. The sentence names
-// the only way across, which the user can do themselves.
-const msgPlanKind = "the Own hardware plan and the hosted plans sell different things; cancel this plan, then choose the other one when it ends"
-
 // billingService returns the service or the disabled error.
 func (s *Server) billingService() (*billing.Service, error) {
 	if s.d.Billing == nil {
@@ -150,7 +143,7 @@ func (s *Server) billingPlan(w http.ResponseWriter, r *http.Request) error {
 	case errors.Is(err, billing.ErrUnknownPlan), errors.Is(err, billing.ErrNotForSale):
 		return errf("invalid", "plan must be %s", billing.PlanChoices(svc.PlansForSale()))
 	case errors.Is(err, billing.ErrPlanKind):
-		return withDetail(errf("conflict", "%s", msgPlanKind), map[string]any{"reason": "plan_kind"})
+		return withDetail(errf("conflict", "%s", billing.MsgPlanKind), map[string]any{"reason": "plan_kind"})
 	case errors.Is(err, billing.ErrNoSubscription):
 		return withDetail(errf("conflict", "you have no plan yet; choose one with a checkout"), map[string]any{"reason": "no_subscription"})
 	case errors.Is(err, billing.ErrSamePlan):

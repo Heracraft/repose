@@ -21,7 +21,9 @@ export type GuestState =
  * `none` is an account with no plan yet, `trial` a trialing one. */
 export type BillingStatus = 'none' | 'trial' | 'active' | 'past_due' | 'suspended' | 'exempt';
 
-export type PlanId = 'solo' | 'plus' | 'pro';
+/** A plan id. `own` is the Own hardware plan: one host the user owns, and
+ *  none of repose's memory, disk or egress (I-1364). */
+export type PlanId = 'solo' | 'plus' | 'pro' | 'own';
 
 /** The subscription's own status, Polar's words (docs/interfaces/api.md GET /billing). */
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'paused' | 'canceled';
@@ -86,6 +88,9 @@ export interface Me {
 		memory_gb: number;
 		disk_gb: number;
 		egress_gb: number;
+		/** How many hosts of their own the account may register (I-1364);
+		 *  absent from an api older than it. */
+		hosts?: number;
 	};
 	notify?: {
 		email: boolean;
@@ -170,6 +175,11 @@ export interface Plan {
 	memory_gb: number;
 	disk_gb: number;
 	egress_gb: number;
+	/** How many hosts of their own the plan allows: 1 on Own hardware, 0 on
+	 *  the hosted plans (I-1364). A plan with hosts > 0 sells none of
+	 *  repose's memory, disk or egress, so those three read 0 and mean
+	 *  "the plan caps nothing"; the host's own memory and disk do. */
+	hosts?: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;
 	/** The introductory price a month and for how many months, Solo's founding

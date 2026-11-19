@@ -46,6 +46,17 @@ func (s *Service) Seats() waitlist.Seats { return s.seats }
 // product id (DECISIONS I-1364).
 func (s *Service) PlansForSale() []Plan { return s.cfg.PlansForSale() }
 
+// MsgPlanKind is the sentence POST /billing/plan answers with when a
+// change crosses between the hosted plans and the Own hardware plan
+// (I-1364). The two sell different things: a hosted plan sells memory on
+// the fleet, Own hardware a host of the user's own, and Polar prorates
+// between products, not between kinds. The sentence names the only way
+// across, which the user can do themselves. It lives here, not in the
+// route, because the fake api says it too and a fake that said it
+// another way would hide the difference from every test against it
+// (as plan_limit's did, I-633).
+const MsgPlanKind = "the Own hardware plan and the hosted plans sell different things; cancel this plan, then choose the other one when it ends"
+
 // PlanChoices lists plan ids as a refusal names them: "solo, plus or pro".
 func PlanChoices(plans []Plan) string {
 	ids := make([]string, 0, len(plans))
