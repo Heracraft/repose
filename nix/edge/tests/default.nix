@@ -125,8 +125,9 @@ in
       def listen(m, addr, port):
           # A listener a `nc -z` can complete a handshake with; `-k` so one
           # probe does not end it.
-          m.succeed(f"systemd-run --unit listen-{port} nc -k -l {addr} {port}")
-          m.wait_until_succeeds(f"ss -ltn | grep -q ':{port} '")
+          unit = "listen-" + addr.replace(".", "-") + f"-{port}"
+          m.succeed(f"systemd-run --unit {unit} nc -k -l {addr} {port}")
+          m.wait_until_succeeds(f"ss -ltn | grep -q '{addr}:{port} '")
 
       def counter(name):
           out = edge.succeed(f"nft list counter inet repose-edge {name}")
