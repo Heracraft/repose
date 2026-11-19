@@ -134,6 +134,29 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		}
 	})
+	// An owned host that has stopped answering (DECISIONS I-1370): adds a
+	// registered host of the account's, puts the project on it, and makes
+	// both the host and the project read as quiet, so the dashboard shows
+	// what a Mac mini owner sees when the Mac is asleep.
+	mux.HandleFunc("POST /offline-host", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			Name      string `json:"name"`
+			QuietMins int    `json:"quiet_minutes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Name == "" {
+			body.Name = "mac-mini"
+		}
+		id := f.AddOwnedHost(body.Name)
+		f.SetProjectHost(body.ProjectID, id)
+		f.SetOwnedHostOffline(id, time.Duration(body.QuietMins)*time.Minute)
+		f.SetHostUnreachable(body.ProjectID, true)
+		_ = json.NewEncoder(w).Encode(map[string]string{"host_id": id})
+	})
 	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
 		back, err := f.CompleteCheckout(r.PathValue("id"))
 		if err != nil {

@@ -36320,3 +36320,104 @@ Forward to your app makes a route the api holds with no trigger; Edit,
 Rotate and Remove in the row; a trigger and a forward share the list and
 the count), `config.spec.ts`'s order test without Webhooks; the shots at
 1440 and 390 in both schemes are in the PR.
+
+**I-1370. `repose host` is the noun for hardware you own: `host add`
+prints the install step, `host ls` is the one table, `host rm` takes it
+off; an owned host that has stopped answering is named wherever it
+shows (mac-mini 19c, 2026-11-19).** *Made during implementation* (the
+settled shape of `docs/workstreams/19-mac-mini.md` §4).
+
+Bring your own hardware (I-647 shape A, I-1366) gives an account a host
+of its own. The user-facing half is one noun and one page.
+
+(1) **`repose host`**, singular, because the Own hardware plan sells one
+and every line of output is about one machine. `host add [NAME]` mints
+the single-use join token through `POST /hosts` and prints, on stdout
+alone so it pipes, the install step the api composed with the token in
+it; stderr says to run it on the machine being added and when it stops
+working. The CLI never builds that line itself: the install path is
+19f's and the api's `host_install_command` setting, so changing it needs
+no CLI release. An api with no step recorded prints the token and the
+docs page instead, which is the honest state until 19f records the Mac's
+line. `host ls` (and bare `repose host`) is `HOST STATE MEMORY MACHINES
+RUNNING LAST SEEN`; `host rm NAME` asks once and retires it. Without
+NAME the api names the host: names are unique per account, not globally
+(19a's migration 0048), so the CLI resolves a name only within the
+account's own listing and never shows another account's.
+
+(2) **The states in a user's words**: `registering` is `waiting`, `ready`
+is `online`, `unreachable` is `offline`, `draining` is `removing`,
+`retired` and `lost` are `removed`. The api's enum is unchanged;
+`hostStateWord` in `internal/cli/hosts.go` and its twin in
+`apps/web/src/lib/offlinehost.ts` are the only places the words live.
+
+(3) **An offline host is named, not described.** A Mac mini on a desk is
+asleep, rebooting or off the Wi-Fi for much of the day, so `host_
+unreachable` is the line its owner reads most after the first day.
+Where the quiet host belongs to the account, `repose ls`, `repose
+status`, `repose run`'s wait and the dashboard say `mac-mini has not
+answered for 14m`; where it is one of repose's, they say `its server is
+not answering`, because that one is not the user's to fix. The CLI and
+the dashboard read `GET /hosts` for the name only when a machine says
+its host is quiet, so the common listing keeps its one round trip
+(`TestLsReadsHostsOnlyWhenOneIsQuiet`). No field was added to `Project`
+for this.
+
+(4) **The one question `host rm` asks** names the loss the user cannot
+discover later: snapshots taken on that host stay on its disk and repose
+has no copy (I-1372). The api refuses to retire a host that still holds
+machines (`host_has_projects`), since a machine moves host only by
+restore, and the CLI prints the machines in the way.
+
+Rejected: `hosts` plural (one per account, and `repose host ls` reads
+better than `repose hosts ls`); a `--open` flag that opens the install
+page in a browser (the printed step is the whole of it, and a second way
+to get it is a second thing to document); a `host_owned` boolean on
+`Project` (the name is what the line needs, and `GET /hosts` has it);
+composing the install line in the CLI (it would pin the Mac installer to
+a CLI release).
+
+*Checked:* `TestHostAddListRm`, `TestHostRmRefusedWhileMachinesAreOnIt`,
+`TestOfflineOwnHostIsNamedEverywhereItShows`,
+`TestLsReadsHostsOnlyWhenOneIsQuiet`, `TestHostStateWords`
+(internal/cli); `apps/web/src/lib/offlinehost.test.ts`;
+`apps/web/tests/own-hardware.spec.ts` with shots at 1440 and 390 in both
+schemes; `internal/cli/docs_test.go` against
+`apps/web/src/content/docs/cli.md`.
+
+**I-1372. Snapshots of an owned host's machines stay on that host's own
+disk, and the docs say a dead disk loses them (mac-mini 19c,
+2026-11-19).** *Made during implementation* (the settled shape of
+`docs/workstreams/19-mac-mini.md` §4; revisit when a user asks).
+
+hostd reaches Azure Blob with the host VM's managed identity, which a
+Mac mini in someone's house does not have. The alternatives were an
+S3-compatible backend with the user's own bucket, or the `FileBlob`
+backend hostd already has (`internal/hostd/snapshot/blob.go`,
+`--snapshot-dir`).
+
+`FileBlob`. A bucket means the bucket's keys live on a machine repose
+does not control, which is a fourth home for a secret where CLAUDE.md
+and `docs/features/secrets.md` allow three. `repose.host.owned = true`
+(`nix/hosts/default.nix`) says the machine belongs to a user, and the
+module asserts that `snapshots.blobUrl` and `snapshots.identityClientId`
+are empty there, so a future provider module cannot hand an owned host a
+bucket by accident. 19f sets it in `nix/hosts/mac.nix`.
+
+The cost is real and is the user's to carry, so it is said in plain
+words rather than implied: `apps/web/src/content/docs/own-hardware.md`
+has a section of its own saying that if the disk dies, every snapshot on
+it dies with it, and `repose host rm`'s question says the same in one
+line. `docs/interfaces/host-conventions.md` records both halves of an
+owned host, the snapshot store and the join token that arrives without
+cloud-init.
+
+Rejected: an S3-compatible backend now (the keys are the problem, not
+the code); uploading an owned host's snapshots to repose's own Blob (the
+plan sells no storage, and a user's machine images on repose's account
+is a promise nobody made); silence about the risk (it is the one thing
+on this page a user cannot undo and cannot discover any other way).
+
+*Checked:* `nix flake check` with `repose.host.owned` on and a blobUrl
+set fails on the assertion; the docs page's section and
+`TestHostAddListRm`'s prompt assertion.
