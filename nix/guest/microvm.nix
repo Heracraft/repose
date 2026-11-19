@@ -181,11 +181,12 @@ let
   pkgs = guestSystem.pkgs;
   toplevel = cfg.system.build.toplevel;
   # What Cloud Hypervisor boots: the uncompressed ELF on x86_64, the
-  # arm64 `Image` on aarch64 (the kernel's own target name), as
-  # microvm.nix's runner picks them.
+  # arm64 `Image` on aarch64 (what nixpkgs installs for an arm64 kernel,
+  # and the one file Cloud Hypervisor boots there), as microvm.nix's
+  # runner picks them.
   kernel = {
     x86_64-linux = "${cfg.microvm.kernel.dev}/vmlinux";
-    aarch64-linux = "${cfg.microvm.kernel.out}/${pkgs.stdenv.hostPlatform.linux-kernel.target}";
+    aarch64-linux = "${cfg.microvm.kernel.out}/Image";
   }.${system};
   initrd = cfg.microvm.initrdPath;
   ch = cfg.microvm.cloud-hypervisor.package;

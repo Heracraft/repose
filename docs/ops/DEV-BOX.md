@@ -97,6 +97,35 @@ echo 'system-features = nixos-test benchmark big-parallel kvm uid-range' >> ~/.c
 Log in again (or prefix one command with `sg kvm -c '...'`) so the group
 applies. Each test boots one or two VMs and takes two to five minutes.
 
+## aarch64 builds go through a remote builder
+
+This box is x86 with no `binfmt`, so nothing `aarch64-linux` builds
+here: `nix build ./nix#packages.aarch64-linux.guest-system` with no
+builder fails at the first derivation. Evaluation is another matter:
+every aarch64 output evaluates here (`nix eval --raw
+./nix#packages.aarch64-linux.guest-system.drvPath`), which is how a
+change to the flake is checked before a Mac day, and it costs the same
+memory as an x86 evaluation, so it goes through the build lock like
+every other `nix` command (`docs/ops/ORCHESTRATION.md`).
+
+`ops/dev/aarch64-base` runs the three things an aarch64 build day needs:
+`check` (the closure limit and that the runner, host and installer
+build), `build` (the guest system, printing its closure size) and `push`
+(the aarch64 agent overlay to Cachix). With `--builder ssh-ng://<user>@<host>`
+it evaluates here, under the lock, and builds there; with no builder it
+expects to be running on the aarch64 machine itself (the Mac's appliance
+VM, where the lock does not apply) and builds locally. The builder is
+the appliance VM's ssh address from the spark (`ops/dev/macmini ssh`
+prints the Mac; the VM is behind it), with this box's key in its
+`authorized_keys` and `nix` on its PATH.
+
+The one thing CI builds for aarch64 is the agent overlay, on a GitHub
+arm64 runner (`ci.yml`, job `nix-aarch64-overlay`), pushed to Cachix
+the way the x86 overlay is. The base closure itself is never pushed:
+it is 6 GiB of mostly cache.nixos.org paths, and the Cachix cache is
+the free 5 GB tier (I-46). An aarch64 host builds its base the way an
+x86 host does, from cache.nixos.org plus the overlay from Cachix.
+
 ## Go tests and Playwright
 
 Inside `nix develop` the temporary directory is `/tmp/nix-shell.*`, and the
