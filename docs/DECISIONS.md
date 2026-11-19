@@ -36189,3 +36189,56 @@ four cases: the only agent is a run (was `not_found`), a window the user
 named `t-notes` beside `claude` (was delivered to `claude` with no
 refusal), a run beside the user's own agent (goes to the user's), and two
 runs and nothing else (was `not_found`, now names both).
+**I-1360. One door, two receivers: the Triggers tab lists every way
+the outside reaches a machine with what answers it, and Config's
+Webhooks section is gone (doors, 2026-11-19).** *Made during
+implementation.* Amends I-1110's dashboard half, I-1258 and I-1266.
+The owner, 2026-11-19, on the trigger form: the line "A route that is
+not there is made, and its URL is yours to paste" made no sense, "what's
+a route?", and the Config tab's Webhooks section was a second way to
+make a webhook for the same machine. A webhook route and a webhook
+trigger are the same door at the edge (the URL, the token, the limits,
+the wake and the start, I-1110 and I-1250), and the only difference is
+who receives the delivery: the app listening on a port, or an agent
+started with a prompt. The dashboard now says that and nothing else.
+(1) A project's Triggers tab lists both: a trigger's row and a
+forwarding route's row, with the door (`webhook`, or the schedule's
+spec) in one column and the receiver (`an agent`, with the prompt path
+where the width holds it; `your app`, with the port and path) in the
+next. The heading counts both as triggers, because on this tab a
+forward is a trigger whose receiver is the app. (2) The form is Name,
+Fires on (a webhook, a schedule) and, on a webhook, Then (start an
+agent, forward to your app). The forward half is the port and path and
+the start switch and goes to `POST /projects/:id/webhooks`; the agent
+half is the prompt and the settings as I-1270 made them. (3) There is
+no Route field: a trigger's route is named after the trigger, so
+`repose webhooks` and the tab say one name. `--route NAME` on the CLI
+stays for a route named by hand, and a trigger whose route the CLI
+named apart reads `webhook recruiting` in the door column. (4) A
+forwarding route's row offers Copy, Edit, Rotate… and Remove…, where a
+trigger's offers Run, Edit, On/Off and Remove…; the one destructive
+action is last on both. Edit on a route changes the target and the
+start switch and keeps the token, as `webhooks add` on a name that
+exists does. (5) The Webhooks section under Config is removed with its
+component, `ProjectWebhooks.svelte`; nothing linked to its anchor. (6)
+The segmented controls in the form take the regular height: the small
+variant is for a filter over a table, and beside a text input it sat
+14 px short, which the owner saw before the words. The CLI is not
+changed: `repose webhooks` is the forward and its delivery log,
+`repose triggers` the agent. Not done: the hand door (`repose say`, the
+Agents card's Say) stays where it is; the owner wants say redesigned as
+a conversation, and that is its own work.
+
+Rejected: keeping the Route field with better copy (the field was the
+problem, not its sentence: a second name for the trigger's own URL);
+renaming the Webhooks feature (`webhooks` is the CLI noun and the docs
+page, and a rename would be a synonym); a new noun for the list
+("doors"), which this file uses and a user never has to.
+
+*Checked:* `apps/web/tests/triggers.spec.ts` (no Route field; the route
+is the trigger's name; `webhook recruiting` for a CLI-named route),
+`apps/web/tests/webhooks.spec.ts` (Config has no Webhooks section;
+Forward to your app makes a route the api holds with no trigger; Edit,
+Rotate and Remove in the row; a trigger and a forward share the list and
+the count), `config.spec.ts`'s order test without Webhooks; the shots at
+1440 and 390 in both schemes are in the PR.

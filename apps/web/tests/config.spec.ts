@@ -203,9 +203,7 @@ test('a Menu search that matches nothing says so', async ({ page }) => {
 // Config has no side column (I-841): the switches sit in a row under the
 // tabs, then Secrets, then Packages with the editor across the column,
 // then Revisions under it.
-test('Config reads top to bottom: switches, Secrets, Webhooks, Packages, Revisions', async ({
-	page
-}) => {
+test('Config reads top to bottom: switches, Secrets, Packages, Revisions', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'config-order-app',
 		remote_url: 'github.com/heracraft/config-order-app'
@@ -216,15 +214,14 @@ test('Config reads top to bottom: switches, Secrets, Webhooks, Packages, Revisio
 	const y = async (name: string) =>
 		(await page.getByRole('heading', { level: 2, name, exact: true }).boundingBox())!.y;
 	const hold = (await page.getByRole('checkbox', { name: /Hold base updates/ }).boundingBox())!;
-	const [secrets, webhooks, packages, revisions] = [
+	const [secrets, packages, revisions] = [
 		await y('Secrets'),
-		await y('Webhooks'),
 		await y('Packages'),
 		await y('Revisions')
 	];
 	expect(hold.y).toBeLessThan(secrets);
-	expect(secrets).toBeLessThan(webhooks);
-	expect(webhooks).toBeLessThan(packages);
+	// Webhooks left Config for the Triggers tab (I-1360).
+	expect(secrets).toBeLessThan(packages);
 	expect(packages).toBeLessThan(revisions);
 	const editor = (await page.locator('.nix-frame').boundingBox())!;
 	const tabs = (await page.getByRole('navigation', { name: 'Project' }).boundingBox())!;

@@ -142,42 +142,70 @@ comes before the four reports. I-1216 records that five tabs fit a
 360-wide screen and six do not, so the strip already scrolls there and a
 seventh joins a strip that scrolls.
 
-Webhooks is a section of the Config tab and triggers are a tab of their
-own, which needs saying because they are neighbours. A route is
-configuration: you set it once and paste the URL elsewhere. A trigger has
-a history — every run, its outcome and its summary — and an action that
-makes the machine work. A list that grows and an action belong on a page;
-a field you fill in once belongs in Config.
+The tab lists every way the outside reaches the machine, with what
+answers it (I-1360). The first draft of this section put webhook routes
+under Config and triggers on a tab of their own, on the grounds that a
+route is configuration and a trigger has a history. The owner read the
+two surfaces as two ways to make a webhook for the same machine, and
+the trigger form's Route field, with its line "A route that is not there
+is made, and its URL is yours to paste", as a sentence nobody could
+explain. The fact under both is that a route and a webhook trigger are
+one door at the edge, the URL, the token, the limits, the wake and the
+start (I-1110, I-1250), and the only difference is who receives the
+delivery: the app on a port, or an agent with a prompt. So the tab has
+one list and one form, with the door in one column and the receiver in
+the next, and Config has no Webhooks section.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ todo-app                                            ● running  Stop │
 │ Overview  Browser  Triggers  Events  Usage  Snapshots  Config        │
 ├──────────────────────────────────────────────────────────────────────┤
-│ 3 triggers                                                           │
-│  NAME    ON                 PROMPT              LAST RUN      NEXT   │
-│  apply   recruiting (route) .repose/triggers/…  ● done 12m           │
-│                                                 Run  Off  Remove…    │
-│  triage  weekdays 07:00     .repose/triggers/…  ● done 7h   07:00 ↑  │
-│                                                 Run  Off  Remove…    │
-│  sweep   daily 03:00        .repose/triggers/…  ● failed 3h          │
-│  off                                            Run  On   Remove…    │
+│ 4 triggers                                                           │
+│  NAME    FIRES ON        THEN                     LAST        NEXT   │
+│  apply   webhook         an agent .repose/trig…   ● done 12m         │
+│                                            Run  Edit  Off  Remove…   │
+│  triage  weekdays 07:00  an agent .repose/trig…   ● done 7h  07:00 ↑ │
+│                                            Run  Edit  Off  Remove…   │
+│  sweep   daily 03:00     an agent .repose/trig…   ● failed 3h        │
+│  off                                       Run  Edit  On   Remove…   │
+│  stripe  webhook         your app :3000/api/web…  ● 200 2m           │
+│                                        Copy  Edit  Rotate…  Remove…  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- Four inline ghost buttons a row — Run, Edit, On/Off, Remove… — the
-  same on every row, and no menu (`apps/web` has none, and this is not
+- **A forwarding route is a row** (I-1360). Its door is `webhook`, its
+  receiver `your app` with the port and path, its last column the last
+  delivery's status in `repose webhooks`' words, and its four buttons
+  Copy, Edit, Rotate… and Remove…, because a provider delivers to it or
+  does not and there is no run to start and nothing to turn off. Its
+  expansion says where it forwards, whether a delivery starts a stopped
+  machine, and the last delivery. Edit opens the same form on the
+  target and the start switch and keeps the token, as `webhooks add` on
+  a name that exists does. The heading counts it as a trigger, because
+  on this tab a forward is a trigger whose receiver is the app; the
+  CLI's two nouns stay, `repose webhooks` for the forward and its
+  delivery log, `repose triggers` for the agent.
+- **A webhook trigger's route is named after the trigger** (I-1360), so
+  the form has no Route field and `repose webhooks` and the tab say one
+  name. `--route NAME` on the CLI is the one place a route is named by
+  hand, and a trigger whose route has another name reads
+  `webhook recruiting` in the door column. The route a trigger owns is
+  the trigger's row and never a second one.
+
+- Four inline ghost buttons a trigger's row — Run, Edit, On/Off,
+  Remove… — the same on every trigger, and no menu (`apps/web` has none, and this is not
   the tab to invent one on). Four short ghost buttons measure about
   236px, and below 640 the row is a block where they have a line to
   themselves (I-1270). A route trigger's Copy URL and its Dry run are in
   the row's expansion, each with a line saying what it does; neither is
   in the row itself, because the one a fifth button would push out is
   Remove.
-- **Below 640 px the row is a block**, as `ProjectWebhooks` makes its
-  own: the name and the state on one line, the prompt and the door under
-  them, the actions on their own line. Three buttons and a target side by
-  side broke the target mid-word there, which is why that component has
-  the breakpoint.
+- **Below 640 px the row is a block**: the name and the state on one
+  line, the door and the receiver under them, the actions on their own
+  line. Three buttons and a target side by side broke the target
+  mid-word there, in the Webhooks section this tab absorbed, which is
+  why the breakpoint.
 - A trigger that is **off** says `off` under its own name, in the muted
   word every other state on a project's tabs uses, and its row's button
   offers `On`. It is not a column of its own: the state that matters on
@@ -185,11 +213,11 @@ a field you fill in once belongs in Config.
   second run. It is not a badge either — a badge on a project tab means
   `temporary` and nothing else.
 - **The columns a width cannot hold move into the row's expansion**, in
-  the order they stop being drawn: `Prompt` below `2xl`, `Next` below
-  `md`, and `On` below `sm` — except that the door is what a trigger
-  *is*, so at phone width it is drawn under the name instead, where a
-  list of names alone would not say which fires on a webhook and which
-  on a clock.
+  the order they stop being drawn: the prompt path beside `an agent`
+  below `2xl`, `Next` and `Then` below `md`, and `Fires on` below `sm`
+  — except that the door is what a trigger *is*, so at phone width it
+  is drawn under the name instead, where a list of names alone would
+  not say which fires on a webhook and which on a clock.
 - `Run` fires it. While the run works the button's label is `Running…`
   and it is disabled; there is no spinner, which is the house rule
   (`hk/tokens.css`). A fire is not an op: it never takes `ctx.opBusy`, so
@@ -207,17 +235,25 @@ a field you fill in once belongs in Config.
   (I-931), and the window's name. A run that is
   working shows as working; stopping one is attaching to that window, or
   its own timeout.
-- `Copy` puts a route trigger's URL on the clipboard and draws none of
-  it. The reason is in `ProjectWebhooks.svelte`, in better words than
-  this doc would repeat.
+- `Copy` puts a URL on the clipboard and draws none of it, on a
+  trigger's row and a forwarding route's alike: the URL holds the
+  route's token, a dashboard on a shared screen is a screen, and the
+  user who needs the characters copies them.
 - Empty: the `hk-empty-title` `No triggers yet` and one sentence,
   `A trigger starts an agent when a webhook arrives or at a time you
-  choose.`, beside the `Add trigger` button that makes one. It names no
-  command: the button does the thing.
+  choose, or hands the webhook to your app.`, beside the `Add trigger`
+  button that makes one. It names no command: the button does the
+  thing.
 - **Add trigger and Edit open the same form** (I-1270, amending this
   section's first draft). It takes everything `repose triggers add`
   takes, with the same defaults and the same refusals in the same
-  words. The door is a two-item segmented control. A schedule is built
+  words, and what `repose webhooks add` takes (I-1360). The door is a
+  two-item segmented control, Fires on; a webhook then shows a second,
+  Then, between starting an agent and forwarding to the app, and the
+  forward half of the form is the port and path and the start switch.
+  Both controls take the regular height, not the small variant made for
+  a filter over a table, which beside a text input sat 14 px short. A
+  schedule is built
   from the six shapes of §6 rather than typed, so nobody learns a
   grammar to say "every weekday at seven", and the spec and the zone it
   will be stored in are shown before it is made, because 07:00 means

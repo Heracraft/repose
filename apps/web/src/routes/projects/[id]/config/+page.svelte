@@ -30,7 +30,6 @@
 		menuEditable
 	} from '$lib/menuSelection';
 	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
-	import ProjectWebhooks from '$lib/components/project/ProjectWebhooks.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
 	import NixEditor from '$lib/components/NixEditor.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -392,7 +391,6 @@
 	</div>
 
 	<ProjectSecrets projectId={id} projectName={project?.slug} />
-	<ProjectWebhooks projectId={id} />
 {/if}
 
 <section class="hk-section packages" aria-labelledby="packages-title">

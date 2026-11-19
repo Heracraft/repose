@@ -1052,3 +1052,4 @@ pointer, not a summary.
 - **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — L36051
 - **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36099
 - **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36119
+- **I-1360** One door, two receivers: the Triggers tab lists every way the outside reaches a machine with what answers it, and Config's Webhooks section is gone (doors, 2026-11-19). Amends I-1110, I-1258 and I-1266 — L36192
