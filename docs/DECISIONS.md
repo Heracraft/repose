@@ -36963,12 +36963,20 @@ aarch64 host built from it (I-1374).
   (2026-11-10), because the old pin's image builder hands nixpkgs's
   vmTools a module tree as the kernel, which this nixpkgs refuses;
   upstream fixed it on 2026-10-19. disko's module is in `hostModules`,
-  so the bump was measured rather than assumed: the same tree evaluated
-  with each pin and every differing leaf derivation listed, for host-01,
-  host-02, host-stg-01 and the edge the only differing leaf is the
-  hostd or gateway version stamp, which changes with every commit, and
-  the installer's derivation is identical. The bump is inert for every
-  host and the edge.
+  so the bump was measured rather than assumed, and the method matters:
+  not a diff across two commits, because every commit changes
+  `self.shortRev`, which is baked into hostd's and gateway's version
+  strings and would show differences that mean nothing. Instead the one
+  tree was evaluated twice, as is and with `--override-input disko
+  github:nix-community/disko/ff8702b4de27f72b4c78573dfb89ec74e36abdf1`,
+  each `nixosConfigurations.<name>.config.system.build.toplevel.drvPath`
+  taken, and `nix derivation show` walked recursively from both until
+  the leaves that differ. For host-01, host-02, host-stg-01 and the edge
+  the only differing leaf is `hostd-<stamp>.drv` or
+  `gateway-<stamp>.drv` (the stamp reads `dirty` under the override),
+  and the installer's derivation path is identical. The bump is inert
+  for every host and the edge. This is how to show the next input bump
+  inert too.
 
 Rejected: two disks, the fleet's layout as it stands (a second file the
 launcher must create and size, for no gain on a machine with one SSD);

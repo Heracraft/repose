@@ -40,7 +40,11 @@
     # At 2026-11-10 or later: the Mac appliance image is disko's image
     # builder (I-1376), and before disko's 2026-10-19 fix it handed
     # nixpkgs's vmTools a module tree as the kernel, which this nixpkgs
-    # refuses ("the `kernel` argument has no `target` attribute").
+    # refuses ("the `kernel` argument has no `target` attribute"). The
+    # bump was shown inert for every host and the edge by evaluating one
+    # tree with `--override-input disko <old rev>` and walking the
+    # derivations to the leaves that differ (only the version stamps);
+    # I-1376 has the method, which is the one to repeat for the next bump.
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
