@@ -498,6 +498,11 @@ trust_reader() {
     [ -x "$check" ] || die "add: $check is missing, so what this CLI fetches at run time cannot be checked (DECISIONS I-1398)"
     assets=$("$check" --cli none --install none 2>&1) ||
       die "add: an asset this CLI fetches at run time does not answer (DECISIONS I-1398):"$'\n'"$assets"
+    # A bypass that is used is a bypass that is seen: the entry records
+    # which script answered, and a run against anything but the tree's own
+    # says so, or a stub exported once in a profile passes every release.
+    [ -z "${REPOSE_QUEUE_ASSETS:-}" ] || echo "release-queue: the asset check was $check, not this tree's ops/dev/release-assets (REPOSE_QUEUE_ASSETS)" >&2
+    assets_check=$check
   fi
   if [[ " $needs " == *" web "* ]]; then
     [ -d "$top/apps/web/node_modules" ] || die "add: apps/web has no node_modules, so the copy guards cannot run; pnpm install in $top first"
@@ -556,6 +561,7 @@ cmd_add() {
       { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
     [ -n "$needs" ] || needs=none
   fi
+  local assets_check=""
   trust_reader "$needs"
   # The pull request, when GitHub is there: pushed, opened or updated,
   # labelled, its record filled from what was computed above.
@@ -583,6 +589,7 @@ cmd_add() {
     echo "needs=$needs"
     echo "base=$(git rev-parse "$tip")"
     echo "exact=$( { [ "${REPOSE_QUEUE_FAST:-}" = 1 ] || ! command -v nix >/dev/null; } && echo no || echo yes)"
+    echo "assets=$assets_check"
     echo "live=$live"
     echo "note=$note"
     echo "machine=$(hostname)"
