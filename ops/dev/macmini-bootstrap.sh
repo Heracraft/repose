@@ -115,11 +115,18 @@ cp "$HOME/macmini-measure-linux.sh" "$LAB/l1-measure.sh"
 scp -i "$LAB/id_lab" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$LAB/l1-measure.sh" "admin@$L1_IP:l1-measure.sh"
 $SSH "admin@$L1_IP" 'chmod +x l1-measure.sh && ./l1-measure.sh' 2>&1 | tee "$RES/l1-measure.log"
 scp -i "$LAB/id_lab" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -r "admin@$L1_IP:results/." "$RES/"
-[ -s "$RES/l2-boot-ms.txt" ] && pass "step 3: L2 booted $(wc -l < "$RES/l2-boot-ms.txt" | tr -d ' ') times; ms to login: $(tr '\n' ' ' < "$RES/l2-boot-ms.txt")" \
-  || fail "step 3: no L2 boot recorded; read $RES/l1-measure.log and $RES/l2-boot-1.log"
-# the Mac's own number for the same benchmark, so L1's cost is visible too
-openssl speed -multi 2 -seconds 5 sha256 2>&1 | tail -n 4 > "$RES/openssl-l0-2threads.txt"
-pass "step 4: openssl sha256 recorded for L0, L1 and L2 (compare the 16384-byte column)"
+# five numbers, not five blank lines (the first run passed on blank lines)
+if [ "$(grep -cE '^[0-9]+$' "$RES/l2-boot-ms.txt" 2>/dev/null)" -ge 1 ]; then
+  pass "step 3: L2 booted $(grep -cE '^[0-9]+$' "$RES/l2-boot-ms.txt") times; ms to login: $(grep -E '^[0-9]+$' "$RES/l2-boot-ms.txt" | tr '\n' ' ')"
+else
+  fail "step 3: no L2 boot recorded; read $RES/l1-measure.log and $RES/l2-boot-1.log"
+fi
+# the Mac's own number for the same benchmark, so L1's cost is visible too.
+# macOS ships LibreSSL, whose speed has no -multi; one thread, like the others.
+openssl speed sha256 2>&1 | tail -n 3 > "$RES/openssl-l0-1thread.txt"
+grep -q "^sha256" "$RES/openssl-l0-1thread.txt" && grep -q "^sha256" "$RES/openssl-l2-1thread.txt" \
+  && pass "step 4: openssl sha256, one thread, at L0, L1 and L2 (compare the 16384-byte column)" \
+  || fail "step 4: an openssl line is missing; see $RES/openssl-l*-1thread.txt"
 
 # --- step 7: the same disk under vfkit ------------------------------------
 say "step 7: vfkit --nested on the Tart disk"

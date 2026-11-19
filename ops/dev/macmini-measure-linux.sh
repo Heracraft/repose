@@ -18,6 +18,9 @@ if ! command -v cloud-localds >/dev/null || ! command -v qemu-img >/dev/null || 
 fi
 { echo "kernel $(uname -r)"; nproc; free -g; ls -l /dev/kvm; } > ../results/linux-facts.txt 2>&1
 [ -e /dev/kvm ] || { echo "no /dev/kvm"; exit 1; }
+# /dev/kvm is root:kvm 0660 and this user is not in kvm (Cloud Hypervisor:
+# "CreateHypervisor(VmCreate(Permission denied))", 2026-11-19); a lab box.
+[ -w /dev/kvm ] || sudo_ chmod a+rw /dev/kvm
 CH=https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download
 [ -x cloud-hypervisor ] || { curl -fsSL -o cloud-hypervisor $CH/cloud-hypervisor-static-aarch64; chmod +x cloud-hypervisor; }
 [ -x ch-remote ]        || { curl -fsSL -o ch-remote $CH/ch-remote-static-aarch64; chmod +x ch-remote; }
@@ -55,7 +58,7 @@ send "ubuntu\r"
 expect -re "(?i)password:"
 send "l2pass\r"
 expect -re "\\\\$ $"
-send "openssl speed -multi 2 -seconds 5 sha256 2>&1 | tail -n 4; echo OPENSSL_DONE\r"
+send "openssl speed -seconds 5 sha256 2>&1 | tail -n 3; echo OPENSSL_DONE\r"
 expect "OPENSSL_DONE"
 send "sudo poweroff\r"
 expect eof
@@ -66,7 +69,8 @@ EXP
 for n in 1 2 3 4 5; do
   ms=$(run_l2 $n); echo "$ms" | tee -a ../results/l2-boot-ms.txt
 done
-sed -n '/sha256/,/OPENSSL_DONE/p' ../results/l2-boot-5.log > ../results/openssl-l2.txt
-openssl speed -multi 2 -seconds 5 sha256 2>&1 | tail -n 4 > ../results/openssl-l1-2threads.txt
+sed -n '/sha256/,/OPENSSL_DONE/p' ../results/l2-boot-5.log > ../results/openssl-l2-1thread.txt
+# one thread at every level is the like-for-like number; all threads shows the VM's ceiling
+openssl speed -seconds 5 sha256 2>&1 | tail -n 3 > ../results/openssl-l1-1thread.txt
 openssl speed -multi "$(nproc)" -seconds 5 sha256 2>&1 | tail -n 4 > ../results/openssl-l1-all.txt
 echo "measure: done"
