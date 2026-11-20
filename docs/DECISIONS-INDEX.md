@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1057 entries.
+1058 entries.
 
 ## Scope
 
@@ -1089,3 +1089,4 @@ pointer, not a summary.
 - **I-1436** `triggers add --route` asks before it takes a route that answers with something else (fix-ask ENG-32, 2026-11-20) — L38667
 - **I-1440** `repose host rm --local` says how many machines go with the appliance, and names the host still on the account afterwards; it stays offline-capable and never refuses on what it could not read (host-rm-local ENG-141, 2026-11-20) — L38717
 - **I-1442** A golden that asserts an order sorts it back into the guest's order first: `TestClaudeSettingsMergeGolden` compares the dropped-hook lines after putting `/home/dev` back, not in the order `$TMPDIR` gave them (claude-golden ENG-139, 2026-11-20) — L38765
+- **I-1444** The guest-address write checks for an open op in its own `where`, not before it, and a write that matched no row does not update the caller's copy (hello-addr ENG-111, 2026-11-20) — L38806

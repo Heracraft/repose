@@ -38802,3 +38802,51 @@ and the `permissions` union goes through `unique` too. If a case ever
 puts a home-dependent path in `permissions`, `want.json` will take the
 same dependency, and a byte comparison of JSON cannot be fixed the same
 way.
+
+**I-1444. The guest-address write checks for an open op in its own
+`where`, not before it, and a write that matched no row does not update
+the caller's copy (hello-addr ENG-111, 2026-11-20).** *Made during
+implementation* (found by CI run `44644449171` on pull request #87, whose
+diff was two documents and one `ci.yml` line, so the failure was main's).
+Completes I-720, whose rule was right and whose guard was two statements.
+
+I-720 gave `projects.guest_ip` a second writer, the Hello reconcile, and
+guarded it: a project with an open op is left alone, because that op's
+result settles the address as it settles the state. The guard read
+`store.OpenOpsForProject`, found none, and then issued the UPDATE. An op
+opening between those two statements is invisible to the first, so the
+very thing the guard exists to stop -- a Hello in the middle of a restore
+writing the address of the guest the restore is about to destroy -- was
+still possible, and CI caught it once in 1.41 s where `-race -count=20`
+on the dev box never did.
+
+- *The open-op test is now a `not exists` inside the UPDATE*, so one
+  statement decides and writes. Nothing else about the rule changes: a
+  destroyed project, a guest that moved and a row that already agrees are
+  refused exactly as before.
+- *A start's own op is the one exception, and it is passed explicitly.*
+  `StartResult` carries the address and is applied while that start is
+  still running, so `recordGuestAddress` takes the op it belongs to and
+  the clause ignores that one. Keying it on the `src` string instead
+  would have made a log label load-bearing. A second, unrelated op open
+  at the same time still holds the write, and there is a test for that:
+  the fix would otherwise have quietly stopped recording addresses on the
+  path I-720 was written for, which is the one the 2026-10-13 outage
+  needed.
+- *A write that matched no row no longer updates the in-memory project.*
+  It did before, for any reason the `where` refused, so a refused write
+  looked applied for the rest of the reconcile. It now logs
+  `change=held` -- ids, states and no address, per OBSERVABILITY §5 --
+  and returns.
+- *The window is now deterministic without winning a race.* Because the
+  check is in the statement, a test can open an op and call the write:
+  before this it wrote the address, after it the row is untouched. The
+  end-to-end test through a real Hello stays, and it is the one that
+  passed throughout the defect's life.
+
+*Not done:* `OnHello` still reads the open ops before it does anything,
+because that read also gates the state reconcile and the two
+`reconcile_missing` paths, which are three more check-then-act sequences
+on the same table. They are not this entry's: each writes a state rather
+than an address, and the window for each wants its own argument about
+what the right behaviour is when an op opens mid-reconcile.

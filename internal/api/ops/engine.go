@@ -670,7 +670,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		// The host's word on its own guest's address (I-720): Hello is
 		// the only message that carries one for a guest the api has no
 		// result for.
-		e.recordGuestAddress(ctx, p, g.GetIp(), g.GetVsockCid(), "hello")
+		e.recordGuestAddress(ctx, p, g.GetIp(), g.GetVsockCid(), "hello", nil)
 		if settled(g.State) && settled(p.State) && g.State != p.State {
 			e.log.Info("reconciling project state from Hello", "event", "reconcile", "project_id", p.ID.String(), "from", p.State, "to", g.State)
 			if err := store.SetProjectState(ctx, e.pool, p.ID, g.State); err != nil {
@@ -752,7 +752,15 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 // differs, and the write names the guest, so a destroy or a restore that
 // moved the guest in between is not overwritten by it. src is where the
 // address came from, for the log line: "hello" or "start".
-func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr string, cidRaw uint32, src string) {
+//
+// exceptOp is the op this write belongs to, or nil for a write that
+// belongs to no op. The UPDATE refuses while any *other* op is open on
+// the project, in the statement rather than before it (DECISIONS I-1444,
+// ENG-111): the caller's own check-then-write left a window an op could
+// open inside, and CI found it. A start passes its own op, because the
+// address it carries is that op's result and the op is still running
+// when the result is applied.
+func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr string, cidRaw uint32, src string, exceptOp *uuid.UUID) {
 	if p.GuestID == nil {
 		return
 	}
@@ -777,14 +785,33 @@ func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr
 	}
 	e.log.Info("recording the address the host reports for a guest", "event", "guest_address", "change", change, "from", src,
 		"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
-	if _, err := e.pool.Exec(ctx,
-		"update projects set guest_ip = $3, vsock_cid = coalesce($4, vsock_cid) where id = $1 and guest_id = $2 and destroyed_at is null",
-		p.ID, *p.GuestID, ip.String(), cid); err != nil {
+	// One statement decides and writes. The `not exists` is the guard the
+	// Hello reconcile used to apply as a separate read (I-720), which an
+	// op opening in between could not be seen by.
+	tag, err := e.pool.Exec(ctx,
+		`update projects set guest_ip = $3, vsock_cid = coalesce($4, vsock_cid)
+		   where id = $1 and guest_id = $2 and destroyed_at is null
+		     and not exists (
+		       select 1 from ops
+		        where project_id = $1 and state in ('pending', 'running')
+		          and ($5::uuid is null or id <> $5))`,
+		p.ID, *p.GuestID, ip.String(), cid, exceptOp)
+	if err != nil {
 		// A unique violation is I-723's index catching two live projects
 		// claiming one address: the row stays as it was and the next
 		// Hello tries again, rather than two logins relaying to one
 		// guest.
 		e.log.Warn("the address the host reports was not recorded", "event", "guest_address", "from", src, "project_id", p.ID.String(), "guest_id", p.GuestID.String(), "err", err.Error())
+		return
+	}
+	// No row matched, so nothing was written and the caller's copy must
+	// not pretend otherwise: an op opened, or the guest moved, or the
+	// project was destroyed, between the read that produced p and now.
+	// Before I-1444 the in-memory fields were set either way, which made
+	// a refused write look applied for the rest of the reconcile.
+	if tag.RowsAffected() == 0 {
+		e.log.Info("the address the host reports was not recorded: the project moved on", "event", "guest_address", "change", "held", "from", src,
+			"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
 		return
 	}
 	p.GuestIP = &ip
