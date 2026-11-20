@@ -263,6 +263,24 @@ Integrate whenever branches are queued; it needs no owner approval.
    loads the box (green alone). A red that is not in the
    batch's diff is reproduced on main before it is called a flake.
 
+   **That family is now measured, so a re-run is read against numbers
+   rather than against a hunch** (mac-mini, 2026-11-20). `internal/cli`
+   holds four tests of the same shape -- a wall-clock capture of what
+   tmux delivered -- and all four fail inside a full suite while **none
+   fails alone**: 40 invocations, 20 per tree, alternating between the
+   branch and a detached `main` worktree so each pair met the same load,
+   zero failures, with the one that drives a real tmux window
+   (`TestTypePromptResendsEnterIntoATmuxWindow`) at zero of eight per
+   tree, across a window where load ran 19 to 98. `guest-base`'s probe
+   writing nothing after a 7.45 s capture is that signature in the VM
+   checks. **And the trap that makes a careful re-run lie:** `-count=N`
+   on a `t.Parallel()` test runs N copies **concurrently**, each with its
+   own tmux server, so "I ran it three times alone" is heavier than the
+   full suite rather than lighter. Separate invocations with
+   `-parallel 1 -p 1` is the only honest alone, and for a VM check
+   "alone" means the box quiet, not the build lock held: the lock
+   serialises nix and not the Go suites in other sessions.
+
    **Migration numbers.** Four branches queued on one day each added
    `0036_*.sql`. Before a cut with several branches: `for b in <queued>; do git
    ls-tree -r --name-only $b | grep migrations/; done` and renumber in the

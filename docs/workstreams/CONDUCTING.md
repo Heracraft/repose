@@ -293,3 +293,34 @@ a defect — each is **not knowing, recorded as knowing.**
 So before authoring a rule, **grep for it.** A guard already in the tooling
 beats a paragraph in a document, because it fires without being read. And
 when a tool refuses, read its sentence: somebody put the reason there.
+
+## A card is a report from a moment, not a statement about now
+
+Reports age in one direction. A review files twenty findings in an
+afternoon, builders fix some of them that night, and the board still
+reads as it did when the report was written. So **before a conductor
+sends a finding back to a builder, and before a builder fixes one, the
+card is checked against the head of the branch** — and the check is
+mechanical, not a reading: is the fix commit an ancestor of head
+(`git merge-base --is-ancestor <sha> HEAD`), and does the behaviour the
+card describes still happen there.
+
+What it cost not to do this, 2026-11-20: ENG-41 sat in `Open` at
+`urgent` while its fix had been merged for hours, which made the open-P0
+count wrong in the one direction that matters — it was the number the
+conductor was about to hand a release conductor as the reason a branch
+could not be cut. The card was closed with the ancestor check as its
+evidence, and with a pointer to the separate card for the *bypass* of
+that fix rather than a clean bill, because the guard was real and was
+being skipped on retry.
+
+Two corollaries, both from the same night:
+
+- **Close what is already fixed, with evidence, rather than fixing it
+  twice.** Three builders were told to verify before building and one of
+  them found a card describing a published build whose shape at head was
+  different; saying "the head has a different shape" is as useful as a
+  fix and costs an hour less.
+- **A rank that the report has changed is changed on the card too.** The
+  report decides the rank; a board left at `urgent` while the report
+  says P1 wins the argument by being what the owner opens first.
