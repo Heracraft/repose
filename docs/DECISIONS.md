@@ -37349,8 +37349,8 @@ and the HOST column, each its own commit on this branch.
 
 **I-1392. A host the account owns is named where the account looks:
 `host_name` beside `host_id` in the project JSON, a HOST column in
-`repose ls` and a `host` row in `repose status` whenever the account owns
-a host, not only when it has stopped answering (fix-placement,
+`repose ls` and a `host` row in `repose status` for a machine on one of
+them, not only when the host has stopped answering (fix-placement,
 2026-11-19).** *Made during implementation* (amends I-616, whose
 premise I-1366 ended; the readout half of ENG-68; the prior art is
 `docs/proposals/2026-11-19-where-a-project-runs.md`, PR #82, which
@@ -37376,16 +37376,33 @@ found every working pattern has a way to see which target is active).
   has `host_id` alone, which is how a client tells the two apart
   without a second field. An older api has no `host_name`, which
   clients read as "not named".
-- *The readout.* `repose ls` gains a HOST column whenever the account
-  owns a host: the host's name for a machine on it, `repose` for one on
-  repose's servers, `-` for one placed nowhere. An account that owns no
-  host sees the table it always saw, because a column that reads
-  `repose` in every row says nothing. `repose status` says the same in
-  a `host` row under the same condition; `-v` keeps the address. The
-  column comes after the flag (I-1390) and not before it, because a
+- *The readout.* `repose ls` gains a HOST column: the host's name for a
+  machine on one of the account's own, `repose` for one on repose's
+  servers -- the word `repose run --host repose` takes -- and `-` for
+  one not placed yet. An account that owns no host sees the table it
+  always saw, because a column that reads `repose` in every row says
+  nothing. `repose status` says the same in a `host` row; `-v` keeps the
+  address, and a host of repose's is still named there alone. The
+  readout comes after the flag (I-1390) and not before it, because a
   readout that shows a trap nobody can escape would only make the trap
   visible.
+- *The condition is the machines, not the hardware (written at the
+  commit that built it).* The condition above read "whenever the account
+  owns a host", and both surfaces ship with the narrower one: whenever a
+  machine they are showing is on a host the account owns. The name is
+  then the project's own `host_name` and the readout costs nothing,
+  where asking "does this account own hardware" is a `GET /hosts` on
+  every `repose ls`; I-1370 put that read behind "a machine says its
+  host is quiet" so the common listing keeps its one round trip, and
+  `TestLsReadsHostsOnlyWhenOneIsQuiet` holds it there. The one case the
+  two conditions disagree on is an account that owns a Mac with none of
+  its machines on it, where the column would read `repose` in every row
+  and say nothing a user acts on -- and `repose host ls` already answers
+  it, in the MACHINES column of the host's own table. `repose status`
+  takes the same condition rather than one of its own, so the two
+  surfaces do not need two rules to explain.
 
-*Not done:* the HOST column and the `host` row (the next commit on
-this branch); the dashboard list, which already names an offline host
-on its row and reads `host_name` from here on.
+*Not done:* the dashboard's project list and project page, which name an
+offline host on a row but never say where a machine runs while the host
+is answering; they read `host_name` from here on (the parity rule,
+I-1354, wants them before this is called finished).

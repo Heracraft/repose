@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -93,5 +94,122 @@ func TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut(t *testing.T) {
 	err := runRun(ctx, e, RunOptions{Name: "api", NoSync: true, NoAttach: true}, false)
 	if exitCodeOf(err) != ExitCapacity || err.Error() != "your host mac-mini has not registered yet." {
 		t.Fatalf("own hardware plan: %v", err)
+	}
+}
+
+// TestHostReadoutNamesTheHostYouOwn is the readout half of I-1392: a
+// machine on a host of the account's own names it where the account
+// looks, in `repose ls`'s HOST column and `repose status`'s `host` row,
+// and an account with no hardware of its own sees neither.
+func TestHostReadoutNamesTheHostYouOwn(t *testing.T) {
+	ps := []Project{
+		{ID: "a", Slug: "todo-app", Class: "large", State: "running", HostID: "h-mac", HostName: "mac-mini"},
+		{ID: "b", Slug: "web", Class: "small", State: "running", HostID: "h-01"},
+		{ID: "c", Slug: "notes", Class: "tiny", State: "creating"},
+	}
+	var b strings.Builder
+	writeProjectsTableHere(&b, ps, "", nil)
+	want := "PROJECT   SIZE   STATE     UP  AGENTS  HOST\n" +
+		"todo-app  large  running   -   -       mac-mini\n" +
+		"web       small  running   -   -       repose\n" +
+		"notes     tiny   creating  -   -       -\n"
+	if b.String() != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", b.String(), want)
+	}
+
+	// Nothing of the account's own: the table it always had, HOST
+	// included nowhere, because a column that reads `repose` in every
+	// row says nothing (I-484).
+	hosted := []Project{
+		{ID: "b", Slug: "web", Class: "small", State: "running", HostID: "h-01"},
+		{ID: "c", Slug: "notes", Class: "tiny", State: "creating"},
+	}
+	b.Reset()
+	writeProjectsTableHere(&b, hosted, "", nil)
+	if got := b.String(); strings.Contains(got, "HOST") || strings.Contains(got, "repose") {
+		t.Fatalf("an account with no hardware got a host readout:\n%s", got)
+	}
+
+	// An api too old to send `host_name` still names the host from the
+	// hosts `repose ls` reads when one of them is quiet.
+	b.Reset()
+	writeProjectsTableHere(&b, []Project{{ID: "a", Slug: "todo-app", Class: "large", State: "running", HostID: "h-mac", HostUnreachable: true}},
+		"", map[string]Host{"h-mac": {ID: "h-mac", Name: "mac-mini"}})
+	if got := b.String(); !strings.Contains(got, "AGENTS  HOST\n") || !strings.Contains(got, "  mac-mini\n") {
+		t.Fatalf("an api that sends no host_name:\n%s", got)
+	}
+
+	// `repose status` says the same in a row, last, where the -v
+	// readout always was.
+	mac := &Project{Slug: "todo-app", Class: "large", State: "stopped", HostID: "h-mac", HostName: "mac-mini", VolumeBytes: 20 << 30}
+	b.Reset()
+	writeStatus(&b, statusView{p: mac, mux: "tmux", now: time.Now()})
+	if !strings.HasSuffix(b.String(), "\n  host       mac-mini\n") {
+		t.Fatalf("a machine on the account's own host:\n%s", b.String())
+	}
+
+	// A machine on repose's servers keeps I-616's ruling: the host is a
+	// platform internal there, and stays under -v.
+	b.Reset()
+	writeStatus(&b, statusView{p: &Project{Slug: "web", Class: "small", State: "stopped", HostID: "h-01", VolumeBytes: 20 << 30}, mux: "tmux", now: time.Now()})
+	if got := b.String(); strings.Contains(got, "\n  host ") {
+		t.Fatalf("a machine on repose's servers named its host:\n%s", got)
+	}
+
+	// -v on the same machine keeps one row, with the address.
+	b.Reset()
+	writeStatus(&b, statusView{p: mac, mux: "tmux", now: time.Now(),
+		route: &Route{HostName: "mac-mini", GuestIP: "10.100.0.12"}})
+	if got := b.String(); !strings.HasSuffix(got, "\n  host       mac-mini, ip 10.100.0.12\n") || strings.Count(got, "  host ") != 1 {
+		t.Fatalf("-v on the account's own host:\n%s", got)
+	}
+}
+
+// TestHostReadoutComesFromTheProjectRecord is the same readout end to
+// end: the name is the api's `host_name` on the project (I-1392), so
+// `repose ls` and `repose status` name the host with no /hosts read of
+// their own, and hardware with none of the account's machines on it
+// still changes nothing either command prints.
+func TestHostReadoutComesFromTheProjectRecord(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	out := &discardWriter{}
+	e.Out, e.ErrOut = out, &discardWriter{}
+
+	id := fake.AddOwnedHost("mac-mini")
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); strings.Contains(got, "HOST") || strings.Contains(got, "mac-mini") {
+		t.Fatalf("a listing with no machine on the account's hardware:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StatusCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); strings.Contains(got, "\n  host ") {
+		t.Fatalf("a status with the machine on repose's servers:\n%s", got)
+	}
+
+	fake.SetProjectHost(p.ID, id)
+	hosts := fake.Calls("GET /v1/hosts")
+	out.buf.Reset()
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "AGENTS  HOST\n") || !strings.Contains(got, "mac-mini") {
+		t.Fatalf("repose ls on the account's own host:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StatusCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "\n  host       mac-mini\n") {
+		t.Fatalf("repose status on the account's own host:\n%s", got)
+	}
+	if n := fake.Calls("GET /v1/hosts") - hosts; n != 0 {
+		t.Fatalf("the readout cost %d /hosts read(s); the name is on the project", n)
 	}
 }

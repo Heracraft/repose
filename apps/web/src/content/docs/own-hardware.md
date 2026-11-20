@@ -55,6 +55,17 @@ mac-mini  online  24 GB   0         0        just now
 
 `waiting` means it has not joined yet, and a new machine is refused until it has: `your host mac-mini has not registered yet`, exit 8, and nothing is created. `repose run --host repose` makes the machine on repose's servers meanwhile. From `online`, `repose run` in any project puts it on your hardware.
 
+`repose ls` then says where each machine runs:
+
+```
+$ repose ls
+PROJECT     SIZE   STATE    UP     AGENTS           HOST
+todo-app *  large  running  2h14m  claude: working  mac-mini
+api         small  running  3d     -                repose
+```
+
+`repose status` says it in a `host` row, and a project's `--json` carries `host_name` beside `host_id`.
+
 To name it yourself, `repose host add mac-mini`. A name is 1 to 32 characters of `a-z`, `0-9` and `-`. It is yours alone: another account may use the same one.
 
 On the dashboard, **New project** has **Runs on** once you have a host: your host, or repose's servers, the same choice as `--host`. While your host is waiting or offline the form says so in the same words and creates nothing, and repose's servers is the way out. Settings → Hosts does the same three things. **Add a host** takes a name, or none, and shows the step to run on the machine once, with a copy button; it is not shown again, and a host that is still waiting can be removed and added again for a fresh one. The list shows each host's state, its memory and cores, how many of your machines are on it and how many are running, and when it last answered.
