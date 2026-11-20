@@ -38713,3 +38713,51 @@ row does say who answers; nothing said it at the moment it changed.
 *Not done:* the dashboard's edit-and-flip case above. And a route whose
 provider is mid-retry still loses the deliveries that arrive between the
 yes and the provider noticing; nothing here replays them.
+
+**I-1440. `repose host rm --local` says how many machines go with the
+appliance, and names the host still on the account afterwards; it stays
+offline-capable and never refuses on what it could not read (host-rm-local
+ENG-141, 2026-11-20).** *Made during implementation* (found by the spark
+on the owner's live account, where the same wedge happened twice in one
+morning). Extends I-1420, which gave the user a way out of the wedge;
+this is where they find out it exists.
+
+The card offered three directions and this chooses the second. `--local`
+could refuse while the account still lists machines on that host, which
+needs a logged-in api call and so changes what the flag means. It could
+warn and ask, which keeps it offline-capable. Or the wedge could be made
+impossible on the other side, which is I-1420 and is already shipped. The
+third makes the first unnecessary, so the remaining gap is what the user
+is told, and that is all this entry changes.
+
+- *Why it must not refuse.* On 2026-11-20 an expired login refused
+  `repose rm pk2` and `repose host rm mac-park3` with "Not logged in",
+  and `repose host rm --local` in the same sequence ran and deleted the
+  appliance. That is correct: the appliance is on the customer's Mac and
+  removing it needs nobody's permission. It is also how a customer with
+  no session reaches the wedge. So the account is read for what it can
+  add to the question, and a login that cannot answer makes the command
+  say less, never stop.
+- *What the question says now.* With the account readable, how many
+  machines are placed on that host and that their disks are on this Mac
+  with no copy anywhere -- "every machine and snapshot on its disk" was
+  true, and told a customer with three machines the same thing it told
+  one with none. With the account unreadable, that it could not be read
+  and therefore cannot say. With an appliance added by `--join`, which
+  has no recorded host name to look up, the plain question unchanged:
+  there is nothing to apologise for.
+- *What it says after.* One line, when machines were placed there: the
+  host is still on the account, how many machines now have no host, and
+  `repose host rm NAME` -- "once it reports not answering" while the host
+  still answers, because the api refuses to remove one that does, and
+  without that clause once it is `unreachable` or `lost`. This is a next
+  command after a success, which I-485 cuts; it stays because the account
+  is wedged until it is run, which is the unblocking exception and not
+  the reassurance the rule is about.
+
+*Not done:* the count comes from the api, so `--local` on a Mac with no
+session still says only that it could not look. A local count would mean
+reading the appliance's own guest list, which lives inside its disk
+image; nothing on the Mac answers that today. And the dashboard has no
+equivalent, because the appliance is on the customer's hardware and
+nothing on repose's side can remove it.

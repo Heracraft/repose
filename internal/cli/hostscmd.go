@@ -155,7 +155,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "removing") }
 			}
 			if name == "" {
-				return HostRmLocalCmd(e, yes, confirm)
+				return HostRmLocalCmd(cmd.Context(), e, yes, confirm)
 			}
 			return HostRmCmd(cmd.Context(), e, name, yes, confirm)
 		},
