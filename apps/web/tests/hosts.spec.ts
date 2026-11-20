@@ -106,11 +106,26 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	// by design and the token inside it never is.
 	await expect(page.locator('body')).not.toContainText(bundle.token);
 
-	// A second host is refused by the plan, in the api's own sentence.
+	// A second host is refused by the plan, in the api's own sentence,
+	// and the sentence is IN the dialog rather than behind it (ENG-25).
 	await section.getByRole('button', { name: 'Add a host' }).click();
 	await dialog.getByLabel('Name', { exact: true }).fill('spare');
 	await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(page.getByText(/your plan includes 1 host/)).toBeVisible();
+	const refusal = dialog.getByTestId('host-add-error');
+	await expect(refusal).toHaveText(/your plan includes 1 host/);
+	// Visible is not enough: a toast is "visible" while sitting under the
+	// dialog's backdrop, because a dialog opened with showModal() is in
+	// the top layer and no z-index reaches it. The customer pressed Add,
+	// nothing appeared to happen, and the reason was behind the thing
+	// they were looking at. So this asks the browser what is actually at
+	// the middle of the refusal, the way the review measured it.
+	const onTop = await refusal.evaluate((el) => {
+		const b = el.getBoundingClientRect();
+		const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+		return el.contains(hit) || hit === el;
+	});
+	expect(onTop, 'the refusal is covered by something').toBe(true);
+	await shots(page, 'hosts-refused');
 	await dialog.getByRole('button', { name: 'Cancel' }).click();
 
 	// The same name twice is the name's own error, in the field.

@@ -36,6 +36,8 @@
 	let name = $state('');
 	let saving = $state(false);
 	let nameError = $state<string | undefined>(undefined);
+	/** A refusal that is not about the name: the plan's limit, no plan. */
+	let addError = $state<string | undefined>(undefined);
 	let made = $state<OwnedHost | undefined>(undefined);
 
 	/**
@@ -75,6 +77,7 @@
 		name = '';
 		saving = false;
 		nameError = undefined;
+		addError = undefined;
 		made = undefined;
 	}
 
@@ -91,6 +94,7 @@
 			return;
 		}
 		nameError = undefined;
+		addError = undefined;
 		saving = true;
 		try {
 			made = await createHost(n ? { name: n } : {});
@@ -102,9 +106,17 @@
 			} else if (err instanceof ApiError && err.detail?.reason === 'name') {
 				nameError = err.message;
 			} else {
-				// host_limit and own_hardware_plan_required are the api's
-				// own sentences, which say what the plan includes.
-				toastApiError(err, 'Could not add the host.');
+				// In the dialog, never behind it (ENG-29's sibling,
+				// ENG-25). A native dialog opened with showModal() sits
+				// in the browser's top layer, which no z-index reaches,
+				// so a toast raised while it is open renders under the
+				// backdrop: the customer pressed Add, nothing appeared
+				// to happen, and the reason — the plan's one-host limit
+				// — was behind the thing they were looking at. The api's
+				// sentences say what the plan includes, so they are the
+				// ones shown, beside the button that was pressed.
+				addError =
+					err instanceof ApiError ? err.message : 'Could not add the host. Try again.';
 			}
 		} finally {
 			saving = false;
@@ -366,6 +378,11 @@
 					{/if}
 				</div>
 			</div>
+			{#if addError}
+				<p class="hdlg-refusal hk-field-error" role="alert" data-testid="host-add-error">
+					{addError}
+				</p>
+			{/if}
 			<div class="hk-modal-foot">
 				<button type="button" class="hk-btn-ghost" onclick={close}>Cancel</button>
 				<button type="submit" class="hk-btn" aria-disabled={saving ? 'true' : undefined}
@@ -529,6 +546,15 @@
 		margin: 0 0 0.75rem;
 		font-size: 0.875rem;
 		color: var(--hk-text-2);
+		text-wrap: pretty;
+	}
+	/* A refusal the api sent, between the field and the buttons: the
+	   dialog is in the top layer and a toast is not, so this is the only
+	   place a reason can be seen while the dialog is open (ENG-25). */
+	.hdlg-refusal {
+		margin: 0;
+		padding: 0 1.25rem 0.25rem;
+		line-height: 1.25rem;
 		text-wrap: pretty;
 	}
 	.hdlg-facts {
