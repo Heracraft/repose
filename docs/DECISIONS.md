@@ -37409,3 +37409,98 @@ a per-command override and a readout; amends I-1366's placement).
 *Not done:* the dashboard's control (the parity rule, I-1354 under
 I-1266), the account-level default, `host_name` in the project JSON
 and the HOST column, each its own commit on this branch.
+
+**I-1404. `repose-ask --timeout` is the only deadline that ends an ask,
+and opening a question is idempotent (fix-ask ENG-105, 2026-11-20).**
+*Made during implementation* (the Mac reviewer's ENG-105, reproduced
+locally). On a published build an agent ran `repose-ask --timeout 3m`,
+got a non-zero exit in about six seconds saying guestd was not answering,
+and carried on -- while guestd opened the question, the owner was paged,
+and `repose reply` answered a question nothing was waiting for. An agent
+that proceeds as if the human said nothing is worse than one that
+crashes, and this is the product's reason to exist.
+
+- *What owned the deadline.* `cmd/repose-hook/main.go`'s `Timeout`, three
+  seconds, written for the fire-and-forget hook POST ("the agent is
+  waiting on this process"), was reused for `POST /ask`. `--timeout` was
+  parsed only into the payload's `timeout_s`, which is the question's
+  lifetime **inside** guestd; it never reached a context the asker
+  created. So the flag could not decide whether the question was ever
+  asked, and guest-conventions.md's promise that an unreachable guestd is
+  retried for two minutes held for the wait alone and not for the open.
+  The alternative of raising the constant lost: a constant is the bug.
+  The open now spends the user's `--timeout`, bounded by the documented
+  two minutes (`LostAfter`), with `AskCall` (30 s) per attempt. A
+  question that is not open yet cannot be answered, so waiting longer
+  than it would live buys nothing, and `repose-notify` and the hooks keep
+  the three seconds, where a lost call loses only a notification.
+- *The cost accepted.* A guestd that is really down now blocks an ask for
+  up to two minutes instead of three seconds. That is what the contract
+  already promised, and the alternative is the asker telling the agent
+  "no answer" while the owner reads the question.
+- *guestd's own write deadline.* The hook socket set `WriteTimeout` 10 s
+  for every route; only the long poll lifted it. Opening a question is
+  real work (a tmpfs write, a window lookup capped at 2 s, the relay) and
+  on a loaded single-core guest it is not certainly under ten seconds. A
+  cut-off answer is this defect from guestd's side: it holds a question
+  the owner will answer and the asker is never told the id. The open
+  route now lifts the deadline to `OpenWait`, 30 s. Shown with a test,
+  not measured on a Mac: the asker sees `EOF` in that case and the Mac's
+  one timed run says `context deadline exceeded`, so this is a defect
+  found in code, not the cause of that run.
+- *Retrying needs idempotence, which is this repo's rule for every guest
+  operation.* An abandoned POST can still open a question, so a blind
+  retry asks the owner twice; a test failed that way under load before
+  this was added. `POST /ask` takes a `request_id` the asker makes once,
+  guestd answers a repeat of it with the question it already opened, and
+  the id is persisted with the question so a guestd restart mid-retry
+  answers once too. An asker that sends none behaves as before, which is
+  the one-release compatibility rule; the two ship in the same guest base
+  closure, so they never disagree in practice. Matching on the question's
+  text alone lost: the asker's own open questions are also what it reads
+  before reporting a question unasked, and text is not an identity.
+- *Before saying it was never asked, ask guestd.* Out of budget, the
+  asker reads its own open questions (`GET /ask`, already scoped to the
+  caller's agent process) and, if guestd holds one, takes it up and waits
+  for the answer instead of reporting it unasked. The outcome is then the
+  wait's: the answer, the question's own timeout, or 7. The case this
+  path is for is a `--timeout` shorter than the open takes, where there
+  is no budget left to retry with: with the request id, a retry against a
+  guestd that answers at all returns the question anyway.
+
+- *A longer open has to stay interruptible.* With three seconds it never
+  mattered; with two minutes a Ctrl-C that only the wait listened for
+  would hang the caller, and an agent's command wrapper SIGTERM with it.
+  A signal now ends the attempt in flight, and takes back a question an
+  abandoned attempt opened, so the owner is not left holding one.
+
+*Not done:* the cancel itself keeps the three seconds, so a Ctrl-C
+against a guestd too slow to answer the DELETE cannot withdraw the
+question; it now says so instead of claiming the question is cancelled,
+and the orphan sweep closes it 90 seconds later. The NixOS guest test
+(`nix/guest/tests/guestd.nix`) still covers only the answered path; the
+new exits are covered by Go tests alone.
+
+**I-1406. `repose-ask` exit 7: the question is open and nothing is
+waiting for it (fix-ask ENG-105, 2026-11-20).** *Made during
+implementation* (ENG-105's second half). Exit 1 meant both "the question
+was never asked" and "the question is open and the asker stopped
+watching it". A caller cannot tell those apart, and they are opposite
+instructions: the first says the human never saw it, the second says the
+human may be answering right now. The Mac reviewer read the second as
+the first, which is the whole finding.
+
+- Exit 1 now means no question of the caller's is waiting for an answer.
+  Exit 7 means one is: the asker stopped waiting, because guestd was lost
+  for two minutes while it waited or answered the wait with something it
+  could not read. The id is on stderr, which `--cancel ID` takes. 3
+  keeps its meaning, a question that closed unanswered, and the
+  difference between 3 and 7 is whether anyone may still answer.
+- The alternative of one code plus a machine-readable stderr lost:
+  stderr is already prose for a human, and the exit code is what a shell
+  script and an agent's command wrapper branch on.
+- guestd closes a question 90 seconds after its last poll (`asker_gone`),
+  so exit 7's question is open now and not indefinitely. Documented where
+  the code is, in guest-conventions.md and /docs/notifications, and in
+  the machine's agent guide, which is the text an agent actually reads:
+  exit 7 is not "no answer".

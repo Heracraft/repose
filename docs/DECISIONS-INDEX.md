@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1034 entries.
+1036 entries.
 
 ## Scope
 
@@ -1066,3 +1066,5 @@ pointer, not a summary.
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37292
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37343
+- **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37413
+- **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37484

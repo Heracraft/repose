@@ -26,6 +26,10 @@ const Shell = "shell"
 // WaitMax caps one long-poll on GET /ask/{id}; the asker polls again.
 const WaitMax = 25 * time.Second
 
+// RequestIDCap caps POST /ask's request_id, which guestd keeps but never
+// reads as anything but an opaque key.
+const RequestIDCap = 128
+
 // MessagePayload is POST /notify. Kind is "" (agent_message) or
 // agent_done.
 type MessagePayload struct {
@@ -45,6 +49,12 @@ type AskPayload struct {
 	Text     string   `json:"text"`
 	Options  []string `json:"options,omitempty"`
 	TimeoutS uint32   `json:"timeout_s,omitempty"`
+	// RequestID is the asker's own id for this open. An asker that
+	// retries an open whose answer it never got sends the same one, and
+	// guestd answers with the question it already opened rather than
+	// asking the owner twice (DECISIONS I-1404). An asker that sends
+	// none gets a new question per POST, as before.
+	RequestID string `json:"request_id,omitempty"`
 	// Secret asks for the named secret instead of a written answer
 	// (DECISIONS I-929); it takes no Options.
 	Secret string `json:"secret,omitempty"`
@@ -161,6 +171,10 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
+	// Opening a question can outlast the socket's own write deadline, and
+	// an answer cut off then leaves guestd holding a question the owner
+	// will answer with nothing waiting for it (ENG-105, I-1404).
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(OpenWait))
 	var p AskPayload
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&p); err != nil {
 		s.reject(w, r, http.StatusBadRequest, "malformed_json")
@@ -183,8 +197,8 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	q, err := s.questions.OpenAsk(questions.Question{Agent: agent, Window: window, AgentProc: s.agentProcOf(r, agent), Text: p.Text, Options: p.Options,
-		Secret: p.Secret, LinkURL: link.URL, LinkLabel: link.Label}, time.Duration(p.TimeoutS)*time.Second)
+	q, repeat, err := s.questions.OpenAsk(questions.Question{Agent: agent, Window: window, AgentProc: s.agentProcOf(r, agent), Text: p.Text, Options: p.Options,
+		Secret: p.Secret, LinkURL: link.URL, LinkLabel: link.Label, RequestID: questions.Clean(p.RequestID, RequestIDCap)}, time.Duration(p.TimeoutS)*time.Second)
 	switch {
 	case errors.Is(err, questions.ErrTooMany):
 		s.reject(w, r, http.StatusTooManyRequests, "too_many_questions")
@@ -194,6 +208,13 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		s.reject(w, r, http.StatusInternalServerError, "internal")
+		return
+	}
+	if repeat {
+		// The asker is retrying an open it got no answer to; the owner
+		// has had this question since the first one (I-1404).
+		s.log.Info("agent question open already", "event", "agent_question", "agent", agent, "question_id", q.ID)
+		writeState(w, http.StatusCreated, q)
 		return
 	}
 	s.log.Info("agent question opened", "event", "agent_question", "agent", agent, "question_id", q.ID,
