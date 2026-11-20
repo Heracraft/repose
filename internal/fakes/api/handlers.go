@@ -1111,7 +1111,14 @@ func (f *Fake) projectRoute(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	out := map[string]string{"host_id": p.HostID, "guest_ip": p.GuestIP, "state": p.State}
 	if p.HostID != "" {
-		out["host_name"] = FakeHostName // the real api adds the host's name and state (api.md)
+		// The real api adds the host's name and state (api.md). A host
+		// the account owns answers with the name its owner gave it, as
+		// the project's own `host_name` does (I-1392).
+		name := f.ownedHostName(p.HostID)
+		if name == "" {
+			name = FakeHostName
+		}
+		out["host_name"] = name
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

@@ -1066,6 +1066,6 @@ pointer, not a summary.
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37292
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37343
-- **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` whenever the account owns a host, not only when it has stopped answering (fix-placement, 2026-11-19) — L37413
-- **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37455
-- **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37526
+- **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37413
+- **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37471
+- **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37542

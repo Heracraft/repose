@@ -28,11 +28,15 @@ todo-app  running 2h14m  large
 (`internal/cli/status.go`. A project the platform stopped for mining, or
 in `error`, gets one more line saying why and what to run.) Since
 DECISIONS I-616 the rows are labelled, the running hours are gone (a
-plan bills none), and the host and the guest's address print only under
-`-v` (`host       host-01, ip 10.100.0.12`); `--json` has them as
-`host_id` and `guest_ip`. `docker N containers` prints only when there
-are some. `*` in `ls` marks the project a command run in that folder
-acts on (REPOSE_PROJECT, the folder's link, its remote). The line under
+plan bills none), and a host of repose's and the guest's address print
+only under `-v` (`host       host-01, ip 10.100.0.12`); `--json` has
+them as `host_id` and `guest_ip`. A host the account owns is named
+without `-v`, in a `host` row and in `ls`'s HOST column (I-1392, which
+amends I-616: a host with an owner is the Mac on the customer's desk,
+not a platform internal); `docs/features/own-hardware.md` has the
+wording. `docker N containers` prints only when there are some. `*` in
+`ls` marks the project a command run in that folder acts on
+(REPOSE_PROJECT, the folder's link, its remote). The line under
 the table is GET /billing's plan and usage; warning lines follow it near
 a limit that refuses, stops or charges (disk past the plan, egress past
 the allowance, `past_due`).

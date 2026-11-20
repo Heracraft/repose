@@ -103,8 +103,8 @@ mac-mini  online  24 GB   3         1        just now
 
 ```
 $ repose ls
-PROJECT     SIZE   STATE    UP     AGENTS
-todo-app *  large  running  2h14m  claude: working
+PROJECT     SIZE   STATE    UP     AGENTS           HOST
+todo-app *  large  running  2h14m  claude: working  mac-mini
 todo-app: your host mac-mini has not answered for 14m.
 ```
 
@@ -365,6 +365,20 @@ The CLI (I-1370):
   machine and removing one retires it: `TestHostsUnderAnAPIToken`.
 - The state words are the same in the CLI and the dashboard:
   `TestHostStateWords` and `offlinehost.test.ts`.
+
+The readout (I-1392):
+
+- A machine on a host the account owns names it where the account looks:
+  a HOST column in `repose ls` and a `host` row in `repose status`, with
+  `repose` for a machine on repose's servers and `-` for one not placed
+  yet. An account that owns no hardware gets neither, and a host of
+  repose's keeps I-616's ruling and stays under `-v` with the machine's
+  address: `TestHostReadoutNamesTheHostYouOwn` (internal/cli).
+- The name is the project's own `host_name`, so the readout costs no
+  `/hosts` read and the column follows the machines rather than the
+  hardware: `TestHostReadoutComesFromTheProjectRecord` (internal/cli),
+  `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http) for the
+  field itself.
 
 An offline host (I-1370):
 
