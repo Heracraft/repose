@@ -213,6 +213,16 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 	// which; one whose appliance was added with --join has no recorded
 	// name and keeps it too, `--local` being the way to remove that one.
 	switch local, installed := localAppliance(e); {
+	case !installed && appliancePresent(e):
+		// An install that never reached its config has no name to check
+		// against h, and the only thing that makes one is `repose host
+		// add` on this Mac. The host it was for is the one going, so the
+		// bytes go with it rather than sitting where no command reached
+		// them (ENG-118).
+		if err := applianceRemove(e); err != nil {
+			return exitf(ExitGeneric, "%s is off your account, but the unfinished install on this Mac could not be removed: %v", h.Name, err)
+		}
+		_, _ = fmt.Fprintln(e.ErrOut, "An unfinished install on this Mac went with it.")
 	case !installed:
 	case local == h.Name:
 		if err := applianceRemove(e); err != nil {
@@ -230,7 +240,10 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 // this Mac, and nothing on the account.
 func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error)) error {
 	name, installed := localAppliance(e)
-	if !installed {
+	// Present, not installed: an install that stopped before its config.
+	// It still holds the bytes, so it is still what this command is for
+	// (ENG-118).
+	if !installed && !appliancePresent(e) {
 		return exitf(ExitGeneric, "There is no appliance on this Mac.")
 	}
 	if !yes {

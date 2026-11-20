@@ -206,7 +206,8 @@ func checkMacForAppliance(f macFacts) error {
 }
 
 // onAppleSilicon is whether this binary runs where the appliance can.
-func onAppleSilicon() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" }
+// A var, as macExec is, so a test on another box can drive the install.
+var onAppleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" }
 
 // ---- the join bundle --------------------------------------------------
 
@@ -681,7 +682,7 @@ func fetchText(ctx context.Context, c *http.Client, url string) (string, error) 
 	return strings.TrimSpace(string(b)), err
 }
 
-func freeGBOf(dir string) int {
+var freeGBOf = func(dir string) int {
 	var st unix.Statfs_t
 	if err := unix.Statfs(dir, &st); err != nil {
 		return 0
@@ -729,6 +730,30 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 	}
 	client := e.applianceHTTP()
 
+	// What `installed` means, decided once and in one place: a config on
+	// disk. Everything before it -- a part file, an unpacked disk, a
+	// vfkit binary -- is an install that did not finish, which this run
+	// adopts and which `repose host rm` clears (ENG-71, ENG-118,
+	// DECISIONS I-1422).
+	_, cfgErr := os.Stat(p.Config)
+	installed := cfgErr == nil
+
+	// The sizing guard, before anything is fetched and on every run that
+	// is not already installed. It used to run after the unpack, inside
+	// the block a second run skips: so a refusal left disk.raw behind at
+	// the image's own size, and the same command run again adopted it,
+	// installing a disk sized to the image on a volume the product had
+	// just said could not hold it (ENG-71, on the AWS M4 at 46 GB free).
+	// Up here it costs no download, leaves nothing behind, and answers
+	// the retry with the same sentence.
+	gb := 0
+	if !installed {
+		var err error
+		if gb, err = diskGB(freeGBOf(p.Dir), o.DiskGB); err != nil {
+			return exitf(ExitUsage, "%v", err)
+		}
+	}
+
 	if _, err := os.Stat(p.Vfkit); err != nil {
 		url, want := envOr(envVfkitURL, vfkitURL), envOr(envVfkitSHA256, vfkitSHA256)
 		_, _ = fmt.Fprintf(e.ErrOut, "fetching vfkit %s\n", vfkitVersion)
@@ -769,14 +794,27 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 			return err
 		}
 		_ = os.Remove(gz)
-		// The disk the user chose, as a sparse file APFS fills as the
-		// machines write; the appliance grows its pool into it at boot.
-		gb, err := diskGB(freeGBOf(p.Dir), o.DiskGB)
-		if err != nil {
-			return exitf(ExitUsage, "%v", err)
-		}
-		if err := os.Truncate(p.Disk, int64(gb)<<30); err != nil {
-			return err
+	}
+
+	// The disk the user chose, as a sparse file APFS fills as the
+	// machines write; the appliance grows its pool into it at boot. Every
+	// install that is not already live sizes it, including one that found
+	// a disk a previous attempt left: at the image's own size there is
+	// nothing after the pool partition for the boot-time grow to claim,
+	// and `repose-mac-grow` fails while the host still registers and
+	// reads online (ENG-79). A live appliance is never resized here:
+	// its disk has machines on it.
+	if !installed {
+		// Grow only, never shrink. Every real plan is a grow (the floor
+		// is 40 GB and the image is 37 GiB), so this costs nothing and it
+		// closes the one window where a resize could destroy a live
+		// disk: two `host add` on one Mac at once, where the second
+		// still reads `installed` false while the first has written its
+		// config and started vfkit.
+		if st, err := os.Stat(p.Disk); err == nil && st.Size() < int64(gb)<<30 {
+			if err := os.Truncate(p.Disk, int64(gb)<<30); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1010,6 +1048,26 @@ func applianceRemove(e *Env) error {
 	_, _ = macExec("launchctl", "bootout", launchdDomain()+"/"+applianceLabel)
 	_ = os.Remove(p.Plist)
 	return os.RemoveAll(p.Dir)
+}
+
+// appliancePresent is whether there is anything of an appliance on this
+// Mac to remove, finished or not: a part file from a download that
+// stopped, a disk from an install that did not reach its config, a
+// vfkit binary, or the launchd agent. localAppliance below answers a
+// different question, whether one is installed and live, and the two
+// were the same question until an unfinished install left bytes that
+// `rm --local` refused to clear and `rm NAME` walked past (ENG-118,
+// DECISIONS I-1422).
+func appliancePresent(e *Env) bool {
+	if !onAppleSilicon() {
+		return false
+	}
+	p := applianceFor(e.HomeDir)
+	if _, err := os.Stat(p.Plist); err == nil {
+		return true
+	}
+	ents, err := os.ReadDir(p.Dir)
+	return err == nil && len(ents) > 0
 }
 
 // localAppliance is the appliance installed on this Mac, if any: its
