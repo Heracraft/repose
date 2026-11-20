@@ -172,6 +172,17 @@ and they apply to whoever runs the review as much as to the builders:
   flag and a missing line read the same from the outside. One of that
   night's three was held back deliberately, and three reviewers hunted it
   as a defect because nobody asked whether it was withheld.
+- **And an absence being on purpose does not mean the state around it
+  still is.** A decision to withhold has a date, and the world moves after
+  it. The same night, the reviewer who established that the Own hardware
+  copy was deliberately held then downgraded the finding on that ground —
+  while `POLAR_PRODUCT_OWN` had since been set on the production api, so
+  `GET /v1/billing` answered `available: true`, `price_cents: 1000`,
+  `trial_days: 7`. The plan was purchasable, with a free week, and its
+  price appeared on no public page. The hold was real; what nobody
+  re-examined was whether it still described the product. Finding the
+  intent behind an absence is the start of the check, not the end of it:
+  ask when it was decided, and what has changed since.
 - **Check a timing window twice before you file it.** A state read once,
   at one moment, cannot tell a propagation delay from a permanent wrong
   answer. Read it again on a clock, at a named interval, and put the
