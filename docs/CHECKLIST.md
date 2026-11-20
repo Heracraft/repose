@@ -634,3 +634,16 @@ entry and this list with it. Counts as of 2026-10-21.
       too. The CLI is the only darwin target and `./cmd/repose/...` is the
       whole of it. Caught on 2026-11-19: the park's keychain file declared
       `keychainService` twice and the dev box built it green.
+
+- [ ] A test that seeds a timestamp some query compares against `now` has a
+      **hidden deadline equal to that window**, enforced on the slowest box
+      that ever runs it. Found 2026-11-20: `TestPickTable/xl_fits_above_reserve`
+      took one `time.Now()` before its table literal and gave every host that
+      value as `last_heartbeat_at`; `PickHost` ignores a heartbeat older than
+      `HeartbeatWindow` (90 s); the table ran for 117 s, so the last case
+      asked for a host the table meant to be fresh and got `no host with
+      capacity`. It passes alone, because alone it finishes inside 90 s
+      (I-1412). Evidence: the seeded time is computed per case, or frozen, or
+      the window is injected — not a table-wide `time.Now()`. Audit every
+      test that seeds `last_heartbeat_at`, `last_seen`, a park deadline or
+      any other field a query reads against the clock.
