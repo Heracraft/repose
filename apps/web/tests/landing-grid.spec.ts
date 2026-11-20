@@ -219,9 +219,12 @@ for (const width of [1440, 1280, 1024]) {
 // The owner, 2026-11-02: the hero's buttons never stand beside the lead
 // (a version had Get started and Copy install command to its right).
 // They share one row under the headline and the lead at every width.
-// From 1024px the copy stands centred over the Orbit (owner, 2026-11-15),
-// so the headline, the lead and that row share one centre line: the row
-// is the buttons and the install line together, centred as one.
+// From 1024px the copy stands centred over the hero's picture (owner,
+// 2026-11-15), so the headline, the lead and that row share one centre
+// line: the row is the buttons and the install line together, centred
+// as one. The picture is the real `repose run` session since I-1446, so
+// the measurement is against its pane rather than against the Orbit's
+// ring; the rule is about the copy, not about which picture is there.
 for (const width of [1024, 1100, 1280, 1440, 1920]) {
 	test(`the hero's copy is centred and its buttons stand under the lead at ${width}`, async ({
 		page
@@ -233,7 +236,7 @@ for (const width of [1024, 1100, 1280, 1440, 1920]) {
 		const start = (await page.getByRole('link', { name: 'Get started' }).boundingBox())!;
 		const copy = (await page.getByRole('button', { name: 'Copy install command' }).boundingBox())!;
 		const install = (await page.locator('.hero .install').boundingBox())!;
-		const orb = (await page.locator('.hero .orb').boundingBox())!;
+		const pic = (await page.locator('.hero .term').boundingBox())!;
 		expect(start.y).toBeGreaterThan(Math.max(lead.y + lead.height, h1.y + h1.height));
 		expect(Math.abs(copy.y - start.y)).toBeLessThanOrEqual(1);
 		const middle = (b: { x: number; width: number }) => b.x + b.width / 2;
@@ -245,7 +248,7 @@ for (const width of [1024, 1100, 1280, 1440, 1920]) {
 			['the lead', middle(lead)],
 			['the buttons', row]
 		] as const)
-			expect(Math.abs(mid - middle(orb)), `${what} at ${width}`).toBeLessThanOrEqual(1);
+			expect(Math.abs(mid - middle(pic)), `${what} at ${width}`).toBeLessThanOrEqual(1);
 	});
 }
 
@@ -265,13 +268,14 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 	const q = page.locator('section', {
 		has: page.getByRole('heading', { name: 'Before you try it' })
 	});
-	// I-1169's overhaul: what you can build, what is special, and the
-	// limits a visitor checks before trying it, each answer from the docs.
+	// I-1446: each question is a reason to try it, for a developer whose
+	// coding agents need a machine. The two that argued the framework are
+	// gone and the two a Mac owner asks are in.
 	const restart = lifecycle.includes('programs, tmux windows and agents carry on where they were');
 	expect(restart).toBe(true);
 	await expect(q.locator('summary')).toHaveText([
-		'What can I build with it?',
-		'How is this different from a server with an agent on it?',
+		'Can I run it on a Mac I already have?',
+		'What happens when my Mac sleeps or reboots?',
 		'Can I close my laptop while it works?',
 		'What can the agent reach?',
 		'What happens when it breaks something?',

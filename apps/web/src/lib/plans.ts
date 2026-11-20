@@ -94,6 +94,25 @@ export const PLANS: PlanFigures[] = [
 	}
 ];
 
+/**
+ * The Own hardware plan (internal/billing/plans.go's Own, I-1364): $10 a
+ * month for one host the user owns. It is not in PLANS, because it is
+ * not one of the three cards: it sells no memory, disk or egress, so
+ * every row of a card would be blank. The landing and /docs/billing draw
+ * it as a row under them, and /billing draws the api's own copy of it.
+ */
+export const OWN_HARDWARE: PlanFigures = {
+	id: 'own',
+	name: 'Own hardware',
+	priceCents: 1000,
+	trialDays: 7,
+	seats: 0,
+	memoryGB: 0,
+	diskGB: 0,
+	egressGB: 0,
+	hosts: 1
+};
+
 /** Whether a plan sells a host the user owns rather than memory on the
  *  fleet (billing.Plan.OwnHardware). The three cards, the seat count and
  *  every meter are the hosted plans'. */

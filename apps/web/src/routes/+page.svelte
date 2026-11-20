@@ -10,11 +10,12 @@
 	import { publicSeats } from '$lib/api/client';
 	import { tabStopWhenScrolls } from '$lib/scroller';
 	import type { PublicSeats } from '$lib/api/types';
-	import { PLANS } from '$lib/plans';
+	import { OWN_HARDWARE, PLANS } from '$lib/plans';
 	import PlanCells from '$lib/components/PlanCells.svelte';
+	import OwnHardwarePlan from '$lib/components/OwnHardwarePlan.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import HeroOrbitV1 from '$lib/components/landing/HeroOrbitV1.svelte';
+	import Terminal from '$lib/components/landing/Terminal.svelte';
 	import PauseButton from '$lib/components/landing/PauseButton.svelte';
 	import { loadHero } from '$lib/components/landing/heroes';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
@@ -26,7 +27,7 @@
 	import Ready from '$lib/components/landing/Ready.svelte';
 
 	/** The hero picture: the Orbit, or the candidate ?hero= names, loaded after mount. */
-	let Hero = $state<Component>(HeroOrbitV1);
+	let Hero = $state<Component>(Terminal);
 	onMount(async () => {
 		const name = new URLSearchParams(window.location.search).get('hero');
 		if (!name) return;
@@ -73,10 +74,10 @@
 </script>
 
 <svelte:head>
-	<title>repose: a platform for running your own always-on agents</title>
+	<title>repose: a machine of its own for your coding agents</title>
 	<meta
 		name="description"
-		content="Run your own always-on agents: pick a machine, bring any agent, and add your dev environment, secrets, schedules and webhooks. Each one runs on a machine of its own, away from your laptop."
+		content="repose run copies your checkout, tools and logins to a machine where your coding agents keep working after you close your laptop. On our servers, or on a Mac mini you own for $10 a month."
 	/>
 </svelte:head>
 
@@ -127,10 +128,10 @@
 <main id="main" tabindex="-1" class="frame landing">
 	<section class="band hero" aria-labelledby="hero-h">
 		<div class="hero-copy">
-			<h1 class="hk-h1" id="hero-h">A platform for running your own always-on agents</h1>
+			<h1 class="hk-h1" id="hero-h">Your coding agents, on a machine of their own</h1>
 			<p class="hk-lead">
-				Give your agent a machine of its own, then add what it needs: your dev environment, secrets,
-				a schedule or a webhook that wakes it. It keeps working with your laptop shut.
+				<code>repose run</code> copies your checkout, tools and logins to a machine where the agents
+				keep working after you close your laptop. On our servers, or on a Mac mini you own.
 			</p>
 			<div class="hero-act">
 				<div class="ctas">
@@ -145,80 +146,59 @@
 		</div>
 		<div class="fig fig--hero field-stage">
 			<div class="stage field-stage hero-stage">
-				<!-- Hero loop (2026-11-12): the Orbit; ?hero=<name> draws another
-				     candidate in its place, in the browser only (heroes.ts). -->
+				<!-- The hero is the Quickstart's real `repose run` session
+				     (Terminal.svelte, I-837): the page leads with the product
+				     running, and the Orbit it replaces drew the always-on pitch
+				     the headline no longer makes (I-1446). `?hero=<name>` still
+				     draws any candidate in its place, in the browser only
+				     (heroes.ts), the Orbit among them. -->
 				<Hero />
 			</div>
+			<!-- The page's one control, in the hero's field (I-666): it holds
+			     EVERY looping picture, not the hero's, and shows itself when
+			     any loop runs (`motion.live > 0` in PauseButton). It stays
+			     when the hero does not loop, because the wreck, the setup and
+			     the grid still do. -->
 			<PauseButton />
 		</div>
 	</section>
 
 	<section class="band" id="parts" aria-labelledby="parts-h">
 		<div class="head">
-			{@render label('01', 'Layers')}
-			<h2 class="hk-h2" id="parts-h">Build it in layers</h2>
+			{@render label('01', 'Where it runs')}
+			<h2 class="hk-h2" id="parts-h">Where it runs</h2>
 			<p class="links side">
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'webhooks' })}>Webhooks</a>
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'notifications' })}
-					>Notifications</a
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
+					>Your own hardware</a
 				>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'billing' })}>Pricing</a>
 			</p>
 		</div>
-		<ul class="cols">
+		<!-- Two homes, one band (I-1446). No start time for either while the
+		     Mac's is too slow to print (ENG-70), and no memory figure until
+		     what a size means on an owned host is settled (ENG-91): two cells
+		     under one heading, one with a number and one without, is an
+		     implication rather than an omission. -->
+		<ul class="cols cols--halves">
 			<li>
-				{@render label('1.1', 'Machine')}
-				<h3 class="item-title">Size it to the job</h3>
+				{@render label('1.1', 'On our servers')}
+				<h3 class="item-title">We run the machine</h3>
 				<p class="copy">
-					A tiny machine with 2 GB keeps one agent running all day. A build gets 2 cores and 8 GB,
-					or 4 and 16.
-				</p>
-				<p class="cmd">repose resize --size large</p>
-			</li>
-			<li>
-				{@render label('1.2', 'Walls')}
-				<h3 class="item-title">Wall it off from your laptop</h3>
-				<p class="copy">
-					The machine can't open a connection to your laptop unless you lend it a port. From the
-					internet, only its webhook routes reach it, and the answers to the agent's own requests
-					come back.
-				</p>
-			</li>
-			<li>
-				{@render label('1.3', 'Your setup')}
-				<h3 class="item-title">Bring your dev environment</h3>
-				<p class="copy">
-					<code>repose run</code> copies your checkout and your tools. Leave it out for an agent that
-					only works on the web.
+					Your plan's memory is what runs at once, around the clock, however many hours the
+					machines run. Snapshots go to cloud storage, so a machine comes back even when the
+					server under it does not.
 				</p>
 				<p class="cmd">repose run</p>
 			</li>
 			<li>
-				{@render label('1.4', 'Secrets')}
-				<h3 class="item-title">Give it the keys you choose</h3>
+				{@render label('1.2', 'On a Mac mini you own')}
+				<h3 class="item-title">Or the Mac on your desk does</h3>
 				<p class="copy">
-					You set a secret by name, and the agent gets it as an environment variable on its next
-					command. Your SSH keys stay on your laptop.
+					An M3 or newer on macOS 15 with 16 GB, and $10 a month. One command puts a single
+					virtual machine on it and changes nothing else; your projects go there and nobody
+					else's, and their snapshots stay on its disk.
 				</p>
-				<p class="cmd">repose secrets set NAME</p>
-			</li>
-			<li>
-				{@render label('1.5', 'Triggers')}
-				<h3 class="item-title">Start it on a schedule or a webhook</h3>
-				<p class="copy">
-					Point a schedule or a webhook at a prompt, and a session starts on the machine with the
-					event in hand. A webhook's URL carries its own token, and a wrong one never reaches the
-					machine.
-				</p>
-			</li>
-			<li>
-				{@render label('1.6', 'Agent')}
-				<h3 class="item-title">Bring any agent</h3>
-				<p class="copy">
-					Claude Code, Codex, Gemini CLI, opencode and pi come installed, and opencode and pi take
-					any provider's key. It asks you for a yes by email, ntfy or Google Chat, and you answer
-					there.
-				</p>
-				<p class="cmd">repose notify set --ntfy URL</p>
+				<p class="cmd">repose host add</p>
 			</li>
 		</ul>
 	</section>
@@ -380,6 +360,10 @@
 			</div>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
+		<!-- The fourth thing for sale, and not a fourth card: it sells one
+		     host the visitor owns and none of the three figures above
+		     (I-1364). -->
+		<OwnHardwarePlan plan={OWN_HARDWARE} variant="public" level={3} />
 	</section>
 
 	<section class="band faq-band" aria-labelledby="faq-h">
@@ -393,20 +377,24 @@
 		</div>
 		<div class="ruled faq">
 			<details>
-				<summary class="item-title">What can I build with it?{@render plus()}</summary>
+				<summary class="item-title"
+					>Can I run it on a Mac I already have?{@render plus()}</summary
+				>
 				<p class="copy">
-					You can build any agent you'd keep running. A responder wakes on your alerts, reads your
-					metrics and logs, and asks before it changes anything.
+					An M3 or newer on macOS 15 with 16 GB of memory, for $10 a month. <code
+						>repose host add</code
+					> puts one virtual machine on it, keeps the Mac awake while your machines run, and
+					<code>repose host rm</code> takes it off again with its disk.
 				</p>
 			</details>
 			<details>
 				<summary class="item-title"
-					>How is this different from a server with an agent on it?{@render plus()}</summary
+					>What happens when my Mac sleeps or reboots?{@render plus()}</summary
 				>
 				<p class="copy">
-					On your own server you set it all up again for each agent. Here the machine freezes when
-					nobody uses it and wakes for the next webhook, and when the server under it restarts, its
-					programs and agents carry on where they were.
+					Your machines are out of reach until it answers again, and what they wrote to disk is
+					kept. A restart starts them fresh: their disks are as they were, and what they held in
+					memory is gone.
 				</p>
 			</details>
 			<details>
