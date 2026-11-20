@@ -650,7 +650,7 @@ entry and this list with it. Counts as of 2026-10-21.
 
 - [ ] Anything made **retryable** is **idempotent first**, or the retry
       duplicates the effect the user sees. Found 2026-11-20 while fixing the
-      asker’s deadline (entry on the `fix-ask` branch; cite its id once merged): an abandoned `POST /ask` can still have
+      asker's deadline (I-1404): an abandoned `POST /ask` can still have
       opened the question, so a blind retry asks the owner the **same
       question twice**. The open now carries a request id the asker makes
       once, guestd answers a repeat with the question it already holds, and
@@ -667,7 +667,7 @@ entry and this list with it. Counts as of 2026-10-21.
       and `repose-ask` reused it for the call that opens a question, as both
       the context and the HTTP client deadline, while the user's
       `--timeout` reached only the payload's `timeout_s`. So the flag could
-      not decide whether the question was ever asked (same entry). Evidence: the
+      not decide whether the question was ever asked (I-1404). Evidence: the
       three deadlines in a call — the dial, the request, and the thing being
       waited for — are separately named, and only the ones that should be
       short are short.
