@@ -310,17 +310,18 @@ percent.
       host.** `internal/gateway/foreignhost_test.go`, with
       `noaddress_test.go` beside it. 19b's STATUS line records it red
       first.
-- [ ] **`repose host add|ls|rm` exist, `cli.md` agrees, the dashboard
+- [x] **`repose host add|ls|rm` exist, `cli.md` agrees, the dashboard
       does the same three, screenshots at 1440 and 390 in both
-      schemes.** Half closed. The three commands are in `cli.md` (:482
+      schemes.** Closed. The three commands are in `cli.md` (:482
       to :487) with the state column, the name rule and the exit codes;
       `internal/cli/docs_test.go` is green inside the 101-package run;
       the dashboard page is `apps/web/src/routes/settings/hosts/+page.svelte`.
-      **No screenshots exist** — nothing under `docs/` holds a Hosts page
-      capture at either width in either scheme, and the repo's own rule
-      is that a screenshot is evidence only at the size a visitor sees.
-      What closes it: four captures of that page at 1x, 1440 and 390,
-      light and dark.
+      **Screenshots taken 2026-11-20** by the 19a builder: list, add,
+      refusal, remove and offline, at 1440 and 390 in both colour
+      schemes, at 1x, in `/tmp/claude-1000/shots2/hosts-*.png`, and read
+      rather than only captured. That is the row's evidence; it is a
+      scratch path rather than a committed one, so whoever needs it
+      later re-takes it.
 - [ ] **The plan exists in Polar sandbox and production, PRICING.md and
       billing.md and the landing agree on $10 and one host.** **Open by
       the owner's own hold, and it is the item to read before cutting
