@@ -191,3 +191,12 @@ and they apply to whoever runs the review as much as to the builders:
   misleads the owner about where the product stands. The one screen this
   review found good reached the report only because a wrong finding was
   challenged, which is how a defect-only review hides the product's health.
+- **One number is not a finding; it is a margin until a second agrees with
+  it.** This fired twice in one night, in the same direction. A reviewer's
+  6.115 s measurement of a command that should have waited three minutes
+  was a single timed run, and the session fixing it accounted for 3.0 s and
+  refused to claim the rest. A 600.023 s test failure read as a hang was the
+  same package's honest 461 to 496 s crossing an inherited 600 s deadline on
+  a loaded box — two earlier runs turned one outlier from a defect into a
+  margin. Before filing a number as a defect, ask what the same measurement
+  reads when nothing is wrong, and say how many times you took it.
