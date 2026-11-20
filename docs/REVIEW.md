@@ -256,6 +256,24 @@ and they apply to whoever runs the review as much as to the builders:
   re-examined was whether it still described the product. Finding the
   intent behind an absence is the start of the check, not the end of it:
   ask when it was decided, and what has changed since.
+- **A billing claim measured on an exempt account, or against a fake, is
+  not measured.** The owner's own account is billing-exempt, so plans,
+  limits, seats and gates take paths no customer meets; the fake api is
+  the alternative and it has to be checked before it is trusted. On
+  2026-11-20 both lied, in opposite directions, within an hour: the fake
+  handed a host to every account whatever its billing mode, and the live
+  exempt account allowed a host because an exempt account genuinely may
+  have one -- which produced a P0-ranked card ("I added my own Mac
+  without ever paying") for behaviour that was the gate working. Re-run
+  any such finding against `setBilling` or a non-exempt account before
+  believing it.
+- **Eliminate an explanation with evidence from the tree under test, not
+  from your branch.** The same card survived an hour because the
+  elimination step was "`login --status` prints `billing-exempt`, not
+  'no plan', for an exempt account" -- true on an unmerged branch, false
+  of the CLI built from `main`, which printed "no plan" for that very
+  account. Careful reasoning from the wrong tree eliminated the correct
+  explanation.
 - **Check a timing window twice before you file it.** A state read once,
   at one moment, cannot tell a propagation delay from a permanent wrong
   answer. Read it again on a clock, at a named interval, and put the
