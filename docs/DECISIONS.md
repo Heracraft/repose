@@ -37350,6 +37350,50 @@ add`'s own message says `the server answered 404` and nothing about
 where to look, which is the customer's view of this and is ENG-62's
 sibling, not this entry's.
 
+**I-1402. An agent packaged from an npm tarball reads its entry script
+from `package.json`'s `bin`, and the build fails when that file is not
+shipped (2026-11-20).** *Made during implementation* (the rule behind a
+fix that was made once, for `chrome-devtools-mcp`, and left as a comment
+in that one file while the other npm-packaged agent still hardcoded its
+path).
+
+- *What happened.* `chrome-devtools-mcp` moved its entry script between
+  releases (`build/src/bin` in 1.10.1, `out/Default/gen/src/bin` in
+  1.13.0). Its derivation had the old path written in, so the daily bump
+  built a package whose `bin/chrome-devtools-mcp` pointed at a file that
+  was no longer there. That was fixed by reading `.bin` from the
+  tarball's own `package.json`, and the reasoning stayed in a comment in
+  that file. `gemini-cli.nix` kept `--add-flags "$dest/bundle/gemini.js"`,
+  which is what `@google/gemini-cli` 0.61.0 does declare
+  (`bin: {"gemini": "bundle/gemini.js"}`, read from the pinned tarball),
+  so nothing is broken today and the next move of that path breaks the
+  bump.
+- *What this settles.* The entry comes from `package.json`'s `bin`, taking
+  the command's key when `bin` is an object and the string when it is
+  one, with `./` stripped; and the `installPhase` exits 1 naming the
+  version and the path when `bin` is empty, `null`, or a file the tarball
+  does not ship. A build that fails here names the cause. A wrapper
+  pointing at a missing file does not: `scripts/bump-agents.sh` runs
+  `<agent> --version`, so it is caught, but as a node module-resolution
+  error in a bump nobody is watching.
+- *Alternatives.* Leaving it until upstream moves the path: that is the
+  position this entry replaces, and the cost of being wrong is a red
+  daily bump and a hand edit. Asserting the hardcoded path exists at
+  build time without reading `bin`: it turns a run-time break into a
+  build break, which is most of the value, but it still needs the hand
+  edit the next day. A `--version` check inside the derivation: the
+  sandbox has no network and these agents reach for a config directory
+  on start, and the bump already runs that check outside.
+- *Rules this adds.* A derivation that wraps an npm tarball's entry
+  script does not name the path. Two files are covered by this today,
+  `nix/overlay/agents/chrome-devtools-mcp.nix` and
+  `nix/overlay/agents/gemini-cli.nix`; the other agents install a single
+  binary and have no entry to resolve.
+
+*Not done:* nothing of the guest closure that the bump also never
+measures (that is its own open item). The `agents` VM test exercises
+`gemini mcp list` and is the check that a wrapper really runs; this entry
+does not add one.
 **I-1400. The buf job posts no pull request comment, and the workflow's
 token stays `contents: read` (2026-11-20).** *Made during implementation*
 (every pull request run was red for a week and the conductor's handoff
