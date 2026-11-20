@@ -106,7 +106,7 @@ A Mac that is only off the network keeps running your machines, and they are rea
 
 ## Restart your Mac and your machines start fresh
 
-When you restart or shut down your Mac, your machines stop and start again at your next login, cold: their disks are as they were, and what they held in memory — programs, tmux windows, an agent mid-task — is gone. Stop anything you would miss before you restart, the way you would on a laptop.
+When you restart or shut down your Mac, your machines stop and start again at your next login, cold: their disks are as they were, and what they held in memory is gone: programs, tmux windows, an agent mid-task. Stop anything you would miss before you restart, the way you would on a laptop.
 
 Keeping a machine's memory across a restart is built and it does not work yet, so this page does not promise it: macOS gives repose about a second when the Mac goes down, measured, and writing a machine's memory takes longer than that. Machines on repose's servers do keep their memory across a server restart ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)); your own Mac does not, today.
 
