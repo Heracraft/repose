@@ -47,6 +47,24 @@ written so none of them goes unnoticed again.
       And name the three deadlines in a call separately — the dial, the
       request, and the thing being waited for — so only the ones that
       should be short are short.
+- [ ] A deadline's **value** clears the slowest observed run of what it
+      bounds **by more than the observed spread**, or it measures load
+      rather than work. Evidence: the measurements it was chosen against,
+      with their spread, in the comment or the decision entry — not a
+      round number. The row above catches a constant borrowed by a second
+      operation; this catches a constant whose value was never checked
+      against the distribution it has to cover, which is a different
+      defect and cost two in one night. In the product: guest starts on a
+      Mac appliance measured 162.6 to 254.9 s server-side on identical
+      work, a 1.57x spread, with registration alone spanning 43.0 to
+      172.5 s against a fixed 180 s limit — so whether a start lived was
+      decided by where in that spread it landed, which is what two
+      successes in nine starts looks like from the outside (ENG-80,
+      I-1408). The published build's own **successful** start used 172,514
+      of its 180,000 ms, 95.8 percent. In the tests: a package's 75 s of
+      variation against the 64 s of headroom its inherited 600 s default
+      left (ENG-115). A deadline inside the distribution is a coin flip,
+      and it fails as "sometimes slow hardware" rather than as a bug.
 - [ ] Errors are handled at every call site, with the failure named in the
       message. No `_ = err`, no bare `panic` outside `main`. Evidence: `rg
       '_ = err|panic\(' cmd internal` is empty or each hit has a comment
