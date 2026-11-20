@@ -217,7 +217,12 @@ nothing is lost by waiting. This was written after the release of
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
-     -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
+     -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures'`
+     (**`TestEvery` matters**: without it the run misses
+     `TestEveryDocsPageNamesRealCommands` and `TestEveryYesHasY`, which is
+     how a page shipped a flag the CLI does not have past two sessions'
+     checks on 2026-11-20; `-run 'TestDocs'` does not match a name that
+     merely contains `Docs`); the
      `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
      `200` for every URL the CLI fetches on a customer's machine (the
      appliance image the batch pins and its checksum, vfkit, the latest
