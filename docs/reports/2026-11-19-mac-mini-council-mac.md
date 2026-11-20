@@ -43,6 +43,11 @@ Ranked by how it reaches a customer, not by how hard it is to fix.
 | 18 | P2 | "Four of my documentation files were left behind for having 'credentials' in the name." | ENG-104 | [F14](#f14-four-documentation-files-left-behind-for-having-credentials-in-the-name) |
 | 19 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
 
+> **Snapshots and restore are sound; starting a guest is not.**
+>
+> That is the whole Mac result in one line. It narrows the defect to a single
+> phase and clears two subsystems that would otherwise be suspected.
+
 **Three open P0 on this surface, and a fourth already closed.**
 
 **ENG-80 is first because it is the feature.** Across five start attempts on
@@ -1226,6 +1231,63 @@ The same sync also printed `Not carried (would not work on the machine):
 Claude hook "…"` with its reason, and `Installing 3 of your tools in the
 background: cptr, golangci-lint, portless`. Those are good lines.
 
+### F15. Adding a Mac captured the owner's own account, by accident, within an hour
+
+`/docs/own-hardware` says it plainly: *"once you have added one, your new
+projects go there rather than on repose's servers."* Designed behaviour.
+What the design does not account for is that it applies to the **whole
+account**, with no per-project opt-out from the CLI
+([B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere)).
+
+**It happened for real while this review was running.** I added `mac-clean`
+at **23:00:52** as a reviewer. At **23:52:32** the *owner* created a project
+called `workday` on the same account, an hour later and with no connection
+to my work. It was placed on my Mac, where it went straight to `error` like
+everything else — and the owner's first thought was that their fleet was
+broken.
+
+**The finding caught the person who built the product, on his own account,
+within an hour.** I cannot improve on that as evidence.
+
+**And the worse case is the one nobody is watching.** A scheduled job or a
+webhook trigger that creates a project goes to the owned host too, fails
+there, and **no one is at a terminal to see it**. The account this happened
+on runs job-application automation, which is exactly that shape. Silent as
+well as total.
+
+**It also makes the incident circular**, which is worth knowing before
+someone hits it at 2am: while a captured project sits on the host,
+`repose host rm` is correctly refused —
+
+```
+mac-clean still has workday on it. `repose rm` or `repose snapshots restore` each of them first.   (exit 1)
+```
+
+— so the host cannot come off until the captured project is dealt with, and
+the captured project cannot start until the host comes off. The way out is:
+destroy the project, remove the host within seconds, create it again.
+
+**I did not destroy it.** A session does not delete an owner's data to
+unblock its own work, even when the deletion is harmless and the owner is
+waiting. **Card ENG-107, P1.**
+
+### F16. The park baseline cannot be taken, and that is the finding
+
+I owed the session building ENG-2 a park and unpark baseline on the
+published build, to put beside its own numbers: park **6.5 s**, unpark
+**3.8 s**, appliance back at its login **21 s**.
+
+**There is nothing to park.** A park operates on a running guest, and after
+23:13 no guest would start on this Mac — nine attempts, two successes, none
+after that time. So the measurement is not missing because I ran out of
+Mac or forgot it; **it is unreachable while ENG-80 stands**, and it will
+stay unreachable for any customer in the same state.
+
+Recorded as a finding rather than a gap, because that is what it is: on this
+hardware, with this build, **the park path cannot be exercised at all**, and
+neither can anything else that needs a running machine — the laptop-closed
+case and a second concurrent machine died with it.
+
 ### F10. What is still unmeasured
 
 Held open honestly rather than filled with impressions. These need a working
@@ -1235,11 +1297,11 @@ is written:
 | Asked for | Status |
 |---|---|
 | The phone ask | **done** — [F13](#f13-the-ask-reaches-me-the-answer-never-reaches-the-agent) |
-| Laptop closed and reopened | **not yet run** |
+| Laptop closed and reopened | **unreachable** — needs a running machine ([F16](#f16-the-park-baseline-cannot-be-taken-and-that-is-the-finding)) |
 | A Mac reboot, and the appliance back at its login against 21 s | **delegated, with cause** — see below |
-| A parked guest restored, against **3.8 s** | **not yet run** |
-| A guest's cold start against **289 s** on a healthy appliance | **running** |
-| Whether [F7](#f7-both-machines-on-the-broken-appliance-died) survives a healthy appliance | **running** — decides ENG-80's rank |
+| A parked guest restored, against **3.8 s** | **unreachable** — [F16](#f16-the-park-baseline-cannot-be-taken-and-that-is-the-finding) |
+| A guest's cold start against **289 s** on a healthy appliance | **done** — 7m05s / 6m30s / 5m11s, [F4](#f4-the-first-machine-on-owned-hardware) |
+| Whether [F7](#f7-both-machines-on-the-broken-appliance-died) survives a healthy appliance | **done** — it does; ENG-80 confirmed P0 |
 
 **A limit on what my reboot can prove, found while answering another
 session.** Every install here ends with:
