@@ -257,3 +257,11 @@ So: **when you record someone else's finding, record which part they
 measured and which part they reasoned**, in the document, not in the
 message. And expect the correction to come from them, which is itself the
 argument for telling them what you wrote down.
+
+The sharpest form of the rule, from the session that caught two of the three:
+**the words that survive the inheritance are the measured ones.** "Ten times
+slower per package" survives. "Four cores" does not. Neither does "the whole
+flake checked" when what ran was `nix flake check --no-build`, which
+evaluates every output and builds none — a job name is a claim like any
+other, and this one differs from the thing people assume it says by every
+VM test and every closure check.
