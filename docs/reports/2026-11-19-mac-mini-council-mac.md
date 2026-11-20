@@ -39,7 +39,7 @@ Ranked by how it reaches a customer, not by how hard it is to fix.
 | 14 | P2 | "I freed the 60 GB the docs asked for and the install still refused me." | ENG-87 | [F8](#f8-the-cli-counts-in-gib-and-says-gb) |
 | 15 | P2 | "Your Troubleshooting page has nothing about the thing I'm troubleshooting." | ENG-57 | [D2](#d2-troubleshooting-does-not-know-this-feature-exists) |
 | 16 | P2 | "The one way out of this is documented nowhere I can find." | ENG-64 | [B3](#b3-the-one-way-out-is-named-on-one-page-and-documented-nowhere) |
-| 17 | P2 | "The price is one scroll below three plans I can't use." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads-first) |
+| 4b | **P1** | "I bought a plan whose price I could not find written anywhere." | ENG-47 | [A2](#a2-the-price-is-on-no-page-a-buyer-reads-first) |
 | 18 | P2 | "Four of my documentation files were left behind for having 'credentials' in the name." | ENG-104 | [F14](#f14-four-documentation-files-left-behind-for-having-credentials-in-the-name) |
 | 19 | P2 | "I named my Mac MacMini and got a regular expression." | ENG-61 | [E4](#e4-the-refusals-are-good-and-one-of-them-is-a-character-class) |
 
@@ -222,8 +222,39 @@ catalogue at **$10.00 a month with no overage charge**, verified against the
 live catalogue at 22:08 UTC by another session.
 
 So what survives is the **docs alone**, and it is the two un-anchored links
-above. **Rank: P2**, down from the P1 I first filed. **Card ENG-47**,
-re-ranked and corrected on the board, and matching the conferred report.
+above. **And then the premise of my own downgrade turned out to be false.** I
+dropped this to P2 because the plan was deliberately dormant, so an absent
+price was the designed state rather than a defect. Verified on production
+after the review, with every field:
+
+```json
+{"id":"own","name":"Own hardware","available":true,"price_cents":1000,
+ "trial_days":7,"hosts":1,"seats":0,"memory_gb":0,"disk_gb":0,"egress_gb":0}
+```
+
+**`available: true`, $10, and a seven-day free trial. It is purchasable
+today.** `POLAR_PRODUCT_OWN` is set on the production api.
+
+The dormancy was only half real. The **copy** is genuinely withheld —
+`7db572b5` is still unmerged. **The plan is not.** So the state is stranger
+than either dormant or launched: **buyable, while its price appears on no
+public page**, its docs page's "What it costs" names no number, and that
+page's own two links land on a page headed "The three plans".
+
+**Rank: back to P1.** **Card ENG-47**, re-ranked on the board with that
+evidence.
+
+**The method rule needs its second half, and this is where I learned it:**
+
+> **An absence being on purpose does not mean the state around it still
+> is.** Someone set `POLAR_PRODUCT_OWN` after the copy was held, and nothing
+> re-examined the hold. Checking that an absence was deliberate is not the
+> end of the check — the decision has a date, and the world moves after it.
+
+And the consequence is not a copy problem. **A customer who finds that plan
+today can buy a $10 subscription, or start a free week, and get the Mac path
+as it stands.** Seven days is exactly long enough to spend an evening on it
+and conclude the product does not work.
 
 ### A3. What I did not file
 
