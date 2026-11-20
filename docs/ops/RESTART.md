@@ -115,8 +115,10 @@ All of this is released and needs no further work:
 
 ## 5. What is not done, grouped
 
-**73 cards are open.** They are not all worth doing; they are all worth
-reading once in a group. Counts are of open cards in each theme.
+**How many cards are open depends on which instrument you ask, and they
+disagree** (see §8), so the themes below carry no total. They are not
+all worth doing; they are all worth reading once in a group. Every card
+named here answers individually to `kaneo show <n>`.
 
 **Web and dashboard (18) — the owner's current priority.** The home
 page overhaul (**ENG-82** hero copy and cut sections, **ENG-83** a real
@@ -257,10 +259,24 @@ Write it at two moments only — when you claim and when you stop.
 `Holder` is a role, never a session name. Never assign anything to the
 owner; move it to `Needs you` with the question in the note.
 
-**`kaneo ls` under-reports and will mislead you.** It printed
-"Open (9)" on a column holding **73** cards. Get the real inventory
-through the Kaneo API (`list_tasks`, `projectId wwwsmens0qqpm8jz5lfig816`,
-`status to-do`, `limit 100`) and read §5 rather than the listing.
+**Do not trust a board count, including one in this file.** Three
+instruments gave three answers on 2026-11-20 and nobody has reconciled
+them:
+
+- `kaneo ls` printed **Open (9)**, and `Open (23)` an hour earlier.
+- The MCP `list_tasks` call (`projectId wwwsmens0qqpm8jz5lfig816`,
+  `status to-do`, `limit 100`) returned **73** cards in that column,
+  including ENG-47 to ENG-144.
+- The release conductor's read of `/task/tasks/<project>` returned
+  **50**, ENG-1 to ENG-46 plus four others, with contiguous ranges
+  absent across every column.
+
+What is reliable is the **single card**: `kaneo show <n>`, `note` and
+`done` work for every id either of us tried, including ones a listing
+omitted. So read §5 for what exists, use `show` to read a card, and
+**treat any total as unverified** until somebody finds which endpoint is
+right. That is itself worth an hour: a board nobody can count is a board
+the owner stops opening.
 
 ## 9. Questions only the owner can answer
 
