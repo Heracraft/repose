@@ -103,8 +103,8 @@ mac-mini  online  24 GB   3         1        just now
 
 ```
 $ repose ls
-PROJECT     SIZE   STATE    UP     AGENTS
-todo-app *  large  running  2h14m  claude: working
+PROJECT     SIZE   STATE    UP     AGENTS           HOST
+todo-app *  large  running  2h14m  claude: working  mac-mini
 todo-app: your host mac-mini has not answered for 14m.
 ```
 
@@ -188,9 +188,15 @@ are outside the seat count, the waitlist and the pool gauges, because
 repose did not buy them.
 
 A create for `own` while the account's host has not registered yet, or
-cannot take the machine, fails the create op with `capacity` and a
+cannot take the machine, is refused at the request with `capacity` and a
 message that names the host and its state, rather than quietly using the
-fleet and billing for it.
+fleet and billing for it, and nothing is written (I-1390). Until I-1390
+the row went in first and the op refused it afterwards, so a customer
+whose Mac had not finished installing stranded one project in `error`
+per attempt and could make one nowhere: the CLI had no flag for the
+other answer. `repose run --host NAME|repose` is that flag; the api's
+refusal carries `detail.hosted_allowed` so the CLI names `--host repose`
+only when the plan would honour it.
 
 ## 4. How long a machine takes to start
 
@@ -284,6 +290,19 @@ host already retired is not an error on the wire (`204`), and the CLI
 says `You have no host named X` because a retired host is not one the
 user has.
 
+A host that still holds machines is refused while it is answering, and
+retired with them when it is not (`unreachable` or `lost`, I-1420). The
+refusal had no way out: a destroy's phases are skipped only for `lost`
+and `retired` (I-924), so while the host stayed `unreachable` the
+machines could not be destroyed, the host could not be removed, and the
+plan's one slot stayed held, which is the account wedge ENG-119 was
+found as. The machines are left in place rather than destroyed -- the
+user asked to remove a host, not to lose work -- and each `repose rm`
+then drains to no phases. The CLI's question and the dashboard's say in
+the same words how many machines go with it and that their disks were on
+that host; nothing but the confirmation stands between the user and the
+loss, so both surfaces carry it.
+
 ## 7. The Mac appliance
 
 One aarch64 NixOS VM on Apple's Virtualization framework runs hostd and
@@ -302,12 +321,58 @@ assertion (research doc §7). A machine's boot on a Mac is minutes, not
 seconds (3 min 36 s cold and 3 min 59 s warm to multi-user on an M4 at 2
 vCPU, research doc §9; hostd's per-start dump-db of the closure is half
 of it), so hostd's ready window is five minutes there
-(`guestReadyTimeout`) where the Azure hosts keep 60 s. Freeze and restore work on Apple silicon
-(gate 0 step 5, research doc §9) and stay off on the appliance until an
-owned host has a way to wrap the image key that is not Key Vault
-(I-653); a reboot stops the machines and the api starts the ones that
-were running (I-645). `repose host add`, `repose host run` and `repose host rm` are the
-user's side on the Mac.
+(`guestReadyTimeout`) where the Azure hosts keep 60 s. The park is on
+(I-1386, I-1394) and **it does not reach the case it was built for**
+(I-1434, ENG-138): a **clean stop of the launcher** parks every running
+machine to an encrypted image on the appliance's disk (6.5 s a guest on
+the M4, snapshot 203 ms, an 824 MB image) and the next start unparks it
+(3.8 s), against about 289 s to start a guest cold and lose its work --
+measured end to end on the rig, with the keychain item created by the
+launchd agent itself and no prompt, a marker intact and uptime
+continuous at 319.27 then 400.95 s. **A restart of the Mac does not do
+that.** `sudo shutdown -r now` gave the launcher about **one second**
+("stopping: the appliance parks its machines and powers off" at
+07:29:27Z, "stopped" at 07:29:28Z, no wrap line written), and the guest
+came back cold -- marker gone, uptime 130.90 against 923.90 before the
+restart. So the user-visible promise is withdrawn from the docs until a
+real window exists. The image's key is wrapped not by Key Vault, which a
+Mac has no identity for, but by the launcher, asked over a vsock vfkit
+forwards to `park-key.sock` (`internal/parkkey`); the launcher keeps the
+one wrapping key as a generic-password item in the user's login keychain
+(`internal/cli/keychain.go`, through `security`, since the darwin build
+has no cgo) and the VM never sees it. Not hardware-backed, and the docs
+say so. A power cut, a panic or a forced power-off parks nothing: the api
+starts the machines that were running (I-645), cold. The image's six
+hours (I-653) count against the user here, because hostd exists only once
+someone logs in: a restart with no login for six hours discards the image
+unread, and the docs say so beside the power-cut case. A stuck snapshot
+holds the shutdown at most 240 s (the deadline plus the park's own stop
+grace), the unit's wall is 270, the launcher's plug 330 and launchd's kill
+360 -- **and that whole chain assumes a window macOS does not give.** What
+it allows an agent at a restart was the one thing only the Mac could
+show, and it has shown it: about a second, so every number above it is
+unreachable at a restart and only the clean-stop path uses them. `repose host add`,
+`repose host run` and `repose host rm` are the user's side on the Mac.
+
+The two downloads a first install makes, vfkit and the 2.08 GB image,
+run on a client of their own with no whole-request deadline (I-1414).
+The CLI's api client carries a 30 s `Timeout` and `http.Client.Timeout`
+covers reading the body, so while the downloads took that client whole a
+2 GB fetch had 30 seconds to finish: the first `repose host add` on the
+lab M4 failed at 31 s with `context deadline exceeded ... while reading
+body` and the second succeeded in 37 s, on a connection that moves the
+asset at 226 MB/s (ENG-117). What ends a dead connection instead is a
+stall window: no bytes for 60 s, the response headers included, and the
+attempt is given up. A failed attempt leaves what it got in a `.part`
+file beside its destination and the next attempt continues from it with
+a `Range` request, three attempts in all; a server that ignores the
+range starts the file over, and a mismatched checksum after a resume
+costs one fresh attempt, because the part may be a prefix of an older
+image. A download that does not finish is the one failure in the install
+that names the way out: `repose host add` minted the host before the
+install, so a plain second `repose host add` would be refused by the
+one-host limit, and the sentence carries `repose host add --join
+<argument>` instead.
 
 ## Behaviour that must hold
 
@@ -323,6 +388,12 @@ Ownership and placement (I-1366):
   (internal/api/http).
 - An account whose plan sells no memory on repose's hosts never lands on
   the fleet, whatever the field says.
+- A create no host can take is refused before the row is written, twice
+  in a row with nothing stranded, and `placement: "hosted"` is the way
+  out: `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http);
+  `repose run --host` sends it and names it in the refusal:
+  `TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut`,
+  `TestRunHostChoosesWhereTheMachineIsMade` (internal/cli). I-1390.
 
 The routes (I-1366):
 
@@ -333,7 +404,16 @@ The routes (I-1366):
   Names are unique per account: `TestHostNames`, `TestHostAddListRemove`.
 - `POST /hosts` past the plan's figure is `host_limit` with
   `detail.limit`; from a plan that sells none it is
-  `own_hardware_plan_required`: `TestHostNeedsAPlanThatSellsOne`.
+  `own_hardware_plan_required`, and that sentence names the plan, its
+  price and its host count, read from the plan table
+  (`billing.OwnHardwareRequiredMessage`): "Your plan does not include a
+  host of your own. The Own hardware plan is $10 a month for one host:
+  choose it at https://repose.run/billing." It is the only place in the
+  product that tells a buyer what a host costs while the public copy is
+  held, which is what the customer review found missing (ENG-39).
+  `TestHostNeedsAPlanThatSellsOne` asserts the figure comes from the
+  plan, and `TestOwnHardwareRefusalIsTheApis` holds the fake's copy of
+  the sentence equal to it.
 - `DELETE /hosts/{id}` on a host with live machines is `host_has_projects`
   naming them; on an already retired host it is `204`:
   `TestHostWithMachinesIsNotRemoved`.
@@ -353,6 +433,20 @@ The CLI (I-1370):
   machine and removing one retires it: `TestHostsUnderAnAPIToken`.
 - The state words are the same in the CLI and the dashboard:
   `TestHostStateWords` and `offlinehost.test.ts`.
+
+The readout (I-1392):
+
+- A machine on a host the account owns names it where the account looks:
+  a HOST column in `repose ls` and a `host` row in `repose status`, with
+  `repose` for a machine on repose's servers and `-` for one not placed
+  yet. An account that owns no hardware gets neither, and a host of
+  repose's keeps I-616's ruling and stays under `-v` with the machine's
+  address: `TestHostReadoutNamesTheHostYouOwn` (internal/cli).
+- The name is the project's own `host_name`, so the readout costs no
+  `/hosts` read and the column follows the machines rather than the
+  hardware: `TestHostReadoutComesFromTheProjectRecord` (internal/cli),
+  `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http) for the
+  field itself.
 
 An offline host (I-1370):
 
@@ -390,6 +484,27 @@ The host itself (I-1372, I-1368, I-1376, I-1380):
 - A host cannot reach another host or the control plane beyond its own
   ports, and the gateway routes to a host only its owner's projects
   (I-1368, `SECURITY.md` "A host you do not own").
+
+The park on the Mac (I-1386, I-1394):
+
+- hostd asks the launcher to wrap and unwrap image keys, what crosses is
+  never the key, and the record's key id names the launcher's key:
+  `TestWrapUnwrapThroughTheLauncher` (internal/parkkey). A record from a
+  replaced keychain item is refused by name, and a tampered one does not
+  open: `TestUnwrapRefusesAnotherKey`. A locked keychain is a plain
+  error, so the park skips its guests with `no_key` rather than writing
+  images nobody can read: `TestALockedKeychainIsAPlainError`; no launcher
+  at the socket fails within its timeout: `TestNoLauncher`.
+- The launcher makes one keychain item the first time, reads it back
+  rather than trusting the add, never logs the value, tries no add
+  against a locked keychain and refuses a value that is not a key:
+  `TestKeychainKeeper*` (internal/cli). The agent's `ExitTimeOut` and the
+  vsock device are in the plist and vfkit's arguments:
+  `TestApplianceConfigAndPlist`; the port is the same on both sides of
+  the VM boundary: `TestMacNixAgreesOnThePort`.
+- On the Mac itself: a park at a stop, a real restart, and an unpark
+  with the `guest_restored` phase timings. Run by whoever holds the Mac;
+  not run at this line.
 
 ## Depends on
 

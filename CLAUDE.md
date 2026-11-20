@@ -132,7 +132,9 @@ each of these is where it is. Do not add a fourth place.
 One exception, which the owner signed off (DECISIONS I-653, I-686): during
 a host restart the guest's memory, secrets included, is kept as an encrypted
 image on the host. dm-crypt, with the image's key wrapped by Key Vault and
-unwrapped only by that host's identity. The image is removed once it has
+unwrapped only by that host's identity -- or, on a host the customer owns,
+by a non-exportable key in that Mac's Keychain, which holds the wrapping key
+and never a secret of a tenant's (I-1386). The image is removed once it has
 been read, and after 6 hours whether it is read or not. It never leaves the
 host.
 

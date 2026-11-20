@@ -29,6 +29,7 @@ var quietAllowed = map[string]string{
 	"restore.go:writeDestroyedTable:A live project is called %s; this one co":     "the plain `repose restore NAME` is wrong for this row",
 	"status.go:writeStatus:  repose's service on the machine is not":              "a failure that status reports",
 	"run.go:ensureRunningFrom:. `repose stop ":                                    "cut from a failed stop's reason, never printed (I-730)",
+	"run.go:createRefusal:`repose run --host ":                                    "a refusal: exit 8, the user's own host cannot take the machine, and this is the one way out (I-1390)",
 	"status.go:diskFullLine:%s; `repose resize %s %dG` grows it":                  "a full disk fails writes, a loss the user cannot undo (I-567)",
 	"lifecycle.go:destroyOne:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",
@@ -71,7 +72,11 @@ var quietFailureFuncs = map[string]bool{
 	"notRunningMessage": true, "nextAfterFailedStart": true, "again": true,
 	"waitForSSH": true, "briefErr": true, "Error": true, "ReadPNG": true,
 	"exitCodeFor": true, // the login and rate-limit refusals
-	"applyScript": true, // a shell script run on the guest, not output
+	// A download that did not finish, and the install step that
+	// continues it: `repose host add` already minted the host, so the
+	// plain command would be refused by the one-host limit (ENG-117).
+	"applianceFetchFailed": true,
+	"applyScript":          true, // a shell script run on the guest, not output
 	// The api's refusals as sentences, the unknown project, the project
 	// cap and a failed revoke (I-623, I-627).
 	"apiErrorExit": true, "noSuchProjectMessage": true, "projectLimitMessage": true,

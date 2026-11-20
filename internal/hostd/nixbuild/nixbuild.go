@@ -99,6 +99,12 @@ type Info struct {
 	Initrd       string
 	Init         string
 	KernelParams string
+	// StoreDisk is <closure>/repose-store-disk resolved: a read-only erofs
+	// image of the closure's store that the guest boots from a virtio-blk
+	// disk instead of the virtiofs share (an experiment on the Mac
+	// appliance, research doc §10; the share stays for later closures).
+	// Empty when the closure has none, which every production guest is.
+	StoreDisk string
 }
 
 // ClosureInfo reads kernel, initrd, init and kernel-params from a NixOS
@@ -116,11 +122,23 @@ func ClosureInfo(closure string) (Info, error) {
 	if _, err := os.Stat(in.Init); err != nil {
 		return in, fmt.Errorf("closure init: %w", err)
 	}
+	// Resolved, so a closure that is a wrapper beside the toplevel (the
+	// store-disk case: its init is a link into the toplevel, and only the
+	// toplevel is in the guest's store) names an init the guest can find.
+	// A toplevel's own init resolves to itself.
+	if r, err := filepath.EvalSymlinks(in.Init); err == nil {
+		in.Init = r
+	}
 	b, err := os.ReadFile(filepath.Join(closure, "kernel-params"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return in, fmt.Errorf("closure kernel-params: %w", err)
 	}
 	in.KernelParams = strings.TrimSpace(string(b))
+	if sd, err := filepath.EvalSymlinks(filepath.Join(closure, "repose-store-disk")); err == nil {
+		in.StoreDisk = sd
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return in, fmt.Errorf("closure repose-store-disk: %w", err)
+	}
 	return in, nil
 }
 
@@ -702,6 +720,8 @@ type Fake struct {
 	Lines        []string
 	Exists       map[string]bool
 	Calls        []Request
+	// Registration is what DumpDB returns (see DumpDB below).
+	Registration []byte
 	// Closures maps a closure to its requisites; a closure not in it is
 	// its own only requisite.
 	Closures map[string][]string
@@ -757,7 +777,15 @@ func (f *Fake) Requisites(_ context.Context, paths ...string) ([]string, error) 
 }
 
 // DumpDB implements Builder with an empty listing.
-func (f *Fake) DumpDB(context.Context, string) ([]byte, error) { return nil, nil }
+// DumpDB implements Builder. Registration is what it returns: nil, the
+// default, skips the RegisterPaths call of a delivery, which is why no
+// test covered that phase until the Mac appliance started failing in it
+// (ENG-80, DECISIONS I-1408).
+func (f *Fake) DumpDB(context.Context, string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Registration, nil
+}
 
 // PathExists implements Builder.
 func (f *Fake) PathExists(_ context.Context, path string) (bool, error) {

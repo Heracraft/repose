@@ -245,9 +245,19 @@ Once per appliance release, so `repose host add` prints a line that
 works:
 
 1. Build the image on an aarch64 builder with KVM (the Mac's appliance
-   VM, `docs/ops/DEV-BOX.md` "aarch64 builds"): `nix build
-   ./nix#packages.aarch64-linux.mac-appliance-image`; the result is
-   `repose-appliance.raw.gz`.
+   VM, `docs/ops/DEV-BOX.md` "aarch64 builds"), from main's head in a
+   clean checkout, never from a branch, since the image carries hostd:
+   `nix build ./nix#packages.aarch64-linux.mac-appliance-image`; the
+   result is `repose-appliance.raw.gz`. The builder VM needs memory
+   beyond its own: disko boots a qemu VM of `disko.memSize` (4 GiB for
+   this image) inside it, and a 6 GiB builder had that inner qemu
+   OOM-killed (2026-11-19), which reads as a build error; 18 GiB built
+   it. `/dev/kvm` in the builder resets to 0660 at every boot; `chmod
+   666 /dev/kvm` first, or the inner VM falls back to TCG silently and
+   the build takes an hour. Keep the result rooted (`nix build -o`) and
+   copy it off the builder before any garbage collection: the only
+   production image was collected on 2026-11-19 and rebuilt while a
+   release waited.
 2. Publish it with its checksum where `repose host add` fetches it: a
    GitHub release of this repository, tag `appliance-<version>`, assets
    `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
@@ -1283,7 +1293,7 @@ it happening again.
    - `no_room`: the thin pool had no room for the image. See PoolHigh.
    - `failed`: the snapshot or the image failed. The `park failed` line
      has the error; the guest kept running.
-   - `no_key`: hostd had no image key (Key Vault). See "Guest park".
+   - `no_key`: hostd had no image key (Key Vault; on a Mac appliance the launcher's keychain, locked or without a login, I-1386: the Mac's `~/Library/Logs/repose/launcher.log` says which on its `park-key:` lines). See "Guest park".
    - `busy`: another park or unpark held the lock past the deadline.
 2. The journal of the boot that did it: `journalctl -b -1 -u
    repose-guest-park -u hostd | grep '"event":"guest_park"'`. The

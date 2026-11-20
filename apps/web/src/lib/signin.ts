@@ -48,6 +48,29 @@ export function isAnswerReturn(v: unknown): v is AnswerReturn {
 	return typeof v === 'string' && ANSWER_RETURN.test(v);
 }
 
+/**
+ * The dashboard's own pages: the four prefixes a signed-out visitor is
+ * turned away from, and so the four a sign-in may come back to when the
+ * browser remembered where it turned them away from (ENG-44). One
+ * definition, read by the layout's guard and by the return rule, so the
+ * two cannot disagree about what a private page is.
+ *
+ * Safe as a return target by construction and not by trust: the pattern
+ * is anchored and its second character is the start of one of four
+ * words, so no value matching it can be `//evil.com` or anything but a
+ * path of this site. It is never read from a URL -- `GET /signin` takes
+ * its `?return=` from one and still matches whole paths against
+ * {@link RETURN_PATHS} alone, because that is the query anyone can put
+ * in a link. This one is only ever a pathname the browser itself was
+ * just on.
+ */
+const PRIVATE_PATH = /^\/(projects|questions|billing|settings)(\/|$)/;
+
+/** Whether p is one of the dashboard's own pages. */
+export function isPrivatePath(p: string): boolean {
+	return PRIVATE_PATH.test(p);
+}
+
 /** Everywhere a completed sign-in may land. */
 export type SignInReturn = ReturnPath | typeof DEFAULT_RETURN | AnswerReturn;
 

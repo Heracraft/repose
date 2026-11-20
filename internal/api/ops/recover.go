@@ -158,7 +158,7 @@ func (e *Engine) recoverFrom(ctx context.Context, op *store.Op, code string) boo
 // humanError turns a host's error into the sentence a user reads in
 // op.error.message and projects.last_error (I-159). The code is kept; the
 // host's own wording, which names internal ids, moves to detail.
-func humanError(kind, phase, code, msg string) (string, bool) {
+func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 	switch code {
 	case codeBootFailed:
 		// hostd's message is a fixed sentence from the console, never
@@ -170,16 +170,32 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 		return "the environment did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
 	case codeGuestUnresponsive:
 		if phase == PhaseCreateGuest || phase == PhaseStartGuest || phase == PhaseRestore {
-			// guestd answered, and then the closure's registration or
-			// the project's setup ran out of time (I-705). No number: a
-			// hostd before I-705 cuts SetupProject at 30 s, a later one
-			// at 3 minutes, and the api cannot tell which it talks to.
-			if (strings.Contains(msg, "SetupProject: ") || strings.Contains(msg, "RegisterPaths: ")) && strings.Contains(msg, "deadline exceeded") {
-				return "the environment started but did not finish setting up in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+			// guestd answered, and then one of the two phases that
+			// follow ran out of time (I-705). Which one is the useful
+			// fact: they have separate deadlines, in separate
+			// processes, and a user reporting one gives the next
+			// session something to act on. One sentence for both is
+			// how nine failed starts on a Mac appliance produced no
+			// evidence at all (ENG-80, DECISIONS I-1408). Still no
+			// number: the host's limit is its own and is in the detail
+			// an operator reads, not in the sentence.
+			if strings.Contains(msg, "deadline exceeded") {
+				switch {
+				case strings.Contains(msg, "RegisterPaths: "):
+					return "the environment started but did not finish loading its system in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+				case strings.Contains(msg, "SetupProject: "):
+					return "the environment started but did not finish setting up the project in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+				case strings.Contains(msg, "WriteSecrets: "), strings.Contains(msg, "SetPrincipals: "):
+					return "the environment started but did not take its ssh keys in time, so nothing can log in to it; `repose start` tries again", true
+				}
 			}
 			// Not "booted": a guest that stopped before its system
-			// started never answers either (I-592).
-			return "the environment did not answer within a minute of starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+			// started never answers either (I-592). How long it had is
+			// the host's to set (hostd --ready-timeout, five minutes on
+			// a Mac appliance against sixty seconds on Azure), so the
+			// sentence names no figure; it named a minute until I-1408,
+			// which was false on every Mac start it was shown for.
+			return "the environment did not answer while it was starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 		}
 		switch kind {
 		case KindResize:
@@ -202,7 +218,27 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 			return "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` applies the new one", true
 		}
 	case "host_unreachable":
+		if hostGone {
+			// The host is `lost` or `retired`: nobody expects it back, so
+			// "once the host is back" is advice that can never be
+			// followed, and it sounds like patience will fix it. A
+			// destroy is what works -- I-924 drains it to no phases on a
+			// host that is gone -- and for anything else the destroy is
+			// all that is left, because the machine's disk was on that
+			// host and nowhere else (ENG-119, DECISIONS I-1418).
+			if kind == KindDestroy {
+				return "the host running this project was removed, so there is nothing left to take down; `repose rm` finishes it", true
+			}
+			return "the host running this project was removed, and this machine's disk was on it; `repose rm` removes the record", true
+		}
 		return "the host running this project stopped answering; the operation can be run again once the host is back", true
+	case "timeout":
+		// The engine's own phase timeout (checkTimeout): the host took
+		// the command and never answered it. Its message is written for
+		// a log -- "start_guest did not complete in 10m0s" -- and until
+		// I-1408 reached the user as it was, naming an internal phase
+		// and a Go duration.
+		return "the host running this project did not answer in time, so the operation was given up; it can be run again", true
 	case codeVolumeUnavailable:
 		// The disk is intact; the host's pool is down (I-644). A start
 		// leaves the project stopped, so the same command works later.

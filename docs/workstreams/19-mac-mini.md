@@ -273,38 +273,179 @@ the queue.
 
 ## 7. Checklist (the conductor closes these, with evidence)
 
-- [ ] Gate 0 recorded: research doc §7 with the pass or fail line of
-      each step and the raw files under `mac-mini-nested-kvm-data/`.
-- [ ] Ownership cannot leak: a test places an owner's project on their
-      host and refuses a stranger's project there, shown red with the
-      ownership filter removed.
-- [ ] A host cannot reach another host or the control plane beyond its
-      ports: the edge ruleset snapshot, and a packet test on staging's
-      edge (`nft list ruleset`, a `nc` from a host to another host's
-      wg address times out).
-- [ ] The gateway refuses a connection to a project on someone else's
-      host: test shown red first.
-- [ ] `repose host add|ls|rm` exist, `cli.md` agrees (`docs_test.go`
-      green), the dashboard does the same three, screenshots at 1440
-      and 390 in both schemes.
-- [ ] The plan exists in Polar sandbox and production, PRICING.md and
-      billing.md and the landing agree on $10 and one host.
-- [ ] `nix build ./nix#guest-system --system aarch64-linux` (or the
-      output the builder names) succeeds on the Mac's builder; closure
-      under the limit; the size in the research doc.
-- [ ] On the AWS Mac: the launcher boots the appliance, the host
-      registers, Hello arrives, `repose run` on a project lands on it,
-      `repose ls` shows the host, the phone ask reaches a session there.
-      Evidence: the api log lines (ids only), `repose ls` output, the
-      session transcript's first line.
-- [ ] Restart: the Mac reboots, the launcher brings the appliance back,
+Closed by the mini-conductor on 2026-11-20, each against the evidence
+named beside it rather than against a session's word that it was done.
+Four are open and two of those are open on purpose; an item that is half
+closed says which half, because "mostly" is how a workstream ships at 99
+percent.
+
+- [x] **Gate 0 recorded.** `docs/research/mac-mini-nested-kvm.md` §7
+      "What the Mac said (AWS mac-m4.metal, eu-west-1a, 2026-11-19)",
+      raw files under `docs/research/mac-mini-nested-kvm-data/`
+      (`kvm-ok.txt`, `l1-facts.txt`, `l1-measure.log`, `l2-boot-1.log`,
+      `l2-boot-2.log`, `ch-version.txt`, `host.txt`). **Steps 1, 2, 3, 4
+      and 7 pass**: nested KVM works, a guest boots under the pinned
+      6.18.57 appliance kernel and hangs under 7.0 with timer wakeups
+      lost, no measurable CPU nesting tax (guest/appliance sha256 ratio
+      1.07), and vfkit boots the same disk. Steps 5 and 6 are hand steps
+      and were not taken, so the freeze-and-restore gate I-1376 names is
+      **not** closed by gate 0.
+- [x] **Ownership cannot leak.** `internal/api/scheduler/scheduler_test.go`:
+      `TestOwnershipPlacesBothWays` (:580), `TestOwnHardwarePlanNeverReachesTheFleet`
+      (:622), `TestOwnerAsksForTheFleet` (:651),
+      `TestOwnHostOffIsNotAFleetPlacement` (:667),
+      `TestFreeingRespectsOwnership` (:692). Both directions, which is
+      what the item asks for. The red-with-the-filter-removed run is
+      19a's claim in its STATUS line and was not re-taken here.
+- [ ] **A host cannot reach another host or the control plane beyond its
+      ports.** Half closed. The ruleset snapshot check exists and is
+      wired (`nix/flake.nix:451`, `checks.x86_64-linux.edge-ruleset-snapshot`).
+      **The packet test on staging's edge was never run** — the item
+      asks for `nft list ruleset` on the live edge and a `nc` from a host
+      to another host's wg address timing out, and no session recorded
+      either. What closes it: those two commands on staging, output in
+      the batch record. A snapshot test proves the rules we wrote; only
+      the packet proves the rules that are loaded.
+- [x] **The gateway refuses a connection to a project on someone else's
+      host.** `internal/gateway/foreignhost_test.go`, with
+      `noaddress_test.go` beside it. 19b's STATUS line records it red
+      first.
+- [x] **`repose host add|ls|rm` exist, `cli.md` agrees, the dashboard
+      does the same three, screenshots at 1440 and 390 in both
+      schemes.** Closed. The three commands are in `cli.md` (:482
+      to :487) with the state column, the name rule and the exit codes;
+      `internal/cli/docs_test.go` is green inside the 101-package run;
+      the dashboard page is `apps/web/src/routes/settings/hosts/+page.svelte`.
+      **Screenshots taken 2026-11-20** by the 19a builder: list, add,
+      refusal, remove and offline, at 1440 and 390 in both colour
+      schemes, at 1x, in `/tmp/claude-1000/shots2/hosts-*.png`, and read
+      rather than only captured. That is the row's evidence; it is a
+      scratch path rather than a committed one, so whoever needs it
+      later re-takes it.
+- [ ] **The plan exists in Polar sandbox and production, PRICING.md and
+      billing.md and the landing agree on $10 and one host.** **Open by
+      the owner's own hold, and it is the item to read before cutting
+      anything.** The product exists in production: `GET /v1/billing`
+      returns the `own` plan `available: true`, `price_cents: 1000`,
+      `hosts: 1`, `trial_days: 7` (read 2026-11-20). `docs/PRICING.md`
+      §"Own hardware" says $10 a month for one host. **`billing.md` and
+      the landing say nothing**, because that is exactly what the held
+      commit `7db572b5` adds, and it is held on the customer review
+      passing. So the shipped tree is incoherent in a way a customer
+      meets: `apps/web/src/content/docs/own-hardware.md` links twice on
+      the words "Own hardware plan" to `/docs/billing`, which has no such
+      section without that commit. Board: ENG-47, ENG-129.
+- [x] **The aarch64 guest closure builds on the Mac's builder and is
+      under the limit.** `docs/research/mac-mini-nested-kvm.md:307`:
+      **6,670,370,872 bytes (6.21 GiB)** against the 7 GiB limit
+      (7,516,192,768), 232 MB larger than the x86 closure's 6,438,215,064
+      at I-1056. Build 169 s for the first pass (979 cached paths, 1.9
+      GiB, 421 derivations), the runner 13 s and the closure check 4.8 s
+      on the second. `checks.aarch64-linux.guest-closure-size` is the
+      same 7 GiB rule as the x86 one and printed that number.
+- [ ] **On the AWS Mac: the launcher boots the appliance, the host
+      registers, Hello arrives, `repose run` lands a project on it,
+      `repose ls` shows the host, the phone ask reaches a session
+      there.** Half closed, and the half that is open is the product's
+      own pitch. Closed: the appliance installs and boots, the host is
+      online 40 s after a 27 s install with zero FAILED units, hostd
+      starts, and five consecutive stop-then-start rounds on mac-rig3 all
+      exit 0 with state `running` (starts 219/216/282/187/190 s, stops
+      12/11/12/9/9 s; hostd's own `total_ms` 200.7/192.8/254.9/162.6/169.7
+      agrees with the api's op records). **The phone ask is not closed**:
+      it failed on the published build (ENG-105, `repose-ask` giving up in
+      6.1 s on a `--timeout 3m`), its fix is merged, and **no live guest
+      has ever run the fixed build** — the spark's field numbers measured
+      the open on a loaded guest but its third run tested the published
+      binary, so it is a control on the old behaviour, not a
+      verification. What closes it: one `repose-ask` round trip on a
+      guest from an image built at `mac-mini` head.
+- [ ] **Restart: the Mac reboots, the launcher brings the appliance back,
       hostd reconciles, the project is reachable again without a
-      command.
-- [ ] Council report exists, second pass has no P0.
-- [ ] `just done-check`, `just lint`, `go test -race`, `golangci-lint`
-      on `mac-mini`; `docs/CHECKLIST.md` greps clean.
-- [ ] Every user-visible change has its docs page in the same commit
-      (I-242); every decision above is in DECISIONS.md with its reserved
-      id and the index regenerated.
-- [ ] `mac-mini` queued with `release-queue add` and a `--live` line
-      that names the AWS Mac check; STATUS.md updated by every session.
+      command, and with what it was doing** (I-1386, ENG-2). Evidence
+      the item asks for: the launcher log's `park-key:` lines and the
+      appliance journal's `guest_park` and `guest_restored` lines with
+      their phase timings, **from a real restart of the Mac**. **Half
+      closed, and the half that is closed was a defect an hour ago.**
+      The cause of the cold boots is found and fixed: `VsockDialer`
+      wrapped an AF_VSOCK descriptor with `net.FileConn`, which cannot
+      work on any platform, so hostd never reached the launcher, the
+      image key was never fetched and every park was skipped — hostd
+      logged it correctly throughout ("getsockname: address family not
+      supported by protocol", then "park skipped: no image key").
+      `5bed14eb`, merged. **Verified on the rig at 07:10 to 07:20 UTC**:
+      `park-key: event=keychain_item_created service=run.repose.appliance
+      account=park-wrapping-key`, then `event=wrapped` and
+      `event=unwrapped` on `key_id=keychain-79a9a0260addb566`, and the
+      guest came back from `launchctl bootout` then `bootstrap` with
+      `/tmp/marker.txt` intact and uptime continuous across the stop
+      (319.27 s before, 400.95 s after) — against the same test an hour
+      earlier on `e167476d`, which had no `park-key` line at all, the
+      marker gone and uptime reset to 193. **And it answers a question
+      only that machine could answer: `security` serves a launchd agent
+      in `gui/501` without a prompt**, so the park does not fail
+      silently for a customer. **And the restart was then run, and it
+      FAILS** (I-1434, ENG-138): `sudo shutdown -r now` gave the launcher
+      about **one second** — "stopping" at 07:29:27Z, "stopped" at
+      07:29:28Z, **no wrap line written** — and the guest came back cold,
+      marker gone, uptime 130.90 against 923.90 immediately before. So
+      the clean-stop path parks and the restart path does not, and
+      I-1386's deadline chain (240 s hold, 270 s wall, 330 s plug, 360 s
+      kill) assumes a window macOS does not give. The park stays on
+      because it is correct where it runs; **every line of copy that
+      promised a restart keeps the user's work is rewritten in this
+      batch to say machines start fresh** — the public page,
+      `lifecycle.md`, `secrets.md`, `troubleshooting.md` and `cli.md`'s
+      `repose host run` row. The promise was never published, so nothing
+      live is corrected and nothing false ships. This item stays open on
+      ENG-138, which also holds the three unknowns: whether this is EC2
+      Mac's restart path specifically, whether a logout behaves like the
+      clean stop, and whether macOS offers any hook with a real window.
+- [ ] **Council report exists, second pass has no P0.** The reports
+      exist and now ship with the work: `docs/reports/2026-11-19-mac-mini-council.md`
+      (the confer), `-mac.md`, `-cli.md`, `-dashboard.md`. **The second
+      pass has not run** and **two P0 are open**: ENG-71 (the install
+      refuses correctly, then the retry adopts the `disk.raw` the refusal
+      left behind, skips the guard, and produces an appliance whose grow
+      unit fails) and ENG-119 (the documented way to remove a Mac wedges
+      the account and the escape its refusal names cannot exist). Both
+      are with builders. The second pass runs against an appliance built
+      at `mac-mini` head, not the published one, or it re-finds what is
+      already fixed and proves nothing.
+- [x] **`just done-check`, `golangci-lint`, the Go suite.** `just
+      done-check` green on this tree 2026-11-20 07:03 (its greps, the
+      two trust-the-reader tests, and the web docs and copy vitest at 31
+      passed). `golangci-lint run ./...` 0 issues. `go test -p 2 -timeout
+      25m ./internal/... ./cmd/...` 101 packages ok, 0 failures.
+      `go build ./...` and `GOOS=darwin GOARCH=arm64 go build
+      ./cmd/repose/...` exit 0. **Said exactly:** `-race` has been run
+      per package by the builders who touched them, not over the whole
+      tree here, and the nix checks run one at a time under a 6 GB cap
+      because a whole-flake evaluation costs this box 8.5 to 12 GB —
+      `guestd`, `host-services`, `host-mac` pass, the rest in flight, and
+      the six `aarch64-linux` checks need a builder the Mac has and this
+      box does not.
+- [ ] **Every user-visible change has its docs page in the same commit;
+      every decision above is in DECISIONS.md with its reserved id and
+      the index regenerated.** The index is current (1044 entries) and
+      every id this program used has an entry **except one: I-1362 has no
+      entry at all**, and it is already cited by another entry
+      ("The Mac mini appliance (I-1362, I-1376)…"), so the repository
+      carries a citation to a decision that does not exist. It is the
+      spark's to write, with gate 0's numbers, per §4. Nothing caught
+      it: `just done-check` and `decisions-index.py --check` both pass
+      with a dangling citation. I-1384 is reserved and unused, which is
+      fine; I-1394 is on the unmerged `fix-park`.
+- [ ] **`mac-mini` queued with `release-queue add` and a `--live` line
+      that names the AWS Mac check.** Not queued yet, and **this item no
+      longer waits on the second pass** (DECISIONS I-1430). Phases 1 and
+      2 shipped in `r20261119-6` on 2026-11-19, before the council ran,
+      so the gate written to keep an unreviewed path away from customers
+      is now holding **repairs** away from customers who already have
+      the path. What it queues on instead: I-1430, the two open P0
+      closed with their evidence, and the batch's verification green
+      with the record naming what did not run and where. The second pass
+      still runs and gates the **launch copy**; `7db572b5` and the
+      landing's piece stay held on the owner's word. ENG-129 keeps the
+      sale question with the owner, reframed as what it really is: do we
+      withhold repairs to a feature already sold and already broken.

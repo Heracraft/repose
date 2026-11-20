@@ -422,6 +422,9 @@ export async function ownedHost(body: {
 	limit?: number;
 	set_install?: boolean;
 	install_line?: string;
+	/** Moves the host of that name to `state` (`registering` is waiting). */
+	state_host?: string;
+	state?: string;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',
@@ -430,4 +433,19 @@ export async function ownedHost(body: {
 	});
 	if (!res.ok) throw new Error(`/owned-host: ${res.status}`);
 	return ((await res.json()) as { id: string }).id;
+}
+
+/**
+ * The root-filesystem figures a machine's Disk column reads (I-567).
+ * Every machine the fake makes is at 1 GiB used, which draws the
+ * narrowest figure that column ever shows; a test about whether the
+ * column is wide enough has to be able to ask for a wide one (ENG-24).
+ */
+export async function setDisk(projectId: string, usedBytes: number, sizeBytes: number) {
+	const res = await fetch(`${adminURL()}/disk`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectId, used_bytes: usedBytes, size_bytes: sizeBytes })
+	});
+	if (!res.ok) throw new Error(`/disk: ${res.status} ${await res.text()}`);
 }

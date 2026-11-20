@@ -28,7 +28,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Limits (docs/interfaces/guest-conventions.md "Asking the user").
+// Limits (docs/interfaces/guest-conventions.md, "Messages and questions").
 const (
 	// TextCap is the cap on a question's text and on a notify message, the
 	// same 1 KB as an AgentEvent summary.
@@ -145,6 +145,12 @@ type Question struct {
 	// checked by the caller with internal/msglink.
 	LinkURL   string `json:"link_url,omitempty"`
 	LinkLabel string `json:"link_label,omitempty"`
+	// RequestID is the asker's own id for the open, which makes opening
+	// idempotent: an asker whose POST got no answer retries it, and the
+	// same RequestID returns this question instead of putting the
+	// question to the owner a second time (DECISIONS I-1404). "" from an
+	// asker that sends none.
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // Open reports whether the question is still waiting.
@@ -172,6 +178,9 @@ type Store struct {
 
 	mu sync.Mutex
 	qs map[string]*entry
+	// byRequest maps an asker's RequestID to the question it opened, so
+	// a retried open returns the stored question (DECISIONS I-1404).
+	byRequest map[string]string
 }
 
 // New builds a store over dir and loads what a previous guestd left there.
@@ -179,7 +188,7 @@ func New(dir string, emit Emitter, log *slog.Logger, now func() time.Time) *Stor
 	if now == nil {
 		now = time.Now
 	}
-	s := &Store{dir: dir, emit: emit, log: log, now: now, qs: map[string]*entry{}}
+	s := &Store{dir: dir, emit: emit, log: log, now: now, qs: map[string]*entry{}, byRequest: map[string]string{}}
 	s.load()
 	return s
 }
@@ -207,6 +216,9 @@ func (s *Store) load() {
 			close(en.done)
 		}
 		s.qs[q.ID] = en
+		if q.RequestID != "" {
+			s.byRequest[q.RequestID] = q.ID
+		}
 	}
 }
 
@@ -227,22 +239,42 @@ func Clean(s string, n int) string {
 // Open starts a question and announces it. proc is the asker's agent
 // process key ("" for none).
 func (s *Store) Open(agent, window, proc, text string, options []string, timeout time.Duration) (Question, error) {
-	return s.open(Question{Agent: agent, Window: window, AgentProc: proc, Text: text, Options: options}, timeout)
+	q, _, err := s.open(Question{Agent: agent, Window: window, AgentProc: proc, Text: text, Options: options}, timeout)
+	return q, err
 }
 
 // OpenAsk starts the question q describes, as POST /ask sends it: its
 // agent, window, process key, text, options or secret, and link. The rest
 // of q is ignored.
-func (s *Store) OpenAsk(q Question, timeout time.Duration) (Question, error) {
+// repeat is true when q.RequestID named a question this store already
+// holds, which is the answer to a retried open rather than a new one.
+func (s *Store) OpenAsk(q Question, timeout time.Duration) (Question, bool, error) {
 	if q.Secret != "" {
 		if len(q.Options) > 0 || !ValidSecretName(q.Secret) {
-			return Question{}, fmt.Errorf("%w: secret names match [A-Z][A-Z0-9_]{0,63}, with no options", ErrInvalid)
+			return Question{}, false, fmt.Errorf("%w: secret names match [A-Z][A-Z0-9_]{0,63}, with no options", ErrInvalid)
 		}
 		if timeout <= 0 {
 			timeout = SecretTimeout
 		}
 	}
+	if q.RequestID != "" {
+		if held, ok := s.opened(q.RequestID); ok {
+			return held, true, nil
+		}
+	}
 	return s.open(q, timeout)
+}
+
+// opened is the question an earlier open with this request id made, if
+// this store still holds it.
+func (s *Store) opened(requestID string) (Question, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.qs[s.byRequest[requestID]]
+	if e == nil {
+		return Question{}, false
+	}
+	return e.q, true
 }
 
 // OpenSecret starts a question that asks the owner for the named secret
@@ -256,14 +288,18 @@ func (s *Store) OpenSecret(agent, window, proc, name, text string, timeout time.
 	if timeout <= 0 {
 		timeout = SecretTimeout
 	}
-	return s.open(Question{Agent: agent, Window: window, AgentProc: proc, Secret: name, Text: text}, timeout)
+	q, _, err := s.open(Question{Agent: agent, Window: window, AgentProc: proc, Secret: name, Text: text}, timeout)
+	return q, err
 }
 
-func (s *Store) open(in Question, timeout time.Duration) (Question, error) {
+// open returns repeat true when in.RequestID named a question this store
+// already held, which a retried open does; nothing is opened and the
+// owner is not told again.
+func (s *Store) open(in Question, timeout time.Duration) (Question, bool, error) {
 	agent, window, proc, secret, options := in.Agent, in.Window, in.AgentProc, in.Secret, in.Options
 	text := Clean(in.Text, TextCap)
 	if text == "" {
-		return Question{}, fmt.Errorf("%w: the question is empty", ErrInvalid)
+		return Question{}, false, fmt.Errorf("%w: the question is empty", ErrInvalid)
 	}
 	var opts []string
 	seen := map[string]bool{}
@@ -276,7 +312,7 @@ func (s *Store) open(in Question, timeout time.Duration) (Question, error) {
 		opts = append(opts, o)
 	}
 	if len(opts) > MaxOptions {
-		return Question{}, fmt.Errorf("%w: at most %d options", ErrInvalid, MaxOptions)
+		return Question{}, false, fmt.Errorf("%w: at most %d options", ErrInvalid, MaxOptions)
 	}
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -289,6 +325,7 @@ func (s *Store) open(in Question, timeout time.Duration) (Question, error) {
 		ID: uuid.Must(uuid.NewV7()).String(), Agent: agent, Window: window, Text: text, Options: opts,
 		TimeoutS: uint32(timeout / time.Second), Created: now, Expires: now.Add(timeout), State: StateOpen,
 		AgentProc: proc, Secret: secret, LinkURL: in.LinkURL, LinkLabel: in.LinkLabel,
+		RequestID: in.RequestID,
 	}
 	s.mu.Lock()
 	open := 0
@@ -299,13 +336,23 @@ func (s *Store) open(in Question, timeout time.Duration) (Question, error) {
 	}
 	if open >= MaxOpen {
 		s.mu.Unlock()
-		return Question{}, ErrTooMany
+		return Question{}, false, ErrTooMany
+	}
+	// A retry that raced this one past the byRequest check finds it here,
+	// under the lock, and is answered with this question.
+	if q.RequestID != "" {
+		if held := s.qs[s.byRequest[q.RequestID]]; held != nil {
+			out := held.q
+			s.mu.Unlock()
+			return out, true, nil
+		}
+		s.byRequest[q.RequestID] = q.ID
 	}
 	s.qs[q.ID] = &entry{q: q, done: make(chan struct{}), lastPoll: s.now()}
 	s.persist(q)
 	s.mu.Unlock()
 	s.emit(q)
-	return q, nil
+	return q, false, nil
 }
 
 // Get returns a question.
@@ -512,6 +559,9 @@ func (s *Store) Sweep() {
 			orphaned = append(orphaned, id)
 		case !e.q.Open() && now.Sub(e.q.Closed) > Keep:
 			delete(s.qs, id)
+			if e.q.RequestID != "" {
+				delete(s.byRequest, e.q.RequestID)
+			}
 			_ = os.Remove(s.file(id)) // a leftover file is reloaded as closed and swept again
 		}
 	}

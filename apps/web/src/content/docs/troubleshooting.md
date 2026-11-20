@@ -65,7 +65,17 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **``todo-app's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start todo-app` works then``.** The machine's server is down or unreachable. The machine's disk is on that server, so nothing can start it elsewhere without losing the work since its last snapshot.
 
+**Machines on your own Mac started cold after a restart.** That is what a restart of the Mac does today: macOS gives repose about a second when the Mac goes down and a machine's memory takes longer than that to write, so every machine starts fresh with its disk as it was ([Restart your Mac and your machines start fresh](/docs/own-hardware#restart-your-mac-and-your-machines-start-fresh)). Stop anything you would miss before you restart.
+
 **`todo-app is in an error state: ...`** The rest of the line is what failed, for example `repose's service on the machine stopped answering`. `repose start todo-app` restarts it. When a boot failed, `repose logs todo-app --kind console` shows what the machine printed.
+
+**`todo-app is in an error state: the machine started but did not finish loading its system in time`.** The machine booted and answered, and then the step that gives it the list of its own software ran out of time. `repose start todo-app` tries again, and `repose logs todo-app --kind console` shows what the machine printed. On [your own Mac](/docs/own-hardware#starting-a-machine-takes-about-four-minutes) this step is the slowest part of a start.
+
+**`todo-app is in an error state: the machine started but did not finish setting up the project in time`.** The machine booted and answered, and then the step that prepares your home directory and the project's folder ran out of time. `repose start todo-app` tries again, and `repose logs todo-app --kind console` shows what the machine printed.
+
+**`todo-app is in an error state: the machine did not answer while it was starting`.** The machine was started and never answered repose. `repose logs todo-app --kind console` shows what it printed while booting, which is usually where the reason is, and `repose start todo-app` tries again.
+
+**`todo-app: the host running this project did not answer in time, so the operation was given up; it can be run again`.** The server took the command and never said what happened. Nothing was lost: run the command again. On your own Mac, `repose host ls` says whether the Mac is answering.
 
 **`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason, and `repose logs todo-app --kind console` shows what the failed boot printed. Nothing tries that system again: the next base update, or a change to the configuration, builds a new one.
 

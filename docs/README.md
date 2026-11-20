@@ -18,6 +18,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [DECISIONS.md](DECISIONS.md) | You want to know *why* something is the way it is, or want to change it. Every settled decision, with the alternatives that lost. |
 | [MILESTONES.md](MILESTONES.md) | You want to know what to build next and what "done" means for each stage. |
 | [REVIEW.md](REVIEW.md) | You are about to put something in front of users. How repose reviews as customers rather than as builders: three sessions by surface, the ranking rule, the confer, the second-pass gate, and the evidence rules a review rests on. |
+| [workstreams/CONDUCTING.md](workstreams/CONDUCTING.md) | You are coordinating several sessions rather than building. The roles a program runs on, how they are orchestrated, the mistakes that cost the most, and the rules for relaying another session's claim without breaking it. |
 | [CHECKLIST.md](CHECKLIST.md) | You are about to call something finished. The global definition of done. |
 | [LANDING.md](LANDING.md) | You touch the landing page: what it sells, its sections, the hero terminal, each fact once, copy rules. |
 | [GLOSSARY.md](GLOSSARY.md) | A word is used in a specific way (guest, host, edge, fragment, closure, project). |

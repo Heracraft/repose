@@ -24,7 +24,7 @@ Applied revision 4f1c2a9e in 45s.
 
 Any package from nixpkgs works, nested names like `python312Packages.black` included; search names at [search.nixos.org](https://search.nixos.org/packages). An unfree package is refused unless it's on the platform's allowlist: the agents, `terraform`, `ngrok`, `google-chrome`, `vscode` and `cursor`. A few names are menu entries that do more than install a package: `postgresql`, `redis` and the other databases also start the service.
 
-The build usually takes under a minute, and it's switched into the running machine without a restart, so your agents keep running. A `Waiting for a build slot` step means the server's builders are all busy with other builds. `-v` adds Nix's own output, and so does a run with no terminal.
+The build usually takes under a minute, and it's switched into the running machine without a restart, so your agents keep running. A `Waiting for a build slot` step means the server's builders are all busy with other builds. `-v` adds Nix's own output.
 
 A failed build leaves the machine on the revision it has, and the name you got wrong never reaches the menu:
 

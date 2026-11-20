@@ -37,6 +37,10 @@ type guestSide struct {
 	attached bool
 	// noRelay: the hostd has not said it relays a secret's name (I-929).
 	noRelay bool
+	// slowEmit holds the POST that opens a question for this long, after
+	// the question is open and answerable: a guestd that is answering,
+	// slowly (ENG-105).
+	slowEmit time.Duration
 }
 
 func newGuestSide(t *testing.T) *guestSide {
@@ -65,7 +69,9 @@ func (g *guestSide) start(t *testing.T) {
 	g.store = questions.New(g.dir, func(q questions.Question) {
 		g.mu.Lock()
 		g.asked = append(g.asked, q)
+		slow := g.slowEmit
 		g.mu.Unlock()
+		time.Sleep(slow)
 	}, log, nil)
 	srv := hooks.NewServer(g.socket, -1, func(string, string, string, string) {}, nil, log)
 	srv.SetHerdrResolver(g.herdr)
@@ -90,6 +96,18 @@ func (g *guestSide) start(t *testing.T) {
 	}
 	go func() { _ = srv.Serve() }()
 	g.srv = srv
+}
+
+// distinctAsked is how many questions guestd opened: one id may be
+// emitted twice (opened, then closed).
+func (g *guestSide) distinctAsked() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	ids := map[string]bool{}
+	for _, q := range g.asked {
+		ids[q.ID] = true
+	}
+	return len(ids)
 }
 
 // open waits for the ask to reach guestd and returns it.
@@ -233,6 +251,45 @@ func ask(args []string, sigs chan os.Signal) (<-chan int, *bytes.Buffer, *bytes.
 	done := make(chan int, 1)
 	go func() { done <- runAsk(args, strings.NewReader(""), &out, &errb, sigs) }()
 	return done, &out, &errb
+}
+
+// syncBuf is a buffer a test may read while repose-ask writes it.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// askWatched runs repose-ask with output a test may read as it goes.
+func askWatched(args []string) (<-chan int, *syncBuf, *syncBuf) {
+	out, errb := &syncBuf{}, &syncBuf{}
+	done := make(chan int, 1)
+	go func() { done <- runAsk(args, strings.NewReader(""), out, errb, make(chan os.Signal)) }()
+	return done, out, errb
+}
+
+// waitForLine waits until repose-ask has written want on stderr.
+func waitForLine(t *testing.T, b *syncBuf, want string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(b.String(), want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("repose-ask never wrote %q; stderr %q", want, b.String())
 }
 
 func waitExit(t *testing.T, done <-chan int) int {
@@ -584,4 +641,184 @@ func TestNotifyAndAskLink(t *testing.T) {
 	if c := waitExit(t, adone); c != ExitUsage {
 		t.Fatalf("bad link on ask: exit %d", c)
 	}
+}
+
+// TestAskWaitsForASlowGuestd is ENG-105, found on a published build on an
+// M4 Mac: `repose-ask --timeout 3m` exited non-zero in seconds with
+// "guestd is not answering", while the question reached the owner and
+// `repose reply` answered it -- so the agent carried on as if the owner
+// had said nothing. The only deadline that may end an ask is the user's
+// own --timeout.
+func TestAskWaitsForASlowGuestd(t *testing.T) {
+	old := pollWait
+	pollWait = 1
+	t.Cleanup(func() { pollWait = old })
+	g := newGuestSide(t)
+	// guestd opens the question, then takes longer than the hook POST's
+	// old 3 s constant to answer the asker.
+	g.slowEmit = 5 * time.Second
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+
+	start := time.Now()
+	done, out, errb := ask([]string{"Drop the legacy table?", "--timeout", "3m"}, make(chan os.Signal))
+	q := g.open(t)
+	if err := g.store.Answer(q.ID, questions.StateAnswered, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	code := waitExit(t, done)
+	t.Logf("exit %d after %s; stdout %q stderr %q", code, time.Since(start).Round(100*time.Millisecond), out, errb)
+	if code != ExitOK || out.String() != "yes\n" {
+		t.Fatalf("exit %d stdout %q stderr %q, want 0 and the answer", code, out, errb)
+	}
+	if n := g.distinctAsked(); n != 1 {
+		t.Fatalf("%d questions opened, want exactly one", n)
+	}
+}
+
+// TestAskSaysWhetherTheQuestionWasEverAsked is the second half of
+// ENG-105 (DECISIONS I-1406). Exit 1 used to mean both "the question was
+// never asked" and "the question is open and nobody is waiting for it",
+// which a caller cannot tell apart -- and an agent that reads the second
+// as the first carries on as if the owner had said nothing.
+func TestAskSaysWhetherTheQuestionWasEverAsked(t *testing.T) {
+	oldPoll, oldLost, oldRetry := pollWait, LostAfter, retryEvery
+	pollWait, LostAfter, retryEvery = 1, time.Second, 50*time.Millisecond
+	t.Cleanup(func() { pollWait, LostAfter, retryEvery = oldPoll, oldLost, oldRetry })
+
+	t.Run("never asked is 1", func(t *testing.T) {
+		// No guestd at that path, and none arrives within the budget.
+		withEnv(t, "REPOSE_HOOK_SOCKET", filepath.Join(t.TempDir(), "absent.sock"),
+			"REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+		done, out, errb := ask([]string{"q?", "--timeout", "3m"}, make(chan os.Signal))
+		code := waitExit(t, done)
+		if code != ExitError || out.Len() != 0 || !strings.Contains(errb.String(), "is not answering") {
+			t.Fatalf("exit %d stdout %q stderr %q, want 1 and that guestd is not answering", code, out, errb)
+		}
+		if strings.Contains(errb.String(), "asked ") {
+			t.Fatalf("it said it asked a question when none was opened: %q", errb)
+		}
+	})
+
+	t.Run("asked and open with nothing waiting is 7", func(t *testing.T) {
+		g := newGuestSide(t)
+		withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+		done, out, errb := ask([]string{"q?", "--timeout", "3m"}, make(chan os.Signal))
+		q := g.open(t)
+		// guestd goes away while the question is open and unanswered:
+		// the owner still has it, and may still answer it.
+		_ = g.srv.Close(context.Background())
+		code := waitExit(t, done)
+		if code != ExitAskedNotAnswered || out.Len() != 0 {
+			t.Fatalf("exit %d stdout %q stderr %q, want %d", code, out, errb, ExitAskedNotAnswered)
+		}
+		// The id is how the caller withdraws it or names it to a human.
+		if !strings.Contains(errb.String(), q.ID) || !strings.Contains(errb.String(), "unanswered") {
+			t.Fatalf("stderr %q names neither the question nor its state", errb)
+		}
+		if got, _ := g.store.Get(q.ID); got.State != questions.StateOpen {
+			t.Fatalf("the question was closed behind the owner's back: %+v", got)
+		}
+	})
+}
+
+// TestAskAdoptsItsOwnOpenQuestion: when the answer to the open is lost,
+// the question may already be open. Asking again would put the same
+// question to the owner twice; reporting failure is ENG-105. The asker
+// takes up the one it already asked.
+func TestAskAdoptsItsOwnOpenQuestion(t *testing.T) {
+	oldPoll, oldCall := pollWait, AskCall
+	pollWait, AskCall = 1, 300*time.Millisecond
+	t.Cleanup(func() { pollWait, AskCall = oldPoll, oldCall })
+	g := newGuestSide(t)
+	// The question is open before this sleep; only the answer to the
+	// POST is lost, which is the race the fix is about.
+	g.slowEmit = time.Second
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+
+	done, out, errb := askWatched([]string{"Drop the legacy table?", "--timeout", "3m"})
+	q := g.open(t)
+	// The owner answers after the asker has taken the question up, as a
+	// human answering in 12 to 20 s does.
+	waitForLine(t, errb, "asked "+q.ID)
+	if err := g.store.Answer(q.ID, questions.StateAnswered, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if code := waitExit(t, done); code != ExitOK || out.String() != "yes\n" {
+		t.Fatalf("exit %d stdout %q stderr %q, want 0 and the answer", code, out, errb.String())
+	}
+	if n := g.distinctAsked(); n != 1 {
+		t.Fatalf("%d questions opened, want exactly one: the owner was asked twice", n)
+	}
+}
+
+// TestAskTakesUpItsQuestionWhenTheOpenRanOutOfTime: with a --timeout
+// shorter than the open takes, the budget for opening is gone before any
+// POST is answered. The question may still be open, and the owner may
+// be reading it, so the asker takes it up rather than report it unasked
+// (ENG-105, DECISIONS I-1404).
+func TestAskTakesUpItsQuestionWhenTheOpenRanOutOfTime(t *testing.T) {
+	oldPoll, oldCall := pollWait, AskCall
+	pollWait, AskCall = 1, 30*time.Second
+	t.Cleanup(func() { pollWait, AskCall = oldPoll, oldCall })
+	g := newGuestSide(t)
+	g.slowEmit = 5 * time.Second
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+
+	// The whole budget for the open is 2 s, which runs out while
+	// guestd's POST handler is still in the question's announcement.
+	done, out, errb := askWatched([]string{"Drop the legacy table?", "--timeout", "2s"})
+	q := g.open(t)
+	waitForLine(t, errb, "asked "+q.ID)
+	if err := g.store.Answer(q.ID, questions.StateAnswered, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if code := waitExit(t, done); code != ExitOK || out.String() != "yes\n" {
+		t.Fatalf("exit %d stdout %q stderr %q, want 0 and the answer", code, out, errb.String())
+	}
+	if n := g.distinctAsked(); n != 1 {
+		t.Fatalf("%d questions opened, want exactly one", n)
+	}
+}
+
+// TestAskInterruptedWhileOpening: the open may now take minutes, so a
+// Ctrl-C during it has to land rather than wait out the budget, and if
+// an abandoned attempt opened a question the interrupt takes it back.
+func TestAskInterruptedWhileOpening(t *testing.T) {
+	oldLost, oldRetry := LostAfter, retryEvery
+	LostAfter, retryEvery = 2*time.Minute, 50*time.Millisecond
+	t.Cleanup(func() { LostAfter, retryEvery = oldLost, oldRetry })
+
+	t.Run("no guestd, nothing asked", func(t *testing.T) {
+		withEnv(t, "REPOSE_HOOK_SOCKET", filepath.Join(t.TempDir(), "absent.sock"),
+			"REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+		sigs := make(chan os.Signal, 1)
+		done, _, errb := ask([]string{"q?", "--timeout", "3m"}, sigs)
+		time.Sleep(150 * time.Millisecond) // it is retrying the open
+		sigs <- syscall.SIGINT
+		if code := waitExit(t, done); code != ExitInterrupted {
+			t.Fatalf("exit %d stderr %q, want %d", code, errb, ExitInterrupted)
+		}
+		if !strings.Contains(errb.String(), "no question was asked") {
+			t.Fatalf("stderr %q does not say that nothing was asked", errb)
+		}
+	})
+
+	t.Run("an abandoned open is taken back", func(t *testing.T) {
+		oldCall := AskCall
+		AskCall = 200 * time.Millisecond
+		t.Cleanup(func() { AskCall = oldCall })
+		g := newGuestSide(t)
+		g.slowEmit = 3 * time.Second
+		withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "")
+		sigs := make(chan os.Signal, 1)
+		done, _, errb := ask([]string{"q?", "--timeout", "3m"}, sigs)
+		q := g.open(t)
+		sigs <- syscall.SIGINT
+		if code := waitExit(t, done); code != ExitInterrupted {
+			t.Fatalf("exit %d stderr %q, want %d", code, errb, ExitInterrupted)
+		}
+		if got, _ := g.store.Get(q.ID); got.State != questions.StateCancelled || got.Reason != questions.ReasonInterrupted {
+			t.Fatalf("the question the owner holds after ^C: %+v", got)
+		}
+	})
 }

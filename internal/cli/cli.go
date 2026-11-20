@@ -370,6 +370,26 @@ func completeProject(env func() (*Env, error)) func(*cobra.Command, []string, st
 	}
 }
 
+// completeHostTarget completes `--host` (DECISIONS I-1390): the account's
+// own hosts by name, from the api, and `repose` for repose's servers.
+func completeHostTarget(env func() (*Env, error)) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		out := []string{hostRepose}
+		if e, err := env(); err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if hosts, err := e.Client.ListHosts(ctx); err == nil {
+				for _, h := range hosts {
+					if h.State != "retired" && h.State != "lost" {
+						out = append(out, h.Name)
+					}
+				}
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
 // projectSlugsForCompletion asks the api (two seconds at most, a shell is
 // waiting) and falls back to the slugs in projects.json.
 func projectSlugsForCompletion(env func() (*Env, error)) []string {
@@ -555,6 +575,8 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "the agent `NAME` -p starts: claude, opencode, codex, gemini or pi (default: the project's agent, set at creation from config.toml's default_agent); without -p, NAME becomes the project's agent")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: tiny, small, large or xl (default: config.toml's default_size, else large)")
+	cmd.Flags().StringVar(&opts.Host, "host", "", "where a new machine is made: one of your hosts by `NAME`, or repose for repose's servers (default: your host when you have one, else repose)")
+	_ = cmd.RegisterFlagCompletionFunc("host", completeHostTarget(env))
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent on this prompt")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.

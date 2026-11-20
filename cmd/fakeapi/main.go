@@ -141,6 +141,8 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	// {name} adds a registered, answering host and answers its id;
 	// {id, quiet_minutes} marks one offline that long ago;
 	// {project_id, host_id} places a machine on it;
+	// {state_host, state} moves the host of that name to a state, which
+	// is how a test gets one that is still `registering` (waiting);
 	// {limit} is the plan's host count, -1 to let it be the default.
 	mux.HandleFunc("POST /owned-host", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -152,6 +154,8 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Limit        *int   `json:"limit"`
 			InstallLine  string `json:"install_line"`
 			SetInstall   bool   `json:"set_install"`
+			StateHost    string `json:"state_host"`
+			State        string `json:"state"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -169,11 +173,32 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		if body.ProjectID != "" && body.HostID != "" {
 			f.SetProjectHost(body.ProjectID, body.HostID)
 		}
+		if body.StateHost != "" && body.State != "" {
+			f.SetOwnedHostState(body.StateHost, body.State)
+		}
 		id := ""
 		if body.Name != "" {
 			id = f.AddOwnedHost(body.Name)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+	})
+	// {project_id, used_bytes, size_bytes}: the root filesystem the Disk
+	// column reads (I-567). The create leaves every machine at 1 GiB
+	// used, the narrowest figure that column draws, so a test about how
+	// wide it has to be needs this (ENG-24).
+	mux.HandleFunc("POST /disk", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			UsedBytes int64  `json:"used_bytes"`
+			SizeBytes int64  `json:"size_bytes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := f.SetProjectDisk(body.ProjectID, body.UsedBytes, body.SizeBytes); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
 	})
 	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
 		back, err := f.CompleteCheckout(r.PathValue("id"))

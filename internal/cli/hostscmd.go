@@ -24,8 +24,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		SuggestFor: []string{"hosts", "hardware", "machine"},
 	}
 
-	var join string
-	var ao applianceOptions
+	var join, joinFile string
+	// Strings, not ints: an int flag's zero value is also "not given",
+	// and pflag's parse error is Go's sentence (ENG-38, I-1432).
+	var diskArg, memoryArg, cpusArg string
 	add := &cobra.Command{
 		Use:   "add [NAME]",
 		Short: "Add a machine of your own",
@@ -38,9 +40,14 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"https://repose.run/docs/own-hardware has what the machine needs first.",
 		Example: "  repose host add\n" +
 			"  repose host add mac-mini\n" +
-			"  repose host add --join eyJ2IjoxLC...   # on the Mac",
+			"  repose host add --join-file ~/join.txt   # on the Mac\n" +
+			"  pbpaste | repose host add --join -       # the same, from the clipboard",
 		Args: argsN(0, 1, "at most one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ao, err := applianceOptionsFrom(diskArg, memoryArg, cpusArg)
+			if err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -49,27 +56,35 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if len(args) == 1 {
 				name = args[0]
 			}
-			if join != "" {
+			if join != "" || joinFile != "" {
 				if name != "" {
 					return cobraUsageError{errors.New("--join takes the argument `repose host add` printed, and no NAME")}
 				}
-				return applianceInstall(cmd.Context(), e, join, "", ao)
+				argument, err := readJoinArgument(join, joinFile, cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				return applianceInstall(cmd.Context(), e, argument, "", ao)
 			}
 			return HostAddCmd(cmd.Context(), e, name, ao)
 		},
 	}
 	add.Flags().BoolVar(&g.json, "json", false, "print every field, the install step and the token included, as JSON")
-	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere")
-	add.Flags().IntVar(&ao.DiskGB, "disk", 0, "the appliance's disk in GB (default 100, at least 40, bounded by the volume's free space less 20)")
-	add.Flags().IntVar(&ao.MemoryMiB, "memory", 0, "the appliance's memory in MiB (default three quarters of the Mac's)")
-	add.Flags().IntVar(&ao.CPUs, "cpus", 0, "the appliance's vCPUs (default all but two)")
+	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere; `-` reads it from standard input")
+	add.Flags().StringVar(&joinFile, "join-file", "", "install on this Mac with the argument in `PATH`, which keeps it off the command line")
+	add.Flags().StringVar(&diskArg, "disk", "", "the appliance's disk in `GB` (default 100, at least 40, bounded by the volume's free space less 20)")
+	add.Flags().StringVar(&memoryArg, "memory", "", "how much memory the appliance gets, in `MIB` (default three quarters of the Mac's, at least 8192)")
+	add.Flags().StringVar(&cpusArg, "cpus", "", "how many `CORES` the appliance gets (default all but two, at least 4)")
 
 	run := &cobra.Command{
 		Use:   "run",
 		Short: "Hold the appliance on this Mac (what launchd runs)",
 		Long: "Run repose's virtual machine on this Mac in the foreground, until it is\n" +
 			"stopped. The launchd agent `repose host add` installs runs this at every\n" +
-			"login; a stop asks the appliance to power off cleanly first.",
+			"login. A stop asks the appliance to keep every running machine's memory\n" +
+			"in an encrypted image on its disk and power off, and the next run brings\n" +
+			"the machines back where they were; the key for those images is one item\n" +
+			"in your keychain, made the first time it is needed.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()

@@ -33,11 +33,16 @@ let
   # The ready window (DECISIONS I-1376); nothing when unset, and hostd's
   # 60 s then applies.
   readyFlags = lib.optionalString (cfg.guestReadyTimeout != "") "--ready-timeout ${lib.escapeShellArg cfg.guestReadyTimeout}";
+  # The two phases after Ready (DECISIONS I-1408); nothing when unset, and
+  # hostd's 3 minutes each then applies.
+  phaseFlags = lib.optionalString (cfg.guestPathsTimeout != "") " --paths-timeout ${lib.escapeShellArg cfg.guestPathsTimeout}"
+    + lib.optionalString (cfg.guestSetupTimeout != "") " --setup-timeout ${lib.escapeShellArg cfg.guestSetupTimeout}";
   # The guest park (park.nix, DECISIONS I-652); nothing when it is off.
   parkFlags = lib.optionalString cfg.park.enable (
     "--park --park-deadline ${toString cfg.park.deadline}s --park-write-rate ${toString cfg.park.writeRateMBs}"
     + " --park-restore-timeout ${toString cfg.park.restoreTimeout}s"
-    + (if cfg.park.keyFile != "" then " --park-key-file ${lib.escapeShellArg cfg.park.keyFile}"
+    + (if cfg.park.launcherPort != 0 then " --park-key-vsock ${toString cfg.park.launcherPort}"
+       else if cfg.park.keyFile != "" then " --park-key-file ${lib.escapeShellArg cfg.park.keyFile}"
        else " --park-key-vault ${lib.escapeShellArg cfg.park.keyVaultUrl} --park-key-name ${lib.escapeShellArg cfg.park.keyName}")
     + lib.optionalString cfg.park.scheduledEvents " --scheduled-events --vm-name ${lib.escapeShellArg cfg.hostName}")
     + lib.optionalString cfg.park.freePageReporting " --free-page-reporting";
@@ -193,7 +198,7 @@ in
       coreutils
     ];
     serviceConfig = {
-      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags} ${readyFlags}";
+      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags} ${readyFlags}${phaseFlags}";
       Restart = "always";
       RestartSec = 2;
       # A join token that has been used is not retried (03-hostd §6).

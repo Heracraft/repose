@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -16,14 +17,17 @@ type User struct {
 
 // Project is the documented Project object.
 type Project struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Slug             string     `json:"slug"`
-	RemoteURL        string     `json:"remote_url"`
-	Class            string     `json:"class"`
-	State            string     `json:"state"`
-	OpID             string     `json:"op_id,omitempty"` // the op pending or running (I-722)
-	HostID           string     `json:"host_id,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	RemoteURL string `json:"remote_url"`
+	Class     string `json:"class"`
+	State     string `json:"state"`
+	OpID      string `json:"op_id,omitempty"` // the op pending or running (I-722)
+	HostID    string `json:"host_id,omitempty"`
+	// HostName is the owned host's name, beside its id (I-1392); a host
+	// repose runs has none.
+	HostName         string     `json:"host_name,omitempty"`
 	GuestIP          string     `json:"guest_ip,omitempty"`
 	AgentDefault     string     `json:"agent_default"`
 	HoldBaseUpdates  bool       `json:"hold_base_updates"`
@@ -279,4 +283,20 @@ type cert struct {
 type revocation struct {
 	serial uint64
 	at     time.Time
+}
+
+// SetProjectDisk gives a project the root-filesystem figures the Disk
+// column reads (I-567). The fake's create leaves every machine at 1 GiB
+// used, which draws the narrowest figure the column ever shows, so a
+// test about how wide that column has to be cannot reproduce anything
+// without this (ENG-24: the customer's read "15...." at 1440).
+func (f *Fake) SetProjectDisk(projectID string, used, size int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return errors.New("no such project")
+	}
+	p.RootUsedBytes, p.RootSizeBytes = used, size
+	return nil
 }

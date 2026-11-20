@@ -8,6 +8,7 @@
 		SIGN_IN_FAILED,
 		adoptServerSession,
 		handleSignInCallback,
+		takePrivateReturn,
 		takeReturnPath
 	} from '$lib/auth.svelte';
 	import type { PageData } from './$types';
@@ -26,8 +27,12 @@
 				await goto(returnHref(data.adopt.returnTo));
 			} else {
 				await handleSignInCallback(location.href);
-				// eslint-disable-next-line svelte/no-navigation-without-resolve -- as above
-				await goto(returnHref(takeReturnPath() ?? '/projects'));
+				// The dashboard page the visitor was turned away from, if
+				// the browser remembered one (ENG-44), else the narrow set
+				// a sign-in link may name, else /projects.
+				const back = takePrivateReturn();
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- as above; a private return is checked whole against the four dashboard prefixes
+				await goto(back ?? returnHref(takeReturnPath() ?? '/projects'));
 			}
 		} catch {
 			toast.error(SIGN_IN_FAILED);

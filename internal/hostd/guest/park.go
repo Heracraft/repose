@@ -1312,6 +1312,11 @@ type unparkPrep struct {
 	rec   *park.Record
 	key   []byte
 	start time.Time
+	// phases are the preparation's timings (activate, fingerprint,
+	// unwrap), logged with the restore's so the whole unpark is accounted
+	// for: on the Mac the restore's own phases summed to 1.3 s of a 7.8 s
+	// unpark, and nothing named the rest (research doc §9).
+	phases []any
 }
 
 // prepareUnpark checks one image and unwraps its key (uctx bounds the
@@ -1319,6 +1324,13 @@ type unparkPrep struct {
 // result when it was discarded or kept.
 func (m *Manager) prepareUnpark(ctx, uctx context.Context, id string) (*unparkPrep, ParkResult) {
 	start := m.d.Now()
+	t0 := start
+	var phases []any
+	phase := func(name string) {
+		now := m.d.Now()
+		phases = append(phases, name+"_ms", now.Sub(t0).Milliseconds())
+		t0 = now
+	}
 	res := ParkResult{GuestID: id, Outcome: "discarded"}
 	fc := m.fcfg()
 	rec, err := m.records().Get(id)
@@ -1391,12 +1403,14 @@ func (m *Manager) prepareUnpark(ctx, uctx context.Context, id string) (*unparkPr
 	if err := m.d.LVM.Activate(ctx, VolumeName(id)); err != nil {
 		return discard("guest volume unavailable")
 	}
+	phase("activate")
 	if m.d.Park.Fingerprint == nil {
 		return discard("no volume fingerprint")
 	}
 	if fp, err := m.d.Park.Fingerprint(m.d.LVM.DevPath(VolumeName(id))); err != nil || fp != rec.Fingerprint {
 		return discard("guest volume changed since the park")
 	}
+	phase("fingerprint")
 	if _, ok := m.d.CH.(ch.Parker); !ok {
 		return discard("hypervisor client cannot restore")
 	}
@@ -1409,7 +1423,8 @@ func (m *Manager) prepareUnpark(ctx, uctx context.Context, id string) (*unparkPr
 		park.Wipe(key)
 		return discard("image key does not match")
 	}
-	return &unparkPrep{g: g, rec: rec, key: key, start: start}, ParkResult{}
+	phase("unwrap")
+	return &unparkPrep{g: g, rec: rec, key: key, start: start, phases: phases}, ParkResult{}
 }
 
 // reparkPaused finishes the park of a guest whose hypervisor outlived
@@ -1546,20 +1561,30 @@ func (m *Manager) unparkGuest(ctx context.Context, p *unparkPrep) ParkResult {
 		res.Ms = m.d.Now().Sub(p.start).Milliseconds()
 		return res
 	}
+	t0 := m.d.Now()
+	phases := p.phases
+	phase := func(name string) {
+		now := m.d.Now()
+		phases = append(phases, name+"_ms", now.Sub(t0).Milliseconds())
+		t0 = now
+	}
 	if err := m.d.Park.Image.Open(ctx, id, p.key, m.imageMount(id), rec.FS); err != nil {
 		m.log(g).Warn("image not opened", "event", "guest_unpark", "err", err.Error())
 		return discard("image volume not opened")
 	}
+	phase("image_open")
 	if err := m.restoreGuest(ctx, g, rec); err != nil {
 		m.log(g).Warn("restore failed; the guest starts cold", "event", "guest_unpark", "err", err.Error())
 		m.teardown(context.WithoutCancel(ctx), g)
 		return discard("restore failed")
 	}
+	phase("restore")
 	m.discardImage(ctx, id, "restored")
+	phase("discard")
 	res.OK, res.Outcome, res.Reason = true, "unparked", ""
 	res.Ms = m.d.Now().Sub(p.start).Milliseconds()
-	m.log(g).Info("guest restored from its parked image", "event", "guest_unpark", "class", g.Class,
-		"duration_ms", res.Ms, "parked_s", int64(m.d.Now().Sub(rec.DoneAt).Seconds()), "image_bytes", rec.ImageBytes)
+	m.log(g).Info("guest restored from its parked image", append([]any{"event", "guest_unpark", "class", g.Class,
+		"duration_ms", res.Ms, "parked_s", int64(m.d.Now().Sub(rec.DoneAt).Seconds()), "image_bytes", rec.ImageBytes}, phases...)...)
 	return res
 }
 

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1036 entries.
+1055 entries.
 
 ## Scope
 
@@ -655,14 +655,14 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16642
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16687
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; amended by I-888; L16714
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16775
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; amended by I-1428; L16775
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; amended by I-890; L16842
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16892
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16926
 - **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16941
 - **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16971
 - **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16983
-- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; L17068
+- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; partly reversed by I-1390; amended by I-1392; L17068
 - **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17157
 - **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17183
 - **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17237
@@ -757,7 +757,7 @@ pointer, not a summary.
 - **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L21162
 - **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L21238
 - **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L21257
-- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L21294
+- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — amended by I-1408; L21294
 - **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — amended by I-718; L21332
 - **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L21359
 - **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L21395
@@ -1059,12 +1059,31 @@ pointer, not a summary.
 - **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — L36424
 - **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36529
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
-- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — L36689
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36689
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
-- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — L37067
-- **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
-- **I-1398** Every URL the shipped CLI fetches on a customer's machine is checked anonymously, at queue time, before a tag publishes, and every six hours (ENG-62, 2026-11-19) — L37280
-- **I-1402** An agent packaged from an npm tarball reads its entry script from `package.json`'s `bin`, and the build fails when that file is not shipped (2026-11-20) — L37353
-- **I-1400** The buf job posts no pull request comment, and the workflow's token stays `contents: read` (2026-11-20) — L37397
-- **I-1412** A test that seeds a timestamp a windowed query reads computes it when the row goes in, not when the table is built (2026-11-20) — L37437
+- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; L37067
+- **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37232
+- **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37295
+- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37346
+- **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37416
+- **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37474
+- **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37545
+- **I-1398** Every URL the shipped CLI fetches on a customer's machine is checked anonymously, at queue time, before a tag publishes, and every six hours (ENG-62, 2026-11-19) — L37572
+- **I-1402** An agent packaged from an npm tarball reads its entry script from `package.json`'s `bin`, and the build fails when that file is not shipped (2026-11-20) — L37645
+- **I-1400** The buf job posts no pull request comment, and the workflow's token stays `contents: read` (2026-11-20) — L37689
+- **I-1412** A test that seeds a timestamp a windowed query reads computes it when the row goes in, not when the table is built (2026-11-20) — L37729
+- **I-1408** A start's phase deadlines belong to the host that runs it, and the failure says which phase ran out: hostd gains `--paths-timeout` and `--setup-timeout` (3 minutes each by default, ten on a Mac appliance), guestd's own 3 minutes becomes a 20-minute backstop, and the machine's ssh identity is delivered before the registration rather than after it (fix-starts, 2026-11-20) — amended by I-1416; L37771
+- **I-1414** The appliance downloads get a client of their own, with no whole-request deadline, a 60-second stall window instead, and three attempts that continue from what is on disk; a download that does not finish names the install step that completes it (fix-starts, 2026-11-20) — L37877
+- **I-1416** The guest's wait for the registration outlasts the host's deadline for sending it, by the ready phase as well as the paths deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name the order and its direction, and a text check reads both numbers because no evaluation sees them together (fix-starts, 2026-11-20) — L37977
+- **I-1426** A held commit separates the release from the launch only while the plan is actually unbuyable, which is a fact to read in the catalogue rather than a state to assume (mac-mini, 2026-11-20) — L38035
+- **I-1394** The park on the Mac appliance: hostd asks the launcher over a vsock to wrap and unwrap image keys, and the launcher keeps the one wrapping key as an item in the user's login keychain through `security` (ENG-2, 2026-11-19) — L38086
+- **I-1430** Workstream 19's checklist gates queueing on the review's second pass; phases 1 and 2 shipped before the review ran, so applying that gate to the repair batch inverts its purpose and the repairs queue without it (mac-mini, 2026-11-20) — L38177
+- **I-1422** An appliance is installed when its config is on disk, and nothing before that: the sizing guard runs before anything is fetched, an unfinished install is sized rather than adopted, and `repose host rm` clears it (mac-mini 19c, 2026-11-20) — L38232
+- **I-1424** The install argument comes in off the command line: `--join -` reads standard input, `--join-file` reads a file, and the line the install prints after a failed download names the file rather than the argument (mac-mini 19c, 2026-11-20) — L38326
+- **I-1432** The appliance's three sizing flags are read as the customer typed them: an explicit zero is refused rather than taken as the default, and a value that is not a number is refused in this CLI's words (mac-mini 19c, 2026-11-20) — L38375
+- **I-1428** Nix's own build output follows `-v`, not the absence of a terminal (fix-ask ENG-27, 2026-11-20) — L38426
+- **I-1418** No sentence on the removal path names a recovery that cannot happen: `host_unreachable` stops telling a user to wait for a host they deleted, the host-removal refusal stops naming a snapshot restore the machine may have no snapshot for, and a destroy's answer carries `final_snapshot` so the CLI stops promising one it cannot take (fix-starts, 2026-11-20) — L38478
+- **I-1420** A user can say their own host is gone: `DELETE /hosts/{id}` retires a host whose state is `unreachable` or `lost` even while machines are on it, instead of refusing, and both clients' confirmations say how many machines go with it (fix-starts, 2026-11-20) — L38553
+- **I-1434** macOS gives the launcher about one second when the Mac restarts, not the 360 it asks for, so the park does not survive a restart and the docs stop promising it; the park stays on, because a clean stop of the launcher does park and unpark correctly (mac-mini, 2026-11-20) — L38619
+- **I-1436** `triggers add --route` asks before it takes a route that answers with something else (fix-ask ENG-32, 2026-11-20) — L38667

@@ -59,7 +59,16 @@ done-check paths="cmd internal":
     @echo "-- unhandled errors / panics --"; rg -n '_ = err|panic\(' {{paths}} || true
     @echo "-- leftovers --"; rg -n 'TODO|FIXME|XXX|not implemented' {{paths}} || true
     @echo "-- help nobody asked for (DECISIONS I-484, I-485) --"
-    go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1
+    # TestDocs* and TestEvery* are here because they were not, and a docs
+    # page shipped `repose host add --join -` past its author's done-check
+    # on 2026-11-20. The filter named only the two copy tests, so the
+    # agreement between the CLI and its pages (TestDocsNameEveryCommandAndFlag,
+    # TestDocsNameEveryConfigKey, TestDocsNameEveryEnvVar,
+    # TestDocsListEveryExitCode) and the conventions
+    # (TestEveryDocsPageNamesRealCommands, TestEveryYesHasY) were run by
+    # nothing anyone runs before saying done. All eight together take
+    # 0.137 s.
+    go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1
     cd apps/web && pnpm exec vitest run src/lib/docs.test.ts src/lib/copy.test.ts
 
 # --- dashboard -------------------------------------------------------------
