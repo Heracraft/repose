@@ -37228,3 +37228,806 @@ detached under `repose host run`), the appliance booted to its login
 prompt and consumed the bundle from the share; `repose host rm --local
 --yes` pressed the power button and removed it in 3 s ("System Power
 Off" on the console, no vfkit left, the directory and the agent gone).
+
+**I-1386. On a host the customer owns, the parked image's wrapping key is
+held by the macOS Keychain, so a Mac restart keeps a customer's work
+(owner, 2026-11-19).** *Made during implementation* (the open question
+I-1376 left when it switched the park off on `provider == "mac"` because
+"the Mac has no identity for a Key Vault, I-653"; the owner settled it
+and asked not to be asked again unless it does not work).
+
+- *Why it had to be answered.* I-653's exception keeps a guest's memory,
+  secrets included, as a dm-crypt image on the host across a restart, with
+  the image's key wrapped by Key Vault and unwrapped only by that host's
+  managed identity. A Mac on a customer's desk has no such identity, so
+  I-1376 switched the park off there — and a Mac restart then stops every
+  machine on it and loses what each was doing. Measured on the AWS M4
+  the same day: a park costs 6.5 s a guest (snapshot 203 ms, an 824 MB
+  image) and an unpark 3.8 s, against 57.9 s to start a guest cold and
+  lose its work. So the park is not a luxury on owned hardware; it is the
+  difference between a restart costing 25 seconds and costing a day.
+- *The custodian, and why this is not a fourth home.* The Keychain holds
+  **the wrapping key only** — one key per host, created on first park, in
+  the **user's login keychain** (this entry first said the System keychain,
+  which was wrong: `internal/cli/appliance.go:84` puts the plist in
+  `~/Library/LaunchAgents` and bootstraps it into `gui/<uid>`, so the
+  appliance is a user agent that cannot run before someone logs in, and a
+  System item would need the root install and signed binary I-1380
+  deliberately avoided), used to wrap and unwrap the per-image key. No named secret, no
+  **the wrapping key only** — one key per host, created on first park,
+  non-exportable, in the System keychain under the launcher's own access
+  group, used to wrap and unwrap the per-image key. No named secret, no
+  tenant data and no token is ever written to it, so CLAUDE.md's "three
+  homes and nothing else" is unchanged and this remains I-653's single
+  exception with a second custodian for hardware we do not own. The image
+  itself is unchanged: dm-crypt, on the host, removed once read and after
+  6 hours whether read or not, never leaving the host.
+- *Not hardware-backed, on purpose, for now.* The owner's words: "It's
+  not hardware backed of course, but we can fix that later." A Secure
+  Enclave key (`kSecAttrTokenIDSecureEnclave`) cannot wrap arbitrary
+  bytes directly and needs an ECIES envelope and a signed, entitled
+  binary, which is the work I-1380 deliberately avoided by launching
+  over a plist and vfkit. So: Keychain now, Secure Enclave as its own
+  decision, and the docs say which it is rather than implying hardware
+  protection the build does not have.
+- *What it does not promise.* A park runs on a restart the customer
+  asks for, and on a `repose host run` stop. It cannot run on a power
+  cut, a panic or a force-off, and the public docs say "restart your Mac
+  and your work survives", never "your work always survives".
+  **And it needs the customer to come back.** Because the appliance is a
+  user agent, hostd exists only once someone logs in, while the parked
+  image is removed after six hours whether it has been read or not
+  (I-653, `internal/hostd/guest/park.go:146`). So a customer who restarts
+  and does not log in within six hours loses the work anyway: hostd starts
+  later, finds the image past `MaxAge` and discards it. The docs say to log
+  back in within six hours; on our own hosts this case cannot arise,
+  because hostd starts with the machine.
+- *The threat it does and does not cover.* An attacker with the Mac's
+  disk alone reads ciphertext. An attacker with the unlocked Mac and
+  root reads the Keychain item and therefore the image, which is weaker
+  than the fleet's Key Vault custody and is the price of the customer
+  owning the machine; it is stated in `docs/features/secrets.md` rather
+  than left for a reader to work out.
+
+*Not done:* the implementation. This entry settles where the key lives;
+the code still has the park off on `provider == "mac"` (ENG-2).
+
+**I-1396. An account with no subscription is measured against no plan:
+`GET /billing`'s usage carries 0 for memory, disk and egress, the
+dashboard lists what a billing-exempt account holds with no limit beside
+it, and `repose login --status` says `billing-exempt` (fix-billing,
+2026-11-19).** *Made during implementation* (the council's dashboard
+review, `reports/2026-11-19-mac-mini-council-dashboard.md` P0-2, ENG-34;
+and its F6, ENG-40. Amends nothing: I-16 and I-1090 already say an
+exempt account is refused nothing.)
+
+- *What was wrong.* `Service.Overview` asked `sub.PlanFor` on a nil
+  subscription, and `PlanOrSolo` answers Solo, so `usage.memory_gb`,
+  `disk_gb` and `egress_included_gb` were 8, 100 and 250 for any account
+  with no subscription, while `/me`'s `limits` for the same exempt
+  account were Pro's 32, 500 and 1000 (`LimitsFor`, I-16). The billing
+  page preferred the usage block, drew "359.9 GB of 100 GB · over" in
+  red and "Creating and restoring projects, and growing a disk, are
+  refused", and the dashboard then created a project in 6 s, because the
+  gate refuses an exempt account nothing (`Gate.CheckIn`, I-1090). A
+  customer who believed the page would have deleted work to get under a
+  line that was never theirs; the owner's account is exempt, so a real
+  customer can be. The fake api sent 0 there all along
+  (`internal/fakes/api` `usageOf`), which is why no dashboard test saw
+  it. The CLI, from the same `/me`, printed `no plan` for the account the
+  page called billing-exempt (ENG-40): one account, two stories, and
+  "no plan" is the state every start is refused on.
+- *The rule.* With no subscription the usage block names no plan's
+  figures: the three are 0 and `overage_cents` is 0, the shape an
+  own-hardware subscription already has (I-1364: 0 means "the plan caps
+  nothing", not "allows nothing"). The page reads the usage block alone
+  and never `/me`'s limits, and treats a billing-exempt account as it
+  treats an own-hardware one: facts (running, held, machines), no meter,
+  no "over", no refusal banner; the own-hardware line about the host's
+  memory and disk is not printed for it, since the banner above already
+  says what bounds it. `repose login --status` prints `billing-exempt`
+  in the plan's place.
+- *Rejected:* measuring an exempt account against `/me`'s limits
+  (Pro's). They are a figure for what the biggest plan would allow, not a
+  ceiling: the gate reads `billing_status = 'exempt'` and nothing else,
+  so a page that drew them as a meter would still say "over" and
+  "refused" past 500 GB about an account nothing refuses, and the fix
+  would have reproduced the defect one plan up. Also rejected: sending
+  Pro's figures from `/billing` for an exempt account, for the same
+  reason, and changing `/me`'s `limits` (the CLI's `resize` and the
+  project cap read it; not this defect).
+- *Not changed:* `LimitsFor` and `/me`; an exempt account with a live
+  subscription is metered by the page as its plan says, as before, while
+  the gate still refuses it nothing. Evidence:
+  `TestNoSubscriptionUsageCapsNothing` (red on Solo's 8 before, green
+  after), `TestLoginStatus` (`billing-exempt`, `no plan`, `Plus plan`),
+  and the two dashboard tests, which set an exempt account past every
+  plan's disk, read no meter and no banner, and create a project.
+**I-1390. Where a project runs is chosen per command with `repose run
+--host NAME|repose`, placement is answered before the project row is
+written, and the api reference documents the field (fix-placement,
+2026-11-19).** *Made during implementation* (the customer reviews of
+2026-11-19, ENG-67, ENG-28 and ENG-66; the prior art is
+`docs/proposals/2026-11-19-where-a-project-runs.md` on PR #82, which
+studied twelve tools and found every one that works has a named default,
+a per-command override and a readout; amends I-1366's placement).
+
+- *The defect.* I-1366 made every new project of an account that owns a
+  host go to that host, and the one escape it named, `placement:
+  "hosted"`, was API-only: the CLI could not send it, the dashboard's
+  form did not send it, and `/docs/api` did not contain the word. A
+  customer whose Mac had not finished installing (the host `waiting`)
+  could therefore create a working project nowhere, on their hardware or
+  ours, by any route either client offers; the only recovery was
+  `repose host rm` on the Mac they had bought, which nothing told them.
+  Reproduced four times by the CLI review and measured by the dashboard
+  review (201, then `error` 8.0 s later, Restart the only control).
+- *The override.* `repose run --host NAME` names one of the account's
+  hosts, `--host repose` names repose's servers; the shape of `--size`
+  and `--agent`. The CLI resolves a name against `GET /hosts` and sends
+  `placement` (`own` for a name, `hosted` for `repose`): the api's field
+  is unchanged, because the Own hardware plan sells one host per account
+  (I-1366), so a name and `own` are the same answer today. A name the
+  account has no host under exits 2 before anything is created. On a
+  project that exists the flag exits 2 whatever it names, as `--size`
+  does on a running one: a machine is pinned to its host for life
+  (DESIGN.md §3), so a flag that cannot act must say so rather than be
+  ignored. The naming-scheme alternative (`mac-mini/todo-app`) lost
+  because a project's slug is already its SSH hostname and webhook path;
+  the ambient-context alternative (a current host, as kubectl and docker
+  have) lost on the prior art's own complaints. A per-host pin in the
+  api (`host` beside `placement`) is deferred to the day a plan sells
+  two hosts.
+- *Placement answers before the row is written.* The create wrote the
+  row as `creating` in its transaction and the op placed it afterwards,
+  so a refusal had a row to leave behind and every retry stranded
+  another. Of the two shapes named (place first, or the failed create
+  removes its own row), the first won: the op's refusal is read through
+  `GET /projects/:id/ops/:op_id`, which needs the project row, so a
+  create that deleted its row would also delete the sentence the client
+  was waiting to read. `ops.Engine.PlaceNew` runs `scheduler.PickHost`
+  inside the create's transaction and the row goes in with `host_id`
+  set, which is PickHost's own contract (the placement lock is held to
+  the commit). The one case the op still places: no host fits now and a
+  guest being stopped is about to free the room (I-408), where the row
+  is written and the op waits as before. A final refusal is this
+  request's `503 capacity` with the sentence the op would have failed
+  with and `detail.reason`, `host`, `host_state` and `hosted_allowed`,
+  so the CLI names `--host repose` only when the plan would honour it.
+  I-406 (a start re-creates a project whose create failed) stays for
+  the rows the old shape left and for a create that fails after
+  placement.
+- *The api reference.* `/docs/api` gains "Where a project runs": the
+  field, the 201, and each refusal with its `detail.reason`. Its rule
+  that bodies are what the CLI sends held only while every field had a
+  flag; this one had none, which is how the documented way out pointed
+  at a page that did not document it.
+- *The account-level default and the readout are the other two parts
+  of the pattern.* The default (`default_host`, asked once at `repose
+  host add`, read by both clients) is not built and is this entry's
+  next part; the readout (`host_name` beside `host_id`, the HOST
+  column) is I-1392, because it reverses I-616's premise rather than
+  amending I-1366.
+
+*Not done:* the dashboard's control (the parity rule, I-1354 under
+I-1266), the account-level default, `host_name` in the project JSON
+and the HOST column, each its own commit on this branch.
+
+**I-1392. A host the account owns is named where the account looks:
+`host_name` beside `host_id` in the project JSON, a HOST column in
+`repose ls` and a `host` row in `repose status` for a machine on one of
+them, not only when the host has stopped answering (fix-placement,
+2026-11-19).** *Made during implementation* (amends I-616, whose
+premise I-1366 ended; the readout half of ENG-68; the prior art is
+`docs/proposals/2026-11-19-where-a-project-runs.md`, PR #82, which
+found every working pattern has a way to see which target is active).
+
+- *The premise that no longer holds.* I-616 put the host and the
+  machine's address behind `status -v` because "the host and the
+  machine's address are platform internals nobody acts on", and on
+  repose's own fleet that was true: a customer could not act on
+  `host-02` and had no reason to know it existed. I-1366 gave a host an
+  owning account. A host with an owner is a Mac on the customer's desk,
+  which they bought, named, plug in and unplug: it is the thing they act
+  on most, and the opposite of an internal. I-616's ruling stands for a
+  host repose runs, which stays behind `-v` and stays an id; this entry
+  changes only what is said about a host of the account's own.
+- *`host_name` first, because it cannot be worked around.* `--json`
+  carried `host_id`, an opaque uuid, and no name; the name was under
+  `status -v`, which also writes a line per api request to stderr
+  (`cli.md`, "Output"), and the route answer. A flag can be found by
+  someone determined; a missing field cannot. `host_name` is the name
+  the account gave its host, set only when the host is the account's,
+  one indexed query per project in `projectJSON`; a host repose runs
+  has `host_id` alone, which is how a client tells the two apart
+  without a second field. An older api has no `host_name`, which
+  clients read as "not named".
+- *The readout.* `repose ls` gains a HOST column: the host's name for a
+  machine on one of the account's own, `repose` for one on repose's
+  servers -- the word `repose run --host repose` takes -- and `-` for
+  one not placed yet. An account that owns no host sees the table it
+  always saw, because a column that reads `repose` in every row says
+  nothing. `repose status` says the same in a `host` row; `-v` keeps the
+  address, and a host of repose's is still named there alone. The
+  readout comes after the flag (I-1390) and not before it, because a
+  readout that shows a trap nobody can escape would only make the trap
+  visible.
+- *The condition is the machines, not the hardware (written at the
+  commit that built it).* The condition above read "whenever the account
+  owns a host", and both surfaces ship with the narrower one: whenever a
+  machine they are showing is on a host the account owns. The name is
+  then the project's own `host_name` and the readout costs nothing,
+  where asking "does this account own hardware" is a `GET /hosts` on
+  every `repose ls`; I-1370 put that read behind "a machine says its
+  host is quiet" so the common listing keeps its one round trip, and
+  `TestLsReadsHostsOnlyWhenOneIsQuiet` holds it there. The one case the
+  two conditions disagree on is an account that owns a Mac with none of
+  its machines on it, where the column would read `repose` in every row
+  and say nothing a user acts on -- and `repose host ls` already answers
+  it, in the MACHINES column of the host's own table. `repose status`
+  takes the same condition rather than one of its own, so the two
+  surfaces do not need two rules to explain.
+
+*Not done:* the HOST column and the `host` row (the next commit on
+this branch); the dashboard list, which already names an offline host
+on its row and reads `host_name` from here on.
+**I-1404. `repose-ask --timeout` is the only deadline that ends an ask,
+and opening a question is idempotent (fix-ask ENG-105, 2026-11-20).**
+*Made during implementation* (the Mac reviewer's ENG-105, reproduced
+locally). On a published build an agent ran `repose-ask --timeout 3m`,
+got a non-zero exit in about six seconds saying guestd was not answering,
+and carried on -- while guestd opened the question, the owner was paged,
+and `repose reply` answered a question nothing was waiting for. An agent
+that proceeds as if the human said nothing is worse than one that
+crashes, and this is the product's reason to exist.
+
+- *What owned the deadline.* `cmd/repose-hook/main.go`'s `Timeout`, three
+  seconds, written for the fire-and-forget hook POST ("the agent is
+  waiting on this process"), was reused for `POST /ask`. `--timeout` was
+  parsed only into the payload's `timeout_s`, which is the question's
+  lifetime **inside** guestd; it never reached a context the asker
+  created. So the flag could not decide whether the question was ever
+  asked, and guest-conventions.md's promise that an unreachable guestd is
+  retried for two minutes held for the wait alone and not for the open.
+  The alternative of raising the constant lost: a constant is the bug.
+  The open now spends the user's `--timeout`, bounded by the documented
+  two minutes (`LostAfter`), with `AskCall` (30 s) per attempt. A
+  question that is not open yet cannot be answered, so waiting longer
+  than it would live buys nothing, and `repose-notify` and the hooks keep
+  the three seconds, where a lost call loses only a notification.
+- *The cost accepted.* A guestd that is really down now blocks an ask for
+  up to two minutes instead of three seconds. That is what the contract
+  already promised, and the alternative is the asker telling the agent
+  "no answer" while the owner reads the question.
+- *guestd's own write deadline.* The hook socket set `WriteTimeout` 10 s
+  for every route; only the long poll lifted it. Opening a question is
+  real work (a tmpfs write, a window lookup capped at 2 s, the relay) and
+  on a loaded single-core guest it is not certainly under ten seconds. A
+  cut-off answer is this defect from guestd's side: it holds a question
+  the owner will answer and the asker is never told the id. The open
+  route now lifts the deadline to `OpenWait`, 30 s. Shown with a test,
+  not measured on a Mac: the asker sees `EOF` in that case and the Mac's
+  one timed run says `context deadline exceeded`, so this is a defect
+  found in code, not the cause of that run.
+- *Retrying needs idempotence, which is this repo's rule for every guest
+  operation.* An abandoned POST can still open a question, so a blind
+  retry asks the owner twice; a test failed that way under load before
+  this was added. `POST /ask` takes a `request_id` the asker makes once,
+  guestd answers a repeat of it with the question it already opened, and
+  the id is persisted with the question so a guestd restart mid-retry
+  answers once too. An asker that sends none behaves as before, which is
+  the one-release compatibility rule; the two ship in the same guest base
+  closure, so they never disagree in practice. Matching on the question's
+  text alone lost: the asker's own open questions are also what it reads
+  before reporting a question unasked, and text is not an identity.
+- *Before saying it was never asked, ask guestd.* Out of budget, the
+  asker reads its own open questions (`GET /ask`, already scoped to the
+  caller's agent process) and, if guestd holds one, takes it up and waits
+  for the answer instead of reporting it unasked. The outcome is then the
+  wait's: the answer, the question's own timeout, or 7. The case this
+  path is for is a `--timeout` shorter than the open takes, where there
+  is no budget left to retry with: with the request id, a retry against a
+  guestd that answers at all returns the question anyway.
+
+- *A longer open has to stay interruptible.* With three seconds it never
+  mattered; with two minutes a Ctrl-C that only the wait listened for
+  would hang the caller, and an agent's command wrapper SIGTERM with it.
+  A signal now ends the attempt in flight, and takes back a question an
+  abandoned attempt opened, so the owner is not left holding one.
+
+*Not done:* the cancel itself keeps the three seconds, so a Ctrl-C
+against a guestd too slow to answer the DELETE cannot withdraw the
+question; it now says so instead of claiming the question is cancelled,
+and the orphan sweep closes it 90 seconds later. The NixOS guest test
+(`nix/guest/tests/guestd.nix`) still covers only the answered path; the
+new exits are covered by Go tests alone.
+
+**I-1406. `repose-ask` exit 7: the question is open and nothing is
+waiting for it (fix-ask ENG-105, 2026-11-20).** *Made during
+implementation* (ENG-105's second half). Exit 1 meant both "the question
+was never asked" and "the question is open and the asker stopped
+watching it". A caller cannot tell those apart, and they are opposite
+instructions: the first says the human never saw it, the second says the
+human may be answering right now. The Mac reviewer read the second as
+the first, which is the whole finding.
+
+- Exit 1 now means no question of the caller's is waiting for an answer.
+  Exit 7 means one is: the asker stopped waiting, because guestd was lost
+  for two minutes while it waited or answered the wait with something it
+  could not read. The id is on stderr, which `--cancel ID` takes. 3
+  keeps its meaning, a question that closed unanswered, and the
+  difference between 3 and 7 is whether anyone may still answer.
+- The alternative of one code plus a machine-readable stderr lost:
+  stderr is already prose for a human, and the exit code is what a shell
+  script and an agent's command wrapper branch on.
+- guestd closes a question 90 seconds after its last poll (`asker_gone`),
+  so exit 7's question is open now and not indefinitely. Documented where
+  the code is, in guest-conventions.md and /docs/notifications, and in
+  the machine's agent guide, which is the text an agent actually reads:
+  exit 7 is not "no answer".
+*Not done:* the dashboard's project list and project page, which name an
+offline host on a row but never say where a machine runs while the host
+is answering; they read `host_name` from here on (the parity rule,
+I-1354, wants them before this is called finished).
+**I-1398. Every URL the shipped CLI fetches on a customer's machine is
+checked anonymously, at queue time, before a tag publishes, and every six
+hours (ENG-62, 2026-11-19).** *Made during implementation* (the night's
+top-ranked customer-review finding, and a second instance of the same
+class found while building the fix).
+
+- *What happened.* CLI v0.1.51 was tagged and published pinning
+  `applianceVersion = "2026.11.19"`, and the release
+  `appliance-2026.11.19` had never been published. On a real Mac at
+  21:38:44 UTC, with the published CLI and a fresh credential, `repose
+  host add` printed `fetching the appliance image 2026.11.19 (about 2
+  GB)` and then `the server answered 404`, exit 1, for 47 minutes, until a
+  human uploaded the asset. The same evening, at 22:28 UTC, that upload
+  was published without `--latest=false`, so `releases/latest` redirected
+  to the appliance tag; `install.sh` turns "latest" into a tag by that
+  redirect and then fetches `repose_<tag>_<os>_<arch>.tar.gz`, which
+  answered 404 under that tag for every platform until 22:54, when
+  `gh release edit v0.1.51 --latest` put it back. Neither was a defect in
+  the code: `release.yml` checks that the draft holds the four archives
+  and that the notes exist (I-798), and nothing anywhere asked whether
+  the things the code would fetch *existed* and *answered to a stranger*.
+- *The check.* `TestReleaseAssetsAnswerAnonymously` in `internal/cli`,
+  run by `ops/dev/release-assets`, fetches with a client that carries no
+  cookie, token or netrc: the appliance image the code pins (200, over 1
+  GiB) and its `.sha256` (a 64-hex body); vfkit, with its body hashed
+  against `vfkitSHA256`; the tag `releases/latest` resolves to, which must
+  match `releaseTagRe` (a `v*` tag); that tag's `checksums.txt` (naming
+  exactly the four archives), `checksums.txt.sig` verified with the key
+  the CLI carries, and each archive; and `https://repose.run/install.sh`.
+  It prints `200 <bytes> <url>` a line and exits 1 naming the asset and
+  the fix. The URLs are the package's own constants, not a list, and
+  `TestReleaseAssetURLsAreAllChecked` walks the package's sources for
+  release URLs and fails when one is not covered. Overrides exist to show
+  it red: `--appliance 2026.11.18` printed `404` for the image and its
+  checksum and exited 1; `--cli v0.1.99` printed `resolves to v0.1.51,
+  not v0.1.99` and exited 1; the plain run printed 200 for 11 assets and
+  exited 0, all on 2026-11-19.
+- *Where it runs, and why three places.* `release-queue add` runs it
+  with `--cli none` for a branch that ships as `cli`, so a bump of
+  `applianceVersion` to an unpublished image never reaches the queue:
+  that is the first failure's cause, caught where the author is. The
+  `sign` job of `release.yml` runs it with `--cli none` before it
+  publishes the draft, so a tag whose code pins a missing asset stays a
+  draft `install.sh` never sees, and again with `--cli <tag>` after the
+  publish, which also asserts `releases/latest` resolves to the new tag.
+  And `release-assets.yml` runs it every six hours against `main` and
+  against the tag customers install, because both failures lasted tens
+  of minutes with no release in progress; a release-time check alone
+  would have caught neither. A red scheduled run is the signal; it
+  reaches whoever GitHub notifies of one, and routing it to the owner's
+  chat (I-648) is not done.
+- *Alternatives.* A curl list in the runbook: it goes stale the day a
+  constant moves, which is the class of failure here. Checking inside
+  `release-queue cut`: the conductor's verify list in `RELEASE.md` names
+  the command, but a hard stop belongs where the mistake is made (`add`)
+  and where it ships (`release.yml`). Downloading the 2 GB image to hash
+  it: a HEAD with a size floor catches an empty or placeholder upload,
+  and the CLI checks the hash on the customer's machine; the daily cost
+  of 2 GB was not worth the one case (a corrupt upload of the right
+  size) this would add. Marking appliance releases `--prerelease`
+  instead of `--latest=false`: GitHub still excludes prereleases from
+  latest, but the word is wrong and a reader would act on it.
+- *Rules this adds.* A release of anything but the CLI is published
+  with `--latest=false` (RUNBOOK, "The Mac appliance image and install
+  line"). Every artefact URL a CLI release hard-codes answers 200
+  anonymously before the tag (RELEASE.md, "Ship the rest"). A row in
+  `docs/CHECKLIST.md` names the evidence.
+
+*Not done:* a chat notification for a red scheduled run; `repose host
+add`'s own message says `the server answered 404` and nothing about
+where to look, which is the customer's view of this and is ENG-62's
+sibling, not this entry's.
+
+**I-1402. An agent packaged from an npm tarball reads its entry script
+from `package.json`'s `bin`, and the build fails when that file is not
+shipped (2026-11-20).** *Made during implementation* (the rule behind a
+fix that was made once, for `chrome-devtools-mcp`, and left as a comment
+in that one file while the other npm-packaged agent still hardcoded its
+path).
+
+- *What happened.* `chrome-devtools-mcp` moved its entry script between
+  releases (`build/src/bin` in 1.10.1, `out/Default/gen/src/bin` in
+  1.13.0). Its derivation had the old path written in, so the daily bump
+  built a package whose `bin/chrome-devtools-mcp` pointed at a file that
+  was no longer there. That was fixed by reading `.bin` from the
+  tarball's own `package.json`, and the reasoning stayed in a comment in
+  that file. `gemini-cli.nix` kept `--add-flags "$dest/bundle/gemini.js"`,
+  which is what `@google/gemini-cli` 0.61.0 does declare
+  (`bin: {"gemini": "bundle/gemini.js"}`, read from the pinned tarball),
+  so nothing is broken today and the next move of that path breaks the
+  bump.
+- *What this settles.* The entry comes from `package.json`'s `bin`, taking
+  the command's key when `bin` is an object and the string when it is
+  one, with `./` stripped; and the `installPhase` exits 1 naming the
+  version and the path when `bin` is empty, `null`, or a file the tarball
+  does not ship. A build that fails here names the cause. A wrapper
+  pointing at a missing file does not: `scripts/bump-agents.sh` runs
+  `<agent> --version`, so it is caught, but as a node module-resolution
+  error in a bump nobody is watching.
+- *Alternatives.* Leaving it until upstream moves the path: that is the
+  position this entry replaces, and the cost of being wrong is a red
+  daily bump and a hand edit. Asserting the hardcoded path exists at
+  build time without reading `bin`: it turns a run-time break into a
+  build break, which is most of the value, but it still needs the hand
+  edit the next day. A `--version` check inside the derivation: the
+  sandbox has no network and these agents reach for a config directory
+  on start, and the bump already runs that check outside.
+- *Rules this adds.* A derivation that wraps an npm tarball's entry
+  script does not name the path. Two files are covered by this today,
+  `nix/overlay/agents/chrome-devtools-mcp.nix` and
+  `nix/overlay/agents/gemini-cli.nix`; the other agents install a single
+  binary and have no entry to resolve.
+
+*Not done:* nothing of the guest closure that the bump also never
+measures (that is its own open item). The `agents` VM test exercises
+`gemini mcp list` and is the check that a wrapper really runs; this entry
+does not add one.
+**I-1400. The buf job posts no pull request comment, and the workflow's
+token stays `contents: read` (2026-11-20).** *Made during implementation*
+(every pull request run was red for a week and the conductor's handoff
+named it as the reason workers stopped trusting pull request CI).
+
+- *What happened.* `bufbuild/buf-action` posts a summary comment on each
+  pull request unless `pr_comment: false`. `ci.yml` grants
+  `contents: read` and the repository's default workflow permission is
+  `read`, so the post answered `Resource not accessible by integration`
+  and the action exited 1 **after** `buf build`, `buf lint` and
+  `buf breaking` had all passed. Run 44636956716 (join-research,
+  2026-11-19 23:21 UTC) is the shape of every one of them: eleven jobs
+  green, `buf lint and breaking` red, one error line, and it is the
+  comment, not the proto files. The cost was not the job. It was that a
+  red pull request run stopped carrying information, so workers reran
+  whole suites locally and the conductor read runs by job instead of by
+  conclusion; I-840 is the same action failing on a pull request for a
+  second reason behind the first.
+- *The fix.* `pr_comment: false`, beside `format: false` and explained
+  in the same comment block. `buf lint` and `buf breaking` are what the
+  job's name promises and they are unchanged.
+- *Alternatives.* Granting the job `pull-requests: write`, which the
+  repository allows (`bump-agents.yml` elevates its own token that way
+  and works): it widens the token on every pull request run to publish a
+  summary of a check whose result is already the job's conclusion and its
+  annotations. Nobody reads these comments — the release queue opens the
+  pull requests and the conductor reads the run, so the comment is help
+  nobody asked for, which the house rule cuts. Removing the job on pull
+  requests: `breaking` only has an "against main" to compare on a pull
+  request, which is where a contract break is caught before the queue.
+- *Rules this adds.* A workflow step that writes to GitHub (a comment, a
+  label, a release, a pull request) says so in the job's `permissions`
+  or is turned off; a step that only reads does not widen the token to
+  write something nobody reads.
+
+*Not done:* nothing of the handoff's wider point. The post-merge
+full-suite reruns that the broken gate put into worker briefs are still
+in them, and whether pull request CI is trusted as a gate again is for
+the conductor to decide after it has been green for a batch.
+
+**I-1412. A test that seeds a timestamp a windowed query reads computes it
+when the row goes in, not when the table is built (2026-11-20).** *Made
+during implementation* (a red in a batch verification that the batch could
+not have caused, and the second time a pinned fixture clock has cost a
+conductor a verification).
+
+- *What happened.* `TestPickTable` in `internal/api/scheduler` took one
+  `time.Now()` before its table literal and gave every host that one
+  timestamp as its last heartbeat. `PickHost` ignores a host whose last
+  heartbeat is older than `HeartbeatWindow`, 90 seconds, measured against
+  the `time.Now()` the caller passes. The table has eight cases, each
+  opening its own database; under `-race` with the whole suite sharing one
+  Postgres it ran for 117 s, so by the last case the hosts it meant to be
+  fresh were two minutes stale and `xl fits above reserve` failed with
+  `no host with capacity`. Nothing about the scheduler was wrong, and
+  nothing in the batch touched Go at all.
+- *The fix.* The table's rows carry an `age` (`0` for fresh,
+  `2 * time.Minute` for the case that is about staleness) and each
+  subtest inserts `time.Now().Add(-h.age)`. The test can now take as long
+  as it likes.
+- *Why this is a rule and not one fix.* The same shape failed before, as
+  a fixture clock pinned to a date (the neighbour of I-1162), and a
+  pinned clock is invisible in review: it reads as a constant and behaves
+  as a deadline. Any test that writes a timestamp which a query then
+  compares against `now` has a hidden time limit equal to that window,
+  and the limit is enforced on the slowest box that ever runs it, which
+  is never the author's.
+- *Alternatives.* Raising `HeartbeatWindow`: it is a production constant
+  and 90 s is the operational answer, not a test's. Giving `PickHost` a
+  fixed clock in the test: it would pass, and it would stop the test
+  exercising the staleness rule against real time, which is the thing one
+  case is for. Marking the test as needing a quiet box: the three other
+  reds of that run were `WaitOp`'s 30-second timeout under contention,
+  which is a slow box and nothing more; this one was wrong by
+  construction, and the two should not be filed together.
+
+*Not done:* the other three reds of that run (`TestHelloLeavesAProject
+WithAnOpenOpAlone`, `TestAFailedWakeIsNotSentAgainStraightAway`,
+`TestResumeSkipsStopAndDestroyWhileUnreachable`) are not touched. Each
+passed alone on the same commit, each failed waiting 30 s for an op the
+engine was too starved to finish, and whether `WaitOp` should scale its
+timeout with the box is open.
+**I-1408. A start's phase deadlines belong to the host that runs it, and
+the failure says which phase ran out: hostd gains `--paths-timeout` and
+`--setup-timeout` (3 minutes each by default, ten on a Mac appliance),
+guestd's own 3 minutes becomes a 20-minute backstop, and the machine's
+ssh identity is delivered before the registration rather than after it
+(fix-starts, 2026-11-20).** *Made during implementation* (ENG-80, the Mac
+review's own measurement: nine guest starts on an `mac-m4.metal`
+appliance on 2026-11-19 gave two successes, and every one of the five
+after a clean `repose stop` failed. Amends I-705, which chose the 3
+minutes, and extends I-1376, which raised the ready window for the same
+hardware and the same reason.)
+
+A guest's cold start on that hardware takes about 289 s, in three phases
+hostd measures separately: 59.5 s to guestd's first answer, 125.5 s to
+load the closure's registration, 102.2 s to set the project up
+(`research/mac-mini-nested-kvm.md` §10). Three deadlines sat close enough
+above those figures to be decided by load rather than by the work --
+registration and set-up had 180 s each against 125.5 s and 102.2 s
+measured, and guestd's `BootDeadline` cut both -- and all three were
+written on hosts where the same phases take 14, 16 and 10 seconds. The
+figure that shows it is a published-build start that *succeeded* on
+`mac-clean`: registration took 172,514 ms of its 180,000 ms, 95.8 percent
+of the limit, while the same phase across every Mac run measured spans
+43.0 to 172.5 s, a fourfold spread against a fixed bound (Loki,
+2026-11-20, `{component="hostd"} | json | event="guest_start"`). No run
+has been shown to have crossed one of these deadlines, and none needs to
+be: a limit inside the observed spread decides a start by where in that
+spread it lands, which is what two successes in nine looks like.
+
+- *The ready window was already raised and the sentence was not.* I-1376
+  set `--ready-timeout 5m` on the appliance, and the published
+  `appliance-2026.11.19` carries it in its unit file. The api's sentence
+  for that failure still said "did not answer within a minute of
+  starting", so two of the review's nine starts reported a minute for a
+  wait of five. It now says "while it was starting" and names no figure,
+  because the figure is the host's.
+- *The registration and the set-up were one sentence for two deadlines.*
+  Both were cut by guestd's `BootDeadline`, a constant inside the guest
+  image, and the api turned either into "the environment started but did
+  not finish setting up in time". So a customer could not say which
+  phase had failed, the operator could not either, and five identical
+  rows in the review carry no evidence of which of the two was at fault.
+  Each phase now has its own sentence, and hostd's message names the
+  phase and the limit it used for the operator's detail.
+- *Why the host owns them, not the guest.* How long either phase takes is
+  a property of the hardware under the guest, which the guest cannot see
+  and hostd already knows. A guest-side constant also cannot be changed
+  without rebuilding every guest closure, which is why the figure stayed
+  at 3 minutes while the ready window moved. guestd keeps a deadline, now
+  20 minutes, so a wedged handler still cannot live forever: a deadline
+  that exists to catch a stuck guest still has to catch one, and the
+  host's own is the one that decides a start and reports it.
+- *Ten minutes is room, not an expectation.* Against the 2 min 6 s and
+  1 min 38 s measured, it is the gap between what the hardware does and a
+  guest that has genuinely stopped. The start itself coming down to
+  seconds is ENG-70, and that is where this number goes back down; the
+  measured path is the store on a disk rather than a share (§10, 57.9 s
+  for the whole start).
+- *The ssh identity moved to the front of the delivery.* `deliver()` sent
+  `WriteSecrets` and `SetPrincipals` after `RegisterPaths`, the slowest
+  call of a start. A guest's user CA and its principals file both live on
+  a tmpfs and sshd recreates them empty on every boot
+  (`nix/guest/base/ssh.nix`), so a start that ran out of time in the
+  registration left a machine that trusted nobody, and the review's
+  "Permission denied (publickey)" after a failed start was that, not a
+  second defect. Both calls are idempotent, the api sends the same
+  material on every start, and neither needs the nix database the
+  registration loads. A start that now runs out of time leaves a machine
+  its owner can log in to and read.
+- *A failed start says where its time went.* The "boot timings" line was
+  logged only by a start that reached running, and the console tail was
+  attached only by a boot that missed Ready. So the failure a Mac
+  customer met most often logged no timings and gave `repose logs --kind
+  console` nothing to print (ENG-100). Both now happen on the failure
+  path, with the phase named.
+- *Two guest-side assumptions the longer window breaks.* The
+  `repose-store-repair` timer fired at `OnBootSec=4min` because a create
+  was "always finished first" at 3 min 15 s; on this hardware a start
+  runs about five minutes, so it fired into the middle of one and
+  competed for the store and the network with the phase that was running
+  out of time. It is now 15 minutes. `repose-paths.service` waited 180 s
+  for the registration and then continued without it, which would now
+  let home-manager run against an unregistered store seven minutes before
+  the host gives up; it waits 20 minutes, the backstop's figure.
+- *What the api's own timeout said.* `checkTimeout` writes "start_guest
+  did not complete in 10m0s" for a host that took a command and never
+  answered, and `humanError` had no arm for the code, so that sentence
+  reached the user with an internal phase name and a Go duration in it.
+- *A booting guest is not a lost one.* A fourth deadline in this path is
+  compared against a clock rather than counted from a start: the
+  monitor marks a guest's guestd lost after 60 s with no vsock
+  connection, counted from the monitor's start, which is shorter than
+  guestd's first answer on this hardware (59.5 to 70 s). So every
+  healthy boot of an owned Mac raised the `guestd_lost` warning to the
+  api and bumped `repose_host_guestd_lost`, which an operator and an
+  alert read as a guest in trouble. The mark now waits for the first
+  connection: before it the ready window bounds the boot and the start's
+  own failure reports it. The shape came from I-1412, found the same
+  night in a test by a session that was not looking for this.
+
+*Not done:* the fix is unverified on the hardware it is for. Every number
+above is measured, the deadlines and the ordering are tested here, and
+nobody has yet run five starts on a Mac with a guest image built from
+this branch -- which is what the guestd backstop and the two unit changes
+need. Until that run shows five of five, ENG-80 stays open.
+
+**I-1414. The appliance downloads get a client of their own, with no
+whole-request deadline, a 60-second stall window instead, and three
+attempts that continue from what is on disk; a download that does not
+finish names the install step that completes it (fix-starts,
+2026-11-20).** *Made during implementation* (ENG-117, found on the
+published build on a real M4 by the spark on 2026-11-20. Amends nothing:
+`applianceHTTP`'s own comment already said "a plain client with no
+timeout, since an image is 2 GB", and this is the code catching up with
+it.)
+
+The first `repose host add` on that Mac failed at 31 s with `the image:
+context deadline exceeded (Client.Timeout or context cancellation while
+reading body)`, and the second succeeded in 37 s. It was not the
+network: the Mac pulls the asset at 226 MB/s, so 2.08 GB is about nine
+seconds of transfer. The chain, read in the code and then reproduced in
+a test:
+
+- `internal/cli/env.go:167` builds the api's client as
+  `&http.Client{Timeout: 30 * time.Second}`, which is right for an api
+  call.
+- `withTiming` and `withVerbose` set `c.Transport` and return the client
+  they were given, so the 30 seconds survives both wrappers, and
+  `env.go:182` puts that client on the `Env` as `httpClient`.
+- `applianceHTTP` returned `e.httpClient` whenever it was non-nil, which
+  production always is, so the no-timeout path existed for tests alone.
+- `http.Client.Timeout` covers reading the body, so the 2 GB fetch ran
+  under a 30-second whole-request deadline: a fast download finishes
+  inside it, a slow one does not, which is why it failed about half the
+  time and why retrying worked.
+
+This is the shape of ENG-105's cause and of I-1408's: a constant correct
+for one purpose reaching another through a field they share. Three of
+them merged inside two days, so this commit adds the row that catches the
+shape to `CHECKLIST.md`, under "For every change": a timeout the change
+adds says which operation it bounds, and no second operation reaches it
+through a field they share. ENG-105's own fix added that row to `mac-mini`
+first (`f7897014`, 2026-11-20), four minutes before this branch's base
+commit and not an ancestor of it, so a grep of this worktree found
+nothing and an earlier draft of this entry said the row existed nowhere
+in the repository. That was a worktree described as a project. The two
+rows say the same thing and the conductor keeps this one at merge,
+because it cites three instances of the shape where the first cites one.
+`f7897014`'s other row is the one this change had to satisfy -- anything
+made retryable is idempotent first, or the retry duplicates the effect
+the user sees -- and a GET that resumes from a part file and verifies the
+whole file's checksum does: the only effect it can duplicate is bytes on
+disk at a known offset, and the hazard worth naming is the stale part
+file above.
+
+- *A stall window, not a response-header timeout.* With the deadline
+  gone, something still has to end a connection that died, because TCP
+  alone can hold a dead one open for a quarter of an hour. A
+  `ResponseHeaderTimeout` was the smaller change and does not cover the
+  failure: the measured one and the one a home connection will really
+  produce are both mid-body, 1.4 GB into a 2 GB transfer, where a header
+  timeout has already been satisfied. It also could not be set here
+  without rebuilding the transport, which is `verboseTransport` over
+  `timingTransport` over `http.DefaultTransport`, and so without losing
+  what `-v` and `--timing` print. The watchdog that replaces it counts
+  the bytes read and cancels the request when a whole window passes with
+  none; because it starts before the request and counts from zero, the
+  wait for the response headers is inside the same 60 seconds, so one
+  mechanism bounds both. Detection takes between one and two windows,
+  since it ticks at the window.
+- *A longer `Timeout` lost because there is no figure to pick.* The
+  transfer is 9 seconds on the lab's connection and 14 minutes on a
+  20 Mbit one, and any constant that covers the second is long enough to
+  be no protection in the first. A deadline on a transfer of unknown size
+  measures the connection, not the fault; progress is the thing worth
+  measuring.
+- *A retry continues rather than starts over.* A failed attempt leaves
+  what it got in a `.part` file beside its destination and the next
+  attempt asks for `Range: bytes=N-`, so a connection that drops at 90
+  percent costs the last 10 percent and not another 2 GB. The hash of
+  what is on disk is taken first, so a continued download still reports
+  the digest of the whole file. A server that ignores the range answers
+  200 instead of 206 and the file starts over, which is the only safe
+  reading of that answer. A checksum mismatch is not retried, so a wrong
+  published checksum cannot cost three downloads -- unless the attempt
+  resumed, where one fresh attempt follows, because the part file may be
+  a prefix of an older image left by an install the customer gave up on
+  before upgrading the CLI.
+- *What the customer reads, and why it names a command.* `repose host
+  add` mints the host through the api before it installs anything, so
+  after a failed download the account holds the host and a plain second
+  `repose host add` is refused by the one-host limit -- the one piece of
+  advice a user would reach for, and the wrong one. The failure names
+  `repose host add --join <argument>` instead, with the argument it
+  already has, which skips the mint and continues from the part file.
+  This is a failure that unblocks, which is where I-484 allows a next
+  command. It also says the host is in the account, because that is the
+  state the Mac is in and nothing else says so.
+- *The test hook stays, the inheritance goes.* `applianceHTTP` still
+  returns the `Env`'s client when a test set one; it copies it and clears
+  `Timeout` alone, so a test's transport and a user's `-v` both survive
+  and no download inherits an api call's deadline. `fetchText`, which
+  reads a 64-byte checksum, takes a 30-second context of its own, so a
+  server that accepts the connection and says nothing cannot hold the
+  install either.
+
+**I-1416. The guest's wait for the registration outlasts the host's
+deadline for sending it, by the ready phase as well as the paths
+deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name
+the order and its direction, and a text check reads both numbers because
+no evaluation sees them together (fix-starts, 2026-11-20).** *Made during
+implementation* (ENG-124, found by reading I-1408's own numbers after the
+Loki pull that confirmed its deadlines were load-bearing. Amends I-1408,
+which set both numbers to 600 s.)
+
+I-1408 raised the host's registration deadline to ten minutes on a Mac
+appliance and the guest's wait for that registration to 600 s, and
+`nix/guest/base/guestd.nix` documents the invariant between them: "It has
+to outlast the host's own registration deadline ... if it gives up first,
+home-manager runs against a store the guest's nix database does not
+know." 600 s does not outlast 600 s.
+
+- *The order was inverted, not merely tied.* `repose-paths.service` is
+  `after = [ "guestd.service" ]`, so the guest starts waiting when
+  guestd's process starts. The host's paths deadline starts later, at
+  `RegisterPaths` after Ready. So the guest waits through the whole ready
+  phase before the host's clock begins, and with both at 600 s it expired
+  first by that much. The margin a correct ordering needs is therefore
+  `--paths-timeout` **plus** `--ready-timeout`, 15 minutes on the
+  appliance, and `pathsWait` is 20.
+- *Why it is worth a fix rather than a card, at a rank that said
+  otherwise.* The failure is silent and reports success. Every other
+  defect in this family ends in a deadline somebody reads: a phase ran
+  out, and the api says which. This one ends with
+  `repose-paths.service` printing "continuing without it" and
+  home-manager activating against a store the guest's nix database does
+  not know, after which the start is reported `running`. A broken machine
+  that says it is fine is worse than a failed start that says which phase
+  failed, which is the whole subject of I-1408.
+- *Not reachable at any speed yet measured, which is the rank and not the
+  reason.* The slowest registration anyone has measured is 172.5 s, so
+  600 s was far away and the margin was luck. I-1408's premise is that
+  the phase's duration is a property of hardware repose does not control,
+  and bringing hardware of your own (I-1366) means hardware nobody has
+  measured.
+- *The deeper shape, and what it costs to check.* This is the `CHECKLIST`
+  row of I-1414 one level up. That row catches a constant borrowed by a
+  second command; this is two constants that must be **ordered** and that
+  live where nothing can compare them -- `pathsWait` in the guest closure,
+  `--paths-timeout` in host configuration, two separate
+  `nixosConfigurations`. `TestTheHostOwnsTheBootPhaseDeadlines` pins the
+  phase deadlines under guestd's backstop and over `DefaultTimeout` and
+  cannot reach `pathsWait` at all, because no Go package holds it.
+- *So the check is a text one, and says so.*
+  `TestTheGuestsPathsWaitOutlastsTheHostsPathsDeadline` reads the two nix
+  files and parses the two numbers. A flake evaluation is the only thing
+  that would see both properly, and it does not fit the box this was
+  written on (8.5 to 12 GB against 9 free), so a check that cannot be run
+  red before green was not worth more than one that can. It fails loudly
+  when either file changes shape rather than passing blind, because a
+  blind check is the state ENG-124 was found in. Both files also carry
+  the sentence with its direction named, since a margin that exists by
+  accident is closed by accident.

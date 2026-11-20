@@ -408,21 +408,26 @@ in
     };
   };
 
-  # Once a boot, four minutes in, check the eleven libraries a binary
+  # Once a boot, well after the start, check the eleven libraries a binary
   # compiled here links against and fetch back any the host has collected
-  # (DECISIONS I-719). The common case is eleven stats and no work. The
-  # four minutes are I-706's reason - nothing on the create path, where a
-  # user is waiting, and least of all a network call - and are past the
-  # 3 min 15 s hostd allows SetupProject, so a create is always finished
-  # first. It is a timer and not a wait inside the unit, because such a
-  # wait would hold the boot on every ordinary start: hostd sends
-  # SetupProject only on a create (create.go is its one caller), so the
-  # stamp never arrives on a start and the wait would run to its 180 s
-  # fallback, and these oneshots are in multi-user.target's path, not
-  # beside it - in the guest-base run the target was reached 2 ms after
-  # the last of them finished. A failure is logged and ignored - no egress
-  # must never cost a boot - and the machine is usable either way: a
-  # rebuild in the checkout gets the base's own libraries.
+  # (DECISIONS I-719). The common case is eleven stats and no work.
+  #
+  # The delay is I-706's reason: nothing on the create path, where a user
+  # is waiting, and least of all a network call. It has to stay past
+  # whatever the host allows the set-up phase, so a start is always
+  # finished first, and that allowance is the host's own since I-1408
+  # (hostd --setup-timeout, ten minutes on a Mac appliance). At four
+  # minutes it no longer cleared it: a start there runs about five
+  # minutes, so this repair fired into the middle of one and competed for
+  # the store and the network with the phase that was already running out
+  # of time (ENG-80).
+  #
+  # It is a timer and not a wait inside the unit because a wait would hold
+  # the boot: these oneshots are in multi-user.target's path, not beside
+  # it - in the guest-base run the target was reached 2 ms after the last
+  # of them finished. A failure is logged and ignored - no egress must
+  # never cost a boot - and the machine is usable either way: a rebuild in
+  # the checkout gets the base's own libraries.
   systemd.services.repose-store-repair = {
     description = "repose: fetch back store paths this machine has lost";
     after = [ "repose-paths.service" "nix-daemon.socket" ];
@@ -438,7 +443,7 @@ in
   systemd.timers.repose-store-repair = {
     wantedBy = [ "timers.target" ];
     timerConfig = {
-      OnBootSec = "4min";
+      OnBootSec = "15min";
       AccuracySec = "1min";
     };
   };

@@ -17,16 +17,26 @@
   The name rule and the duplicates are the api's: it holds the names and
   the remotes, so its sentence is the one shown rather than a second copy
   of the rule that could drift from it.
+
+  Runs on (DECISIONS I-1390) is `repose run --host`: your host, or
+  repose's servers. It shows only when the account owns a host, because
+  an account with one possible answer has nothing to choose, and it is
+  what lets a customer whose Mac has not finished installing make a
+  machine anywhere. The api answers placement before it writes anything,
+  so a host that is waiting or offline refuses in its own words and the
+  form keeps what was typed.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { createProject } from '$lib/api/client';
+	import { onMount } from 'svelte';
+	import { createProject, listHosts } from '$lib/api/client';
 	import { ApiError, errorText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { classMemoryGB, normalizeRemoteDisplay } from '$lib/format';
+	import { hostStateWord } from '$lib/offlinehost';
 	import { withoutBillingURL } from '$lib/refusal';
 	import { focusOnMount } from '$lib/focus';
-	import type { Project } from '$lib/api/types';
+	import type { OwnedHost, Placement, Project } from '$lib/api/types';
 
 	let {
 		onsaved,
@@ -59,8 +69,24 @@
 	let repo = $state('');
 	/** 0 keeps the machine; anything else makes it temporary. */
 	let life = $state(0);
+	/** The host the account owns, if any: Runs on shows only then. */
+	let host = $state<OwnedHost | undefined>(undefined);
+	/** `own` is the api's default, so a user who leaves it alone gets what
+	 * `repose run` gives them. */
+	let placement = $state<Placement>('own');
 	let saving = $state(false);
 	let error = $state<string | undefined>(undefined);
+
+	onMount(async () => {
+		// A side read: an account that owns no host gets the form it
+		// always had, and so does one whose /hosts did not answer.
+		try {
+			const hosts = await listHosts({ passive: true });
+			host = hosts.find((h) => h.state !== 'retired' && h.state !== 'lost');
+		} catch {
+			host = undefined;
+		}
+	});
 	/** A plan or capacity refusal: the api's sentence plus the plan's page. */
 	let billingRefusal = $state(false);
 
@@ -84,7 +110,8 @@
 					? { remote_url: normalizeRemoteDisplay(repo) }
 					: undefined),
 				...(life === 0 ? undefined : { expires_in_s: life }),
-				...(zone ? { tz: zone } : undefined)
+				...(zone ? { tz: zone } : undefined),
+				...(host ? { placement } : undefined)
 			});
 			onsaved(p);
 		} catch (err) {
@@ -135,6 +162,17 @@
 					{/each}
 				</select>
 			</div>
+			{#if host}
+				<div class="npfield">
+					<label for="np-host" class="hk-field-label">Runs on</label>
+					<select id="np-host" class="hk-select" bind:value={placement}>
+						<option value="own"
+							>{host.name}{host.state === 'ready' ? '' : ` · ${hostStateWord(host.state)}`}</option
+						>
+						<option value="hosted">repose's servers</option>
+					</select>
+				</div>
+			{/if}
 			<div class="npfield">
 				<label for="np-life" class="hk-field-label">Keep it</label>
 				<select id="np-life" class="hk-select" bind:value={life}>
@@ -193,8 +231,11 @@
 		flex-direction: column;
 		gap: 0.75rem;
 	}
-	/* The three short fields share a line from 640, as the trigger form's
-	   do; below it each takes its own. */
+	/* The short fields share a line from 640, as the trigger form's do;
+	   below it each takes its own. An account with a host has four (Runs
+	   on, I-1390), and at 1440 the fourth wraps to a line of its own:
+	   9rem would seat all four and clip "mac-mini · waiting" and "Until
+	   I destroy it" to do it. */
 	.npfields {
 		display: grid;
 		gap: 0.75rem;

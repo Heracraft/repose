@@ -364,3 +364,74 @@ func TestHostAddPeersTheHubBeforeRegistration(t *testing.T) {
 		t.Fatal("a removed host is still a peer")
 	}
 }
+
+// TestCreateRefusedBeforeTheRowIsWritten is the shape I-1390 settles for
+// ENG-66: placement answers inside the create request, so a project no
+// host can take is refused with the sentence the op used to fail with,
+// and nothing is written. Until this the row went in as `creating`, the
+// op refused it afterwards, and a customer whose Mac had not registered
+// yet stranded one project in `error` per attempt. The way out the
+// refusal names, `placement: "hosted"`, then makes the project on
+// repose's own host.
+func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"}); r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	rows := func() int {
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects where user_id = $1", uid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
+		d := detailOf(t, r)
+		if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "registering" || d["hosted_allowed"] != true {
+			t.Fatalf("attempt %d while the host waits: %d %s, want 503 capacity no_own_host for mac-mini", attempt, r.status, r.raw)
+		}
+		if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your host mac-mini has not registered yet") {
+			t.Fatalf("attempt %d: message %q does not name the host and its state", attempt, msg)
+		}
+		if n := rows(); n != 0 {
+			t.Fatalf("attempt %d stranded %d project row(s)", attempt, n)
+		}
+	}
+	var ops int
+	if err := e.h.Pool.QueryRow(ctx, "select count(*) from ops o join projects p on p.id = o.project_id where p.user_id = $1", uid).Scan(&ops); err != nil {
+		t.Fatal(err)
+	}
+	if ops != 0 {
+		t.Fatalf("a refused create enqueued %d op(s)", ops)
+	}
+	// The way out: repose's own host, named in the 201 as host_id.
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small", "placement": "hosted"})
+	if r.status != 201 || r.body["host_id"] != e.h.HostID.String() || r.body["placement"] != "hosted" {
+		t.Fatalf("hosted: %d %s, want 201 on %s", r.status, r.raw, e.h.HostID)
+	}
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("hosted create: %s %+v", op.State, op.Error)
+	}
+	if n := rows(); n != 1 {
+		t.Fatalf("%d rows after one accepted create", n)
+	}
+	// host_name beside host_id (I-1392): absent on a host repose runs,
+	// the name the account gave it once the host is theirs.
+	pid := r.body["id"].(string)
+	if _, has := r.body["host_name"]; has {
+		t.Fatalf("a host repose runs carried host_name: %s", r.raw)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "GET", "/projects/"+pid, nil); r.status != 200 || r.body["host_name"] != "host-01" {
+		t.Fatalf("own host: %d %s, want host_name host-01", r.status, r.raw)
+	}
+	if r := e.do(t, tok, "GET", "/projects", nil); r.status != 200 || len(r.list) != 1 || r.list[0].(map[string]any)["host_name"] != "host-01" {
+		t.Fatalf("list: %d %s, want host_name host-01", r.status, r.raw)
+	}
+}

@@ -33,6 +33,20 @@ written so none of them goes unnoticed again.
 - [ ] No hardcoded values that belong in config: hostnames, IPs, ports, sizes,
       prices, paths outside the documented conventions. Evidence: `rg` for the
       literal returns only the config definition.
+- [ ] A timeout, deadline or window the change adds says in its comment
+      which operation it bounds, and no second operation reaches it through a
+      field they share. Evidence: `rg` for the constant's name, and for the
+      field it is stored on, and every reader is an operation the comment
+      names. Three defects of this one shape merged inside two days: a 3 s
+      hook constant bounding a 3-minute ask (ENG-105), start deadlines
+      written for x86 hosts applied to a Mac (I-1408), and the api's 30 s
+      client timeout reaching a 2 GB download through `Env.httpClient`
+      (I-1414), which failed the first `repose host add` about half the
+      time. Each comment was right about its own operation and silent about
+      the borrower.
+      And name the three deadlines in a call separately — the dial, the
+      request, and the thing being waited for — so only the ones that
+      should be short are short.
 - [ ] Errors are handled at every call site, with the failure named in the
       message. No `_ = err`, no bare `panic` outside `main`. Evidence: `rg
       '_ = err|panic\(' cmd internal` is empty or each hit has a comment
@@ -395,6 +409,25 @@ entry and this list with it. Counts as of 2026-10-21.
       --jq '.body | length'` is over 400, and the notes name every
       user-visible change, what the release does not fix with its numbers,
       and what it costs. `release.yml` fails the publish below 400 bytes.
+- [ ] Every URL the shipped CLI fetches on a customer's machine answers
+      200 to a client with no credentials: the appliance image the code
+      pins and its `.sha256`, vfkit against its pinned checksum, the
+      release `releases/latest` resolves to (a `v*` tag, with
+      `checksums.txt`, a signature the release key verifies and the four
+      archives) and `install.sh` (DECISIONS I-1398). The failure this
+      prevents happened twice on 2026-11-19: v0.1.51 shipped pinning an
+      appliance release nobody had published, so `repose host add` said
+      "the server answered 404" on every Mac for 47 minutes; and the
+      appliance release, once published, became GitHub's "latest", so
+      `install.sh` resolved the version to `appliance-2026.11.19` and every
+      install on every platform failed for 26 minutes. Evidence:
+      `ops/dev/release-assets` prints `200` for every asset and exits 0,
+      run after an appliance publish, before a CLI tag, and after the
+      sign job; shown red first (`--appliance <unpublished>` or `--cli
+      <wrong tag>` exits 1 naming the asset). `release-queue add` runs
+      it for a `cli` branch, `release.yml` refuses to publish without it,
+      and `release-assets.yml` runs it every six hours against `main`
+      and against the released tag.
 
 ## For every workstream, before it is called done
 
@@ -619,3 +652,97 @@ entry and this list with it. Counts as of 2026-10-21.
       `main` (17 rules, 17 headings, 2026-09-21); HostMemory80, HostUnreachable, SnapshotStale,
       BuildQueueStuck, GatewayAuthSpike and EgressHigh are the six the
       row names.
+
+- [ ] A change the Mac's CLI compiles builds **for the Mac**. `go build
+      ./...` on the dev box is linux-only, so a darwin-only compile error —
+      a duplicate symbol in a `_darwin.go` file, a missing build tag —
+      survives every local check and first appears in CI's GoReleaser
+      matrix, after the branch is queued. Evidence:
+      `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/repose/...`
+      exits 0. Run it whenever you touch `internal/cli`, anything with a
+      `_darwin.go` sibling, or the appliance and park paths. Do not widen
+      it: `./...` fails on packages that are legitimately linux-only
+      (`internal/guestd/hooks`, `cmd/gateway`, `internal/hostd/storeview`),
+      and `go vet ./internal/cli/...` under `GOOS=darwin` pulls those in
+      too. The CLI is the only darwin target and `./cmd/repose/...` is the
+      whole of it. Caught on 2026-11-19: the park's keychain file declared
+      `keychainService` twice and the dev box built it green.
+
+- [ ] A test that seeds a timestamp some query compares against `now` has a
+      **hidden deadline equal to that window**, enforced on the slowest box
+      that ever runs it. Found 2026-11-20: `TestPickTable/xl_fits_above_reserve`
+      took one `time.Now()` before its table literal and gave every host that
+      value as `last_heartbeat_at`; `PickHost` ignores a heartbeat older than
+      `HeartbeatWindow` (90 s); the table ran for 117 s, so the last case
+      asked for a host the table meant to be fresh and got `no host with
+      capacity`. It passes alone, because alone it finishes inside 90 s
+      (I-1412). Evidence: the seeded time is computed per case, or frozen, or
+      the window is injected — not a table-wide `time.Now()`. Audit every
+      test that seeds `last_heartbeat_at`, `last_seen`, a park deadline or
+      any other field a query reads against the clock.
+
+- [ ] Anything made **retryable** is **idempotent first**, or the retry
+      duplicates the effect the user sees. Found 2026-11-20 while fixing the
+      asker's deadline (I-1404): an abandoned `POST /ask` can still have
+      opened the question, so a blind retry asks the owner the **same
+      question twice**. The open now carries a request id the asker makes
+      once, guestd answers a repeat with the question it already holds, and
+      the id is persisted so a guestd restart mid-retry still answers once.
+      Evidence: a test that fails under load rather than in isolation —
+      which is the shape to look for, since a retry path is only exercised
+      when something is slow. Audit every place a timeout was raised or a
+      retry added: raising a deadline makes the retry path reachable for the
+      first time.
+- [ ] A fake is **not more forgiving than the thing it stands for**, and a
+      fake that returns nothing makes its whole phase invisible. **Two P0s
+      in one night came from this**, and in both the suite was green while a
+      customer's path was broken:
+      - `nixbuild.Fake.DumpDB` returned `nil`, so **every** hostd test
+        skipped `RegisterPaths` — the phase a Mac start actually fails in.
+        The suite had been green for a week while a customer's start was a
+        coin flip.
+      - The dashboard's fake api sent zeros for an account's plan limits
+        where the real api sends the plan's figures, so no dashboard test
+        caught the billing page measuring an account against the wrong
+        plan's ceilings and then creating anyway.
+
+      Evidence: for each fake, the list of real responses it stands in for,
+      and a test that fails if the fake answers where the real one would
+      refuse. A `nil`, a zero or an empty slice from a fake is a silent
+      skip, not a pass: if a phase cannot fail in the suite, the suite does
+      not cover it.
+
+- [ ] Before blaming a machine for a slow or flaky suite, **compare
+      per-package times across machines**, not the suite's total. Measured
+      2026-11-20 on the same commit against the same shared Postgres:
+
+      | package | this 8-core box | CI's 4-core runner |
+      |---|---|---|
+      | `internal/api/resume` | 277.9 s | **24.1 s** |
+      | `internal/api/ops` | 414.7 s | **53.0 s** |
+      | `internal/api/scheduler` | 254.8 s | **10.6 s** |
+
+      The runner everyone assumed was weaker is **ten times faster per
+      package.** That difference is measured; **its cause is not.** The
+      leading explanation is our own parallelism against a shared resource —
+      `go test ./...` runs 8 packages at once on this 8-core box, and the
+      runner is believed to run 4, which is GitHub's documented standard
+      spec and **does not appear in the job log** — but a different Postgres
+      fsync path, or less overlap between packages, would produce the same
+      times. **The `-p 2` remeasure has now been run**, on the whole tree
+      with main merged: **101 packages ok, 0 failures**, with
+      `internal/api/ops` at **20.397 s** (against 414.7 at the default
+      and 53.0 on CI), `resume` **6.611 s** (277.9 / 24.1), `scheduler`
+      **2.468 s** (254.8 / 10.6) and `resting` **2.287 s**. At `-p 2`
+      this box is faster than CI on every one of them, and the three
+      reds read all night as flaky tests **pass**. Caveat, because the
+      comparison is not clean: the default-parallelism figures were
+      taken while several sessions loaded the box and the `-p 2` run
+      was taken when it was quiet, so parallelism and ambient load
+      moved together — this supports the explanation strongly without
+      isolating it. Whatever the cause, the three reds read all night as "a
+      starved box" are not evidence of a weak machine, and the cheap thing
+      to try is `-p 2` or an api-only pass **before** any test's deadline is
+      widened — widening would have hidden the real race one of those reds
+      turned out to be. Evidence: the per-package table, plus the `-p 2`
+      remeasure once someone runs it.

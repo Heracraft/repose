@@ -61,10 +61,19 @@ Accepts one hostd connection; a second connection replaces the first (the
 old one gets `EOF`), so a hostd restart reconnects cleanly.
 
 Every request handler has a deadline (default 30 s, `Switch` 10 min,
-`RegisterPaths` and `SetupProject` 3 min since DECISIONS I-705, `Exec`
+`RegisterPaths` and `SetupProject` 20 min since DECISIONS I-1408, `Exec`
 per request) and runs in its own goroutine; responses are written under a
 mutex. `Notify` messages are queued (buffer 256) and dropped with a counter
 if hostd is absent for long; samples are pull-based so nothing accumulates.
+
+The two boot-phase deadlines are backstops, not the deadline that decides
+a start: the host sets what it will wait for each phase (`hostd
+--paths-timeout` and `--setup-timeout`, 3 minutes each by default and ten
+on a Mac appliance) and reports which phase ran out, and guestd's 20
+minutes only stops a handler living forever. They were I-705's 3 minutes
+until I-1408, which made them the limit that fired on hardware slower
+than Azure and left the api unable to say which phase a start had failed
+in.
 
 ### Freeze and the watchdog
 

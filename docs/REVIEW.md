@@ -11,9 +11,48 @@ program and every program after it: "The last review must be super ruthless,
 like going through every combination, possible combination. Every feature,
 try it out, find errors, be a real customer. CLI and dashboard."
 
+The bar the review measures against, in the owner's words at the end of that
+same day: **"Gotta be something the user wants to use and pay for. Gotta be
+the best experience because otherwise, what's the flipping point? They might
+as well just use SSH."** That is the comparison every finding is ranked
+against. A customer who could do this with `ssh` and a terminal multiplexer
+is the competition, they already have it, and it costs them nothing. So a
+rough edge is not a cosmetic matter here: it is the reason someone closes the
+tab and goes back to what they had.
+
 The reusable form of this, for any project, is the `customer-review` skill.
 This file is the repose-specific version: the surfaces, the comparisons and
 the gate.
+
+## Two sizes of review, and they are not interchangeable
+
+The full review below is for a thing that is **built** and about to meet
+users. The owner asked for a second, lighter pass on 2026-11-19, for work
+that is **designed and not yet built**, and it is a different job:
+
+> Not a full usability review — a customer-perspective critique and a
+> user-experience review that finds gaps, then re-implement them.
+
+**The design critique.** Its subject is a proposal and a set of work items,
+not a running product. It has no measurements to take, so its evidence is
+different: it walks the proposed experience as a named person with named
+ignorance, and it reports what that person cannot do, cannot find, or would
+get wrong. It may not say "this is fine"; it either names gaps or says
+plainly that it looked for them and found none, with what it tried.
+
+**Its pass test is written by whoever commissions it, in one sentence, before
+it starts.** For the owned-hardware sizing work that sentence is the owner's:
+*a newcomer who knows nothing about cores or disks gets a good machine
+without deciding anything, and finds the freedom when they want it.* A
+critique without such a sentence turns into taste, and taste cannot be
+re-implemented against.
+
+**Why it comes before the build and not after.** The findings are meant to be
+re-implemented, which is cheap while the work is a proposal and expensive
+once it is merged. This is the "critique them, experience them as real users,
+fail, fix" middle of the loop in `docs/workstreams/CONDUCTING.md`, and
+skipping it is how a design that reads well ships as a product nobody can
+use.
 
 ## Split by surface
 
@@ -94,6 +133,17 @@ so — a second pass with no P0 — not when a column is empty. Closing a card
 is not evidence a finding is fixed, where a checklist item closed with its
 named evidence is.
 
+- **File the cause separately from the symptom and link them.** Closing the
+  symptom's card must not lose what caused it. The worked example is the
+  2026-11-19 review: the released CLI had no `host` command for twenty-one
+  minutes while the docs described it in full, and when the tag landed the
+  symptom's card closed itself — so the reviewer filed the push-versus-tag
+  ordering that caused it as its own card first.
+- **A card's rank follows the report when the two disagree.** A card left at
+  `urgent` while the report says P1 wins the argument by being what the
+  owner looks at first, and the report loses it by being correct. So a
+  re-rank is carried to the card with its reason, not left in the document.
+
 ## The evidence rules a review rests on
 
 These were learned in one day of the Mac mini program, each from a mistake,
@@ -115,3 +165,60 @@ and they apply to whoever runs the review as much as to the builders:
   starved machine is worse than none, because it will be believed.
 - **Show a test red before green**, or say plainly that you did not. A test
   that has never failed has not been shown to test anything.
+- **Locate the hit; do not count it.** A grep that counts matches says a
+  thing exists somewhere. It does not say the page a customer opens carries
+  it. One finding that night rested on a count and died on the page.
+- **Check whether an absence is on purpose.** A missing price, a missing
+  flag and a missing line read the same from the outside. One of that
+  night's three was held back deliberately, and three reviewers hunted it
+  as a defect because nobody asked whether it was withheld.
+- **Check a timing window twice before you file it.** A state read once,
+  at one moment, cannot tell a propagation delay from a permanent wrong
+  answer. Read it again on a clock, at a named interval, and put the
+  readings in the report.
+- **Name the measurement a shortfall is computed against.** "Six seconds
+  unaccounted for" was arithmetic against a number that was never
+  measured; the six seconds did not exist.
+- **When two sessions review the same surface, the merge carries each
+  one's evidence or it carries neither.** Two true sentences about the
+  same screen can contradict each other, because each is true of its own
+  evidence. A merge that keeps the sentences and drops whose evidence they
+  were produces a confident claim that nobody measured. This happened
+  three times in one night, every time in the conductor's summary and
+  never in a reviewer's report.
+- **The report carries a method section.** What you ran, what you could
+  not run, and which of these rules bit you. A review whose method is
+  invisible cannot be checked, and the next reviewer repeats its
+  mistakes.
+- **Do not rank a finding from the only state you could reach.** An account,
+  a plan, a device or a window you happen to have is not the state a customer
+  is in. One of this review's P1 findings was the behaviour of an exempt
+  account's billing page, filed by the only reviewer with an account, and it
+  disappeared when a normal account was reached.
+- **When a reviewer's finding and the product's behaviour disagree, reach the
+  state the reviewer could not.** It is almost always cheaper than the
+  argument about whether they needed to.
+- **Report what is right, measured.** A review that lists only damage
+  misleads the owner about where the product stands. The one screen this
+  review found good reached the report only because a wrong finding was
+  challenged, which is how a defect-only review hides the product's health.
+- **One number is not a finding; it is a margin until a second agrees with
+  it.** This fired twice in one night, in the same direction. A reviewer's
+  6.115 s measurement of a command that should have waited three minutes
+  was a single timed run, and the session fixing it accounted for 3.0 s and
+  refused to claim the rest. A 600.023 s test failure read as a hang was the
+  same package's honest 461 to 496 s crossing an inherited 600 s deadline on
+  a loaded box — two earlier runs turned one outlier from a defect into a
+  margin. Before filing a number as a defect, ask what the same measurement
+  reads when nothing is wrong, and say how many times you took it.
+- **A finding that overstates is one the next reader discounts entirely**, so
+  cut the sentence that outruns the evidence even when it is the sentence
+  carrying the force. The hard revision is not the one that improves your own
+  claim; it is the one that costs your card its punch. On 2026-11-20 a
+  speculation of the conductor's — that a package taking 485 s here would
+  likely exceed 600 s on a slower runner, and that this explained CI's
+  unreliability — was written into a card in stronger words than the evidence
+  deserved, and the single CI measurement that existed came back at 461 s,
+  faster than four of five local passes. **Mark the unverified part
+  unverified and say what stands without it**; here the measured case was
+  untouched.

@@ -103,8 +103,8 @@ mac-mini  online  24 GB   3         1        just now
 
 ```
 $ repose ls
-PROJECT     SIZE   STATE    UP     AGENTS
-todo-app *  large  running  2h14m  claude: working
+PROJECT     SIZE   STATE    UP     AGENTS           HOST
+todo-app *  large  running  2h14m  claude: working  mac-mini
 todo-app: your host mac-mini has not answered for 14m.
 ```
 
@@ -188,9 +188,15 @@ are outside the seat count, the waitlist and the pool gauges, because
 repose did not buy them.
 
 A create for `own` while the account's host has not registered yet, or
-cannot take the machine, fails the create op with `capacity` and a
+cannot take the machine, is refused at the request with `capacity` and a
 message that names the host and its state, rather than quietly using the
-fleet and billing for it.
+fleet and billing for it, and nothing is written (I-1390). Until I-1390
+the row went in first and the op refused it afterwards, so a customer
+whose Mac had not finished installing stranded one project in `error`
+per attempt and could make one nowhere: the CLI had no flag for the
+other answer. `repose run --host NAME|repose` is that flag; the api's
+refusal carries `detail.hosted_allowed` so the CLI names `--host repose`
+only when the plan would honour it.
 
 ## 4. How long a machine takes to start
 
@@ -309,6 +315,26 @@ owned host has a way to wrap the image key that is not Key Vault
 were running (I-645). `repose host add`, `repose host run` and `repose host rm` are the
 user's side on the Mac.
 
+The two downloads a first install makes, vfkit and the 2.08 GB image,
+run on a client of their own with no whole-request deadline (I-1414).
+The CLI's api client carries a 30 s `Timeout` and `http.Client.Timeout`
+covers reading the body, so while the downloads took that client whole a
+2 GB fetch had 30 seconds to finish: the first `repose host add` on the
+lab M4 failed at 31 s with `context deadline exceeded ... while reading
+body` and the second succeeded in 37 s, on a connection that moves the
+asset at 226 MB/s (ENG-117). What ends a dead connection instead is a
+stall window: no bytes for 60 s, the response headers included, and the
+attempt is given up. A failed attempt leaves what it got in a `.part`
+file beside its destination and the next attempt continues from it with
+a `Range` request, three attempts in all; a server that ignores the
+range starts the file over, and a mismatched checksum after a resume
+costs one fresh attempt, because the part may be a prefix of an older
+image. A download that does not finish is the one failure in the install
+that names the way out: `repose host add` minted the host before the
+install, so a plain second `repose host add` would be refused by the
+one-host limit, and the sentence carries `repose host add --join
+<argument>` instead.
+
 ## Behaviour that must hold
 
 Ownership and placement (I-1366):
@@ -323,6 +349,12 @@ Ownership and placement (I-1366):
   (internal/api/http).
 - An account whose plan sells no memory on repose's hosts never lands on
   the fleet, whatever the field says.
+- A create no host can take is refused before the row is written, twice
+  in a row with nothing stranded, and `placement: "hosted"` is the way
+  out: `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http);
+  `repose run --host` sends it and names it in the refusal:
+  `TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut`,
+  `TestRunHostChoosesWhereTheMachineIsMade` (internal/cli). I-1390.
 
 The routes (I-1366):
 
@@ -353,6 +385,20 @@ The CLI (I-1370):
   machine and removing one retires it: `TestHostsUnderAnAPIToken`.
 - The state words are the same in the CLI and the dashboard:
   `TestHostStateWords` and `offlinehost.test.ts`.
+
+The readout (I-1392):
+
+- A machine on a host the account owns names it where the account looks:
+  a HOST column in `repose ls` and a `host` row in `repose status`, with
+  `repose` for a machine on repose's servers and `-` for one not placed
+  yet. An account that owns no hardware gets neither, and a host of
+  repose's keeps I-616's ruling and stays under `-v` with the machine's
+  address: `TestHostReadoutNamesTheHostYouOwn` (internal/cli).
+- The name is the project's own `host_name`, so the readout costs no
+  `/hosts` read and the column follows the machines rather than the
+  hardware: `TestHostReadoutComesFromTheProjectRecord` (internal/cli),
+  `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http) for the
+  field itself.
 
 An offline host (I-1370):
 

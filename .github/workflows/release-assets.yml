@@ -1,0 +1,74 @@
+# Daily: every URL the shipped CLI fetches on a customer's machine answers
+# 200 to a client with no credentials (ops/dev/release-assets, DECISIONS
+# I-1398). Two checkouts, because they pin different things: `main` pins
+# what the next CLI release will fetch, and the latest CLI release pins
+# what customers fetch today. Both runs also resolve releases/latest, which
+# must be a CLI tag, and fetch install.sh from repose.run.
+#
+# A red run is the signal; it reaches whoever GitHub notifies of a failed
+# scheduled workflow. On 2026-11-19 the appliance image was missing for 47
+# minutes and releases/latest pointed at the wrong release for 26, with no
+# release in progress for either; this is what would have said so.
+# Actions are pinned by commit (DECISIONS I-429).
+
+name: release-assets
+
+on:
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  main:
+    name: what main pins
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: ops/dev/release-assets
+
+  released:
+    name: what the latest CLI release pins
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the tag releases/latest resolves to
+        id: tag
+        run: |
+          # The same redirect install.sh follows, read anonymously: the
+          # API's "latest" is the same release, but this is the customer's path.
+          loc=$(curl -fsS -o /dev/null -w '%{redirect_url}' https://github.com/heracraft/repose/releases/latest)
+          tag=${loc##*/}
+          echo "releases/latest -> $tag"
+          case $tag in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::releases/latest resolves to $tag, not a CLI release; gh release edit <newest v0.1.N> --latest"; exit 1 ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if [ -x ops/dev/release-assets ]; then
+            ops/dev/release-assets --cli "$TAG"
+          else
+            echo "::notice::$TAG predates ops/dev/release-assets; the main job's pins are the check until the next CLI release"
+          fi

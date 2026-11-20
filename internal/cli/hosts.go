@@ -361,3 +361,34 @@ func hostUnreachableLine(p *Project, own map[string]Host, now time.Time) string 
 	}
 	return fmt.Sprintf("your host %s has not answered for %s", h.Name, humanDuration(now.Sub(*h.LastHeartbeatAt)))
 }
+
+// ownHostName is the name of the host a machine is on while that host is
+// one the account owns, and "" while it is one of repose's: the
+// project's `host_name` (I-1392), or, for an api that does not send the
+// field, the hosts already read because one of them is quiet.
+func ownHostName(p *Project, own map[string]Host) string {
+	if p.HostName != "" {
+		return p.HostName
+	}
+	if p.HostID == "" {
+		return ""
+	}
+	return own[p.HostID].Name
+}
+
+// hostCell is `repose ls`'s HOST cell and `repose status`'s `host` row
+// (I-1392, which amends I-616): the name of a host of the account's own,
+// `repose` for a machine on repose's servers, which is the word
+// `repose run --host repose` takes for them, and "" for one not placed
+// yet, which the table prints as `-`. A host of repose's keeps I-616's
+// ruling and is never named here: it is a platform internal, and its
+// name and the machine's address stay under `-v`.
+func hostCell(p *Project, own map[string]Host) string {
+	if name := ownHostName(p, own); name != "" {
+		return name
+	}
+	if p.HostID == "" {
+		return ""
+	}
+	return "repose"
+}
