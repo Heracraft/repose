@@ -274,3 +274,22 @@ flake checked" when what ran was `nix flake check --no-build`, which
 evaluates every output and builds none — a job name is a claim like any
 other, and this one differs from the thing people assume it says by every
 VM test and every closure check.
+
+## Look for the guard before you write the rule
+
+Everything above was derived over one night from mistakes. Then
+`release-queue cut` refused a cut with the sentence that states the whole
+theme better than anything here:
+
+> **Not knowing yet is not a pass. Wait for it, then cut.**
+
+`ops/dev/release-queue:1088`. It was written before any of tonight, it is
+enforced by the tool rather than by anyone's discipline, and neither
+conductor knew it was there. Every lesson on this page is a variant of it:
+an always-red check, a truncated log, a filtered test that matched nothing,
+a job named "flake check" that builds nothing, a single measurement read as
+a defect — each is **not knowing, recorded as knowing.**
+
+So before authoring a rule, **grep for it.** A guard already in the tooling
+beats a paragraph in a document, because it fires without being read. And
+when a tool refuses, read its sentence: somebody put the reason there.
