@@ -22,93 +22,84 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-20, 12:25 UTC)
+## Where things stand (2026-11-20, 18:00 UTC)
 
-- **Three releases went out today and two batches sit on main unreleased.**
-  `v0.1.52` from `dfbdaf7a` with base **2026.11.20.1** and
-  **`appliance-2026.11.20`**, then `v0.1.53` from `f6aab4f2`, which pins
-  that appliance in the CLI. `origin/main` is still `f6aab4f2`. Local
-  main is **`0089a8fd`**, two batches ahead: `r20261120-12`, this
-  document, and `r20261120-13`, which ships **cli and web**. Both wait
-  for the owner's word, and `integrated` on GitHub holds them and deploys
-  nothing.
-- **The queue is empty and every record is written.** Records for
-  `r20261120-6` through `-13` were owed and are now in
-  `docs/releases/`; `-13` carries what was run on the merged tree and
-  what was not.
-- **What `r20261120-13` ships, in one line each.** `repose host rm
-  --local` now counts the machines that go with the appliance and names
-  the host it leaves on the account (I-1440, ENG-141, the thing that
-  wedged the owner twice this morning). The Claude merge golden asserts
-  the guest's order instead of `$TMPDIR`'s (I-1442, ENG-139). And
-  `DEV-BOX.md` has a measured figure for the flake evaluation with the
-  capped way to measure it. **Its live check is owed at the release:** on
-  repose.run/docs/own-hardware, the "Taking it off" section shows the
-  paragraph beginning "Removing the appliance first".
-- **CI's `nix flake check (evaluate)` is the job that will red on you,
-  and it is not your commit.** It lost its runner twice within an hour on
-  2026-11-20, on `f6aab4f2` and then on a branch of documents: run
-  `44710016416` took 46 minutes against its usual 11 with every step
-  after the Nix install carrying an empty conclusion, and run
-  `44720098012` said `The runner has received a shutdown signal` 2.5
-  minutes in, with one run on the branch, no `concurrency` block and no
-  `timeout-minutes` anywhere, so nobody cancelled it. Both re-ran green.
-  **ENG-144** now carries the measurements: that command exceeds 8.47 GiB
-  in one process on a 16 GB runner, `checks.x86_64-linux` alone is what
-  does it, and sharding `checks` into four jobs puts the worst process at
-  6.06 GiB and finishes faster. The card also says why that is not a
-  one-line change: `nix flake check` validates output shapes a sharded
-  `nix eval` would silently stop checking. Re-run the job, read the
-  annotation, and do not let a red there cost you an hour.
-- **The mac-mini program's repair batch is released** as `r20261120-10`,
-  197 commits, with its live check passed on hardware. The Mac's queue is
-  empty and about $38 is spent; its shutdown and the `aws login` its
-  release needs are the owner's, raised with them directly.
-- **What a release claim is about is the artefact, not the tree.**
-  v0.1.52's notes said a customer's Mac worked properly while the shipped
-  CLI still pinned `appliance-2026.11.19`. The spark caught it on the
-  published tag, the notes are corrected, and ENG-143 carries the
-  mechanism. **Check which artefact a claim lives in before publishing
-  it.** The same rule is why ENG-141 and ENG-139 are `Blocked` and not
-  `Done`: the work is on main and no customer has it.
-- **The weekly model limit was at 90 % at 08:20 and resets Saturday
-  2026-11-22 at 07:00 UTC.** ENG-14, the review's second pass, is in
-  `Needs you` as a spending decision.
-- **ENG-138 is narrowed on hardware and the narrowing is the result.** A
-  logout gives the appliance **18 seconds** and the park is attempted; a
-  restart gives **one**. So macOS honours the shutdown window on a
-  session teardown and not on a system restart, and the remaining work is
-  the restart hook rather than `ExitTimeOut`.
-- **ENG-43 is closed on evidence rather than on the procedure existing.**
-  `ops/dev/docs-ahead-of-cli` replayed against its own incident exits 1
-  and lists the six `repose host` paths; today on main it exits 0 at 115
-  documented commands against v0.1.53; a clone with no tags exits 2,
-  which its own documentation calls not a pass. Run it without a pipe.
-- **The board's listing shows about a third of the board, so do not
-  trust `kaneo ls` for an inventory.** Measured on 2026-11-20 straight
-  from the api that backs it: `/task/tasks/<project>` returns **50**
-  cards, which are ENG-1 to ENG-46 plus ENG-120, ENG-129, ENG-130 and
-  ENG-131. Every card from ENG-47 to ENG-119, ENG-121 to ENG-128 and
-  ENG-132 to ENG-144 is missing from it, **94 of them**, including every
-  card this shift wrote to. They exist and are reachable one at a time:
-  `kaneo show ENG-144` answers, `kaneo note` and `kaneo done` work, and
-  the column counts the listing prints are right about the cards it can
-  see and wrong about the board. So cite a card by its ticket and read it
-  with `show`; an "Open (9)" is not nine open items. The mac-mini
-  conductor hit the same wall from the other side and is carrying a
-  grouped inventory inline in `docs/ops/RESTART.md` for that reason.
-- Open and unowned, in the order they would hurt: **ENG-111**, the Hello
-  reconcile writing a guest address while an op is open, confirmed on CI
-  and reproduced here under full-suite load, seven read-then-act call
-  sites, five weeks live, blocking no release. **ENG-119** with its
-  siblings ENG-120, ENG-121 and ENG-122. **ENG-144** above. **ENG-10**,
-  where a killed Playwright run's fixtures keep the port and the next run
-  silently tests the old build; it cost me twenty minutes today and the
-  card now has the mechanism. **ENG-113**, the suite at `-p 2`.
-- **`7db572b5` is still held** and nothing today touched it. ENG-129 is in
-  `Needs you` with the fact that decided the argument: `POLAR_PRODUCT_OWN`
-  is set on production, the plan is purchasable at $10 with a seven-day
-  trial, and the public copy is the owner's separate gate.
+- **Four batches are integrated and none of them is released.** Local
+  `main` is **`a9c5039b`** and `origin/main` is still `f6aab4f2`, which
+  is v0.1.53. That is **34 commits**, shipping **api, cli and web**:
+  `r20261120-11` through `-14`. `integrated` on GitHub holds all of it
+  and deploys nothing. **The queue is empty.**
+- **It is waiting on one sentence, and the sentence has to be typed in
+  the conductor's own session.** The owner told the mac-mini conductor
+  to publish everything that works. That reached this session as a
+  relay, and a relay is not the word: a push cycles production and a
+  peer cannot grant it. Both conductors have asked, twice each, and
+  neither will push on the other's account. **If you are the conductor
+  and the owner says it to you, everything below is one command.**
+- **The release is staged to be boring.** `ops/dev/docs-ahead-of-cli`
+  is green on this main, 115 documented commands against v0.1.53, so no
+  command is new and the tag does not have to chase the push (RELEASE.md
+  step 2b). The v0.1.54 notes are drafted, over the sign job's 400-byte
+  floor, saying two things: `host rm --local` counts the machines that
+  go with the appliance and names the host left on the account, and on
+  repose's side a machine's address can no longer be rewritten or
+  released while work on it is still running. The order is push main,
+  watch CI, annotated tag, notes on the draft before the sign job's
+  notes step, `release-assets` after, then the two owed live checks.
+- **What the four batches carry.** `r20261120-14` is the big one: the
+  new home page with the plan's price on it, which retires the held
+  `7db572b5` by shipping its copy with the page that makes it true
+  (I-1446); **ENG-111** fixed after five weeks, the guest-address write
+  and release each checking for an open op in one statement (I-1444);
+  ENG-148's bound; and both handoffs. `-13` has `host rm --local`
+  (I-1440) and the golden (I-1442). `-12` and `-11` are documents and
+  the appliance pin.
+- **Two live checks are owed at the release**, named in
+  `docs/releases/r20261120-14.md`: that `repose-admin projects show` on
+  a running project prints a `guest_ip` and no `guest_address` line with
+  `change=held` appears for a project with no open op, and that
+  repose.run shows the new headline and the Own hardware price.
+- **CI's `nix flake check (evaluate)` lost its runner seven times
+  today**, every time on a commit touching nothing the evaluation reads,
+  every re-run green. Five of those failures lasted 46m00s, 46m01s,
+  47m00s, 48m00s and 46m00s, against 8 to 11 minutes when it passes, so
+  a fixed platform timeout is pronouncing a runner dead long after it
+  stopped answering. **ENG-144** has the measurements: the command
+  exceeds 8.47 GiB in one process on a 16 GB runner, `checks.x86_64-linux`
+  alone is the peak, and four shards of ten put the worst process at
+  6.06 GiB and finish faster. It also says why that is not a one-line
+  change, because `nix flake check` validates output shapes a sharded
+  `nix eval` would silently stop checking. **Expect the red, re-run it,
+  and do not spend an hour on it.** It cost this shift an afternoon of
+  queue latency.
+- **Three kinds of red looked identical in a run summary today, and
+  only one was a flake.** The runner losses above are the platform.
+  `TestOverlapMenuOnARealTerminal` is genuine load and is recorded as
+  such from 2026-11-11. `TestParallelRangesErrors` was a test that had
+  been wrong since it was written and needed `-race` to expose it, found
+  because it was run locally instead of re-run on CI. **Run it here
+  before you re-run the job**: the first two cost a re-run, the third
+  costs a defect.
+- **`kaneo ls` shows about a third of the board**, measured from the api
+  behind it: 50 cards returned, 94 missing, including every card this
+  shift wrote to. Cards answer individually, so `show`, `note` and
+  `done` work. **ENG-145.** `docs/ops/RESTART.md` carries a grouped
+  inventory inline for that reason, and it is the document to read first
+  after a stop.
+- **The mac-mini program**: three builders are out, 19e on the aarch64
+  findings, 19f on the half of ENG-79 no code fix reaches, and
+  `factory-3f` with the Mac and ENG-138's three unknowns. The review's
+  second pass is parked on the owner's capacity decision with its
+  worktrees and briefs staged. The weekly model limit resets Saturday
+  2026-11-22 at 07:00 UTC.
+- Open and unowned, in the order they would hurt: **ENG-119** with its
+  siblings ENG-120, ENG-121 and ENG-122. **ENG-144** above. **ENG-146**,
+  the Hello reconcile's state write, which is ENG-111's sibling and left
+  deliberately because what should happen when an op opens mid-reconcile
+  is a question about states, not a race on a column. **ENG-10**, where
+  a killed Playwright run's fixtures keep the port and the next run
+  silently tests the old build. **ENG-147**, the home page's length.
+  **ENG-113**, the suite at `-p 2`.
 
 
 ## The owner's rules this week
@@ -399,6 +390,36 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   took that for Go tests too, and a golden flipped because `unique` sorts
   the real path. Fixed in the test and recorded as I-1442; the boundary is
   in DEV-BOX.md. Advice travels further than the case it was written for.
+- **A composed page is measured in the browser, not in the file that
+  composes it.** I grepped `+page.svelte` for `data-motion-group`, got
+  zero, and cleared a landing change as having no looping pictures. The
+  attribute lives in the picture components; five of them loop, and the
+  change had removed the page's only motion control, which is WCAG
+  2.2.2. I had the page open in a browser at the time and nine
+  screenshots of it. One `locator('.pic-frame').count()` would have said
+  five. What caught it was a sixth spec file nobody had updated, doing
+  its job.
+- **An instrument that answers instantly and confidently is the one to
+  check.** Three did it in one day. `kaneo ls` returns 50 of ~144 cards
+  with column counts that are internally consistent. `gh pr checks <n>`
+  aggregates superseded attempts, so a job re-run green still prints
+  `fail`; read the newest run instead, `gh run list --branch <b> --limit
+  1` then `gh run view <id> --json status,conclusion,jobs`. And the grep
+  above. All three were wrong about the question asked, and none of them
+  looked wrong.
+- **`pgrep -f "<pattern>"` matches your own waiter.** An
+  `until ! pgrep -f "playwright test"` loop contains that string in its
+  own command line, so it never exits and every check says the job is
+  still running. It cost me a suite I thought was running and was not.
+  Match on something the waiter does not contain, or check the log.
+- **A bound nobody can re-derive is one the next person widens.**
+  `TestParallelRangesErrors` allowed `after + parallel + 1` fetches when
+  the dispatcher is bounded by the buffer pool, `parallel + 1`, plus one
+  per part the consumer hands back. One short since it was written, and
+  only `-race` was slow enough to reach it. Before widening it I removed
+  the `cancel()` and watched the test fail at every block in the
+  fixture, because widening a bound is how a guard quietly stops
+  guarding.
 
 ## Owed
 
