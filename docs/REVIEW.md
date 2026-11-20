@@ -200,3 +200,14 @@ and they apply to whoever runs the review as much as to the builders:
   a loaded box — two earlier runs turned one outlier from a defect into a
   margin. Before filing a number as a defect, ask what the same measurement
   reads when nothing is wrong, and say how many times you took it.
+- **A finding that overstates is one the next reader discounts entirely**, so
+  cut the sentence that outruns the evidence even when it is the sentence
+  carrying the force. The hard revision is not the one that improves your own
+  claim; it is the one that costs your card its punch. On 2026-11-20 a
+  speculation of the conductor's — that a package taking 485 s here would
+  likely exceed 600 s on a slower runner, and that this explained CI's
+  unreliability — was written into a card in stronger words than the evidence
+  deserved, and the single CI measurement that existed came back at 461 s,
+  faster than four of five local passes. **Mark the unverified part
+  unverified and say what stands without it**; here the measured case was
+  untouched.
