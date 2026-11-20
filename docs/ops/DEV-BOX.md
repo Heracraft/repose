@@ -145,6 +145,48 @@ Run anything long **detached** (`setsid`, redirect to a log) and watch the
 log with a `Monitor`: the harness kills a session's background waiters
 when memory is low, and the job then finishes with nobody reading it.
 
+Nobody had measured the evaluation **on its own**: the range above comes
+from runs with their builds, and the evaluator was blamed by reasoning
+rather than by a reading. So on 2026-11-20 `nix flake check --no-build
+./nix` was run inside a 9 GiB cap, on `main` at `f6aab4f2`. The cgroup
+killed it -- `oom-kill ... task=nix`, `anon-rss:8886640kB`,
+`total-vm:30576000kB` -- with the evaluation unfinished at `checking
+derivation checks.x86_64-linux.fragment-contract`, 110 seconds in. So
+**8.47 GiB is a floor for the evaluation with nothing built**, the cost
+is the evaluator's and not the builds', and nobody has a peak: no cap
+this box can afford lets the command reach the end.
+
+**Measure inside the cap rather than guess.** The ban is on running this
+uncapped. A cgroup kill at the cap costs one evaluation and gives a
+number; an uncapped run costs somebody's session and gives the same
+number.
+
+```
+flock /mnt/nixstore/repose-ws/nix-build.lock \
+  systemd-run --user --scope --unit=eval-measure -p MemoryMax=9G -- \
+  env TMPDIR=/mnt/nixstore/tmp choom -n 1000 -- \
+  /usr/bin/time -v nix flake check --no-build ./nix
+```
+
+Poll the scope's own `memory.current` from inside it while it runs. A
+kill leaves `time -v` reporting the cap rather than the peak, and
+`memory.peak` goes with the cgroup, so a poller is the only reading that
+survives one. `dmesg` then names the task and its RSS, and that is the
+evidence; the poll is only the shape.
+
+CI runs that same `--no-build` command on every push and every pull
+request, on a 16 GB `ubuntu-latest` runner. **ENG-144** carries it: on
+2026-11-20 run `44710016416` lost its runner on that job, 46 minutes
+against the 11 it takes when it passes, every step after the Nix install
+with an empty conclusion and no log uploaded, and GitHub's annotation on
+check-run `136199039366` names starving the runner for CPU or memory
+first. A re-run on a fresh runner passed, and then the same job lost its
+runner again 25 minutes later, on a branch of documents, with
+`The runner has received a shutdown signal` 2.5 minutes into the
+evaluation. Twice in an hour on two commits that touch nothing the
+evaluation reads: expect it, re-run the job, and read a red there as a
+fact about the runner until something says otherwise.
+
 `ops/dev/release-queue add` evaluates the systems for its ships
 computation, so it counts as a nix evaluation too: do not run it beside
 another one.

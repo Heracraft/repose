@@ -22,12 +22,16 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-20, 09:30 UTC)
+## Where things stand (2026-11-20, 10:40 UTC)
 
 - **Three releases went out today.** `v0.1.52` from `dfbdaf7a` with base
   **2026.11.20.1** and **`appliance-2026.11.20`**, then `v0.1.53` from
   `f6aab4f2`, which pins that appliance in the CLI; `origin/main` is
-  f6aab4f2 and the queue is empty. `releases/latest` resolves to the CLI tag
+  f6aab4f2 and the queue is empty. A twelfth batch, `r20261120-12`, is
+  merged into **local** main at `0f8aa2ca` and deliberately not pushed: it
+  is this document and one STATUS line, so it ships nothing, and a push
+  cycles production for nothing. It goes out with whatever is released
+  next. `releases/latest` resolves to the CLI tag
   and not the appliance, checked after publishing, which is last night's
   second failure not repeated. No host switch and no edge switch: the
   branch established from the code that the api and hostd are independent
@@ -79,6 +83,21 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   morning. **ENG-119** with its siblings ENG-120, ENG-121 and ENG-122.
   **ENG-139**, a golden whose order depends on `TMPDIR`. **ENG-113**, the
   suite at `-p 2`.
+- **CI's `nix flake check (evaluate)` is the job that will red on you
+  next, and it is not your commit.** On 2026-11-20 run `44710016416` on
+  `f6aab4f2` took 46 minutes against its usual 11 and lost its runner;
+  every step after the Nix install carried an empty conclusion, the log
+  answered `BlobNotFound`, and GitHub's annotation on check-run
+  `136199039366` names starving the runner for CPU or memory first. The
+  parent commit was green on all twelve jobs and the diff touches nothing
+  under `nix/`. A re-run on a fresh runner passed, and then the same job
+  lost its runner again 25 minutes later on a branch of documents, this
+  time saying `The runner has received a shutdown signal` 2.5 minutes
+  into the evaluation. **ENG-144** holds the finding with the measurement:
+  that command wants more than 8.47 GiB in one process, measured here
+  inside a cap, on a 16 GB runner. Re-run it before you suspect the
+  commit, read the annotation rather than the empty log, and know that a
+  red there currently carries no information about your change.
 - **`7db572b5` is still held** and nothing today touched it. ENG-129 is in
   `Needs you` with the fact that decided the argument: `POLAR_PRODUCT_OWN`
   is set on production, the plan is purchasable at $10 with a seven-day
@@ -319,6 +338,22 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   alone, because a live dev shell holds one. Expect `df` not to move at
   once: a third of what I removed was still held open by running
   processes, and the space comes back when they exit.
+- **A platform's own annotation beats both sides' inference.** A red
+  whose log would not load had two of us reasoning from shape: I was
+  ready to accept the infrastructure's word, and the mac-mini conductor
+  had been wrong about load on shape four hours earlier, which is the
+  only reason they went looking for the link instead of agreeing. The
+  answer was one annotation on the check-run and one grep of `nix/`.
+  **Inference was the expensive thing all day; looking was the cheap
+  one.**
+- **Measure inside the cap rather than ban and guess.** This box forbids
+  a whole-flake evaluation because it takes 8.5 to 12 GB, and that range
+  came from runs with their builds, so the evaluation's own cost was
+  attributed by reasoning. One capped run settled it: the cgroup killed
+  `nix` at `anon-rss:8886640kB` with `--no-build` and nothing built, and
+  it had not finished. The ban is on running it uncapped; a cgroup kill
+  costs one evaluation and yields a number, where the uncapped run costs
+  a session and yields the same number. `DEV-BOX.md` has the invocation.
 - The exit-through-a-pipe trap again, in a verification script this time:
   a check whose output goes through `tail` or `grep` reports the pipe's
   exit, so `EXIT 0` printed under a `--- FAIL` line is the pipe
