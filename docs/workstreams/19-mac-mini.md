@@ -383,10 +383,23 @@ percent.
       marker gone and uptime reset to 193. **And it answers a question
       only that machine could answer: `security` serves a launchd agent
       in `gui/501` without a prompt**, so the park does not fail
-      silently for a customer. **Still open:** that was a `bootout`, not
-      a restart, so the launcher's `ExitTimeOut` of 360 s was never
-      stressed — the stop took 20 s. What closes it is `sudo shutdown -r
-      now` on the Mac, which the spark is running.
+      silently for a customer. **And the restart was then run, and it
+      FAILS** (I-1434, ENG-138): `sudo shutdown -r now` gave the launcher
+      about **one second** — "stopping" at 07:29:27Z, "stopped" at
+      07:29:28Z, **no wrap line written** — and the guest came back cold,
+      marker gone, uptime 130.90 against 923.90 immediately before. So
+      the clean-stop path parks and the restart path does not, and
+      I-1386's deadline chain (240 s hold, 270 s wall, 330 s plug, 360 s
+      kill) assumes a window macOS does not give. The park stays on
+      because it is correct where it runs; **every line of copy that
+      promised a restart keeps the user's work is rewritten in this
+      batch to say machines start fresh** — the public page,
+      `lifecycle.md`, `secrets.md`, `troubleshooting.md` and `cli.md`'s
+      `repose host run` row. The promise was never published, so nothing
+      live is corrected and nothing false ships. This item stays open on
+      ENG-138, which also holds the three unknowns: whether this is EC2
+      Mac's restart path specifically, whether a logout behaves like the
+      clean stop, and whether macOS offers any hook with a real window.
 - [ ] **Council report exists, second pass has no P0.** The reports
       exist and now ship with the work: `docs/reports/2026-11-19-mac-mini-council.md`
       (the confer), `-mac.md`, `-cli.md`, `-dashboard.md`. **The second
