@@ -436,6 +436,54 @@ for the reason I-473 already names — "the edge needs a reboot that cannot wait
 for a quiet hour, uptime is promised in the terms, or one edge's relays near
 200".
 
+## 4a. The two stops at 20:30, and why one machine has no snapshot
+
+The handoff left this as "trigger unknown, ask the owner". The records that
+survive answer most of it, and the part they cannot answer is itself the
+finding.
+
+Both of the host's xl machines were stopped within about twenty seconds of
+each other, two minutes after the park restore brought them back and two
+minutes before hostd was switched:
+
+| Project | Op created | Finished | State | Step | Snapshot |
+|---|---|---|---|---|---|
+| verista | 20:30 | 20:31 | `done` | 2 of 2 | taken, 20:31 |
+| kanali | 20:30 | 20:33 | `error` | 1 of 2 | **none**; its newest is still 03:10 |
+
+kanali's op carries `volume_unavailable` with the detail `lvcreate -s: the
+host's guest pool is unavailable: thin pool unavailable: lvs: lvs: context
+canceled`. `context canceled` is hostd going away: `/run/current-system` on
+host-02 was switched at 20:33, which is the same minute the op failed. So the
+guest did reach `stopped` and the disk is intact, exactly as the user-facing
+message says, but the snapshot the stop promises was never taken, and nothing
+retried it. That is the lesson the handoff already carries ("read the running
+ops before a switch") seen from the tenant's side: the cost of switching into
+an open op is a stop that silently keeps no snapshot.
+
+Nothing stopped except those two, and both are xl, which reads as somebody
+freeing the host's two largest guests before the switch rather than as an
+automatic action. The idle pause is not a candidate: it pauses vCPUs and leaves
+the state `running` (I-818), and it never stops a machine.
+
+**What no record can say is who asked.** Three places were read:
+
+- `repose-admin ops list` has no actor column at all, for any op.
+- `repose-admin audit --since 10h` records no project stop or start. Over
+  those ten hours it holds `host_add` (17), `host_rm` (17), `operator_login`
+  (12), `cert_issue` (9), `webhook_put`, `webhook_rotate`, `token_create`,
+  `token_revoke`, `secret_put`, `operator_cert`, `host_install_command` and
+  `host_register`, and nothing else. Adding or removing a host is audited.
+  Stopping a tenant's machine is not.
+- The api container's logs went with the 21:26 redeploy.
+
+So the question for the owner is narrow: did you, or a session acting as you,
+stop verista and kanali at 20:30 before the switch? And the gap worth closing
+whatever the answer is: an op that changes a tenant's machine should record
+the actor that asked for it, because the one action here that loses a
+tenant's running state is the one action with no attribution. It is a column
+on the op and a row in the audit, not a design.
+
 ## 5. The runbook entry
 
 Written in this branch, as `docs/ops/RUNBOOK.md` "Host or control VM dead on the
