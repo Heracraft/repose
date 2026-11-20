@@ -210,6 +210,15 @@ subject.
   1 when it finds nothing, so a watcher looking for failures reported
   failure *because there were none*.
 
+**`pgrep -f "<pattern>"` matches the waiter's own command line.** An
+`until ! pgrep -f "playwright test"; do sleep ...; done` loop never
+exits, because the shell running it has that string in its own
+`/proc/<pid>/cmdline`, so every check reports the job still running. It
+cost a suite that was believed to be running and had in fact never
+started, found only by reading `/proc/<pid>/fd/1`. Wait on a file the
+job writes, or on its process id, rather than on a pattern the waiter
+itself matches.
+
 **A red in a run summary is one of three things, and they look
 identical there.** On 2026-11-20 all three happened:
 
