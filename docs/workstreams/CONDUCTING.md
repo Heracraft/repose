@@ -258,6 +258,15 @@ measured and which part they reasoned**, in the document, not in the
 message. And expect the correction to come from them, which is itself the
 argument for telling them what you wrote down.
 
+The rule has a mirror image, which is inferring another session's **process**
+from your own observation: **a red in your tree is not evidence it went
+unchecked upstream.** A break reaching you proves only that it reached you.
+On 2026-11-20 a builder found a merged commit's test red in its worktree and
+reported that the commit "was merged without the package being run"; the
+package had been run, the red had been caught, and the fix was already on the
+program branch. Ask, or read the log, before describing someone else's
+diligence.
+
 The sharpest form of the rule, from the session that caught two of the three:
 **the words that survive the inheritance are the measured ones.** "Ten times
 slower per package" survives. "Four cores" does not. Neither does "the whole
