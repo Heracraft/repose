@@ -1288,6 +1288,36 @@ hardware, with this build, **the park path cannot be exercised at all**, and
 neither can anything else that needs a running machine — the laptop-closed
 case and a second concurrent machine died with it.
 
+### F17. The published appliance carries a `guestd` built from a dirty tree
+
+On an idle `small` guest — 1 vCPU, 4 GB, no agent running, nothing to do:
+
+```
+guestd.service - repose guestd (vsock control agent)
+     Active: active (running) since Thu 2026-11-19 23:13:52 UTC; 9min ago
+        CPU: 1min 21.164s
+     CGroup: └─ 451 /nix/store/4gmkp0rh6i9rbqw0s3qwl6bqbx264sw6-guestd-dirty/bin/guestd
+```
+
+**Two separate problems that share one observation.**
+
+**The store path says `guestd-dirty`.** The published
+`appliance-2026.11.19` — the first public artefact of this feature, released
+at 22:28:08 — carries a `guestd` built from a working tree with uncommitted
+changes. Nobody can say from the artefact which source produced it. That is
+a release-hygiene defect independent of performance, and it is the half I
+would fix first.
+
+**And it burns ~15% of the guest's only core doing nothing.** 1 min 21 s of
+CPU in 9 minutes of idle, on hardware where a guest start already takes five
+to seven minutes, beside the very phases that are running out of time in
+[F7](#f7-both-machines-on-the-broken-appliance-died). **Not claimed as the
+cause of ENG-80** — the session fixing the start path owns that — but it is
+a thumb on the scale and it is free to remove.
+
+Found while gathering evidence for [F13](#f13-the-ask-reaches-me-the-answer-never-reaches-the-agent);
+the start session saw the same thing independently. **Card ENG-110, P2.**
+
 ### F10. What is still unmeasured
 
 Held open honestly rather than filled with impressions. These need a working
