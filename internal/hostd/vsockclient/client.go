@@ -21,14 +21,50 @@ import (
 const Port = 5000
 
 // Timeouts per request family, from workstream 04's handler deadlines.
+//
+// The two boot-phase deadlines are the host's to choose and guestd's only
+// to backstop (DECISIONS I-1408). Until then guestd's own 3 minutes was
+// the deadline that fired, so neither the operator nor the api could say
+// which phase had run out, and a host whose hardware is slower than 3
+// minutes had no way to say so: on the Mac appliance every start after a
+// stop failed in this phase pair, five for five (ENG-80, 2026-11-19).
 const (
 	DefaultTimeout = 30 * time.Second
 	SwitchTimeout  = 10 * time.Minute
-	// SetupTimeout is SetupProject's: guestd gives it 3 minutes, since it
-	// waits for home-manager's first activation (DECISIONS I-705), and
-	// hostd waits a little longer so guestd's own error is what arrives.
-	SetupTimeout = 3*time.Minute + 15*time.Second
+	// PathsTimeout is RegisterPaths's: the load of the closure's
+	// registration into the guest's nix database, which took 2 min 6 s on
+	// the Mac appliance with the store over virtiofs against 16 s with it
+	// on a disk (research/mac-mini-nested-kvm.md §10). The default is
+	// guestd's old 3 minutes, so a host that sets nothing keeps the
+	// deadline it had.
+	PathsTimeout = 3 * time.Minute
+	// SetupTimeout is SetupProject's: guestd gave it 3 minutes, since it
+	// waits for home-manager's first activation (DECISIONS I-705).
+	SetupTimeout = 3 * time.Minute
 )
+
+// Timeouts bound a session's calls per request family. A zero field takes
+// the constant above, so a caller sets only what its host overrides.
+type Timeouts struct {
+	Default, Switch, Paths, Setup time.Duration
+}
+
+func (t Timeouts) resolve() timeouts {
+	out := defaultTimeouts
+	if t.Default > 0 {
+		out.def = t.Default
+	}
+	if t.Switch > 0 {
+		out.sw = t.Switch
+	}
+	if t.Paths > 0 {
+		out.paths = t.Paths
+	}
+	if t.Setup > 0 {
+		out.setup = t.Setup
+	}
+	return out
+}
 
 // Target names a guest to connect to.
 type Target struct {
@@ -79,10 +115,14 @@ type Session interface {
 // CHDialer connects through Cloud Hypervisor's host-side vsock socket
 // (`--vsock cid=N,socket=<dir>/vsock.sock`): connect, send `CONNECT 5000`,
 // expect `OK <port>`.
-type CHDialer struct{}
+type CHDialer struct {
+	// Timeouts overrides the per-family deadlines of the sessions this
+	// dialer opens; the zero value keeps the constants above.
+	Timeouts Timeouts
+}
 
 // Dial implements Dialer.
-func (CHDialer) Dial(ctx context.Context, t Target) (Session, error) {
+func (d0 CHDialer) Dial(ctx context.Context, t Target) (Session, error) {
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "unix", filepath.Join(t.Dir, "vsock.sock"))
 	if err != nil {
@@ -105,7 +145,7 @@ func (CHDialer) Dial(ctx context.Context, t Target) (Session, error) {
 		return nil, fmt.Errorf("vsock handshake refused: %s", strings.TrimSpace(line))
 	}
 	_ = c.SetDeadline(time.Time{}) // clearing a deadline cannot fail on a live socket
-	return newSession(c), nil
+	return newSessionWith(c, d0.Timeouts), nil
 }
 
 // UnixDialer connects to a plain unix socket, for guests without vsock
@@ -113,6 +153,8 @@ func (CHDialer) Dial(ctx context.Context, t Target) (Session, error) {
 // socket; the default is `<dir>/guestd.sock`.
 type UnixDialer struct {
 	Path func(t Target) string
+	// Timeouts overrides the per-family deadlines, as CHDialer's does.
+	Timeouts Timeouts
 }
 
 // Dial implements Dialer.
@@ -126,16 +168,16 @@ func (u UnixDialer) Dial(ctx context.Context, t Target) (Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newSession(c), nil
+	return newSessionWith(c, u.Timeouts), nil
 }
 
 // timeouts are a session's per-family bounds; production sessions use the
 // constants above, and a test scales them down to watch a call outlive one.
 type timeouts struct {
-	def, sw, setup time.Duration
+	def, sw, paths, setup time.Duration
 }
 
-var defaultTimeouts = timeouts{def: DefaultTimeout, sw: SwitchTimeout, setup: SetupTimeout}
+var defaultTimeouts = timeouts{def: DefaultTimeout, sw: SwitchTimeout, paths: PathsTimeout, setup: SetupTimeout}
 
 type session struct {
 	cl *vsockrpc.Client
@@ -144,6 +186,10 @@ type session struct {
 
 func newSession(c net.Conn) *session {
 	return &session{cl: vsockrpc.NewClient(c, 256), t: defaultTimeouts}
+}
+
+func newSessionWith(c net.Conn, t Timeouts) *session {
+	return &session{cl: vsockrpc.NewClient(c, 256), t: t.resolve()}
 }
 
 func (s *session) call(ctx context.Context, timeout time.Duration, req *guestdv1.Request) (*guestdv1.Response, error) {
@@ -179,7 +225,7 @@ func (s *session) Thaw(ctx context.Context) error {
 }
 
 func (s *session) RegisterPaths(ctx context.Context, registration []byte) error {
-	_, err := s.call(ctx, s.t.sw, &guestdv1.Request{Req: &guestdv1.Request_RegisterPaths{RegisterPaths: &guestdv1.RegisterPaths{Registration: registration}}})
+	_, err := s.call(ctx, s.t.paths, &guestdv1.Request{Req: &guestdv1.Request_RegisterPaths{RegisterPaths: &guestdv1.RegisterPaths{Registration: registration}}})
 	return err
 }
 

@@ -32,10 +32,11 @@ const (
 )
 
 // DefaultTimeout bounds the whole setup. The session unit waits for
-// home-manager's first activation, which a busy host took past a minute;
-// guestd's BootDeadline for the request is the same 3 minutes (DECISIONS
-// I-705).
-const DefaultTimeout = 3 * time.Minute
+// home-manager's first activation, which a busy host took past a minute
+// (DECISIONS I-705). Like guestd's BootDeadline it backstops the host's
+// own --setup-timeout rather than deciding a start, so it sits above any
+// host's figure (DECISIONS I-1408).
+const DefaultTimeout = 20 * time.Minute
 
 // slugRe is the shape of a project slug. It becomes a directory name and a
 // tmux session name, so anything that could escape either is rejected.

@@ -3,6 +3,7 @@ package guest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -132,6 +133,25 @@ func (m *Manager) readyFailure(g *state.Guest, from int64, waitErr error) *Error
 		msg = fmt.Sprintf("create: step %d (%s) failed: guest did not become ready: %v (%s)", stepReady, stepNames[stepReady], waitErr, bf.message)
 	}
 	return &Error{Code: bf.code, Message: msg, ConsoleTail: tail, NoReady: true, Reason: bf.message}
+}
+
+// deliverFailure is the step-10 error of a boot whose guestd answered and
+// then a delivery phase failed: it names the phase and the deadline that
+// phase had, and it carries the console.
+//
+// Until ENG-80 only a boot that missed Ready carried one, so the failure a
+// Mac customer met most often -- the start that answers and then runs out
+// of time setting up -- gave `repose logs --kind console` nothing at all
+// to print (ENG-100). The phase's own name and limit go in the message
+// after the wording an api before I-1408 matches on, so the old shape
+// stays readable for one release.
+func (m *Manager) deliverFailure(g *state.Guest, from int64, dt deliverTimings, err error) *Error {
+	tail := m.consoleTail(g.GuestID, from)
+	msg := fmt.Sprintf("create: step %d (%s) failed: %s", stepReady, stepNames[stepReady], err.Error())
+	if dt.phase != "" && dt.limit > 0 && errors.Is(err, context.DeadlineExceeded) {
+		msg += fmt.Sprintf(" (the %s phase ran out of its %s)", dt.phase, dt.limit)
+	}
+	return &Error{Code: CodeGuestUnresponsive, Message: msg, ConsoleTail: tail}
 }
 
 // goodRoot is the GC root that keeps a guest's last good closure in the

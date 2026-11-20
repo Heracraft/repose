@@ -262,7 +262,13 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	m, err := New(cfg, Deps{
 		State: st, LVM: harnessLVM(h), Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
 		Stream: h.stream, Emit: h.rec, Metrics: h.metrics, Log: logger,
-		Guestd:  vsockclient.UnixDialer{Path: func(tg vsockclient.Target) string { return filepath.Join(h.sockDir, tg.GuestID+".sock") }},
+		// The session's phase deadlines come from the same config the
+		// manager reports them from, as app.go builds them, so a test
+		// that shortens one actually cuts the call (DECISIONS I-1408).
+		Guestd: vsockclient.UnixDialer{
+			Path:     func(tg vsockclient.Target) string { return filepath.Join(h.sockDir, tg.GuestID+".sock") },
+			Timeouts: vsockclient.Timeouts{Paths: cfg.PathsTimeout, Setup: cfg.SetupTimeout},
+		},
 		MemInfo: func() (uint64, uint64, error) { return 64 << 30, 40 << 30, nil },
 		Load1:   func() float64 { return 0.5 },
 		CgroupCPUPressure: func(cg string) (uint64, error) {

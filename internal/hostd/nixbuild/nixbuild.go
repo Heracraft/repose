@@ -720,6 +720,8 @@ type Fake struct {
 	Lines        []string
 	Exists       map[string]bool
 	Calls        []Request
+	// Registration is what DumpDB returns (see DumpDB below).
+	Registration []byte
 	// Closures maps a closure to its requisites; a closure not in it is
 	// its own only requisite.
 	Closures map[string][]string
@@ -775,7 +777,15 @@ func (f *Fake) Requisites(_ context.Context, paths ...string) ([]string, error) 
 }
 
 // DumpDB implements Builder with an empty listing.
-func (f *Fake) DumpDB(context.Context, string) ([]byte, error) { return nil, nil }
+// DumpDB implements Builder. Registration is what it returns: nil, the
+// default, skips the RegisterPaths call of a delivery, which is why no
+// test covered that phase until the Mac appliance started failing in it
+// (ENG-80, DECISIONS I-1408).
+func (f *Fake) DumpDB(context.Context, string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Registration, nil
+}
 
 // PathExists implements Builder.
 func (f *Fake) PathExists(_ context.Context, path string) (bool, error) {

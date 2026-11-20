@@ -276,6 +276,20 @@ in
       # nested vCPUs, and hostd's RegisterPaths of the closure takes over
       # a minute on the appliance. hostd's 60 s window closed on it twice.
       guestReadyTimeout = lib.mkDefault "5m";
+      # The two phases after Ready, for the same reason and from the same
+      # hardware (ENG-80, DECISIONS I-1408). Both default to 3 minutes,
+      # which is what guestd enforced for every host; on this appliance
+      # the registration took 2 min 6 s and the set-up 1 min 38 s with
+      # the store over virtiofs (research §10), so at 3 minutes a start
+      # was a coin flip whose odds followed how busy the Mac was -- nine
+      # starts on 2026-11-19 gave two successes, and every one of the
+      # five after a clean stop failed in this pair. Ten minutes is not a
+      # number this hardware is expected to need: it is the room between
+      # what was measured and a guest that has genuinely stopped, which
+      # the deadline still has to catch. The start itself coming down to
+      # seconds is ENG-70, and it is where this number goes back down.
+      guestPathsTimeout = lib.mkDefault "10m";
+      guestSetupTimeout = lib.mkDefault "10m";
     };
 
     # ---- boot ------------------------------------------------------------

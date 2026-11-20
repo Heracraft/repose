@@ -37409,3 +37409,99 @@ a per-command override and a readout; amends I-1366's placement).
 *Not done:* the dashboard's control (the parity rule, I-1354 under
 I-1266), the account-level default, `host_name` in the project JSON
 and the HOST column, each its own commit on this branch.
+
+**I-1408. A start's phase deadlines belong to the host that runs it, and
+the failure says which phase ran out: hostd gains `--paths-timeout` and
+`--setup-timeout` (3 minutes each by default, ten on a Mac appliance),
+guestd's own 3 minutes becomes a 20-minute backstop, and the machine's
+ssh identity is delivered before the registration rather than after it
+(fix-starts, 2026-11-20).** *Made during implementation* (ENG-80, the Mac
+review's own measurement: nine guest starts on an `mac-m4.metal`
+appliance on 2026-11-19 gave two successes, and every one of the five
+after a clean `repose stop` failed. Amends I-705, which chose the 3
+minutes, and extends I-1376, which raised the ready window for the same
+hardware and the same reason.)
+
+A guest's cold start on that hardware takes about 289 s, in three phases
+hostd measures separately: 59.5 s to guestd's first answer, 125.5 s to
+load the closure's registration, 102.2 s to set the project up
+(`research/mac-mini-nested-kvm.md` §10). Three deadlines sat at or under
+those figures, and all three were written on hosts where the same phases
+take 14, 16 and 10 seconds.
+
+- *The ready window was already raised and the sentence was not.* I-1376
+  set `--ready-timeout 5m` on the appliance, and the published
+  `appliance-2026.11.19` carries it in its unit file. The api's sentence
+  for that failure still said "did not answer within a minute of
+  starting", so two of the review's nine starts reported a minute for a
+  wait of five. It now says "while it was starting" and names no figure,
+  because the figure is the host's.
+- *The registration and the set-up were one sentence for two deadlines.*
+  Both were cut by guestd's `BootDeadline`, a constant inside the guest
+  image, and the api turned either into "the environment started but did
+  not finish setting up in time". So a customer could not say which
+  phase had failed, the operator could not either, and five identical
+  rows in the review carry no evidence of which of the two was at fault.
+  Each phase now has its own sentence, and hostd's message names the
+  phase and the limit it used for the operator's detail.
+- *Why the host owns them, not the guest.* How long either phase takes is
+  a property of the hardware under the guest, which the guest cannot see
+  and hostd already knows. A guest-side constant also cannot be changed
+  without rebuilding every guest closure, which is why the figure stayed
+  at 3 minutes while the ready window moved. guestd keeps a deadline, now
+  20 minutes, so a wedged handler still cannot live forever: a deadline
+  that exists to catch a stuck guest still has to catch one, and the
+  host's own is the one that decides a start and reports it.
+- *Ten minutes is room, not an expectation.* Against the 2 min 6 s and
+  1 min 38 s measured, it is the gap between what the hardware does and a
+  guest that has genuinely stopped. The start itself coming down to
+  seconds is ENG-70, and that is where this number goes back down; the
+  measured path is the store on a disk rather than a share (§10, 57.9 s
+  for the whole start).
+- *The ssh identity moved to the front of the delivery.* `deliver()` sent
+  `WriteSecrets` and `SetPrincipals` after `RegisterPaths`, the slowest
+  call of a start. A guest's user CA and its principals file both live on
+  a tmpfs and sshd recreates them empty on every boot
+  (`nix/guest/base/ssh.nix`), so a start that ran out of time in the
+  registration left a machine that trusted nobody, and the review's
+  "Permission denied (publickey)" after a failed start was that, not a
+  second defect. Both calls are idempotent, the api sends the same
+  material on every start, and neither needs the nix database the
+  registration loads. A start that now runs out of time leaves a machine
+  its owner can log in to and read.
+- *A failed start says where its time went.* The "boot timings" line was
+  logged only by a start that reached running, and the console tail was
+  attached only by a boot that missed Ready. So the failure a Mac
+  customer met most often logged no timings and gave `repose logs --kind
+  console` nothing to print (ENG-100). Both now happen on the failure
+  path, with the phase named.
+- *Two guest-side assumptions the longer window breaks.* The
+  `repose-store-repair` timer fired at `OnBootSec=4min` because a create
+  was "always finished first" at 3 min 15 s; on this hardware a start
+  runs about five minutes, so it fired into the middle of one and
+  competed for the store and the network with the phase that was running
+  out of time. It is now 15 minutes. `repose-paths.service` waited 180 s
+  for the registration and then continued without it, which would now
+  let home-manager run against an unregistered store seven minutes before
+  the host gives up; it waits 20 minutes, the backstop's figure.
+- *What the api's own timeout said.* `checkTimeout` writes "start_guest
+  did not complete in 10m0s" for a host that took a command and never
+  answered, and `humanError` had no arm for the code, so that sentence
+  reached the user with an internal phase name and a Go duration in it.
+- *A booting guest is not a lost one.* A fourth deadline in this path is
+  compared against a clock rather than counted from a start: the
+  monitor marks a guest's guestd lost after 60 s with no vsock
+  connection, counted from the monitor's start, which is shorter than
+  guestd's first answer on this hardware (59.5 to 70 s). So every
+  healthy boot of an owned Mac raised the `guestd_lost` warning to the
+  api and bumped `repose_host_guestd_lost`, which an operator and an
+  alert read as a guest in trouble. The mark now waits for the first
+  connection: before it the ready window bounds the boot and the start's
+  own failure reports it. The shape came from I-1412, found the same
+  night in a test by a session that was not looking for this.
+
+*Not done:* the fix is unverified on the hardware it is for. Every number
+above is measured, the deadlines and the ordering are tested here, and
+nobody has yet run five starts on a Mac with a guest image built from
+this branch -- which is what the guestd backstop and the two unit changes
+need. Until that run shows five of five, ENG-80 stays open.

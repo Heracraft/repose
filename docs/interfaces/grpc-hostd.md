@@ -268,8 +268,14 @@ stage 1's error); `message` is a fixed sentence, and `console_tail`
 (`Error` field 5) the end of what that boot printed, at most 200 lines
 and 16 KiB, tenant output that is never logged. A boot whose console
 shows the system started, or nothing hostd recognises, stays
-`guest_unresponsive`, also with `console_tail`. An api older than I-592
-shows a `boot_failed` message as it is. `build_failed` and `eval_failed` carry the
+`guest_unresponsive`, also with `console_tail` -- including a start whose
+guestd answered and which then ran out of time registering the closure's
+paths or setting the project up, which carried none until I-1408 and so
+left `repose logs --kind console` nothing to print for the commonest
+failure on an owned Mac. That message names the phase that ran out and
+the deadline the host gave it, after the `RegisterPaths:` or
+`SetupProject:` wording an api before I-1408 matches on. An api older
+than I-592 shows a `boot_failed` message as it is. `build_failed` and `eval_failed` carry the
 Nix error text verbatim in `message` (capped 32 KB) plus `fragment_line` when
 parseable, or `personal_line` (field 4, I-490) when the location is in the
 personal layer.

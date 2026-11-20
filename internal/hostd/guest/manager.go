@@ -206,6 +206,16 @@ type Config struct {
 	MaxBuilds        int
 	MaxBuildQueue    int
 	ReadyTimeout     time.Duration
+	// PathsTimeout and SetupTimeout bound the two phases that run after
+	// guestd answers: the registration of the closure's paths, and the
+	// project's set-up. They are the host's to choose, since how long
+	// either takes is a property of its hardware -- on the Mac appliance
+	// the pair took 3 min 48 s where an Azure host takes 27 s (ENG-80,
+	// DECISIONS I-1408) -- and guestd only backstops them. Zero means
+	// the vsockclient defaults, which are the 3 minutes guestd used to
+	// enforce, so a host that sets neither keeps the deadline it had.
+	PathsTimeout time.Duration
+	SetupTimeout time.Duration
 	// VirtiofsSocketWait bounds how long step 8 waits for virtiofsd to create
 	// its socket before Cloud Hypervisor is started; zero skips the wait
 	// (unit tests with a fake systemd). A virtiofsd that exits first fails
@@ -311,6 +321,12 @@ func (c Config) Defaults() Config {
 	def(&c.DownloadMbit, 1000)
 	if c.ReadyTimeout == 0 {
 		c.ReadyTimeout = 60 * time.Second
+	}
+	if c.PathsTimeout == 0 {
+		c.PathsTimeout = vsockclient.PathsTimeout
+	}
+	if c.SetupTimeout == 0 {
+		c.SetupTimeout = vsockclient.SetupTimeout
 	}
 	if c.StopTimeoutS == 0 {
 		c.StopTimeoutS = 60
