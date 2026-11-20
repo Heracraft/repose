@@ -423,7 +423,15 @@ percent.
       with a dangling citation. I-1384 is reserved and unused, which is
       fine; I-1394 is on the unmerged `fix-park`.
 - [ ] **`mac-mini` queued with `release-queue add` and a `--live` line
-      that names the AWS Mac check.** Not queued. The release conductor
-      will not cut it while the second pass is open, because the plan is
-      purchasable today, and that disagreement is with the owner as
-      ENG-129.
+      that names the AWS Mac check.** Not queued yet, and **this item no
+      longer waits on the second pass** (DECISIONS I-1430). Phases 1 and
+      2 shipped in `r20261119-6` on 2026-11-19, before the council ran,
+      so the gate written to keep an unreviewed path away from customers
+      is now holding **repairs** away from customers who already have
+      the path. What it queues on instead: I-1430, the two open P0
+      closed with their evidence, and the batch's verification green
+      with the record naming what did not run and where. The second pass
+      still runs and gates the **launch copy**; `7db572b5` and the
+      landing's piece stay held on the owner's word. ENG-129 keeps the
+      sale question with the owner, reframed as what it really is: do we
+      withhold repairs to a feature already sold and already broken.

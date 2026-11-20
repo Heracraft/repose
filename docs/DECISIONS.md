@@ -38173,3 +38173,59 @@ mac host's hostd flags. *Not done at this line:* a park, a real restart
 and an unpark on the Mac with the phase timings, which is the only
 evidence that a customer keeps their work; whoever holds the Mac runs it
 (workstream 19's restart item).
+
+**I-1430. Workstream 19's checklist gates queueing on the review's
+second pass; phases 1 and 2 shipped before the review ran, so applying
+that gate to the repair batch inverts its purpose and the repairs queue
+without it (mac-mini, 2026-11-20).** *Made during implementation* (the
+doc is wrong here and this entry is why, per `CLAUDE.md`: a doc edit
+without a decision entry is how two agents build against different
+contracts. Qualifies `docs/workstreams/19-mac-mini.md` §7 and
+`docs/REVIEW.md`'s gate; see I-1426 for the half of this that is about
+reading the catalogue rather than assuming a state.)
+
+- *What the gate says and what it was written for.* §7's last item is
+  "`mac-mini` queued with `release-queue add`", and §6 says "the second
+  report's P0 list must be empty before the queue". Both were written on
+  2026-11-19, while every part of bring your own hardware was unshipped.
+  The purpose is plain and good: do not put a stranger's hardware path
+  in front of paying customers until a review has walked it.
+- *What happened instead.* `mac-mini` at `81741b2b` was merged into
+  release `r20261119-6` on 2026-11-19, **before the council ran**. So
+  `origin/main` and the published build carry `internal/cli/hosts.go`,
+  `apps/web/src/content/docs/own-hardware.md`, migrations
+  `0048_host_owner` and `0049_plan_own`, and entries I-1364, I-1366,
+  I-1368, I-1370, I-1374, I-1376 and I-1386. The plan answers
+  `available: true` at $10 with a seven-day trial (I-1426). The council
+  then found its P0s **on published v0.1.51 against the published
+  appliance**, which is only possible on a build that has the feature.
+- *So the gate now protects nobody and costs a customer.* What a
+  customer who buys today gets is the **published** build: guests that
+  do not reliably start (ENG-80), a first install that fails at 31
+  seconds (ENG-117), an agent that never hears the answer to the
+  question it asked (ENG-105), an install that refuses and then installs
+  a broken appliance on the retry (ENG-71), and a documented removal
+  that wedges the account (ENG-119). Holding the branch does not keep
+  that path away from them. It keeps the broken build in their hands.
+- *What replaces it, and it is not "nothing".* The repair batch queues
+  on: this entry; the two open P0 closed with their own evidence; the
+  batch's verification green with the record naming what did **not**
+  run and on which machine and tree; and the commit that puts the plan
+  on **public sale**, `7db572b5`, together with the landing's separate
+  piece, **staying held** on the owner's word. The second pass still
+  runs, against an appliance built from this branch rather than the
+  published one, and it gates the **launch copy** rather than the
+  repairs.
+- *The alternatives, and why not them.* Taking the plan off sale first
+  would make the dormancy real and the gate meaningful again -- it is a
+  production billing change on an absent owner's account, so neither
+  conductor will make it. Waiting for the owner leaves the cost of
+  waiting on a paying customer inside a seven-day trial. Running the
+  full second pass first delays the repairs by a review round while the
+  defects the review found stay live.
+- *How this was caught, because the method is the reusable part.* Both
+  conductors argued the gate from its words for two hours. It was
+  settled by reading what `main` actually holds -- `git ls-tree`, the
+  migration files, the decision ids -- rather than by argument. A gate
+  is a claim about the world on the day it was written; check whether
+  the world still matches it before enforcing it or waiving it.
