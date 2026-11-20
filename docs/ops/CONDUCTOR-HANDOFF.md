@@ -84,6 +84,19 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   and lists the six `repose host` paths; today on main it exits 0 at 115
   documented commands against v0.1.53; a clone with no tags exits 2,
   which its own documentation calls not a pass. Run it without a pipe.
+- **The board's listing shows about a third of the board, so do not
+  trust `kaneo ls` for an inventory.** Measured on 2026-11-20 straight
+  from the api that backs it: `/task/tasks/<project>` returns **50**
+  cards, which are ENG-1 to ENG-46 plus ENG-120, ENG-129, ENG-130 and
+  ENG-131. Every card from ENG-47 to ENG-119, ENG-121 to ENG-128 and
+  ENG-132 to ENG-144 is missing from it, **94 of them**, including every
+  card this shift wrote to. They exist and are reachable one at a time:
+  `kaneo show ENG-144` answers, `kaneo note` and `kaneo done` work, and
+  the column counts the listing prints are right about the cards it can
+  see and wrong about the board. So cite a card by its ticket and read it
+  with `show`; an "Open (9)" is not nine open items. The mac-mini
+  conductor hit the same wall from the other side and is carrying a
+  grouped inventory inline in `docs/ops/RESTART.md` for that reason.
 - Open and unowned, in the order they would hurt: **ENG-111**, the Hello
   reconcile writing a guest address while an op is open, confirmed on CI
   and reproduced here under full-suite load, seven read-then-act call
