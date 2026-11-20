@@ -38761,3 +38761,44 @@ reading the appliance's own guest list, which lives inside its disk
 image; nothing on the Mac answers that today. And the dashboard has no
 equivalent, because the appliance is on the customer's hardware and
 nothing on repose's side can remove it.
+
+**I-1442. A golden that asserts an order sorts it back into the guest's
+order first: `TestClaudeSettingsMergeGolden` compares the dropped-hook
+lines after putting `/home/dev` back, not in the order `$TMPDIR` gave
+them (claude-golden ENG-139, 2026-11-20).** *Made during implementation*
+(found in the mac-mini batch's full suite at 07:49 and passing alone
+minutes later, which read as load and was not).
+
+The merge script lists hook commands through jq's `unique`, so they come
+out sorted by the command string, and a rewritten laptop path begins with
+the home the script ran under. In a guest that home is always
+`/home/dev`. In the test it is `t.TempDir()`, so the sort key starts with
+`$TMPDIR` and where that sits in the alphabet decides the order: under
+`/tmp` the `/opt/homebrew/...` hook sorts first, under
+`/mnt/nixstore/tmp` it sorts second. Measured both ways on one tree:
+`TMPDIR=/mnt/nixstore/tmp` fails on `rewrite`, `/tmp/rt` passes, and the
+only difference is the variable.
+
+- *Sorting is not a loosening here.* Sorting the lines once the home has
+  been put back is sorting on `/home/dev/...`, which is exactly what the
+  guest's `unique` does, so the test now reconstructs the guest's order
+  instead of abandoning order. `-update` writes the file that way too,
+  so the golden cannot drift back to whatever `$TMPDIR` the updater had.
+- *The stored golden was wrong about the product, not just brittle.* It
+  held the `/opt` line first, which is the order a `/tmp` temporary
+  directory produces and not the order any guest produces: `/home` sorts
+  before `/opt`. So the file asserted an order the shipped code never
+  prints. It now holds the guest's order, and the test that was failing
+  was reporting the truth.
+- *The dev box's advice armed this.* `DEV-BOX.md` tells a heavy Nix run
+  to use `TMPDIR=/mnt/nixstore/tmp`, a verification script took that for
+  Go tests as well, and this red appeared. The boundary is already in
+  that document; this entry is the other half, which is that a test
+  reading `$TMPDIR` into an assertion is the thing that made the advice
+  dangerous.
+
+*Not done:* nothing else in the merge output is order-sensitive today,
+and the `permissions` union goes through `unique` too. If a case ever
+puts a home-dependent path in `permissions`, `want.json` will take the
+same dependency, and a byte comparison of JSON cannot be fixed the same
+way.

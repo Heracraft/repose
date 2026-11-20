@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -44,6 +45,41 @@ func runClaudeMerge(t *testing.T, home string, laptop []byte, laptopHome string,
 		t.Fatalf("merge script: %v\n%s%s", err, out.String(), stderr.String())
 	}
 	return out.String()
+}
+
+// inGuestOrder is the merge's dropped-hook lines in the order a guest
+// prints them, which is not the order this test gets them in (ENG-139,
+// DECISIONS I-1442).
+//
+// The script lists the commands through jq's `unique`, so they come out
+// sorted by the command string -- and a rewritten laptop path begins
+// with the home the script ran under. In a guest that home is always
+// `/home/dev`. Here it is `t.TempDir()`, so the sort key starts with
+// `$TMPDIR`, and where that sits in the alphabet decides the order:
+// under `/tmp` the `/opt/...` hook sorts first, under
+// `/mnt/nixstore/tmp` it sorts second. The test saw both on 2026-11-20,
+// four hours apart, with the same code.
+//
+// Sorting after the home has been put back is therefore not a loosening
+// of the assertion: sorting on `/home/dev/...` is exactly what the
+// guest's `unique` does, so this reconstructs the guest's order rather
+// than giving up on order. Lines that are not a dropped hook keep
+// theirs; today every `want.out` holds nothing else.
+func inGuestOrder(out string) string {
+	lines := strings.SplitAfter(out, "\n")
+	var dropped, rest []string
+	for _, l := range lines {
+		if l == "" {
+			continue
+		}
+		if strings.HasPrefix(l, "#dropped Claude hook ") {
+			dropped = append(dropped, l)
+			continue
+		}
+		rest = append(rest, l)
+	}
+	sort.Strings(dropped)
+	return strings.Join(append(dropped, rest...), "")
 }
 
 // The golden cases: permissions union (union), the laptop-home rewrite
@@ -105,7 +141,7 @@ func TestClaudeSettingsMergeGolden(t *testing.T) {
 				if err := os.WriteFile(golden, first, 0o644); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(filepath.Join(src, "want.out"), []byte(out), 0o644); err != nil {
+				if err := os.WriteFile(filepath.Join(src, "want.out"), []byte(inGuestOrder(out)), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -117,8 +153,8 @@ func TestClaudeSettingsMergeGolden(t *testing.T) {
 				t.Errorf("merged settings.json differs from %s:\n%s", golden, first)
 			}
 			wantOut, _ := os.ReadFile(filepath.Join(src, "want.out"))
-			if out != string(wantOut) {
-				t.Errorf("merge output = %q, want %q", out, wantOut)
+			if got := inGuestOrder(out); got != string(wantOut) {
+				t.Errorf("merge output = %q, want %q", got, wantOut)
 			}
 			if _, err := os.Stat(settings + ".repose-prev"); (err == nil) != fileExists(filepath.Join(src, "guest.json")) {
 				t.Errorf("settings.json.repose-prev present = %v, want it exactly when there was a guest file", err == nil)
