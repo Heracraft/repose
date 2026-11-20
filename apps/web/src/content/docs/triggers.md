@@ -21,6 +21,8 @@ The project's **Triggers** tab does the same thing, and it is also where a [webh
 
 A webhook trigger's URL is named after the trigger, so there is nothing to name but the trigger. `--route` on the CLI names the route apart from the trigger; the tab then shows that name beside the word webhook.
 
+A route that already forwards to your app keeps doing it until you say otherwise. `repose triggers add NAME --route R` on such a route says what answers that URL today and asks before the agent answers it instead, so a provider's deliveries are never diverted by a command you ran for something else. `--yes` answers the question, and without a terminal the command refuses rather than move a live URL. Re-running `add` on the route a trigger already has never asks, so changing a flag is not a question.
+
 Each row says what it fires on and who answers: `an agent` or `your app`. A trigger's row has **Run**, **Edit**, **On**/**Off** and **Remove**; a forwarding route's has **Copy**, **Edit**, **Rotate** and **Remove**. Opening a trigger's row shows its runs, **Copy URL** for a webhook, and **Dry run**, which runs the gate and starts no agent. Opening a route's row shows where it forwards and its last delivery. Edit opens on what the trigger is now, and changes only what you change, the same as `repose triggers add` on a name that exists.
 
 Your prompt isn't kept by repose. It is carried to your machine and forgotten, so the tab can write a prompt and can't show you the one that's there; the box says so. A machine that is stopped has nothing to write into, so either start it or point the trigger at a file that's already there.

@@ -38136,3 +38136,53 @@ path, is untouched and still prefixes Nix's lines (07-cli.md §5.8); the
 nix-daemon warning a tenant sees with `-v`, "ignoring the
 client-specified setting 'sandbox'", has the cause I-755 recorded at
 `nixbuild.go` and is still hostd's to fix.
+
+**I-1436. `triggers add --route` asks before it takes a route that
+answers with something else (fix-ask ENG-32, 2026-11-20).** *Made during
+implementation* (the customer review's F5 on the CLI surface). `repose
+triggers add onhook --route council` on a route that was forwarding a
+provider's deliveries to port 3000 moved who answers that URL, from the
+project's own app to an agent, and printed only the URL the user already
+had and a warning about a different thing. Proved on the review's
+machine: the same URL answered `502 nothing is listening on port 3000`
+before and `202` with a `claude` window after, and `webhooks list`'s
+TARGET went from `:3000/hook` to `trigger onhook`. Completes I-1360
+rather than amending it: one door with two receivers is right, and the
+row does say who answers; nothing said it at the moment it changed.
+
+- *What it does now.* `--route` on a route that answers with something
+  else -- the app on a port, or another trigger -- prints what answers
+  that URL today and asks. A no changes nothing and says so. `--yes`
+  skips the question, and then one line on stderr says what was taken
+  over, so it is said once either way. Without a terminal the command
+  refuses and names `--yes`, which is `askYesNo`'s own rule (I-614), so
+  a script cannot divert a live URL by accident.
+- *Three cases are not a takeover and never ask.* A route that does not
+  exist, which `--route` creates as it documents. A route this same
+  trigger already owns, so re-running `add` to change a flag is not a
+  question, which is what keeps an idempotent script working. And
+  `--yes`.
+- *The check is before anything is written.* `routeTakeover` runs after
+  the project is resolved and before the prompt file goes into the
+  machine, so a no leaves no prompt behind.
+- *Why the CLI alone, against the dashboard parity rule (I-1266, and
+  I-765's direction: where the CLI has a rule, the rule is the
+  specification).* The
+  dashboard cannot reach this path: a trigger's route is named after the
+  trigger there and `TriggerForm.svelte` has no Route field, so
+  `--route NAME` is the only place a route is named by hand. Its one
+  neighbouring case is a user opening a forwarding route and flipping
+  "Then" to "Start an agent", which is a choice made on a form showing
+  what the route is now, not a side effect of a command about something
+  else. That case still does not say what it stops, and is noted on
+  ENG-32 as the smaller, visible half.
+- *Evidence.* `TestTriggerAddOverARouteThatForwardsAsks`, five subtests,
+  red before this: a no made the trigger anyway and printed the URL plus
+  the no-gate warning, which is the review's output exactly. The route's
+  TARGET is read back through `GetWebhook` after each case, so a no is
+  proved by the route still answering `:3000/hook` and a yes by it
+  answering `trigger onhook`.
+
+*Not done:* the dashboard's edit-and-flip case above. And a route whose
+provider is mid-retry still loses the deliveries that arrive between the
+yes and the provider noticing; nothing here replays them.

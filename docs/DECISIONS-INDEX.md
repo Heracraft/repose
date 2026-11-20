@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1046 entries.
+1047 entries.
 
 ## Scope
 
@@ -1078,3 +1078,4 @@ pointer, not a summary.
 - **I-1416** The guest's wait for the registration outlasts the host's deadline for sending it, by the ready phase as well as the paths deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name the order and its direction, and a text check reads both numbers because no evaluation sees them together (fix-starts, 2026-11-20) — L37977
 - **I-1426** A held commit separates the release from the launch only while the plan is actually unbuyable, which is a fact to read in the catalogue rather than a state to assume (mac-mini, 2026-11-20) — L38035
 - **I-1428** Nix's own build output follows `-v`, not the absence of a terminal (fix-ask ENG-27, 2026-11-20) — L38087
+- **I-1436** `triggers add --route` asks before it takes a route that answers with something else (fix-ask ENG-32, 2026-11-20) — L38140
