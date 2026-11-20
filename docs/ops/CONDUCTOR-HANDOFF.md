@@ -211,6 +211,16 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 - A new worktree needs its own `pnpm install --frozen-lockfile` before
   `just done-check`, or the web half fails with "Command vitest not
   found" and nothing wrong with the branch.
+- The full `go test -race ./...` with one Postgres for every package
+  gives four reds on a quiet-ish 8-core box, and they are not the
+  batch's: `TestHelloLeavesAProjectWithAnOpenOpAlone`,
+  `TestAFailedWakeIsNotSentAgainStraightAway` and
+  `TestResumeSkipsStopAndDestroyWhileUnreachable` each wait 30 s in
+  `apitest.WaitOp` for an op the starved engine does not finish, and all
+  three pass alone on the same commit. The fourth,
+  `TestPickTable/xl_fits_above_reserve`, was wrong by construction and is
+  fixed as I-1412. Rerun the three alone before reading anything into
+  them, and do not file them with the fourth.
 - `ops/dev/release-queue add` validates the body with `ops/dev/pr-record`
   and refuses a Markdown heading where the template has none: the
   what-changes part is everything before `**Why.**`, which must be that

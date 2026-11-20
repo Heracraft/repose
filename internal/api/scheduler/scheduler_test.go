@@ -71,28 +71,46 @@ func pickFor(t *testing.T, pool *db.Pool, target scheduler.Target, class string,
 	return p, err
 }
 
+// tableHost is a host for the table below, whose heartbeat is an age at
+// the moment its case runs rather than an absolute time. PickHost ignores
+// a host whose last heartbeat is older than HeartbeatWindow, 90 seconds,
+// and it is given time.Now(); a table built from one time.Now() outside
+// the loop therefore passes only while the whole table finishes inside
+// that window. Under -race on a loaded box it took 117 s, and the last
+// case failed with "no host with capacity" against a host the table
+// meant to be fresh (2026-11-20).
+type tableHost struct {
+	name     string
+	state    string
+	draining bool
+	mem      int64
+	free     int64
+	pool     int64
+	age      time.Duration // how long ago this host last heartbeated
+}
+
 func TestPickTable(t *testing.T) {
-	now := time.Now()
+	const stale = 2 * time.Minute
 	cases := []struct {
 		name  string
-		hosts []host
+		hosts []tableHost
 		class string
 		want  string // host name or "" for capacity error
 	}{
-		{"most free wins", []host{{"a", "ready", false, 64 << 30, 20 << 30, 1 << 40, now}, {"b", "ready", false, 64 << 30, 40 << 30, 1 << 40, now}}, "large", "b"},
-		{"draining skipped", []host{{"a", "ready", true, 64 << 30, 50 << 30, 1 << 40, now}, {"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, now}}, "large", "b"},
-		{"unreachable skipped", []host{{"a", "unreachable", false, 64 << 30, 50 << 30, 1 << 40, now}, {"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, now}}, "large", "b"},
-		{"stale heartbeat skipped", []host{{"a", "ready", false, 64 << 30, 50 << 30, 1 << 40, now.Add(-2 * time.Minute)}, {"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, now}}, "large", "b"},
-		{"full host skipped", []host{{"a", "ready", false, 64 << 30, 7 << 30, 1 << 40, now}}, "large", ""},
-		{"pool full skipped", []host{{"a", "ready", false, 64 << 30, 50 << 30, 0, now}}, "large", ""},
-		{"reserve respected", []host{{"a", "ready", false, 16 << 30, 16 << 30, 1 << 40, now}}, "xl", ""},
-		{"xl fits above reserve", []host{{"a", "ready", false, 32 << 30, 32 << 30, 1 << 40, now}}, "xl", "a"},
+		{"most free wins", []tableHost{{"a", "ready", false, 64 << 30, 20 << 30, 1 << 40, 0}, {"b", "ready", false, 64 << 30, 40 << 30, 1 << 40, 0}}, "large", "b"},
+		{"draining skipped", []tableHost{{"a", "ready", true, 64 << 30, 50 << 30, 1 << 40, 0}, {"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, 0}}, "large", "b"},
+		{"unreachable skipped", []tableHost{{"a", "unreachable", false, 64 << 30, 50 << 30, 1 << 40, 0}, {"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, 0}}, "large", "b"},
+		{"stale heartbeat skipped", []tableHost{{"a", "ready", false, 64 << 30, 50 << 30, 1 << 40, stale}, {"b", "ready", false, 64 << 30, 20 << 30, 1 << 40, 0}}, "large", "b"},
+		{"full host skipped", []tableHost{{"a", "ready", false, 64 << 30, 7 << 30, 1 << 40, 0}}, "large", ""},
+		{"pool full skipped", []tableHost{{"a", "ready", false, 64 << 30, 50 << 30, 0, 0}}, "large", ""},
+		{"reserve respected", []tableHost{{"a", "ready", false, 16 << 30, 16 << 30, 1 << 40, 0}}, "xl", ""},
+		{"xl fits above reserve", []tableHost{{"a", "ready", false, 32 << 30, 32 << 30, 1 << 40, 0}}, "xl", "a"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			pool := testdb.Open(t)
 			for _, h := range c.hosts {
-				addHost(t, pool, h)
+				addHost(t, pool, host{h.name, h.state, h.draining, h.mem, h.free, h.pool, time.Now().Add(-h.age)})
 			}
 			p, err := pick(t, pool, c.class, 1<<30, 40<<30)
 			if c.want == "" {

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1034 entries.
+1035 entries.
 
 ## Scope
 
@@ -1066,3 +1066,4 @@ pointer, not a summary.
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
 - **I-1398** Every URL the shipped CLI fetches on a customer's machine is checked anonymously, at queue time, before a tag publishes, and every six hours (ENG-62, 2026-11-19) — L37280
 - **I-1400** The buf job posts no pull request comment, and the workflow's token stays `contents: read` (2026-11-20) — L37353
+- **I-1412** A test that seeds a timestamp a windowed query reads computes it when the row goes in, not when the table is built (2026-11-20) — L37393
