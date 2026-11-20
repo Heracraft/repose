@@ -38229,3 +38229,96 @@ reading the catalogue rather than assuming a state.)
   migration files, the decision ids -- rather than by argument. A gate
   is a claim about the world on the day it was written; check whether
   the world still matches it before enforcing it or waiving it.
+**I-1422. An appliance is installed when its config is on disk, and
+nothing before that: the sizing guard runs before anything is fetched,
+an unfinished install is sized rather than adopted, and `repose host rm`
+clears it (mac-mini 19c, 2026-11-20).** *Made during implementation*
+(ENG-71, ENG-118; amends I-1380).
+
+Two defects, one question. `repose host add` refused a Mac with 46 GB
+free, correctly and with correct arithmetic, and the same line run two
+minutes later with nothing freed installed the appliance in under a
+second (ENG-71, the AWS M4, published CLI v0.1.51). Separately, an
+install that stopped before its config left up to 2 GB that no command
+could clear (ENG-118). Both are the same question answered twice:
+**what is installed when a directory exists and a config does not.**
+
+(1) **A config on disk is the whole of `installed`**, decided once in
+`applianceInstall` and read by `localAppliance`. Everything before it,
+a part file, an unpacked disk, a vfkit binary, is an install that did
+not finish.
+
+(2) **The sizing guard runs before anything is fetched, on every run
+that is not installed.** The part a reader needs in order not to
+reintroduce it: the block's condition was `st.Size() <
+applianceImageApparentBytes`, and `applianceImageApparentBytes` is our
+own constant `37 << 30`, which is exactly the size the unpack leaves.
+So the predicate was false **by construction** for the artefact its own
+failure path creates. It was not a race and not a missing cleanup; the
+guard lived inside a block that could not run a second time.
+
+It used to run after the unpack, inside that block, so the refusal left
+`disk.raw` behind at the image's own size (39,728,447,488 bytes) and the
+retry found it, skipped the download and the guard together, and
+installed a disk sized to the image on a volume the product had just
+said could not hold it. Up front it costs no download, leaves nothing
+behind, and answers the retry with the same sentence. The refusal is
+now atomic in the sense that matters: it writes nothing it then refuses
+to finish.
+
+(3) **An unfinished install is sized, not adopted, and only ever
+grown.** A disk with no config has never booted: `applianceRun`, which
+the launchd agent and the detached fallback both invoke, reads the
+config first and refuses without it, and `applianceInstall` writes the
+config before the plist and the plist before any start, so no ordering
+leaves a launchable appliance without one. The resize is
+**grow-only, and that is on purpose**: it truncates only when the file
+on disk is smaller than the plan. Two `host add` on one Mac at once
+would otherwise let the second shrink a disk the first had just started,
+both having read `installed` false. That window is one this change
+opened rather than found: before it, the second run skipped the block
+and truncated nothing. It costs nothing to close, because the floor is
+40 GB and the image is 37 GiB, so every real plan is a grow and the
+shrink is unreachable rather than merely unlikely. Anyone relaxing this
+reopens it. A disk at the
+image's own size has nothing after the pool partition for
+`repose-mac-grow` to claim at boot, which is the named hypothesis of
+ENG-79: the host registers and reads `online` while a unit failed. A
+live appliance is never resized here; its disk has machines on it.
+
+(4) **Every refusal that does not need a host runs before the host is
+minted.** Found live on the Mac at 58 GB free, an hour after the Linux
+reproduction and on a third volume size: the disk floor refused
+correctly, but `repose host add` had already called `POST /hosts`, so
+the retry read "You already have a host named mac-park2", `--join` had
+no argument because the refused run printed none, and the one-host plan
+refused a second name. Nothing the customer could type recovered it, and
+a 37 GiB `disk.raw` sat there as well. `applianceCanInstall` is this
+Mac's facts and the volume's free space, asked before the api is asked
+for anything. It is the CLI's order and not the api's: the api is called
+once, when there is something to call it for.
+
+(5) **`appliancePresent` is the second question**, whether there is
+anything to remove. `repose host rm --local` clears an unfinished
+install instead of refusing "There is no appliance on this Mac", and
+`repose host rm NAME` takes it with the host: an install that never
+reached a config has no name to check, and the only thing that makes
+one is `repose host add` on that Mac, so the host it was for is the one
+going. The public page names the command instead of the folder.
+
+Rejected: counting the leftover's allocated blocks back into the free
+figure so a retry's arithmetic matches (with the guard up front there is
+no leftover to count, and the simpler code is the one that can be
+checked); leaving the leftover and printing where it is (that is what
+ENG-118 filed); removing a leftover only when its name matches (it has
+no name, which is the defect).
+
+*Checked:* `TestApplianceRefusalMintsNoHost` fails at head with "the
+refused add minted 1 host(s); the retry then collides on the name".
+`TestApplianceRefusalIsAtomicAndRepeats` fails at head on
+both halves, "the refusal left disk.raw behind" and then the retry
+installing; `TestApplianceLeftoverDiskIsSizedNotAdopted` fails at head
+with "disk is 39728447488 bytes (37.00 GiB), want 60 GiB", the exact
+figure ENG-71 reports from the Mac; `TestApplianceLeftoversAreRemovable`
+fails to build at head on `appliancePresent` and then on both rm paths.
+All three pass after, with the rest of `TestAppliance*` unchanged.
