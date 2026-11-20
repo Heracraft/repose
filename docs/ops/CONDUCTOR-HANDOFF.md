@@ -22,82 +22,76 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-20, 10:40 UTC)
+## Where things stand (2026-11-20, 12:25 UTC)
 
-- **Three releases went out today.** `v0.1.52` from `dfbdaf7a` with base
-  **2026.11.20.1** and **`appliance-2026.11.20`**, then `v0.1.53` from
-  `f6aab4f2`, which pins that appliance in the CLI; `origin/main` is
-  f6aab4f2 and the queue is empty. A twelfth batch, `r20261120-12`, is
-  merged into **local** main at `0f8aa2ca` and deliberately not pushed: it
-  is this document and one STATUS line, so it ships nothing, and a push
-  cycles production for nothing. It goes out with whatever is released
-  next. `releases/latest` resolves to the CLI tag
-  and not the appliance, checked after publishing, which is last night's
-  second failure not repeated. No host switch and no edge switch: the
-  branch established from the code that the api and hostd are independent
-  in this batch.
-- **The mac-mini program's repair batch is released.** 197 commits as
-  `r20261120-10`, verified here at 105 Go packages with zero data races,
-  422 Playwright tests, vitest 53 files, the guest system and its closure
-  at 6,533,221,680 of 7,516,192,768 bytes, and the host configuration
-  evaluating. One red was the batch's own and is fixed in it: a council
-  report quoted the old domain, allow-listed rather than edited because
-  the name has not moved and the line is a record of what a reviewer ran.
-- **What a release claim is about is the artefact, not the tree.** v0.1.52's
-  notes said a customer's Mac worked properly; the shipped CLI still
-  pinned `appliance-2026.11.19`, so none of the hostd, guestd or hook
-  repairs reached a Mac. The spark caught it on the published tag. The
-  notes are corrected and ENG-143 carries the mechanism. **Check which
-  artefact a claim lives in before publishing it.**
-- **The live check passed on hardware**, run against a locally built
-  appliance and not the published artefact, with the published v0.1.52
-  CLI: a refusal at 55 GB free leaving no `disk.raw` and minting no host,
-  an install resuming with `--join-file` to a guest running in 453 s, and
-  `repose-ask --timeout 3m` answered with exit 0. ENG-125 closed on an
-  absence. That evidence is what made publishing the appliance defensible
-  rather than hopeful, and the sequence was: prove on hardware, then
-  publish.
+- **Three releases went out today and two batches sit on main unreleased.**
+  `v0.1.52` from `dfbdaf7a` with base **2026.11.20.1** and
+  **`appliance-2026.11.20`**, then `v0.1.53` from `f6aab4f2`, which pins
+  that appliance in the CLI. `origin/main` is still `f6aab4f2`. Local
+  main is **`0089a8fd`**, two batches ahead: `r20261120-12`, this
+  document, and `r20261120-13`, which ships **cli and web**. Both wait
+  for the owner's word, and `integrated` on GitHub holds them and deploys
+  nothing.
+- **The queue is empty and every record is written.** Records for
+  `r20261120-6` through `-13` were owed and are now in
+  `docs/releases/`; `-13` carries what was run on the merged tree and
+  what was not.
+- **What `r20261120-13` ships, in one line each.** `repose host rm
+  --local` now counts the machines that go with the appliance and names
+  the host it leaves on the account (I-1440, ENG-141, the thing that
+  wedged the owner twice this morning). The Claude merge golden asserts
+  the guest's order instead of `$TMPDIR`'s (I-1442, ENG-139). And
+  `DEV-BOX.md` has a measured figure for the flake evaluation with the
+  capped way to measure it. **Its live check is owed at the release:** on
+  repose.run/docs/own-hardware, the "Taking it off" section shows the
+  paragraph beginning "Removing the appliance first".
+- **CI's `nix flake check (evaluate)` is the job that will red on you,
+  and it is not your commit.** It lost its runner twice within an hour on
+  2026-11-20, on `f6aab4f2` and then on a branch of documents: run
+  `44710016416` took 46 minutes against its usual 11 with every step
+  after the Nix install carrying an empty conclusion, and run
+  `44720098012` said `The runner has received a shutdown signal` 2.5
+  minutes in, with one run on the branch, no `concurrency` block and no
+  `timeout-minutes` anywhere, so nobody cancelled it. Both re-ran green.
+  **ENG-144** now carries the measurements: that command exceeds 8.47 GiB
+  in one process on a 16 GB runner, `checks.x86_64-linux` alone is what
+  does it, and sharding `checks` into four jobs puts the worst process at
+  6.06 GiB and finishes faster. The card also says why that is not a
+  one-line change: `nix flake check` validates output shapes a sharded
+  `nix eval` would silently stop checking. Re-run the job, read the
+  annotation, and do not let a red there cost you an hour.
+- **The mac-mini program's repair batch is released** as `r20261120-10`,
+  197 commits, with its live check passed on hardware. The Mac's queue is
+  empty and about $38 is spent; its shutdown and the `aws login` its
+  release needs are the owner's, raised with them directly.
+- **What a release claim is about is the artefact, not the tree.**
+  v0.1.52's notes said a customer's Mac worked properly while the shipped
+  CLI still pinned `appliance-2026.11.19`. The spark caught it on the
+  published tag, the notes are corrected, and ENG-143 carries the
+  mechanism. **Check which artefact a claim lives in before publishing
+  it.** The same rule is why ENG-141 and ENG-139 are `Blocked` and not
+  `Done`: the work is on main and no customer has it.
 - **The weekly model limit was at 90 % at 08:20 and resets Saturday
-  2026-11-22 at 07:00 UTC.** The mac-mini conductor stopped before
-  launching the review's second pass and put it to the owner as a
-  spending decision (ENG-14, `Needs you`). The agreed order if capacity
-  must be chosen: the batch verification, then the appliance and its live
-  check, then ENG-138's unknowns, then the second pass.
+  2026-11-22 at 07:00 UTC.** ENG-14, the review's second pass, is in
+  `Needs you` as a spending decision.
 - **ENG-138 is narrowed on hardware and the narrowing is the result.** A
   logout gives the appliance **18 seconds** and the park is attempted; a
-  restart gives **one**. So macOS honours the shutdown window on a session
-  teardown and not on a system restart, and the remaining work is the
-  restart hook rather than `ExitTimeOut`. One keychain failure in that run
-  is recorded as **not evidence**: the reviewer had changed the account
-  password with `dscl . -passwd`, which does not change the login
-  keychain's own password.
-- **The Mac's queue is empty**, about $38 spent at $1.353 an hour since
-  06:02 UTC on 2026-11-19. Its shutdown and the `aws login` that any
-  release of the host needs are the owner's, raised with them directly.
+  restart gives **one**. So macOS honours the shutdown window on a
+  session teardown and not on a system restart, and the remaining work is
+  the restart hook rather than `ExitTimeOut`.
+- **ENG-43 is closed on evidence rather than on the procedure existing.**
+  `ops/dev/docs-ahead-of-cli` replayed against its own incident exits 1
+  and lists the six `repose host` paths; today on main it exits 0 at 115
+  documented commands against v0.1.53; a clone with no tags exits 2,
+  which its own documentation calls not a pass. Run it without a pipe.
 - Open and unowned, in the order they would hurt: **ENG-111**, the Hello
   reconcile writing a guest address while an op is open, confirmed on CI
   and reproduced here under full-suite load, seven read-then-act call
-  sites, five weeks live, blocking no release. **ENG-141**, `repose host
-  rm --local` stranding a machine with no warning and working while the
-  CLI is not logged in, which wedged the owner's account twice this
-  morning. **ENG-119** with its siblings ENG-120, ENG-121 and ENG-122.
-  **ENG-139**, a golden whose order depends on `TMPDIR`. **ENG-113**, the
-  suite at `-p 2`.
-- **CI's `nix flake check (evaluate)` is the job that will red on you
-  next, and it is not your commit.** On 2026-11-20 run `44710016416` on
-  `f6aab4f2` took 46 minutes against its usual 11 and lost its runner;
-  every step after the Nix install carried an empty conclusion, the log
-  answered `BlobNotFound`, and GitHub's annotation on check-run
-  `136199039366` names starving the runner for CPU or memory first. The
-  parent commit was green on all twelve jobs and the diff touches nothing
-  under `nix/`. A re-run on a fresh runner passed, and then the same job
-  lost its runner again 25 minutes later on a branch of documents, this
-  time saying `The runner has received a shutdown signal` 2.5 minutes
-  into the evaluation. **ENG-144** holds the finding with the measurement:
-  that command wants more than 8.47 GiB in one process, measured here
-  inside a cap, on a 16 GB runner. Re-run it before you suspect the
-  commit, read the annotation rather than the empty log, and know that a
-  red there currently carries no information about your change.
+  sites, five weeks live, blocking no release. **ENG-119** with its
+  siblings ENG-120, ENG-121 and ENG-122. **ENG-144** above. **ENG-10**,
+  where a killed Playwright run's fixtures keep the port and the next run
+  silently tests the old build; it cost me twenty minutes today and the
+  card now has the mechanism. **ENG-113**, the suite at `-p 2`.
 - **`7db572b5` is still held** and nothing today touched it. ENG-129 is in
   `Needs you` with the fact that decided the argument: `POLAR_PRODUCT_OWN`
   is set on production, the plan is purchasable at $10 with a seven-day
@@ -358,6 +352,40 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   a check whose output goes through `tail` or `grep` reports the pipe's
   exit, so `EXIT 0` printed under a `--- FAIL` line is the pipe
   succeeding. Read the `ok` and `FAIL` lines whenever either is piped.
+- **A stacked pull request cannot be merged by GitHub, only closed.**
+  `release-queue add --on BRANCH` bases a PR on another queued branch.
+  When the batch lands, `done` pushes `integrated` and GitHub marks the
+  PR whose base *was* `integrated` as merged, while the stacked ones stay
+  open: their base branch still exists, and `gh pr edit --base integrated`
+  then refuses with "There are no new commits between base branch
+  'integrated' and head branch", which is the refusal telling you the
+  work is already in. Confirm with `git merge-base --is-ancestor <head>
+  origin/integrated`, close them with a comment naming the batch, and
+  delete the merged branches. Two were left open on 2026-11-20 until I
+  looked.
+- **A verification that is not installed, and a suite talking to the
+  wrong server, both report what looks like a product failure.**
+  `golangci-lint` outside the dev shell answers "No such file or
+  directory" in zero seconds, and a pipe calls that success. A Playwright
+  suite whose predecessor still holds the test port fails every test in a
+  file at the identical timeout, which reads as sign-in and billing being
+  broken. The tell in both cases is the shape of the result rather than
+  its content: zero seconds, or one duration repeated. `ss -ltnp` names
+  the process holding a port in one line.
+- **Measure inside the cap rather than ban and guess, and then check your
+  own proposal.** A capped run settled what the flake evaluation costs
+  with nothing built. Sharding it then looked obvious, so I measured that
+  too: splitting by top-level group fails because `checks` alone is the
+  whole peak, and sharding `checks` by four drops the worst process to
+  6.06 GiB and runs faster. Then the proposal turned out not to be a
+  one-line change, because `nix flake check` validates output shapes a
+  sharded `nix eval` would silently stop checking. **The measurement was
+  cheap and it is the thing that stopped me landing a weaker gate.**
+- **A test asserting the conductor's own advice.** `DEV-BOX.md` tells a
+  heavy Nix run to point `TMPDIR` at the big disk, a verification script
+  took that for Go tests too, and a golden flipped because `unique` sorts
+  the real path. Fixed in the test and recorded as I-1442; the boundary is
+  in DEV-BOX.md. Advice travels further than the case it was written for.
 
 ## Owed
 
