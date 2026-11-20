@@ -182,6 +182,24 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	})
+	// {project_id, used_bytes, size_bytes}: the root filesystem the Disk
+	// column reads (I-567). The create leaves every machine at 1 GiB
+	// used, the narrowest figure that column draws, so a test about how
+	// wide it has to be needs this (ENG-24).
+	mux.HandleFunc("POST /disk", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			UsedBytes int64  `json:"used_bytes"`
+			SizeBytes int64  `json:"size_bytes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := f.SetProjectDisk(body.ProjectID, body.UsedBytes, body.SizeBytes); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+	})
 	mux.HandleFunc("GET /polar/checkout/{id}", func(w http.ResponseWriter, r *http.Request) {
 		back, err := f.CompleteCheckout(r.PathValue("id"))
 		if err != nil {
