@@ -132,7 +132,7 @@ Refusals of `POST /hosts`, beside the envelope's own:
 | `invalid` | 400 | `detail.reason = "name"`: a `name` outside `[a-z0-9][a-z0-9-]{0,31}` |
 | `conflict` | 409 | `detail.reason = "name_taken"`: this account already has a host by that name. Names are unique per account, so another account's `mac-mini` is no bar and is never named. A **removed** host's name is not taken: the row it kept for the history takes the name back, with a new token, the same id and nothing of the machine it was |
 | `conflict` | 409 | `detail.reason = "host_limit"`, `detail.limit`: the account already owns as many hosts as its plan allows (one on the Own hardware plan, I-1364; I-1366). The figure is the plan's, read from `billing.Plan.Hosts`, and lives nowhere else |
-| `payment_required` | 402 | `detail.reason = "own_hardware_plan_required"`: the account's plan sells no host (`limit` 0). A billing-exempt account is allowed one, as it is allowed everything else |
+| `payment_required` | 402 | `detail.reason = "own_hardware_plan_required"`: the account's plan sells no host (`limit` 0). The `message` names the plan, its price and its host count from the plan table (I-1364), so a caller who reads only the refusal knows what a host costs. A billing-exempt account is allowed one, as it is allowed everything else |
 
 `DELETE /hosts/{id}` answers `404 not_found` for an id that is not one of
 the account's hosts, and `409 conflict` with `detail: {reason:

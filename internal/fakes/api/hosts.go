@@ -32,6 +32,30 @@ const FakeHostInstall = "repose host add --join %s"
 // hardware plan (DECISIONS I-1366).
 const maxFakeHosts = 1
 
+// ownHardwareRequired is billing.OwnHardwareRequiredMessage's sentence,
+// word for word, built from the fake's own plan table so that a change
+// to the real one is a deliberate change here too
+// (TestOwnHardwareRefusalIsTheApis holds them equal). It names the
+// price: the refusal is the one place in the product that tells a
+// buyer what a host costs while the public copy is held (ENG-39).
+func ownHardwareRequired() string {
+	hosts := "one host"
+	if OwnPlan.Hosts != 1 {
+		hosts = fmt.Sprintf("%d hosts", OwnPlan.Hosts)
+	}
+	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s/billing.",
+		OwnPlan.Name, dollars(OwnPlan.PriceCents), hosts, FakeDashboard)
+}
+
+// dollars is billing.Dollars: "$10", or "$10.50" when the cents are not
+// whole.
+func dollars(cents int64) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("$%d", cents/100)
+	}
+	return fmt.Sprintf("$%d.%02d", cents/100, cents%100)
+}
+
 // FakeDashboard is the origin the fake builds the refusals' and the
 // install's addresses on.
 const FakeDashboard = "https://repose.run"
@@ -132,7 +156,27 @@ func (f *Fake) hostsAllowed() int {
 	if f.hostLimit != nil {
 		return *f.hostLimit
 	}
-	return maxFakeHosts
+	// The api's answer, in the fake's terms (billing.Gate.HostsAllowed):
+	// a billing-exempt account and an api with billing off get one, an
+	// account with no live subscription gets none, and otherwise the
+	// plan's own figure decides -- one on Own hardware, none on the
+	// plans that sell memory on repose's fleet.
+	//
+	// It used to hand one to every account whatever its plan, which is a
+	// fake that says yes where the api says no: a reviewer running
+	// against it reports "I added a Mac without ever paying and nothing
+	// stopped me" about a contract that does stop them (ENG-36), and no
+	// test of ours disagrees, because the tests that care set the limit
+	// by hand.
+	switch f.bill.mode {
+	case BillingOff, BillingExempt:
+		return maxFakeHosts
+	}
+	plan := f.currentPlan()
+	if plan == nil {
+		return 0
+	}
+	return plan.Hosts
 }
 
 func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
@@ -185,7 +229,7 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	u := userFrom(r)
 	allowed := f.hostsAllowed()
 	if allowed <= 0 {
-		return errf("payment_required", "Your plan does not include a host of your own. Choose the Own hardware plan at %s/billing.", FakeDashboard).
+		return errf("payment_required", "%s", ownHardwareRequired()).
 			withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	have := 0

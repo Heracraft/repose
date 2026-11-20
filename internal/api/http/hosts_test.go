@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"github.com/heracraft/repose/internal/billing"
 	"strings"
 	"testing"
 
@@ -251,8 +252,18 @@ func TestHostNeedsAPlanThatSellsOne(t *testing.T) {
 	// An account with no plan at all is refused the same way: there is
 	// nothing to read a host count off.
 	e.subscribe(t, "sub-plus", "")
-	if r := e.do(t, tok, "POST", "/hosts", nil); r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" {
+	r = e.do(t, tok, "POST", "/hosts", nil)
+	if r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" {
 		t.Fatalf("no plan: %d %s", r.status, r.raw)
+	}
+	// The sentence names the price, from the plan table. Until the
+	// public copy is unheld this refusal is the only place the product
+	// tells a buyer what a host costs, and the customer review found one
+	// who committed hardware without ever being told (ENG-39). The
+	// figure is billing.Own's; a literal here would be a second price.
+	msg, _ := r.body["error"].(map[string]any)["message"].(string)
+	if want := billing.Dollars(billing.Own.PriceCents) + " a month for one host"; !strings.Contains(msg, want) {
+		t.Fatalf("the refusal %q does not say %q", msg, want)
 	}
 }
 
