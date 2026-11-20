@@ -24,7 +24,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		SuggestFor: []string{"hosts", "hardware", "machine"},
 	}
 
-	var join string
+	var join, joinFile string
 	var ao applianceOptions
 	add := &cobra.Command{
 		Use:   "add [NAME]",
@@ -38,7 +38,8 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"https://repose.run/docs/own-hardware has what the machine needs first.",
 		Example: "  repose host add\n" +
 			"  repose host add mac-mini\n" +
-			"  repose host add --join eyJ2IjoxLC...   # on the Mac",
+			"  repose host add --join-file ~/join.txt   # on the Mac\n" +
+			"  pbpaste | repose host add --join -       # the same, from the clipboard",
 		Args: argsN(0, 1, "at most one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
@@ -49,17 +50,22 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if len(args) == 1 {
 				name = args[0]
 			}
-			if join != "" {
+			if join != "" || joinFile != "" {
 				if name != "" {
 					return cobraUsageError{errors.New("--join takes the argument `repose host add` printed, and no NAME")}
 				}
-				return applianceInstall(cmd.Context(), e, join, "", ao)
+				argument, err := readJoinArgument(join, joinFile, cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				return applianceInstall(cmd.Context(), e, argument, "", ao)
 			}
 			return HostAddCmd(cmd.Context(), e, name, ao)
 		},
 	}
 	add.Flags().BoolVar(&g.json, "json", false, "print every field, the install step and the token included, as JSON")
-	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere")
+	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere; `-` reads it from standard input")
+	add.Flags().StringVar(&joinFile, "join-file", "", "install on this Mac with the argument in `PATH`, which keeps it off the command line")
 	add.Flags().IntVar(&ao.DiskGB, "disk", 0, "the appliance's disk in GB (default 100, at least 40, bounded by the volume's free space less 20)")
 	add.Flags().IntVar(&ao.MemoryMiB, "memory", 0, "the appliance's memory in MiB (default three quarters of the Mac's)")
 	add.Flags().IntVar(&ao.CPUs, "cpus", 0, "the appliance's vCPUs (default all but two)")
