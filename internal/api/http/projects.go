@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -669,10 +670,14 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	for _, o := range open {
 		if o.Kind == ops.KindDestroy {
-			writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.ID, "state": o.State})
+			writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.ID, "state": o.State, "final_snapshot": s.finalSnapshot(r.Context(), p)})
 			return nil
 		}
 	}
+	// Taken before the state moves to `destroying`, because PlanDestroy
+	// reads the project's state and the answer must describe the plan
+	// that was enqueued (DECISIONS I-1418).
+	snap := s.finalSnapshot(r.Context(), p)
 	// The project reads `destroying` from the moment the destroy is
 	// accepted, in the same transaction, because the CLI returns right
 	// away (I-166) and the next `repose ls` must not show it running.
@@ -697,8 +702,32 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.d.Engine.Kick()
 	obs.Logger(ctx, s.d.Log).Info("project destroy accepted", "event", "guest_destroy", "project_id", pid.String(), "op_id", id.String())
-	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "state": "pending"})
+	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "state": "pending", "final_snapshot": snap})
 	return nil
+}
+
+// finalSnapshot is whether this destroy will take one, which is what the
+// CLI needs to know before it says so: it prints its line the moment
+// this route answers, before any phase has run, and it promised a final
+// snapshot for a machine that had none and could never get one (ENG-119,
+// DECISIONS I-1418). Two reasons there may be no snapshot, and the
+// answer is the same for both: a temporary project's plan does not carry
+// the phase (I-347), and a host nobody expects back has every phase
+// skipped (I-924).
+func (s *Server) finalSnapshot(ctx context.Context, p *store.Project) bool {
+	if !slices.Contains(ops.PlanDestroy(p), ops.PhaseSnapshot) {
+		return false
+	}
+	if p.HostID == nil {
+		return false
+	}
+	h, err := store.GetHost(ctx, s.d.Pool, *p.HostID)
+	if err != nil || h == nil {
+		// The host row is gone, so the host is (ops.Engine.hostGone reads
+		// a missing row the same way).
+		return err == nil && h != nil
+	}
+	return h.State != "lost" && h.State != "retired"
 }
 
 func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {

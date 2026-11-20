@@ -328,7 +328,7 @@ func TestHelloCountsOnlyForTheHostsOwnGuests(t *testing.T) {
 }
 
 func TestHumanErrorVolumeUnavailable(t *testing.T) {
-	got, ok := ops.HumanErrorForTest(ops.KindStart, ops.PhaseStartGuest, "volume_unavailable", "volume_unavailable: lvs: Volume group \"vg-guests\" not found")
+	got, ok := ops.HumanErrorForTest(ops.KindStart, ops.PhaseStartGuest, "volume_unavailable", "volume_unavailable: lvs: Volume group \"vg-guests\" not found", false)
 	if !ok || strings.Contains(got, "vg-guests") || !strings.Contains(got, "disk is intact") {
 		t.Fatalf("human %q %v", got, ok)
 	}

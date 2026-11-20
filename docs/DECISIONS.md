@@ -38424,3 +38424,143 @@ path, is untouched and still prefixes Nix's lines (07-cli.md §5.8); the
 nix-daemon warning a tenant sees with `-v`, "ignoring the
 client-specified setting 'sandbox'", has the cause I-755 recorded at
 `nixbuild.go` and is still hostd's to fix.
+**I-1418. No sentence on the removal path names a recovery that cannot
+happen: `host_unreachable` stops telling a user to wait for a host they
+deleted, the host-removal refusal stops naming a snapshot restore the
+machine may have no snapshot for, and a destroy's answer carries
+`final_snapshot` so the CLI stops promising one it cannot take
+(fix-starts, 2026-11-20).** *Made during implementation* (ENG-119 and
+ENG-120, found by the spark on the owner's live account by following the
+documented path, and confirmed from the account's own rows. Extends
+I-924, which fixed the work these sentences describe; the work was
+already right and only the sentences were wrong.)
+
+The sequence was three documented commands. `repose rm rig1 --yes`
+printed "Destroying rig1. Its final snapshot is kept until 2026-12-20";
+`repose host rm --local --yes` on the Mac removed the appliance, its disk
+and every machine on it in five seconds, which is what that flag is
+documented to do; and the destroy then could not finish, because
+finishing it needed the host that had just gone. The account's ops rows,
+read whole:
+
+    01a1f724-a15e-7778  destroy  done   step 4/4  host -          04:08
+    01a1f6f4-428a-7e77  destroy  error  step 1    host mac-rig2   03:16  host_unreachable
+    01a1f6e4-0530-776c  destroy  error  step 1    host mac-rig2   02:58  host_unreachable
+    01a1f6d8-1151-734a  create   done   step 2    host mac-rig2   02:45
+
+Three sentences in that path each named a recovery that could not
+happen, and this entry is only those three. What they described was not
+broken: the third destroy completed at step 4 of 4 **with no host at
+all**, once an operator had moved the host to `lost`, which is I-924
+working exactly as written.
+
+- *"The operation can be run again once the host is back."* `recover.go`
+  mapped `host_unreachable` to that for every host, including one the
+  user had deleted themselves. It is the worst of the three, because it
+  does not merely fail to help: it says that waiting will work. It now
+  asks whether the host is one nobody expects back -- `lost` or
+  `retired`, the states `hostGone` already defines -- and says the host
+  was removed, naming the destroy, which I-924 drains to no phases. A
+  host that is merely `unreachable` keeps the old sentence, because for
+  that host it is true.
+- *"`repose rm` or `repose snapshots restore` each of them first."* The
+  CLI's wording for the api's `host_has_projects` refusal. A restore
+  needs a snapshot, and the refusal is shown for whatever machines are on
+  the host, which may have none: `rig1` had none, and
+  `count(*) from snapshots where project_id = rig1` was 0 and had never
+  been anything else. The clause is also unnecessary, because `repose rm`
+  keeps the final snapshot for 30 days, so the work a restore would have
+  saved survives the removal the sentence asks for. It now names
+  `repose rm` alone.
+- *"Its final snapshot is kept until 2026-12-20."* Printed twice, ten
+  minutes apart, for a machine that had no snapshot and could not get
+  one. The CLI cannot work this out: it prints that line the moment the
+  api answers `202`, before any phase has run. So `DELETE /projects/:id`
+  now answers `final_snapshot`, false for a temporary project (I-347) and
+  false when the host is gone (I-924), and the CLI says a snapshot is
+  kept only when the api said one is coming. An api that does not send
+  the field is read as yes, which is what it was for every host that was
+  still there, so the old shape stays correct for a release.
+
+*What this is not.* The account wedge itself -- a host that cannot be
+removed because it holds a project that cannot be destroyed because the
+host is not gone -- is the channel for the user's own statement, not the
+wording, and it is I-1420. The three sentences are separated from it
+deliberately: wording that needs no decision should not wait behind code
+that does.
+
+*Three things on those rows that are deliberately left.* The destroyed
+project row still carries `last_error` with this entry's first sentence
+in it, so a destroyed machine still reads as retryable; `disk_held_bytes`
+and `disk_held_at` are still set on it; and the host row, `lost` and
+`draining`, still reports `running_guests = 1` with its only project
+destroyed. All three are the same family -- a counter or a message that
+nothing clears at the terminal state -- and all three are filed rather
+than fixed here, because changing what a sentence says is not the same
+change as clearing it when it stops being true.
+
+**I-1420. A user can say their own host is gone: `DELETE /hosts/{id}`
+retires a host whose state is `unreachable` or `lost` even while
+machines are on it, instead of refusing, and both clients' confirmations
+say how many machines go with it (fix-starts, 2026-11-20).** *Made
+during implementation* (ENG-119 and ENG-120, found by the spark on the
+owner's live account. Extends I-924, whose completion rule was already
+right; what was missing was the channel for the user's own statement.)
+
+Three documented commands, each behaving as written, left an account
+with nothing it could do. `repose rm rig1 --yes` accepted a destroy;
+`repose host rm --local --yes` on the Mac deleted the appliance, its
+disk and every machine on it in five seconds, which is what that flag
+documents; and then: the destroy could not finish without the host, the
+host could not be removed because it held a project (`host_has_projects`),
+and no replacement could be added because the plan's one slot was still
+held (`ExemptHosts = 1`, the count taking every host not `retired` or
+`lost`). `repose rm` printed its cheerful line twice and made two more
+ops that failed the same way.
+
+- *What was already right.* I-924 skips `wake`, `stop_guest`, `snapshot`
+  and `destroy_guest` when the host is gone, so a destroy drains to no
+  phases and `markDestroyed` runs. The account's own rows prove it: the
+  third destroy of `rig1` completed **at step 4 of 4 with no host at
+  all**, in the same minute, once an operator had run `hosts mark-lost`.
+  No change was needed there and none is made here.
+- *What was missing.* `hostGone` is `lost` or `retired`, and I-924
+  excluded `unreachable` deliberately: "That host may answer in a minute,
+  and skipping its phases would mark a guest destroyed with its volume
+  still live on a host that comes back. The guard is only for the two
+  states that mean **a human has said the host is not returning**." In
+  this sequence a human did say it, and said it with a destructive
+  command. But they said it on the Mac, and nothing carried it to the
+  account: only an operator's `mark-lost` or a retire can move a host to
+  a gone state, and the retire was the thing being refused. The hole is
+  a missing channel for the user's statement, not a missing capability.
+- *Why this does not reopen what I-924 closed.* Its reason for excluding
+  `unreachable` is that the host may come back. That premise does not
+  survive the command being asked for: the retire in this same handler
+  clears `cert_serial`, `prev_cert_serial` and `join_token_hash`, so a
+  retired host cannot come back on them. Checking a decision's premise
+  rather than its ruling is the rule this followed (I-616 against
+  I-1366); the ruling still stands for every op the engine builds, and
+  only this one route, which makes the comeback impossible as it runs,
+  is allowed to act on the user's word.
+- *The condition names the states that mean "not answering", not the ones
+  that mean "answering".* `unreachable` and `lost` are allowed; anything
+  else refuses. A host still `registering` may yet come up, and a state
+  added later should refuse until somebody decides it should not. The
+  first draft tested for `ready || draining` and let a `registering`
+  host through, which the existing test caught.
+- *The machines are left, not destroyed.* The user asked to remove a
+  host, not to lose their work, and after the retire every `repose rm`
+  on them drains to no phases and completes. So the loss is theirs to
+  take in one more command, and this route decides nothing about it.
+- *Which puts the whole weight on the confirmation, so both clients
+  carry it.* This is the only path on which removing a host loses
+  machines. `repose host rm` asks "It is not answering, and the machine
+  on it cannot be recovered: its disk is on that host and repose has no
+  copy", and Settings → Hosts asks it in the same words -- the dashboard
+  never gated its Remove button, so without that change it would have
+  stranded machines silently where the CLI warned (the parity rule,
+  I-1354 under I-1266). `--yes` skips the question, as everywhere.
+- *What a user should do instead when the Mac was only asleep* is in
+  `/docs/own-hardware`: turn it on and wait for `online`, because once a
+  host is removed it cannot rejoin and what was on its disk is gone.

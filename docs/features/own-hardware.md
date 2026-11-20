@@ -290,6 +290,19 @@ host already retired is not an error on the wire (`204`), and the CLI
 says `You have no host named X` because a retired host is not one the
 user has.
 
+A host that still holds machines is refused while it is answering, and
+retired with them when it is not (`unreachable` or `lost`, I-1420). The
+refusal had no way out: a destroy's phases are skipped only for `lost`
+and `retired` (I-924), so while the host stayed `unreachable` the
+machines could not be destroyed, the host could not be removed, and the
+plan's one slot stayed held, which is the account wedge ENG-119 was
+found as. The machines are left in place rather than destroyed -- the
+user asked to remove a host, not to lose work -- and each `repose rm`
+then drains to no phases. The CLI's question and the dashboard's say in
+the same words how many machines go with it and that their disks were on
+that host; nothing but the confirmation stands between the user and the
+loss, so both surfaces carry it.
+
 ## 7. The Mac appliance
 
 One aarch64 NixOS VM on Apple's Virtualization framework runs hostd and

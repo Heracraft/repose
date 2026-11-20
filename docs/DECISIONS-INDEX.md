@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1050 entries.
+1052 entries.
 
 ## Scope
 
@@ -1082,3 +1082,5 @@ pointer, not a summary.
 - **I-1422** An appliance is installed when its config is on disk, and nothing before that: the sizing guard runs before anything is fetched, an unfinished install is sized rather than adopted, and `repose host rm` clears it (mac-mini 19c, 2026-11-20) — L38232
 - **I-1424** The install argument comes in off the command line: `--join -` reads standard input, `--join-file` reads a file, and the line the install prints after a failed download names the file rather than the argument (mac-mini 19c, 2026-11-20) — L38326
 - **I-1428** Nix's own build output follows `-v`, not the absence of a terminal (fix-ask ENG-27, 2026-11-20) — L38375
+- **I-1418** No sentence on the removal path names a recovery that cannot happen: `host_unreachable` stops telling a user to wait for a host they deleted, the host-removal refusal stops naming a snapshot restore the machine may have no snapshot for, and a destroy's answer carries `final_snapshot` so the CLI stops promising one it cannot take (fix-starts, 2026-11-20) — L38427
+- **I-1420** A user can say their own host is gone: `DELETE /hosts/{id}` retires a host whose state is `unreachable` or `lost` even while machines are on it, instead of refusing, and both clients' confirmations say how many machines go with it (fix-starts, 2026-11-20) — L38502

@@ -47,7 +47,9 @@ func (e *Engine) skipFailedApply(ctx context.Context, op *store.Op, code, msg st
 	if err != nil {
 		return false
 	}
-	human, ok := humanError(op.Kind, PhaseApplyConfig, code, msg)
+	// A boot failure came from the host itself, so the host answered and
+	// is not gone (DECISIONS I-1418).
+	human, ok := humanError(op.Kind, PhaseApplyConfig, code, msg, false)
 	if !ok {
 		human = firstLineOf(msg)
 	}

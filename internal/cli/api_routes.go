@@ -154,20 +154,44 @@ func (c *Client) PatchProject(ctx context.Context, id string, req PatchProjectRe
 	return &p, nil
 }
 
-// DestroyProject is DELETE /projects/:id: 202 {op_id, state} (api.md,
-// I-156). The destroy is finished only when that op is done; an older
-// api that answered without an op_id is waited on by polling the
-// project instead (DestroyCmd).
-func (c *Client) DestroyProject(ctx context.Context, id string) (string, error) {
-	var r opIDResponse
+// DestroyProject is DELETE /projects/:id: 202 {op_id, state,
+// final_snapshot} (api.md, I-156, I-1418). The destroy is finished only
+// when that op is done; an older api that answered without an op_id is
+// waited on by polling the project instead (DestroyCmd).
+func (c *Client) DestroyProject(ctx context.Context, id string) (DestroyResult, error) {
+	var r DestroyResult
 	if err := c.delete(ctx, "/projects/"+url.PathEscape(id), &r); err != nil {
-		return "", err
+		return DestroyResult{}, err
 	}
-	return r.OpID, nil
+	return r, nil
 }
 
 type opIDResponse struct {
 	OpID string `json:"op_id"`
+}
+
+// DestroyResult is DELETE /projects/:id's answer. FinalSnapshot is
+// whether this destroy will take one: false for a temporary project
+// (I-347) and for a machine whose host nobody expects back, where every
+// phase including the snapshot is skipped (I-924). The CLI says what is
+// kept before any phase has run, so it cannot work this out for itself
+// and promised a snapshot that did not exist (ENG-119, I-1418).
+//
+// An api that does not send the field leaves it false, which would drop
+// a true sentence rather than print a false one; the CLI therefore reads
+// it as "not said" and keeps the old line, and only a `false` the api
+// sent changes anything. That is what HasFinalSnapshot is for.
+type DestroyResult struct {
+	OpID          string `json:"op_id"`
+	FinalSnapshot *bool  `json:"final_snapshot,omitempty"`
+}
+
+// HasFinalSnapshot is whether a final snapshot is coming, as far as the
+// api said: an api that sent nothing is treated as yes, which is what
+// every api before I-1418 did and did correctly for every host that was
+// still there.
+func (r DestroyResult) HasFinalSnapshot() bool {
+	return r.FinalSnapshot == nil || *r.FinalSnapshot
 }
 
 // StartResult is POST /start's answer: the op, and whether the api turned

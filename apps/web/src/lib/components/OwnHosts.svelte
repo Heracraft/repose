@@ -188,6 +188,22 @@
 		return `${h.projects} ${word}, ${h.running_projects} running`;
 	}
 
+	// What the confirmation says. A host that is answering cannot be
+	// removed while machines are on it: the api refuses that. A host that
+	// has stopped answering can be, which is the only way out of the
+	// wedge in ENG-119, and it is the one path where removing a host
+	// loses machines -- so the question says how many and that their
+	// disks went with it, in the same words `repose host rm` uses
+	// (DECISIONS I-1420).
+	function removeWarning(h: OwnedHost): string {
+		if (h.projects && (h.state === 'unreachable' || h.state === 'lost')) {
+			const what = h.projects === 1 ? 'the machine on it' : `the ${h.projects} machines on it`;
+			const disks = h.projects === 1 ? 'its disk is' : 'their disks are';
+			return `It is not answering, and ${what} cannot be recovered: ${disks} on that host and repose has no copy.`;
+		}
+		return 'It stops taking your projects, and it joins again only with a new install.';
+	}
+
 	function heard(h: OwnedHost): string {
 		return h.last_heartbeat_at ? relativeTime(h.last_heartbeat_at) : '—';
 	}
@@ -304,8 +320,7 @@
 								<td colspan="6">
 									<div class="hk-confirm" data-testid="confirm-remove-host">
 										<p>
-											Remove <code>{h.name}</code>? It stops taking your projects, and it
-											joins again only with a new install.
+											Remove <code>{h.name}</code>? {removeWarning(h)}
 										</p>
 										<div class="hk-confirm-actions">
 											<button
@@ -396,8 +411,7 @@
 			<div class="hdlg-body">
 				{#if step}
 					<p class="hdlg-once">
-						Run this on the machine you are adding. It is not shown again, and it works
-						once.
+						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
 					<div data-testid="host-install">
 						<CodeCopy command={step} what="the install step" />
@@ -411,9 +425,7 @@
 					<!-- An api older than I-1380 sends no install step at all.
 					     The token is an input to the api and not something to
 					     run, so it is never offered as one. -->
-					<p class="hdlg-once">
-						This is its join token. It is not shown again, and it works once.
-					</p>
+					<p class="hdlg-once">This is its join token. It is not shown again, and it works once.</p>
 					<div data-testid="host-token">
 						<CodeCopy command={made.join_token} what="the join token" />
 					</div>

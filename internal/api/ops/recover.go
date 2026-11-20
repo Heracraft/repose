@@ -158,7 +158,7 @@ func (e *Engine) recoverFrom(ctx context.Context, op *store.Op, code string) boo
 // humanError turns a host's error into the sentence a user reads in
 // op.error.message and projects.last_error (I-159). The code is kept; the
 // host's own wording, which names internal ids, moves to detail.
-func humanError(kind, phase, code, msg string) (string, bool) {
+func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 	switch code {
 	case codeBootFailed:
 		// hostd's message is a fixed sentence from the console, never
@@ -218,6 +218,19 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 			return "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` applies the new one", true
 		}
 	case "host_unreachable":
+		if hostGone {
+			// The host is `lost` or `retired`: nobody expects it back, so
+			// "once the host is back" is advice that can never be
+			// followed, and it sounds like patience will fix it. A
+			// destroy is what works -- I-924 drains it to no phases on a
+			// host that is gone -- and for anything else the destroy is
+			// all that is left, because the machine's disk was on that
+			// host and nowhere else (ENG-119, DECISIONS I-1418).
+			if kind == KindDestroy {
+				return "the host running this project was removed, so there is nothing left to take down; `repose rm` finishes it", true
+			}
+			return "the host running this project was removed, and this machine's disk was on it; `repose rm` removes the record", true
+		}
 		return "the host running this project stopped answering; the operation can be run again once the host is back", true
 	case "timeout":
 		// The engine's own phase timeout (checkTimeout): the host took

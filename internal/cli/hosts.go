@@ -288,6 +288,19 @@ func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error))
 // is only ever asked of a host with none, and what it has to say is
 // where the snapshots were all along (I-1372).
 func hostRemovePrompt(h *Host) string {
+	// A host that is answering cannot be removed while machines are on
+	// it: the api refuses that. A host that has stopped answering can
+	// be, which is the only way out of the wedge in ENG-119 -- and it is
+	// the one path where removing a host loses machines, so the question
+	// says how many and that their disks were on it (DECISIONS I-1420).
+	if h.Projects > 0 && (h.State == "unreachable" || h.State == "lost") {
+		what, disks := "the machine on it", "its disk is"
+		if h.Projects > 1 {
+			what, disks = fmt.Sprintf("the %d machines on it", h.Projects), "their disks are"
+		}
+		return fmt.Sprintf("Remove %s? It is not answering, and %s cannot be recovered: %s on that host and repose has no copy. [y/N] ",
+			h.Name, what, disks)
+	}
 	return fmt.Sprintf("Remove %s? Snapshots taken on it stay on its disk, and repose has no copy. [y/N] ", h.Name)
 }
 
@@ -315,12 +328,20 @@ func hostErr(err error, name string) error {
 	case reason == "host_has_projects":
 		// A machine moves host only by restore (DESIGN §3), so the api
 		// refuses rather than leave them with nowhere to run. It names
-		// them; this says it in the commands that clear them.
+		// them; this says it in the command that clears them.
+		//
+		// It named `repose snapshots restore` as a second way out until
+		// I-1418, and that was not one: the refusal is shown for the
+		// machines on the host, which may have no snapshot to restore --
+		// rig1, the machine this was found on, had none and never had
+		// (ENG-119). It is not needed either, because `repose rm` keeps
+		// the final snapshot for 30 days, so the work a restore would
+		// have saved survives the removal it asks for.
 		on := detailStrings(apiErr.Detail["projects"])
 		if len(on) == 0 {
 			break
 		}
-		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` or `repose snapshots restore` each of them first.", name, joinNames(on))
+		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` each of them first.", name, joinNames(on))
 	}
 	return err
 }

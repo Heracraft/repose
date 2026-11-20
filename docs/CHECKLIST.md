@@ -91,6 +91,20 @@ written so none of them goes unnoticed again.
       anything in hostd that touches LVM, nftables, CH, or nix, run on a real
       host and its output pasted in the PR. Evidence: CI green plus the
       pasted output.
+- [ ] A suite you are quoting as evidence **ran**. A package whose
+      precondition is missing skips rather than fails, and prints `ok`, so
+      a green result can be the absence of the tests rather than their
+      success. Evidence: the per-package times, and a figure that is
+      impossible for a skipping package. Found 2026-11-20 while fixing
+      ENG-119: on a box with no `initdb` on `PATH`,
+      `internal/db/testdb:71` skips every Postgres-backed test, so
+      `internal/api/http` printed `ok` in **0.020 s** and `internal/api/ops`
+      in **0.009 s** -- four api packages reporting success while running
+      nothing, for however long nobody noticed. With `postgresql` on
+      `PATH` the same two take **69.2 s** and **22.2 s**. Nothing in `just
+      done-check` notices, and the earlier instance of the same shape is a
+      test that passes in isolation and fails under load (the row above on
+      retries).
 - [ ] `go vet`, `staticcheck`, `gofmt`, `nix flake check`, `tofu validate`
       clean.
 - [ ] The workstream doc's checklist has been re-read and every item that
