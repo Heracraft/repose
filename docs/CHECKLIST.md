@@ -690,3 +690,22 @@ entry and this list with it. Counts as of 2026-10-21.
       refuse. A `nil`, a zero or an empty slice from a fake is a silent
       skip, not a pass: if a phase cannot fail in the suite, the suite does
       not cover it.
+
+- [ ] Before blaming a machine for a slow or flaky suite, **compare
+      per-package times across machines**, not the suite's total. Measured
+      2026-11-20 on the same commit against the same shared Postgres:
+
+      | package | this 8-core box | CI's 4-core runner |
+      |---|---|---|
+      | `internal/api/resume` | 277.9 s | **24.1 s** |
+      | `internal/api/ops` | 414.7 s | **53.0 s** |
+      | `internal/api/scheduler` | 254.8 s | **10.6 s** |
+
+      The runner everyone assumed was weaker is **ten times faster per
+      package**, because `go test ./...` here runs 8 packages at once
+      against one Postgres and the runner runs 4. So the three reds read all
+      night as "a starved box" are **our own parallelism against a shared
+      resource** — self-inflicted, and cheaper to fix with `-p 2` or an
+      api-only pass than by widening any test's deadline. Evidence: the
+      per-package table, and `-p 2` tried before `WaitOp`'s flat 30 s is
+      touched.
