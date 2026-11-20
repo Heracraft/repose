@@ -322,11 +322,21 @@ else integrated with it.
 2. **Push main.** Watch CI on the pushed commit; a push redeploys `api` and
    `web` whether CI passes or not, so a red run is fixed at once (as its
    own small batch, integrated and pushed).
-2b. **Tag right after the push when the release adds a command.** The
-   push deploys `web`, the public docs included, within minutes; the CLI
-   ships only at the tag, 20 to 30 minutes later. In that window the docs
-   describe a command nobody has (v0.1.50, 2026-11-19, with a plan on
-   sale). `gh release create --draft` makes no tag: push the annotated tag.
+2b. **Tag right after the push when the release adds a command, and ask a
+   script whether it does.** The push deploys `web`, the public docs
+   included, within minutes; the CLI ships only at the tag, 20 to 30
+   minutes later. In that window the docs describe a command nobody has
+   (v0.1.50, 2026-11-19, with a plan on sale). `gh release create
+   --draft` makes no tag: push the annotated tag.
+   `ops/dev/docs-ahead-of-cli` answers whether this release is one of
+   those: it reads the command paths the public docs name at the newest
+   `v*` tag and at `HEAD`, and exits 1 listing any the released CLI does
+   not have. Exit 0 means the ordering does not matter this time. **Exit
+   2 means it could not tell**, which a shallow clone with no tags gives,
+   and is not a pass. Run it before the push, because after the push the
+   window has already opened. `internal/cli/docs_test.go` cannot answer
+   this: it holds the docs to this tree's CLI, which is the thing that has
+   not shipped, and CI's `go` job checks out with no tags (ENG-43).
 3. **Write the notes before the sign job runs.** `release.yml`'s sign job
    refuses a draft with under 400 bytes of notes (I-798). The tag creates the
    draft; `gh release edit v0.1.N --title "v0.1.N" --notes-file

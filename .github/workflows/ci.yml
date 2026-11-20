@@ -354,6 +354,14 @@ jobs:
       - name: the decisions index is current and no id is cited without an entry
         if: ${{ !cancelled() }}
         run: python3 ops/dev/decisions-index.py --check
+      # The release-time check itself (ENG-43, step 2b of RELEASE.md) needs
+      # tags, which this checkout has none of, so only its reading of the
+      # docs runs here: --selftest takes no git at all. It fails if the
+      # reader stops finding the command paths of the incident it exists
+      # for, which is the way this check could start passing for nothing.
+      - name: the docs-ahead-of-cli reader still finds a command path
+        if: ${{ !cancelled() }}
+        run: python3 ops/dev/docs-ahead-of-cli --selftest
 
   web:
     name: dashboard unit + e2e tests, Docker build
