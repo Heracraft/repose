@@ -141,6 +141,20 @@ flock /mnt/nixstore/repose-ws/nix-build.lock \
   nix build --no-link -L ./nix#checks.x86_64-linux.<name>
 ```
 
+**That variable is for `nix` only. Do not export it for `go test`.** One
+test in `internal/cli`, `TestClaudeSettingsMergeGolden/rewrite`, compares
+a golden whose line order was produced by sorting *unnormalised* paths:
+the merge script's jq ends in `unique`, which sorts, and the test
+substitutes the stable home into the output only afterwards. One of the
+sorted strings is the run's own temporary path, so with `/mnt` sorting
+before `/opt` and `/opt` before `/tmp`, a Go run under
+`/mnt/nixstore/tmp` fails it and the same run under `/tmp/rt` passes.
+Proven both ways in about a tenth of a second each on 2026-11-20, and it
+cost the mac-mini conductor a red that its own verification script had
+manufactured by putting this variable at the top rather than inside the
+nix invocation. Until ENG-139 is fixed, keep Go runs on `/tmp/rt` (or
+`/tmp/r`, see below) and this one inside the capped `nix` command.
+
 Run anything long **detached** (`setsid`, redirect to a log) and watch the
 log with a `Monitor`: the harness kills a session's background waiters
 when memory is low, and the job then finishes with nobody reading it.
