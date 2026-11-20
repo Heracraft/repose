@@ -136,7 +136,7 @@ written so none of them goes unnoticed again.
       the user who runs the command for the hundredth time reads every
       one of them under the table they asked for. State that belongs to a
       row is a column, not a line under the table. Evidence: `go test
-      ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures'`
+      ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures'`
       passes (`release-queue add` runs it too), any new
       `quietAllowed` entry carries a reason a reviewer agrees with, and
       the new success lines are pasted in the commit message (the test
