@@ -132,6 +132,8 @@ A host that is answering and still holds machines is not removed. A machine move
 
 A host that has **stopped** answering is removed, machines and all, because the alternative is a dead end: the machines on it cannot be destroyed while repose still believes the host may come back, so refusing to remove the host would leave you unable to do either, or to add a replacement. The question says how many machines go with it and that their disks were on that host; `--yes` skips it, as everywhere. Afterwards the machines are still listed and `repose rm` finishes each of them without the host. If the Mac was only asleep, turn it on and wait for `online` instead: once a host is removed it cannot rejoin, and whatever was on its disk is gone.
 
+Removing the appliance first is the other order, and it takes one more step. `repose host rm --local` works with no session and with repose unreachable, because the appliance is on your Mac and removing it needs nobody's permission. The question it asks says how many machines go with it when your account can be read, and says that it could not be read when it cannot. The host stays on your account either way, holding machines that no longer have anywhere to run, so remove it with `repose host rm <name>` once it reports not answering.
+
 Settings → Hosts has the same Remove, with the same question and the same machines named.
 
 Once a host is off, your new projects go to repose's servers again if your plan buys memory there.

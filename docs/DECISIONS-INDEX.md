@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1055 entries.
+1056 entries.
 
 ## Scope
 
@@ -1087,3 +1087,4 @@ pointer, not a summary.
 - **I-1420** A user can say their own host is gone: `DELETE /hosts/{id}` retires a host whose state is `unreachable` or `lost` even while machines are on it, instead of refusing, and both clients' confirmations say how many machines go with it (fix-starts, 2026-11-20) — L38553
 - **I-1434** macOS gives the launcher about one second when the Mac restarts, not the 360 it asks for, so the park does not survive a restart and the docs stop promising it; the park stays on, because a clean stop of the launcher does park and unpark correctly (mac-mini, 2026-11-20) — L38619
 - **I-1436** `triggers add --route` asks before it takes a route that answers with something else (fix-ask ENG-32, 2026-11-20) — L38667
+- **I-1440** `repose host rm --local` says how many machines go with the appliance, and names the host still on the account afterwards; it stays offline-capable and never refuses on what it could not read (host-rm-local ENG-141, 2026-11-20) — L38717

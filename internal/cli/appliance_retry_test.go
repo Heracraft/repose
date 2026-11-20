@@ -170,7 +170,7 @@ func TestApplianceLeftoversAreRemovable(t *testing.T) {
 	if !appliancePresent(e) {
 		t.Fatal("a part file is something on this Mac to remove")
 	}
-	if err := HostRmLocalCmd(e, true, nil); err != nil {
+	if err := HostRmLocalCmd(context.Background(), e, true, nil); err != nil {
 		t.Fatalf("rm --local over an unfinished install: %v", err)
 	}
 	if _, err := os.Stat(part); err == nil {
@@ -179,7 +179,7 @@ func TestApplianceLeftoversAreRemovable(t *testing.T) {
 
 	// Nothing there at all is still a refusal, and it is the sentence
 	// the customer reads.
-	err := HostRmLocalCmd(e, true, nil)
+	err := HostRmLocalCmd(context.Background(), e, true, nil)
 	if err == nil || !strings.Contains(err.Error(), "no appliance on this Mac") {
 		t.Fatalf("rm --local on a Mac with nothing: %v", err)
 	}

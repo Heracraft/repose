@@ -260,7 +260,7 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 
 // HostRmLocalCmd implements `repose host rm --local`: the appliance on
 // this Mac, and nothing on the account.
-func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error)) error {
+func HostRmLocalCmd(ctx context.Context, e *Env, yes bool, confirm func(prompt string) (bool, error)) error {
 	name, installed := localAppliance(e)
 	// Present, not installed: an install that stopped before its config.
 	// It still holds the bytes, so it is still what this command is for
@@ -268,19 +268,110 @@ func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error))
 	if !installed && !appliancePresent(e) {
 		return exitf(ExitGeneric, "There is no appliance on this Mac.")
 	}
+	h, unread := localHostOnAccount(ctx, e, name)
 	if !yes {
 		if confirm == nil {
 			return exitf(ExitUsage, "Removing the appliance on this Mac needs a confirmation; pass --yes to skip it.")
 		}
-		what := "the appliance on this Mac"
-		if name != "" {
-			what = name + "'s appliance on this Mac"
-		}
-		if err := confirmOr(confirm, fmt.Sprintf("Remove %s, with every machine and snapshot on its disk? [y/N] ", what), "Nothing removed."); err != nil {
+		if err := confirmOr(confirm, localRemovePrompt(name, h, unread), "Nothing removed."); err != nil {
 			return err
 		}
 	}
-	return applianceRemove(e)
+	if err := applianceRemove(e); err != nil {
+		return err
+	}
+	// Where both of 2026-11-20's wedges happened: the appliance gone, the
+	// host still on the account holding a machine whose destroy needs the
+	// host that just went, and the plan's slot still held so no
+	// replacement could be added. I-1420 is the way out and this is the
+	// only place the user finds out it exists (DECISIONS I-1440).
+	if h != nil && h.Projects > 0 {
+		// A host that already reports not answering can go now; one that
+		// still answers cannot, because the api refuses while machines
+		// are on it, and it answers until its heartbeat runs out.
+		when := " once it reports not answering"
+		if h.State == "unreachable" || h.State == "lost" {
+			when = ""
+		}
+		_, _ = fmt.Fprintf(e.ErrOut, "%s is still on your account, with %s. Remove it with `repose host rm %s`%s.\n",
+			h.Name, machinesWithout(h.Projects), h.Name, when)
+	}
+	return nil
+}
+
+// localHostOnAccount is what the account says about the host this Mac
+// runs, which is where the cost of a `--local` removal actually lands:
+// the machines placed here keep their rows and lose the only host that
+// can finish a destroy (ENG-141, DECISIONS I-1440).
+//
+// The answer is advisory, and deliberately so. `--local` is the command
+// that works when nothing else does: on 2026-11-20 an expired login
+// refused `repose rm` and `repose host rm NAME` while `--local` ran and
+// took the appliance, which is correct -- the appliance is on this Mac
+// and removing it needs nobody's permission -- and is also how a user
+// with no session reached the wedge. So a login that cannot answer makes
+// this say less, never refuse. unread is true when the account could not
+// be read at all, which is a different sentence from a host that is not
+// there.
+func localHostOnAccount(ctx context.Context, e *Env, name string) (h *Host, unread bool) {
+	// Added with --join: this Mac has no recorded name, so there is
+	// nothing to look up and nothing to apologise for.
+	if name == "" || e == nil || e.Client == nil {
+		return nil, false
+	}
+	hosts, err := e.Client.ListHosts(ctx)
+	if err != nil {
+		return nil, true
+	}
+	for i := range hosts {
+		if hosts[i].State == "retired" {
+			continue
+		}
+		if hosts[i].Name == name {
+			return &hosts[i], false
+		}
+	}
+	return nil, false
+}
+
+// localRemovePrompt is the question `host rm --local` asks. It says how
+// many machines go with the appliance whenever the account can be read,
+// because "every machine on its disk" was true and told a customer with
+// three machines the same thing it told one with none (ENG-141).
+func localRemovePrompt(name string, h *Host, unread bool) string {
+	what := "the appliance on this Mac"
+	if name != "" {
+		what = name + "'s appliance on this Mac"
+	}
+	switch {
+	case h != nil && h.Projects > 0:
+		disks := "its disk is"
+		if h.Projects > 1 {
+			disks = "their disks are"
+		}
+		return fmt.Sprintf("Remove %s? The %s on it cannot be recovered: %s on this Mac and repose has no copy. [y/N] ",
+			what, machinesOn(h.Projects), disks)
+	case unread:
+		return fmt.Sprintf("Remove %s, with every machine and snapshot on its disk? Your account could not be read, so this cannot say how many machines go with it. [y/N] ", what)
+	default:
+		return fmt.Sprintf("Remove %s, with every machine and snapshot on its disk? [y/N] ", what)
+	}
+}
+
+// machinesOn and machinesWithout count machines in the two sentences
+// above, so neither has to say "1 machines".
+func machinesOn(n int) string {
+	if n == 1 {
+		return "machine"
+	}
+	return fmt.Sprintf("%d machines", n)
+}
+
+func machinesWithout(n int) string {
+	if n == 1 {
+		return "1 machine that no longer has a host"
+	}
+	return fmt.Sprintf("%d machines that no longer have a host", n)
 }
 
 // hostRemovePrompt says what the removal costs. The api refuses while
