@@ -26,6 +26,7 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 
 	var (
+		addYes                   bool
 		addRoute, addEvery       string
 		addPrompt, addPromptFile string
 		addWorkdir, addAgent     string
@@ -58,7 +59,14 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{errStartBoth}
 			}
 			o := TriggerAddOptions{Route: addRoute, Every: addEvery,
-				Prompt: addPrompt, PromptFile: addPromptFile}
+				Prompt: addPrompt, PromptFile: addPromptFile, Yes: addYes}
+			// `--route` on a route that answers with something else asks
+			// first (ENG-32); off a terminal askYesNo names --yes.
+			if !addYes {
+				o.Confirm = func(prompt string) (bool, error) {
+					return askYesNo(cmd.Context(), prompt, false, "taking the route over")
+				}
+			}
 			if cmd.Flags().Changed("workdir") {
 				o.Workdir = &addWorkdir
 			}
@@ -98,6 +106,7 @@ func newTriggersCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	add.Flags().StringVar(&addRoute, "route", "", "fire on a delivery to this webhook `ROUTE`, which is made if it is not there")
+	add.Flags().BoolVar(&addYes, "yes", false, "do not ask before a --route that answers with something else starts this trigger instead")
 	add.Flags().StringVar(&addEvery, "every", "", "fire on a `SPEC` schedule: every 15m, daily 03:00, weekdays 07:00, weekends 10:00, mon,thu 18:30, monthly 1 09:00, with an optional zone (daily 03:00 UTC)")
 	add.Flags().StringVarP(&addPrompt, "prompt", "p", "", "the prompt as `TEXT`, written into the machine as .repose/triggers/NAME.md")
 	add.Flags().StringVar(&addPromptFile, "prompt-file", "", "the prompt as a `PATH` in the machine (default .repose/triggers/NAME.md)")
