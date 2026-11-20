@@ -37541,8 +37541,19 @@ for one purpose reaching another through a field they share. Three of
 them merged inside two days, so this commit adds the row that catches the
 shape to `CHECKLIST.md`, under "For every change": a timeout the change
 adds says which operation it bounds, and no second operation reaches it
-through a field they share. ENG-117's card proposed that row as already
-existing; it did not, which is part of why this was the third.
+through a field they share. ENG-105's own fix added that row to `mac-mini`
+first (`f7897014`, 2026-11-20), four minutes before this branch's base
+commit and not an ancestor of it, so a grep of this worktree found
+nothing and an earlier draft of this entry said the row existed nowhere
+in the repository. That was a worktree described as a project. The two
+rows say the same thing and the conductor keeps this one at merge,
+because it cites three instances of the shape where the first cites one.
+`f7897014`'s other row is the one this change had to satisfy -- anything
+made retryable is idempotent first, or the retry duplicates the effect
+the user sees -- and a GET that resumes from a part file and verifies the
+whole file's checksum does: the only effect it can duplicate is bytes on
+disk at a known offset, and the hazard worth naming is the stale part
+file above.
 
 - *A stall window, not a response-header timeout.* With the deadline
   gone, something still has to end a connection that died, because TCP
