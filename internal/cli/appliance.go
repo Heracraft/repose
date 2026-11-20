@@ -74,6 +74,11 @@ const (
 	applianceDiskMinGB = 40
 	// applianceDiskKeepGB stays free on the volume for the user.
 	applianceDiskKeepGB = 20
+	// applianceMinCPUs and applianceMinMemoryMiB are the floors the
+	// sizing rules already keep (vmCPUs, vmMemoryMiB); naming them lets
+	// an explicit flag be refused against the same number.
+	applianceMinCPUs      = 4
+	applianceMinMemoryMiB = 8192
 	// applianceImageApparentBytes is the raw image's size as built (37
 	// GiB): a disk file smaller than that is a broken unpack.
 	applianceImageApparentBytes = 37 << 30
@@ -728,6 +733,48 @@ var freeGBOf = func(dir string) int {
 }
 
 // ---- install ----------------------------------------------------------
+
+// applianceOptionsFrom reads the three sizing flags as the customer
+// typed them. They are strings rather than ints for two reasons
+// (ENG-38). An int flag's zero value is also "not given", so `--cpus 0`
+// was indistinguishable from the flag left out and silently took the
+// default, where the same CLI refuses `--expires 0`. And pflag wraps an
+// int parse failure as `invalid argument "banana" for "--disk" flag:
+// strconv.ParseInt: ...`, which is Go's sentence and not this CLI's.
+// An empty string is the flag left out, and 0 in the result still means
+// "take the default", which is what the sizing rules below read.
+func applianceOptionsFrom(disk, memory, cpus string) (applianceOptions, error) {
+	var o applianceOptions
+	var err error
+	if o.DiskGB, err = wholeAtLeast(disk, "gigabytes", applianceDiskMinGB); err != nil {
+		return o, err
+	}
+	if o.MemoryMiB, err = wholeAtLeast(memory, "MiB of memory", applianceMinMemoryMiB); err != nil {
+		return o, err
+	}
+	if o.CPUs, err = wholeAtLeast(cpus, "cores", applianceMinCPUs); err != nil {
+		return o, err
+	}
+	return o, nil
+}
+
+// wholeAtLeast reads one of them: "" is the flag left out, anything else
+// is a whole number at or above floor, refused in prose that quotes the
+// input as typed.
+func wholeAtLeast(in, what string, floor int) (int, error) {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(in)
+	if err != nil {
+		return 0, cobraUsageError{fmt.Errorf("%q is not a whole number of %s", in, what)}
+	}
+	if n < floor {
+		return 0, cobraUsageError{fmt.Errorf("the appliance needs at least %d %s, not %d", floor, what, n)}
+	}
+	return n, nil
+}
 
 // readJoinArgument is the install argument, from wherever the customer
 // put it: `--join -` reads standard input, `--join-file PATH` reads a
