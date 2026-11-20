@@ -55,4 +55,3 @@ func VsockDialer(cid, port uint32) Dialer {
 		}
 	}
 }
-
