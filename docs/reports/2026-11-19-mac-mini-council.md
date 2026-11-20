@@ -20,14 +20,26 @@ disagreed on a rank, both ranks are shown below with what separates them.
 
 ## What has never been checked, said out loud
 
-A builder asked for this to be stated rather than assumed, and it is right:
-**the full `nix flake check` has never passed on this branch, anywhere, at
-any point.** It was abandoned deliberately — a whole-flake evaluation takes
-8.5 to 12 GB on the 16 GB machine this program ran on, and it was OOM-killed
-twice — so the checks were built one at a time under a lock instead. That is
-weaker evidence than a full check and it is what we have. **An idle box is
-not evidence that a check passed.** Whoever cuts the queue should say this
-out loud rather than let a reader assume the usual gate ran.
+A builder asked for this to be stated rather than assumed, and it is right —
+with one precision that was missing when this section was first written, and
+which the same discipline demands:
+
+- **The whole-flake *evaluation* has passed on this branch**, on CI, for an
+  older head: `nix flake check (evaluate)` green in 10m50s on PR #76 at
+  `81741b2b8`. That job runs `nix flake check --no-build`, which evaluates
+  every output and **builds none**. The branch is now 68 commits past that
+  head.
+- **The full `nix flake check` with its builds — the VM tests and the
+  closure checks actually running — has never passed on this branch,
+  anywhere, at any point.** On this box a whole-flake evaluation alone takes
+  8.5 to 12 GB on 16 GB of RAM and was OOM-killed twice, so the checks were
+  built one at a time under a lock instead.
+
+The difference between those two sentences is every VM test and every
+closure check, and the first is routinely mistaken for the second because
+the job is named "flake check". **An idle box is not evidence that a check
+passed, and a job's name is a claim like any other.** Whoever cuts the queue
+says this out loud rather than letting a reader assume the usual gate ran.
 
 Also never exercised by a customer path: the disk-floor refusal (ENG-41),
 because sizing happens after the image is unpacked and until 22:28 UTC
