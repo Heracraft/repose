@@ -54,11 +54,15 @@ import (
 // console, which carries the appliance's journal (ids and states) and
 // nothing of the user's. One thing lives outside: the wrapping key of
 // the parked images, an item in the user's keychain (parkkeychain.go,
-// DECISIONS I-1386), which is what lets a restart of the Mac keep what
-// every machine was doing.
+// DECISIONS I-1386). It is what *would* let a restart of the Mac keep
+// what every machine was doing, and it does not: macOS gives the
+// launcher about one second when the Mac goes down, measured, and
+// writing a machine's memory takes longer (DECISIONS I-1434). The park
+// works on a clean stop of the appliance and not across a restart, so
+// every machine starts fresh after one.
 
 const (
-	applianceVersion  = "2026.11.19"
+	applianceVersion  = "2026.11.20"
 	applianceURL      = "https://github.com/Heracraft/repose/releases/download/appliance-" + applianceVersion + "/repose-appliance-aarch64.raw.gz"
 	vfkitVersion      = "0.6.4"
 	vfkitURL          = "https://github.com/crc-org/vfkit/releases/download/v" + vfkitVersion + "/vfkit"
