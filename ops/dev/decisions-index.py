@@ -198,7 +198,48 @@ ENFORCED = [
     ".github/", "docs/interfaces/", "docs/features/", "docs/ops/",
     "docs/DESIGN.md", "docs/ARCHITECTURE.md", "docs/CHECKLIST.md",
     "docs/MILESTONES.md", "docs/README.md", "install.sh", "justfile",
+    # Added 2026-11-20 after an entry cited in docs/REVIEW.md turned out to
+    # be an orphan nothing looked for, because that file was outside this
+    # list. These five
+    # are normative documents in the same class as DESIGN.md and
+    # CHECKLIST.md: a reader acts on them, so a dead id in one points at
+    # nothing. All five were clean when they were added, 114 citations
+    # between them and no orphan, so this widened the net without moving a
+    # single existing line.
+    "docs/REVIEW.md", "docs/SECURITY.md", "docs/PRICING.md",
+    "docs/LANDING.md", "docs/GLOSSARY.md",
 ]
+
+
+# An entry heading this file cannot parse makes the entry ABSENT rather
+# than wrong: the index is "current" without it, and a citation of it is an
+# orphan only where citations are enforced. On 2026-11-20 an entry was
+# written with a Markdown heading instead of the bold form (the mac-mini
+# branch; its number is deliberately not repeated here, because a number
+# in this file is itself a citation in an enforced path). No tool could
+# see it for twenty minutes while a commit and docs/REVIEW.md cited it,
+# and --check printed "is current" with the same entry count before and
+# after. These two shapes
+# are what that mistake looks like; both match nothing in DECISIONS.md as
+# it stands, which is what makes them safe to fail on. A bare id at the
+# start of a line is deliberately not here: six of those are prose wrapped
+# mid-sentence ("Amends\nI-269. With plans ..."), so it cannot tell a
+# malformed heading from a paragraph.
+MISHEADINGS = [
+    (re.compile(r"^#{1,6}[ \t]*\*{0,2}(" + ID_GROUP + r")\b", re.M),
+     "a Markdown heading"),
+    (re.compile(r"^\*(?!\*)[ \t]*(" + ID_GROUP + r")\.", re.M),
+     "one asterisk, not two"),
+]
+
+
+def misheadings(text):
+    """Lines that look like an entry heading in a shape parse() ignores."""
+    out = []
+    for pat, shape in MISHEADINGS:
+        for m in pat.finditer(text):
+            out.append((text[: m.start()].count("\n") + 1, m.group(1), shape))
+    return sorted(out)
 
 
 def declared(entries):
@@ -269,6 +310,19 @@ def main(argv):
             file=sys.stderr,
         )
         return 1
+    bad = misheadings(SRC.read_text())
+    if bad:
+        src = SRC.relative_to(ROOT)
+        for lineno, cited, shape in bad:
+            print(f"{src}:{lineno}: {cited} looks like an entry heading written as "
+                  f"{shape}; parse() ignores it, so the entry is absent and the "
+                  f"index is 'current' without it", file=sys.stderr)
+        print("entries start with `**I-<n>.` at the start of a line; a heading in "
+              "any other shape is invisible to every tool that reads DECISIONS.md",
+              file=sys.stderr)
+        if check:
+            return 1
+
     # Only under --check. Regenerating the index is a formatter and must
     # always succeed: `cut` regenerates it to settle an index conflict, and
     # ops/dev/release-queue-test drives that path in a scratch repository

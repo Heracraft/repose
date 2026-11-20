@@ -127,6 +127,20 @@ trouble, which is why it was not enough on its own. Verified on
 `nix build ./nix#guest-system`, the `guest-closure-size` check and the
 whole `guest-base` VM test (29 subtests) all completed inside 6 GB.
 
+Point `TMPDIR` at the big disk while you are at it: **`/mnt/nixstore/tmp`**.
+`/tmp` is on the 29 GB root filesystem, a NixOS VM test writes its disk
+images into `TMPDIR`, and on 2026-11-20 the root was at 84 % with 4.7 GB
+free while a 2 GB appliance image sat staged in `/tmp/rt`. A VM series
+that fills the root fails in a way that looks like anything but disk. The
+whole invocation is then:
+
+```
+flock /mnt/nixstore/repose-ws/nix-build.lock \
+  systemd-run --user --scope -p MemoryMax=6G --quiet -- \
+  env TMPDIR=/mnt/nixstore/tmp choom -n 1000 -- \
+  nix build --no-link -L ./nix#checks.x86_64-linux.<name>
+```
+
 Run anything long **detached** (`setsid`, redirect to a log) and watch the
 log with a `Monitor`: the harness kills a session's background waiters
 when memory is low, and the job then finishes with nobody reading it.
@@ -163,6 +177,23 @@ the way the x86 overlay is. The base closure itself is never pushed:
 it is 6 GiB of mostly cache.nixos.org paths, and the Cachix cache is
 the free 5 GB tier (I-46). An aarch64 host builds its base the way an
 x86 host does, from cache.nixos.org plus the overlay from Cachix.
+
+## A check that is not installed fails in zero seconds
+
+`golangci-lint` is **not on `PATH` outside `nix develop ./nix`**. A
+verification run that calls it from a plain shell reports `FAIL lint`
+immediately, which reads exactly like a real red and is not one: nothing
+was linted. The mac-mini conductor lost a verification run to this on
+2026-11-20, and every "lint 0 issues" on that program came from a session
+that happened to have the dev shell. Run it as `just lint`, or inside
+`nix develop ./nix -c sh -c '...'` with the rest of the Go set, and read
+the tool's own first line rather than only its exit code: zero seconds is
+the tell.
+
+This is the same family as a check's exit read through a pipe
+(`CONDUCTOR-HANDOFF.md`, Lessons) and as a filtered `go test` that matches
+nothing and prints `ok`. An absent check and a passing check are
+indistinguishable from the exit code alone.
 
 ## Go tests and Playwright
 
