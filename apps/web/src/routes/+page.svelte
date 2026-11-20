@@ -28,18 +28,11 @@
 
 	/** The hero picture: the Orbit, or the candidate ?hero= names, loaded after mount. */
 	let Hero = $state<Component>(Terminal);
-	// The pause control belongs to a looping picture (I-666, WCAG 2.2.2).
-	// The Terminal reveals its lines once and stops, so it needs none; a
-	// candidate loaded with `?hero=` may loop, and keeps its control.
-	let heroLoops = $state(false);
 	onMount(async () => {
 		const name = new URLSearchParams(window.location.search).get('hero');
 		if (!name) return;
 		const alt = await loadHero(name);
-		if (alt) {
-			Hero = alt;
-			heroLoops = true;
-		}
+		if (alt) Hero = alt;
 	});
 
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
@@ -161,9 +154,12 @@
 				     (heroes.ts), the Orbit among them. -->
 				<Hero />
 			</div>
-			{#if heroLoops}
-				<PauseButton />
-			{/if}
+			<!-- The page's one control, in the hero's field (I-666): it holds
+			     EVERY looping picture, not the hero's, and shows itself when
+			     any loop runs (`motion.live > 0` in PauseButton). It stays
+			     when the hero does not loop, because the wreck, the setup and
+			     the grid still do. -->
+			<PauseButton />
 		</div>
 	</section>
 

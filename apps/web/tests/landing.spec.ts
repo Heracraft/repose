@@ -258,15 +258,12 @@ test('the motion control shows, takes the pointer, and stands in the hero field'
 }) => {
 	for (const width of [1440, 1024, 390]) {
 		await page.setViewportSize({ width, height: 900 });
-		// The page itself has no looping picture since the hero became the
-		// real `repose run` session (I-1446): the Terminal reveals its
-		// lines once and stops, so a pause control there would pause
-		// nothing. The control and its geometry are checked on a looping
-		// candidate from the `?hero=` gallery, which is where one lives.
+		// The page's one control stands in the hero's field and holds
+		// every looping picture, not the hero's (I-666). It stays there
+		// now that the hero is the session, which does not loop, because
+		// the wreck, the setup and the grid still do.
 		await page.goto('/');
 		await expect(page.locator('main .fig-bar')).toHaveCount(0);
-		await expect(page.locator('main .fig .pic-pause')).toHaveCount(0);
-		await page.goto('/?hero=orbitv1');
 		const buttons = page.locator('main .fig .pic-pause');
 		await expect(buttons).toHaveCount(1);
 		await expect(page.locator('.hero .fig .pic-pause')).toHaveCount(1);
@@ -468,7 +465,6 @@ test('the hero picture is the real repose run session, and holds under reduced m
 	expect(pane.height).toBeLessThanOrEqual(900 - 64);
 	await expect(page.locator('.cmp')).toHaveCount(0);
 	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-	await expect(page.locator('button.pic-pause')).toHaveCount(0);
 	await context.close();
 });
 
