@@ -698,7 +698,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 			rf, err := unfinishedRestore(ctx, e.pool, p.ID)
 			if len(open) == 0 && err == nil && rf.destroyedOld {
 				e.log.Warn("releasing the address of a guest a failed restore destroyed", "event", "reconcile_missing", "project_id", p.ID.String())
-				_, _ = e.pool.Exec(ctx, "update projects set guest_ip = null, vsock_cid = null where id = $1 and guest_id = $2 and state = 'error'", p.ID, *p.GuestID) // best effort; the next Hello tries again
+				e.releaseGuestAddress(ctx, &p)
 			}
 		}
 	}
@@ -818,6 +818,41 @@ func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr
 	if cid != nil {
 		p.VsockCID = cid // coalesce kept the old one when the host sent none
 	}
+}
+
+// releaseGuestAddress clears the address of a guest a failed in-place
+// restore destroyed, with the open-op test in the statement for the same
+// reason the write has it (DECISIONS I-1444).
+//
+// This clears the two columns recordGuestAddress writes, so leaving it as
+// a read followed by an UPDATE would have left the same window open in
+// the worse direction: a running op that needs guest_ip loses it, rather
+// than gaining a stale one. The caller's other two conditions stay in Go
+// -- one of them is a second query -- because neither is a race; only the
+// open-op test was.
+func (e *Engine) releaseGuestAddress(ctx context.Context, p *store.Project) {
+	if p.GuestID == nil {
+		return
+	}
+	// Best effort, as it was: the next Hello tries again.
+	tag, err := e.pool.Exec(ctx,
+		`update projects set guest_ip = null, vsock_cid = null
+		   where id = $1 and guest_id = $2 and state = 'error'
+		     and not exists (
+		       select 1 from ops
+		        where project_id = $1 and state in ('pending', 'running'))`,
+		p.ID, *p.GuestID)
+	if err != nil {
+		e.log.Warn("the address of a destroyed guest was not released", "event", "reconcile_missing", "project_id", p.ID.String(), "err", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		e.log.Info("the address of a destroyed guest was not released: the project moved on", "event", "reconcile_missing", "change", "held",
+			"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
+		return
+	}
+	p.GuestIP = nil
+	p.VsockCID = nil
 }
 
 func settled(state string) bool {

@@ -302,3 +302,48 @@ func TestTheAddressWriteAllowsTheOpItBelongsTo(t *testing.T) {
 		t.Fatalf("another open op did not hold the write: %v", got.GuestIP)
 	}
 }
+
+// TestTheAddressReleaseRefusesWhileAnOpIsOpen: the reconcile's other
+// writer of guest_ip clears it, and had the same check-then-act window
+// the write had (DECISIONS I-1444). This direction is the worse one: a
+// running op that needs the address loses it, rather than gaining a
+// stale one.
+func TestTheAddressReleaseRefusesWhileAnOpIsOpen(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("addrrelease")
+	p := h.CreateRunning(u, "izma")
+
+	// The state this path is for: error, with an address still on the row.
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error' where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	row := h.Project(p.ID)
+	if row.GuestIP == nil {
+		t.Fatal("the fixture has no address to release")
+	}
+
+	opID := store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx,
+		"insert into ops (id, project_id, kind, state, step, host_id, params) values ($1, $2, 'restore', 'running', 0, $3, '{}'::jsonb)",
+		opID, p.ID, p.HostID); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Engine.ReleaseGuestAddressForTest(h.Ctx, row)
+	if got := h.Project(p.ID); got.GuestIP == nil {
+		t.Fatal("the address was released while an op was open")
+	}
+	if row.GuestIP == nil {
+		t.Fatal("the in-memory project was cleared by a write that did nothing")
+	}
+
+	// With the op finished the same call releases it, so the refusal is
+	// the open op and not the statement being wrong.
+	if _, err := h.Pool.Exec(h.Ctx, "update ops set state = 'done' where id = $1", opID); err != nil {
+		t.Fatal(err)
+	}
+	h.Engine.ReleaseGuestAddressForTest(h.Ctx, row)
+	if got := h.Project(p.ID); got.GuestIP != nil {
+		t.Fatalf("with no op open the address was not released: %v", got.GuestIP)
+	}
+}

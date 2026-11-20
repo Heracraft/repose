@@ -37,3 +37,9 @@ func (e *Engine) RecordGuestAddressForTest(ctx context.Context, p *store.Project
 func (e *Engine) RecordGuestAddressForOpTest(ctx context.Context, p *store.Project, ip string, cid uint32, op uuid.UUID) {
 	e.recordGuestAddress(ctx, p, ip, cid, "start", &op)
 }
+
+// ReleaseGuestAddressForTest is the address *clear* on its own, the other
+// writer of guest_ip in the reconcile (I-1444).
+func (e *Engine) ReleaseGuestAddressForTest(ctx context.Context, p *store.Project) {
+	e.releaseGuestAddress(ctx, p)
+}

@@ -38844,9 +38844,34 @@ on the dev box never did.
   end-to-end test through a real Hello stays, and it is the one that
   passed throughout the defect's life.
 
-*Not done:* `OnHello` still reads the open ops before it does anything,
-because that read also gates the state reconcile and the two
-`reconcile_missing` paths, which are three more check-then-act sequences
-on the same table. They are not this entry's: each writes a state rather
-than an address, and the window for each wants its own argument about
-what the right behaviour is when an op opens mid-reconcile.
+- *The other writer of these columns is fixed with it.* The
+  `reconcile_missing` path that releases the address of a guest a failed
+  restore destroyed read the open ops and then ran `update projects set
+  guest_ip = null, vsock_cid = null`, which is this same defect on the
+  same two columns, and in the worse direction: a running op that needs
+  the address loses it rather than gaining a stale one. It is now
+  `releaseGuestAddress`, with the same `not exists`, the same
+  `RowsAffected` discipline and its own deterministic test. Caught in
+  review by the mac-mini conductor, after a first draft of this entry
+  claimed the remaining sites each wrote "a state rather than an
+  address", which was wrong about exactly this one.
+- *This narrows the window; it does not close it, and the entry says so
+  rather than letting a later reader assume otherwise.* Postgres runs
+  these statements at READ COMMITTED, so the subquery sees what was
+  committed when the statement began. Enqueueing an op is a bare `insert
+  into ops` that touches no `projects` row, so it takes no lock the
+  UPDATE contends for, and an op committed after that instant is still
+  invisible. What changes is the size: from a gap between two round
+  trips, which CI hit, to the gap inside one statement. Closing it
+  completely would mean making op creation conflict with the project row
+  -- a `select ... for update` on `projects` in the enqueue -- which is a
+  lock-ordering decision across every op path and is not this entry's to
+  make.
+
+*Not done:* the state reconcile beside it still reads the open ops and
+then calls `SetProjectState(..., "error")`, so a project can be marked
+`error` by the reconcile while an op is opening. It is left because
+`SetProjectState` is shared by callers who must not inherit this
+condition, so fixing it means either a dedicated statement or a new store
+function, and because what *should* happen when an op opens mid-reconcile
+is a question about states rather than a race on a column. Carded.
