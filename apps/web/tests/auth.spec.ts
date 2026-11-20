@@ -279,3 +279,35 @@ test.describe('with JavaScript disabled', () => {
 		expect(cookies.find((c) => c.name === 'repose_signin')).toBeUndefined();
 	});
 });
+
+// ENG-44, from the customer review: with an expired token the dashboard
+// made no api call, rewrote /projects to / and rendered the landing page
+// — no word that the session had ended, no sign-in prompt, and the
+// address gone, so neither reload nor Back recovered it. The same
+// happened to anyone opening a bookmarked /projects, /billing, /settings
+// or /questions.
+//
+// The repair is deliberately the small one: the landing page is still
+// where they land, because forcing a sign-in redirect on every private
+// route would loop if the session ever read as ended while it was not.
+// What changes is that they are told, and that the page they asked for
+// is remembered and returned to.
+test('a signed-out visitor on a dashboard page is told, and comes back to it', async ({ page }) => {
+	await page.goto('/projects');
+	// The landing page, as before.
+	await expect(page).toHaveURL(/\/$/);
+	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
+	// And a word, naming the page they asked for, which is also how they
+	// can see it was not thrown away.
+	await expect(page.getByText('Sign in to open /projects.')).toBeVisible();
+
+	// Signing in from here comes back to it rather than to /projects by
+	// luck: /settings is a page the sign-in link itself may not name.
+	await page.goto('/settings/hosts');
+	await expect(page.getByText('Sign in to open /settings/hosts.')).toBeVisible();
+	await page.getByRole('link', { name: 'Get started' }).click();
+	await page.waitForURL(/\/oidc\/auth/);
+	await page.getByRole('button', { name: 'Continue as heracraft' }).click();
+	await page.waitForURL(/\/settings\/hosts$/);
+	await expect(page.locator('#hosts')).toBeVisible();
+});

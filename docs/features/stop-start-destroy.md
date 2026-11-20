@@ -276,6 +276,16 @@ Destroy:
   when it is done and the project is gone, and a failed op with the
   project's state and the command that retries (DECISIONS I-153,
   api.md).
+- The destroy's answer carries `final_snapshot`, and the line the CLI
+  prints says a snapshot is kept only when it is true (api.md, I-1418).
+  It is false for a temporary project and for a project whose host is
+  `lost` or `retired`, where every phase including the snapshot is
+  skipped (I-924) and the destroy drains to nothing. The CLI prints its
+  line the moment the api accepts, before any phase has run, so it
+  cannot work this out for itself: it promised "its final snapshot is
+  kept until <date>" twice for a machine on a Mac whose appliance the
+  owner had deleted, and that machine's snapshot count was 0 and had
+  never been anything else (ENG-119).
 - The project is `destroying` from the moment the api accepts. The op
   stops the guest if it is not stopped (no snapshot in the stop), then
   takes the final snapshot of the stopped volume, which is clean without

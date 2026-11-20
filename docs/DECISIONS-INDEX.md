@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1050 entries.
+1055 entries.
 
 ## Scope
 
@@ -655,7 +655,7 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16642
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16687
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; amended by I-888; L16714
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16775
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; amended by I-1428; L16775
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; amended by I-890; L16842
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16892
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16926
@@ -1082,3 +1082,8 @@ pointer, not a summary.
 - **I-1422** An appliance is installed when its config is on disk, and nothing before that: the sizing guard runs before anything is fetched, an unfinished install is sized rather than adopted, and `repose host rm` clears it (mac-mini 19c, 2026-11-20) — L38232
 - **I-1424** The install argument comes in off the command line: `--join -` reads standard input, `--join-file` reads a file, and the line the install prints after a failed download names the file rather than the argument (mac-mini 19c, 2026-11-20) — L38326
 - **I-1432** The appliance's three sizing flags are read as the customer typed them: an explicit zero is refused rather than taken as the default, and a value that is not a number is refused in this CLI's words (mac-mini 19c, 2026-11-20) — L38375
+- **I-1428** Nix's own build output follows `-v`, not the absence of a terminal (fix-ask ENG-27, 2026-11-20) — L38426
+- **I-1418** No sentence on the removal path names a recovery that cannot happen: `host_unreachable` stops telling a user to wait for a host they deleted, the host-removal refusal stops naming a snapshot restore the machine may have no snapshot for, and a destroy's answer carries `final_snapshot` so the CLI stops promising one it cannot take (fix-starts, 2026-11-20) — L38478
+- **I-1420** A user can say their own host is gone: `DELETE /hosts/{id}` retires a host whose state is `unreachable` or `lost` even while machines are on it, instead of refusing, and both clients' confirmations say how many machines go with it (fix-starts, 2026-11-20) — L38553
+- **I-1434** macOS gives the launcher about one second when the Mac restarts, not the 360 it asks for, so the park does not survive a restart and the docs stop promising it; the park stays on, because a clean stop of the launcher does park and unpark correctly (mac-mini, 2026-11-20) — L38619
+- **I-1436** `triggers add --route` asks before it takes a route that answers with something else (fix-ask ENG-32, 2026-11-20) — L38667

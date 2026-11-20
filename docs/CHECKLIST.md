@@ -47,6 +47,24 @@ written so none of them goes unnoticed again.
       And name the three deadlines in a call separately — the dial, the
       request, and the thing being waited for — so only the ones that
       should be short are short.
+- [ ] A deadline's **value** clears the slowest observed run of what it
+      bounds **by more than the observed spread**, or it measures load
+      rather than work. Evidence: the measurements it was chosen against,
+      with their spread, in the comment or the decision entry — not a
+      round number. The row above catches a constant borrowed by a second
+      operation; this catches a constant whose value was never checked
+      against the distribution it has to cover, which is a different
+      defect and cost two in one night. In the product: guest starts on a
+      Mac appliance measured 162.6 to 254.9 s server-side on identical
+      work, a 1.57x spread, with registration alone spanning 43.0 to
+      172.5 s against a fixed 180 s limit — so whether a start lived was
+      decided by where in that spread it landed, which is what two
+      successes in nine starts looks like from the outside (ENG-80,
+      I-1408). The published build's own **successful** start used 172,514
+      of its 180,000 ms, 95.8 percent. In the tests: a package's 75 s of
+      variation against the 64 s of headroom its inherited 600 s default
+      left (ENG-115). A deadline inside the distribution is a coin flip,
+      and it fails as "sometimes slow hardware" rather than as a bug.
 - [ ] Errors are handled at every call site, with the failure named in the
       message. No `_ = err`, no bare `panic` outside `main`. Evidence: `rg
       '_ = err|panic\(' cmd internal` is empty or each hit has a comment
@@ -73,6 +91,20 @@ written so none of them goes unnoticed again.
       anything in hostd that touches LVM, nftables, CH, or nix, run on a real
       host and its output pasted in the PR. Evidence: CI green plus the
       pasted output.
+- [ ] A suite you are quoting as evidence **ran**. A package whose
+      precondition is missing skips rather than fails, and prints `ok`, so
+      a green result can be the absence of the tests rather than their
+      success. Evidence: the per-package times, and a figure that is
+      impossible for a skipping package. Found 2026-11-20 while fixing
+      ENG-119: on a box with no `initdb` on `PATH`,
+      `internal/db/testdb:71` skips every Postgres-backed test, so
+      `internal/api/http` printed `ok` in **0.020 s** and `internal/api/ops`
+      in **0.009 s** -- four api packages reporting success while running
+      nothing, for however long nobody noticed. With `postgresql` on
+      `PATH` the same two take **69.2 s** and **22.2 s**. Nothing in `just
+      done-check` notices, and the earlier instance of the same shape is a
+      test that passes in isolation and fails under load (the row above on
+      retries).
 - [ ] `go vet`, `staticcheck`, `gofmt`, `nix flake check`, `tofu validate`
       clean.
 - [ ] The workstream doc's checklist has been re-read and every item that
@@ -461,6 +493,17 @@ entry and this list with it. Counts as of 2026-10-21.
       create to running 47 s, menu apply 5 s, eval and build timings). No
       axis came close to the 20 percent question, so the Hetzner fallback
       (R3-20) stays a fallback; I-39 records the v7 sizes used.
+- [ ] **The docs do not promise a command before the CLI ships it.** The
+      public docs deploy on the push to main and the CLI only at the tag, so
+      a release that adds a command has a window where /docs describes one
+      nobody can install. Evidence: `ops/dev/docs-ahead-of-cli; echo $?`
+      prints 0, or prints 1 with the commands named and the tag follows the
+      push at once (`docs/ops/RELEASE.md` step 2b). Read the script's own
+      exit code: 2 is "could not tell", which is what a checkout with no
+      tags gives, and is not a pass. On 2026-11-19 /docs/own-hardware and
+      /docs/cli documented `repose host add|run|ls|rm` for 21 minutes while
+      `install.sh` served a CLI that exited 2 on it, on the launch feature
+      (ENG-43, ENG-23).
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
 - [ ] **Paging reaches a human.** One contact point in the owner's Grafana,

@@ -446,3 +446,163 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 		t.Fatalf("list: %d %s, want host_name host-01", r.status, r.raw)
 	}
 }
+
+// TestRemovingAHostClearsWhatItLeftOnTheMachines is ENG-33, from the
+// customer review: adding a host captured every new project, the host
+// never registered, the creates failed with `your host host-1 has not
+// registered yet`, and removing the host left five project rows naming
+// a host Settings → Hosts said the customer did not have.
+//
+// A placement failure frees the project's host and leaves the sentence
+// on the row (ops/phases.go), so the sentence outlives the host. It is
+// the api's to clear: the op keeps the history, and a row that asserts
+// something false about hardware the customer no longer owns is the one
+// thing they cannot act on.
+func TestRemovingAHostClearsWhatItLeftOnTheMachines(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "host-1"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+
+	// Two machines the host's absence left in error, with the host freed
+	// as a failed placement frees it, and one left in error by something
+	// else, which is none of the host's business.
+	mk := func(slug, lastErr string) {
+		t.Helper()
+		if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, volume_bytes, last_error)
+			values ($1, $2, $3, $3, 'large', 'error', 1, $4)`, store.NewID(), uid, slug, lastErr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("todo", "capacity: your host host-1 has not registered yet")
+	mk("notes", "capacity: your host host-1 has not registered yet")
+	mk("api", "build_failed: nixpkgs has no package \"ghc9999\"")
+
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
+		t.Fatalf("remove: %d %s", r.status, r.raw)
+	}
+
+	errs := map[string]*string{}
+	rows, err := e.h.Pool.Query(e.h.Ctx, "select slug, last_error from projects where user_id = $1", uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var slug string
+		var last *string
+		if err := rows.Scan(&slug, &last); err != nil {
+			t.Fatal(err)
+		}
+		errs[slug] = last
+	}
+	rows.Close()
+	for _, slug := range []string{"todo", "notes"} {
+		if errs[slug] != nil {
+			t.Errorf("%s still says %q after its host was removed", slug, *errs[slug])
+		}
+	}
+	if errs["api"] == nil || !strings.Contains(*errs["api"], "ghc9999") {
+		t.Errorf("a machine in error for its own reasons lost it: %v", errs["api"])
+	}
+}
+
+// A destroy says whether it will take a final snapshot, because the CLI
+// prints what is kept the moment this route answers, before any phase
+// runs. On a host nobody expects back every phase including the snapshot
+// is skipped (I-924), so a destroy there keeps nothing, and the CLI said
+// "its final snapshot is kept until <date>" anyway -- twice, on the
+// owner's own account, for a machine whose snapshot count was 0 and had
+// never been anything else (ENG-119, DECISIONS I-1418).
+func TestDestroySaysWhetherASnapshotIsKept(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	hostID, _ := r.body["id"].(string)
+
+	newProject := func(slug string) string {
+		id := store.NewID()
+		if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, guest_id, volume_bytes)
+			values ($1, $2, $3, $3, 'small', 'stopped', $4, $5, 1)`, id, uid, slug, hostID, store.NewID()); err != nil {
+			t.Fatal(err)
+		}
+		return id.String()
+	}
+
+	// The host is there: the snapshot phase runs and the promise is true.
+	live := newProject("live")
+	r = e.do(t, tok, "DELETE", "/projects/"+live, nil)
+	if r.status != 202 {
+		t.Fatalf("destroy on a live host: %d %s", r.status, r.raw)
+	}
+	if r.body["final_snapshot"] != true {
+		t.Errorf("a destroy on a host that is there says final_snapshot %v, want true: %s", r.body["final_snapshot"], r.raw)
+	}
+
+	// The user removed the Mac. Nobody expects it back, so the snapshot
+	// phase is skipped and nothing is kept.
+	gone := newProject("gone")
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set state = 'lost' where id = $1", hostID); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "DELETE", "/projects/"+gone, nil)
+	if r.status != 202 {
+		t.Fatalf("destroy on a lost host: %d %s", r.status, r.raw)
+	}
+	if r.body["final_snapshot"] != false {
+		t.Errorf("a destroy whose host is gone says final_snapshot %v, want false; the CLI promises a snapshot on that answer: %s", r.body["final_snapshot"], r.raw)
+	}
+}
+
+// A host that is not answering can be removed although it still holds
+// machines, because refusing left the account with no way out at all:
+// the host could not be removed while it held a project, and the project
+// could not be destroyed while the host was not gone (ENG-119, DECISIONS
+// I-1420). A host that IS answering keeps the refusal, because its
+// machines are really there.
+func TestAHostThatIsGoneCanBeRemovedWithItsMachines(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-rig2"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+	if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes)
+		values ($1, $2, 'rig1', 'rig1', 'small', 'error', $3, 1)`, store.NewID(), uid, id); err != nil {
+		t.Fatal(err)
+	}
+
+	// Still answering: the refusal stands.
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 409 || detailOf(t, r)["reason"] != "host_has_projects" {
+		t.Fatalf("a host that answers: %d %s, want 409 host_has_projects", r.status, r.raw)
+	}
+
+	// The user removed the appliance, so the host stopped answering.
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set state = 'unreachable' where id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
+		t.Fatalf("a host that is not answering: %d %s, want 204; the account has no other way out", r.status, r.raw)
+	}
+
+	// Retired, and its credentials cleared, which is what makes this
+	// safe: the host cannot come back on them, so the guest whose volume
+	// I-924 worried about cannot reappear under a destroyed record.
+	var state string
+	var serial, token *string
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "select state, cert_serial, join_token_hash from hosts where id = $1", id).Scan(&state, &serial, &token); err != nil {
+		t.Fatal(err)
+	}
+	if state != "retired" || serial != nil || token != nil {
+		t.Errorf("after removal: state %q, cert_serial %v, join_token_hash %v; want retired and both cleared", state, serial, token)
+	}
+}

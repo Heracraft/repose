@@ -129,16 +129,30 @@ func HostLsCmd(ctx context.Context, e *Env) error {
 	if err != nil {
 		return hostErr(err, "")
 	}
+	// A host the customer removed is not hardware they have; the api
+	// keeps the row for the history and every output of this command
+	// leaves it out. One filter above the three, because `--json` once
+	// returned the api's answer unchanged and answered four removed
+	// hosts to a script while the table said the customer had none
+	// (ENG-37, the customer review).
+	hosts = slices.DeleteFunc(hosts, func(h Host) bool {
+		return h.State == "retired" || h.State == "lost"
+	})
 	if e.JSON {
 		if hosts == nil {
 			hosts = []Host{}
 		}
-		return writeJSONOut(e.Out, hosts)
+		// The same word the table prints, for the same reason: cli.md
+		// names five states and `registering` is not one of them, so a
+		// script switching on the api's own enum would switch on a word
+		// no customer is ever shown.
+		out := make([]Host, len(hosts))
+		copy(out, hosts)
+		for i := range out {
+			out[i].State = hostStateWord(out[i].State)
+		}
+		return writeJSONOut(e.Out, out)
 	}
-	// A host the user removed is not hardware they have; the api keeps
-	// the row and the listing leaves it out. `--json` is the api's
-	// answer unchanged.
-	hosts = slices.DeleteFunc(hosts, func(h Host) bool { return h.State == "retired" })
 	if e.Quiet {
 		for _, h := range hosts {
 			_, _ = fmt.Fprintln(e.Out, h.Name)
@@ -274,6 +288,19 @@ func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error))
 // is only ever asked of a host with none, and what it has to say is
 // where the snapshots were all along (I-1372).
 func hostRemovePrompt(h *Host) string {
+	// A host that is answering cannot be removed while machines are on
+	// it: the api refuses that. A host that has stopped answering can
+	// be, which is the only way out of the wedge in ENG-119 -- and it is
+	// the one path where removing a host loses machines, so the question
+	// says how many and that their disks were on it (DECISIONS I-1420).
+	if h.Projects > 0 && (h.State == "unreachable" || h.State == "lost") {
+		what, disks := "the machine on it", "its disk is"
+		if h.Projects > 1 {
+			what, disks = fmt.Sprintf("the %d machines on it", h.Projects), "their disks are"
+		}
+		return fmt.Sprintf("Remove %s? It is not answering, and %s cannot be recovered: %s on that host and repose has no copy. [y/N] ",
+			h.Name, what, disks)
+	}
 	return fmt.Sprintf("Remove %s? Snapshots taken on it stay on its disk, and repose has no copy. [y/N] ", h.Name)
 }
 
@@ -301,12 +328,20 @@ func hostErr(err error, name string) error {
 	case reason == "host_has_projects":
 		// A machine moves host only by restore (DESIGN §3), so the api
 		// refuses rather than leave them with nowhere to run. It names
-		// them; this says it in the commands that clear them.
+		// them; this says it in the command that clears them.
+		//
+		// It named `repose snapshots restore` as a second way out until
+		// I-1418, and that was not one: the refusal is shown for the
+		// machines on the host, which may have no snapshot to restore --
+		// rig1, the machine this was found on, had none and never had
+		// (ENG-119). It is not needed either, because `repose rm` keeps
+		// the final snapshot for 30 days, so the work a restore would
+		// have saved survives the removal it asks for.
 		on := detailStrings(apiErr.Detail["projects"])
 		if len(on) == 0 {
 			break
 		}
-		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` or `repose snapshots restore` each of them first.", name, joinNames(on))
+		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` each of them first.", name, joinNames(on))
 	}
 	return err
 }

@@ -38423,3 +38423,293 @@ asserts a `cobraUsageError`, which is what `Main` turns into exit 2.
 Live: `repose host add --cpus 0` prints "the appliance needs at least 4
 cores, not 0" and exits 2; `--disk banana` prints `"banana" is not a
 whole number of gigabytes`.
+**I-1428. Nix's own build output follows `-v`, not the absence of a
+terminal (fix-ask ENG-27, 2026-11-20).** *Made during implementation*
+(the customer reviews' F4 on the CLI surface and F5 on the Mac surface).
+`buildView.raw` was set by `e.Verbose || !e.TTY`, so a run without a
+terminal printed every `nix › ` line as well as the steps. Two reviewers
+measured the same thing independently: a first `repose run` writing
+3,706 lines to stderr of which **3,664, 98.9 percent, began `nix ›`**
+against the **42** lines of summary a customer is meant to read, and
+`repose config add ripgrep` writing 73 lines, 62 of them `nix ›`, to add
+one package. Amends I-614 and continues I-755 in the same place.
+
+- *The premise was wrong, not the taste.* The `!e.TTY` arm was written on
+  the understanding that there are no steps to read without a terminal.
+  There are: `progress` prints one plain line per phase off a terminal
+  and the same `✓` line when it ends (I-609), which is exactly what both
+  reviews quoted. So the raw copy was never the only thing a reader had;
+  it was the thing burying what they had.
+- *It is I-614's defect in another place, which is why this is an
+  amendment.* `Env.TTY` is `canDrawSpinner(os.Stderr)`, and that reads
+  `TERM=dumb` and `REPOSE_NO_SPINNER=1` as well as isatty. So an Emacs
+  shell, an IDE console, or anyone who turned the spinner off to get
+  *less* noise got 3,664 lines of store paths instead. I-614 split that
+  same switch away from whether a confirmation is asked, for the same
+  reason and in the same words: turning the spinner off must not change
+  anything else.
+- *What a reader asked for stays.* `-v` prints Nix's lines on a terminal
+  and off one alike, which is the documented switch and works in CI;
+  `--json`, which shows no steps at all, still sends the whole log to
+  stderr. A failure prints its own tail either way, so the raw stream was
+  never the diagnostic path (I-755).
+- *The instrument, because the reports do not state it.* Both reviews ran
+  the CLI from an agent session capturing stderr, so neither measured
+  what a customer in a terminal sees, which was already the 42 lines.
+  Read as "a customer's first impression is a wall of store paths" the
+  finding overstates; read as "every consumer that is not a terminal,
+  which is CI, a pipe, an IDE console, a spinner turned off, and every
+  agent driving the CLI" it is exact, and that is the set this changes.
+- *Evidence.* `TestCreateShowsTheBuildThenTheBoot` already asserted no
+  `nix ›` on a terminal; the `tty &&` guard is removed, so it asserts it
+  for both, and it is red before this change with the nix lines printed
+  between `✓ Fetched 3 paths` and `✓ Built 2 derivations`. The `-v` case
+  in `TestConfigOpShowsSteps` is unchanged and still requires them. And
+  the switch now does one thing, which is the checklist's own evidence for
+  this shape: `rg 'e\.TTY'` over `internal/cli` leaves two readers, both
+  `newProgress(e.ErrOut, e.TTY)`, so whether stderr is a terminal decides
+  whether a spinner is drawn and nothing else.
+
+*Not done:* `internal/cli/buildlog.go`'s `StreamBuildLog`, the `--json`
+path, is untouched and still prefixes Nix's lines (07-cli.md §5.8); the
+nix-daemon warning a tenant sees with `-v`, "ignoring the
+client-specified setting 'sandbox'", has the cause I-755 recorded at
+`nixbuild.go` and is still hostd's to fix.
+**I-1418. No sentence on the removal path names a recovery that cannot
+happen: `host_unreachable` stops telling a user to wait for a host they
+deleted, the host-removal refusal stops naming a snapshot restore the
+machine may have no snapshot for, and a destroy's answer carries
+`final_snapshot` so the CLI stops promising one it cannot take
+(fix-starts, 2026-11-20).** *Made during implementation* (ENG-119 and
+ENG-120, found by the spark on the owner's live account by following the
+documented path, and confirmed from the account's own rows. Extends
+I-924, which fixed the work these sentences describe; the work was
+already right and only the sentences were wrong.)
+
+The sequence was three documented commands. `repose rm rig1 --yes`
+printed "Destroying rig1. Its final snapshot is kept until 2026-12-20";
+`repose host rm --local --yes` on the Mac removed the appliance, its disk
+and every machine on it in five seconds, which is what that flag is
+documented to do; and the destroy then could not finish, because
+finishing it needed the host that had just gone. The account's ops rows,
+read whole:
+
+    01a1f724-a15e-7778  destroy  done   step 4/4  host -          04:08
+    01a1f6f4-428a-7e77  destroy  error  step 1    host mac-rig2   03:16  host_unreachable
+    01a1f6e4-0530-776c  destroy  error  step 1    host mac-rig2   02:58  host_unreachable
+    01a1f6d8-1151-734a  create   done   step 2    host mac-rig2   02:45
+
+Three sentences in that path each named a recovery that could not
+happen, and this entry is only those three. What they described was not
+broken: the third destroy completed at step 4 of 4 **with no host at
+all**, once an operator had moved the host to `lost`, which is I-924
+working exactly as written.
+
+- *"The operation can be run again once the host is back."* `recover.go`
+  mapped `host_unreachable` to that for every host, including one the
+  user had deleted themselves. It is the worst of the three, because it
+  does not merely fail to help: it says that waiting will work. It now
+  asks whether the host is one nobody expects back -- `lost` or
+  `retired`, the states `hostGone` already defines -- and says the host
+  was removed, naming the destroy, which I-924 drains to no phases. A
+  host that is merely `unreachable` keeps the old sentence, because for
+  that host it is true.
+- *"`repose rm` or `repose snapshots restore` each of them first."* The
+  CLI's wording for the api's `host_has_projects` refusal. A restore
+  needs a snapshot, and the refusal is shown for whatever machines are on
+  the host, which may have none: `rig1` had none, and
+  `count(*) from snapshots where project_id = rig1` was 0 and had never
+  been anything else. The clause is also unnecessary, because `repose rm`
+  keeps the final snapshot for 30 days, so the work a restore would have
+  saved survives the removal the sentence asks for. It now names
+  `repose rm` alone.
+- *"Its final snapshot is kept until 2026-12-20."* Printed twice, ten
+  minutes apart, for a machine that had no snapshot and could not get
+  one. The CLI cannot work this out: it prints that line the moment the
+  api answers `202`, before any phase has run. So `DELETE /projects/:id`
+  now answers `final_snapshot`, false for a temporary project (I-347) and
+  false when the host is gone (I-924), and the CLI says a snapshot is
+  kept only when the api said one is coming. An api that does not send
+  the field is read as yes, which is what it was for every host that was
+  still there, so the old shape stays correct for a release.
+
+*What this is not.* The account wedge itself -- a host that cannot be
+removed because it holds a project that cannot be destroyed because the
+host is not gone -- is the channel for the user's own statement, not the
+wording, and it is I-1420. The three sentences are separated from it
+deliberately: wording that needs no decision should not wait behind code
+that does.
+
+*Three things on those rows that are deliberately left.* The destroyed
+project row still carries `last_error` with this entry's first sentence
+in it, so a destroyed machine still reads as retryable; `disk_held_bytes`
+and `disk_held_at` are still set on it; and the host row, `lost` and
+`draining`, still reports `running_guests = 1` with its only project
+destroyed. All three are the same family -- a counter or a message that
+nothing clears at the terminal state -- and all three are filed rather
+than fixed here, because changing what a sentence says is not the same
+change as clearing it when it stops being true.
+
+**I-1420. A user can say their own host is gone: `DELETE /hosts/{id}`
+retires a host whose state is `unreachable` or `lost` even while
+machines are on it, instead of refusing, and both clients' confirmations
+say how many machines go with it (fix-starts, 2026-11-20).** *Made
+during implementation* (ENG-119 and ENG-120, found by the spark on the
+owner's live account. Extends I-924, whose completion rule was already
+right; what was missing was the channel for the user's own statement.)
+
+Three documented commands, each behaving as written, left an account
+with nothing it could do. `repose rm rig1 --yes` accepted a destroy;
+`repose host rm --local --yes` on the Mac deleted the appliance, its
+disk and every machine on it in five seconds, which is what that flag
+documents; and then: the destroy could not finish without the host, the
+host could not be removed because it held a project (`host_has_projects`),
+and no replacement could be added because the plan's one slot was still
+held (`ExemptHosts = 1`, the count taking every host not `retired` or
+`lost`). `repose rm` printed its cheerful line twice and made two more
+ops that failed the same way.
+
+- *What was already right.* I-924 skips `wake`, `stop_guest`, `snapshot`
+  and `destroy_guest` when the host is gone, so a destroy drains to no
+  phases and `markDestroyed` runs. The account's own rows prove it: the
+  third destroy of `rig1` completed **at step 4 of 4 with no host at
+  all**, in the same minute, once an operator had run `hosts mark-lost`.
+  No change was needed there and none is made here.
+- *What was missing.* `hostGone` is `lost` or `retired`, and I-924
+  excluded `unreachable` deliberately: "That host may answer in a minute,
+  and skipping its phases would mark a guest destroyed with its volume
+  still live on a host that comes back. The guard is only for the two
+  states that mean **a human has said the host is not returning**." In
+  this sequence a human did say it, and said it with a destructive
+  command. But they said it on the Mac, and nothing carried it to the
+  account: only an operator's `mark-lost` or a retire can move a host to
+  a gone state, and the retire was the thing being refused. The hole is
+  a missing channel for the user's statement, not a missing capability.
+- *Why this does not reopen what I-924 closed.* Its reason for excluding
+  `unreachable` is that the host may come back. That premise does not
+  survive the command being asked for: the retire in this same handler
+  clears `cert_serial`, `prev_cert_serial` and `join_token_hash`, so a
+  retired host cannot come back on them. Checking a decision's premise
+  rather than its ruling is the rule this followed (I-616 against
+  I-1366); the ruling still stands for every op the engine builds, and
+  only this one route, which makes the comeback impossible as it runs,
+  is allowed to act on the user's word.
+- *The condition names the states that mean "not answering", not the ones
+  that mean "answering".* `unreachable` and `lost` are allowed; anything
+  else refuses. A host still `registering` may yet come up, and a state
+  added later should refuse until somebody decides it should not. The
+  first draft tested for `ready || draining` and let a `registering`
+  host through, which the existing test caught.
+- *The machines are left, not destroyed.* The user asked to remove a
+  host, not to lose their work, and after the retire every `repose rm`
+  on them drains to no phases and completes. So the loss is theirs to
+  take in one more command, and this route decides nothing about it.
+- *Which puts the whole weight on the confirmation, so both clients
+  carry it.* This is the only path on which removing a host loses
+  machines. `repose host rm` asks "It is not answering, and the machine
+  on it cannot be recovered: its disk is on that host and repose has no
+  copy", and Settings → Hosts asks it in the same words -- the dashboard
+  never gated its Remove button, so without that change it would have
+  stranded machines silently where the CLI warned (the parity rule,
+  I-1354 under I-1266). `--yes` skips the question, as everywhere.
+- *What a user should do instead when the Mac was only asleep* is in
+  `/docs/own-hardware`: turn it on and wait for `online`, because once a
+  host is removed it cannot rejoin and what was on its disk is gone.
+
+**I-1434. macOS gives the launcher about one second when the Mac
+restarts, not the 360 it asks for, so the park does not survive a
+restart and the docs stop promising it; the park stays on, because a
+clean stop of the launcher does park and unpark correctly (mac-mini,
+2026-11-20).** *Made during implementation* (measured on the AWS M4 rig
+by the spark; qualifies I-1386 and I-1394, whose deadline chain assumes
+a window the platform does not give.)
+
+- *What was measured, both halves, within ten minutes of each other.*
+  A **clean stop** -- `launchctl bootout gui/501/run.repose.appliance`
+  -- parks and unparks end to end: the keychain item is created at
+  07:10:29Z by the launchd agent itself with no prompt
+  (`park-key: event=keychain_item_created service=run.repose.appliance
+  account=park-wrapping-key`), wrapped at 07:19:25Z and unwrapped at
+  07:20:12Z on `key_id=keychain-79a9a0260addb566`, and the guest came
+  back with its marker intact and uptime continuous, 319.27 s before and
+  400.95 s after. A **real restart** -- `sudo shutdown -r now` -- did
+  not: "stopping: the appliance parks its machines and powers off" at
+  07:29:27Z and "stopped" at **07:29:28Z**, one second, with no wrap line
+  written at all, and the guest came back cold with its marker gone and
+  uptime 130.90 against 923.90 immediately before.
+- *So the deadline chain in I-1386 is unreachable at a restart.* The 240
+  s shutdown hold, the unit's 270 s wall, the launcher's 330 s plug and
+  launchd's 360 s kill all assume macOS lets the agent finish. It does
+  not. The chain still governs the clean-stop path, which is the path
+  that works.
+- *The park stays on.* It is correct where it runs, the vsock dial fix it
+  depends on was a genuine defect on any platform
+  (`net.FileConn` cannot wrap an AF_VSOCK descriptor), and turning it off
+  would lose the working case for nothing.
+- *What changes instead is every line that promised it.* The public page
+  loses "Restart your Mac and your work survives" for "Restart your Mac
+  and your machines start fresh", and `lifecycle.md`, `secrets.md`,
+  `troubleshooting.md` and `cli.md`'s `repose host run` row stop saying
+  the Mac keeps a machine's memory across a restart. Trust the reader
+  (I-484, I-485): a promise a customer will test on their first restart
+  is worse than an absence, and this one was about to ship in the same
+  batch that fixed five other things they would have met first.
+- *What is not known, and is a card rather than a guess* (ENG-138):
+  whether this is EC2 Mac's restart path specifically, whether a logout
+  behaves like the clean stop, and whether macOS offers any hook that
+  does get a real shutdown window. The honest state is that the
+  mechanism works and the trigger does not.
+- *Why this is in the batch rather than after it.* The promise was not
+  published: `main` has no such section, so the false sentence exists
+  only on this branch. Shipping it and fixing it later would make a
+  liar of a page a customer reads on the day they buy the plan.
+
+**I-1436. `triggers add --route` asks before it takes a route that
+answers with something else (fix-ask ENG-32, 2026-11-20).** *Made during
+implementation* (the customer review's F5 on the CLI surface). `repose
+triggers add onhook --route council` on a route that was forwarding a
+provider's deliveries to port 3000 moved who answers that URL, from the
+project's own app to an agent, and printed only the URL the user already
+had and a warning about a different thing. Proved on the review's
+machine: the same URL answered `502 nothing is listening on port 3000`
+before and `202` with a `claude` window after, and `webhooks list`'s
+TARGET went from `:3000/hook` to `trigger onhook`. Completes I-1360
+rather than amending it: one door with two receivers is right, and the
+row does say who answers; nothing said it at the moment it changed.
+
+- *What it does now.* `--route` on a route that answers with something
+  else -- the app on a port, or another trigger -- prints what answers
+  that URL today and asks. A no changes nothing and says so. `--yes`
+  skips the question, and then one line on stderr says what was taken
+  over, so it is said once either way. Without a terminal the command
+  refuses and names `--yes`, which is `askYesNo`'s own rule (I-614), so
+  a script cannot divert a live URL by accident.
+- *Three cases are not a takeover and never ask.* A route that does not
+  exist, which `--route` creates as it documents. A route this same
+  trigger already owns, so re-running `add` to change a flag is not a
+  question, which is what keeps an idempotent script working. And
+  `--yes`.
+- *The check is before anything is written.* `routeTakeover` runs after
+  the project is resolved and before the prompt file goes into the
+  machine, so a no leaves no prompt behind.
+- *Why the CLI alone, against the dashboard parity rule (I-1266, and
+  I-765's direction: where the CLI has a rule, the rule is the
+  specification).* The
+  dashboard cannot reach this path: a trigger's route is named after the
+  trigger there and `TriggerForm.svelte` has no Route field, so
+  `--route NAME` is the only place a route is named by hand. Its one
+  neighbouring case is a user opening a forwarding route and flipping
+  "Then" to "Start an agent", which is a choice made on a form showing
+  what the route is now, not a side effect of a command about something
+  else. That case still does not say what it stops, and is noted on
+  ENG-32 as the smaller, visible half.
+- *Evidence.* `TestTriggerAddOverARouteThatForwardsAsks`, five subtests,
+  red before this: a no made the trigger anyway and printed the URL plus
+  the no-gate warning, which is the review's output exactly. The route's
+  TARGET is read back through `GetWebhook` after each case, so a no is
+  proved by the route still answering `:3000/hook` and a yes by it
+  answering `trigger onhook`.
+
+*Not done:* the dashboard's edit-and-flip case above. And a route whose
+provider is mid-retry still loses the deliveries that arrive between the
+yes and the provider noticing; nothing here replays them.

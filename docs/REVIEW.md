@@ -256,6 +256,16 @@ and they apply to whoever runs the review as much as to the builders:
   re-examined was whether it still described the product. Finding the
   intent behind an absence is the start of the check, not the end of it:
   ask when it was decided, and what has changed since.
+- **Before you trust a fake, make it produce the state your finding
+  needs; if it cannot, that is the first finding.** Two instances hours
+  apart on 2026-11-20: the fake api handed a host to every account
+  whatever its billing mode, and every machine it made sat at 1 GiB
+  used, which draws the narrowest figure the disk column ever shows, so
+  a clipping defect a customer had already hit could not be reproduced
+  by any test until a fixture was written for it. The fake grew one
+  assumption at a time, each true of the test that added it. The danger
+  is not incompleteness: **every test stays green while a surface is
+  untestable**, and nothing in a suite or on a board shows it.
 - **A billing claim measured on an exempt account, or against a fake, is
   not measured.** The owner's own account is billing-exempt, so plans,
   limits, seats and gates take paths no customer meets; the fake api is

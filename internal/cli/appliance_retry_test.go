@@ -11,8 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )

@@ -290,8 +290,11 @@ func TestCreateShowsTheBuildThenTheBoot(t *testing.T) {
 		if n := strings.Count(got, "✓ Booted todo-app"); n != 1 {
 			t.Fatalf("tty=%v: %d Booted lines:\n%s", tty, n, got)
 		}
-		if tty && strings.Contains(got, "nix ›") {
-			t.Fatalf("nix lines shown on a terminal without -v:\n%s", got)
+		// Nix's own lines are shown for `-v` and for `--json`, and for
+		// nothing else: off a terminal the steps are printed too, so the
+		// raw copy only buries them (ENG-27, DECISIONS I-1428).
+		if strings.Contains(got, "nix ›") {
+			t.Fatalf("tty=%v: nix lines shown without -v:\n%s", tty, got)
 		}
 	}
 }

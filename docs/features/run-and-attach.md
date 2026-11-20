@@ -29,10 +29,13 @@ Ready in 1m15s.
 dev@todo-app:~/todo-app$
 ```
 
-Without a terminal on stderr (CI, a pipe) the phases are plain lines,
-`Creating todo-app...`, the build's steps (`Evaluating your config...`
-and the rest, with Nix's own lines after `nix ›`), `Booting
-todo-app...`, `Connecting to todo-app...`, `Syncing...`. One `repose run`
+Without a terminal on stderr (CI, a pipe, `TERM=dumb`,
+`REPOSE_NO_SPINNER=1`) the phases are plain lines, `Creating
+todo-app...`, the build's steps (`Evaluating your config...` and the
+rest), `Booting todo-app...`, `Connecting to todo-app...`, `Syncing...`.
+Nix's own `nix ›` lines follow a step only with `-v`, there and on a
+terminal alike: the steps are printed either way, so the raw copy buried
+the 42 lines a customer reads under 3,664 it does not (I-1428). One `repose run`
 makes one SSH connection and asks for nothing: the CLI's own key has no
 passphrase (I-149).
 

@@ -310,17 +310,18 @@ percent.
       host.** `internal/gateway/foreignhost_test.go`, with
       `noaddress_test.go` beside it. 19b's STATUS line records it red
       first.
-- [ ] **`repose host add|ls|rm` exist, `cli.md` agrees, the dashboard
+- [x] **`repose host add|ls|rm` exist, `cli.md` agrees, the dashboard
       does the same three, screenshots at 1440 and 390 in both
-      schemes.** Half closed. The three commands are in `cli.md` (:482
+      schemes.** Closed. The three commands are in `cli.md` (:482
       to :487) with the state column, the name rule and the exit codes;
       `internal/cli/docs_test.go` is green inside the 101-package run;
       the dashboard page is `apps/web/src/routes/settings/hosts/+page.svelte`.
-      **No screenshots exist** — nothing under `docs/` holds a Hosts page
-      capture at either width in either scheme, and the repo's own rule
-      is that a screenshot is evidence only at the size a visitor sees.
-      What closes it: four captures of that page at 1x, 1440 and 390,
-      light and dark.
+      **Screenshots taken 2026-11-20** by the 19a builder: list, add,
+      refusal, remove and offline, at 1440 and 390 in both colour
+      schemes, at 1x, in `/tmp/claude-1000/shots2/hosts-*.png`, and read
+      rather than only captured. That is the row's evidence; it is a
+      scratch path rather than a committed one, so whoever needs it
+      later re-takes it.
 - [ ] **The plan exists in Polar sandbox and production, PRICING.md and
       billing.md and the landing agree on $10 and one host.** **Open by
       the owner's own hold, and it is the item to read before cutting
@@ -383,10 +384,23 @@ percent.
       marker gone and uptime reset to 193. **And it answers a question
       only that machine could answer: `security` serves a launchd agent
       in `gui/501` without a prompt**, so the park does not fail
-      silently for a customer. **Still open:** that was a `bootout`, not
-      a restart, so the launcher's `ExitTimeOut` of 360 s was never
-      stressed — the stop took 20 s. What closes it is `sudo shutdown -r
-      now` on the Mac, which the spark is running.
+      silently for a customer. **And the restart was then run, and it
+      FAILS** (I-1434, ENG-138): `sudo shutdown -r now` gave the launcher
+      about **one second** — "stopping" at 07:29:27Z, "stopped" at
+      07:29:28Z, **no wrap line written** — and the guest came back cold,
+      marker gone, uptime 130.90 against 923.90 immediately before. So
+      the clean-stop path parks and the restart path does not, and
+      I-1386's deadline chain (240 s hold, 270 s wall, 330 s plug, 360 s
+      kill) assumes a window macOS does not give. The park stays on
+      because it is correct where it runs; **every line of copy that
+      promised a restart keeps the user's work is rewritten in this
+      batch to say machines start fresh** — the public page,
+      `lifecycle.md`, `secrets.md`, `troubleshooting.md` and `cli.md`'s
+      `repose host run` row. The promise was never published, so nothing
+      live is corrected and nothing false ships. This item stays open on
+      ENG-138, which also holds the three unknowns: whether this is EC2
+      Mac's restart path specifically, whether a logout behaves like the
+      clean stop, and whether macOS offers any hook with a real window.
 - [ ] **Council report exists, second pass has no P0.** The reports
       exist and now ship with the work: `docs/reports/2026-11-19-mac-mini-council.md`
       (the confer), `-mac.md`, `-cli.md`, `-dashboard.md`. **The second

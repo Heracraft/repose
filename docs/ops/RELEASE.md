@@ -169,6 +169,18 @@ branch, which deploys nothing ("The integrated branch" below).
 
 Integrate whenever branches are queued; it needs no owner approval.
 
+**A batch that ships nothing deployable waits for the next release, even
+when a release has just happened.** A push to `main` cycles Coolify's
+`api`, `api-grpc` and `web` whether or not their content changed, so a
+batch whose diff touches no deploy target buys nothing and costs a
+production restart. One cost of that restart is not obvious from the
+outside: the api's container is replaced, and its logs go with it, which
+is how the trigger for the two stop ops of 2026-11-19 at 20:30 became
+unrecoverable (`docs/proposals/2026-11-19-azure-host-events.md` §4a).
+`integrated` on GitHub already makes the batch durable and readable, so
+nothing is lost by waiting. This was written after the release of
+2026-11-20, whose own record was integrated and deliberately not pushed.
+
 1. **See what is waiting.** `ops/dev/release-queue ls` reads the open
    PRs labelled `queued` against `integrated`, in stack order, and fetches
    each one's branch; a PR stacked on a branch that is not queued waits
@@ -322,11 +334,21 @@ else integrated with it.
 2. **Push main.** Watch CI on the pushed commit; a push redeploys `api` and
    `web` whether CI passes or not, so a red run is fixed at once (as its
    own small batch, integrated and pushed).
-2b. **Tag right after the push when the release adds a command.** The
-   push deploys `web`, the public docs included, within minutes; the CLI
-   ships only at the tag, 20 to 30 minutes later. In that window the docs
-   describe a command nobody has (v0.1.50, 2026-11-19, with a plan on
-   sale). `gh release create --draft` makes no tag: push the annotated tag.
+2b. **Tag right after the push when the release adds a command, and ask a
+   script whether it does.** The push deploys `web`, the public docs
+   included, within minutes; the CLI ships only at the tag, 20 to 30
+   minutes later. In that window the docs describe a command nobody has
+   (v0.1.50, 2026-11-19, with a plan on sale). `gh release create
+   --draft` makes no tag: push the annotated tag.
+   `ops/dev/docs-ahead-of-cli` answers whether this release is one of
+   those: it reads the command paths the public docs name at the newest
+   `v*` tag and at `HEAD`, and exits 1 listing any the released CLI does
+   not have. Exit 0 means the ordering does not matter this time. **Exit
+   2 means it could not tell**, which a shallow clone with no tags gives,
+   and is not a pass. Run it before the push, because after the push the
+   window has already opened. `internal/cli/docs_test.go` cannot answer
+   this: it holds the docs to this tree's CLI, which is the thing that has
+   not shipped, and CI's `go` job checks out with no tags (ENG-43).
 3. **Write the notes before the sign job runs.** `release.yml`'s sign job
    refuses a draft with under 400 bytes of notes (I-798). The tag creates the
    draft; `gh release edit v0.1.N --title "v0.1.N" --notes-file

@@ -102,17 +102,13 @@ todo-app: your host mac-mini has not answered for 14m.
 
 `repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else. A new machine is refused with the same sentence, and `repose run --host repose` makes it on repose's servers instead.
 
-A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart or shut down keeps them too, below. A Mac that loses power stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not.
+A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart, shut down or lose power on stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not.
 
-## Restart your Mac and your work survives
+## Restart your Mac and your machines start fresh
 
-When you restart or shut down your Mac, or log out, each running machine's memory is written to an encrypted image on the appliance's disk before the Mac goes down, and at your next login each machine carries on where it was: programs, tmux windows and agents included, with its clock set when it is back. The shutdown waits for the images, a few seconds a machine, and the machines come back when you log in, because that is when the appliance starts.
+When you restart or shut down your Mac, your machines stop and start again at your next login, cold: their disks are as they were, and what they held in memory is gone: programs, tmux windows, an agent mid-task. Stop anything you would miss before you restart, the way you would on a laptop.
 
-An image is removed once its machine is back, and after 6 hours either way, so log in again within 6 hours of the restart: after that the saved memory is discarded and the machines start fresh. A machine that can't come back from its image starts cold instead, with its disk as it was: [When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts) lists the cases, and they are the same here.
-
-This covers a restart, a shutdown and a logout you ask for. It can't cover a power cut, a kernel panic or holding the power button down: there is no time to write anything, and those machines start cold.
-
-The images' keys are wrapped by one key of their own, an item in your login keychain labelled `repose: key for the machines kept across a restart`, made the first time it is needed. Keychain Access shows it under that label. It is an item in the keychain, not a key in the Secure Enclave: whoever can unlock your keychain can read it, and with it the images on the disk. It wraps the images' keys and nothing else; no secret of yours, no token and nothing a machine holds is ever written to your keychain. Delete the item and the machines kept with it start cold at the next login, and a new one is made.
+Keeping a machine's memory across a restart is built and it does not work yet, so this page does not promise it: macOS gives repose about a second when the Mac goes down, measured, and writing a machine's memory takes longer than that. Machines on repose's servers do keep their memory across a server restart ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)); your own Mac does not, today.
 
 ## Snapshots stay on its disk
 
@@ -132,9 +128,11 @@ repose host rm mac-mini
 
 Repose asks once, then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
 
-A host still holding machines is not removed. A machine moves hardware only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore) elsewhere, so `repose rm` or restore each of them first, and `repose host rm` then tells you which are in the way.
+A host that is answering and still holds machines is not removed. A machine moves hardware only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore) elsewhere, so `repose rm` each of them first, and `repose host rm` then tells you which are in the way.
 
-Settings → Hosts has the same Remove, and names the machines that are in the way.
+A host that has **stopped** answering is removed, machines and all, because the alternative is a dead end: the machines on it cannot be destroyed while repose still believes the host may come back, so refusing to remove the host would leave you unable to do either, or to add a replacement. The question says how many machines go with it and that their disks were on that host; `--yes` skips it, as everywhere. Afterwards the machines are still listed and `repose rm` finishes each of them without the host. If the Mac was only asleep, turn it on and wait for `online` instead: once a host is removed it cannot rejoin, and whatever was on its disk is gone.
+
+Settings → Hosts has the same Remove, with the same question and the same machines named.
 
 Once a host is off, your new projects go to repose's servers again if your plan buys memory there.
 
