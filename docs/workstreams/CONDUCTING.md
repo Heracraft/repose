@@ -138,7 +138,20 @@ went wrong and what prevents it, because a list of apologies teaches nothing.
    second break, which is the signature of a missing invariant rather than
    carelessness. Neither break was announced by an alert, a test or a
    customer: both were found because somebody happened to look.
-9. **Small environment traps** cost an hour each and are each one line:
+9. **A check that is always red is as useless as one that is always green,
+   and more expensive.** Every pull request run in this repository was red
+   for a week — always and only on one job, which passed its three commands
+   and then exited 1 trying to post a comment its token could not post. So a
+   red run meant nothing, nobody could tell a real failure from the
+   permanent one, and the place real failures appear had been trained out of
+   everyone's attention. **Nobody asked why every run was red**, which makes
+   it a conducting failure rather than a code one. Put beside the two above
+   it is a pattern worth naming: the first two were checks that did not
+   exist, this was a check that existed, ran, and was ignored, which is
+   worse, because somebody believed it was covered. **Ask of every green
+   tick and every red cross what it last told you that you did not already
+   know.**
+10. **Small environment traps** cost an hour each and are each one line:
    `TMPDIR` longer than 108 bytes breaks unix sockets (`/tmp/r`, not
    `/tmp/rt`); the harness kills background tool jobs under memory pressure.
 
