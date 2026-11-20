@@ -180,8 +180,12 @@ request, on a 16 GB `ubuntu-latest` runner. **ENG-144** carries it: on
 against the 11 it takes when it passes, every step after the Nix install
 with an empty conclusion and no log uploaded, and GitHub's annotation on
 check-run `136199039366` names starving the runner for CPU or memory
-first. A re-run on a fresh runner passed, so it is a margin the job
-sometimes loses and not a fault in the commit.
+first. A re-run on a fresh runner passed, and then the same job lost its
+runner again 25 minutes later, on a branch of documents, with
+`The runner has received a shutdown signal` 2.5 minutes into the
+evaluation. Twice in an hour on two commits that touch nothing the
+evaluation reads: expect it, re-run the job, and read a red there as a
+fact about the runner until something says otherwise.
 
 `ops/dev/release-queue add` evaluates the systems for its ships
 computation, so it counts as a nix evaluation too: do not run it beside

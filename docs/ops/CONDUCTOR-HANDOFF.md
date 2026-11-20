@@ -90,11 +90,14 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   answered `BlobNotFound`, and GitHub's annotation on check-run
   `136199039366` names starving the runner for CPU or memory first. The
   parent commit was green on all twelve jobs and the diff touches nothing
-  under `nix/`. A re-run on a fresh runner passed, and the batch's own PR
-  passed the same job. **ENG-144** holds the finding with the measurement:
+  under `nix/`. A re-run on a fresh runner passed, and then the same job
+  lost its runner again 25 minutes later on a branch of documents, this
+  time saying `The runner has received a shutdown signal` 2.5 minutes
+  into the evaluation. **ENG-144** holds the finding with the measurement:
   that command wants more than 8.47 GiB in one process, measured here
   inside a cap, on a 16 GB runner. Re-run it before you suspect the
-  commit, and read the annotation rather than the empty log.
+  commit, read the annotation rather than the empty log, and know that a
+  red there currently carries no information about your change.
 - **`7db572b5` is still held** and nothing today touched it. ENG-129 is in
   `Needs you` with the fact that decided the argument: `POLAR_PRODUCT_OWN`
   is set on production, the plan is purchasable at $10 with a seven-day
