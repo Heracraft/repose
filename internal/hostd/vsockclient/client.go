@@ -184,10 +184,6 @@ type session struct {
 	t  timeouts
 }
 
-func newSession(c net.Conn) *session {
-	return &session{cl: vsockrpc.NewClient(c, 256), t: defaultTimeouts}
-}
-
 func newSessionWith(c net.Conn, t Timeouts) *session {
 	return &session{cl: vsockrpc.NewClient(c, 256), t: t.resolve()}
 }

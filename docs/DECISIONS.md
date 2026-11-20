@@ -37425,9 +37425,19 @@ hardware and the same reason.)
 A guest's cold start on that hardware takes about 289 s, in three phases
 hostd measures separately: 59.5 s to guestd's first answer, 125.5 s to
 load the closure's registration, 102.2 s to set the project up
-(`research/mac-mini-nested-kvm.md` §10). Three deadlines sat at or under
-those figures, and all three were written on hosts where the same phases
-take 14, 16 and 10 seconds.
+(`research/mac-mini-nested-kvm.md` §10). Three deadlines sat close enough
+above those figures to be decided by load rather than by the work --
+registration and set-up had 180 s each against 125.5 s and 102.2 s
+measured, and guestd's `BootDeadline` cut both -- and all three were
+written on hosts where the same phases take 14, 16 and 10 seconds. The
+figure that shows it is a published-build start that *succeeded* on
+`mac-clean`: registration took 172,514 ms of its 180,000 ms, 95.8 percent
+of the limit, while the same phase across every Mac run measured spans
+43.0 to 172.5 s, a fourfold spread against a fixed bound (Loki,
+2026-11-20, `{component="hostd"} | json | event="guest_start"`). No run
+has been shown to have crossed one of these deadlines, and none needs to
+be: a limit inside the observed spread decides a start by where in that
+spread it lands, which is what two successes in nine looks like.
 
 - *The ready window was already raised and the sentence was not.* I-1376
   set `--ready-timeout 5m` on the appliance, and the published
@@ -37605,3 +37615,61 @@ file above.
   reads a 64-byte checksum, takes a 30-second context of its own, so a
   server that accepts the connection and says nothing cannot hold the
   install either.
+
+**I-1416. The guest's wait for the registration outlasts the host's
+deadline for sending it, by the ready phase as well as the paths
+deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name
+the order and its direction, and a text check reads both numbers because
+no evaluation sees them together (fix-starts, 2026-11-20).** *Made during
+implementation* (ENG-124, found by reading I-1408's own numbers after the
+Loki pull that confirmed its deadlines were load-bearing. Amends I-1408,
+which set both numbers to 600 s.)
+
+I-1408 raised the host's registration deadline to ten minutes on a Mac
+appliance and the guest's wait for that registration to 600 s, and
+`nix/guest/base/guestd.nix` documents the invariant between them: "It has
+to outlast the host's own registration deadline ... if it gives up first,
+home-manager runs against a store the guest's nix database does not
+know." 600 s does not outlast 600 s.
+
+- *The order was inverted, not merely tied.* `repose-paths.service` is
+  `after = [ "guestd.service" ]`, so the guest starts waiting when
+  guestd's process starts. The host's paths deadline starts later, at
+  `RegisterPaths` after Ready. So the guest waits through the whole ready
+  phase before the host's clock begins, and with both at 600 s it expired
+  first by that much. The margin a correct ordering needs is therefore
+  `--paths-timeout` **plus** `--ready-timeout`, 15 minutes on the
+  appliance, and `pathsWait` is 20.
+- *Why it is worth a fix rather than a card, at a rank that said
+  otherwise.* The failure is silent and reports success. Every other
+  defect in this family ends in a deadline somebody reads: a phase ran
+  out, and the api says which. This one ends with
+  `repose-paths.service` printing "continuing without it" and
+  home-manager activating against a store the guest's nix database does
+  not know, after which the start is reported `running`. A broken machine
+  that says it is fine is worse than a failed start that says which phase
+  failed, which is the whole subject of I-1408.
+- *Not reachable at any speed yet measured, which is the rank and not the
+  reason.* The slowest registration anyone has measured is 172.5 s, so
+  600 s was far away and the margin was luck. I-1408's premise is that
+  the phase's duration is a property of hardware repose does not control,
+  and bringing hardware of your own (I-1366) means hardware nobody has
+  measured.
+- *The deeper shape, and what it costs to check.* This is the `CHECKLIST`
+  row of I-1414 one level up. That row catches a constant borrowed by a
+  second command; this is two constants that must be **ordered** and that
+  live where nothing can compare them -- `pathsWait` in the guest closure,
+  `--paths-timeout` in host configuration, two separate
+  `nixosConfigurations`. `TestTheHostOwnsTheBootPhaseDeadlines` pins the
+  phase deadlines under guestd's backstop and over `DefaultTimeout` and
+  cannot reach `pathsWait` at all, because no Go package holds it.
+- *So the check is a text one, and says so.*
+  `TestTheGuestsPathsWaitOutlastsTheHostsPathsDeadline` reads the two nix
+  files and parses the two numbers. A flake evaluation is the only thing
+  that would see both properly, and it does not fit the box this was
+  written on (8.5 to 12 GB against 9 free), so a check that cannot be run
+  red before green was not worth more than one that can. It fails loudly
+  when either file changes shape rather than passing blind, because a
+  blind check is the state ENG-124 was found in. Both files also carry
+  the sentence with its direction named, since a margin that exists by
+  accident is closed by accident.

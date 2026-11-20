@@ -288,6 +288,16 @@ in
       # what was measured and a guest that has genuinely stopped, which
       # the deadline still has to catch. The start itself coming down to
       # seconds is ENG-70, and it is where this number goes back down.
+      #
+      # Raising either of these, or guestReadyTimeout above, needs
+      # `repose.guestd.pathsWait` in the guest closure raised with it: it
+      # must stay above --paths-timeout plus --ready-timeout, since the
+      # guest starts waiting at guestd.service and the host's paths clock
+      # starts later at RegisterPaths. A guest that gives up first
+      # activates home-manager against an unregistered store and reports
+      # success (ENG-124, DECISIONS I-1416). Nothing in either evaluation
+      # sees both numbers, so the check is a text one:
+      # TestTheGuestsPathsWaitOutlastsTheHostsPathsDeadline.
       guestPathsTimeout = lib.mkDefault "10m";
       guestSetupTimeout = lib.mkDefault "10m";
     };

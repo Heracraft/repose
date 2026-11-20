@@ -3,6 +3,7 @@ package guest
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -126,4 +127,108 @@ func TestABootingGuestIsNotALostGuestd(t *testing.T) {
 	if strings.Contains(h.logs.String(), "guestd_lost") {
 		t.Errorf("a healthy boot logged guestd_lost")
 	}
+}
+
+// The guest's wait for the registration must outlast the host's deadline
+// for sending it, and nothing could check that: `repose.guestd.pathsWait`
+// is an option of the guest closure and `--paths-timeout` is host
+// configuration, so neither side's evaluation sees the other and no Go
+// package holds either number (ENG-124, DECISIONS I-1416).
+//
+// The failure it prevents is the worst shape found on 2026-11-20, because
+// it is silent: if the guest gives up first, `repose-paths.service` prints
+// "continuing without it" and home-manager activates against a store the
+// guest's nix database does not know, so the start reports success into a
+// broken machine. I-1408 left both numbers at 600 s, which is not
+// outlasting, and the guest's clock starts first -- at `guestd.service`,
+// where the host's starts later at RegisterPaths after Ready -- so the
+// guest expired first by the whole ready phase.
+//
+// This reads the two nix files as text. It is not an evaluation and
+// cannot be: the check has to see both numbers at once, and the only
+// place that does is a flake evaluation, which does not fit the dev box
+// (8.5 to 12 GB against 9 free). A text check catches the regression that
+// matters, which is someone changing one number and not the other.
+func TestTheGuestsPathsWaitOutlastsTheHostsPathsDeadline(t *testing.T) {
+	root := repoRoot(t)
+	guestWait := nixSeconds(t, filepath.Join(root, "nix/guest/base/guestd.nix"),
+		`options.repose.guestd.pathsWait`, `default = (\d+);`)
+	hostPaths := nixDuration(t, filepath.Join(root, "nix/hosts/mac.nix"),
+		`guestPathsTimeout = lib.mkDefault "([^"]+)"`)
+	hostReady := nixDuration(t, filepath.Join(root, "nix/hosts/mac.nix"),
+		`guestReadyTimeout = lib.mkDefault "([^"]+)"`)
+
+	// The guest starts waiting at guestd.service and the host starts its
+	// paths clock after Ready, so the guest burns the ready phase first.
+	// Ready is bounded by the host's own ready window, so that is the
+	// head start the wait has to cover on top of the paths deadline.
+	need := hostPaths + hostReady
+	if guestWait <= need {
+		t.Errorf("repose.guestd.pathsWait is %s, which does not outlast the host's %s paths deadline plus the %s ready window it waits through first (%s): "+
+			"the guest gives up before the host does, prints \"continuing without it\", and home-manager activates against an unregistered store",
+			guestWait, hostPaths, hostReady, need)
+	}
+}
+
+// repoRoot walks up to the directory holding go.mod.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 10 {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	t.Fatal("no go.mod above the test's directory")
+	return ""
+}
+
+// nixSeconds is a bare integer of seconds in a nix file, found after near.
+func nixSeconds(t *testing.T, path, near, pat string) time.Duration {
+	t.Helper()
+	n := nixMatch(t, path, near, pat)
+	d, err := time.ParseDuration(n + "s")
+	if err != nil {
+		t.Fatalf("%s: %q is not a number of seconds: %v", path, n, err)
+	}
+	return d
+}
+
+// nixDuration is a Go duration string in a nix file ("10m").
+func nixDuration(t *testing.T, path, pat string) time.Duration {
+	t.Helper()
+	s := nixMatch(t, path, "", pat)
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		t.Fatalf("%s: %q is not a Go duration: %v", path, s, err)
+	}
+	return d
+}
+
+// nixMatch is pat's one capture in path, searched after near when near is
+// set. A miss fails loudly: the file changed shape and the invariant is
+// unchecked again, which is the state ENG-124 was found in.
+func nixMatch(t *testing.T, path, near, pat string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if near != "" {
+		i := strings.Index(s, near)
+		if i < 0 {
+			t.Fatalf("%s no longer contains %q, so this check is blind; find where the option moved", path, near)
+		}
+		s = s[i:]
+	}
+	m := regexp.MustCompile(pat).FindStringSubmatch(s)
+	if m == nil {
+		t.Fatalf("%s no longer matches %q, so this check is blind; find where the number moved", path, pat)
+	}
+	return m[1]
 }
