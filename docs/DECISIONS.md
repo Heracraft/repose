@@ -38032,9 +38032,14 @@ know." 600 s does not outlast 600 s.
   the sentence with its direction named, since a margin that exists by
   accident is closed by accident.
 
-### I-1426 A held commit only separates the release from the launch while the plan is actually unbuyable
+**I-1426. A held commit separates the release from the launch only while
+the plan is actually unbuyable, which is a fact to read in the catalogue
+rather than a state to assume (mac-mini, 2026-11-20).** *Made during
+implementation* (found by the release conductor disproving this
+conductor's premise rather than its reasoning; qualifies the gate in
+`docs/REVIEW.md` and carries the same lesson as I-1366's premise check.)
 
-*Made during implementation* (mac-mini, 2026-11-20): `docs/REVIEW.md`'s
+`docs/REVIEW.md`'s
 gate said that for a plan the gate is not the release, because "repose
 ships a plan dormant and the commit that puts it on sale is held until
 the second pass is clean, so the release and the launch are separate
