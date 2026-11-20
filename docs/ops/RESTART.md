@@ -210,6 +210,19 @@ subject.
   1 when it finds nothing, so a watcher looking for failures reported
   failure *because there were none*.
 
+**A test can encode a positioning decision, and you meet it when you
+change the pitch.** Rewriting the home page on 2026-11-20 redded five
+specs that had the old pitch in their selectors or their subjects: a
+`.hero .orb` measurement for "the hero's picture", a numbering list of
+six cells, a questions list, a pause-control geometry test, and a
+forbidden-claims list that banned the string "your own hardware"
+anywhere on the page. That last one would have failed the held pricing
+commit on its own, had anyone run it. None was wrong when written.
+**Rewrite them deliberately rather than deleting the assertion**: the
+Orbit's accessibility contract moved to a test of the `?hero=`
+candidate it became, and the pause geometry moved to a picture that
+still loops.
+
 **Never run `nix flake check` with its builds here.** It wants 8.5 to 12
 GB in one process on a 16 GB box and has cost three sessions over two
 nights. One check at a time, capped, under the lock:
