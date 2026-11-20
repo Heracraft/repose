@@ -97,6 +97,44 @@ echo 'system-features = nixos-test benchmark big-parallel kvm uid-range' >> ~/.c
 Log in again (or prefix one command with `sg kvm -c '...'`) so the group
 applies. Each test boots one or two VMs and takes two to five minutes.
 
+## Heavy Nix runs in a memory-capped scope, one at a time
+
+This box has 16 GB and usually a dozen Claude sessions on it. A
+whole-flake `nix flake check ./nix` evaluates every host, edge and guest
+system in one process and wants **8.5 to 12 GB**; the evaluator's memory,
+not parallel building, is what does not fit, so `--max-jobs 1` changes
+nothing. It has now cost three mini-conductor sessions over two nights:
+2026-11-19 twice, and 2026-11-20 at 06:06 UTC, where the kernel killed
+`nix` at 12.5 GB RSS and the session died minutes later from the pressure
+around it rather than from the kill.
+
+So **do not run `nix flake check` with its builds here at all.** Build
+what you need one check at a time, each inside a cap:
+
+```
+flock /mnt/nixstore/repose-ws/nix-build.lock \
+  systemd-run --user --scope -p MemoryMax=6G --quiet -- \
+  choom -n 1000 -- nix build --no-link -L ./nix#checks.x86_64-linux.<name>
+```
+
+Each piece earns its place. `flock` keeps one heavy job on the box at a
+time. `systemd-run --user --scope -p MemoryMax=6G` is the part that
+protects the sessions: the cgroup kills nix at the cap instead of letting
+the box swap, so a bad evaluation loses a build rather than somebody's
+context. `choom -n 1000` only decides who dies once the box is already in
+trouble, which is why it was not enough on its own. Verified on
+2026-11-20: a 512M test scope reported `memory.max` 536870912, and
+`nix build ./nix#guest-system`, the `guest-closure-size` check and the
+whole `guest-base` VM test (29 subtests) all completed inside 6 GB.
+
+Run anything long **detached** (`setsid`, redirect to a log) and watch the
+log with a `Monitor`: the harness kills a session's background waiters
+when memory is low, and the job then finishes with nobody reading it.
+
+`ops/dev/release-queue add` evaluates the systems for its ships
+computation, so it counts as a nix evaluation too: do not run it beside
+another one.
+
 ## aarch64 builds go through a remote builder
 
 This box is x86 with no `binfmt`, so nothing `aarch64-linux` builds

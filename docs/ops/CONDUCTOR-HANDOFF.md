@@ -224,6 +224,13 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 - `repose-admin hosts add` never calls PrepareHub and prints a bare
   token; `POST /v1/hosts` builds the WireGuard bundle. Read the
   `settings` rows before believing the api lacks edge material.
+- Heavy nix goes in a **memory-capped scope**, not just under the lock:
+  `flock /mnt/nixstore/repose-ws/nix-build.lock systemd-run --user
+  --scope -p MemoryMax=6G --quiet -- choom -n 1000 -- nix build ...`, and
+  never `nix flake check` with its builds (`DEV-BOX.md`, "Heavy Nix runs
+  in a memory-capped scope"). The cap is what saves a session: on
+  2026-11-20 `choom` worked, the kernel took nix at 12.5 GB, and the
+  mini-conductor's session still died of the pressure around it.
 - Heavy checks go under `flock /mnt/nixstore/repose-ws/nix-build.lock`;
   two programs' VM checks at once put the load at 100 and OOM-killed nix
   evaluations. The harness kills background Bash waiters on "low memory"
