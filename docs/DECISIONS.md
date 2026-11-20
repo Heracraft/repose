@@ -37768,3 +37768,198 @@ WithAnOpenOpAlone`, `TestAFailedWakeIsNotSentAgainStraightAway`,
 passed alone on the same commit, each failed waiting 30 s for an op the
 engine was too starved to finish, and whether `WaitOp` should scale its
 timeout with the box is open.
+**I-1408. A start's phase deadlines belong to the host that runs it, and
+the failure says which phase ran out: hostd gains `--paths-timeout` and
+`--setup-timeout` (3 minutes each by default, ten on a Mac appliance),
+guestd's own 3 minutes becomes a 20-minute backstop, and the machine's
+ssh identity is delivered before the registration rather than after it
+(fix-starts, 2026-11-20).** *Made during implementation* (ENG-80, the Mac
+review's own measurement: nine guest starts on an `mac-m4.metal`
+appliance on 2026-11-19 gave two successes, and every one of the five
+after a clean `repose stop` failed. Amends I-705, which chose the 3
+minutes, and extends I-1376, which raised the ready window for the same
+hardware and the same reason.)
+
+A guest's cold start on that hardware takes about 289 s, in three phases
+hostd measures separately: 59.5 s to guestd's first answer, 125.5 s to
+load the closure's registration, 102.2 s to set the project up
+(`research/mac-mini-nested-kvm.md` §10). Three deadlines sat at or under
+those figures, and all three were written on hosts where the same phases
+take 14, 16 and 10 seconds.
+
+- *The ready window was already raised and the sentence was not.* I-1376
+  set `--ready-timeout 5m` on the appliance, and the published
+  `appliance-2026.11.19` carries it in its unit file. The api's sentence
+  for that failure still said "did not answer within a minute of
+  starting", so two of the review's nine starts reported a minute for a
+  wait of five. It now says "while it was starting" and names no figure,
+  because the figure is the host's.
+- *The registration and the set-up were one sentence for two deadlines.*
+  Both were cut by guestd's `BootDeadline`, a constant inside the guest
+  image, and the api turned either into "the environment started but did
+  not finish setting up in time". So a customer could not say which
+  phase had failed, the operator could not either, and five identical
+  rows in the review carry no evidence of which of the two was at fault.
+  Each phase now has its own sentence, and hostd's message names the
+  phase and the limit it used for the operator's detail.
+- *Why the host owns them, not the guest.* How long either phase takes is
+  a property of the hardware under the guest, which the guest cannot see
+  and hostd already knows. A guest-side constant also cannot be changed
+  without rebuilding every guest closure, which is why the figure stayed
+  at 3 minutes while the ready window moved. guestd keeps a deadline, now
+  20 minutes, so a wedged handler still cannot live forever: a deadline
+  that exists to catch a stuck guest still has to catch one, and the
+  host's own is the one that decides a start and reports it.
+- *Ten minutes is room, not an expectation.* Against the 2 min 6 s and
+  1 min 38 s measured, it is the gap between what the hardware does and a
+  guest that has genuinely stopped. The start itself coming down to
+  seconds is ENG-70, and that is where this number goes back down; the
+  measured path is the store on a disk rather than a share (§10, 57.9 s
+  for the whole start).
+- *The ssh identity moved to the front of the delivery.* `deliver()` sent
+  `WriteSecrets` and `SetPrincipals` after `RegisterPaths`, the slowest
+  call of a start. A guest's user CA and its principals file both live on
+  a tmpfs and sshd recreates them empty on every boot
+  (`nix/guest/base/ssh.nix`), so a start that ran out of time in the
+  registration left a machine that trusted nobody, and the review's
+  "Permission denied (publickey)" after a failed start was that, not a
+  second defect. Both calls are idempotent, the api sends the same
+  material on every start, and neither needs the nix database the
+  registration loads. A start that now runs out of time leaves a machine
+  its owner can log in to and read.
+- *A failed start says where its time went.* The "boot timings" line was
+  logged only by a start that reached running, and the console tail was
+  attached only by a boot that missed Ready. So the failure a Mac
+  customer met most often logged no timings and gave `repose logs --kind
+  console` nothing to print (ENG-100). Both now happen on the failure
+  path, with the phase named.
+- *Two guest-side assumptions the longer window breaks.* The
+  `repose-store-repair` timer fired at `OnBootSec=4min` because a create
+  was "always finished first" at 3 min 15 s; on this hardware a start
+  runs about five minutes, so it fired into the middle of one and
+  competed for the store and the network with the phase that was running
+  out of time. It is now 15 minutes. `repose-paths.service` waited 180 s
+  for the registration and then continued without it, which would now
+  let home-manager run against an unregistered store seven minutes before
+  the host gives up; it waits 20 minutes, the backstop's figure.
+- *What the api's own timeout said.* `checkTimeout` writes "start_guest
+  did not complete in 10m0s" for a host that took a command and never
+  answered, and `humanError` had no arm for the code, so that sentence
+  reached the user with an internal phase name and a Go duration in it.
+- *A booting guest is not a lost one.* A fourth deadline in this path is
+  compared against a clock rather than counted from a start: the
+  monitor marks a guest's guestd lost after 60 s with no vsock
+  connection, counted from the monitor's start, which is shorter than
+  guestd's first answer on this hardware (59.5 to 70 s). So every
+  healthy boot of an owned Mac raised the `guestd_lost` warning to the
+  api and bumped `repose_host_guestd_lost`, which an operator and an
+  alert read as a guest in trouble. The mark now waits for the first
+  connection: before it the ready window bounds the boot and the start's
+  own failure reports it. The shape came from I-1412, found the same
+  night in a test by a session that was not looking for this.
+
+*Not done:* the fix is unverified on the hardware it is for. Every number
+above is measured, the deadlines and the ordering are tested here, and
+nobody has yet run five starts on a Mac with a guest image built from
+this branch -- which is what the guestd backstop and the two unit changes
+need. Until that run shows five of five, ENG-80 stays open.
+
+**I-1414. The appliance downloads get a client of their own, with no
+whole-request deadline, a 60-second stall window instead, and three
+attempts that continue from what is on disk; a download that does not
+finish names the install step that completes it (fix-starts,
+2026-11-20).** *Made during implementation* (ENG-117, found on the
+published build on a real M4 by the spark on 2026-11-20. Amends nothing:
+`applianceHTTP`'s own comment already said "a plain client with no
+timeout, since an image is 2 GB", and this is the code catching up with
+it.)
+
+The first `repose host add` on that Mac failed at 31 s with `the image:
+context deadline exceeded (Client.Timeout or context cancellation while
+reading body)`, and the second succeeded in 37 s. It was not the
+network: the Mac pulls the asset at 226 MB/s, so 2.08 GB is about nine
+seconds of transfer. The chain, read in the code and then reproduced in
+a test:
+
+- `internal/cli/env.go:167` builds the api's client as
+  `&http.Client{Timeout: 30 * time.Second}`, which is right for an api
+  call.
+- `withTiming` and `withVerbose` set `c.Transport` and return the client
+  they were given, so the 30 seconds survives both wrappers, and
+  `env.go:182` puts that client on the `Env` as `httpClient`.
+- `applianceHTTP` returned `e.httpClient` whenever it was non-nil, which
+  production always is, so the no-timeout path existed for tests alone.
+- `http.Client.Timeout` covers reading the body, so the 2 GB fetch ran
+  under a 30-second whole-request deadline: a fast download finishes
+  inside it, a slow one does not, which is why it failed about half the
+  time and why retrying worked.
+
+This is the shape of ENG-105's cause and of I-1408's: a constant correct
+for one purpose reaching another through a field they share. Three of
+them merged inside two days, so this commit adds the row that catches the
+shape to `CHECKLIST.md`, under "For every change": a timeout the change
+adds says which operation it bounds, and no second operation reaches it
+through a field they share. ENG-105's own fix added that row to `mac-mini`
+first (`f7897014`, 2026-11-20), four minutes before this branch's base
+commit and not an ancestor of it, so a grep of this worktree found
+nothing and an earlier draft of this entry said the row existed nowhere
+in the repository. That was a worktree described as a project. The two
+rows say the same thing and the conductor keeps this one at merge,
+because it cites three instances of the shape where the first cites one.
+`f7897014`'s other row is the one this change had to satisfy -- anything
+made retryable is idempotent first, or the retry duplicates the effect
+the user sees -- and a GET that resumes from a part file and verifies the
+whole file's checksum does: the only effect it can duplicate is bytes on
+disk at a known offset, and the hazard worth naming is the stale part
+file above.
+
+- *A stall window, not a response-header timeout.* With the deadline
+  gone, something still has to end a connection that died, because TCP
+  alone can hold a dead one open for a quarter of an hour. A
+  `ResponseHeaderTimeout` was the smaller change and does not cover the
+  failure: the measured one and the one a home connection will really
+  produce are both mid-body, 1.4 GB into a 2 GB transfer, where a header
+  timeout has already been satisfied. It also could not be set here
+  without rebuilding the transport, which is `verboseTransport` over
+  `timingTransport` over `http.DefaultTransport`, and so without losing
+  what `-v` and `--timing` print. The watchdog that replaces it counts
+  the bytes read and cancels the request when a whole window passes with
+  none; because it starts before the request and counts from zero, the
+  wait for the response headers is inside the same 60 seconds, so one
+  mechanism bounds both. Detection takes between one and two windows,
+  since it ticks at the window.
+- *A longer `Timeout` lost because there is no figure to pick.* The
+  transfer is 9 seconds on the lab's connection and 14 minutes on a
+  20 Mbit one, and any constant that covers the second is long enough to
+  be no protection in the first. A deadline on a transfer of unknown size
+  measures the connection, not the fault; progress is the thing worth
+  measuring.
+- *A retry continues rather than starts over.* A failed attempt leaves
+  what it got in a `.part` file beside its destination and the next
+  attempt asks for `Range: bytes=N-`, so a connection that drops at 90
+  percent costs the last 10 percent and not another 2 GB. The hash of
+  what is on disk is taken first, so a continued download still reports
+  the digest of the whole file. A server that ignores the range answers
+  200 instead of 206 and the file starts over, which is the only safe
+  reading of that answer. A checksum mismatch is not retried, so a wrong
+  published checksum cannot cost three downloads -- unless the attempt
+  resumed, where one fresh attempt follows, because the part file may be
+  a prefix of an older image left by an install the customer gave up on
+  before upgrading the CLI.
+- *What the customer reads, and why it names a command.* `repose host
+  add` mints the host through the api before it installs anything, so
+  after a failed download the account holds the host and a plain second
+  `repose host add` is refused by the one-host limit -- the one piece of
+  advice a user would reach for, and the wrong one. The failure names
+  `repose host add --join <argument>` instead, with the argument it
+  already has, which skips the mint and continues from the part file.
+  This is a failure that unblocks, which is where I-484 allows a next
+  command. It also says the host is in the account, because that is the
+  state the Mac is in and nothing else says so.
+- *The test hook stays, the inheritance goes.* `applianceHTTP` still
+  returns the `Env`'s client when a test set one; it copies it and clears
+  `Timeout` alone, so a test's transport and a user's `-v` both survive
+  and no download inherits an api call's deadline. `fetchText`, which
+  reads a 64-byte checksum, takes a 30-second context of its own, so a
+  server that accepts the connection and says nothing cannot hold the
+  install either.

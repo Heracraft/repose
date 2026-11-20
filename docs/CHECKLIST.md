@@ -33,6 +33,17 @@ written so none of them goes unnoticed again.
 - [ ] No hardcoded values that belong in config: hostnames, IPs, ports, sizes,
       prices, paths outside the documented conventions. Evidence: `rg` for the
       literal returns only the config definition.
+- [ ] A timeout, deadline or window the change adds says in its comment
+      which operation it bounds, and no second operation reaches it through a
+      field they share. Evidence: `rg` for the constant's name, and for the
+      field it is stored on, and every reader is an operation the comment
+      names. Three defects of this one shape merged inside two days: a 3 s
+      hook constant bounding a 3-minute ask (ENG-105), start deadlines
+      written for x86 hosts applied to a Mac (I-1408), and the api's 30 s
+      client timeout reaching a 2 GB download through `Env.httpClient`
+      (I-1414), which failed the first `repose host add` about half the
+      time. Each comment was right about its own operation and silent about
+      the borrower.
 - [ ] Errors are handled at every call site, with the failure named in the
       message. No `_ = err`, no bare `panic` outside `main`. Evidence: `rg
       '_ = err|panic\(' cmd internal` is empty or each hit has a comment

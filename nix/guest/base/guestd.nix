@@ -11,6 +11,27 @@
     description = "The guestd binary package (flake packages.guestd).";
   };
 
+  options.repose.guestd.pathsWait = lib.mkOption {
+    type = lib.types.int;
+    default = 600;
+    description = ''
+      Seconds `repose-paths.service` waits for hostd's registration before
+      it gives up and lets the boot continue without it (DECISIONS
+      I-1408). It exits the moment the registration arrives, so this is
+      only what a guest whose hostd never comes pays.
+
+      It has to outlast the host's own registration deadline (`hostd
+      --paths-timeout`, ten minutes on a Mac appliance): if it gives up
+      first, home-manager runs against a store the guest's nix database
+      does not know. At 180 s it was shorter than that deadline on any
+      host slower than Azure, where the registration itself takes 2 min
+      6 s (ENG-80).
+
+      The guest VM tests set it low: none of them runs a hostd, so every
+      one of them otherwise waits this out before `multi-user.target`.
+    '';
+  };
+
   config = {
     systemd.tmpfiles.rules = [
       "d /run/repose 0755 root root -"
@@ -71,11 +92,14 @@
           # 0.1 s steps: this unit is on the path to the first login
           # (home-manager, then systemd-user-sessions), and a 0.5 s step
           # cost up to half a second of every boot (DECISIONS I-161).
-          for _ in $(seq 1 1800); do
+          #
+          # The wait is repose.guestd.pathsWait, which outlasts the
+          # host's own registration deadline; its option says why.
+          for _ in $(seq 1 ${toString (config.repose.guestd.pathsWait * 10)}); do
             [ -e /run/repose/paths-registered ] && exit 0
             sleep 0.1
           done
-          echo "no path registration from hostd after 180 s; continuing"
+          echo "no path registration from hostd after ${toString config.repose.guestd.pathsWait} s; continuing without it"
         ''}";
       };
     };
