@@ -37389,3 +37389,46 @@ named it as the reason workers stopped trusting pull request CI).
 full-suite reruns that the broken gate put into worker briefs are still
 in them, and whether pull request CI is trusted as a gate again is for
 the conductor to decide after it has been green for a batch.
+
+**I-1412. A test that seeds a timestamp a windowed query reads computes it
+when the row goes in, not when the table is built (2026-11-20).** *Made
+during implementation* (a red in a batch verification that the batch could
+not have caused, and the second time a pinned fixture clock has cost a
+conductor a verification).
+
+- *What happened.* `TestPickTable` in `internal/api/scheduler` took one
+  `time.Now()` before its table literal and gave every host that one
+  timestamp as its last heartbeat. `PickHost` ignores a host whose last
+  heartbeat is older than `HeartbeatWindow`, 90 seconds, measured against
+  the `time.Now()` the caller passes. The table has eight cases, each
+  opening its own database; under `-race` with the whole suite sharing one
+  Postgres it ran for 117 s, so by the last case the hosts it meant to be
+  fresh were two minutes stale and `xl fits above reserve` failed with
+  `no host with capacity`. Nothing about the scheduler was wrong, and
+  nothing in the batch touched Go at all.
+- *The fix.* The table's rows carry an `age` (`0` for fresh,
+  `2 * time.Minute` for the case that is about staleness) and each
+  subtest inserts `time.Now().Add(-h.age)`. The test can now take as long
+  as it likes.
+- *Why this is a rule and not one fix.* The same shape failed before, as
+  a fixture clock pinned to a date (the neighbour of I-1162), and a
+  pinned clock is invisible in review: it reads as a constant and behaves
+  as a deadline. Any test that writes a timestamp which a query then
+  compares against `now` has a hidden time limit equal to that window,
+  and the limit is enforced on the slowest box that ever runs it, which
+  is never the author's.
+- *Alternatives.* Raising `HeartbeatWindow`: it is a production constant
+  and 90 s is the operational answer, not a test's. Giving `PickHost` a
+  fixed clock in the test: it would pass, and it would stop the test
+  exercising the staleness rule against real time, which is the thing one
+  case is for. Marking the test as needing a quiet box: the three other
+  reds of that run were `WaitOp`'s 30-second timeout under contention,
+  which is a slow box and nothing more; this one was wrong by
+  construction, and the two should not be filed together.
+
+*Not done:* the other three reds of that run (`TestHelloLeavesAProject
+WithAnOpenOpAlone`, `TestAFailedWakeIsNotSentAgainStraightAway`,
+`TestResumeSkipsStopAndDestroyWhileUnreachable`) are not touched. Each
+passed alone on the same commit, each failed waiting 30 s for an op the
+engine was too starved to finish, and whether `WaitOp` should scale its
+timeout with the box is open.
