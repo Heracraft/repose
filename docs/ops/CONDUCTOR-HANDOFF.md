@@ -261,5 +261,13 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   never exported; nothing watches `repose-wg-watchdog`. The owner picks.
 - The xl park deadline: an xl that cannot snapshot in time loses its
   running state on every graceful host restart (txhm, 2026-11-19).
-- kanali's and verista's stop ops at 20:30 on 2026-11-19: trigger unknown
-  (the api container's logs went with the redeploy); ask the owner.
+- kanali's and verista's stop ops at 20:30 on 2026-11-19: read out in
+  `docs/proposals/2026-11-19-azure-host-events.md` §4a. Both xl machines,
+  stopped twenty seconds apart; verista's stop completed with its
+  snapshot at 20:31, kanali's failed at step 1 of 2 at 20:33 with the
+  thin pool `context canceled`, which is the hostd switch of that
+  minute, so **kanali has no snapshot from that stop** and its newest is
+  03:10. Who asked cannot be recovered: the op rows carry no actor, the
+  audit log records no project stop or start at all, and the api's logs
+  went with the redeploy. Two things for the owner: did you stop those
+  two before the switch, and is an actor on the op worth building.
