@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1033 entries.
+1034 entries.
 
 ## Scope
 
@@ -1065,3 +1065,4 @@ pointer, not a summary.
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — L37067
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
 - **I-1398** Every URL the shipped CLI fetches on a customer's machine is checked anonymously, at queue time, before a tag publishes, and every six hours (ENG-62, 2026-11-19) — L37280
+- **I-1402** An agent packaged from an npm tarball reads its entry script from `package.json`'s `bin`, and the build fails when that file is not shipped (2026-11-20) — L37353
