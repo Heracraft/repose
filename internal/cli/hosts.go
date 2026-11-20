@@ -121,16 +121,30 @@ func HostLsCmd(ctx context.Context, e *Env) error {
 	if err != nil {
 		return hostErr(err, "")
 	}
+	// A host the customer removed is not hardware they have; the api
+	// keeps the row for the history and every output of this command
+	// leaves it out. One filter above the three, because `--json` once
+	// returned the api's answer unchanged and answered four removed
+	// hosts to a script while the table said the customer had none
+	// (ENG-37, the customer review).
+	hosts = slices.DeleteFunc(hosts, func(h Host) bool {
+		return h.State == "retired" || h.State == "lost"
+	})
 	if e.JSON {
 		if hosts == nil {
 			hosts = []Host{}
 		}
-		return writeJSONOut(e.Out, hosts)
+		// The same word the table prints, for the same reason: cli.md
+		// names five states and `registering` is not one of them, so a
+		// script switching on the api's own enum would switch on a word
+		// no customer is ever shown.
+		out := make([]Host, len(hosts))
+		copy(out, hosts)
+		for i := range out {
+			out[i].State = hostStateWord(out[i].State)
+		}
+		return writeJSONOut(e.Out, out)
 	}
-	// A host the user removed is not hardware they have; the api keeps
-	// the row and the listing leaves it out. `--json` is the api's
-	// answer unchanged.
-	hosts = slices.DeleteFunc(hosts, func(h Host) bool { return h.State == "retired" })
 	if e.Quiet {
 		for _, h := range hosts {
 			_, _ = fmt.Fprintln(e.Out, h.Name)
