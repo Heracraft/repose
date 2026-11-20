@@ -56,7 +56,13 @@
 			(entries) => {
 				if (!entries.some((e) => e.isIntersecting)) return;
 				io.disconnect();
-				count = 1;
+				// The first two lines arrive together: on its own, line one
+				// is `cd` into a folder, and a visitor who glances and
+				// scrolls would read a directory change as the whole idea.
+				// Together they open on the command this page is about
+				// (I-1446; the release conductor read the opening frame at
+				// 300 ms before the push).
+				count = 2;
 				timer = setInterval(() => {
 					count += 1;
 					if (count >= total) clearInterval(timer);
