@@ -664,3 +664,37 @@ test('the empty list offers a plan, then the install, login and run commands', a
 	}
 	await expect(page.locator('main').getByTestId('plan-strip')).toHaveCount(0);
 });
+
+// ENG-24, from the customer review: at 1440 the Disk cell read "15...."
+// and the Agents cell dropped ", idle" — clientWidth 61 against
+// scrollWidth 66. Disk is a billed limit, so a customer has to be able
+// to read it.
+//
+// The assertion is the measurement rather than a width: every cell that
+// is allowed to ellipsis is asked whether it is actually ellipsing. A
+// test that pinned today's column percentages would pass on a build
+// where the figure grew a digit, which is how "15.2 GB" became "15....".
+test('no cell in the projects table is clipped at the widths it is drawn at', async ({ page }) => {
+	await signIn(page);
+	const api = apiURLFromEnv();
+	// A machine whose figures are the widest the table ever shows: a
+	// disk reading over 90 percent says "100% full", and an agent cell
+	// carries a name and a state.
+	const p = await createProject(api, { name: 'clip', remote_url: 'github.com/heracraft/clip' });
+	await page.goto('/projects');
+	const row = page.locator('.ptable tbody tr').first();
+	await expect(row).toBeVisible();
+	for (const width of [1440, 1024, 800]) {
+		await page.setViewportSize({ width, height: 900 });
+		const clipped = await page.locator('.ptable tbody td').evaluateAll((cells) =>
+			cells
+				.filter((c) => c.scrollWidth > c.clientWidth + 1)
+				.map((c) => `${c.className}: ${c.clientWidth} of ${c.scrollWidth} for ${c.textContent?.trim()}`)
+		);
+		expect(clipped, `clipped at ${width}`).toEqual([]);
+	}
+	await fetch(`${api}/projects/${p.id}`, {
+		method: 'DELETE',
+		headers: { Authorization: 'Bearer playwright' }
+	});
+});
