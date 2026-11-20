@@ -103,9 +103,74 @@ before it is dropped.
 
 Then: fix every P0 and P1 by sending the finding back to the session that
 built it, run the review again, and **only a second pass with no P0 opens
-the gate**. For a plan, the gate is not the release: repose ships a plan
-dormant and the commit that puts it on sale is held until the second pass is
-clean, so the release and the launch are separate events.
+the gate**. For a plan, the gate is not the release *while the plan is
+actually dormant*: repose ships a plan unlisted and the commit that puts it
+on sale is held until the second pass is clean, so the release and the
+launch are separate events.
+
+**That separation holds only as long as nobody can buy the thing being
+shipped, and that is a fact to read rather than a state to assume**
+(DECISIONS I-1426). It failed the first time it was relied on. On
+2026-11-20 a conductor argued that the Own hardware machinery could ship
+ahead of its review because the commit putting the plan on sale was held —
+and `POLAR_PRODUCT_OWN` was set on the production api, so `GET /v1/billing`
+answered `available: true`, `price_cents: 1000`, `trial_days: 7`. The plan
+was purchasable, with a free week, while its price appeared on no public
+page. So: before shipping behind a held commit, **read the catalogue the
+customer reads**. If the plan answers `available: true`, the gate is the
+release, because a customer who finds it gets the code in the batch.
+
+## The second pass, and why it is briefed differently
+
+A second pass is **verification, not discovery**, and briefing it like a
+first pass wastes it. Written after the first review of 2026-11-19 by the
+session that ran its hardest surface; each rule here is a thing that
+review got wrong or nearly did.
+
+- **Give each session the fixed list with its reproduction, and require
+  every one to be re-run**, then a time-boxed free hunt with the time that
+  is left. A pass against the build that was reviewed re-finds what is
+  already fixed and proves nothing: the second pass runs against the tree
+  that holds the fixes.
+- **A finding that was fixed and regressed outranks a new P2.** The plain
+  gate does not say this and a reviewer ranking by customer impact alone
+  will bury it.
+- **The brief owes each session the list of what is deliberately absent,
+  each with the date it was decided.** The date is the load-bearing part;
+  see the gate above for what happens without it.
+- **Reviewers talk to each other directly, and settle contradictions
+  between themselves.** Four claims got stronger passing through the
+  conductor in one night, which is the relay amplifying rather than
+  anyone lying. Give the sessions each other's names at launch. A
+  contradiction they resolve still goes in the report, because "we
+  disagreed and this is why one of us was wrong" is evidence and the
+  conclusion alone is not. **And a contradiction they cannot settle goes
+  to the conductor unresolved, carrying both pieces of evidence, rather
+  than to whichever reviewer is more confident.**
+- **Finding something on another session's surface is a success, not a
+  trespass.** The best evidence of that night crossed the split: a
+  dashboard defect found by the only reviewer with a host that reached
+  `online`.
+- **Each finding names its instrument, and the reading that would have
+  falsified it.** Two short fields, and the second does the work. The
+  instrument alone becomes a box to tick, and a form that launders weak
+  evidence is worse than no form. Worked, from that night: the 37.00
+  against 52.00 GiB disk comparison, falsifier "the clean install's grow
+  unit fails too", run and it did not, so the finding stands. The guest
+  starts finding, falsifier "a clean appliance still fails to start
+  guests", which is exactly what happened — the causal chain died and the
+  finding got stronger, legible only because the falsifier was named in
+  advance. And the one the field would have caught: "6.1 s is
+  reproducible" had one timed run and one untimed observation, was
+  written as "twice", and the falsifier field could not have been filled
+  honestly for it.
+- **A session that reviewed a surface before is a worse customer on it
+  than a fresh session**, and knows where the bodies are. For a long
+  install path on scarce hardware that trade is worth taking. Everywhere
+  else, take fresh sessions and **do not give them the first report** — if
+  they re-find what was found, that is signal; primed, it is nothing.
+  Withhold the priming, not the truth: a session that asks what it is
+  working on is told.
 
 ## The report is a document; its findings are cards
 

@@ -38031,3 +38031,50 @@ know." 600 s does not outlast 600 s.
   blind check is the state ENG-124 was found in. Both files also carry
   the sentence with its direction named, since a margin that exists by
   accident is closed by accident.
+
+### I-1426 A held commit only separates the release from the launch while the plan is actually unbuyable
+
+*Made during implementation* (mac-mini, 2026-11-20): `docs/REVIEW.md`'s
+gate said that for a plan the gate is not the release, because "repose
+ships a plan dormant and the commit that puts it on sale is held until
+the second pass is clean, so the release and the launch are separate
+events". That sentence is kept, with the condition it always had and
+never stated: **it holds only while nobody can buy the thing being
+shipped, and that is a fact to read rather than a state to assume.**
+
+- *What happened the first time it was relied on.* Resuming the mac-mini
+  program, this conductor argued that the bring-your-own-hardware
+  machinery could reach `main` ahead of its customer review, because
+  `7db572b5`, the commit that puts the Own hardware plan on public sale,
+  was held on that review by the owner. The release conductor disproved
+  the premise rather than the reasoning: `POLAR_PRODUCT_OWN` was set on
+  the production api, which by 19d's own design note is the switch that
+  makes the plan listed and purchasable. A council session then read the
+  catalogue itself, which is better evidence than the switch:
+  `GET /v1/billing` answers the `own` plan `available: true`,
+  `price_cents: 1000`, `hosts: 1`, **`trial_days: 7`**.
+- *So the state was neither dormant nor launched.* The plan was
+  purchasable, with a free week, while its price appeared on no public
+  page -- `repose.run/pricing` names neither the plan nor the figure, and
+  `/docs/own-hardware` links twice on the words "Own hardware plan" to a
+  `/docs/billing` section that only the held commit adds. Purchasable and
+  undocumented is the one combination nothing defends.
+- *What the rule is now.* Before shipping a surface behind a held
+  commit, read the catalogue the customer reads. If the plan answers
+  `available: true`, **the gate is the release**, because a customer who
+  finds it gets whatever is in that batch -- which on 2026-11-20 would
+  have been two open P0: an install that refuses and then installs a
+  broken appliance on the retry (ENG-71), and a documented removal path
+  that wedges the account (ENG-119).
+- *Why it is written as a decision and not as a note.* The sentence it
+  qualifies is in the doc that gates every review, and this conductor
+  read it as permission while it was describing a world that had moved.
+  Two different agents reasoning from the same doc reached opposite
+  conclusions about whether a release was allowed, which is the exact
+  failure `DECISIONS.md` exists to prevent.
+- *The second half, which is I-1366's lesson in a different costume.* A
+  held commit records an intention on a date. The product keeps moving
+  after that date, and nothing re-examines the hold. `docs/REVIEW.md`'s
+  evidence rules now carry the same point for a reviewer reading an
+  absence: finding the intent behind it is the start of the check, not
+  the end.
