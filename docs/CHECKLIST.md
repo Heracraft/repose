@@ -702,10 +702,16 @@ entry and this list with it. Counts as of 2026-10-21.
       | `internal/api/scheduler` | 254.8 s | **10.6 s** |
 
       The runner everyone assumed was weaker is **ten times faster per
-      package**, because `go test ./...` here runs 8 packages at once
-      against one Postgres and the runner runs 4. So the three reds read all
-      night as "a starved box" are **our own parallelism against a shared
-      resource** — self-inflicted, and cheaper to fix with `-p 2` or an
-      api-only pass than by widening any test's deadline. Evidence: the
-      per-package table, and `-p 2` tried before `WaitOp`'s flat 30 s is
-      touched.
+      package.** That difference is measured; **its cause is not.** The
+      leading explanation is our own parallelism against a shared resource —
+      `go test ./...` runs 8 packages at once on this 8-core box, and the
+      runner is believed to run 4, which is GitHub's documented standard
+      spec and **does not appear in the job log** — but a different Postgres
+      fsync path, or less overlap between packages, would produce the same
+      times. **Nobody has run the test**, which is `-p 2` here and a
+      remeasure. Whatever the cause, the three reds read all night as "a
+      starved box" are not evidence of a weak machine, and the cheap thing
+      to try is `-p 2` or an api-only pass **before** any test's deadline is
+      widened — widening would have hidden the real race one of those reds
+      turned out to be. Evidence: the per-package table, plus the `-p 2`
+      remeasure once someone runs it.
