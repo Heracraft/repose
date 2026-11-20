@@ -2,9 +2,11 @@
 
 Read this first, then `docs/ops/RELEASE.md` and `docs/ops/ORCHESTRATION.md`.
 Written by the conductor of 2026-11-11 to 2026-11-18 (session `conductor`
-on woker-1). It says what is true now, what the owner has ruled, what the
-commands are that worked, and what is owed. Keep it current: the next
-conductor rewrites "Where things stand" and appends to "Lessons".
+on woker-1), and revised at each handover since; "Where things stand"
+is dated and is the newest conductor's. It says what is true now, what
+the owner has ruled, what the commands are that worked, and what is
+owed. Keep it current: the next conductor rewrites "Where things stand"
+and appends to "Lessons".
 
 ## Who you are
 
@@ -20,39 +22,68 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-19, 21:35 UTC)
+## Where things stand (2026-11-20, 00:25 UTC)
 
-- Live: CLI v0.1.51 (v0.1.50 at 21:00, v0.1.51 at 21:29), main a3ecdc45
-  pushed, base 2026.11.19 (at 28272062), host-02 at hostd 2827206 and the
-  edge at 28272062, both switched 20:33 on the owner's word. The Own
-  hardware work (mac-mini, I-1364..I-1382) is on production; the plan is
-  on sale (`POLAR_PRODUCT_OWN` set by the owner); the edge hub material
-  has been in `settings` since 2026-09-20 (no edge init needed).
-- Local main equals origin/main and integrated. The queue is empty.
-- The mac-mini program (sessions `kanali-mac-mini-da` the mini-conductor,
-  `factory-3f` the spark) runs a customer review on production; its
-  findings land as ENG cards on the owner's board; it queues branches
-  itself and stays out of main. Known after v0.1.51: the dashboard's
-  add-host dialog shows `join_token` where the CLI takes
-  `install.argument` (ENG-29); `repose host add --join` puts a WireGuard
-  private key on the command line (ENG-42); a create on an unregistered
-  own host refuses and pages OpsFailing (ENG-46).
-- The outage of 2026-11-19 (host-02 16:21-20:29, the edge 18:21-18:27,
-  the control VM 19:10-19:37 UTC): Azure host-level events ("Live
-  Migration Failed" on host-02) left two VMs running with dead NICs;
-  `az vm restart` fixed each in seconds; the park unit saved four of five
-  guests at the restart (the xl txhm skipped: "snapshot would outlast the
-  deadline"). Grafana paged Chat within nine minutes each time; nobody
-  acted for three hours. `docs/proposals/2026-11-19-azure-host-events.md`
-  and RUNBOOK "Host or control VM dead on the network" hold the rest.
-- Worktrees under `~`: the owner's and the mac-mini program's (`kanali-doors`,
-  `kanali-form-shifts*`, `kanali-mac-mini*`, `kanali-council-*`, `kanali-pm`, `kanali-review-docs`); nothing of the conductor's.
-- Secrets on this box: `~/.config/repose-ops/{grafana-token,
-  logto-m2m-secret, polar-live-token, polar-sandbox-token}`; no Coolify
-  token (the owner sets Coolify envs in the UI).
-- Machines that are not yours: everything in `repose ls` except `e2e-*`
-  you made. The box's CLI login (`~/.config/repose/account.json`) is the
-  owner's; a CLI built from main is at `/tmp/rt/repose-main`.
+- Live and unchanged since the last conductor's shift: CLI v0.1.51 is the
+  `Latest` release (tagged 21:27 UTC on 2026-11-19), `origin/main` is
+  a3ecdc45, the base is 2026.11.19. `appliance-2026.11.19` exists and is
+  correctly **not** `Latest`, so I-1398's second failure has stayed fixed.
+- host-02 is healthy, read on the host at 00:14 UTC: up 3 h 43 m (the
+  20:29 restart of the outage), `/run/current-system` switched 20:33 to
+  `mz9z1xh2...-nixos-system-host-02-26.11.20260916.b1b8759`, `hostd.service`
+  active and running, three `guest@*` units running, one of them restored
+  from a park snapshot. The edge is up 5 h 45 m (its 18:27 restart).
+  **Burst is on in production**: hostd's ExecStart carries `--burst
+  --burst-gate 0.750000`, which is the owner's 2026-11-11 task, done.
+  Stages 4 and 5 of the burst proposal (the overage switch, the status
+  row, the docs) are still unbuilt, so burst is silent and unbilled.
+- Two names cost me a false alarm each, and both are in Lessons: the host
+  is **10.255.0.4**, not .2 (that is retired host-01, and it answers "No
+  route to host"), and the unit is **`hostd.service`**, not
+  `repose-hostd` (every other unit on the host does carry the prefix).
+- Local `main` is be8edb8e and `integrated` is the same commit. It is **25
+  commits ahead of `origin/main`** and every one of them ships as nothing
+  to deploy: tonight's review method, the conducting record, three
+  proposals, five decision entries and `ops/dev/release-assets` with its
+  tests. They are waiting on the owner's release word, and nothing else.
+- The queue holds one entry, mine: PR #86 `ci-buf-comment` (I-1400, ships
+  none), which stops the buf job posting a comment the `contents: read`
+  token cannot post. **Pull request CI had been red on every run in the
+  repository for a week on that and nothing else**, so a red run carried
+  no information; on #86's own run the job is green again. Do not cut a
+  batch of it alone unless you want the gate proven; it costs nothing to
+  carry.
+- The mac-mini program runs itself. `kanali-mac-mini-da` is its
+  mini-conductor in `~/kanali-mac-mini` and is alive, with builders and
+  two fixers as windows of the `mac-mini` tmux session. Its branch is 56
+  commits ahead of main and **held behind its own review gate**; it will
+  hand it over as one unit and not before. Two things about it are mine
+  when it comes: the **full `nix flake check` has never passed on that
+  branch** (abandoned after two OOM kills; its checks were built one at a
+  time under the lock), which I have agreed to run on the batch worktree
+  and to say out loud in the batch record and the release notes, and
+  commit **7db572b5, which puts the Own hardware plan on public sale, is
+  held deliberately** and must not reach main without the owner's word for
+  that commit. The landing session holds a separate piece for the same
+  reason. "The plan stays on sale in principle" is not that word.
+- The Mac is in a bad state, which is the program's to fix but the
+  owner's to pay for: the reviewer's tally on the published build is
+  **two successes in nine guest starts and nothing at all since 23:13
+  UTC**, with the event log isolating `starting` while stop, destroy and
+  restore each complete in about three seconds. The staged park test
+  cannot be taken while nothing starts.
+- `ops/dev/macmini` and the aws-mcp server both fail with "Your session
+  has expired. Please reauthenticate using `aws login`". Nobody can
+  allocate, inspect or release the AWS Mac until the owner re-authenticates,
+  and the host bills at $1.353 an hour meanwhile. The owner has approved
+  a third Mac day; it is the credentials that are missing, not the money.
+- Secrets: the four files under `~/.config/repose-ops/` are as the last
+  conductor left them. **The repository has no GitHub Actions secrets at
+  all** (`gh secret list` is empty), which is why ENG-99 cannot be built
+  from here; see Owed.
+- Worktrees under `~`: the program's, the owner's, and two of mine
+  (`kanali-ci-buf-comment`, `kanali-conductor-handoff-5`).
+
 
 ## The owner's rules this week
 
@@ -163,6 +194,27 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   console and nothing on the network is a dead NIC from the host side;
   Resource Health may still say Available. Restart it (RUNBOOK "Host or
   control VM dead on the network").
+- **An always-red check is as useless as an always-green one, and costs
+  more**, because it also teaches everyone to ignore the place real
+  failures appear. Every pull request run in the repository was red for a
+  week; the one red job passed its three buf commands and then exited 1
+  posting a comment the token cannot post. Nobody asked why the red was
+  permanent. Read a run by job, not by conclusion, and when a job is red
+  on every branch, that is the bug.
+- **Read a check's exit code, and read what it actually selected.** Two
+  sibling traps, both met in one hour: `ssh root@10.255.0.2` answers "No
+  route to host" because .2 is retired host-01 and host-02 is .4, and
+  `systemctl is-active repose-hostd` answers `inactive` because the unit
+  is `hostd.service` while every other unit on the host is `repose-*`.
+  Either answer, believed, reads as a production outage. List what
+  exists before concluding something is absent.
+- A new worktree needs its own `pnpm install --frozen-lockfile` before
+  `just done-check`, or the web half fails with "Command vitest not
+  found" and nothing wrong with the branch.
+- `ops/dev/release-queue add` validates the body with `ops/dev/pr-record`
+  and refuses a Markdown heading where the template has none: the
+  what-changes part is everything before `**Why.**`, which must be that
+  exact bold marker. Run `ops/dev/pr-record check <file>` before `add`.
 
 ## Owed
 
@@ -180,8 +232,29 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   mac-disk-floor refusal sentence on a Mac with under 57 GB free (the
   mac-mini program has the Mac); bump (`chrome-devtools-mcp --version`
   on the new base).
-- The buf job's comment permission in `ci.yml` (above), and the
-  post-merge full-suite reruns in worker briefs that it causes.
+- The post-merge full-suite reruns that worker briefs carry because
+  pull request CI could not be trusted. The gate itself is fixed (#86,
+  I-1400); the briefs still say to rerun by hand, and whether the gate
+  is trusted again is a judgement to make after a batch has been green.
+- **Four things only the owner can unblock**, each with the consequence
+  of leaving it:
+  1. The **release word**. 25 integrated commits, all `ships: none`, are
+     not live, and ENG-99's card cannot go green at all until the push,
+     because what proves it is the first scheduled `release-assets.yml`
+     run against a pushed main.
+  2. **`aws login`**. Nothing can touch the AWS Mac until it is done,
+     the program needs that hardware for three things no other machine
+     can answer, and it bills at $1.353 an hour either way.
+  3. **ENG-99's channel.** A red scheduled `release-assets.yml` run
+     reaches only whoever GitHub notifies. Routing it to the owner's
+     chat needs a webhook URL as a GitHub Actions secret, and this
+     repository has no Actions secrets at all, so nothing can be built
+     from here either way. The alternative that needs no secret in
+     GitHub is an Uptime Kuma monitor on the workflow's latest run
+     conclusion through the public API, which is a change on the owner's
+     Kuma rather than in this repository. The owner picks which.
+  4. Whether **7db572b5** (the Own hardware plan on public sale) and the
+     landing session's held piece go, and when.
 - From the outage research (PR #77): the api pages nothing itself on
   `host_unreachable`; an outside probe of the VM agent heartbeat; the
   edge keeping wgsync's peers across a reboot; `repose_gateway_wgsync_errors_total`
