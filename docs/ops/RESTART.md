@@ -210,6 +210,30 @@ subject.
   1 when it finds nothing, so a watcher looking for failures reported
   failure *because there were none*.
 
+**`gh pr checks <n>` aggregates superseded attempts, so a job that
+failed and was re-run green still prints `fail`.** On 2026-11-20 the
+release conductor read all four pull requests as red; three were green.
+The reliable form is the newest run:
+
+```
+R=$(gh run list --branch <branch> --limit 1 --json databaseId --jq '.[].databaseId')
+gh run view $R --json status,conclusion,jobs
+```
+
+That is the third instrument in one day that was internally consistent
+and wrong about the question asked of it, after the board's listing
+(§8) and a grep that measured the wrong file. The pattern is worth more
+than the three instances: **when an instrument answers instantly and
+confidently, ask what it measured.**
+
+**A grep for an attribute measures the file you grepped, not the page.**
+The conductor grepped `data-motion-group="grid"` in `+page.svelte`, got
+zero, and concluded the page had no looping pictures; the attribute is
+set by the picture components, not by the page that composes them.
+There were five. The browser was open at the time, and counting
+`.pic-frame` in it would have answered in a second. **A composed page is
+measured in the browser, not in the file that composes it.**
+
 **A test can encode a positioning decision, and you meet it when you
 change the pitch.** Rewriting the home page on 2026-11-20 redded five
 specs that had the old pitch in their selectors or their subjects: a
