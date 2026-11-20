@@ -13,19 +13,37 @@
 
   options.repose.guestd.pathsWait = lib.mkOption {
     type = lib.types.int;
-    default = 600;
+    default = 1200;
     description = ''
       Seconds `repose-paths.service` waits for hostd's registration before
       it gives up and lets the boot continue without it (DECISIONS
       I-1408). It exits the moment the registration arrives, so this is
       only what a guest whose hostd never comes pays.
 
-      It has to outlast the host's own registration deadline (`hostd
-      --paths-timeout`, ten minutes on a Mac appliance): if it gives up
-      first, home-manager runs against a store the guest's nix database
-      does not know. At 180 s it was shorter than that deadline on any
-      host slower than Azure, where the registration itself takes 2 min
-      6 s (ENG-80).
+      **This must stay greater than `hostd --paths-timeout` plus `hostd
+      --ready-timeout` on the slowest host that runs this closure** (10m
+      and 5m on a Mac appliance, so 15 minutes, and this is 20). Raising
+      either of those without raising this one re-opens the failure below;
+      `nix/hosts/mac.nix` carries the same sentence beside them, and
+      `TestTheGuestsPathsWaitOutlastsTheHostsPathsDeadline` reads both
+      files and fails when the order breaks, because no evaluation sees
+      both numbers (DECISIONS I-1416).
+
+      Two clocks, and this one starts first, which is why the margin is
+      not just the paths deadline: this unit is `after
+      guestd.service`, so it begins waiting as soon as guestd's process
+      starts, while the host's registration deadline begins later, at
+      RegisterPaths after Ready. The guest therefore waits through the
+      whole ready phase before the host's clock even starts.
+
+      If it gives up first, home-manager runs against a store the guest's
+      nix database does not know -- a start that reports success into a
+      broken machine, with no deadline reported to anyone, which is why
+      the order matters more than either number. At 180 s it was shorter
+      than the host's deadline on any host slower than Azure, where the
+      registration itself takes 2 min 6 s (ENG-80); at 600 s against a
+      Mac's 600 s it was equal rather than greater, and so still expired
+      first by the ready phase (ENG-124).
 
       The guest VM tests set it low: none of them runs a hostd, so every
       one of them otherwise waits this out before `multi-user.target`.

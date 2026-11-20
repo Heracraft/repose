@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1043 entries.
+1044 entries.
 
 ## Scope
 
@@ -1073,5 +1073,6 @@ pointer, not a summary.
 - **I-1402** An agent packaged from an npm tarball reads its entry script from `package.json`'s `bin`, and the build fails when that file is not shipped (2026-11-20) — L37645
 - **I-1400** The buf job posts no pull request comment, and the workflow's token stays `contents: read` (2026-11-20) — L37689
 - **I-1412** A test that seeds a timestamp a windowed query reads computes it when the row goes in, not when the table is built (2026-11-20) — L37729
-- **I-1408** A start's phase deadlines belong to the host that runs it, and the failure says which phase ran out: hostd gains `--paths-timeout` and `--setup-timeout` (3 minutes each by default, ten on a Mac appliance), guestd's own 3 minutes becomes a 20-minute backstop, and the machine's ssh identity is delivered before the registration rather than after it (fix-starts, 2026-11-20) — L37771
-- **I-1414** The appliance downloads get a client of their own, with no whole-request deadline, a 60-second stall window instead, and three attempts that continue from what is on disk; a download that does not finish names the install step that completes it (fix-starts, 2026-11-20) — L37867
+- **I-1408** A start's phase deadlines belong to the host that runs it, and the failure says which phase ran out: hostd gains `--paths-timeout` and `--setup-timeout` (3 minutes each by default, ten on a Mac appliance), guestd's own 3 minutes becomes a 20-minute backstop, and the machine's ssh identity is delivered before the registration rather than after it (fix-starts, 2026-11-20) — amended by I-1416; L37771
+- **I-1414** The appliance downloads get a client of their own, with no whole-request deadline, a 60-second stall window instead, and three attempts that continue from what is on disk; a download that does not finish names the install step that completes it (fix-starts, 2026-11-20) — L37877
+- **I-1416** The guest's wait for the registration outlasts the host's deadline for sending it, by the ready phase as well as the paths deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name the order and its direction, and a text check reads both numbers because no evaluation sees them together (fix-starts, 2026-11-20) — L37977
