@@ -315,6 +315,26 @@ owned host has a way to wrap the image key that is not Key Vault
 were running (I-645). `repose host add`, `repose host run` and `repose host rm` are the
 user's side on the Mac.
 
+The two downloads a first install makes, vfkit and the 2.08 GB image,
+run on a client of their own with no whole-request deadline (I-1414).
+The CLI's api client carries a 30 s `Timeout` and `http.Client.Timeout`
+covers reading the body, so while the downloads took that client whole a
+2 GB fetch had 30 seconds to finish: the first `repose host add` on the
+lab M4 failed at 31 s with `context deadline exceeded ... while reading
+body` and the second succeeded in 37 s, on a connection that moves the
+asset at 226 MB/s (ENG-117). What ends a dead connection instead is a
+stall window: no bytes for 60 s, the response headers included, and the
+attempt is given up. A failed attempt leaves what it got in a `.part`
+file beside its destination and the next attempt continues from it with
+a `Range` request, three attempts in all; a server that ignores the
+range starts the file over, and a mismatched checksum after a resume
+costs one fresh attempt, because the part may be a prefix of an older
+image. A download that does not finish is the one failure in the install
+that names the way out: `repose host add` minted the host before the
+install, so a plain second `repose host add` would be refused by the
+one-host limit, and the sentence carries `repose host add --join
+<argument>` instead.
+
 ## Behaviour that must hold
 
 Ownership and placement (I-1366):

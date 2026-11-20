@@ -72,7 +72,11 @@ var quietFailureFuncs = map[string]bool{
 	"notRunningMessage": true, "nextAfterFailedStart": true, "again": true,
 	"waitForSSH": true, "briefErr": true, "Error": true, "ReadPNG": true,
 	"exitCodeFor": true, // the login and rate-limit refusals
-	"applyScript": true, // a shell script run on the guest, not output
+	// A download that did not finish, and the install step that
+	// continues it: `repose host add` already minted the host, so the
+	// plain command would be refused by the one-host limit (ENG-117).
+	"applianceFetchFailed": true,
+	"applyScript":          true, // a shell script run on the guest, not output
 	// The api's refusals as sentences, the unknown project, the project
 	// cap and a failed revoke (I-623, I-627).
 	"apiErrorExit": true, "noSuchProjectMessage": true, "projectLimitMessage": true,

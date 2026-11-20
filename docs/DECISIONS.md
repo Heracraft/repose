@@ -37505,3 +37505,92 @@ above is measured, the deadlines and the ordering are tested here, and
 nobody has yet run five starts on a Mac with a guest image built from
 this branch -- which is what the guestd backstop and the two unit changes
 need. Until that run shows five of five, ENG-80 stays open.
+
+**I-1414. The appliance downloads get a client of their own, with no
+whole-request deadline, a 60-second stall window instead, and three
+attempts that continue from what is on disk; a download that does not
+finish names the install step that completes it (fix-starts,
+2026-11-20).** *Made during implementation* (ENG-117, found on the
+published build on a real M4 by the spark on 2026-11-20. Amends nothing:
+`applianceHTTP`'s own comment already said "a plain client with no
+timeout, since an image is 2 GB", and this is the code catching up with
+it.)
+
+The first `repose host add` on that Mac failed at 31 s with `the image:
+context deadline exceeded (Client.Timeout or context cancellation while
+reading body)`, and the second succeeded in 37 s. It was not the
+network: the Mac pulls the asset at 226 MB/s, so 2.08 GB is about nine
+seconds of transfer. The chain, read in the code and then reproduced in
+a test:
+
+- `internal/cli/env.go:167` builds the api's client as
+  `&http.Client{Timeout: 30 * time.Second}`, which is right for an api
+  call.
+- `withTiming` and `withVerbose` set `c.Transport` and return the client
+  they were given, so the 30 seconds survives both wrappers, and
+  `env.go:182` puts that client on the `Env` as `httpClient`.
+- `applianceHTTP` returned `e.httpClient` whenever it was non-nil, which
+  production always is, so the no-timeout path existed for tests alone.
+- `http.Client.Timeout` covers reading the body, so the 2 GB fetch ran
+  under a 30-second whole-request deadline: a fast download finishes
+  inside it, a slow one does not, which is why it failed about half the
+  time and why retrying worked.
+
+This is the shape of ENG-105's cause and of I-1408's: a constant correct
+for one purpose reaching another through a field they share. Three of
+them merged inside two days, so this commit adds the row that catches the
+shape to `CHECKLIST.md`, under "For every change": a timeout the change
+adds says which operation it bounds, and no second operation reaches it
+through a field they share. ENG-117's card proposed that row as already
+existing; it did not, which is part of why this was the third.
+
+- *A stall window, not a response-header timeout.* With the deadline
+  gone, something still has to end a connection that died, because TCP
+  alone can hold a dead one open for a quarter of an hour. A
+  `ResponseHeaderTimeout` was the smaller change and does not cover the
+  failure: the measured one and the one a home connection will really
+  produce are both mid-body, 1.4 GB into a 2 GB transfer, where a header
+  timeout has already been satisfied. It also could not be set here
+  without rebuilding the transport, which is `verboseTransport` over
+  `timingTransport` over `http.DefaultTransport`, and so without losing
+  what `-v` and `--timing` print. The watchdog that replaces it counts
+  the bytes read and cancels the request when a whole window passes with
+  none; because it starts before the request and counts from zero, the
+  wait for the response headers is inside the same 60 seconds, so one
+  mechanism bounds both. Detection takes between one and two windows,
+  since it ticks at the window.
+- *A longer `Timeout` lost because there is no figure to pick.* The
+  transfer is 9 seconds on the lab's connection and 14 minutes on a
+  20 Mbit one, and any constant that covers the second is long enough to
+  be no protection in the first. A deadline on a transfer of unknown size
+  measures the connection, not the fault; progress is the thing worth
+  measuring.
+- *A retry continues rather than starts over.* A failed attempt leaves
+  what it got in a `.part` file beside its destination and the next
+  attempt asks for `Range: bytes=N-`, so a connection that drops at 90
+  percent costs the last 10 percent and not another 2 GB. The hash of
+  what is on disk is taken first, so a continued download still reports
+  the digest of the whole file. A server that ignores the range answers
+  200 instead of 206 and the file starts over, which is the only safe
+  reading of that answer. A checksum mismatch is not retried, so a wrong
+  published checksum cannot cost three downloads -- unless the attempt
+  resumed, where one fresh attempt follows, because the part file may be
+  a prefix of an older image left by an install the customer gave up on
+  before upgrading the CLI.
+- *What the customer reads, and why it names a command.* `repose host
+  add` mints the host through the api before it installs anything, so
+  after a failed download the account holds the host and a plain second
+  `repose host add` is refused by the one-host limit -- the one piece of
+  advice a user would reach for, and the wrong one. The failure names
+  `repose host add --join <argument>` instead, with the argument it
+  already has, which skips the mint and continues from the part file.
+  This is a failure that unblocks, which is where I-484 allows a next
+  command. It also says the host is in the account, because that is the
+  state the Mac is in and nothing else says so.
+- *The test hook stays, the inheritance goes.* `applianceHTTP` still
+  returns the `Env`'s client when a test set one; it copies it and clears
+  `Timeout` alone, so a test's transport and a user's `-v` both survive
+  and no download inherits an api call's deadline. `fetchText`, which
+  reads a 64-byte checksum, takes a 30-second context of its own, so a
+  server that accepts the connection and says nothing cannot hold the
+  install either.

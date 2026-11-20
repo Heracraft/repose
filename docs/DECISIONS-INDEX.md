@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1035 entries.
+1036 entries.
 
 ## Scope
 
@@ -1067,3 +1067,4 @@ pointer, not a summary.
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37292
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37343
 - **I-1408** A start's phase deadlines belong to the host that runs it, and the failure says which phase ran out: hostd gains `--paths-timeout` and `--setup-timeout` (3 minutes each by default, ten on a Mac appliance), guestd's own 3 minutes becomes a 20-minute backstop, and the machine's ssh identity is delivered before the registration rather than after it (fix-starts, 2026-11-20) — L37413
+- **I-1414** The appliance downloads get a client of their own, with no whole-request deadline, a 60-second stall window instead, and three attempts that continue from what is on disk; a download that does not finish names the install step that completes it (fix-starts, 2026-11-20) — L37509
