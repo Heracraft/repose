@@ -226,3 +226,34 @@ where its evidence is a vendor doc rather than a measurement.
 8. Run the review by surface; confer; fix every P0 and P1; run a second pass that must find no P0.
 9. Queue the branch with `ops/dev/release-queue add`, and let the release conductor merge it.
 10. Record the decisions in `docs/DECISIONS.md`, close the cards with evidence, and write what is **not** done into `STATUS.md` before stopping.
+
+## Writing someone else's claim down makes it yours
+
+The method doc's rule is *ask which surfaces a claim was measured on, not
+whether the claim is true.* Tonight added its companion, and it is the
+conductor's own failure mode rather than a builder's:
+
+**When you write another session's claim into a document, you inherit its
+evidence — including the parts it inferred.** A claim in a message is
+attributable and perishable. The same claim in a checklist row has your
+authority and no author, and the next reader cites it rather than checking
+it.
+
+Three instances in one night, each caught by the session that made the
+claim rather than by the conductor who recorded it:
+
+- A per-package timing difference was measured and its **cause** inferred
+  from a vendor's documented runner spec that never appeared in the job
+  log. It travelled from a message into a checklist row, as fact, in under
+  an hour.
+- A single 600-second test failure was read as a hang and written up as
+  one; five further measurements made it a package at 89 percent of an
+  inherited deadline.
+- A speculation that a slower runner would exceed that deadline reached a
+  card in stronger words than the evidence deserved, and the one
+  measurement that existed pointed the other way.
+
+So: **when you record someone else's finding, record which part they
+measured and which part they reasoned**, in the document, not in the
+message. And expect the correction to come from them, which is itself the
+argument for telling them what you wrote down.
