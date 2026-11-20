@@ -38564,3 +38564,51 @@ ops that failed the same way.
 - *What a user should do instead when the Mac was only asleep* is in
   `/docs/own-hardware`: turn it on and wait for `online`, because once a
   host is removed it cannot rejoin and what was on its disk is gone.
+
+**I-1434. macOS gives the launcher about one second when the Mac
+restarts, not the 360 it asks for, so the park does not survive a
+restart and the docs stop promising it; the park stays on, because a
+clean stop of the launcher does park and unpark correctly (mac-mini,
+2026-11-20).** *Made during implementation* (measured on the AWS M4 rig
+by the spark; qualifies I-1386 and I-1394, whose deadline chain assumes
+a window the platform does not give.)
+
+- *What was measured, both halves, within ten minutes of each other.*
+  A **clean stop** -- `launchctl bootout gui/501/run.repose.appliance`
+  -- parks and unparks end to end: the keychain item is created at
+  07:10:29Z by the launchd agent itself with no prompt
+  (`park-key: event=keychain_item_created service=run.repose.appliance
+  account=park-wrapping-key`), wrapped at 07:19:25Z and unwrapped at
+  07:20:12Z on `key_id=keychain-79a9a0260addb566`, and the guest came
+  back with its marker intact and uptime continuous, 319.27 s before and
+  400.95 s after. A **real restart** -- `sudo shutdown -r now` -- did
+  not: "stopping: the appliance parks its machines and powers off" at
+  07:29:27Z and "stopped" at **07:29:28Z**, one second, with no wrap line
+  written at all, and the guest came back cold with its marker gone and
+  uptime 130.90 against 923.90 immediately before.
+- *So the deadline chain in I-1386 is unreachable at a restart.* The 240
+  s shutdown hold, the unit's 270 s wall, the launcher's 330 s plug and
+  launchd's 360 s kill all assume macOS lets the agent finish. It does
+  not. The chain still governs the clean-stop path, which is the path
+  that works.
+- *The park stays on.* It is correct where it runs, the vsock dial fix it
+  depends on was a genuine defect on any platform
+  (`net.FileConn` cannot wrap an AF_VSOCK descriptor), and turning it off
+  would lose the working case for nothing.
+- *What changes instead is every line that promised it.* The public page
+  loses "Restart your Mac and your work survives" for "Restart your Mac
+  and your machines start fresh", and `lifecycle.md`, `secrets.md`,
+  `troubleshooting.md` and `cli.md`'s `repose host run` row stop saying
+  the Mac keeps a machine's memory across a restart. Trust the reader
+  (I-484, I-485): a promise a customer will test on their first restart
+  is worse than an absence, and this one was about to ship in the same
+  batch that fixed five other things they would have met first.
+- *What is not known, and is a card rather than a guess* (ENG-138):
+  whether this is EC2 Mac's restart path specifically, whether a logout
+  behaves like the clean stop, and whether macOS offers any hook that
+  does get a real shutdown window. The honest state is that the
+  mechanism works and the trigger does not.
+- *Why this is in the batch rather than after it.* The promise was not
+  published: `main` has no such section, so the false sentence exists
+  only on this branch. Shipping it and fixing it later would make a
+  liar of a page a customer reads on the day they buy the plan.

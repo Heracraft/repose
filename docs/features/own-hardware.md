@@ -322,11 +322,20 @@ seconds (3 min 36 s cold and 3 min 59 s warm to multi-user on an M4 at 2
 vCPU, research doc §9; hostd's per-start dump-db of the closure is half
 of it), so hostd's ready window is five minutes there
 (`guestReadyTimeout`) where the Azure hosts keep 60 s. The park is on
-(I-1386, I-1394): a restart, a shutdown or a logout the user asks for
-parks every running machine to an encrypted image on the appliance's
-disk (6.5 s a guest on the M4, snapshot 203 ms, an 824 MB image) and the
-next login unparks it (3.8 s), against about 289 s to start a guest cold
-and lose its work. The image's key is wrapped not by Key Vault, which a
+(I-1386, I-1394) and **it does not reach the case it was built for**
+(I-1434, ENG-138): a **clean stop of the launcher** parks every running
+machine to an encrypted image on the appliance's disk (6.5 s a guest on
+the M4, snapshot 203 ms, an 824 MB image) and the next start unparks it
+(3.8 s), against about 289 s to start a guest cold and lose its work --
+measured end to end on the rig, with the keychain item created by the
+launchd agent itself and no prompt, a marker intact and uptime
+continuous at 319.27 then 400.95 s. **A restart of the Mac does not do
+that.** `sudo shutdown -r now` gave the launcher about **one second**
+("stopping: the appliance parks its machines and powers off" at
+07:29:27Z, "stopped" at 07:29:28Z, no wrap line written), and the guest
+came back cold -- marker gone, uptime 130.90 against 923.90 before the
+restart. So the user-visible promise is withdrawn from the docs until a
+real window exists. The image's key is wrapped not by Key Vault, which a
 Mac has no identity for, but by the launcher, asked over a vsock vfkit
 forwards to `park-key.sock` (`internal/parkkey`); the launcher keeps the
 one wrapping key as a generic-password item in the user's login keychain
@@ -339,8 +348,10 @@ someone logs in: a restart with no login for six hours discards the image
 unread, and the docs say so beside the power-cut case. A stuck snapshot
 holds the shutdown at most 240 s (the deadline plus the park's own stop
 grace), the unit's wall is 270, the launcher's plug 330 and launchd's kill
-360; what macOS itself allows an agent at a restart is only the Mac's to
-show. `repose host add`,
+360 -- **and that whole chain assumes a window macOS does not give.** What
+it allows an agent at a restart was the one thing only the Mac could
+show, and it has shown it: about a second, so every number above it is
+unreachable at a restart and only the clean-stop path uses them. `repose host add`,
 `repose host run` and `repose host rm` are the user's side on the Mac.
 
 The two downloads a first install makes, vfkit and the 2.08 GB image,
