@@ -38802,3 +38802,76 @@ and the `permissions` union goes through `unique` too. If a case ever
 puts a home-dependent path in `permissions`, `want.json` will take the
 same dependency, and a byte comparison of JSON cannot be fixed the same
 way.
+
+**I-1444. The guest-address write checks for an open op in its own
+`where`, not before it, and a write that matched no row does not update
+the caller's copy (hello-addr ENG-111, 2026-11-20).** *Made during
+implementation* (found by CI run `44644449171` on pull request #87, whose
+diff was two documents and one `ci.yml` line, so the failure was main's).
+Completes I-720, whose rule was right and whose guard was two statements.
+
+I-720 gave `projects.guest_ip` a second writer, the Hello reconcile, and
+guarded it: a project with an open op is left alone, because that op's
+result settles the address as it settles the state. The guard read
+`store.OpenOpsForProject`, found none, and then issued the UPDATE. An op
+opening between those two statements is invisible to the first, so the
+very thing the guard exists to stop -- a Hello in the middle of a restore
+writing the address of the guest the restore is about to destroy -- was
+still possible, and CI caught it once in 1.41 s where `-race -count=20`
+on the dev box never did.
+
+- *The open-op test is now a `not exists` inside the UPDATE*, so one
+  statement decides and writes. Nothing else about the rule changes: a
+  destroyed project, a guest that moved and a row that already agrees are
+  refused exactly as before.
+- *A start's own op is the one exception, and it is passed explicitly.*
+  `StartResult` carries the address and is applied while that start is
+  still running, so `recordGuestAddress` takes the op it belongs to and
+  the clause ignores that one. Keying it on the `src` string instead
+  would have made a log label load-bearing. A second, unrelated op open
+  at the same time still holds the write, and there is a test for that:
+  the fix would otherwise have quietly stopped recording addresses on the
+  path I-720 was written for, which is the one the 2026-10-13 outage
+  needed.
+- *A write that matched no row no longer updates the in-memory project.*
+  It did before, for any reason the `where` refused, so a refused write
+  looked applied for the rest of the reconcile. It now logs
+  `change=held` -- ids, states and no address, per OBSERVABILITY §5 --
+  and returns.
+- *The window is now deterministic without winning a race.* Because the
+  check is in the statement, a test can open an op and call the write:
+  before this it wrote the address, after it the row is untouched. The
+  end-to-end test through a real Hello stays, and it is the one that
+  passed throughout the defect's life.
+
+- *The other writer of these columns is fixed with it.* The
+  `reconcile_missing` path that releases the address of a guest a failed
+  restore destroyed read the open ops and then ran `update projects set
+  guest_ip = null, vsock_cid = null`, which is this same defect on the
+  same two columns, and in the worse direction: a running op that needs
+  the address loses it rather than gaining a stale one. It is now
+  `releaseGuestAddress`, with the same `not exists`, the same
+  `RowsAffected` discipline and its own deterministic test. Caught in
+  review by the mac-mini conductor, after a first draft of this entry
+  claimed the remaining sites each wrote "a state rather than an
+  address", which was wrong about exactly this one.
+- *This narrows the window; it does not close it, and the entry says so
+  rather than letting a later reader assume otherwise.* Postgres runs
+  these statements at READ COMMITTED, so the subquery sees what was
+  committed when the statement began. Enqueueing an op is a bare `insert
+  into ops` that touches no `projects` row, so it takes no lock the
+  UPDATE contends for, and an op committed after that instant is still
+  invisible. What changes is the size: from a gap between two round
+  trips, which CI hit, to the gap inside one statement. Closing it
+  completely would mean making op creation conflict with the project row
+  -- a `select ... for update` on `projects` in the enqueue -- which is a
+  lock-ordering decision across every op path and is not this entry's to
+  make.
+
+*Not done:* the state reconcile beside it still reads the open ops and
+then calls `SetProjectState(..., "error")`, so a project can be marked
+`error` by the reconcile while an op is opening. It is left because
+`SetProjectState` is shared by callers who must not inherit this
+condition, so fixing it means either a dedicated statement or a new store
+function, and because what *should* happen when an op opens mid-reconcile
+is a question about states rather than a race on a column. Carded.

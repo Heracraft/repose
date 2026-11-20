@@ -199,3 +199,151 @@ func TestHelloRecordsTheAddressOfAStoppedGuestButNotADestroyedProject(t *testing
 		t.Fatalf("a destroyed project was written: ip=%v state=%s", d.GuestIP, d.State)
 	}
 }
+
+// TestTheAddressWriteRefusesWhileAnOpIsOpen is ENG-111 made
+// deterministic (DECISIONS I-1444).
+//
+// TestHelloLeavesAProjectWithAnOpenOpAlone above asserts the same rule
+// through a real Hello, and it passed here on every run while the defect
+// was live: the guard was a separate read, so only an op that opened
+// between that read and the write could slip past, and nothing on this
+// box interleaved that way. CI did, once, on a pull request of two
+// documents -- run 44644449171, "the reconcile wrote <an address> while
+// an op was open" -- which is a failure nobody can reproduce on demand.
+//
+// So this calls the write with an op already open. The guard now lives in
+// the UPDATE's own `where`, which means the open op is checked by the
+// statement that writes, and a test does not have to win a race to prove
+// it: before I-1444 this wrote the address, after it the row is
+// untouched.
+func TestTheAddressWriteRefusesWhileAnOpIsOpen(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("addrguard")
+	p := h.CreateRunning(u, "izma")
+
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set guest_ip = null, vsock_cid = null where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	row := h.Project(p.ID)
+
+	// The restore the comment on I-720 is about: open, and nothing will
+	// finish it.
+	opID := store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx,
+		"insert into ops (id, project_id, kind, state, step, host_id, params) values ($1, $2, 'restore', 'running', 0, $3, '{}'::jsonb)",
+		opID, p.ID, p.HostID); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Engine.RecordGuestAddressForTest(h.Ctx, row, "10.64.0.9", 7)
+	if got := h.Project(p.ID); got.GuestIP != nil || got.VsockCID != nil {
+		t.Fatalf("the write went through while an op was open: ip=%v cid=%v", got.GuestIP, got.VsockCID)
+	}
+	// And the caller's copy does not pretend it was written, which is
+	// what made a refused write look applied for the rest of a reconcile.
+	if row.GuestIP != nil || row.VsockCID != nil {
+		t.Fatalf("the in-memory project was updated by a write that did nothing: ip=%v cid=%v", row.GuestIP, row.VsockCID)
+	}
+
+	// With the op finished the same call writes, so the refusal is the
+	// open op and not the statement being broken.
+	if _, err := h.Pool.Exec(h.Ctx, "update ops set state = 'done' where id = $1", opID); err != nil {
+		t.Fatal(err)
+	}
+	h.Engine.RecordGuestAddressForTest(h.Ctx, row, "10.64.0.9", 7)
+	got := h.Project(p.ID)
+	if got.GuestIP == nil || got.GuestIP.String() != "10.64.0.9" {
+		t.Fatalf("with no op open the address was not recorded: %v", got.GuestIP)
+	}
+	if got.VsockCID == nil || *got.VsockCID != 7 {
+		t.Fatalf("with no op open the vsock cid was not recorded: %v", got.VsockCID)
+	}
+}
+
+// TestTheAddressWriteAllowsTheOpItBelongsTo: a start's own op is running
+// when its result is applied, so the write that carries that result must
+// not refuse for it (DECISIONS I-1444). Without this the fix for ENG-111
+// would quietly stop recording addresses on the path I-720 added first,
+// which is the one that mattered to the 2026-10-13 outage.
+func TestTheAddressWriteAllowsTheOpItBelongsTo(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("addrownop")
+	p := h.CreateRunning(u, "izma")
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set guest_ip = null, vsock_cid = null where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	row := h.Project(p.ID)
+
+	opID := store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx,
+		"insert into ops (id, project_id, kind, state, step, host_id, params) values ($1, $2, 'start', 'running', 0, $3, '{}'::jsonb)",
+		opID, p.ID, p.HostID); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Engine.RecordGuestAddressForOpTest(h.Ctx, row, "10.64.0.11", 9, opID)
+	got := h.Project(p.ID)
+	if got.GuestIP == nil || got.GuestIP.String() != "10.64.0.11" {
+		t.Fatalf("a start did not record the address its own op carried: %v", got.GuestIP)
+	}
+
+	// A second, unrelated op open at the same time still refuses it.
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set guest_ip = null where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	row = h.Project(p.ID)
+	if _, err := h.Pool.Exec(h.Ctx,
+		"insert into ops (id, project_id, kind, state, step, host_id, params) values ($1, $2, 'restore', 'running', 0, $3, '{}'::jsonb)",
+		store.NewID(), p.ID, p.HostID); err != nil {
+		t.Fatal(err)
+	}
+	h.Engine.RecordGuestAddressForOpTest(h.Ctx, row, "10.64.0.11", 9, opID)
+	if got := h.Project(p.ID); got.GuestIP != nil {
+		t.Fatalf("another open op did not hold the write: %v", got.GuestIP)
+	}
+}
+
+// TestTheAddressReleaseRefusesWhileAnOpIsOpen: the reconcile's other
+// writer of guest_ip clears it, and had the same check-then-act window
+// the write had (DECISIONS I-1444). This direction is the worse one: a
+// running op that needs the address loses it, rather than gaining a
+// stale one.
+func TestTheAddressReleaseRefusesWhileAnOpIsOpen(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("addrrelease")
+	p := h.CreateRunning(u, "izma")
+
+	// The state this path is for: error, with an address still on the row.
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set state = 'error' where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	row := h.Project(p.ID)
+	if row.GuestIP == nil {
+		t.Fatal("the fixture has no address to release")
+	}
+
+	opID := store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx,
+		"insert into ops (id, project_id, kind, state, step, host_id, params) values ($1, $2, 'restore', 'running', 0, $3, '{}'::jsonb)",
+		opID, p.ID, p.HostID); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Engine.ReleaseGuestAddressForTest(h.Ctx, row)
+	if got := h.Project(p.ID); got.GuestIP == nil {
+		t.Fatal("the address was released while an op was open")
+	}
+	if row.GuestIP == nil {
+		t.Fatal("the in-memory project was cleared by a write that did nothing")
+	}
+
+	// With the op finished the same call releases it, so the refusal is
+	// the open op and not the statement being wrong.
+	if _, err := h.Pool.Exec(h.Ctx, "update ops set state = 'done' where id = $1", opID); err != nil {
+		t.Fatal(err)
+	}
+	h.Engine.ReleaseGuestAddressForTest(h.Ctx, row)
+	if got := h.Project(p.ID); got.GuestIP != nil {
+		t.Fatalf("with no op open the address was not released: %v", got.GuestIP)
+	}
+}

@@ -1200,7 +1200,10 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		// 72 h to 2026-10-13, so the Hello reconcile alone would have
 		// taken days).
 		if st := res.GetStart(); st != nil {
-			e.recordGuestAddress(ctx, p, st.GetGuestIp(), st.GetVsockCid(), "start")
+			// This start's own op is still running; the address is its
+			// result, so it is the one op the write does not refuse for
+			// (I-1444).
+			e.recordGuestAddress(ctx, p, st.GetGuestIp(), st.GetVsockCid(), "start", &op.ID)
 		}
 		// A restore onto another host tells the user here and not in the
 		// restore phase, because only a project that is being started
