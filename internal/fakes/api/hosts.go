@@ -417,7 +417,10 @@ func (f *Fake) placeNew(u *userRec, class, placement string) (string, *apiError)
 	case "draining":
 		msg = "your host " + own.Name + " is being removed, so nothing can be placed on it"
 	}
-	hostedAllowed := !(f.hostLimit != nil && *f.hostLimit > 0)
+	// A plan that sells a host sells no fleet memory (I-1364), so `hosted`
+	// is refused on it. De Morgan of !(set && above zero); the nil check
+	// still short-circuits the deref.
+	hostedAllowed := f.hostLimit == nil || *f.hostLimit <= 0
 	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
 		"reason": "no_own_host", "host": own.Name, "host_state": own.State, "hosted_allowed": hostedAllowed})
 }
