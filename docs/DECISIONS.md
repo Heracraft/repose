@@ -38322,3 +38322,52 @@ with "disk is 39728447488 bytes (37.00 GiB), want 60 GiB", the exact
 figure ENG-71 reports from the Mac; `TestApplianceLeftoversAreRemovable`
 fails to build at head on `appliancePresent` and then on both rm paths.
 All three pass after, with the rest of `TestAppliance*` unchanged.
+
+**I-1424. The install argument comes in off the command line: `--join -`
+reads standard input, `--join-file` reads a file, and the line the
+install prints after a failed download names the file rather than the
+argument (mac-mini 19c, 2026-11-20).** *Made during implementation*
+(ENG-42; amends I-1380).
+
+The install argument is base64url JSON carrying a live WireGuard private
+key (I-1380). As a flag value it sits in the argv of `repose host add
+--join ...` for the whole install, about 97 seconds on the AWS Mac,
+where any process on that Mac can read it from `ps`. The key dies at
+`Register`, so the window is the install, and the window is the whole of
+it.
+
+`repose secrets set` already answers this for a secret's value: it reads
+a pipe, takes `--from-file`, and refuses `NAME=VALUE` because the value
+would stay in the shell's history. The join argument takes the same
+shapes rather than a new one. `--join VALUE` keeps working, for the lab
+and for a step already printed.
+
+The install writes the argument to `join-argument` in its own directory,
+0600 inside the 0700 directory it already makes, as soon as it starts.
+Two things follow. A retry after a failed download has the argument
+without the customer pasting it again, which is what `--join-file`
+points at and what the failure message now names: that sentence is the
+one a customer is most likely to copy, and it used to carry the key.
+And the file goes with the directory at `repose host rm`, so it is
+covered by `appliancePresent` (I-1422) rather than being a new thing to
+clean up.
+
+The file is not a fourth home for a secret (CLAUDE.md): the argument
+already lands on that disk at `share/join`, which is how the appliance
+reads it at first boot, so this is the same treatment one directory
+along, and strictly better than argv, which every process on the Mac can
+read.
+
+Rejected: refusing `--join VALUE` outright (the card asks to keep it,
+and a step already printed and pasted is not made safer by failing
+after the fact); warning on stderr when the value came from argv (the
+exposure is over by the time anyone reads it, and the printed step is
+what decides which form a customer uses); a `REPOSE_JOIN` environment
+variable (an environment is readable too, and it would be a third shape
+where the CLI already has two).
+
+*Checked:* `TestJoinArgumentOffTheCommandLine` covers the four ways in
+and the two refusals; `TestFetchFailureTellsThemTheSafeForm` fails on a
+failure line that contains `--join ey` or `--join rjt_`;
+`TestApplianceFetchFailureTellsTheCustomerWhatToDo` was asserting the
+old shape and now asserts the file.

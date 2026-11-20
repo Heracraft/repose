@@ -292,13 +292,16 @@ func TestApplianceDownloadRetryContinuesFromDisk(t *testing.T) {
 }
 
 func TestApplianceFetchFailureTellsTheCustomerWhatToDo(t *testing.T) {
-	arg := encodeTokenBundle("rjt_abc")
-	msg := applianceFetchFailed("The appliance image", errors.New("no data for 1m0s after 1.4 GB"), arg, "mac-mini")
+	// The line names the file the install kept the argument in, not the
+	// argument: it carries a live WireGuard key and this is the sentence
+	// a customer is most likely to copy (ENG-42, DECISIONS I-1424).
+	path := applianceFor("/Users/dev").Argument
+	msg := applianceFetchFailed("The appliance image", errors.New("no data for 1m0s after 1.4 GB"), path, "mac-mini")
 	for _, want := range []string{
 		"The appliance image did not download",
 		"no data for 1m0s after 1.4 GB",
 		"mac-mini is in your account",
-		"repose host add --join " + arg,
+		"repose host add --join-file " + path,
 		"continues from what is already here",
 	} {
 		if !strings.Contains(msg, want) {
@@ -311,7 +314,7 @@ func TestApplianceFetchFailureTellsTheCustomerWhatToDo(t *testing.T) {
 		t.Errorf("the failure sends the customer back to a command the host limit refuses:\n%s", msg)
 	}
 	// On the --join path there is no host row of ours to name.
-	if m := applianceFetchFailed("vfkit", errors.New("broken pipe"), arg, ""); strings.Contains(m, "in your account") {
+	if m := applianceFetchFailed("vfkit", errors.New("broken pipe"), path, ""); strings.Contains(m, "in your account") {
 		t.Errorf("the --join path names a host the api did not mint:\n%s", m)
 	}
 }

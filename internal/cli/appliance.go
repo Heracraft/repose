@@ -96,20 +96,24 @@ const (
 
 // appliancePaths is where the launcher keeps everything on a Mac.
 type appliancePaths struct {
-	Dir, Logs, Plist, Config, Disk, Share, Join, Sock, ParkKeySock, EFIVars, Vfkit, LauncherLog, ConsoleLog string
+	Dir, Logs, Plist, Config, Disk, Share, Join, Argument, Sock, ParkKeySock, EFIVars, Vfkit, LauncherLog, ConsoleLog string
 }
 
 func applianceFor(home string) appliancePaths {
 	dir := filepath.Join(home, "Library", "Application Support", "repose")
 	logs := filepath.Join(home, "Library", "Logs", "repose")
 	return appliancePaths{
-		Dir:         dir,
-		Logs:        logs,
-		Plist:       filepath.Join(home, "Library", "LaunchAgents", applianceLabel+".plist"),
-		Config:      filepath.Join(dir, "config"),
-		Disk:        filepath.Join(dir, "disk.raw"),
-		Share:       filepath.Join(dir, "share"),
-		Join:        filepath.Join(dir, "share", "join"),
+		Dir:    dir,
+		Logs:   logs,
+		Plist:  filepath.Join(home, "Library", "LaunchAgents", applianceLabel+".plist"),
+		Config: filepath.Join(dir, "config"),
+		Disk:   filepath.Join(dir, "disk.raw"),
+		Share:  filepath.Join(dir, "share"),
+		Join:   filepath.Join(dir, "share", "join"),
+		// The install argument, kept 0600 beside the install so a retry
+		// after a failed download does not need it on the command line
+		// (ENG-42). It goes with the directory at `repose host rm`.
+		Argument:    filepath.Join(dir, "join-argument"),
 		Sock:        filepath.Join(dir, "vfkit.sock"),
 		ParkKeySock: filepath.Join(dir, "park-key.sock"),
 		EFIVars:     filepath.Join(dir, "efi-vars.bin"),
@@ -443,13 +447,18 @@ const applianceFetchTries = 3
 // by the one-host limit: the install alone, with the same argument, is
 // the way out, and it continues from the part file (ENG-117). hostName
 // is empty on the `--join` path, where the api minted nothing here.
-func applianceFetchFailed(what string, err error, argument, hostName string) string {
+func applianceFetchFailed(what string, err error, argumentPath, hostName string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s did not download: %v.\n", what, err)
 	if hostName != "" {
 		fmt.Fprintf(&b, "%s is in your account already. ", hostName)
 	}
-	fmt.Fprintf(&b, "Run this on the Mac when the connection is back; it continues from what is already here:\n  repose host add --join %s", argument)
+	// The argument is a live key, so the line the customer is most
+	// likely to copy keeps it off argv (ENG-42): it goes through a file
+	// they already have, or a pipe.
+	fmt.Fprintf(&b, "Run this on the Mac when the connection is back; it continues from what is already here:\n"+
+		"  repose host add --join-file %s\n"+
+		"That file holds the argument. It carries a key, so it is not passed on the command line.", argumentPath)
 	return b.String()
 }
 
@@ -720,6 +729,52 @@ var freeGBOf = func(dir string) int {
 
 // ---- install ----------------------------------------------------------
 
+// readJoinArgument is the install argument, from wherever the customer
+// put it: `--join -` reads standard input, `--join-file PATH` reads a
+// file, and `--join VALUE` still works for the lab. The argument is
+// base64url JSON carrying a live WireGuard private key (I-1380), so as
+// a flag value it sits in argv for the whole install, about 97 seconds
+// on the AWS Mac, where any process on that Mac can read it from `ps`
+// (ENG-42). The key dies at Register, so the window is the install, and
+// the window is the whole of it. `repose secrets set` already answers
+// this for a secret's value and this follows it rather than inventing a
+// second shape.
+func readJoinArgument(join, file string, stdin io.Reader) (string, error) {
+	switch {
+	case join != "" && file != "":
+		return "", cobraUsageError{errors.New("--join and --join-file are two ways to give one argument; pass one")}
+	case file != "":
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return "", exitf(ExitUsage, "Could not read the install argument from %s: %v", file, err)
+		}
+		return trimArgument(string(b), file)
+	case join == "-":
+		if stdin == nil {
+			stdin = os.Stdin
+		}
+		b, err := io.ReadAll(io.LimitReader(stdin, maxJoinBytes+1))
+		if err != nil {
+			return "", exitf(ExitUsage, "Could not read the install argument from standard input: %v", err)
+		}
+		return trimArgument(string(b), "standard input")
+	}
+	return join, nil
+}
+
+// maxJoinBytes bounds what is read; the bundle is a few hundred bytes
+// and a pipe that never ends must not fill memory.
+const maxJoinBytes = 64 << 10
+
+func trimArgument(s, from string) (string, error) {
+	s = strings.TrimRight(s, "\r\n")
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", exitf(ExitUsage, "No install argument on %s.", from)
+	}
+	return s, nil
+}
+
 // applianceCanInstall is every refusal that does not need a host: this
 // Mac's own facts and the volume's free space. `repose host add` runs
 // it before it mints anything, because the mint is not free to undo. A
@@ -792,6 +847,12 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 			return err
 		}
 	}
+	// The argument, kept where a retry can read it without putting a
+	// live key in argv (ENG-42). 0600 in a 0700 directory, and it goes
+	// with the directory at `repose host rm`.
+	if err := os.WriteFile(p.Argument, []byte(argument+"\n"), 0o600); err != nil {
+		return err
+	}
 	client := e.applianceHTTP()
 
 	// What `installed` means, decided once and in one place: a config on
@@ -822,7 +883,7 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 		url, want := envOr(envVfkitURL, vfkitURL), envOr(envVfkitSHA256, vfkitSHA256)
 		_, _ = fmt.Fprintf(e.ErrOut, "fetching vfkit %s\n", vfkitVersion)
 		if _, err := fetchTo(ctx, client, e.ErrOut, url, p.Vfkit, want); err != nil {
-			return exitf(ExitGeneric, "%s", applianceFetchFailed("vfkit", err, argument, hostName))
+			return exitf(ExitGeneric, "%s", applianceFetchFailed("vfkit", err, p.Argument, hostName))
 		}
 		if err := os.Chmod(p.Vfkit, 0o755); err != nil {
 			return err
@@ -835,14 +896,14 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 		_, _ = fmt.Fprintf(e.ErrOut, "fetching the appliance image %s (about 2 GB)\n", applianceVersion)
 		sum, err := fetchText(ctx, client, url+".sha256")
 		if err != nil {
-			return exitf(ExitGeneric, "%s", applianceFetchFailed("The appliance image's checksum", err, argument, hostName))
+			return exitf(ExitGeneric, "%s", applianceFetchFailed("The appliance image's checksum", err, p.Argument, hostName))
 		}
 		if f := strings.Fields(sum); len(f) > 0 {
 			sum = f[0]
 		}
 		gz := filepath.Join(p.Dir, "image.raw.gz")
 		if _, err := fetchTo(ctx, client, e.ErrOut, url, gz, sum); err != nil {
-			return exitf(ExitGeneric, "%s", applianceFetchFailed("The appliance image", err, argument, hostName))
+			return exitf(ExitGeneric, "%s", applianceFetchFailed("The appliance image", err, p.Argument, hostName))
 		}
 		_, _ = fmt.Fprintln(e.ErrOut, "unpacking the image")
 		in, err := os.Open(gz)
