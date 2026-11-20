@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -290,6 +292,85 @@ func TestHostStateWords(t *testing.T) {
 	} {
 		if got := hostStateWord(api); got != want {
 			t.Errorf("%s: %s, want %s", api, got, want)
+		}
+	}
+}
+
+// TestHostLsAgreesWithItsOwnJSON is ENG-37, from the customer review: the
+// table printed "You have no hardware of your own." while `--json` on the
+// same account returned four hosts, all removed, and a script reading the
+// JSON to decide whether to add one concluded it already had four.
+//
+// The assertion is that the two outputs answer the same question, not
+// that either prints a particular string: a test that pinned today's
+// table and today's JSON separately is exactly what let them drift. Both
+// are read back and compared — the names each lists, and the words each
+// uses for a state.
+func TestHostLsAgreesWithItsOwnJSON(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out, errOut := &discardWriter{}, &discardWriter{}
+	e.Out, e.ErrOut = out, errOut
+
+	// One of each: a host that has joined, one that never did, and one
+	// the customer removed. The removed one is the whole finding.
+	live := fake.AddOwnedHost("mac-mini")
+	fake.SetHostLimit(9)
+	if err := HostAddCmd(ctx, e, "waiting-one", applianceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	gone := fake.AddOwnedHost("old-mac")
+	fake.SetOwnedHostState("old-mac", "retired")
+	_ = live
+	_ = gone
+
+	out.buf.Reset()
+	if err := HostLsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	table := out.buf.String()
+
+	out.buf.Reset()
+	e.JSON = true
+	if err := HostLsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	e.JSON = false
+	var fromJSON []Host
+	if err := json.Unmarshal([]byte(out.buf.String()), &fromJSON); err != nil {
+		t.Fatalf("--json: %v: %s", err, out.buf.String())
+	}
+
+	// Every host the JSON lists is in the table, and the other way round.
+	for _, h := range fromJSON {
+		if !strings.Contains(table, h.Name) {
+			t.Errorf("--json lists %s (%s) and the table does not:\n%s", h.Name, h.State, table)
+		}
+	}
+	for _, name := range []string{"mac-mini", "waiting-one"} {
+		if !strings.Contains(table, name) {
+			t.Errorf("the table does not list %s:\n%s", name, table)
+		}
+		if !slices.ContainsFunc(fromJSON, func(h Host) bool { return h.Name == name }) {
+			t.Errorf("--json does not list %s: %s", name, out.buf.String())
+		}
+	}
+	if slices.ContainsFunc(fromJSON, func(h Host) bool { return h.Name == "old-mac" }) {
+		t.Errorf("--json lists a host the customer removed: %s", out.buf.String())
+	}
+
+	// And they say the same word for a state. The docs name five
+	// (cli.md "repose host"); `registering` is not one of them, and a
+	// script that switched on it would be switching on a word no
+	// customer is ever shown.
+	for _, h := range fromJSON {
+		if got := hostStateWord(h.State); got != h.State {
+			t.Errorf("--json says %q for %s where the table says %q", h.State, h.Name, got)
+		}
+		if !strings.Contains(table, h.State) {
+			t.Errorf("--json says %q for %s and the table does not use that word:\n%s", h.State, h.Name, table)
 		}
 	}
 }

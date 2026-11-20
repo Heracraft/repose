@@ -446,3 +446,66 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 		t.Fatalf("list: %d %s, want host_name host-01", r.status, r.raw)
 	}
 }
+
+// TestRemovingAHostClearsWhatItLeftOnTheMachines is ENG-33, from the
+// customer review: adding a host captured every new project, the host
+// never registered, the creates failed with `your host host-1 has not
+// registered yet`, and removing the host left five project rows naming
+// a host Settings → Hosts said the customer did not have.
+//
+// A placement failure frees the project's host and leaves the sentence
+// on the row (ops/phases.go), so the sentence outlives the host. It is
+// the api's to clear: the op keeps the history, and a row that asserts
+// something false about hardware the customer no longer owns is the one
+// thing they cannot act on.
+func TestRemovingAHostClearsWhatItLeftOnTheMachines(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "host-1"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+
+	// Two machines the host's absence left in error, with the host freed
+	// as a failed placement frees it, and one left in error by something
+	// else, which is none of the host's business.
+	mk := func(slug, lastErr string) {
+		t.Helper()
+		if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, volume_bytes, last_error)
+			values ($1, $2, $3, $3, 'large', 'error', 1, $4)`, store.NewID(), uid, slug, lastErr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("todo", "capacity: your host host-1 has not registered yet")
+	mk("notes", "capacity: your host host-1 has not registered yet")
+	mk("api", "build_failed: nixpkgs has no package \"ghc9999\"")
+
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
+		t.Fatalf("remove: %d %s", r.status, r.raw)
+	}
+
+	errs := map[string]*string{}
+	rows, err := e.h.Pool.Query(e.h.Ctx, "select slug, last_error from projects where user_id = $1", uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var slug string
+		var last *string
+		if err := rows.Scan(&slug, &last); err != nil {
+			t.Fatal(err)
+		}
+		errs[slug] = last
+	}
+	rows.Close()
+	for _, slug := range []string{"todo", "notes"} {
+		if errs[slug] != nil {
+			t.Errorf("%s still says %q after its host was removed", slug, *errs[slug])
+		}
+	}
+	if errs["api"] == nil || !strings.Contains(*errs["api"], "ghc9999") {
+		t.Errorf("a machine in error for its own reasons lost it: %v", errs["api"])
+	}
+}
