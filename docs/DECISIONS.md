@@ -37673,3 +37673,78 @@ know." 600 s does not outlast 600 s.
   blind check is the state ENG-124 was found in. Both files also carry
   the sentence with its direction named, since a margin that exists by
   accident is closed by accident.
+
+**I-1418. No sentence on the removal path names a recovery that cannot
+happen: `host_unreachable` stops telling a user to wait for a host they
+deleted, the host-removal refusal stops naming a snapshot restore the
+machine may have no snapshot for, and a destroy's answer carries
+`final_snapshot` so the CLI stops promising one it cannot take
+(fix-starts, 2026-11-20).** *Made during implementation* (ENG-119 and
+ENG-120, found by the spark on the owner's live account by following the
+documented path, and confirmed from the account's own rows. Extends
+I-924, which fixed the work these sentences describe; the work was
+already right and only the sentences were wrong.)
+
+The sequence was three documented commands. `repose rm rig1 --yes`
+printed "Destroying rig1. Its final snapshot is kept until 2026-12-20";
+`repose host rm --local --yes` on the Mac removed the appliance, its disk
+and every machine on it in five seconds, which is what that flag is
+documented to do; and the destroy then could not finish, because
+finishing it needed the host that had just gone. The account's ops rows,
+read whole:
+
+    01a1f724-a15e-7778  destroy  done   step 4/4  host -          04:08
+    01a1f6f4-428a-7e77  destroy  error  step 1    host mac-rig2   03:16  host_unreachable
+    01a1f6e4-0530-776c  destroy  error  step 1    host mac-rig2   02:58  host_unreachable
+    01a1f6d8-1151-734a  create   done   step 2    host mac-rig2   02:45
+
+Three sentences in that path each named a recovery that could not
+happen, and this entry is only those three. What they described was not
+broken: the third destroy completed at step 4 of 4 **with no host at
+all**, once an operator had moved the host to `lost`, which is I-924
+working exactly as written.
+
+- *"The operation can be run again once the host is back."* `recover.go`
+  mapped `host_unreachable` to that for every host, including one the
+  user had deleted themselves. It is the worst of the three, because it
+  does not merely fail to help: it says that waiting will work. It now
+  asks whether the host is one nobody expects back -- `lost` or
+  `retired`, the states `hostGone` already defines -- and says the host
+  was removed, naming the destroy, which I-924 drains to no phases. A
+  host that is merely `unreachable` keeps the old sentence, because for
+  that host it is true.
+- *"`repose rm` or `repose snapshots restore` each of them first."* The
+  CLI's wording for the api's `host_has_projects` refusal. A restore
+  needs a snapshot, and the refusal is shown for whatever machines are on
+  the host, which may have none: `rig1` had none, and
+  `count(*) from snapshots where project_id = rig1` was 0 and had never
+  been anything else. The clause is also unnecessary, because `repose rm`
+  keeps the final snapshot for 30 days, so the work a restore would have
+  saved survives the removal the sentence asks for. It now names
+  `repose rm` alone.
+- *"Its final snapshot is kept until 2026-12-20."* Printed twice, ten
+  minutes apart, for a machine that had no snapshot and could not get
+  one. The CLI cannot work this out: it prints that line the moment the
+  api answers `202`, before any phase has run. So `DELETE /projects/:id`
+  now answers `final_snapshot`, false for a temporary project (I-347) and
+  false when the host is gone (I-924), and the CLI says a snapshot is
+  kept only when the api said one is coming. An api that does not send
+  the field is read as yes, which is what it was for every host that was
+  still there, so the old shape stays correct for a release.
+
+*What this is not.* The account wedge itself -- a host that cannot be
+removed because it holds a project that cannot be destroyed because the
+host is not gone -- is the channel for the user's own statement, not the
+wording, and it is I-1420. The three sentences are separated from it
+deliberately: wording that needs no decision should not wait behind code
+that does.
+
+*Three things on those rows that are deliberately left.* The destroyed
+project row still carries `last_error` with this entry's first sentence
+in it, so a destroyed machine still reads as retryable; `disk_held_bytes`
+and `disk_held_at` are still set on it; and the host row, `lost` and
+`draining`, still reports `running_guests = 1` with its only project
+destroyed. All three are the same family -- a counter or a message that
+nothing clears at the terminal state -- and all three are filed rather
+than fixed here, because changing what a sentence says is not the same
+change as clearing it when it stops being true.

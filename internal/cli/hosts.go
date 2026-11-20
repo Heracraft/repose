@@ -280,12 +280,20 @@ func hostErr(err error, name string) error {
 	case reason == "host_has_projects":
 		// A machine moves host only by restore (DESIGN §3), so the api
 		// refuses rather than leave them with nowhere to run. It names
-		// them; this says it in the commands that clear them.
+		// them; this says it in the command that clears them.
+		//
+		// It named `repose snapshots restore` as a second way out until
+		// I-1418, and that was not one: the refusal is shown for the
+		// machines on the host, which may have no snapshot to restore --
+		// rig1, the machine this was found on, had none and never had
+		// (ENG-119). It is not needed either, because `repose rm` keeps
+		// the final snapshot for 30 days, so the work a restore would
+		// have saved survives the removal it asks for.
 		on := detailStrings(apiErr.Detail["projects"])
 		if len(on) == 0 {
 			break
 		}
-		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` or `repose snapshots restore` each of them first.", name, joinNames(on))
+		return exitf(ExitGeneric, "%s still has %s on it. `repose rm` each of them first.", name, joinNames(on))
 	}
 	return err
 }

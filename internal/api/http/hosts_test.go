@@ -420,3 +420,54 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 		t.Fatalf("%d rows after one accepted create", n)
 	}
 }
+
+// A destroy says whether it will take a final snapshot, because the CLI
+// prints what is kept the moment this route answers, before any phase
+// runs. On a host nobody expects back every phase including the snapshot
+// is skipped (I-924), so a destroy there keeps nothing, and the CLI said
+// "its final snapshot is kept until <date>" anyway -- twice, on the
+// owner's own account, for a machine whose snapshot count was 0 and had
+// never been anything else (ENG-119, DECISIONS I-1418).
+func TestDestroySaysWhetherASnapshotIsKept(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	hostID, _ := r.body["id"].(string)
+
+	newProject := func(slug string) string {
+		id := store.NewID()
+		if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, guest_id, volume_bytes)
+			values ($1, $2, $3, $3, 'small', 'stopped', $4, $5, 1)`, id, uid, slug, hostID, store.NewID()); err != nil {
+			t.Fatal(err)
+		}
+		return id.String()
+	}
+
+	// The host is there: the snapshot phase runs and the promise is true.
+	live := newProject("live")
+	r = e.do(t, tok, "DELETE", "/projects/"+live, nil)
+	if r.status != 202 {
+		t.Fatalf("destroy on a live host: %d %s", r.status, r.raw)
+	}
+	if r.body["final_snapshot"] != true {
+		t.Errorf("a destroy on a host that is there says final_snapshot %v, want true: %s", r.body["final_snapshot"], r.raw)
+	}
+
+	// The user removed the Mac. Nobody expects it back, so the snapshot
+	// phase is skipped and nothing is kept.
+	gone := newProject("gone")
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set state = 'lost' where id = $1", hostID); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "DELETE", "/projects/"+gone, nil)
+	if r.status != 202 {
+		t.Fatalf("destroy on a lost host: %d %s", r.status, r.raw)
+	}
+	if r.body["final_snapshot"] != false {
+		t.Errorf("a destroy whose host is gone says final_snapshot %v, want false; the CLI promises a snapshot on that answer: %s", r.body["final_snapshot"], r.raw)
+	}
+}

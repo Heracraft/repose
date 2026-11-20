@@ -810,12 +810,14 @@ func printLines(e *Env, r destroyResult) {
 func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool, pr *progress, started time.Time) destroyResult {
 	var r destroyResult
 	var opID string
+	var dr DestroyResult
 	if r.err = waitOutStop(ctx, e, project, pr); r.err != nil {
 		return r
 	}
 	if r.err = retryOnOpConflict(ctx, func() error {
 		var err error
-		opID, err = e.Client.DestroyProject(ctx, project.ID)
+		dr, err = e.Client.DestroyProject(ctx, project.ID)
+		opID = dr.OpID
 		return err
 	}); r.err != nil {
 		return r
@@ -830,9 +832,12 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 	if !wait {
 		pr.Fail()
 		switch {
-		case temporary || asked:
+		case temporary || asked || !dr.HasFinalSnapshot():
 			// No snapshot, nothing to restore (I-347); or the question
-			// just said what is kept (A8).
+			// just said what is kept (A8); or the api says this destroy
+			// takes none, its host being gone (I-924, I-1418) -- in which
+			// case promising one is a sentence the user can check and
+			// find false.
 			r.out = append(r.out, fmt.Sprintf("Destroying %s.", project.Slug))
 		default:
 			// The snapshot is taken in the next minute or so; its 30 days

@@ -856,7 +856,16 @@ func (e *Engine) failWithLines(ctx context.Context, op *store.Op, code, msg stri
 	errObj := map[string]any{"code": code, "message": msg}
 	// The user reads message; the host's own wording names internal ids
 	// and stays in detail for operators (I-159).
-	if human, ok := humanError(op.Kind, currentPhase(op), code, msg); ok {
+	// Whether the host this op was addressed to is one nobody expects
+	// back: it changes what the sentence can honestly tell the user to do
+	// (DECISIONS I-1418).
+	gone := false
+	if op.HostID != nil {
+		if g, err := e.hostGone(ctx, *op.HostID); err == nil {
+			gone = g
+		}
+	}
+	if human, ok := humanError(op.Kind, currentPhase(op), code, msg, gone); ok {
 		errObj["message"], errObj["detail"] = human, msg
 		msg = human
 	}

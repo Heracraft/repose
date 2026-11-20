@@ -163,6 +163,16 @@ func TestHostRmRefusedWhileMachinesAreOnIt(t *testing.T) {
 	if !strings.Contains(err.Error(), "repose rm") {
 		t.Fatalf("the way out is not in the refusal: %v", err)
 	}
+	// ENG-119, DECISIONS I-1418: it named `repose snapshots restore` as
+	// the other way out, and that is not one. On the owner's account the
+	// refusal was shown for rig1, which had no snapshot row at all
+	// (`count(*) from snapshots` was 0 and never anything else), so the
+	// command it sent them to had no id to take. It is not needed either:
+	// `repose rm` keeps the final snapshot for 30 days, so removing a
+	// machine does not lose the work a restore would have saved.
+	if strings.Contains(err.Error(), "snapshots restore") {
+		t.Errorf("the refusal names a restore, which has nothing to restore for a machine with no snapshot: %v", err)
+	}
 }
 
 // A host of the user's own that has stopped answering is named, with how

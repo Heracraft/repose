@@ -752,13 +752,32 @@ func (f *Fake) destroyProject(w http.ResponseWriter, r *http.Request) *apiError 
 			f.finishDestroy(p)
 			o.State = "done"
 		}()
-		writeJSON(w, http.StatusAccepted, map[string]string{"op_id": o.id, "state": o.State})
+		writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.id, "state": o.State, "final_snapshot": f.finalSnapshot(p)})
 		return nil
 	}
+	snap := f.finalSnapshot(p)
 	f.finishDestroy(p)
-	// api.md: 202 {op_id, state} (I-156); the fake's ops finish at once.
-	writeJSON(w, http.StatusAccepted, map[string]string{"op_id": o.id, "state": o.State})
+	// api.md: 202 {op_id, state, final_snapshot} (I-156, I-1418); the
+	// fake's ops finish at once.
+	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.id, "state": o.State, "final_snapshot": snap})
 	return nil
+}
+
+// finalSnapshot mirrors the api's: no snapshot for a temporary project
+// (I-347) and none on a host nobody expects back (I-924, I-1418).
+func (f *Fake) finalSnapshot(p *project) bool {
+	if p.ExpiresAt != nil {
+		return false
+	}
+	if p.HostID == "" {
+		return true
+	}
+	for _, h := range f.ownedHosts {
+		if h.ID == p.HostID {
+			return h.State != "lost" && h.State != "retired"
+		}
+	}
+	return true
 }
 
 // finishDestroy is the end of a destroy: the final snapshot, the volume

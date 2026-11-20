@@ -197,6 +197,8 @@ $ repose run
 ...
 ```
 
+A machine on [hardware of your own](/docs/own-hardware) that you have removed keeps no final snapshot, and the line says `Destroying todo-app.` with nothing about one: the disk was on that machine and went with it, so there is nothing left to snapshot. The destroy finishes without the host.
+
 The name stays taken until the destroy finishes, so a `repose run` started meanwhile waits for it (`Waiting for the old todo-app to finish destroying`) and then creates a new project with the same name. It waits the same way for a project being destroyed that holds the name it wants but isn't this checkout's, instead of creating `todo-app-2`. `repose rm --wait && repose run` does the same in one line. The old machine's final snapshot is kept, and `repose ls --destroyed` still lists it, as `todo-app (name in use)`. If the destroy fails, the project lands in `error` and `repose run` creates nothing; `repose rm` tries again.
 
 ## A second machine for the same repository
