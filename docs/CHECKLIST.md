@@ -44,6 +44,9 @@ written so none of them goes unnoticed again.
       (I-1414), which failed the first `repose host add` about half the
       time. Each comment was right about its own operation and silent about
       the borrower.
+      And name the three deadlines in a call separately — the dial, the
+      request, and the thing being waited for — so only the ones that
+      should be short are short.
 - [ ] Errors are handled at every call site, with the failure named in the
       message. No `_ = err`, no bare `panic` outside `main`. Evidence: `rg
       '_ = err|panic\(' cmd internal` is empty or each hit has a comment
@@ -690,18 +693,6 @@ entry and this list with it. Counts as of 2026-10-21.
       when something is slow. Audit every place a timeout was raised or a
       retry added: raising a deadline makes the retry path reachable for the
       first time.
-- [ ] A constant's comment says which command it bounds, and no second
-      command borrows it. Found 2026-11-20: `cmd/repose-hook/main.go`
-      declared `Timeout = 3 * time.Second`, correctly commented as bounding
-      a fire-and-forget hook POST where a miss loses one notification —
-      and `repose-ask` reused it for the call that opens a question, as both
-      the context and the HTTP client deadline, while the user's
-      `--timeout` reached only the payload's `timeout_s`. So the flag could
-      not decide whether the question was ever asked (I-1404). Evidence: the
-      three deadlines in a call — the dial, the request, and the thing being
-      waited for — are separately named, and only the ones that should be
-      short are short.
-
 - [ ] A fake is **not more forgiving than the thing it stands for**, and a
       fake that returns nothing makes its whole phase invisible. **Two P0s
       in one night came from this**, and in both the suite was green while a
