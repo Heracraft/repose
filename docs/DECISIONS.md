@@ -38372,6 +38372,57 @@ failure line that contains `--join ey` or `--join rjt_`;
 `TestApplianceFetchFailureTellsTheCustomerWhatToDo` was asserting the
 old shape and now asserts the file.
 
+**I-1432. The appliance's three sizing flags are read as the customer
+typed them: an explicit zero is refused rather than taken as the
+default, and a value that is not a number is refused in this CLI's words
+(mac-mini 19c, 2026-11-20).** *Made during implementation* (ENG-38;
+amends I-1380).
+
+`repose host add --cpus 0` exited 0 and created a host with a join
+token, where the same CLI refuses `--expires 0` with "a number of days,
+1 to 365". Two mechanisms, named apart because a reader who thinks one
+fix covers both will re-break the second.
+
+(1) **Zero was the sentinel.** `applianceOptions` uses 0 for "not
+given": `vmCPUs` and `vmMemoryMiB` default on it and `diskGB` defaults
+when `asked <= 0`. So `--cpus 0` was indistinguishable from the flag
+left out, and so were `--memory 0` and `--disk 0`; fixing only the one
+the card named would have left the same trap in the other two.
+
+(2) **The parse error was Go's.** `--disk banana` was refused by pflag's
+int parser as `invalid argument "banana" for "--disk" flag:
+strconv.ParseInt: parsing "banana": invalid syntax`. pflag wraps a
+`Set` error, so a `pflag.Value` would not have fixed the wrapper
+either.
+
+The three flags are now strings, parsed by `applianceOptionsFrom`
+before anything else happens: `""` is the flag left out, anything else
+is a whole number at or above its floor (40 GB, 8192 MiB, 4 cores, the
+floors `diskGB`, `vmMemoryMiB` and `vmCPUs` already keep), and a
+refusal quotes the input as typed. 0 in the result still means "take
+the default", so the sizing rules are unchanged.
+
+**It refuses before the api is asked for anything**, in the cobra layer,
+which is the earliest point there is. A flag refused after the mint
+would leave a host record whose retry collides on the name, which is the
+trap I-1422 closed for the disk guard; `TestApplianceFlagRefusalMintsNoHost`
+holds it.
+
+Rejected: a `pflag.Value` (the wrapper is pflag's, not the value's);
+accepting a size like `80G` as `repose resize` does, which would be the
+consistent grammar but would break the documented `--disk 100` by
+making a bare number a `sizeUnitError`, and is a user-visible change
+this card did not ask for; refusing `--cpus 0` alone, which leaves the
+same trap twice.
+
+*Checked:* `TestApplianceFlagsRefuseInThisCLIsWords` covers eight
+refusals, the flags left out, and the values taken as typed, and fails
+on any message containing `strconv` or `invalid syntax`;
+`TestApplianceFlagRefusalMintsNoHost` drives the real command and
+asserts a `cobraUsageError`, which is what `Main` turns into exit 2.
+Live: `repose host add --cpus 0` prints "the appliance needs at least 4
+cores, not 0" and exits 2; `--disk banana` prints `"banana" is not a
+whole number of gigabytes`.
 **I-1428. Nix's own build output follows `-v`, not the absence of a
 terminal (fix-ask ENG-27, 2026-11-20).** *Made during implementation*
 (the customer reviews' F4 on the CLI surface and F5 on the Mac surface).
@@ -38662,54 +38713,3 @@ row does say who answers; nothing said it at the moment it changed.
 *Not done:* the dashboard's edit-and-flip case above. And a route whose
 provider is mid-retry still loses the deliveries that arrive between the
 yes and the provider noticing; nothing here replays them.
-**I-1432. The appliance's three sizing flags are read as the customer
-typed them: an explicit zero is refused rather than taken as the
-default, and a value that is not a number is refused in this CLI's words
-(mac-mini 19c, 2026-11-20).** *Made during implementation* (ENG-38;
-amends I-1380).
-
-`repose host add --cpus 0` exited 0 and created a host with a join
-token, where the same CLI refuses `--expires 0` with "a number of days,
-1 to 365". Two mechanisms, named apart because a reader who thinks one
-fix covers both will re-break the second.
-
-(1) **Zero was the sentinel.** `applianceOptions` uses 0 for "not
-given": `vmCPUs` and `vmMemoryMiB` default on it and `diskGB` defaults
-when `asked <= 0`. So `--cpus 0` was indistinguishable from the flag
-left out, and so were `--memory 0` and `--disk 0`; fixing only the one
-the card named would have left the same trap in the other two.
-
-(2) **The parse error was Go's.** `--disk banana` was refused by pflag's
-int parser as `invalid argument "banana" for "--disk" flag:
-strconv.ParseInt: parsing "banana": invalid syntax`. pflag wraps a
-`Set` error, so a `pflag.Value` would not have fixed the wrapper
-either.
-
-The three flags are now strings, parsed by `applianceOptionsFrom`
-before anything else happens: `""` is the flag left out, anything else
-is a whole number at or above its floor (40 GB, 8192 MiB, 4 cores, the
-floors `diskGB`, `vmMemoryMiB` and `vmCPUs` already keep), and a
-refusal quotes the input as typed. 0 in the result still means "take
-the default", so the sizing rules are unchanged.
-
-**It refuses before the api is asked for anything**, in the cobra layer,
-which is the earliest point there is. A flag refused after the mint
-would leave a host record whose retry collides on the name, which is the
-trap I-1422 closed for the disk guard; `TestApplianceFlagRefusalMintsNoHost`
-holds it.
-
-Rejected: a `pflag.Value` (the wrapper is pflag's, not the value's);
-accepting a size like `80G` as `repose resize` does, which would be the
-consistent grammar but would break the documented `--disk 100` by
-making a bare number a `sizeUnitError`, and is a user-visible change
-this card did not ask for; refusing `--cpus 0` alone, which leaves the
-same trap twice.
-
-*Checked:* `TestApplianceFlagsRefuseInThisCLIsWords` covers eight
-refusals, the flags left out, and the values taken as typed, and fails
-on any message containing `strconv` or `invalid syntax`;
-`TestApplianceFlagRefusalMintsNoHost` drives the real command and
-asserts a `cobraUsageError`, which is what `Main` turns into exit 2.
-Live: `repose host add --cpus 0` prints "the appliance needs at least 4
-cores, not 0" and exits 2; `--disk banana` prints `"banana" is not a
-whole number of gigabytes`.
