@@ -25,7 +25,9 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 
 	var join, joinFile string
-	var ao applianceOptions
+	// Strings, not ints: an int flag's zero value is also "not given",
+	// and pflag's parse error is Go's sentence (ENG-38, I-1432).
+	var diskArg, memoryArg, cpusArg string
 	add := &cobra.Command{
 		Use:   "add [NAME]",
 		Short: "Add a machine of your own",
@@ -42,6 +44,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"  pbpaste | repose host add --join -       # the same, from the clipboard",
 		Args: argsN(0, 1, "at most one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ao, err := applianceOptionsFrom(diskArg, memoryArg, cpusArg)
+			if err != nil {
+				return err
+			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -66,9 +72,9 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	add.Flags().BoolVar(&g.json, "json", false, "print every field, the install step and the token included, as JSON")
 	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere; `-` reads it from standard input")
 	add.Flags().StringVar(&joinFile, "join-file", "", "install on this Mac with the argument in `PATH`, which keeps it off the command line")
-	add.Flags().IntVar(&ao.DiskGB, "disk", 0, "the appliance's disk in GB (default 100, at least 40, bounded by the volume's free space less 20)")
-	add.Flags().IntVar(&ao.MemoryMiB, "memory", 0, "the appliance's memory in MiB (default three quarters of the Mac's)")
-	add.Flags().IntVar(&ao.CPUs, "cpus", 0, "the appliance's vCPUs (default all but two)")
+	add.Flags().StringVar(&diskArg, "disk", "", "the appliance's disk in `GB` (default 100, at least 40, bounded by the volume's free space less 20)")
+	add.Flags().StringVar(&memoryArg, "memory", "", "how much memory the appliance gets, in `MIB` (default three quarters of the Mac's, at least 8192)")
+	add.Flags().StringVar(&cpusArg, "cpus", "", "how many `CORES` the appliance gets (default all but two, at least 4)")
 
 	run := &cobra.Command{
 		Use:   "run",

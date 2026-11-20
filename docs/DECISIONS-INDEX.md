@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1054 entries.
+1055 entries.
 
 ## Scope
 
@@ -1062,7 +1062,7 @@ pointer, not a summary.
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36689
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
-- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; L37067
+- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; L37067
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37295
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37346
@@ -1086,3 +1086,4 @@ pointer, not a summary.
 - **I-1420** A user can say their own host is gone: `DELETE /hosts/{id}` retires a host whose state is `unreachable` or `lost` even while machines are on it, instead of refusing, and both clients' confirmations say how many machines go with it (fix-starts, 2026-11-20) — L38502
 - **I-1434** macOS gives the launcher about one second when the Mac restarts, not the 360 it asks for, so the park does not survive a restart and the docs stop promising it; the park stays on, because a clean stop of the launcher does park and unpark correctly (mac-mini, 2026-11-20) — L38568
 - **I-1436** `triggers add --route` asks before it takes a route that answers with something else (fix-ask ENG-32, 2026-11-20) — L38616
+- **I-1432** The appliance's three sizing flags are read as the customer typed them: an explicit zero is refused rather than taken as the default, and a value that is not a number is refused in this CLI's words (mac-mini 19c, 2026-11-20) — L38665
