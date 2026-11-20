@@ -169,6 +169,18 @@ branch, which deploys nothing ("The integrated branch" below).
 
 Integrate whenever branches are queued; it needs no owner approval.
 
+**A batch that ships nothing deployable waits for the next release, even
+when a release has just happened.** A push to `main` cycles Coolify's
+`api`, `api-grpc` and `web` whether or not their content changed, so a
+batch whose diff touches no deploy target buys nothing and costs a
+production restart. One cost of that restart is not obvious from the
+outside: the api's container is replaced, and its logs go with it, which
+is how the trigger for the two stop ops of 2026-11-19 at 20:30 became
+unrecoverable (`docs/proposals/2026-11-19-azure-host-events.md` §4a).
+`integrated` on GitHub already makes the batch durable and readable, so
+nothing is lost by waiting. This was written after the release of
+2026-11-20, whose own record was integrated and deliberately not pushed.
+
 1. **See what is waiting.** `ops/dev/release-queue ls` reads the open
    PRs labelled `queued` against `integrated`, in stack order, and fetches
    each one's branch; a PR stacked on a branch that is not queued waits
