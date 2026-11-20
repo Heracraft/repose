@@ -22,98 +22,67 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-20, 01:30 UTC)
+## Where things stand (2026-11-20, 09:30 UTC)
 
-- **No release happened on this shift and nothing was deployed.** CLI
-  v0.1.51 is still `Latest`, `origin/main` is still a3ecdc45, the base is
-  2026.11.19, `appliance-2026.11.19` is correctly not `Latest`. A release
-  needs the owner's word and they have not given one. Nothing was pushed,
-  switched, published or tagged.
-- Three batches were integrated: **r20261120-1** (ci-buf-comment,
-  conductor-handoff-5), **r20261120-2** (stop-attribution, pick-clock) and
-  **r20261120-3** (gemini-entry). Local `main` and `integrated` are the
-  same commit. The next release now ships as **base**, which means the
-  push is followed by `repose-admin base publish --rev <sha>`; before this
-  shift it shipped as nothing to deploy.
-- host-02 is healthy, read on the host rather than carried: up since the
-  20:29 restart, system switched 20:33, `hostd.service` active, three
-  `guest@*` units running and one of them restored from a park.
-  **Burst is on in production** (`--burst --burst-gate 0.750000` in
-  hostd's ExecStart), which is the owner's 2026-11-11 task, done; ENG-4 had
-  been sitting in the board's "Needs you" asking for a go they had already
-  given, and is now Done with that evidence. Stages 4 and 5 of the burst
-  proposal are unbuilt, so burst is silent and unbilled. The edge is up.
-- **Pull request CI is a gate again** (I-1400). For a week every run in
-  the repository was red on `buf lint and breaking`, which passes its three
-  buf commands and then exits 1 posting a comment the `contents: read`
-  token cannot post. A red run therefore carried nothing. The first
-  readable runs are green on that job.
-- **What the restored gate found on its first day is ENG-111, and it is
-  open.** On CI, `TestHelloLeavesAProjectWithAnOpenOpAlone` failed in
-  1.41 s with "the reconcile wrote a guest address while an op was open",
-  which is the behaviour I-720 exists to forbid, and it was then
-  reproduced here in 10.09 s under full-suite load. The guard is
-  read-then-act at seven call sites (three in `internal/api/ops/engine.go`,
-  one in `internal/api/events/events.go`, two in
-  `internal/api/http/projects.go`, one in `internal/admin/cmds.go`);
-  `OpenOpsForProject` takes a `Querier`, so each could read inside its
-  write's transaction, and the two on request paths are a separate
-  decision because failing closed there is a refusal a user sees. The
-  guard has stood unchanged since d26ab70f on 2026-10-14, which is I-720's
-  own commit and is in the deployed main, so this is a five-week-old live
-  defect rather than a regression, and **it blocks no release**. Its
-  consequence for a tenant is unmeasured. The mac-mini mini-conductor and
-  I agreed it does not jump the Mac's two P0s tonight.
-- **The three "starvation" reds are self-inflicted, which changes the
-  fix.** Per package on the same commit with the same shared Postgres:
-  `internal/api/resume` 277.9 s here against 24.1 s on CI,
-  `internal/api/ops` 414.7 against 53.0, `internal/api/scheduler` 254.8
-  against 10.6. **Measured**: the 10x per-package difference, and that
-  this box has 8 cores so `go test ./...` runs 8 packages at once against
-  one server. **Inferred, not measured**: that the cause is the runner's
-  lower parallelism; its core count is GitHub's documented standard and is
-  nowhere in the job log, and a different Postgres fsync path would
-  explain the same numbers. So try `-p 2` or an api-only pass and measure
-  it before touching `apitest.WaitOp`'s flat 30 seconds (ENG-113).
-  Related and not yet a problem: `internal/cli` took 461.0 s on CI and
-  passed, at 77 % of Go's 600-second default that the CI job never sets,
-  so a batch verification passes `-timeout` explicitly; mine used 30m and
-  40m.
-- The mac-mini program runs itself and **nothing of it is queued**; it will
-  queue nothing until the Mac gives `fix-starts` five starts out of five.
-  Two things of it are the release conductor's when it comes: **the
-  `nix flake check` with its builds has never passed on that branch**, and
-  the distinction matters because the job named "flake check" on CI runs
-  `--no-build`. The evaluation half has passed there once, on PR #76 at
-  81741b2b8 in 10m50s, for a head the branch is now 68 commits past; every
-  VM test and every closure check is the difference between the two, and
-  none of them has ever run on this branch. I agreed to run the real one
-  on the batch worktree and to say that out loud in the batch record and
-  the release notes. The second thing is commit **7db572b5**, which puts
-  the Own hardware plan
-  on public sale, must not reach main without the owner's word for that
-  commit. The landing session holds a separate piece for the same reason.
-  "The plan stays on sale in principle" is not that word.
-- The Mac is in a bad state, which is the program's to fix: two successes
-  in nine guest starts on the published build and nothing since 23:13 UTC,
-  with the event log isolating `starting` while stop, destroy and restore
-  each finish in about three seconds. The staged park test cannot be taken
-  while nothing starts.
-- `ops/dev/macmini` and the aws-mcp server both fail on an expired AWS
-  session, so nobody can allocate, inspect or release the AWS Mac until
-  the owner runs `aws login`, and it bills at $1.353 an hour meanwhile.
-  The owner has approved a third Mac day: the money is approved and the
-  credentials are not.
-- The repository has **no GitHub Actions secrets at all** (`gh secret
-  list` is empty), which is why ENG-99 cannot be built from here in any
-  shape; see Owed.
-- Secrets on this box are as the last conductor left them, the four files
-  under `~/.config/repose-ops/`.
-- Worktrees of mine under `~`: `kanali-ci-buf-comment`,
-  `kanali-conductor-handoff-5`, `kanali-stop-attribution`,
-  `kanali-pick-clock`, `kanali-gemini-entry`, `kanali-conductor-handoff-6`.
-  The throwaway Postgres for the batches was `batch-pg-1120` on port
-  55440, removed with `docker rm -f -v` at the end of the shift.
+- **Three releases went out today.** `v0.1.52` from `dfbdaf7a` with base
+  **2026.11.20.1** and **`appliance-2026.11.20`**, then `v0.1.53` from
+  `f6aab4f2`, which pins that appliance in the CLI; `origin/main` is
+  f6aab4f2 and the queue is empty. `releases/latest` resolves to the CLI tag
+  and not the appliance, checked after publishing, which is last night's
+  second failure not repeated. No host switch and no edge switch: the
+  branch established from the code that the api and hostd are independent
+  in this batch.
+- **The mac-mini program's repair batch is released.** 197 commits as
+  `r20261120-10`, verified here at 105 Go packages with zero data races,
+  422 Playwright tests, vitest 53 files, the guest system and its closure
+  at 6,533,221,680 of 7,516,192,768 bytes, and the host configuration
+  evaluating. One red was the batch's own and is fixed in it: a council
+  report quoted the old domain, allow-listed rather than edited because
+  the name has not moved and the line is a record of what a reviewer ran.
+- **What a release claim is about is the artefact, not the tree.** v0.1.52's
+  notes said a customer's Mac worked properly; the shipped CLI still
+  pinned `appliance-2026.11.19`, so none of the hostd, guestd or hook
+  repairs reached a Mac. The spark caught it on the published tag. The
+  notes are corrected and ENG-143 carries the mechanism. **Check which
+  artefact a claim lives in before publishing it.**
+- **The live check passed on hardware**, run against a locally built
+  appliance and not the published artefact, with the published v0.1.52
+  CLI: a refusal at 55 GB free leaving no `disk.raw` and minting no host,
+  an install resuming with `--join-file` to a guest running in 453 s, and
+  `repose-ask --timeout 3m` answered with exit 0. ENG-125 closed on an
+  absence. That evidence is what made publishing the appliance defensible
+  rather than hopeful, and the sequence was: prove on hardware, then
+  publish.
+- **The weekly model limit was at 90 % at 08:20 and resets Saturday
+  2026-11-22 at 07:00 UTC.** The mac-mini conductor stopped before
+  launching the review's second pass and put it to the owner as a
+  spending decision (ENG-14, `Needs you`). The agreed order if capacity
+  must be chosen: the batch verification, then the appliance and its live
+  check, then ENG-138's unknowns, then the second pass.
+- **ENG-138 is narrowed on hardware and the narrowing is the result.** A
+  logout gives the appliance **18 seconds** and the park is attempted; a
+  restart gives **one**. So macOS honours the shutdown window on a session
+  teardown and not on a system restart, and the remaining work is the
+  restart hook rather than `ExitTimeOut`. One keychain failure in that run
+  is recorded as **not evidence**: the reviewer had changed the account
+  password with `dscl . -passwd`, which does not change the login
+  keychain's own password.
+- **The Mac's queue is empty**, about $38 spent at $1.353 an hour since
+  06:02 UTC on 2026-11-19. Its shutdown and the `aws login` that any
+  release of the host needs are the owner's, raised with them directly.
+- Open and unowned, in the order they would hurt: **ENG-111**, the Hello
+  reconcile writing a guest address while an op is open, confirmed on CI
+  and reproduced here under full-suite load, seven read-then-act call
+  sites, five weeks live, blocking no release. **ENG-141**, `repose host
+  rm --local` stranding a machine with no warning and working while the
+  CLI is not logged in, which wedged the owner's account twice this
+  morning. **ENG-119** with its siblings ENG-120, ENG-121 and ENG-122.
+  **ENG-139**, a golden whose order depends on `TMPDIR`. **ENG-113**, the
+  suite at `-p 2`.
+- **`7db572b5` is still held** and nothing today touched it. ENG-129 is in
+  `Needs you` with the fact that decided the argument: `POLAR_PRODUCT_OWN`
+  is set on production, the plan is purchasable at $10 with a seven-day
+  trial, and the public copy is the owner's separate gate.
 
 
 ## The owner's rules this week
@@ -319,6 +288,28 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   union, 224 lines. Expect the same for any shared document when you cut
   a long-lived branch, and read both sides rather than resolving: git has
   no opinion when the loss is not textual.
+- **A release claim is about an artefact, not about the tree.** v0.1.52's
+  notes said a customer's Mac worked properly. True of `main`; false of
+  the release, because the shipped CLI still pinned the previous
+  appliance, so every repair in hostd, guestd and the hook reached nobody.
+  Before publishing a claim, ask which artefact it lives in and whether
+  that artefact is the one the release ships (ENG-143).
+- **A test whose input is the repository is touched by every change.**
+  `test/domain` failed on a line in a merged council report, and neither
+  of the branch's runs covered it because both chose packages from the
+  diff. Choose by what a test reads, not by what the diff names.
+- **The exit code belongs to the thing that looked, not the thing looked
+  at.** Three in one day: `golangci-lint` absent from `PATH` reporting a
+  lint failure in zero seconds, `go test -race` without `CGO_ENABLED=1`
+  erroring instead of running, and a watcher of mine reporting failure
+  because its last command was `grep -c` on a pattern that correctly
+  matched nothing. Read the tool's own output and its duration.
+- **Prove on hardware, then publish.** The appliance went out only after
+  the three-part live check passed on a Mac against that exact image,
+  because publishing an unproven one would have replaced a build that
+  starts two times in nine with one nobody had started at all. Publish
+  with `--latest=false` and run `ops/dev/release-assets` **after**, which
+  is the only order that catches both of 2026-11-19's failures.
 - **`/tmp` is on the 29 GB root disk, not a tmpfs, and `/tmp/rt` grows
   without bound.** It held 7.9 GB at 01:04 on 2026-11-20 with the root
   filesystem at 86 %, mostly 372 `repose-sync-*.tar` from CLI tests plus
