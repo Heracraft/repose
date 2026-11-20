@@ -37254,6 +37254,9 @@ and asked not to be asked again unless it does not work).
   appliance is a user agent that cannot run before someone logs in, and a
   System item would need the root install and signed binary I-1380
   deliberately avoided), used to wrap and unwrap the per-image key. No named secret, no
+  **the wrapping key only** — one key per host, created on first park,
+  non-exportable, in the System keychain under the launcher's own access
+  group, used to wrap and unwrap the per-image key. No named secret, no
   tenant data and no token is ever written to it, so CLAUDE.md's "three
   homes and nothing else" is unchanged and this remains I-653's single
   exception with a second custodian for hardware we do not own. The image
@@ -37566,3 +37569,202 @@ the first, which is the whole finding.
 offline host on a row but never say where a machine runs while the host
 is answering; they read `host_name` from here on (the parity rule,
 I-1354, wants them before this is called finished).
+**I-1398. Every URL the shipped CLI fetches on a customer's machine is
+checked anonymously, at queue time, before a tag publishes, and every six
+hours (ENG-62, 2026-11-19).** *Made during implementation* (the night's
+top-ranked customer-review finding, and a second instance of the same
+class found while building the fix).
+
+- *What happened.* CLI v0.1.51 was tagged and published pinning
+  `applianceVersion = "2026.11.19"`, and the release
+  `appliance-2026.11.19` had never been published. On a real Mac at
+  21:38:44 UTC, with the published CLI and a fresh credential, `repose
+  host add` printed `fetching the appliance image 2026.11.19 (about 2
+  GB)` and then `the server answered 404`, exit 1, for 47 minutes, until a
+  human uploaded the asset. The same evening, at 22:28 UTC, that upload
+  was published without `--latest=false`, so `releases/latest` redirected
+  to the appliance tag; `install.sh` turns "latest" into a tag by that
+  redirect and then fetches `repose_<tag>_<os>_<arch>.tar.gz`, which
+  answered 404 under that tag for every platform until 22:54, when
+  `gh release edit v0.1.51 --latest` put it back. Neither was a defect in
+  the code: `release.yml` checks that the draft holds the four archives
+  and that the notes exist (I-798), and nothing anywhere asked whether
+  the things the code would fetch *existed* and *answered to a stranger*.
+- *The check.* `TestReleaseAssetsAnswerAnonymously` in `internal/cli`,
+  run by `ops/dev/release-assets`, fetches with a client that carries no
+  cookie, token or netrc: the appliance image the code pins (200, over 1
+  GiB) and its `.sha256` (a 64-hex body); vfkit, with its body hashed
+  against `vfkitSHA256`; the tag `releases/latest` resolves to, which must
+  match `releaseTagRe` (a `v*` tag); that tag's `checksums.txt` (naming
+  exactly the four archives), `checksums.txt.sig` verified with the key
+  the CLI carries, and each archive; and `https://repose.run/install.sh`.
+  It prints `200 <bytes> <url>` a line and exits 1 naming the asset and
+  the fix. The URLs are the package's own constants, not a list, and
+  `TestReleaseAssetURLsAreAllChecked` walks the package's sources for
+  release URLs and fails when one is not covered. Overrides exist to show
+  it red: `--appliance 2026.11.18` printed `404` for the image and its
+  checksum and exited 1; `--cli v0.1.99` printed `resolves to v0.1.51,
+  not v0.1.99` and exited 1; the plain run printed 200 for 11 assets and
+  exited 0, all on 2026-11-19.
+- *Where it runs, and why three places.* `release-queue add` runs it
+  with `--cli none` for a branch that ships as `cli`, so a bump of
+  `applianceVersion` to an unpublished image never reaches the queue:
+  that is the first failure's cause, caught where the author is. The
+  `sign` job of `release.yml` runs it with `--cli none` before it
+  publishes the draft, so a tag whose code pins a missing asset stays a
+  draft `install.sh` never sees, and again with `--cli <tag>` after the
+  publish, which also asserts `releases/latest` resolves to the new tag.
+  And `release-assets.yml` runs it every six hours against `main` and
+  against the tag customers install, because both failures lasted tens
+  of minutes with no release in progress; a release-time check alone
+  would have caught neither. A red scheduled run is the signal; it
+  reaches whoever GitHub notifies of one, and routing it to the owner's
+  chat (I-648) is not done.
+- *Alternatives.* A curl list in the runbook: it goes stale the day a
+  constant moves, which is the class of failure here. Checking inside
+  `release-queue cut`: the conductor's verify list in `RELEASE.md` names
+  the command, but a hard stop belongs where the mistake is made (`add`)
+  and where it ships (`release.yml`). Downloading the 2 GB image to hash
+  it: a HEAD with a size floor catches an empty or placeholder upload,
+  and the CLI checks the hash on the customer's machine; the daily cost
+  of 2 GB was not worth the one case (a corrupt upload of the right
+  size) this would add. Marking appliance releases `--prerelease`
+  instead of `--latest=false`: GitHub still excludes prereleases from
+  latest, but the word is wrong and a reader would act on it.
+- *Rules this adds.* A release of anything but the CLI is published
+  with `--latest=false` (RUNBOOK, "The Mac appliance image and install
+  line"). Every artefact URL a CLI release hard-codes answers 200
+  anonymously before the tag (RELEASE.md, "Ship the rest"). A row in
+  `docs/CHECKLIST.md` names the evidence.
+
+*Not done:* a chat notification for a red scheduled run; `repose host
+add`'s own message says `the server answered 404` and nothing about
+where to look, which is the customer's view of this and is ENG-62's
+sibling, not this entry's.
+
+**I-1402. An agent packaged from an npm tarball reads its entry script
+from `package.json`'s `bin`, and the build fails when that file is not
+shipped (2026-11-20).** *Made during implementation* (the rule behind a
+fix that was made once, for `chrome-devtools-mcp`, and left as a comment
+in that one file while the other npm-packaged agent still hardcoded its
+path).
+
+- *What happened.* `chrome-devtools-mcp` moved its entry script between
+  releases (`build/src/bin` in 1.10.1, `out/Default/gen/src/bin` in
+  1.13.0). Its derivation had the old path written in, so the daily bump
+  built a package whose `bin/chrome-devtools-mcp` pointed at a file that
+  was no longer there. That was fixed by reading `.bin` from the
+  tarball's own `package.json`, and the reasoning stayed in a comment in
+  that file. `gemini-cli.nix` kept `--add-flags "$dest/bundle/gemini.js"`,
+  which is what `@google/gemini-cli` 0.61.0 does declare
+  (`bin: {"gemini": "bundle/gemini.js"}`, read from the pinned tarball),
+  so nothing is broken today and the next move of that path breaks the
+  bump.
+- *What this settles.* The entry comes from `package.json`'s `bin`, taking
+  the command's key when `bin` is an object and the string when it is
+  one, with `./` stripped; and the `installPhase` exits 1 naming the
+  version and the path when `bin` is empty, `null`, or a file the tarball
+  does not ship. A build that fails here names the cause. A wrapper
+  pointing at a missing file does not: `scripts/bump-agents.sh` runs
+  `<agent> --version`, so it is caught, but as a node module-resolution
+  error in a bump nobody is watching.
+- *Alternatives.* Leaving it until upstream moves the path: that is the
+  position this entry replaces, and the cost of being wrong is a red
+  daily bump and a hand edit. Asserting the hardcoded path exists at
+  build time without reading `bin`: it turns a run-time break into a
+  build break, which is most of the value, but it still needs the hand
+  edit the next day. A `--version` check inside the derivation: the
+  sandbox has no network and these agents reach for a config directory
+  on start, and the bump already runs that check outside.
+- *Rules this adds.* A derivation that wraps an npm tarball's entry
+  script does not name the path. Two files are covered by this today,
+  `nix/overlay/agents/chrome-devtools-mcp.nix` and
+  `nix/overlay/agents/gemini-cli.nix`; the other agents install a single
+  binary and have no entry to resolve.
+
+*Not done:* nothing of the guest closure that the bump also never
+measures (that is its own open item). The `agents` VM test exercises
+`gemini mcp list` and is the check that a wrapper really runs; this entry
+does not add one.
+**I-1400. The buf job posts no pull request comment, and the workflow's
+token stays `contents: read` (2026-11-20).** *Made during implementation*
+(every pull request run was red for a week and the conductor's handoff
+named it as the reason workers stopped trusting pull request CI).
+
+- *What happened.* `bufbuild/buf-action` posts a summary comment on each
+  pull request unless `pr_comment: false`. `ci.yml` grants
+  `contents: read` and the repository's default workflow permission is
+  `read`, so the post answered `Resource not accessible by integration`
+  and the action exited 1 **after** `buf build`, `buf lint` and
+  `buf breaking` had all passed. Run 44636956716 (join-research,
+  2026-11-19 23:21 UTC) is the shape of every one of them: eleven jobs
+  green, `buf lint and breaking` red, one error line, and it is the
+  comment, not the proto files. The cost was not the job. It was that a
+  red pull request run stopped carrying information, so workers reran
+  whole suites locally and the conductor read runs by job instead of by
+  conclusion; I-840 is the same action failing on a pull request for a
+  second reason behind the first.
+- *The fix.* `pr_comment: false`, beside `format: false` and explained
+  in the same comment block. `buf lint` and `buf breaking` are what the
+  job's name promises and they are unchanged.
+- *Alternatives.* Granting the job `pull-requests: write`, which the
+  repository allows (`bump-agents.yml` elevates its own token that way
+  and works): it widens the token on every pull request run to publish a
+  summary of a check whose result is already the job's conclusion and its
+  annotations. Nobody reads these comments — the release queue opens the
+  pull requests and the conductor reads the run, so the comment is help
+  nobody asked for, which the house rule cuts. Removing the job on pull
+  requests: `breaking` only has an "against main" to compare on a pull
+  request, which is where a contract break is caught before the queue.
+- *Rules this adds.* A workflow step that writes to GitHub (a comment, a
+  label, a release, a pull request) says so in the job's `permissions`
+  or is turned off; a step that only reads does not widen the token to
+  write something nobody reads.
+
+*Not done:* nothing of the handoff's wider point. The post-merge
+full-suite reruns that the broken gate put into worker briefs are still
+in them, and whether pull request CI is trusted as a gate again is for
+the conductor to decide after it has been green for a batch.
+
+**I-1412. A test that seeds a timestamp a windowed query reads computes it
+when the row goes in, not when the table is built (2026-11-20).** *Made
+during implementation* (a red in a batch verification that the batch could
+not have caused, and the second time a pinned fixture clock has cost a
+conductor a verification).
+
+- *What happened.* `TestPickTable` in `internal/api/scheduler` took one
+  `time.Now()` before its table literal and gave every host that one
+  timestamp as its last heartbeat. `PickHost` ignores a host whose last
+  heartbeat is older than `HeartbeatWindow`, 90 seconds, measured against
+  the `time.Now()` the caller passes. The table has eight cases, each
+  opening its own database; under `-race` with the whole suite sharing one
+  Postgres it ran for 117 s, so by the last case the hosts it meant to be
+  fresh were two minutes stale and `xl fits above reserve` failed with
+  `no host with capacity`. Nothing about the scheduler was wrong, and
+  nothing in the batch touched Go at all.
+- *The fix.* The table's rows carry an `age` (`0` for fresh,
+  `2 * time.Minute` for the case that is about staleness) and each
+  subtest inserts `time.Now().Add(-h.age)`. The test can now take as long
+  as it likes.
+- *Why this is a rule and not one fix.* The same shape failed before, as
+  a fixture clock pinned to a date (the neighbour of I-1162), and a
+  pinned clock is invisible in review: it reads as a constant and behaves
+  as a deadline. Any test that writes a timestamp which a query then
+  compares against `now` has a hidden time limit equal to that window,
+  and the limit is enforced on the slowest box that ever runs it, which
+  is never the author's.
+- *Alternatives.* Raising `HeartbeatWindow`: it is a production constant
+  and 90 s is the operational answer, not a test's. Giving `PickHost` a
+  fixed clock in the test: it would pass, and it would stop the test
+  exercising the staleness rule against real time, which is the thing one
+  case is for. Marking the test as needing a quiet box: the three other
+  reds of that run were `WaitOp`'s 30-second timeout under contention,
+  which is a slow box and nothing more; this one was wrong by
+  construction, and the two should not be filed together.
+
+*Not done:* the other three reds of that run (`TestHelloLeavesAProject
+WithAnOpenOpAlone`, `TestAFailedWakeIsNotSentAgainStraightAway`,
+`TestResumeSkipsStopAndDestroyWhileUnreachable`) are not touched. Each
+passed alone on the same commit, each failed waiting 30 s for an op the
+engine was too starved to finish, and whether `WaitOp` should scale its
+timeout with the box is open.

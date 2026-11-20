@@ -56,10 +56,14 @@ Where a row names two sections, the first is the common cause.
 | The thin pool is full, inactive or unmonitored | "PoolUnavailable", then "PoolFull" |
 | The Nix store is filling | "StoreFull" |
 | It will not boot | "Host does not boot" (needs the console password: "Console access (host and edge)") |
+| A VM reaches nothing while Azure says it is running and healthy | "Host or control VM dead on the network" |
 | **People and money** | |
 | A user cannot log in | "CLI: user cannot log in", then "api: login service unavailable" |
 | A user says their account is suspended | the section titled `api: user reports "account suspended"` |
 | A customer disputes a charge | "Customer disputes a charge" |
+| **A release** | |
+| `repose host add` printed `fetching the appliance image` and then `the server answered 404` | "The Mac appliance image and install line" — the image the CLI pins is not published; `ops/dev/release-assets` names it |
+| `install.sh` downloads `repose_appliance-…` or any name without a `v`, or `repose version update` refuses the latest release | "Only a CLI release is latest" in `RELEASE.md` — `gh release edit <newest v0.1.N> --latest` |
 | **Infrastructure** | |
 | An apply hangs on the state lock | "OpenTofu state lock stuck" |
 | An apply wants to replace a disk or an IP | "An apply wants to replace a host data disk or a static IP" |
@@ -257,12 +261,35 @@ works:
 2. Publish it with its checksum where `repose host add` fetches it: a
    GitHub release of this repository, tag `appliance-<version>`, assets
    `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
-   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`). Another home
-   is a CLI release with `applianceURL` changed in
+   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`), **with
+   `--latest=false`**:
+
+   ```
+   gh release create appliance-<version> --latest=false --title appliance-<version> \
+     --notes "The Mac appliance image <version> (docs/ops/RUNBOOK.md)." \
+     repose-appliance-aarch64.raw.gz repose-appliance-aarch64.raw.gz.sha256
+   ```
+
+   `https://repose.run/install.sh` and `repose version update` resolve
+   `latest` by following GitHub's `releases/latest` redirect and build
+   the CLI archive name from that tag; an appliance release that becomes
+   "latest" sends every install on every platform to a tag with no CLI
+   archives, and they 404 (appliance-2026.11.19 did this for 26 minutes
+   on 2026-11-19 until `gh release edit v0.1.51 --latest` moved it
+   back). Another home is a CLI release with `applianceURL` changed in
    `internal/cli/appliance.go`, or `REPOSE_APPLIANCE_URL` on the Mac.
-3. Bump `applianceVersion` in `internal/cli/appliance.go` to that
-   version; it ships with the next CLI release.
-4. Record the line once, if it is not recorded:
+3. `ops/dev/release-assets --appliance <version>` prints `200` for the
+   image and its checksum, fetched with no credentials as a customer's
+   Mac fetches them, for everything else the CLI fetches, and that
+   `releases/latest` still points at the CLI tag. It exits 1 naming what
+   does not answer; nothing below happens until it is green (DECISIONS
+   I-1398: v0.1.51 shipped pinning a version this step would have
+   refused).
+4. Bump `applianceVersion` in `internal/cli/appliance.go` to that
+   version; it ships with the next CLI release. `release-queue add`
+   runs the same check on the branch and refuses one whose version is
+   not published.
+5. Record the line once, if it is not recorded:
    `repose-admin hosts install-command 'repose host add --join %s'`.
    The hub settings `repose-admin edge init` recorded are what let
    `POST /hosts` mint the machine's place on the hub; without them the
@@ -539,6 +566,142 @@ which needs the console password (I-654).
    `az vm restart -g repose-prod -n host-01` from woker-1 ("Host
    rebooted" afterwards).
 5. Record the times and the counters in the incident file.
+
+If the VM is the edge or the control VM, or Azure's health reads
+"Available" while nothing answers, read the next section instead: it is
+the general case, and it says why those readings are not evidence.
+
+## Host or control VM dead on the network
+
+Any repose VM — a host, the edge, the control VM — reaches nothing and
+nothing reaches it, while Azure says it is running. This is the general
+case of "Host network dead after a live migration" above; that section is
+the host-specific fast path, and this one is for the other two VMs and for
+the part that is hardest to believe under pressure: **Azure's health
+signals are not evidence here.** Measured on 2026-11-19, when all three
+production VMs saw host-side maintenance within three hours
+(`../proposals/2026-11-19-azure-host-events.md`):
+
+- host-02's Resource Health event said `Live Migration Failed` with
+  `currentHealthStatus: Available`, and `VmAvailabilityMetric` read 1.0 for
+  every minute of the three hours it was dark.
+- coolify-01 produced no Resource Health event at all.
+- edge-01's event did fire the `repose-prod-vm-health` email, 59 minutes
+  late and 54 minutes after the VM had recovered by itself.
+
+So "Resource health: Available, no known platform problems" and "VM
+running" are both consistent with a VM that has been unreachable for
+hours. The two readings that *were* true all evening were the VM agent's
+status (`Not Ready`, with a stale timestamp) and `az vm restart` fixing it
+in seconds.
+
+### Diagnosis, in the order that separates the cases fastest
+
+Run these from woker-1, which has no WireGuard of its own and reaches
+Azure's control plane directly (`nix develop ./nix#infra` for `az`).
+
+1. **Power state and the agent, together.** The agent line is the one that
+   tells you anything.
+   ```
+   az vm get-instance-view -g repose-prod -n <vm> \
+     --query "{power:instanceView.statuses[].displayStatus,
+               agent:instanceView.vmAgent.statuses[].[displayStatus,time]}"
+   ```
+   `VM running` with the agent `Ready` and a timestamp from the last few
+   minutes: the VM and its NIC are fine, and this is a repose problem —
+   "HostUnreachable" for a host, "GatewayDown" for the edge, "ApiDown" for
+   the control plane. `VM running` with the agent **`Not Ready`**, or a
+   timestamp from before the symptom started: the VM is alive inside and
+   its path to the platform is gone. Continue. Not running at all:
+   "Operating while host-01 is down".
+2. **Is it alive inside?** The console screenshot answers it without a
+   login, and the serial log says what the kernel did.
+   ```
+   az vm boot-diagnostics get-boot-log-uris -g repose-prod -n <vm> --expire 60
+   ```
+   Fetch both URLs it prints. A login prompt in the screenshot means the
+   VM booted and is running; a panic or a stuck boot line means it is not,
+   and that is "Host does not boot" or "Host rebooted".
+3. **What Azure will admit to.** Current status, then the history. Read
+   both; the current one lies more often.
+   ```
+   az rest --method get --url "https://management.azure.com/subscriptions/$(az account show --query id -o tsv)/resourceGroups/repose-prod/providers/Microsoft.Compute/virtualMachines/<vm>/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2023-07-01-preview" \
+     --query "properties.{avail:availabilityState,summary:summary,reason:reasonType,occured:occuredTime}"
+
+   az monitor activity-log list -g repose-prod --offset 18h --max-events 400 \
+     --query "[?category.value=='ResourceHealth'].{t:eventTimestamp,res:resourceId,prev:properties.previousHealthStatus,cur:properties.currentHealthStatus,cause:properties.cause,title:properties.title}"
+   ```
+   A `PlatformInitiated` row with a title such as `Live Migration Failed`
+   or `Redeploying due to host failure` is Azure's own account of the
+   fault, whatever `currentHealthStatus` says beside it. The same list
+   with the `Administrative` category shows whether a human did this
+   (`--query "[?category.value=='Administrative']"`); nothing there means
+   nobody did.
+4. **Which paths are really dead.** Two independent paths lead to a host
+   and each proves a different thing ("HostUnreachable" explains why).
+   - The api's view, which travels the VNet and not the tunnel:
+     `repose-admin hosts list`, and a current heartbeat means the host is
+     alive and only the mesh is broken ("HostWgDown").
+   - The mesh, from the edge: `ssh -p 2222 root@<edge ip>`, then
+     `wg show wg0` for the peer's handshake age and
+     `nc -vz 10.255.0.<host> 9101` for hostd's metrics port. An old
+     handshake with no traffic is the tunnel; a recent handshake with a
+     refused port is hostd.
+   - If the VM under investigation **is** the edge, neither of those
+     works. Probe it from outside instead: `nc -vz <edge ip> 22` and
+     `nc -vz <edge ip> 2222`. A banner on 22 and nothing on 2222 is the
+     gateway serving users while operator ssh is down, which is a
+     different fault.
+5. **What the VM itself saw, once it is back.** The previous boot's kernel
+   log names a platform pause by its fingerprint:
+   ```
+   journalctl -b -1 -k | grep -iE 'hv_utils|TimeSync|Clock change|hv_netvsc|nvme'
+   ```
+   `hv_utils: TimeSync IC version 4.0` followed by systemd-resolved's
+   "Clock change detected" is the host-side pause; on 2026-11-19
+   coolify-01 logged exactly that at 19:10, then waagent's
+   `Error fetching the goal state: Wireserver` at 19:11:30, which is the
+   wire server (`168.63.129.16`) going unreachable. On an Azure serial log
+   read the **last** Linux version banner, not the first.
+
+### Remedy, in this order
+
+1. **The virtual function, if this is a host.** `ip link set dev eth1
+   down` over the serial console, which needs the console password
+   ("Console access (host and edge)"). Free, reversible, and it fixed
+   host-01 on 2026-10-10: "Host network dead after a live migration" steps
+   1 to 3 have the counters that prove it is the VF before you touch it.
+2. **`az vm restart`.** It keeps the VM on its Azure host and power-cycles
+   it. On 2026-11-19 it brought coolify-01 back within seconds.
+   ```
+   az vm restart -g repose-prod -n <vm>
+   ```
+   Before restarting a **host with the park on**, silence `HostUnreachable`
+   and `HostdDown` for it in Grafana and read "Host rebooted" on what the
+   park does and does not save; the restart waits out the park's deadline.
+   A host that was network-dead can still park — the wrap key is cached —
+   but the unpark on the way up needs Key Vault, so if the restart does
+   not fix the network every image is discarded and every guest comes back
+   cold ("Guest park").
+3. **`az vm redeploy`** if the fault returns after a restart. It moves the
+   VM to a different Azure host, so it is the answer to a bad host rather
+   than a bad VM. It is slower, it can fail for capacity, and it discards
+   the local temp disk — which costs repose nothing, because guest volumes
+   live on the managed data disk (DESIGN §4).
+   ```
+   az vm redeploy -g repose-prod -n <vm>
+   ```
+4. **Afterwards.** A host: "Host rebooted" for the unit-by-unit check and
+   the resumes. The edge: its WireGuard comes back with only the static
+   peers, and wgsync re-adds the hosts from `GET /internal/hosts` within 30
+   seconds — but only if the api is up, so check `wg show wg0` has a peer
+   per host before believing the mesh. The control VM: "Coolify deploy
+   failed" and "api cannot resolve repose-postgres" are the two ways it
+   comes back half-started.
+5. **Record it.** Times, the agent timestamps, the Resource Health rows
+   and the counters go in an incident file in `../incidents/`. Three of
+   these in one evening is a pattern about the zone, and only the files say
+   so.
 
 ## HostdDown
 

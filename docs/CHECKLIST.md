@@ -395,6 +395,25 @@ entry and this list with it. Counts as of 2026-10-21.
       --jq '.body | length'` is over 400, and the notes name every
       user-visible change, what the release does not fix with its numbers,
       and what it costs. `release.yml` fails the publish below 400 bytes.
+- [ ] Every URL the shipped CLI fetches on a customer's machine answers
+      200 to a client with no credentials: the appliance image the code
+      pins and its `.sha256`, vfkit against its pinned checksum, the
+      release `releases/latest` resolves to (a `v*` tag, with
+      `checksums.txt`, a signature the release key verifies and the four
+      archives) and `install.sh` (DECISIONS I-1398). The failure this
+      prevents happened twice on 2026-11-19: v0.1.51 shipped pinning an
+      appliance release nobody had published, so `repose host add` said
+      "the server answered 404" on every Mac for 47 minutes; and the
+      appliance release, once published, became GitHub's "latest", so
+      `install.sh` resolved the version to `appliance-2026.11.19` and every
+      install on every platform failed for 26 minutes. Evidence:
+      `ops/dev/release-assets` prints `200` for every asset and exits 0,
+      run after an appliance publish, before a CLI tag, and after the
+      sign job; shown red first (`--appliance <unpublished>` or `--cli
+      <wrong tag>` exits 1 naming the asset). `release-queue add` runs
+      it for a `cli` branch, `release.yml` refuses to publish without it,
+      and `release-assets.yml` runs it every six hours against `main`
+      and against the released tag.
 
 ## For every workstream, before it is called done
 
@@ -643,7 +662,7 @@ entry and this list with it. Counts as of 2026-10-21.
       `HeartbeatWindow` (90 s); the table ran for 117 s, so the last case
       asked for a host the table meant to be fresh and got `no host with
       capacity`. It passes alone, because alone it finishes inside 90 s
-      (decision entry on the `pick-clock` branch; cite its id here once that is on main). Evidence: the seeded time is computed per case, or frozen, or
+      (I-1412). Evidence: the seeded time is computed per case, or frozen, or
       the window is injected — not a table-wide `time.Now()`. Audit every
       test that seeds `last_heartbeat_at`, `last_seen`, a park deadline or
       any other field a query reads against the clock.

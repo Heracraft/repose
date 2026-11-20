@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1037 entries.
+1041 entries.
 
 ## Scope
 
@@ -1064,8 +1064,12 @@ pointer, not a summary.
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — L37067
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
-- **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37292
-- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37343
-- **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37413
-- **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37471
-- **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37542
+- **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37295
+- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37346
+- **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37416
+- **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37474
+- **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37545
+- **I-1398** Every URL the shipped CLI fetches on a customer's machine is checked anonymously, at queue time, before a tag publishes, and every six hours (ENG-62, 2026-11-19) — L37572
+- **I-1402** An agent packaged from an npm tarball reads its entry script from `package.json`'s `bin`, and the build fails when that file is not shipped (2026-11-20) — L37645
+- **I-1400** The buf job posts no pull request comment, and the workflow's token stays `contents: read` (2026-11-20) — L37689
+- **I-1412** A test that seeds a timestamp a windowed query reads computes it when the row goes in, not when the table is built (2026-11-20) — L37729
