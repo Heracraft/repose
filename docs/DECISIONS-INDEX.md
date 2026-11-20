@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1045 entries.
+1046 entries.
 
 ## Scope
 
@@ -655,7 +655,7 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16642
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16687
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; amended by I-888; L16714
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16775
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; amended by I-1428; L16775
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; amended by I-890; L16842
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16892
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16926
@@ -1077,3 +1077,4 @@ pointer, not a summary.
 - **I-1414** The appliance downloads get a client of their own, with no whole-request deadline, a 60-second stall window instead, and three attempts that continue from what is on disk; a download that does not finish names the install step that completes it (fix-starts, 2026-11-20) — L37877
 - **I-1416** The guest's wait for the registration outlasts the host's deadline for sending it, by the ready phase as well as the paths deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name the order and its direction, and a text check reads both numbers because no evaluation sees them together (fix-starts, 2026-11-20) — L37977
 - **I-1426** A held commit separates the release from the launch only while the plan is actually unbuyable, which is a fact to read in the catalogue rather than a state to assume (mac-mini, 2026-11-20) — L38035
+- **I-1428** Nix's own build output follows `-v`, not the absence of a terminal (fix-ask ENG-27, 2026-11-20) — L38087

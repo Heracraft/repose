@@ -461,6 +461,17 @@ entry and this list with it. Counts as of 2026-10-21.
       create to running 47 s, menu apply 5 s, eval and build timings). No
       axis came close to the 20 percent question, so the Hetzner fallback
       (R3-20) stays a fallback; I-39 records the v7 sizes used.
+- [ ] **The docs do not promise a command before the CLI ships it.** The
+      public docs deploy on the push to main and the CLI only at the tag, so
+      a release that adds a command has a window where /docs describes one
+      nobody can install. Evidence: `ops/dev/docs-ahead-of-cli; echo $?`
+      prints 0, or prints 1 with the commands named and the tag follows the
+      push at once (`docs/ops/RELEASE.md` step 2b). Read the script's own
+      exit code: 2 is "could not tell", which is what a checkout with no
+      tags gives, and is not a pass. On 2026-11-19 /docs/own-hardware and
+      /docs/cli documented `repose host add|run|ls|rm` for 21 minutes while
+      `install.sh` served a CLI that exited 2 on it, on the launch feature
+      (ENG-43, ENG-23).
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
 - [ ] **Paging reaches a human.** One contact point in the owner's Grafana,

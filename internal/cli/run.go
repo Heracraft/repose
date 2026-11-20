@@ -1789,7 +1789,7 @@ func waitOpPhased(ctx context.Context, e *Env, project *Project, opID string, pr
 		switch {
 		case pr == nil:
 			v.raw = e.ErrOut
-		case e.Verbose || !e.TTY:
+		case e.Verbose:
 			v.raw = pr
 		}
 		v.built = func() { pr.Phase("Booting "+project.Slug, "Booted "+project.Slug) }

@@ -38083,3 +38083,56 @@ shipped, and that is a fact to read rather than a state to assume.**
   evidence rules now carry the same point for a reviewer reading an
   absence: finding the intent behind it is the start of the check, not
   the end.
+
+**I-1428. Nix's own build output follows `-v`, not the absence of a
+terminal (fix-ask ENG-27, 2026-11-20).** *Made during implementation*
+(the customer reviews' F4 on the CLI surface and F5 on the Mac surface).
+`buildView.raw` was set by `e.Verbose || !e.TTY`, so a run without a
+terminal printed every `nix › ` line as well as the steps. Two reviewers
+measured the same thing independently: a first `repose run` writing
+3,706 lines to stderr of which **3,664, 98.9 percent, began `nix ›`**
+against the **42** lines of summary a customer is meant to read, and
+`repose config add ripgrep` writing 73 lines, 62 of them `nix ›`, to add
+one package. Amends I-614 and continues I-755 in the same place.
+
+- *The premise was wrong, not the taste.* The `!e.TTY` arm was written on
+  the understanding that there are no steps to read without a terminal.
+  There are: `progress` prints one plain line per phase off a terminal
+  and the same `✓` line when it ends (I-609), which is exactly what both
+  reviews quoted. So the raw copy was never the only thing a reader had;
+  it was the thing burying what they had.
+- *It is I-614's defect in another place, which is why this is an
+  amendment.* `Env.TTY` is `canDrawSpinner(os.Stderr)`, and that reads
+  `TERM=dumb` and `REPOSE_NO_SPINNER=1` as well as isatty. So an Emacs
+  shell, an IDE console, or anyone who turned the spinner off to get
+  *less* noise got 3,664 lines of store paths instead. I-614 split that
+  same switch away from whether a confirmation is asked, for the same
+  reason and in the same words: turning the spinner off must not change
+  anything else.
+- *What a reader asked for stays.* `-v` prints Nix's lines on a terminal
+  and off one alike, which is the documented switch and works in CI;
+  `--json`, which shows no steps at all, still sends the whole log to
+  stderr. A failure prints its own tail either way, so the raw stream was
+  never the diagnostic path (I-755).
+- *The instrument, because the reports do not state it.* Both reviews ran
+  the CLI from an agent session capturing stderr, so neither measured
+  what a customer in a terminal sees, which was already the 42 lines.
+  Read as "a customer's first impression is a wall of store paths" the
+  finding overstates; read as "every consumer that is not a terminal,
+  which is CI, a pipe, an IDE console, a spinner turned off, and every
+  agent driving the CLI" it is exact, and that is the set this changes.
+- *Evidence.* `TestCreateShowsTheBuildThenTheBoot` already asserted no
+  `nix ›` on a terminal; the `tty &&` guard is removed, so it asserts it
+  for both, and it is red before this change with the nix lines printed
+  between `✓ Fetched 3 paths` and `✓ Built 2 derivations`. The `-v` case
+  in `TestConfigOpShowsSteps` is unchanged and still requires them. And
+  the switch now does one thing, which is the checklist's own evidence for
+  this shape: `rg 'e\.TTY'` over `internal/cli` leaves two readers, both
+  `newProgress(e.ErrOut, e.TTY)`, so whether stderr is a terminal decides
+  whether a spinner is drawn and nothing else.
+
+*Not done:* `internal/cli/buildlog.go`'s `StreamBuildLog`, the `--json`
+path, is untouched and still prefixes Nix's lines (07-cli.md §5.8); the
+nix-daemon warning a tenant sees with `-v`, "ignoring the
+client-specified setting 'sandbox'", has the cause I-755 recorded at
+`nixbuild.go` and is still hostd's to fix.
