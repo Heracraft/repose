@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1045 entries.
+1046 entries.
 
 ## Scope
 
@@ -1063,7 +1063,7 @@ pointer, not a summary.
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — L37067
-- **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — L37232
+- **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37295
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37346
 - **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37416
@@ -1077,3 +1077,4 @@ pointer, not a summary.
 - **I-1414** The appliance downloads get a client of their own, with no whole-request deadline, a 60-second stall window instead, and three attempts that continue from what is on disk; a download that does not finish names the install step that completes it (fix-starts, 2026-11-20) — L37877
 - **I-1416** The guest's wait for the registration outlasts the host's deadline for sending it, by the ready phase as well as the paths deadline: `repose.guestd.pathsWait` goes to 20 minutes, both files name the order and its direction, and a text check reads both numbers because no evaluation sees them together (fix-starts, 2026-11-20) — L37977
 - **I-1426** A held commit separates the release from the launch only while the plan is actually unbuyable, which is a fact to read in the catalogue rather than a state to assume (mac-mini, 2026-11-20) — L38035
+- **I-1394** The park on the Mac appliance: hostd asks the launcher over a vsock to wrap and unwrap image keys, and the launcher keeps the one wrapping key as an item in the user's login keychain through `security` (ENG-2, 2026-11-19) — L38086

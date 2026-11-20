@@ -361,14 +361,32 @@ percent.
       guest from an image built at `mac-mini` head.
 - [ ] **Restart: the Mac reboots, the launcher brings the appliance back,
       hostd reconciles, the project is reachable again without a
-      command.** **Open, and the cause is known.** On a real rig the
-      guest cold-booted with its marker gone: `VsockDialer` wrapped an
-      AF_VSOCK descriptor with `net.FileConn`, which cannot work on any
-      platform, so hostd never reached the launcher, the image key was
-      never fetched and every park was skipped — hostd logged it
-      correctly throughout ("getsockname: address family not supported by
-      protocol", then "park skipped: no image key"). Fixed on `fix-park`
-      at `5bed14eb` and **unverified on hardware**. ENG-2, ENG-127.
+      command, and with what it was doing** (I-1386, ENG-2). Evidence
+      the item asks for: the launcher log's `park-key:` lines and the
+      appliance journal's `guest_park` and `guest_restored` lines with
+      their phase timings, **from a real restart of the Mac**. **Half
+      closed, and the half that is closed was a defect an hour ago.**
+      The cause of the cold boots is found and fixed: `VsockDialer`
+      wrapped an AF_VSOCK descriptor with `net.FileConn`, which cannot
+      work on any platform, so hostd never reached the launcher, the
+      image key was never fetched and every park was skipped — hostd
+      logged it correctly throughout ("getsockname: address family not
+      supported by protocol", then "park skipped: no image key").
+      `5bed14eb`, merged. **Verified on the rig at 07:10 to 07:20 UTC**:
+      `park-key: event=keychain_item_created service=run.repose.appliance
+      account=park-wrapping-key`, then `event=wrapped` and
+      `event=unwrapped` on `key_id=keychain-79a9a0260addb566`, and the
+      guest came back from `launchctl bootout` then `bootstrap` with
+      `/tmp/marker.txt` intact and uptime continuous across the stop
+      (319.27 s before, 400.95 s after) — against the same test an hour
+      earlier on `e167476d`, which had no `park-key` line at all, the
+      marker gone and uptime reset to 193. **And it answers a question
+      only that machine could answer: `security` serves a launchd agent
+      in `gui/501` without a prompt**, so the park does not fail
+      silently for a customer. **Still open:** that was a `bootout`, not
+      a restart, so the launcher's `ExitTimeOut` of 360 s was never
+      stressed — the stop took 20 s. What closes it is `sudo shutdown -r
+      now` on the Mac, which the spark is running.
 - [ ] **Council report exists, second pass has no P0.** The reports
       exist and now ship with the work: `docs/reports/2026-11-19-mac-mini-council.md`
       (the confer), `-mac.md`, `-cli.md`, `-dashboard.md`. **The second

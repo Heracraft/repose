@@ -38083,3 +38083,93 @@ shipped, and that is a fact to read rather than a state to assume.**
   evidence rules now carry the same point for a reviewer reading an
   absence: finding the intent behind it is the start of the check, not
   the end.
+**I-1394. The park on the Mac appliance: hostd asks the launcher over a
+vsock to wrap and unwrap image keys, and the launcher keeps the one
+wrapping key as an item in the user's login keychain through `security`
+(ENG-2, 2026-11-19).** *Made during implementation* (the mechanics of
+I-1386, which settled where the key lives and left the build to this
+entry).
+
+- *Who holds the wrapping key, and who never sees it.* The launcher,
+  `repose host run`, is the custodian; hostd inside the VM is a client.
+  hostd dials vsock CID 2 port 1386 (`--park-key-vsock`,
+  `repose.host.park.launcherPort`), which vfkit forwards to
+  `park-key.sock` beside the disk, where the launcher listens for as long
+  as the VM runs. One request per connection, one JSON object each way
+  (`internal/parkkey`, `docs/interfaces/host-conventions.md`): `ready`,
+  `wrap` a fresh image key, `unwrap` a record's. The wrapping key never
+  crosses the boundary: what crosses is a 64-byte image key hostd made a
+  moment before, on its way to being wrapped, and a wrapped key on its
+  way back. Rejected: handing the wrapping key into the VM at boot (then
+  it sits in hostd's memory and in every image of the appliance, and
+  I-1386 said the Keychain wraps); the share directory as the channel (a
+  request file on the Mac's disk, polled); a TCP port on the NAT bridge
+  (an address that exists only while the VM runs, reachable from the
+  LAN if misbound).
+- *The item.* A generic-password item, service `run.repose.appliance`,
+  account `park-wrapping-key`, holding 32 random bytes as hex, made the
+  first time a request needs it, read back rather than trusted after the
+  add, in the user's default (login) keychain. Read and written through
+  macOS's `security` tool because the CLI's darwin build has no cgo and
+  so no Security.framework (I-1380's reason for vfkit), which fixes two
+  things I-1386's text said loosely: it is the login keychain, not the
+  System keychain (writing there needs an administrator, and the
+  launcher has no sudo anywhere, I-1380), and "non-exportable" is the
+  keychain's own rule for an item `security` added, which `security`
+  reads again without a prompt while the keychain is unlocked and
+  nothing reads while it is locked; it is not a key object that cannot
+  leave the keychain. The value passes on `security`'s command line
+  once, at creation, for milliseconds, to a process list the same user
+  and root can read, who can read the item itself; nothing is gained by
+  hiding it from them. The label in Keychain Access says what it is and
+  the comment says what it is not. Rejected: an asymmetric key in the
+  keychain used through `SecKeyCreateEncryptedData` (needs cgo; it is
+  the shape a Secure Enclave key would take, and is the path for that
+  later decision); `security -i` to keep the value off argv (its
+  tokeniser is undocumented, and the gain is nothing).
+- *The wrap.* AES-256-GCM under the item's key, nonce first, the key id
+  as additional data. The key id is `keychain-` and 16 hex digits of a
+  salted hash of the wrapping key, carried in the park record as
+  `key_id` where Key Vault's key version goes, so an image from a
+  replaced item is refused by name (`unwrap_failed`, that guest starts
+  cold) rather than opened to garbage for the image's key check to catch.
+- *Time.* The park's deadline on the Mac is 120 s (mac.nix). The worst
+  case is a guest that will not snapshot: the park holds the shutdown for
+  the deadline plus its own 120 s stop grace (park.go), 240 s; the unit's
+  wall cuts it at 270 (park.nix); the launcher pulls the plug at 330, 60
+  s for the rest of the shutdown after that wall; the agent's
+  `ExitTimeOut` is 360 where launchd's default is 20, which no park fits
+  in; `repose host rm` and a logout wait the same. So hostd gives up
+  before the launcher does, and an image is never cut mid-write from the
+  Mac's side; what macOS itself allows an agent at a restart is only the
+  Mac's to show. 120 s at the 100 MB/s floor admits 12 GB, more than a
+  16 GB Mac places; the park measures the real rate from its first
+  snapshot as everywhere. The park-key service runs past the launcher's
+  SIGTERM on purpose: the park that the stop triggers wraps through it.
+- *Six hours, counted against the user.* I-653 removes an image six
+  hours after it was written, read or not. On the fleet hostd starts
+  with the host; on a Mac it starts when someone logs in, so a restart
+  followed by no login for six hours loses the work anyway. Not changed
+  here (the limit is I-653's); said on the docs page in the same breath
+  as the power cut: "log in again within 6 hours".
+- *The keychain, corrected.* I-1386's text said the System keychain
+  under an access group; the appliance is a user LaunchAgent that cannot
+  run before a login, so the login keychain is the home and the System
+  keychain would buy nothing at the cost of the root install I-1380
+  avoided. The conductor amends I-1386's wording; this entry is the
+  mechanics.
+- *Observed and not.* The launcher log carries `park-key:` lines with
+  events and key ids, never a value; the appliance's journal carries the
+  park's `guest_park` and `guest_restored` lines unchanged, the unwrap
+  phase now a local round trip. A locked keychain or a Mac with no login
+  yet is `key_unavailable` with `security`'s exit status and line, and
+  the park skips its guests as `no_key`.
+
+*Checked:* `internal/parkkey` (five tests, the wrap, the replaced key,
+the locked keychain, no launcher, bad requests, and the port held
+against mac.nix), `TestKeychainKeeper*` and `TestApplianceConfigAndPlist`
+in `internal/cli`, `go build ./...`, and a targeted evaluation of the
+mac host's hostd flags. *Not done at this line:* a park, a real restart
+and an unpark on the Mac with the phase timings, which is the only
+evidence that a customer keeps their work; whoever holds the Mac runs it
+(workstream 19's restart item).

@@ -102,7 +102,17 @@ todo-app: your host mac-mini has not answered for 14m.
 
 `repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else. A new machine is refused with the same sentence, and `repose run --host repose` makes it on repose's servers instead.
 
-A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac that was switched off or rebooted stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not. `repose host rm` on the Mac and a shutdown of the Mac give your machines 20 seconds to finish writing before they stop.
+A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart or shut down keeps them too, below. A Mac that loses power stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not.
+
+## Restart your Mac and your work survives
+
+When you restart or shut down your Mac, or log out, each running machine's memory is written to an encrypted image on the appliance's disk before the Mac goes down, and at your next login each machine carries on where it was: programs, tmux windows and agents included, with its clock set when it is back. The shutdown waits for the images, a few seconds a machine, and the machines come back when you log in, because that is when the appliance starts.
+
+An image is removed once its machine is back, and after 6 hours either way, so log in again within 6 hours of the restart: after that the saved memory is discarded and the machines start fresh. A machine that can't come back from its image starts cold instead, with its disk as it was: [When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts) lists the cases, and they are the same here.
+
+This covers a restart, a shutdown and a logout you ask for. It can't cover a power cut, a kernel panic or holding the power button down: there is no time to write anything, and those machines start cold.
+
+The images' keys are wrapped by one key of their own, an item in your login keychain labelled `repose: key for the machines kept across a restart`, made the first time it is needed. Keychain Access shows it under that label. It is an item in the keychain, not a key in the Secure Enclave: whoever can unlock your keychain can read it, and with it the images on the disk. It wraps the images' keys and nothing else; no secret of yours, no token and nothing a machine holds is ever written to your keychain. Delete the item and the machines kept with it start cold at the next login, and a new one is made.
 
 ## Snapshots stay on its disk
 

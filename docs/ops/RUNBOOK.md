@@ -1293,7 +1293,7 @@ it happening again.
    - `no_room`: the thin pool had no room for the image. See PoolHigh.
    - `failed`: the snapshot or the image failed. The `park failed` line
      has the error; the guest kept running.
-   - `no_key`: hostd had no image key (Key Vault). See "Guest park".
+   - `no_key`: hostd had no image key (Key Vault; on a Mac appliance the launcher's keychain, locked or without a login, I-1386: the Mac's `~/Library/Logs/repose/launcher.log` says which on its `park-key:` lines). See "Guest park".
    - `busy`: another park or unpark held the lock past the deadline.
 2. The journal of the boot that did it: `journalctl -b -1 -u
    repose-guest-park -u hostd | grep '"event":"guest_park"'`. The

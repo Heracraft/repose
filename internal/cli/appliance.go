@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/heracraft/repose/internal/parkkey"
 )
 
 // The Mac mini appliance's launcher (DECISIONS I-1376, I-1380): `repose
@@ -45,10 +47,15 @@ import (
 // Everything lives under ~/Library/Application Support/repose:
 // bin/vfkit, disk.raw (the appliance's one disk: the machines' volumes
 // and snapshots are in it), share/join (the argument, until the first
-// boot consumes it), efi-vars.bin, config, vfkit.sock; and under
-// ~/Library/Logs/repose: launcher.log and console.log, the VM's console,
-// which carries the appliance's journal (ids and states) and nothing of
-// the user's.
+// boot consumes it), efi-vars.bin, config, vfkit.sock, park-key.sock
+// (where the appliance's park asks for its image keys to be wrapped and
+// unwrapped, over a vsock vfkit forwards here, internal/parkkey); and
+// under ~/Library/Logs/repose: launcher.log and console.log, the VM's
+// console, which carries the appliance's journal (ids and states) and
+// nothing of the user's. One thing lives outside: the wrapping key of
+// the parked images, an item in the user's keychain (parkkeychain.go,
+// DECISIONS I-1386), which is what lets a restart of the Mac keep what
+// every machine was doing.
 
 const (
 	applianceVersion  = "2026.11.19"
@@ -70,11 +77,26 @@ const (
 	// applianceImageApparentBytes is the raw image's size as built (37
 	// GiB): a disk file smaller than that is a broken unpack.
 	applianceImageApparentBytes = 37 << 30
+	// applianceStopGrace is how long a stop (launchd's SIGTERM at a
+	// restart or a logout, `repose host rm`) gives the appliance to park
+	// its machines and power off before the plug is pulled. The worst
+	// case inside is a guest that will not snapshot: the park holds the
+	// shutdown for its 120 s deadline plus its own 120 s stop grace
+	// (nix/hosts/mac.nix, internal/hostd/guest/park.go), the unit's wall
+	// cuts it at 270 (park.nix, deadline + 150), and the rest of the
+	// shutdown (the guests' clean stops, the shares, LVM) takes its share
+	// after that; 330 leaves it 60 s. So hostd gives up before the
+	// launcher does and an image is never cut mid-write by this side,
+	// while a plug at 330 catches a shutdown that is hung for another
+	// reason. The agent's ExitTimeOut is this plus 30, so launchd's
+	// SIGKILL comes after the plug, never before. How long macOS itself
+	// waits for an agent at a restart is the part only the Mac shows.
+	applianceStopGrace = 330 * time.Second
 )
 
 // appliancePaths is where the launcher keeps everything on a Mac.
 type appliancePaths struct {
-	Dir, Logs, Plist, Config, Disk, Share, Join, Sock, EFIVars, Vfkit, LauncherLog, ConsoleLog string
+	Dir, Logs, Plist, Config, Disk, Share, Join, Sock, ParkKeySock, EFIVars, Vfkit, LauncherLog, ConsoleLog string
 }
 
 func applianceFor(home string) appliancePaths {
@@ -89,6 +111,7 @@ func applianceFor(home string) appliancePaths {
 		Share:       filepath.Join(dir, "share"),
 		Join:        filepath.Join(dir, "share", "join"),
 		Sock:        filepath.Join(dir, "vfkit.sock"),
+		ParkKeySock: filepath.Join(dir, "park-key.sock"),
 		EFIVars:     filepath.Join(dir, "efi-vars.bin"),
 		Vfkit:       filepath.Join(dir, "bin", "vfkit"),
 		LauncherLog: filepath.Join(logs, "launcher.log"),
@@ -308,7 +331,9 @@ func (randomSource) Read(p []byte) (int, error) {
 }
 
 // launchdPlist is the agent that runs `repose host run` at every login
-// and brings it back if it exits.
+// and brings it back if it exits. ExitTimeOut is how long launchd waits
+// after its SIGTERM before it kills the launcher, and with it the VM:
+// the default is 20 s, which no park fits in.
 func launchdPlist(self, dir, launcherLog string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -319,6 +344,7 @@ func launchdPlist(self, dir, launcherLog string) string {
   <array><string>` + self + `</string><string>host</string><string>run</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>ExitTimeOut</key><integer>` + strconv.Itoa(int((applianceStopGrace+30*time.Second)/time.Second)) + `</integer>
   <key>ProcessType</key><string>Interactive</string>
   <key>WorkingDirectory</key><string>` + dir + `</string>
   <key>StandardOutPath</key><string>` + launcherLog + `</string>
@@ -330,7 +356,8 @@ func launchdPlist(self, dir, launcherLog string) string {
 
 // vfkitArgs is the VM: nested virtualization, EFI with its variable
 // store beside the image, the one disk, NAT, entropy, the launcher's
-// share, and the console to a file.
+// share, the park-key vsock (the guest dials the port, vfkit connects
+// to the unix socket `host run` listens on), and the console to a file.
 func vfkitArgs(p appliancePaths, c applianceConfig) []string {
 	return []string{
 		"--cpus", strconv.Itoa(c.CPUs), "--memory", strconv.Itoa(c.MemoryMiB), "--nested",
@@ -339,6 +366,7 @@ func vfkitArgs(p appliancePaths, c applianceConfig) []string {
 		"--device", "virtio-net,nat,mac=" + c.MAC,
 		"--device", "virtio-rng",
 		"--device", "virtio-fs,sharedDir=" + p.Share + ",mountTag=" + applianceShareTag,
+		"--device", "virtio-vsock,port=" + strconv.Itoa(parkkey.Port) + ",socketURL=" + p.ParkKeySock,
 		"--device", "virtio-serial,logFilePath=" + p.ConsoleLog,
 		"--restful-uri", "unix://" + p.Sock,
 	}
@@ -889,9 +917,10 @@ func applianceStart(e *Env, p appliancePaths, self string) error {
 // ---- run ----------------------------------------------------------------
 
 // applianceRun holds the VM in the foreground (what launchd calls): vfkit
-// under caffeinate, and a clean shutdown of the appliance when launchd
-// stops it (SIGTERM), which the appliance takes as the power button and
-// stops every machine cleanly before powering off (nix/hosts/hostd.nix).
+// under caffeinate, the park-key service beside it for as long as the VM
+// runs, and a clean shutdown of the appliance when launchd stops it
+// (SIGTERM), which the appliance takes as the power button, parks every
+// machine (nix/hosts/park.nix, I-1386) and powers off.
 func applianceRun(ctx context.Context, e *Env) error {
 	if !onAppleSilicon() {
 		return exitf(ExitGeneric, "The appliance runs on a Mac with Apple silicon; this is %s/%s.", runtime.GOOS, runtime.GOARCH)
@@ -905,7 +934,21 @@ func applianceRun(ctx context.Context, e *Env) error {
 		return exitf(ExitGeneric, "No appliance image at %s; run `repose host add` again.", p.Disk)
 	}
 	_ = os.Remove(p.Sock)
-	_, _ = fmt.Fprintf(e.Out, "%s starting: cpus=%d memory_mib=%d\n", time.Now().UTC().Format(time.RFC3339), c.CPUs, c.MemoryMiB)
+	logf := func(format string, args ...any) {
+		_, _ = fmt.Fprintf(e.Out, time.Now().UTC().Format(time.RFC3339)+" "+format+"\n", args...)
+	}
+	logf("starting: cpus=%d memory_mib=%d", c.CPUs, c.MemoryMiB)
+	// The park-key service outlives the SIGTERM below on purpose: the
+	// park that a stop triggers wraps its keys through it.
+	_ = os.Remove(p.ParkKeySock)
+	ln, err := net.Listen("unix", p.ParkKeySock)
+	if err != nil {
+		return exitf(ExitGeneric, "park-key socket: %v", err)
+	}
+	_ = os.Chmod(p.ParkKeySock, 0o600)
+	serveCtx, stopServe := context.WithCancel(context.Background())
+	defer stopServe()
+	go parkkey.Serve(serveCtx, ln, &parkKeychainKeeper{log: logf}, logf)
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	args := append([]string{"-s", "-i", p.Vfkit}, vfkitArgs(p, c)...)
@@ -918,15 +961,16 @@ func applianceRun(ctx context.Context, e *Env) error {
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
-		_, _ = fmt.Fprintf(e.Out, "%s stopped\n", time.Now().UTC().Format(time.RFC3339))
+		logf("stopped")
 		if err != nil {
 			return exitf(ExitGeneric, "vfkit: %v", err)
 		}
 		return nil
 	case <-ctx.Done():
-		applianceShutdown(p, 120*time.Second)
+		logf("stopping: the appliance parks its machines and powers off")
+		applianceShutdown(p, applianceStopGrace)
 		<-done
-		_, _ = fmt.Fprintf(e.Out, "%s stopped\n", time.Now().UTC().Format(time.RFC3339))
+		logf("stopped")
 		return nil
 	}
 }
@@ -989,7 +1033,7 @@ func applianceStop(p appliancePaths) {
 	if _, err := os.Stat(p.Plist); err == nil {
 		if _, err := macExec("launchctl", "print", dom+"/"+applianceLabel); err == nil {
 			_, _ = macExec("launchctl", "bootout", dom+"/"+applianceLabel)
-			deadline := time.Now().Add(130 * time.Second)
+			deadline := time.Now().Add(applianceStopGrace + 10*time.Second)
 			for applianceRunning(p) && time.Now().Before(deadline) {
 				time.Sleep(time.Second)
 			}
@@ -997,7 +1041,7 @@ func applianceStop(p appliancePaths) {
 		}
 	}
 	if applianceRunning(p) {
-		applianceShutdown(p, 120*time.Second)
+		applianceShutdown(p, applianceStopGrace)
 	}
 }
 

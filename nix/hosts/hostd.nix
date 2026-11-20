@@ -41,7 +41,8 @@ let
   parkFlags = lib.optionalString cfg.park.enable (
     "--park --park-deadline ${toString cfg.park.deadline}s --park-write-rate ${toString cfg.park.writeRateMBs}"
     + " --park-restore-timeout ${toString cfg.park.restoreTimeout}s"
-    + (if cfg.park.keyFile != "" then " --park-key-file ${lib.escapeShellArg cfg.park.keyFile}"
+    + (if cfg.park.launcherPort != 0 then " --park-key-vsock ${toString cfg.park.launcherPort}"
+       else if cfg.park.keyFile != "" then " --park-key-file ${lib.escapeShellArg cfg.park.keyFile}"
        else " --park-key-vault ${lib.escapeShellArg cfg.park.keyVaultUrl} --park-key-name ${lib.escapeShellArg cfg.park.keyName}")
     + lib.optionalString cfg.park.scheduledEvents " --scheduled-events --vm-name ${lib.escapeShellArg cfg.hostName}")
     + lib.optionalString cfg.park.freePageReporting " --free-page-reporting";

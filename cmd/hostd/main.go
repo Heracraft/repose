@@ -97,6 +97,7 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.Park.KeyVaultURL, "park-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
 	fs.StringVar(&o.Park.KeyName, "park-key-name", "", "name of that key")
 	fs.StringVar(&o.Park.KeyFile, "park-key-file", "", "RSA private key (PEM) to wrap image keys with instead of Key Vault (staging, tests)")
+	fs.UintVar(&o.Park.KeyVsockPort, "park-key-vsock", 0, "vsock port on the hypervisor's host where the launcher that holds this VM wraps and unwraps image keys, instead of Key Vault (a host the customer owns, DECISIONS I-1386)")
 	fs.DurationVar(&o.ReadyTimeout, "ready-timeout", 0, "how long a starting guest has to say Ready before the start fails; 0 is 60s, the Azure hosts' figure, and the Mac appliance sets minutes (DECISIONS I-1376: a guest's first boot there said Ready at 70s)")
 	fs.DurationVar(&o.PathsTimeout, "paths-timeout", 0, "how long the registration of a guest's store paths has before the start fails; 0 is 3m (DECISIONS I-1408)")
 	fs.DurationVar(&o.SetupTimeout, "setup-timeout", 0, "how long a guest's project set-up has before the start fails; 0 is 3m (DECISIONS I-1408)")
