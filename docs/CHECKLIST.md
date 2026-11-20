@@ -727,8 +727,18 @@ entry and this list with it. Counts as of 2026-10-21.
       runner is believed to run 4, which is GitHub's documented standard
       spec and **does not appear in the job log** — but a different Postgres
       fsync path, or less overlap between packages, would produce the same
-      times. **Nobody has run the test**, which is `-p 2` here and a
-      remeasure. Whatever the cause, the three reds read all night as "a
+      times. **The `-p 2` remeasure has now been run**, on the whole tree
+      with main merged: **101 packages ok, 0 failures**, with
+      `internal/api/ops` at **20.397 s** (against 414.7 at the default
+      and 53.0 on CI), `resume` **6.611 s** (277.9 / 24.1), `scheduler`
+      **2.468 s** (254.8 / 10.6) and `resting` **2.287 s**. At `-p 2`
+      this box is faster than CI on every one of them, and the three
+      reds read all night as flaky tests **pass**. Caveat, because the
+      comparison is not clean: the default-parallelism figures were
+      taken while several sessions loaded the box and the `-p 2` run
+      was taken when it was quiet, so parallelism and ambient load
+      moved together — this supports the explanation strongly without
+      isolating it. Whatever the cause, the three reds read all night as "a
       starved box" are not evidence of a weak machine, and the cheap thing
       to try is `-p 2` or an api-only pass **before** any test's deadline is
       widened — widening would have hidden the real race one of those reds
