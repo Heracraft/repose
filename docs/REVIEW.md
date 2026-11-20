@@ -132,6 +132,14 @@ review got wrong or nearly did.
   is left. A pass against the build that was reviewed re-finds what is
   already fixed and proves nothing: the second pass runs against the tree
   that holds the fixes.
+- **For a surface a fresh session reviews, that order inverts, in two
+  phases.** The fresh session walks the surface as a customer first, with
+  no report and no card list, and files what it finds; *then* it is given
+  the fixed list and verifies each one. Unprimed first costs nothing and
+  buys a reading that cannot be bought later -- once a session has read
+  what to look for, it cannot un-read it -- and the verification half is
+  mechanical enough to keep. For a surface its own first reviewer returns
+  to, the plain order stands: it is primed already.
 - **A finding that was fixed and regressed outranks a new P2.** The plain
   gate does not say this and a reviewer ranking by customer impact alone
   will bury it.
