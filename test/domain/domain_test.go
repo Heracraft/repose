@@ -67,6 +67,7 @@ var allowed = []struct {
 	{"cmd/hostd/main.go", `"api-addr"`, "hostd's flag default for the same address"},
 	{"internal/hostd/register/register.go", "APIAddr    string", "a comment giving the shape of that address"},
 	{"infra/azure/modules/environment/main.tf", "`api.repose.herakraft.co:443` (nix/hosts/default.nix", "names that unmoved default"},
+	{"docs/reports/2026-11-19-mac-mini-council-mac.md", "--api-server-name api.repose.herakraft.co", "a verbatim quote of what a reviewer ran on the Mac; it names that same unmoved gRPC name, and correcting the quote would falsify the record of what happened"},
 
 	// The api's /metrics router, matched on a Host header the monitoring
 	// peer resolves with one /etc/hosts line, never through DNS.
