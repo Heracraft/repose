@@ -643,14 +643,14 @@ entry and this list with it. Counts as of 2026-10-21.
       `HeartbeatWindow` (90 s); the table ran for 117 s, so the last case
       asked for a host the table meant to be fresh and got `no host with
       capacity`. It passes alone, because alone it finishes inside 90 s
-      (I-1412). Evidence: the seeded time is computed per case, or frozen, or
+      (decision entry on the `pick-clock` branch; cite its id here once that is on main). Evidence: the seeded time is computed per case, or frozen, or
       the window is injected — not a table-wide `time.Now()`. Audit every
       test that seeds `last_heartbeat_at`, `last_seen`, a park deadline or
       any other field a query reads against the clock.
 
 - [ ] Anything made **retryable** is **idempotent first**, or the retry
       duplicates the effect the user sees. Found 2026-11-20 while fixing the
-      asker's deadline (I-1404): an abandoned `POST /ask` can still have
+      asker’s deadline (entry on the `fix-ask` branch; cite its id once merged): an abandoned `POST /ask` can still have
       opened the question, so a blind retry asks the owner the **same
       question twice**. The open now carries a request id the asker makes
       once, guestd answers a repeat with the question it already holds, and
@@ -667,7 +667,7 @@ entry and this list with it. Counts as of 2026-10-21.
       and `repose-ask` reused it for the call that opens a question, as both
       the context and the HTTP client deadline, while the user's
       `--timeout` reached only the payload's `timeout_s`. So the flag could
-      not decide whether the question was ever asked (I-1404). Evidence: the
+      not decide whether the question was ever asked (same entry). Evidence: the
       three deadlines in a call — the dial, the request, and the thing being
       waited for — are separately named, and only the ones that should be
       short are short.
