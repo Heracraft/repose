@@ -38802,3 +38802,67 @@ and the `permissions` union goes through `unique` too. If a case ever
 puts a home-dependent path in `permissions`, `want.json` will take the
 same dependency, and a byte comparison of JSON cannot be fixed the same
 way.
+
+**I-1446. The home page sells the machine again: the headline is "Your
+coding agents, on a machine of their own", the hero's picture is the
+real `repose run` session, 01 compares the two homes instead of listing
+six layers, and no band names a start time or a memory figure for
+either home (home-page, 2026-11-20).** *Made during implementation*
+(the owner's instruction on 2026-11-20 to work on the website now and
+be clear about why somebody would do this; pulls back from I-1169's
+framework pitch and restores I-837's hero. The research is
+`docs/proposals/2026-11-19-home-page-overhaul.md`, which this follows
+except where §6's gating is overtaken, below.)
+
+- *What the page said, and why it changed.* I-1169 sold "a platform for
+  running your own always-on agents", built in layers, with the Orbit
+  as its picture. The owner's reading is that this customer does not pay
+  the bills. The proposal's evidence agrees: the 2026-11-04 council's
+  four highest-scored features are one loop (`repose run`, close the
+  laptop, the work comes back), the 2026-09-27 demand research found the
+  named pain is lid-close and price, and the Own hardware plan's only
+  possible buyer is a developer with a Mac on a desk. So the page sells
+  the machine, and what is added is **where it lives**.
+- *The sentence a stranger repeats*, from the proposal: repose gives
+  your coding agents a machine of their own, on our servers or on a Mac
+  mini you own, and they keep working after you close your laptop.
+- *The hero's picture is the product running.* The proposal found no
+  software page that leads with a diagram of its parts, and every page
+  that leads with a picture leads with the product running.
+  `landing/Terminal.svelte` already drew the Quickstart's real session,
+  read from the docs at build time, so the swap invents nothing. **And
+  the Orbit actively contradicted the new headline**: its centre reads
+  "repose / always on", which is the pitch the headline stopped making.
+  It stays as a `?hero=` candidate.
+- *The pause control follows the picture, not the page.* The Terminal
+  reveals its lines once and stops, so a control there would pause
+  nothing; I-666 asks for one on a **looping** picture. The default page
+  now has none, and a looping candidate from the gallery keeps its own.
+  `landing.spec.ts` checks the geometry there rather than dropping it.
+- *01 Where it runs, on the halves.* Two cells, "On our servers" and "On
+  a Mac mini you own", with the $10 in the Mac cell, replacing 01
+  Layers' six. The x86 box is a docs link rather than a third column,
+  because the docs say what it needs and it is not a product a stranger
+  pictures.
+- *No start time and no memory figure for either home, and the omission
+  is a rule rather than a gap.* The Mac's start is far too slow to print
+  (ENG-70) and what a size means on an owned host is unsettled (ENG-91).
+  Two cells under one heading, one carrying a number and one silent, is
+  an implication rather than an omission, so while either is unprintable
+  for one home the page gives it for neither and the docs carry both.
+  The spec holds it: the band must not match "seconds", "minutes" or a
+  memory figure.
+- *What this does not wait for, and why that is not an invented
+  blocker.* The proposal's §6 gated everything naming the Mac mini on
+  the mac-mini gate and the customer review. The owner retired the
+  review as a gate on 2026-11-20 ("no user is buying... don't invent
+  blockers"), and the machinery it was gating shipped in v0.1.53 the
+  same day. What is **not** retired is a false number, which is why the
+  figures stay out.
+- *The plan's public copy ships here rather than as its own commit.*
+  `7db572b5` drew the Own hardware row and `OWN_HARDWARE` in
+  `lib/plans.ts`; it is in this branch, so the price a stranger can
+  repeat is on the page a stranger reads (ENG-47, ENG-16). On its own it
+  would have redded `landing.spec.ts`, which forbade "your own
+  hardware" anywhere on the page: that list is a statement about what
+  the page sells, and it changed with the page.

@@ -24,13 +24,14 @@ of them:
    and what the logins on it reach, and a snapshot brings the machine
    back.
 
-The reader is a developer who runs agents. The page carries no eyebrow
-(owner, 2026-11-15): the headline opens it. The one use it draws is the
-hero's picture, the Orbit (I-1212, "The hero's picture" below): one
-always-on machine, the five agents that can run on it, what wakes it and
-what it carries, and the question it asks you on your phone. The job
-agent no longer has a band of its own; its trigger is the webhook in the
-Orbit and the triggers cell in 01.
+The reader is a developer who runs coding agents. The page carries no
+eyebrow (owner, 2026-11-15): the headline opens it. Since I-1446 the
+headline sells the machine rather than the platform, and names both
+homes: our servers, or a Mac mini the reader owns. The hero's picture is
+the Quickstart's real `repose run` session (`landing/Terminal.svelte`,
+I-837), so the page leads with the product running; the Orbit it
+replaced drew the always-on pitch the headline no longer makes and is a
+`?hero=` candidate now ("The hero's picture" below).
 
 Two lines are written ahead of shipping on the owner's word (I-1169):
 triggers that start a session, and a tiny machine of 2 GB. They name no
@@ -60,25 +61,34 @@ grid (I-961, option D; see "The sheet" below). In order:
    line, under the logo. The buttons never stand beside the lead at any
    width (owner, 2026-11-02). The install line is mono, exactly what the
    button copies, on one line, scrolling under a fade where its column
-   is narrower. Under the copy, the Orbit
-   (`landing/HeroOrbitV1.svelte`, "The hero's picture" below) on the
-   hero's dark field, which runs to the window's edges and ends on the
-   next band's rule; the page's one motion control stands in the field's
-   top right corner, its chip's right edge on the text line.
-2. **01 Layers. "Build it in layers"** (`#parts`), with "Webhooks" and
-   "Notifications" (the docs pages, set as the Agents links) on the
-   heading's last line, then six cells on the thirds in two rows, split
-   by inner rules with no gap, as the plans are, bottom to top as a
-   machine is built: 1.1 Machine, 1.2 Walls, 1.3 Your setup, 1.4
-   Secrets, 1.5 Triggers, 1.6 Agent. Each is its numbered label, a
-   serif claim, one paragraph and its command in the reference
-   treatment (`repose resize --size large`, `repose run`, `repose
-   secrets set NAME`, `repose notify set --ntfy URL`; the walls and
-   the triggers have none: nothing turns the walls on, and the trigger
-   layer has no command yet). The
-   cells of a row share its tracks (a subgrid), so their paragraphs
-   start on one line. Below 1024px they stack, each under its rule. The
-   titles wrap balanced.
+   is narrower. Under the copy, the Quickstart's real `repose run`
+   session (`landing/Terminal.svelte`, I-1446) on the hero's dark field,
+   which runs to the window's edges and ends on the next band's rule.
+   **No motion control stands there**: the session reveals its lines
+   once and stops, so there is no loop to pause (I-666 asks for the
+   control on a looping picture, not on every picture). A looping
+   candidate loaded with `?hero=` keeps its control in the field's top
+   right corner, its chip's right edge on the text line.
+2. **01 Where it runs** (`#parts`), with "Your own hardware" and
+   "Pricing" (the docs pages, set as the Agents links) on the heading's
+   last line, then **two cells on the halves** (`.cols--halves`), split
+   by one inner rule with no gap as the plans are: 1.1 On our servers,
+   1.2 On a Mac mini you own. Each is its numbered label, a serif
+   claim, one paragraph and its command in the reference treatment
+   (`repose run`, `repose host add`). Below 1024px they stack, each
+   under its rule. The titles wrap balanced.
+
+   **Neither cell names a start time, and neither names a memory
+   figure** (I-1446). The Mac's start is on the board as far too slow
+   (ENG-70) and what a size means on a host the user owns is unsettled
+   (ENG-91); two cells under one heading, one carrying a number and one
+   silent, is an implication rather than an omission, so while either is
+   true of one home the page gives it for neither and the docs carry
+   both. `landing.spec.ts` holds that: the band must not match
+   "seconds", "minutes" or a memory figure. This band replaced **01
+   Layers**, whose six cells built the platform bottom to top; that
+   band argued the framework pitch the page no longer makes, and its
+   subjects live in the docs the heading links.
 3. **02 Permissions. "Let it run with full permissions"**, with one
    paragraph on the heading's last line (you don't approve its commands
    one by one; it can touch its machine and anything the logins on it
@@ -253,9 +263,22 @@ figure of physical equipment (a shelf, a rack, brackets and screws),
 anywhere on the page (owner, 2026-10-04 and 2026-10-19), with one
 exception the owner asked for: the Orbit's ring (I-1212).
 
-## The hero's picture (I-1212)
+## The hero's picture (I-1212, replaced by I-1446)
 
-The hero is the Orbit, `landing/HeroOrbitV1.svelte`: repose in the
+**The hero is the Quickstart's real `repose run` session**,
+`landing/Terminal.svelte` (I-837's hero, restored by I-1446): the pane
+shows what the CLI shows, read from the docs at build time, so nothing
+on it is invented. It reveals its lines once and stops, so it needs no
+pause control, and without scripts or under reduced motion every line
+is there from the first paint. The page leads with the product running,
+which is what every researched page that leads with a picture does.
+
+The Orbit below is what it replaced, kept because `?hero=` still draws
+it and because the reasoning is worth having when the next round reads
+this file. It drew one always-on machine, the agents on a ring, and
+what wakes it: the pitch the headline stopped making at I-1446.
+
+The Orbit was, `landing/HeroOrbitV1.svelte`: repose in the
 middle on its tile ("repose", "always on"), the five agents as bubbles
 on a ring around it, each its mark and its name; out on the left, in
 plain words, what wakes it (every night at 2, an alert goes off, a

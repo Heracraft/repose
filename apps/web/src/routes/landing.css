@@ -501,6 +501,22 @@
 .landing .cols .item-title {
 	text-wrap: balance;
 }
+/* Two cells stand on the halves line instead of the thirds, for a band
+   that compares two things rather than listing six (I-1446). Below
+   1024px they stack like any other .cols. */
+@media (min-width: 1024px) {
+	.landing .cols--halves {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	}
+	.landing .cols--halves > li:nth-child(2) {
+		border-left: 1px solid var(--rule-in);
+		padding-right: var(--edge);
+	}
+	.landing .cols--halves > li:nth-child(1) {
+		padding-left: var(--edge);
+		padding-right: var(--in);
+	}
+}
 /* From 1024px the cells stand on the thirds lines as the plans do: the
    middle cell is a third of the content plus a gap, so the two inner
    rules stand half a gap before the fifth and ninth column lines. */
