@@ -17,6 +17,7 @@ package billing
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -109,6 +110,42 @@ func (g *Gate) FleetAllowed(ctx context.Context, q store.Querier, userID uuid.UU
 	// a plan with no fleet memory is neither placed on the fleet nor
 	// gated by it, and one predicate asked twice cannot drift.
 	return sub.PlanFor(sub.Period(g.Now()).Start).SellsFleetMemory(), nil
+}
+
+// OwnHardwareRequiredMessage is what `POST /hosts` answers an account
+// whose plan sells no host of its own. It names the price, because the
+// customer review found a buyer who committed hardware to the product
+// and was never told it costs anything: the CLI has no plan, billing or
+// price command, and until the public copy is unheld this refusal is
+// the only place in the product that can say the number to someone who
+// asked for a host (ENG-39, ENG-36).
+//
+// The figure comes from the plan table rather than a literal, so it
+// cannot drift from PRICING.md the way a second copy of a price does.
+// url is Config.BillingURL(). The fake api says the same sentence and
+// TestOwnHardwareRefusalIsTheApis holds the two equal.
+func OwnHardwareRequiredMessage(url string) string {
+	plan, ok := OwnPlan()
+	if !ok {
+		// No own-hardware plan in the table at all: say what is true
+		// rather than quote a price for a plan nobody sells.
+		return "Your plan does not include a host of your own. See " + url + "."
+	}
+	hosts := "one host"
+	if plan.Hosts != 1 {
+		hosts = fmt.Sprintf("%d hosts", plan.Hosts)
+	}
+	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s.",
+		plan.Name, Dollars(plan.PriceCents), hosts, url)
+}
+
+// Dollars prints a price the way the product says it: "$10", and "$10.50"
+// when the cents are not whole.
+func Dollars(cents int64) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("$%d", cents/100)
+	}
+	return fmt.Sprintf("$%d.%02d", cents/100, cents%100)
 }
 
 // HostedRefusal is the refusal a project that asked for the hosted fleet

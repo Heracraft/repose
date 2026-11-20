@@ -138,7 +138,7 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if allowed <= 0 {
-		return withDetail(errf("payment_required", "Your plan does not include a host of your own. Choose the Own hardware plan at %s.", s.billingURL()),
+		return withDetail(errf("payment_required", "%s", billing.OwnHardwareRequiredMessage(s.billingURL())),
 			map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	token, hostID := "", uuid.Nil
