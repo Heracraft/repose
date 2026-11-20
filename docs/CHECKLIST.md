@@ -647,3 +647,27 @@ entry and this list with it. Counts as of 2026-10-21.
       the window is injected — not a table-wide `time.Now()`. Audit every
       test that seeds `last_heartbeat_at`, `last_seen`, a park deadline or
       any other field a query reads against the clock.
+
+- [ ] Anything made **retryable** is **idempotent first**, or the retry
+      duplicates the effect the user sees. Found 2026-11-20 while fixing the
+      asker's deadline (I-1404): an abandoned `POST /ask` can still have
+      opened the question, so a blind retry asks the owner the **same
+      question twice**. The open now carries a request id the asker makes
+      once, guestd answers a repeat with the question it already holds, and
+      the id is persisted so a guestd restart mid-retry still answers once.
+      Evidence: a test that fails under load rather than in isolation —
+      which is the shape to look for, since a retry path is only exercised
+      when something is slow. Audit every place a timeout was raised or a
+      retry added: raising a deadline makes the retry path reachable for the
+      first time.
+- [ ] A constant's comment says which command it bounds, and no second
+      command borrows it. Found 2026-11-20: `cmd/repose-hook/main.go`
+      declared `Timeout = 3 * time.Second`, correctly commented as bounding
+      a fire-and-forget hook POST where a miss loses one notification —
+      and `repose-ask` reused it for the call that opens a question, as both
+      the context and the HTTP client deadline, while the user's
+      `--timeout` reached only the payload's `timeout_s`. So the flag could
+      not decide whether the question was ever asked (I-1404). Evidence: the
+      three deadlines in a call — the dial, the request, and the thing being
+      waited for — are separately named, and only the ones that should be
+      short are short.
