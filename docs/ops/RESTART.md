@@ -210,6 +210,29 @@ subject.
   1 when it finds nothing, so a watcher looking for failures reported
   failure *because there were none*.
 
+**A red in a run summary is one of three things, and they look
+identical there.** On 2026-11-20 all three happened:
+
+- **The platform.** The nix evaluate job lost its runner six times,
+  twice at exactly 46m00s and 46m01s, which is a fixed timeout rather
+  than a build. GitHub's own annotation names memory starvation
+  (ENG-144). Re-run it.
+- **Load.** `TestOverlapMenuOnARealTerminal` fails in a full CI run and
+  passes three of three alone in 0.039 s, and `STATUS.md` has recorded
+  it since 2026-11-11. Re-run it.
+- **A test that was wrong and needed a slow scheduler to prove it.**
+  `TestParallelRangesErrors` reproduced about one run in thirty under
+  `-race`, and never in sixty without it: the detector was not causing
+  the failure, it was the only thing slow enough to expose a bound that
+  had been one short since it was written (ENG-148). **Re-running it
+  would have shipped past it.**
+
+**So run the thing locally before you re-run the job.** The first two
+cost a re-run; the third costs a defect. And when a bound is widened,
+check it still catches what it exists to catch: that one was verified
+by removing the `cancel()` it guards and watching the subtest fail at
+every block in the fixture.
+
 **`gh pr checks <n>` aggregates superseded attempts, so a job that
 failed and was re-run green still prints `fail`.** On 2026-11-20 the
 release conductor read all four pull requests as red; three were green.
