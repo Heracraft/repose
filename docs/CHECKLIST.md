@@ -105,6 +105,20 @@ written so none of them goes unnoticed again.
       done-check` notices, and the earlier instance of the same shape is a
       test that passes in isolation and fails under load (the row above on
       retries).
+
+      The other half is the **selector**, which narrows a run without
+      saying so: `-run 'TestDocs'` is unanchored and still misses
+      `TestEveryDocsPageNamesRealCommands`, whose name does not contain
+      `TestDocs`. Found three times on 2026-11-20: a builder reporting
+      the docs contract green from four of six docs tests; `fix-ask`'s
+      trigger set missing `grammar_test.go`; and `just done-check`'s own
+      `internal/cli` filter naming only
+      `TestSuccessOutputNamesNoCommand|TestCLIReassures`, so six tests,
+      two of that morning's reds among them, were run by nothing anyone
+      runs before saying done. All eight run in 0.137 s. So: **a
+      selector or a skip that narrows a run is quoted with the result,
+      or the result is quoted wider than it was measured.** A green is
+      only as wide as the selector that produced it.
 - [ ] `go vet`, `staticcheck`, `gofmt`, `nix flake check`, `tofu validate`
       clean.
 - [ ] The workstream doc's checklist has been re-read and every item that
