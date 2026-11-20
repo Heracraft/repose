@@ -385,17 +385,36 @@ func TestParallelRangesErrors(t *testing.T) {
 		}
 	})
 	t.Run("writer fails", func(t *testing.T) {
+		const parallel, after = 4, 3
 		var calls atomic.Int32
-		err := parallelRanges(context.Background(), size, block, 4, func(_ context.Context, off int64, dst []byte) error {
+		err := parallelRanges(context.Background(), size, block, parallel, func(_ context.Context, off int64, dst []byte) error {
 			calls.Add(1)
 			copy(dst, src[off:])
 			return nil
-		}, &failingWriter{after: 3, err: boom})
+		}, &failingWriter{after: after, err: boom})
 		if !errors.Is(err, boom) {
 			t.Fatalf("got %v", err)
 		}
-		if c := calls.Load(); c > 3+4+1 {
-			t.Fatalf("%d fetches after the writer failed at the 3rd", c)
+		// How far the fetcher can run ahead before the writer's error
+		// stops it, derived from the structure rather than guessed. The
+		// dispatcher is bounded by the buffer pool, which holds
+		// parallel+1, so that many fetches start at once. The consumer
+		// returns one buffer per part it handles, each of which lets one
+		// more fetch start, and it handles `after` parts successfully
+		// plus the one whose write fails. The cancel lands after that
+		// last buffer goes back, so one more fetch can begin.
+		//
+		// The old bound was `after + parallel + 1`, which counted the
+		// workers instead of the pool and was one short. It passed for
+		// weeks and failed under `-race`, where the slower scheduling
+		// reaches the true maximum: 9 observed against 8 allowed, on CI
+		// and here, reproducible in about one run in thirty with
+		// `-race -count=30` (ENG-148).
+		//
+		// This stays tight enough to catch what it is for: a fetcher
+		// that ignored the cancel would reach size/block, which is 50.
+		if c := calls.Load(); c > (parallel+1)+(after+1) {
+			t.Fatalf("%d fetches after the writer failed on write %d, more than the %d the pool allows", c, after+1, (parallel+1)+(after+1))
 		}
 	})
 	t.Run("caller cancels", func(t *testing.T) {
