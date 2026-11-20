@@ -1502,6 +1502,57 @@ value.** A customer has neither the instruction nor the habit. ENG-42's own
 fix — take the argument on stdin or from a file — wants a second half: say,
 at the moment of printing, that it is a credential.
 
+## What happened after the review, and what is still not evidence
+
+Three of this report's findings had fixes committed within two hours of
+being filed. **None of them is closed**, and the reason is a rule this
+repository already has: *closing a card is not evidence.* Each is a branch
+commit, not a released build; every finding here was measured against
+published `v0.1.51` and `appliance-2026.11.19`, and that is what a customer
+has.
+
+| Finding | Fix | Closes when |
+|---|---|---|
+| **ENG-80** — guests do not reliably start | `fix-starts` `1763d4df` | **five of five** `repose start` succeed after a clean `repose stop` on the Mac. Not five first-runs — both my successes were first starts of a fresh machine, so first-runs would miss the broken case. |
+| **ENG-105** — the ask is one-way | `fix-ask` `1068b1ba` | a released build returns an answer to the asking agent, or exits 7 with the question's id |
+| **ENG-100** — the empty console and the false minute | `fix-starts` `1763d4df` | a start fails on a **released** build and `repose logs --kind console` returns the console with the phase named |
+
+**What the causes turned out to be**, recorded because in each case the
+measurement pointed at the right place and the code said why:
+
+- **Two deadlines in two phases**, as the timings implied. The ready window
+  was the host's and already five minutes — which my read of the shipped
+  unit file confirmed, making *"did not answer within a minute"* false copy
+  on a real failure. Registration and set-up were both cut by a **3-minute
+  constant inside `guestd`**, so it lived in the guest closure, could not be
+  raised for this hardware, and the api could name neither phase.
+- **The `publickey` refusal was a symptom of the same timeout.** A guest's
+  user CA and principals file live on tmpfs and are recreated empty at every
+  boot; `hostd` sent both *after* registration, so a start that died in
+  registration left a machine that trusted nobody.
+- **The ask**: a three-second constant written for the fire-and-forget hook
+  POST, borrowed by the call that *opens* a question, while `--timeout`
+  only ever set how long `guestd` would hold the question. Both halves read
+  as correct in isolation.
+
+**And one correction of mine changed a fix.** I had written "reproduced
+twice, 6.1 s both times" for the ask. Only the second run was timed; the
+first was merely observed to finish within 12 s. On the corrected **n=1**,
+the fixing session could reproduce only **3.0 s** of the 6.115 s locally and
+says so in its commit — about 3 seconds remains unaccounted for, with cold
+exec and `guestd` latency named as candidates. Had my "twice" stood, cold
+exec would have been ruled out on my evidence and the search would have gone
+the wrong way.
+
+**A fourth defect came out of the same enumeration and I could not have
+found it**, which is worth recording about the limits of this method: the
+monitor marked a guest's `guestd` lost after 60 s counted from the monitor's
+own start rather than the first connection, so **every healthy Mac boot was
+raising `guestd_lost` and bumping `repose_host_guestd_lost`**. From a
+terminal it was invisible — a metric nobody was reading, on a host reporting
+`online`. That is the fourth thing in one night that was plainly wrong
+underneath while every customer-facing surface said healthy.
+
 ## Signatures
 
 One session writes the confer; this file is `19-council-mac`'s half, with
