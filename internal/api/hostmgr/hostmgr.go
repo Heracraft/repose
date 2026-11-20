@@ -13,6 +13,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -210,6 +211,120 @@ func MintJoinTokenIn(ctx context.Context, tx db.Tx, req JoinTokenRequest) (strin
 	return token, id, err
 }
 
+// HubBootstrap is the WireGuard material a host that has no route to the
+// api's VNet address needs before its first Register (DECISIONS I-1380,
+// settling what I-92 and I-1382 left open): its own private key, its hub
+// address, and the edge's public key and endpoint. The api mints it at
+// `repose host add`, stores the public half on the host's row, and the
+// edge's wgsync peers the host from GET /internal/hosts within its next
+// pass, so the tunnel exists before the machine first boots. Register then
+// travels over it, to the api's gRPC at the control plane's hub address
+// (I-1382), and mints a fresh key pair as it always has: the key that
+// passed through the user's terminal in the install step is dead after
+// registration. The api keeps no copy of PrivateKey.
+type HubBootstrap struct {
+	PrivateKey   string `json:"private_key"`
+	Address      string `json:"address"`
+	EdgePubkey   string `json:"edge_pubkey"`
+	EdgeEndpoint string `json:"edge_endpoint"`
+}
+
+// JoinBundle is what the install step's `%s` carries for a host the user
+// owns (`install.argument` of POST /hosts): the join token and, when the
+// deployment has a hub, the bootstrap material. One base64url string, so
+// it survives a shell line, a copy button and a plist.
+type JoinBundle struct {
+	Version int           `json:"v"`
+	Token   string        `json:"token"`
+	WG      *HubBootstrap `json:"wg,omitempty"`
+}
+
+// JoinBundleVersion is the `v` of every bundle this api writes; a reader
+// refuses what it does not know rather than guessing at the fields.
+const JoinBundleVersion = 1
+
+// EncodeJoinBundle renders the bundle the install step carries.
+func EncodeJoinBundle(b JoinBundle) (string, error) {
+	if b.Version == 0 {
+		b.Version = JoinBundleVersion
+	}
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// DecodeJoinBundle reads a bundle back; the appliance's join unit does
+// the same in shell (nix/hosts/mac.nix), and this is the reference.
+func DecodeJoinBundle(s string) (JoinBundle, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(s))
+	if err != nil {
+		return JoinBundle{}, fmt.Errorf("join bundle: %w", err)
+	}
+	var b JoinBundle
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return JoinBundle{}, fmt.Errorf("join bundle: %w", err)
+	}
+	if b.Version != JoinBundleVersion {
+		return JoinBundle{}, fmt.Errorf("join bundle: version %d, want %d", b.Version, JoinBundleVersion)
+	}
+	if b.Token == "" {
+		return JoinBundle{}, errors.New("join bundle: no token")
+	}
+	return b, nil
+}
+
+// PrepareHub gives a host row that has not registered yet its place on
+// the hub: the guest /22 and wg address Register would otherwise allocate
+// (kept if the row already has them, so a reissued token changes no
+// address), and a bootstrap key pair whose public half goes on the row.
+// From this moment GET /internal/hosts lists the host and the edge peers
+// it. nil, nil when the deployment has recorded no edge (`repose-admin
+// edge init`): the install step then carries the token alone, which is
+// what a host on the api's own VNet needs anyway.
+func PrepareHub(ctx context.Context, tx db.Tx, hostID uuid.UUID) (*HubBootstrap, error) {
+	edgePub, err := store.Setting(ctx, tx, SettingEdgeWGPubkey)
+	if err != nil {
+		return nil, err
+	}
+	edgeEndpoint, err := store.Setting(ctx, tx, SettingEdgeWGEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	if edgePub == "" || edgeEndpoint == "" {
+		return nil, nil
+	}
+	var registered *time.Time
+	var cidr *netip.Prefix
+	var wgIP *netip.Addr
+	if err := tx.QueryRow(ctx, "select registered_at, guest_cidr, wg_ip from hosts where id = $1 for update", hostID).Scan(&registered, &cidr, &wgIP); err != nil {
+		return nil, err
+	}
+	if registered != nil {
+		return nil, fmt.Errorf("host %s is registered; a hub bootstrap is for a host that has not", hostID)
+	}
+	if cidr == nil || wgIP == nil {
+		var seq int64
+		if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
+			return nil, err
+		}
+		c, ip, err := allocate(seq)
+		if err != nil {
+			return nil, err
+		}
+		cidr, wgIP = &c, &ip
+	}
+	priv, pub, err := wgKeypair()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, "update hosts set guest_cidr = $2, wg_ip = $3, wg_pubkey = $4 where id = $1", hostID, *cidr, *wgIP, pub); err != nil {
+		return nil, err
+	}
+	return &HubBootstrap{PrivateKey: priv, Address: wgIP.String() + "/16", EdgePubkey: edgePub, EdgeEndpoint: edgeEndpoint}, nil
+}
+
 // hostByName resolves the row a mint would reuse: among the hosts repose
 // runs for an operator mint, and among the account's own for an owner's,
 // because names are unique per owner since migration 0048.
@@ -341,13 +456,13 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 	var refused error
 	err := db.InTx(ctx, s.pool, func(tx db.Tx) error {
 		var h store.Host
-		row, err := tx.Query(ctx, "select id, name, registered_at, join_token_expires_at from hosts where join_token_hash = $1 for update", hash)
+		row, err := tx.Query(ctx, "select id, name, registered_at, join_token_expires_at, guest_cidr, wg_ip from hosts where join_token_hash = $1 for update", hash)
 		if err != nil {
 			return err
 		}
 		found := row.Next()
 		if found {
-			if err := row.Scan(&h.ID, &h.Name, &h.RegisteredAt, &h.JoinTokenExpiresAt); err != nil {
+			if err := row.Scan(&h.ID, &h.Name, &h.RegisteredAt, &h.JoinTokenExpiresAt, &h.GuestCIDR, &h.WGIP); err != nil {
 				row.Close()
 				return err
 			}
@@ -365,13 +480,22 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 			refused = status.Error(codes.PermissionDenied, "join token expired")
 			return nil
 		}
-		var seq int64
-		if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
-			return err
-		}
-		cidr, wgIP, err := allocate(seq)
-		if err != nil {
-			return err
+		// A host PrepareHub placed on the hub at `host add` keeps its
+		// addresses: the edge already routes its guest range and peers
+		// its wg address, and a fresh allocation would leave that peer
+		// pointing at a range nobody uses. The key pair is always new.
+		var cidr netip.Prefix
+		var wgIP netip.Addr
+		if h.GuestCIDR != nil && h.WGIP != nil {
+			cidr, wgIP = *h.GuestCIDR, *h.WGIP
+		} else {
+			var seq int64
+			if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
+				return err
+			}
+			if cidr, wgIP, err = allocate(seq); err != nil {
+				return err
+			}
 		}
 		wgPriv, wgPub, err := wgKeypair()
 		if err != nil {

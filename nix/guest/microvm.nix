@@ -37,9 +37,22 @@
 , vcpu ? null
 , mem ? null
 , extraKernelParams ? [ ]
+  # The closure's store as a read-only erofs disk the guest boots from,
+  # beside the share (mounted at /nix/.ro-share then): the Mac appliance's
+  # experiment, research doc §10. Off for every product guest.
+, storeOnDisk ? false
 }:
 let
   lib = nixpkgs.lib;
+  # The serial console per architecture (DECISIONS I-1374): Cloud
+  # Hypervisor's serial device is a 16550 at ttyS0 on x86_64 and a PL011
+  # at ttyAMA0 on aarch64. The same split is in internal/hostd/ch (the
+  # command hostd renders) and must stay in step with this one.
+  consoleTTY = { x86_64-linux = "ttyS0"; aarch64-linux = "ttyAMA0"; }.${system};
+  consoleParams =
+    if system == "x86_64-linux"
+    then "console=ttyS0 earlyprintk=ttyS0"
+    else "console=${consoleTTY}";
   # The runner's own defaults, for a runner built without explicit vcpu and
   # mem (hostdev, and a hand-built runner on a dev box); hostd always passes
   # both from internal/hostd/guest.Classes, which is the table that counts.
@@ -92,14 +105,14 @@ let
           hypervisor = "cloud-hypervisor";
           vcpu = defaultVcpu;
           mem = defaultMem;
-          storeOnDisk = false;
+          storeOnDisk = storeOnDisk;
           writableStoreOverlay = "/nix/.rw-store";
           # Guest-side view only: the socket and image paths are placeholders
           # that bin/run replaces with the per-guest ones.
           shares = [{
             tag = "ro-store";
             source = "/nix/store";
-            mountPoint = "/nix/.ro-store";
+            mountPoint = if storeOnDisk then "/nix/.ro-share" else "/nix/.ro-store";
             proto = "virtiofs";
             socket = "virtiofsd.sock";
           }];
@@ -114,8 +127,8 @@ let
           socket = "ch.sock";
         };
         # The kernel's ip= is handled by systemd-network-generator; the
-        # console lives on ttyS0.
-        boot.kernelParams = [ "console=ttyS0" ];
+        # console lives on ttyS0 (x86_64) or ttyAMA0 (aarch64).
+        boot.kernelParams = [ "console=${consoleTTY}" ];
       }
       ({ config, pkgs, ... }: {
         home-manager.useGlobalPkgs = true;
@@ -171,7 +184,23 @@ let
   cfg = guestSystem.config;
   pkgs = guestSystem.pkgs;
   toplevel = cfg.system.build.toplevel;
-  kernel = "${cfg.microvm.kernel.dev}/vmlinux";
+  # With storeOnDisk, what hostd boots in the toplevel's place: the
+  # toplevel's entries beside the repose-store-disk link, which
+  # nixbuild.ClosureInfo reads. The link cannot live inside the toplevel,
+  # since the image holds the toplevel's closure (a cycle).
+  toplevelOnDisk = if !storeOnDisk then null else pkgs.runCommandLocal "repose-guest-system-ondisk" { } ''
+    mkdir $out
+    for f in ${toplevel}/*; do ln -s "$f" $out/; done
+    ln -s ${cfg.microvm.storeDisk} $out/repose-store-disk
+  '';
+  # What Cloud Hypervisor boots: the uncompressed ELF on x86_64, the
+  # arm64 `Image` on aarch64 (what nixpkgs installs for an arm64 kernel,
+  # and the one file Cloud Hypervisor boots there), as microvm.nix's
+  # runner picks them.
+  kernel = {
+    x86_64-linux = "${cfg.microvm.kernel.dev}/vmlinux";
+    aarch64-linux = "${cfg.microvm.kernel.out}/Image";
+  }.${system};
   initrd = cfg.microvm.initrdPath;
   ch = cfg.microvm.cloud-hypervisor.package;
   baseCmdline = lib.concatStringsSep " " (cfg.microvm.kernelParams ++ extraKernelParams);
@@ -269,7 +298,7 @@ let
     mkdir -p "$state_dir"
     rm -f "$api_socket" "$vsock_socket"
 
-    cmdline="console=ttyS0 earlyprintk=ttyS0 ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off systemd.hostname=$hostname"
+    cmdline="${consoleParams} ${baseCmdline} ip=$ip::$gateway:$netmask:$hostname:eth0:off systemd.hostname=$hostname"
     if [ -n "$extra_cmdline" ]; then
       cmdline="$cmdline $extra_cmdline"
     fi
@@ -284,6 +313,7 @@ let
       --console null \
       --serial "$serial" \
       --vsock "cid=$cid,socket=$vsock_socket" \
+      ${lib.optionalString storeOnDisk "--disk path=${cfg.microvm.storeDisk},image_type=raw,readonly=on"} \
       --disk "path=$volume,image_type=raw,direct=on,num_queues=$vcpu" \
       --fs "tag=ro-store,socket=$virtiofs_socket,num_queues=1,queue_size=1024" \
       --net "tap=$tap,mac=$mac" \
@@ -331,7 +361,7 @@ in
 pkgs.runCommand "repose-guest-runner-${baseVersion}-${class}"
 {
   passthru = {
-    inherit toplevel guestSystem class baseVersion;
+    inherit toplevel toplevelOnDisk guestSystem class baseVersion;
     config = cfg;
     kernel = kernel;
     initrd = initrd;

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Every URL the shipped CLI fetches on a customer's machine answers 200 to
+# a client with no credentials: the appliance image and its .sha256, vfkit
+# against its pinned checksum, the CLI release that releases/latest resolves
+# to (checksums.txt, its signature against the release key, the four
+# archives) and install.sh. Exit 1 when any does not, with the asset and
+# the fix named. DECISIONS I-1398; docs/ops/RELEASE.md.
+#
+# The check is TestReleaseAssetsAnswerAnonymously in internal/cli, so the
+# URLs are the constants the code fetches, not a list kept here.
+#
+#   ops/dev/release-assets                      what this checkout pins, the latest CLI release, install.sh
+#   ops/dev/release-assets --cli none           the appliance and vfkit only (release-queue add; release.yml before the publish)
+#   ops/dev/release-assets --cli v0.1.51        that tag's assets, and that releases/latest resolves to it
+#   ops/dev/release-assets --appliance 2026.11.18   a version other than the one the code pins (to see it red)
+#   ops/dev/release-assets --install none       skip install.sh (a checkout whose web deploy is not live)
+set -euo pipefail
+
+usage() {
+  sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//' >&2
+  exit 2
+}
+
+appliance="" cli="" install=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --appliance) appliance=${2:?}; shift 2 ;;
+    --cli) cli=${2:?}; shift 2 ;;
+    --install) install=${2:?}; shift 2 ;;
+    -h | --help) usage ;;
+    *) echo "release-assets: unknown argument $1" >&2; usage ;;
+  esac
+done
+
+command -v go >/dev/null || { echo "release-assets: go is not on PATH; run it in the dev shell (nix develop ./nix)" >&2; exit 1; }
+top=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+cd "$top"
+
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+set +e
+env REPOSE_RELEASE_ASSETS=1 \
+  ${appliance:+REPOSE_RELEASE_ASSETS_APPLIANCE="$appliance"} \
+  ${cli:+REPOSE_RELEASE_ASSETS_CLI="$cli"} \
+  ${install:+REPOSE_RELEASE_ASSETS_INSTALL="$install"} \
+  go test ./internal/cli -run '^TestReleaseAssetsAnswerAnonymously$' -count=1 -v >"$out" 2>&1
+rc=$?
+set -e
+# The lines the test prints, without go test's framing; everything when
+# the build itself failed, since then the framing is the message.
+if grep -q '^=== RUN' "$out"; then
+  grep -v -E '^(=== RUN|--- (PASS|FAIL)|PASS$|FAIL$|ok[[:space:]]|FAIL[[:space:]])' "$out" |
+    sed -E 's/^[[:space:]]+releaseassets_test\.go:[0-9]+: /FAIL /' || true
+else
+  cat "$out"
+fi
+exit $rc

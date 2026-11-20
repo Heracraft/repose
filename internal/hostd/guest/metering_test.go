@@ -94,7 +94,7 @@ func TestCounterResetCountsInFull(t *testing.T) {
 	tap := h.guest(gid1).Tap
 	h.net.Send(tap, 0, 5000)
 	h.m.CollectSamples(ctx)
-	h.net.Counters[gid1] = 300 // the counter was recreated under hostd
+	h.net.Counters[gid1] = 300           // the counter was recreated under hostd
 	h.net.Stats[tap] = [2]uint64{0, 300} // and the tap
 	s := h.m.CollectSamples(ctx)
 	if got := s.Guests[0].NetTxBytesDelta; got != 300 || s.Guests[0].GetNetEgressBytesDelta() != 300 {

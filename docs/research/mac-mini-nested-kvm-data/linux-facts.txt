@@ -1,0 +1,7 @@
+kernel 7.0.0-43-generic
+8
+               total        used        free      shared  buff/cache   available
+Mem:              11           0          10           0           0          11
+Swap:              0           0           0
+crw-rw-rw- 1 root kvm 10, 232 Nov 19 06:42 /dev/kvm
+kernel PE32+ executable (EFI application) Aarch64 (stripped to external PDB), for MS Wi; Image magic  (41524d64 is ARM64)

@@ -8,6 +8,11 @@
 # the pool into (storage.nix). Pool metadata is 1 percent of the disk,
 # clamped to [1 GiB, 16 GiB] (LVM's ceiling), computed in the disko script
 # because the disk size is only known at install time.
+# One disk (`oneDisk`, the Mac appliance, DECISIONS I-1376): the OS disk
+# carries the ESP, a root of `rootSize`, and a third partition that is the
+# PV; there is no data disk. The pool is the same `lvm_vg` either way, and
+# the image ships with the PV partition at its smallest: mac.nix's
+# repose-mac-grow gives it the rest of the disk at first boot.
 {
   lib,
   osDevice,
@@ -17,14 +22,24 @@
   withData ? true,
   # Directory of udev rules that create /dev/disk/azure/*; null outside Azure.
   azureUdevRules ? null,
+  # The PV is the OS disk's third partition and there is no data disk.
+  oneDisk ? false,
+  # The root's size when it does not take the rest of the disk.
+  rootSize ? "32G",
+  # The pool metadata's floor. 1 GiB on a data disk; the one-disk image is
+  # formatted with a 4 GiB PV, where a 1 GiB metadata LV plus its spare
+  # beside a 95 percent pool is more than the VG holds, so the image takes
+  # 64 MiB and repose-mac-grow raises it to the 1 GiB floor once the PV
+  # has grown (mac.nix).
+  poolMetadataFloor ? 1073741824,
 }:
 let
-  # One percent of the PV, clamped to 1 to 16 GiB, in whole MiB: lvcreate
-  # rejects a byte count that is not a multiple of 512 (host-01, 2026-09-20).
-  # The clamp is assigned back to m; as a bare comma operand its value was
-  # discarded, so a 64 GiB test disk got 0.64 GiB and a disk over 1.6 TiB
-  # would have asked for more metadata than a thin pool allows.
-  poolMetadataSize = ''"$(( m = $(blockdev --getsize64 "''${lvm_devices[0]}") / 100, m = (m < 1073741824 ? 1073741824 : (m > 17179869184 ? 17179869184 : m)), m / 1048576 ))m"'';
+  # One percent of the PV, clamped to the floor and 16 GiB, in whole MiB:
+  # lvcreate rejects a byte count that is not a multiple of 512 (host-01,
+  # 2026-09-20). The clamp is assigned back to m; as a bare comma operand
+  # its value was discarded, so a 64 GiB test disk got 0.64 GiB and a disk
+  # over 1.6 TiB would have asked for more metadata than a thin pool allows.
+  poolMetadataSize = ''"$(( m = $(blockdev --getsize64 "''${lvm_devices[0]}") / 100, m = (m < ${toString poolMetadataFloor} ? ${toString poolMetadataFloor} : (m > 17179869184 ? 17179869184 : m)), m / 1048576 ))m"'';
 
   # A symlink under /dev/disk/repose is this hook's own answer from a
   # previous run. /dev is tmpfs, but an install that failed and is retried
@@ -172,11 +187,21 @@ let
           };
         };
         root = {
-          size = "100%";
+          size = if oneDisk then rootSize else "100%";
           content = {
             type = "filesystem";
             format = "ext4";
             mountpoint = "/";
+          };
+        };
+      } // lib.optionalAttrs oneDisk {
+        # Third, after the ESP and the root, which is what mac.nix's
+        # `guestsPartition` and repose-mac-grow count on.
+        guests = {
+          size = "100%";
+          content = {
+            type = "lvm_pv";
+            vg = "vg-guests";
           };
         };
       };
@@ -200,7 +225,7 @@ let
   };
 in
 {
-  disk = (lib.optionalAttrs withOs { inherit os; }) // (lib.optionalAttrs withData { inherit data; });
+  disk = (lib.optionalAttrs withOs { inherit os; }) // (lib.optionalAttrs (withData && !oneDisk) { inherit data; });
 }
 // lib.optionalAttrs withData {
   lvm_vg.vg-guests = {

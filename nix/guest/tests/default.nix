@@ -55,6 +55,11 @@ let
     repose.applyOverlay = false;
     repose.baseVersion = baseVersion;
     repose.guestd.package = guestd;
+    # No test here runs a hostd, so nothing writes the registration stamp
+    # and every node otherwise waits the production figure out before
+    # multi-user.target (DECISIONS I-1408). Ten seconds keeps the unit in
+    # the boot, which several tests read, without paying for it.
+    repose.guestd.pathsWait = 10;
     repose.hookPackage = reposeHook;
     systemd.services.guestd.serviceConfig.ExecStart = lib.mkForce "${fakeGuestd}/bin/fake-guestd";
     # The test driver gives root a password file; the guest has none and the
@@ -1320,14 +1325,17 @@ in
           assert libpq in err, err
           assert "cannot reach https://cache.nixos.org" in err, err
           assert "not supported by store 'daemon'" not in err, err
-          # A boot never pays for that: a timer runs the check four
-          # minutes in, past the 3 min 15 s hostd allows SetupProject, and
+          # A boot never pays for that: a timer runs the check well after
+          # the start, past whatever the host allows the set-up phase, and
           # the unit tolerates its own failure (I-719). A wait inside the
           # unit would instead hold multi-user.target for its whole
-          # timeout on every start, since the set-up stamp only arrives on
-          # a create.
+          # timeout on every start. Four minutes stopped clearing that
+          # allowance when the host gained its own (I-1408: ten minutes on
+          # a Mac appliance, where a start runs about five), so the repair
+          # fired into the middle of a start and competed for the store
+          # with the phase that was running out of time (ENG-80).
           guest.succeed("systemctl cat repose-store-repair.service | grep -q '^ExecStart=-'")
-          guest.succeed("systemctl cat repose-store-repair.timer | grep -qx 'OnBootSec=4min'")
+          guest.succeed("systemctl cat repose-store-repair.timer | grep -qx 'OnBootSec=15min'")
           guest.succeed("systemctl list-timers --all repose-store-repair.timer | grep -q repose-store-repair")
           guest.fail("systemctl cat repose-store-repair.service | grep -q ExecStartPre")
           guest.succeed("systemctl start repose-store-repair.service")
@@ -1676,8 +1684,9 @@ in
           guest.succeed("grep -q '^pi' /home/dev/.repose/agent-windows.live")
           guest.crash()
           guest.start()
-          # Not multi-user.target: repose-paths-wait holds it for 180 s
-          # when no hostd registers paths, as here.
+          # Not multi-user.target: repose-paths-wait holds it for
+          # repose.guestd.pathsWait when no hostd registers paths, as
+          # here.
           guest.wait_for_unit("guestd.service")
           assert guest.succeed("cat /proc/sys/kernel/random/boot_id").strip() != boot
           guestd_s = int(guest.succeed("systemctl show -p ActiveEnterTimestampMonotonic --value guestd.service").strip()) / 1e6

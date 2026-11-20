@@ -23,6 +23,12 @@ outputs = { self, nixpkgs, home-manager, microvm, fragment, ... }: {
   # "${fragment}/personal.nix" imported before it when the file exists
   # (DECISIONS I-490). Only config.system.build.toplevel is required.
   guestSystem = <nixosSystem>;
+  # The same, one per architecture (DECISIONS I-1374): a flake cannot read
+  # the builder's own system, so hostd names the attribute for the host it
+  # runs on. `guestSystem` is `guestSystems.x86_64-linux`, kept under its
+  # old name for every base revision and hostd release before I-1374.
+  guestSystems.x86_64-linux = <nixosSystem>;
+  guestSystems.aarch64-linux = <nixosSystem>;
 };
 ```
 
@@ -80,6 +86,10 @@ L, in order:
      --override-input fragment path:/var/lib/repose/builds/R \
      "git+file:///var/lib/repose/base/B?dir=nix#guestSystem.config.system.build.toplevel.drvPath"
    ```
+
+   On an aarch64 host the attribute is
+   `guestSystems.aarch64-linux.config.system.build.toplevel.drvPath`
+   (`nixbuild.DefaultEvalAttr`, by the host's own architecture).
 
    The flake is named through `git+file://` with `dir=nix`, not `path:`,
    because `nix/packages.nix` builds the Go binaries from the repository
@@ -140,8 +150,9 @@ L, in order:
    applied (`nixbuild.KernelChanged`).
 
 The attribute path after `#` is the hostd flag `--eval-attr`
-(default `guestSystem.config.system.build.toplevel.drvPath`), so 12 can
-rename the output without a hostd change. The daemon on a host caps the
+(default `guestSystem.config.system.build.toplevel.drvPath` on x86_64,
+`guestSystems.aarch64-linux.config.system.build.toplevel.drvPath` on
+aarch64), so 12 can rename the output without a hostd change. The daemon on a host caps the
 same numbers (`nix/hosts/gc.nix`: sandbox, max-jobs 2, cores 8, the
 substituters), so an unprivileged client passing them changes nothing it
 could not already have.
@@ -198,7 +209,8 @@ were captured with a `personal.nix` beside the fragment and
 `TestMapEvalErrorPersonal` pins their `machine.nix` summaries and
 `personal_line`). `realnix_test.go` runs
 the whole pipeline against `testdata/miniflake` (the same `fragment` input
-and `guestSystem` output, nixpkgs at the platform's locked revision, no
+and `guestSystem` and `guestSystems.aarch64-linux` outputs, nixpkgs at the
+platform's locked revision, no
 home-manager) when `REPOSE_NIX_TESTS=1`: the five canonical cases with the
 timeout lowered to 5 s and the cap to 100 MB, the restrict-eval checks,
 the success path with its GC root, and `kernel_changed` across a

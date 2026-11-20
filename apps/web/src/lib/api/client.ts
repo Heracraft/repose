@@ -33,6 +33,7 @@ import type {
 	ApiToken,
 	CreateTokenRequest,
 	OwnedHost,
+	Placement,
 	Samples,
 	SampleWindow,
 	Say,
@@ -203,6 +204,8 @@ export const createProject = (body: {
 	remote_url?: string;
 	tz?: string;
 	expires_in_s?: number;
+	/** Where it runs (I-1390): a host the account owns, or repose's servers. */
+	placement?: Placement;
 }) => request<Project>('/projects', { method: 'POST', body });
 export const patchProject = (
 	id: string,
@@ -359,8 +362,7 @@ export const deleteToken = (name: string) =>
 // one that carries the join token, as a minted API token's is.
 /** passive: a side read beside the project list, which must not clear an
  *  outage bar of its own (I-1370). */
-export const listHosts = (opts: { passive?: boolean } = {}) =>
-	request<OwnedHost[]>('/hosts', opts);
+export const listHosts = (opts: { passive?: boolean } = {}) => request<OwnedHost[]>('/hosts', opts);
 export const createHost = (body: { name?: string }) =>
 	request<OwnedHost>('/hosts', { method: 'POST', body });
 export const deleteHost = (id: string) =>

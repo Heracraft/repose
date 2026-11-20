@@ -142,6 +142,7 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 			map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	token, hostID := "", uuid.Nil
+	var hub *hostmgr.HubBootstrap
 	err = db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
 		// The name before the count: an account at its one-host limit
 		// asking for the name it already uses is told about the name,
@@ -181,6 +182,13 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 		var err error
 		token, hostID, err = hostmgr.MintJoinTokenIn(r.Context(), tx,
 			hostmgr.JoinTokenRequest{Name: name, Provider: "metal", Owner: &owner, Reissue: reissue})
+		if err != nil {
+			return err
+		}
+		// A machine of the user's has no route to the api's VNet address,
+		// so it gets its place on the hub now and reaches the api over
+		// WireGuard from its first boot (DECISIONS I-1380).
+		hub, err = hostmgr.PrepareHub(r.Context(), tx, hostID)
 		return err
 	})
 	if err != nil {
@@ -196,7 +204,7 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 	// The token is never logged: it is a credential that takes over a
 	// machine (CLAUDE.md "Never log what a tenant typed").
 	obs.Logger(r.Context(), s.d.Log).Info("host added", "event", "host_add", "host_id", h.ID.String())
-	install, err := s.hostInstall(r, token)
+	install, err := s.hostInstall(r, token, hub)
 	if err != nil {
 		return err
 	}
@@ -277,19 +285,26 @@ func (s *Server) hostsAllowed(r *http.Request, u *store.User) (int, error) {
 }
 
 // hostInstall is the `install` object of the POST answer: the one line to
-// run on the machine with the token already in it, and the page that
-// explains it. `command` is empty while no installer line has been
-// recorded, and a client then shows the token and the page.
-func (s *Server) hostInstall(r *http.Request, token string) (map[string]any, error) {
+// run on the machine with its argument already in it, the argument on its
+// own, and the page that explains it. The argument is the join bundle
+// (hostmgr.JoinBundle): the token and, where the deployment has a hub,
+// the WireGuard material the machine needs before it can reach the api
+// at all (DECISIONS I-1380). `command` is empty while no installer line
+// has been recorded, and a client then shows the argument and the page.
+func (s *Server) hostInstall(r *http.Request, token string, hub *hostmgr.HubBootstrap) (map[string]any, error) {
 	tmpl, err := store.Setting(r.Context(), s.d.Pool, SettingHostInstall)
+	if err != nil {
+		return nil, err
+	}
+	arg, err := hostmgr.EncodeJoinBundle(hostmgr.JoinBundle{Token: token, WG: hub})
 	if err != nil {
 		return nil, err
 	}
 	command := ""
 	if strings.Contains(tmpl, "%s") {
-		command = strings.Replace(tmpl, "%s", token, 1)
+		command = strings.Replace(tmpl, "%s", arg, 1)
 	}
-	return map[string]any{"command": command, "url": s.docsURL("own-hardware")}, nil
+	return map[string]any{"command": command, "argument": arg, "url": s.docsURL("own-hardware")}, nil
 }
 
 // nextHostName names a host the caller did not name: `host-1`, then the

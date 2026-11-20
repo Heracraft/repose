@@ -17,6 +17,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -98,6 +99,12 @@ type Info struct {
 	Initrd       string
 	Init         string
 	KernelParams string
+	// StoreDisk is <closure>/repose-store-disk resolved: a read-only erofs
+	// image of the closure's store that the guest boots from a virtio-blk
+	// disk instead of the virtiofs share (an experiment on the Mac
+	// appliance, research doc §10; the share stays for later closures).
+	// Empty when the closure has none, which every production guest is.
+	StoreDisk string
 }
 
 // ClosureInfo reads kernel, initrd, init and kernel-params from a NixOS
@@ -115,11 +122,23 @@ func ClosureInfo(closure string) (Info, error) {
 	if _, err := os.Stat(in.Init); err != nil {
 		return in, fmt.Errorf("closure init: %w", err)
 	}
+	// Resolved, so a closure that is a wrapper beside the toplevel (the
+	// store-disk case: its init is a link into the toplevel, and only the
+	// toplevel is in the guest's store) names an init the guest can find.
+	// A toplevel's own init resolves to itself.
+	if r, err := filepath.EvalSymlinks(in.Init); err == nil {
+		in.Init = r
+	}
 	b, err := os.ReadFile(filepath.Join(closure, "kernel-params"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return in, fmt.Errorf("closure kernel-params: %w", err)
 	}
 	in.KernelParams = strings.TrimSpace(string(b))
+	if sd, err := filepath.EvalSymlinks(filepath.Join(closure, "repose-store-disk")); err == nil {
+		in.StoreDisk = sd
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return in, fmt.Errorf("closure repose-store-disk: %w", err)
+	}
 	return in, nil
 }
 
@@ -151,7 +170,7 @@ type Real struct {
 	// above nix/) or "path" (path:<checkout>/nix, for a self-contained test
 	// flake).
 	BaseScheme    string
-	EvalAttr      string // guestSystem.config.system.build.toplevel.drvPath
+	EvalAttr      string // DefaultEvalAttr(): guestSystem.config.system.build.toplevel.drvPath on x86_64
 	Substituters  string
 	MemoryMax     string // 16G
 	Roots         gcroot.Roots
@@ -171,6 +190,20 @@ type Real struct {
 	LogLines int
 }
 
+// DefaultEvalAttr is the flake attribute a Build evaluates on this
+// architecture (docs/interfaces/nix-build-contract.md). A flake cannot
+// read the builder's own system, so the base carries one guest system per
+// architecture under `guestSystems.<system>` (DECISIONS I-1374); on x86_64
+// it stays `guestSystem`, the name every base revision before I-1374 and
+// every earlier hostd release use, so an x86 host keeps building old
+// revisions unchanged.
+func DefaultEvalAttr() string {
+	if runtime.GOARCH == "arm64" {
+		return "guestSystems.aarch64-linux.config.system.build.toplevel.drvPath"
+	}
+	return "guestSystem.config.system.build.toplevel.drvPath"
+}
+
 // Defaults fills the documented values into zero fields.
 func (b *Real) Defaults() *Real {
 	if b.BaseSubdir == "" {
@@ -180,7 +213,7 @@ func (b *Real) Defaults() *Real {
 		b.BaseScheme = "git"
 	}
 	if b.EvalAttr == "" {
-		b.EvalAttr = "guestSystem.config.system.build.toplevel.drvPath"
+		b.EvalAttr = DefaultEvalAttr()
 	}
 	if b.Substituters == "" {
 		// The platform overlay cache is a host option
@@ -687,6 +720,8 @@ type Fake struct {
 	Lines        []string
 	Exists       map[string]bool
 	Calls        []Request
+	// Registration is what DumpDB returns (see DumpDB below).
+	Registration []byte
 	// Closures maps a closure to its requisites; a closure not in it is
 	// its own only requisite.
 	Closures map[string][]string
@@ -742,7 +777,15 @@ func (f *Fake) Requisites(_ context.Context, paths ...string) ([]string, error) 
 }
 
 // DumpDB implements Builder with an empty listing.
-func (f *Fake) DumpDB(context.Context, string) ([]byte, error) { return nil, nil }
+// DumpDB implements Builder. Registration is what it returns: nil, the
+// default, skips the RegisterPaths call of a delivery, which is why no
+// test covered that phase until the Mac appliance started failing in it
+// (ENG-80, DECISIONS I-1408).
+func (f *Fake) DumpDB(context.Context, string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Registration, nil
+}
 
 // PathExists implements Builder.
 func (f *Fake) PathExists(_ context.Context, path string) (bool, error) {

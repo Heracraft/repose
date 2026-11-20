@@ -46,7 +46,12 @@ type Host struct {
 // the host's kind, and then the token and URL are all there is to give.
 type Install struct {
 	Command string `json:"command"`
-	URL     string `json:"url"`
+	// Argument is what the step takes, on its own: the join bundle, the
+	// token with the machine's place on the hub inside it (DECISIONS
+	// I-1380). It is what stdout carries when no line is recorded, so a
+	// user with the docs page can still run the step by hand.
+	Argument string `json:"argument,omitempty"`
+	URL      string `json:"url"`
 }
 
 // CreateHostRequest is POST /hosts. An empty Name lets the api name it.

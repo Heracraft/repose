@@ -315,6 +315,29 @@ proves each:
   every message and its check. Proven by the `foreign_test.go` in
   `internal/api/resting`, `say`, `questions`, `triggers` and `buildlog`.
 
+- **The install step.** `repose host add` prints one line whose
+  argument is the join bundle (DECISIONS I-1380): the single-use join
+  token and the machine's place on the hub, a WireGuard private key
+  with its address and the edge's peer, minted by the api, which keeps
+  the public half only. It crosses the user's terminal, clipboard and
+  shell history as the token always did, and it is worth exactly what
+  the token was worth: before registration, whoever reads it can bring
+  up a tunnel as that host and reach the api's gRPC port, which answers
+  only a Register with that same token, so the bundle grants the power
+  to register a machine as the user's host and nothing more; after
+  registration the token is spent and Register has replaced the key, so
+  the edge no longer peers it and the bundle opens nothing. An unused
+  bundle dies with its token: an unregistered host leaves the edge's
+  peer list when its token expires (24 hours) or the host is removed,
+  and `repose host rm` then `host add` replaces a lost bundle with a new
+  key and kills the old one. Nothing logs it, by test: the api's
+  `TestHostAddPeersTheHubBeforeRegistration` reads its own log for the
+  argument and the key; the appliance's join unit logs events, never
+  values (`host-mac` VM check). What this does not stop: a user who
+  pastes the line somewhere public before running it, who has handed
+  out the right to add a machine to their account, and takes it back
+  with `repose host rm`.
+
 What this does not stop: the owner reading their own guests' memory and
 volumes, which are theirs; a host lying about itself in its samples,
 events and logs, which the api bounds (row 11) and the operator reads

@@ -85,6 +85,26 @@ then the queue. §6.
 
 ## 4. Settled shape (the assumptions the builders build on)
 
+**The owner, 2026-11-19, verbatim: "You are free to question the initial
+assumptions made by the development process. For example, do we have to use
+Cloud Hypervisor? Perhaps a different one for the Mac minis, something more
+efficient for their environment. As long as guests have NICs and boot, we're
+good. Weigh the guest cost against maintenance."** So everything below is a
+default and not a wall. A session that finds a better shape says so with
+numbers rather than building to the list.
+
+The live example, which the council's engineer hat and 19f both owe an
+opinion on: the deepest alternative on a Mac is **no appliance at all** -
+each project's machine run directly on Virtualization.framework by a macOS
+hostd, which removes the nesting, the appliance's kernel pin and one layer
+of memory, and would attack the four-minute start at its root. The cost is
+a second hostd platform to maintain: LVM thin pools become APFS clones,
+taps become vmnet, systemd becomes launchd. A middle option, keeping the
+appliance and the x86 hostd but a lighter VMM inside it, buys little. The
+honest comparison in a few lines, with numbers from the Mac we have, goes
+to the owner with the council's report. **Nothing is rebuilt on this before
+the release.**
+
 Each is a decision entry a builder writes under "Made during
 implementation" with the id given, unless the owner overrides it first.
 
@@ -201,6 +221,28 @@ Cachix and switches; the api accepts the previous hostd release for
 one release; RUNBOOK section.
 
 ## 6. The user council
+
+**The owner's scope, 2026-11-19, verbatim: "The last review must be super
+ruthless, like going through every combination, possible combination.
+Every feature, try it out, find errors, be a real customer. CLI and
+dashboard."** So the council is not the Mac mini path alone. It is every
+feature the product has, every command of the CLI and every action of the
+dashboard, in every combination a customer could reach: plans and plan
+changes, the four sizes, projects created and destroyed and restored,
+secrets, triggers and webhooks, the phone ask, pause and resume, snapshots,
+`host add` and `host rm`, cancellation, the lot. Every error reproduced and
+ranked.
+
+That is more than one session's day, so it is **two or three council
+sessions** with a split, each a real customer with a stopwatch, conferring
+at the end into one report: one on the CLI, one on the dashboard, one on the
+Mac path. Each writes what it did, what it waited for, what it had to read
+twice and what it would have tweeted; the confer produces the single
+ranked list. A finding one session cannot reproduce is the other's to try
+before it is dropped.
+
+The Mac mini half, which the rest of this section describes, is one of
+those three and the one the owner cannot test at all:
 
 The owner does not own a Mac mini and cannot test this; the council is
 the stand-in for the users who would otherwise scream. After phase 3

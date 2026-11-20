@@ -140,10 +140,10 @@ type Fake struct {
 	apiTokens map[string]*fakeToken
 	// calls counts the requests that reached each route pattern, for a
 	// test that cares how many round trips a command costs (Calls).
-	calls     map[string]int
-	users     map[string]*userRec
-	projects  map[string]*project
-	ops       map[string]*op
+	calls    map[string]int
+	users    map[string]*userRec
+	projects map[string]*project
+	ops      map[string]*op
 	// webhookTombstones are the hex sha256 of tokens rotated or removed
 	// (DECISIONS I-1110); the edge answers 410 for them.
 	webhookTombstones []string

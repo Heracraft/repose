@@ -49,12 +49,23 @@ const NotifyQueue = 256
 // DefaultDeadline bounds a request handler that does not set its own.
 const DefaultDeadline = 30 * time.Second
 
-// BootDeadline bounds RegisterPaths and SetupProject, which wait on the
-// boot: the load of the closure's registration, and home-manager's first
-// activation before the session unit starts. A busy host took both past
-// DefaultDeadline and failed creates that would have finished (DECISIONS
-// I-705).
-const BootDeadline = 3 * time.Minute
+// BootDeadline backstops RegisterPaths and SetupProject, which wait on
+// the boot: the load of the closure's registration, and home-manager's
+// first activation before the session unit starts. A busy host took both
+// past DefaultDeadline and failed creates that would have finished
+// (DECISIONS I-705).
+//
+// It is a backstop and no longer the deadline that decides a start. How
+// long either phase takes is a property of the host's hardware, so the
+// host sets the limit it will wait (hostd's --paths-timeout and
+// --setup-timeout) and reports which phase ran out; this one only stops a
+// handler living forever, and so sits well above any host's figure. While
+// it was 3 minutes it was the limit that fired on hardware slower than
+// Azure, and the guest's own error reached the user as a sentence that
+// named no phase: on the Mac appliance every start after a stop failed in
+// this pair, five for five, and the phase was unknowable (ENG-80,
+// DECISIONS I-1408).
+const BootDeadline = 20 * time.Minute
 
 // ReadyPollInterval is how often the readiness check looks for sshd. It
 // reads /proc/net/tcp and stops at the first hit, so a short step costs

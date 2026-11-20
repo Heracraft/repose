@@ -57,7 +57,9 @@ func (s *Service) PlansForSale() []Plan { return s.cfg.PlansForSale() }
 // (as plan_limit's did, I-633).
 const MsgPlanKind = "the Own hardware plan and the hosted plans sell different things; cancel this plan, then choose the other one when it ends"
 
-// PlanChoices lists plan ids as a refusal names them: "solo, plus or pro".
+// PlanChoices lists the plan ids this deployment sells as a refusal
+// names them: "solo, plus and pro", or with the fourth product
+// configured, "solo, plus, pro and own".
 func PlanChoices(plans []Plan) string {
 	ids := make([]string, 0, len(plans))
 	for _, p := range plans {
@@ -132,7 +134,18 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 	} else {
 		period = Period{Start: now.AddDate(0, 0, -30), End: now}
 	}
-	plan := sub.PlanFor(period.Start)
+	// With no subscription the account has no plan, and the usage block
+	// names no plan's figures: memory_gb, disk_gb and egress_included_gb
+	// are 0, which a client reads as "nothing caps this" (the
+	// own-hardware shape, I-1364), and no overage is owed. sub.PlanFor on
+	// a nil subscription answers Solo (PlanOrSolo), and the dashboard
+	// measured a billing-exempt account against Solo's 8, 100 and 250,
+	// said it was over and that creating was refused, then created
+	// (DECISIONS I-1396).
+	var plan Plan
+	if sub != nil {
+		plan = sub.PlanFor(period.Start)
+	}
 	usage, err := LoadUsage(ctx, s.pool, u.ID, plan, period)
 	if err != nil {
 		return nil, err

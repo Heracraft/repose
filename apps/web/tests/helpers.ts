@@ -422,6 +422,9 @@ export async function ownedHost(body: {
 	limit?: number;
 	set_install?: boolean;
 	install_line?: string;
+	/** Moves the host of that name to `state` (`registering` is waiting). */
+	state_host?: string;
+	state?: string;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',

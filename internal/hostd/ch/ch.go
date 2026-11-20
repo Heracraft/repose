@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,11 @@ type Spec struct {
 	DiskIOPS        uint64
 	DiskBytesPerSec uint64
 	StoreTag        string // ro-store
+	// StoreDisk is the closure's read-only store image (nixbuild.Info);
+	// set, it is a second virtio-blk disk, read-only, and the guest mounts
+	// it as its lower store layer instead of the share. Empty on every
+	// production closure today.
+	StoreDisk string
 	// Hostname is the guest's name on the kernel line (the project slug,
 	// DECISIONS I-550); empty, or not a DNS label, leaves the closure's
 	// default (repose-guest).
@@ -80,6 +86,19 @@ func Hostname(name string) string {
 	return name
 }
 
+// ConsoleTTY is the guest's serial console on this architecture: Cloud
+// Hypervisor's serial device is a 16550 at ttyS0 on x86_64 and a PL011 at
+// ttyAMA0 on aarch64 (DECISIONS I-1374). hostd runs on the host whose
+// guests it starts, so the host's own architecture is the guest's. The
+// same split is in nix/guest/microvm.nix (the runner's bin/run and the
+// base's console= line) and must stay in step with this one.
+func ConsoleTTY() string {
+	if runtime.GOARCH == "arm64" {
+		return "ttyAMA0"
+	}
+	return "ttyS0"
+}
+
 // Cmdline renders the kernel command line: the closure's init and params,
 // the serial console, the static address the guest's networkd reads and,
 // when Hostname is a DNS label, the guest's name. systemd.hostname= wins
@@ -91,7 +110,7 @@ func (s Spec) Cmdline() string {
 		parts = append(parts, p)
 	}
 	host := Hostname(s.Hostname)
-	parts = append(parts, "console=ttyS0",
+	parts = append(parts, "console="+ConsoleTTY(),
 		fmt.Sprintf("ip=%s::%s:%s:%s:eth0:off", s.IP, s.Gateway, s.Netmask, host))
 	if host != "" {
 		parts = append(parts, "systemd.hostname="+host)
@@ -134,16 +153,25 @@ func (s Spec) Args() []string {
 		// The rate limiter is Cloud Hypervisor's own, applied before the
 		// request reaches the volume, so it holds with direct=on and covers
 		// nothing the host does to the volume itself (snapshots, restores).
-		"--disk", "path=" + s.VolumeDev + ",image_type=raw,direct=on" + s.diskLimits(),
+	}
+	// The store disk goes first: the guest's drive letters follow
+	// microvm.nix's order, store disk then volumes, so with a store disk
+	// the volume is /dev/vdb; the other way round stage 1 fscks the erofs
+	// as its root (lab image 6, 2026-11-19).
+	if s.StoreDisk != "" {
+		args = append(args, "--disk", "path="+s.StoreDisk+",image_type=raw,readonly=on")
+	}
+	args = append(args,
+		"--disk", "path="+s.VolumeDev+",image_type=raw,direct=on"+s.diskLimits(),
 		"--net", fmt.Sprintf("tap=%s,mac=%s", s.Tap, s.MAC),
 		"--fs", fmt.Sprintf("tag=%s,socket=%s", s.StoreTag, VirtiofsSocket(s.GuestDir)),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", s.CID, VsockSocket(s.GuestDir)),
-		"--serial", "socket=" + ConsoleSocket(s.GuestDir),
+		"--serial", "socket="+ConsoleSocket(s.GuestDir),
 		"--console", "off",
 		// Cloud Hypervisor's default; written out so a build that flips the
 		// default, or an operator reading ch.args, sees the filter is on.
 		"--seccomp", "true",
-	}
+	)
 	if s.AuthTag != "" {
 		args = append(args, "--fs", fmt.Sprintf("tag=%s,socket=%s", s.AuthTag, AuthSocket(s.GuestDir)))
 	}

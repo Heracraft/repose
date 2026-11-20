@@ -388,9 +388,10 @@ Every guest has herdr from the base, whatever its multiplexer; only a
 project whose `project.json` names herdr runs its server.
 
 - **Package.** `herdr` from `nix/overlay/agents/herdr.nix`, upstream's
-  static-pie x86-64 release pinned in `nix/overlay/agents/versions.json`
-  (`herdr.version`, `herdr.x86_64-linux.url` and `.hash`, the agents'
-  shape) and moved by `scripts/bump-agents.sh`.
+  static-pie release pinned in `nix/overlay/agents/versions.json`
+  (`herdr.version`, `herdr.x86_64-linux.url` and `.hash`, and the same
+  under `aarch64-linux`; the agents' shape, DECISIONS I-1374) and moved by
+  `scripts/bump-agents.sh`.
   The derivation's install check runs `herdr status client --json` and
   fails unless `endpoint_protocol_generation == 1` and `protocol >= 22`.
   It is in `environment.systemPackages`, so
@@ -855,10 +856,37 @@ repose-ask --cancel [ID | --all]
   answer on stdout. `--options` (at most 3, comma-separated, 64 bytes each)
   makes the answer one of them and gives ntfy, email and Google Chat buttons;
   `--timeout` is a duration or seconds, default 30 minutes, at most 24
-  hours. Flags may come before or after the question. While guestd is
-  unreachable (a restart) it retries for 2 minutes. SIGINT, SIGTERM or
-  SIGHUP cancel the question (`DELETE /ask/<id>`, reason `interrupted`) and
-  exit 130.
+  hours. Flags may come before or after the question.
+- `--timeout` is the only deadline that ends an ask (I-1404). Getting the
+  question open is part of it: while guestd is unreachable or does not
+  answer -- a restart, or a guest loaded enough that opening a question
+  takes seconds -- the asker keeps trying for 2 minutes, and never for
+  longer than `--timeout`, since a question that is not open yet cannot be
+  answered. The hook POST's 3 seconds bound hooks and `repose-notify`
+  alone. The failure this prevents: a 3-minute ask that gave up in
+  seconds, while guestd went on to open the question, so the owner
+  answered one nothing was waiting for and the agent carried on as if
+  they had said nothing (ENG-105).
+- Opening a question is idempotent. Each open carries a `request_id` the
+  asker makes once, and guestd answers a repeat of that id with the
+  question it already opened, so a retry never puts the same question to
+  the owner twice; an asker that sends none gets one question per POST,
+  and a guestd that does not read it is no worse than before. guestd also
+  lifts the socket's write deadline for the open (`OpenWait`, 30 s), as it
+  does for a long poll: a cut-off answer leaves it holding a question
+  whose asker was never told the id. Before the asker reports a question
+  unasked it asks guestd for its own open questions (`GET /ask`), because
+  an open whose answer was lost is not an open that failed. When guestd
+  holds the question, the asker takes it up and waits, so the outcome is
+  the wait's: the answer, the question's own timeout, or 7.
+- SIGINT, SIGTERM or SIGHUP cancel the question (`DELETE /ask/<id>`, reason
+  `interrupted`) and exit 130, during the open as well as during the wait,
+  since the open may now take minutes: a signal ends the attempt in
+  flight, and takes back a question an abandoned attempt had opened. The
+  asker says the question is cancelled only when guestd confirmed it;
+  otherwise it names the question and says it closes 90 seconds later,
+  which is the orphan sweep, or says no question was asked when guestd
+  holds none.
 - `repose-ask --secret NAME` (I-929) asks the owner for the value of the
   named secret NAME (`[A-Z][A-Z0-9_]{0,63}`, not `BASH_ENV`, `ENV` or
   `REPOSE_ENV_GEN`; exit 2 otherwise, or with `--options`). The owner
@@ -894,15 +922,20 @@ repose-ask --cancel [ID | --all]
   hostd connection for 10 minutes, beside the open questions; the api
   applies a close only to a pending question.
 
+A caller must be able to tell "I could not ask" from "I asked and have no
+answer yet" (I-1406): 1 is the first, 7 the second, and an agent that
+reads 7 as 3 proceeds as though the owner declined to answer.
+
 | Exit | Meaning |
 |---|---|
 | 0 | answered; the answer is on stdout (with `--secret`, the secret is on the machine and nothing is printed) |
-| 1 | guestd unreachable, refused the question, or lost for 2 minutes |
+| 1 | no question of the caller's is waiting for an answer: guestd did not answer within `--timeout` (at most 2 minutes) and holds none of theirs, or it refused the question, or the asker withdrew it |
 | 2 | usage: no question, more than 3 options, a bad `--timeout`, a bad `--secret` name or `--secret` with `--options` |
 | 3 | no answer before the timeout |
 | 4 | no notification channel is on for the owner (email off, no ntfy, no working Google Chat webhook) |
 | 5 | cancelled: the owner dismissed it, the agent withdrew it, the guest stopped, or the question is gone (the guest rebooted) |
 | 6 | the user sent the asking agent a prompt, which closed the question (I-690) |
+| 7 | asked, open, and nothing is waiting for it: the asker stopped waiting, because guestd was lost for 2 minutes while it waited or answered the wait with something it could not read. The id is on stderr. The owner may still answer, and guestd closes it 90 seconds after the last poll (`asker_gone`), so a caller that needs the answer asks again and one that no longer wants it withdraws it with `--cancel ID` (I-1406) |
 | 130 | interrupted |
 
 ## Triggers (DECISIONS I-1248..I-1262)

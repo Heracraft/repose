@@ -14,7 +14,9 @@ change to either happens in the same commit.
 | `/var/lib/repose/builds/<revision_id>/` | `fragment.nix` for a `Build`; see `nix-build-contract.md` |
 | `/var/lib/repose/base/<base_ref>/` | checkout of the platform repository at that revision (its `nix/` is the flake hostd evaluates) |
 | `/run/repose/hostd.sock` | hostd's operator control socket (`hostd status`, `guests`, `snapshot-all`, `drain`, `reconcile`, `park`, `unpark`, `pause <guest_id>`, `wake <guest_id>`). `park` and `unpark` were `freeze` and `thaw` until I-1002; the socket answers `POST /freeze` and `POST /thaw` as well for one release, and they are removed the release after. The record directory and the image volumes keep their `freeze`/`frz-` names on purpose (I-1002): a switch replaces hostd and the host then reboots, so guests are parked by the old binary and unparked by the new one, and renaming either would lose a guest's memory on the very restart that shipped the rename. |
-| `/run/repose/join-token` | one-shot registration token, written to the installed system over SSH by `infra/azure/modules/host` or by hand per the runbook, mode 0600, deleted after Register. Not from cloud-init: nixos-anywhere replaces the system that ran cloud-init (DECISIONS I-20) |
+| `/run/repose/join-token` | one-shot registration token, written to the installed system over SSH by `infra/azure/modules/host` or by hand per the runbook, mode 0600, deleted after Register. Not from cloud-init: nixos-anywhere replaces the system that ran cloud-init (DECISIONS I-20). On the Mac appliance, written by `repose-launcher-join` from the launcher's share (below, I-1380) |
+| `/run/repose/hub.json` | the host's place on the hub before it has registered (DECISIONS I-1380): `{private_key, address, edge_pubkey, edge_endpoint}`, the `wg` half of the join bundle `POST /hosts` minted. Mode 0600, written by `repose-launcher-join`; `repose-host-net` renders `wg0.conf` from it while there is no `host.json`, so `hostd register` reaches the api at the control plane's hub address (I-1382), and removes it once `host.json` exists. Absent on a host that registers over the VNet |
+| `/run/repose/launcher/` | the Mac appliance only (`nix/hosts/mac.nix`): the directory the launcher shares in over virtio-fs (mount tag `repose-launcher`). `join` in it is the join bundle, 0600, read once by `repose-launcher-join` and deleted |
 | `/run/repose/host.env` | rendered from `host.json` at boot by `repose-host-net`: `HOST_ID`, `GUEST_CIDR`, `BRIDGE_ADDR`, `WG_ADDR`, `LOKI_HOST`, `LOKI_PORT`. Read by units that need the addresses (node_exporter, Fluent Bit); hostd may read it too. No secrets in it. |
 | `/run/repose/wg0.conf`, `/run/repose/host_ca.pub`, `/run/repose/sshd.conf` | also rendered from `host.json`; wg-quick, sshd `TrustedUserCAKeys` and sshd `ListenAddress` respectively. |
 | `/run/repose/store-view/` | Mount point of each guest's store view (DECISIONS I-463); empty on the host. `virtiofsd@<id>` runs with `PrivateMounts=yes` and `TemporaryFileSystem=/run/repose/store-view:mode=0755,nosuid,nodev,size=16m`, shares this path, and pivots into it; hostd then bind-mounts every path of the guest's closure, and of the closures it ran before (up to 16 recorded, plus the project's `rev-*` roots, those still on the host) (`nix-store -qR`) into that namespace, read-only, `nosuid,nodev`, private propagation (a symlink store path is recreated as a symlink). An in-place apply adds the new closure's paths before the switch; nothing is removed until the guest's next start. Nothing is mounted in the host namespace. |
@@ -227,7 +229,8 @@ system is stopping, presses the guest's ACPI power button through
 systemd's SIGTERM (DECISIONS I-650). Host units, in start order:
 `nftables.service`, `repose-store-export.service`,
 `repose-host-net.service`, `wg-quick-wg0.service`, `repose-register.service`
-(oneshot, skipped when `host.json` exists or there is no token),
+(oneshot, skipped when `host.json` exists or there is no token; ordered
+after `wg-quick-wg0.service` too, for the bootstrap tunnel of I-1380),
 `repose-guest-pool.service` (oneshot, `RemainAfterExit`, up to 30
 minutes; the one unit that activates `vg-guests/thin` after boot, clears
 the leftovers of an interrupted activation top down at open count 0,
@@ -423,10 +426,20 @@ repose. Two things follow, and the module asserts the second:
   through `hostd register` and deletes it, and it waits on
   `cloud-final.service` only where `repose.host.provider == "azure"`. So
   anything that writes that file before `hostd.service` registers the
-  host: the Mac launcher (19f), an installer's `--extra-files`, or a
-  hand `install -m 0600`. The token comes from `repose host add`, is
-  single-use and lasts 24 hours; it is `hosts.join_token_hash` on the
-  host's row and is stored nowhere else.
+  host: the Mac launcher's join unit (below), an installer's
+  `--extra-files`, or a hand `install -m 0600`. The token comes from
+  `repose host add`, is single-use and lasts 24 hours; it is
+  `hosts.join_token_hash` on the host's row and is stored nowhere else.
+- **The host is on the hub before it registers** (DECISIONS I-1380). A
+  machine of the user's has no route to the api's VNet address, so
+  `POST /hosts` gives it its guest `/22`, its hub address and a bootstrap
+  key pair, and the install step carries the private half beside the
+  token (the join bundle, `api.md`). `/run/repose/hub.json` is that
+  material on the host; `repose-host-net` renders `wg0` from it until
+  `host.json` exists; `hostd register` dials `repose.host.apiAddr =
+  10.255.255.1:8443`, the control plane's hub address (I-1382); Register
+  answers a fresh key and the same address, and `host.json` takes over
+  at the restart the register unit asks for.
 - **Snapshots stay on the host's own disk.** `snapshots.blobUrl` and
   `snapshots.identityClientId` must be empty, which makes hostd take
   `--snapshot-dir <snapshots.localDir>` and write `FileBlob` under
@@ -435,3 +448,41 @@ repose. Two things follow, and the module asserts the second:
   The alternative, a storage bucket's keys on a machine in someone's
   house, would be a fourth home for a secret, and there are three
   (CLAUDE.md, `docs/features/secrets.md`).
+
+### The Mac appliance (`repose.host.provider = "mac"`, DECISIONS I-1376, I-1380)
+
+`nix/hosts/mac.nix`, `nixosConfigurations.mac` (aarch64; `mac-x86` is the
+same modules for the dev box's checks). It is the owned host above with
+these differences:
+
+- **One disk, `/dev/vda`** (`repose.host.mac.disk`): GPT, a 1 GB ESP
+  (`disk-os-ESP`), a 32 GiB ext4 root (`disk-os-root`,
+  `repose.host.mac.rootSize`) and a third partition `disk-os-guests`
+  that is the PV of `vg-guests` (`disko-layout.nix` `oneDisk`). No data
+  disk; `repose.host.dataDevice` is unused. The image
+  (`packages.aarch64-linux.mac-appliance-image`, `repose-appliance.raw.gz`)
+  ships with the PV partition at 4 GiB; `repose-mac-grow.service`
+  (after `repose-guest-pool`, before `hostd`, every boot, skipped while
+  `/run/repose/pool-hold` exists) grows the partition, the PV, the
+  pool's metadata and the pool to the disk, and logs
+  `partition_grown|partition_unchanged`, `pv_resized`,
+  `pool_metadata_grown`, `pool_grown|pool_unchanged` with sizes.
+- **The launcher's share** at `/run/repose/launcher` (virtio-fs, tag
+  `repose-launcher`, `nofail`). `repose-launcher-join.service` (before
+  `repose-host-net`, `repose-register` and `hostd`) reads `join` there,
+  writes `/run/repose/join-token` and `/run/repose/hub.json`, deletes
+  `join`, and logs `join_token_written`, `hub_bootstrap_written`,
+  `no_join_file`, `join_ignored reason=registered`, `join_invalid
+  reason=encoding|version|no_token`. A bundle found after `host.json`
+  exists is deleted and ignored.
+- **The api over the hub**: `apiAddr = 10.255.255.1:8443`,
+  `apiServerName` and `apiCA` from `nix/hosts/platform.nix`, the same
+  values `prod.nix` reads.
+- **No Azure, no cloud-init, no `kvm-intel`**, console `hvc0`, the NAT
+  NIC named `wan0` by driver (`repose.host.uplinkInterface`), the park
+  off, the operator bootstrap key off, nix free-space floors 4 and 8
+  GiB. The kernel is the fleet pin and a product constraint (I-1376,
+  `kernel.nix`).
+- **Memory**: the launcher gives the VM three quarters of the Mac's (12
+  GiB of 16, 18 of 24) and all but two cores; the reserve inside is the
+  fleet rule (I-724). `repose host ls` shows the VM's memory.

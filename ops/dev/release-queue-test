@@ -96,7 +96,7 @@ q() { # dir args...
   # is a harness that passes or fails by whoever typed the command. It
   # carries its own answer, like the nix and pnpm stubs beside it.
   ( cd "$d" && PATH="$root/bin:$PATH" REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
-      REPOSE_QUEUE_SKIP_RED_MAIN=1 \
+      REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" REPOSE_QUEUE_SKIP_RED_MAIN=1 \
       ops/dev/release-queue "$@" 2>&1 )
 }
 
@@ -105,6 +105,7 @@ q() { # dir args...
 qgh() { # dir args...
   local d=$1; shift
   ( cd "$d" && PATH="$root/bin:$PATH" REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
+      REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" \
       ops/dev/release-queue "$@" 2>&1 )
 }
 
@@ -140,6 +141,25 @@ world() {
 exit 0
 EOF
   chmod +x "$root/bin/pnpm"
+  # The release-asset check (ops/dev/release-assets, DECISIONS I-1398)
+  # answers for the appliance image, its checksum and vfkit over the
+  # network; the scratch world has none. The queue takes the script's
+  # path from REPOSE_QUEUE_ASSETS, and this stub is what the fixture
+  # names there: it prints what the real one prints, and refuses when
+  # the tree plants REPOSE_FIXTURE_ASSETS_FAIL. The queue has no other way
+  # around that gate (t_add_refuses_an_unpublished_asset and
+  # t_add_refuses_without_the_asset_check hold that).
+  cat > "$root/bin/assets-stub" <<'EOF'
+#!/usr/bin/env bash
+# fixture stub: the release-asset check's answer
+if [ -n "${REPOSE_FIXTURE_ASSETS_FAIL:-}" ]; then
+  echo "FAIL 404 https://example/releases/download/appliance-0/repose-appliance-aarch64.raw.gz (the appliance image)"
+  echo "1 of 3 do not answer; the release does not go"
+  exit 1
+fi
+echo "3 assets answer 200 anonymously"
+EOF
+  chmod +x "$root/bin/assets-stub"
   # The comparison release-queue runs for base/host/edge. The scratch
   # repository is not an evaluable flake, so this stands in for
   # ops/dev/closure-equiv.py. It answers "the system really changes" by
@@ -620,8 +640,53 @@ t_add_runs_cli_guards() {
   local wt; wt=$(branch woker loud-cli)
   echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
   commit "$wt" "cli"
-  local o; o=$(cd "$wt" && REPOSE_FIXTURE_CLI_FAIL=1 PATH="$root/bin:$PATH" ops/dev/release-queue add 2>&1)
+  local o; o=$(cd "$wt" && REPOSE_FIXTURE_CLI_FAIL=1 PATH="$root/bin:$PATH" REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" ops/dev/release-queue add 2>&1)
   assert_has "a branch that fails the guards is refused" "$o" "help nobody asked for"
+}
+
+# DECISIONS I-1398. A `cli` branch is refused when something the CLI
+# fetches on a customer's machine does not answer, and the refusal
+# carries the check's own lines. The stub answers here; the real script
+# is held by its own Go test.
+t_add_refuses_an_unpublished_asset() {
+  local wt; wt=$(branch woker unpublished-asset)
+  echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "cli"
+  local o; o=$(cd "$wt" && REPOSE_FIXTURE_ASSETS_FAIL=1 PATH="$root/bin:$PATH" \
+    REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" REPOSE_QUEUE_SKIP_RED_MAIN=1 ops/dev/release-queue add 2>&1)
+  assert_has "a cli branch whose asset does not answer is refused" "$o" "does not answer" || return 1
+  assert_has "the refusal names the asset" "$o" "404 https://example/" || return 1
+  [ ! -e "$(state_of woker)/release-queue/entries/unpublished-asset" ] || { bad "an entry was written for a refused branch"; return 1; }
+  # and a branch that reaches no binary never runs the check
+  local wt2; wt2=$(branch woker docs-only-no-assets)
+  echo "more" >> "$wt2/docs/DECISIONS.md"
+  commit "$wt2" "docs"
+  o=$(cd "$wt2" && REPOSE_FIXTURE_ASSETS_FAIL=1 PATH="$root/bin:$PATH" \
+    REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" REPOSE_QUEUE_SKIP_RED_MAIN=1 ops/dev/release-queue add 2>&1)
+  assert_has "a branch that ships no CLI is queued without the check" "$o" "queued docs-only-no-assets" || return 1
+  # a bypass that is used is seen: the stubbed run says so, and the entry
+  # records which script answered, so a stub left in a profile cannot
+  # pass a release quietly
+  local wt3; wt3=$(branch woker stubbed-assets)
+  echo 'const More = 1' >> "$wt3/internal/clipkg/clipkg.go"
+  commit "$wt3" "cli"
+  o=$(q "$wt3" add)
+  assert_has "a run against a stub names it" "$o" "the asset check was $root/bin/assets-stub, not this tree's" || return 1
+  assert_has "the entry records the script" "$(cat "$(state_of woker)/release-queue/entries/stubbed-assets")" "assets=$root/bin/assets-stub"
+}
+
+# The gate has one way around it, REPOSE_QUEUE_ASSETS, and no ambient one:
+# with the variable unset the queue runs ops/dev/release-assets from the
+# tree, and a tree without it is refused rather than passed. A gate that
+# passed when its check was missing would be the 2026-11-19 failure with a
+# check in front of it.
+t_add_refuses_without_the_asset_check() {
+  local wt; wt=$(branch woker no-asset-check)
+  echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "cli"
+  local o; o=$(cd "$wt" && PATH="$root/bin:$PATH" REPOSE_QUEUE_SKIP_RED_MAIN=1 ops/dev/release-queue add 2>&1)
+  assert_has "a tree with no ops/dev/release-assets is refused" "$o" "release-assets is missing" || return 1
+  [ ! -e "$(state_of woker)/release-queue/entries/no-asset-check" ] || { bad "an entry was written without the check"; return 1; }
 }
 
 t_add_records_live_and_note() {

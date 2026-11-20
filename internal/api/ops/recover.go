@@ -170,16 +170,32 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 		return "the environment did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
 	case codeGuestUnresponsive:
 		if phase == PhaseCreateGuest || phase == PhaseStartGuest || phase == PhaseRestore {
-			// guestd answered, and then the closure's registration or
-			// the project's setup ran out of time (I-705). No number: a
-			// hostd before I-705 cuts SetupProject at 30 s, a later one
-			// at 3 minutes, and the api cannot tell which it talks to.
-			if (strings.Contains(msg, "SetupProject: ") || strings.Contains(msg, "RegisterPaths: ")) && strings.Contains(msg, "deadline exceeded") {
-				return "the environment started but did not finish setting up in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+			// guestd answered, and then one of the two phases that
+			// follow ran out of time (I-705). Which one is the useful
+			// fact: they have separate deadlines, in separate
+			// processes, and a user reporting one gives the next
+			// session something to act on. One sentence for both is
+			// how nine failed starts on a Mac appliance produced no
+			// evidence at all (ENG-80, DECISIONS I-1408). Still no
+			// number: the host's limit is its own and is in the detail
+			// an operator reads, not in the sentence.
+			if strings.Contains(msg, "deadline exceeded") {
+				switch {
+				case strings.Contains(msg, "RegisterPaths: "):
+					return "the environment started but did not finish loading its system in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+				case strings.Contains(msg, "SetupProject: "):
+					return "the environment started but did not finish setting up the project in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+				case strings.Contains(msg, "WriteSecrets: "), strings.Contains(msg, "SetPrincipals: "):
+					return "the environment started but did not take its ssh keys in time, so nothing can log in to it; `repose start` tries again", true
+				}
 			}
 			// Not "booted": a guest that stopped before its system
-			// started never answers either (I-592).
-			return "the environment did not answer within a minute of starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+			// started never answers either (I-592). How long it had is
+			// the host's to set (hostd --ready-timeout, five minutes on
+			// a Mac appliance against sixty seconds on Azure), so the
+			// sentence names no figure; it named a minute until I-1408,
+			// which was false on every Mac start it was shown for.
+			return "the environment did not answer while it was starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 		}
 		switch kind {
 		case KindResize:
@@ -203,6 +219,13 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 		}
 	case "host_unreachable":
 		return "the host running this project stopped answering; the operation can be run again once the host is back", true
+	case "timeout":
+		// The engine's own phase timeout (checkTimeout): the host took
+		// the command and never answered it. Its message is written for
+		// a log -- "start_guest did not complete in 10m0s" -- and until
+		// I-1408 reached the user as it was, naming an internal phase
+		// and a Go duration.
+		return "the host running this project did not answer in time, so the operation was given up; it can be run again", true
 	case codeVolumeUnavailable:
 		// The disk is intact; the host's pool is down (I-644). A start
 		// leaves the project stopped, so the same command works later.

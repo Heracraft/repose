@@ -44,9 +44,11 @@ func hostStateWord(state string) string {
 	return state
 }
 
-// HostAddCmd implements `repose host add [NAME]`. The install step is
-// the whole of stdout, so it pipes; what to do with it is on stderr.
-func HostAddCmd(ctx context.Context, e *Env, name string) error {
+// HostAddCmd implements `repose host add [NAME]`. On a Mac with Apple
+// silicon the mint is followed by the install here (I-1380); elsewhere
+// the install step is the whole of stdout, so it pipes, and what to do
+// with it is on stderr.
+func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) error {
 	if name != "" {
 		if err := checkHostName(name); err != nil {
 			return err
@@ -59,6 +61,21 @@ func HostAddCmd(ctx context.Context, e *Env, name string) error {
 	if e.JSON {
 		return writeJSONOut(e.Out, h)
 	}
+	if onAppleSilicon() {
+		argument := ""
+		if h.Install != nil {
+			argument = h.Install.Argument
+		}
+		if argument == "" {
+			argument = encodeTokenBundle(h.JoinToken)
+		}
+		_, _ = fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
+		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(e.ErrOut, "%s is starting and joins your account in a few minutes.\n", h.Name)
+		return nil
+	}
 	// stdout is the one thing to carry to the machine, so it pipes: the
 	// install step the api composed, or, while no install line is
 	// recorded for this kind of machine, the token the install takes.
@@ -66,6 +83,8 @@ func HostAddCmd(ctx context.Context, e *Env, name string) error {
 	switch {
 	case installed:
 		_, _ = fmt.Fprintln(e.Out, h.Install.Command)
+	case h.Install != nil && h.Install.Argument != "":
+		_, _ = fmt.Fprintln(e.Out, h.Install.Argument)
 	case h.JoinToken != "":
 		_, _ = fmt.Fprintln(e.Out, h.JoinToken)
 	default:
@@ -189,7 +208,44 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 	if err := e.Client.DeleteHost(ctx, h.ID); err != nil {
 		return hostErr(err, name)
 	}
+	// The Mac this runs on, when it is the one that runs h: the appliance
+	// goes with the host. A Mac that runs another host keeps it and says
+	// which; one whose appliance was added with --join has no recorded
+	// name and keeps it too, `--local` being the way to remove that one.
+	switch local, installed := localAppliance(e); {
+	case !installed:
+	case local == h.Name:
+		if err := applianceRemove(e); err != nil {
+			return exitf(ExitGeneric, "%s is off your account, but the appliance on this Mac could not be removed: %v", h.Name, err)
+		}
+	case local != "":
+		_, _ = fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; its appliance stays.\n", local, h.Name)
+	default:
+		_, _ = fmt.Fprintf(e.ErrOut, "This Mac's appliance was added with --join and stays.\n")
+	}
 	return nil
+}
+
+// HostRmLocalCmd implements `repose host rm --local`: the appliance on
+// this Mac, and nothing on the account.
+func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error)) error {
+	name, installed := localAppliance(e)
+	if !installed {
+		return exitf(ExitGeneric, "There is no appliance on this Mac.")
+	}
+	if !yes {
+		if confirm == nil {
+			return exitf(ExitUsage, "Removing the appliance on this Mac needs a confirmation; pass --yes to skip it.")
+		}
+		what := "the appliance on this Mac"
+		if name != "" {
+			what = name + "'s appliance on this Mac"
+		}
+		if err := confirmOr(confirm, fmt.Sprintf("Remove %s, with every machine and snapshot on its disk? [y/N] ", what), "Nothing removed."); err != nil {
+			return err
+		}
+	}
+	return applianceRemove(e)
 }
 
 // hostRemovePrompt says what the removal costs. The api refuses while
@@ -304,4 +360,35 @@ func hostUnreachableLine(p *Project, own map[string]Host, now time.Time) string 
 		return fmt.Sprintf("your host %s has not answered", h.Name)
 	}
 	return fmt.Sprintf("your host %s has not answered for %s", h.Name, humanDuration(now.Sub(*h.LastHeartbeatAt)))
+}
+
+// ownHostName is the name of the host a machine is on while that host is
+// one the account owns, and "" while it is one of repose's: the
+// project's `host_name` (I-1392), or, for an api that does not send the
+// field, the hosts already read because one of them is quiet.
+func ownHostName(p *Project, own map[string]Host) string {
+	if p.HostName != "" {
+		return p.HostName
+	}
+	if p.HostID == "" {
+		return ""
+	}
+	return own[p.HostID].Name
+}
+
+// hostCell is `repose ls`'s HOST cell and `repose status`'s `host` row
+// (I-1392, which amends I-616): the name of a host of the account's own,
+// `repose` for a machine on repose's servers, which is the word
+// `repose run --host repose` takes for them, and "" for one not placed
+// yet, which the table prints as `-`. A host of repose's keeps I-616's
+// ruling and is never named here: it is a platform internal, and its
+// name and the machine's address stay under `-v`.
+func hostCell(p *Project, own map[string]Host) string {
+	if name := ownHostName(p, own); name != "" {
+		return name
+	}
+	if p.HostID == "" {
+		return ""
+	}
+	return "repose"
 }

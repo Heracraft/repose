@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heracraft/repose/internal/api/hostmgr"
+	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/store"
 )
 
@@ -271,5 +273,165 @@ func TestPlacementField(t *testing.T) {
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "three", "class": "small", "placement": "somewhere"})
 	if r.status != 400 || detailOf(t, r)["reason"] != "placement" {
 		t.Fatalf("a bad placement: %d %s, want invalid placement", r.status, r.raw)
+	}
+}
+
+// TestHostAddPeersTheHubBeforeRegistration: the install step's argument
+// is the join bundle with the token and the hub material in it, and the
+// edge's host list carries the new host from the moment it is added, so
+// the tunnel exists before the machine first boots (DECISIONS I-1380).
+func TestHostAddPeersTheHubBeforeRegistration(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-hub", "hub")
+	e.exempt(t, "sub-hub")
+	for k, v := range map[string]string{
+		hostmgr.SettingEdgeWGPubkey:   "dyP2l2byrPpr9ehOwYga0Ya9/qkUChpSCR0vJVRa0f8=",
+		hostmgr.SettingEdgeWGEndpoint: "edge.example:51820",
+		httpapi.SettingHostInstall:    "curl -fsSL https://repose.run/mac | sh -s -- %s",
+	} {
+		if err := store.SetSetting(e.h.Ctx, e.h.Pool, k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	token, _ := r.body["join_token"].(string)
+	install, _ := r.body["install"].(map[string]any)
+	arg, _ := install["argument"].(string)
+	command, _ := install["command"].(string)
+	if arg == "" || command != "curl -fsSL https://repose.run/mac | sh -s -- "+arg {
+		t.Fatalf("install %v: want the command with the bundle where %%s was", install)
+	}
+	if strings.Contains(command, token) {
+		t.Fatal("the bare token is in the install step; the bundle carries it")
+	}
+	b, err := hostmgr.DecodeJoinBundle(arg)
+	if err != nil || b.Token != token || b.WG == nil || b.WG.EdgeEndpoint != "edge.example:51820" || b.WG.PrivateKey == "" {
+		t.Fatalf("bundle %+v (%v): want the token and the hub material", b, err)
+	}
+	// Nothing of the bundle reaches a log line: it is the machine's key.
+	if strings.Contains(e.logText(), b.WG.PrivateKey) || strings.Contains(e.logText(), arg) {
+		t.Fatal("the hub bootstrap reached a log line")
+	}
+
+	// The edge's list, which wgsync peers from, has the host already.
+	ih := e.internalDo(t, "GET", "/internal/hosts", nil)
+	if ih.status != 200 {
+		t.Fatalf("internal hosts: %d %s", ih.status, ih.raw)
+	}
+	var found map[string]any
+	for _, row := range ih.list {
+		if m, _ := row.(map[string]any); m != nil && m["name"] == "mac-mini" {
+			found = m
+		}
+	}
+	if found == nil || found["wg_pubkey"] == "" || found["wg_ip"] == nil || found["guest_cidr"] == nil || found["state"] != "registering" {
+		t.Fatalf("the unregistered host is not a peer: %v", found)
+	}
+	if b.WG.Address != found["wg_ip"].(string)+"/16" {
+		t.Fatalf("bundle address %s, listed wg_ip %v", b.WG.Address, found["wg_ip"])
+	}
+
+	// A bundle nobody used dies with its token: once the token has
+	// expired, or the host was removed, the edge stops peering the key.
+	listed := func() bool {
+		r := e.internalDo(t, "GET", "/internal/hosts", nil)
+		for _, row := range r.list {
+			if m, _ := row.(map[string]any); m != nil && m["name"] == "mac-mini" {
+				return true
+			}
+		}
+		return false
+	}
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set join_token_expires_at = now() - interval '1 minute' where id = $1", r.body["id"]); err != nil {
+		t.Fatal(err)
+	}
+	if listed() {
+		t.Fatal("an unregistered host whose token expired is still a peer")
+	}
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set join_token_expires_at = now() + interval '1 hour' where id = $1", r.body["id"]); err != nil {
+		t.Fatal(err)
+	}
+	if !listed() {
+		t.Fatal("a host with a live token is not a peer")
+	}
+	if rr := e.do(t, tok, "DELETE", "/hosts/"+r.body["id"].(string), nil); rr.status != 204 {
+		t.Fatalf("remove: %d %s", rr.status, rr.raw)
+	}
+	if listed() {
+		t.Fatal("a removed host is still a peer")
+	}
+}
+
+// TestCreateRefusedBeforeTheRowIsWritten is the shape I-1390 settles for
+// ENG-66: placement answers inside the create request, so a project no
+// host can take is refused with the sentence the op used to fail with,
+// and nothing is written. Until this the row went in as `creating`, the
+// op refused it afterwards, and a customer whose Mac had not registered
+// yet stranded one project in `error` per attempt. The way out the
+// refusal names, `placement: "hosted"`, then makes the project on
+// repose's own host.
+func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"}); r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	rows := func() int {
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects where user_id = $1", uid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
+		d := detailOf(t, r)
+		if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "registering" || d["hosted_allowed"] != true {
+			t.Fatalf("attempt %d while the host waits: %d %s, want 503 capacity no_own_host for mac-mini", attempt, r.status, r.raw)
+		}
+		if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your host mac-mini has not registered yet") {
+			t.Fatalf("attempt %d: message %q does not name the host and its state", attempt, msg)
+		}
+		if n := rows(); n != 0 {
+			t.Fatalf("attempt %d stranded %d project row(s)", attempt, n)
+		}
+	}
+	var ops int
+	if err := e.h.Pool.QueryRow(ctx, "select count(*) from ops o join projects p on p.id = o.project_id where p.user_id = $1", uid).Scan(&ops); err != nil {
+		t.Fatal(err)
+	}
+	if ops != 0 {
+		t.Fatalf("a refused create enqueued %d op(s)", ops)
+	}
+	// The way out: repose's own host, named in the 201 as host_id.
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small", "placement": "hosted"})
+	if r.status != 201 || r.body["host_id"] != e.h.HostID.String() || r.body["placement"] != "hosted" {
+		t.Fatalf("hosted: %d %s, want 201 on %s", r.status, r.raw, e.h.HostID)
+	}
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("hosted create: %s %+v", op.State, op.Error)
+	}
+	if n := rows(); n != 1 {
+		t.Fatalf("%d rows after one accepted create", n)
+	}
+	// host_name beside host_id (I-1392): absent on a host repose runs,
+	// the name the account gave it once the host is theirs.
+	pid := r.body["id"].(string)
+	if _, has := r.body["host_name"]; has {
+		t.Fatalf("a host repose runs carried host_name: %s", r.raw)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "GET", "/projects/"+pid, nil); r.status != 200 || r.body["host_name"] != "host-01" {
+		t.Fatalf("own host: %d %s, want host_name host-01", r.status, r.raw)
+	}
+	if r := e.do(t, tok, "GET", "/projects", nil); r.status != 200 || len(r.list) != 1 || r.list[0].(map[string]any)["host_name"] != "host-01" {
+		t.Fatalf("list: %d %s, want host_name host-01", r.status, r.raw)
 	}
 }

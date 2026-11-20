@@ -287,7 +287,10 @@ https://microvm-nix.github.io/microvm.nix/shares.html
 
 Update 2026-09-20 (workstream 12): the overlay no longer takes any agent
 from nixpkgs (DECISIONS I-46). Upstream release artefacts for
-`x86_64-linux`, as pinned in `nix/overlay/agents/versions.json`:
+`x86_64-linux`, as pinned in `nix/overlay/agents/versions.json` (since
+2026-11-19 the same file pins each binary's `aarch64-linux` asset beside
+it, DECISIONS I-1374; every upstream below publishes an arm64 Linux build
+of the same version):
 
 | Agent | Source | Artefact | Linking |
 |---|---|---|---|

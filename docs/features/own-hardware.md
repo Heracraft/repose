@@ -22,13 +22,18 @@ read (I-994). User-facing documentation is
 **Status.** The hosted half is built: the Own hardware plan, ownership,
 placement, the three routes, `repose host`, the dashboard's Hosts page,
 the hub rules, the offline wording, the snapshot store. The machine half
-is not: there is no aarch64 guest base, no Mac appliance image and no
-launcher, so nothing has joined an account yet and no
-`host_install_command` has been recorded, which means every `repose host
-add` today prints the token and the docs page rather than a line to run
-(§2). Owned hosts do not update themselves; an operator switches them by
-hand, and the timer that would pull a published host system is not built
-and may ship after launch.
+is written and proven on x86 and in the api's tests (§7, I-1374, I-1376,
+I-1380): the aarch64 outputs, the Mac appliance's modules and image
+recipe, the launcher, and the bootstrap order that lets a machine with
+no route to the api register over the hub. Not yet done at this line:
+the aarch64 image built and booted on a Mac, the image published where
+the installer fetches it, and the `host_install_command` recorded
+(`repose-admin hosts install-command 'repose host add --join %s'`), so
+`repose host add` on production still prints the argument and the docs
+page rather than the line. Owned hosts do not
+update themselves; an operator switches them by hand, and the timer that
+would pull a published host system is not built and may ship after
+launch.
 
 **The two figures the public page quotes**, measured by 19f on the lab
 Mac and not on anyone's desk: an appliance given 12 GiB, which is what a
@@ -86,7 +91,7 @@ already in it, and nothing else, so it pipes to the machine:
 
 ```
 $ repose host add mac-mini
-curl -fsSL https://repose.run/mac | sh -s -- rjt_Vb3nQ8...
+repose host add --join eyJ2IjoxLCJ0b2tlbiI6InJqdF9WYjNuUTgu...
 mac-mini: run this on the machine you are adding. It works once, before Thu 20 Nov 14:05.
 ```
 
@@ -98,8 +103,8 @@ mac-mini  online  24 GB   3         1        just now
 
 ```
 $ repose ls
-PROJECT     SIZE   STATE    UP     AGENTS
-todo-app *  large  running  2h14m  claude: working
+PROJECT     SIZE   STATE    UP     AGENTS           HOST
+todo-app *  large  running  2h14m  claude: working  mac-mini
 todo-app: your host mac-mini has not answered for 14m.
 ```
 
@@ -138,12 +143,23 @@ prints the one step to run on the machine being added. The dashboard's
 Hosts page does the same and shows the same step.
 
 The step is the api's, never the CLI's: `install.command` is the
-`host_install_command` setting with `%s` replaced by the token, so the
-install path can change without a CLI release and the user-facing step
-and `repose-admin hosts install-command` cannot drift. While no setting
-is recorded the api sends `command: ""`, and a client then prints the
-token and `install.url`, which is the public docs page. A client never
-composes a line of its own: a line a user pastes has to be true.
+`host_install_command` setting with `%s` replaced by `install.argument`,
+so the install path can change without a CLI release and the user-facing
+step and `repose-admin hosts install-command` cannot drift. While no
+setting is recorded the api sends `command: ""`, and a client then
+prints the argument and `install.url`, which is the public docs page. A
+client never composes a line of its own: a line a user pastes has to be
+true.
+
+The argument is the join bundle (I-1380): the token and the machine's
+place on the hub, a WireGuard key pair's private half with the machine's
+address and the edge's peer, minted by `POST /hosts` so that the edge
+peers the machine before it boots. A machine of the user's has no route
+to the api's VNet address, so without this it could not register at all
+(I-92, I-1382). Register replaces the key, so the bundle is dead once the
+machine has joined, and an unused one dies with its token; the user who
+loses one runs `host rm` and `host add` again. `SECURITY.md` "A host you
+do not own" says what the bundle is worth to someone who reads it.
 
 Without NAME the api names the host `host-1`, `host-2`, … within the
 account. Names are unique **per account**, not globally, so two users may
@@ -172,9 +188,15 @@ are outside the seat count, the waitlist and the pool gauges, because
 repose did not buy them.
 
 A create for `own` while the account's host has not registered yet, or
-cannot take the machine, fails the create op with `capacity` and a
+cannot take the machine, is refused at the request with `capacity` and a
 message that names the host and its state, rather than quietly using the
-fleet and billing for it.
+fleet and billing for it, and nothing is written (I-1390). Until I-1390
+the row went in first and the op refused it afterwards, so a customer
+whose Mac had not finished installing stranded one project in `error`
+per attempt and could make one nowhere: the CLI had no flag for the
+other answer. `repose run --host NAME|repose` is that flag; the api's
+refusal carries `detail.hosted_allowed` so the CLI names `--host repose`
+only when the plan would honour it.
 
 ## 4. How long a machine takes to start
 
@@ -268,6 +290,51 @@ host already retired is not an error on the wire (`204`), and the CLI
 says `You have no host named X` because a retired host is not one the
 user has.
 
+## 7. The Mac appliance
+
+One aarch64 NixOS VM on Apple's Virtualization framework runs hostd and
+the user's machines as Cloud Hypervisor microVMs under its KVM
+(`nix/hosts/mac.nix`, `nixosConfigurations.mac`, I-1376). The launcher
+is the CLI itself: `repose host add` on a Mac fetches vfkit and the
+appliance image and starts the VM from a launchd agent that runs
+`repose host run` at every login, holding the Mac awake with
+`caffeinate` while it runs; `repose host rm` on that Mac takes the
+appliance away with the host (I-1380; `internal/cli/appliance.go`). One disk, the image grown to the size the user
+chose, with the machines' volumes and snapshots in it; three quarters of
+the Mac's memory to the VM and the fleet's host reserve inside it. The
+kernel is a product constraint: 6.18.57 is the one version known both to
+boot nested guests on Apple silicon and to pass the CVE-2026-99999
+assertion (research doc §7). A machine's boot on a Mac is minutes, not
+seconds (3 min 36 s cold and 3 min 59 s warm to multi-user on an M4 at 2
+vCPU, research doc §9; hostd's per-start dump-db of the closure is half
+of it), so hostd's ready window is five minutes there
+(`guestReadyTimeout`) where the Azure hosts keep 60 s. Freeze and restore work on Apple silicon
+(gate 0 step 5, research doc §9) and stay off on the appliance until an
+owned host has a way to wrap the image key that is not Key Vault
+(I-653); a reboot stops the machines and the api starts the ones that
+were running (I-645). `repose host add`, `repose host run` and `repose host rm` are the
+user's side on the Mac.
+
+The two downloads a first install makes, vfkit and the 2.08 GB image,
+run on a client of their own with no whole-request deadline (I-1414).
+The CLI's api client carries a 30 s `Timeout` and `http.Client.Timeout`
+covers reading the body, so while the downloads took that client whole a
+2 GB fetch had 30 seconds to finish: the first `repose host add` on the
+lab M4 failed at 31 s with `context deadline exceeded ... while reading
+body` and the second succeeded in 37 s, on a connection that moves the
+asset at 226 MB/s (ENG-117). What ends a dead connection instead is a
+stall window: no bytes for 60 s, the response headers included, and the
+attempt is given up. A failed attempt leaves what it got in a `.part`
+file beside its destination and the next attempt continues from it with
+a `Range` request, three attempts in all; a server that ignores the
+range starts the file over, and a mismatched checksum after a resume
+costs one fresh attempt, because the part may be a prefix of an older
+image. A download that does not finish is the one failure in the install
+that names the way out: `repose host add` minted the host before the
+install, so a plain second `repose host add` would be refused by the
+one-host limit, and the sentence carries `repose host add --join
+<argument>` instead.
+
 ## Behaviour that must hold
 
 Ownership and placement (I-1366):
@@ -282,6 +349,12 @@ Ownership and placement (I-1366):
   (internal/api/http).
 - An account whose plan sells no memory on repose's hosts never lands on
   the fleet, whatever the field says.
+- A create no host can take is refused before the row is written, twice
+  in a row with nothing stranded, and `placement: "hosted"` is the way
+  out: `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http);
+  `repose run --host` sends it and names it in the refusal:
+  `TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut`,
+  `TestRunHostChoosesWhereTheMachineIsMade` (internal/cli). I-1390.
 
 The routes (I-1366):
 
@@ -313,6 +386,20 @@ The CLI (I-1370):
 - The state words are the same in the CLI and the dashboard:
   `TestHostStateWords` and `offlinehost.test.ts`.
 
+The readout (I-1392):
+
+- A machine on a host the account owns names it where the account looks:
+  a HOST column in `repose ls` and a `host` row in `repose status`, with
+  `repose` for a machine on repose's servers and `-` for one not placed
+  yet. An account that owns no hardware gets neither, and a host of
+  repose's keeps I-616's ruling and stays under `-v` with the machine's
+  address: `TestHostReadoutNamesTheHostYouOwn` (internal/cli).
+- The name is the project's own `host_name`, so the readout costs no
+  `/hosts` read and the column follows the machines rather than the
+  hardware: `TestHostReadoutComesFromTheProjectRecord` (internal/cli),
+  `TestCreateRefusedBeforeTheRowIsWritten` (internal/api/http) for the
+  field itself.
+
 An offline host (I-1370):
 
 - A quiet host of the account's is named with how long it has been quiet
@@ -326,11 +413,23 @@ An offline host (I-1370):
   `TestLsReadsHostsOnlyWhenOneIsQuiet`, and the read count in
   `own-hardware.spec.ts`.
 
-The host itself (I-1372, I-1368):
+The host itself (I-1372, I-1368, I-1376, I-1380):
 
 - An owned host takes its join token from `/run/repose/join-token` with
   no cloud-init, consumes it once and refuses a second: the
   `host-services` VM check, whose host is `provider = "none"`.
+- `POST /hosts` peers the machine before it boots and Register keeps the
+  addresses and replaces the key: `TestHostAddPeersTheHubBeforeRegistration`
+  (internal/api/http), `TestHubBootstrapPeersTheHostBeforeItRegisters`
+  (internal/api/hostmgr); an unregistered host whose token expired or
+  that was removed is not a peer (the first test).
+- The appliance splits the bundle, brings wg0 up on the bootstrap key,
+  registers over it at the hub address, swaps to the registration's key
+  and ignores a second bundle; the one-disk layout grows to the disk:
+  the `host-mac` VM check. The launcher's sizing, its sparse unpack, the
+  bundle, the config, the agent and vfkit's arguments:
+  `TestAppliance*` (internal/cli); the Mac refusals:
+  `TestApplianceRefusesTheWrongMac`.
 - An owned host writes snapshots to its own disk and carries no bucket
   credentials; the module refuses to build otherwise: the
   `owned-host-keeps-snapshots-local` flake check.
@@ -343,15 +442,17 @@ The host itself (I-1372, I-1368):
 Workstreams 19a (ownership, placement, the routes, the dashboard's Hosts
 page), 19b (the hub and gateway rules), 19c (`repose host`, the install
 path, the offline wording, the snapshot store), 19d (the plan), 19e (the
-aarch64 outputs), 19f (the Mac appliance and its launcher), 19g
-(unattended updates). Underneath them: 05 (`api`, `db-schema`,
+aarch64 outputs), 19f (the Mac appliance, its launcher and the bootstrap
+order), 19g (unattended updates). Underneath them: 05 (`api`, `db-schema`,
 scheduler), 07 (CLI), 08 (dashboard), 01 and 03 (the host module and
 hostd).
 
 ## Deferred
 
 The x86 `metal` path beyond what the hosted half already allows: the
-one-disk disko layout is the Mac's, and an x86 box still needs two disks.
+one-disk disko layout is the Mac's, and an x86 box still needs two disks
+and a way to place the join bundle (`/run/repose/launcher/join` by hand
+would do; nothing ships it).
 Snapshots to a bucket of the user's own (I-1372, revisit when a user
 asks). More than one host per account, which is a number in `plans.go`
 and nothing else. Unattended updates, which may ship after launch.

@@ -216,8 +216,19 @@ func (s *Server) internalHosts(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := []map[string]any{}
+	now := time.Now()
 	for _, h := range hosts {
-		if h.RegisteredAt == nil || h.WGPubkey == nil {
+		// A host with a public key is a peer, registered or not: a host
+		// the user owns gets its key at `host add` (hostmgr.PrepareHub,
+		// DECISIONS I-1380) and registers over the tunnel the edge builds
+		// from this list. A row with no key has nothing to peer, and one
+		// that never registered before its token expired is not kept on
+		// the hub for a registration that can no longer happen: the
+		// bootstrap key in a lost install bundle dies with its token.
+		if h.WGPubkey == nil {
+			continue
+		}
+		if h.RegisteredAt == nil && (h.JoinTokenHash == nil || (h.JoinTokenExpiresAt != nil && now.After(*h.JoinTokenExpiresAt))) {
 			continue
 		}
 		row := map[string]any{"host_id": h.ID, "name": h.Name, "wg_pubkey": *h.WGPubkey, "state": h.State}

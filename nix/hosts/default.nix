@@ -28,6 +28,7 @@ in
     ./vm-hardening.nix
     ./park.nix
     ./wg-watchdog.nix
+    ./mac.nix
   ];
 
   options.repose.host = {
@@ -95,11 +96,13 @@ in
     };
 
     provider = lib.mkOption {
-      type = lib.types.enum [ "azure" "none" ];
+      type = lib.types.enum [ "azure" "none" "mac" ];
       default = "azure";
       description = ''
         Where the host runs. `azure` enables waagent, cloud-init for the join
-        token, and the Hyper-V drivers. `none` is for the VM tests and for a
+        token, and the Hyper-V drivers. `mac` is the Mac mini appliance
+        (mac.nix, DECISIONS I-1376): one disk, the join from the launcher's
+        share, the api over the hub. `none` is for the VM tests and for a
         future provider module (DECISIONS R3-20: Hetzner is a second module,
         added when it exists).
       '';
@@ -333,6 +336,47 @@ in
       type = lib.types.str;
       default = "UTC";
       description = "The host's timezone; `repose-snapshot.timer` fires at 03:00 in it (DESIGN §6).";
+    };
+
+    guestReadyTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long a starting guest has to say Ready over vsock before the
+        start fails (hostd --ready-timeout, a Go duration such as "5m").
+        Empty is hostd's 60 s, which every Azure host meets in seconds.
+        The Mac appliance sets minutes (mac.nix, DECISIONS I-1376): under
+        nested virtualization a guest's first boot said Ready at 70 s.
+      '';
+    };
+
+    guestPathsTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long the registration of a guest's store paths has before the
+        start fails (hostd --paths-timeout, a Go duration such as "10m").
+        Empty is hostd's 3 minutes, which is what guestd used to enforce
+        for every host.
+
+        It is a property of the hardware, not of the guest: the call took
+        2 min 6 s on the Mac appliance with the store over virtiofs
+        against 16 s with it on a disk (research/mac-mini-nested-kvm.md
+        §10), and at 3 minutes every start after a stop failed there,
+        five for five (ENG-80, DECISIONS I-1408).
+      '';
+    };
+
+    guestSetupTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long a guest's project set-up has before the start fails
+        (hostd --setup-timeout, a Go duration such as "10m"). Empty is
+        hostd's 3 minutes. The phase waits for home-manager's first
+        activation, which took 1 min 38 s on the Mac appliance against
+        seconds on Azure (DECISIONS I-1408).
+      '';
     };
 
     owned = lib.mkOption {
