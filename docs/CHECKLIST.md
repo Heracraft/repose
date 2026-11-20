@@ -671,3 +671,22 @@ entry and this list with it. Counts as of 2026-10-21.
       three deadlines in a call — the dial, the request, and the thing being
       waited for — are separately named, and only the ones that should be
       short are short.
+
+- [ ] A fake is **not more forgiving than the thing it stands for**, and a
+      fake that returns nothing makes its whole phase invisible. **Two P0s
+      in one night came from this**, and in both the suite was green while a
+      customer's path was broken:
+      - `nixbuild.Fake.DumpDB` returned `nil`, so **every** hostd test
+        skipped `RegisterPaths` — the phase a Mac start actually fails in.
+        The suite had been green for a week while a customer's start was a
+        coin flip.
+      - The dashboard's fake api sent zeros for an account's plan limits
+        where the real api sends the plan's figures, so no dashboard test
+        caught the billing page measuring an account against the wrong
+        plan's ceilings and then creating anyway.
+
+      Evidence: for each fake, the list of real responses it stands in for,
+      and a test that fails if the fake answers where the real one would
+      refuse. A `nil`, a zero or an empty slice from a fake is a silent
+      skip, not a pass: if a phase cannot fail in the suite, the suite does
+      not cover it.
