@@ -138,9 +138,11 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   dangling=true)` (the throwaway Postgres leaves one each time; use
   `docker rm -f -v`).
 - A batch: `ops/dev/release-queue cut`; in the batch worktree, the Go set
-  in a private tmux (`tmux -L relcheck new-session -d "..."`), with
-  `CGO_ENABLED=1`, `DATABASE_URL` on a `--network host` Postgres, and
-  `TMPDIR=/tmp/rt` set inside `nix develop`; the web set to one log file
+  in a private tmux (`tmux -L relcheck new-session -d "..."`), **at
+  `-p 2`** and with an explicit `-timeout`, with `CGO_ENABLED=1`,
+  `DATABASE_URL` on a `--network host` Postgres, and `TMPDIR=/tmp/rt`
+  exported **inside** `nix develop` (exporting it there is what keeps the
+  socket paths short enough; see the `/tmp/r` note in `DEV-BOX.md`); the web set to one log file
   per check with its own exit line (never `| tail` before reading the
   status); `nix build` of guest-system, closure-size and the packages
   the batch reaches; the VM checks the batch touches, one at a time,
@@ -289,6 +291,27 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 - `release-queue done` removes the batch worktree, so a test you want to
   rerun on exactly what you verified has to run elsewhere; once main has
   moved, the main checkout is the same commit.
+- **Run the batch's Go set at `-p 2`.** Measured on this box on
+  2026-11-20: the whole tree at `-p 2` is 101 packages ok with no
+  failures, and the three api tests that are red at the default
+  parallelism pass. `internal/api/ops` 20.4 s against 414.7 s,
+  `internal/api/resume` 6.6 s against 277.9 s, `internal/api/scheduler`
+  2.5 s against 254.8 s, each of which also beats CI's time for the same
+  package. The caveat is in the number and not hidden: the slow figures
+  were taken while several sessions loaded the box and the `-p 2` run
+  after it went quiet, so parallelism and ambient load moved together and
+  the isolating run has never been done. It is enough to invoke the suite
+  this way and not enough to call `WaitOp`'s flat 30 seconds correct;
+  widening that would have hidden the race of ENG-111.
+- **A document both a branch and main have edited conflicts add/add, and
+  "pick a side" deletes rules that look like nothing.** Merging main into
+  the mac-mini branch on 2026-11-20 did this to `docs/REVIEW.md`: an
+  earlier copy had reached main through PR #80 while the branch's copy
+  kept growing, so each side held rules the other lacked and git offered
+  only one or the other. The mini-conductor diffed them and wrote the
+  union, 224 lines. Expect the same for any shared document when you cut
+  a long-lived branch, and read both sides rather than resolving: git has
+  no opinion when the loss is not textual.
 - **`/tmp` is on the 29 GB root disk, not a tmpfs, and `/tmp/rt` grows
   without bound.** It held 7.9 GB at 01:04 on 2026-11-20 with the root
   filesystem at 86 %, mostly 372 `repose-sync-*.tar` from CLI tests plus
