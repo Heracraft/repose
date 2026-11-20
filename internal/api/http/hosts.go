@@ -249,10 +249,28 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) error {
 		  where id = $1`, h.ID); err != nil {
 		return err
 	}
+	// What the host's absence wrote on the account's machines goes with
+	// it (ENG-33, the customer review). A placement that found no host
+	// of the account's own frees the project and leaves its sentence on
+	// the row (ops/phases.go), so "your host host-1 has not registered
+	// yet" outlived host-1: Settings → Hosts said the customer had no
+	// hardware while five rows named it, and the only control offered
+	// was a Start that could not succeed. The op keeps the history; the
+	// row stops asserting something false, and the next start says
+	// what is true now. Only the capacity class, which is the one a
+	// host's absence causes, and `capacity:` is the api's own prefix
+	// rather than anything a tenant typed.
+	cleared, err := s.d.Pool.Exec(r.Context(), `update projects set last_error = null
+		  where user_id = $1 and host_id is null and state = 'error'
+		    and last_error like 'capacity:%' and destroyed_at is null`, u.ID)
+	if err != nil {
+		return err
+	}
 	if _, err := store.Audit(r.Context(), s.d.Pool, "user:"+u.ID.String(), "host_rm", h.Name, map[string]any{"host_id": h.ID.String()}); err != nil {
 		return err
 	}
-	obs.Logger(r.Context(), s.d.Log).Info("host removed", "event", "host_rm", "host_id", h.ID.String())
+	obs.Logger(r.Context(), s.d.Log).Info("host removed", "event", "host_rm",
+		"host_id", h.ID.String(), "cleared", cleared.RowsAffected())
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
