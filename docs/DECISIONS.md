@@ -37349,3 +37349,43 @@ class found while building the fix).
 add`'s own message says `the server answered 404` and nothing about
 where to look, which is the customer's view of this and is ENG-62's
 sibling, not this entry's.
+
+**I-1400. The buf job posts no pull request comment, and the workflow's
+token stays `contents: read` (2026-11-20).** *Made during implementation*
+(every pull request run was red for a week and the conductor's handoff
+named it as the reason workers stopped trusting pull request CI).
+
+- *What happened.* `bufbuild/buf-action` posts a summary comment on each
+  pull request unless `pr_comment: false`. `ci.yml` grants
+  `contents: read` and the repository's default workflow permission is
+  `read`, so the post answered `Resource not accessible by integration`
+  and the action exited 1 **after** `buf build`, `buf lint` and
+  `buf breaking` had all passed. Run 44636956716 (join-research,
+  2026-11-19 23:21 UTC) is the shape of every one of them: eleven jobs
+  green, `buf lint and breaking` red, one error line, and it is the
+  comment, not the proto files. The cost was not the job. It was that a
+  red pull request run stopped carrying information, so workers reran
+  whole suites locally and the conductor read runs by job instead of by
+  conclusion; I-840 is the same action failing on a pull request for a
+  second reason behind the first.
+- *The fix.* `pr_comment: false`, beside `format: false` and explained
+  in the same comment block. `buf lint` and `buf breaking` are what the
+  job's name promises and they are unchanged.
+- *Alternatives.* Granting the job `pull-requests: write`, which the
+  repository allows (`bump-agents.yml` elevates its own token that way
+  and works): it widens the token on every pull request run to publish a
+  summary of a check whose result is already the job's conclusion and its
+  annotations. Nobody reads these comments — the release queue opens the
+  pull requests and the conductor reads the run, so the comment is help
+  nobody asked for, which the house rule cuts. Removing the job on pull
+  requests: `breaking` only has an "against main" to compare on a pull
+  request, which is where a contract break is caught before the queue.
+- *Rules this adds.* A workflow step that writes to GitHub (a comment, a
+  label, a release, a pull request) says so in the job's `permissions`
+  or is turned off; a step that only reads does not widen the token to
+  write something nobody reads.
+
+*Not done:* nothing of the handoff's wider point. The post-merge
+full-suite reruns that the broken gate put into worker briefs are still
+in them, and whether pull request CI is trusted as a gate again is for
+the conductor to decide after it has been green for a batch.
