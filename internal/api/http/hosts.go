@@ -231,7 +231,33 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if len(projects) > 0 {
+	// A host that is answering keeps the refusal: its machines are really
+	// there, and a machine moves host only by restore (DESIGN §6).
+	//
+	// A host that is NOT answering is a different question, and refusing
+	// it left the account with no way out at all: the host could not be
+	// removed while it held a project, the project could not be destroyed
+	// while the host was not gone (I-924 skips a destroy's phases for
+	// `lost` and `retired` only), and the plan's one host slot stayed
+	// held, so no replacement could be added either. Removing it is the
+	// user making the statement `hosts mark-lost` makes for an operator:
+	// this host is not coming back. What made I-924 exclude `unreachable`
+	// does not apply to the command being asked for here, because the
+	// retire below clears `cert_serial`, `prev_cert_serial` and
+	// `join_token_hash`, so the host cannot come back on them and the
+	// live volume it worried about cannot reappear under a destroyed
+	// record (ENG-119, DECISIONS I-1420).
+	//
+	// The machines are left where they are rather than destroyed: the
+	// user asked to remove a host, not to lose their work, and every
+	// `repose rm` on them now drains to no phases and completes. What
+	// they lose is said at the confirmation, in the CLI and the
+	// dashboard, not decided here.
+	// Named as the states that mean it is not answering, not as the ones
+	// that mean it is: a host still `registering` may yet come up, and
+	// a state added later should refuse until someone decides it should
+	// not.
+	if len(projects) > 0 && h.State != "unreachable" && h.State != "lost" {
 		slugs := make([]string, 0, len(projects))
 		for _, p := range projects {
 			slugs = append(slugs, p.Slug)

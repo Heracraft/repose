@@ -471,3 +471,49 @@ func TestDestroySaysWhetherASnapshotIsKept(t *testing.T) {
 		t.Errorf("a destroy whose host is gone says final_snapshot %v, want false; the CLI promises a snapshot on that answer: %s", r.body["final_snapshot"], r.raw)
 	}
 }
+
+// A host that is not answering can be removed although it still holds
+// machines, because refusing left the account with no way out at all:
+// the host could not be removed while it held a project, and the project
+// could not be destroyed while the host was not gone (ENG-119, DECISIONS
+// I-1420). A host that IS answering keeps the refusal, because its
+// machines are really there.
+func TestAHostThatIsGoneCanBeRemovedWithItsMachines(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-rig2"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+	if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes)
+		values ($1, $2, 'rig1', 'rig1', 'small', 'error', $3, 1)`, store.NewID(), uid, id); err != nil {
+		t.Fatal(err)
+	}
+
+	// Still answering: the refusal stands.
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 409 || detailOf(t, r)["reason"] != "host_has_projects" {
+		t.Fatalf("a host that answers: %d %s, want 409 host_has_projects", r.status, r.raw)
+	}
+
+	// The user removed the appliance, so the host stopped answering.
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set state = 'unreachable' where id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
+		t.Fatalf("a host that is not answering: %d %s, want 204; the account has no other way out", r.status, r.raw)
+	}
+
+	// Retired, and its credentials cleared, which is what makes this
+	// safe: the host cannot come back on them, so the guest whose volume
+	// I-924 worried about cannot reappear under a destroyed record.
+	var state string
+	var serial, token *string
+	if err := e.h.Pool.QueryRow(e.h.Ctx, "select state, cert_serial, join_token_hash from hosts where id = $1", id).Scan(&state, &serial, &token); err != nil {
+		t.Fatal(err)
+	}
+	if state != "retired" || serial != nil || token != nil {
+		t.Errorf("after removal: state %q, cert_serial %v, join_token_hash %v; want retired and both cleared", state, serial, token)
+	}
+}

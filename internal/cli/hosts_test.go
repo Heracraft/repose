@@ -301,3 +301,33 @@ func TestHostStateWords(t *testing.T) {
 		}
 	}
 }
+
+// Removing a host that has stopped answering is now allowed even though
+// machines are on it (I-1420), because refusing was a dead end. It is
+// also the one path on which a user loses machines by removing a host,
+// so the confirmation says so and names them. ENG-119: the account it
+// was found on could neither remove the host nor destroy the machine,
+// and the way out has to be a command whose question tells the truth.
+func TestRemovingAHostThatIsGoneSaysWhatGoesWithIt(t *testing.T) {
+	quiet := &Host{Name: "mac-rig2", State: "unreachable", Projects: 1}
+	p := hostRemovePrompt(quiet)
+	if !strings.Contains(p, "the machine on it cannot be recovered") {
+		t.Errorf("the question does not say the machine goes with it: %q", p)
+	}
+	if !strings.Contains(p, "not answering") {
+		t.Errorf("the question does not say why this one is allowed: %q", p)
+	}
+	if !strings.Contains(p, "mac-rig2") {
+		t.Errorf("the question does not name the host: %q", p)
+	}
+	// A host that is answering holds no machines it can lose this way:
+	// the api still refuses that, so the question must not threaten it.
+	live := &Host{Name: "mac-mini", State: "ready", Projects: 0}
+	if got := hostRemovePrompt(live); strings.Contains(got, "machine") {
+		t.Errorf("a host with nothing on it threatens machines: %q", got)
+	}
+	// Two machines read as two.
+	if got := hostRemovePrompt(&Host{Name: "mac-rig2", State: "lost", Projects: 2}); !strings.Contains(got, "the 2 machines on it cannot be recovered") || !strings.Contains(got, "their disks are") {
+		t.Errorf("two machines: %q", got)
+	}
+}

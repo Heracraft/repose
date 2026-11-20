@@ -54,7 +54,10 @@ async function clearHosts(page: import('@playwright/test').Page) {
 	}
 	const res = await fetch(`${apiURLFromEnv()}/hosts`, { headers: auth });
 	for (const h of (await res.json()) as { id: string }[]) {
-		const gone = await fetch(`${apiURLFromEnv()}/hosts/${h.id}`, { method: 'DELETE', headers: auth });
+		const gone = await fetch(`${apiURLFromEnv()}/hosts/${h.id}`, {
+			method: 'DELETE',
+			headers: auth
+		});
 		if (!gone.ok) throw new Error(`clearHosts: ${h.id}: ${gone.status} ${await gone.text()}`);
 	}
 	await page.goto('/settings/hosts');
@@ -252,6 +255,17 @@ test('a host that has registered shows its size, its machines and when it last a
 	await expect(off).toContainText('offline');
 	await expect(off).toContainText('14m ago');
 	await shots(page, 'hosts-offline');
+
+	// Offline and still holding a machine: this one IS removable
+	// (DECISIONS I-1420), because refusing it was the dead end in
+	// ENG-119 -- and it is the one path where removing a host loses
+	// machines, so the question says so in the same words `repose host
+	// rm` uses.
+	await off.getByRole('button', { name: 'Remove mac-mini…' }).click();
+	await expect(page.getByTestId('confirm-remove-host')).toContainText(
+		'It is not answering, and the machine on it cannot be recovered'
+	);
+	await page.getByTestId('confirm-remove-host').getByRole('button', { name: 'Keep it' }).click();
 });
 
 // The empty list is this page's most common state -- every account owns

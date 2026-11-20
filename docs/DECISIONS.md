@@ -37748,3 +37748,69 @@ destroyed. All three are the same family -- a counter or a message that
 nothing clears at the terminal state -- and all three are filed rather
 than fixed here, because changing what a sentence says is not the same
 change as clearing it when it stops being true.
+
+**I-1420. A user can say their own host is gone: `DELETE /hosts/{id}`
+retires a host whose state is `unreachable` or `lost` even while
+machines are on it, instead of refusing, and both clients' confirmations
+say how many machines go with it (fix-starts, 2026-11-20).** *Made
+during implementation* (ENG-119 and ENG-120, found by the spark on the
+owner's live account. Extends I-924, whose completion rule was already
+right; what was missing was the channel for the user's own statement.)
+
+Three documented commands, each behaving as written, left an account
+with nothing it could do. `repose rm rig1 --yes` accepted a destroy;
+`repose host rm --local --yes` on the Mac deleted the appliance, its
+disk and every machine on it in five seconds, which is what that flag
+documents; and then: the destroy could not finish without the host, the
+host could not be removed because it held a project (`host_has_projects`),
+and no replacement could be added because the plan's one slot was still
+held (`ExemptHosts = 1`, the count taking every host not `retired` or
+`lost`). `repose rm` printed its cheerful line twice and made two more
+ops that failed the same way.
+
+- *What was already right.* I-924 skips `wake`, `stop_guest`, `snapshot`
+  and `destroy_guest` when the host is gone, so a destroy drains to no
+  phases and `markDestroyed` runs. The account's own rows prove it: the
+  third destroy of `rig1` completed **at step 4 of 4 with no host at
+  all**, in the same minute, once an operator had run `hosts mark-lost`.
+  No change was needed there and none is made here.
+- *What was missing.* `hostGone` is `lost` or `retired`, and I-924
+  excluded `unreachable` deliberately: "That host may answer in a minute,
+  and skipping its phases would mark a guest destroyed with its volume
+  still live on a host that comes back. The guard is only for the two
+  states that mean **a human has said the host is not returning**." In
+  this sequence a human did say it, and said it with a destructive
+  command. But they said it on the Mac, and nothing carried it to the
+  account: only an operator's `mark-lost` or a retire can move a host to
+  a gone state, and the retire was the thing being refused. The hole is
+  a missing channel for the user's statement, not a missing capability.
+- *Why this does not reopen what I-924 closed.* Its reason for excluding
+  `unreachable` is that the host may come back. That premise does not
+  survive the command being asked for: the retire in this same handler
+  clears `cert_serial`, `prev_cert_serial` and `join_token_hash`, so a
+  retired host cannot come back on them. Checking a decision's premise
+  rather than its ruling is the rule this followed (I-616 against
+  I-1366); the ruling still stands for every op the engine builds, and
+  only this one route, which makes the comeback impossible as it runs,
+  is allowed to act on the user's word.
+- *The condition names the states that mean "not answering", not the ones
+  that mean "answering".* `unreachable` and `lost` are allowed; anything
+  else refuses. A host still `registering` may yet come up, and a state
+  added later should refuse until somebody decides it should not. The
+  first draft tested for `ready || draining` and let a `registering`
+  host through, which the existing test caught.
+- *The machines are left, not destroyed.* The user asked to remove a
+  host, not to lose their work, and after the retire every `repose rm`
+  on them drains to no phases and completes. So the loss is theirs to
+  take in one more command, and this route decides nothing about it.
+- *Which puts the whole weight on the confirmation, so both clients
+  carry it.* This is the only path on which removing a host loses
+  machines. `repose host rm` asks "It is not answering, and the machine
+  on it cannot be recovered: its disk is on that host and repose has no
+  copy", and Settings → Hosts asks it in the same words -- the dashboard
+  never gated its Remove button, so without that change it would have
+  stranded machines silently where the CLI warned (the parity rule,
+  I-1354 under I-1266). `--yes` skips the question, as everywhere.
+- *What a user should do instead when the Mac was only asleep* is in
+  `/docs/own-hardware`: turn it on and wait for `online`, because once a
+  host is removed it cannot rejoin and what was on its disk is gone.

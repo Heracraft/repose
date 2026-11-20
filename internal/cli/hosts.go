@@ -253,6 +253,19 @@ func HostRmLocalCmd(e *Env, yes bool, confirm func(prompt string) (bool, error))
 // is only ever asked of a host with none, and what it has to say is
 // where the snapshots were all along (I-1372).
 func hostRemovePrompt(h *Host) string {
+	// A host that is answering cannot be removed while machines are on
+	// it: the api refuses that. A host that has stopped answering can
+	// be, which is the only way out of the wedge in ENG-119 -- and it is
+	// the one path where removing a host loses machines, so the question
+	// says how many and that their disks were on it (DECISIONS I-1420).
+	if h.Projects > 0 && (h.State == "unreachable" || h.State == "lost") {
+		what, disks := "the machine on it", "its disk is"
+		if h.Projects > 1 {
+			what, disks = fmt.Sprintf("the %d machines on it", h.Projects), "their disks are"
+		}
+		return fmt.Sprintf("Remove %s? It is not answering, and %s cannot be recovered: %s on that host and repose has no copy. [y/N] ",
+			h.Name, what, disks)
+	}
 	return fmt.Sprintf("Remove %s? Snapshots taken on it stay on its disk, and repose has no copy. [y/N] ", h.Name)
 }
 
