@@ -54,6 +54,14 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 			return err
 		}
 	}
+	// On a Mac, every refusal that does not need a host comes first: a
+	// host minted and then refused is a record the retry collides with
+	// and a token nobody kept (I-1422).
+	if onAppleSilicon() {
+		if err := applianceCanInstall(e, o); err != nil {
+			return err
+		}
+	}
 	h, err := e.Client.CreateHost(ctx, CreateHostRequest{Name: name})
 	if err != nil {
 		return hostErr(err, name)

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 	"testing"
+
+	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
 // ENG-71, found on the AWS M4 by the council: `repose host add` refused
@@ -180,5 +182,34 @@ func TestApplianceLeftoversAreRemovable(t *testing.T) {
 	err := HostRmLocalCmd(e, true, nil)
 	if err == nil || !strings.Contains(err.Error(), "no appliance on this Mac") {
 		t.Fatalf("rm --local on a Mac with nothing: %v", err)
+	}
+}
+
+// Found live on the Mac at 58 GB free: the disk-floor refusal fired
+// correctly, but `repose host add` had already minted the host record,
+// so the retry hit "You already have a host named mac-park2" while
+// `--join` had no argument (the refused run printed none) and the
+// one-host plan refused a second name. Nothing the customer could type
+// recovered it. The refusal must come before the mint.
+func TestApplianceRefusalMintsNoHost(t *testing.T) {
+	e, _, p := fakeMac(t, 46)
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	le := newLifecycleEnv(t, fake)
+	e.Client = le.Client
+	e.Out, e.ErrOut = &discardWriter{}, &discardWriter{}
+
+	before := fake.Calls("POST /v1/hosts")
+	err := HostAddCmd(context.Background(), e, "mac-mini", applianceOptions{})
+	if err == nil || !strings.Contains(err.Error(), "the appliance needs a 40 GB disk") {
+		t.Fatalf("host add on a volume that cannot hold it: %v", err)
+	}
+	if n := fake.Calls("POST /v1/hosts") - before; n != 0 {
+		t.Fatalf("the refused add minted %d host(s); the retry then collides on the name", n)
+	}
+	if _, serr := os.Stat(p.Dir); serr == nil {
+		if ents, _ := os.ReadDir(p.Dir); len(ents) > 0 {
+			t.Fatalf("the refused add left %d file(s) on the Mac", len(ents))
+		}
 	}
 }

@@ -692,6 +692,42 @@ var freeGBOf = func(dir string) int {
 
 // ---- install ----------------------------------------------------------
 
+// applianceCanInstall is every refusal that does not need a host: this
+// Mac's own facts and the volume's free space. `repose host add` runs
+// it before it mints anything, because the mint is not free to undo. A
+// refusal after the mint left the host record behind, so the retry read
+// "You already have a host named mac-park2", `--join` had no argument
+// (the refused run printed none) and the one-host plan refused a second
+// name: nothing the customer could type recovered it (ENG-71, found on
+// the Mac at 58 GB free; DECISIONS I-1422).
+//
+// It is the CLI's order, not the api's: the api is asked once, when
+// there is something to ask it for.
+func applianceCanInstall(e *Env, o applianceOptions) error {
+	facts, err := readMacFacts()
+	if err != nil {
+		return exitf(ExitGeneric, "Could not read this Mac's facts: %v", err)
+	}
+	if err := checkMacForAppliance(facts); err != nil {
+		return err
+	}
+	p := applianceFor(e.HomeDir)
+	if _, err := os.Stat(p.Config); err == nil {
+		// Installed: nothing here will be sized, so nothing here refuses.
+		return nil
+	}
+	// The directory is made by the install, so before one has run the
+	// volume to measure is the home it sits in.
+	dir := p.Dir
+	if _, err := os.Stat(dir); err != nil {
+		dir = e.HomeDir
+	}
+	if _, err := diskGB(freeGBOf(dir), o.DiskGB); err != nil {
+		return exitf(ExitUsage, "%v", err)
+	}
+	return nil
+}
+
 // applianceOptions is what `repose host add` takes on a Mac.
 type applianceOptions struct {
 	DiskGB    int

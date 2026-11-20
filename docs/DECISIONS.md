@@ -38074,17 +38074,34 @@ grown.** A disk with no config has never booted: `applianceRun`, which
 the launchd agent and the detached fallback both invoke, reads the
 config first and refuses without it, and `applianceInstall` writes the
 config before the plist and the plist before any start, so no ordering
-leaves a launchable appliance without one. The resize is still
-grow-only, because two `host add` on one Mac at once would otherwise let
-the second shrink a disk the first had just started; every real plan is
-a grow, since the floor is 40 GB and the image is 37 GiB, so the
-restriction costs nothing. A disk at the
+leaves a launchable appliance without one. The resize is
+**grow-only, and that is on purpose**: it truncates only when the file
+on disk is smaller than the plan. Two `host add` on one Mac at once
+would otherwise let the second shrink a disk the first had just started,
+both having read `installed` false. That window is one this change
+opened rather than found: before it, the second run skipped the block
+and truncated nothing. It costs nothing to close, because the floor is
+40 GB and the image is 37 GiB, so every real plan is a grow and the
+shrink is unreachable rather than merely unlikely. Anyone relaxing this
+reopens it. A disk at the
 image's own size has nothing after the pool partition for
 `repose-mac-grow` to claim at boot, which is the named hypothesis of
 ENG-79: the host registers and reads `online` while a unit failed. A
 live appliance is never resized here; its disk has machines on it.
 
-(4) **`appliancePresent` is the second question**, whether there is
+(4) **Every refusal that does not need a host runs before the host is
+minted.** Found live on the Mac at 58 GB free, an hour after the Linux
+reproduction and on a third volume size: the disk floor refused
+correctly, but `repose host add` had already called `POST /hosts`, so
+the retry read "You already have a host named mac-park2", `--join` had
+no argument because the refused run printed none, and the one-host plan
+refused a second name. Nothing the customer could type recovered it, and
+a 37 GiB `disk.raw` sat there as well. `applianceCanInstall` is this
+Mac's facts and the volume's free space, asked before the api is asked
+for anything. It is the CLI's order and not the api's: the api is called
+once, when there is something to call it for.
+
+(5) **`appliancePresent` is the second question**, whether there is
 anything to remove. `repose host rm --local` clears an unfinished
 install instead of refusing "There is no appliance on this Mac", and
 `repose host rm NAME` takes it with the host: an install that never
@@ -38099,7 +38116,9 @@ checked); leaving the leftover and printing where it is (that is what
 ENG-118 filed); removing a leftover only when its name matches (it has
 no name, which is the defect).
 
-*Checked:* `TestApplianceRefusalIsAtomicAndRepeats` fails at head on
+*Checked:* `TestApplianceRefusalMintsNoHost` fails at head with "the
+refused add minted 1 host(s); the retry then collides on the name".
+`TestApplianceRefusalIsAtomicAndRepeats` fails at head on
 both halves, "the refusal left disk.raw behind" and then the retry
 installing; `TestApplianceLeftoverDiskIsSizedNotAdopted` fails at head
 with "disk is 39728447488 bytes (37.00 GiB), want 60 GiB", the exact
