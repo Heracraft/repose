@@ -48,6 +48,39 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
+// The Own hardware plan under the three cells (I-1364): a row, not a
+// fourth card, because it sells one host the visitor owns and none of
+// the three figures the cards carry.
+test('the pricing section offers Own hardware as a row under the three', async ({ page }) => {
+	await resetBilling();
+	await page.goto('/');
+	const pricing = page.locator('#pricing');
+	const own = pricing.getByTestId('plan-own');
+	await expect(own.getByRole('heading', { level: 3, name: 'Own hardware' })).toBeVisible();
+	await expect(own.locator('.o-price .o-n')).toHaveText('$10');
+	await expect(own).toContainText('One host; its memory and disk are the limits.');
+	// It is below the three, and the three are still three.
+	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveCount(3);
+	const cells = await pricing.locator('[data-testid^="plan-"]').allTextContents();
+	expect(cells[cells.length - 1]).toContain('Own hardware');
+	// Flush with the sheet like the cells above it: no card edge of its
+	// own (landing.css, the plans as flush cells).
+	await expect(own).toHaveCSS('border-top-left-radius', '0px');
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (dir) {
+		for (const width of [1440, 390]) {
+			for (const scheme of ['light', 'dark'] as const) {
+				await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+				await page.emulateMedia({ colorScheme: scheme });
+				await own.scrollIntoViewIfNeeded();
+				await page.screenshot({ path: `${dir}/landing-own-${width}-${scheme}.png` });
+			}
+		}
+		await page.setViewportSize({ width: 1280, height: 720 });
+		await page.emulateMedia({ colorScheme: null });
+	}
+});
+
 test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {
 	await setBilling({ founding_left: 0 });
 	await page.goto('/');
@@ -154,9 +187,9 @@ test('the headline starts under the logo, and stands centred over the picture fr
 			expect(Math.abs(logo.x - headline.x), `at ${width}`).toBeLessThanOrEqual(1);
 			continue;
 		}
-		const orb = (await page.locator('.hero .orb').boundingBox())!;
+		const pic = (await page.locator('.hero .term').boundingBox())!;
 		const mid = (b: { x: number; width: number }) => b.x + b.width / 2;
-		expect(Math.abs(mid(headline) - mid(orb)), `at ${width}`).toBeLessThanOrEqual(1);
+		expect(Math.abs(mid(headline) - mid(pic)), `at ${width}`).toBeLessThanOrEqual(1);
 		expect(headline.x, `at ${width}`).toBeGreaterThan(logo.x);
 	}
 });
@@ -225,6 +258,10 @@ test('the motion control shows, takes the pointer, and stands in the hero field'
 }) => {
 	for (const width of [1440, 1024, 390]) {
 		await page.setViewportSize({ width, height: 900 });
+		// The page's one control stands in the hero's field and holds
+		// every looping picture, not the hero's (I-666). It stays there
+		// now that the hero is the session, which does not loop, because
+		// the wreck, the setup and the grid still do.
 		await page.goto('/');
 		await expect(page.locator('main .fig-bar')).toHaveCount(0);
 		const buttons = page.locator('main .fig .pic-pause');
@@ -265,7 +302,7 @@ test('the motion control shows, takes the pointer, and stands in the hero field'
 // I-961, the owner's pick (alternative C's labels in D): one numbering
 // on the page. Each band after the hero opens on its number and name
 // over its h2, each cell on its band's number over its title (1.1 to
-// 1.6 and 4.1 to 4.4), and the install rows count under theirs (6.1 to
+// 1.2 and 4.1 to 4.4), and the install rows count under theirs (6.1 to
 // 6.3); the label sits on the text line, and its name starts at the
 // number's fixed width, where a step's name does too. I-1167 put the
 // layers and the wreck before the setup, and I-1212's bands run 01 to
@@ -275,7 +312,7 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 	await page.goto('/');
 	const heads = page.locator('main .band > .head');
 	await expect(heads.locator(':scope > .num')).toHaveText([
-		'01 Layers',
+		'01 Where it runs',
 		'02 Permissions',
 		'03 Setup',
 		'04 Machine',
@@ -285,12 +322,8 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 		'08 Questions'
 	]);
 	await expect(page.locator('#parts .cols > li > .num')).toHaveText([
-		'1.1 Machine',
-		'1.2 Walls',
-		'1.3 Your setup',
-		'1.4 Secrets',
-		'1.5 Triggers',
-		'1.6 Agent'
+		'1.1 On our servers',
+		'1.2 On a Mac mini you own'
 	]);
 	await expect(page.locator('#features .cell-copy > .num')).toHaveText([
 		'4.1 Snapshots',
@@ -353,51 +386,53 @@ test('the footer links to the refund policy', async ({ page }) => {
 	).toHaveAttribute('href', '/refunds');
 });
 
-// DECISIONS I-1169: the page sells a platform for running your own
-// always-on agents, built in layers. The h1 names it, the lead names the
-// machine and what you add to it, and six cells build it bottom to top.
-// Nothing names a command or a class that does not exist, and the
-// earlier headlines are gone. The job-application agent lost its band
-// in the hero loop's round 8 (I-1212): it is a trigger in the Orbit and
-// the triggers cell now.
-test('the hero and the layers say what repose is now', async ({ page }) => {
+// DECISIONS I-1446, which pulls the page back from I-1169's framework
+// pitch: it sells a machine of their own for the visitor's coding
+// agents, on our servers or on a Mac mini they own. The h1 names the
+// machine, the lead names what `repose run` carries and both homes, and
+// 01 compares the two homes instead of listing six layers. Nothing
+// names a command or a class that does not exist, and the earlier
+// headlines are gone.
+test('the hero and the two homes say what repose is now', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
-	await expect(page).toHaveTitle('repose: a platform for running your own always-on agents');
+	await expect(page).toHaveTitle('repose: a machine of its own for your coding agents');
 	await expect(page.locator('meta[name="description"]')).toHaveAttribute(
 		'content',
-		/^Run your own always-on agents: pick a machine, bring any agent/
+		/^repose run copies your checkout, tools and logins to a machine/
 	);
 	// The eyebrow is gone (owner, 2026-11-15).
 	await expect(page.locator('.hero .eyebrow')).toHaveCount(0);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-		'A platform for running your own always-on agents'
+		'Your coding agents, on a machine of their own'
 	);
 	await expect(page.locator('.hero .hk-lead')).toHaveText(
-		'Give your agent a machine of its own, then add what it needs: your dev environment, secrets, a schedule or a webhook that wakes it. It keeps working with your laptop shut.'
+		'repose run copies your checkout, tools and logins to a machine where the agents keep working after you close your laptop. On our servers, or on a Mac mini you own.'
 	);
 	await expect(page.locator('#parts .cols .item-title')).toHaveText([
-		'Size it to the job',
-		'Wall it off from your laptop',
-		'Bring your dev environment',
-		'Give it the keys you choose',
-		'Start it on a schedule or a webhook',
-		'Bring any agent'
+		'We run the machine',
+		'Or the Mac on your desk does'
 	]);
-	await expect(page.locator('#parts .cols .cmd')).toHaveText([
-		'repose resize --size large',
-		'repose run',
-		'repose secrets set NAME',
-		'repose notify set --ntfy URL'
-	]);
+	await expect(page.locator('#parts .cols .cmd')).toHaveText(['repose run', 'repose host add']);
+	// No start time for either home while the Mac's is too slow to print
+	// (ENG-70), and no memory figure until a size on an owned host is
+	// settled (ENG-91): one cell with a number beside one without is an
+	// implication, not an omission.
+	const homes = (await page.locator('#parts').textContent())!;
+	for (const implied of [/\bseconds\b/, /\bminutes\b/, /\d+\s?GB of memory\b/])
+		expect(homes).not.toMatch(implied);
 	const text = (await page.locator('main').textContent())!;
-	for (const gone of ['replicated in the cloud', 'For solo founders', 'A framework for running'])
+	for (const gone of [
+		'replicated in the cloud',
+		'For solo founders',
+		'A framework for running',
+		'Build it in layers'
+	])
 		expect(text).not.toContain(gone);
 	// Never on the page, and no command or class that does not exist.
 	for (const claim of [
 		/burst/i,
 		/bare metal/i,
-		/your own hardware/i,
 		/repose trigger/i,
 		/--size tiny/i,
 		/\btiny class\b/i
@@ -405,15 +440,13 @@ test('the hero and the layers say what repose is now', async ({ page }) => {
 		expect(text).not.toMatch(claim);
 });
 
-// The hero's picture (LANDING.md "The hero's picture") is the Orbit:
-// repose in the middle, the five agents as bubbles on a ring around it,
-// and in plain words what wakes it and what it carries. Named for a
-// screen reader, with no command or variable name in it (owner,
-// 2026-11-12), and whole in the first screen at 1440. Under reduced
-// motion it holds on its still frame: nothing is animating, and the
-// controller has let it go. The three lanes it replaced (Compose, the
-// hero of rounds 1 to 8) are not on the page.
-test('the hero picture is the Orbit, named in plain words, and holds under reduced motion', async ({
+// The hero's picture (LANDING.md "The hero's picture") is the real
+// `repose run` session since I-1446: named for a screen reader, whole
+// in the first screen at 1440, and under reduced motion every line is
+// there with nothing animating and no pause control, because it reveals
+// its lines once and never loops. The three lanes an earlier round used
+// (Compose) are not on the page.
+test('the hero picture is the real repose run session, and holds under reduced motion', async ({
 	browser
 }) => {
 	const context = await browser.newContext({
@@ -422,6 +455,32 @@ test('the hero picture is the Orbit, named in plain words, and holds under reduc
 	});
 	const page = await context.newPage();
 	await page.goto('/');
+	const term = page.locator('.hero .term');
+	await expect(term).toHaveAttribute('role', 'region');
+	await expect(term).toHaveAttribute('aria-label', 'A repose run session');
+	// Every line is there under reduced motion, the last one included.
+	await expect(term).toContainText('repose run -p');
+	await expect(term).toContainText('Ready in');
+	const pane = (await term.boundingBox())!;
+	expect(pane.height).toBeLessThanOrEqual(900 - 64);
+	await expect(page.locator('.cmp')).toHaveCount(0);
+	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+	await context.close();
+});
+
+// The Orbit is a `?hero=` candidate now rather than the hero (I-1446),
+// and keeps the contract it had while it led the page: repose in the
+// middle, the five agents on a ring, in plain words what wakes it and
+// what it carries, named for a screen reader with no command or
+// variable name in it (owner, 2026-11-12), holding on its still frame
+// under reduced motion.
+test('the Orbit keeps its contract as a gallery candidate', async ({ browser }) => {
+	const context = await browser.newContext({
+		reducedMotion: 'reduce',
+		viewport: { width: 1440, height: 900 }
+	});
+	const page = await context.newPage();
+	await page.goto('/?hero=orbitv1');
 	const orb = page.locator('.hero .orb');
 	await expect(orb).toHaveAttribute('role', 'img');
 	await expect(orb).toHaveAttribute('aria-label', /^repose in the middle: one always-on machine\./);
@@ -447,14 +506,11 @@ test('the hero picture is the Orbit, named in plain words, and holds under reduc
 	await expect(orb.locator('.phone .q')).toHaveText('Roll back the last deploy?');
 	const text = (await orb.textContent())!;
 	for (const jargon of [/repose run/, /[A-Z]+_[A-Z]+/]) expect(text).not.toMatch(jargon);
-	// Whole in the first screen, under the copy, and nothing of the three
-	// lanes left on the page.
+	// Whole in the first screen, under the copy.
 	const box = (await orb.boundingBox())!;
 	expect(box.height).toBeLessThanOrEqual(900 - 64);
-	await expect(page.locator('.cmp')).toHaveCount(0);
 	// Reduced motion: the still frame, with no loop behind it.
 	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 	await expect(page.locator('.orb-frame')).not.toHaveAttribute('data-motion', 'play');
-	await expect(page.locator('button.pic-pause')).toHaveCount(0);
 	await context.close();
 });

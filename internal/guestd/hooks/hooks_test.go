@@ -349,3 +349,84 @@ func TestPromptFallsBackToTheWindow(t *testing.T) {
 		t.Fatalf("another window's question closed: %+v", got)
 	}
 }
+
+// TestOpenAnswersAfterSlowWork is the guestd half of ENG-105: opening a
+// question is real work (a tmpfs write, the window lookup, the relay to
+// hostd), and the hook socket's own write deadline must not be shorter
+// than that work can take on a loaded guest. When it is, guestd holds
+// the question the owner will answer and cannot tell the asker its id.
+func TestOpenAnswersAfterSlowWork(t *testing.T) {
+	old := WriteWait
+	WriteWait = 300 * time.Millisecond
+	t.Cleanup(func() { WriteWait = old })
+
+	s, _, client := newHookServer(t, nil)
+	store := questions.New(t.TempDir(), func(questions.Question) {
+		time.Sleep(time.Second) // longer than WriteWait, shorter than OpenWait
+	}, quietLog(), nil)
+	s.EnableAsk(store, func(string, string, string, string) {})
+
+	body, _ := json.Marshal(AskPayload{Agent: "claude", Text: "Drop the legacy table?", TimeoutS: 180})
+	resp, err := client.Post("http://guestd/ask", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("the asker never got the answer to its open: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // test
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("the answer to the open was cut off: %v", err)
+	}
+	var st AskState
+	if resp.StatusCode != http.StatusCreated || json.Unmarshal(out, &st) != nil || st.ID == "" {
+		t.Fatalf("POST /ask answered %d %q", resp.StatusCode, out)
+	}
+	if q, err := store.Get(st.ID); err != nil || q.State != questions.StateOpen {
+		t.Fatalf("the question guestd answered with is not open: %+v %v", q, err)
+	}
+}
+
+// TestRetriedOpenAsksOnce: an asker whose POST /ask got no answer sends
+// it again with the same request_id. guestd answers with the question it
+// already opened. Without this the owner is asked the same question
+// twice, once for every attempt (ENG-105, DECISIONS I-1404).
+func TestRetriedOpenAsksOnce(t *testing.T) {
+	s, _, client := newHookServer(t, nil)
+	var opened []string
+	store := questions.New(t.TempDir(), func(q questions.Question) { opened = append(opened, q.ID) }, quietLog(), nil)
+	s.EnableAsk(store, func(string, string, string, string) {})
+
+	post := func() AskState {
+		t.Helper()
+		body, _ := json.Marshal(AskPayload{Agent: "claude", Text: "Drop the legacy table?", TimeoutS: 180, RequestID: "01a1f600-0000-7000-8000-000000000001"})
+		resp, err := client.Post("http://guestd/ask", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		defer resp.Body.Close() //nolint:errcheck // test
+		var st AskState
+		if err := json.NewDecoder(resp.Body).Decode(&st); err != nil || resp.StatusCode != http.StatusCreated {
+			t.Fatalf("POST /ask answered %d: %v", resp.StatusCode, err)
+		}
+		return st
+	}
+
+	first, second := post(), post()
+	if first.ID == "" || second.ID != first.ID {
+		t.Fatalf("the retry opened %q, the first %q: the owner was asked twice", second.ID, first.ID)
+	}
+	if len(opened) != 1 {
+		t.Fatalf("%d questions announced to the owner, want 1: %v", len(opened), opened)
+	}
+	// A different request id is a different question.
+	body, _ := json.Marshal(AskPayload{Agent: "claude", Text: "Drop the legacy table?", TimeoutS: 180, RequestID: "01a1f600-0000-7000-8000-000000000002"})
+	resp, err := client.Post("http://guestd/ask", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // test
+	var third AskState
+	_ = json.NewDecoder(resp.Body).Decode(&third)
+	if third.ID == first.ID || len(opened) != 2 {
+		t.Fatalf("a second question was not opened: %q, announced %v", third.ID, opened)
+	}
+}

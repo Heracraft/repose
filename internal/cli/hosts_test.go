@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +60,9 @@ func TestHostAddListRm(t *testing.T) {
 	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
 		t.Fatalf("limit: %v", err)
 	}
-	fake.SetHostLimit(-1)
+	// A plan that sells no host at all is 0; a figure below 0 puts the
+	// fake's default plan back, which sells one (I-1390's knob).
+	fake.SetHostLimit(0)
 	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
 		t.Fatalf("no plan: %v", err)
 	}
@@ -162,6 +166,16 @@ func TestHostRmRefusedWhileMachinesAreOnIt(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "repose rm") {
 		t.Fatalf("the way out is not in the refusal: %v", err)
+	}
+	// ENG-119, DECISIONS I-1418: it named `repose snapshots restore` as
+	// the other way out, and that is not one. On the owner's account the
+	// refusal was shown for rig1, which had no snapshot row at all
+	// (`count(*) from snapshots` was 0 and never anything else), so the
+	// command it sent them to had no id to take. It is not needed either:
+	// `repose rm` keeps the final snapshot for 30 days, so removing a
+	// machine does not lose the work a restore would have saved.
+	if strings.Contains(err.Error(), "snapshots restore") {
+		t.Errorf("the refusal names a restore, which has nothing to restore for a machine with no snapshot: %v", err)
 	}
 }
 
@@ -289,5 +303,114 @@ func TestHostStateWords(t *testing.T) {
 		if got := hostStateWord(api); got != want {
 			t.Errorf("%s: %s, want %s", api, got, want)
 		}
+	}
+}
+
+// TestHostLsAgreesWithItsOwnJSON is ENG-37, from the customer review: the
+// table printed "You have no hardware of your own." while `--json` on the
+// same account returned four hosts, all removed, and a script reading the
+// JSON to decide whether to add one concluded it already had four.
+//
+// The assertion is that the two outputs answer the same question, not
+// that either prints a particular string: a test that pinned today's
+// table and today's JSON separately is exactly what let them drift. Both
+// are read back and compared — the names each lists, and the words each
+// uses for a state.
+func TestHostLsAgreesWithItsOwnJSON(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out, errOut := &discardWriter{}, &discardWriter{}
+	e.Out, e.ErrOut = out, errOut
+
+	// One of each: a host that has joined, one that never did, and one
+	// the customer removed. The removed one is the whole finding.
+	live := fake.AddOwnedHost("mac-mini")
+	fake.SetHostLimit(9)
+	if err := HostAddCmd(ctx, e, "waiting-one", applianceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	gone := fake.AddOwnedHost("old-mac")
+	fake.SetOwnedHostState("old-mac", "retired")
+	_ = live
+	_ = gone
+
+	out.buf.Reset()
+	if err := HostLsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	table := out.buf.String()
+
+	out.buf.Reset()
+	e.JSON = true
+	if err := HostLsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	e.JSON = false
+	var fromJSON []Host
+	if err := json.Unmarshal([]byte(out.buf.String()), &fromJSON); err != nil {
+		t.Fatalf("--json: %v: %s", err, out.buf.String())
+	}
+
+	// Every host the JSON lists is in the table, and the other way round.
+	for _, h := range fromJSON {
+		if !strings.Contains(table, h.Name) {
+			t.Errorf("--json lists %s (%s) and the table does not:\n%s", h.Name, h.State, table)
+		}
+	}
+	for _, name := range []string{"mac-mini", "waiting-one"} {
+		if !strings.Contains(table, name) {
+			t.Errorf("the table does not list %s:\n%s", name, table)
+		}
+		if !slices.ContainsFunc(fromJSON, func(h Host) bool { return h.Name == name }) {
+			t.Errorf("--json does not list %s: %s", name, out.buf.String())
+		}
+	}
+	if slices.ContainsFunc(fromJSON, func(h Host) bool { return h.Name == "old-mac" }) {
+		t.Errorf("--json lists a host the customer removed: %s", out.buf.String())
+	}
+
+	// And they say the same word for a state. The docs name five
+	// (cli.md "repose host"); `registering` is not one of them, and a
+	// script that switched on it would be switching on a word no
+	// customer is ever shown.
+	for _, h := range fromJSON {
+		if got := hostStateWord(h.State); got != h.State {
+			t.Errorf("--json says %q for %s where the table says %q", h.State, h.Name, got)
+		}
+		if !strings.Contains(table, h.State) {
+			t.Errorf("--json says %q for %s and the table does not use that word:\n%s", h.State, h.Name, table)
+		}
+	}
+}
+
+// Removing a host that has stopped answering is now allowed even though
+// machines are on it (I-1420), because refusing was a dead end. It is
+// also the one path on which a user loses machines by removing a host,
+// so the confirmation says so and names them. ENG-119: the account it
+// was found on could neither remove the host nor destroy the machine,
+// and the way out has to be a command whose question tells the truth.
+func TestRemovingAHostThatIsGoneSaysWhatGoesWithIt(t *testing.T) {
+	quiet := &Host{Name: "mac-rig2", State: "unreachable", Projects: 1}
+	p := hostRemovePrompt(quiet)
+	if !strings.Contains(p, "the machine on it cannot be recovered") {
+		t.Errorf("the question does not say the machine goes with it: %q", p)
+	}
+	if !strings.Contains(p, "not answering") {
+		t.Errorf("the question does not say why this one is allowed: %q", p)
+	}
+	if !strings.Contains(p, "mac-rig2") {
+		t.Errorf("the question does not name the host: %q", p)
+	}
+	// A host that is answering holds no machines it can lose this way:
+	// the api still refuses that, so the question must not threaten it.
+	live := &Host{Name: "mac-mini", State: "ready", Projects: 0}
+	if got := hostRemovePrompt(live); strings.Contains(got, "machine") {
+		t.Errorf("a host with nothing on it threatens machines: %q", got)
+	}
+	// Two machines read as two.
+	if got := hostRemovePrompt(&Host{Name: "mac-rig2", State: "lost", Projects: 2}); !strings.Contains(got, "the 2 machines on it cannot be recovered") || !strings.Contains(got, "their disks are") {
+		t.Errorf("two machines: %q", got)
 	}
 }

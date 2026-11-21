@@ -84,3 +84,24 @@ func TestCmdlineHostnameFallback(t *testing.T) {
 		}
 	}
 }
+
+// A closure with a store disk gets it as the first virtio-blk disk,
+// read-only, the volume second (the guest's drive letters follow that
+// order), and the share stays.
+func TestArgsWithStoreDisk(t *testing.T) {
+	s := Spec{GuestDir: "/g", Kernel: "/k", Initrd: "/i", Init: "/init", VolumeDev: "/dev/v", VCPUs: 2, MemMiB: 2048,
+		Tap: "tap0", MAC: "52:54:00:00:00:01", CID: 3, StoreTag: "ro-store", StoreDisk: "/nix/store/abc-microvm-store-disk.erofs"}
+	args := s.Args()
+	var disks []string
+	for i, a := range args {
+		if a == "--disk" {
+			disks = append(disks, args[i+1])
+		}
+	}
+	if len(disks) != 2 || disks[0] != "path=/nix/store/abc-microvm-store-disk.erofs,image_type=raw,readonly=on" || !strings.HasPrefix(disks[1], "path=/dev/v,") {
+		t.Fatalf("disks %q", disks)
+	}
+	if !strings.Contains(strings.Join(args, " "), "--fs tag=ro-store,") {
+		t.Fatal("the share is gone")
+	}
+}

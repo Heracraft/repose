@@ -66,7 +66,7 @@ Each agent's window opens again with the conversation it was in ([When the machi
 
 ## When a machine's server restarts
 
-Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was: programs, tmux windows and agents carry on where they were. It takes a few minutes, longer on a server with a lot of memory in use, however much your own machine is holding. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server. The image is removed once the machine is back, and after 6 hours either way.
+Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was: programs, tmux windows and agents carry on where they were. It takes a few minutes, longer on a server with a lot of memory in use, however much your own machine is holding. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server. The image is removed once the machine is back, and after 6 hours either way. A machine on [your own Mac](/docs/own-hardware#restart-your-mac-and-your-machines-start-fresh) does not: a restart of the Mac starts it fresh, with its disk as it was.
 
 A machine that can't come back that way stops instead. Its disk is kept; processes and memory are lost, the agent's turn with them ([When the machine ends without a stop](/docs/run-and-attach#when-the-machine-ends-without-a-stop)). That's what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
 
@@ -196,6 +196,8 @@ $ repose run
 ✓ Created todo-app (large)  0.4s
 ...
 ```
+
+A machine on [hardware of your own](/docs/own-hardware) that you have removed keeps no final snapshot, and the line says `Destroying todo-app.` with nothing about one: the disk was on that machine and went with it, so there is nothing left to snapshot. The destroy finishes without the host.
 
 The name stays taken until the destroy finishes, so a `repose run` started meanwhile waits for it (`Waiting for the old todo-app to finish destroying`) and then creates a new project with the same name. It waits the same way for a project being destroyed that holds the name it wants but isn't this checkout's, instead of creating `todo-app-2`. `repose rm --wait && repose run` does the same in one line. The old machine's final snapshot is kept, and `repose ls --destroyed` still lists it, as `todo-app (name in use)`. If the destroy fails, the project lands in `error` and `repose run` creates nothing; `repose rm` tries again.
 

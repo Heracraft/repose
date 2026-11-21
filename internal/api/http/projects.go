@@ -6,10 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/heracraft/repose/internal/api/abuse"
@@ -124,6 +126,20 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// run the other one until it stops.
 		"multiplexer": multiplexer.Normalize(p.Multiplexer),
 		"placement":   store.NormalizePlacement(p.Placement),
+	}
+	if p.HostID != nil {
+		// The name the account gave its host, beside the id (I-1392): a
+		// script reading --json got an opaque uuid and never the name
+		// its owner typed, which nothing could work around. A host
+		// repose runs stays an id: that one is a platform internal
+		// (I-616), and its name is not the user's.
+		var name string
+		err := s.d.Pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id = $2", *p.HostID, u.ID).Scan(&name)
+		if err == nil {
+			out["host_name"] = name
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
 	}
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no
@@ -357,8 +373,20 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if count >= limits.Projects {
 			return projectLimitError(count, limits.Projects, 1)
 		}
-		_, err := tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, billing.NewProjectHeldBytes)
+		// Placement answers before the row is written (DECISIONS
+		// I-1390): a refusal is this request's 503 and leaves nothing
+		// behind. Until this the op placed the row afterwards, and a
+		// customer whose own host had not registered yet stranded one
+		// project in `error` per attempt. The pick is recorded on the
+		// row in this transaction, which is PickHost's contract.
+		held := billing.NewProjectHeldBytes
+		hostID, err := s.d.Engine.PlaceNew(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
+			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held})
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, host_id) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, held, hostID)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -391,6 +419,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		p, err = store.GetProject(ctx, tx, pid)
 		return err
 	})
+	var refused *ops.PlacementRefusal
+	if errors.As(err, &refused) {
+		return withDetail(errf(refused.Code, "%s", refused.Message), refused.Detail)
+	}
 	if err != nil {
 		return err
 	}
@@ -638,10 +670,14 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	for _, o := range open {
 		if o.Kind == ops.KindDestroy {
-			writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.ID, "state": o.State})
+			writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.ID, "state": o.State, "final_snapshot": s.finalSnapshot(r.Context(), p)})
 			return nil
 		}
 	}
+	// Taken before the state moves to `destroying`, because PlanDestroy
+	// reads the project's state and the answer must describe the plan
+	// that was enqueued (DECISIONS I-1418).
+	snap := s.finalSnapshot(r.Context(), p)
 	// The project reads `destroying` from the moment the destroy is
 	// accepted, in the same transaction, because the CLI returns right
 	// away (I-166) and the next `repose ls` must not show it running.
@@ -666,8 +702,32 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.d.Engine.Kick()
 	obs.Logger(ctx, s.d.Log).Info("project destroy accepted", "event", "guest_destroy", "project_id", pid.String(), "op_id", id.String())
-	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "state": "pending"})
+	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": id, "state": "pending", "final_snapshot": snap})
 	return nil
+}
+
+// finalSnapshot is whether this destroy will take one, which is what the
+// CLI needs to know before it says so: it prints its line the moment
+// this route answers, before any phase has run, and it promised a final
+// snapshot for a machine that had none and could never get one (ENG-119,
+// DECISIONS I-1418). Two reasons there may be no snapshot, and the
+// answer is the same for both: a temporary project's plan does not carry
+// the phase (I-347), and a host nobody expects back has every phase
+// skipped (I-924).
+func (s *Server) finalSnapshot(ctx context.Context, p *store.Project) bool {
+	if !slices.Contains(ops.PlanDestroy(p), ops.PhaseSnapshot) {
+		return false
+	}
+	if p.HostID == nil {
+		return false
+	}
+	h, err := store.GetHost(ctx, s.d.Pool, *p.HostID)
+	if err != nil || h == nil {
+		// The host row is gone, so the host is (ops.Engine.hostGone reads
+		// a missing row the same way).
+		return err == nil && h != nil
+	}
+	return h.State != "lost" && h.State != "retired"
 }
 
 func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {

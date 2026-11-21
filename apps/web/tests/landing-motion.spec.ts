@@ -3,6 +3,13 @@
 // of a pause button per picture), only one picture in
 // the "On every machine" grid plays at a time, and the hero rebuilds only on
 // a change of its own width, never of the window's height alone.
+//
+// Since I-1446 the hero is the real `repose run` session, which reveals
+// its lines once and does not loop, so it registers no picture: the page
+// has five, not six, and the control stands in the hero's field holding
+// the wreck, the setup and the grid. The rules that are about a hero's
+// own loop run against a looping candidate from the `?hero=` gallery,
+// where that behaviour still lives.
 import { test, expect, type Page } from '@playwright/test';
 
 const frames = '.pic-frame';
@@ -11,7 +18,19 @@ const playingInGrid = '[data-motion-group="grid"][data-motion="play"]';
 async function load(page: Page) {
 	await page.goto('/');
 	// Every picture registers once anime.js has loaded; the page's one
-	// control shows then.
+	// control shows then, and holds all of them. Five pictures since the
+	// hero became the real `repose run` session (I-1446), which does not
+	// register because it does not loop: the wreck, the setup and the
+	// three in the grid still do, which is why the control is still here.
+	await expect(page.locator('button.pic-pause')).toHaveCount(1);
+	await expect(page.locator(frames)).toHaveCount(5);
+}
+
+// A looping hero, from the `?hero=` gallery, for the rules that are
+// about the hero's own loop. The Orbit led the page until I-1446 and
+// these assertions held it then; they hold it where it lives now.
+async function loadLoopingHero(page: Page) {
+	await page.goto('/?hero=orbitv1');
 	await expect(page.locator('button.pic-pause')).toHaveCount(1);
 	await expect(page.locator(frames)).toHaveCount(6);
 }
@@ -22,7 +41,7 @@ async function load(page: Page) {
 // view from the first paint, so it is the one that shows it.
 test('the Orbit holds while the page moves and plays once it is still', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await load(page);
+	await loadLoopingHero(page);
 	const orb = page.locator('.orb-frame');
 	// Nudging the page keeps it unsettled, with the Orbit in view throughout.
 	for (let i = 0; i < 14; i++) {
@@ -35,7 +54,7 @@ test('the Orbit holds while the page moves and plays once it is still', async ({
 
 test('a height-only resize does not restart the hero', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await load(page);
+	await loadLoopingHero(page);
 	await page.locator('.hero-pic .mwin').scrollIntoViewIfNeeded();
 	await expect(page.locator('.hero-frame')).toHaveAttribute('data-motion', 'play');
 	// 9s in, the project rows have landed (T.land is 1.3s) and the
@@ -112,7 +131,9 @@ test('hovering a picture holds it, and it plays again after the pointer leaves',
 
 test('scrolling a picture under a resting pointer does not hold it', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await load(page);
+	// The hero's own frame is the picture this wheels under the pointer,
+	// so it needs a hero that registers one.
+	await loadLoopingHero(page);
 	await page.mouse.move(720, 450);
 	const hero = page.locator('.hero-frame');
 	// Wheel the hero's middle up to the pointer.

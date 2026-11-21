@@ -15,6 +15,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/park"
 	"github.com/heracraft/repose/internal/hostd/schedev"
 	"github.com/heracraft/repose/internal/hostd/shell"
+	"github.com/heracraft/repose/internal/parkkey"
 )
 
 // ParkOptions are hostd's guest park flags (DECISIONS I-652, I-653).
@@ -29,6 +30,11 @@ type ParkOptions struct {
 	// KeyFile is an RSA private key (PEM) used instead of Key Vault, for
 	// staging and tests; it must not live on the host's disks.
 	KeyFile string
+	// KeyVsockPort, when set, is the vsock port on the hypervisor's host
+	// (CID 2) where the launcher holding this VM wraps and unwraps image
+	// keys with a key it keeps in the Mac's Keychain (DECISIONS I-1386,
+	// internal/parkkey). Instead of Key Vault, on a host the customer owns.
+	KeyVsockPort uint
 	// Deadline bounds one ParkAll.
 	Deadline time.Duration
 	// WriteRateMBs is the write rate in MB/s a park estimates a
@@ -70,6 +76,8 @@ func parkSetup(o Options, r shell.Runner, l lvm.LVM, log *slog.Logger) (guest.Pa
 		return cfg, deps
 	}
 	switch {
+	case o.Park.KeyVsockPort != 0:
+		deps.Sealer = parkkey.NewClient(parkkey.VsockDialer(parkkey.HostCID, uint32(o.Park.KeyVsockPort)))
 	case o.Park.KeyFile != "":
 		deps.Sealer = &park.FileKey{Path: o.Park.KeyFile}
 	case o.Park.KeyVaultURL != "" && o.Park.KeyName != "":
@@ -81,7 +89,7 @@ func parkSetup(o Options, r shell.Runner, l lvm.LVM, log *slog.Logger) (guest.Pa
 		}
 		deps.Sealer = kv
 	default:
-		log.Error("guest park off: no image key (--park-key-vault and --park-key-name, or --park-key-file)", "event", "guest_park")
+		log.Error("guest park off: no image key (--park-key-vault and --park-key-name, --park-key-file, or --park-key-vsock)", "event", "guest_park")
 		cfg.Enabled = false
 	}
 	return cfg, deps

@@ -36,8 +36,9 @@ test("an offline host of the user's own is named in the list and on the machine'
 		name: 'own-host-app',
 		remote_url: 'github.com/heracraft/own-host-app'
 	});
+	let hostID = '';
 	try {
-		await setOfflineOwnHost(p.id, 'mac-mini', 14);
+		hostID = await setOfflineOwnHost(p.id, 'mac-mini', 14);
 
 		await page.goto('/projects');
 		const row = page
@@ -65,6 +66,15 @@ test("an offline host of the user's own is named in the list and on the machine'
 		await expect(stacked).toContainText('your host mac-mini has not answered for 14m');
 	} finally {
 		await destroyProject(api, p.id);
+		// The quiet host would refuse every later file's creates, as the
+		// api refuses a create while the account's host is offline
+		// (I-1390); its machine is gone, so it can go too.
+		if (hostID) {
+			await fetch(`${api}/hosts/${hostID}`, {
+				method: 'DELETE',
+				headers: { Authorization: 'Bearer playwright' }
+			});
+		}
 	}
 });
 

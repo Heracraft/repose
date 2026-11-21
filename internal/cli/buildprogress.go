@@ -16,8 +16,11 @@ import (
 // The steps come from the step lines of docs/interfaces/api.md "Build log
 // lines" and from Nix's own "will be built" / "will be fetched" and
 // per-path lines; I-57 kept those out of metrics, not out of a display.
-// Nix's lines themselves go to raw when it is set (-v, or no terminal),
-// and are hidden otherwise: a failure prints its own tail.
+// Nix's lines themselves go to raw when it is set (`-v`, and `--json`
+// where there are no steps at all), and are hidden otherwise: a failure
+// prints its own tail. Not having a terminal used to set it too, on the
+// premise that there were no steps to read without one; there are, so
+// the raw copy only buried them (ENG-27, DECISIONS I-1428).
 type buildView struct {
 	pr  *progress
 	raw io.Writer
@@ -201,7 +204,7 @@ func waitConfigOp(ctx context.Context, e *Env, project *Project, opID string) (*
 	switch {
 	case pr == nil:
 		v.raw = e.ErrOut // --json: no steps, the log as before, off stdout
-	case e.Verbose || !e.TTY:
+	case e.Verbose:
 		v.raw = pr
 	}
 	w := &opWatch{line: v.Line, phase: v.Phase}

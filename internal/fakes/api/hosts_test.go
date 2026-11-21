@@ -178,3 +178,50 @@ func TestFakeProjectPlacement(t *testing.T) {
 		t.Fatalf("detail %v", detailOf(t, r))
 	}
 }
+
+// TestFakeHostFollowsTheBillingMode: the fake refuses a host exactly
+// where the api does, from its own billing mode, rather than handing one
+// to every account. The api reads the plan (billing.Gate.HostsAllowed:
+// exempt or enforcement off gets one, no live subscription gets none,
+// otherwise the plan's Hosts), and a fake that said yes where the api
+// says no is how a reviewer reports "nothing stopped me" against a
+// contract that does stop them (ENG-36).
+func TestFakeHostFollowsTheBillingMode(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		mode    string
+		plan    string
+		allowed bool
+	}{
+		{"billing off is the exempt account", BillingOff, "", true},
+		{"a billing-exempt account", BillingExempt, "", true},
+		{"no plan at all", BillingNone, "", false},
+		{"a hosted plan sells no host", BillingActive, "solo", false},
+		{"the Own hardware plan", BillingActive, "own", true},
+		{"on trial on Own hardware", BillingTrial, "own", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := New(Options{})
+			defer f.Close()
+			state := BillingState{Mode: &c.mode}
+			if c.plan != "" {
+				on := true
+				state.Plan, state.OwnForSale = &c.plan, &on
+			}
+			if err := f.SetBillingState(state); err != nil {
+				t.Fatal(err)
+			}
+			r := call(t, f, "POST", "/v1/hosts", tok, nil)
+			if c.allowed {
+				if r.status != 201 {
+					t.Fatalf("mode %s plan %q: %d %s, want a host", c.mode, c.plan, r.status, r.body)
+				}
+				return
+			}
+			wantErr(t, r, 402, "payment_required")
+			if detailOf(t, r)["reason"] != "own_hardware_plan_required" {
+				t.Fatalf("mode %s plan %q: detail %v", c.mode, c.plan, detailOf(t, r))
+			}
+		})
+	}
+}

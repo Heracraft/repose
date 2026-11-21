@@ -552,6 +552,15 @@ func TestEveryDocsPageNamesRealCommands(t *testing.T) {
 				continue
 			}
 			name, _, _ := strings.Cut(tok, "=")
+			if name == "-" {
+				// A lone dash is a value, not a flag: it is standard
+				// input wherever it appears (`repose host add --join -`,
+				// I-1424). Reading it as a flag made this test wrong
+				// about a legitimate form, which pushes the next author
+				// into rewording a page rather than fixing the test.
+				positional++
+				continue
+			}
 			var f *pflag.Flag
 			if strings.HasPrefix(name, "--") {
 				f = cmd.Flags().Lookup(name[2:])

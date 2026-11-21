@@ -22,98 +22,84 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-20, 01:30 UTC)
+## Where things stand (2026-11-20, 18:00 UTC)
 
-- **No release happened on this shift and nothing was deployed.** CLI
-  v0.1.51 is still `Latest`, `origin/main` is still a3ecdc45, the base is
-  2026.11.19, `appliance-2026.11.19` is correctly not `Latest`. A release
-  needs the owner's word and they have not given one. Nothing was pushed,
-  switched, published or tagged.
-- Three batches were integrated: **r20261120-1** (ci-buf-comment,
-  conductor-handoff-5), **r20261120-2** (stop-attribution, pick-clock) and
-  **r20261120-3** (gemini-entry). Local `main` and `integrated` are the
-  same commit. The next release now ships as **base**, which means the
-  push is followed by `repose-admin base publish --rev <sha>`; before this
-  shift it shipped as nothing to deploy.
-- host-02 is healthy, read on the host rather than carried: up since the
-  20:29 restart, system switched 20:33, `hostd.service` active, three
-  `guest@*` units running and one of them restored from a park.
-  **Burst is on in production** (`--burst --burst-gate 0.750000` in
-  hostd's ExecStart), which is the owner's 2026-11-11 task, done; ENG-4 had
-  been sitting in the board's "Needs you" asking for a go they had already
-  given, and is now Done with that evidence. Stages 4 and 5 of the burst
-  proposal are unbuilt, so burst is silent and unbilled. The edge is up.
-- **Pull request CI is a gate again** (I-1400). For a week every run in
-  the repository was red on `buf lint and breaking`, which passes its three
-  buf commands and then exits 1 posting a comment the `contents: read`
-  token cannot post. A red run therefore carried nothing. The first
-  readable runs are green on that job.
-- **What the restored gate found on its first day is ENG-111, and it is
-  open.** On CI, `TestHelloLeavesAProjectWithAnOpenOpAlone` failed in
-  1.41 s with "the reconcile wrote a guest address while an op was open",
-  which is the behaviour I-720 exists to forbid, and it was then
-  reproduced here in 10.09 s under full-suite load. The guard is
-  read-then-act at seven call sites (three in `internal/api/ops/engine.go`,
-  one in `internal/api/events/events.go`, two in
-  `internal/api/http/projects.go`, one in `internal/admin/cmds.go`);
-  `OpenOpsForProject` takes a `Querier`, so each could read inside its
-  write's transaction, and the two on request paths are a separate
-  decision because failing closed there is a refusal a user sees. The
-  guard has stood unchanged since d26ab70f on 2026-10-14, which is I-720's
-  own commit and is in the deployed main, so this is a five-week-old live
-  defect rather than a regression, and **it blocks no release**. Its
-  consequence for a tenant is unmeasured. The mac-mini mini-conductor and
-  I agreed it does not jump the Mac's two P0s tonight.
-- **The three "starvation" reds are self-inflicted, which changes the
-  fix.** Per package on the same commit with the same shared Postgres:
-  `internal/api/resume` 277.9 s here against 24.1 s on CI,
-  `internal/api/ops` 414.7 against 53.0, `internal/api/scheduler` 254.8
-  against 10.6. **Measured**: the 10x per-package difference, and that
-  this box has 8 cores so `go test ./...` runs 8 packages at once against
-  one server. **Inferred, not measured**: that the cause is the runner's
-  lower parallelism; its core count is GitHub's documented standard and is
-  nowhere in the job log, and a different Postgres fsync path would
-  explain the same numbers. So try `-p 2` or an api-only pass and measure
-  it before touching `apitest.WaitOp`'s flat 30 seconds (ENG-113).
-  Related and not yet a problem: `internal/cli` took 461.0 s on CI and
-  passed, at 77 % of Go's 600-second default that the CI job never sets,
-  so a batch verification passes `-timeout` explicitly; mine used 30m and
-  40m.
-- The mac-mini program runs itself and **nothing of it is queued**; it will
-  queue nothing until the Mac gives `fix-starts` five starts out of five.
-  Two things of it are the release conductor's when it comes: **the
-  `nix flake check` with its builds has never passed on that branch**, and
-  the distinction matters because the job named "flake check" on CI runs
-  `--no-build`. The evaluation half has passed there once, on PR #76 at
-  81741b2b8 in 10m50s, for a head the branch is now 68 commits past; every
-  VM test and every closure check is the difference between the two, and
-  none of them has ever run on this branch. I agreed to run the real one
-  on the batch worktree and to say that out loud in the batch record and
-  the release notes. The second thing is commit **7db572b5**, which puts
-  the Own hardware plan
-  on public sale, must not reach main without the owner's word for that
-  commit. The landing session holds a separate piece for the same reason.
-  "The plan stays on sale in principle" is not that word.
-- The Mac is in a bad state, which is the program's to fix: two successes
-  in nine guest starts on the published build and nothing since 23:13 UTC,
-  with the event log isolating `starting` while stop, destroy and restore
-  each finish in about three seconds. The staged park test cannot be taken
-  while nothing starts.
-- `ops/dev/macmini` and the aws-mcp server both fail on an expired AWS
-  session, so nobody can allocate, inspect or release the AWS Mac until
-  the owner runs `aws login`, and it bills at $1.353 an hour meanwhile.
-  The owner has approved a third Mac day: the money is approved and the
-  credentials are not.
-- The repository has **no GitHub Actions secrets at all** (`gh secret
-  list` is empty), which is why ENG-99 cannot be built from here in any
-  shape; see Owed.
-- Secrets on this box are as the last conductor left them, the four files
-  under `~/.config/repose-ops/`.
-- Worktrees of mine under `~`: `kanali-ci-buf-comment`,
-  `kanali-conductor-handoff-5`, `kanali-stop-attribution`,
-  `kanali-pick-clock`, `kanali-gemini-entry`, `kanali-conductor-handoff-6`.
-  The throwaway Postgres for the batches was `batch-pg-1120` on port
-  55440, removed with `docker rm -f -v` at the end of the shift.
+- **Four batches are integrated and none of them is released.** Local
+  `main` is **`a9c5039b`** and `origin/main` is still `f6aab4f2`, which
+  is v0.1.53. That is **34 commits**, shipping **api, cli and web**:
+  `r20261120-11` through `-14`. `integrated` on GitHub holds all of it
+  and deploys nothing. **The queue is empty.**
+- **It is waiting on one sentence, and the sentence has to be typed in
+  the conductor's own session.** The owner told the mac-mini conductor
+  to publish everything that works. That reached this session as a
+  relay, and a relay is not the word: a push cycles production and a
+  peer cannot grant it. Both conductors have asked, twice each, and
+  neither will push on the other's account. **If you are the conductor
+  and the owner says it to you, everything below is one command.**
+- **The release is staged to be boring.** `ops/dev/docs-ahead-of-cli`
+  is green on this main, 115 documented commands against v0.1.53, so no
+  command is new and the tag does not have to chase the push (RELEASE.md
+  step 2b). The v0.1.54 notes are drafted, over the sign job's 400-byte
+  floor, saying two things: `host rm --local` counts the machines that
+  go with the appliance and names the host left on the account, and on
+  repose's side a machine's address can no longer be rewritten or
+  released while work on it is still running. The order is push main,
+  watch CI, annotated tag, notes on the draft before the sign job's
+  notes step, `release-assets` after, then the two owed live checks.
+- **What the four batches carry.** `r20261120-14` is the big one: the
+  new home page with the plan's price on it, which retires the held
+  `7db572b5` by shipping its copy with the page that makes it true
+  (I-1446); **ENG-111** fixed after five weeks, the guest-address write
+  and release each checking for an open op in one statement (I-1444);
+  ENG-148's bound; and both handoffs. `-13` has `host rm --local`
+  (I-1440) and the golden (I-1442). `-12` and `-11` are documents and
+  the appliance pin.
+- **Two live checks are owed at the release**, named in
+  `docs/releases/r20261120-14.md`: that `repose-admin projects show` on
+  a running project prints a `guest_ip` and no `guest_address` line with
+  `change=held` appears for a project with no open op, and that
+  repose.run shows the new headline and the Own hardware price.
+- **CI's `nix flake check (evaluate)` lost its runner seven times
+  today**, every time on a commit touching nothing the evaluation reads,
+  every re-run green. Five of those failures lasted 46m00s, 46m01s,
+  47m00s, 48m00s and 46m00s, against 8 to 11 minutes when it passes, so
+  a fixed platform timeout is pronouncing a runner dead long after it
+  stopped answering. **ENG-144** has the measurements: the command
+  exceeds 8.47 GiB in one process on a 16 GB runner, `checks.x86_64-linux`
+  alone is the peak, and four shards of ten put the worst process at
+  6.06 GiB and finish faster. It also says why that is not a one-line
+  change, because `nix flake check` validates output shapes a sharded
+  `nix eval` would silently stop checking. **Expect the red, re-run it,
+  and do not spend an hour on it.** It cost this shift an afternoon of
+  queue latency.
+- **Three kinds of red looked identical in a run summary today, and
+  only one was a flake.** The runner losses above are the platform.
+  `TestOverlapMenuOnARealTerminal` is genuine load and is recorded as
+  such from 2026-11-11. `TestParallelRangesErrors` was a test that had
+  been wrong since it was written and needed `-race` to expose it, found
+  because it was run locally instead of re-run on CI. **Run it here
+  before you re-run the job**: the first two cost a re-run, the third
+  costs a defect.
+- **`kaneo ls` shows about a third of the board**, measured from the api
+  behind it: 50 cards returned, 94 missing, including every card this
+  shift wrote to. Cards answer individually, so `show`, `note` and
+  `done` work. **ENG-145.** `docs/ops/RESTART.md` carries a grouped
+  inventory inline for that reason, and it is the document to read first
+  after a stop.
+- **The mac-mini program**: three builders are out, 19e on the aarch64
+  findings, 19f on the half of ENG-79 no code fix reaches, and
+  `factory-3f` with the Mac and ENG-138's three unknowns. The review's
+  second pass is parked on the owner's capacity decision with its
+  worktrees and briefs staged. The weekly model limit resets Saturday
+  2026-11-22 at 07:00 UTC.
+- Open and unowned, in the order they would hurt: **ENG-119** with its
+  siblings ENG-120, ENG-121 and ENG-122. **ENG-144** above. **ENG-146**,
+  the Hello reconcile's state write, which is ENG-111's sibling and left
+  deliberately because what should happen when an op opens mid-reconcile
+  is a question about states, not a race on a column. **ENG-10**, where
+  a killed Playwright run's fixtures keep the port and the next run
+  silently tests the old build. **ENG-147**, the home page's length.
+  **ENG-113**, the suite at `-p 2`.
 
 
 ## The owner's rules this week
@@ -319,6 +305,28 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   union, 224 lines. Expect the same for any shared document when you cut
   a long-lived branch, and read both sides rather than resolving: git has
   no opinion when the loss is not textual.
+- **A release claim is about an artefact, not about the tree.** v0.1.52's
+  notes said a customer's Mac worked properly. True of `main`; false of
+  the release, because the shipped CLI still pinned the previous
+  appliance, so every repair in hostd, guestd and the hook reached nobody.
+  Before publishing a claim, ask which artefact it lives in and whether
+  that artefact is the one the release ships (ENG-143).
+- **A test whose input is the repository is touched by every change.**
+  `test/domain` failed on a line in a merged council report, and neither
+  of the branch's runs covered it because both chose packages from the
+  diff. Choose by what a test reads, not by what the diff names.
+- **The exit code belongs to the thing that looked, not the thing looked
+  at.** Three in one day: `golangci-lint` absent from `PATH` reporting a
+  lint failure in zero seconds, `go test -race` without `CGO_ENABLED=1`
+  erroring instead of running, and a watcher of mine reporting failure
+  because its last command was `grep -c` on a pattern that correctly
+  matched nothing. Read the tool's own output and its duration.
+- **Prove on hardware, then publish.** The appliance went out only after
+  the three-part live check passed on a Mac against that exact image,
+  because publishing an unproven one would have replaced a build that
+  starts two times in nine with one nobody had started at all. Publish
+  with `--latest=false` and run `ops/dev/release-assets` **after**, which
+  is the only order that catches both of 2026-11-19's failures.
 - **`/tmp` is on the 29 GB root disk, not a tmpfs, and `/tmp/rt` grows
   without bound.** It held 7.9 GB at 01:04 on 2026-11-20 with the root
   filesystem at 86 %, mostly 372 `repose-sync-*.tar` from CLI tests plus
@@ -328,10 +336,90 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   alone, because a live dev shell holds one. Expect `df` not to move at
   once: a third of what I removed was still held open by running
   processes, and the space comes back when they exit.
+- **A platform's own annotation beats both sides' inference.** A red
+  whose log would not load had two of us reasoning from shape: I was
+  ready to accept the infrastructure's word, and the mac-mini conductor
+  had been wrong about load on shape four hours earlier, which is the
+  only reason they went looking for the link instead of agreeing. The
+  answer was one annotation on the check-run and one grep of `nix/`.
+  **Inference was the expensive thing all day; looking was the cheap
+  one.**
+- **Measure inside the cap rather than ban and guess.** This box forbids
+  a whole-flake evaluation because it takes 8.5 to 12 GB, and that range
+  came from runs with their builds, so the evaluation's own cost was
+  attributed by reasoning. One capped run settled it: the cgroup killed
+  `nix` at `anon-rss:8886640kB` with `--no-build` and nothing built, and
+  it had not finished. The ban is on running it uncapped; a cgroup kill
+  costs one evaluation and yields a number, where the uncapped run costs
+  a session and yields the same number. `DEV-BOX.md` has the invocation.
 - The exit-through-a-pipe trap again, in a verification script this time:
   a check whose output goes through `tail` or `grep` reports the pipe's
   exit, so `EXIT 0` printed under a `--- FAIL` line is the pipe
   succeeding. Read the `ok` and `FAIL` lines whenever either is piped.
+- **A stacked pull request cannot be merged by GitHub, only closed.**
+  `release-queue add --on BRANCH` bases a PR on another queued branch.
+  When the batch lands, `done` pushes `integrated` and GitHub marks the
+  PR whose base *was* `integrated` as merged, while the stacked ones stay
+  open: their base branch still exists, and `gh pr edit --base integrated`
+  then refuses with "There are no new commits between base branch
+  'integrated' and head branch", which is the refusal telling you the
+  work is already in. Confirm with `git merge-base --is-ancestor <head>
+  origin/integrated`, close them with a comment naming the batch, and
+  delete the merged branches. Two were left open on 2026-11-20 until I
+  looked.
+- **A verification that is not installed, and a suite talking to the
+  wrong server, both report what looks like a product failure.**
+  `golangci-lint` outside the dev shell answers "No such file or
+  directory" in zero seconds, and a pipe calls that success. A Playwright
+  suite whose predecessor still holds the test port fails every test in a
+  file at the identical timeout, which reads as sign-in and billing being
+  broken. The tell in both cases is the shape of the result rather than
+  its content: zero seconds, or one duration repeated. `ss -ltnp` names
+  the process holding a port in one line.
+- **Measure inside the cap rather than ban and guess, and then check your
+  own proposal.** A capped run settled what the flake evaluation costs
+  with nothing built. Sharding it then looked obvious, so I measured that
+  too: splitting by top-level group fails because `checks` alone is the
+  whole peak, and sharding `checks` by four drops the worst process to
+  6.06 GiB and runs faster. Then the proposal turned out not to be a
+  one-line change, because `nix flake check` validates output shapes a
+  sharded `nix eval` would silently stop checking. **The measurement was
+  cheap and it is the thing that stopped me landing a weaker gate.**
+- **A test asserting the conductor's own advice.** `DEV-BOX.md` tells a
+  heavy Nix run to point `TMPDIR` at the big disk, a verification script
+  took that for Go tests too, and a golden flipped because `unique` sorts
+  the real path. Fixed in the test and recorded as I-1442; the boundary is
+  in DEV-BOX.md. Advice travels further than the case it was written for.
+- **A composed page is measured in the browser, not in the file that
+  composes it.** I grepped `+page.svelte` for `data-motion-group`, got
+  zero, and cleared a landing change as having no looping pictures. The
+  attribute lives in the picture components; five of them loop, and the
+  change had removed the page's only motion control, which is WCAG
+  2.2.2. I had the page open in a browser at the time and nine
+  screenshots of it. One `locator('.pic-frame').count()` would have said
+  five. What caught it was a sixth spec file nobody had updated, doing
+  its job.
+- **An instrument that answers instantly and confidently is the one to
+  check.** Three did it in one day. `kaneo ls` returns 50 of ~144 cards
+  with column counts that are internally consistent. `gh pr checks <n>`
+  aggregates superseded attempts, so a job re-run green still prints
+  `fail`; read the newest run instead, `gh run list --branch <b> --limit
+  1` then `gh run view <id> --json status,conclusion,jobs`. And the grep
+  above. All three were wrong about the question asked, and none of them
+  looked wrong.
+- **`pgrep -f "<pattern>"` matches your own waiter.** An
+  `until ! pgrep -f "playwright test"` loop contains that string in its
+  own command line, so it never exits and every check says the job is
+  still running. It cost me a suite I thought was running and was not.
+  Match on something the waiter does not contain, or check the log.
+- **A bound nobody can re-derive is one the next person widens.**
+  `TestParallelRangesErrors` allowed `after + parallel + 1` fetches when
+  the dispatcher is bounded by the buffer pool, `parallel + 1`, plus one
+  per part the consumer hands back. One short since it was written, and
+  only `-race` was slow enough to reach it. Before widening it I removed
+  the `cancel()` and watched the test fail at every block in the
+  fixture, because widening a bound is how a guard quietly stops
+  guarding.
 
 ## Owed
 

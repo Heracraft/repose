@@ -305,6 +305,32 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	await expect(page.getByTestId('disk-over')).toHaveCount(0);
 });
 
+// A billing-exempt account has no plan and is refused nothing (I-1090),
+// so the page measures it against nothing: what it holds as facts, no
+// meter, no "over", no banner saying creating is refused. The council's
+// review read "359.9 GB of 100 GB · over" and that banner on such an
+// account, then made a project through the dashboard in 6 s
+// (docs/reports/2026-11-19-mac-mini-council-dashboard.md P0-2, ENG-34,
+// I-1396). The figures here pass every plan's, so a meter against any of
+// them would say over.
+test('a billing-exempt account sees what it holds, with no limit, no over and nothing refused', async ({
+	page
+}) => {
+	await setBilling({ mode: 'exempt', disk_held_gb: 612.3, egress_gb: 1200 });
+	await page.goto('/billing');
+	await expect(page.getByText('This account is billing-exempt.')).toBeVisible();
+	const facts = page.getByTestId('own-usage');
+	await expect(facts).toContainText('612.3 GB');
+	await expect(page.getByRole('progressbar')).toHaveCount(0);
+	await expect(page.getByText(/· over/)).toHaveCount(0);
+	await expect(page.getByText(/ of \d+ (GB|TB)/)).toHaveCount(0);
+	await expect(page.getByTestId('disk-over')).toHaveCount(0);
+	// The own-hardware line is about a host of the user's; this account has
+	// none, and the banner above already says what bounds it.
+	await expect(page.getByText("Your host's memory and disk are the limits.")).toHaveCount(0);
+	await shots(page, 'billing-exempt', 'own-usage');
+});
+
 // Over on egress and disk (review r3 B1, B3): the next charge carries the
 // overage, the egress note gives only the rate, and the projects that hold
 // the most disk stay named while it is over.

@@ -70,16 +70,48 @@ func TestUnixDialerAgainstFake(t *testing.T) {
 	}
 }
 
-// SetupProject waits for home-manager's first activation in the guest,
-// which took past 30 s on a busy host and failed the boot (DECISIONS
-// I-705). hostd waits a little longer than guestd's own 3-minute bound,
-// so the guest's error, which says which step ran out, is what arrives.
-func TestSetupProjectWaitsPastGuestdsBootDeadline(t *testing.T) {
-	if SetupTimeout <= 3*time.Minute || SetupTimeout > 4*time.Minute {
-		t.Fatalf("SetupTimeout %s, want just over guestd's 3-minute BootDeadline", SetupTimeout)
+// The two boot phases wait on the guest's own boot: the registration of
+// the closure's paths, and home-manager's first activation, which took
+// past 30 s on a busy host and failed the boot (DECISIONS I-705). Both
+// deadlines are the host's, and each sits below guestd's backstop, so
+// the one that fires is hostd's and the error names the phase and the
+// limit it used.
+//
+// I-705 had the opposite rule -- hostd waited 15 s longer than guestd's
+// 3 minutes, so guestd's error arrived -- and the reversal is I-1408's
+// (ENG-80). Under the old rule the deadline that decided every start was
+// a constant inside the guest image: it could not be raised for slower
+// hardware without rebuilding every guest, and the api could not say
+// which of the two phases had run out. On a Mac appliance both phases
+// run for minutes and five starts in a row failed in them.
+func TestTheHostOwnsTheBootPhaseDeadlines(t *testing.T) {
+	// guestd's backstop, which this package must stay under. It is
+	// guestd.BootDeadline; hostd does not import the guest's package,
+	// so the figure is restated with its source.
+	const guestdBackstop = 20 * time.Minute
+	for _, c := range []struct {
+		name string
+		d    time.Duration
+	}{{"PathsTimeout", PathsTimeout}, {"SetupTimeout", SetupTimeout}} {
+		if c.d >= guestdBackstop {
+			t.Errorf("%s %s is not below guestd's %s backstop, so the guest's deadline fires first and the phase is unknowable", c.name, c.d, guestdBackstop)
+		}
+		if c.d <= DefaultTimeout {
+			t.Errorf("%s %s is not above DefaultTimeout %s", c.name, c.d, DefaultTimeout)
+		}
 	}
-	if SetupTimeout <= DefaultTimeout {
-		t.Fatalf("SetupTimeout %s is not above DefaultTimeout %s", SetupTimeout, DefaultTimeout)
+	// The default is what guestd used to enforce, so a host that sets
+	// neither flag keeps the deadline it had.
+	if PathsTimeout != 3*time.Minute || SetupTimeout != 3*time.Minute {
+		t.Errorf("defaults changed from the 3 minutes guestd enforced: paths %s, setup %s", PathsTimeout, SetupTimeout)
+	}
+	// A host may raise them, which is the whole point.
+	got := Timeouts{Paths: 10 * time.Minute, Setup: 10 * time.Minute}.resolve()
+	if got.paths != 10*time.Minute || got.setup != 10*time.Minute {
+		t.Errorf("a host's own figures were not taken: %+v", got)
+	}
+	if zero := (Timeouts{}).resolve(); zero.paths != PathsTimeout || zero.setup != SetupTimeout || zero.def != DefaultTimeout || zero.sw != SwitchTimeout {
+		t.Errorf("the zero value does not keep the defaults: %+v", zero)
 	}
 }
 

@@ -276,8 +276,27 @@ func TestLoginStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := strings.TrimPrefix(fake.URL(), "http://")
-	if got := out.String(); !strings.Contains(got, " on "+host+", ") || strings.Count(got, "\n") != 1 {
+	// The fake's account is billing-exempt: no plan, and refused nothing,
+	// which is what the dashboard says of it too (ENG-40, I-1396).
+	if got := out.String(); !strings.HasSuffix(got, " on "+host+", billing-exempt\n") || strings.Count(got, "\n") != 1 {
 		t.Errorf("status %q", got)
+	}
+	fake.SetBilling(fakeapi.BillingNone)
+	out.Reset()
+	if err := loginStatus(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.HasSuffix(got, ", no plan\n") {
+		t.Errorf("status with no plan %q", got)
+	}
+	fake.SetBilling(fakeapi.BillingActive)
+	fake.SetPlan("plus")
+	out.Reset()
+	if err := loginStatus(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.HasSuffix(got, ", Plus plan\n") {
+		t.Errorf("status on a plan %q", got)
 	}
 	e.Client = newClient(fake.URL()+"/v1", notLoggedInSource{})
 	var errOut bytes.Buffer

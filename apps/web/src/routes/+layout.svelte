@@ -5,9 +5,9 @@
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { Toaster } from 'svelte-sonner';
-	import { authState, initAuth } from '$lib/auth.svelte';
-	import { isAnswerReturn, signinHref } from '$lib/signin';
+	import { Toaster, toast } from 'svelte-sonner';
+	import { authState, initAuth, rememberPrivateReturn } from '$lib/auth.svelte';
+	import { isAnswerReturn, isPrivatePath, signinHref } from '$lib/signin';
 	import { reachability } from '$lib/api/reachability.svelte';
 	import { init as initTheme, theme } from '$lib/theme.svelte';
 	import SiteHeader from '$lib/components/SiteHeader.svelte';
@@ -29,7 +29,7 @@
 	}
 	// The signed-in places. Only these send a signed-out visitor home; any
 	// other path renders (an unknown one, its 404) for everyone.
-	const isPrivate = (p: string) => /^\/(projects|questions|billing|settings)(\/|$)/.test(p);
+	const isPrivate = isPrivatePath;
 
 	onMount(() => {
 		void initAuth();
@@ -56,8 +56,22 @@
 			// A notification's link to a secret question signs in and comes
 			// back to it (I-929): the owner tapped it to answer.
 			const here = page.url.pathname + page.url.search;
-			if (isAnswerReturn(here)) location.assign(signinHref(here));
-			else void goto(resolve('/'));
+			if (isAnswerReturn(here)) {
+				location.assign(signinHref(here));
+				return;
+			}
+			// Everyone else goes to the landing page, as they always
+			// have, but hears why and keeps their place (ENG-44: the
+			// customer's token ran out, the address was rewritten to /
+			// and nothing was said, so neither reload nor Back
+			// recovered the page they asked for). The page is
+			// remembered rather than the sign-in being forced: a
+			// redirect into Logto on every private route would loop if
+			// the session ever read as ended while it was not, and a
+			// loop is worse than this was.
+			rememberPrivateReturn(page.url.pathname);
+			toast.error(`Sign in to open ${page.url.pathname}.`);
+			void goto(resolve('/'));
 		}
 	});
 

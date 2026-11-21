@@ -5,7 +5,7 @@ section: Account
 order: 30
 ---
 
-Your plan buys memory for running machines, disk for what your projects hold, and egress for the month. The first week is free.
+Your plan buys memory for running machines, disk for what your projects hold, and egress for the month. The first week is free. If the machine is yours, [Own hardware](#own-hardware) is $10 a month instead.
 
 <!-- plans: the page draws lib/plans.ts here; this table is for /docs/billing.md -->
 
@@ -21,7 +21,17 @@ The $39 is the founding price: the first 30 subscribers to Solo pay it for Solo'
 
 Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its [memory and cores](/docs/machine).
 
-Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page and the foot of its side menu do. On a narrower screen the dashboard shows a line under its menu only when the plan needs you: a failed payment, a suspended account, no plan, the waitlist or a held seat.
+Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page and the foot of its side menu do. On a narrower screen the dashboard shows a line under its menu only when the plan needs you: a failed payment, a suspended account, no plan, the waitlist or a held seat. An account marked billing-exempt has no plan and nothing is refused it: **Billing** lists what it holds with no limit beside it, and `repose login --status` says `billing-exempt`.
+
+## Own hardware
+
+If you have a machine of your own, a Mac mini or an x86 box, the Own hardware plan is **$10 a month** for one host you own. Your projects run on it, and everything else is the same: the dashboard, the CLI, SSH and the browser view, triggers, notifications and snapshots.
+
+The plan buys none of our compute, so it limits none of yours. What may run at once is whatever your machine's memory holds, a project's disk is whatever its disk holds, and egress isn't counted at all, because your machines send their traffic over your own connection. There's no seat to wait for either: you can buy it while repose is full.
+
+The free week, the card at checkout, the tax and what happens after a failed payment are the same as on any plan. Your snapshots stay on your own host's disk, so a dead disk loses them.
+
+You can't change between Own hardware and a hosted plan: they sell different things. Cancel the one you have, and choose the other when it ends.
 
 ## What a plan means
 

@@ -165,7 +165,7 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 | `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                                                                 |
 | `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                                                                |
 | `--link URL`      | none       | A button to what the question is about. `--label TEXT` names it. As on `repose-notify`.                                                                                                            |
-| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds. While you are typing an answer on the dashboard, the question stays open past it. |
+| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds. It covers reaching the machine's agent service as well as waiting for you, so a busy machine does not end an ask early. While you are typing an answer on the dashboard, the question stays open past it. |
 | `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                                                                          |
 | `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many.                                              |
 
@@ -174,12 +174,13 @@ It exits with:
 | Code | Meaning                                                                                                                                           |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | You answered. The answer is on standard output; with `--secret`, the secret is on the machine.                                                    |
-| 1    | The machine's agent service couldn't be reached, or refused the question. With `--secret`, also: the secret was set but didn't reach the machine. |
+| 1    | No question of yours is waiting: the machine's agent service couldn't be reached within the timeout and holds none of yours, or it refused the question. With `--secret`, also: the secret was set but didn't reach the machine. |
 | 2    | Wrong usage, such as no question, more than three options, or a `--secret` name that isn't valid.                                                 |
 | 3    | No answer before the timeout.                                                                                                                     |
 | 4    | No channel is on (email off, no ntfy topic, no working Google Chat webhook), so nobody would see the question.                                    |
 | 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted.                                                         |
 | 6    | You answered the agent in its terminal. Nothing is on standard output.                                                                            |
+| 7    | Asked, still open, and `repose-ask` stopped waiting for it, because the machine's agent service stopped answering while it waited. The question's id is on standard error. You may still answer it, so this is not "no answer": the agent should ask again or withdraw it, not act as though you had said nothing. |
 | 130  | Interrupted, for example with `Ctrl-C`. The question is cancelled.                                                                                |
 
 Messages and questions are capped at 1 KB and count toward the [hourly cap](#limits). Neither is written to any log.

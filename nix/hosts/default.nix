@@ -350,6 +350,35 @@ in
       '';
     };
 
+    guestPathsTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long the registration of a guest's store paths has before the
+        start fails (hostd --paths-timeout, a Go duration such as "10m").
+        Empty is hostd's 3 minutes, which is what guestd used to enforce
+        for every host.
+
+        It is a property of the hardware, not of the guest: the call took
+        2 min 6 s on the Mac appliance with the store over virtiofs
+        against 16 s with it on a disk (research/mac-mini-nested-kvm.md
+        §10), and at 3 minutes every start after a stop failed there,
+        five for five (ENG-80, DECISIONS I-1408).
+      '';
+    };
+
+    guestSetupTimeout = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        How long a guest's project set-up has before the start fails
+        (hostd --setup-timeout, a Go duration such as "10m"). Empty is
+        hostd's 3 minutes. The phase waits for home-manager's first
+        activation, which took 1 min 38 s on the Mac appliance against
+        seconds on Azure (DECISIONS I-1408).
+      '';
+    };
+
     owned = lib.mkOption {
       type = lib.types.bool;
       default = false;

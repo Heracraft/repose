@@ -548,6 +548,122 @@ decides between them, and it is a day's work on the Mac. Not measured:
 the Mac's own fio (no fio, no Homebrew there), and hostd's
 RegisterPaths natively on APFS.
 
+**The boot, measured the same evening (ENG-12).** `mkGuestRunner
+storeOnDisk` puts the guest's closure on an erofs image (3.3 GB for the
+6.6 GiB closure, built by microvm.nix's store-disk module) that hostd
+attaches as the first virtio-blk disk, read-only, from the
+`repose-store-disk` link beside the toplevel; the guest mounts it at
+`/nix/.ro-store` under its overlay and the share moves to
+`/nix/.ro-share`. Lab image 6 carried both guests, so one appliance (8
+vCPU, 12 GiB, the 6.18.57 kernel) booted each by closure, small class,
+minutes apart, through hostdev:
+
+| hostd's create breakdown | store on the erofs disk | store over virtiofs |
+|---|---|---|
+| volume | 2.1 s | 1.9 s |
+| ready (guestd answers) | 29.1 s | 59.5 s |
+| paths (RegisterPaths) | 16.2 s | 125.5 s |
+| setup (SetupProject) | 10.3 s | 102.2 s |
+| total | 57.9 s | 289 s |
+| the guest's own clock (`systemd-analyze`) | 5.2 s kernel + 44.6 s userspace | 7.7 s kernel + 4 min 31 s userspace |
+| `repose-paths.service` | 20.6 s | 2 min 6 s |
+| `home-manager-dev.service` | 10.8 s | 1 min 38 s |
+
+Five times faster end to end, eight on the store-bound phases, with
+the kernel's 13 s (§9) down to 5. A warm restart of the disk-fed guest
+(stop, start) took 81 s (ready 35.7, paths 37.7, setup 7.8). The share
+guest here is slower than §9's 141 s because the disk-fed guest was
+still running beside it; the pair is the point. What the disk does not
+fix: RegisterPaths is still 16 s, hostd's own work on the appliance,
+and SetupProject's 10 s is the guest's. Against x86's 26 to 40 s start
+to set up (boot-speed.md) the appliance is now within two times, not
+five, and the gap left is the catalogue recompute (the first lever), not
+the hypervisor. Three things cost a boot each: the store disk must be
+the first disk, since the guest's drive letters follow microvm.nix's
+order and stage 1 otherwise fscks the erofs as its root; the init on
+the kernel line must be the toplevel's, resolved, since the wrapper
+beside it is not in the image; and the CLI of v0.1.50 truncated the
+disk file below the image on a volume with 52 GB free (ENG-41, fixed
+at 38f5b797). What the measurement did not do: the share still serves
+later closures, and a project whose closure is not the base one reads
+it over virtiofs, so the product shape is a store disk per base and
+the share for the rest, or a disk per closure; neither is designed
+here.
+
+**The restore's seconds (ENG-13).** §9 quoted the restore's phases
+without the last one: the `restore phases` line has always ended in
+`guestd_ms`, the wait for guestd after the resume, and the unpark's
+preparation (volume activation, fingerprint, key unwrap) and its image
+open ran untimed before the phases. A park cycle of the disk-fed guest
+the same evening (a clean appliance stop, which parks its guests, then
+`repose host run` again): the park took 6.5 s (snapshot 203 ms, an 824
+MB image; the appliance stopped in 15 s), the appliance was back at its
+login in 21 s, and the unpark took 3.8 s for 27 s parked: net 34 ms,
+virtiofsd 41, store view 152, image read 1,015, resume 174, guestd
+1,630, and 772 ms outside the phases. So the unmeasured part of §9's
+7.8 s was mostly the guestd wait, which the line names, plus under a
+second of preparation; hostd now times the preparation too (`activate`,
+`fingerprint`, `unwrap`, `image_open`, `restore`, `discard` on the
+`guest restored` line, 6a77f9db), though this cycle ran the image's
+hostd, since the swapped binary was a runtime bind mount the reboot
+undid. Where the seconds go, then: the image read at about 0.8 GB/s
+and the guest's own wake-up, 1.6 s of the 3.8; a faster restore is a
+smaller image (the guest's free pages) and a quicker guestd answer,
+not the host.
+
+## 11. Every deadline a start crosses on this hardware (ENG-80, 2026-11-20)
+
+§10's phase figures are what the start's deadlines have to be judged
+against, and until I-1408 three of them were below those figures. The
+Mac review's own run is the evidence they were being crossed: nine
+starts on a clean `mac-m4.metal` appliance (published
+`appliance-2026.11.19`, `vfkit --cpus 8 --memory 18432 --nested`), two
+successes, and five of five failures after a clean `repose stop`, with
+two error strings, `the machine did not answer within a minute of
+starting` (attempts 2 and 3) and `the machine started but did not finish
+setting up in time` (attempts 5 to 9, 283 to 451 s each).
+
+Every deadline between `repose start` and a usable machine, with what a
+289 s start does to it. The measured column is §10's share guest, which
+is the shape a customer's guest has today.
+
+| deadline | where it lives | value | measured | crossed |
+|---|---|---|---|---|
+| ready: guestd's first answer | hostd `--ready-timeout`, `mac.nix` | 60 s default, **5 min on the Mac** | 59.5 s (§10), 45.7 s (§9), 70 s (I-1376) | yes at the default; the appliance's unit file carries 5m and attempt 3 still reached 6 min 30 s |
+| RegisterPaths | guestd `BootDeadline` | **3 min** | 125.5 s (§10), 59.7 s (§9) | within 54 s of it, and it is the deadline that fires |
+| RegisterPaths | hostd `SwitchTimeout` | 10 min | 125.5 s | no |
+| SetupProject | guestd `BootDeadline` | **3 min** | 102.2 s (§10), 34.8 s (§9) | within 78 s of it, and it is the deadline that fires |
+| SetupProject | guestd `project.DefaultTimeout` | **3 min** | 102.2 s | within 78 s |
+| SetupProject | hostd `SetupTimeout` | 3 min 15 s | 102.2 s | no |
+| `repose-paths.service` waits for the registration, then continues | guest unit | **180 s** | 126 s for the unit | within 54 s, and giving up is silent: home-manager then runs against an unregistered store |
+| `repose-store-repair` timer | guest timer | **`OnBootSec=4min`** | 289 s for the whole start | **yes**: it fires into the middle of a start, which its own comment said could not happen |
+| guestd "lost" after no vsock connection | hostd `GuestdLostAfter`, from the monitor's start | **60 s** | guestd answers at 59.5 to 70 s | **yes, on every healthy boot**: compared against a clock, not counted from a phase, so it fires while the guest is still coming up and raises `guestd_lost` to the api |
+| the api's phase timeout | `ops.phaseTimeout` default | 10 min | 289 s | no, but a ready failure plus its fallback boot can reach it |
+| the CLI's op poll | `cli.opPollTimeout` | 20 min | 289 s | no |
+| the gateway's dial into a guest | `DialTimeout` | seconds | n/a | no: it dials a running guest |
+
+The `guestd_lost` row is the one deadline here that is compared against a
+clock rather than counted from the start of the phase it bounds, which is
+the shape I-1412 names: a window keyed to "was this seen recently" reads
+a healthy, still-booting guest as gone, and a 289 s start crosses a 60 s
+window several times over.
+
+What the table says about the two error strings: they are two deadlines
+in two phases, as the reviewer deduced from the timings alone. The ready
+window is the host's and was already raised; the two phase deadlines
+were a constant inside the guest image, which is why they were never
+raised with it, and why the api could name neither phase. I-1408 moves
+them to the host.
+
+The publickey refusal the review saw after a failed start is neither of
+the two: it is the delivery's order. `deliver()` sent `WriteSecrets` and
+`SetPrincipals` after `RegisterPaths`, and a guest's user CA and
+principals file live on a tmpfs that sshd recreates empty on every boot,
+so a start that ran out of time in the registration left a guest that
+trusted nobody. `TestStartOutOfTimeKeepsSshAndNamesThePhase` fails on the
+old order with an empty secrets map and no principals, which is that
+refusal reproduced in a test rather than argued from the code.
+
 ## Sources
 
 - Scaleway Apple silicon docs (docs-content repository, `pages/apple-silicon/*`:
