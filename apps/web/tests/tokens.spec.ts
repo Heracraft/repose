@@ -2,8 +2,22 @@
 // makes one in a dialog that shows the token once, and revokes with the
 // two-step the Secrets tab uses. The token reaches the DOM once, in the
 // dialog, and never in the list.
-import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { test, expect, type Page } from '@playwright/test';
+import { signIn, createProject, apiURLFromEnv, failNext } from './helpers';
+
+async function shots(page: Page, name: string): Promise<void> {
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (!dir) return;
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
+		}
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: null });
+}
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -172,3 +186,76 @@ for (const width of [390, 360]) {
 		);
 	});
 }
+
+// A refusal raised while the Create token modal is open (both the 20-token
+// limit and a server error) renders INSIDE the dialog on top of the modal,
+// never as a toast hidden behind the top-layer backdrop (ENG-136, I-1450).
+test('Create token shows API refusals inside the modal dialog, never behind it', async ({
+	page
+}) => {
+	const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
+	// Clean any existing live tokens, then create 20 to hit the account limit.
+	const existing = (await (
+		await fetch(`${apiURLFromEnv()}/me/tokens`, { headers: auth })
+	).json()) as {
+		name: string;
+		revoked_at: string | null;
+	}[];
+	for (const t of existing) {
+		if (!t.revoked_at) {
+			await fetch(`${apiURLFromEnv()}/me/tokens/${t.name}`, { method: 'DELETE', headers: auth });
+		}
+	}
+
+	await page.goto('/settings/tokens');
+	const section = page.locator('#tokens');
+	const dialog = page.getByTestId('token-dialog');
+
+	// First: a 500 internal error renders in-dialog, above the backdrop.
+	await failNext('POST', '/v1/me/tokens', 'internal');
+	await section.getByRole('button', { name: 'Create token' }).click();
+	await dialog.getByLabel('Name', { exact: true }).fill('err-check');
+	await dialog.getByRole('button', { name: 'Create' }).click();
+	const refusal = dialog.getByTestId('token-create-error');
+	await expect(refusal).toContainText('Could not make the token.');
+	const errOnTop = await refusal.evaluate((el) => {
+		const b = el.getBoundingClientRect();
+		const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+		return el.contains(hit) || hit === el;
+	});
+	expect(errOnTop, 'internal refusal is covered by the modal backdrop').toBe(true);
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+	// Second: fill the 20-token limit and verify the limit sentence is shown
+	// inside the dialog on top of the backdrop.
+	const madeNames: string[] = [];
+	try {
+		for (let i = 1; i <= 20; i++) {
+			const name = `cap-${i}`;
+			const res = await fetch(`${apiURLFromEnv()}/me/tokens`, {
+				method: 'POST',
+				headers: auth,
+				body: JSON.stringify({ name, scopes: ['read'], expires_in_days: 7 })
+			});
+			expect(res.status).toBe(201);
+			madeNames.push(name);
+		}
+		await page.reload();
+		await section.getByRole('button', { name: 'Create token' }).click();
+		await dialog.getByLabel('Name', { exact: true }).fill('cap-21');
+		await dialog.getByRole('button', { name: 'Create' }).click();
+		await expect(refusal).toContainText('20 tokens at most');
+		const limitOnTop = await refusal.evaluate((el) => {
+			const b = el.getBoundingClientRect();
+			const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+			return el.contains(hit) || hit === el;
+		});
+		expect(limitOnTop, 'token_limit refusal is covered by the modal backdrop').toBe(true);
+		await shots(page, 'tokens-refused');
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+	} finally {
+		for (const name of madeNames) {
+			await fetch(`${apiURLFromEnv()}/me/tokens/${name}`, { method: 'DELETE', headers: auth });
+		}
+	}
+});

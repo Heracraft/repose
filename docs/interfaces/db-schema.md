@@ -44,7 +44,11 @@ hosts        (id pk, name text, hostname text, sku text, provider text, region t
               pool_unavailable bool not null default false,  -- the thin pool cannot serve volumes, from Hello and
                                                              -- every Heartbeat; nothing is placed here (0021, I-644)
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
-              nixos_system text, ch_version text,
+              nixos_system text, arch text, ch_version text,
+                                                            -- arch (0050, I-1448): CPU architecture (`x86_64`, `aarch64`)
+                                                            -- from HostInfo.arch / Hello.arch, separate from nixos_system
+                                                            -- (which is the /nix/store/... closure path). Updated on Hello
+                                                            -- and Rotate when non-empty so upgraded hosts populate it.
                                                             -- FROZEN AT REGISTRATION, with sku, hostname and mem_bytes:
                                                             -- Register runs once (single-use token), Rotate refreshes only
                                                             -- vcpus and cores, Hello and Heartbeat only the free/pool/load

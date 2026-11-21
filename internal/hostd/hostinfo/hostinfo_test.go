@@ -1,12 +1,16 @@
 package hostinfo
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/heracraft/repose/internal/hostd/shell"
 )
 
 func TestBootIDAndTime(t *testing.T) {
@@ -215,5 +219,31 @@ func TestPanicOnOops(t *testing.T) {
 	// reporting the host configured.
 	if on, err := panicOnOopsFrom(filepath.Join(t.TempDir(), "gone")); err == nil || on {
 		t.Fatalf("a missing sysctl read %v, %v", on, err)
+	}
+}
+
+// Arch reports the host's CPU architecture in Nix/Linux form ("x86_64",
+// "aarch64") rather than anything sliced from nixos_system's store path
+// (ENG-89, DECISIONS I-1448).
+func TestArchReportsCPUArchitectureNotStorePath(t *testing.T) {
+	cases := []struct{ goarch, want string }{
+		{"amd64", "x86_64"},
+		{"arm64", "aarch64"},
+		{"riscv64", "riscv64"},
+	}
+	for _, tc := range cases {
+		if got := archFor(tc.goarch); got != tc.want {
+			t.Errorf("archFor(%q) = %q, want %q", tc.goarch, got, tc.want)
+		}
+	}
+	got := Arch()
+	if got == "" || strings.Contains(got, "/") || strings.Contains(got, "-") {
+		t.Fatalf("Arch() = %q, want a plain CPU architecture string", got)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	info := Collect(ctx, &shell.Fake{}, nil)
+	if info.Arch != got {
+		t.Fatalf("Collect().Arch = %q, want %q", info.Arch, got)
 	}
 }

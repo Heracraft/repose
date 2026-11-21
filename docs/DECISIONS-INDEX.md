@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1059 entries.
+1061 entries.
 
 ## Scope
 
@@ -1091,3 +1091,5 @@ pointer, not a summary.
 - **I-1442** A golden that asserts an order sorts it back into the guest's order first: `TestClaudeSettingsMergeGolden` compares the dropped-hook lines after putting `/home/dev` back, not in the order `$TMPDIR` gave them (claude-golden ENG-139, 2026-11-20) — L38765
 - **I-1444** The guest-address write checks for an open op in its own `where`, not before it, and a write that matched no row does not update the caller's copy (hello-addr ENG-111, 2026-11-20) — L38806
 - **I-1446** The home page sells the machine again: the headline is "Your coding agents, on a machine of their own", the hero's picture is the real `repose run` session, 01 compares the two homes instead of listing six layers, and no band names a start time or a memory figure for either home (home-page, 2026-11-20) — L38878
+- **I-1448** Host architecture is its own field (`HostInfo.arch`, `Hello.arch`, `hosts.arch`), never sliced from `hosts.nixos_system` (web-hosts-ux, 2026-11-21) — L38942
+- **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38948

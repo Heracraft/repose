@@ -10,7 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import { listAccountSecrets, putAccountSecret, deleteAccountSecret } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
-	import { ApiError } from '$lib/api/errors';
+	import { errorText } from '$lib/api/errors';
 	import SecretDialog from '$lib/components/SecretDialog.svelte';
 	import { dateTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -52,9 +52,9 @@
 			void focusAfterRender('account-secret-add-open');
 			return undefined;
 		} catch (err) {
-			if (err instanceof ApiError && err.code === 'invalid') return err.message;
-			toastApiError(err, 'Could not store the secret.');
-			return 'Could not store the secret. Try again.';
+			// Shown inside SecretDialog rather than via a toast behind its
+			// top-layer backdrop (ENG-136, I-1450).
+			return errorText(err, 'Could not store the secret.');
 		}
 	}
 

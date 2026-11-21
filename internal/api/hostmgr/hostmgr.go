@@ -512,10 +512,11 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 		if _, err := tx.Exec(ctx, `update hosts set registered_at = now(), join_token_hash = null, guest_cidr = $2, wg_ip = $3, wg_pubkey = $4,
 			hostname = $5, sku = coalesce(nullif($6, ''), sku), mem_bytes = $7, vcpus = $8, pool_bytes = $9, nixos_system = $10, ch_version = $11,
 			cert_serial = $12, prev_cert_serial = null, cert_expires_at = $13, state = 'registering',
-			cores = case when $14::int > 0 then $14::int when $8::int > 1 then $8::int / 2 else 0 end
+			cores = case when $14::int > 0 then $14::int when $8::int > 1 then $8::int / 2 else 0 end,
+			arch = $15
 			where id = $1`,
 			h.ID, cidr, wgIP, wgPub, nilIfEmpty(info.Hostname), info.Sku, int64(info.MemBytes), int32(info.Vcpus), int64(info.PoolBytes), nilIfEmpty(info.NixosSystem), nilIfEmpty(info.ChVersion),
-			serial, time.Now().Add(pki.HostCertValidity), int32(info.Cores)); err != nil {
+			serial, time.Now().Add(pki.HostCertValidity), int32(info.Cores), nilIfEmpty(cleanArch(info.Arch))); err != nil {
 			return err
 		}
 		resp = &hostdv1.RegisterResponse{HostId: h.ID.String(), ClientCert: certPEM, ClientKey: keyPEM, GuestCidr: cidr.String(), HostCaPub: s.hostCAPubLine()}
@@ -577,9 +578,10 @@ func (s *Server) Rotate(ctx context.Context, req *hostdv1.RegisterRequest) (*hos
 	// it.
 	tag, err := s.pool.Exec(ctx, `update hosts set cert_serial = $2, prev_cert_serial = $4, cert_expires_at = $3,
 		vcpus = case when $5::int > 0 then $5::int else hosts.vcpus end,
-		cores = case when $6::int > 0 then $6::int when $5::int > 1 then $5::int / 2 else hosts.cores end
+		cores = case when $6::int > 0 then $6::int when $5::int > 1 then $5::int / 2 else hosts.cores end,
+		arch = case when $7 <> '' then $7 else hosts.arch end
 		where id = $1 and state not in ('lost', 'retired')`,
-		h.ID, serial, time.Now().Add(pki.HostCertValidity), presented, int32(info.Vcpus), int32(info.Cores))
+		h.ID, serial, time.Now().Add(pki.HostCertValidity), presented, int32(info.Vcpus), int32(info.Cores), cleanArch(info.Arch))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "rotate failed")
 	}
@@ -713,9 +715,9 @@ func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 	if features == nil {
 		features = []string{}
 	}
-	if err := s.pool.QueryRow(ctx, `update hosts h set state = case when h.state in ('registering','unreachable') then 'ready' else h.state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else h.pool_bytes end, pool_unavailable = $5, features = $6, last_heartbeat_at = now()
+	if err := s.pool.QueryRow(ctx, `update hosts h set state = case when h.state in ('registering','unreachable') then 'ready' else h.state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else h.pool_bytes end, pool_unavailable = $5, features = $6, arch = case when $7 <> '' then $7 else h.arch end, last_heartbeat_at = now()
 		from (select id, last_heartbeat_at from hosts where id = $1 for update) prev where h.id = prev.id returning prev.last_heartbeat_at`,
-		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes), h.PoolUnavailable, features).Scan(&lastHeard); err != nil {
+		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes), h.PoolUnavailable, features, cleanArch(h.Arch)).Scan(&lastHeard); err != nil {
 		s.log.Error("hello update failed", "event", "hello", "host_id", hostID.String(), "err", err.Error())
 	}
 	s.log.Info("hello", "event", "hello", "host_id", hostID.String(), "guests", len(h.Guests), "pool_unavailable", h.PoolUnavailable, "boot_id", h.HostBootId)
@@ -732,6 +734,23 @@ func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		}
 	}
 	return nil
+}
+
+// cleanArch returns a trimmed CPU architecture identifier ("x86_64",
+// "aarch64") or "" for anything else, so a store path or malformed value
+// never lands in hosts.arch (ENG-89, DECISIONS I-1448).
+func cleanArch(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 || len(s) > 32 {
+		return ""
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return ""
+		}
+	}
+	return s
 }
 
 func (s *Server) onHeartbeat(ctx context.Context, hostID uuid.UUID, serial string, hb *hostdv1.Heartbeat) error {

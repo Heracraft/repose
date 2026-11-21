@@ -41,7 +41,13 @@ type HostInfo struct {
 	// 3). Not Limits.cores, which is a nix build's job count. 0 from a
 	// hostd older than I-735, for which the api records vcpus / 2 instead,
 	// accepted for one release (DECISIONS I-735).
-	Cores         uint32 `protobuf:"varint,8,opt,name=cores,proto3" json:"cores,omitempty"`
+	Cores uint32 `protobuf:"varint,8,opt,name=cores,proto3" json:"cores,omitempty"`
+	// The host's CPU architecture in Nix/Linux form ("x86_64", "aarch64").
+	// Empty from a hostd older than I-1448, which leaves hosts.arch null
+	// until the host upgrades and sends it in Hello or Rotate. Never parsed
+	// from nixos_system, which is the /nix/store/... closure path
+	// (DECISIONS I-1448).
+	Arch          string `protobuf:"bytes,9,opt,name=arch,proto3" json:"arch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -130,6 +136,13 @@ func (x *HostInfo) GetCores() uint32 {
 		return x.Cores
 	}
 	return 0
+}
+
+func (x *HostInfo) GetArch() string {
+	if x != nil {
+		return x.Arch
+	}
+	return ""
 }
 
 type WireguardPeer struct {
@@ -787,7 +800,12 @@ type Hello struct {
 	// class ceiling, runs the cpu.max controller and takes SetBurst
 	// (DECISIONS I-1126). Absent from an older hostd, which
 	// answers a command it does not know `invalid_argument`.
-	Features      []string `protobuf:"bytes,9,rep,name=features,proto3" json:"features,omitempty"`
+	Features []string `protobuf:"bytes,9,rep,name=features,proto3" json:"features,omitempty"`
+	// The host's CPU architecture ("x86_64", "aarch64"), so an already-
+	// registered host populates hosts.arch on its first reconnect after
+	// upgrading hostd without re-registering (DECISIONS I-1448). Empty from
+	// a hostd older than this, which keeps whatever hosts.arch already holds.
+	Arch          string `protobuf:"bytes,10,opt,name=arch,proto3" json:"arch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -883,6 +901,13 @@ func (x *Hello) GetFeatures() []string {
 		return x.Features
 	}
 	return nil
+}
+
+func (x *Hello) GetArch() string {
+	if x != nil {
+		return x.Arch
+	}
+	return ""
 }
 
 type Heartbeat struct {
@@ -6041,7 +6066,7 @@ var File_repose_hostd_v1_hostd_proto protoreflect.FileDescriptor
 
 const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\n" +
-	"\x1brepose/hostd/v1/hostd.proto\x12\x0frepose.hostd.v1\"\xe2\x01\n" +
+	"\x1brepose/hostd/v1/hostd.proto\x12\x0frepose.hostd.v1\"\xf6\x01\n" +
 	"\bHostInfo\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12\x10\n" +
 	"\x03sku\x18\x02 \x01(\tR\x03sku\x12\x1b\n" +
@@ -6052,7 +6077,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"ch_version\x18\x06 \x01(\tR\tchVersion\x12\x1d\n" +
 	"\n" +
 	"pool_bytes\x18\a \x01(\x04R\tpoolBytes\x12\x14\n" +
-	"\x05cores\x18\b \x01(\rR\x05cores\"\x85\x01\n" +
+	"\x05cores\x18\b \x01(\rR\x05cores\x12\x12\n" +
+	"\x04arch\x18\t \x01(\tR\x04arch\"\x85\x01\n" +
 	"\rWireguardPeer\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x1d\n" +
 	"\n" +
@@ -6101,7 +6127,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x0einterrupted_at\x18\a \x01(\x03R\rinterruptedAt\x12\x1d\n" +
 	"\n" +
 	"resting_at\x18\b \x01(\x03R\trestingAt\x12!\n" +
-	"\fburst_denied\x18\t \x01(\bR\vburstDenied\"\xce\x02\n" +
+	"\fburst_denied\x18\t \x01(\bR\vburstDenied\"\xe2\x02\n" +
 	"\x05Hello\x12\x17\n" +
 	"\ahost_id\x18\x01 \x01(\tR\x06hostId\x124\n" +
 	"\x06guests\x18\x02 \x03(\v2\x1c.repose.hostd.v1.GuestStatusR\x06guests\x12$\n" +
@@ -6114,7 +6140,9 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"hostBootId\x12 \n" +
 	"\fhost_boot_at\x18\b \x01(\x03R\n" +
 	"hostBootAt\x12\x1a\n" +
-	"\bfeatures\x18\t \x03(\tR\bfeatures\"\xfc\x01\n" +
+	"\bfeatures\x18\t \x03(\tR\bfeatures\x12\x12\n" +
+	"\x04arch\x18\n" +
+	" \x01(\tR\x04arch\"\xfc\x01\n" +
 	"\tHeartbeat\x12$\n" +
 	"\x0efree_mem_bytes\x18\x01 \x01(\x04R\ffreeMemBytes\x12&\n" +
 	"\x0fpool_free_bytes\x18\x02 \x01(\x04R\rpoolFreeBytes\x12\x14\n" +

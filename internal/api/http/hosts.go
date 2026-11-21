@@ -62,13 +62,15 @@ func hostJSON(h *store.Host, projects, running int, token string, expires any, i
 	if h.Provider != nil {
 		out["provider"] = *h.Provider
 	}
-	// The architecture is the first half of the system the host reported
-	// (`x86_64-linux`), so it is known from the first registration and
-	// absent before it. No column: the machine tells us what it is.
-	if h.NixosSystem != nil {
-		if arch, _, ok := strings.Cut(*h.NixosSystem, "-"); ok && arch != "" {
-			out["arch"] = arch
-		}
+	// The architecture the host reported (`x86_64`, `aarch64`), kept in
+	// hosts.arch since I-1448. Before it, this sliced hosts.nixos_system
+	// on `-`, assuming a Nix system tuple; hostd actually stores
+	// `readlink /run/current-system` there, so owned Macs emitted
+	// `/nix/store/<hash>` (ENG-89). A non-path `x86_64-linux` value in
+	// nixos_system stays accepted for one release; store paths are never
+	// emitted.
+	if arch := hostArch(h); arch != "" {
+		out["arch"] = arch
 	}
 	if h.LastHeartbeatAt != nil {
 		out["last_heartbeat_at"] = *h.LastHeartbeatAt
@@ -82,6 +84,26 @@ func hostJSON(h *store.Host, projects, running int, token string, expires any, i
 		out["install"] = install
 	}
 	return out
+}
+
+var hostArchRe = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
+
+// hostArch returns the host's CPU architecture ("x86_64", "aarch64") or
+// "" when unknown. Prefers hosts.arch (I-1448); falls back to the first
+// half of a Nix system tuple ("aarch64-linux") in nixos_system only when
+// it is not a store path and matches a plain architecture token (ENG-89).
+func hostArch(h *store.Host) string {
+	if h.Arch != nil {
+		if a := strings.TrimSpace(*h.Arch); hostArchRe.MatchString(a) {
+			return a
+		}
+	}
+	if h.NixosSystem != nil && !strings.HasPrefix(*h.NixosSystem, "/") {
+		if arch, _, ok := strings.Cut(*h.NixosSystem, "-"); ok && hostArchRe.MatchString(arch) {
+			return arch
+		}
+	}
+	return ""
 }
 
 // hostCounts is the account's live projects on the host and those of

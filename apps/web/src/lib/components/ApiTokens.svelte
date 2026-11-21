@@ -7,10 +7,9 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { toast } from 'svelte-sonner';
 	import { listTokens, createToken, deleteToken } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
-	import { ApiError } from '$lib/api/errors';
+	import { ApiError, errorText } from '$lib/api/errors';
 	import { dateOnly, relativeTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
@@ -42,6 +41,8 @@
 	let saving = $state(false);
 	let nameError = $state<string | undefined>(undefined);
 	let scopeError = $state<string | undefined>(undefined);
+	/** A refusal that is not about a single field: the 20-token limit, API failure (ENG-136, I-1450). */
+	let createError = $state<string | undefined>(undefined);
 	let made = $state<ApiToken | undefined>(undefined);
 
 	let live = $derived((tokens ?? []).filter((t) => !t.revoked_at));
@@ -81,6 +82,7 @@
 		saving = false;
 		nameError = undefined;
 		scopeError = undefined;
+		createError = undefined;
 		made = undefined;
 	}
 
@@ -101,6 +103,7 @@
 			? undefined
 			: '1 to 32 of a-z, 0-9 and -, starting with a letter or digit.';
 		scopeError = scopes.length ? undefined : 'Pick at least one.';
+		createError = undefined;
 		if (nameError || scopeError) return;
 		saving = true;
 		try {
@@ -116,11 +119,24 @@
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				nameError = `You already have a token named ${n}.`;
-			} else if (err instanceof ApiError && err.code === 'invalid') {
-				if (err.detail?.reason === 'token_limit') toast.error(err.message);
-				else nameError = err.message;
+			} else if (
+				err instanceof ApiError &&
+				err.code === 'invalid' &&
+				err.detail?.reason === 'name'
+			) {
+				nameError = err.message;
+			} else if (
+				err instanceof ApiError &&
+				err.code === 'invalid' &&
+				err.detail?.reason === 'scopes'
+			) {
+				scopeError = err.message;
 			} else {
-				toastApiError(err, 'Could not make the token.');
+				// In the dialog, never behind it (ENG-136, DECISIONS I-1450): a
+				// native <dialog> opened with showModal() sits in the browser's
+				// top layer, which no z-index reaches, so a toast raised while
+				// it is open renders under the backdrop.
+				createError = errorText(err, 'Could not make the token.');
 			}
 		} finally {
 			saving = false;
@@ -347,6 +363,11 @@
 					</div>
 				</div>
 			</div>
+			{#if createError}
+				<p class="tdlg-refusal hk-field-error" role="alert" data-testid="token-create-error">
+					{createError}
+				</p>
+			{/if}
 			<div class="hk-modal-foot">
 				<button type="button" class="hk-btn-ghost" onclick={close}>Cancel</button>
 				<button type="submit" class="hk-btn" aria-disabled={saving ? 'true' : undefined}
@@ -525,6 +546,14 @@
 		margin: 0;
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
+	}
+	/* A refusal the api sent, between the fields and the buttons: the dialog
+	   is in the top layer and a toast is not (ENG-136, I-1450). */
+	.tdlg-refusal {
+		margin: 0;
+		padding: 0.75rem 1.25rem 0.25rem;
+		line-height: 1.25rem;
+		text-wrap: pretty;
 	}
 	.nw {
 		white-space: nowrap;
