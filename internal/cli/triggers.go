@@ -9,6 +9,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -64,6 +65,11 @@ type TriggerAddOptions struct {
 	Start       *bool
 	StopAfter   *bool
 	CatchUp     *bool
+	// Yes skips the question `--route` asks before it moves a route that
+	// forwards a provider's deliveries somewhere else (ENG-32); Confirm
+	// asks it, and is nil off a terminal.
+	Yes     bool
+	Confirm func(prompt string) (bool, error)
 }
 
 // TriggersAddCmd implements `repose triggers add NAME`. For a route it
@@ -125,6 +131,13 @@ func TriggersAddCmd(ctx context.Context, e *Env, projectArg, name string, o Trig
 	}
 
 	project, err := requireProject(ctx, e, projectArg)
+	if err != nil {
+		return err
+	}
+
+	// Before anything is written: a route that already answers with
+	// something else is not this trigger's to take (ENG-32).
+	took, err := routeTakeover(ctx, e, project, name, o)
 	if err != nil {
 		return err
 	}
@@ -191,6 +204,11 @@ func TriggersAddCmd(ctx context.Context, e *Env, projectArg, name string, o Trig
 	default:
 		_, _ = fmt.Fprintf(e.Out, "%s\n", t.Name)
 	}
+	// What the route used to answer with, when nothing asked (--yes): the
+	// question is that line when there is one, so it is said once.
+	if took != "" && o.Yes {
+		_, _ = fmt.Fprintf(e.ErrOut, "%s answered with %s until now; it starts %s from now on.\n", o.Route, took, name)
+	}
 	// Two things the user cannot see and has to know, each said once.
 	if t.Route != nil && t.Gate == "" {
 		_, _ = fmt.Fprintf(e.ErrOut, "No gate: anyone with that URL can start an agent run. `--gate CMD` checks the provider's signature.\n")
@@ -202,6 +220,56 @@ func TriggersAddCmd(ctx context.Context, e *Env, projectArg, name string, o Trig
 		_, _ = fmt.Fprintf(e.ErrOut, "An unattended run is proven for Claude Code; %s may stop at its first permission prompt.\n", *o.Agent)
 	}
 	return nil
+}
+
+// routeTakeover asks before `--route` moves a route that answers with
+// something else, and returns what that was ("" when nothing is taken
+// over). One door with two receivers is the design (I-1360) and `webhooks
+// list` says who answers, but nothing said it at the moment it changed:
+// a provider already posting to the route had its deliveries moved from
+// the project's own app to an agent in silence, and the only output was
+// the URL the user already had (ENG-32).
+//
+// Three cases are not a takeover: no such route, which `--route` creates
+// as it documents; a route this same trigger already owns, so re-running
+// `add` to change a flag never asks; and `--yes`.
+func routeTakeover(ctx context.Context, e *Env, project *Project, trigger string, o TriggerAddOptions) (string, error) {
+	if o.Route == "" {
+		return "", nil
+	}
+	route, err := e.Client.GetWebhook(ctx, project.ID, o.Route)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && (apiErr.Code == "not_found" || apiErr.Status == 404) {
+			return "", nil
+		}
+		return "", webhookErr(err, project.Slug, o.Route)
+	}
+	if route.Trigger == trigger {
+		return "", nil
+	}
+	had := routeAnswersWith(route)
+	if o.Yes {
+		return had, nil
+	}
+	if o.Confirm == nil {
+		return "", exitf(ExitUsage, "%s answers with %s, and --route %s would make it start %s instead. Pass --yes to take it over.",
+			o.Route, had, o.Route, trigger)
+	}
+	prompt := fmt.Sprintf("%s answers with %s. Make it start %s instead? [y/N] ", o.Route, had, trigger)
+	if err := confirmOr(o.Confirm, prompt, fmt.Sprintf("Nothing changed. %s still answers with %s.", o.Route, had)); err != nil {
+		return "", err
+	}
+	return had, nil
+}
+
+// routeAnswersWith is what a delivery to route reaches today, in the
+// words `webhooks list` uses for its TARGET column.
+func routeAnswersWith(route *WebhookRoute) string {
+	if route.Trigger != "" {
+		return "trigger " + route.Trigger
+	}
+	return ":" + strconv.Itoa(route.Port) + route.Path
 }
 
 // triggerFlagsOnly reports whether `add` names only flags, which changes

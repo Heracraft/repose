@@ -33,7 +33,7 @@ in
       description = ''
         Park running guests to an encrypted memory image when the host
         shuts down and restore them when it is back (DECISIONS I-652). Needs
-        the image key: keyVaultUrl and keyName, or keyFile.
+        the image key: keyVaultUrl and keyName, keyFile, or launcherPort.
       '';
     };
     keyVaultUrl = lib.mkOption {
@@ -50,6 +50,17 @@ in
       type = lib.types.str;
       default = "";
       description = "An RSA private key (PEM) on a path outside the host's disks, instead of Key Vault: staging and tests only.";
+    };
+    launcherPort = lib.mkOption {
+      type = lib.types.ints.between 0 65535;
+      default = 0;
+      description = ''
+        A host the customer owns, running as a VM under a launcher of
+        repose's (the Mac appliance, mac.nix): the vsock port on the
+        hypervisor's host where the launcher wraps and unwraps image keys
+        with a key it keeps in the Mac's Keychain (DECISIONS I-1386,
+        internal/parkkey). 0 is off; set, it replaces Key Vault and keyFile.
+      '';
     };
     deadline = lib.mkOption {
       type = lib.types.ints.between 10 300;
@@ -115,8 +126,8 @@ in
 
   config = lib.mkIf pk.enable {
     assertions = [{
-      assertion = pk.keyFile != "" || pk.keyVaultUrl != "";
-      message = "repose.host.park.enable needs keyVaultUrl (with keyName) or keyFile.";
+      assertion = pk.keyFile != "" || pk.keyVaultUrl != "" || pk.launcherPort != 0;
+      message = "repose.host.park.enable needs keyVaultUrl (with keyName), keyFile, or launcherPort.";
     }];
 
     # cryptsetup for the image's dm-crypt, btrfs-progs to make its

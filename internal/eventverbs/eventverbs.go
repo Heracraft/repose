@@ -11,12 +11,12 @@ import "strings"
 // are what reaches the phone and the email subject first, and what a
 // mail filter matches.
 var Verbs = map[string]string{
-	"completed":            "finished",
-	"needs_input":          "needs input",
-	"error":                "hit an error",
-	"agent_message":        "says",
-	"agent_question":       "asks",
-	"agent_done":           "is done",
+	"completed":      "finished",
+	"needs_input":    "needs input",
+	"error":          "hit an error",
+	"agent_message":  "says",
+	"agent_question": "asks",
+	"agent_done":     "is done",
 	// `repose say` reached the agent's terminal (DECISIONS I-1144). It
 	// notifies nobody, so this word is only ever read in `repose events`
 	// and the dashboard's event stream.

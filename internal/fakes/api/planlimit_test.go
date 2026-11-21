@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/heracraft/repose/internal/billing"
@@ -47,5 +48,23 @@ func TestPlanLimitMessageIsTheGates(t *testing.T) {
 func TestPlanKindMessageIsTheApis(t *testing.T) {
 	if MsgPlanKind != billing.MsgPlanKind {
 		t.Errorf("fake %q\n api %q", MsgPlanKind, billing.MsgPlanKind)
+	}
+}
+
+// The fake's own_hardware_plan_required sentence is the api's, word for
+// word, for the reason the plan_limit one is: it is what a buyer reads
+// when they try to add a Mac on a plan that sells no host, it names the
+// price, and a fake that worded it differently would hide a drift in
+// the one place the product currently says what a host costs (ENG-39).
+func TestOwnHardwareRefusalIsTheApis(t *testing.T) {
+	got := ownHardwareRequired()
+	want := billing.OwnHardwareRequiredMessage(FakeDashboard + "/billing")
+	if got != want {
+		t.Errorf("fake %q\n api %q", got, want)
+	}
+	// It carries the figure, not a word for it: a buyer who reads only
+	// this line knows the price.
+	if !strings.Contains(got, "$10 a month") || !strings.Contains(got, "one host") {
+		t.Errorf("the refusal does not name the price and the host count: %q", got)
 	}
 }

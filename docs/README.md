@@ -18,6 +18,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [DECISIONS.md](DECISIONS.md) | You want to know *why* something is the way it is, or want to change it. Every settled decision, with the alternatives that lost. |
 | [MILESTONES.md](MILESTONES.md) | You want to know what to build next and what "done" means for each stage. |
 | [REVIEW.md](REVIEW.md) | You are about to put something in front of users. How repose reviews as customers rather than as builders: three sessions by surface, the ranking rule, the confer, the second-pass gate, and the evidence rules a review rests on. |
+| [workstreams/CONDUCTING.md](workstreams/CONDUCTING.md) | You are coordinating several sessions rather than building. The roles a program runs on, how they are orchestrated, the mistakes that cost the most, and the rules for relaying another session's claim without breaking it. |
 | [CHECKLIST.md](CHECKLIST.md) | You are about to call something finished. The global definition of done. |
 | [LANDING.md](LANDING.md) | You touch the landing page: what it sells, its sections, the hero terminal, each fact once, copy rules. |
 | [GLOSSARY.md](GLOSSARY.md) | A word is used in a specific way (guest, host, edge, fragment, closure, project). |
@@ -29,6 +30,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [workstreams/](workstreams/README.md) | You are an agent picking up a chunk of work. Each workstream is self-contained: scope, non-goals, interfaces it owns and consumes, and a checklist. |
 | [interfaces/](interfaces/README.md) | Two workstreams meet here. gRPC between API and hostd, vsock between hostd and guestd, the HTTP API, the database schema, the SSH gateway login contract, the CLI config file. |
 | [features/](features/README.md) | User-facing behaviour, one feature per file, written as the behaviour a user sees and the edge cases that must hold. |
+| [ops/RESTART.md](ops/RESTART.md) | **A session is starting cold, or restarting after a stop: read this first.** What is published, what is merged and unpushed, what the owner asked for last, the open cards grouped so you can pick, the traps that reported failure in zero seconds, and what each role does first. |
 | [ops/CONDUCTOR-HANDOFF.md](ops/CONDUCTOR-HANDOFF.md) | You are the new conductor: where things stand, the owner's standing rules, the commands that worked on this box, the traps, and what is owed. Read it before RELEASE.md. |
 | [ops/ORCHESTRATION.md](ops/ORCHESTRATION.md) | You are running the waves: conductor and worker roles, the wave cycle, merge rules learned by doing, how applies and stalls are handled. |
 | [ops/RELEASE.md](ops/RELEASE.md) | Your branch is done and you want it on main, or you are the conductor cutting a release: the release queue, what a branch ships as, the verify-ship-check-record steps. |

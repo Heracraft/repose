@@ -264,7 +264,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		return m.fail(g, stepRunner, err)
 	}
 	spec := ch.Spec{
-		GuestDir: dir, Kernel: info.Kernel, Initrd: info.Initrd, Init: info.Init, KernelParams: info.KernelParams,
+		GuestDir: dir, Kernel: info.Kernel, Initrd: info.Initrd, Init: info.Init, KernelParams: info.KernelParams, StoreDisk: info.StoreDisk,
 		IP: g.IP, Gateway: m.gateway(), Netmask: m.netmask(), Tap: g.Tap, MAC: g.MAC, CID: g.CID,
 		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: m.bootVCPUs(class), MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
@@ -356,11 +356,20 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		return m.fail(g, stepReady, rf)
 	}
 	readyAt := m.d.Now()
-	paths, err := m.deliver(ctx, g, sess, dump)
+	dt, err := m.deliver(ctx, g, sess, dump)
 	if err != nil {
 		mon.stop()
 		m.removeMonitor(g.GuestID)
-		return m.fail(g, stepReady, err)
+		// Where the time went, on a boot that failed as much as on one
+		// that reached running. Without this line nobody could say which
+		// phase a failed start had run out of, which is how nine starts
+		// on a Mac appliance produced two error sentences and no
+		// evidence (ENG-80).
+		m.log(g).Warn("boot timings", "event", "guest_start", "op", op, "result", "failed", "phase", dt.phase,
+			"volume_ms", ms(volume), "prepare_ms", ms(chStart.Sub(bootStart)), "ready_ms", ms(readyAt.Sub(chStart)),
+			"identity_ms", ms(dt.identity), "paths_ms", ms(dt.paths), "setup_ms", ms(dt.setup),
+			"limit_ms", ms(dt.limit), "total_ms", ms(volume+m.d.Now().Sub(bootStart)))
+		return m.fail(g, stepReady, m.deliverFailure(g, consoleFrom, dt, err))
 	}
 	// The closure reached Ready and took its delivery: it is what a later
 	// boot that fails falls back to (I-590). setState writes the record.
@@ -369,9 +378,13 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		return m.fail(g, stepReady, err)
 	}
 	done := m.d.Now()
+	// SetupMs is the set-up phase as deliver measured it, not what is
+	// left of the delivery after the registration: since I-1408 the ssh
+	// identity is delivered first, and the rest of this window is the
+	// record write.
 	bt := &hostdv1.BootTimings{
 		VolumeMs: ms(volume), PrepareMs: ms(chStart.Sub(bootStart)), ReadyMs: ms(readyAt.Sub(chStart)),
-		PathsMs: ms(paths), SetupMs: ms(done.Sub(readyAt) - paths), TotalMs: ms(volume + done.Sub(bootStart)),
+		PathsMs: ms(dt.paths), SetupMs: ms(dt.setup), TotalMs: ms(volume + done.Sub(bootStart)),
 	}
 	m.mu.Lock()
 	m.boots[g.GuestID] = bt
@@ -379,7 +392,8 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	m.log(g).Info("guest running", "event", "guest_start", "class", g.Class)
 	// Where the boot's time went, as "stop timings" says for a stop
 	// (DECISIONS I-707); the same numbers go back in the result.
-	m.log(g).Info("boot timings", "event", "guest_start", "op", op, "volume_ms", bt.VolumeMs, "prepare_ms", bt.PrepareMs,
+	m.log(g).Info("boot timings", "event", "guest_start", "op", op, "result", "running", "identity_ms", ms(dt.identity),
+		"volume_ms", bt.VolumeMs, "prepare_ms", bt.PrepareMs,
 		"ready_ms", bt.ReadyMs, "paths_ms", bt.PathsMs, "setup_ms", bt.SetupMs, "total_ms", bt.TotalMs)
 	return nil
 }
@@ -405,46 +419,92 @@ type dumpResult struct {
 	err error
 }
 
-// deliver sends secrets, principals and the project setup after Ready.
-// dump delivers the closure's registration, read while the guest booted.
-// It returns how long the registration took, its wait for the dump
-// included.
-func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.Session, dump <-chan dumpResult) (time.Duration, error) {
+// The phases of a delivery, as the boot timings line and the error name
+// them. A start that runs out of time runs out in one of these, and until
+// ENG-80 nothing said which: the api turned every one of them into the
+// same sentence, and a failed boot logged no timings at all, so five
+// failed starts on a Mac appliance could not be told apart from each
+// other or from a guest that had hung (DECISIONS I-1408).
+const (
+	phaseIdentity = "identity"
+	phasePaths    = "paths"
+	phaseSetup    = "setup"
+)
+
+// deliverTimings is where a delivery's time went and, when it failed,
+// which phase failed and what deadline that phase had.
+type deliverTimings struct {
+	identity, paths, setup time.Duration
+	phase                  string
+	limit                  time.Duration
+}
+
+// deliver sends the machine's ssh identity, the closure's registration,
+// the trigger set and the project setup after Ready. dump delivers the
+// closure's registration, read while the guest booted. It returns where
+// the time went, and on a failure which phase failed and the deadline it
+// had.
+//
+// The ssh identity goes first, ahead of the registration, which is the
+// slowest call of a start (2 min 6 s on the Mac appliance, against 16 s
+// with the store on a disk). The user CA and the principals file both
+// live on a tmpfs and sshd recreates them empty on every boot, so until
+// this order a start that ran out of time in either later phase left a
+// machine that trusted nobody: "Permission denied (publickey)" for the
+// user, at the one moment they most need to get in and read the logs
+// (ENG-80, DECISIONS I-1408). Both calls are idempotent -- the api sends
+// the same material on every start -- and neither needs the nix database
+// the registration loads, which SetupProject's home-manager does.
+func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.Session, dump <-chan dumpResult) (deliverTimings, error) {
+	var t deliverTimings
 	start := m.d.Now()
-	// The booted closure is on disk in the guest but unknown to its nix
-	// database until registered (DECISIONS I-67).
-	var d dumpResult
-	select {
-	case d = <-dump:
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
-	reg, err := d.b, d.err
-	if err != nil {
-		return 0, fmt.Errorf("nix-store --dump-db: %w", err)
-	}
-	if len(reg) > 0 {
-		if err := sess.RegisterPaths(ctx, reg); err != nil {
-			return 0, fmt.Errorf("RegisterPaths: %w", err)
-		}
-	}
-	paths := m.d.Now().Sub(start)
 	if secrets := m.cachedSecrets(g.GuestID); len(secrets) > 0 {
 		if err := sess.WriteSecrets(ctx, secrets); err != nil {
-			return paths, fmt.Errorf("WriteSecrets: %w", err)
+			t.phase, t.limit = phaseIdentity, vsockclient.DefaultTimeout
+			return t, fmt.Errorf("WriteSecrets: %w", err)
 		}
 	}
 	if len(g.Principals) > 0 {
 		if err := sess.SetPrincipals(ctx, g.Principals); err != nil {
-			return paths, fmt.Errorf("SetPrincipals: %w", err)
+			t.phase, t.limit = phaseIdentity, vsockclient.DefaultTimeout
+			return t, fmt.Errorf("SetPrincipals: %w", err)
 		}
 	}
+	t.identity = m.d.Now().Sub(start)
+
+	// The booted closure is on disk in the guest but unknown to its nix
+	// database until registered (DECISIONS I-67).
+	pathsStart := m.d.Now()
+	var d dumpResult
+	select {
+	case d = <-dump:
+	case <-ctx.Done():
+		t.phase, t.limit = phasePaths, m.cfg.PathsTimeout
+		return t, ctx.Err()
+	}
+	reg, err := d.b, d.err
+	if err != nil {
+		t.phase = phasePaths
+		return t, fmt.Errorf("nix-store --dump-db: %w", err)
+	}
+	if len(reg) > 0 {
+		if err := sess.RegisterPaths(ctx, reg); err != nil {
+			t.paths = m.d.Now().Sub(pathsStart)
+			t.phase, t.limit = phasePaths, m.cfg.PathsTimeout
+			return t, fmt.Errorf("RegisterPaths: %w", err)
+		}
+	}
+	t.paths = m.d.Now().Sub(pathsStart)
+
+	setupStart := m.d.Now()
 	// The trigger set, before SetupProject starts the session: a
 	// delivery that arrives on a machine whose receiver has no set is a
 	// 404 the provider reads as "no such route" (I-1248).
 	if set := m.cachedTriggers(g.GuestID); len(set) > 0 {
 		if err := sess.SetTriggers(ctx, &guestdv1.SetTriggers{Triggers: set}); err != nil {
-			return paths, fmt.Errorf("SetTriggers: %w", err)
+			t.setup = m.d.Now().Sub(setupStart)
+			t.phase, t.limit = phaseSetup, vsockclient.DefaultTimeout
+			return t, fmt.Errorf("SetTriggers: %w", err)
 		}
 	}
 	slug := g.ProjectSlug
@@ -453,9 +513,12 @@ func (m *Manager) deliver(ctx context.Context, g *state.Guest, sess vsockclient.
 	}
 	sp := &guestdv1.SetupProject{ProjectSlug: slug, RemoteUrl: g.RemoteURL, Tz: g.Env["TZ"], Lang: g.Env["LANG"], ProjectJson: g.ProjectJSON}
 	if err := sess.SetupProject(ctx, sp); err != nil {
-		return paths, fmt.Errorf("SetupProject: %w", err)
+		t.setup = m.d.Now().Sub(setupStart)
+		t.phase, t.limit = phaseSetup, m.cfg.SetupTimeout
+		return t, fmt.Errorf("SetupProject: %w", err)
 	}
-	return paths, nil
+	t.setup = m.d.Now().Sub(setupStart)
+	return t, nil
 }
 
 // teardown removes tap, tc, nft membership, the virtiofsd and guest units
@@ -719,7 +782,15 @@ type monitor struct {
 	readyOK bool
 	lostAt  time.Time
 	lost    bool
-	stopCon func()
+	// connected is whether this guest's guestd has ever answered. Before
+	// it has, the guest is booting and not lost, however long that takes:
+	// the boot's own ready window is what bounds it, and the start's
+	// failure is what reports it. Counted from the monitor's start, the
+	// lost window (60 s) is shorter than guestd's first answer on an
+	// owned Mac (59.5 to 70 s), so every healthy boot there raised the
+	// warning and bumped repose_host_guestd_lost (ENG-80, I-1408).
+	connected bool
+	stopCon   func()
 	// wake is poked when the guest's resting mark is cleared, so the dial
 	// the rest held back goes at once rather than on the next retry.
 	wake chan struct{}
@@ -945,6 +1016,7 @@ func (mon *monitor) run() {
 			sess, notes, sessDone = s, s.Notifications(), s.Done()
 			mon.mu.Lock()
 			mon.sess = s
+			mon.connected = true
 			mon.mu.Unlock()
 			mon.regained()
 			go func() {
@@ -988,6 +1060,9 @@ func (mon *monitor) checkLost() {
 		mon.lostAt = m.d.Now()
 		return
 	}
+	if !mon.everConnected() {
+		return
+	}
 	if !mon.lost && m.d.Now().Sub(mon.lostAt) >= m.cfg.GuestdLostAfter {
 		mon.lost = true
 		m.log(mon.g).Warn("guestd lost", "event", "guestd_lost")
@@ -997,6 +1072,14 @@ func (mon *monitor) checkLost() {
 		// from this line in Loki and from the Warning the api receives.
 		m.Warn("guestd_lost", "guest "+mon.g.GuestID+": no vsock connection for "+m.cfg.GuestdLostAfter.String())
 	}
+}
+
+// everConnected reports whether guestd has answered this monitor at
+// least once.
+func (mon *monitor) everConnected() bool {
+	mon.mu.Lock()
+	defer mon.mu.Unlock()
+	return mon.connected
 }
 
 func (mon *monitor) regained() {

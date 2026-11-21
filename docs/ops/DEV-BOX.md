@@ -97,6 +97,100 @@ echo 'system-features = nixos-test benchmark big-parallel kvm uid-range' >> ~/.c
 Log in again (or prefix one command with `sg kvm -c '...'`) so the group
 applies. Each test boots one or two VMs and takes two to five minutes.
 
+## Heavy Nix runs in a memory-capped scope, one at a time
+
+This box has 16 GB and usually a dozen Claude sessions on it. A
+whole-flake `nix flake check ./nix` evaluates every host, edge and guest
+system in one process and wants **8.5 to 12 GB**; the evaluator's memory,
+not parallel building, is what does not fit, so `--max-jobs 1` changes
+nothing. It has now cost three mini-conductor sessions over two nights:
+2026-11-19 twice, and 2026-11-20 at 06:06 UTC, where the kernel killed
+`nix` at 12.5 GB RSS and the session died minutes later from the pressure
+around it rather than from the kill.
+
+So **do not run `nix flake check` with its builds here at all.** Build
+what you need one check at a time, each inside a cap:
+
+```
+flock /mnt/nixstore/repose-ws/nix-build.lock \
+  systemd-run --user --scope -p MemoryMax=6G --quiet -- \
+  choom -n 1000 -- nix build --no-link -L ./nix#checks.x86_64-linux.<name>
+```
+
+Each piece earns its place. `flock` keeps one heavy job on the box at a
+time. `systemd-run --user --scope -p MemoryMax=6G` is the part that
+protects the sessions: the cgroup kills nix at the cap instead of letting
+the box swap, so a bad evaluation loses a build rather than somebody's
+context. `choom -n 1000` only decides who dies once the box is already in
+trouble, which is why it was not enough on its own. Verified on
+2026-11-20: a 512M test scope reported `memory.max` 536870912, and
+`nix build ./nix#guest-system`, the `guest-closure-size` check and the
+whole `guest-base` VM test (29 subtests) all completed inside 6 GB.
+
+Point `TMPDIR` at the big disk while you are at it: **`/mnt/nixstore/tmp`**.
+`/tmp` is on the 29 GB root filesystem, a NixOS VM test writes its disk
+images into `TMPDIR`, and on 2026-11-20 the root was at 84 % with 4.7 GB
+free while a 2 GB appliance image sat staged in `/tmp/rt`. A VM series
+that fills the root fails in a way that looks like anything but disk. The
+whole invocation is then:
+
+```
+flock /mnt/nixstore/repose-ws/nix-build.lock \
+  systemd-run --user --scope -p MemoryMax=6G --quiet -- \
+  env TMPDIR=/mnt/nixstore/tmp choom -n 1000 -- \
+  nix build --no-link -L ./nix#checks.x86_64-linux.<name>
+```
+
+Run anything long **detached** (`setsid`, redirect to a log) and watch the
+log with a `Monitor`: the harness kills a session's background waiters
+when memory is low, and the job then finishes with nobody reading it.
+
+Nobody had measured the evaluation **on its own**: the range above comes
+from runs with their builds, and the evaluator was blamed by reasoning
+rather than by a reading. So on 2026-11-20 `nix flake check --no-build
+./nix` was run inside a 9 GiB cap, on `main` at `f6aab4f2`. The cgroup
+killed it -- `oom-kill ... task=nix`, `anon-rss:8886640kB`,
+`total-vm:30576000kB` -- with the evaluation unfinished at `checking
+derivation checks.x86_64-linux.fragment-contract`, 110 seconds in. So
+**8.47 GiB is a floor for the evaluation with nothing built**, the cost
+is the evaluator's and not the builds', and nobody has a peak: no cap
+this box can afford lets the command reach the end.
+
+**Measure inside the cap rather than guess.** The ban is on running this
+uncapped. A cgroup kill at the cap costs one evaluation and gives a
+number; an uncapped run costs somebody's session and gives the same
+number.
+
+```
+flock /mnt/nixstore/repose-ws/nix-build.lock \
+  systemd-run --user --scope --unit=eval-measure -p MemoryMax=9G -- \
+  env TMPDIR=/mnt/nixstore/tmp choom -n 1000 -- \
+  /usr/bin/time -v nix flake check --no-build ./nix
+```
+
+Poll the scope's own `memory.current` from inside it while it runs. A
+kill leaves `time -v` reporting the cap rather than the peak, and
+`memory.peak` goes with the cgroup, so a poller is the only reading that
+survives one. `dmesg` then names the task and its RSS, and that is the
+evidence; the poll is only the shape.
+
+CI runs that same `--no-build` command on every push and every pull
+request, on a 16 GB `ubuntu-latest` runner. **ENG-144** carries it: on
+2026-11-20 run `44710016416` lost its runner on that job, 46 minutes
+against the 11 it takes when it passes, every step after the Nix install
+with an empty conclusion and no log uploaded, and GitHub's annotation on
+check-run `136199039366` names starving the runner for CPU or memory
+first. A re-run on a fresh runner passed, and then the same job lost its
+runner again 25 minutes later, on a branch of documents, with
+`The runner has received a shutdown signal` 2.5 minutes into the
+evaluation. Twice in an hour on two commits that touch nothing the
+evaluation reads: expect it, re-run the job, and read a red there as a
+fact about the runner until something says otherwise.
+
+`ops/dev/release-queue add` evaluates the systems for its ships
+computation, so it counts as a nix evaluation too: do not run it beside
+another one.
+
 ## aarch64 builds go through a remote builder
 
 This box is x86 with no `binfmt`, so nothing `aarch64-linux` builds
@@ -125,6 +219,23 @@ the way the x86 overlay is. The base closure itself is never pushed:
 it is 6 GiB of mostly cache.nixos.org paths, and the Cachix cache is
 the free 5 GB tier (I-46). An aarch64 host builds its base the way an
 x86 host does, from cache.nixos.org plus the overlay from Cachix.
+
+## A check that is not installed fails in zero seconds
+
+`golangci-lint` is **not on `PATH` outside `nix develop ./nix`**. A
+verification run that calls it from a plain shell reports `FAIL lint`
+immediately, which reads exactly like a real red and is not one: nothing
+was linted. The mac-mini conductor lost a verification run to this on
+2026-11-20, and every "lint 0 issues" on that program came from a session
+that happened to have the dev shell. Run it as `just lint`, or inside
+`nix develop ./nix -c sh -c '...'` with the rest of the Go set, and read
+the tool's own first line rather than only its exit code: zero seconds is
+the tell.
+
+This is the same family as a check's exit read through a pipe
+(`CONDUCTOR-HANDOFF.md`, Lessons) and as a filtered `go test` that matches
+nothing and prints `ok`. An absent check and a passing check are
+indistinguishable from the exit code alone.
 
 ## Go tests and Playwright
 

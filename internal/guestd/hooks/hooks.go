@@ -28,6 +28,19 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// WriteWait is the hook socket's write deadline for a route that does
+// not set its own. The two ask routes that can outlast it do set their
+// own: the long poll (its wait and 5 s) and the open (OpenWait).
+var WriteWait = 10 * time.Second
+
+// OpenWait is how long guestd may spend opening a question before the
+// write deadline cuts the answer off. Opening one is real work -- the
+// window lookup alone is capped at 2 s -- and on a loaded single-core
+// guest WriteWait is not certainly longer than it. A cut-off answer is
+// ENG-105 from guestd's side: guestd holds a question the owner will
+// answer and the asker is never told its id (DECISIONS I-1404).
+var OpenWait = 30 * time.Second
+
 // SummaryCap is the cap on a hook summary (docs/interfaces/grpc-hostd.md caps
 // the AgentEvent summary at 1 KB).
 const SummaryCap = 1 << 10
@@ -109,7 +122,7 @@ func NewServer(path string, gid int, sink Sink, resolve WindowResolver, log *slo
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      WriteWait,
 		ConnContext:       s.connContext,
 	}
 	return s

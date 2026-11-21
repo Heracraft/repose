@@ -169,6 +169,18 @@ branch, which deploys nothing ("The integrated branch" below).
 
 Integrate whenever branches are queued; it needs no owner approval.
 
+**A batch that ships nothing deployable waits for the next release, even
+when a release has just happened.** A push to `main` cycles Coolify's
+`api`, `api-grpc` and `web` whether or not their content changed, so a
+batch whose diff touches no deploy target buys nothing and costs a
+production restart. One cost of that restart is not obvious from the
+outside: the api's container is replaced, and its logs go with it, which
+is how the trigger for the two stop ops of 2026-11-19 at 20:30 became
+unrecoverable (`docs/proposals/2026-11-19-azure-host-events.md` §4a).
+`integrated` on GitHub already makes the batch durable and readable, so
+nothing is lost by waiting. This was written after the release of
+2026-11-20, whose own record was integrated and deliberately not pushed.
+
 1. **See what is waiting.** `ops/dev/release-queue ls` reads the open
    PRs labelled `queued` against `integrated`, in stack order, and fetches
    each one's branch; a PR stacked on a branch that is not queued waits
@@ -205,8 +217,17 @@ Integrate whenever branches are queued; it needs no owner approval.
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
-     -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
-     `docs/CHECKLIST.md` greps.
+     -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures'`
+     (**`TestEvery` matters**: without it the run misses
+     `TestEveryDocsPageNamesRealCommands` and `TestEveryYesHasY`, which is
+     how a page shipped a flag the CLI does not have past two sessions'
+     checks on 2026-11-20; `-run 'TestDocs'` does not match a name that
+     merely contains `Docs`); the
+     `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
+     `200` for every URL the CLI fetches on a customer's machine (the
+     appliance image the batch pins and its checksum, vfkit, the latest
+     CLI release's six assets, `install.sh`) and exits 1 naming the one
+     that does not (DECISIONS I-1398).
      `DATABASE_URL` is not a detail of convenience and "a real Postgres"
      was the wrong way to say it: `internal/db/testdb` starts a throwaway
      cluster **per test process** when the variable is unset, which is
@@ -259,6 +280,24 @@ Integrate whenever branches are queued; it needs no owner approval.
    loads the box (green alone). A red that is not in the
    batch's diff is reproduced on main before it is called a flake.
 
+   **That family is now measured, so a re-run is read against numbers
+   rather than against a hunch** (mac-mini, 2026-11-20). `internal/cli`
+   holds four tests of the same shape -- a wall-clock capture of what
+   tmux delivered -- and all four fail inside a full suite while **none
+   fails alone**: 40 invocations, 20 per tree, alternating between the
+   branch and a detached `main` worktree so each pair met the same load,
+   zero failures, with the one that drives a real tmux window
+   (`TestTypePromptResendsEnterIntoATmuxWindow`) at zero of eight per
+   tree, across a window where load ran 19 to 98. `guest-base`'s probe
+   writing nothing after a 7.45 s capture is that signature in the VM
+   checks. **And the trap that makes a careful re-run lie:** `-count=N`
+   on a `t.Parallel()` test runs N copies **concurrently**, each with its
+   own tmux server, so "I ran it three times alone" is heavier than the
+   full suite rather than lighter. Separate invocations with
+   `-parallel 1 -p 1` is the only honest alone, and for a VM check
+   "alone" means the box quiet, not the build lock held: the lock
+   serialises nix and not the Go suites in other sessions.
+
    **Migration numbers.** Four branches queued on one day each added
    `0036_*.sql`. Before a cut with several branches: `for b in <queued>; do git
    ls-tree -r --name-only $b | grep migrations/; done` and renumber in the
@@ -300,11 +339,21 @@ else integrated with it.
 2. **Push main.** Watch CI on the pushed commit; a push redeploys `api` and
    `web` whether CI passes or not, so a red run is fixed at once (as its
    own small batch, integrated and pushed).
-2b. **Tag right after the push when the release adds a command.** The
-   push deploys `web`, the public docs included, within minutes; the CLI
-   ships only at the tag, 20 to 30 minutes later. In that window the docs
-   describe a command nobody has (v0.1.50, 2026-11-19, with a plan on
-   sale). `gh release create --draft` makes no tag: push the annotated tag.
+2b. **Tag right after the push when the release adds a command, and ask a
+   script whether it does.** The push deploys `web`, the public docs
+   included, within minutes; the CLI ships only at the tag, 20 to 30
+   minutes later. In that window the docs describe a command nobody has
+   (v0.1.50, 2026-11-19, with a plan on sale). `gh release create
+   --draft` makes no tag: push the annotated tag.
+   `ops/dev/docs-ahead-of-cli` answers whether this release is one of
+   those: it reads the command paths the public docs name at the newest
+   `v*` tag and at `HEAD`, and exits 1 listing any the released CLI does
+   not have. Exit 0 means the ordering does not matter this time. **Exit
+   2 means it could not tell**, which a shallow clone with no tags gives,
+   and is not a pass. Run it before the push, because after the push the
+   window has already opened. `internal/cli/docs_test.go` cannot answer
+   this: it holds the docs to this tree's CLI, which is the thing that has
+   not shipped, and CI's `go` job checks out with no tags (ENG-43).
 3. **Write the notes before the sign job runs.** `release.yml`'s sign job
    refuses a draft with under 400 bytes of notes (I-798). The tag creates the
    draft; `gh release edit v0.1.N --title "v0.1.N" --notes-file
@@ -322,7 +371,14 @@ else integrated with it.
    --changelog "..."` on the control VM.
 
 4. **Ship the rest**, in this order when present: `base` publish (the rev
-   is the pushed main commit), `cli` tag (the next `v0.1.N`), `host`
+   is the pushed main commit), `cli` tag (the next `v0.1.N`; **every
+   artefact URL the CLI hard-codes must answer 200 anonymously before the
+   tag**: `ops/dev/release-assets --cli none` on the commit being tagged,
+   and the sign job runs the same check and leaves the draft unpublished
+   when it fails; after the job, `ops/dev/release-assets --cli v0.1.N`
+   says the new release is what `releases/latest` resolves to and that
+   its six assets answer. v0.1.51 was tagged pinning an appliance image
+   whose release did not exist, DECISIONS I-1398), `host`
    switches (RUNBOOK "Switch a host to main"; host-01 is retired since
    2026-11-02, so that is host-02) and the `edge` switch (its first switch
    onto a unit that gained a `StateDirectory` needs a restart; the gateway's
@@ -412,7 +468,17 @@ A `v*` tag runs `release.yml`: GoReleaser uploads a draft, and the `sign`
 job signs `checksums.txt`, attests the archives and publishes the draft
 (DECISIONS I-430). A tag whose `sign` job fails leaves a draft that
 install.sh never sees; fix the cause and re-run the job from the Actions
-page.
+page. The job also fails before the publish when an asset the tag's code
+fetches at run time (the appliance image it pins, its checksum, vfkit)
+does not answer 200 to an anonymous client, and after it when the
+published release's own assets do not (`ops/dev/release-assets`, I-1398).
+
+**Only a CLI release is "latest".** `install.sh` and `repose version
+update` turn "latest" into a tag by following `releases/latest`, so a
+release of anything else (`appliance-<version>`) published as latest
+sends every install to a tag with no archives: 26 minutes on 2026-11-19.
+Publish such a release with `--latest=false`; `gh release edit <the
+newest v0.1.N> --latest` is the repair.
 
 **The notes are written before the tag is pushed** (DECISIONS I-798).
 `release.yml` refuses to publish a release whose body is under 400 bytes,

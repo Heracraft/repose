@@ -134,7 +134,18 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 	} else {
 		period = Period{Start: now.AddDate(0, 0, -30), End: now}
 	}
-	plan := sub.PlanFor(period.Start)
+	// With no subscription the account has no plan, and the usage block
+	// names no plan's figures: memory_gb, disk_gb and egress_included_gb
+	// are 0, which a client reads as "nothing caps this" (the
+	// own-hardware shape, I-1364), and no overage is owed. sub.PlanFor on
+	// a nil subscription answers Solo (PlanOrSolo), and the dashboard
+	// measured a billing-exempt account against Solo's 8, 100 and 250,
+	// said it was over and that creating was refused, then created
+	// (DECISIONS I-1396).
+	var plan Plan
+	if sub != nil {
+		plan = sub.PlanFor(period.Start)
+	}
 	usage, err := LoadUsage(ctx, s.pool, u.ID, plan, period)
 	if err != nil {
 		return nil, err

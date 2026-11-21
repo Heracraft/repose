@@ -444,6 +444,24 @@ image is encrypted with a key of its own that only the host's identity can
 unwrap at Key Vault, never leaves the host, and is removed as soon as the
 guest is restored or the image is found unusable, at most 6 hours later.
 
+On a host the customer owns, the Mac appliance (I-1386, I-1394), the same
+image is wrapped not by Key Vault, which that host has no identity for,
+but by a key the launcher on the Mac keeps as one item in the user's
+login keychain; the appliance asks the launcher to wrap and unwrap over a
+vsock (`internal/parkkey`), the wrapping key never enters the VM, and the
+keychain holds nothing else of repose's: no named secret, no tenant data,
+no token, so the three homes stay three. What it covers and what it does
+not, stated plainly: an attacker with the Mac's disk alone reads
+ciphertext; an attacker with the unlocked Mac and root reads the keychain
+item and therefore the image. That is weaker than the fleet's Key Vault
+custody and is the price of the customer owning the machine. The item is
+not hardware-backed; a Secure Enclave key is its own future decision. The
+same six hours apply, and on a Mac they count against the user: hostd
+exists there only once someone logs in, so a restart followed by no login
+for six hours leaves the image past its age at the next start, and it is
+discarded unread. The docs say "log in again within 6 hours" in the same
+breath as the power-cut case.
+
 ## Depends on
 
 Workstreams 05 (secrets routes, envelope encryption, Key Vault), 03

@@ -13,7 +13,13 @@ import { resolve } from '$app/paths';
 import { toast } from 'svelte-sonner';
 import LogtoClient, { BrowserStorage, PersistKey } from '@logto/browser';
 import { apiResource } from '$lib/api/resource';
-import { RETURN_PATHS, isAnswerReturn, type AnswerReturn, type ReturnPath } from '$lib/signin';
+import {
+	RETURN_PATHS,
+	isAnswerReturn,
+	isPrivatePath,
+	type AnswerReturn,
+	type ReturnPath
+} from '$lib/signin';
 
 let client: LogtoClient | undefined;
 
@@ -70,11 +76,54 @@ export async function signIn(returnTo?: ReturnPath | AnswerReturn): Promise<void
 	try {
 		if (returnTo && (isAnswerReturn(returnTo) || RETURN_PATHS.includes(returnTo)))
 			sessionStorage.setItem(RETURN_KEY, returnTo);
-		else sessionStorage.removeItem(RETURN_KEY);
+		else if (!isPrivatePath(sessionStorage.getItem(RETURN_KEY) ?? '')) {
+			// A sign-in that names no destination does not throw away the
+			// page the visitor was turned away from (ENG-44). It still
+			// clears anything else, so one flow's destination is never
+			// the next one's.
+			sessionStorage.removeItem(RETURN_KEY);
+		}
 	} catch {
 		// No storage: the sign-in comes back to /projects.
 	}
 	await getClient().signIn(callbackUrl());
+}
+
+/**
+ * Remembers the dashboard page a signed-out visitor asked for, so the
+ * sign-in they are sent to comes back to it (ENG-44: the customer's
+ * session ran out, the dashboard rewrote /projects to / and the address
+ * they asked for was gone, so neither reload nor Back recovered it).
+ *
+ * Browser flow only, and never from a URL: `GET /signin` reads its
+ * `?return=` from a query anyone can put in a link and still matches
+ * whole paths against RETURN_PATHS. This is a pathname the browser was
+ * just on, checked against the same rule that turned it away.
+ */
+export function rememberPrivateReturn(path: string): void {
+	try {
+		if (isPrivatePath(path)) sessionStorage.setItem(RETURN_KEY, path);
+	} catch {
+		// No storage: the sign-in comes back to /projects.
+	}
+}
+
+/**
+ * The dashboard page a turned-away visitor asked for, once. Separate
+ * from takeReturnPath so the narrow set a sign-in LINK may name stays
+ * narrow and this one capability is visible on its own.
+ */
+export function takePrivateReturn(): string | undefined {
+	try {
+		const v = sessionStorage.getItem(RETURN_KEY);
+		if (v && isPrivatePath(v)) {
+			sessionStorage.removeItem(RETURN_KEY);
+			return v;
+		}
+	} catch {
+		// No storage: the sign-in comes back to /projects.
+	}
+	return undefined;
 }
 
 /** The page the sign-in asked to come back to, once; undefined for /projects. */

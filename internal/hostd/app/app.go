@@ -96,6 +96,14 @@ type Options struct {
 	// nested virtualization (DECISIONS I-1376), so mac.nix sets it to
 	// minutes there and the Azure hosts keep the default.
 	ReadyTimeout time.Duration
+	// PathsTimeout and SetupTimeout are how long the two phases after
+	// Ready have: the registration of the closure's paths, and the
+	// project's set-up. 0 takes guest.Config's 3 minutes each, which is
+	// what guestd used to enforce. mac.nix sets both to minutes, since
+	// the pair took 3 min 48 s there against 27 s on an Azure host
+	// (ENG-80, DECISIONS I-1408).
+	PathsTimeout time.Duration
+	SetupTimeout time.Duration
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -269,9 +277,13 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	default:
 		return errors.New("hostd: set --snapshot-dir or --blob-url")
 	}
-	var dialer vsockclient.Dialer = vsockclient.CHDialer{}
+	// The session's deadlines are the host's: a slower host gives the two
+	// boot phases longer, and guestd only backstops them (DECISIONS
+	// I-1408).
+	vt := vsockclient.Timeouts{Paths: o.PathsTimeout, Setup: o.SetupTimeout}
+	var dialer vsockclient.Dialer = vsockclient.CHDialer{Timeouts: vt}
 	if o.GuestdUnix {
-		dialer = vsockclient.UnixDialer{}
+		dialer = vsockclient.UnixDialer{Timeouts: vt}
 	}
 	nix := (&nixbuild.Real{R: r, BuildsDir: o.BuildsDir, BaseDir: o.BaseDir, BaseRepoURL: o.BaseRepoURL, BaseSSHKey: o.BaseSSHKey,
 		Roots: gcroot.Roots{Dir: o.GCRootsDir}, UseScope: true, User: o.BuildUser, Timeout: "timeout", Substituters: o.Substituters}).Defaults()
@@ -287,6 +299,8 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		BurstGate:          o.BurstGate,
 		Cores:              hostinfo.PhysicalCores(),
 		ReadyTimeout:       o.ReadyTimeout,
+		PathsTimeout:       o.PathsTimeout,
+		SetupTimeout:       o.SetupTimeout,
 	}
 	fcfg, fdeps := parkSetup(o, r, l, log)
 	cfg.Park = fcfg

@@ -276,6 +276,16 @@ Destroy:
   when it is done and the project is gone, and a failed op with the
   project's state and the command that retries (DECISIONS I-153,
   api.md).
+- The destroy's answer carries `final_snapshot`, and the line the CLI
+  prints says a snapshot is kept only when it is true (api.md, I-1418).
+  It is false for a temporary project and for a project whose host is
+  `lost` or `retired`, where every phase including the snapshot is
+  skipped (I-924) and the destroy drains to nothing. The CLI prints its
+  line the moment the api accepts, before any phase has run, so it
+  cannot work this out for itself: it promised "its final snapshot is
+  kept until <date>" twice for a machine on a Mac whose appliance the
+  owner had deleted, and that machine's snapshot count was 0 and had
+  never been anything else (ENG-119).
 - The project is `destroying` from the moment the api accepts. The op
   stops the guest if it is not stopped (no snapshot in the stop), then
   takes the final snapshot of the stopped volume, which is clean without
@@ -351,6 +361,26 @@ Failure handling:
   `guest_unresponsive`, message "the environment's agent (guestd) stopped
   answering; `repose start` restarts it". The host's own wording, with
   internal ids, is the error's `detail` (I-159).
+- A start that answers and then runs out of time says **which phase** ran
+  out, because the phases have separate deadlines and the host sets them
+  (I-1408): "did not finish loading its system in time" for the
+  registration of the closure's paths, "did not finish setting up the
+  project in time" for the project's set-up, and "did not take its ssh
+  keys in time" for the delivery of its sshd material. A start that never
+  answers at all says "did not answer while it was starting" and names no
+  figure, since how long it had is the host's (`hostd --ready-timeout`,
+  five minutes on a Mac appliance against sixty seconds on Azure). All
+  three carry the console, so `repose logs --kind console` has something
+  to print. The host's own message names the phase and the limit it used,
+  in `detail`.
+- A machine whose start ran out of time is still reachable over SSH: the
+  sshd material and the principals go first in the delivery, ahead of the
+  registration, so the failure leaves a machine its owner can log in to
+  and read (I-1408). Before that order a start that ran out of time left
+  a machine that refused every login.
+- A host that takes a command and never answers it fails the op with code
+  `timeout` and "the host running this project did not answer in time, so
+  the operation was given up; it can be run again".
 - hostd restart mid-operation: the op is replayed by the API with the same
   command id and completes or is idempotently skipped
   (`interfaces/grpc-hostd.md`). No state is lost.

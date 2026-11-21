@@ -121,8 +121,9 @@ func TestCheckout(t *testing.T) {
 		t.Fatalf("overview: %v", ov)
 	}
 	usage := ov["usage"].(map[string]any)
-	if usage["memory_gb"] != 8 || usage["project_limit"] != billing.ProjectCap {
-		t.Fatalf("usage without a plan shows Solo's limits: %v", usage)
+	// No plan, no plan's figures (I-1396); the project cap is the account's.
+	if usage["memory_gb"] != 0 || usage["project_limit"] != billing.ProjectCap {
+		t.Fatalf("usage without a plan: %v", usage)
 	}
 }
 
@@ -556,5 +557,44 @@ func TestSubscriptionSeatsStub(t *testing.T) {
 	}
 	if err := s.Converted(ctx, "x"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// GET /billing for an account with no subscription names no plan's
+// figures. Overview read sub.PlanFor on a nil subscription, which
+// PlanOrSolo answers with Solo, so a billing-exempt account's usage
+// carried 8, 100 and 250 while /me carried 32, 500 and 1000; the
+// dashboard measured the owner's account against the first three,
+// printed "over" in red and said creating was refused, then created a
+// project (docs/reports/2026-11-19-mac-mini-council-dashboard.md P0-2,
+// DECISIONS I-1396). The figures are 0, as on an own-hardware
+// subscription (I-1364): no plan caps the account, so nothing is over
+// and no overage is owed, however much it holds or sent.
+func TestNoSubscriptionUsageCapsNothing(t *testing.T) {
+	pool := testdb.Open(t)
+	f := newFakePolar()
+	defer f.Close()
+	ctx := context.Background()
+	s, _ := newService(t, pool, f, nil)
+	for _, status := range []string{"exempt", "none"} {
+		a := seedAccount(t, pool, "", status, "large", "running")
+		held(t, pool, a.ProjectID, 360<<30)
+		// Egress inside the last 30 days, the period without a
+		// subscription: past Solo's 250 GB allowance and its 1 TB stop.
+		usageHour(t, pool, a.ProjectID, s.Now().Add(-2*time.Hour), "large", 3600, 1200<<30, a.Period)
+		out, err := s.Overview(ctx, user(t, pool, a))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out["subscription"] != nil {
+			t.Fatalf("%s: a subscription: %v", status, out["subscription"])
+		}
+		usage := out["usage"].(map[string]any)
+		if usage["memory_gb"] != 0 || usage["disk_gb"] != 0 || usage["egress_included_gb"] != 0 || usage["overage_cents"] != int64(0) {
+			t.Fatalf("%s: the usage names a plan's figures: %v", status, usage)
+		}
+		if usage["running_gb"] != 8 || usage["disk_held_gb"] != 360.0 || usage["egress_gb"] != 1200.0 {
+			t.Fatalf("%s: what the account holds: %v", status, usage)
+		}
 	}
 }

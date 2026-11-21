@@ -32,9 +32,37 @@ const FakeHostInstall = "repose host add --join %s"
 // hardware plan (DECISIONS I-1366).
 const maxFakeHosts = 1
 
+// ownHardwareRequired is billing.OwnHardwareRequiredMessage's sentence,
+// word for word, built from the fake's own plan table so that a change
+// to the real one is a deliberate change here too
+// (TestOwnHardwareRefusalIsTheApis holds them equal). It names the
+// price: the refusal is the one place in the product that tells a
+// buyer what a host costs while the public copy is held (ENG-39).
+func ownHardwareRequired() string {
+	hosts := "one host"
+	if OwnPlan.Hosts != 1 {
+		hosts = fmt.Sprintf("%d hosts", OwnPlan.Hosts)
+	}
+	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s/billing.",
+		OwnPlan.Name, dollars(OwnPlan.PriceCents), hosts, FakeDashboard)
+}
+
+// dollars is billing.Dollars: "$10", or "$10.50" when the cents are not
+// whole.
+func dollars(cents int64) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("$%d", cents/100)
+	}
+	return fmt.Sprintf("$%d.%02d", cents/100, cents%100)
+}
+
 // FakeDashboard is the origin the fake builds the refusals' and the
 // install's addresses on.
 const FakeDashboard = "https://repose.run"
+
+// fakeWGKey is a canned WireGuard public key: 32 zero bytes in base64,
+// which is the right shape and the right length and opens nothing.
+const fakeWGKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 var hostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
@@ -106,10 +134,18 @@ func (f *Fake) SetHostInstall(line string) {
 }
 
 // SetHostLimit replaces the hosts an account may own, which is the
-// plan's figure in the real api; 0 is a plan that sells none.
+// plan's figure in the real api; 0 is a plan that sells none, and a
+// figure below 0 puts the default back (one host, and memory on
+// repose's servers too). A figure a test set above 0 is read as the
+// Own hardware plan, which sells no fleet memory, so `hosted` is
+// refused on it (createProject).
 func (f *Fake) SetHostLimit(n int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if n < 0 {
+		f.hostLimit = nil
+		return
+	}
 	f.hostLimit = &n
 }
 
@@ -120,7 +156,27 @@ func (f *Fake) hostsAllowed() int {
 	if f.hostLimit != nil {
 		return *f.hostLimit
 	}
-	return maxFakeHosts
+	// The api's answer, in the fake's terms (billing.Gate.HostsAllowed):
+	// a billing-exempt account and an api with billing off get one, an
+	// account with no live subscription gets none, and otherwise the
+	// plan's own figure decides -- one on Own hardware, none on the
+	// plans that sell memory on repose's fleet.
+	//
+	// It used to hand one to every account whatever its plan, which is a
+	// fake that says yes where the api says no: a reviewer running
+	// against it reports "I added a Mac without ever paying and nothing
+	// stopped me" about a contract that does stop them (ENG-36), and no
+	// test of ours disagrees, because the tests that care set the limit
+	// by hand.
+	switch f.bill.mode {
+	case BillingOff, BillingExempt:
+		return maxFakeHosts
+	}
+	plan := f.currentPlan()
+	if plan == nil {
+		return 0
+	}
+	return plan.Hosts
 }
 
 func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
@@ -173,7 +229,7 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	u := userFrom(r)
 	allowed := f.hostsAllowed()
 	if allowed <= 0 {
-		return errf("payment_required", "Your plan does not include a host of your own. Choose the Own hardware plan at %s/billing.", FakeDashboard).
+		return errf("payment_required", "%s", ownHardwareRequired()).
 			withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
 	have := 0
@@ -221,10 +277,16 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	if f.hostInstallSet {
 		line = f.hostInstall
 	}
-	// The step's argument is the join bundle (DECISIONS I-1380): the real
-	// api puts the machine's hub material beside the token; the fake has
-	// no hub and carries the token alone, in the same envelope.
-	argument := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"token":"` + h.JoinToken + `"}`))
+	// The step's argument is the join bundle (DECISIONS I-1380): the
+	// token and the machine's place on the hub, which it needs before it
+	// can reach the api at all. The fake runs no hub, so the WireGuard
+	// half is canned -- but it is there, and the same size it is in
+	// production (a bundle is about 340 characters, not the 60 a token
+	// alone makes). A client's layout and its copy button are judged
+	// against what a user will actually be handed.
+	argument := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"token":"` + h.JoinToken +
+		`","wg":{"private_key":"` + fakeWGKey + `","address":"10.255.0.9/16","edge_pubkey":"` + fakeWGKey +
+		`","edge_endpoint":"edge.repose.test:51820"}}`))
 	command := ""
 	if strings.Contains(line, "%s") {
 		command = strings.Replace(line, "%s", argument, 1)
@@ -346,6 +408,76 @@ func (f *Fake) SetProjectHost(projectID, hostID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if p := f.projects[projectID]; p != nil {
-		p.HostID = hostID
+		p.HostID, p.HostName = hostID, f.ownedHostName(hostID)
+	}
+}
+
+// ownedHostName is the name of an owned host by id, "" for a host
+// repose runs (I-1392): what Project.host_name carries.
+func (f *Fake) ownedHostName(hostID string) string {
+	for _, h := range f.ownedHosts {
+		if h.ID == hostID {
+			return h.Name
+		}
+	}
+	return ""
+}
+
+// placeNew is where an `own` project goes (DECISIONS I-1366, I-1390),
+// answered at the create as the api answers it: the account's own host
+// when it owns one that is online; a `capacity` refusal that names the
+// host and its state when the one it owns is waiting, offline or being
+// removed; the fleet (no host yet, f.run picks the fleet's) when it owns
+// none. `hosted` is the fleet whatever it owns. The refusal's detail is
+// the api's: `reason` no_own_host, `host`, `host_state`, and
+// `hosted_allowed`, whether the plan sells memory on repose's servers.
+func (f *Fake) placeNew(u *userRec, class, placement string) (string, *apiError) {
+	if placement == "hosted" {
+		return "", nil
+	}
+	var own *ownedHostRec
+	for _, h := range f.ownedHosts {
+		if h.owner == u.ID && h.State != "retired" && h.State != "lost" {
+			own = h
+			break
+		}
+	}
+	if own == nil {
+		return "", nil
+	}
+	if own.State == "ready" {
+		return own.ID, nil
+	}
+	msg := "your host " + own.Name + " has no room for a " + class + " machine"
+	switch own.State {
+	case "registering":
+		msg = "your host " + own.Name + " has not registered yet"
+	case "unreachable":
+		quiet := "90s"
+		if own.LastHeartbeatAt != nil {
+			quiet = quietFor(f.now().Sub(*own.LastHeartbeatAt))
+		}
+		msg = "your host " + own.Name + " has not answered for " + quiet
+	case "draining":
+		msg = "your host " + own.Name + " is being removed, so nothing can be placed on it"
+	}
+	// A plan that sells a host sells no fleet memory (I-1364), so `hosted`
+	// is refused on it. De Morgan of !(set && above zero); the nil check
+	// still short-circuits the deref.
+	hostedAllowed := f.hostLimit == nil || *f.hostLimit <= 0
+	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
+		"reason": "no_own_host", "host": own.Name, "host_state": own.State, "hosted_allowed": hostedAllowed})
+}
+
+// quietFor is how long a host has been silent, in the api's shortest
+// true unit: "14m", "3h", "2d".
+func quietFor(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", max(1, int(d.Minutes())))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }

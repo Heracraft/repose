@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""Does this revision's public docs name a command the released CLI lacks?
+
+The public docs ship on a push to main and the CLI ships at a tag, 20 to 30
+minutes later, so in that window /docs describes a command nobody can
+install. That happened on 2026-11-19: /docs/own-hardware and /docs/cli
+documented `repose host add|run|ls|rm` from 20:39 UTC while install.sh still
+served a CLI that exited 2 on `repose host`, until v0.1.50 at 21:00 (ENG-43,
+ENG-23). docs/ops/RELEASE.md step 2b answers it -- tag right after the push
+when the release adds a command -- and this says whether it does, so the
+conductor is not relying on noticing.
+
+`internal/cli/docs_test.go` cannot answer this. It holds the docs to *this
+tree's* CLI, which is the thing that has not shipped yet; what a customer can
+install is only known to a tag. CI's `go` job checks out shallow with no tags,
+so a test would see nothing to compare against.
+
+Usage:
+  ops/dev/docs-ahead-of-cli [--since REV] [--rev REV] [--quiet]
+  ops/dev/docs-ahead-of-cli --selftest
+
+  --since    what a customer can install; the newest `v*` tag by default
+  --rev      what the docs would ship as; HEAD by default
+  --selftest check the reading against the incident's own text, with no
+             git at all, which is what CI runs: a checkout with no tags
+             cannot run the real check
+
+Exits 0 when the docs name no command the released CLI lacks, so the ordering
+does not matter for this release. Exits 1 and lists them when they do: the
+tag has to follow the push closely. Exits 2 when it cannot tell -- no tag, or
+a revision it cannot read -- because a check that passes when it cannot see
+is worse than no check.
+"""
+
+import argparse
+import re
+import subprocess
+import sys
+
+DOCS = "apps/web/src/content/docs"
+
+# A command named inside backticks: `repose host add NAME` names
+# "repose host add". Only lowercase words continue the path, so an
+# argument (NAME, PACKAGE...) or a flag ends it, and the path stops at
+# three words because that is as deep as the CLI goes (`repose config
+# add`, `repose tokens create`). A deeper command would still be caught
+# by its three-word prefix.
+#
+# A span is one line, as inline code in these pages always is. A command
+# written with a line break inside the backticks would be missed -- and
+# missed on both sides of the comparison, since the same reader runs over
+# both revisions, so it cannot turn an added command into a false pass on
+# its own. The end-to-end check is that this finds all six `repose host`
+# paths in the v0.1.50 docs, which is the incident it exists for.
+BACKTICK = re.compile(r"`([^`\n]+)`")
+WORD = re.compile(r"[a-z][a-z0-9-]*\Z")
+MAX_DEPTH = 3
+
+
+def git(*args):
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=False
+    )
+
+
+def commands(text):
+    """Every `repose ...` command path named in text."""
+    out = set()
+    for span in BACKTICK.findall(text):
+        words = span.split()
+        if not words or words[0] != "repose":
+            continue
+        path = ["repose"]
+        for word in words[1:]:
+            if len(path) >= MAX_DEPTH or not WORD.match(word):
+                break
+            path.append(word)
+        if len(path) > 1:
+            out.add(" ".join(path))
+    return out
+
+
+def pages(rev):
+    r = git("ls-tree", "-r", "--name-only", rev, "--", DOCS)
+    if r.returncode != 0:
+        die(f"cannot read {DOCS} at {rev}: {r.stderr.strip()}")
+    return [p for p in r.stdout.split() if p.endswith(".md")]
+
+
+def documented(rev):
+    found = pages(rev)
+    if not found:
+        die(f"{rev} has no docs pages under {DOCS}; wrong revision?")
+    out = set()
+    for page in found:
+        r = git("show", f"{rev}:{page}")
+        if r.returncode != 0:
+            die(f"cannot read {page} at {rev}: {r.stderr.strip()}")
+        out |= commands(r.stdout)
+    return out
+
+
+def newest_tag():
+    r = git("tag", "--list", "v*", "--sort=-version:refname")
+    tags = r.stdout.split()
+    if not tags:
+        die(
+            "no v* tag in this checkout, so there is nothing to compare "
+            "against. Fetch tags (`git fetch --tags`) and run it again; a "
+            "shallow clone has none."
+        )
+    return tags[0]
+
+
+def die(msg):
+    print(f"docs-ahead-of-cli: {msg}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+# SELFTEST is the 2026-11-19 incident as docs text: the spans /docs/cli and
+# /docs/own-hardware carried for `repose host`, and spans that must not
+# become commands. It runs without git, so CI covers the part of this
+# script that can silently start finding nothing (--selftest).
+SELFTEST_DOC = """
+Add a Mac with `repose host add NAME`, list them with `repose host ls`
+(or `repose host list`), and remove one with `repose host rm NAME`.
+Run a project on it with `repose host run`, and `repose host` alone
+prints the group. An example argument does not deepen the path:
+`repose host add mac-mini`. A flag ends it: `repose run --host repose`.
+None of these is a command path: `repose`, `REPOSE_TOKEN`, `--host`,
+`ssh dev@x.repose`, `repose-ask`.
+"""
+SELFTEST_WANT = {
+    "repose host",
+    "repose host add",
+    "repose host ls",
+    "repose host list",
+    "repose host rm",
+    "repose host run",
+    "repose run",
+}
+
+
+def selftest():
+    got = commands(SELFTEST_DOC)
+    if got != SELFTEST_WANT:
+        print("docs-ahead-of-cli: --selftest failed", file=sys.stderr)
+        for line, names in (
+            ("missing", sorted(SELFTEST_WANT - got)),
+            ("unwanted", sorted(got - SELFTEST_WANT)),
+        ):
+            if names:
+                print(f"  {line}: {names}", file=sys.stderr)
+        return 2
+    print(f"--selftest: {len(got)} command paths found, as expected.")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument(
+        "--selftest",
+        action="store_true",
+        help="check the extraction against the incident's own docs text; no git",
+    )
+    ap.add_argument("--since", help="the released revision (newest v* tag)")
+    ap.add_argument("--rev", default="HEAD", help="the revision to check")
+    ap.add_argument("--quiet", action="store_true", help="print only the verdict")
+    args = ap.parse_args()
+    if args.selftest:
+        return selftest()
+
+    since = args.since or newest_tag()
+    released = documented(since)
+    shipping = documented(args.rev)
+    added = sorted(shipping - released)
+
+    if not args.quiet:
+        print(f"released at {since}: {len(released)} commands in the docs")
+        print(f"{args.rev}: {len(shipping)} commands in the docs")
+    if not added:
+        print(f"No command is documented that {since} does not have.")
+        return 0
+    print(f"\nThe docs at {args.rev} name {len(added)} command(s) that {since} does not have:")
+    for cmd in added:
+        print(f"  {cmd}")
+    print(
+        "\nA push deploys the docs within minutes and the CLI ships only at "
+        "the tag, so push and tag together: docs/ops/RELEASE.md step 2b."
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

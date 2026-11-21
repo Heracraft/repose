@@ -109,6 +109,15 @@ jobs:
           # of it. This job lints and detects breaking changes, which is
           # what its name says.
           format: false
+          # And it posts a summary comment on every pull request unless
+          # told not to. The workflow's token is `contents: read`, so the
+          # post answers "Resource not accessible by integration" and the
+          # action exits 1 after buf itself passed: every pull request run
+          # from 2026-11-13 to 2026-11-20 was red for that and nothing
+          # else, so a red run stopped meaning anything (I-1400). Nobody
+          # reads these comments; the queue opens the pull requests and the
+          # conductor reads the run.
+          pr_comment: false
           breaking: ${{ github.event_name == 'pull_request' }}
           breaking_against: https://github.com/${{ github.repository }}.git#branch=main
           push: false
@@ -345,6 +354,14 @@ jobs:
       - name: the decisions index is current and no id is cited without an entry
         if: ${{ !cancelled() }}
         run: python3 ops/dev/decisions-index.py --check
+      # The release-time check itself (ENG-43, step 2b of RELEASE.md) needs
+      # tags, which this checkout has none of, so only its reading of the
+      # docs runs here: --selftest takes no git at all. It fails if the
+      # reader stops finding the command paths of the incident it exists
+      # for, which is the way this check could start passing for nothing.
+      - name: the docs-ahead-of-cli reader still finds a command path
+        if: ${{ !cancelled() }}
+        run: python3 ops/dev/docs-ahead-of-cli --selftest
 
   web:
     name: dashboard unit + e2e tests, Docker build

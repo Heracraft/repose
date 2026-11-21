@@ -137,11 +137,18 @@ func loginStatus(ctx context.Context, e *Env) error {
 		return nil
 	}
 	plan := "no plan"
-	if me.Billing.Plan != nil && *me.Billing.Plan != "" {
+	switch {
+	case me.Billing.Plan != nil && *me.Billing.Plan != "":
 		plan = planTitle(*me.Billing.Plan) + " plan"
 		if me.Billing.Status != "" && me.Billing.Status != "active" && me.Billing.Status != "exempt" {
 			plan += " (" + strings.ReplaceAll(me.Billing.Status, "_", " ") + ")"
 		}
+	case me.Billing.Status == "exempt":
+		// An exempt account has no plan and is refused nothing (I-1090).
+		// "no plan" is the account every start is refused on, and the
+		// dashboard's Billing page says billing-exempt: the two said
+		// different things about one account (ENG-40, I-1396).
+		plan = "billing-exempt"
 	}
 	_, _ = fmt.Fprintf(e.Out, "%s (%s) on %s, %s\n", me.Handle, me.Email, hostOf(e.Cfg.APIURL), plan)
 	return nil

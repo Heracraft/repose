@@ -61,6 +61,9 @@ Where a row names two sections, the first is the common cause.
 | A user cannot log in | "CLI: user cannot log in", then "api: login service unavailable" |
 | A user says their account is suspended | the section titled `api: user reports "account suspended"` |
 | A customer disputes a charge | "Customer disputes a charge" |
+| **A release** | |
+| `repose host add` printed `fetching the appliance image` and then `the server answered 404` | "The Mac appliance image and install line" — the image the CLI pins is not published; `ops/dev/release-assets` names it |
+| `install.sh` downloads `repose_appliance-…` or any name without a `v`, or `repose version update` refuses the latest release | "Only a CLI release is latest" in `RELEASE.md` — `gh release edit <newest v0.1.N> --latest` |
 | **Infrastructure** | |
 | An apply hangs on the state lock | "OpenTofu state lock stuck" |
 | An apply wants to replace a disk or an IP | "An apply wants to replace a host data disk or a static IP" |
@@ -242,18 +245,51 @@ Once per appliance release, so `repose host add` prints a line that
 works:
 
 1. Build the image on an aarch64 builder with KVM (the Mac's appliance
-   VM, `docs/ops/DEV-BOX.md` "aarch64 builds"): `nix build
-   ./nix#packages.aarch64-linux.mac-appliance-image`; the result is
-   `repose-appliance.raw.gz`.
+   VM, `docs/ops/DEV-BOX.md` "aarch64 builds"), from main's head in a
+   clean checkout, never from a branch, since the image carries hostd:
+   `nix build ./nix#packages.aarch64-linux.mac-appliance-image`; the
+   result is `repose-appliance.raw.gz`. The builder VM needs memory
+   beyond its own: disko boots a qemu VM of `disko.memSize` (4 GiB for
+   this image) inside it, and a 6 GiB builder had that inner qemu
+   OOM-killed (2026-11-19), which reads as a build error; 18 GiB built
+   it. `/dev/kvm` in the builder resets to 0660 at every boot; `chmod
+   666 /dev/kvm` first, or the inner VM falls back to TCG silently and
+   the build takes an hour. Keep the result rooted (`nix build -o`) and
+   copy it off the builder before any garbage collection: the only
+   production image was collected on 2026-11-19 and rebuilt while a
+   release waited.
 2. Publish it with its checksum where `repose host add` fetches it: a
    GitHub release of this repository, tag `appliance-<version>`, assets
    `repose-appliance-aarch64.raw.gz` and `repose-appliance-aarch64.raw.gz.sha256`
-   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`). Another home
-   is a CLI release with `applianceURL` changed in
+   (`sha256sum repose-appliance.raw.gz | sed 's/ .*//'`), **with
+   `--latest=false`**:
+
+   ```
+   gh release create appliance-<version> --latest=false --title appliance-<version> \
+     --notes "The Mac appliance image <version> (docs/ops/RUNBOOK.md)." \
+     repose-appliance-aarch64.raw.gz repose-appliance-aarch64.raw.gz.sha256
+   ```
+
+   `https://repose.run/install.sh` and `repose version update` resolve
+   `latest` by following GitHub's `releases/latest` redirect and build
+   the CLI archive name from that tag; an appliance release that becomes
+   "latest" sends every install on every platform to a tag with no CLI
+   archives, and they 404 (appliance-2026.11.19 did this for 26 minutes
+   on 2026-11-19 until `gh release edit v0.1.51 --latest` moved it
+   back). Another home is a CLI release with `applianceURL` changed in
    `internal/cli/appliance.go`, or `REPOSE_APPLIANCE_URL` on the Mac.
-3. Bump `applianceVersion` in `internal/cli/appliance.go` to that
-   version; it ships with the next CLI release.
-4. Record the line once, if it is not recorded:
+3. `ops/dev/release-assets --appliance <version>` prints `200` for the
+   image and its checksum, fetched with no credentials as a customer's
+   Mac fetches them, for everything else the CLI fetches, and that
+   `releases/latest` still points at the CLI tag. It exits 1 naming what
+   does not answer; nothing below happens until it is green (DECISIONS
+   I-1398: v0.1.51 shipped pinning a version this step would have
+   refused).
+4. Bump `applianceVersion` in `internal/cli/appliance.go` to that
+   version; it ships with the next CLI release. `release-queue add`
+   runs the same check on the branch and refuses one whose version is
+   not published.
+5. Record the line once, if it is not recorded:
    `repose-admin hosts install-command 'repose host add --join %s'`.
    The hub settings `repose-admin edge init` recorded are what let
    `POST /hosts` mint the machine's place on the hub; without them the
@@ -1089,7 +1125,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `certificate not valid for this project` | the certificate's principals do not contain the resolved project id, or the login names another user's handle (no lookup is made, so this says nothing about whether that project exists; I-437) | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
 | `<slug> is on a host the control plane cannot reach right now; try again shortly` | the api has not heard from the project's host within the heartbeat deadline | "HostUnreachable" (and "HostWgDown" if the host is still heartbeating); the machine itself may be fine, and the banner clears with the next heartbeat |
-| `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines |
+| `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines. A line with `change=held` is not a fault: the write was refused because an op was open on that project, and that op's result settles the address (I-1444). If `held` repeats for one project, look for an op stuck in `pending` or `running` rather than at the address |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
 | `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; neither a refusal of the user's own certificate for its project, I-599, nor a refusal because the gateway's own caches are stale, I-868, is a failure); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host`, or `read: Connection reset by peer` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
@@ -1257,7 +1293,7 @@ it happening again.
    - `no_room`: the thin pool had no room for the image. See PoolHigh.
    - `failed`: the snapshot or the image failed. The `park failed` line
      has the error; the guest kept running.
-   - `no_key`: hostd had no image key (Key Vault). See "Guest park".
+   - `no_key`: hostd had no image key (Key Vault; on a Mac appliance the launcher's keychain, locked or without a login, I-1386: the Mac's `~/Library/Logs/repose/launcher.log` says which on its `park-key:` lines). See "Guest park".
    - `busy`: another park or unpark held the lock past the deadline.
 2. The journal of the boot that did it: `journalctl -b -1 -u
    repose-guest-park -u hostd | grep '"event":"guest_park"'`. The

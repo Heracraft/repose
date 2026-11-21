@@ -1029,9 +1029,19 @@
 	.ptable .c-agents {
 		width: 19%;
 	}
+	/* Wide enough for the widest thing this cell says. Measured on the
+	   page at 1440 (ENG-24, the customer review): "15.2 GB" needs 74px
+	   and "100% full", which is what it says past 90 percent, needs 84.
+	   It had 3.5rem, which gave the content 61px, so a customer read
+	   "15...." — and Disk is a billed limit, so it is the one figure
+	   here they have to be able to read. The state column pays for it;
+	   it carries the most slack. */
 	@container dash (min-width: 680px) {
 		.ptable .c-disk {
-			width: 3.5rem;
+			width: 5.25rem;
+		}
+		.ptable .c-state {
+			width: 24%;
 		}
 	}
 	@container dash (min-width: 800px) {
@@ -1039,7 +1049,7 @@
 			width: 31%;
 		}
 		.ptable .c-state {
-			width: 22.5%;
+			width: 20.5%;
 		}
 		.ptable .c-size {
 			width: 14%;

@@ -299,7 +299,9 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 // says its host has stopped answering (DECISIONS I-1370): then the line
 // under the table can name the machine the user owns and turns back on,
 // instead of calling it a server of repose's. nil the rest of the time,
-// so the common listing still costs one round trip.
+// so the common listing still costs one round trip: the HOST column
+// (I-1392) reads the name from the project's own host_name, and uses
+// this map only for an api too old to send that field.
 func (e *Env) ownHostsFor(ctx context.Context, projects []Project) map[string]Host {
 	for i := range projects {
 		if projects[i].HostUnreachable {
@@ -317,16 +319,25 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 	// The STATE cell carries `frozen` for a machine the api has paused
 	// (I-826); it is not a column of its own, and the UP cell keeps the
 	// uptime, which a pause does not change.
+	// HOST, where the machine runs (I-1392), is a column only while a
+	// machine of the account's own hardware is listed: the host is the
+	// Mac on their desk, which they named and can unplug, and the
+	// account that owns none has one possible answer and reads the
+	// table it always had (I-484).
 	// LEFT, a temporary machine's time left (I-347), is a column only
 	// while one of them is listed (I-484).
 	// DISK, a nearly full disk (I-567), likewise.
-	left, disk := false, false
+	host, left, disk := false, false, false
 	for i := range projects {
+		host = host || ownHostName(&projects[i], own) != ""
 		left = left || projects[i].ExpiresAt != nil
 		disk = disk || diskFullCell(&projects[i]) != ""
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	head := "PROJECT\tSIZE\tSTATE\tUP\tAGENTS"
+	if host {
+		head += "\tHOST"
+	}
 	if left {
 		head += "\tLEFT"
 	}
@@ -342,6 +353,9 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 		}
 		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s",
 			name, p.Class, stateWithFrozen(p), orDash(uptime(p)), orDash(agentState(p)))
+		if host {
+			row += "\t" + orDash(hostCell(p, own))
+		}
 		if left {
 			row += "\t" + orDash(tempLeft(p, now))
 		}
@@ -449,9 +463,12 @@ const statusIndent = "             "
 // size and a multiplexer other than tmux; one line for each thing that
 // needs the reader (a stop by the platform, an unused machine, a
 // temporary one's end, an error, a disk near full, a plan limit); then
-// labelled rows. The host and the machine's address are platform
-// internals nobody acts on, so they print only under -v (I-616, which
-// amends I-192); --json has them as host_id and guest_ip.
+// labelled rows. A host of repose's and the machine's address are
+// platform internals nobody acts on, so they print only under -v
+// (I-616, which amends I-192); --json has them as host_id and guest_ip.
+// A host of the account's own is the opposite of an internal -- the Mac
+// they bought, named and unplug -- so it gets a `host` row of its own
+// (I-1392, which amends I-616 after I-1366 ended its premise).
 func writeStatus(w io.Writer, v statusView) {
 	p := v.p
 	gd := v.disk
@@ -543,6 +560,12 @@ func writeStatus(w io.Writer, v statusView) {
 			host = v.route.HostID // an api without host_name
 		}
 		statusRow(w, "host", fmt.Sprintf("%s, ip %s", orDash(host), orDash(v.route.GuestIP)))
+	} else if name := ownHostName(p, v.own); name != "" {
+		// The machine is on the account's own hardware (I-1392): the
+		// host is theirs to name and to unplug, so it is a row of its
+		// own and not an internal behind `-v`. The address stays under
+		// `-v`, where the row above says both.
+		statusRow(w, "host", name)
 	}
 }
 

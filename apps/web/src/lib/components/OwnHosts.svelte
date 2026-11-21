@@ -3,9 +3,10 @@
   your projects. Add, list, remove, which is the whole of it and the same
   three `repose host` has (the dashboard parity rule).
 
-  Add mints a single-use join token and shows it once, as the API tokens
-  tab does, with the install line when the api has one recorded and the
-  token plus the docs page when it has not. Remove is the two-step the
+  Add mints a single-use join token and shows the step that uses it once,
+  as the API tokens tab shows a token once: the deployment's own installer
+  line when it has recorded one, and `repose host add --join <bundle>`
+  otherwise, which is every deployment today. Remove is the two-step the
   other tabs use, and a host still holding machines is refused by the api
   with their names.
 -->
@@ -35,6 +36,8 @@
 	let name = $state('');
 	let saving = $state(false);
 	let nameError = $state<string | undefined>(undefined);
+	/** A refusal that is not about the name: the plan's limit, no plan. */
+	let addError = $state<string | undefined>(undefined);
 	let made = $state<OwnedHost | undefined>(undefined);
 
 	/**
@@ -74,6 +77,7 @@
 		name = '';
 		saving = false;
 		nameError = undefined;
+		addError = undefined;
 		made = undefined;
 	}
 
@@ -90,6 +94,7 @@
 			return;
 		}
 		nameError = undefined;
+		addError = undefined;
 		saving = true;
 		try {
 			made = await createHost(n ? { name: n } : {});
@@ -101,9 +106,17 @@
 			} else if (err instanceof ApiError && err.detail?.reason === 'name') {
 				nameError = err.message;
 			} else {
-				// host_limit and own_hardware_plan_required are the api's
-				// own sentences, which say what the plan includes.
-				toastApiError(err, 'Could not add the host.');
+				// In the dialog, never behind it (ENG-29's sibling,
+				// ENG-25). A native dialog opened with showModal() sits
+				// in the browser's top layer, which no z-index reaches,
+				// so a toast raised while it is open renders under the
+				// backdrop: the customer pressed Add, nothing appeared
+				// to happen, and the reason — the plan's one-host limit
+				// — was behind the thing they were looking at. The api's
+				// sentences say what the plan includes, so they are the
+				// ones shown, beside the button that was pressed.
+				addError =
+					err instanceof ApiError ? err.message : 'Could not add the host. Try again.';
 			}
 		} finally {
 			saving = false;
@@ -175,9 +188,54 @@
 		return `${h.projects} ${word}, ${h.running_projects} running`;
 	}
 
+	// What the confirmation says. A host that is answering cannot be
+	// removed while machines are on it: the api refuses that. A host that
+	// has stopped answering can be, which is the only way out of the
+	// wedge in ENG-119, and it is the one path where removing a host
+	// loses machines -- so the question says how many and that their
+	// disks went with it, in the same words `repose host rm` uses
+	// (DECISIONS I-1420).
+	function removeWarning(h: OwnedHost): string {
+		if (h.projects && (h.state === 'unreachable' || h.state === 'lost')) {
+			const what = h.projects === 1 ? 'the machine on it' : `the ${h.projects} machines on it`;
+			const disks = h.projects === 1 ? 'its disk is' : 'their disks are';
+			return `It is not answering, and ${what} cannot be recovered: ${disks} on that host and repose has no copy.`;
+		}
+		return 'It stops taking your projects, and it joins again only with a new install.';
+	}
+
 	function heard(h: OwnedHost): string {
 		return h.last_heartbeat_at ? relativeTime(h.last_heartbeat_at) : '—';
 	}
+
+	/**
+	 * The one step a user runs on the machine they are adding, from the
+	 * answer to the mint (DECISIONS I-1366, I-1380). The same ladder
+	 * `repose host add` prints, in the same order, because one answer
+	 * read two ways is how the dialog came to show a value nobody could
+	 * use:
+	 *
+	 * 1. `install.command`, the deployment's own installer line, run as
+	 *    it is. Empty until an operator records one with `repose-admin
+	 *    hosts install-command`, which no deployment has, so 2 is the
+	 *    normal case rather than the edge case.
+	 * 2. `install.argument`, the join bundle, in the command that takes
+	 *    it. The CLI prints the argument bare because it pipes; nobody
+	 *    pipes a dialog, so this shows the line to paste.
+	 * 3. Nothing, for an api that sent neither.
+	 *
+	 * Never the bare `join_token`: it is an input to the api, not
+	 * something a user runs, and a 43-character value that looks
+	 * runnable is worse than no value, because the dialog is one-shot
+	 * and remove-and-add hands out the same wrong thing again.
+	 */
+	let step = $derived(
+		made?.install?.command
+			? made.install.command
+			: made?.install?.argument
+				? `repose host add --join ${made.install.argument}`
+				: ''
+	);
 </script>
 
 <section class="hk-section" id="hosts" aria-labelledby="hosts-h">
@@ -262,8 +320,7 @@
 								<td colspan="6">
 									<div class="hk-confirm" data-testid="confirm-remove-host">
 										<p>
-											Remove <code>{h.name}</code>? It stops taking your projects, and it
-											joins again only with a new install.
+											Remove <code>{h.name}</code>? {removeWarning(h)}
 										</p>
 										<div class="hk-confirm-actions">
 											<button
@@ -336,6 +393,11 @@
 					{/if}
 				</div>
 			</div>
+			{#if addError}
+				<p class="hdlg-refusal hk-field-error" role="alert" data-testid="host-add-error">
+					{addError}
+				</p>
+			{/if}
 			<div class="hk-modal-foot">
 				<button type="button" class="hk-btn-ghost" onclick={close}>Cancel</button>
 				<button type="submit" class="hk-btn" aria-disabled={saving ? 'true' : undefined}
@@ -347,21 +409,38 @@
 		<div class="hdlg-made">
 			<div class="hdlg-head"><h2 id="hdlg-title" class="hk-modal-title">{made.name}</h2></div>
 			<div class="hdlg-body">
-				{#if made.install?.command}
-					<p class="hdlg-once">Run this on the machine. It is not shown again.</p>
-					<div data-testid="host-install">
-						<CodeCopy command={made.install.command} what="the install command" />
-					</div>
-				{:else}
+				{#if step}
 					<p class="hdlg-once">
-						Copy this token now. It is not shown again, and it is used once.
+						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
+					<div data-testid="host-install">
+						<CodeCopy command={step} what="the install step" />
+					</div>
+					<p class="hdlg-facts">
+						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
+							>What this does</a
+						>
+					</p>
+				{:else if made.join_token}
+					<!-- An api older than I-1380 sends no install step at all.
+					     The token is an input to the api and not something to
+					     run, so it is never offered as one. -->
+					<p class="hdlg-once">This is its join token. It is not shown again, and it works once.</p>
 					<div data-testid="host-token">
-						<CodeCopy command={made.join_token ?? ''} what="the join token" />
+						<CodeCopy command={made.join_token} what="the join token" />
 					</div>
 					<p class="hdlg-facts">
 						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
 							>What to do with it</a
+						>
+					</p>
+				{:else}
+					<p class="hdlg-once">
+						{made.name} was added, but this repose sent nothing to install it with.
+					</p>
+					<p class="hdlg-facts">
+						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
+							>Adding your own hardware</a
 						>
 					</p>
 				{/if}
@@ -479,6 +558,15 @@
 		margin: 0 0 0.75rem;
 		font-size: 0.875rem;
 		color: var(--hk-text-2);
+		text-wrap: pretty;
+	}
+	/* A refusal the api sent, between the field and the buttons: the
+	   dialog is in the top layer and a toast is not, so this is the only
+	   place a reason can be seen while the dialog is open (ENG-25). */
+	.hdlg-refusal {
+		margin: 0;
+		padding: 0 1.25rem 0.25rem;
+		line-height: 1.25rem;
 		text-wrap: pretty;
 	}
 	.hdlg-facts {

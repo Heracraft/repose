@@ -670,7 +670,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		// The host's word on its own guest's address (I-720): Hello is
 		// the only message that carries one for a guest the api has no
 		// result for.
-		e.recordGuestAddress(ctx, p, g.GetIp(), g.GetVsockCid(), "hello")
+		e.recordGuestAddress(ctx, p, g.GetIp(), g.GetVsockCid(), "hello", nil)
 		if settled(g.State) && settled(p.State) && g.State != p.State {
 			e.log.Info("reconciling project state from Hello", "event", "reconcile", "project_id", p.ID.String(), "from", p.State, "to", g.State)
 			if err := store.SetProjectState(ctx, e.pool, p.ID, g.State); err != nil {
@@ -698,7 +698,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 			rf, err := unfinishedRestore(ctx, e.pool, p.ID)
 			if len(open) == 0 && err == nil && rf.destroyedOld {
 				e.log.Warn("releasing the address of a guest a failed restore destroyed", "event", "reconcile_missing", "project_id", p.ID.String())
-				_, _ = e.pool.Exec(ctx, "update projects set guest_ip = null, vsock_cid = null where id = $1 and guest_id = $2 and state = 'error'", p.ID, *p.GuestID) // best effort; the next Hello tries again
+				e.releaseGuestAddress(ctx, &p)
 			}
 		}
 	}
@@ -752,7 +752,15 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 // differs, and the write names the guest, so a destroy or a restore that
 // moved the guest in between is not overwritten by it. src is where the
 // address came from, for the log line: "hello" or "start".
-func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr string, cidRaw uint32, src string) {
+//
+// exceptOp is the op this write belongs to, or nil for a write that
+// belongs to no op. The UPDATE refuses while any *other* op is open on
+// the project, in the statement rather than before it (DECISIONS I-1444,
+// ENG-111): the caller's own check-then-write left a window an op could
+// open inside, and CI found it. A start passes its own op, because the
+// address it carries is that op's result and the op is still running
+// when the result is applied.
+func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr string, cidRaw uint32, src string, exceptOp *uuid.UUID) {
 	if p.GuestID == nil {
 		return
 	}
@@ -777,9 +785,18 @@ func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr
 	}
 	e.log.Info("recording the address the host reports for a guest", "event", "guest_address", "change", change, "from", src,
 		"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
-	if _, err := e.pool.Exec(ctx,
-		"update projects set guest_ip = $3, vsock_cid = coalesce($4, vsock_cid) where id = $1 and guest_id = $2 and destroyed_at is null",
-		p.ID, *p.GuestID, ip.String(), cid); err != nil {
+	// One statement decides and writes. The `not exists` is the guard the
+	// Hello reconcile used to apply as a separate read (I-720), which an
+	// op opening in between could not be seen by.
+	tag, err := e.pool.Exec(ctx,
+		`update projects set guest_ip = $3, vsock_cid = coalesce($4, vsock_cid)
+		   where id = $1 and guest_id = $2 and destroyed_at is null
+		     and not exists (
+		       select 1 from ops
+		        where project_id = $1 and state in ('pending', 'running')
+		          and ($5::uuid is null or id <> $5))`,
+		p.ID, *p.GuestID, ip.String(), cid, exceptOp)
+	if err != nil {
 		// A unique violation is I-723's index catching two live projects
 		// claiming one address: the row stays as it was and the next
 		// Hello tries again, rather than two logins relaying to one
@@ -787,10 +804,55 @@ func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr
 		e.log.Warn("the address the host reports was not recorded", "event", "guest_address", "from", src, "project_id", p.ID.String(), "guest_id", p.GuestID.String(), "err", err.Error())
 		return
 	}
+	// No row matched, so nothing was written and the caller's copy must
+	// not pretend otherwise: an op opened, or the guest moved, or the
+	// project was destroyed, between the read that produced p and now.
+	// Before I-1444 the in-memory fields were set either way, which made
+	// a refused write look applied for the rest of the reconcile.
+	if tag.RowsAffected() == 0 {
+		e.log.Info("the address the host reports was not recorded: the project moved on", "event", "guest_address", "change", "held", "from", src,
+			"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
+		return
+	}
 	p.GuestIP = &ip
 	if cid != nil {
 		p.VsockCID = cid // coalesce kept the old one when the host sent none
 	}
+}
+
+// releaseGuestAddress clears the address of a guest a failed in-place
+// restore destroyed, with the open-op test in the statement for the same
+// reason the write has it (DECISIONS I-1444).
+//
+// This clears the two columns recordGuestAddress writes, so leaving it as
+// a read followed by an UPDATE would have left the same window open in
+// the worse direction: a running op that needs guest_ip loses it, rather
+// than gaining a stale one. The caller's other two conditions stay in Go
+// -- one of them is a second query -- because neither is a race; only the
+// open-op test was.
+func (e *Engine) releaseGuestAddress(ctx context.Context, p *store.Project) {
+	if p.GuestID == nil {
+		return
+	}
+	// Best effort, as it was: the next Hello tries again.
+	tag, err := e.pool.Exec(ctx,
+		`update projects set guest_ip = null, vsock_cid = null
+		   where id = $1 and guest_id = $2 and state = 'error'
+		     and not exists (
+		       select 1 from ops
+		        where project_id = $1 and state in ('pending', 'running'))`,
+		p.ID, *p.GuestID)
+	if err != nil {
+		e.log.Warn("the address of a destroyed guest was not released", "event", "reconcile_missing", "project_id", p.ID.String(), "err", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		e.log.Info("the address of a destroyed guest was not released: the project moved on", "event", "reconcile_missing", "change", "held",
+			"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
+		return
+	}
+	p.GuestIP = nil
+	p.VsockCID = nil
 }
 
 func settled(state string) bool {
@@ -856,7 +918,16 @@ func (e *Engine) failWithLines(ctx context.Context, op *store.Op, code, msg stri
 	errObj := map[string]any{"code": code, "message": msg}
 	// The user reads message; the host's own wording names internal ids
 	// and stays in detail for operators (I-159).
-	if human, ok := humanError(op.Kind, currentPhase(op), code, msg); ok {
+	// Whether the host this op was addressed to is one nobody expects
+	// back: it changes what the sentence can honestly tell the user to do
+	// (DECISIONS I-1418).
+	gone := false
+	if op.HostID != nil {
+		if g, err := e.hostGone(ctx, *op.HostID); err == nil {
+			gone = g
+		}
+	}
+	if human, ok := humanError(op.Kind, currentPhase(op), code, msg, gone); ok {
 		errObj["message"], errObj["detail"] = human, msg
 		msg = human
 	}

@@ -37,6 +37,10 @@
 , vcpu ? null
 , mem ? null
 , extraKernelParams ? [ ]
+  # The closure's store as a read-only erofs disk the guest boots from,
+  # beside the share (mounted at /nix/.ro-share then): the Mac appliance's
+  # experiment, research doc §10. Off for every product guest.
+, storeOnDisk ? false
 }:
 let
   lib = nixpkgs.lib;
@@ -101,14 +105,14 @@ let
           hypervisor = "cloud-hypervisor";
           vcpu = defaultVcpu;
           mem = defaultMem;
-          storeOnDisk = false;
+          storeOnDisk = storeOnDisk;
           writableStoreOverlay = "/nix/.rw-store";
           # Guest-side view only: the socket and image paths are placeholders
           # that bin/run replaces with the per-guest ones.
           shares = [{
             tag = "ro-store";
             source = "/nix/store";
-            mountPoint = "/nix/.ro-store";
+            mountPoint = if storeOnDisk then "/nix/.ro-share" else "/nix/.ro-store";
             proto = "virtiofs";
             socket = "virtiofsd.sock";
           }];
@@ -180,6 +184,15 @@ let
   cfg = guestSystem.config;
   pkgs = guestSystem.pkgs;
   toplevel = cfg.system.build.toplevel;
+  # With storeOnDisk, what hostd boots in the toplevel's place: the
+  # toplevel's entries beside the repose-store-disk link, which
+  # nixbuild.ClosureInfo reads. The link cannot live inside the toplevel,
+  # since the image holds the toplevel's closure (a cycle).
+  toplevelOnDisk = if !storeOnDisk then null else pkgs.runCommandLocal "repose-guest-system-ondisk" { } ''
+    mkdir $out
+    for f in ${toplevel}/*; do ln -s "$f" $out/; done
+    ln -s ${cfg.microvm.storeDisk} $out/repose-store-disk
+  '';
   # What Cloud Hypervisor boots: the uncompressed ELF on x86_64, the
   # arm64 `Image` on aarch64 (what nixpkgs installs for an arm64 kernel,
   # and the one file Cloud Hypervisor boots there), as microvm.nix's
@@ -300,6 +313,7 @@ let
       --console null \
       --serial "$serial" \
       --vsock "cid=$cid,socket=$vsock_socket" \
+      ${lib.optionalString storeOnDisk "--disk path=${cfg.microvm.storeDisk},image_type=raw,readonly=on"} \
       --disk "path=$volume,image_type=raw,direct=on,num_queues=$vcpu" \
       --fs "tag=ro-store,socket=$virtiofs_socket,num_queues=1,queue_size=1024" \
       --net "tap=$tap,mac=$mac" \
@@ -347,7 +361,7 @@ in
 pkgs.runCommand "repose-guest-runner-${baseVersion}-${class}"
 {
   passthru = {
-    inherit toplevel guestSystem class baseVersion;
+    inherit toplevel toplevelOnDisk guestSystem class baseVersion;
     config = cfg;
     kernel = kernel;
     initrd = initrd;
