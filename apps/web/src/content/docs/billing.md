@@ -1,6 +1,6 @@
 ---
 title: Pricing
-description: The three plans, what each one buys, the free week, and what happens when you change, cancel or miss a payment.
+description: Hosted plans and Own hardware, what each one buys, the free week, and what happens when you change, cancel or miss a payment.
 section: Account
 order: 30
 ---
@@ -25,11 +25,11 @@ Your plan's memory is how much runs at once, around the clock: the month costs t
 
 ## Own hardware
 
-If you have a machine of your own, a Mac mini or an x86 box, the Own hardware plan is **$10 a month** for one host you own. Your projects run on it, and everything else is the same: the dashboard, the CLI, SSH and the browser view, triggers, notifications and snapshots.
+If you have a machine of your own, a Mac mini or an x86 box, the Own hardware plan is **$10 a month** for one host you own, with [seven days free](#the-free-week) first. Your projects run on it, and everything else is included: the dashboard, the CLI, SSH through the gateway, the browser view, triggers, notifications and snapshots.
 
-The plan buys none of our compute, so it limits none of yours. What may run at once is whatever your machine's memory holds, a project's disk is whatever its disk holds, and egress isn't counted at all, because your machines send their traffic over your own connection. There's no seat to wait for either: you can buy it while repose is full.
+The plan buys none of repose's compute, disk or egress, so you can't place machines on repose's servers on it and it doesn't limit your hardware. What may run at once is whatever your machine's memory holds, a project's disk is whatever its disk holds, and egress isn't counted, because your machines send their traffic over your own connection. There is no seat to wait for: you can choose it while repose is full.
 
-The free week, the card at checkout, the tax and what happens after a failed payment are the same as on any plan. Your snapshots stay on your own host's disk, so a dead disk loses them.
+The card at checkout, tax and what happens after a failed payment are the same as on any plan. Solo's founding price does not apply. Your snapshots stay on your own host's disk, and repose keeps no copy, so a dead disk loses them.
 
 You can't change between Own hardware and a hosted plan: they sell different things. Cancel the one you have, and choose the other when it ends.
 

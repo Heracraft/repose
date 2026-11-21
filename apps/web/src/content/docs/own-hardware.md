@@ -5,7 +5,7 @@ section: Account
 order: 29
 ---
 
-Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing) it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
+Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing#own-hardware) ($10 a month) it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
 
 Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. `repose run --host repose` makes one on repose's servers instead, `repose run --host mac-mini` names your hardware, and a project made through the [API](/docs/api#where-a-project-runs) says the same with `placement`. Repose's servers need a plan that buys memory there. A machine stays on its host for life; it moves only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore).
 
@@ -55,7 +55,7 @@ HOST      STATE   MEMORY  MACHINES  RUNNING  LAST SEEN
 mac-mini  online  24 GB   0         0        just now
 ```
 
-`waiting` means it has not joined yet, and a new machine is refused until it has: `your host mac-mini has not registered yet`, exit 8, and nothing is created. `repose run --host repose` makes the machine on repose's servers meanwhile. From `online`, `repose run` in any project puts it on your hardware.
+`waiting` means it has not joined yet, and a new machine is refused until it has: `your host mac-mini has not registered yet`, exit 8, and nothing is created. `repose run --host repose` makes the machine on repose's servers meanwhile on a hosted plan, or [remove the host](#taking-it-off) and add it again if the install stalled ([troubleshooting](/docs/troubleshooting#your-own-hardware)). From `online`, `repose run` in any project puts it on your hardware.
 
 `repose ls` then says where each machine runs:
 
@@ -102,13 +102,13 @@ todo-app: your host mac-mini has not answered for 14m.
 
 `repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else. A new machine is refused with the same sentence, and `repose run --host repose` makes it on repose's servers instead.
 
-A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart, shut down or lose power on stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not.
+A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart, shut down or lose power on stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not. If the hardware is gone for good, [retire the offline host](#taking-it-off) with `repose host rm <name>` to free your host slot and clear its stranded machines with `repose rm`.
 
 ## Restart your Mac and your machines start fresh
 
 When you restart or shut down your Mac, your machines stop and start again at your next login, cold: their disks are as they were, and what they held in memory is gone: programs, tmux windows, an agent mid-task. Stop anything you would miss before you restart, the way you would on a laptop.
 
-Keeping a machine's memory across a restart is built and it does not work yet, so this page does not promise it: macOS gives repose about a second when the Mac goes down, measured, and writing a machine's memory takes longer than that. Machines on repose's servers do keep their memory across a server restart ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)); your own Mac does not, today.
+macOS gives repose about a second when the Mac goes down, measured, and writing a machine's memory takes longer than that. Machines on repose's servers do keep their memory across a server restart ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)); your own Mac does not, today.
 
 ## Snapshots stay on its disk
 
@@ -132,7 +132,7 @@ A host that is answering and still holds machines is not removed. A machine move
 
 A host that has **stopped** answering is removed, machines and all, because the alternative is a dead end: the machines on it cannot be destroyed while repose still believes the host may come back, so refusing to remove the host would leave you unable to do either, or to add a replacement. The question says how many machines go with it and that their disks were on that host; `--yes` skips it, as everywhere. Afterwards the machines are still listed and `repose rm` finishes each of them without the host. If the Mac was only asleep, turn it on and wait for `online` instead: once a host is removed it cannot rejoin, and whatever was on its disk is gone.
 
-Removing the appliance first is the other order, and it takes one more step. `repose host rm --local` works with no session and with repose unreachable, because the appliance is on your Mac and removing it needs nobody's permission. The question it asks says how many machines go with it when your account can be read, and says that it could not be read when it cannot. The host stays on your account either way, holding machines that no longer have anywhere to run, so remove it with `repose host rm <name>` once it reports not answering.
+Removing the appliance first is the other order, and it takes one more step. `repose host rm --local` works with no session and with repose unreachable, because the appliance is on your Mac and removing it needs nobody's permission. The question it asks says how many machines go with it when your account can be read, and says that it could not be read when it cannot. The host stays on your account either way, holding machines that no longer have anywhere to run: wait until `repose host ls` shows it `offline` (about 90 seconds), run `repose host rm <name>` to retire it, and then `repose rm` each stranded machine.
 
 Settings → Hosts has the same Remove, with the same question and the same machines named.
 
@@ -140,4 +140,4 @@ Once a host is off, your new projects go to repose's servers again if your plan 
 
 ## What it costs
 
-The [Own hardware plan](/docs/billing) is one host per account. It buys no memory and no disk of repose's: your hardware's memory is the only cap on what runs at once, and your disk the only cap on what you keep. Repose still runs the gateway your SSH goes through, the control plane, the notifications and the triggers, which is what the plan pays for.
+The [Own hardware plan](/docs/billing#own-hardware) is **$10 a month** for one host per account, with seven days free first (prices exclude tax). It buys no memory, disk or egress on repose's servers, so you cannot place machines there on this plan: your hardware's memory is the only cap on what runs at once, your disk the only cap on what you keep, and egress is not counted. Repose runs the gateway your SSH goes through, the control plane, the dashboard, notifications and triggers, which is what the plan pays for. There is no seat to wait for while repose is full.
