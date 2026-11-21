@@ -425,6 +425,8 @@ export async function ownedHost(body: {
 	/** Moves the host of that name to `state` (`registering` is waiting). */
 	state_host?: string;
 	state?: string;
+	/** Overrides the host's reported arch, for layout resilience tests (ENG-88). */
+	arch?: string;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',

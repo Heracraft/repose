@@ -90,6 +90,21 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	await expect(dialog.getByText(/Run this on the machine you are adding/)).toBeVisible();
 	const install = dialog.getByTestId('host-install');
 	await expect(install).toBeVisible();
+	// The 360-char join command wraps across lines at both desktop and phone
+	// widths so a user can read all of it without horizontal scrolling (ENG-63).
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+		const pre = install.locator('pre');
+		const overflow = await pre.evaluate((el) => ({
+			scrollWidth: el.scrollWidth,
+			clientWidth: el.clientWidth
+		}));
+		expect(
+			overflow.scrollWidth,
+			`install command scrolled horizontally at ${width}px (${overflow.scrollWidth} > ${overflow.clientWidth})`
+		).toBeLessThanOrEqual(overflow.clientWidth + 1);
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
 	await shots(page, 'hosts-added');
 	// The deployment's own installer line, which the fake records as
 	// `repose host add --join %s`. Decoded by the rule the CLI parses it
@@ -335,4 +350,38 @@ test('the Hosts tab is reachable from Settings at both widths', async ({ page })
 		await tab.click();
 		await expect(page.locator('#hosts')).toBeVisible();
 	}
+});
+
+// Even with a 32-char host name or an unbroken long arch string, the table
+// never overflows 390px and Remove stays fully on-screen and clickable (ENG-88).
+test('a host row with a long name and unbroken arch fits 390px with Remove clickable', async ({
+	page
+}) => {
+	await clearHosts(page);
+	await ownedHost({
+		name: 'a-very-long-hostname-up-to-32chr',
+		arch: '/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1'
+	});
+	await page.goto('/settings/hosts');
+	const table = page.getByTestId('own-hosts');
+	await expect(table).toBeVisible();
+
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+		const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+		expect(scrollWidth, `page overflowed horizontally at ${width}px`).toBeLessThanOrEqual(width);
+
+		const btn = table.getByRole('button', { name: 'Remove a-very-long-hostname-up-to-32chr…' });
+		await expect(btn).toBeVisible();
+		const box = (await btn.boundingBox())!;
+		expect(box.x, `Remove left edge at ${width}px`).toBeGreaterThanOrEqual(0);
+		expect(box.x + box.width, `Remove right edge at ${width}px`).toBeLessThanOrEqual(width);
+		const onTop = await btn.evaluate((el) => {
+			const b = el.getBoundingClientRect();
+			const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+			return el.contains(hit) || hit === el;
+		});
+		expect(onTop, `Remove is covered or clipped at ${width}px`).toBe(true);
+	}
+	await shots(page, 'hosts-long-row');
 });

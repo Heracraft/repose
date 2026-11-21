@@ -29,6 +29,12 @@ message HostInfo {
   // hostd older than I-735, for which the api records vcpus / 2 instead,
   // accepted for one release (DECISIONS I-735).
   uint32 cores = 8;
+  // The host's CPU architecture in Nix/Linux form ("x86_64", "aarch64").
+  // Empty from a hostd older than I-1448, which leaves hosts.arch null
+  // until the host upgrades and sends it in Hello or Rotate. Never parsed
+  // from nixos_system, which is the /nix/store/... closure path
+  // (DECISIONS I-1448).
+  string arch = 9;
 }
 
 message WireguardPeer {
@@ -141,6 +147,11 @@ message Hello {
   // (DECISIONS I-1126). Absent from an older hostd, which
   // answers a command it does not know `invalid_argument`.
   repeated string features = 9;
+  // The host's CPU architecture ("x86_64", "aarch64"), so an already-
+  // registered host populates hosts.arch on its first reconnect after
+  // upgrading hostd without re-registering (DECISIONS I-1448). Empty from
+  // a hostd older than this, which keeps whatever hosts.arch already holds.
+  string arch = 10;
 }
 
 message Heartbeat {

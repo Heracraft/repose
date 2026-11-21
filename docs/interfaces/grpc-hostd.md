@@ -18,7 +18,7 @@ RegisterResponse { string host_id; bytes client_cert; bytes client_key;
                    string loki_url; string host_ca_pub; }
 HostInfo { string hostname; string sku; uint64 mem_bytes; uint32 vcpus;
            uint32 cores; string nixos_system; string ch_version;
-           uint64 pool_bytes; }
+           uint64 pool_bytes; string arch; }
 ```
 
 `repose-admin hosts add` mints the join token, and it reaches the host's
@@ -45,11 +45,20 @@ SMT thread count `runtime.NumCPU()` reports and stays recorded beside
 it. A hostd older than I-735 sends 0, and the api records `vcpus / 2`
 instead, which is the exact core count on every shape repose can run
 (DESIGN.md §4); the old shape is accepted for one release. `Rotate`
-carries `HostInfo` too and records `vcpus` and `cores` from it, each
-only when the host sends it above 0, because `Register` runs once per
+carries `HostInfo` too and records `vcpus`, `cores` and `arch` from it, each
+only when non-empty/above 0, because `Register` runs once per
 host: the join token is single use, so a rotate is an already-registered
 host's only way to report what it now has. Not `Limits.cores`, which is
 a nix build's job count.
+
+`arch` (field 9 of `HostInfo` and field 10 of `Hello`, DECISIONS I-1448)
+is the host's CPU architecture in Nix/Linux form (`x86_64`, `aarch64`),
+never parsed from `nixos_system` (which holds the `/nix/store/...`
+closure path from `readlink /run/current-system`). `Hello` carries it so
+an already-registered host populates `hosts.arch` on its first reconnect
+after upgrading hostd without re-registering. The api accepts only a
+plain identifier (`[a-z0-9_]{1,32}`); a hostd older than I-1448 sends `""`
+and keeps whatever `hosts.arch` holds.
 
 `Rotate` and `Session` admit a certificate only when its serial is the
 host's `cert_serial`, or the serial the last rotate replaced until the host

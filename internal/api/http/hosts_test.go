@@ -606,3 +606,56 @@ func TestAHostThatIsGoneCanBeRemovedWithItsMachines(t *testing.T) {
 		t.Errorf("after removal: state %q, cert_serial %v, join_token_hash %v; want retired and both cleared", state, serial, token)
 	}
 }
+
+// GET /hosts reports the CPU architecture from hosts.arch and never leaks a
+// /nix/store/... closure path from hosts.nixos_system (ENG-89, DECISIONS
+// I-1448). Before this fix, hostJSON sliced nixos_system on `-`, turning
+// `/nix/store/<hash>-nixos-system-...` into `arch: "/nix/store/<hash>"`.
+func TestHostArchNeverReturnsStorePath(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-arch", "archuser")
+	e.exempt(t, "sub-arch")
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-clean"})
+	if r.status != 201 {
+		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	id, _ := r.body["id"].(string)
+
+	// Legacy row: registered before I-1448, nixos_system holds the closure
+	// path and arch is null. GET /hosts must omit arch rather than emit the
+	// store path.
+	storePath := "/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1-nixos-system-repose-appliance-25.05"
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set state = 'ready', nixos_system = $2, arch = null where id = $1", id, storePath); err != nil {
+		t.Fatal(err)
+	}
+	list := e.do(t, tok, "GET", "/hosts", nil)
+	if list.status != 200 || len(list.list) != 1 {
+		t.Fatalf("list: %d %s", list.status, list.raw)
+	}
+	row := list.list[0].(map[string]any)
+	if got, has := row["arch"]; has {
+		t.Fatalf("legacy row with store path emitted arch=%q, want arch omitted", got)
+	}
+
+	// Once hostd reports arch (Register/Hello/Rotate), GET /hosts returns it
+	// even though nixos_system still holds the closure path.
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set arch = 'aarch64' where id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	list = e.do(t, tok, "GET", "/hosts", nil)
+	row = list.list[0].(map[string]any)
+	if row["arch"] != "aarch64" {
+		t.Fatalf("registered host arch = %v, want aarch64", row["arch"])
+	}
+
+	// Old-shape compatibility: a non-path Nix system tuple in nixos_system
+	// when arch is null still yields its architecture prefix.
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set arch = null, nixos_system = 'x86_64-linux' where id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	list = e.do(t, tok, "GET", "/hosts", nil)
+	row = list.list[0].(map[string]any)
+	if row["arch"] != "x86_64" {
+		t.Fatalf("tuple nixos_system arch = %v, want x86_64", row["arch"])
+	}
+}

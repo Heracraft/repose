@@ -95,8 +95,9 @@ has used it yet), `ready`, `draining`, `unreachable` (no heartbeat for 90
 seconds, which for a machine at home is "switched off"), `retired`,
 `lost`. `mem_bytes`, `vcpus` and `cores` are 0 and `arch`,
 `last_heartbeat_at` and `registered_at` are absent until the host
-registers; `arch` is the first half of the system it reported
-(`x86_64`, `aarch64`). `projects` counts the account's live projects
+registers; `arch` is the CPU architecture it reported (`x86_64`,
+`aarch64`, DECISIONS I-1448), omitted when unknown and never a
+`/nix/store/...` closure path. `projects` counts the account's live projects
 placed on it and `running_projects` those of them in a state that holds
 memory, which is what the dashboard's list shows.
 

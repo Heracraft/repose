@@ -375,6 +375,18 @@ func (f *Fake) AddOwnedHost(name string) string {
 	return h.ID
 }
 
+// SetOwnedHostArch replaces a host's reported arch, so a layout test can
+// verify that even a long unbroken arch never pushes Remove off a phone.
+func (f *Fake) SetOwnedHostArch(id, arch string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range f.ownedHosts {
+		if h.ID == id {
+			h.Arch = arch
+		}
+	}
+}
+
 // SetOwnedHostOffline marks a host unreachable and puts its last
 // heartbeat quiet ago, which is what a machine switched off looks like.
 // The duration is the point: a surface that says how long it has been

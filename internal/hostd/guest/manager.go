@@ -26,6 +26,7 @@ import (
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/gcroot"
+	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/metrics"
 	"github.com/heracraft/repose/internal/hostd/mount"
@@ -984,7 +985,7 @@ func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features(m.cfg.PauseIdle, m.cfg.Burst)}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features(m.cfg.PauseIdle, m.cfg.Burst), Arch: hostinfo.Arch()}
 	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
