@@ -524,3 +524,136 @@ test('Answered names each outcome and where it came from', async ({ page }) => {
 		page.getByRole('region', { name: 'Answered' }).getByRole('link', { name: 'alpha' })
 	).toHaveCount(0);
 });
+
+// ENG-54: on /questions, long questions wrap and expand cleanly on mobile
+// (390px) and desktop without relying on hover-only title tooltips, and
+// project names are not prematurely truncated.
+test('long questions on /questions wrap and expand on mobile and desktop without clipping project names', async ({
+	page
+}) => {
+	const now = Date.now();
+	const longText =
+		'Airbnb Software Engineering Intern (BS/MS), SF: the database migration adds a NOT NULL column on candidate_reviews without a default value, and 14 existing fixtures in test/integration omit it. Should I backfill the fixtures with an empty summary string, make the column nullable until the second release, or pause and wait for your schema review before continuing the branch? Final sentence to confirm full readability.';
+	expect(longText.length).toBeGreaterThan(400);
+
+	const pending = [
+		{
+			id: '00000000-0000-4000-8000-000000000201',
+			project_id: '00000000-0000-4000-9000-000000000201',
+			project: 'recruiting-platform',
+			agent: 'claude',
+			window: 'claude',
+			text: longText,
+			options: ['backfill', 'nullable'],
+			state: 'pending',
+			answer: null,
+			answered_via: null,
+			created_at: new Date(now - 3 * 60_000).toISOString(),
+			expires_at: new Date(now + 3600_000).toISOString(),
+			answered_at: null
+		}
+	];
+	const all = [
+		...pending,
+		{
+			id: '00000000-0000-4000-8000-000000000202',
+			project_id: '00000000-0000-4000-9000-000000000201',
+			project: 'recruiting-platform',
+			agent: 'claude',
+			window: 'claude',
+			text: longText,
+			options: ['backfill', 'nullable'],
+			state: 'answered',
+			answer: 'backfill',
+			answered_via: 'dashboard',
+			created_at: new Date(now - 26 * 3600_000).toISOString(),
+			expires_at: new Date(now - 25 * 3600_000).toISOString(),
+			answered_at: new Date(now - 25 * 3600_000).toISOString()
+		},
+		{
+			id: '00000000-0000-4000-8000-000000000203',
+			project_id: '00000000-0000-4000-9000-000000000202',
+			project: 'notebook-workspace',
+			agent: 'codex',
+			window: 'codex',
+			text: 'Keep the local SQLite fixture after running the migration tests?',
+			options: ['yes', 'no'],
+			state: 'answered',
+			answer: 'yes',
+			answered_via: 'cli',
+			created_at: new Date(now - 4 * 3600_000).toISOString(),
+			expires_at: new Date(now - 3 * 3600_000).toISOString(),
+			answered_at: new Date(now - 3 * 3600_000).toISOString()
+		}
+	];
+
+	await page.route(/\/questions\?state=pending$/, (route) =>
+		route.fulfill({ json: { questions: pending } })
+	);
+	await page.route(/\/questions\?state=all$/, (route) => route.fulfill({ json: { questions: all } }));
+
+	const shotsDir = process.env.REPOSE_SHOTS_DIR;
+
+	for (const width of [390, 1440]) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+		await page.goto('/questions');
+
+		// Waiting on you: wraps cleanly and expands via Show all.
+		const waitingRow = page.getByTestId('questions').getByTestId('question').first();
+		const waitingText = waitingRow.locator('.qrow-text');
+		await expect(waitingText).toBeVisible();
+		const waitingClip = await waitingText.evaluate((el) => ({
+			scrollW: el.scrollWidth,
+			clientW: el.clientWidth,
+			h: el.getBoundingClientRect().height
+		}));
+		expect(waitingClip.scrollW).toBeLessThanOrEqual(waitingClip.clientW + 1);
+		await waitingRow.getByRole('button', { name: 'Show all' }).click();
+		const waitingExpanded = (await waitingText.boundingBox())?.height ?? 0;
+		expect(waitingExpanded).toBeGreaterThan(waitingClip.h);
+
+		// Answered: no hover-only title, no horizontal clipping, expands via Show all.
+		const ansRow = page.getByTestId('answered').locator('[data-qid="00000000-0000-4000-8000-000000000202"]');
+		const ansText = ansRow.getByTestId('answered-text');
+		await expect(ansText).toBeVisible();
+		await expect(ansText).not.toHaveAttribute('title', /.*/);
+		const ansClip = await ansText.evaluate((el) => ({
+			scrollW: el.scrollWidth,
+			clientW: el.clientWidth,
+			h: el.getBoundingClientRect().height
+		}));
+		expect(ansClip.scrollW).toBeLessThanOrEqual(ansClip.clientW + 1);
+		const showAll = ansRow.getByRole('button', { name: 'Show all' });
+		await expect(showAll).toBeVisible();
+		await showAll.click();
+		await expect(ansRow.getByRole('button', { name: 'Show less' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		const ansExpanded = (await ansText.boundingBox())?.height ?? 0;
+		expect(ansExpanded).toBeGreaterThan(ansClip.h);
+
+		// Project name is not truncated to "recrui…".
+		const projectEl = ansRow.locator('.arow-project');
+		const projClip = await projectEl.evaluate((el) => ({
+			text: el.textContent,
+			scrollW: el.scrollWidth,
+			clientW: el.clientWidth
+		}));
+		expect(projClip.text).toBe('recruiting-platform');
+		expect(projClip.scrollW).toBeLessThanOrEqual(projClip.clientW + 1);
+
+		// No horizontal page overflow.
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+			width
+		);
+
+		if (shotsDir) {
+			for (const scheme of ['light', 'dark'] as const) {
+				await page.emulateMedia({ colorScheme: scheme });
+				await page.screenshot({ path: `${shotsDir}/questions-${width}-${scheme}.png` });
+			}
+			await page.emulateMedia({ colorScheme: null });
+		}
+	}
+});

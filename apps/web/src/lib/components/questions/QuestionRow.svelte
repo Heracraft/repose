@@ -94,6 +94,7 @@
 		measure();
 		const ro = new ResizeObserver(() => measure());
 		if (rowEl) ro.observe(rowEl);
+		void document.fonts?.ready.then(measure);
 		return () => ro.disconnect();
 	});
 
