@@ -173,6 +173,25 @@ pr_upsert() {
   echo "$n"
 }
 
+# pr_retarget N FALLBACK_BASE: move PR N onto $integrated_branch when its base
+# is another branch (a stacked PR added with `--on`), so pushing `integrated`
+# closes it as merged rather than leaving it open (ENG-114).
+pr_retarget() {
+  gh_on || return 0
+  local pr=$1 base=${2:-} live_base=""
+  [ -n "$pr" ] || return 0
+  live_base=$(gh pr view "$pr" --json baseRefName --jq .baseRefName 2>/dev/null || true)
+  if [ -n "$live_base" ]; then
+    base=$live_base
+  fi
+  if [ -z "$base" ] || [ "$base" = "$integrated_branch" ]; then
+    return 0
+  fi
+  if ! gh pr edit "$pr" --base "$integrated_branch" >/dev/null 2>&1; then
+    echo "release-queue: could not retarget PR #$pr from $base to $integrated_branch; retarget it by hand" >&2
+  fi
+}
+
 # pr_unqueue N TEXT: `queued` comes off and the reason is a comment.
 pr_unqueue() {
   gh_on || return 0
@@ -1193,6 +1212,19 @@ cmd_done() {
     owed="$owed $b"
   done < <(sed -n 's/^merged=//p' "$state/releases/$rel")
   [ -z "$owed" ] || echo "  live checks with no result yet:$owed (release-queue live <branch> --ran ...)"
+  # A PR stacked with `--on BRANCH` keeps that branch as its base, and the
+  # cut merged both into main without advancing that base. Retarget every
+  # merged PR whose base is not `$integrated_branch` before pushing
+  # `integrated`, so GitHub sees its commits land in its base and closes it
+  # as merged rather than leaving it open (ENG-114).
+  if gh_on; then
+    while read -r b sha needs; do
+      [ -n "$b" ] || continue
+      local ef pr; ef=$(entry_file "$b"); [ -f "$ef" ] || continue
+      pr=$(field "$ef" pr); [ -n "$pr" ] || continue
+      pr_retarget "$pr" "$(field "$ef" stack)"
+    done < <(sed -n 's/^merged=//p' "$state/releases/$rel")
+  fi
   push_integrated
   # The push of `integrated` closes each PR as merged; the label and a line
   # saying which batch are what is left to do.
