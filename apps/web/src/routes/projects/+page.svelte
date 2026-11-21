@@ -836,7 +836,7 @@
 											<td class="c-state">{@render stateCell(p)}</td>
 											{#if showHost}
 												{@const h = hostCell(p, ownHosts)}
-												<td class="c-host whitespace-nowrap" title={h !== '-' ? h : undefined}>
+												<td class="c-host" title={h !== '-' ? h : undefined}>
 													<span class={h === '-' ? 'muted' : 'hk-mono'} data-testid="row-host"
 														>{h}</span
 													>
@@ -1020,9 +1020,12 @@
 	   is set by the machine rather than by the user clip instead. The
 	   name's cell is left alone: its own ring and the frost are children
 	   of it, and `.premote` already ellipses (I-896). */
-	.ptable :is(.c-state, .c-host, .c-size, .c-agents, .c-disk) {
+	.ptable :is(.c-state, .c-size, .c-agents, .c-disk) {
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.ptable .c-host {
+		overflow-wrap: anywhere;
 	}
 	/* A frozen row's frost is 18px tall and sits at the row's foot, so
 	   the text above it needs more than 14px of clearance to stay clear
@@ -1103,10 +1106,10 @@
 			width: 17%;
 		}
 		.ptable--host .c-name {
-			width: 23.5%;
+			width: 21.5%;
 		}
 		.ptable--host .c-state {
-			width: 19%;
+			width: 21%;
 		}
 		.ptable--host .c-host {
 			width: 13%;

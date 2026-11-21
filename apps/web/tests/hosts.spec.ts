@@ -33,12 +33,23 @@ test.beforeEach(async ({ page }) => {
 
 const created: string[] = [];
 test.afterAll(async () => {
-	for (const id of created) {
+	const auth = { Authorization: 'Bearer playwright' };
+	for (const id of created.splice(0)) {
 		await fetch(`${apiURLFromEnv()}/projects/${id}`, {
 			method: 'DELETE',
-			headers: { Authorization: 'Bearer playwright' }
+			headers: auth
 		});
 	}
+	const res = await fetch(`${apiURLFromEnv()}/hosts`, { headers: auth });
+	if (res.ok) {
+		for (const h of (await res.json()) as { id: string }[]) {
+			await fetch(`${apiURLFromEnv()}/hosts/${h.id}`, {
+				method: 'DELETE',
+				headers: auth
+			});
+		}
+	}
+	await ownedHost({ limit: 1, set_install: false });
 });
 
 /**
