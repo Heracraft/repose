@@ -477,3 +477,72 @@ test('Start on one tab, watch it finish on another', async ({ page }) => {
 		.click();
 	await expect(page.getByTestId('project-state')).toHaveText('running', { timeout: 15_000 });
 });
+
+// ENG-52: a 409 conflict on Destroy while an operation is in progress stays
+// inline in the destroy panel naming what is happening, instead of flashing
+// by in a 4-second toast far from the button.
+test('a 409 conflict on Destroy stays inline in the destroy panel until dismissed or retried', async ({
+	page
+}) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'destroy-conflict-app',
+		remote_url: 'github.com/heracraft/destroy-conflict-app'
+	});
+	let blockDestroy = true;
+	await page.route(`**/v1/projects/${p.id}`, async (route) => {
+		const method = route.request().method();
+		if (method === 'GET' && blockDestroy) {
+			const res = await route.fetch();
+			const json = await res.json();
+			await route.fulfill({ response: res, json: { ...json, state: 'starting' } });
+			return;
+		}
+		if (method === 'DELETE' && blockDestroy) {
+			await route.fulfill({
+				status: 409,
+				contentType: 'application/json',
+				json: { error: { code: 'conflict', message: 'an operation is in progress' } }
+			});
+			return;
+		}
+		await route.fallback();
+	});
+
+	await page.goto(`/projects/${p.id}`);
+	const card = page.getByTestId('destroy-card');
+	await card.getByRole('button', { name: `Destroy ${p.slug}…` }).click();
+	await card.getByLabel(/to confirm/).fill(p.slug);
+	await card.getByRole('button', { name: 'Destroy', exact: true }).click();
+
+	const err = card.getByTestId('destroy-error');
+	await expect(err).toBeVisible();
+	await expect(err).toContainText(
+		'This machine is still starting. Wait for it to finish, then try again.'
+	);
+
+	// Capture real-size shots if requested for visual inspection.
+	const shotsDir = process.env.REPOSE_SHOTS_DIR;
+	if (shotsDir) {
+		for (const width of [1440, 390]) {
+			for (const scheme of ['light', 'dark'] as const) {
+				await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+				await page.emulateMedia({ colorScheme: scheme });
+				await card.scrollIntoViewIfNeeded();
+				await page.screenshot({ path: `${shotsDir}/destroy-conflict-${width}-${scheme}.png` });
+			}
+		}
+		await page.emulateMedia({ colorScheme: null });
+	}
+
+	// Persists past the old 4.1s toast window without vanishing.
+	await page.waitForTimeout(4500);
+	await expect(err).toBeVisible();
+
+	// Dismiss clears the banner; retrying when clear succeeds.
+	await err.getByRole('button', { name: 'Dismiss' }).click();
+	await expect(err).toHaveCount(0);
+
+	blockDestroy = false;
+	await card.getByRole('button', { name: 'Destroy', exact: true }).click();
+	await expect(page).toHaveURL('/projects', { timeout: 10_000 });
+});

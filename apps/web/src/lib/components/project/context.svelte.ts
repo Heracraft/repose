@@ -40,6 +40,8 @@ export class ProjectState {
 	opBusy = $state<OpKind | undefined>(undefined);
 	/** Start's refusal, shown under the tabs on every tab. */
 	startBanner = $state<'payment_required' | 'capacity' | undefined>(undefined);
+	/** The sentence for a `capacity` refusal on Start/Restart (own-host or fleet). */
+	capacityMessage = $state<string | undefined>(undefined);
 	refusal = $state<Refusal | undefined>(undefined);
 	/**
 	 * Config's Apply bar is on screen: the header's Start or Restart draws

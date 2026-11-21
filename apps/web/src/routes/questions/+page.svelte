@@ -4,20 +4,18 @@
 	// 7 days' closed ones, each with its outcome and where it came from.
 	// The pending list is the rail's own (lib/questions.svelte.ts): this
 	// page's 10s poll hands it each answer, so the rail reads nothing more.
-	import { agentLink } from '$lib/agent-link';
 	import { onMount } from 'svelte';
-	import { resolve } from '$app/paths';
 	import { listQuestions } from '$lib/api/client';
 	import { PollFailure } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
 	import { clock } from '$lib/clock.svelte';
-	import { dateTime } from '$lib/format';
 	import { title } from '$lib/title';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import { projectsStore } from '$lib/projects.svelte';
 	import { ANSWERED_DAYS, answeredRows } from '$lib/question-view';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
+	import AnsweredRow from '$lib/components/questions/AnsweredRow.svelte';
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import type { Question } from '$lib/api/types';
 
@@ -112,41 +110,7 @@
 				</div>
 				<ol class="answered-list" data-testid="answered">
 					{#each shown as r (r.question.id)}
-						{@const q = r.question}
-						{@const link = agentLink(q.link)}
-						<li class="arow" data-testid="answered-row" data-qid={q.id}>
-							<p class="arow-meta">
-								<time
-									datetime={q.answered_at ?? q.created_at}
-									title={dateTime(q.answered_at ?? q.created_at)}>{r.when}</time
-								><span aria-hidden="true">&nbsp;·&nbsp;</span>{#if live(q.project_id)}<a
-										href={resolve('/projects/[id]', { id: q.project_id })}
-										class="arow-project hk-tap">{q.project}</a
-									>{:else}<span class="arow-project">{q.project}</span>{/if}<span class="arow-by"
-									><span class="arow-sep" aria-hidden="true">&nbsp;·&nbsp;</span><span class="hk-sr"
-										>asked by
-									</span><span class="arow-agent">{q.agent}</span></span
-								>
-							</p>
-							<p class="arow-text" title={q.text}>{q.text}</p>
-							{#if link}
-								<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
-								<a
-									class="hk-link arow-link"
-									href={link.href}
-									target="_blank"
-									rel="noopener noreferrer">{link.text}</a
-								>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{/if}
-							<p class="arow-outcome">
-								<span data-testid="answered-outcome"
-									>{#if r.answer !== undefined}<span class="arow-answer">{r.answer}</span
-										>{#if r.rest}<span aria-hidden="true">&nbsp;·&nbsp;</span
-											>{r.rest}{/if}{:else}{r.rest}{/if}</span
-								>
-							</p>
-						</li>
+						<AnsweredRow row={r} live={live(r.question.project_id)} />
 					{/each}
 				</ol>
 				{#if rows.length > ANSWERED_SHOWN}
@@ -165,93 +129,11 @@
 </PageShell>
 
 <style>
-	.arow-link {
-		display: inline-block;
-		margin-top: 0.125rem;
-		font-size: 0.8125rem;
-		overflow-wrap: anywhere;
-	}
 	.answered-list {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 		border-bottom: 1px solid var(--hk-hairline);
-	}
-	/* One hairline row a question: when, where and which agent asked,
-	   then what was asked on one line, then how it ended. From a 640px
-	   column the when, where and who take their own column. */
-	.arow {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.125rem;
-		padding: 0.75rem 0;
-		border-top: 1px solid var(--hk-hairline);
-	}
-	.arow p {
-		margin: 0;
-		min-width: 0;
-	}
-	.arow-meta {
-		font-size: 0.8125rem;
-		line-height: 1.25rem;
-		color: var(--hk-text-3);
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-		/* Clipped sideways only: the project link's 44px touch box
-		   reaches over and under the line. */
-		overflow: clip visible;
-		text-overflow: ellipsis;
-	}
-	.arow-project {
-		color: var(--hk-text-2);
-	}
-	a.arow-project {
-		text-decoration: underline;
-		text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-		text-underline-offset: 3px;
-	}
-	a.arow-project:hover {
-		color: var(--hk-text);
-		text-decoration-color: currentColor;
-	}
-	.arow-text {
-		font-size: 0.875rem;
-		line-height: 1.375rem;
-		color: var(--hk-text);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.arow-outcome {
-		font-size: 0.8125rem;
-		line-height: 1.25rem;
-		color: var(--hk-text-3);
-		overflow-wrap: anywhere;
-	}
-	.arow-answer {
-		font-weight: 500;
-		color: var(--hk-text);
-	}
-	.arow-agent {
-		font-family: var(--hk-font-mono);
-	}
-	@container dash (min-width: 640px) {
-		.arow {
-			grid-template-columns: 11rem minmax(0, 1fr);
-			column-gap: 1.5rem;
-		}
-		.arow-meta {
-			grid-row: span 2;
-		}
-		/* The agent takes the meta column's second line. */
-		.arow-by {
-			display: block;
-			overflow: hidden;
-			text-overflow: ellipsis;
-		}
-		.arow-sep {
-			display: none;
-		}
 	}
 	.amore {
 		margin-top: 0.5rem;

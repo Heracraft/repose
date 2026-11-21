@@ -45,10 +45,9 @@
 		listProjectQuestions,
 		getUsage,
 		patchProject,
-		listEventsPage,
-		listHosts
+		listEventsPage
 	} from '$lib/api/client';
-	import { ApiError } from '$lib/api/errors';
+	import { ApiError, errorText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
 	import { dateOnly } from '$lib/format';
@@ -61,48 +60,17 @@
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
 	import DetailsList from '$lib/components/project/DetailsList.svelte';
 	import LatestEvents, { LATEST_EVENTS } from '$lib/components/project/LatestEvents.svelte';
-	import { splitTicks } from '$lib/components/project/ticks';
 	import { useProject } from '$lib/components/project/context.svelte';
-	import { abuseStopReason } from '$lib/abuse';
-	import { bootFallbackReason } from '$lib/bootfail';
-	import { offlineHostLine } from '$lib/offlinehost';
+	import { destroyRefusalMessage } from '$lib/components/project/host';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { latest, type Pt } from '$lib/usage';
-	import type { OwnedHost, ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
+	import type { ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
 
 	const ctx = useProject();
 	const id = ctx.id;
 	let project = $derived(ctx.project);
 
 	let ready = $state(false);
-	/**
-	 * The account's own hosts by id, read only while this machine's host
-	 * is quiet (I-1370), so the banner can name the Mac the user turns
-	 * back on. Empty otherwise.
-	 */
-	let ownHosts = $state(new Map<string, OwnedHost>());
-	// Deliberately not $state: the effect writes ownHosts and must not
-	// read it, or an account that owns no host answers the read with an
-	// empty map, the map is a new reference, the effect runs again and
-	// the page reads /hosts in a loop.
-	let hostsAsked = false;
-	$effect(() => {
-		if (!project?.host_unreachable) {
-			if (hostsAsked) {
-				hostsAsked = false;
-				ownHosts = new Map();
-			}
-			return;
-		}
-		if (hostsAsked) return;
-		hostsAsked = true;
-		listHosts({ passive: true })
-			.then((hosts) => {
-				ownHosts = new Map(hosts.map((h) => [h.id, h]));
-			})
-			// Nothing to say: the banner keeps the unnamed line.
-			.catch(() => {});
-	});
 	let questions = $state<Question[]>([]);
 	let events = $state<ProjectEvent[] | undefined>(undefined);
 	const cache = keep(id);
@@ -280,14 +248,18 @@
 
 	/** Destroy asks first: its button opens the typed confirm in its place. */
 	let askingDestroy = $state(false);
+	/** Inline refusal shown in the Destroy panel until dismissed or retried. */
+	let destroyError = $state<string | undefined>(undefined);
 	function keepIt() {
 		askingDestroy = false;
+		destroyError = undefined;
 		void focusAfterRender('destroy-open');
 	}
 
 	async function onDestroy() {
 		if (ctx.opBusy || !project) return;
 		ctx.opBusy = 'destroy';
+		destroyError = undefined;
 		try {
 			await destroyProject(id);
 			// The destroy runs on after this returns (I-166). A temporary
@@ -302,22 +274,20 @@
 			await goto(resolve('/projects'));
 		} catch (err) {
 			ctx.opBusy = undefined;
+			const conflict = destroyRefusalMessage(err, project.state);
+			if (conflict) {
+				destroyError = conflict;
+				void ctx.refresh();
+				return;
+			}
+			if (err instanceof ApiError && err.code !== 'internal') {
+				destroyError = errorText(err, 'Could not destroy the project.');
+				return;
+			}
 			toastApiError(err, 'Could not destroy the project.');
 		}
 	}
-
-	/** The sentence after "code: " in last_error, its first letter raised. */
-	let errorReason = $derived.by(() => {
-		if (!project || project.state !== 'error' || !project.last_error) return '';
-		const i = project.last_error.indexOf(': ');
-		const r = i > 0 ? project.last_error.slice(i + 2) : project.last_error;
-		return r.charAt(0).toUpperCase() + r.slice(1);
-	});
 </script>
-
-{#snippet ticks(text: string)}{#each splitTicks(text) as part, i (i)}{#if part.code}<code
-				>{part.text}</code
-			>{:else}{part.text}{/if}{/each}{/snippet}
 
 {#if !project || !ready}
 	<!-- A screen's height while it loads, so the footer is not in view to
@@ -327,50 +297,6 @@
 	</div>
 {:else}
 	{@const agents = project.state === 'running' && (project.signals?.agents.length ?? 0) > 0}
-	{@const notes =
-		!!errorReason ||
-		!!project.host_unreachable ||
-		!!abuseStopReason(project) ||
-		!!bootFallbackReason(project)}
-	{#if notes}
-		<!-- One banner per exception, each changing what Connect will do. -->
-		<div class="notes">
-			{#if errorReason}
-				<div class="hk-banner hk-banner--err" role="alert" data-testid="last-error">
-					<p>
-						{@render ticks(errorReason)}
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a query appended -->
-						<a
-							href={resolve('/projects/[id]/events', { id }) + '?events_kind=errors'}
-							data-testid="last-error-link">Errors</a
-						>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					</p>
-				</div>
-			{/if}
-			{#if project.host_unreachable}
-				<div class="hk-banner" role="status" data-testid="host-unreachable">
-					<p>
-						{#if ownHosts.get(project.host_id ?? '')}
-							{offlineHostLine(project, ownHosts)}.
-						{:else}
-							The server running this machine is not answering.
-						{/if}
-					</p>
-				</div>
-			{/if}
-			{#if abuseStopReason(project)}
-				<div class="hk-banner" role="status" data-testid="abuse-stop">
-					<p>{abuseStopReason(project)}</p>
-				</div>
-			{/if}
-			{#if bootFallbackReason(project)}
-				<div class="hk-banner" role="status" data-testid="boot-fallback">
-					<p>{bootFallbackReason(project)}</p>
-				</div>
-			{/if}
-		</div>
-	{/if}
 
 	<!-- What waits on you first: an agent is stopped until it is answered. -->
 	<WaitingCard projectId={id} pollFailures={ctx.pollFailures} bind:questions />
@@ -492,6 +418,18 @@
 						cancelLabel="Keep it"
 						autofocus
 					/>
+					{#if destroyError}
+						<div class="hk-banner destroy-error" role="alert" data-testid="destroy-error">
+							<p>
+								{destroyError}
+								<button
+									type="button"
+									class="hk-banner-action"
+									onclick={() => (destroyError = undefined)}>Dismiss</button
+								>
+							</p>
+						</div>
+					{/if}
 				{:else}
 					<button
 						type="button"
@@ -507,15 +445,6 @@
 {/if}
 
 <style>
-	.notes {
-		display: grid;
-		gap: 0.75rem;
-		margin-bottom: 1.75rem;
-	}
-	.notes :global(.hk-banner) {
-		margin: 0;
-	}
-
 	/* ---- Now and history ---- */
 	.ogrid {
 		display: grid;
@@ -598,6 +527,18 @@
 		font-size: 0.9375rem;
 		color: var(--hk-text-2);
 	}
+	.destroy-act {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+	.destroy-act--open {
+		align-items: stretch;
+	}
+	.destroy-error {
+		margin: 0;
+	}
 	@container dash (min-width: 760px) {
 		.destroy-row {
 			flex-direction: row;
@@ -607,12 +548,12 @@
 		}
 		.destroy-act {
 			flex: none;
-			display: flex;
-			justify-content: flex-end;
+			align-items: flex-end;
 			padding-top: 0.125rem;
 		}
 		.destroy-act--open {
 			width: 31rem;
+			align-items: stretch;
 		}
 		/* ConfirmType lays out by its own width (a size container), so it
 		   needs one: the field, Destroy and Keep it on one row, flush right. */

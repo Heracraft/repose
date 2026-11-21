@@ -17,7 +17,7 @@
 		upLabel
 	} from '$lib/format';
 
-	let { project }: { project: Project } = $props();
+	let { project, host }: { project: Project; host?: string } = $props();
 
 	// The size's cores (the api calls the field vcpus); a stopped machine is
 	// not sampled, so the figure comes from the class (I-492, I-784).
@@ -62,6 +62,14 @@
 				<span>{coresLabel}</span>
 				<span aria-hidden="true">·</span>
 				<span>{classMemoryGB(project.class)} GB</span>
+			{/if}
+			{#if host}
+				<!-- Where this machine runs, shown when the account has a machine on
+				     an owned host (DECISIONS I-1392): the host name, `repose`, or `-`. -->
+				<span aria-hidden="true">·</span>
+				<span data-testid="project-host"
+					>{#if host === '-'}host -{:else}on <span class="hk-mono">{host}</span>{/if}</span
+				>
 			{/if}
 			{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
 				<!-- The stored choice is the next start's; a running machine may
