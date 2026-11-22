@@ -10,6 +10,8 @@
 #   e2e-erofs.sh --from 08-docker       from that step on (done ones skipped)
 #   e2e-erofs.sh --only 10-config-add   that step alone, done or not
 #   e2e-erofs.sh --redo 05-agents       forget that step's done mark, run it
+#   e2e-erofs.sh --to 14-park           stop after that step
+#   e2e-erofs.sh --keep-going           go on past a failed step
 #   RUN_ID=... picks the run directory (default: the latest, else a new one)
 #
 # Preconditions (step 00 checks them): an erofs base published and
@@ -425,7 +427,7 @@ runstep() {
 	[ "$rc" -eq 0 ] && touch "$RUN/done/$CUR"
 	return "$rc"
 }
-from="" only="" stop_on_fail=1
+from="" only="" to="" stop_on_fail=1
 while [ $# -gt 0 ]; do
 	case $1 in
 	--list) list; exit 0 ;;
@@ -433,6 +435,7 @@ while [ $# -gt 0 ]; do
 	--only) only=$2; shift ;;
 	--redo) rm -f "$RUN/done/$2"; from=$2; shift ;;
 	--keep-going) stop_on_fail=0 ;;
+	--to) to=$2; shift ;;
 	*) echo "unknown argument $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -444,5 +447,6 @@ for s in "${STEPS[@]}"; do
 	[ $started = 1 ] || continue
 	[ -e "$RUN/done/$s" ] && { echo "skip $s (done)"; continue; }
 	runstep "$s" || { [ $stop_on_fail = 1 ] && { echo "stopped at $s; fix and rerun (it resumes here)"; exit 1; }; }
+	[ "$s" = "$to" ] && break
 done
 echo "summary: $SUMMARY"

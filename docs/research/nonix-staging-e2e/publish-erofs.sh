@@ -38,7 +38,9 @@ for a in "$@"; do
 	esac
 done
 
-sums=$(curl -fsSL "${RELEASE_URL}SHA256SUMS" 2>/dev/null || true)
+# A VNet-private URL (staging's edge server) is read through the edge.
+sums=$(curl -fsSL --max-time 20 "${RELEASE_URL}SHA256SUMS" 2>/dev/null ||
+	ssh -F "$SSHCFG" stg-edge "curl -fsSL --max-time 20 $(printf '%q' "${RELEASE_URL}SHA256SUMS")" 2>/dev/null || true)
 sum_of() { # <file> [given]
 	if [ -n "${2:-}" ]; then echo "$2"; return; fi
 	local s
