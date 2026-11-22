@@ -1,55 +1,31 @@
 <!--
-  ScrollWheel: monumental, scroll-driven 400%-scale quarter-wheel showcase.
-  On desktop (>= 1024px, motion allowed), a tall scroll track pins a full-viewport
-  architectural stage where a giant 400%-area circular dial anchored cleanly to the
-  1200px left sheet rail integrates cleanly into the page background and rotates
-  smoothly through four customer-value beats as the visitor scrolls (0° -> -90° -> -180° -> -270°).
-  On phones (< 1024px), all four concise beats stack cleanly vertically so mobile scrollers
-  discover Cloud/Own hardware, Parallel agents, Localhost/Browser/Editor, and Away alerts
-  without having to tap through hidden tabs.
+  ScrollWheel: the scroll-driven quarter-wheel (owner, 2026-11-22). On desktop
+  (>= 1024px, motion allowed) a tall track pins a full-viewport stage; a
+  large dial, its centre past the sheet's left edge, turns a quarter per beat
+  as the visitor scrolls: where it runs, the agents, the tools. Phones stack
+  the three beats. Each beat is a picture with a title, not a paragraph.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { price } from '$lib/format';
 	import { agentMarks, type Mark } from '$lib/components/illustrations/marks';
 
-	let {
-		soloPriceCents,
-		ownPriceCents
-	}: {
-		soloPriceCents: number;
-		ownPriceCents: number;
-	} = $props();
-
 	const BEATS = [
-		{ id: 'hardware', num: '1.1', label: 'Hardware', short: 'Cloud or yours' },
-		{ id: 'agents', num: '1.2', label: 'Agents', short: 'All 5 agents' },
-		{ id: 'tools', num: '1.3', label: 'Tools', short: 'Your tools' },
-		{ id: 'away', num: '1.4', label: 'Away', short: 'Walk away' }
+		{ id: 'hardware', short: 'Where it runs' },
+		{ id: 'agents', short: 'Any agent' },
+		{ id: 'tools', short: 'Your tools' }
 	] as const;
+	const LAST = BEATS.length - 1;
+	/* The chapter number, with the space the label's text needs after it. */
+	const chapter = '01 ';
 
-	const PARALLEL_VMS = [
-		{
-			repo: 'billing-api',
-			mark: agentMarks[0],
-			task: 'Running proration tests',
-			state: 'Full perms',
-			active: true
-		},
-		{
-			repo: 'web-app',
-			mark: agentMarks[1],
-			task: 'Refactoring OAuth callback',
-			state: 'Full perms',
-			active: true
-		},
-		{
-			repo: 'infra-cli',
-			mark: agentMarks[3],
-			task: 'Waiting for next task',
-			state: 'Auto-frozen',
-			active: false
-		}
+	/* Three sandboxes at once, each on its own login: the mix the beat shows.
+	   Logins per docs/agents: Claude Code logs in once with a claude.ai
+	   subscription, Codex's login is copied from the laptop, pi takes a
+	   provider's API key as a secret. */
+	const PARALLEL = [
+		{ repo: 'billing-api', mark: agentMarks[0], login: 'Claude subscription' },
+		{ repo: 'web-app', mark: agentMarks[1], login: 'ChatGPT login' },
+		{ repo: 'infra', mark: agentMarks[4], login: 'OPENAI_API_KEY' }
 	];
 
 	let trackEl = $state<HTMLElement | null>(null);
@@ -61,9 +37,7 @@
 	onMount(() => {
 		const q = new URLSearchParams(window.location.search).get('wheel');
 		if (q) {
-			const idx = BEATS.findIndex(
-				(b) => b.id === q || b.num === q || String(BEATS.indexOf(b)) === q
-			);
+			const idx = BEATS.findIndex((b) => b.id === q || String(BEATS.indexOf(b)) === q);
 			if (idx >= 0) {
 				step = idx;
 				angle = idx * 90;
@@ -90,14 +64,14 @@
 			const vh = window.innerHeight - 57;
 			const scrollable = Math.max(1, rect.height - vh);
 			const raw = Math.min(1, Math.max(0, (57 - rect.top) / scrollable));
-			const scaled = raw * 3;
+			const scaled = raw * LAST;
 			const base = Math.floor(scaled);
 			const frac = scaled - base;
 			const eased = frac < 0.22 ? 0 : frac > 0.78 ? 1 : (frac - 0.22) / 0.56;
 			const smooth = eased * eased * (3 - 2 * eased);
-			const pos = Math.min(3, base + smooth);
+			const pos = Math.min(LAST, base + smooth);
 			angle = pos * 90;
-			step = Math.min(3, Math.round(pos));
+			step = Math.min(LAST, Math.round(pos));
 		}
 
 		function onScroll() {
@@ -122,13 +96,13 @@
 	});
 
 	function goTo(i: number) {
-		const target = ((i % 4) + 4) % 4;
+		const target = Math.min(LAST, Math.max(0, i));
 		if (scrollDriven && trackEl) {
 			const rect = trackEl.getBoundingClientRect();
 			const trackTop = rect.top + window.scrollY;
 			const vh = window.innerHeight - 57;
 			const scrollable = Math.max(1, rect.height - vh);
-			const y = trackTop - 57 + (target / 3) * scrollable;
+			const y = trackTop - 57 + (target / LAST) * scrollable;
 			window.scrollTo({ top: y, behavior: 'smooth' });
 		} else {
 			step = target;
@@ -147,12 +121,7 @@
 	}
 
 	const rimTicks = Array.from({ length: 72 }, (_, i) => i * 5);
-	const rimLabels = [
-		{ rot: 0, text: '1.1 · HARDWARE' },
-		{ rot: 90, text: '1.2 · AGENTS' },
-		{ rot: 180, text: '1.3 · TOOLS' },
-		{ rot: 270, text: '1.4 · AWAY' }
-	];
+	const quads = [0, 90, 180, 270];
 </script>
 
 {#snippet mark(m: Mark, size: number)}
@@ -171,72 +140,79 @@
 	>
 {/snippet}
 
-{#snippet hardwareVisual()}
-	<div class="sw-hw-grid">
-		<div class="sw-card">
-			<div class="sw-c-head">
-				<span class="sw-tag">Hosted</span>
-				<span class="sw-price"><em>From</em> {price(soloPriceCents)}/mo</span>
-			</div>
-			<h3 class="sw-c-title">repose Cloud</h3>
-			<ul class="sw-list">
-				<li>Dedicated Ubuntu VM per project</li>
-				<li>Auto-freezes when idle</li>
-				<li>Automatic cloud snapshots</li>
-			</ul>
-			<p class="sw-cmd"><span>$</span> repose run</p>
-		</div>
+{#snippet sandbox(repo: string, m: Mark)}
+	<li class="sw-sb">
+		<span class="sw-sb-dot" aria-hidden="true"></span>
+		<span class="sw-sb-repo">{repo}</span>
+		<span class="sw-sb-mark" title={m.name}>{@render mark(m, 14)}</span>
+	</li>
+{/snippet}
 
-		<div class="sw-card sw-card--accent">
-			<div class="sw-c-head">
-				<span class="sw-tag sw-tag--accent">Bring your own</span>
-				<span class="sw-price">{price(ownPriceCents)}/mo</span>
-			</div>
-			<h3 class="sw-c-title">Your own hardware</h3>
-			<ul class="sw-list">
-				<li>Same isolated VMs &amp; local snapshots</li>
-				<li>Mac mini (M3+) or Linux x86 with KVM</li>
-				<li>Your RAM and disk, no VPN setup</li>
+{#snippet hardwareVisual()}
+	<div
+		class="sw-hw"
+		aria-label="The same sandboxes run on repose's cloud or on a Mac mini or Linux server of yours."
+	>
+		<div class="sw-host">
+			<p class="sw-host-head">
+				<svg
+					viewBox="0 0 24 24"
+					width="18"
+					height="18"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.1 4.75 4.75 0 0 0 7 18.5z" />
+				</svg>
+				repose cloud
+			</p>
+			<ul class="sw-sbs">
+				{@render sandbox('billing-api', agentMarks[0])}
+				{@render sandbox('web-app', agentMarks[1])}
 			</ul>
-			<p class="sw-cmd"><span>$</span> repose host add</p>
+		</div>
+		<div class="sw-host">
+			<p class="sw-host-head">
+				<svg
+					viewBox="0 0 24 24"
+					width="18"
+					height="18"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<rect x="3" y="8" width="18" height="8" rx="2.5" />
+					<path d="M6.5 13.5h2" stroke-linecap="round" />
+				</svg>
+				your Mac mini
+				<span class="sw-host-or">or Linux server</span>
+			</p>
+			<ul class="sw-sbs">
+				{@render sandbox('billing-api', agentMarks[0])}
+				{@render sandbox('web-app', agentMarks[1])}
+			</ul>
 		</div>
 	</div>
 {/snippet}
 
 {#snippet agentsVisual()}
-	<div class="sw-card sw-card--wide sw-agents-card">
-		<div class="sw-c-head">
-			<span class="sw-tag sw-tag--accent">Parallel sandboxes</span>
-			<span class="sw-badge-ok">Full permissions on</span>
-		</div>
-		<ul class="sw-vm-list" aria-label="Parallel agent sandboxes">
-			{#each PARALLEL_VMS as vm (vm.repo)}
-				<li class="sw-vm-row">
-					<div class="sw-vm-left">
-						<span class="sw-vm-dot" class:sw-vm-dot--live={vm.active} aria-hidden="true"></span>
-						<span class="sw-vm-repo">{vm.repo}</span>
-					</div>
-					<span class="sw-vm-agent">
-						<span class="sw-ag-ic">{@render mark(vm.mark, 14)}</span>
-						<span>{vm.mark.name}</span>
-					</span>
-					<span class="sw-vm-task">{vm.task}</span>
-					<span class="sw-vm-state" class:sw-vm-state--live={vm.active}>{vm.state}</span>
-				</li>
-			{/each}
-		</ul>
-		<div class="sw-ag-foot">
-			<div class="sw-ag-icons" aria-label="Preinstalled agents: Claude Code, Codex, opencode, Gemini CLI, pi">
-				{#each agentMarks as m (m.name)}
-					<span class="sw-mini-chip" title={m.name}>
-						{@render mark(m, 13)}
-						<span>{m.name}</span>
-					</span>
-				{/each}
-			</div>
-			<span class="sw-ag-byo">Your own subscriptions or API keys · No token markup</span>
-		</div>
-	</div>
+	<ul
+		class="sw-mix"
+		aria-label="Three sandboxes at once: Claude Code on a Claude subscription, Codex on a ChatGPT login, pi on an OpenAI API key."
+	>
+		{#each PARALLEL as vm (vm.repo)}
+			<li>
+				<span class="sw-mix-mark" title={vm.mark.name}>{@render mark(vm.mark, 20)}</span>
+				<span class="sw-mix-repo">{vm.repo}</span>
+				<span class="sw-mix-login">{vm.login}</span>
+			</li>
+		{/each}
+	</ul>
 {/snippet}
 
 {#snippet toolsVisual()}
@@ -248,7 +224,7 @@
 					<span class="sw-p-live">listening :5173</span>
 				</div>
 				<div class="sw-p-term">
-					<span class="sw-t-green">VITE v8.0.1</span>
+					<span class="sw-t-vite">VITE v8.0.1</span>
 					<span class="sw-t-dim">ready in 1.4s</span>
 					<span class="sw-t-url">→ http://localhost:5173/</span>
 				</div>
@@ -284,50 +260,10 @@
 			</div>
 		</div>
 
-		<div class="sw-tool-pills">
-			<div class="sw-tp">
-				<span class="sw-tr-k">Browser</span>
-				<span class="sw-tr-v">Sign in or inspect live Chromium</span>
-				<code class="sw-tr-c">$ repose browser</code>
-			</div>
-			<div class="sw-tp">
-				<span class="sw-tr-k">Editor</span>
-				<span class="sw-tr-v">VS Code, Cursor, Zed, Neovim</span>
-				<code class="sw-tr-c">$ ssh project.repose</code>
-			</div>
-		</div>
-	</div>
-{/snippet}
-
-{#snippet awayVisual()}
-	<div class="sw-card sw-card--wide">
-		<div class="sw-c-head">
-			<span class="sw-tag sw-tag--accent">Unattended</span>
-			<span class="sw-meta-mono">email · ntfy · Google Chat</span>
-		</div>
-		<div class="sw-ping-box">
-			<div class="sw-ping-rail sw-ping-rail--done"></div>
-			<div class="sw-ping-body">
-				<div class="sw-ping-top">
-					<span class="sw-ping-title">billing-api · claude is done</span>
-					<span class="sw-ping-badge sw-ping-badge--done">Passing</span>
-				</div>
-				<p class="sw-ping-msg">Wrote proration tests and opened PR #42. All 6 checks passing.</p>
-			</div>
-		</div>
-		<div class="sw-ping-box">
-			<div class="sw-ping-rail sw-ping-rail--ask"></div>
-			<div class="sw-ping-body">
-				<div class="sw-ping-top">
-					<span class="sw-ping-title">checkout · codex needs input</span>
-					<span class="sw-ping-badge sw-ping-badge--ask">Waiting</span>
-				</div>
-				<p class="sw-ping-msg">Drop legacy sessions table before migrating?</p>
-				<p class="sw-ping-cue">
-					Reply in dashboard or run <code>repose attach checkout</code>
-				</p>
-			</div>
-		</div>
+		<p class="sw-editors">
+			<code>ssh your-project.repose</code>
+			<span>VS Code · Cursor · Zed · Neovim</span>
+		</p>
 	</div>
 {/snippet}
 
@@ -350,10 +286,6 @@
 			</svg>
 			<div class="sw-rotor" class:sw-rotor--snap={!scrollDriven} style="--angle: {angle}deg">
 				<svg class="sw-dial-svg" viewBox="0 0 1200 1200" fill="none">
-					<defs>
-						<path id="sw-label-arc" d="M 600 22 A 578 578 0 0 1 1178 600" />
-					</defs>
-
 					<circle cx="600" cy="600" r="552" class="sw-ring-outer" />
 					<circle cx="600" cy="600" r="522" class="sw-ring-dash" />
 					<circle cx="600" cy="600" r="452" class="sw-ring-inner" />
@@ -363,8 +295,8 @@
 					<line x1="600" y1="48" x2="600" y2="1152" class="sw-spoke" />
 					<line x1="48" y1="600" x2="1152" y2="600" class="sw-spoke" />
 
-					{#each rimLabels as q, idx (q.rot)}
-						<g transform="rotate({q.rot} 600 600)">
+					{#each quads as rot, idx (rot)}
+						<g transform="rotate({rot} 600 600)">
 							<path
 								d="M 614 48.2 A 552 552 0 0 1 1151.8 586"
 								class="sw-arc-halo"
@@ -382,9 +314,6 @@
 								class="sw-node"
 								class:sw-node--active={step === idx}
 							/>
-							<text class="sw-rim-text" class:sw-rim-text--active={step === idx}>
-								<textPath href="#sw-label-arc" startOffset="19%">{q.text}</textPath>
-							</text>
 						</g>
 					{/each}
 
@@ -405,27 +334,18 @@
 		<!-- Desktop monumental scroll-driven layout (>= 1024px) -->
 		<div class="sw-inner sw-desktop">
 			<div class="sw-rail">
-				<p class="label num"><span class="n">01 </span>How it works</p>
+				<p class="label num"><span class="n">{chapter}</span>How it works</p>
 
 				<div class="sw-copy-stack">
 					{#if step === 0}
-						<h2 class="hk-h2" id="where-h">Our cloud, or your own hardware</h2>
-						<p class="sw-lead">Hosted Linux VMs, or a Mac mini or Linux server you already run.</p>
+						<h2 class="hk-h2" id="where-h">Our cloud, or a machine you already have</h2>
+						<p class="sw-lead">A Mac mini, or any Linux server that runs VMs.</p>
 					{:else if step === 1}
-						<h2 class="hk-h2" id="where-h">All 5 agents, preinstalled</h2>
-						<p class="sw-lead">
-							Run parallel agents in isolated VMs using your own accounts. No token markup.
-						</p>
-					{:else if step === 2}
-						<h2 class="hk-h2" id="where-h">Works with your browser and editor</h2>
-						<p class="sw-lead">
-							Dev ports forward to localhost. Take over the agent's browser or attach over SSH.
-						</p>
+						<h2 class="hk-h2" id="where-h">Every agent, preinstalled</h2>
+						<p class="sw-lead">Mix and match subscriptions and inference providers.</p>
 					{:else}
-						<h2 class="hk-h2" id="where-h">Close the lid, get pinged when done</h2>
-						<p class="sw-lead">
-							Tasks keep running unattended. Get alerted when an agent finishes or needs input.
-						</p>
+						<h2 class="hk-h2" id="where-h">Your browser and editor still work</h2>
+						<p class="sw-lead">Its dev server opens on your localhost.</p>
 					{/if}
 				</div>
 
@@ -499,54 +419,36 @@
 				>
 					{@render toolsVisual()}
 				</div>
-
-				<div
-					class="sw-panel-wrap"
-					id="sw-stage-away"
-					role="tabpanel"
-					aria-labelledby="sw-tab-away"
-					class:is-active={step === 3}
-					aria-hidden={step !== 3}
-				>
-					{@render awayVisual()}
-				</div>
 			</div>
 		</div>
 
 		<!-- Mobile stacked showcase (< 1024px): all 4 beats visible on natural scroll with zero hidden tabs -->
 		<div class="sw-mobile" aria-label="How repose works">
 			<div class="sw-mob-head">
-				<p class="label num"><span class="n">01 </span>How it works</p>
+				<p class="label num"><span class="n">{chapter}</span>How it works</p>
 			</div>
 
 			<ol class="sw-mob-beats">
 				<li>
 					<div class="sw-mb-head">
 						<span class="label">1.1</span>
-						<h3>Our cloud, or your own hardware</h3>
+						<h3>Our cloud, or a machine you already have</h3>
 					</div>
 					{@render hardwareVisual()}
 				</li>
 				<li>
 					<div class="sw-mb-head">
 						<span class="label">1.2</span>
-						<h3>All 5 agents in parallel sandboxes</h3>
+						<h3>Every agent, preinstalled</h3>
 					</div>
 					{@render agentsVisual()}
 				</li>
 				<li>
 					<div class="sw-mb-head">
 						<span class="label">1.3</span>
-						<h3>Works with your browser and editor</h3>
+						<h3>Your browser and editor still work</h3>
 					</div>
 					{@render toolsVisual()}
-				</li>
-				<li>
-					<div class="sw-mb-head">
-						<span class="label">1.4</span>
-						<h3>Close the lid, get pinged when done</h3>
-					</div>
-					{@render awayVisual()}
 				</li>
 			</ol>
 		</div>
@@ -611,13 +513,7 @@
 		overflow: hidden;
 		pointer-events: none;
 		container-type: size;
-		background:
-			radial-gradient(
-				64% 72% at 62% 52%,
-				color-mix(in srgb, var(--sw-glow) 8%, transparent),
-				transparent 70%
-			),
-			var(--hk-bg);
+		background: var(--hk-bg);
 	}
 	.sw-dotfield {
 		position: absolute;
@@ -625,7 +521,6 @@
 		background: radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 /
 			20px 20px;
 		opacity: 0.36;
-		mask-image: radial-gradient(80% 90% at 72% 48%, #000 18%, transparent 90%);
 	}
 	.sw-mob-arc {
 		position: absolute;
@@ -634,7 +529,6 @@
 		width: 13.5rem;
 		height: 13.5rem;
 		opacity: 0.32;
-		mask-image: radial-gradient(100% 100% at 100% 0%, #000 45%, transparent 95%);
 	}
 	.sw-rotor {
 		display: none;
@@ -656,9 +550,6 @@
 			transform-origin: 50% 50%;
 			transform: rotate(calc(var(--angle) * -1));
 			will-change: transform;
-		}
-		.sw-backdrop {
-			mask-image: linear-gradient(to bottom, #000 0%, #000 94%, rgb(0 0 0 / 0.35) 100%);
 		}
 	}
 	@media (min-width: 1200px) {
@@ -742,16 +633,6 @@
 		stroke: var(--pic-accent);
 		stroke-width: 1.75;
 		opacity: 0.75;
-	}
-	.sw-rim-text {
-		font-family: var(--hk-font-mono);
-		font-size: 12.5px;
-		font-weight: 500;
-		letter-spacing: 0.18em;
-		fill: var(--pic-faint);
-	}
-	.sw-rim-text--active {
-		fill: var(--pic-accent);
 	}
 
 	/* ---------- Responsive mode toggle: Desktop Wheel vs Mobile Stacked Beats ---------- */
@@ -918,267 +799,8 @@
 	}
 
 	/* ---------- Beat 01: Side-by-side Cloud vs Your own hardware ---------- */
-	.sw-hw-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.875rem;
-	}
-	@media (min-width: 640px) {
-		.sw-hw-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-
-	.sw-card {
-		display: flex;
-		flex-direction: column;
-		gap: 0.9375rem;
-		padding: 1.5rem;
-		border: 1px solid var(--rule-strong);
-		border-radius: 8px;
-		background: var(--surface);
-		box-shadow: 0 18px 44px -26px rgb(0 0 0 / 0.22);
-	}
-	.sw-card--accent {
-		border-color: color-mix(in srgb, var(--pic-accent) 55%, var(--rule-strong));
-		box-shadow:
-			inset 0 1px 0 color-mix(in srgb, var(--pic-accent) 45%, transparent),
-			0 18px 44px -26px rgb(0 0 0 / 0.22);
-	}
-	.sw-card--wide {
-		padding: 1.5rem;
-		gap: 1.125rem;
-	}
-	@media (max-width: 639.98px) {
-		.sw-card,
-		.sw-card--wide {
-			padding: 1rem;
-			gap: 0.875rem;
-		}
-	}
-
-	.sw-c-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		flex-wrap: wrap;
-	}
-	.sw-tag {
-		padding: 0.1875rem 0.5rem;
-		border: 1px solid var(--rule-strong);
-		border-radius: 5px;
-		background: var(--sunken);
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		font-weight: 500;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--pic-dim);
-	}
-	.sw-tag--accent {
-		border-color: var(--pic-accent);
-		color: var(--pic-accent);
-	}
-	.sw-price {
-		font-family: var(--hk-font-display);
-		font-size: 1.125rem;
-		color: var(--ink);
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-	.sw-price em {
-		font-family: var(--hk-font-sans);
-		font-style: normal;
-		font-size: 0.75rem;
-		color: var(--pic-dim);
-		margin-right: 0.125rem;
-	}
-	.sw-c-title {
-		margin: 0;
-		font-family: var(--hk-font-display);
-		font-size: 1.25rem;
-		font-weight: 400;
-		line-height: 1.25;
-		color: var(--ink);
-	}
-	.sw-list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		font-size: 0.875rem;
-		line-height: 1.4;
-		color: var(--hk-text-2);
-	}
-	.sw-list li {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-	}
-	.sw-list li::before {
-		content: '✓';
-		color: var(--pic-accent);
-		font-family: var(--hk-font-mono);
-		font-size: 0.75rem;
-		flex: none;
-	}
-	.sw-cmd {
-		margin: auto 0 0;
-		padding: 0.5625rem 0.75rem;
-		border: 1px solid var(--rule-strong);
-		border-radius: 6px;
-		background: var(--sunken);
-		font-family: var(--hk-font-mono);
-		font-size: 0.75rem;
-		color: var(--ink);
-	}
-	.sw-cmd span {
-		color: var(--pic-accent);
-		margin-right: 0.375rem;
-	}
 
 	/* ---------- Beat 02: Parallel Sandboxes Matrix + 5-Agent Footer ---------- */
-	.sw-badge-ok {
-		padding: 0.1875rem 0.5625rem;
-		border: 1px solid color-mix(in srgb, var(--hk-ok) 40%, transparent);
-		border-radius: 999px;
-		background: color-mix(in srgb, var(--hk-ok) 10%, transparent);
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		font-weight: 500;
-		color: var(--hk-ok);
-	}
-	.sw-vm-list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.sw-vm-row {
-		display: grid;
-		grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.3125rem 0.625rem;
-		padding: 0.6875rem 0.875rem;
-		border: 1px solid var(--rule);
-		border-radius: 6px;
-		background: var(--sunken);
-		font-size: 0.8125rem;
-	}
-	@media (min-width: 640px) {
-		.sw-vm-row {
-			grid-template-columns: 7.25rem 7.5rem minmax(0, 1fr) auto;
-			gap: 0.375rem 0.75rem;
-		}
-	}
-	.sw-vm-left {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-	.sw-vm-dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 999px;
-		background: var(--pic-faint);
-		flex: none;
-	}
-	.sw-vm-dot--live {
-		background: var(--hk-ok-dot);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--hk-ok-dot) 18%, transparent);
-	}
-	.sw-vm-repo {
-		font-family: var(--hk-font-mono);
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--ink);
-		white-space: nowrap;
-	}
-	.sw-vm-agent {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--ink);
-		white-space: nowrap;
-	}
-	.sw-ag-ic {
-		display: flex;
-		color: var(--ink);
-		flex: none;
-	}
-	.sw-vm-task {
-		color: var(--hk-text-2);
-		font-size: 0.8125rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	@media (max-width: 639.98px) {
-		.sw-vm-task {
-			grid-column: 1 / -1;
-			grid-row: 2;
-			font-size: 0.75rem;
-		}
-		.sw-vm-state {
-			grid-column: 3;
-			grid-row: 1;
-			justify-self: end;
-		}
-	}
-	.sw-vm-state {
-		padding: 0.125rem 0.4375rem;
-		border-radius: 4px;
-		background: var(--stage);
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		color: var(--pic-dim);
-		white-space: nowrap;
-	}
-	.sw-vm-state--live {
-		background: color-mix(in srgb, var(--hk-ok) 11%, transparent);
-		color: var(--hk-ok);
-	}
-	.sw-ag-foot {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem 0.75rem;
-		padding-top: 0.875rem;
-		border-top: 1px solid var(--rule);
-	}
-	.sw-ag-icons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem;
-	}
-	.sw-mini-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3125rem;
-		padding: 0.25rem 0.5rem;
-		border: 1px solid var(--rule);
-		border-radius: 5px;
-		background: var(--sunken);
-		font-size: 0.71875rem;
-		font-weight: 500;
-		color: var(--ink);
-		white-space: nowrap;
-	}
-	.sw-ag-byo {
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		color: var(--pic-dim);
-		white-space: nowrap;
-	}
 
 	/* ---------- Beat 03: Clean Port-Forward + Browser & Editor ---------- */
 	.sw-tools-wrap {
@@ -1217,7 +839,7 @@
 		color: var(--ink);
 	}
 	.sw-p-live {
-		color: var(--hk-ok);
+		color: var(--pic-dim);
 	}
 	.sw-p-addr {
 		padding: 0.0625rem 0.4375rem;
@@ -1234,10 +856,6 @@
 		padding: 0.625rem 0.75rem;
 		font-family: var(--hk-font-mono);
 		font-size: 0.75rem;
-	}
-	.sw-t-green {
-		font-weight: 600;
-		color: var(--t-green);
 	}
 	.sw-t-dim {
 		color: var(--pic-dim);
@@ -1323,134 +941,141 @@
 		color: var(--pic-faint);
 	}
 
-	.sw-tool-pills {
+	/* ---------- Beat 04: Away notifications ---------- */
+	/* ---------- Beat 1: the same sandboxes, on our cloud or your machine ---------- */
+	.sw-hw {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.625rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
 	}
-	@media (min-width: 640px) {
-		.sw-tool-pills {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-	.sw-tp {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		padding: 0.75rem 0.875rem;
-		border: 1px solid var(--rule-strong);
+	.sw-host {
+		border: 1px solid var(--rule);
 		border-radius: 8px;
 		background: var(--surface);
-	}
-	.sw-meta-mono {
-		font-family: var(--hk-font-mono);
-		font-size: 0.75rem;
-		color: var(--pic-faint);
-	}
-	.sw-tr-k {
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--pic-accent);
-	}
-	.sw-tr-v {
-		font-size: 0.8125rem;
-		color: var(--ink);
-	}
-	.sw-tr-c {
-		align-self: flex-start;
-		margin-top: 0.1875rem;
-		padding: 0.125rem 0.4375rem;
-		border: 1px solid var(--rule);
-		border-radius: 4px;
-		background: var(--sunken);
-		font-family: var(--hk-font-mono);
-		font-size: 0.75rem;
-		color: var(--pic-dim);
-		white-space: nowrap;
-	}
-
-	/* ---------- Beat 04: Away notifications ---------- */
-	.sw-ping-box {
-		display: flex;
-		border: 1px solid var(--rule);
-		border-radius: 6px;
-		background: var(--sunken);
 		overflow: hidden;
 	}
-	.sw-ping-rail {
-		width: 3px;
-		flex: none;
-	}
-	.sw-ping-rail--done {
-		background: var(--hk-ok-dot);
-	}
-	.sw-ping-rail--ask {
-		background: var(--pic-accent);
-	}
-	.sw-ping-body {
-		flex: 1;
-		min-width: 0;
-		padding: 0.9375rem 1rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-	}
-	.sw-ping-top {
+	.sw-host-head {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		gap: 0.5rem;
-	}
-	.sw-ping-title {
-		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
-		font-weight: 600;
+		margin: 0;
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--rule);
+		background: var(--sunken);
+		font-size: 0.875rem;
+		font-weight: 500;
 		color: var(--ink);
 	}
-	@media (max-width: 479.98px) {
-		.sw-ping-title {
-			font-size: 0.71875rem;
-		}
-	}
-	.sw-ping-badge {
-		padding: 0.0625rem 0.4375rem;
-		border-radius: 999px;
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		font-weight: 500;
-		white-space: nowrap;
-	}
-	.sw-ping-badge--done {
-		background: color-mix(in srgb, var(--hk-ok) 12%, transparent);
-		color: var(--hk-ok);
-	}
-	.sw-ping-badge--ask {
-		background: color-mix(in srgb, var(--pic-accent) 12%, transparent);
+	.sw-host-head svg {
 		color: var(--pic-accent);
+		flex: none;
 	}
-	.sw-ping-msg {
-		margin: 0;
-		font-size: 0.875rem;
-		line-height: 1.4;
-		color: var(--hk-text-2);
-	}
-	.sw-ping-cue {
-		margin: 0.125rem 0 0;
-		font-size: 0.75rem;
-		line-height: 1.65;
+	.sw-host-or {
+		font-weight: 400;
 		color: var(--pic-dim);
 	}
-	.sw-ping-cue code {
-		display: inline-block;
-		padding: 0.0625rem 0.375rem;
-		border: 1px solid var(--rule-strong);
-		border-radius: 4px;
-		background: var(--surface);
+	.sw-sbs {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 1rem;
+		list-style: none;
+	}
+	.sw-sb {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0.625rem 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
 		font-family: var(--hk-font-mono);
 		font-size: 0.75rem;
-		color: var(--ink);
-		white-space: nowrap;
+		color: var(--pic-ink);
+	}
+	.sw-sb-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--hk-ok-dot);
+		flex: none;
+	}
+	.sw-sb-mark {
+		display: inline-flex;
+		margin-left: auto;
+		color: var(--pic-dim);
+	}
+
+	/* ---------- Beat 2: three sandboxes, three logins ---------- */
+	.sw-mix {
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+		padding: 0;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--surface);
+		list-style: none;
+		overflow: hidden;
+	}
+	.sw-mix li {
+		display: grid;
+		grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 1rem;
+		padding: 1rem 1.25rem;
+	}
+	.sw-mix li + li {
+		border-top: 1px solid var(--rule);
+	}
+	.sw-mix-mark {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--sunken);
+		color: var(--pic-ink);
+	}
+	.sw-mix-repo {
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		color: var(--pic-ink);
+	}
+	.sw-mix-login {
+		font-family: var(--hk-font-mono);
+		font-size: 0.75rem;
+		color: var(--pic-dim);
+	}
+
+	/* ---------- Beat 3: the editor line under the port picture ---------- */
+	.sw-t-vite {
+		font-weight: 600;
+		color: var(--pic-ink);
+	}
+	.sw-editors {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+		margin: 0.75rem 0 0;
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--surface);
+		font-size: 0.8125rem;
+		color: var(--pic-dim);
+	}
+	.sw-editors code {
+		font-family: var(--hk-font-mono);
+		font-size: 0.75rem;
+		color: var(--pic-accent);
+	}
+	@media (max-width: 639.98px) {
+		.sw-hw {
+			grid-template-columns: minmax(0, 1fr);
+		}
 	}
 </style>

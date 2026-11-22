@@ -19,40 +19,36 @@
 		plan,
 		current = false,
 		action,
-		meta,
 		variant = 'app',
-		level = 2
+		level = 2,
+		name
 	}: {
 		plan: PlanFigures;
 		/** The account is on this plan: the stronger edge and a badge. */
 		current?: boolean;
 		action?: Snippet<[PlanFigures]>;
-		/** Optional extra note rendered under the summary line (e.g. hardware requirements). */
-		meta?: Snippet;
 		variant?: 'public' | 'app';
 		level?: 2 | 3;
+		/** The heading in place of the plan's name (the landing's plain wording). */
+		name?: string;
 	} = $props();
 </script>
 
-<div class="own own--{variant}" class:current data-testid="plan-{plan.id}">
+<div class="own" class:current data-testid="plan-{plan.id}">
 	<div class="o-top">
-		<svelte:element this={`h${level}`} class="o-name">{plan.name}</svelte:element>
+		<svelte:element this={`h${level}`} class="o-name">{name ?? plan.name}</svelte:element>
 		{#if current}<span class="hk-badge hk-badge--outline">Current</span>{/if}
 	</div>
 	<p class="o-price">
 		<span class="o-n">{price(plan.priceCents)}</span>
 		<span class="o-per">a month</span>
 	</p>
-	<div class="o-what">
-		<p>
-			Connect {plan.hosts === 1 ? 'one host you own' : `${plan.hosts} hosts you own`}. Your RAM and
-			disk are the limits.
-		</p>
-		{#if meta}
-			<p class="o-meta">{@render meta()}</p>
-		{/if}
-	</div>
-	{#if action}
+	<p class="o-what">
+		A Mac mini or an x86 box you own, in your account. {plan.hosts === 1
+			? 'One host'
+			: `${plan.hosts} hosts`}; its memory and disk are the limits.
+	</p>
+	{#if action && variant === 'app'}
 		<div class="o-act">{@render action(plan)}</div>
 	{/if}
 </div>
@@ -116,17 +112,9 @@
 	.o-what {
 		margin: 0;
 		font-size: 0.875rem;
-		line-height: 1.45;
+		line-height: 1.375rem;
 		color: var(--hk-text-2);
 		text-wrap: pretty;
-	}
-	.o-what p {
-		margin: 0;
-	}
-	.o-meta {
-		margin-top: 0.25rem !important;
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
 	}
 	.o-act {
 		padding-top: 1rem;

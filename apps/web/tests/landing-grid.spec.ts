@@ -1,9 +1,15 @@
-// Landing geometry & interactive showcase tests: monumental scroll-driven
-// ScrollWheel across 4 beats on desktop (and stacked 4-beat layout on phones),
-// left-to-right Safety Wreck layout, and flush PlanCells on thirds.
+// Landing geometry & interactive showcase tests: the scroll-driven
+// ScrollWheel across 3 beats on desktop (and stacked on phones), left-to-right
+// Safety Wreck layout, and flush PlanCells on thirds.
 import { test, expect } from '@playwright/test';
 
-test('01 How it works: scroll-driven wheel rotates across four beats on desktop and supports click and keyboard', async ({
+const HEADS = [
+	'Our cloud, or a machine you already have',
+	'Every agent, preinstalled',
+	'Your browser and editor still work'
+];
+
+test('01 How it works: scroll-driven wheel turns across three beats on desktop and supports click and keyboard', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -16,11 +22,11 @@ test('01 How it works: scroll-driven wheel rotates across four beats on desktop 
 	await expect(page.locator('#agents .sw-mobile')).toBeHidden();
 
 	const navBtns = stage.locator('.sw-nav [role="tab"]');
-	await expect(navBtns).toHaveCount(4);
+	await expect(navBtns).toHaveText(['Where it runs', 'Any agent', 'Your tools']);
 	await expect(navBtns.nth(0)).toHaveAttribute('aria-selected', 'true');
-	await expect(stage.locator('#where-h')).toHaveText('Our cloud, or your own hardware');
+	await expect(stage.locator('#where-h')).toHaveText(HEADS[0]);
 
-	// Scroll to the end of the track -> wheel turns toward 270deg and activates Beat 1.4.
+	// The end of the track turns the wheel to 180deg, the last beat.
 	const geom = await track.evaluate((el) => {
 		const r = el.getBoundingClientRect();
 		return { top: r.top + window.scrollY, height: r.height };
@@ -28,37 +34,36 @@ test('01 How it works: scroll-driven wheel rotates across four beats on desktop 
 	const vh = 900 - 57;
 	const scrollable = geom.height - vh;
 	await page.evaluate((y) => window.scrollTo(0, y), geom.top - 57 + scrollable);
-	await expect(navBtns.nth(3)).toHaveAttribute('aria-selected', 'true');
-	await expect(stage.locator('#where-h')).toHaveText('Close the lid, get pinged when done');
-
+	await expect(navBtns.nth(2)).toHaveAttribute('aria-selected', 'true');
+	await expect(stage.locator('#where-h')).toHaveText(HEADS[2]);
 	const dialAngle = await page
 		.locator('#agents .sw-rotor')
 		.evaluate((el) => parseFloat(el.style.getPropertyValue('--angle')));
-	expect(dialAngle).toBeGreaterThan(240);
+	expect(dialAngle).toBeGreaterThan(150);
 
-	// Scroll to Beat 1.2 (Agents) -> all five preinstalled agents carry visible names.
-	await page.evaluate((y) => window.scrollTo(0, y), geom.top - 57 + scrollable / 3);
+	// Halfway: the agents beat, three sandboxes on three different logins.
+	await page.evaluate((y) => window.scrollTo(0, y), geom.top - 57 + scrollable / 2);
 	await expect(navBtns.nth(1)).toHaveAttribute('aria-selected', 'true');
-	await expect(stage.locator('.sw-panel-wrap.is-active .sw-ag-icons .sw-mini-chip')).toHaveText([
-		'Claude Code',
-		'Codex',
-		'opencode',
-		'Gemini CLI',
-		'pi'
+	const rows = stage.locator('.sw-panel-wrap.is-active .sw-mix li');
+	await expect(rows).toHaveCount(3);
+	await expect(rows.locator('svg')).toHaveCount(3);
+	await expect(rows.locator('.sw-mix-login')).toHaveText([
+		'Claude subscription',
+		'ChatGPT login',
+		'OPENAI_API_KEY'
 	]);
-	await expect(stage.locator('.sw-panel-wrap.is-active .sw-ag-icons svg')).toHaveCount(5);
 
-	// Keyboard navigation on the wheel nav works cleanly under reduced motion (direct jump).
+	// Keyboard navigation on the wheel nav works under reduced motion (direct jump).
 	await page.emulateMedia({ reducedMotion: 'reduce' });
 	await navBtns.nth(1).focus();
 	await page.keyboard.press('ArrowDown');
 	await expect(navBtns.nth(2)).toHaveAttribute('aria-selected', 'true');
-	await expect(stage.locator('#where-h')).toHaveText('Works with your browser and editor');
+	await expect(stage.locator('#where-h')).toHaveText(HEADS[2]);
 	await page.keyboard.press('ArrowUp');
 	await expect(navBtns.nth(1)).toHaveAttribute('aria-selected', 'true');
 });
 
-test('01 How it works: stacks all four beats vertically on phones without hidden tabs', async ({
+test('01 How it works: stacks the three beats vertically on phones without hidden tabs', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -67,24 +72,12 @@ test('01 How it works: stacks all four beats vertically on phones without hidden
 	await expect(page.locator('#agents .sw-desktop')).toBeHidden();
 	const mob = page.locator('#agents .sw-mobile');
 	await expect(mob).toBeVisible();
-	await expect(mob.locator('.sw-mb-head .label')).toHaveText(['1.1', '1.2', '1.3', '1.4']);
-	await expect(mob.locator('.sw-mb-head h3')).toHaveText([
-		'Our cloud, or your own hardware',
-		'All 5 agents in parallel sandboxes',
-		'Works with your browser and editor',
-		'Close the lid, get pinged when done'
-	]);
-	await expect(mob.locator('.sw-ag-icons .sw-mini-chip')).toHaveText([
-		'Claude Code',
-		'Codex',
-		'opencode',
-		'Gemini CLI',
-		'pi'
-	]);
+	await expect(mob.locator('.sw-mb-head .label')).toHaveText(['1.1', '1.2', '1.3']);
+	await expect(mob.locator('.sw-mb-head h3')).toHaveText(HEADS);
 	const tops = await mob
 		.locator('.sw-mob-beats > li')
 		.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
-	expect(tops).toHaveLength(4);
+	expect(tops).toHaveLength(3);
 	for (let i = 1; i < tops.length; i++) {
 		expect(tops[i]).toBeGreaterThan(tops[i - 1]);
 	}

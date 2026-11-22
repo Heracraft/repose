@@ -345,15 +345,10 @@ main.landing .plans .p-name {
 	.landing .hero-install .code-copy {
 		padding: 0.375rem 0.375rem 0.375rem 0.625rem;
 	}
+	/* Below 640px the install line wraps after `/` at 12px (CodeCopy's
+	   <wbr>), so a phone reads the whole `curl ... | sh` (docs/LANDING.md). */
 	.landing .hero-install .code-copy .line {
-		font-size: 0.65625rem;
-		white-space: pre;
-		overflow-x: auto;
-		overflow-wrap: normal;
-		scrollbar-width: none;
-	}
-	.landing .hero-install .code-copy wbr {
-		display: none;
+		font-size: 0.75rem;
 	}
 	.landing .hero-btns > .hk-btn {
 		flex: 1 1 auto;
@@ -455,38 +450,6 @@ main.landing .plans .p-name {
 /* ---------- Figures ---------- */
 
 /* Desktop-only column captions aligned over Wreck's 3 panels; mobile renders inline captions per card. */
-.landing .safety-steps {
-	display: none;
-}
-@media (min-width: 1024px) {
-	.landing .safety-steps {
-		display: grid;
-		grid-template-columns: minmax(0, 0.82fr) 138px minmax(0, 1.55fr) 164px minmax(0, 0.92fr);
-		gap: 0;
-		margin: 0 0 1.125rem;
-		padding: 0;
-		list-style: none;
-		font-size: 0.8125rem;
-		color: var(--hk-text-2);
-	}
-	.landing .safety-steps li {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-	}
-	.landing .safety-steps li span {
-		font-family: var(--hk-font-mono);
-		font-size: 0.75rem;
-		color: var(--pic-accent);
-		font-variant-numeric: tabular-nums;
-	}
-	.landing .safety-steps li:nth-child(2) {
-		grid-column: 3;
-	}
-	.landing .safety-steps li:nth-child(3) {
-		grid-column: 5;
-	}
-}
 
 .landing .band > .fig {
 	--pause-y: 0.5rem;
@@ -860,21 +823,12 @@ main.landing .plans--public .p-price .was {
 	}
 }
 
-/* Elevated Own hardware row: proud peer option with subtle surface lift, accent rail & 3-col balance */
+/* The hardware row under the plan cards, on the stage's fill. */
 main.landing #pricing .own-wrap {
 	position: relative;
 	margin-inline: calc(-1 * var(--edge));
 	border-top: 1px solid var(--rule-band);
 	background: var(--stage);
-}
-main.landing #pricing .own-wrap::before {
-	content: '';
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	width: 3px;
-	background: var(--pic-accent);
 }
 main.landing #pricing .own {
 	margin: 0;

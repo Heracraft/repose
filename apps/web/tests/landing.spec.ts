@@ -1,6 +1,6 @@
 // Landing page contract: 5-chapter layout (Hero + HeroVisual, 01 How it works
-// ScrollWheel, 02 Safety Wreck, 03 Pricing + 3-col Own hardware row, 04 Start
-// with Cloud / Own hardware setup toggle), live pricing from lib/plans.ts +
+// ScrollWheel, 02 Safety Wreck, 03 Pricing + the Mac mini or server row, 04 Start
+// with a Cloud / Mac mini or server toggle), live pricing from lib/plans.ts +
 // GET /public/seats, strict honesty rules, zero horizontal overflow, and
 // preserved `?hero=orbitv1` gallery contract.
 import { test, expect } from '@playwright/test';
@@ -38,13 +38,13 @@ test('the pricing section shows the three plans and live seats left', async ({ p
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText('18 cloud seats left');
 	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
-	await expect(pricing.locator('.pricing-lead')).toContainText(
-		'Bring your own agent subscriptions or API keys'
+	await expect(pricing.locator('.pricing-lead')).toHaveText(
+		"7 days free. Stopped sandboxes don't count."
 	);
 	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
-test('the pricing section offers Own hardware as a flush 3-column row with a Connect hardware CTA', async ({
+test('the pricing section offers a Mac mini or server as a flush row under the plans', async ({
 	page
 }) => {
 	await resetBilling();
@@ -52,26 +52,23 @@ test('the pricing section offers Own hardware as a flush 3-column row with a Con
 	await page.goto('/');
 	const pricing = page.locator('#pricing');
 	const own = pricing.getByTestId('plan-own');
-	await expect(own.getByRole('heading', { level: 3, name: 'Own hardware' })).toBeVisible();
+	await expect(
+		own.getByRole('heading', { level: 3, name: 'Your Mac mini or server' })
+	).toBeVisible();
 	await expect(own.locator('.o-price .o-n')).toHaveText('$10');
-	await expect(own).toContainText('Connect one host you own. Your RAM and disk are the limits.');
-	await expect(own).toContainText('Mac mini (M3+, macOS 15) or Linux x86 with KVM');
-	await expect(own.getByRole('link', { name: 'Connect hardware' })).toBeVisible();
+	await expect(own).toContainText('A Mac mini or an x86 box you own');
+	await expect(own.locator(':is(a, button)')).toHaveCount(0);
 	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveCount(3);
-	const cells = await pricing.locator('[data-testid^="plan-"]').allTextContents();
-	expect(cells[cells.length - 1]).toContain('Own hardware');
 	await expect(own).toHaveCSS('border-top-left-radius', '0px');
 	await expect(own).toHaveCSS('border-left-width', '0px');
-	const [ownTop, ownWhat, ownAct] = await Promise.all([
+	const [ownTop, ownWhat] = await Promise.all([
 		own.locator('.o-top').boundingBox(),
-		own.locator('.o-what').boundingBox(),
-		own.locator('.o-act').boundingBox()
+		own.locator('.o-what').boundingBox()
 	]);
 	expect(ownWhat!.x).toBeGreaterThan(ownTop!.x + ownTop!.width);
-	expect(ownAct!.x).toBeGreaterThan(ownWhat!.x + ownWhat!.width);
 });
 
-test('with no founding places left, Solo, the hero meta and HeroVisual show $49 and no founding line', async ({
+test('with no founding places left, Solo and the hero meta show $49 and no founding line', async ({
 	page
 }) => {
 	await setBilling({ founding_left: 0 });
@@ -83,7 +80,6 @@ test('with no founding places left, Solo, the hero meta and HeroVisual show $49 
 	await expect(solo.locator('.p-price .was')).toHaveCount(0);
 	await expect(pricing.getByText('$39')).toHaveCount(0);
 	await expect(page.locator('.hero-meta')).toContainText('Cloud from $49/mo');
-	await expect(page.locator('.hero .hv')).toContainText('From $49/mo');
 	await setBilling({ founding_left: 30 });
 });
 
@@ -94,7 +90,7 @@ test('one seat free: the line is singular', async ({ page }) => {
 	await resetBilling();
 });
 
-test('when full, the line says so with the number waiting and notes own hardware has no waitlist', async ({
+test('when full, the line says so with the number waiting and notes your own machine has no waitlist', async ({
 	page
 }) => {
 	await setBilling({ seats: { total: 30, held: 30, waiting: 41 } });
@@ -102,11 +98,11 @@ test('when full, the line says so with the number waiting and notes own hardware
 	const pricing = page.locator('#pricing');
 	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	await expect(page.getByTestId('seats-line')).toHaveText(
-		'Cloud full for now. 41 waiting; own hardware has no waitlist.'
+		'Cloud full for now. 41 waiting; your own Mac mini or server has no waitlist.'
 	);
 });
 
-test('the start section toggles between Cloud and Own hardware and copies commands cleanly', async ({
+test('the start section toggles between Cloud and a Mac mini or server and copies commands cleanly', async ({
 	page,
 	context
 }) => {
@@ -114,7 +110,8 @@ test('the start section toggles between Cloud and Own hardware and copies comman
 	await page.goto('/');
 	const install = page.locator('#install');
 	const cloudTab = install.getByRole('tab', { name: 'Cloud' });
-	const ownTab = install.getByRole('tab', { name: 'Own hardware' });
+	const ownTab = install.getByRole('tab', { name: 'Mac mini or server' });
+	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Start in three commands');
 	await expect(cloudTab).toHaveAttribute('aria-selected', 'true');
 	await expect(ownTab).toHaveAttribute('aria-selected', 'false');
 
@@ -130,9 +127,14 @@ test('the start section toggles between Cloud and Own hardware and copies comman
 
 	await ownTab.click();
 	await expect(ownTab).toHaveAttribute('aria-selected', 'true');
-	await expect(step2).toContainText('Connect your hardware');
-	await expect(step2.locator('.code-copy')).toContainText('repose host add');
-	await step2.getByRole('button', { name: 'Copy the host add command' }).click();
+	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Start in four commands');
+	// Adding a machine needs an account first, so sign-in stays the second step.
+	await expect(step2).toContainText('Sign in');
+	await expect(step2.locator('.code-copy')).toContainText('repose login');
+	const step3own = install.locator('.steps li').nth(2);
+	await expect(step3own).toContainText('Add your Mac mini or server');
+	await expect(step3own.locator('.code-copy')).toContainText('repose host add');
+	await step3own.getByRole('button', { name: 'Copy the host add command' }).click();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('repose host add');
 });
 
@@ -209,7 +211,7 @@ test('the hero install command shows in full without clipping on a phone', async
 	}
 });
 
-test('one numbering: the chapters, safety steps and start steps', async ({ page }) => {
+test('one numbering: the chapters and start steps', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	await expect(page.locator('#agents .sw-desktop .num')).toHaveText('01 How it works');
@@ -217,11 +219,6 @@ test('one numbering: the chapters, safety steps and start steps', async ({ page 
 		'02 Safety',
 		'03 Pricing',
 		'04 Start'
-	]);
-	await expect(page.locator('#safety .safety-steps li')).toHaveText([
-		'2.1 Laptop stays walled off',
-		'2.2 Agent runs freely inside VM',
-		'2.3 Snapshots undo the whole disk'
 	]);
 	await expect(page.locator('.steps .step-title .label')).toHaveText(['4.1', '4.2', '4.3']);
 });
@@ -248,11 +245,16 @@ test('the hero and own-hardware copy uphold the product rules and stay honest', 
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 		'Sandboxes for your coding agents'
 	);
-	await expect(page.locator('.hero .hk-lead')).toContainText('full permissions in isolated Linux VMs');
+	await expect(page.locator('.hero .hk-lead')).toContainText('Linux VM set up like your laptop');
+	await expect(page.locator('.hero .hk-lead')).toContainText('full permissions');
 	await expect(page.locator('.hero .hero-meta')).toContainText('7 days free');
 	await expect(page.locator('.hero .hero-meta')).toContainText('Cloud from $39/mo');
-	await expect(page.locator('.hero .hero-meta')).toContainText('Own hardware $10/mo');
-	await expect(page.locator('.hero .hv .hv-agents li')).toHaveText([
+	await expect(page.locator('.hero .hero-meta')).toContainText('Your Mac mini or server $10/mo');
+	// The agents are drawn by their marks alone, named only for hover and screen readers.
+	const agents = page.locator('.hero .hv .hv-agents li');
+	await expect(agents).toHaveCount(5);
+	await expect(agents).toHaveText(['', '', '', '', '']);
+	expect(await agents.evaluateAll((l) => l.map((e) => e.getAttribute('title')))).toEqual([
 		'Claude Code',
 		'Codex',
 		'opencode',
@@ -269,9 +271,14 @@ test('the hero and own-hardware copy uphold the product rules and stay honest', 
 		'For solo founders',
 		'A framework for running',
 		'Build it in layers',
+		'No token markup',
+		'Full permissions',
+		'get pinged',
 		'—'
 	])
 		expect(text).not.toContain(gone);
+	// "Own hardware" is the plan's billing name; the landing says what the machine is.
+	expect(text).not.toMatch(/own hardware/i);
 	for (const claim of [
 		/burst/i,
 		/bare metal/i,
@@ -292,10 +299,10 @@ test('the hero visual renders cleanly and holds zero animations under reduced mo
 	const page = await context.newPage();
 	await page.goto('/');
 	const hv = page.locator('.hero .hv');
-	await expect(hv).toHaveAttribute('role', 'region');
-	await expect(hv).toContainText('Isolated Ubuntu sandbox');
-	await expect(hv).toContainText('Whole-disk undo');
-	await expect(hv).toContainText('Your own hardware');
+	await expect(hv).toHaveAttribute('aria-label', /SSH keys and documents stay on the laptop/);
+	await expect(hv).toContainText('Your laptop');
+	await expect(hv).toContainText('repose run');
+	await expect(hv).toContainText('snapshots');
 	const pane = (await hv.boundingBox())!;
 	expect(pane.height).toBeLessThanOrEqual(900 - 64);
 	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
@@ -312,7 +319,10 @@ test('the Orbit keeps its contract as a gallery candidate', async ({ browser }) 
 	const orb = page.locator('.hero .orb');
 	await expect(orb).toHaveAttribute('role', 'img');
 	await expect(orb).toHaveAttribute('aria-label', /^repose in the middle: one always-on machine\./);
-	await expect(orb).toHaveAttribute('aria-label', /Claude Code, Codex, opencode, Gemini CLI and pi/);
+	await expect(orb).toHaveAttribute(
+		'aria-label',
+		/Claude Code, Codex, opencode, Gemini CLI and pi/
+	);
 	await expect(orb.locator('.ag .nm')).toHaveText([
 		'Claude Code',
 		'Codex',
@@ -327,7 +337,10 @@ test('the Orbit keeps its contract as a gallery candidate', async ({ browser }) 
 		'an alert goes off',
 		'a webhook arrives'
 	]);
-	await expect(orb.locator('.carry .chip')).toHaveText(['your code, tools, logins', 'your secrets']);
+	await expect(orb.locator('.carry .chip')).toHaveText([
+		'your code, tools, logins',
+		'your secrets'
+	]);
 	await expect(orb.locator('.phone .q')).toHaveText('Roll back the last deploy?');
 	const text = (await orb.textContent())!;
 	for (const jargon of [/repose run/, /[A-Z]+_[A-Z]+/]) expect(text).not.toMatch(jargon);

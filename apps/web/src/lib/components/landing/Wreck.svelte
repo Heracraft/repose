@@ -830,7 +830,11 @@
 	<span class="gl" class:wreck={when === 'wreck'} class:night={when === 'night'}>
 		<i class="gr"
 			><b class="gt acc">your-project/</b><b class="gv"
-				>{when === 'night' ? 'last night' : when === 'wreck' ? 'discarded' : `${kids.length} changes`}</b
+				>{when === 'night'
+					? 'last night'
+					: when === 'wreck'
+						? 'discarded'
+						: `${kids.length} changes`}</b
 			></i
 		>
 		{#each sys as m (m.n)}
@@ -923,7 +927,17 @@
 			<div class="ask-pills">
 				<span class="pic-chip" class:fire={ask}>snapshot</span>
 				{#if restored}<span class="mob-restore"
-						><svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 10V2M3 5l3-3 3 3" /></svg>restore 21:25</span
+						><svg
+							viewBox="0 0 12 12"
+							width="11"
+							height="11"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.6"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"><path d="M6 10V2M3 5l3-3 3 3" /></svg
+						>restore 21:25</span
 					>{/if}
 			</div>
 			<span class="wire arrow ask-r"></span>
@@ -977,12 +991,8 @@
 					<SnapshotTile class="tile t-u-full" time="21:25" cause="user"
 						>{@render glyph('work')}</SnapshotTile
 					>
-					<SnapshotTile
-						class="tile t-s-full"
-						time="21:31"
-						cause="stop"
-						badge="wrecked"
-						tone="stop">{@render glyph('wreck')}</SnapshotTile
+					<SnapshotTile class="tile t-s-full" time="21:31" cause="stop" badge="wrecked" tone="stop"
+						>{@render glyph('wreck')}</SnapshotTile
 					>
 					<SnapshotTile
 						class="tile t-u-stub"
@@ -2051,7 +2061,7 @@
 			font-size: 10.5px;
 			font-weight: 500;
 			line-height: 16px;
-			color: #f4f4f5;
+			color: var(--pic-ink);
 			white-space: nowrap;
 		}
 		.w-net {

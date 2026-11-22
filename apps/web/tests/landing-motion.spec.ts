@@ -60,7 +60,9 @@ test('paused motion stays paused through scrolling out and back', async ({ page 
 	await expect(wreckFrame).toHaveAttribute('data-motion', 'play', { timeout: 3500 });
 });
 
-test('reduced motion hides Pause motion and leaves zero running animations', async ({ browser }) => {
+test('reduced motion hides Pause motion and leaves zero running animations', async ({
+	browser
+}) => {
 	const context = await browser.newContext({
 		reducedMotion: 'reduce',
 		viewport: { width: 1440, height: 900 }

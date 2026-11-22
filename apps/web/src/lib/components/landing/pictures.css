@@ -52,7 +52,7 @@
 	--pic-dim: #71717a;
 	--pic-faint: var(--hk-text-3);
 	--pic-stop: var(--hk-err);
-	--pic-add: var(--hk-ok);
+	--pic-add: var(--pic-accent);
 	--tab-idle-ink: var(--hk-text-2);
 	--was-ink: var(--hk-text-3);
 	--own-btn-bg: var(--hk-surface);
@@ -133,8 +133,7 @@
 	}
 }
 :root[data-theme='dark'] .landing,
-:root.dark .landing,
-.landing .field-stage {
+:root.dark .landing {
 	--stage: #0f1014;
 	--stage-edge: rgb(255 255 255 / 0.1);
 	--stage-sheen: rgb(147 167 208 / 0.11);
@@ -172,52 +171,6 @@
 	--t-bar: #1e2028;
 	--t-bar-fg: #b4b7c2;
 }
-/* Unified full-bleed dark chapter for Permissions / Safety: crisp slate-black
-   in light mode, elevated slate-charcoal with lit top/bottom rules in dark mode. */
-.landing .field-stage {
-	color-scheme: dark;
-	--hk-text: #f4f4f5;
-	--hk-text-2: #cdd0dc;
-	--hk-text-3: #a6aab9;
-	--hk-text-4: #787d8f;
-	--hk-border: #2a2d38;
-	--hk-border-strong: #424654;
-	--hk-hairline: #1f212a;
-	--hk-ok: #34d399;
-	--hk-ok-dot: #34d399;
-	--hk-err: #f87171;
-	--ink: var(--hk-text);
-	--ink-muted: var(--hk-text-2);
-	--ink-faint: var(--hk-text-3);
-	--control-edge: var(--hk-text-4);
-	--pic-dim: #b8bcc9;
-	--pic-faint: #a1a6b8;
-	--pic-stop: #fb7185;
-	--pic-add: var(--hk-ok);
-	--color-emerald-500: var(--hk-ok-dot);
-	--stage-hero: #0e1015;
-	--stage-hero-edge: #242733;
-	--stage-dot: #2b2e3b;
-	--stage-sheen: rgb(147 167 208 / 0.14);
-	color: var(--hk-text);
-}
-.landing .field-stage .hero-pic {
-	--rogue: #ff4b3e;
-}
-@media (prefers-color-scheme: dark) {
-	:root:not(.light):not([data-theme='light']) .landing .field-stage {
-		--stage-hero: #131620;
-		--stage-hero-edge: #303445;
-		--stage-dot: #2f3444;
-	}
-}
-:root[data-theme='dark'] .landing .field-stage,
-:root.dark .landing .field-stage {
-	--stage-hero: #131620;
-	--stage-hero-edge: #303445;
-	--stage-dot: #2f3444;
-}
-
 /* ---------- The stage ----------
 
    Every picture on the page stands on one stage (.stage for the hero,
@@ -231,7 +184,7 @@
 	isolation: isolate;
 	border: 0;
 	border-radius: 0;
-	background: radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
+	background: var(--stage);
 	box-shadow: inset 0 1px 0 var(--stage-top);
 }
 /* The steps' command cells (landing.css) stand on the stage's fill,
@@ -251,27 +204,6 @@
 		transition: none;
 	}
 }
-/* The wreck picture's field alone runs past the sheet to the window's edges: the
-   page's one moment of contrast, the dark plate carrying a 16px dot
-   grid, under its top edge, the windows still on the frame.
-   The fill past the frame is a spread shadow and the edge a border-image
-   outset, both ink that adds no scroll width (as the bands' rules do);
-   the sheen and the dots fade out before the frame's edges, so the flat
-   fill past them meets them without a seam. The spread covers the rails
-   (landing.css), which stop at the field's top edge. */
-.landing .stage.field-stage {
-	border-top: 1px solid;
-	border-image: linear-gradient(var(--stage-hero-edge), var(--stage-hero-edge)) 1 / 1px 0 0 / 0
-		100vw;
-	background:
-		radial-gradient(50% 100% at 50% 0%, var(--stage-sheen), transparent),
-		radial-gradient(50% 100% at 50% 0%, transparent 40%, var(--stage-hero) 100%),
-		radial-gradient(circle at 1px 1px, var(--stage-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
-		var(--stage-hero);
-	box-shadow: 0 0 0 100vmax var(--stage-hero);
-	clip-path: inset(0 -100vmax);
-}
-
 /* ---------- Picture primitives ----------
 
    One frame for the four cell pictures: a fixed height, each picture
@@ -320,58 +252,19 @@
 	color: var(--surface);
 }
 
-/* Unified full-bleed dark chapter for Permissions / Safety (header + Wreck stage together). */
-.landing .band.band--dark {
-	background:
-		radial-gradient(60% 70% at 50% 0%, var(--stage-sheen), transparent 72%),
-		var(--stage-hero);
-	box-shadow: 0 0 0 100vmax var(--stage-hero);
-	clip-path: inset(0 -100vmax);
-	--rule-band: var(--stage-hero-edge);
-	--rule-in: var(--hk-border);
-	color: var(--hk-text);
-	padding-bottom: var(--field-y);
-}
-.landing .band.band--dark > .fig {
-	border-top: 0;
-}
-.landing .band.band--dark > .fig > .stage {
-	padding-block: 0.5rem 0;
-	border-top: 0;
-	border-image: none;
-	box-shadow: none;
-	clip-path: none;
-	background:
-		radial-gradient(50% 100% at 50% 0%, transparent 45%, var(--stage-hero) 100%),
-		radial-gradient(circle at 1px 1px, var(--stage-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
-		transparent;
-}
-.landing .band--dark .steps .code-copy {
-	background: #18181b;
-}
-
 /* ---------- The hero's field ---------- */
 .landing .hero-stage {
 	background:
-		radial-gradient(70% 80% at 65% 20%, var(--stage-sheen), transparent 70%),
 		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
 		var(--stage);
 	--hero-dot: #dcdce0;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
-		background:
-			radial-gradient(66% 54% at 50% 48%, rgb(96 165 250 / 0.12), transparent 70%),
-			radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
-			#09090c;
-		--hero-dot: #232634;
+		--hero-dot: #24262e;
 	}
 }
 :root[data-theme='dark'] .landing .hero-stage,
 :root.dark .landing .hero-stage {
-	background:
-		radial-gradient(66% 54% at 50% 48%, rgb(96 165 250 / 0.12), transparent 70%),
-		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
-		#09090c;
-	--hero-dot: #232634;
+	--hero-dot: #24262e;
 }

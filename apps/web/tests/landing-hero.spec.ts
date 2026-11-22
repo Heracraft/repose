@@ -11,10 +11,9 @@ test.describe('without scripts', () => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/');
 		const hv = page.locator('.hero .hv');
-		await expect(hv).toContainText('Isolated Ubuntu sandbox');
-		await expect(hv).toContainText('Whole-disk undo');
-		await expect(hv).toContainText('Your own hardware');
-		await expect(page.locator('#agents')).toContainText('Our cloud, or your own hardware');
+		await expect(hv).toContainText('Your laptop');
+		await expect(hv).toContainText('snapshots');
+		await expect(page.locator('#agents')).toContainText('Our cloud, or a machine you already have');
 		const wreck = page.locator('#safety .hero-pic');
 		await expect(wreck).toHaveAttribute('role', 'img');
 		await expect(wreck.locator('.side.laptop')).toBeVisible();

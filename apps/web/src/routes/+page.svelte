@@ -56,8 +56,9 @@
 				]
 			: [
 					{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
+					{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
 					{
-						title: 'Connect your hardware',
+						title: 'Add your Mac mini or server',
 						command: 'repose host add',
 						what: 'the host add command'
 					},
@@ -65,11 +66,11 @@
 				]
 	);
 
+	const stepCount = $derived(['', '', '', 'three', 'four'][steps.length] ?? String(steps.length));
+
 	const introEligible = $derived(seats?.founding_left !== 0);
 	const solo = PLANS[0];
-	const soloPrice = $derived(
-		introEligible && solo.intro ? solo.intro.priceCents : solo.priceCents
-	);
+	const soloPrice = $derived(introEligible && solo.intro ? solo.intro.priceCents : solo.priceCents);
 </script>
 
 <svelte:head>
@@ -98,10 +99,8 @@
 		<a href={resolve('/projects')} class={cls}>{@render authLabel(signedIn, signedOut)}</a>
 	{:else}
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- signinHref() calls resolve('/signin') and adds the return path (lib/signin) -->
-		<a
-			href={signinHref(returnTo)}
-			class={cls}
-			onclick={(e) => onSignInLinkClick(e, returnTo)}>{@render authLabel(signedOut, signedIn)}</a
+		<a href={signinHref(returnTo)} class={cls} onclick={(e) => onSignInLinkClick(e, returnTo)}
+			>{@render authLabel(signedOut, signedIn)}</a
 		>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
@@ -117,8 +116,8 @@
 			<div class="hero-copy">
 				<h1 class="hk-h1" id="hero-h">Sandboxes for your coding agents</h1>
 				<p class="hk-lead">
-					Run them with full permissions in isolated Linux VMs. Undo any mistake with whole-disk
-					snapshots.
+					Each repo gets a Linux VM set up like your laptop. Agents run there with full permissions,
+					and a snapshot rolls back whatever they break.
 				</p>
 				<div class="hero-act">
 					<div class="hero-btns">
@@ -140,7 +139,7 @@
 					<a class="meta-link nw" href="#pricing">Cloud from {price(soloPrice)}/mo</a>
 					<span class="sep" aria-hidden="true">·</span>
 					<a class="meta-link nw" href="#pricing"
-						>Own hardware {price(OWN_HARDWARE.priceCents)}/mo</a
+						>Your Mac mini or server {price(OWN_HARDWARE.priceCents)}/mo</a
 					>
 				</p>
 			</div>
@@ -150,7 +149,7 @@
 					{#if HeroAlt}
 						<HeroAlt />
 					{:else}
-						<HeroVisual soloPriceCents={soloPrice} ownPriceCents={OWN_HARDWARE.priceCents} />
+						<HeroVisual />
 					{/if}
 				</div>
 			</div>
@@ -158,22 +157,14 @@
 	</section>
 
 	<section class="band band--wheel" id="agents" aria-labelledby="where-h">
-		<ScrollWheel soloPriceCents={soloPrice} ownPriceCents={OWN_HARDWARE.priceCents} />
+		<ScrollWheel />
 	</section>
 
-	<section class="band band--dark field-stage" id="safety" aria-labelledby="safety-h">
+	<section class="band" id="safety" aria-labelledby="safety-h">
 		<div class="head">
 			{@render label('02', 'Safety')}
-			<h2 class="hk-h2" id="safety-h">Full permissions, instant undo</h2>
-			<p class="copy side">
-				Let agents run unattended. Roll back files, databases, and packages together.
-			</p>
+			<h2 class="hk-h2" id="safety-h">Let it break the whole machine</h2>
 		</div>
-		<ol class="safety-steps" aria-hidden="true">
-			<li><span>2.1</span> Laptop stays walled off</li>
-			<li><span>2.2</span> Agent runs freely inside VM</li>
-			<li><span>2.3</span> Snapshots undo the whole disk</li>
-		</ol>
 		<div class="fig">
 			<div class="stage">
 				<Wreck />
@@ -188,8 +179,7 @@
 			<div class="pricing-title">
 				<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
 				<p class="copy pricing-lead">
-					{solo.trialDays} days free. Frozen VMs don't count. Bring your own agent subscriptions or
-					API keys.
+					{solo.trialDays} days free. Stopped sandboxes don't count.
 				</p>
 			</div>
 			<div class="cta-row side">
@@ -199,7 +189,7 @@
 						{#if seats.free > 0}
 							{seats.free} cloud {seats.free === 1 ? 'seat' : 'seats'} left
 						{:else}
-							Cloud full for now. {seats.waiting} waiting; own hardware has no waitlist.
+							Cloud full for now. {seats.waiting} waiting; your own Mac mini or server has no waitlist.
 						{/if}
 					</p>
 				{/if}
@@ -207,21 +197,19 @@
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
 		<div class="own-wrap" id="parts">
-			<OwnHardwarePlan plan={OWN_HARDWARE} variant="public" level={3}>
-				{#snippet meta()}
-					Mac mini (M3+, macOS 15) or Linux x86 with KVM · {OWN_HARDWARE.trialDays} days free · No waitlist.
-				{/snippet}
-				{#snippet action()}
-					{@render authAction('Connect hardware', 'Open the dashboard', '/billing', 'secondary')}
-				{/snippet}
-			</OwnHardwarePlan>
+			<OwnHardwarePlan
+				plan={OWN_HARDWARE}
+				variant="public"
+				level={3}
+				name="Your Mac mini or server"
+			/>
 		</div>
 	</section>
 
 	<section class="band install-band" id="install" aria-labelledby="install-h">
 		<div class="head">
 			{@render label('04', 'Start')}
-			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
+			<h2 class="hk-h2" id="install-h">Start in {stepCount} commands</h2>
 			<div class="cta-row side start-actions">
 				<div class="hk-tablist" role="tablist" aria-label="Setup path">
 					<button
@@ -234,7 +222,7 @@
 						type="button"
 						role="tab"
 						aria-selected={startMode === 'own'}
-						onclick={() => (startMode = 'own')}>Own hardware</button
+						onclick={() => (startMode = 'own')}>Mac mini or server</button
 					>
 				</div>
 				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
