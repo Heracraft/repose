@@ -42,7 +42,7 @@ Press Ctrl-C to stop watching: `Interrupted. The install keeps going on the mach
 
 ## The menu
 
-The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Packages that aren't menu entries show under **Extra packages**, each with **Remove**.
+The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Type a package's name in the search and **Add** puts it under **Extra packages**, as `repose config add NAME` does; each there has **Remove**.
 
 | Group     | Entries                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |

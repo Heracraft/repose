@@ -29,7 +29,8 @@
 		groupCatalog,
 		buildMenuSelection,
 		parseMenuSelection,
-		menuEditable
+		menuEditable,
+		validPackageName
 	} from '$lib/menuSelection';
 	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
@@ -200,6 +201,19 @@
 	}
 
 	let groups = $derived(groupCatalog(catalog, search));
+
+	// A package the menu lacks, added by name from the search, as `repose
+	// config add NAME` does (I-1508): a valid name for the machine's
+	// runtime that is no menu id and not already added.
+	let addable = $derived.by(() => {
+		const name = search.trim();
+		if (!name || catalog.some((c) => c.id === name) || extraPackages.includes(name)) return '';
+		return validPackageName(project?.guest_runtime, name) ? name : '';
+	});
+	function addPackage(name: string) {
+		extraPackages = [...extraPackages, name];
+		search = '';
+	}
 
 	function toggleItem(item: CatalogItem, checked: boolean) {
 		if (item.kind === 'service') {
@@ -563,12 +577,26 @@
 								</div>
 							</div>
 						{:else}
-							{#if search.trim()}
+							{#if search.trim() && !addable}
 								<div class="hk-empty-row">
 									<span>No package matches “{search.trim()}”.</span>
 								</div>
 							{/if}
 						{/each}
+						{#if addable}
+							<div class="hk-empty-row cadd">
+								<span
+									>{erofs ? 'An apt package' : 'A nixpkgs package'}:
+									<span class="hk-mono">{addable}</span></span
+								>
+								<button
+									type="button"
+									class="hk-btn-secondary hk-btn-sm"
+									aria-label={`Add package ${addable}`}
+									onclick={() => addPackage(addable)}>Add</button
+								>
+							</div>
+						{/if}
 						{#if extraPackages.length}
 							<div class="cgroup">
 								<h3 class="group-title">
@@ -757,6 +785,12 @@
 	   base it replaces, its action at the end. */
 	.cbase {
 		margin: 0 0 0.75rem;
+	}
+	.cadd {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
 	}
 	.cbase-buttons {
 		display: flex;

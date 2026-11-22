@@ -90,3 +90,15 @@ export function menuEditable(config: { menu?: unknown; fragment?: string | null 
 	const f = config.fragment ?? '';
 	return f.trim() === '' || f.trim() === DEFAULT_FRAGMENT.trim() || f.startsWith(GENERATED_PREFIX);
 }
+
+/**
+ * Whether `name` is a package a menu may carry for the project's runtime
+ * (DECISIONS I-1486, I-1508): an apt package name on an Ubuntu (erofs)
+ * machine, a nixpkgs attribute path on a Nix one. The same rules as
+ * `internal/menu` (`ValidAptPackage`, `ValidPackage`), so the dashboard
+ * offers exactly the names the api takes.
+ */
+export function validPackageName(runtime: 'nix' | 'erofs' | undefined, name: string): boolean {
+	if (runtime === 'erofs') return /^[a-z0-9][a-z0-9+.-]{0,127}$/.test(name);
+	return name.length <= 200 && /^[A-Za-z_][A-Za-z0-9_+-]*(\.[A-Za-z_][A-Za-z0-9_+-]*)*$/.test(name);
+}

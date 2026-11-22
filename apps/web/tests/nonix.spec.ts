@@ -3,19 +3,20 @@
 // the next base with Restart; the Nix shape is unchanged; the settings
 // nav lists machine.nix only for an account with a Nix project; the add
 // host dialog shows the x86 installer beside the Mac's step.
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { signIn, apiURLFromEnv, pruneProjects, ownedHost } from './helpers';
 
 const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
 
 /** Captures the viewport at 1x, at 1440 and 390, light and dark (CLAUDE.md "Judge visuals at real size"). */
-async function shots(page: Page, name: string): Promise<void> {
+async function shots(page: Page, name: string, region?: Locator): Promise<void> {
 	const dir = process.env.REPOSE_SHOTS_DIR;
 	if (!dir) return;
 	for (const width of [1440, 390]) {
 		for (const scheme of ['light', 'dark'] as const) {
 			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
 			await page.emulateMedia({ colorScheme: scheme });
+			if (region) await region.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
 		}
 	}
@@ -174,4 +175,26 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 		}
 		await ownedHost({ limit: 1, set_install: false });
 	}
+});
+
+// Council finding 1 (D1): a package name the menu lacks is added from the
+// search, as `repose config add NAME` does (I-1508).
+test('the Packages search adds an apt package by name on an Ubuntu project', async ({ page }) => {
+	const p = await makeProject('ubuntu-apt', 'erofs');
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByPlaceholder('Search packages and services…').fill('ffmpeg');
+	await shots(page, 'config-add-apt', page.locator('.cadd'));
+	await page.getByRole('button', { name: 'Add package ffmpeg' }).click();
+	await expect(page.locator('.extras')).toContainText('ffmpeg');
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
+	const cfg = await (
+		await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, { headers: auth })
+	).json();
+	expect(JSON.stringify(cfg.menu)).toContain('"package":"ffmpeg"');
+	// A name apt would refuse, or a menu id, offers no Add.
+	await page.getByPlaceholder('Search packages and services…').fill('FFmpeg');
+	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
+	await page.getByPlaceholder('Search packages and services…').fill('redis');
+	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
 });
