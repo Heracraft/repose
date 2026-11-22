@@ -65,10 +65,11 @@ const (
 // PlanCreate is build then create.
 func PlanCreate() []string { return []string{PhaseBuild, PhaseCreateGuest} }
 
-// PlanStart is start, then apply a built-but-unapplied revision.
+// PlanStart is build (skipped when the revision is already built), start,
+// then apply a built-but-unapplied revision.
 func PlanStart(pendingRevision bool) []string {
 	if pendingRevision {
-		return []string{PhaseStartGuest, PhaseApplyConfig}
+		return []string{PhaseBuild, PhaseStartGuest, PhaseApplyConfig}
 	}
 	return []string{PhaseStartGuest}
 }
@@ -591,6 +592,15 @@ func (e *Engine) revisionFor(ctx context.Context, op *store.Op, p *store.Project
 }
 
 func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project) (*hostdv1.Command, uuid.UUID, bool, error) {
+	if op.Kind == KindStart {
+		rev, needBuild, err := e.resolveStartRevision(ctx, op, p)
+		if err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		if !needBuild || rev == nil {
+			return nil, uuid.Nil, true, nil
+		}
+	}
 	rev, err := e.revisionFor(ctx, op, p)
 	if err != nil {
 		return nil, uuid.Nil, false, err
@@ -690,14 +700,16 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 		hostID = &picked
 		p.HostID = hostID
 	}
-	if op.Kind == KindCreate {
-		reused, err := e.reuseBuild(ctx, p, rev, version, *hostID)
+	if op.Kind == KindCreate || op.Kind == KindBuild || op.Kind == KindStart {
+		reused, err := e.reuseBuild(ctx, p, rev, version, *hostID, op.Kind == KindCreate)
 		if err != nil {
 			return nil, uuid.Nil, false, err
 		}
 		if reused {
 			return nil, uuid.Nil, true, nil
 		}
+	}
+	if op.Kind == KindCreate {
 		if rev.Personal != "" {
 			// Never block (DECISIONS I-490): the combined configuration
 			// is not on this host, so the machine is created on the
@@ -706,7 +718,7 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 			if rev, err = e.deferPersonal(ctx, op, p, rev, version); err != nil {
 				return nil, uuid.Nil, false, err
 			}
-			reused, err := e.reuseBuild(ctx, p, rev, version, *hostID)
+			reused, err := e.reuseBuild(ctx, p, rev, version, *hostID, true)
 			if err != nil {
 				return nil, uuid.Nil, false, err
 			}
@@ -714,6 +726,17 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 				return nil, uuid.Nil, true, nil
 			}
 		}
+	}
+	if op.CommandID == nil && e.cfg.MaxHostBuilds > 0 {
+		var inflight int
+		if err := e.pool.QueryRow(ctx, hostBuildInFlightSQL, *hostID, op.ID).Scan(&inflight); err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		if inflight >= e.cfg.MaxHostBuilds {
+			return nil, uuid.Nil, false, errBuildWait
+		}
+	}
+	if op.Kind == KindCreate {
 		if err := e.setState(ctx, p, "building"); err != nil {
 			return nil, uuid.Nil, false, err
 		}
@@ -802,29 +825,37 @@ func (e *Engine) enqueuePersonalBuild(ctx context.Context, p *store.Project, rid
 	return nil
 }
 
+// hostBuildInFlightSQL counts running ops on host $1 whose current phase
+// is build and whose command has already been assigned (command_id is
+// not null), excluding op $2 itself (DECISIONS I-1454).
+const hostBuildInFlightSQL = `select count(*) from ops
+	where host_id = $1 and state = 'running' and command_id is not null
+	  and params->'phases'->>step = 'build' and id <> $2`
+
 // reusableClosureSQL finds a closure already built on host $1 from the
 // same fragment ($2) and personal layer ($5) on the same base version
-// ($3): the applied revision of
-// another live project there whose guest exists. Those are the only inputs
-// of the system closure (the project id, name, class, address, tz and user
-// arrive at run time, I-34, I-43), and that guest's GC root holds the path
-// on the host, so nothing has to be built or copied (DECISIONS I-160). A
+// ($3): a built or applied revision of another live project there whose
+// guest exists. Those are the only inputs of the system closure (the
+// project id, name, class, address, tz and user arrive at run time,
+// I-34, I-43), and that guest's GC root holds the path on the host, so
+// nothing has to be built or copied (DECISIONS I-160, I-1454). A
 // create's revision recorded no base_version before I-160, so the base is
-// the project's for those rows.
-const reusableClosureSQL = `select r.system_closure, coalesce(r.closure_bytes, 0)
-	from projects q join config_revisions r on r.id = q.config_revision_id
+// the project's for those rows when the revision is the active one.
+const reusableClosureSQL = `select r.system_closure, coalesce(r.closure_bytes, 0), r.kernel_changed
+	from projects q join config_revisions r on r.project_id = q.id
 	where q.host_id = $1 and q.id <> $4 and q.destroyed_at is null and q.guest_id is not null
 	  and q.state not in ('destroying', 'error')
-	  and r.status = 'applied' and r.system_closure is not null
-	  and r.fragment = $2 and coalesce(r.base_version, q.base_version) = $3
+	  and r.status in ('built', 'applied') and r.system_closure is not null and r.system_closure <> ''
+	  and r.fragment = $2 and coalesce(r.base_version, case when r.id = q.config_revision_id then q.base_version end) = $3
 	  and r.personal = $5
-	order by r.applied_at desc nulls last limit 1`
+	order by r.applied_at desc nulls last, r.built_at desc nulls last limit 1`
 
-// reuseBuild completes a create's build without a Build command when the
-// host already holds the closure it would produce. The revision becomes
-// `built` with that closure; kernel_changed is false because a new guest
-// has booted nothing yet.
-func (e *Engine) reuseBuild(ctx context.Context, p *store.Project, rev *store.Revision, version string, hostID uuid.UUID) (bool, error) {
+// reuseBuild completes a build phase without a Build command when the
+// host already holds the closure it would produce (DECISIONS I-160,
+// I-1454). The revision becomes `built` with that closure; for a new
+// guest (isCreate), kernel_changed is false because it has booted nothing
+// yet.
+func (e *Engine) reuseBuild(ctx context.Context, p *store.Project, rev *store.Revision, version string, hostID uuid.UUID, isCreate bool) (bool, error) {
 	// "dev" is the api's --base-ref checkout, a name that can move; only a
 	// published base pins one git revision.
 	if version == "dev" || version == "" {
@@ -832,16 +863,20 @@ func (e *Engine) reuseBuild(ctx context.Context, p *store.Project, rev *store.Re
 	}
 	var closure string
 	var bytes int64
-	err := e.pool.QueryRow(ctx, reusableClosureSQL, hostID, rev.Fragment, version, p.ID, rev.Personal).Scan(&closure, &bytes)
+	var kernelChanged bool
+	err := e.pool.QueryRow(ctx, reusableClosureSQL, hostID, rev.Fragment, version, p.ID, rev.Personal).Scan(&closure, &bytes, &kernelChanged)
 	if db.IsNoRows(err) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
+	if isCreate {
+		kernelChanged = false
+	}
 	if _, err := e.pool.Exec(ctx, `update config_revisions set status = 'built', base_version = coalesce(base_version, $2),
-		system_closure = $3, closure_bytes = $4, kernel_changed = false, built_at = now(), error = null, fragment_line = null, personal_line = null
-		where id = $1`, rev.ID, version, closure, bytes); err != nil {
+		system_closure = $3, closure_bytes = $4, kernel_changed = $5, built_at = now(), error = null, fragment_line = null, personal_line = null
+		where id = $1`, rev.ID, version, closure, bytes, kernelChanged); err != nil {
 		return false, err
 	}
 	if rev.BaseVersion == nil {
@@ -1038,10 +1073,101 @@ const pendingRevisionSQL = `select id from config_revisions
 	  and created_at > coalesce((select created_at from config_revisions where id = $2), 'epoch'::timestamptz)
 	order by created_at desc limit 1`
 
-// PendingRevision reports whether a start of p would apply a revision.
+// ensureStartBaseRevision prepares a config_revision on the newest
+// published base version when a stopped, unheld project is behind that
+// base and has no revision for it yet (DECISIONS I-1454). It reports
+// whether a revision for the latest base is now pending (built or
+// building) for the start op.
+func ensureStartBaseRevision(ctx context.Context, q store.Querier, p *store.Project) (bool, error) {
+	if p.State != "stopped" || p.HoldBaseUpdates || p.ConfigRevisionID == nil {
+		return false, nil
+	}
+	latest, err := store.LatestBase(ctx, q)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) || db.IsNoRows(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if p.BaseVersion != nil && *p.BaseVersion == latest.Version {
+		return false, nil
+	}
+	revs, err := store.ListRevisions(ctx, q, p.ID)
+	if err != nil {
+		return false, err
+	}
+	if len(revs) > 0 && revs[0].BaseVersion != nil && *revs[0].BaseVersion == latest.Version {
+		switch revs[0].Status {
+		case "built", "building", "pending":
+			return true, nil
+		case "failed":
+			return false, nil
+		}
+	}
+	cur, err := store.GetRevision(ctx, q, *p.ConfigRevisionID)
+	if err != nil {
+		return false, err
+	}
+	for i := range revs {
+		if revs[i].CreatedAt.After(cur.CreatedAt) && revs[i].Status == "built" {
+			cur = &revs[i]
+			break
+		}
+	}
+	rid := store.NewID()
+	if _, err := q.Exec(ctx, `insert into config_revisions (id, project_id, fragment, menu, base_version, status, personal, personal_revision_id, personal_opt_out)
+		values ($1, $2, $3, $4, $5, 'building', $6, $7, $8)`,
+		rid, p.ID, cur.Fragment, cur.Menu, latest.Version, cur.Personal, cur.PersonalRevisionID, cur.PersonalOptOut); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// resolveStartRevision locates (or prepares) the pending revision for a
+// start op's PhaseBuild and reports whether PhaseBuild needs to run. When
+// the revision is already built, PhaseBuild is skipped and PhaseApplyConfig
+// applies it after StartGuest (DECISIONS I-1454).
+func (e *Engine) resolveStartRevision(ctx context.Context, op *store.Op, p *store.Project) (*store.Revision, bool, error) {
+	if op.RevisionID == nil {
+		if _, err := ensureStartBaseRevision(ctx, e.pool, p); err != nil {
+			return nil, false, err
+		}
+		var rid uuid.UUID
+		err := e.pool.QueryRow(ctx, `select id from config_revisions
+			where project_id = $1 and status in ('building', 'built')
+			  and created_at > coalesce((select created_at from config_revisions where id = $2), 'epoch'::timestamptz)
+			order by created_at desc limit 1`, p.ID, p.ConfigRevisionID).Scan(&rid)
+		if err != nil {
+			if db.IsNoRows(err) {
+				return nil, false, nil
+			}
+			return nil, false, err
+		}
+		if _, err := e.pool.Exec(ctx, "update ops set revision_id = $2 where id = $1", op.ID, rid); err != nil {
+			return nil, false, err
+		}
+		op.RevisionID = &rid
+	}
+	rev, err := store.GetRevision(ctx, e.pool, *op.RevisionID)
+	if err != nil {
+		return nil, false, err
+	}
+	if rev.Status == "built" && rev.SystemClosure != nil && *rev.SystemClosure != "" {
+		return rev, false, nil
+	}
+	return rev, true, nil
+}
+
+// PendingRevision reports whether a start of p would apply a revision,
+// preparing a base-update revision first when p is stopped, unheld, and
+// behind the newest published base (DECISIONS I-1454).
 func PendingRevision(ctx context.Context, q store.Querier, p *store.Project) (bool, error) {
+	ok, err := ensureStartBaseRevision(ctx, q, p)
+	if err != nil || ok {
+		return ok, err
+	}
 	var rid uuid.UUID
-	err := q.QueryRow(ctx, pendingRevisionSQL, p.ID, p.ConfigRevisionID).Scan(&rid)
+	err = q.QueryRow(ctx, pendingRevisionSQL, p.ID, p.ConfigRevisionID).Scan(&rid)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return false, nil

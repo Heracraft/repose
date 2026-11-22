@@ -16,7 +16,9 @@ import (
 func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
 // Three projects: one unheld running, one unheld stopped, one held. A
-// publish builds the two unheld ones and skips the held one.
+// publish sweeps only the running unheld one; the stopped unheld one is
+// skipped by the sweep and updates on its next start, while the held one
+// keeps its base across both (DECISIONS I-1454).
 func TestSweepBuildsUnheldSkipsHeld(t *testing.T) {
 	h := apitest.New(t, apitest.Options{})
 	u := h.NewUser("ivy")
@@ -39,39 +41,36 @@ func TestSweepBuildsUnheldSkipsHeld(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(touched) != 2 {
-		t.Fatalf("touched %v", touched)
+	if len(touched) != 1 || touched[0] != a.ID {
+		t.Fatalf("touched %v, want only running project %s", touched, a.ID)
 	}
-	for _, id := range touched {
-		if id == c.ID {
-			t.Fatal("held project was bumped")
-		}
+	aOps, _ := store.ListProjectOps(ctx, h.Pool, a.ID, 5)
+	if len(aOps) == 0 || aOps[0].Kind != "build" {
+		t.Fatalf("no build op for %s", a.Slug)
 	}
-	for _, p := range []*store.Project{a, b} {
-		ops, _ := store.ListProjectOps(ctx, h.Pool, p.ID, 5)
-		if len(ops) == 0 || ops[0].Kind != "build" {
-			t.Fatalf("no build op for %s", p.Slug)
-		}
-		got := h.WaitOp(ops[0].ID)
-		if got.State != "done" {
-			t.Fatalf("bump build for %s: %+v", p.Slug, got.Error)
-		}
+	if got := h.WaitOp(aOps[0].ID); got.State != "done" {
+		t.Fatalf("bump build for %s: %+v", a.Slug, got.Error)
 	}
 	h.WaitFor("running project on the new base", func() bool {
 		pa := h.Project(a.ID)
 		return pa.BaseVersion != nil && *pa.BaseVersion == "2026.09.22"
 	})
-	// The stopped project's revision stays built, and its base moves, at
+	// The stopped project was not touched by the sweep; its base moves at
 	// its next start.
 	pb := h.Project(b.ID)
-	revs, _ := store.ListRevisions(ctx, h.Pool, pb.ID)
-	if revs[0].Status != "built" || pb.BaseVersion == nil || *pb.BaseVersion == "2026.09.22" {
-		t.Fatalf("stopped project's bump: revision %s base %v", revs[0].Status, pb.BaseVersion)
+	bOps, _ := store.ListProjectOps(ctx, h.Pool, pb.ID, 5)
+	for _, op := range bOps {
+		if op.Kind == "build" {
+			t.Fatalf("stopped project got a sweep build op: %+v", op)
+		}
+	}
+	if pb.BaseVersion != nil && *pb.BaseVersion == "2026.09.22" {
+		t.Fatalf("stopped project moved to the new base before start: %v", pb.BaseVersion)
 	}
 	if h.Project(c.ID).BaseVersion != nil && *h.Project(c.ID).BaseVersion == "2026.09.22" {
 		t.Fatal("held project moved to the new base")
 	}
-	// A second sweep is a no-op for the updated projects.
+	// A second sweep is a no-op.
 	again, _ := job.Sweep(ctx)
 	if len(again) != 0 {
 		t.Fatalf("second sweep touched %v", again)
@@ -79,22 +78,50 @@ func TestSweepBuildsUnheldSkipsHeld(t *testing.T) {
 	var n int
 	h.WaitFor("base_updated events", func() bool {
 		_ = h.Pool.QueryRow(ctx, "select count(*) from events where kind = 'base_updated'").Scan(&n)
-		return n == 2
+		return n == 1
 	})
-	// The stopped project starts and applies the pending base revision.
+	// Starting a stopped held project does not update its base.
+	if _, err := h.Pool.Exec(ctx, "update projects set state = 'stopped' where id = $1", c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := ops.PendingRevision(ctx, h.Pool, h.Project(c.ID)); err != nil || pending {
+		t.Fatalf("held stopped project had pending revision: %v %v", pending, err)
+	}
+	cid := c.ID
+	if cop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &cid, Phases: ops.PlanStart(false)})); cop.State != "done" {
+		t.Fatalf("start held project: %+v", cop.Error)
+	}
+	if h.Project(c.ID).BaseVersion != nil && *h.Project(c.ID).BaseVersion == "2026.09.22" {
+		t.Fatal("held project moved to the new base on start")
+	}
+	// The stopped unheld project starts, prepares and reuses the latest
+	// base closure on the host, and applies it.
 	bid := b.ID
-	sop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &bid, Phases: ops.PlanStart(true)}))
+	pending, err := ops.PendingRevision(ctx, h.Pool, h.Project(bid))
+	if err != nil || !pending {
+		t.Fatalf("stopped unheld project behind latest base: pending=%v err=%v", pending, err)
+	}
+	buildsBefore := len(h.Fake.Commands())
+	sop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &bid, Phases: ops.PlanStart(pending)}))
 	if sop.State != "done" {
 		t.Fatalf("start with pending revision: %+v", sop.Error)
+	}
+	for _, cmd := range h.Fake.Commands()[buildsBefore:] {
+		if bld := cmd.GetBuild(); bld != nil && bld.ProjectId == bid.String() {
+			t.Fatal("start of b built instead of reusing a's closure on the same host")
+		}
 	}
 	if pb := h.Project(b.ID); pb.State != "running" || pb.BaseVersion == nil || *pb.BaseVersion != "2026.09.22" {
 		t.Fatalf("after start: state=%s base=%v", pb.State, pb.BaseVersion)
 	}
-	// A failing bump raises base_update_failed and keeps the project working.
+	// A failing bump raises base_update_failed with the failure reason
+	// (failWithLines sets op.Error before OnOpFinished) and keeps the
+	// project working.
 	if _, err := h.Pool.Exec(ctx, "insert into base_versions (version, nix_rev) values ('2026.09.29', 'def456')"); err != nil {
 		t.Fatal(err)
 	}
 	h.Fake.SetFail("Build", "build_failed")
+	h.Fake.SetFailMessage("Build", "builder for /nix/store/bad.drv failed")
 	touched, _ = job.Sweep(ctx)
 	for _, id := range touched {
 		ops, _ := store.ListProjectOps(ctx, h.Pool, id, 1)
@@ -104,10 +131,18 @@ func TestSweepBuildsUnheldSkipsHeld(t *testing.T) {
 		_ = h.Pool.QueryRow(ctx, "select count(*) from events where kind = 'base_update_failed'").Scan(&n)
 		return n == 2
 	})
+	var failSummary string
+	if err := h.Pool.QueryRow(ctx, "select summary from events where project_id = $1 and kind = 'base_update_failed'", a.ID).Scan(&failSummary); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(failSummary, "builder for /nix/store/bad.drv failed") {
+		t.Fatalf("base_update_failed summary missing error message: %q", failSummary)
+	}
 	if h.Project(a.ID).State != "running" || *h.Project(a.ID).BaseVersion != "2026.09.22" {
 		t.Fatal("a failed bump changed the project")
 	}
 	h.Fake.SetFail("Build", "")
+	h.Fake.SetFailMessage("Build", "")
 	if touched, _ := job.Sweep(ctx); len(touched) != 0 {
 		t.Fatalf("projects with a failed bump were retried: %v", touched)
 	}

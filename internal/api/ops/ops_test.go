@@ -916,3 +916,103 @@ func TestPlacementWaitsForAGuestBeingStopped(t *testing.T) {
 		t.Fatalf("failed after %s, before the wait ended", d)
 	}
 }
+
+// TestBuildPacingReuseAndQueueFullBackpressure covers DECISIONS I-1454:
+// per-host build pacing caps concurrent in-flight Build commands at
+// MaxHostBuilds, later KindBuild ops on the same host reuse the closure
+// the first batch built without sending Command_Build, and a "build queue
+// full" insufficient_capacity result is retried as backpressure rather
+// than failing the op and revision.
+func TestBuildPacingReuseAndQueueFullBackpressure(t *testing.T) {
+	h := apitest.New(t, apitest.Options{BuildDelay: 250 * time.Millisecond})
+	if _, err := h.Pool.Exec(h.Ctx, "insert into base_versions (version, nix_rev) values ('2026.09.25', 'rev25'), ('2026.09.26', 'rev26')"); err != nil {
+		t.Fatal(err)
+	}
+	u := h.NewUser("pace")
+	const nProjects = 6
+	projects := make([]*store.Project, nProjects)
+	for i := 0; i < nProjects; i++ {
+		projects[i] = h.CreateRunning(u, fmt.Sprintf("p-%d", i))
+	}
+	before := len(h.Fake.Commands())
+	opIDs := make([]uuid.UUID, nProjects)
+	for i, p := range projects {
+		pid := p.ID
+		rid := store.NewID()
+		if _, err := h.Pool.Exec(h.Ctx, "insert into config_revisions (id, project_id, fragment, base_version, status) values ($1, $2, $3, '2026.09.26', 'building')", rid, pid, "{ pkgs, ... }: { }"); err != nil {
+			t.Fatal(err)
+		}
+		id, err := h.Engine.Enqueue(h.Ctx, h.Pool, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(true)}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opIDs[i] = id
+	}
+	h.Engine.Kick()
+	for _, id := range opIDs {
+		if op := h.WaitOp(id); op.State != "done" {
+			t.Fatalf("op %s: state=%s err=%+v", id, op.State, op.Error)
+		}
+	}
+	buildCmds := 0
+	for _, c := range h.Fake.Commands()[before:] {
+		if c.GetBuild() != nil {
+			buildCmds++
+		}
+	}
+	if buildCmds > ops.DefaultMaxHostBuilds {
+		t.Fatalf("sent %d Build commands for %d identical projects on one host, want at most %d (rest reused)", buildCmds, nProjects, ops.DefaultMaxHostBuilds)
+	}
+	for _, p := range projects {
+		got := h.Project(p.ID)
+		if got.BaseVersion == nil || *got.BaseVersion != "2026.09.26" {
+			t.Fatalf("project %s base_version=%v", p.Slug, got.BaseVersion)
+		}
+	}
+
+	// Defense in depth: if hostd answers a Build with insufficient_capacity
+	// "build queue full", the engine clears command_id and retries rather
+	// than failing the op and marking the revision failed.
+	h.Fake.SetFail("Build", "insufficient_capacity")
+	h.Fake.SetFailMessage("Build", "build queue full")
+	pid := projects[0].ID
+	rid := store.NewID()
+	if _, err := h.Pool.Exec(h.Ctx, "insert into config_revisions (id, project_id, fragment, base_version, status) values ($1, $2, $3, '2026.09.26', 'building')", rid, pid, "{ pkgs, ... }: { home.packages = [ pkgs.curl ]; }"); err != nil {
+		t.Fatal(err)
+	}
+	beforeRetry := len(h.Fake.Commands())
+	opID := h.Enqueue(ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuild(true)})
+	h.WaitFor("first Build attempt refused by full queue", func() bool {
+		for _, c := range h.Fake.Commands()[beforeRetry:] {
+			if b := c.GetBuild(); b != nil && b.RevisionId == rid.String() {
+				return true
+			}
+		}
+		return false
+	})
+	time.Sleep(150 * time.Millisecond)
+	op, err := store.GetOp(h.Ctx, h.Pool, opID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.State == "error" {
+		t.Fatalf("op failed permanently on build queue full: %+v", op.Error)
+	}
+	rev, err := store.GetRevision(h.Ctx, h.Pool, rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev.Status == "failed" {
+		t.Fatalf("revision marked failed on build queue full: %+v", rev)
+	}
+	h.Fake.SetFail("Build", "")
+	h.Fake.SetFailMessage("Build", "")
+	h.Engine.Kick()
+	if got := h.WaitOp(opID); got.State != "done" {
+		t.Fatalf("op after queue cleared: state=%s err=%+v", got.State, got.Error)
+	}
+	rev, _ = store.GetRevision(h.Ctx, h.Pool, rid)
+	if rev.Status != "applied" {
+		t.Fatalf("revision after retry: %s", rev.Status)
+	}
+}

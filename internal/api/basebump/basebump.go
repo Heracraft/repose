@@ -79,9 +79,11 @@ func nextRun(now time.Time) time.Time {
 	return n
 }
 
-// Sweep enqueues a build for every unheld project behind the latest base
-// and returns the project ids it touched. A project with an open op or
-// whose last build failed is skipped until its next successful apply.
+// Sweep enqueues a build for every unheld running project behind the
+// latest base and returns the project ids it touched. Stopped projects
+// are skipped here and updated on their next start (DECISIONS I-1454). A
+// project with an open op or whose last build against the latest base
+// failed is skipped until its next successful apply.
 func (j *Job) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 	latest, err := store.LatestBase(ctx, j.pool)
 	if err != nil {
@@ -90,7 +92,7 @@ func (j *Job) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 		}
 		return nil, err
 	}
-	rows, err := j.pool.Query(ctx, `select id from projects where destroyed_at is null and state in ('running','stopped') and not hold_base_updates
+	rows, err := j.pool.Query(ctx, `select id from projects where destroyed_at is null and state = 'running' and not hold_base_updates
 		and (base_version is null or base_version <> $1) and config_revision_id is not null and user_id <> '00000000-0000-7000-8000-000000000000' order by created_at`, latest.Version)
 	if err != nil {
 		return nil, err
