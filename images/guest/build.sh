@@ -21,8 +21,10 @@
 #              else images/guest/out
 #   --builder  a buildx builder (a container builder whose state lives off
 #              the root disk, on a small dev box); default the current one
-# Needs: docker with buildx (binfmt for a foreign arch), go, mkfs.erofs and
-# dump.erofs (erofs-utils), python3, jq, sha256sum.
+# Needs: docker with buildx (binfmt for a foreign arch), go, mkfs.erofs,
+# fsck.erofs and dump.erofs (erofs-utils 1.9.4 or later: 1.7.1 writes an
+# image the guest kernel cannot read, DECISIONS I-1556), python3, jq,
+# sha256sum.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -37,7 +39,7 @@ while [ $# -gt 0 ]; do
     --version) version=$2; shift ;;
     --out) out=$2; shift ;;
     --builder) builder=(--builder "$2"); shift ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "build.sh: unknown argument $1" >&2; exit 64 ;;
   esac
   shift
@@ -53,7 +55,20 @@ fi
 for a in "${archs[@]}"; do
   case "$a" in amd64|arm64) ;; *) echo "build.sh: --arch is amd64 or arm64, not $a" >&2; exit 64 ;; esac
 done
-command -v mkfs.erofs >/dev/null || { echo "build.sh: mkfs.erofs (erofs-utils) is not on PATH" >&2; exit 1; }
+# erofs-utils 1.7.1 (Ubuntu noble's) wrote the guest's small files as
+# compressed inodes with no data, and guest 2026.11.22.11 froze at boot
+# (DECISIONS I-1556). 1.9.4 is the oldest release proven on this root. 1.7
+# has no -V; its usage text ends "mkfs.erofs 1.7.1".
+erofs_min=1.9.4
+for t in mkfs.erofs fsck.erofs dump.erofs; do
+  command -v "$t" >/dev/null || { echo "build.sh: $t (erofs-utils) is not on PATH" >&2; exit 1; }
+  v=$("$t" -V 2>&1 || true)
+  v=$(grep -oE "^$t( \(erofs-utils\))? [0-9]+(\.[0-9]+)+" <<<"$v" | grep -oE '[0-9]+(\.[0-9]+)+$' | head -1 || true)
+  if [ -z "$v" ] || [ "$(printf '%s\n%s\n' "$erofs_min" "$v" | sort -V | head -1)" != "$erofs_min" ]; then
+    echo "build.sh: $t is erofs-utils ${v:-of unknown version} ($(command -v "$t")); the build needs $erofs_min or later, older releases write images the guest kernel cannot read (DECISIONS I-1556)" >&2
+    exit 1
+  fi
+done
 
 # COPY keeps the context's modes, directories included, and git keeps no
 # directory modes: a checkout made under umask 002 gave the image a
@@ -105,6 +120,12 @@ for arch in "${archs[@]}"; do
   # --tar=f reads the tar straight into the image; the uid, gid and modes
   # are the tar's, and every file's time is the build's (-T0, reproducible).
   mkfs.erofs -zlz4hc,9 -T0 --tar=f "$dest/rootfs.erofs" "$work/rootfs.tar" >/dev/null
+  # The image must be readable before anything else is asked of it
+  # (DECISIONS I-1556): fsck.erofs --extract decompresses every file, and
+  # the feature gate checks each inode against what the guest kernel (6.8)
+  # accepts, so an image it would refuse fails here, not at boot.
+  fsck.erofs --extract "$dest/rootfs.erofs"
+  python3 "$here/scripts/erofs-features-gate.py" "$dest/rootfs.erofs"
   # The artifact gate: the modes and owners sshd, sudo and every user's
   # temp files depend on, read from the produced image's inodes.
   python3 "$here/scripts/erofs-gate.py" "$(command -v dump.erofs)" "$dest/rootfs.erofs"
