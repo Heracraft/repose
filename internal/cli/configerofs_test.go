@@ -251,3 +251,35 @@ func TestConfigRevisionsErofs(t *testing.T) {
 		t.Fatalf("revisions:\n%s", got)
 	}
 }
+
+// On an erofs machine `repose run` and `repose sync` leave the checkout's
+// repose.nix unsent and say nothing: the api would refuse it on every run
+// (I-1488). Only `repose config apply` meets the refusal.
+func TestRunAndSyncSkipRepoConfigOnErofs(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	fake.SetDefaultGuestRuntime("erofs")
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	errOut := &discardWriter{}
+	f.env.ErrOut = errOut
+	if err := os.WriteFile(filepath.Join(f.local, "repose.nix"), []byte("{ pkgs, ... }: { home.packages = [ pkgs.ripgrep ]; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatalf("run: %v\n%s", err, errOut.buf.String())
+	}
+	if err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false); err != nil {
+		t.Fatalf("sync: %v\n%s", err, errOut.buf.String())
+	}
+	projects, err := f.env.Client.ListProjects(ctx)
+	if err != nil || len(projects) != 1 || projects[0].GuestRuntime != "erofs" {
+		t.Fatalf("projects: %+v %v", projects, err)
+	}
+	if n := fake.Calls("PUT /v1/projects/{id}/config"); n != 0 {
+		t.Fatalf("%d config PUTs on an erofs machine", n)
+	}
+	if strings.Contains(errOut.buf.String(), "repose.nix") {
+		t.Fatalf("run or sync named repose.nix:\n%s", errOut.buf.String())
+	}
+}
