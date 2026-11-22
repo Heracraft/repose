@@ -111,7 +111,9 @@ func TestPsTailsAWindow(t *testing.T) {
 	if _, err := runSSH(ctx, f.target, "tmux new-window -d -t "+testSlug+" -n agent-x 'for i in 1 2 3 4 5; do echo out$i; done; exec sleep 300'", nil); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	if _, err := waitForCapture(ctx, f.target, testSlug, "agent-x", "out5"); err != nil {
+		t.Fatal(err)
+	}
 	out := &discardWriter{}
 	f.env.Out = out
 	if err := PsCmdWith(ctx, f.env, PsOptions{ProjectArg: testSlug, Window: "agent-x", Lines: 2}); err != nil {

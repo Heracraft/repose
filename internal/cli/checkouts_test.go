@@ -33,6 +33,7 @@ func newSecondRepo(t *testing.T, name string) string {
 // The name a joining folder gets skips the checkout, its worktrees, the
 // names other folders have and non-empty directories (I-480).
 func TestClaimCheckoutNames(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(f.guestHome, "web"), 0o755); err != nil {

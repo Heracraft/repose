@@ -606,7 +606,7 @@ func TestWaitThatEndsRunningCallsGuestUp(t *testing.T) {
 	for _, from := range []string{"restoring", "starting"} {
 		fake.SetState(p.ID, from)
 		go func() {
-			time.Sleep(700 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			fake.SetState(p.ID, "running")
 		}()
 		called := 0

@@ -12,6 +12,7 @@ import (
 // with both a staged change and a further unstaged one, and every file's
 // content matches.
 func TestSyncKeepsStagedAndUnstaged(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	write := func(rel, content string) {
 		t.Helper()

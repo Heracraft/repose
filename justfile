@@ -54,21 +54,25 @@ obs-dev:
 obs-dev-down:
     docker compose -f ops/dev/docker-compose.yml down -v
 
+# Fast pre-push check (~10s, no Nix or Postgres required, DECISIONS I-1456).
+fast-check:
+    python3 ops/dev/decisions-index.py --check
+    python3 ops/dev/docs-ahead-of-cli --selftest
+    go vet ./...
+    GOOS=darwin GOARCH=arm64 go build ./cmd/repose
+    go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide' ./test/domain
+
 # The greps docs/CHECKLIST.md asks for before calling anything done.
 done-check paths="cmd internal":
     @echo "-- unhandled errors / panics --"; rg -n '_ = err|panic\(' {{paths}} || true
     @echo "-- leftovers --"; rg -n 'TODO|FIXME|XXX|not implemented' {{paths}} || true
     @echo "-- help nobody asked for (DECISIONS I-484, I-485) --"
-    # TestDocs* and TestEvery* are here because they were not, and a docs
-    # page shipped `repose host add --join -` past its author's done-check
-    # on 2026-11-20. The filter named only the two copy tests, so the
-    # agreement between the CLI and its pages (TestDocsNameEveryCommandAndFlag,
-    # TestDocsNameEveryConfigKey, TestDocsNameEveryEnvVar,
-    # TestDocsListEveryExitCode) and the conventions
-    # (TestEveryDocsPageNamesRealCommands, TestEveryYesHasY) were run by
-    # nothing anyone runs before saying done. All eight together take
-    # 0.137 s.
-    go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1
+    # TestDocs*, TestEvery* and AgentGuide are here because they were not,
+    # and a docs page shipped `repose host add --join -` past its author's
+    # done-check on 2026-11-20. The filter named only the two copy tests,
+    # so the agreement between the CLI, its pages and the agent guide was
+    # run by nothing anyone runs before saying done.
+    go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide' -count=1
     cd apps/web && pnpm exec vitest run src/lib/docs.test.ts src/lib/copy.test.ts
 
 # --- dashboard -------------------------------------------------------------

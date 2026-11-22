@@ -76,44 +76,36 @@ test('the snapshot list shows the newest 8, and Show all the rest', async ({ pag
 	await expect(rows).toHaveCount(8);
 });
 
-for (const width of [1024, 1440]) {
-	test(`Restore… opens inside the snapshots section at ${width}`, async ({ page }) => {
-		await page.setViewportSize({ width, height: 900 });
-		const p = await project(`restore-room-${width}`, 2);
-		// Stopped, so the panel offers both outcomes.
-		await stop(p.id);
-		await page.goto(`/projects/${p.id}/snapshots`);
-		const card = page.getByTestId('snapshots-card');
-		await card.getByRole('button', { name: 'Restore…' }).first().click();
-		const panel = card.getByTestId('restore-confirm');
-		await expect(panel).toBeVisible();
-		// Focus moves into the panel, on the typed confirm.
-		await expect(panel.getByLabel(/to confirm/)).toBeFocused();
-		await insideCard(card, [
-			panel.getByLabel(/to confirm/),
-			panel.getByRole('button', { name: 'Restore', exact: true }),
-			panel.getByLabel('Name for the restored project'),
-			panel.getByRole('button', { name: 'Restore as new', exact: true }),
-			panel.getByRole('button', { name: 'Cancel' })
-		]);
-	});
-}
-
-test('Restore as new keeps its field and buttons on one line inside the section', async ({
+test('Restore… opens inside the snapshots section at 1024 and 1440, with Restore as new on one line', async ({
 	page
 }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
-	const p = await project('as-new-room', 2);
+	const p = await project('restore-room', 2);
+	// Stopped, so the panel offers both outcomes.
+	await stop(p.id);
+	await page.setViewportSize({ width: 1024, height: 900 });
 	await page.goto(`/projects/${p.id}/snapshots`);
 	const card = page.getByTestId('snapshots-card');
 	// One action a row: Restore… offers both outcomes.
 	await expect(card.getByRole('button', { name: /Restore as new/ })).toHaveCount(0);
 	await card.getByRole('button', { name: 'Restore…' }).first().click();
-	const field = card.getByLabel('Name for the restored project');
-	const submit = card.getByRole('button', { name: 'Restore as new', exact: true });
-	const cancel = card.getByRole('button', { name: 'Cancel' });
-	await insideCard(card, [field, submit, cancel]);
-	// One line: the field and both buttons share a row.
+	const panel = card.getByTestId('restore-confirm');
+	await expect(panel).toBeVisible();
+	// Focus moves into the panel, on the typed confirm.
+	await expect(panel.getByLabel(/to confirm/)).toBeFocused();
+	const field = panel.getByLabel('Name for the restored project');
+	const submit = panel.getByRole('button', { name: 'Restore as new', exact: true });
+	const cancel = panel.getByRole('button', { name: 'Cancel' });
+	for (const width of [1024, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		await insideCard(card, [
+			panel.getByLabel(/to confirm/),
+			panel.getByRole('button', { name: 'Restore', exact: true }),
+			field,
+			submit,
+			cancel
+		]);
+	}
+	// One line at 1440: the field and both buttons share a row.
 	const [f, s, c] = await Promise.all([field, submit, cancel].map((l) => l.boundingBox()));
 	expect(Math.abs(f!.y + f!.height / 2 - (s!.y + s!.height / 2))).toBeLessThan(4);
 	expect(Math.abs(s!.y + s!.height / 2 - (c!.y + c!.height / 2))).toBeLessThan(4);
@@ -133,9 +125,9 @@ test('a stopped project has no Agents card', async ({ page }) => {
 // vertical scroll (spec section 2, Page tabs).
 test("the current tab's edge lies on the rule", async ({ page }) => {
 	const p = await project('tabs-edge', 0);
+	await page.goto(`/projects/${p.id}`);
 	for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 900 });
-		await page.goto(`/projects/${p.id}`);
 		const m = await page.locator('.hk-tabs').evaluate((nav) => {
 			const a = nav.querySelector('[aria-current="page"]')!.getBoundingClientRect();
 			const rule = nav.parentElement!.getBoundingClientRect();
@@ -254,7 +246,11 @@ test('Connect offers repose attach first and never repose run', async ({ page })
 
 // From a 760px column (1440: 872px) the newest events sit on the left and
 // Agents and Machine in an 18rem column on the right; the rest spans it.
-test('the Overview sits in two columns at 1440, questions and Connect first', async ({ page }) => {
+// Below a 760px column (1024: 700px, and every phone) one column, in the
+// DOM order.
+test('the Overview sits in two columns at 1440 and stacks in one column at 1024 and 390', async ({
+	page
+}) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const p = await busy('order-wide');
 	await page.goto(`/projects/${p.id}`);
@@ -275,23 +271,17 @@ test('the Overview sits in two columns at 1440, questions and Connect first', as
 	expect(b.Details.y).toBeGreaterThan(b.Machine.y);
 	expect(b.Destroy.y).toBeGreaterThan(b.Details.y);
 	expect(b.Details.w).toBe(b.Connect.w);
-});
 
-// Below a 760px column (1024: 700px, and every phone) one column, in the
-// DOM order.
-for (const width of [390, 1024]) {
-	test(`the Overview stacks in one column at ${width}`, async ({ page }) => {
+	for (const width of [1024, 390]) {
 		await page.setViewportSize({ width, height: 900 });
-		const p = await busy(`order-${width}`);
-		await page.goto(`/projects/${p.id}`);
-		await expect(page.getByTestId('agents-card')).toBeVisible();
-		await expect(page.getByTestId('questions')).toBeVisible();
-		const b = await boxes(page, ORDER);
-		const ys = ORDER.map((n) => b[n].y);
-		expect([...ys].sort((m, n) => m - n)).toEqual(ys);
-		for (const n of ORDER) expect(Math.abs(b[n].x - b.Connect.x)).toBeLessThanOrEqual(1);
-	});
-}
+		const stacked = await boxes(page, ORDER);
+		const ys = ORDER.map((n) => stacked[n].y);
+		expect([...ys].sort((m, n) => m - n), `at ${width}`).toEqual(ys);
+		for (const n of ORDER) {
+			expect(Math.abs(stacked[n].x - stacked.Connect.x), `${n} at ${width}`).toBeLessThanOrEqual(1);
+		}
+	}
+});
 
 test('Latest events shows the newest 5 and links to the Events tab', async ({ page }) => {
 	const p = await project('latest-five', 0);
@@ -381,19 +371,21 @@ test('the tabs switch under one header that stays mounted', async ({ page }) => 
 // sideways under it, and the row's own scroll is sideways only, so the
 // current tab's 1px edge stays on the title rule. Reaching a tab by
 // scrolling the row is browser-view.spec.ts.
-for (const width of [360, 390]) {
-	test(`the tab row holds the seven at ${width} without moving the page`, async ({ page }) => {
+test('the tab row holds the seven at 360 and 390 without moving the page', async ({ page }) => {
+	const p = await project('tabs-fit', 0);
+	await page.setViewportSize({ width: 390, height: 800 });
+	await page.goto(`/projects/${p.id}/config`);
+	const nav = page.getByRole('navigation', { name: 'Project' });
+	await expect(nav.getByRole('link')).toHaveText(TABS);
+	for (const width of [360, 390]) {
 		await page.setViewportSize({ width, height: 800 });
-		const p = await project(`tabs-fit-${width}`, 0);
-		await page.goto(`/projects/${p.id}/config`);
-		const nav = page.getByRole('navigation', { name: 'Project' });
-		await expect(nav.getByRole('link')).toHaveText(TABS);
-		expect(await nav.evaluate((n) => n.scrollHeight <= n.clientHeight)).toBe(true);
+		expect(await nav.evaluate((n) => n.scrollHeight <= n.clientHeight), `at ${width}`).toBe(true);
 		expect(
-			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+			`at ${width}`
 		).toBe(true);
-	});
-}
+	}
+});
 
 // Moving from one project to another (a rail row) starts the other's
 // frame: its name, its tabs and its poll, not the first one's.

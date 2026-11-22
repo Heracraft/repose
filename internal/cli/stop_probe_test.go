@@ -104,18 +104,18 @@ func TestStopLineSaysWhenTheCheckoutIsUnknown(t *testing.T) {
 // The read of a machine named on the command line starts beside the
 // api's read of the project, not after it.
 func TestStopProbeStartsBesideTheApi(t *testing.T) {
-	fake := fakeapi.New(fakeapi.Options{StopDelay: 3 * time.Second, StopPickup: 100 * time.Millisecond})
+	fake := fakeapi.New(fakeapi.Options{StopDelay: 300 * time.Millisecond, StopPickup: 20 * time.Millisecond})
 	defer fake.Close()
 	ctx := context.Background()
 	e := newLifecycleEnv(t, fake)
 	runningProject(t, fake, e, "job")
 
-	// The project list answers two seconds late, as from a far laptop.
+	// The project list answers 400 ms late, as from a far laptop.
 	u, _ := url.Parse(fake.URL())
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/projects" {
-			time.Sleep(2 * time.Second)
+			time.Sleep(400 * time.Millisecond)
 		}
 		proxy.ServeHTTP(w, r)
 	}))
@@ -132,7 +132,7 @@ func TestStopProbeStartsBesideTheApi(t *testing.T) {
 		if budget != stopProbeTimeout {
 			t.Errorf("budget %s", budget)
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(400 * time.Millisecond)
 		return guestStatus{mux: "tmux", git: []gitRow{{Worktree: "job", Branch: "main", Uncommitted: &n}}}
 	}
 	var out bytes.Buffer
@@ -148,8 +148,8 @@ func TestStopProbeStartsBesideTheApi(t *testing.T) {
 	if reads != 1 {
 		t.Fatalf("%d reads of the machine", reads)
 	}
-	// In turn the two take 4 s; beside each other, about 2.2 s.
-	if took > 3*time.Second {
+	// In turn the two take > 800 ms; beside each other, about 450 ms.
+	if took > 700*time.Millisecond {
 		t.Fatalf("stop took %s; the read waited for the api", took)
 	}
 }

@@ -51,7 +51,14 @@ figure is quoted.
   nothing; stderr says "NAME: installing the appliance on this Mac" and
   "NAME is starting and joins your account in a few minutes"
   (`internal/cli/hosts.go`, `nix/hosts/mac.nix`; read). On this path an
-  agent's transcript carries no secret today.
+  agent's transcript carries no secret today, **with one four-character
+  exception**: `repose host add --json` returns before the Apple-silicon
+  branch (`hosts.go:61` before `:64`; read) and prints the whole host
+  object, `install.argument` and its private key included, to stdout.
+  `--json` is the flag an agent reaches for because it is the
+  machine-readable one, so the safe path and the unsafe path differ by
+  that flag alone. Found by the mac-mini conductor on 2026-11-19 while
+  verifying this file, and filed as ENG-102.
 - **Anywhere else**, `repose host add` prints the install line
   `repose host add --join <bundle>` on stdout (read), and the dashboard's
   Hosts page shows the same line in a one-time dialog with a copy button
@@ -294,9 +301,15 @@ from the user's path without breaking it.
 0. **Say what already works, and tell the agent.** `apps/web/src/content/docs/own-hardware.md`
    and `agents.md`: on the Mac, `repose login` then `repose host add`;
    never paste a `--join` line into an agent. The agent guide an agent
-   reads on a customer's Mac says the same. Zero code. The transcript on
-   this path already holds nothing secret (read, §1). It does not cover
-   the dashboard's dialog or a Mac the customer will not log in on.
+   reads on a customer's Mac says the same. The transcript on this path
+   already holds nothing secret (read, §1), **except under `--json`**, so
+   step 0 is docs plus a decision on ENG-102: on a Mac, `--json` either
+   installs as the plain command does and reports the host without
+   `install.argument` and `join_token`, or refuses with one line. The
+   docs alone cannot close this, because an agent adds `--json` on its
+   own initiative and nobody briefs every agent in the world. Step 0
+   does not cover the dashboard's dialog or a Mac the customer will not
+   log in on.
 1. **ENG-42 as filed.** `--join` takes `-` for stdin or a path; the
    recorded install line uses it; the flag value stays for the lab. This
    ends the 97-second `ps` exposure and nothing else: the bundle still
@@ -401,6 +414,13 @@ What changes, by interface and component, for step 2:
 - **Log fields**: ids, states, the user code's existence, never its
   value, and never the public key beyond its fingerprint
   (`docs/ops/OBSERVABILITY.md`).
+
+What changes about ENG-102. It is the step-zero dependency: until
+`repose host add --json` on a Mac stops printing `install.argument`, the
+"already safe" path is safe only for an agent that does not add the
+flag. The fix is small and belongs before any docs change that tells a
+customer to let an agent run the install. In step 2 the question
+disappears, because the api no longer sends a private key to anyone.
 
 What changes about ENG-42. Its finding stands and its fix, a file or
 stdin for `--join`, is step 1 and should be done. Its scope changes: the

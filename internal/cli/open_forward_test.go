@@ -50,6 +50,7 @@ func TestOpenForwardReachesWhereTheServerListens(t *testing.T) {
 // SSH finds it, and the forward reaches it, where the forward before I-261
 // (to 127.0.0.1) is refused.
 func TestOpenForwardsToAnIPv6OnlyServer(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ssh"); err != nil {
 		t.Skip("no ssh client")
 	}

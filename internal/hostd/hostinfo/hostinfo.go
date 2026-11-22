@@ -297,9 +297,26 @@ func SKU(ctx context.Context) string {
 	return strings.TrimSpace(string(b))
 }
 
+// Arch returns this host's CPU architecture in Nix/Linux form ("x86_64",
+// "aarch64"), which Register, Rotate and Hello report so the api never
+// tries to slice an architecture out of nixos_system's /nix/store/...
+// closure path (ENG-89, DECISIONS I-1448).
+func Arch() string { return archFor(runtime.GOARCH) }
+
+func archFor(goarch string) string {
+	switch goarch {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	default:
+		return goarch
+	}
+}
+
 // Collect builds the HostInfo message.
 func Collect(ctx context.Context, r shell.Runner, l lvm.LVM) *hostdv1.HostInfo {
-	info := &hostdv1.HostInfo{Vcpus: uint32(runtime.NumCPU()), Cores: PhysicalCores()}
+	info := &hostdv1.HostInfo{Vcpus: uint32(runtime.NumCPU()), Cores: PhysicalCores(), Arch: Arch()}
 	info.Hostname, _ = os.Hostname() // an unreadable hostname is reported as empty
 	info.MemBytes, _, _ = MemInfo()  // same
 	info.Sku = SKU(ctx)

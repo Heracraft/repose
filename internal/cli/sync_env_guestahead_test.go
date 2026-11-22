@@ -15,6 +15,7 @@ import (
 // to carry only the carry — the env payload travelled and was dropped,
 // while sync.md promises the files are copied each run.
 func TestSyncCopiesEnvFilesWhenTheGuestIsAhead(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	write := func(rel, body string) {
 		t.Helper()

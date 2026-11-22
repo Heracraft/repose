@@ -47,11 +47,38 @@ async function project(name: string) {
 test('the tab connects, retries three times, then offers Resume view', async ({ page }) => {
 	const p = await project('view-states');
 	await page.setViewportSize({ width: 1440, height: 900 });
+
+	// Gate the 4th mint (last automatic retry) until the initial Connecting…
+	// assertion and screenshot have completed, and gate the 5th mint (triggered
+	// by clicking Resume view) until the resumed Connecting… state is asserted.
+	// Without gating the 5th mint, a fast loopback 503 after retries=3 returns
+	// the component to 'stopped' in ~2ms before Playwright's post-click check.
+	let mints = 0;
+	let releaseFourthMint!: () => void;
+	const fourthMintGate = new Promise<void>((r) => {
+		releaseFourthMint = r;
+	});
+	let releaseResumeMint!: () => void;
+	const resumeMintGate = new Promise<void>((r) => {
+		releaseResumeMint = r;
+	});
+	await page.route(`**/v1/projects/${p.id}/browser/view`, async (route) => {
+		if (route.request().method() !== 'POST') {
+			await route.fallback();
+			return;
+		}
+		mints += 1;
+		if (mints === 4) await fourthMintGate;
+		if (mints === 5) await resumeMintGate;
+		await route.fallback();
+	});
+
 	await page.goto(`/projects/${p.id}/browser`);
 	await expect(page).toHaveTitle(new RegExp(`Browser · ${p.name} · repose$`));
 	await expect(page.getByTestId('view-screen')).toBeVisible();
 	await expect(page.getByText('Connecting…')).toBeVisible();
 	await shots(page, 'browser-connecting');
+	releaseFourthMint();
 
 	// 1 + 2 + 4 seconds of reconnects, each one a fresh mint, and then it
 	// stops rather than minting for ever.
@@ -59,11 +86,16 @@ test('the tab connects, retries three times, then offers Resume view', async ({ 
 		timeout: 30_000
 	});
 	await expect(page.getByText('The view could not be reached.')).toBeVisible();
+	expect(mints).toBe(4);
 	await shots(page, 'browser-stopped');
 
 	// Resume view is one mint: the page says it is connecting again.
 	await page.getByRole('button', { name: 'Resume view' }).click();
 	await expect(page.getByText('Connecting…')).toBeVisible();
+	await expect.poll(() => mints).toBe(5);
+	releaseResumeMint();
+	await expect(page.getByRole('button', { name: 'Resume view' })).toBeVisible();
+	await page.unroute(`**/v1/projects/${p.id}/browser/view`);
 	await destroyProject(apiURLFromEnv(), p.id);
 });
 

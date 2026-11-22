@@ -318,10 +318,10 @@ func TestAttachLoopReattachesAfterADrop(t *testing.T) {
 	typeIn("before")
 	waitPane(t, f, "agent", "before")
 
-	// The edge goes away for two seconds.
+	// The edge goes away across a probe interval.
 	proxy.cut(true)
 	waitFor(t, func() bool { return strings.Contains(screen.String(), "lost the connection to "+testSlug) })
-	time.Sleep(2 * time.Second)
+	time.Sleep(250 * time.Millisecond)
 	proxy.cut(false)
 
 	// Keys typed while it reconnects are dropped, so wait for the new

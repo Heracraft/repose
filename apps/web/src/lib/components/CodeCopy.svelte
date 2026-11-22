@@ -15,7 +15,8 @@
 		copy,
 		what,
 		prompt = false,
-		labelFrom = 640
+		labelFrom = 640,
+		wrap = false
 	}: {
 		/** The line shown, with no "$ " prompt. */
 		command: string;
@@ -27,6 +28,8 @@
 		prompt?: boolean;
 		/** The width (px) from which Copy shows its word; narrower, its icon. */
 		labelFrom?: number;
+		/** Wrap across lines at every width so long commands (such as a join bundle) are readable without horizontal scrolling (ENG-63). */
+		wrap?: boolean;
 	} = $props();
 	const narrow = $derived(new MediaQuery(`max-width: ${labelFrom - 0.02}px`));
 
@@ -37,7 +40,7 @@
 	}
 </script>
 
-<div class="code-copy">
+<div class="code-copy" class:wrap>
 	<pre class="line" use:tabStopWhenScrolls onscroll={markEnd}>{#if prompt}<span
 				class="prompt"
 				aria-hidden="true">$&nbsp;</span
@@ -96,6 +99,19 @@
 	}
 	.line:focus-visible {
 		outline-offset: 2px;
+	}
+	/* A wrapped command (e.g. a 360-char join bundle in a modal, ENG-63)
+	   shows all of its text at every width with Copy pinned to the first line. */
+	.code-copy.wrap {
+		align-items: flex-start;
+		width: 100%;
+	}
+	.code-copy.wrap .line {
+		padding-top: 0.125rem;
+		overflow-x: visible;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		mask-image: none;
 	}
 	/* On a phone the command wraps, after a slash where it can (the <wbr>s),
 	   anywhere where it cannot, so its end shows. */

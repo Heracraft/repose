@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -35,6 +36,9 @@ func TestReadHiddenLineOnATerminal(t *testing.T) {
 	os.Stdin, os.Stderr = tty, tty
 	defer func() { os.Stdin, os.Stderr = oldIn, oldErr }()
 
+	screenBuf := &syncBuffer{}
+	go func() { _, _ = io.Copy(screenBuf, ptmx) }()
+
 	type result struct {
 		v   []byte
 		err error
@@ -48,7 +52,7 @@ func TestReadHiddenLineOnATerminal(t *testing.T) {
 	// discipline echoes them.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if st, err := getTermios(tty); err == nil && !st.echo {
+		if st, err := getTermios(tty); err == nil && !st.echo && !st.canonical {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -68,10 +72,11 @@ func TestReadHiddenLineOnATerminal(t *testing.T) {
 	if r.err != nil || string(r.v) != "s3cret" {
 		t.Fatalf("value = %q, err = %v", r.v, r.err)
 	}
-	_ = ptmx.SetReadDeadline(time.Now().Add(2 * time.Second))
-	buf := make([]byte, 256)
-	n, _ := ptmx.Read(buf)
-	screen := string(buf[:n])
+	echoDeadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(screenBuf.String(), "****\b \b***") && time.Now().Before(echoDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	screen := screenBuf.String()
 	if strings.Contains(screen, "s3c") || strings.Contains(screen, "ret") {
 		t.Errorf("the screen showed the value: %q", screen)
 	}

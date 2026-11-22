@@ -17,6 +17,7 @@ import (
 // (and that v0.1.4 asked to push, or failed on) arrives without a push,
 // and origin is left exactly as it was.
 func TestSyncSendsAnUnpushedCommit(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	originBefore := mustRun(t, f.bare, "git", "rev-parse", "main")
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("local change, not pushed\n"), 0o644); err != nil {
@@ -65,6 +66,7 @@ func TestSyncSendsAnUnpushedCommit(t *testing.T) {
 // history travels, the branch and origin are set up, and the owner's
 // uncommitted and untracked work lands on top.
 func TestSyncIntoAnEmptyGuestRepo(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, guestRepo string)
@@ -132,6 +134,7 @@ func TestSyncIntoAnEmptyGuestRepo(t *testing.T) {
 // a merge of the laptop's commit, so the agent's commit stays on it and
 // the checkout has the laptop's work, with no detached HEAD (I-574).
 func TestSyncMergesADivergedGuestBranch(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "agent.go"), []byte("package agent\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -179,6 +182,7 @@ func TestSyncMergesADivergedGuestBranch(t *testing.T) {
 // stays on the agent's commit and the laptop's commit is checked out
 // detached, with one warning (I-150, I-574).
 func TestSyncLeavesAConflictingGuestBranchAlone(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -217,6 +221,7 @@ func TestSyncLeavesAConflictingGuestBranchAlone(t *testing.T) {
 // a merge would put the agent's version under it, so the branch is left
 // alone and the laptop's commit is checked out detached (I-574).
 func TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "notes.md"), []byte("agent\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -248,6 +253,7 @@ func TestSyncDoesNotMergeUnderTheLaptopsUncommittedWork(t *testing.T) {
 // --name project without a remote gets the laptop's real commits, so a
 // deletion on the laptop is a deletion in the guest too.
 func TestSyncNoRemoteSendsHistory(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	local := t.TempDir()
 	mustRun(t, local, "git", "init", "-q", "-b", "main", ".")
@@ -307,6 +313,7 @@ func TestSyncNoRemoteSendsHistory(t *testing.T) {
 // connection, every later ssh a session on it, and no ssh call left
 // waiting on the persisted master's pipes.
 func TestSyncOverAMultiplexedConnection(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ssh"); err != nil {
 		t.Skip("no ssh client")
 	}
@@ -390,6 +397,7 @@ func guestOnFeatureX(t *testing.T, f *syncFixture, rel, body string) (mainHead, 
 // the sync moves the checkout to main as it always does, merging the
 // laptop's commit there; feature-x keeps its commit (I-574).
 func TestSyncMergesTheGuestsMainFromAnotherBranch(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	mainHead, fxHead := guestOnFeatureX(t, f, "agent.go", "package agent\n")
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "scratch.txt"), []byte("the agent's\n"), 0o644); err != nil {
@@ -424,6 +432,7 @@ func TestSyncMergesTheGuestsMainFromAnotherBranch(t *testing.T) {
 // the laptop's commit is checked out detached, and neither of the
 // guest's branches moves.
 func TestSyncLeavesTheGuestsBranchesAloneWhenMainConflicts(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	mainHead, fxHead := guestOnFeatureX(t, f, "README.md", "agent\n")
 	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})

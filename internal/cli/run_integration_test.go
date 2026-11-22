@@ -44,35 +44,12 @@ type syncFixture struct {
 func newSyncFixture(t *testing.T) *syncFixture {
 	t.Helper()
 	bare := t.TempDir()
-	mustRun(t, bare, "git", "init", "--bare", "-q", "-b", "main", ".")
-
-	seed := t.TempDir()
-	mustRun(t, seed, "git", "clone", "-q", bare, ".")
-	mustRun(t, seed, "git", "config", "user.email", "seed@example.com")
-	mustRun(t, seed, "git", "config", "user.name", "Seed")
-	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("hello\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustRun(t, seed, "git", "add", "README.md")
-	mustRun(t, seed, "git", "commit", "-q", "-m", "initial")
-	mustRun(t, seed, "git", "push", "-q", "origin", "main")
-
 	local := t.TempDir()
-	mustRun(t, local, "git", "clone", "-q", bare, ".")
-	mustRun(t, local, "git", "config", "user.email", "dev@example.com")
-	mustRun(t, local, "git", "config", "user.name", "Dev Laptop")
-
 	guestHome := t.TempDir()
 	guestRepo := filepath.Join(guestHome, testSlug)
-	mustRun(t, guestHome, "git", "clone", "-q", bare, testSlug)
-	mustRun(t, guestRepo, "git", "config", "user.email", "guest@example.com")
-	mustRun(t, guestRepo, "git", "config", "user.name", "Guest")
+	copySyncTemplate(t, bare, local, guestRepo)
 
-	keyDir := t.TempDir()
-	privPath, pub, err := testguest.GenerateClientKey(keyDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	privPath, pub := cachedClientKey(t)
 	guest, err := testguest.New(guestHome, pub)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +160,7 @@ func (f *syncFixture) guestRepo() string {
 }
 
 func TestSyncDirtyRemoteRefused(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent was here\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -207,6 +185,7 @@ func TestSyncDirtyRemoteRefused(t *testing.T) {
 }
 
 func TestSyncStashRemote(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent was here\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -222,6 +201,7 @@ func TestSyncStashRemote(t *testing.T) {
 }
 
 func TestSyncDiscardRemote(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent was here\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -244,6 +224,7 @@ func TestSyncDiscardRemote(t *testing.T) {
 }
 
 func TestSyncAppliesDiffAndUntracked(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("edited locally, uncommitted\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -276,6 +257,7 @@ func TestSyncAppliesDiffAndUntracked(t *testing.T) {
 }
 
 func TestSyncCredentialsCopiesExactlyTheFourRows(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	home := t.TempDir()
 
@@ -355,6 +337,7 @@ func TestSyncCredentialsCopiesExactlyTheFourRows(t *testing.T) {
 // the guest has no keyring, so the token is written into the hosts.yml
 // that travels.
 func TestSyncCredentialsCarriesAKeyringGhToken(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	home := t.TempDir()
 	p := filepath.Join(home, ".config", "gh", "hosts.yml")
@@ -392,6 +375,7 @@ func TestSyncCredentialsCarriesAKeyringGhToken(t *testing.T) {
 // features/secrets.md: a login done inside the guest (newer than the
 // laptop's file) is not clobbered, and the CLI says which side won.
 func TestSyncCredentialsKeepsANewerGuestLogin(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	home := t.TempDir()
 	local := filepath.Join(home, ".codex", "auth.json")
@@ -442,6 +426,7 @@ func TestSyncCredentialsKeepsANewerGuestLogin(t *testing.T) {
 }
 
 func TestPromptSendAndSecondWindowNaming(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 
@@ -502,7 +487,7 @@ func TestPromptWaitsForDevShellLoad(t *testing.T) {
 	}
 	// The load outlasts the ordinary wait for an agent to start.
 	defer func(d time.Duration) { paneIdleTimeout = d }(paneIdleTimeout)
-	paneIdleTimeout = 1 * time.Second
+	paneIdleTimeout = 300 * time.Millisecond
 	got := filepath.Join(f.guestHome, "got")
 	script := filepath.Join(f.guestHome, "fake-wrapper")
 	body := "#!/bin/sh\n" +
@@ -515,9 +500,12 @@ func TestPromptWaitsForDevShellLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The stand-in's loading ends when the test says so (two lines typed
-	// by the test, not by startAgentWindow), four seconds in.
+	// by the test, not by startAgentWindow), after outlasting paneIdleWait.
+	const holdLoad = 1200 * time.Millisecond
+	loadingCh := make(chan struct{}, 1)
 	go func() {
-		time.Sleep(4 * time.Second)
+		<-loadingCh
+		time.Sleep(holdLoad)
 		_, _ = runSSH(ctx, f.target, "tmux send-keys -t "+testSlug+":cat 'x' Enter 'y' Enter", nil)
 	}()
 	if _, err := runSSH(ctx, f.target, "tmux new-window -t "+testSlug+" -n cat -c ~/"+testSlug+" -d "+shQuote(script), nil); err != nil {
@@ -525,13 +513,19 @@ func TestPromptWaitsForDevShellLoad(t *testing.T) {
 	}
 	loadingSeen := 0
 	start := time.Now()
-	if err := waitPaneIdle(ctx, f.target, testSlug, "cat", "cat", func() { loadingSeen++ }); err != nil {
+	if err := waitPaneIdle(ctx, f.target, testSlug, "cat", "cat", func() {
+		loadingSeen++
+		select {
+		case loadingCh <- struct{}{}:
+		default:
+		}
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if loadingSeen != 1 {
 		t.Fatalf("onLoading called %d times, want 1", loadingSeen)
 	}
-	if waited := time.Since(start); waited < 4*time.Second {
+	if waited := time.Since(start); waited < holdLoad {
 		t.Fatalf("waitPaneIdle returned after %s, before the dev shell loaded", waited)
 	}
 	if _, err := runSSH(ctx, f.target, "tmux send-keys -t "+testSlug+":cat -l "+shQuote("the prompt")+" && tmux send-keys -t "+testSlug+":cat Enter", nil); err != nil {
@@ -546,11 +540,12 @@ func TestPromptWaitsForDevShellLoad(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the agent never got the prompt; its input: %q", b)
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
 func TestPickWindowHasNoCap(t *testing.T) {
+	t.Parallel()
 	open := []string{"shell", "claude", "claude-2", "claude-3", "claude-4", "claude-5", "claude-6", "claude-7", "claude-8", "claude-9", "codex"}
 	if name, others := pickWindow("claude", open, nil); name != "claude-10" || !others {
 		t.Fatalf("pickWindow = %q/%v, want claude-10/true", name, others)
@@ -570,6 +565,7 @@ func TestPickWindowHasNoCap(t *testing.T) {
 }
 
 func TestRunWorktree(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if _, err := runSSH(ctx, f.target, "tmux new-session -d -s "+testSlug+" -c ~/"+testSlug, nil); err != nil {
@@ -721,6 +717,7 @@ func TestRunWorktree(t *testing.T) {
 }
 
 func TestRunWorktreeRefusals(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if _, err := runSSH(ctx, f.target, "tmux new-session -d -s "+testSlug+" -c ~", nil); err != nil {

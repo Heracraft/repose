@@ -13,6 +13,7 @@ import (
 // run lists the .env files while the probe is in flight: the sync asks
 // for them once, only after the probe, and writes what it gets.
 func TestSyncTakesEnvFilesAfterTheProbe(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.local, ".gitignore"), []byte(".env\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -54,6 +55,7 @@ func TestSyncTakesEnvFilesAfterTheProbe(t *testing.T) {
 // file: the probe reads each line as a path, says nothing, and rewrites
 // it with mtimes.
 func TestEnvPathsCheckReadsTheOldShape(t *testing.T) {
+	t.Parallel()
 	home, repo := t.TempDir(), t.TempDir()
 	for _, rel := range []string{".env", "apps/my app/.env"} {
 		p := filepath.Join(repo, rel)
@@ -85,6 +87,7 @@ func TestEnvPathsCheckReadsTheOldShape(t *testing.T) {
 // do not, a guest copy newer than the laptop's is kept and named, and an
 // unchanged set is not sent again.
 func TestSyncCarriesEnvFiles(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	write := func(rel, body string, mode os.FileMode) {
 		t.Helper()

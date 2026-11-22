@@ -7,7 +7,7 @@ order: 31
 
 ## Your plan
 
-Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. A `tiny` takes 2 GB, so Solo runs four of them; an `xl` takes 16 GB on its own, so it needs Plus or Pro.
+Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. A `tiny` takes 2 GB, so Solo runs four of them; an `xl` takes 16 GB on its own, so it needs Plus or Pro. The [Own hardware plan](/docs/billing#own-hardware) ($10 a month) buys one host you own instead of memory on repose's servers, so your hardware's memory and disk are the limits.
 
 Starting a machine, or growing one, that would pass the total is refused with exit code 7. On a terminal `repose run`, `start` and `attach` [ask to stop one](/docs/billing#what-a-plan-means) instead.
 
@@ -23,7 +23,7 @@ While your projects hold more than [the plan's disk](/docs/billing#what-a-plan-m
 
 ## When repose is full
 
-A seat is 8 GB of memory for running machines, so a plan takes one for each 8 GB it runs. Choosing a plan whose seats aren't free puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page shows your place and how many are waiting.
+A seat is 8 GB of memory for running machines, so a plan takes one for each 8 GB it runs. Choosing a plan whose seats aren't free puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page shows your place and how many are waiting. The [Own hardware plan](/docs/billing#own-hardware) holds no seat, so you can choose it while repose is full.
 
 We let people in, in the order they joined, one seat each, as plans end and as we add servers. You get one [email](/docs/notifications#emails-about-your-account) when it's your turn, and the seat is held for 72 hours. If you don't choose a plan in that time, the seat goes back and you're off the waitlist, with an email saying so. We don't offer you another seat until you ask: choose a plan on the Billing page, or join the waitlist again there, at the back.
 

@@ -273,10 +273,15 @@ and the revision stays `built` until the user confirms with `POST
 
 Base bumps: `repose-admin base release <version> --nix-rev <rev>
 --changelog <file> [--security]` inserts `base_versions`. A daily job (at
-04:00 UTC, or immediately for `--security`) finds projects with
+04:00 UTC, or immediately for `--security`) finds running projects with
 `base_version < latest` and `hold_base_updates = false`, and enqueues a
-`build` op per project reusing its current fragment. Failures do not stop
-the sweep; each failure is an event `base_update_failed` on the project.
+`build` op per project reusing its current fragment (DECISIONS I-1454).
+Stopped unheld projects behind `latest` are skipped by the sweep and
+updated on their next `start`. The ops engine paces in-flight `Build`
+commands per host (`MaxHostBuilds`) and reuses an identical `(fragment,
+base_version, personal)` closure already built or applied on that host.
+Failures do not stop the sweep; each failure is an event
+`base_update_failed` on the project.
 
 ### 5.8 Snapshots
 

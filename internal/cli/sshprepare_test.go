@@ -81,12 +81,7 @@ func newPlainSSHFixture(t *testing.T) *plainSSHFixture {
 		}
 	}
 	f := &plainSSHFixture{}
-	f.bin = filepath.Join(t.TempDir(), "repose")
-	build := exec.Command("go", "build", "-o", f.bin, "../../cmd/repose")
-	build.Env = append(filterTestEnv(os.Environ(), "HOME", "XDG_CONFIG_HOME"), "HOME="+realHome, "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
-	}
+	f.bin = builtRepose(t)
 
 	ca, err := testca.New()
 	if err != nil {
