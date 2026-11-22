@@ -2,25 +2,32 @@
 # Publish an erofs base version on staging and, optionally, make erofs the
 # default guest runtime. Staging only (stg-cp, DECISIONS I-1462, I-1464).
 #
-#   RELEASE_URL=https://.../v1/  VERSION=2026.11.22-1  KERNEL_VERSION=6.18.57 \
-#   CHANGELOG="first erofs base"  publish-erofs.sh [--default]
+#   VERSION=2026.11.22.5 KERNEL_VERSION=6.18.57 CHANGELOG="first erofs base" \
+#   publish-erofs.sh [--default] [--dry-run]
 #
-# File names inside RELEASE_URL (defaults are guesses; set them from the
-# release's manifest): AMD64_IMAGE, AMD64_KERNEL, AMD64_INITRAMFS, and the
-# optional ARM64_IMAGE, ARM64_KERNEL, ARM64_INITRAMFS. Each *_SHA256 may be
-# given; otherwise it is read from RELEASE_URL/SHA256SUMS. MANIFEST_URL
-# defaults to RELEASE_URL/manifest.json. --default also runs
+# The release layout is fixed (D-11): under
+# https://github.com/Heracraft/repose/releases/download/guest-<version>/,
+# amd64-vmlinuz, amd64-initramfs.img, amd64-rootfs.erofs,
+# amd64-manifest.json, the same with arm64-, and one SHA256SUMS for all
+# eight. RELEASE_URL overrides the directory; NO_ARM64=1 publishes amd64
+# alone. Each *_SHA256 may be given; otherwise it is read from SHA256SUMS.
+# MANIFEST_URL defaults to the amd64 manifest. --default also runs
 # `settings set default_guest_runtime erofs`. --dry-run prints the command.
 set -euo pipefail
-: "${RELEASE_URL:?set RELEASE_URL (the directory holding the release files, ending in /)}"
-: "${VERSION:?set VERSION (the base_versions label)}"
+: "${VERSION:?set VERSION (the base_versions label, as in guest-<version>)}"
+RELEASE_URL="${RELEASE_URL:-https://github.com/Heracraft/repose/releases/download/guest-${VERSION}/}"
 : "${KERNEL_VERSION:?set KERNEL_VERSION}"
 : "${CHANGELOG:?set CHANGELOG}"
 RELEASE_URL="${RELEASE_URL%/}/"
-MANIFEST_URL="${MANIFEST_URL:-${RELEASE_URL}manifest.json}"
-AMD64_IMAGE="${AMD64_IMAGE:-rootfs-amd64.erofs}"
-AMD64_KERNEL="${AMD64_KERNEL:-vmlinuz-amd64}"
-AMD64_INITRAMFS="${AMD64_INITRAMFS:-initramfs-amd64.img}"
+MANIFEST_URL="${MANIFEST_URL:-${RELEASE_URL}amd64-manifest.json}"
+AMD64_IMAGE="${AMD64_IMAGE:-amd64-rootfs.erofs}"
+AMD64_KERNEL="${AMD64_KERNEL:-amd64-vmlinuz}"
+AMD64_INITRAMFS="${AMD64_INITRAMFS:-amd64-initramfs.img}"
+if [ "${NO_ARM64:-0}" != 1 ]; then
+	ARM64_IMAGE="${ARM64_IMAGE:-arm64-rootfs.erofs}"
+	ARM64_KERNEL="${ARM64_KERNEL:-arm64-vmlinuz}"
+	ARM64_INITRAMFS="${ARM64_INITRAMFS:-arm64-initramfs.img}"
+fi
 SSHCFG=/home/azureuser/repose-ws/staging-ssh-config
 default=0 dry=0
 for a in "$@"; do
@@ -40,6 +47,12 @@ sum_of() { # <file> [given]
 	echo "$s"
 }
 
+# Every hash first, so a missing one stops the script before anything runs.
+for f in AMD64_IMAGE AMD64_KERNEL AMD64_INITRAMFS ARM64_IMAGE ARM64_KERNEL ARM64_INITRAMFS; do
+	[ -n "${!f:-}" ] || continue
+	v=$(sum_of "${!f}" "$(eval echo "\${${f}_SHA256:-}")") || exit 1
+	printf -v "${f}_SHA256" '%s' "$v"
+done
 args=(base publish --format erofs --version "$VERSION" --kernel-version "$KERNEL_VERSION"
 	--manifest-url "$MANIFEST_URL" --changelog "$CHANGELOG"
 	--amd64-url "${RELEASE_URL}${AMD64_IMAGE}" --amd64-sha256 "$(sum_of "$AMD64_IMAGE" "${AMD64_IMAGE_SHA256:-}")"

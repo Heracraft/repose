@@ -356,11 +356,12 @@ step_14-park() {
 }
 
 step_15-base-rotate() {
-	# Needs the second release: BASE2_RELEASE_URL, BASE2_VERSION,
-	# BASE2_KERNEL_VERSION, BASE2_CHANGELOG (and the file names, as
-	# publish-erofs.sh reads them).
+	# Needs the second release: BASE2_VERSION, BASE2_KERNEL_VERSION,
+	# BASE2_CHANGELOG; BASE2_RELEASE_URL defaults to the D-11 layout
+	# (releases/download/guest-<version>/).
 	cd "$RUN/work/a" || return 1
-	: "${BASE2_VERSION:?set BASE2_VERSION, BASE2_RELEASE_URL, BASE2_KERNEL_VERSION, BASE2_CHANGELOG for the second base}"
+	: "${BASE2_VERSION:?set BASE2_VERSION, BASE2_KERNEL_VERSION, BASE2_CHANGELOG for the second base}"
+	BASE2_RELEASE_URL="${BASE2_RELEASE_URL:-https://github.com/Heracraft/repose/releases/download/guest-${BASE2_VERSION}/}"
 	local before
 	before=$(status_json "$A" | jget 'd.get("base_version")'); note "base before: $before"
 	gx "$A" 'echo home-kept-$(date +%s) > ~/home-marker.txt; cat ~/home-marker.txt' | tee "$RUN/work/home-marker.txt"
