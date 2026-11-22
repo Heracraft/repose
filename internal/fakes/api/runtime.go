@@ -16,6 +16,11 @@ import (
 // erofs machine (internal/api/http.MsgNixConfigRetired).
 const MsgNixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services."
 
+// MsgMenuStale is the api's sentence for a config PUT whose
+// base_revision_id is not the project's current revision
+// (internal/api/http.MsgMenuStale, I-1528).
+const MsgMenuStale = "The configuration changed since you loaded it; reload it and make your change again."
+
 // SetDefaultGuestRuntime is settings.default_guest_runtime: what a create
 // gets when it names no runtime.
 func (f *Fake) SetDefaultGuestRuntime(runtime string) {
@@ -25,18 +30,21 @@ func (f *Fake) SetDefaultGuestRuntime(runtime string) {
 }
 
 // SetPendingBase sets a project's pending_base_version, as the base bump
-// does for an erofs project; "" clears it.
-func (f *Fake) SetPendingBase(projectID, version string) {
+// does for an erofs project; "" clears it. The next start boots it.
+func (f *Fake) SetPendingBase(projectID, version string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if p, ok := f.projects[projectID]; ok {
-		if version == "" {
-			p.PendingBaseVersion = nil
-		} else {
-			v := version
-			p.PendingBaseVersion = &v
-		}
+	p, ok := f.projects[projectID]
+	if !ok {
+		return fmt.Errorf("no project %s", projectID)
 	}
+	if version == "" {
+		p.PendingBaseVersion = nil
+	} else {
+		v := version
+		p.PendingBaseVersion = &v
+	}
+	return nil
 }
 
 // createRuntime is the api's rule, called under f.mu: the default, or what an exempt account

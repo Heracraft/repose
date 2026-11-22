@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1081 entries.
+1082 entries.
 
 ## Scope
 
@@ -1113,3 +1113,4 @@ pointer, not a summary.
 - **I-1490** Dashboard for an erofs project: the Config page shows the menu and the base, a one-line banner with Restart only while `pending_base_version` is set, and no Nix editor or machine.nix switch; Settings lists machine.nix only for an account with a Nix project; Add a host shows the x86 installer beside the Mac step, with the Mac image's download size and free disk (nonix-config-cli-web, 2026-11-22) — L39094
 - **I-1492** The public docs describe the Ubuntu base: Nix appears in one paragraph (machine.md "Older machines"), in the one sentence an erofs machine answers a Nix file with, and in a laptop CLI message; the agent guide test reads `images/guest/agent-guide.md` (nonix-config-cli-web, 2026-11-22) — L39101
 - **I-1504** A published bundle file is whole, or parts `<name>.part0`, `<name>.part1`, ... of at most 1900 MiB each concatenated in order; SHA256SUMS lists the parts, `<arch>-manifest.json` carries the whole file's SHA-256 and its parts, and a host fetches the parts when the whole-file URL answers 404 and checks the whole file's SHA-256 from the base row (nonix-hostd-parts, 2026-11-22) — L39107
+- **I-1528** `PUT /projects/:id/config` takes an optional `base_revision_id`, the revision the client last read; one that is not the project's current revision is `409 menu_stale` (nonix-contracts-2, 2026-11-22) — L39115

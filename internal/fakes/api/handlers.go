@@ -382,6 +382,11 @@ func (f *Fake) run(p *project) {
 	}
 	p.StartedAt = &now
 	p.Signals = &Signals{Agents: []AgentSignal{}, GuestdOK: true}
+	if p.GuestRuntime == "erofs" && p.PendingBaseVersion != nil {
+		// The boot takes the pending base and clears the mark, as the
+		// api's onErofsBooted does from booted_base_version (I-1464).
+		p.BaseVersion, p.PendingBaseVersion = *p.PendingBaseVersion, nil
+	}
 	// The api's event for a state change: kind guest_state_changed, the
 	// state as its summary (internal/api/events, I-609).
 	f.event(p, "guest_state_changed", "", "running")
@@ -1276,6 +1281,8 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
 		Fragment *string         `json:"fragment"`
 		Menu     json.RawMessage `json:"menu"`
+		// BaseRevisionID is the revision the client last saw (I-1528).
+		BaseRevisionID *string `json:"base_revision_id"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -1292,9 +1299,19 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 		// The api's refusal while a stop op is open.
 		return errf("conflict", "%s is %s", p.Slug, p.State)
 	}
+	if body.BaseRevisionID != nil && *body.BaseRevisionID != p.ConfigRevisionID {
+		// A stale tab (I-1528): another change landed since this
+		// client read the configuration.
+		return errf("menu_stale", "%s", MsgMenuStale).withDetail(map[string]any{"reason": "menu_stale", "current_revision_id": p.ConfigRevisionID})
+	}
 	if body.Fragment != nil && p.GuestRuntime == "erofs" {
 		// An erofs machine takes a menu only (I-1462).
 		return errf("nix_config_retired", "%s", MsgNixConfigRetired).withDetail(map[string]any{"reason": "nix_config_retired"})
+	}
+	if p.OpID != "" {
+		// An op is open on the project: the api's Enqueue refuses a
+		// second one (409 conflict), after the checks above.
+		return errf("conflict", "a build is in progress")
 	}
 	if p.GuestRuntime == "erofs" {
 		return f.putMenuErofs(w, p, body.Menu)
@@ -1424,7 +1441,7 @@ func (f *Fake) issueCert(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		line = sshca.Marshal(signed)
 	}
-	gwHost, gwPort := gatewayHost, 22
+	gwHost, gwPort := "127.0.0.1", FakeGatewayPort
 	if f.opts.GatewayHost != "" {
 		gwHost = f.opts.GatewayHost
 	}
@@ -1793,6 +1810,12 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 	}
 	f.copyMultiplexer(p, np)
 	copyHeld(p, np)
+	// The volume's layout is the runtime's, so a copy keeps it, as the
+	// api's insertRestored does (I-1462).
+	np.GuestRuntime = p.GuestRuntime
+	if np.GuestRuntime == "" {
+		np.GuestRuntime = "nix"
+	}
 	f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
 	return np, nil
 }
