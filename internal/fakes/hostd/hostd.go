@@ -857,7 +857,16 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			if code == "" {
 				g.Menu = c.ApplyConfig.GetMenu()
 			}
+			send := f.send
 			f.mu.Unlock()
+			// guestd's progress lines, which real hostd forwards as
+			// BuildLog under the command's id while the menu applies
+			// (DECISIONS I-1460, I-1536).
+			if send != nil {
+				for i, line := range menuLines(c.ApplyConfig.GetMenu(), code, msg) {
+					_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Log{Log: &hostdv1.BuildLog{CommandId: id, Seq: uint64(i + 1), Line: line}}}) // a dead stream ends Recv
+				}
+			}
 			if code != "" {
 				return errResult(id, code, msg)
 			}

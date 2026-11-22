@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -113,4 +115,43 @@ func TestRunRejectsEmptyArgv(t *testing.T) {
 	if err == nil {
 		t.Fatal("an empty argv was accepted")
 	}
+}
+
+// OnLine sees each line when the command writes it, not when it exits:
+// the first line of a command that then sleeps arrives well before the
+// command ends (DECISIONS I-1536).
+func TestOnLineStreamsWhileTheCommandRuns(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	var firstAt time.Time
+	start := time.Now()
+	res, err := ExecRunner{}.Run(context.Background(), RunSpec{
+		Argv: []string{"sh", "-c", "echo one; echo E: two >&2; sleep 1; echo three"},
+		Env:  []string{"PATH=/usr/bin:/bin:" + os.Getenv("PATH")},
+		OnLine: func(l string) {
+			mu.Lock()
+			defer mu.Unlock()
+			if len(got) == 0 {
+				firstAt = time.Now()
+			}
+			got = append(got, l)
+		},
+	})
+	end := time.Now()
+	if err != nil || res.ExitCode != 0 {
+		t.Fatalf("%v %+v", err, res)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	sort.Strings(got)
+	if strings.Join(got, "|") != "E: two|one|three" {
+		t.Fatalf("lines %q", got)
+	}
+	if end.Sub(firstAt) < 700*time.Millisecond {
+		t.Fatalf("first line came %s after the start and %s before the end: not streamed", firstAt.Sub(start), end.Sub(firstAt))
+	}
+	if string(res.Stdout) != "one\nthree\n" {
+		t.Fatalf("stdout tail %q", res.Stdout)
+	}
+	t.Logf("first line %s after start, command took %s", firstAt.Sub(start), end.Sub(start))
 }

@@ -216,7 +216,7 @@ test('a failed install is said at the Apply bar, in view', async ({ page }) => {
 		await page.getByRole('button', { name: 'Apply', exact: true }).click();
 		const status = page.locator('.cbar-status');
 		await expect(status).toContainText(
-			'Not installed: repose-fake-missing failed: E: Unable to locate package repose-fake-missing',
+			'Not installed: repose-fake-missing failed: E: Unable to locate package repose-fake-missing (apt-get exited 100)',
 			{ timeout: 10_000 }
 		);
 		await expect(status).toBeInViewport();

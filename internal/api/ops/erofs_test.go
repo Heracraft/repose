@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -162,6 +163,10 @@ func TestErofsCreateMenuAndStart(t *testing.T) {
 		apply.Menu.Items[0].Id != "postgresql" || apply.Menu.Items[1].Package != "ffmpeg" {
 		t.Fatalf("ApplyConfig: %+v", apply)
 	}
+	// guestd's lines, which hostd forwards as BuildLog under the
+	// command's id, are the op's log (DECISIONS I-1536): an apply_config
+	// command is bound to its op as a build's is.
+	assertOpLog(t, h, op.ID, "installing postgresql", "postgresql ready", "installing ffmpeg", "ffmpeg installed")
 	rev, _ := store.GetRevision(h.Ctx, h.Pool, rid)
 	if rev.Status != "applied" || *h.Project(pid).ConfigRevisionID != rid {
 		t.Fatalf("revision after apply: %s", rev.Status)
@@ -229,6 +234,7 @@ func TestErofsMenuFailure(t *testing.T) {
 	if op.State != "error" {
 		t.Fatalf("a failed menu finished %s", op.State)
 	}
+	assertOpLog(t, h, op.ID, "installing postgresql", "postgresql: apt-get install failed")
 	if rev, _ := store.GetRevision(h.Ctx, h.Pool, rid); rev.Status != "failed" {
 		t.Fatalf("revision %s after a failed menu", rev.Status)
 	}
@@ -282,4 +288,26 @@ func TestErofsPlacement(t *testing.T) {
 	if _, err := place("erofs"); !errors.As(err, &refused) || refused.Detail["reason"] != "no_runtime_host" {
 		t.Fatalf("erofs on an arch with no image: %v", err)
 	}
+}
+
+// assertOpLog fails unless the op's stored log is want, line for line:
+// guestd's lines, and no api line whose seq could take one of theirs.
+func assertOpLog(t *testing.T, h *apitest.Harness, opID uuid.UUID, want ...string) {
+	t.Helper()
+	var got []string
+	for i := 0; i < 50; i++ {
+		lines, err := h.Logs.Read(h.Ctx, opID, 0, 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = got[:0]
+		for _, l := range lines {
+			got = append(got, l.Line)
+		}
+		if slices.Equal(got, want) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("op log %q want %q", got, want)
 }

@@ -52,13 +52,31 @@ func (g *simGuest) Run(_ context.Context, spec sysdep.RunSpec) (sysdep.RunResult
 		return sysdep.RunResult{ExitCode: code, Stdout: []byte(out.String())}, nil
 	case "apt-get":
 		verb, pkgs := aptVerb(argv)
-		switch verb {
-		case "install":
-			for _, p := range pkgs {
-				if g.failPkgs[p] {
-					return sysdep.RunResult{ExitCode: 100}, nil
+		say := func(lines ...string) {
+			if spec.OnLine != nil {
+				for _, l := range lines {
+					spec.OnLine(l)
 				}
 			}
+		}
+		switch verb {
+		case "update":
+			say("Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease", "Reading package lists...")
+		case "install":
+			say("Reading package lists...", "Building dependency tree...")
+			for _, p := range pkgs {
+				if g.failPkgs[p] {
+					say("E: Unable to locate package " + p)
+					return sysdep.RunResult{ExitCode: 100, Stderr: []byte("E: Unable to locate package " + p + "\n")}, nil
+				}
+			}
+			say("0 upgraded, 3 newly installed, 0 to remove and 0 not upgraded.",
+				"Need to get 1,526 kB of archives.",
+				"Get:1 http://archive.ubuntu.com/ubuntu noble/main amd64 libjemalloc2 amd64 5.3.0-2build1 [256 kB]",
+				"Unpacking libjemalloc2:amd64 (5.3.0-2build1) ...",
+				"Unpacking "+pkgs[0]+" ...",
+				"Setting up libjemalloc2:amd64 (5.3.0-2build1) ...",
+				"Setting up "+pkgs[0]+" ...")
 			for _, p := range pkgs {
 				g.pkgs[p] = true
 			}
@@ -318,7 +336,7 @@ func TestAFailingItemDoesNotStopTheOthers(t *testing.T) {
 	if res.GetErrorCode() != CodeMenuFailed {
 		t.Fatalf("error_code = %q, want menu_failed (lines %q)", res.GetErrorCode(), lines)
 	}
-	if res.GetLine() != "ffmpeg failed: apt-get exited 100" {
+	if res.GetLine() != "ffmpeg failed: E: Unable to locate package ffmpeg (apt-get exited 100)" {
 		t.Fatalf("final line %q", res.GetLine())
 	}
 	if !g.pkgs["postgresql-16"] || !g.active["repose-svc-postgresql.service"] || !g.mise["bun@1"] {
@@ -524,4 +542,37 @@ func ranCmd(g *simGuest, prefix string) bool {
 		}
 	}
 	return false
+}
+
+// A line per item and per step of it, as each happens, and a failure
+// that carries apt's own E: line and its exit code (DECISIONS I-1536).
+// apt's other output never reaches a line.
+func TestApplyMenuSaysEachStepAndAptsError(t *testing.T) {
+	p := erofsRoot(t)
+	g := newSim()
+	g.failPkgs["ffmpeg-typo"] = true
+	h := newHandler(t, p, g)
+	res, lines := run(h, menuOf(id("redis"), pkg("ffmpeg-typo")), false)
+	want := []string{
+		"installing redis",
+		"redis: updating package lists",
+		"redis: installing 3 packages (1,526 kB)",
+		"redis: unpacking",
+		"redis: setting up",
+		"redis: starting repose-svc-redis.service",
+		"redis ready on 127.0.0.1:6379",
+		"installing ffmpeg-typo",
+		"ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo (apt-get exited 100)",
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("lines:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+	if res.GetErrorCode() != CodeMenuFailed || res.GetLine() != want[len(want)-1] {
+		t.Fatalf("final %+v", res)
+	}
+	for _, l := range lines {
+		if strings.Contains(l, "Get:") || strings.Contains(l, "libjemalloc") || strings.Contains(l, "Reading package") {
+			t.Fatalf("apt output reached a line: %q", l)
+		}
+	}
 }

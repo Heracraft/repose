@@ -607,10 +607,10 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			log.Error("op send record", "event", "op_fail", "err", err.Error())
 			return
 		}
-		if ph == "build" {
+		if logsLines(ph) {
 			e.logs.Bind(cmd.CommandId, op.ID, hostID)
 		}
-		if ph == PhaseApplyConfig && op.Kind == KindBuild {
+		if ph == PhaseApplyConfig && op.Kind == KindBuild && slices.Contains(phases(op), PhaseBuild) {
 			// The build's log goes on into its apply, so a client
 			// streaming it learns the phase changed (DECISIONS I-320).
 			if err := e.logs.Note(ctx, op.ID, ApplyLogLine); err != nil {
@@ -758,7 +758,7 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 			continue
 		}
 		cmd.CommandId = op.CommandID.String()
-		if currentPhase(op) == "build" {
+		if logsLines(currentPhase(op)) {
 			e.logs.Bind(cmd.CommandId, op.ID, hostID)
 		}
 		e.log.Info("re-sending unfinished command after Hello", "event", "command_resend", "op_id", op.ID.String(), "command_id", cmd.CommandId)
@@ -1126,3 +1126,10 @@ func (e *Engine) finishedHook() func(ctx context.Context, op *store.Op) {
 	defer e.onFinishedMu.RUnlock()
 	return e.onFinished
 }
+
+// logsLines is a phase whose command streams BuildLog lines into the op's
+// log: a build's Nix output, and an apply_config's, which on an erofs
+// guest carries guestd's ApplyMenu lines (DECISIONS I-1536). Without the
+// binding the store refuses every line, and a menu change showed nothing
+// between its start and its end.
+func logsLines(phase string) bool { return phase == PhaseBuild || phase == PhaseApplyConfig }

@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -27,6 +29,11 @@ type RunSpec struct {
 	Stdin []byte
 	// MaxOutput caps each of stdout and stderr. Zero means DefaultMaxOutput.
 	MaxOutput int
+	// OnLine, when set, is called with each line of stdout and stderr as
+	// the command writes it, not at its end (DECISIONS I-1536): what
+	// ApplyMenu reads apt's phases from while apt runs. It is called from
+	// the reader goroutines, one line at a time, and must not block.
+	OnLine func(line string)
 }
 
 // DefaultMaxOutput is the per-stream cap when a RunSpec does not set one.
@@ -95,6 +102,20 @@ func (r ExecRunner) Run(ctx context.Context, spec RunSpec) (RunResult, error) {
 	cmd.Env = spec.Env
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	var outLines, errLines *lineWriter
+	if spec.OnLine != nil {
+		// stdout and stderr are copied by two goroutines; OnLine sees one
+		// line at a time.
+		var mu sync.Mutex
+		one := func(l string) {
+			mu.Lock()
+			defer mu.Unlock()
+			spec.OnLine(l)
+		}
+		outLines, errLines = &lineWriter{fn: one}, &lineWriter{fn: one}
+		cmd.Stdout = io.MultiWriter(&stdout, outLines)
+		cmd.Stderr = io.MultiWriter(&stderr, errLines)
+	}
 	if len(spec.Stdin) > 0 {
 		cmd.Stdin = bytes.NewReader(spec.Stdin)
 	}
@@ -108,6 +129,10 @@ func (r ExecRunner) Run(ctx context.Context, spec RunSpec) (RunResult, error) {
 	}
 
 	runErr := cmd.Run()
+	if outLines != nil {
+		outLines.flush()
+		errLines.flush()
+	}
 	res := RunResult{
 		Stdout:    stdout.Bytes(),
 		Stderr:    stderr.Bytes(),
@@ -247,3 +272,47 @@ func (t *tailBuffer) Write(p []byte) (int, error) {
 }
 
 func (t *tailBuffer) Bytes() []byte { return t.buf }
+
+// lineWriter calls fn with each complete line written to it; the last
+// line without a newline is passed on by flush. A line longer than
+// MaxStreamLine is cut there, so one without a newline (a progress bar
+// redrawn with \r) cannot grow without end.
+type lineWriter struct {
+	fn  func(string)
+	buf []byte
+}
+
+// MaxStreamLine caps one line OnLine is given.
+const MaxStreamLine = 4 << 10
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	for len(p) > 0 {
+		i := bytes.IndexAny(p, "\r\n")
+		if i < 0 {
+			w.buf = append(w.buf, p...)
+			if len(w.buf) > MaxStreamLine {
+				w.fn(string(w.buf[:MaxStreamLine]))
+				w.buf = w.buf[:0]
+			}
+			break
+		}
+		w.buf = append(w.buf, p[:i]...)
+		if len(w.buf) > 0 {
+			if len(w.buf) > MaxStreamLine {
+				w.buf = w.buf[:MaxStreamLine]
+			}
+			w.fn(string(w.buf))
+		}
+		w.buf = w.buf[:0]
+		p = p[i+1:]
+	}
+	return n, nil
+}
+
+func (w *lineWriter) flush() {
+	if len(w.buf) > 0 {
+		w.fn(string(w.buf))
+		w.buf = w.buf[:0]
+	}
+}

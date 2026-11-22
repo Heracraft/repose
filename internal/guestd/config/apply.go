@@ -145,6 +145,16 @@ type apply struct {
 	aptUpdated bool
 	failures   []failure
 	changed    int
+	// cur is the item being worked on: the prefix of its step lines.
+	cur string
+}
+
+// step says one step of the current item: "<item>: <what>" (DECISIONS
+// I-1536). The CLI shows it as the running phase of the item's line.
+func (a *apply) step(what string) {
+	if a.cur != "" {
+		a.progress(a.cur + ": " + what)
+	}
 }
 
 // Apply makes the guest match spec and returns the final
@@ -364,6 +374,8 @@ func (a *apply) ensure(ctx context.Context, w *want) (installed []string, err er
 		return nil, nil
 	}
 	a.changed++
+	a.cur = w.label
+	defer func() { a.cur = "" }()
 	a.progress("installing " + w.label)
 
 	for _, s := range r.AptSources {
@@ -393,11 +405,13 @@ func (a *apply) ensure(ctx context.Context, w *want) (installed []string, err er
 		}
 	}
 	if r.Download != nil {
+		a.step("downloading " + r.Recipe.Download.Name + " " + r.Recipe.Download.Version)
 		if err := a.download(ctx, r); err != nil {
 			return installed, err
 		}
 	}
 	for _, spec := range r.Mise {
+		a.step("installing " + spec + " with mise")
 		if err := a.dev(ctx, "mise", "mise", "use", "-g", spec); err != nil {
 			return installed, err
 		}
@@ -536,6 +550,7 @@ func (a *apply) ensureService(ctx context.Context, r *Rendered) error {
 	if changed {
 		verb = "restart"
 	}
+	a.step("starting " + unit)
 	if err := a.root(ctx, "systemctl", "systemctl", verb, unit); err != nil {
 		return fmt.Errorf("its unit did not start (%v)", err)
 	}
@@ -554,6 +569,8 @@ func (a *apply) ensurePackage(ctx context.Context, w *want) ([]string, error) {
 	st := a.aptStatus(ctx, []string{w.pkg})
 	if !st[w.pkg] {
 		a.changed++
+		a.cur = w.pkg
+		defer func() { a.cur = "" }()
 		a.progress("installing " + w.pkg)
 		if err := a.aptInstall(ctx, []string{w.pkg}); err != nil {
 			return nil, err
@@ -591,6 +608,7 @@ func (a *apply) replayManual(ctx context.Context, wants []*want) {
 			continue
 		}
 		a.changed++
+		a.cur = name
 		a.progress("installing " + name + " again")
 		if err := a.aptInstall(ctx, []string{name}); err != nil {
 			a.progress("could not install " + name + " again: " + err.Error())
@@ -598,6 +616,7 @@ func (a *apply) replayManual(ctx context.Context, wants []*want) {
 		}
 		a.progress(name + " installed")
 	}
+	a.cur = ""
 }
 
 // remove undoes an item the menu no longer has. A service's data
@@ -723,6 +742,7 @@ func (a *apply) aptUpdate(ctx context.Context) error {
 	if a.aptUpdated {
 		return nil
 	}
+	a.step("updating package lists")
 	if err := a.root(ctx, "apt-get", "apt-get", "-o", "DPkg::Lock::Timeout=300", "-q", "update"); err != nil {
 		return err
 	}
@@ -735,7 +755,67 @@ func (a *apply) aptInstall(ctx context.Context, pkgs []string) error {
 		return err
 	}
 	argv := append([]string{"apt-get", "-o", "DPkg::Lock::Timeout=300", "-q", "-y", "--no-install-recommends", "install"}, pkgs...)
-	return a.root(ctx, "apt-get", argv...)
+	ph := &aptPhases{step: a.step}
+	return a.runStep(ctx, "apt-get", sysdep.RunSpec{Argv: argv, Env: a.h.rootEnv(), OnLine: ph.line})
+}
+
+var (
+	aptCountRe = regexp.MustCompile(`^\d+ upgraded, (\d+) newly installed`)
+	aptSizeRe  = regexp.MustCompile(`^Need to get (.+) of archives\.`)
+)
+
+// aptPhases turns apt-get install's own lines into one step line per
+// phase as it starts: how many packages and how much to download, then
+// unpacking, then setting up. Nothing apt prints is passed on as it is
+// (DECISIONS I-1536).
+type aptPhases struct {
+	step                   func(string)
+	count                  string
+	said, unpack, settings bool
+}
+
+func (p *aptPhases) line(l string) {
+	switch {
+	case aptCountRe.MatchString(l):
+		p.count = aptCountRe.FindStringSubmatch(l)[1]
+	case aptSizeRe.MatchString(l):
+		if p.count != "" && p.count != "0" && !p.said {
+			p.said = true
+			p.step("installing " + packages(p.count) + " (" + aptSizeRe.FindStringSubmatch(l)[1] + ")")
+		}
+	case strings.HasPrefix(l, "Unpacking ") && !p.unpack:
+		if p.count != "" && p.count != "0" && !p.said {
+			p.said = true
+			p.step("installing " + packages(p.count))
+		}
+		p.unpack = true
+		p.step("unpacking")
+	case strings.HasPrefix(l, "Setting up ") && !p.settings:
+		p.settings = true
+		p.step("setting up")
+	}
+}
+
+func packages(n string) string {
+	if n == "1" {
+		return "1 package"
+	}
+	return n + " packages"
+}
+
+// aptError is the last "E: " line in apt's output: apt's own words for
+// why it failed, which the user reads (DECISIONS I-1536).
+func aptError(out []byte) string {
+	last := ""
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); strings.HasPrefix(l, "E: ") {
+			last = l
+		}
+	}
+	if len(last) > 300 {
+		last = last[:300]
+	}
+	return last
 }
 
 func (a *apply) aptRemove(ctx context.Context, pkgs []string) error {
@@ -795,6 +875,11 @@ func (a *apply) runStep(ctx context.Context, what string, spec sysdep.RunSpec) e
 		return fmt.Errorf("%s could not run", what)
 	}
 	if res.ExitCode != 0 {
+		if what == "apt-get" {
+			if e := aptError(append(append([]byte(nil), res.Stdout...), res.Stderr...)); e != "" {
+				return fmt.Errorf("%s (%s exited %d)", e, what, res.ExitCode)
+			}
+		}
 		return fmt.Errorf("%s exited %d", what, res.ExitCode)
 	}
 	return nil
