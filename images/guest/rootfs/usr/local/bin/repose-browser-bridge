@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+case "${1:-}" in
+  on)
+    systemctl stop repose-browser-proxy.service repose-browser.socket
+    systemctl start repose-browser-bridge.socket
+    ;;
+  off)
+    systemctl stop repose-browser-bridge-proxy.service repose-browser-bridge.socket
+    systemctl start repose-browser.socket
+    ;;
+  status)
+    if systemctl is-active --quiet repose-browser-bridge.socket; then echo on; else echo off; fi
+    ;;
+  tunnel)
+    # Is a laptop's end listening: sshd's listener for the
+    # reverse forward, gone when the ssh that carried it ended.
+    ss -Hltn "sport = :9226" | grep -q LISTEN
+    ;;
+  release)
+    # Make room for a new bridge: end the ssh session that holds
+    # the port from before (a laptop that slept keeps its listener
+    # until sshd's ClientAlive gives up on it, two minutes). The
+    # session process runs as dev, so dev sees and may kill it.
+    for pid in $(ss -Hltnp "sport = :9226" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
+      kill "$pid" 2>/dev/null || true
+    done
+    for _ in $(seq 1 20); do
+      ss -Hltn "sport = :9226" | grep -q LISTEN || exit 0
+      sleep 0.1
+    done
+    echo "port 9226 is still held" >&2
+    exit 1
+    ;;
+  *)
+    echo "usage: repose-browser-bridge on|off|status|tunnel|release" >&2
+    exit 64
+    ;;
+esac

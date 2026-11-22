@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+state=$(systemctl --user show -p ActiveState --value repose-herdr-server.service 2>/dev/null || true)
+case "$state" in
+  active|activating|reloading) ;;
+  *) exit 0 ;;
+esac
+# Bounded by wall time, not by tries: the step runs as
+# ExecStartPost, inside the unit's start timeout and guestd's
+# SetupProject budget, and a herdr that accepts the connection
+# without answering (while it restores session.json) would make a
+# count of tries take minutes. Each try gets at most 2 s of the 10.
+list=
+deadline=$((SECONDS + 10))
+while [ "$SECONDS" -lt "$deadline" ]; do
+  left=$((deadline - SECONDS))
+  if [ "$left" -gt 2 ]; then left=2; fi
+  if list=$(timeout "$left" herdr workspace list 2>/dev/null); then
+    break
+  fi
+  list=
+  sleep 0.25
+done
+if [ -z "$list" ]; then
+  echo "repose-herdr-workspace: herdr did not answer within 10 s" >&2
+  exit 0
+fi
+dir=$(repose-checkout)
+old=
+if [ "$dir" = "${HOME:-/home/dev}" ]; then
+  label=home
+else
+  label=checkout
+  old=$(basename "$dir")
+fi
+if printf '%s' "$list" | jq -e --arg l "$label" \
+  '[.result.workspaces[]? | select(.label == $l)] | length > 0' >/dev/null 2>&1; then
+  exit 0
+fi
+# The label before I-597: the workspace is the checkout's, renamed
+# with its tabs and agents.
+if [ -n "$old" ] && [ "$old" != home ] && [ "$old" != checkout ]; then
+  id=$(printf '%s' "$list" | jq -r --arg l "$old" \
+    'first(.result.workspaces[]? | select(.label == $l) | .workspace_id) // empty' 2>/dev/null || true)
+  if [ -n "$id" ] && timeout 5 herdr workspace rename "$id" checkout >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+if ! timeout 5 herdr workspace create --cwd "$dir" --label "$label" --no-focus >/dev/null; then
+  echo "repose-herdr-workspace: herdr could not create the workspace $label" >&2
+  exit 1
+fi

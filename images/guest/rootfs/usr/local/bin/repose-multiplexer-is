@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+want="${1:-}"
+case "$want" in
+  tmux) other=repose-herdr-server.service ;;
+  herdr) other=repose-tmux-session.service ;;
+  *) echo "usage: repose-multiplexer-is tmux|herdr" >&2; exit 2 ;;
+esac
+project="${HOME:-/home/dev}/.repose/project.json"
+[ -s "$project" ] || exit 1
+have=$(jq -r '.multiplexer // "tmux"' "$project" 2>/dev/null || echo tmux)
+[ "$have" = herdr ] || have=tmux
+[ "$have" = "$want" ] || exit 1
+if systemctl --user -q is-active "$other" 2>/dev/null; then
+  exit 1
+fi
+exit 0

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+config="${XDG_CONFIG_HOME:-$HOME/.config}/herdr"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/repose/herdr-conf.sha256"
+running=
+if [ -S "$config/herdr.sock" ]; then
+  running=1
+  repose-herdr-config || true
+fi
+sum=none
+if [ -r "$config/config.toml" ]; then
+  sum=$(sha256sum < "$config/config.toml" | cut -d' ' -f1)
+fi
+old=$(cat "$state" 2>/dev/null || true)
+mkdir -p "$(dirname "$state")"
+printf '%s\n' "$sum" > "$state"
+if [ -z "$running" ] || [ -z "$old" ] || [ "$old" = "$sum" ]; then
+  exit 0
+fi
+timeout 10 herdr server reload-config >/dev/null 2>&1 || true

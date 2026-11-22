@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: repose-browser-unlock PROFILE" >&2
+  exit 64
+fi
+dir=$1
+lock=$dir/SingletonLock
+[ -L "$lock" ] || [ -e "$lock" ] || exit 0
+target=$(readlink "$lock" 2>/dev/null || true)
+pid=${target##*-}
+case "$pid" in
+  "" | *[!0-9]*) ;;
+  *)
+    if [ -r "/proc/$pid/cmdline" ]; then
+      cmdline=" $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true) "
+      case "$cmdline" in
+        *" --user-data-dir=$dir "*) exit 0 ;;
+      esac
+    fi
+    ;;
+esac
+rm -f "$dir/SingletonLock" "$dir/SingletonSocket" "$dir/SingletonCookie"
+echo "removed a stale profile lock (${target:-unreadable})"

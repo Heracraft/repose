@@ -43,6 +43,9 @@ bin/
 # The host scripts of the appliance and the x86 installer are source
 # (DECISIONS I-1540): build.sh and embed.sh read them.
 !images/appliance-arm64/**/bin/
+# The erofs guest's /usr/local/bin scripts are source too (DECISIONS
+# I-1554): the Dockerfile copies rootfs/ whole, and its units call them.
+!images/guest/rootfs/usr/local/bin/
 dist/
 *.tfstate
 *.tfstate.backup

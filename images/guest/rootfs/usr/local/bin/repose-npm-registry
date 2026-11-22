@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+f="$HOME/.npmrc"
+m="$HOME/.repose/npm-registry"
+if [ -e "$m" ]; then
+  exit 0
+fi
+mkdir -p "$HOME/.repose"
+if [ -f "$f" ] && grep -Eq '^[[:space:]]*registry[[:space:]]*=|registry\.npmjs\.org/:_' "$f"; then
+  echo "$f names its own registry or a registry.npmjs.org token; leaving it alone"
+  echo own > "$m"
+  exit 0
+fi
+# Any answer from the front means it is there; 000 is no answer.
+for _ in 1 2 3 4 5 6; do
+  code=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://10.63.255.254:4873/-/ping || true)
+  if [ "$code" != "000" ] && [ -n "$code" ]; then
+    printf '# repose: this host'"'"'s npm cache (DECISIONS I-202). Delete these two lines to use the registry directly.\nregistry=%s\n' http://10.63.255.254:4873/ >> "$f"
+    echo added > "$m"
+    echo "npm registry set to the host's cache"
+    exit 0
+  fi
+  sleep 10
+done
+echo "the host's npm cache did not answer; $f unchanged, tried again at the next boot"

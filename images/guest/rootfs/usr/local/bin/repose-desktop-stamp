@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+dir=${REPOSE_DESKTOP_DIR:-/run/repose/desktop}
+owner=${REPOSE_DESKTOP_OWNER:-dev:dev}
+for name in "$@"; do
+  touch "$dir/$name"
+  chown "$owner" "$dir/$name"
+done

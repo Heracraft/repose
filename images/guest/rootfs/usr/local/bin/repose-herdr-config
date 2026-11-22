@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+dir="${XDG_CONFIG_HOME:-${HOME:-/home/dev}/.config}/herdr"
+cfg="$dir/config.toml"
+if [ -e "$cfg" ] || [ -L "$cfg" ]; then
+  exit 0
+fi
+mkdir -p "$dir"
+# home-manager moves a real file aside to config.toml.repose-bak
+# when a machine.nix starts managing config.toml, and refuses the
+# next activation while that backup exists. When the machine.nix
+# stops managing it, the file it moved aside comes back, so a later
+# machine.nix that manages it again finds no backup in the way.
+bak="$cfg.repose-bak"
+if [ -f "$bak" ] && [ ! -L "$bak" ]; then
+  mv -n "$bak" "$cfg"
+  exit 0
+fi
+tmp=$(mktemp -p "$dir" .config.toml.XXXXXX)
+cat /usr/local/share/repose/herdr-config.toml > "$tmp"
+chmod 0644 "$tmp"
+mv -n "$tmp" "$cfg"
+rm -f "$tmp"

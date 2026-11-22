@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+user=$(id -un)
+# shellcheck disable=SC2016 # expanded by the login shell
+out=$(timeout 10 env -i HOME="${HOME:-/home/$user}" USER="$user" LOGNAME="$user" \
+  /usr/bin/bash -lc 'printf "\n__repose_login_path=%s\n" "$PATH"' </dev/null 2>/dev/null || true)
+path=$(printf '%s\n' "$out" | sed -n 's/^__repose_login_path=//p' | tail -n 1)
+if [ -n "$path" ]; then
+  printf '%s\n' "$path"
+fi

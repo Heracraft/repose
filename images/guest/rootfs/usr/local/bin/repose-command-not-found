@@ -1,0 +1,40 @@
+#!/bin/sh
+# bash's command_not_found_handle (devtools.nix, DECISIONS I-219, I-517,
+# I-630): a command still being installed by the tools carry says so, the
+# commands whose package is the wrong answer here get the right one, and
+# every other name goes to Ubuntu's command-not-found, which names the apt
+# package that has it.
+cmd=${1:-}
+[ -n "$cmd" ] || exit 127
+installing="/run/user/$(id -u)/repose-installing"
+if [ -r "$installing" ] && grep -qxF -- "$cmd" "$installing"; then
+  printf '%s is still being installed; try again in a moment\n' "$cmd" >&2
+  exit 127
+fi
+case "$cmd" in
+  pip | pip3)
+    {
+      printf '%s: command not found\n' "$cmd"
+      printf '  %-48s  %s\n' "python3 -m venv .venv && . .venv/bin/activate" "a virtual environment, with pip in it"
+      printf '  %-48s  %s\n' "uv tool install NAME" "install a Python command-line tool"
+    } >&2
+    exit 127 ;;
+  repose)
+    {
+      printf 'repose: command not found\n'
+      printf 'The repose CLI runs on your laptop. On this machine: repose-ask, repose-notify, repose-checkout.\n'
+    } >&2
+    exit 127 ;;
+  crontab | cron | crond | at)
+    {
+      printf '%s: command not found\n' "$cmd"
+      printf 'This machine has no cron; a systemd user timer runs a job on a schedule: https://repose.run/docs/machine#scheduled-jobs\n'
+    } >&2
+    exit 127 ;;
+esac
+if [ -x /usr/lib/command-not-found ]; then
+  /usr/lib/command-not-found -- "$cmd"
+else
+  printf '%s: command not found\n' "$cmd" >&2
+fi
+exit 127

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1109 entries.
+1110 entries.
 
 ## Scope
 
@@ -1096,7 +1096,7 @@ pointer, not a summary.
 - **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38954
 - **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
 - **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — amended by I-1464; L38976
-- **I-1466** The erofs guest: Ubuntu 24.04 from `images/guest/Dockerfile`, flattened to `rootfs.erofs`, booted through a BusyBox initramfs that composes it with the project's ext4 volume, with `nix/guest/base` ported as files (nonix-guest-image, 2026-11-22) — L38987
+- **I-1466** The erofs guest: Ubuntu 24.04 from `images/guest/Dockerfile`, flattened to `rootfs.erofs`, booted through a BusyBox initramfs that composes it with the project's ext4 volume, with `nix/guest/base` ported as files (nonix-guest-image, 2026-11-22) — amended by I-1554; L38987
 - **I-1468** The guest base is published as one GitHub release `guest-<version>` per version, never marked latest, with each architecture's files named `<arch>-<file>` (nonix-guest-image, 2026-11-22) — partly amended by I-1506; L38997
 - **I-1470** `images/guest/versions.json` is the agents' list; `scripts/bump-agents.sh` writes it and copies it byte for byte to `nix/overlay/agents/versions.json`, and it pins `playwright-mcp` (nonix-guest-image, 2026-11-22) — L39003
 - **I-1472** The erofs guest's machine guide is `images/guest/agent-guide.md`; `nix/guest/base/agent-guide.md` stays the NixOS guest's (nonix-guest-image, 2026-11-22) — L39008
@@ -1141,3 +1141,4 @@ pointer, not a summary.
 - **I-1546** The dashboard says the same: Settings > Hosts' Remove question counts the snapshots it deletes; Recently destroyed and the Snapshots tab show "gone with host NAME" with no Restore; the Overview's Destroy card and its toast say where an own-host machine's snapshot is kept (nonix-config-cli-web-5, 2026-11-22) — L39259
 - **I-1550** Every guest@ unit on a host without Nix stops before the image cache volume goes: its drop-in orders it After= `repose-images-volume.service` and `blk-availability.service` and RequiresMountsFor=/var/lib/repose/images, and build.sh refuses an appliance without it (nonix-appliances-6, 2026-11-22) — L39261
 - **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39266
+- **I-1554** The erofs guest's `/usr/local/bin` scripts are source and tracked in git, and the image build fails when a systemd unit names a `/usr/local` path the root does not have, or one that is not executable (guest-bin-fix, 2026-11-22) — L39273
