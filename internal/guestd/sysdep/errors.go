@@ -15,7 +15,19 @@ const (
 	// CodeStorePathHidden: a Switch whose closure, or a path of it, an
 	// overlayfs whiteout in the guest's own store hides (DECISIONS I-589).
 	CodeStorePathHidden = "store_path_hidden"
+	// CodeUnimplemented: a request this guest's runtime does not have
+	// (Switch and RegisterPaths on an erofs guest, ApplyMenu on a Nix
+	// one; DECISIONS I-1460).
+	CodeUnimplemented = "unimplemented"
+	// CodeMenuFailed: an ApplyMenu item did not install or start
+	// (DECISIONS I-1460).
+	CodeMenuFailed = "menu_failed"
 )
+
+// Unimplemented is a request the guest's runtime does not serve.
+func Unimplemented(format string, args ...any) error {
+	return Errf(CodeUnimplemented, format, args...)
+}
 
 // CodedError carries one of those codes alongside the message hostd surfaces.
 type CodedError struct {
