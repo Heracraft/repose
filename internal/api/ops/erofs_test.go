@@ -176,6 +176,11 @@ func TestErofsCreateMenuAndStart(t *testing.T) {
 	if op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Phases: ops.PlanStop()})); op.State != "done" {
 		t.Fatalf("stop: %+v", op.Error)
 	}
+	// The stop's snapshot carries the base it was taken on, from the wire.
+	var snapBase *string
+	if err := h.Pool.QueryRow(h.Ctx, "select base_version from snapshots where project_id = $1 order by taken_at desc limit 1", pid).Scan(&snapBase); err != nil || snapBase == nil || *snapBase != "2026.11.22.1" {
+		t.Fatalf("snapshot base_version %v %v", snapBase, err)
+	}
 	if op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &pid, Phases: ops.PlanStartFor(h.Project(pid), true)})); op.State != "done" {
 		t.Fatalf("start: %+v", op.Error)
 	}

@@ -1394,7 +1394,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		return e.setState(ctx, p, "running")
 	case PhaseStopGuest:
 		if s := res.GetStop(); s != nil && s.BlobPath != "" {
-			if err := e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, "stop"); err != nil {
+			if err := e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, s.BaseVersion, "stop"); err != nil {
 				return err
 			}
 		}
@@ -1407,7 +1407,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if s == nil || s.BlobPath == "" {
 			return errors.New("snapshot result without a blob path")
 		}
-		return e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, snapshotReason(op))
+		return e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, s.BaseVersion, snapshotReason(op))
 	case PhaseDestroyGuest:
 		if op.Kind != KindDestroy {
 			// Restore: the old guest is gone and hostd has released its
@@ -1477,7 +1477,7 @@ const ForkSnapshotTTL = 24 * time.Hour
 
 // recordSnapshot writes the snapshot row. sha256 is the digest hostd
 // computed while uploading, "" from a hostd older than I-462.
-func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, sha256, reason string) error {
+func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, sha256, baseVersion, reason string) error {
 	id := store.NewID()
 	var expires *time.Time
 	if op.Kind == KindDestroy {
@@ -1491,10 +1491,10 @@ func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Proj
 		expires = &t
 	}
 	var got uuid.UUID
-	err := e.pool.QueryRow(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, sha256, base_version) values ($1, $2, $3, $4, $5, $6, now(), $7, nullif($8, ''), (select base_version from projects where id = $2))
+	err := e.pool.QueryRow(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, sha256, base_version) values ($1, $2, $3, $4, $5, $6, now(), $7, nullif($8, ''), coalesce(nullif($9, ''), (select base_version from projects where id = $2)))
 		on conflict (blob_path) do update set reason = excluded.reason, bytes = greatest(snapshots.bytes, excluded.bytes), expires_at = coalesce(excluded.expires_at, snapshots.expires_at), sha256 = coalesce(snapshots.sha256, excluded.sha256)
 		where snapshots.project_id = excluded.project_id
-		returning id`, id, p.ID, p.HostID, blobPath, bytes, reason, expires, sha256).Scan(&got)
+		returning id`, id, p.ID, p.HostID, blobPath, bytes, reason, expires, sha256, baseVersion).Scan(&got)
 	if err != nil {
 		return err
 	}

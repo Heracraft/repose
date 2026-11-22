@@ -274,6 +274,9 @@ type op struct {
 	// finished is when a delayed op ended; an op that ended when it was
 	// made reads as finished at created.
 	finished *time.Time
+	// lines is the op's log when it is not the Nix build's buildLines:
+	// an erofs menu's ApplyMenu lines (I-1460).
+	lines []string
 }
 
 type cert struct {

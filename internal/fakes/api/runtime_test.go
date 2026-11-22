@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -38,4 +39,35 @@ func TestGuestRuntimeFake(t *testing.T) {
 		t.Fatalf("default erofs: %+v", e)
 	}
 	wantErr(t, call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "ero4", "class": "large", "guest_runtime": "x"}), http.StatusBadRequest, "invalid")
+}
+
+// An erofs menu PUT validates apt names and logs ApplyMenu's lines.
+func TestErofsMenuFake(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "ero", "class": "large", "guest_runtime": "erofs"})
+	want(t, r, http.StatusCreated)
+	var p Project
+	r.json(t, &p)
+	path := "/v1/projects/" + p.ID + "/config"
+	wantErr(t, call(t, f, "PUT", path, tok, map[string]any{"menu": []map[string]any{{"package": "python312Packages.black"}}}), http.StatusBadRequest, "invalid")
+	logOf := func(r resp) string {
+		id := opID(t, r)
+		return string(call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id+"/log", tok, nil).body)
+	}
+	log := logOf(call(t, f, "PUT", path, tok, map[string]any{"menu": []map[string]any{{"id": "postgresql"}, {"package": "python3.12-venv"}}}))
+	for _, l := range []string{"installing postgresql", "postgresql ready", "installing python3.12-venv", "python3.12-venv installed"} {
+		if !strings.Contains(log, l) {
+			t.Fatalf("log lacks %q: %s", l, log)
+		}
+	}
+	if strings.Contains(log, "evaluating configuration") {
+		t.Fatalf("erofs log has the Nix build's lines: %s", log)
+	}
+	log = logOf(call(t, f, "PUT", path, tok, map[string]any{"menu": []map[string]any{{"package": FailMenuPackage}}}))
+	for _, l := range []string{"removing postgresql", "postgresql removed", FailMenuPackage + " failed: "} {
+		if !strings.Contains(log, l) {
+			t.Fatalf("log lacks %q: %s", l, log)
+		}
+	}
 }

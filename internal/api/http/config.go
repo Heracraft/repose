@@ -239,7 +239,9 @@ func (s *Server) putMenuErofs(w http.ResponseWriter, r *http.Request, p *store.P
 	if err != nil {
 		return err
 	}
-	if err := cat.Validate(sel); err != nil {
+	// apt names, not nixpkgs paths (PR 7's ValidateFor; never Normalize,
+	// which applies the Nix rule).
+	if err := cat.ValidateFor(menu.RuntimeErofs, sel); err != nil {
 		var me *menu.Error
 		if errors.As(err, &me) {
 			return errf("invalid", "%s", me.Message)

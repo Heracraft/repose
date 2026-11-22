@@ -339,7 +339,12 @@ selection as it was PUT. The api renders catalog entries in catalog order,
 then the packages by name, into the generated fragment; a package nixpkgs
 does not have fails the build with `eval_failed`
 `nixpkgs has no package "<name>"; search https://search.nixos.org/packages`
-(nix-build-contract.md "What the user reads"). The older shape, `[{id,
+(nix-build-contract.md "What the user reads"). On an `erofs` project
+(DECISIONS I-1462, I-1486) a `package` is an apt package name instead,
+`[a-z0-9][a-z0-9+.-]{0,127}`, which guestd's `ApplyMenu` installs; any
+other is `400 invalid` with `"<name>" is not an apt package name (lower
+case letters, digits, + - and dots, at most 128 characters)`, and a
+package the archive does not have fails the apply with `menu_failed`. The older shape, `[{id,
 options?}]` only, is the same array without `package` items and stays valid.
 
 ## Certificates
@@ -688,4 +693,8 @@ return any error code. The CLI and dashboard tests run against it.
 `guest_runtime` and `pending_base_version` (I-1462) are served on every
 `Project`; `SetDefaultGuestRuntime` stands for the setting and
 `SetPendingBase` for the base bump. A create's `guest_runtime` and a
-`{fragment}` on an erofs project are refused as the api refuses them.
+`{fragment}` on an erofs project are refused as the api refuses them. An
+erofs `{menu}` is checked with apt names, and its op's log is ApplyMenu's
+lines (`installing X`, `X ready` or `X installed`, `removing X`, `X
+removed`, `X failed: <reason>`) instead of a Nix build's; the package
+`repose-fake-missing` fails it with `menu_failed`.
