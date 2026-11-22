@@ -719,6 +719,11 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				opts.ProjectArg = g.project
 			}
 			opts.NoAttach, opts.Sync = true, true
+			if canPrompt(os.Stdin) {
+				opts.Confirm = func(prompt string) (bool, error) {
+					return askYesNo(cmd.Context(), prompt, false, "making a machine")
+				}
+			}
 			return withProjectJSON(cmd.Context(), e, opts.ProjectArg, func() error { return runRun(cmd.Context(), e, opts, false) }, func() *Project { return e.acted })
 		},
 	}

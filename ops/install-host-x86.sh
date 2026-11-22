@@ -35,6 +35,14 @@ CH_VERSION=53.0
 CH_SHA256=448af3d4e59b22c2987f7df94c213ad40fb53a10d437e42b5ee6c4fce7c29ecc
 CHR_SHA256=13f32ba952e6791fd901f2279be2055fbacc64005f96c42a8e90d58860df84a7
 CH_BASE=https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v$CH_VERSION
+# virtiofsd: the version the NixOS hosts run, upstream's static musl
+# build from its release (DECISIONS I-1540). The distributions' are too
+# old or absent: Ubuntu 24.04's 1.10.0 has no --translate-uid, which the
+# Claude login share needs (I-278), and Debian 12 ships none.
+VIRTIOFSD_VERSION=1.14.0
+VIRTIOFSD_ZIP=https://gitlab.com/-/project/21523468/uploads/f505704014ae7a816e515f2a05a93d8b/virtiofsd-v1.14.0.zip
+VIRTIOFSD_ZIP_SHA256=2e4fe9571f492b00baa34bc4e708e950039c5da05b830b31a8d179cb6ac8978e
+VIRTIOFSD_SHA256=15b2e72a78cc08a9bd8a6943e89fb69c88cb3cbeb63069efceade835342ac7d4
 MANIFEST_URL=https://github.com/Heracraft/repose/releases/download/hostd-stable/manifest.json
 # The api over the hub (DECISIONS I-1382), as the Mac appliance dials it:
 # the control plane's WireGuard address, its internal name and the
@@ -159,7 +167,7 @@ say "machine: $PRETTY_NAME, kernel $kver, uplink $uplink, guests on ${device:-$l
 
 # ---- packages ------------------------------------------------------------
 packages=(lvm2 thin-provisioning-tools nftables wireguard-tools iproute2 util-linux
-  e2fsprogs zstd curl ca-certificates jq openssl virtiofsd)
+  e2fsprogs zstd curl ca-certificates jq openssl unzip)
 missing=()
 for p in "${packages[@]}"; do
   dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
@@ -616,6 +624,51 @@ $restart
 end=$(date +%s.%N)
 say "event=updated from=${current:-none} to=$version seconds=$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.2f", b - a }')"
 REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-images-volume <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# The base image cache on its own thin volume (DECISIONS I-1494): hostd's
+# --images-dir, /var/lib/repose/images, holds up to two bundles and a
+# download in progress (I-1478's rotation), about 3 GB each for arm64, and
+# the appliance's 2 GiB root cannot hold one (the first create on a Mac
+# failed with "no space left on device"). After the pool is active and
+# before hostd: make vg-guests/images once, 16 GiB thin, ext4, and mount
+# it. Every step is skipped when already done.
+set -euo pipefail
+vg="vg-guests"
+lv=images
+size=${REPOSE_IMAGES_SIZE:-16G}
+dir=/var/lib/repose/images
+say() { echo "repose-images-volume: $*"; }
+
+if ! lvs "$vg/$lv" >/dev/null 2>&1; then
+  lvcreate -q -y -V "$size" -T "$vg/thin" -n "$lv"
+  udevadm settle --timeout 30 || true
+  mkfs.ext4 -q -L repose-images -E lazy_itable_init=1 "/dev/$vg/$lv"
+  say "event=volume_created size=$size"
+fi
+if [ "$(lvs --noheadings -o lv_active "$vg/$lv" | tr -d ' ')" != active ]; then
+  lvchange -ay "$vg/$lv"
+fi
+mkdir -p "$dir"
+if mountpoint -q "$dir"; then
+  say "event=volume_mounted_already"
+else
+  # A cache written to the root before this volume existed is moved in,
+  # not hidden under the mount.
+  if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+    tmp=$(mktemp -d /run/repose-images.XXXXXX)
+    mount -o noatime,discard "/dev/$vg/$lv" "$tmp"
+    cp -a "$dir"/. "$tmp"/
+    umount "$tmp"
+    rmdir "$tmp"
+    find "$dir" -mindepth 1 -delete
+    say "event=cache_moved"
+  fi
+  mount -o noatime,discard "/dev/$vg/$lv" "$dir"
+  say "event=volume_mounted"
+fi
+chmod 0755 "$dir"
+REPOSE_HOST_FILE
   install_file 0755 /usr/local/lib/repose/repose-launcher-join <<'REPOSE_HOST_FILE'
 #!/bin/bash
 # The join bundle (hostmgr.JoinBundle, docs/interfaces/api.md): one
@@ -785,8 +838,8 @@ REPOSE_HOST_FILE
 # update included, does not stop them, and hostd reconciles them at start.
 [Unit]
 Description=repose hostd: runs tenants' guests on this host
-Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-nftables.service
-After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service lvm2-monitor.service
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service lvm2-monitor.service
 
 [Service]
 EnvironmentFile=/etc/repose/hostd.env
@@ -918,6 +971,23 @@ Unit=repose-hostd-update.service
 
 [Install]
 WantedBy=timers.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-images-volume.service <<'REPOSE_HOST_FILE'
+# hostd's base image cache on vg-guests/images (DECISIONS I-1494).
+[Unit]
+Description=Mount the base image cache volume on /var/lib/repose/images
+After=repose-guest-pool.service repose-mac-grow.service
+Wants=repose-guest-pool.service
+Before=hostd.service
+ConditionPathExists=!/run/repose/pool-hold
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-images-volume
+
+[Install]
+WantedBy=multi-user.target
 REPOSE_HOST_FILE
   install_file 0644 /etc/systemd/system/repose-launcher-join.service <<'REPOSE_HOST_FILE'
 [Unit]
@@ -1350,8 +1420,53 @@ write_host_files
 # ---- Cloud Hypervisor and hostd -------------------------------------------
 fetch_verified "$CH_BASE/cloud-hypervisor-static" "$CH_SHA256" /usr/local/bin/cloud-hypervisor 0755
 fetch_verified "$CH_BASE/ch-remote-static" "$CHR_SHA256" /usr/local/bin/ch-remote 0755
-if [ ! -e /usr/local/bin/virtiofsd ]; then
-  step "link /usr/local/bin/virtiofsd to /usr/libexec/virtiofsd" -- ln -s /usr/libexec/virtiofsd /usr/local/bin/virtiofsd
+if [ -f /usr/local/bin/virtiofsd ] && [ ! -L /usr/local/bin/virtiofsd ] &&
+  echo "$VIRTIOFSD_SHA256  /usr/local/bin/virtiofsd" | sha256sum -c --quiet - 2>/dev/null; then
+  :
+elif [ "$dry" = 1 ]; then
+  echo "would: fetch virtiofsd $VIRTIOFSD_VERSION ($VIRTIOFSD_ZIP, sha256 $VIRTIOFSD_SHA256) to /usr/local/bin/virtiofsd"
+else
+  echo "==> fetch virtiofsd $VIRTIOFSD_VERSION"
+  curl -fsSL --retry 3 -o "$tmp/virtiofsd.zip" "$VIRTIOFSD_ZIP"
+  echo "$VIRTIOFSD_ZIP_SHA256  $tmp/virtiofsd.zip" | sha256sum -c --quiet - || die "$VIRTIOFSD_ZIP does not match its pinned sha256"
+  unzip -q -o -j "$tmp/virtiofsd.zip" target/x86_64-unknown-linux-musl/release/virtiofsd -d "$tmp/virtiofsd"
+  echo "$VIRTIOFSD_SHA256  $tmp/virtiofsd/virtiofsd" | sha256sum -c --quiet - || die "virtiofsd in $VIRTIOFSD_ZIP does not match its pinned sha256"
+  # Before an installer that linked the distribution's, this was a link.
+  rm -f /usr/local/bin/virtiofsd
+  install -m 0755 "$tmp/virtiofsd/virtiofsd" /usr/local/bin/virtiofsd
+  changed+=(/usr/local/bin/virtiofsd)
+fi
+# virtiofsd sandboxes itself in an unprivileged user namespace
+# (--sandbox namespace). Ubuntu 24.04 lets only a binary with an AppArmor
+# profile that says `userns` make one, so without this every share fails
+# with "Error entering sandbox: CleanMount(... Permission denied)". The
+# profile is Ubuntu's own shape for such binaries (crun's): unconfined
+# otherwise, so it names the binary and changes nothing else. Only where
+# the restriction exists: an older AppArmor does not parse the rule.
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+  cat <<'PROFILE' | install_file 0644 /etc/apparmor.d/repose-virtiofsd
+# repose (ops/install-host-x86.sh, DECISIONS I-1540): virtiofsd may make
+# the user namespace its sandbox needs; nothing else is confined.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile repose-virtiofsd /usr/local/bin/virtiofsd flags=(unconfined) {
+  userns,
+
+  include if exists <local/repose-virtiofsd>
+}
+PROFILE
+  if [ "$dry" = 1 ]; then
+    echo "would: load /etc/apparmor.d/repose-virtiofsd"
+  else
+    step "load /etc/apparmor.d/repose-virtiofsd" -- apparmor_parser -r -W /etc/apparmor.d/repose-virtiofsd
+  fi
+fi
+# The login share's unit passes --translate-uid (internal/hostd/virtiofs);
+# a virtiofsd without it exits 2 at every guest start and the guest boots
+# without the share, which nothing else would say.
+if [ "$dry" = 0 ] && ! /usr/local/bin/virtiofsd --help 2>&1 | grep -q -- '--translate-uid'; then
+  die "/usr/local/bin/virtiofsd has no --translate-uid; the Claude login share needs it. Nothing is enabled."
 fi
 printf '%s\n' "$RELEASE_PUBKEY" > "$tmp/release.pub"
 install_file 0644 /etc/repose/release.pub < "$tmp/release.pub"
@@ -1440,7 +1555,7 @@ fi
 
 # ---- the units -----------------------------------------------------------------
 units=(systemd-networkd.service repose-nftables.service repose-fault-around.service
-  repose-guests-slice.service repose-guest-pool.service repose-launcher-join.service
+  repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service
   repose-host-net.service repose-register.service hostd.service
   repose-snapshot.timer repose-hostd-update.timer)
 if [ "$dry" = 1 ]; then
@@ -1457,11 +1572,11 @@ else
     esac
   done
   systemctl start repose-fault-around.service || say "warning: fault-around could not be set (no debugfs?); see docs/ops for I-1040"
-  systemctl start repose-guests-slice.service repose-guest-pool.service repose-launcher-join.service repose-host-net.service
+  systemctl start repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service repose-host-net.service
   systemctl start --no-block repose-register.service
   restart_hostd=0
   for f in "${changed[@]}"; do
-    case $f in /usr/local/bin/hostd | /etc/repose/hostd.env | /etc/repose/api-ca.pem) restart_hostd=1 ;; esac
+    case $f in /usr/local/bin/hostd | /etc/repose/hostd.env | /etc/repose/api-ca.pem | /etc/systemd/system/hostd.service) restart_hostd=1 ;; esac
   done
   if [ "$restart_hostd" = 1 ] && systemctl is-active -q hostd.service; then
     systemctl restart hostd.service

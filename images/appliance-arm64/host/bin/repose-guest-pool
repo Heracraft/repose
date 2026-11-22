@@ -1,0 +1,135 @@
+#!/bin/bash
+# repose-guest-pool (DECISIONS I-643), ported from nix/hosts/storage.nix
+# (I-1494): the one thing that activates vg-guests/thin after boot.
+# Exit 0: pool active. Exit 1: the VG never appeared, or three attempts
+# failed. Exit 2: thin_check says the metadata is damaged; never retried
+# and never repaired. Every failure leaves /run/repose/pool-hold, which
+# the unit's ExecCondition reads, so a failed pool is not retried at
+# every hostd restart. Log lines carry VG, volume and dm names and exit
+# codes only.
+set -euo pipefail
+vg="vg-guests"
+pool=thin
+# dm names double the dashes of the VG and LV names.
+dmpool="vg--guests-thin"
+hold_file=/run/repose/pool-hold
+vg_wait=${REPOSE_POOL_VG_WAIT:-300}
+say() { echo "repose-guest-pool: $*"; }
+hold() {
+  mkdir -p "$(dirname "$hold_file")"
+  : > "$hold_file"
+  exit "$1"
+}
+
+if [ "${1:-}" = --held ]; then
+  # The unit's ExecCondition: skipped, not failed, while held.
+  if [ -e "$hold_file" ]; then
+    say "event=pool_held marker=$hold_file"
+    exit 1
+  fi
+  exit 0
+fi
+rm -f "$hold_file"
+
+udevadm settle --timeout=60 || true
+waited=0
+until vgs "$vg" >/dev/null 2>&1; do
+  if [ "$waited" -ge "$vg_wait" ]; then
+    say "event=pool_vg_missing vg=$vg waited_s=$waited"
+    hold 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+
+if [ "$(vgs --noheadings -o autoactivation "$vg" | tr -d ' ')" = enabled ]; then
+  vgchange --setautoactivation n "$vg"
+  say "event=pool_autoactivation_off vg=$vg"
+fi
+
+lvm_says_active() {
+  [ "$(lvs --noheadings -o lv_active "$vg/$pool" 2>/dev/null | tr -d ' ')" = active ]
+}
+pool_active() {
+  local table
+  lvm_says_active || return 1
+  table=$(dmsetup table "$dmpool-tpool" 2>/dev/null || dmsetup table "$dmpool" 2>/dev/null || true)
+  grep -q ' thin-pool ' <<< "$table"
+}
+open_count() { dmsetup info -c --noheadings -o open "$1" 2>/dev/null | tr -d ' '; }
+
+clear_leftovers() {
+  local d n names
+  if lvm_says_active; then
+    say "event=pool_leftover_held reason=pool_reported_active"
+    return 1
+  fi
+  names=$(dmsetup info -c --noheadings -o name 2>/dev/null || true)
+  if grep -qE "^vg--guests-(g--|auth--|repose--cache)" <<< "$names"; then
+    say "event=pool_leftover_held reason=thin_volume_device_present"
+    return 1
+  fi
+  for d in "$dmpool" "$dmpool-tpool" "$dmpool"_tdata "$dmpool"_tmeta; do
+    dmsetup info "$d" >/dev/null 2>&1 || continue
+    n=$(open_count "$d")
+    if [ "$n" != 0 ]; then
+      say "event=pool_leftover_held device=$d open_count=$n"
+      return 1
+    fi
+    dmsetup remove "$d"
+    say "event=pool_leftover_removed device=$d"
+  done
+}
+
+attempt() {
+  local err rc status
+  if pool_active; then
+    say "event=pool_already_active vg=$vg"
+  else
+    clear_leftovers || return 1
+    err=$(mktemp)
+    rc=0
+    lvchange -ay "$vg/$pool" 2>"$err" || rc=$?
+    if [ "$rc" != 0 ]; then
+      status=$(grep -oE 'Check of pool .* failed \(status:-?[0-9]+\)' "$err" | grep -oE -- '-?[0-9]+\)$' | tr -d ')' || true)
+      rm -f "$err"
+      if [ -n "$status" ] && [ "$status" -gt 0 ]; then
+        say "event=pool_check_failed vg=$vg pool=$pool status=$status"
+        hold 2
+      fi
+      say "event=pool_activate_failed vg=$vg pool=$pool exit=$rc"
+      return 1
+    fi
+    rm -f "$err"
+    say "event=pool_activated vg=$vg pool=$pool"
+  fi
+  vgchange -ay "$vg" >/dev/null || say "event=pool_volumes_partial vg=$vg"
+  pool_active || return 1
+  return 0
+}
+
+delays=(10 30 60)
+ok=0
+for i in 1 2 3; do
+  if attempt; then ok=1; break; fi
+  [ "$i" = 3 ] && break
+  sleep "${REPOSE_POOL_RETRY_DELAY:-${delays[$((i - 1))]}}"
+done
+if [ "$ok" != 1 ]; then
+  say "event=pool_unavailable vg=$vg attempts=3"
+  hold 1
+fi
+
+inactive=$(lvs --noheadings -o lv_name,lv_active "$vg" | awk '$1 ~ /^(g|auth)-/ && $2 != "active" { n++ } END { print n + 0 }')
+if [ "$inactive" != 0 ]; then
+  say "event=pool_volumes_inactive vg=$vg count=$inactive"
+fi
+
+# dmeventd: autoextend acts only on a monitored pool.
+systemctl start dm-event.service || true
+lvchange --monitor y "$vg/$pool" || true
+if [ "$(lvs --noheadings -o seg_monitor "$vg/$pool" | tr -d ' ')" = monitored ]; then
+  say "event=pool_monitored vg=$vg pool=$pool"
+else
+  say "event=pool_unmonitored vg=$vg pool=$pool"
+fi

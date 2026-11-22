@@ -107,7 +107,7 @@ func TestConfigAddErofsFailure(t *testing.T) {
 	// the outcome, the code prefix is gone, and the last line says the
 	// menu kept what it had.
 	got := out.buf.String()
-	want := "error: " + fakeapi.FailMenuPackage + " failed: E: Unable to locate package " + fakeapi.FailMenuPackage + "\ntodo-app's menu is unchanged.\n"
+	want := "error: " + fakeapi.FailMenuPackage + " failed: E: Unable to locate package " + fakeapi.FailMenuPackage + " (apt-get exited 100)\ntodo-app's menu is unchanged.\n"
 	if got != want {
 		t.Fatalf("stdout:\n%q\nwant\n%q", got, want)
 	}
@@ -308,5 +308,30 @@ func TestConfigRemoveEmptyUbuntuMenu(t *testing.T) {
 	}
 	if got := out.buf.String(); got != "redis is not in todo-app's menu.\n" {
 		t.Fatalf("stdout %q", got)
+	}
+}
+
+// An item's step lines ("redis: unpacking") are its running phase, not
+// its result: the item still ends on its own ready line, once, and no
+// step line becomes a ✓ line (DECISIONS I-1536).
+func TestBuildViewKeepsStepLinesInsideTheItem(t *testing.T) {
+	w := &discardWriter{}
+	pr := newProgress(w, false)
+	v := &buildView{pr: pr}
+	for _, l := range []string{
+		"installing redis", "redis: updating package lists", "redis: installing 3 packages (1,526 kB)",
+		"redis: unpacking", "redis: setting up", "redis: starting repose-svc-redis.service",
+		"redis ready on 127.0.0.1:6379",
+		"installing ffmpeg-typo", "ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo (apt-get exited 100)",
+	} {
+		v.Line(l)
+	}
+	pr.End()
+	got := w.buf.String()
+	if n := strings.Count(got, "✓ "); n != 1 || !strings.Contains(got, "✓ redis ready on 127.0.0.1:6379  ") {
+		t.Fatalf("want one ✓ line, redis's ready line:\n%s", got)
+	}
+	if strings.Contains(got, "✓ redis:") || !strings.Contains(got, "ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo (apt-get exited 100)\n") {
+		t.Fatalf("view:\n%s", got)
 	}
 }

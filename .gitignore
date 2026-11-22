@@ -40,6 +40,9 @@ scratch.md
 result
 result-*
 bin/
+# The host scripts of the appliance and the x86 installer are source
+# (DECISIONS I-1540): build.sh and embed.sh read them.
+!images/appliance-arm64/**/bin/
 dist/
 *.tfstate
 *.tfstate.backup

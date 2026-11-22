@@ -1,0 +1,116 @@
+#!/bin/bash
+# hostd's unattended update on a host repose does not rebuild: the Mac
+# appliance and a machine ops/install-host-x86.sh set up (DECISIONS
+# I-1496). repose-hostd-update.timer runs it every 30 minutes.
+#
+# It reads the channel's manifest.json, a GitHub release asset:
+#   {"version": "...",
+#    "arches": {"amd64": {"url": "...", "sha256": "..."},
+#               "arm64": {"url": "...", "sha256": "..."}},
+#    "signature": "<base64>"}
+# The signature is the release key's (install.sh RELEASE_PUBKEY, the key
+# release.yml signs the CLI with) over this text, one line each, the
+# arches in that order:
+#   repose-hostd-manifest v1
+#   version <version>
+#   amd64 <sha256> <url>
+#   arm64 <sha256> <url>
+# so a manifest is trusted for nothing its signature does not cover. A
+# manifest that does not verify, a version older than the running one, or
+# a binary whose sha256 differs changes nothing. Otherwise the binary is
+# written beside /usr/local/bin/hostd, asked its version, renamed over the
+# old one and hostd restarted; hostd.service has KillMode=process, so the
+# guests keep running and hostd reconciles them at its start.
+#
+#   repose-hostd-update [--manifest-url URL] [--force]
+#
+# Environment (tests): REPOSE_HOSTD_BIN, REPOSE_RELEASE_PUBKEY_FILE,
+# REPOSE_HOSTD_RESTART (the command that restarts hostd).
+set -euo pipefail
+
+channel=stable
+url="https://github.com/Heracraft/repose/releases/download/hostd-$channel/manifest.json"
+# shellcheck source=/dev/null
+[ -r /etc/repose/hostd-update.env ] && . /etc/repose/hostd-update.env
+url=${REPOSE_HOSTD_MANIFEST_URL:-$url}
+force=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --manifest-url) url=${2:?}; shift 2 ;;
+    --force) force=1; shift ;;
+    *) echo "repose-hostd-update: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+bin=${REPOSE_HOSTD_BIN:-/usr/local/bin/hostd}
+pubkey=${REPOSE_RELEASE_PUBKEY_FILE:-/etc/repose/release.pub}
+restart=${REPOSE_HOSTD_RESTART:-systemctl restart hostd.service}
+say() { echo "repose-hostd-update: $*"; }
+start=$(date +%s.%N)
+
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64) arch=arm64 ;;
+  *) say "event=update_refused reason=arch arch=$(uname -m)" >&2; exit 1 ;;
+esac
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if ! curl -fsSL --max-time 60 -o "$tmp/manifest.json" "$url"; then
+  say "event=manifest_fetch_failed" >&2
+  exit 1
+fi
+m=$tmp/manifest.json
+field() { jq -er "$1" "$m" 2>/dev/null; }
+if ! version=$(field .version) || ! sig=$(field .signature) ||
+  ! a_url=$(field .arches.amd64.url) || ! a_sum=$(field .arches.amd64.sha256) ||
+  ! r_url=$(field .arches.arm64.url) || ! r_sum=$(field .arches.arm64.sha256); then
+  say "event=update_refused reason=manifest_shape" >&2
+  exit 1
+fi
+printf 'repose-hostd-manifest v1\nversion %s\namd64 %s %s\narm64 %s %s\n' \
+  "$version" "$a_sum" "$a_url" "$r_sum" "$r_url" > "$tmp/signed"
+if ! printf '%s' "$sig" | base64 -d > "$tmp/sig" 2>/dev/null ||
+  ! openssl dgst -sha256 -verify "$pubkey" -signature "$tmp/sig" "$tmp/signed" >/dev/null 2>&1; then
+  say "event=update_refused reason=signature version=$version" >&2
+  exit 1
+fi
+say "event=manifest_verified version=$version"
+
+current=$("$bin" version 2>/dev/null | awk '{ print $2 }') || current=""
+if [ "$current" = "$version" ] && [ "$force" = 0 ]; then
+  say "event=up_to_date version=$version"
+  exit 0
+fi
+if [ -n "$current" ] && [ "$current" != dev ] && [ "$force" = 0 ] &&
+  [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" = "$current" ]; then
+  say "event=update_refused reason=older version=$version running=$current" >&2
+  exit 1
+fi
+
+if [ "$arch" = amd64 ]; then want_url=$a_url want_sum=$a_sum; else want_url=$r_url want_sum=$r_sum; fi
+# Beside the binary, so the rename below is one filesystem's and atomic.
+new="$(dirname "$bin")/.hostd.new"
+rm -f "$new"
+if ! curl -fsSL --max-time 300 -o "$new" "$want_url"; then
+  rm -f "$new"
+  say "event=binary_fetch_failed version=$version" >&2
+  exit 1
+fi
+got=$(sha256sum "$new" | awk '{ print $1 }')
+if [ "$got" != "$want_sum" ]; then
+  rm -f "$new"
+  say "event=update_refused reason=sha256 version=$version" >&2
+  exit 1
+fi
+say "event=sha256_verified version=$version"
+chmod 0755 "$new"
+said=$("$new" version 2>/dev/null | awk '{ print $2 }') || said=""
+if [ "$said" != "$version" ]; then
+  rm -f "$new"
+  say "event=update_refused reason=version_mismatch version=$version binary=$said" >&2
+  exit 1
+fi
+mv -f "$new" "$bin"
+$restart
+end=$(date +%s.%N)
+say "event=updated from=${current:-none} to=$version seconds=$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.2f", b - a }')"

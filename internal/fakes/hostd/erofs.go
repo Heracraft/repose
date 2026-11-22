@@ -103,3 +103,27 @@ func (f *Fake) menuError(m *hostdv1.MenuSpec) *hostdv1.Error {
 	}
 	return &hostdv1.Error{Code: f.menuFailCode, Message: f.menuFailMsg}
 }
+
+// menuLines are the progress lines guestd streams for m: per item
+// "installing X" and "X ready" (a package: "X installed"); with a failure,
+// msg in place of the last item's ready line.
+func menuLines(m *hostdv1.MenuSpec, failCode, failMsg string) []string {
+	var lines []string
+	items := m.GetItems()
+	for i, it := range items {
+		name := it.GetId()
+		if name == "" {
+			name = it.GetPackage()
+		}
+		lines = append(lines, "installing "+name)
+		switch {
+		case failCode != "" && i == len(items)-1:
+			lines = append(lines, failMsg)
+		case it.GetPackage() != "":
+			lines = append(lines, name+" installed")
+		default:
+			lines = append(lines, name+" ready")
+		}
+	}
+	return lines
+}

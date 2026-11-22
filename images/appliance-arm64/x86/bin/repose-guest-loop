@@ -1,0 +1,14 @@
+#!/bin/bash
+# Attach the file that holds vg-guests on a machine with one disk
+# (ops/install-host-x86.sh --loop-file) to a loop device, at every boot
+# before repose-guest-pool. Attached already is success.
+#
+#   repose-guest-loop <file>
+set -euo pipefail
+file=${1:?usage: repose-guest-loop <file>}
+if [ -n "$(losetup -j "$file" -O NAME -n)" ]; then
+  echo "repose-guest-loop: event=loop_present device=$(losetup -j "$file" -O NAME -n)"
+  exit 0
+fi
+dev=$(losetup --find --show --direct-io=on "$file")
+echo "repose-guest-loop: event=loop_attached device=$dev"

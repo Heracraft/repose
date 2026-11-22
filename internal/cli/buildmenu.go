@@ -36,6 +36,14 @@ func (v *buildView) menuLine(line string) {
 		}
 		return
 	}
+	if rest, ok := v.menuStepLine(line); ok {
+		// A step of the running item (DECISIONS I-1536): printed as
+		// guestd wrote it and shown as the item's phase, which stays
+		// open for the item's own ready line.
+		_, _ = fmt.Fprintln(v.pr, line)
+		v.pr.Relabel(v.menuStep+" ("+rest+")", "")
+		return
+	}
 	switch {
 	case isMenuStart(line):
 		v.menuStep = line
@@ -51,4 +59,18 @@ func (v *buildView) menuLine(line string) {
 	default:
 		_, _ = fmt.Fprintln(v.pr, "✓ "+strings.TrimSpace(line))
 	}
+}
+
+// menuStepLine reports whether line is a step of the item the open step
+// names ("redis: unpacking" while "installing redis" runs), and the step.
+func (v *buildView) menuStepLine(line string) (string, bool) {
+	if v.menuStep == "" {
+		return "", false
+	}
+	f := strings.Fields(v.menuStep)
+	if len(f) < 2 {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(line, f[1]+": ")
+	return rest, ok && rest != ""
 }

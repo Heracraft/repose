@@ -16,8 +16,12 @@ import (
 
 // RunOptions is `repose run`'s flags (07-cli.md §5.1).
 type RunOptions struct {
-	Prompt string
-	Agent  string
+	// Confirm asks the one question `repose sync` puts before it makes a
+	// machine for a checkout that has none (DECISIONS I-1532); nil when
+	// there is no terminal to ask on, and then sync refuses instead.
+	Confirm func(prompt string) (bool, error)
+	Prompt  string
+	Agent   string
 	// SetAgent is --agent without -p: Agent becomes the project's agent,
 	// which `run -p` starts from then on (I-635).
 	SetAgent      bool
@@ -297,6 +301,13 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	if project == nil {
 		if attachOnly {
 			return errNoProject(res, e.Command)
+		}
+		if opts.Sync && opts.Temp == 0 {
+			// sync sends a checkout to its machine; it never makes one on
+			// its own (I-1532). --temp is the explicit request for one.
+			if err := confirmSyncCreate(e, res.CreateRemote(), opts, pr); err != nil {
+				return err
+			}
 		}
 		personal.finish(ctx, e, opts.NoPersonal, nil)
 		project, err = createProjectForRun(ctx, e, res.CreateRemote(), opts, pr)
@@ -2007,7 +2018,9 @@ func waitOpWith(ctx context.Context, c *Client, projectID, opID string, out io.W
 	}
 }
 
-func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOptions, pr *progress) (*Project, error) {
+// newProjectName is the name a run gives the machine it makes: --name,
+// a temporary one's own, else the remote's or the folder's (I-358).
+func newProjectName(e *Env, remote string, opts RunOptions) (string, error) {
 	name := opts.Name
 	if name == "" && opts.Temp > 0 {
 		name = tempName()
@@ -2019,14 +2032,54 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 		if remote == "" {
 			name = dirProjectName(name)
 			if name == "" {
-				return nil, exitf(ExitUsage, "This folder's name cannot be a project name. Name one: `repose run NAME`.")
+				return "", exitf(ExitUsage, "This folder's name cannot be a project name. Name one: `repose run NAME`.")
 			}
 		}
 	}
-	class := opts.Size
-	if class == "" {
-		class = e.Cfg.DefaultClass
+	return name, nil
+}
+
+// newProjectClass is the size a run gives the machine it makes.
+func newProjectClass(e *Env, opts RunOptions) string {
+	if opts.Size != "" {
+		return opts.Size
 	}
+	return e.Cfg.DefaultClass
+}
+
+// confirmSyncCreate is sync's question before it makes a machine
+// (DECISIONS I-1532): on a terminal one [y/N] naming the machine and its
+// size, no by default; without one, a refusal naming `repose run`.
+func confirmSyncCreate(e *Env, remote string, opts RunOptions, pr *progress) error {
+	if opts.Confirm == nil {
+		return exitf(ExitProjectNotFound, "No repose machine for this checkout; `repose run` creates one.")
+	}
+	name, err := newProjectName(e, remote, opts)
+	if err != nil {
+		return err
+	}
+	size := newProjectClass(e, opts)
+	if size == "" {
+		size = "large" // the api's default
+	}
+	what := size
+	if c, ok := classSpecs[size]; ok {
+		cores := fmt.Sprintf("%g cores", float64(c.MilliVCPUs)/1000)
+		if c.MilliVCPUs == 1000 {
+			cores = "1 core"
+		}
+		what = fmt.Sprintf("%s: %s, %d GB", size, cores, c.MemGB)
+	}
+	pr.Fail() // the question stands alone, not under a spinner
+	return confirmOr(opts.Confirm, fmt.Sprintf("No machine for this checkout. Create %s (%s) and sync to it? [y/N] ", name, what), "Not created.")
+}
+
+func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOptions, pr *progress) (*Project, error) {
+	name, err := newProjectName(e, remote, opts)
+	if err != nil {
+		return nil, err
+	}
+	class := newProjectClass(e, opts)
 	req := CreateProjectRequest{Name: name, RemoteURL: remote, Class: class, TZ: localTZ(), PersonalOptOut: opts.NoPersonal}
 	if opts.Temp > 0 {
 		// Found by nothing and cached nowhere (I-351): its name is how
@@ -2181,6 +2234,15 @@ const hostRepose = "repose"
 // works for it.
 func createRefusal(apiErr *APIError, host string) string {
 	reason, _ := apiErr.Detail["reason"].(string)
+	if reason == "no_runtime_host" {
+		// No host runs this kind of machine (I-1464): stopping one frees
+		// nothing, so the room sentence would be false (I-1538).
+		next := ""
+		if allowed, _ := apiErr.Detail["hosted_allowed"].(bool); allowed && host == "" {
+			next = "`repose run --host " + hostRepose + "` tries repose's servers."
+		}
+		return withNext(noRuntimeHost, next)
+	}
 	if reason != "no_own_host" {
 		return "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it."
 	}
@@ -2190,6 +2252,12 @@ func createRefusal(apiErr *APIError, host string) string {
 	}
 	return withNext(apiErr.Message, next)
 }
+
+// noRuntimeHost is the sentence for a 503 capacity whose reason is
+// no_runtime_host (DECISIONS I-1538): no host runs the kind of machine
+// the account makes, Ubuntu or NixOS. The api names neither the kind nor
+// the hosts' kinds, so the sentence names the cause and not those.
+const noRuntimeHost = "No host can run the kind of machine your account makes (Ubuntu or NixOS), so stopping machines frees nothing for it."
 
 // runDestroyWait bounds how long `repose run` waits for the destroy of
 // the project it resolved to before it creates a fresh one (I-301).
