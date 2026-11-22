@@ -4,7 +4,11 @@ import { BASE_URL } from './tests/fixtures';
 // No `webServer` entry: tests/global-setup.ts starts cmd/fakeapi, cmd/fake-
 // logto and the already-built dashboard (`node build`) itself, since the
 // dashboard's PUBLIC_API_URL/PUBLIC_LOGTO_ENDPOINT are only known once the
-// two Go fixtures have picked their (random) ports. Run `pnpm build` before
+// two Go fixtures have picked their (random) ports. tests/fixtures.ts never
+// reuses an existing server (`reuseExistingServer: false` semantics): it
+// picks an ephemeral loopback port when REPOSE_WEB_TEST_PORT is unset, fails
+// loudly if the target port is already occupied, and kills all spawned
+// process groups on teardown and signals. Run `pnpm build` before
 // `pnpm test:integration`.
 const config: PlaywrightTestConfig = {
 	testDir: 'tests',

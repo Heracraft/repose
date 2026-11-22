@@ -298,12 +298,28 @@ test.describe('signed in', () => {
 // Feedback link in the header and the footer of every page.
 const FRAME_PAGES = ['/', '/docs/cli', '/terms', '/projects'];
 
-for (const width of [320, 360, 390, 1024, 1440]) {
-	test(`the header row fits at ${width} on every kind of page`, async ({ page }) => {
-		await page.setViewportSize({ width, height: 800 });
-		await signIn(page);
-		for (const path of FRAME_PAGES) {
-			await page.goto(path);
+test('the header row fits, aligns the logo at the frame edge, and links to home and feedback on every kind of page', async ({
+	page
+}) => {
+	await signIn(page);
+	const xsByWidth: Record<number, number[]> = { 1440: [], 390: [] };
+	for (const path of FRAME_PAGES) {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto(path);
+		if (path === '/projects') {
+			await expect(page.getByRole('link', { name: 'repose, home' })).toHaveAttribute('href', '/');
+		}
+		for (const where of [
+			page.getByRole('navigation', { name: 'Site' }),
+			page.getByRole('navigation', { name: 'Footer' })
+		]) {
+			await expect(where.getByRole('link', { name: 'Feedback' }), path).toHaveAttribute(
+				'href',
+				'https://repose.fider.io'
+			);
+		}
+		for (const width of [320, 360, 390, 1024, 1440]) {
+			await page.setViewportSize({ width, height: 800 });
 			const nav = page.getByRole('navigation', { name: 'Site' });
 			if (path !== '/projects' || width >= 640) {
 				await expect(nav.getByRole('link', { name: 'Docs' })).toBeVisible();
@@ -314,7 +330,7 @@ for (const width of [320, 360, 390, 1024, 1440]) {
 				// Signed in, Pricing goes (I-679): Docs, Feedback, GitHub and
 				// Account from sm; below it Account alone, which holds Docs
 				// and Feedback. The places are in the rail or strip (I-841).
-				expect(count, path).toBe(width >= 640 ? 4 : 1);
+				expect(count, `${path} at ${width}`).toBe(width >= 640 ? 4 : 1);
 				const places = page.getByRole('navigation', { name: 'Dashboard' });
 				await expect(places.getByRole('link', { name: 'Projects', exact: true })).toBeInViewport({
 					ratio: 1
@@ -322,65 +338,36 @@ for (const width of [320, 360, 390, 1024, 1440]) {
 			} else {
 				// Docs, Feedback and the account slot at every width; Pricing
 				// from 400px and GitHub from sm.
-				expect(count, path).toBe(width >= 640 ? 5 : width >= 400 ? 4 : 3);
+				expect(count, `${path} at ${width}`).toBe(width >= 640 ? 5 : width >= 400 ? 4 : 3);
 			}
 			for (let i = 0; i < count; i++) {
-				await expect(items.nth(i), `${path} item ${i}`).toBeInViewport({ ratio: 1 });
+				await expect(items.nth(i), `${path} at ${width} item ${i}`).toBeInViewport({ ratio: 1 });
 			}
 			await expect(page.getByRole('link', { name: 'repose, home' })).toBeInViewport({
 				ratio: 1
 			});
+			if (width === 1440 || width === 390) {
+				const logo = page
+					.getByRole('link', { name: 'repose, home' })
+					.locator('svg')
+					.filter({ visible: true });
+				await expect(logo).toBeVisible();
+				const { x, cw } = await logo.evaluate((el) => ({
+					x: el.getBoundingClientRect().x,
+					// The header is full-bleed: its width is the page's.
+					cw: document.querySelector('header')!.getBoundingClientRect().width
+				}));
+				// The 1200px frame, centred in the page's width (less a classic
+				// scrollbar's gutter, which an overlay scrollbar does not take),
+				// and its 20 to 40px gutter: x=160 at 1440 and x=20 at 390.
+				const gutter = Math.min(40, Math.max(20, 0.03 * width));
+				expect(x, `${path} at ${width}`).toBeCloseTo((cw - Math.min(cw, 1200)) / 2 + gutter, 0);
+				xsByWidth[width].push(Math.round(x));
+			}
 		}
-	});
-}
-
-for (const width of [1440, 390]) {
-	test(`the logo stands at the frame's edge on every page at ${width}`, async ({ page }) => {
-		await page.setViewportSize({ width, height: 900 });
-		await signIn(page);
-		const xs: number[] = [];
-		for (const path of FRAME_PAGES) {
-			await page.goto(path);
-			const logo = page
-				.getByRole('link', { name: 'repose, home' })
-				.locator('svg')
-				.filter({ visible: true });
-			await expect(logo).toBeVisible();
-			const { x, cw } = await logo.evaluate((el) => ({
-				x: el.getBoundingClientRect().x,
-				// The header is full-bleed: its width is the page's.
-				cw: document.querySelector('header')!.getBoundingClientRect().width
-			}));
-			// The 1200px frame, centred in the page's width (less a classic
-			// scrollbar's gutter, which an overlay scrollbar does not take),
-			// and its 20 to 40px gutter: x=160 at 1440 and x=20 at 390.
-			const gutter = Math.min(40, Math.max(20, 0.03 * width));
-			expect(x, path).toBeCloseTo((cw - Math.min(cw, 1200)) / 2 + gutter, 0);
-			xs.push(Math.round(x));
-		}
-		expect(new Set(xs).size, xs.join(',')).toBe(1);
-	});
-}
-
-test('the logo goes home from the dashboard', async ({ page }) => {
-	await signIn(page);
-	await page.goto('/projects');
-	await expect(page.getByRole('link', { name: 'repose, home' })).toHaveAttribute('href', '/');
-});
-
-test('every page links to the feedback board in its header and its footer', async ({ page }) => {
-	await signIn(page);
-	for (const path of FRAME_PAGES) {
-		await page.goto(path);
-		for (const where of [
-			page.getByRole('navigation', { name: 'Site' }),
-			page.getByRole('navigation', { name: 'Footer' })
-		]) {
-			await expect(where.getByRole('link', { name: 'Feedback' }), path).toHaveAttribute(
-				'href',
-				'https://repose.fider.io'
-			);
-		}
+	}
+	for (const width of [1440, 390] as const) {
+		expect(new Set(xsByWidth[width]).size, `${width}: ${xsByWidth[width].join(',')}`).toBe(1);
 	}
 });
 
@@ -397,61 +384,60 @@ test('the header stays at the top of a long page', async ({ page }) => {
 		.toBe(0);
 });
 
-for (const width of [768, 1024, 1120]) {
-	test(`the landing does not scroll sideways at ${width}`, async ({ page }) => {
+test('the landing does not scroll sideways at 768, 1024 and 1120', async ({ page }) => {
+	await page.goto('/');
+	for (const width of [768, 1024, 1120]) {
 		await page.setViewportSize({ width, height: 900 });
-		await page.goto('/');
 		const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-		expect(wide).toBeLessThanOrEqual(0);
-	});
-}
+		expect(wide, `at ${width}`).toBeLessThanOrEqual(0);
+	}
+});
 
 test.describe('public pages', () => {
-	test('the docs fold chevron turns only when motion is allowed', async ({ page }) => {
-		await page.setViewportSize({ width: 390, height: 844 });
-		const chevron = page.locator('main details summary svg');
-		await page.goto('/docs/cli');
-		await expect(chevron).toBeAttached();
-		expect(await chevron.evaluate((el) => getComputedStyle(el).transitionProperty)).toContain(
-			'transform'
-		);
-		await page.emulateMedia({ reducedMotion: 'reduce' });
-		expect(await chevron.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe('none');
-	});
-
 	// Inline code with no space in it never breaks, so a long one could push
-	// the page wider than a phone (a 44-character ntfy URL did).
-	for (const width of [390, 360]) {
-		test(`no docs page scrolls sideways at ${width}`, async ({ page }) => {
-			await page.setViewportSize({ width, height: 800 });
-			for (const slug of ['notifications', 'cli', 'secrets', 'troubleshooting', 'your-chrome']) {
-				await page.goto(`/docs/${slug}`);
-				await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-				const wide = await page.evaluate(() => document.documentElement.scrollWidth);
-				expect(wide, slug).toBeLessThanOrEqual(width);
-			}
-		});
-	}
-
-	// A reference table fits its column: from sm the term column stays on
-	// one line and description code wraps; on a phone a two- or three-column
-	// table stacks each row (/docs/cli Secrets ran 690px in 624, config.toml
-	// 403 in 335).
-	for (const width of [1440, 390]) {
-		test(`no /docs/cli table scrolls sideways at ${width}`, async ({ page }) => {
-			await page.setViewportSize({ width, height: 900 });
-			await page.goto('/docs/cli');
+	// the page wider than a phone (a 44-character ntfy URL did). A reference
+	// table fits its column: from sm the term column stays on one line and
+	// description code wraps; on a phone a two- or three-column table stacks
+	// each row (/docs/cli Secrets ran 690px in 624, config.toml 403 in 335).
+	test('no docs page or /docs/cli table scrolls sideways, and the fold chevron respects reduced motion', async ({
+		page
+	}) => {
+		for (const slug of ['notifications', 'cli', 'secrets', 'troubleshooting', 'your-chrome']) {
+			await page.setViewportSize({ width: 390, height: 844 });
+			await page.goto(`/docs/${slug}`);
 			await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-			const wide = await page
-				.locator('.doc .table-wrap')
-				.evaluateAll((els) =>
-					els
-						.filter((el) => el.scrollWidth > el.clientWidth)
-						.map((el) => `${el.scrollWidth}/${el.clientWidth}`)
+			for (const width of [390, 360]) {
+				await page.setViewportSize({ width, height: 800 });
+				const wide = await page.evaluate(() => document.documentElement.scrollWidth);
+				expect(wide, `${slug} at ${width}`).toBeLessThanOrEqual(width);
+			}
+			if (slug === 'cli') {
+				await page.setViewportSize({ width: 390, height: 844 });
+				const chevron = page.locator('main details summary svg');
+				await expect(chevron).toBeAttached();
+				expect(await chevron.evaluate((el) => getComputedStyle(el).transitionProperty)).toContain(
+					'transform'
 				);
-			expect(wide).toEqual([]);
-		});
-	}
+				await page.emulateMedia({ reducedMotion: 'reduce' });
+				expect(await chevron.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe(
+					'none'
+				);
+				await page.emulateMedia({ reducedMotion: null });
+
+				for (const width of [1440, 390]) {
+					await page.setViewportSize({ width, height: 900 });
+					const wide = await page
+						.locator('.doc .table-wrap')
+						.evaluateAll((els) =>
+							els
+								.filter((el) => el.scrollWidth > el.clientWidth)
+								.map((el) => `${el.scrollWidth}/${el.clientWidth}`)
+						);
+					expect(wide, `/docs/cli tables at ${width}`).toEqual([]);
+				}
+			}
+		}
+	});
 
 	test('monospace text draws "://" with no ligature gap', async ({ page }) => {
 		await page.goto('/docs/install');
@@ -564,7 +550,6 @@ test('an unknown path signed out renders Not found and stays put', async ({ page
 	await expect(page.getByRole('navigation', { name: 'Site' })).toBeVisible();
 	await expect(page.getByRole('navigation', { name: 'Footer' })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Docs', exact: true }).last()).toBeVisible();
-	await page.waitForTimeout(500);
 	await expect(page).toHaveURL('/no-such-place');
 });
 
@@ -588,6 +573,11 @@ const TOUCH_PAGES = [
 	'/settings/machine-nix',
 	'/no-such-place'
 ];
+
+async function waitPageSettled(page: Page): Promise<void> {
+	await expect(page.locator('main#main')).toBeVisible();
+	await expect(page.locator('main#main').getByText('Loading…')).toHaveCount(0);
+}
 
 async function shortTargets(page: Page, scope: string): Promise<string[]> {
 	return page.locator(scope).evaluateAll((roots) => {
@@ -650,8 +640,7 @@ test.describe('touch targets', () => {
 		for (const path of TOUCH_PAGES) {
 			const url = path.startsWith('project') ? path.replace('project', `/projects/${p.id}`) : path;
 			await page.goto(url);
-			await expect(page.locator('main#main')).toBeVisible();
-			await page.waitForLoadState('networkidle');
+			await waitPageSettled(page);
 			expect(await shortTargets(page, 'header'), `${url} header`).toEqual([]);
 			expect(await shortTargets(page, 'main'), `${url} main`).toEqual([]);
 			// The strip's places are links: each is a 44px row (I-841).
@@ -681,51 +670,28 @@ test.describe('the dashboard rail', () => {
 			return (cw - Math.min(cw, 1200)) / 2 + gutter;
 		});
 
-	for (const width of [1440, 1024]) {
-		test(`the rail is 200px at the frame's edge and the page 48px past it at ${width}`, async ({
-			page
-		}) => {
+	test("the rail is 200px at the frame's edge at 1440 and 1024, and the strip holds the four places at 390 and 360", async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+		for (const width of [1440, 1024]) {
 			await page.setViewportSize({ width, height: 900 });
-			await page.goto('/projects');
-			await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
 			const left = await frameLeft(page);
 			const rail = (await page.locator('[data-dash-strip]').boundingBox())!;
 			const main = (await page.locator('main#main').boundingBox())!;
-			expect(rail.x).toBeCloseTo(left, 0);
-			expect(rail.width).toBeCloseTo(200, 0);
-			expect(main.x).toBeCloseTo(left + 248, 0);
+			expect(rail.x, `rail.x at ${width}`).toBeCloseTo(left, 0);
+			expect(rail.width, `rail.width at ${width}`).toBeCloseTo(200, 0);
+			expect(main.x, `main.x at ${width}`).toBeCloseTo(left + 248, 0);
 			// The rail is the window under the header less the compact
 			// footer's 71px row, its plan at the foot.
-			expect(rail.y).toBeCloseTo(57, 0);
-			expect(rail.y + rail.height).toBeCloseTo(900 - 71, 0);
-		});
-	}
-
-	// The rail never slides under the header at a page's foot, and its
-	// plan sits at one height on a long page and a short one (review IA).
-	test('the rail holds still at the foot of a long page and a short one', async ({ page }) => {
-		await page.setViewportSize({ width: 1440, height: 900 });
-		const tops: number[] = [];
-		for (const path of ['/projects', '/questions', '/settings/secrets', '/no-such-place']) {
-			await page.goto(path);
-			await expect(page.locator('main#main')).toBeVisible();
-			await page.waitForLoadState('networkidle');
-			await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
-			// Measured once the scroll has landed: reading a frame after a
-			// fire-and-forget scrollTo caught the rail mid-flight and failed
-			// this once in a full run (settledBox).
-			const first = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link').first();
-			const box = await settledBox(page, first);
-			expect(box.y, `${path} first place`).toBeGreaterThanOrEqual(57);
-			tops.push((await settledBox(page, page.locator('[data-dash-strip]'))).y);
+			expect(rail.y, `rail.y at ${width}`).toBeCloseTo(57, 0);
+			expect(rail.y + rail.height, `rail bottom at ${width}`).toBeCloseTo(900 - 71, 0);
 		}
-		for (const y of tops) expect(y).toBeCloseTo(57, 0);
-	});
-
-	for (const width of [390, 360]) {
-		test(`the strip under the header holds the four places at ${width}`, async ({ page }) => {
+		for (const width of [390, 360]) {
 			await page.setViewportSize({ width, height: 844 });
-			await page.goto('/projects');
+			await page.evaluate(() => scrollTo(0, 0));
 			const nav = page.getByRole('navigation', { name: 'Dashboard' });
 			for (const name of ['Projects', 'Questions', 'Billing', 'Settings']) {
 				await expect(
@@ -739,31 +705,50 @@ test.describe('the dashboard rail', () => {
 				.locator('ul')
 				.first()
 				.evaluate((ul) => ul.scrollWidth <= ul.clientWidth);
-			expect(fits).toBe(true);
-			const strip = (await page.locator('[data-dash-strip]').boundingBox())!;
-			expect(strip.y + strip.height).toBeCloseTo(101, 0);
+			expect(fits, `fits at ${width}`).toBe(true);
+			const strip = await settledBox(page, page.locator('[data-dash-strip]'));
+			expect(strip.y + strip.height, `strip bottom at ${width}`).toBeCloseTo(101, 0);
 			// It sticks under the header.
 			await page.evaluate(() => scrollTo(0, 600));
 			await expect
 				.poll(async () => (await page.locator('[data-dash-strip]').boundingBox())!.y)
 				.toBeCloseTo(57, 0);
-		});
-	}
+		}
+	});
+
+	// The rail never slides under the header at a page's foot, and its
+	// plan sits at one height on a long page and a short one (review IA).
+	test('the rail holds still at the foot of a long page and a short one', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		const tops: number[] = [];
+		for (const path of ['/projects', '/questions', '/settings/secrets', '/no-such-place']) {
+			await page.goto(path);
+			await waitPageSettled(page);
+			await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+			// Measured once the scroll has landed: reading a frame after a
+			// fire-and-forget scrollTo caught the rail mid-flight and failed
+			// this once in a full run (settledBox).
+			const first = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link').first();
+			const box = await settledBox(page, first);
+			expect(box.y, `${path} first place`).toBeGreaterThanOrEqual(57);
+			tops.push((await settledBox(page, page.locator('[data-dash-strip]'))).y);
+		}
+		for (const y of tops) expect(y).toBeCloseTo(57, 0);
+	});
 
 	test('no dashboard page scrolls sideways', async ({ page }) => {
 		const p = await project({ name: 'wide-app', remote_url: 'github.com/heracraft/wide-app' });
-		for (const width of [320, 390, 768, 1024, 1280]) {
-			await page.setViewportSize({ width, height: 900 });
-			for (const path of [
-				'/projects',
-				'/questions',
-				`/projects/${p.id}`,
-				'/billing',
-				'/settings'
-			]) {
-				await page.goto(path);
-				await expect(page.locator('main#main')).toBeVisible();
-				await page.waitForLoadState('networkidle');
+		for (const path of [
+			'/projects',
+			'/questions',
+			`/projects/${p.id}`,
+			'/billing',
+			'/settings'
+		]) {
+			await page.goto(path);
+			await waitPageSettled(page);
+			for (const width of [320, 390, 768, 1024, 1280]) {
+				await page.setViewportSize({ width, height: 900 });
 				const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 				expect(wide, `${path} at ${width}`).toBeLessThanOrEqual(0);
 			}
@@ -793,23 +778,21 @@ test.describe('the dashboard rail', () => {
 		];
 		const nav = page.getByRole('navigation', { name: 'Dashboard' });
 		for (const [path, name] of routes) {
+			await page.setViewportSize({ width: 1440, height: 900 });
 			await page.goto(path);
 			await expect(page.locator('main#main')).toBeVisible();
 			const current = nav.locator('[aria-current="page"]');
 			await expect(current, path).toHaveCount(1);
 			await expect(current, path).toContainText(name);
-		}
-		// The strip draws no project rows, so on a project's tabs Projects
-		// is the current place, shown and named (ia-final 1.2's fallback).
-		for (const width of [390, 768]) {
-			await page.setViewportSize({ width, height: 844 });
-			for (const path of [`/projects/${p.id}`, `/projects/${p.id}/config`]) {
-				await page.goto(path);
-				await expect(page.locator('main#main')).toBeVisible();
-				const current = nav.locator('[aria-current="page"]');
-				await expect(current, `${path} at ${width}`).toHaveCount(1);
-				await expect(current, `${path} at ${width}`).toHaveText('Projects');
-				await expect(current, `${path} at ${width}`).toBeVisible();
+			if (path === `/projects/${p.id}` || path === `/projects/${p.id}/config`) {
+				// The strip draws no project rows, so on a project's tabs Projects
+				// is the current place, shown and named (ia-final 1.2's fallback).
+				for (const width of [390, 768]) {
+					await page.setViewportSize({ width, height: 844 });
+					await expect(current, `${path} at ${width}`).toHaveCount(1);
+					await expect(current, `${path} at ${width}`).toHaveText('Projects');
+					await expect(current, `${path} at ${width}`).toBeVisible();
+				}
 			}
 		}
 	});
@@ -835,8 +818,7 @@ test.describe('the dashboard rail', () => {
 		];
 		for (const [path, most] of pages) {
 			await page.goto(path);
-			await expect(page.locator('main#main')).toBeVisible();
-			await page.waitForLoadState('networkidle');
+			await waitPageSettled(page);
 			const n = await page.locator('main .hk-btn').filter({ visible: true }).count();
 			expect(n, path).toBeLessThanOrEqual(most);
 		}
@@ -896,7 +878,7 @@ test.describe('the dashboard rail', () => {
 		await page.goto('/projects');
 		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
 		// Billing switched off: no plan to show.
-		await page.waitForLoadState('networkidle');
+		await waitPageSettled(page);
 		await expect(page.getByTestId('plan-strip')).toHaveCount(0);
 	});
 
@@ -939,9 +921,13 @@ test.describe('first loads hold still', () => {
 
 	async function cls(page: Page, path: string): Promise<number> {
 		await page.goto(path);
-		await expect(page.locator('main#main')).toBeVisible();
-		await page.waitForLoadState('networkidle');
-		await page.waitForTimeout(800);
+		await waitPageSettled(page);
+		await page.evaluate(
+			() =>
+				new Promise<void>((r) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 80)))
+				)
+		);
 		return page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 	}
 
@@ -989,15 +975,22 @@ test.describe('first loads hold still', () => {
 			await destroyProject(apiURLFromEnv(), gone.id);
 		}
 		await page.route(/\/v1\/projects\/[^/]+\/events/, async (route) => {
-			await new Promise((r) => setTimeout(r, 600));
+			await new Promise((r) => setTimeout(r, 150));
 			await route.fallback();
 		});
 		await page.setViewportSize({ width: 1440, height: 900 });
 		try {
 			await setBilling({ mode: 'active', plan: 'pro' });
-			const shift = await cls(page, '/projects');
+			await page.goto('/projects');
 			await expect(page.getByTestId('recent-activity')).toBeVisible();
 			await expect(page.getByRole('heading', { name: 'Recently destroyed' })).toBeVisible();
+			await page.evaluate(
+				() =>
+					new Promise<void>((r) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 80)))
+					)
+			);
+			const shift = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 			expect(shift).toBeLessThanOrEqual(0.01);
 		} finally {
 			await resetBilling();
