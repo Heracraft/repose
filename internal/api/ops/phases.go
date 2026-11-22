@@ -1643,11 +1643,36 @@ func (e *Engine) notifyPlatform(ctx context.Context, projectID uuid.UUID, kind, 
 // reaper started (params.expired) records temp_destroyed, once: only
 // the call that marks the row does.
 func (e *Engine) markDestroyed(ctx context.Context, op *store.Op, projectID uuid.UUID) error {
+	// A machine whose host is lost or retired is destroyed without it
+	// (DECISIONS I-1548): every phase skipped (I-924), and a snapshot
+	// that host kept on its own disk, the account's own host's, goes
+	// with it, marked as a host removal marks it (I-1542). A snapshot in
+	// repose's store (a host repose runs) stays as the final snapshot.
+	hostGone := false
+	var hostID *uuid.UUID
+	if err := e.pool.QueryRow(ctx, "select host_id from projects where id = $1", projectID).Scan(&hostID); err != nil && !db.IsNoRows(err) {
+		return err
+	}
+	if hostID != nil {
+		gone, err := e.hostGone(ctx, *hostID)
+		if err != nil {
+			return err
+		}
+		hostGone = gone
+		if gone {
+			if _, err := e.pool.Exec(ctx, `update snapshots s set gone_with_host = h.name
+				  from hosts h
+				 where s.project_id = $1 and s.host_id = h.id and h.owner_account_id is not null
+				   and s.gone_with_host is null and s.deleted_at is null`, projectID); err != nil {
+				return err
+			}
+		}
+	}
 	tag, err := e.pool.Exec(ctx, `update projects set state = 'destroyed', destroyed_at = now(), host_id = null, guest_id = null, guest_ip = null, vsock_cid = null where id = $1 and destroyed_at is null`, projectID)
 	if err != nil {
 		return err
 	}
-	e.log.Info("project destroyed", "event", "guest_destroy", "project_id", projectID.String())
+	e.log.Info("project destroyed", "event", "guest_destroy", "project_id", projectID.String(), "host_gone", hostGone)
 	_, err = e.pool.Exec(ctx, `update snapshots s set expires_at = case
 			when p.expires_at is not null then least(coalesce(s.expires_at, now()), now())
 			when s.id = (select k.id from snapshots k where k.project_id = s.project_id and k.deleted_at is null

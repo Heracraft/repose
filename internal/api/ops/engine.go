@@ -326,6 +326,7 @@ func (e *Engine) loop(ctx context.Context) {
 // Tick advances every op that has work: pending, a result waiting, or a
 // phase not yet sent; then applies timeouts. Exposed for tests.
 func (e *Engine) Tick(ctx context.Context) {
+	e.redestroyOnGoneHosts(ctx)
 	rows, err := e.pool.Query(ctx, `select distinct on (coalesce(project_id, id)) id from ops
 		where state in ('pending','running') order by coalesce(project_id, id), created_at, id`)
 	if err != nil {
@@ -450,11 +451,69 @@ func currentPhase(op *store.Op) string {
 	return ""
 }
 
+// dropForGoneHost ends an op's in-flight phase on a host nobody expects
+// back (I-1548): the command is forgotten and the op moves to its next
+// phase, which the next pass builds and, the host being gone, skips.
+func (e *Engine) dropForGoneHost(ctx context.Context, op *store.Op) {
+	e.log.Info("phase dropped: host gone", "event", "op_host_gone", "op_id", op.ID.String(), "kind", op.Kind, "phase", currentPhase(op))
+	if _, err := e.pool.Exec(ctx, "update ops set step = step + 1, command_id = null, sent_at = null, command_result = null where id = $1 and step = $2", op.ID, op.Step); err != nil {
+		e.log.Error("op host-gone step", "event", "op_fail", "op_id", op.ID.String(), "err", err.Error())
+		return
+	}
+	e.Kick()
+}
+
+// redestroyOnGoneHosts enqueues a fresh destroy for every live project on
+// a host that is lost or retired whose newest op is a destroy that failed
+// with host_unreachable (DECISIONS I-1548): it failed while the host was only unreachable, and a
+// destroy now finishes without the host. Each is enqueued at most once,
+// since the new op is then the newest.
+func (e *Engine) redestroyOnGoneHosts(ctx context.Context) {
+	rows, err := e.pool.Query(ctx, `select p.id from projects p
+		  join hosts h on h.id = p.host_id
+		 where p.destroyed_at is null and h.state in ('lost', 'retired')
+		   and exists (select 1 from ops o where o.id = (select n.id from ops n where n.project_id = p.id order by n.created_at desc, n.id desc limit 1)
+		               and o.kind = 'destroy' and o.state = 'error' and o.error->>'code' = 'host_unreachable')`)
+	if err != nil {
+		return
+	}
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, pid := range ids {
+		p, err := store.GetProject(ctx, e.pool, pid)
+		if err != nil {
+			continue
+		}
+		id := pid
+		if _, err := e.Enqueue(ctx, e.pool, NewOp{Kind: KindDestroy, ProjectID: &id, Params: map[string]any{"host_gone": true}, Phases: PlanDestroy(p)}, false); err == nil {
+			e.log.Info("destroy re-run: host gone", "event", "guest_destroy_retry", "project_id", pid.String())
+		}
+	}
+}
+
 func (e *Engine) checkTimeout(ctx context.Context, op *store.Op) {
 	if op.SentAt == nil {
 		return
 	}
 	age := e.now().Sub(*op.SentAt)
+	if op.HostID != nil && op.Kind == KindDestroy {
+		// A destroy whose host became lost or retired while
+		// its command waited: nothing will answer, and nothing needs to,
+		// so the phase is dropped and the plan goes on without the host
+		// at once, where every later phase skips (DECISIONS I-1548).
+		// A destroy enqueued while its host was only unreachable used to
+		// fail here as host_unreachable and leave the row in error.
+		if gone, err := e.hostGone(ctx, *op.HostID); err == nil && gone {
+			e.dropForGoneHost(ctx, op)
+			return
+		}
+	}
 	if op.HostID != nil {
 		h, err := store.GetHost(ctx, e.pool, *op.HostID)
 		// `lost` and `retired` join `unreachable` here: an op addressed

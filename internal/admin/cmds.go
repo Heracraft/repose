@@ -658,7 +658,7 @@ func (e *Env) projects(ctx context.Context, args []string) error {
 			{"id", p.ID.String()}, {"slug", p.Slug}, {"user", u.Handle + " (" + u.ID.String() + ")"}, {"class", p.Class}, {"state", p.State},
 			{"host", host}, {"guest_id", fmt.Sprint(p.GuestID)}, {"guest_ip", fmt.Sprint(p.GuestIP)}, {"base", derefOr(p.BaseVersion, "-")},
 			{"hold_base_updates", strconv.FormatBool(p.HoldBaseUpdates)}, {"volume", gb(p.VolumeBytes)}, {"last snapshot", fmtTime(lastSnap)},
-			{"last error", fmt.Sprint(p.LastError)}, {"created", fmtTime(&p.CreatedAt)},
+			{"last error", derefOr(p.LastError, "-")}, {"created", fmtTime(&p.CreatedAt)},
 		}
 		if l, ok, _ := meter.LatestSample(ctx, e.pool, p.ID); ok {
 			rows = append(rows, []string{"signals", fmt.Sprintf("ssh=%d tmux=%d docker=%d guestd_ok=%v agents=%v (%s ago)", l.SSHSessions, l.TmuxClients, l.DockerContainers, l.GuestdOK, l.Agents, time.Since(l.TS).Round(time.Second))})
