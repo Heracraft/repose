@@ -423,3 +423,143 @@ that lands on the machine.
   address. Neither changed anything.
 - Single readings: every time above is one run, except the config-delay
   figure (3.02 s, twice).
+
+## Second pass (2026-11-22, afternoon)
+
+Tree with the fixes: `main` at 424cafcd, merged into `council/nonix-cli`.
+The CLI and the fake api were built from it. The fake ran with
+`-default-runtime erofs -config-delay 3s` and the new `/runtime` and
+`/pending-base` switches, and the harness from the first pass was not
+used. Real machines ran on staging (control plane, host, gateway and CLI
+wrapper `~/repose-ws/repose-stg` all at c460b3a2; Ubuntu base
+2026.11.22.8; account `stgdev`, exempt), from
+`/mnt/nixstore/tmp/council-cli/`.
+
+**Gate: clean. No P0 is open.** Two new P1s are open (N1, N2).
+
+### Verification
+
+| First pass | Now | New behaviour, quoted | Where |
+|---|---|---|---|
+| C1 `config --global` on Ubuntu | Fixed | Ubuntu-only: "Your machines run the Ubuntu base and don't use machine.nix; `repose config add NAME` installs a package on one." exit 1. Mixed: "…legacy switches in place. … app runs the Ubuntu base and doesn't use machine.nix." Help: "every NixOS machine of your account gets". Template header: "Ubuntu machines don't use it", link `/docs/machine#older-machines`. | fake; staging (refusal) |
+| C2 `scan` | Fixed (scan); `run`'s carry not re-run | `scan -v` now reads `GET /v1/projects/{id}`; "node 18 through mise when the machine's node is another version"; no machine.nix or repose.nix skip lines. | fake |
+| C3 fake fidelity | Fixed | Ubuntu by flag; restore `--as` and `restore` after `rm` keep `"guest_runtime": "erofs"`; machine.nix no longer fans out to erofs; pending base settable; the CA now names `[127.0.0.1]:1`, so no ssh leaves the box. New gap: N1. | fake |
+| C4 failed install | Fixed on the CLI | No "Added …" line on failure; ends "app's menu is unchanged.", exit 10. Residual: the item before the failure is installed and not in the menu (staging: `redis-server` present, `repose-svc-redis` inactive, `redis` absent from `config show`); items after it are not named. | fake; staging |
+| C5 `config rm` on empty menu | Fixed | "redis is not in cli-r's menu." exit 2, nothing more. | fake; staging |
+| C6 waiting base | Fixed | status: "base 2026.11.30 is ready; app uses it at its next restart" plus a `base 2026.09.15, Ubuntu` row; ls: "app: base 2026.11.30 is ready; …". | fake (staging has no pending base) |
+| C7 kind of machine | Partly fixed | status row `base 2026.11.22.8, Ubuntu` (staging) and `…, NixOS` (fake). `ls` with an Ubuntu and a NixOS machine still shows no kind. | fake; staging |
+| C8 help texts | Fixed, except `logs --kind build` | `--no-personal`: "on a NixOS machine, keep your machine.nix off it"; catalog: postgresql "under /var/lib/repose/services/postgresql, one folder per major", vercel "Vercel's CLI, from npm." cli.md now says `build` holds "the install lines on an Ubuntu machine"; the real log holds only "build switching the machine" (N1). | fake; staging |
+| C9 error lines | Fixed (empty `show` closed by documentation) | "error: repose-fake-missing failed: E: …" (no `menu_failed:`); 129 characters: "is longer than an apt package name can be (128 characters at most)."; cli.md now says `show` prints "nothing when it is empty". | fake |
+| C10 `host add` on Linux | Not fixed (CLI half) | Still only `repose host add --join …`; on linux/amd64 the step answers "The appliance runs on a Mac with Apple silicon; this is linux/amd64." with no installer. | fake |
+| C11 smaller lines | /v1 hint and restart line fixed; rest not fixed | "http://127.0.0.1:38275 has no /v1 at its end; the api answers at …/v1. Check --api-url or $REPOSE_API_URL." config.md: "`repose stop --no-snapshot todo-app && repose start todo-app` does the same." Still: `--temp` twice → "spk" is taken; trying "spk-2"; `snapshots app` exit 2; 30.03 s of silence before "timed out" (192.0.2.1). | fake |
+| Guide | Fixed in source, not in the published base | `internal/cli/testdata` and `ws/nonix-guest-image` say "For tkinter, `sudo apt-get install -y python3-tk`"; the guide on a staging machine (base 2026.11.22.8) still says "The system `python3` has no Tk". The `needs:` commands are all on the machine (`repose-checkout`, `repose-guest-profile`, `repose-presence`, `repose-notify`, `repose-ask`, `repose-mcp`, `mise`, `apt-get`), so that first-pass doubt is closed. | staging `exec` |
+
+No finding regressed.
+
+### New findings
+
+**N1 (P1). A real install says nothing until it ends, and a failure gives
+no reason.** Both reviewers saw it on two machines (cli-a here, tmp-vffw
+for the dashboard reviewer).
+
+```
+$ repose-stg config add --project cli-a postgresql bun ffmpeg
+Added postgresql, bun and ffmpeg to cli-a.
+Applied revision 38933074 in 1m10s.          (70.03 s, nothing in between)
+$ repose-stg logs cli-a --kind build
+2026-11-22T13:32:21Z build switching the machine
+$ repose-stg config add --project cli-a redis ffmpeg-typo zig
+error: ffmpeg-typo failed: apt-get exited 100
+cli-a's menu is unchanged.                    (15.71 s, exit 10)
+```
+
+On a pseudo-terminal (`script`), `config add deno` drew no spinner and no
+item line in its 8.0 s. config.md shows "✓ postgresql 16 ready on
+127.0.0.1:5432 14s" and "E: Unable to locate package ffmpeg-typo", and
+troubleshooting.md tells the reader to look for that apt line. The fake
+streams "installing X / X ready" and the apt line, so every test that uses
+it passes while a customer stares at nothing for a minute. The installs
+themselves are right: PostgreSQL 16.16 answers `psql -h 127.0.0.1 -U dev
+-d dev`, `repose-svc-postgresql` is active, `/var/lib/repose/services/postgresql/16`
+exists, and bun, deno and ffmpeg are on the path. Falsifier: one real
+install that prints a per-item line. None of four did (two here, two for
+the dashboard reviewer). Against plain SSH, where `apt-get` shows its own
+progress, a silent minute is worse.
+
+**N2 (P1). `repose sync` after `run --temp` makes a second, permanent,
+large machine without asking.**
+
+```
+$ cd repo          # git checkout, committed repose.nix, no remote
+$ repose-stg run cli-r --temp --size small -d      # 6.78 s, fine
+$ (edit two files) ; repose-stg sync
+Creating repo...
+✓ Created repo (large)  5.5s
+...
+Synced: 2 modified, 1 untracked (1 new commit)  0.3s
+```
+
+The temporary machine is never written to the laptop's project cache
+(documented), so the next `sync` in that folder finds no project and
+creates one named after the folder, at the default size, not temporary.
+On a terminal it does not ask either (fake, under `script`: "✓ Created
+fresh (large)"). The customer's changes went to `repo`, not to `cli-r`
+where they were working. `sync --help` says "creating or starting the
+machine if needed", and lifecycle.md says `--temp` "never uses the
+checkout's project". Each sentence is documented, but nothing warns about
+what they do together. I reached it on an exempt account. On Solo, with
+the 4 GB temporary machine running, an 8 GB large one would be refused
+with exit 7, which is a confusing answer to `sync`. On Plus it would be
+made silently. Not specific to Ubuntu. Falsifier: `sync` asks before
+creating, or picks the temporary machine. It did neither.
+
+**N3 (P2). A snapshot id as shown is refused when typed by its start.**
+`snapshots list cli-a` shows `8b287420`, the last 8 characters of
+`01a20377-…-0cd38b287420`. `snapshots restore cli-a 8b28 --as cli-b` →
+"cli-a has no snapshot 8b28." exit 2, and `8b2874` is refused too, while
+`7420` and `8b287420` work. The help says "4 or more of its first or
+last characters", and the customer sees neither end of the real id.
+
+**N4 (P2). Restoring a temporary machine's snapshot makes a permanent
+machine.** `snapshots restore cli-a 8b287420 --as cli-b` (cli-a temporary)
+made `cli-b` with no `LEFT`, and nothing said so. That is a second way to
+end up with a machine that keeps running.
+
+**N5 (P2). Nix-era words on a real Ubuntu machine's operations.**
+`logs --kind ops`: "build done 1m10s"; `config revisions`: the first
+revision's status is `built`; the build log: "switching the machine".
+`sync` on an all-Ubuntu account still prints "Not pushing
+~/.config/repose/machine.nix: the copy on your account was saved
+elsewhere …" (fake), about a file no machine of theirs uses.
+
+Real timings, for the record (one reading each unless stated): create
+6.0 s ("Created … 6.0s"), `run -d` total 6.40 s and 6.78 s, against the 6 s
+reference. Start after a stop: boot 5.3 s, 12.97 s with the wait for the
+stop. `resize --size tiny`: 11.36 s, boot 8.8 s. `restore --as`: 12.76 s
+and 14 s; the first pass had no figure for this, and the reference is
+about 8 s, so it is 5 to 6 s slower. Menu installs: 70.03 s
+(postgresql+bun+ffmpeg on a fresh machine), 8.0 s (deno), 15.71 s (failed).
+
+### Method, second pass
+
+- Ran: every CLI row above on the fake. On staging: create, `status`,
+  `config add` (success, failure, on a pseudo-terminal), `config rm`,
+  `config edit`, `config --global`, `logs`, stop/start, `snapshots
+  restore --as`, `resize --size`, `run --temp` in a git checkout with
+  `repose.nix`, `sync` with a dirty checkout, and `exec` checks on the
+  machine.
+- Could not run: `run`'s laptop-tool carry with an account machine.nix
+  (an Ubuntu-only account now refuses to make one, which is the C1 fix);
+  a pending base on staging; the dashboard against staging (the partner
+  found the staging login 404s).
+- Rules that bit: "fakes must mirror refusals" again, the other way round.
+  The fake now models states it did not, but it invents install output the
+  real system does not produce (N1). "Do not rank from the only state you
+  could reach": N2 was measured on an exempt account, and its Solo and
+  Plus outcomes are reasoned, not run.
+- My breaches: staging held four machines twice, for about a minute after
+  `restore --as cli-x` (I ran a second restore to test a suffix id) and
+  for about 30 s after N2's unexpected create. I destroyed them at once.
+  All my machines (cli-a, cli-b, cli-x, cli-r, repo) are destroyed. Their
+  final snapshots stay in `ls --destroyed` for 30 days, and the CLI cannot
+  purge them.
