@@ -82,6 +82,16 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
               multiplexer text not null default 'tmux'
                 check (multiplexer in ('tmux','herdr')),  -- what the next start runs (0017, I-502)
+              guest_runtime text not null default 'nix'
+                check (guest_runtime in ('nix','erofs')),  -- what the guest boots (0051, I-1462): a Nix
+                -- closure, or an erofs base image. Fixed at create from the request (exempt
+                -- accounts only) or settings.default_guest_runtime; a restore copies its
+                -- source's. Never changed in place: the two volume layouts differ
+              pending_base_version text null,  -- the erofs base the next start boots (0051, I-1462),
+                -- set by the base bump for an unheld erofs project behind the latest erofs
+                -- base for its host's arch, cleared (and base_version set to it) when a
+                -- start reports booted_base_version; null when none, and always null on a
+                -- nix project
               placement text not null default 'own'
                 check (placement in ('own','hosted')),  -- where the machine goes when it is
                 -- placed (0048, I-1366): `own` is the account's own hardware when it owns
@@ -193,7 +203,9 @@ snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes big
               reason text,  -- scheduled|stop|manual|fork (fork: 0025, I-703; no longer written since
                             -- I-1082 removed repose fork, and a later migration narrows the check)
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
-              sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
+              sha256 text null,  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
+              base_version text null)  -- the base the guest ran when it was taken (0051, I-1462);
+                                       -- null before 0051
 
 events       (id pk, project_id fk null, user_id fk null,  -- one of them is set (0007, I-269):
               -- user_id alone for an account event (waitlist_invited, the plan emails of I-291)
@@ -362,12 +374,34 @@ resume_notices (user_id fk, host_id fk, boot_id text, event_id uuid null, sent_a
               -- the one machines_restarted notice per user per host restart (0022, I-645)
 
 base_versions (version text pk, nix_rev text, changelog text, released_at,
-              security bool)
+              security bool,
+              format text not null default 'nix'  -- nix|erofs (0051, I-1462): a nix/ revision hosts build
+                check (format in ('nix','erofs')), -- from, or an Ubuntu image release hosts fetch
+              image_amd64_url text, image_amd64_sha256 text,          -- rootfs.erofs per arch
+              kernel_amd64_url text, kernel_amd64_sha256 text,        -- the kernel per arch
+              initramfs_amd64_url text, initramfs_amd64_sha256 text,  -- the initramfs per arch
+              image_arm64_url text, image_arm64_sha256 text,
+              kernel_arm64_url text, kernel_arm64_sha256 text,
+              initramfs_arm64_url text, initramfs_arm64_sha256 text,
+              kernel_version text,   -- uname -r of the image's kernel; null for nix rows
+              manifest_url text)     -- the release's manifest.json; null for nix rows
+              -- An erofs row has all six amd64 fields (check constraint); the six
+              -- arm64 fields are all set or all null, since the Mac path publishes
+              -- later. nix_rev is '' on an erofs row. sha256 values are lower-case
+              -- hex, checked by `repose-admin base publish` against the release's
+              -- SHA256SUMS or manifest before the row is written (I-1464). "The
+              -- latest base" is per format from 0051: a Nix project's builds, bumps
+              -- and starts read the newest `nix` row, an erofs project's the newest
+              -- `erofs` row with an image for its host's arch (amd64 for x86_64,
+              -- arm64 for aarch64). Index (format, released_at desc).
 
 host_sessions (host_id pk, replica_id text, since)          -- which api replica holds the host's stream
 gateway_sessions (project_id fk, cert_serial bigint, session_id text default '', opened_at,
               primary key (project_id, cert_serial, session_id))   -- one row per gateway relay (0004, I-176)
-settings     (key text pk, value text)                       -- edge_wg_pubkey, edge_wg_endpoint (repose-admin edge init)
+settings     (key text pk, value text)                       -- edge_wg_pubkey, edge_wg_endpoint (repose-admin edge init);
+              -- default_guest_runtime (I-1462): nix|erofs, the guest_runtime a project
+              -- create gets when the request names none; absent means nix. Set with
+              -- `repose-admin settings set default_guest_runtime erofs`, per environment
 says         (id pk, project_id fk, user_id fk,   -- `repose say` (0039, I-1144)
               tmux_window text, text text, sender text, from_owner bool,
               state text,          -- pending|sending|delivered|waiting|replaced|failed;
@@ -484,7 +518,7 @@ per-account listing), and the two partial unique indexes on host names,
 name) where owner_account_id is not null` (0048, I-1366).
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0049_plan_own`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0051_nonix_base_images`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

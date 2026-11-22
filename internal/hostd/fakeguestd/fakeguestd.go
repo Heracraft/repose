@@ -16,6 +16,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/vsockrpc"
+	"google.golang.org/protobuf/proto"
 )
 
 // Call is one recorded request.
@@ -54,6 +55,21 @@ type Options struct {
 	// and its read of the next timer elapse, I-818); nil, or a nil
 	// answer, leaves the canned reply.
 	OnExec func(argv []string) *guestdv1.ExecResult
+	// Erofs makes the fake an erofs guest (DECISIONS I-1460): Switch and
+	// RegisterPaths answer unimplemented, and ApplyMenu works. Without
+	// it the fake is a Nix guest and ApplyMenu answers unimplemented.
+	Erofs bool
+	// BaseUpgraded is the initramfs's .base-upgraded marker at the fake's
+	// start: the first ApplyMenu with replay_after_base_upgrade installs
+	// the menu and removes it, as guestd does.
+	BaseUpgraded bool
+	// AppliedMenu is the menu the guest last applied, as guestd keeps it
+	// in /run/repose/rw/menu-applied.json across boots: a test hands the
+	// last fake's Applied to the next.
+	AppliedMenu []byte
+	// MenuLines are the progress lines an ApplyMenu that installs sends
+	// as Notify frames before its answer; nil sends one per item.
+	MenuLines []string
 }
 
 // Server is one fake guest listening on a unix socket.
@@ -71,13 +87,19 @@ type Server struct {
 	triggers []*guestdv1.Trigger
 	// prompts is what WriteTriggerPrompt wrote, by trigger name, which
 	// is the file a real guest would hold (DECISIONS I-1266).
-	prompts  map[string][]byte
-	frozen   bool
-	conn     *vsockrpc.ServerConn
-	closed   bool
-	stopped  chan struct{}
-	shutdown func()
-	wg       sync.WaitGroup
+	prompts map[string][]byte
+	// applied is the last menu an ApplyMenu installed, and menuRuns how
+	// many ApplyMenus installed anything (a replay that found nothing to
+	// do is not one).
+	applied      []byte
+	menuRuns     int
+	baseUpgraded bool
+	frozen       bool
+	conn         *vsockrpc.ServerConn
+	closed       bool
+	stopped      chan struct{}
+	shutdown     func()
+	wg           sync.WaitGroup
 }
 
 // Listen starts a fake guestd on path.
@@ -96,7 +118,7 @@ func Listen(path string, opts Options) (*Server, error) {
 	if opts.BootID == "" {
 		opts.BootID = "boot-1"
 	}
-	s := &Server{path: path, opts: opts, ln: ln, secrets: map[string][]byte{}, stopped: make(chan struct{})}
+	s := &Server{path: path, opts: opts, ln: ln, secrets: map[string][]byte{}, stopped: make(chan struct{}), baseUpgraded: opts.BaseUpgraded, applied: opts.AppliedMenu}
 	s.wg.Add(1)
 	go s.accept()
 	return s, nil
@@ -281,6 +303,8 @@ func kindOf(req *guestdv1.Request) string {
 		return "Exec"
 	case *guestdv1.Request_Shutdown:
 		return "Shutdown"
+	case *guestdv1.Request_ApplyMenu:
+		return "ApplyMenu"
 	}
 	return "unknown"
 }
@@ -289,8 +313,74 @@ func fail(code, msg string) *guestdv1.Response {
 	return &guestdv1.Response{Ok: false, Error: &guestdv1.Error{Code: code, Message: msg}}
 }
 
+// MenuRuns is how many ApplyMenus installed something.
+func (s *Server) MenuRuns() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.menuRuns
+}
+
+// Applied is the last menu an ApplyMenu installed, as bytes.
+func (s *Server) Applied() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.applied...)
+}
+
+// BaseUpgraded reports whether the .base-upgraded marker is still there.
+func (s *Server) BaseUpgraded() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.baseUpgraded
+}
+
+// applyMenu is guestd's ApplyMenu as vsock-guestd.md states it: a replay
+// works only after a base upgrade or for a menu that differs from the
+// last one applied, sends a progress line per item under the request's
+// id, and removes the marker after a replay that succeeded.
+func (s *Server) applyMenu(ctx context.Context, r *guestdv1.ApplyMenu) *guestdv1.Response {
+	if !s.opts.Erofs {
+		return fail("unimplemented", "ApplyMenu is for erofs guests")
+	}
+	for _, it := range r.GetMenu().GetItems() {
+		if (it.GetId() == "") == (it.GetPackage() == "") {
+			return &guestdv1.Response{Ok: false, Error: &guestdv1.Error{Code: "invalid_argument", Message: "an item names exactly one of id and package"},
+				Result: &guestdv1.Response_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenuProgress{Done: true, ErrorCode: "invalid_argument"}}}
+		}
+	}
+	b, _ := proto.Marshal(r.GetMenu()) // a message the fake just decoded marshals
+	s.mu.Lock()
+	same := string(b) == string(s.applied)
+	upgraded := s.baseUpgraded
+	conn := s.conn
+	s.mu.Unlock()
+	if r.GetReplayAfterBaseUpgrade() && !upgraded && same {
+		return &guestdv1.Response{Ok: true, Result: &guestdv1.Response_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenuProgress{Done: true}}}
+	}
+	lines := s.opts.MenuLines
+	if lines == nil {
+		for _, it := range r.GetMenu().GetItems() {
+			lines = append(lines, "installing "+it.GetId()+it.GetPackage())
+		}
+	}
+	id := vsockrpc.RequestID(ctx)
+	for _, l := range lines {
+		if conn != nil {
+			_ = conn.NotifyFor(id, &guestdv1.Notify{N: &guestdv1.Notify_ApplyMenuProgress{ApplyMenuProgress: &guestdv1.ApplyMenuProgress{Line: l}}}) // the peer may be gone
+		}
+	}
+	s.mu.Lock()
+	s.applied = b
+	s.menuRuns++
+	if r.GetReplayAfterBaseUpgrade() {
+		s.baseUpgraded = false
+	}
+	s.mu.Unlock()
+	return &guestdv1.Response{Ok: true, Result: &guestdv1.Response_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenuProgress{Done: true, Line: "menu applied"}}}
+}
+
 // Handle implements vsockrpc.Handler.
-func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Response {
+func (s *Server) Handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Response {
 	kind := kindOf(req)
 	s.mu.Lock()
 	s.calls = append(s.calls, Call{Kind: kind, Req: req})
@@ -348,14 +438,21 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 		s.mu.Lock()
 		s.frozen = false
 		s.mu.Unlock()
+	case *guestdv1.Request_ApplyMenu:
+		return s.applyMenu(ctx, r.ApplyMenu)
 	case *guestdv1.Request_Switch:
+		if s.opts.Erofs {
+			return fail("unimplemented", "Switch is for Nix guests")
+		}
 		if s.opts.NeedsReboot[r.Switch.SystemClosure] && !r.Switch.ForceReboot {
 			ok.Result = &guestdv1.Response_Switch{Switch: &guestdv1.SwitchResult{NeedsReboot: true, Output: []byte("kernel changed")}}
 		} else {
 			ok.Result = &guestdv1.Response_Switch{Switch: &guestdv1.SwitchResult{Rebooted: r.Switch.ForceReboot, Output: []byte("activating the configuration...\n")}}
 		}
 	case *guestdv1.Request_RegisterPaths:
-		// nothing to record beyond the call itself
+		if s.opts.Erofs {
+			return fail("unimplemented", "RegisterPaths is for Nix guests")
+		}
 	case *guestdv1.Request_GrowFs:
 		ok.Result = &guestdv1.Response_GrowFs{GrowFs: &guestdv1.GrowFsResult{NewBytes: 1 << 30}}
 	case *guestdv1.Request_WriteSecrets:

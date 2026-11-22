@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/app"
+	"github.com/heracraft/repose/internal/hostd/baseimg"
 	"github.com/heracraft/repose/internal/hostd/control"
 	"github.com/heracraft/repose/internal/hostd/guest"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
@@ -64,6 +65,8 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.BaseSSHKey, "base-repo-ssh-key", "", "private key file for cloning --base-repo-url over SSH")
 	fs.StringVar(&o.BuildUser, "build-user", "nixbuild", "unprivileged user fragment evaluation and builds run as (empty: hostd's own)")
 	fs.StringVar(&o.GCRootsDir, "gcroots", "/nix/var/nix/gcroots/repose", "GC roots directory")
+	fs.StringVar(&o.ImagesDir, "images-dir", baseimg.DefaultDir, "erofs base image cache, one <version>-<arch> directory per base; empty boots no erofs guests (DECISIONS I-1478)")
+	fs.StringVar(&o.NixMode, "nix-mode", "on", "on: build and boot Nix guests when nix is on PATH; off: none, and a Nix guest's command answers nix_unsupported (DECISIONS I-1484)")
 	// The herakraft.co name stays after the move to repose.run: this is the
 	// internal host-to-api address and the name on the api's own CA-issued
 	// certificate (DECISIONS I-1156).

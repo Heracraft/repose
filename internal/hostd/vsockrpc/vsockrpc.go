@@ -123,6 +123,10 @@ type Client struct {
 	err     error
 	prefix  string
 	dropped atomic.Uint64
+	// streams holds the progress handler of each in-flight call that
+	// takes Notify frames under its own request_id (ApplyMenu, DECISIONS
+	// I-1460); guarded by mu.
+	streams map[string]func(*guestdv1.Notify)
 }
 
 // NewClient starts the read loop on c. Notifications the caller does not
@@ -172,6 +176,19 @@ func (cl *Client) readLoop() {
 				close(ch)
 			}
 		case *guestdv1.Envelope_Notify:
+			if env.RequestId != "" {
+				// A Notify that names a request belongs to that call's
+				// progress, never to the guest's notification stream; one
+				// for a call this client does not know (it ended, or was
+				// never made) is dropped, as vsock-guestd.md says.
+				cl.mu.Lock()
+				h := cl.streams[env.RequestId]
+				cl.mu.Unlock()
+				if h != nil {
+					h(b.Notify)
+				}
+				continue
+			}
 			select {
 			case cl.notify <- b.Notify:
 			default:
@@ -183,6 +200,15 @@ func (cl *Client) readLoop() {
 
 // Call sends req and waits for its response or ctx.
 func (cl *Client) Call(ctx context.Context, req *guestdv1.Request) (*guestdv1.Response, error) {
+	return cl.CallStream(ctx, req, nil)
+}
+
+// CallStream is Call for a request whose progress arrives as Notify
+// frames carrying its request_id before the Response (ApplyMenu,
+// DECISIONS I-1460): each one is handed to progress, on the read loop's
+// goroutine and in order, until the Response arrives. progress must not
+// block. A nil progress is Call.
+func (cl *Client) CallStream(ctx context.Context, req *guestdv1.Request, progress func(*guestdv1.Notify)) (*guestdv1.Response, error) {
 	id := cl.prefix + fmt.Sprint(cl.seq.Add(1))
 	ch := make(chan *guestdv1.Response, 1)
 	cl.mu.Lock()
@@ -191,6 +217,17 @@ func (cl *Client) Call(ctx context.Context, req *guestdv1.Request) (*guestdv1.Re
 		return nil, fmt.Errorf("vsockrpc: %w", cl.err)
 	}
 	cl.pending[id] = ch
+	if progress != nil {
+		if cl.streams == nil {
+			cl.streams = map[string]func(*guestdv1.Notify){}
+		}
+		cl.streams[id] = progress
+		defer func() {
+			cl.mu.Lock()
+			delete(cl.streams, id)
+			cl.mu.Unlock()
+		}()
+	}
 	cl.mu.Unlock()
 	env := &guestdv1.Envelope{RequestId: id, Body: &guestdv1.Envelope_Request{Request: req}}
 	if err := cl.conn.Write(env); err != nil {
@@ -292,7 +329,7 @@ func Serve(ctx context.Context, c net.Conn, h Handler) *ServerConn {
 				continue
 			}
 			go func(id string, r *guestdv1.Request) {
-				resp := h.Handle(ctx, r)
+				resp := h.Handle(context.WithValue(ctx, requestIDKey{}, id), r)
 				if resp == nil {
 					resp = &guestdv1.Response{Ok: false, Error: &guestdv1.Error{Code: "internal", Message: "handler returned nothing"}}
 				}
@@ -306,6 +343,22 @@ func Serve(ctx context.Context, c net.Conn, h Handler) *ServerConn {
 // Notify pushes an unsolicited message to the host side.
 func (s *ServerConn) Notify(n *guestdv1.Notify) error {
 	return s.conn.Write(&guestdv1.Envelope{Body: &guestdv1.Envelope_Notify{Notify: n}})
+}
+
+// NotifyFor pushes a progress Notify of the request named id (an
+// ApplyMenu's lines, DECISIONS I-1460): the one Notify that carries a
+// request_id.
+func (s *ServerConn) NotifyFor(id string, n *guestdv1.Notify) error {
+	return s.conn.Write(&guestdv1.Envelope{RequestId: id, Body: &guestdv1.Envelope_Notify{Notify: n}})
+}
+
+type requestIDKey struct{}
+
+// RequestID is the request_id of the request a Handler is serving, for a
+// handler that sends progress with NotifyFor.
+func RequestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
 }
 
 // Done is closed when the connection ends.

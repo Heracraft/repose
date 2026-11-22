@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -81,6 +82,9 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	if p.State == "creating" || p.State == "building" || p.State == "stopping" || p.State == "destroying" || p.State == "destroyed" {
 		return errf("conflict", "%s is %s", p.Slug, p.State)
+	}
+	if store.NormalizeRuntime(p.GuestRuntime) == store.RuntimeErofs {
+		return s.putMenuErofs(w, r, p, body.Fragment, body.Menu)
 	}
 	cur, err := s.currentRevision(r, p)
 	if err != nil {
@@ -218,3 +222,65 @@ func (s *Server) catalog(w http.ResponseWriter, r *http.Request) error {
 // I-44), loaded and validated once; the api's own stand-in
 // (`internal/nixmenu`, I-42) is gone (I-119).
 var menuCatalog = sync.OnceValues(menu.Load)
+
+// MsgNixConfigRetired is what a Nix file sent to an erofs machine answers
+// (DECISIONS I-1462).
+const MsgNixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services."
+
+// putMenuErofs is PUT /config on an erofs project (DECISIONS I-1462,
+// I-1464): a menu only, nothing built. A running machine applies it in
+// place; a stopped one at its next start, the revision waiting as built.
+func (s *Server) putMenuErofs(w http.ResponseWriter, r *http.Request, p *store.Project, fragment *string, sel menu.Selection) error {
+	ctx := r.Context()
+	if fragment != nil {
+		return withDetail(errf("nix_config_retired", "%s", MsgNixConfigRetired), map[string]any{"reason": "nix_config_retired"})
+	}
+	cat, err := menuCatalog()
+	if err != nil {
+		return err
+	}
+	// apt names, not nixpkgs paths (PR 7's ValidateFor; never Normalize,
+	// which applies the Nix rule).
+	if err := cat.ValidateFor(menu.RuntimeErofs, sel); err != nil {
+		var me *menu.Error
+		if errors.As(err, &me) {
+			return errf("invalid", "%s", me.Message)
+		}
+		return err
+	}
+	menuJSON := map[string]any{"selection": sel}
+	if cur, err := s.currentRevision(r, p); err == nil && cur.Status == "applied" && sameSelection(cur.Menu, menuJSON) {
+		writeJSON(w, http.StatusOK, map[string]any{"revision_id": cur.ID, "op_id": "", "unchanged": true, "message": "configuration unchanged; " + cur.ID.String()[:8] + " is still active"})
+		return nil
+	}
+	rid := store.NewID()
+	pid := p.ID
+	var opID uuid.UUID
+	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
+		if _, err := tx.Exec(ctx, "select 1 from projects where id = $1 for update", pid); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, menu, base_version, status, personal, personal_opt_out) values ($1, $2, '', $3, $4, 'built', '', true)", rid, pid, menuJSON, p.BaseVersion); err != nil {
+			return err
+		}
+		opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindBuild, ProjectID: &pid, RevisionID: &rid, Phases: ops.PlanBuildFor(p, p.State == "running")}, false)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, ops.ErrOpInProgress) {
+			return errf("conflict", "a build is in progress")
+		}
+		return err
+	}
+	s.d.Engine.Kick()
+	writeJSON(w, http.StatusAccepted, map[string]any{"revision_id": rid, "op_id": opID})
+	return nil
+}
+
+// sameSelection reports whether two config_revisions.menu values hold the
+// same selection.
+func sameSelection(a, b map[string]any) bool {
+	ja, err1 := json.Marshal(a["selection"])
+	jb, err2 := json.Marshal(b["selection"])
+	return err1 == nil && err2 == nil && string(ja) == string(jb)
+}

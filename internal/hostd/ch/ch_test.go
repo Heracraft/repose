@@ -1,6 +1,7 @@
 package ch
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -103,5 +104,86 @@ func TestArgsWithStoreDisk(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(args, " "), "--fs tag=ro-store,") {
 		t.Fatal("the share is gone")
+	}
+}
+
+// erofsSpec is an erofs guest as create.go fills it (DECISIONS I-1480).
+func erofsSpec() Spec {
+	return Spec{
+		GuestDir:  "/var/lib/repose/guests/0192f0a1-1111-7000-8000-000000000001",
+		Kernel:    "/var/lib/repose/images/2026.11.22.1-x86_64/vmlinuz",
+		Initrd:    "/var/lib/repose/images/2026.11.22.1-x86_64/initramfs.img",
+		RootImage: "/var/lib/repose/images/2026.11.22.1-x86_64/rootfs.erofs",
+		IP:        "10.64.4.2", Gateway: "10.64.4.1", Netmask: "255.255.252.0",
+		Tap: "tap-0192f0a1", MAC: "52:54:01:92:f0:a1", CID: 1000,
+		VolumeDev: "/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001",
+		VCPUs:     4, MemMiB: 8192, StoreTag: "ro-store", AuthTag: "claude-auth",
+		DiskIOPS: 3000, DiskBytesPerSec: 120_000_000, Hostname: "todo-app",
+	}
+}
+
+// The whole argv of an erofs guest: vda the read-only erofs, vdb the
+// volume with its limits, no ro-store share, the login share kept, and
+// a kernel line without init=.
+func TestArgsGoldenErofs(t *testing.T) {
+	if ConsoleTTY() != "ttyS0" {
+		t.Skip("the golden file is the x86_64 console")
+	}
+	got := strings.Join(erofsSpec().Args(), "\n") + "\n"
+	want, err := os.ReadFile("testdata/args-erofs.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Fatalf("argv differs from testdata/args-erofs.golden:\n%s", got)
+	}
+}
+
+func TestCmdlineErofs(t *testing.T) {
+	s := erofsSpec()
+	s.Init, s.KernelParams = "/nix/store/x/init", "loglevel=4" // ignored on an erofs guest
+	want := "console=" + ConsoleTTY() + " ip=10.64.4.2::10.64.4.1:255.255.252.0:todo-app:eth0:off systemd.hostname=todo-app panic=-1 reboot=t"
+	if got := s.Cmdline(); got != want {
+		t.Fatalf("cmdline\n got %s\nwant %s", got, want)
+	}
+	if strings.Contains(s.Cmdline(), "init=") {
+		t.Fatal("init= on an erofs guest's kernel line")
+	}
+}
+
+// vm.resize-disk targets the guest's volume and never the read-only
+// root: on an erofs guest the id it is given is the one the volume's
+// --disk carries, and the read-only disk carries another (I-1480).
+func TestVolumeDiskIDNeverReadOnly(t *testing.T) {
+	for name, s := range map[string]Spec{
+		"erofs":            erofsSpec(),
+		"nix":              {GuestDir: "/g", VolumeDev: "/dev/vg-guests/g-1", StoreTag: "ro-store"},
+		"nix-with-a-store": {GuestDir: "/g", VolumeDev: "/dev/vg-guests/g-1", StoreTag: "ro-store", StoreDisk: "/nix/store/x/store.erofs"},
+	} {
+		args := s.Args()
+		var disks []string
+		for i, a := range args {
+			if a == "--disk" {
+				disks = append(disks, args[i+1])
+			}
+		}
+		id := s.VolumeDiskID()
+		// Cloud Hypervisor names a --disk without id= _disk<n> by its place.
+		for n, d := range disks {
+			dID := fmt.Sprintf("_disk%d", n)
+			for _, opt := range strings.Split(d, ",") {
+				if v, ok := strings.CutPrefix(opt, "id="); ok {
+					dID = v
+				}
+			}
+			ro := strings.Contains(d, "readonly=on")
+			isVol := strings.HasPrefix(d, "path="+s.VolumeDev+",")
+			if dID == id && (ro || !isVol) {
+				t.Fatalf("%s: resize id %s names %s", name, id, d)
+			}
+			if isVol && dID != id {
+				t.Fatalf("%s: the volume is %s, resize targets %s", name, dID, id)
+			}
+		}
 	}
 }

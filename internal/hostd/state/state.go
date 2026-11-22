@@ -25,8 +25,12 @@ var (
 	bucketGuests   = []byte("guests")
 	bucketIPs      = []byte("ips")
 	bucketCommands = []byte("commands")
-	keySchema      = []byte("schema_version")
-	keyDraining    = []byte("draining")
+	// bucketImages holds one record per erofs base bundle in the host's
+	// image cache (DECISIONS I-1478): additive, so no schema bump, and a
+	// hostd older than it never opens the bucket.
+	bucketImages = []byte("base_images")
+	keySchema    = []byte("schema_version")
+	keyDraining  = []byte("draining")
 	// keyHostBootID is the host boot id the last Reconcile ran under
 	// (DECISIONS I-645): a different one at the next start means the host
 	// restarted, and guests found running with no hypervisor are marked.
@@ -53,6 +57,22 @@ type Guest struct {
 	Class         string `json:"class"`
 	VolumeBytes   uint64 `json:"volume_bytes"`
 	SystemClosure string `json:"system_closure"`
+	// BaseVersion is the erofs base an erofs guest boots (DECISIONS
+	// I-1458, I-1478): the base_versions label of the bundle under the
+	// host's image cache. Empty on a Nix guest, whose system is
+	// SystemClosure; exactly one of the two is set on a guest that was
+	// ever created or restored here.
+	BaseVersion string `json:"base_version,omitempty"`
+	// BaseNeedsFetch is set when reconcile found BaseVersion's bundle
+	// missing from the cache (a disk wipe, or a GC that raced a record):
+	// the guest is reported as it is, and its next start fetches the
+	// bundle again from that start's base_image (I-1484).
+	BaseNeedsFetch bool `json:"base_needs_fetch,omitempty"`
+	// Menu is the last MenuSpec a create, start or ApplyConfig carried
+	// for an erofs guest, as protobuf bytes, so a boot whose StartGuest
+	// brings none still replays the project's menu after a base bump
+	// (I-1482). Package names are tenant content: stored, never logged.
+	Menu []byte `json:"menu,omitempty"`
 	// PastClosures are the system closures this guest ran before, newest
 	// first, at most MaxPastClosures: its store view holds them too, since
 	// its nix database still lists their paths as valid (I-463).
@@ -139,6 +159,21 @@ type Resting struct {
 	NextTimer time.Time `json:"next_timer,omitempty"`
 }
 
+// BaseImage is one erofs base bundle in the host's image cache
+// (DECISIONS I-1478): the directory <images-dir>/<version>-<arch>/ holds
+// its kernel, initramfs and rootfs.erofs. FetchedAt is when the fetch
+// finished, which is what "the newest fetched" is measured by;
+// UnreferencedSince is when GC first found no guest naming it, zero
+// while one does.
+type BaseImage struct {
+	Key               string    `json:"key"` // <version>-<arch>
+	Version           string    `json:"version"`
+	Arch              string    `json:"arch"`
+	Bytes             uint64    `json:"bytes"`
+	FetchedAt         time.Time `json:"fetched_at"`
+	UnreferencedSince time.Time `json:"unreferenced_since,omitempty"`
+}
+
 // MaxPastClosures bounds Guest.PastClosures.
 const MaxPastClosures = 16
 
@@ -171,7 +206,7 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("open state %s: %w", path, err)
 	}
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, b := range [][]byte{bucketMeta, bucketGuests, bucketIPs, bucketCommands} {
+		for _, b := range [][]byte{bucketMeta, bucketGuests, bucketIPs, bucketCommands, bucketImages} {
 			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
 				return err
 			}
@@ -633,4 +668,52 @@ func (d *DB) ClaimIndex(guestID string, idx uint32) error {
 		}
 		return b.Put(idxKey(idx), []byte(guestID))
 	})
+}
+
+// PutBaseImage writes an image cache record.
+func (d *DB) PutBaseImage(r *BaseImage) error {
+	v, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	return d.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketImages).Put([]byte(r.Key), v)
+	})
+}
+
+// GetBaseImage reads one image cache record; ErrNotFound when absent.
+func (d *DB) GetBaseImage(key string) (*BaseImage, error) {
+	var r *BaseImage
+	err := d.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bucketImages).Get([]byte(key))
+		if v == nil {
+			return ErrNotFound
+		}
+		r = &BaseImage{}
+		return json.Unmarshal(v, r)
+	})
+	return r, err
+}
+
+// DeleteBaseImage removes an image cache record; a missing one is fine.
+func (d *DB) DeleteBaseImage(key string) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketImages).Delete([]byte(key))
+	})
+}
+
+// ListBaseImages returns every image cache record.
+func (d *DB) ListBaseImages() ([]*BaseImage, error) {
+	var out []*BaseImage
+	err := d.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketImages).ForEach(func(_, v []byte) error {
+			r := &BaseImage{}
+			if err := json.Unmarshal(v, r); err != nil {
+				return err
+			}
+			out = append(out, r)
+			return nil
+		})
+	})
+	return out, err
 }

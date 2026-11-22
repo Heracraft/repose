@@ -15,6 +15,18 @@ import (
 // the empty string.
 type Paths struct {
 	Root string
+	// Erofs is set on an erofs guest (DetectRuntime, DECISIONS I-1474).
+	// The zero value is a Nix guest, so every Paths a test or handler
+	// builds without it behaves as before.
+	Erofs bool
+}
+
+// Runtime names the runtime this Paths was built for.
+func (p Paths) Runtime() Runtime {
+	if p.Erofs {
+		return RuntimeErofs
+	}
+	return RuntimeNix
 }
 
 // join is Root/elem..., and /elem... on a real guest (empty Root): every
@@ -171,6 +183,54 @@ func (p Paths) CPUPressure() string { return p.join("proc", "pressure", "cpu") }
 // MemInfo is /proc/meminfo.
 func (p Paths) MemInfo() string { return p.join("proc", "meminfo") }
 
+// Mountinfo is /proc/self/mountinfo, read to decide the runtime and to
+// find the block device under /run/repose/rw (DECISIONS I-1474).
+func (p Paths) Mountinfo() string { return p.join("proc", "self", "mountinfo") }
+
+// RWMount is /run/repose/rw, the erofs guest's volume (vdb, ext4).
+func (p Paths) RWMount() string { return p.join("run", "repose", "rw") }
+
+// BaseUpgraded is /run/repose/rw/.base-upgraded: the initramfs writes it
+// when it rotated the overlay's upper directory for a new base, and
+// guestd removes it after the menu's replay succeeded (DECISIONS I-1460).
+func (p Paths) BaseUpgraded() string { return p.join("run", "repose", "rw", ".base-upgraded") }
+
+// MenuApplied is /run/repose/rw/menu-applied.json, root 0600: the menu
+// ApplyMenu last applied and how each item went (DECISIONS I-1460).
+func (p Paths) MenuApplied() string { return p.join("run", "repose", "rw", "menu-applied.json") }
+
+// AptManual is /run/repose/rw/apt-manual.list: the packages marked
+// manual that the base does not carry, one per line, which a replay after
+// a base upgrade installs again. The base's DPkg::Post-Invoke hook owns
+// it and rewrites it whole at every dpkg run; guestd only reads it. It is
+// on the volume's own root and not under /var/lib/repose, which is in the
+// overlay's upper directory and rotates away with it (DECISIONS I-1476).
+func (p Paths) AptManual() string { return p.join("run", "repose", "rw", "apt-manual.list") }
+
+// AptManualLegacy is /var/lib/repose/apt-manual.list, where the proposal
+// first put the list; read on a replay, from the live overlay and from
+// the rotated upper (AptManualRotated), never written. Both reads are
+// accepted for one release, then removed (DECISIONS I-1476).
+func (p Paths) AptManualLegacy() string { return p.join("var", "lib", "repose", "apt-manual.list") }
+
+// AptManualRotated is that legacy list in the upper directory the last
+// base upgrade rotated away.
+func (p Paths) AptManualRotated() string {
+	return p.join("run", "repose", "rw", "overlay", "upper.prev", "var", "lib", "repose", "apt-manual.list")
+}
+
+// ServicesDir is /var/lib/repose/services, the direct bind of the
+// volume's /services: a menu service's data lives in <id>/ under it, so
+// it survives a base upgrade (DECISIONS I-1460).
+func (p Paths) ServicesDir() string { return p.join("var", "lib", "repose", "services") }
+
+// SystemdUnitDir is /etc/systemd/system, where a menu service's unit is
+// written.
+func (p Paths) SystemdUnitDir() string { return p.join("etc", "systemd", "system") }
+
+// Etc is /etc/<elem...>.
+func (p Paths) Etc(elem ...string) string { return p.join(append([]string{"etc"}, elem...)...) }
+
 // Mounts is /proc/mounts, read to find the root block device.
 func (p Paths) Mounts() string { return p.join("proc", "mounts") }
 
@@ -188,10 +248,16 @@ func (p Paths) InotifyMax(name string) string {
 // DockerSock is the Docker daemon's unix socket.
 func (p Paths) DockerSock() string { return p.join("var", "run", "docker.sock") }
 
-// RootMount is the filesystem FIFREEZE is applied to. Under a test root it is
-// the root directory itself, which the fake freezer accepts and the real one
-// never sees.
+// RootMount is the filesystem FIFREEZE is applied to, GrowFs measures and
+// Sample and the disk warning statfs. Under a test root it is the root
+// directory itself, which the fake freezer accepts and the real one never
+// sees. On an erofs guest it is /run/repose/rw, the volume's ext4: / there
+// is an overlayfs, which FIFREEZE refuses with EOPNOTSUPP and whose statfs
+// is not the volume's (DECISIONS I-1460, I-1474).
 func (p Paths) RootMount() string {
+	if p.Erofs {
+		return p.RWMount()
+	}
 	if p.Root == "" {
 		return "/"
 	}

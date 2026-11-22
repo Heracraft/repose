@@ -9,7 +9,7 @@ option go_package = "github.com/heracraft/repose/internal/gen/guestd/v1;guestdv1
 import "repose/hostd/v1/hostd.proto";
 
 message Envelope {
-  string request_id = 1;   // empty for Notify
+  string request_id = 1;   // empty for Notify, except an ApplyMenuProgress (I-1460)
   oneof body {
     Request request = 2;
     Response response = 3;
@@ -30,9 +30,11 @@ message Thaw {}
 // registration: `nix-store --dump-db` of the closure, loaded into the guest's
 // database before the switch so nix knows the paths that arrived through the
 // shared store (DECISIONS I-67). Empty keeps the pre-I-55 behaviour.
+// Nix guests only: an erofs guest answers `unimplemented` (DECISIONS I-1460).
 message Switch { string system_closure = 1; bool force_reboot = 2; bytes registration = 3; }
 // RegisterPaths loads a `nix-store --dump-db` listing into the guest's nix
 // database; hostd sends one for the booted closure right after Ready.
+// Nix guests only: an erofs guest answers `unimplemented` (DECISIONS I-1460).
 message RegisterPaths { bytes registration = 1; }
 message GrowFs {}
 message WriteSecrets { repeated Secret secrets = 1; }
@@ -121,6 +123,21 @@ message RunTrigger {
   string payload_path = 6;
 }
 
+// ApplyMenu makes the guest's installed packages and services match menu
+// (DECISIONS I-1460), erofs guests only; a Nix guest answers
+// `unimplemented`. It is a state, not a diff, so the same menu twice
+// changes nothing and answers done. replay_after_base_upgrade is set on
+// the call hostd makes at a boot: guestd then applies the menu only when
+// the base changed under it (the /.base-upgraded marker on vdb) or the
+// menu differs from the one it last applied, and answers done at once
+// otherwise. While it works guestd sends ApplyMenuProgress lines as Notify
+// frames whose Envelope.request_id is this request's; the Response's
+// ApplyMenuProgress, done set, ends it.
+message ApplyMenu {
+  repose.hostd.v1.MenuSpec menu = 1;
+  bool replay_after_base_upgrade = 2;
+}
+
 message Request {
   oneof req {
     Ping ping = 1;
@@ -140,6 +157,7 @@ message Request {
     SetTriggers set_triggers = 15;
     RunTrigger run_trigger = 16;
     WriteTriggerPrompt write_trigger_prompt = 17;
+    ApplyMenu apply_menu = 18;  // DECISIONS I-1460
   }
 }
 
@@ -180,6 +198,16 @@ message SayResult { string state = 1; string window = 2; bool replaced = 3; }
 // installed), with the window and the bounded reason.
 message TriggerRunResult { string state = 1; string window = 2; string reason = 3; }
 
+// ApplyMenuProgress is one step of an ApplyMenu (DECISIONS I-1460). Sent
+// as a Notify with done false, line is one line of output for the user
+// (an install's own words, at most 1 KB). As the Response's result, done
+// is true: error_code empty is success, else `menu_failed` (an item did
+// not install or start; line names it) or `invalid_argument` (an unknown
+// catalog id or option, an item with both or neither of id and package, a
+// package name outside [a-z0-9][a-z0-9+.-]{0,127}), and the Response's
+// ok is false with the same code in its Error.
+message ApplyMenuProgress { string line = 1; bool done = 2; string error_code = 3; }
+
 message Response {
   bool ok = 1;
   Error error = 2;
@@ -191,6 +219,7 @@ message Response {
     ExecResult exec = 14;
     SayResult say = 15;
     TriggerRunResult trigger_run = 16;
+    ApplyMenuProgress apply_menu = 17;  // DECISIONS I-1460
   }
 }
 
@@ -270,5 +299,8 @@ message Notify {
     Warning warning = 4;
     Question question = 5;
     TriggerRun trigger_run = 6;
+    // A progress line of the ApplyMenu named by the Envelope's request_id
+    // (DECISIONS I-1460).
+    ApplyMenuProgress apply_menu_progress = 7;
   }
 }

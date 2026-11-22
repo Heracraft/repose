@@ -26,13 +26,14 @@ for an operator on a guest that has lost hostd (ops/RUNBOOK.md, "Guest
 unresponsive").
 
 Requests: ping, freeze, thaw, switch, register-paths, grow-fs, write-secrets,
-          set-principals, setup-project, sample, exec, shutdown
+          set-principals, setup-project, sample, exec, shutdown, apply-menu
 
 Examples:
   guestd call ping
   guestd call switch '{"systemClosure":"/nix/store/...-nixos-system"}'
   guestd call exec '{"argv":["uptime"],"timeoutS":5}'
   guestd call freeze --watch 15s      # then print notifications for 15 s
+  guestd call apply-menu '{"menu":{"items":[{"id":"postgresql"}]}}' --timeout 30m
 `
 
 // builders maps a request name to a decoder for its JSON body.
@@ -107,6 +108,13 @@ var builders = map[string]func(string) (*guestdv1.Request, error){
 			return nil, err
 		}
 		return &guestdv1.Request{Req: &guestdv1.Request_SayToAgent{SayToAgent: m}}, nil
+	},
+	"apply-menu": func(body string) (*guestdv1.Request, error) {
+		m := &guestdv1.ApplyMenu{}
+		if err := unmarshal(body, m); err != nil {
+			return nil, err
+		}
+		return &guestdv1.Request{Req: &guestdv1.Request_ApplyMenu{ApplyMenu: m}}, nil
 	},
 	"shutdown": func(body string) (*guestdv1.Request, error) {
 		m := &guestdv1.Shutdown{}
@@ -184,6 +192,12 @@ func runCall(args []string) error {
 
 	notifications := make(chan string, 64)
 	client := vsockrpc.NewClient(conn, func(n *guestdv1.Notify) {
+		// An ApplyMenu's progress is printed as it comes, before the
+		// response (DECISIONS I-1460).
+		if p := n.GetApplyMenuProgress(); p != nil {
+			fmt.Fprintln(os.Stderr, p.GetLine())
+			return
+		}
 		b, err := protojson.Marshal(n)
 		if err != nil {
 			return

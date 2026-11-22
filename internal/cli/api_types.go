@@ -102,6 +102,14 @@ type Project struct {
 	RunningSecondsToday int64      `json:"running_seconds_today,omitempty"`
 	RunningSecondsMonth int64      `json:"running_seconds_month,omitempty"`
 	LastSnapshotAt      *time.Time `json:"last_snapshot_at,omitempty"`
+
+	// GuestRuntime is what the machine boots (DECISIONS I-1462): `nix`,
+	// or `erofs`, the Ubuntu base configured by the menu alone. Absent
+	// from an older api, which the CLI reads as nix.
+	GuestRuntime string `json:"guest_runtime,omitempty"`
+	// PendingBaseVersion is the newer base an erofs machine boots at its
+	// next start (I-1462); null otherwise and from an older api.
+	PendingBaseVersion *string `json:"pending_base_version,omitempty"`
 	// LastError is the api's "code: message" for the op that last failed
 	// (the ops engine writes it; cleared by a successful start), and
 	// HostUnreachable its flag for a host that stopped answering. Both are

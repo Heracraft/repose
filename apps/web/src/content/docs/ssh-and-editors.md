@@ -64,7 +64,7 @@ It only writes those files, so a plain `ssh todo-app.repose` never starts a stop
 
 `Could not resolve hostname todo-app.repose` with no other message means ssh isn't reading the file repose writes: no entry gave ssh the name, so it asked DNS. `Include ~/.ssh/repose/config` has to sit above the first `Host` or `Match` line of `~/.ssh/config`, because below one it applies to that block alone. `repose login` puts it at the top, and leaves a line of your own further down where you put it.
 
-When `~/.ssh/config` is a symlink, the line goes in at the far end of it, your dotfiles repository included. When that target is one repose can't write, home-manager's in the Nix store for instance, it prints the path and the line to add there yourself, and every command that connects says so until the line is in place.
+When `~/.ssh/config` is a symlink, the line goes in at the far end of it, your dotfiles repository included. When that target is one repose can't write, a file another tool manages for instance, it prints the path and the line to add there yourself, and every command that connects says so until the line is in place.
 
 repose's own commands connect anyway: they hand ssh the file with `-F`. The editor `repose code` opens does not, and nor do plain `ssh`, `scp` and `git`.
 

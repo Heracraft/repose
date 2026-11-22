@@ -76,7 +76,7 @@ It downloads the latest release, checks it the way the install script does, and 
 
 A CLI older than the latest release says so on stderr, once per release. One the server no longer answers as these docs describe says so at the end of every `repose run`, `repose attach` and `repose sync`.
 
-If a package manager installed the binary (Nix, Homebrew, snap, your distribution), the command names that manager and changes nothing; update it there. If the binary is somewhere you can't write, `/usr/local/bin` after `install.sh --system` for instance, run `sudo repose version update`.
+If a package manager installed the binary (Homebrew, snap, your distribution's), the command names that manager and changes nothing; update it there. If the binary is somewhere you can't write, `/usr/local/bin` after `install.sh --system` for instance, run `sudo repose version update`.
 
 A CLI too old to have the command updates the old way. Run the install command again:
 

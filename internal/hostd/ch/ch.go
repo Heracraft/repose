@@ -20,10 +20,19 @@ import (
 // Spec is everything the argv needs; the guest package fills it from the
 // guest record and the system closure.
 type Spec struct {
-	GuestDir     string // /var/lib/repose/guests/<id>
-	Kernel       string // <closure>/kernel
-	Initrd       string // <closure>/initrd
-	Init         string // <closure>/init
+	GuestDir string // /var/lib/repose/guests/<id>
+	// Kernel and Initrd are the closure's on a Nix guest and the bundle's
+	// vmlinuz and initramfs.img on an erofs guest (DECISIONS I-1480).
+	Kernel string // <closure>/kernel
+	Initrd string // <closure>/initrd
+	// Init is the closure's init, on the kernel line as init=. Empty on
+	// an erofs guest: its initramfs switches root to /sbin/init.
+	Init string // <closure>/init
+	// RootImage is an erofs guest's read-only root, the bundle's
+	// rootfs.erofs (DECISIONS I-1458, I-1480): set, it is vda and the
+	// guest's volume is vdb, both with explicit ids, there is no store
+	// share, and the kernel line carries no init=. Empty is a Nix guest.
+	RootImage    string
 	KernelParams string // contents of <closure>/kernel-params
 	IP           string
 	Gateway      string
@@ -104,16 +113,27 @@ func ConsoleTTY() string {
 // when Hostname is a DNS label, the guest's name. systemd.hostname= wins
 // over the closure's /etc/hostname, which the ip= name field alone does not
 // (DECISIONS I-550).
+//
+// An erofs guest's line has no init= and no closure params: the initramfs
+// mounts vda and vdb and hands over to /sbin/init, and panic=-1 reboot=t
+// make a guest whose init fails end its VM, which hostd reports as a
+// failed start, instead of hanging in the initramfs (DECISIONS I-1480).
 func (s Spec) Cmdline() string {
-	parts := []string{"init=" + s.Init}
-	if p := strings.TrimSpace(s.KernelParams); p != "" {
-		parts = append(parts, p)
+	var parts []string
+	if s.RootImage == "" {
+		parts = append(parts, "init="+s.Init)
+		if p := strings.TrimSpace(s.KernelParams); p != "" {
+			parts = append(parts, p)
+		}
 	}
 	host := Hostname(s.Hostname)
 	parts = append(parts, "console="+ConsoleTTY(),
 		fmt.Sprintf("ip=%s::%s:%s:%s:eth0:off", s.IP, s.Gateway, s.Netmask, host))
 	if host != "" {
 		parts = append(parts, "systemd.hostname="+host)
+	}
+	if s.RootImage != "" {
+		parts = append(parts, "panic=-1", "reboot=t")
 	}
 	return strings.Join(parts, " ")
 }
@@ -158,13 +178,30 @@ func (s Spec) Args() []string {
 	// microvm.nix's order, store disk then volumes, so with a store disk
 	// the volume is /dev/vdb; the other way round stage 1 fscks the erofs
 	// as its root (lab image 6, 2026-11-19).
-	if s.StoreDisk != "" {
-		args = append(args, "--disk", "path="+s.StoreDisk+",image_type=raw,readonly=on")
+	//
+	// An erofs guest's root comes first for the same reason: the
+	// initramfs mounts vda as the base and vdb as the volume. Both carry
+	// an id, so vm.resize-disk names the volume and can never reach the
+	// read-only root (DECISIONS I-1480). The root has no rate limiter:
+	// it is the same read-only file for every guest on the host, so its
+	// reads are mostly the host's page cache, and it is not the disk a
+	// tenant's writes could take from another.
+	switch {
+	case s.RootImage != "":
+		args = append(args,
+			"--disk", "path="+s.RootImage+",image_type=raw,readonly=on,id="+RootID,
+			"--disk", "path="+s.VolumeDev+",image_type=raw,direct=on,id="+VolumeID+s.diskLimits())
+	default:
+		if s.StoreDisk != "" {
+			args = append(args, "--disk", "path="+s.StoreDisk+",image_type=raw,readonly=on")
+		}
+		args = append(args, "--disk", "path="+s.VolumeDev+",image_type=raw,direct=on"+s.diskLimits())
+	}
+	args = append(args, "--net", fmt.Sprintf("tap=%s,mac=%s", s.Tap, s.MAC))
+	if s.RootImage == "" {
+		args = append(args, "--fs", fmt.Sprintf("tag=%s,socket=%s", s.StoreTag, VirtiofsSocket(s.GuestDir)))
 	}
 	args = append(args,
-		"--disk", "path="+s.VolumeDev+",image_type=raw,direct=on"+s.diskLimits(),
-		"--net", fmt.Sprintf("tap=%s,mac=%s", s.Tap, s.MAC),
-		"--fs", fmt.Sprintf("tag=%s,socket=%s", s.StoreTag, VirtiofsSocket(s.GuestDir)),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", s.CID, VsockSocket(s.GuestDir)),
 		"--serial", "socket="+ConsoleSocket(s.GuestDir),
 		"--console", "off",
@@ -193,9 +230,31 @@ type Client interface {
 	Version(ctx context.Context) (string, error)
 }
 
-// DiskID is the identifier Cloud Hypervisor gives the guest's one disk
+// DiskID is the identifier Cloud Hypervisor gives a Nix guest's volume
 // (the first --disk without an explicit id).
 const DiskID = "_disk0"
+
+// RootID and VolumeID are an erofs guest's two disks, named on the argv
+// (DECISIONS I-1480): vda the read-only rootfs.erofs, vdb the volume.
+const (
+	RootID   = "vda"
+	VolumeID = "vdb"
+)
+
+// VolumeDiskID is the id of the guest's volume, the only disk
+// vm.resize-disk may target: vdb on an erofs guest, the second implicit
+// id behind a store disk, the first otherwise. A guest keeps the disks
+// it booted with until its next start, so this is read from the Spec its
+// running hypervisor was started with.
+func (s Spec) VolumeDiskID() string {
+	switch {
+	case s.RootImage != "":
+		return VolumeID
+	case s.StoreDisk != "":
+		return "_disk1"
+	}
+	return DiskID
+}
 
 // HTTP talks to the API socket over HTTP/unix.
 type HTTP struct {
@@ -367,11 +426,13 @@ func (h *HTTP) Version(ctx context.Context) (string, error) {
 
 // Fake records API calls.
 type Fake struct {
-	mu     sync.Mutex
-	Calls  []string
-	Fail   map[string]error
-	Ver    string
-	paused map[string]bool // vm.info says Paused between a pause and a resume
+	mu    sync.Mutex
+	Calls []string
+	// ResizeIDs is the disk id of every ResizeDisk, in order.
+	ResizeIDs []string
+	Fail      map[string]error
+	Ver       string
+	paused    map[string]bool // vm.info says Paused between a pause and a resume
 }
 
 func (f *Fake) record(op, sock string) error {
@@ -420,8 +481,18 @@ func (f *Fake) setPaused(sock string, p bool) {
 	}
 	f.paused[sock] = p
 }
-func (f *Fake) ResizeDisk(_ context.Context, sock, _ string, _ uint64) error {
+func (f *Fake) ResizeDisk(_ context.Context, sock, id string, _ uint64) error {
+	f.mu.Lock()
+	f.ResizeIDs = append(f.ResizeIDs, id)
+	f.mu.Unlock()
 	return f.record("resize-disk", sock)
+}
+
+// Resizes returns the disk ids ResizeDisk was called with.
+func (f *Fake) Resizes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.ResizeIDs...)
 }
 func (f *Fake) Info(_ context.Context, sock string) (json.RawMessage, error) {
 	if err := f.record("info", sock); err != nil {

@@ -1,0 +1,343 @@
+# A copy of internal/guestd/config/recipes.yaml at 6a433995 (ws/nonix-guestd,
+# PR 4), read by TestEveryEntryNamesARecipe only while that file is not on
+# this branch. Once it is, the test reads it and ignores this copy; delete
+# the copy then (DECISIONS I-1486).
+
+# How an erofs (Ubuntu 24.04) guest installs each menu catalog entry
+# (PR 4's recipe decision). guestd's ApplyMenu embeds this file; the catalog
+# (internal/menu/catalog.yaml) is what the user picks from, and every
+# catalog id has exactly one recipe here under the same id
+# (TestEveryCatalogEntryHasARecipe holds the two together).
+#
+# A recipe's fields, each optional except id and kind, run in this order:
+#
+#   id           the catalog id, exactly.
+#   kind         runtime | service | tool | base. base: the image has it;
+#                nothing to install.
+#   options      {name: {values: [...], default: v}}: the only values
+#                ApplyMenu accepts, the same as the catalog's options.
+#   apt_sources  [{name, key_url, key_sha256, line}]: an apt source added
+#                before the install. The key is fetched once, checked
+#                against key_sha256 and kept in /etc/apt/keyrings/
+#                repose-<name>.asc; line is the sources line, with
+#                {{.key}} for that file.
+#   pre          shell, as root, before the install.
+#   apt          [package]: apt-get install -y, as root, after one
+#                apt-get update per apply.
+#   download     {name, version, install: binary | awscli, amd64: {url,
+#                sha256}, arm64: {url, sha256}}: an upstream file, its
+#                sha256 checked before it is installed under /usr/local.
+#   mise         [tool@version]: `mise use -g` as dev, one at a time, in
+#                order. Installs land in /home/dev, which a base upgrade
+#                keeps.
+#   files        [{path, mode, content}]: written as root.
+#   service      {user, port, data, mask, unit, ready_timeout_s}: a
+#                systemd unit repose-svc-<id>.service. unit is its
+#                [Service] lines; guestd adds [Unit] and [Install]. The
+#                data directory is /var/lib/repose/services/<id>[/<data>],
+#                on the volume (it survives a base upgrade and an item's
+#                removal), owned by user. mask: the package's own units,
+#                masked before the install so they never start. ApplyMenu
+#                waits for 127.0.0.1:<port> to listen.
+#   post         shell, as root, after the service is up.
+#   post_dev     shell, as dev, last.
+#   check        shell, as root: exit 0 when the item is in place, in
+#                addition to the checks guestd makes of apt, mise, files
+#                and the unit. A download item needs one.
+#   remove       shell, as root, when the item leaves the menu, besides
+#                what guestd undoes itself (mise unuse, apt-get remove of
+#                a non-service item's packages, the unit stopped and
+#                removed; a service's packages and data are kept).
+#   ready        the line the user reads when the item is in place.
+#
+# Templates ({{.name}}) take the item's options, data (the data
+# directory), arch (amd64 or arm64), codename (from /etc/os-release) and,
+# in an apt source's line, key. Every option value is one of its listed
+# values, so nothing a user typed reaches a shell.
+
+version: 1
+recipes:
+
+  # Runtimes. mise is in the base (/usr/local/bin/mise).
+  - id: bun
+    kind: runtime
+    mise: [bun@1]
+    ready: bun ready
+
+  - id: deno
+    kind: runtime
+    mise: [deno@2]
+    ready: deno ready
+
+  - id: nodejs
+    kind: runtime
+    options:
+      version: {values: ["20", "22"], default: "22"}
+    mise: ["node@{{.version}}"]
+    ready: "node {{.version}} ready"
+
+  - id: python
+    kind: runtime
+    options:
+      version: {values: ["3.11", "3.13"], default: "3.13"}
+    mise: ["python@{{.version}}"]
+    ready: "python {{.version}} ready"
+
+  - id: go-tools
+    kind: runtime
+    mise:
+      - go@latest
+      - "go:golang.org/x/tools/gopls@latest"
+      - golangci-lint@latest
+      - "go:github.com/go-delve/delve/cmd/dlv@latest"
+    ready: gopls, golangci-lint and dlv ready
+
+  - id: zig
+    kind: runtime
+    mise: [zig@latest]
+    ready: zig ready
+
+  # Erlang through mise builds from source (minutes, and a compiler
+  # toolchain); Ubuntu's packages install in seconds.
+  - id: elixir
+    kind: runtime
+    apt: [elixir, erlang-nox, erlang-dev]
+    ready: elixir ready
+
+  # Ruby through mise builds from source too.
+  - id: ruby
+    kind: runtime
+    apt: [ruby-full, ruby-bundler]
+    ready: ruby and bundler ready
+
+  - id: jdk
+    kind: runtime
+    options:
+      version: {values: ["17", "21"], default: "21"}
+    mise: ["java@temurin-{{.version}}", maven@latest, gradle@latest]
+    ready: "java {{.version}}, maven and gradle ready"
+
+  - id: dotnet
+    kind: runtime
+    apt: [dotnet-sdk-8.0]
+    files:
+      - path: /etc/profile.d/repose-dotnet.sh
+        mode: "0644"
+        content: |
+          export DOTNET_CLI_TELEMETRY_OPTOUT=1
+    ready: .NET SDK 8 ready
+
+  # Services. Each listens on 127.0.0.1 only; the guest is reached
+  # through `repose open <port>`.
+  - id: postgresql
+    kind: service
+    options:
+      version: {values: ["15", "16", "17"], default: "16"}
+    # Ubuntu 24.04 carries 16 only; PGDG carries every major.
+    apt_sources:
+      - name: pgdg
+        key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        key_sha256: 0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
+        line: "deb [signed-by={{.key}}] https://apt.postgresql.org/pub/repos/apt {{.codename}}-pgdg main"
+    # No main cluster: the server runs from the volume.
+    pre: |
+      mkdir -p /etc/postgresql-common/createcluster.d
+      printf 'create_main_cluster = false\n' > /etc/postgresql-common/createcluster.d/repose.conf
+    apt: ["postgresql-{{.version}}"]
+    # pg_wrapper (psql, createdb) finds the server through this file.
+    files:
+      - path: "/etc/postgresql/{{.version}}/main/postgresql.conf"
+        mode: "0644"
+        content: |
+          data_directory = '{{.data}}'
+          port = 5432
+          unix_socket_directories = '/run/postgresql'
+      - path: "/etc/postgresql/{{.version}}/main/start.conf"
+        mode: "0644"
+        content: |
+          manual
+    service:
+      user: postgres
+      port: 5432
+      data: "{{.version}}"
+      mask: [postgresql.service, "postgresql@{{.version}}-main.service"]
+      unit: |
+        ExecStartPre=/bin/sh -c 'test -s {{.data}}/PG_VERSION || exec /usr/lib/postgresql/{{.version}}/bin/initdb -D {{.data}} -U postgres --auth=trust -E UTF8'
+        ExecStart=/usr/lib/postgresql/{{.version}}/bin/postgres -D {{.data}} -c listen_addresses=127.0.0.1 -c port=5432 -c unix_socket_directories=/run/postgresql
+        RuntimeDirectory=postgresql
+        RuntimeDirectoryPreserve=yes
+    post: |
+      q() { runuser -u postgres -- psql -h /run/postgresql -p 5432 -d postgres -tAc "$1"; }
+      q "SELECT 1 FROM pg_roles WHERE rolname='dev'" | grep -q 1 || q "CREATE ROLE dev SUPERUSER LOGIN"
+      q "SELECT 1 FROM pg_database WHERE datname='dev'" | grep -q 1 || q "CREATE DATABASE dev OWNER dev"
+    ready: "postgresql {{.version}} ready on 127.0.0.1:5432"
+
+  - id: redis
+    kind: service
+    apt: [redis-server]
+    service:
+      user: redis
+      port: 6379
+      mask: [redis-server.service]
+      unit: |
+        ExecStart=/usr/bin/redis-server --bind 127.0.0.1 --port 6379 --dir {{.data}} --daemonize no
+    ready: redis ready on 127.0.0.1:6379
+
+  - id: mysql
+    kind: service
+    apt: [mariadb-server]
+    service:
+      user: mysql
+      port: 3306
+      mask: [mariadb.service]
+      unit: |
+        ExecStartPre=/bin/sh -c 'test -d {{.data}}/mysql || exec /usr/bin/mariadb-install-db --datadir={{.data}} --auth-root-authentication-method=socket --skip-test-db'
+        ExecStart=/usr/sbin/mariadbd --datadir={{.data}} --bind-address=127.0.0.1 --port=3306 --socket=/run/mysqld/mysqld.sock
+        RuntimeDirectory=mysqld
+    post: |
+      mariadb --socket=/run/mysqld/mysqld.sock -e "CREATE DATABASE IF NOT EXISTS dev; CREATE USER IF NOT EXISTS 'dev'@'localhost' IDENTIFIED VIA unix_socket; GRANT ALL PRIVILEGES ON dev.* TO 'dev'@'localhost'"
+    ready: mariadb ready on 127.0.0.1:3306 (database dev)
+
+  - id: memcached
+    kind: service
+    apt: [memcached]
+    service:
+      user: memcache
+      port: 11211
+      mask: [memcached.service]
+      unit: |
+        ExecStart=/usr/bin/memcached -l 127.0.0.1 -p 11211 -U 0 -m 64
+    ready: memcached ready on 127.0.0.1:11211
+
+  - id: rabbitmq
+    kind: service
+    apt: [rabbitmq-server]
+    files:
+      - path: /etc/rabbitmq/rabbitmq.conf
+        mode: "0644"
+        content: |
+          listeners.tcp.default = 127.0.0.1:5672
+          management.tcp.ip = 127.0.0.1
+          management.tcp.port = 15672
+      - path: /etc/rabbitmq/enabled_plugins
+        mode: "0644"
+        content: |
+          [rabbitmq_management].
+    service:
+      user: rabbitmq
+      port: 5672
+      ready_timeout_s: 120
+      mask: [rabbitmq-server.service]
+      # HOME holds the Erlang cookie, so it is on the volume with the data.
+      unit: |
+        Environment=HOME={{.data}} RABBITMQ_MNESIA_BASE={{.data}}/mnesia RABBITMQ_LOG_BASE={{.data}}/log RABBITMQ_NODENAME=rabbit@localhost ERL_EPMD_ADDRESS=127.0.0.1
+        Environment="RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-kernel inet_dist_use_interface {127,0,0,1}"
+        ExecStart=/usr/lib/rabbitmq/bin/rabbitmq-server
+    ready: rabbitmq ready on 127.0.0.1:5672, management UI on 127.0.0.1:15672
+
+  # Ubuntu has no Meilisearch package: the upstream binary, pinned.
+  - id: meilisearch
+    kind: service
+    download:
+      name: meilisearch
+      version: v1.57.0
+      install: binary
+      amd64:
+        url: https://github.com/meilisearch/meilisearch/releases/download/v1.57.0/meilisearch-linux-amd64
+        sha256: cc5c8825d6effd5295c534fd2fb92f14410eb9a14a88a012805cb239f2dc7969
+      arm64:
+        url: https://github.com/meilisearch/meilisearch/releases/download/v1.57.0/meilisearch-linux-aarch64
+        sha256: 0e670a95eda37bf53afb04d495d8647a1a68708b1688f31ac89cbf5851152779
+    service:
+      user: meilisearch
+      port: 7700
+      unit: |
+        WorkingDirectory={{.data}}
+        ExecStart=/usr/local/bin/meilisearch --db-path {{.data}}/data.ms --http-addr 127.0.0.1:7700 --env development --no-analytics
+    remove: rm -f /usr/local/bin/meilisearch
+    ready: meilisearch ready on 127.0.0.1:7700
+
+  - id: nats
+    kind: service
+    apt: [nats-server]
+    mise: ["aqua:nats-io/natscli@latest"]
+    service:
+      user: nats
+      port: 4222
+      mask: [nats-server.service]
+      unit: |
+        ExecStart=/usr/bin/nats-server -a 127.0.0.1 -p 4222 -js -sd {{.data}}
+    ready: nats ready on 127.0.0.1:4222 (JetStream on)
+
+  # Tools.
+  # AWS ships CLI v2 only as its own installer.
+  - id: awscli
+    kind: tool
+    apt: [unzip]
+    download:
+      name: awscli
+      version: 2.42.1
+      install: awscli
+      amd64:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.42.1.zip
+        sha256: ff2631c32c5db291b099600f404bc493454ec66c125ff4604625da90480c1f47
+      arm64:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-aarch64-2.42.1.zip
+        sha256: 98f5f03bb6508a06ce9d9d6d2db97932dce735f3b7ad85616324a95edf4b815f
+    check: /usr/local/bin/aws --version 2>/dev/null | grep -q '^aws-cli/2.42.1 '
+    remove: rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer
+    ready: aws 2.42.1 ready
+
+  - id: opentofu
+    kind: tool
+    mise: [opentofu@1]
+    ready: tofu ready
+
+  - id: kubernetes
+    kind: tool
+    mise: [kubectl@latest, helm@latest, k9s@latest]
+    ready: kubectl, helm and k9s ready
+
+  - id: shell-extras
+    kind: tool
+    mise: [lazygit@latest, delta@latest, tealdeer@latest, hyperfine@latest]
+    post_dev: |
+      [ "$(git config --global core.pager)" = delta ] || git config --global core.pager delta
+    ready: lazygit, delta, tldr and hyperfine ready
+
+  # Deploy CLIs. The npm ones use the base's node.
+  - id: wrangler
+    kind: tool
+    mise: ["npm:wrangler@latest"]
+    ready: wrangler ready
+
+  - id: supabase
+    kind: tool
+    mise: [supabase@latest]
+    ready: supabase ready
+
+  - id: flyctl
+    kind: tool
+    mise: [flyctl@latest]
+    post_dev: |
+      if [ ! -e "$HOME/.local/bin/fly" ]; then
+        mkdir -p "$HOME/.local/bin"
+        printf '#!/bin/sh\nexec flyctl "$@"\n' > "$HOME/.local/bin/fly"
+        chmod 755 "$HOME/.local/bin/fly"
+      fi
+    ready: flyctl (and fly) ready
+
+  - id: vercel
+    kind: tool
+    mise: ["npm:vercel@latest"]
+    ready: vercel ready
+
+  - id: portless
+    kind: tool
+    mise: ["npm:portless@latest"]
+    ready: portless ready
+
+  # In every base since I-1246.
+  - id: cloudflared
+    kind: base
+    ready: cloudflared is in the base

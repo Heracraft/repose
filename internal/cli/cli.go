@@ -1281,13 +1281,13 @@ func readSecretValue(name, fromFile string, fromEnv bool) ([]byte, error) {
 
 func newConfigCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	root := &cobra.Command{Use: "config", Short: "Add packages and services to the machine",
-		Long: `Add packages and services to the machine through the project's repose.nix.
-Alone, print it.
+		Long: `Add packages and services to the machine. Alone, print its configuration:
+the project's repose.nix on a Nix machine, the menu on an Ubuntu one.
 
-With --global, each command acts on your machine.nix instead: a home-manager
-module every machine of your account gets, kept at ~/.config/repose/machine.nix
-and on your account. repose run pushes that file when it changed; repose config
-off PROJECT keeps it off one machine.
+With --global, each command acts on your machine.nix instead (Nix machines):
+a home-manager module every Nix machine of your account gets, kept at
+~/.config/repose/machine.nix and on your account. repose run pushes that file
+when it changed; repose config off PROJECT keeps it off one machine.
 
 The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 		Example: "  repose config add gcc air\n  repose config --global add ripgrep fd\n  repose config --global edit"}
@@ -1316,7 +1316,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	var showRevisions bool
 	show := &cobra.Command{
 		Use:               "show [PROJECT]",
-		Short:             "Print the project's repose.nix",
+		Short:             "Print the project's repose.nix, or its menu on an Ubuntu machine",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1360,7 +1360,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 
 	edit := &cobra.Command{
 		Use:               "edit [PROJECT]",
-		Short:             "Edit the project's repose.nix in $EDITOR and apply it",
+		Short:             "Edit the project's repose.nix in $EDITOR and apply it (Nix machines)",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1378,9 +1378,9 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	apply := &cobra.Command{
 		Use:   "apply [PATH]",
 		Short: "Apply a repose.nix file or an earlier revision",
-		Long: "Apply PATH (default ./repose.nix) to the machine, or with neither, the current\n" +
-			"configuration again. --revision ID switches the running machine back to an\n" +
-			"earlier revision that built. With --global, push PATH (default\n" +
+		Long: "Apply PATH (default ./repose.nix, Nix machines) to the machine, or with\n" +
+			"neither, the current configuration again. --revision ID switches the running\n" +
+			"machine back to an earlier revision. With --global, push PATH (default\n" +
 			"~/.config/repose/machine.nix) to your account.",
 		Example: "  repose config apply\n  repose config apply --revision 3f2a9c1e\n  repose config --global apply",
 		Args:    argsN(0, 1, "at most one PATH"),
@@ -1411,23 +1411,24 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	})
 	add := &cobra.Command{
 		Use:   "add [PACKAGE...]",
-		Short: "Add menu entries or nixpkgs packages to the machine",
-		Long: `Add packages to the project's repose.nix and rebuild the machine.
+		Short: "Add menu entries or package names to the machine",
+		Long: `Add packages and services to the machine.
 
 A name the dashboard's menu has (bun, postgresql, portless, ...) adds that
-menu entry, services included. Any other name is a nixpkgs attribute: gcc,
-air, nodejs_22, python312Packages.black, nodePackages.typescript. Find names
-at https://search.nixos.org/packages.
+menu entry, services included. Any other name is a package: on an Ubuntu
+machine an apt package (ffmpeg, libpq-dev, python3.12-venv), on a Nix machine
+a nixpkgs attribute (gcc, nodejs_22, python312Packages.black; find names at
+https://search.nixos.org/packages).
 
 With no names, it lists the menu's entries by group.
 
-A project whose repose.nix was edited by hand has no menu; add packages there
-with repose config edit.
+A Nix project whose repose.nix was edited by hand has no menu; add packages
+there with repose config edit.
 
 With --global, the names go into the home.packages list of your
 machine.nix, every machine of your account gets them, and the menu's
 services are not available.`,
-		Example: "  repose config add gcc air\n  repose config add postgresql python312Packages.black\n  repose config --global add ripgrep",
+		Example: "  repose config add postgresql bun\n  repose config add ffmpeg libpq-dev\n  repose config --global add ripgrep",
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := globalEnv()
@@ -1465,9 +1466,9 @@ services are not available.`,
 	// `repose config --global on|off [PROJECT]` (I-622): machine.nix on or
 	// off for one machine; `repose run --no-personal` is off's shortcut.
 	switchCmd := func(on bool) *cobra.Command {
-		use, short := "off [PROJECT]", "Keep your machine.nix off the project's machine"
+		use, short := "off [PROJECT]", "Keep your machine.nix off the project's machine (Nix machines)"
 		if on {
-			use, short = "on [PROJECT]", "Give the project's machine your machine.nix again"
+			use, short = "on [PROJECT]", "Give the project's machine your machine.nix again (Nix machines)"
 		}
 		return &cobra.Command{
 			Use:               use,

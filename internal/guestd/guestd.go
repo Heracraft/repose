@@ -18,6 +18,7 @@ import (
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
+	"github.com/heracraft/repose/internal/guestd/config"
 	"github.com/heracraft/repose/internal/guestd/exec"
 	"github.com/heracraft/repose/internal/guestd/freeze"
 	"github.com/heracraft/repose/internal/guestd/fs"
@@ -102,6 +103,14 @@ type Config struct {
 	Docker  sysdep.Docker
 	Now     func() time.Time
 
+	// Runtime overrides the runtime guestd detects from mountinfo
+	// (sysdep.DetectRuntime). Empty detects, which is what a guest does.
+	Runtime sysdep.Runtime
+
+	// Menu overrides how ApplyMenu checks a service port and is ready
+	// (tests). Nil is the real check of /proc/net/tcp.
+	MenuPortWait config.PortWaiter
+
 	// SkipReadyProbe makes Ready fire immediately instead of waiting for
 	// sshd. Tests set it; a guest never does.
 	SkipReadyProbe bool
@@ -132,6 +141,8 @@ type Server struct {
 	warn    *warn.Checker
 	hooks   *hooks.Server
 	asks    *questions.Store
+	// menu is ApplyMenu's, on an erofs guest (DECISIONS I-1460, I-1476).
+	menu *config.Handler
 	// triggers is the machine's half of a trigger (DECISIONS I-1248):
 	// the set the api pushes, the receiver on 9227, the runs and their
 	// supervisor.
@@ -161,6 +172,11 @@ func New(cfg Config) (*Server, error) {
 		cfg.VsockPort = vsockrpc.Port
 	}
 	paths := sysdep.Paths{Root: cfg.Root}
+	rt := cfg.Runtime
+	if rt == "" {
+		rt = sysdep.DetectRuntime(paths)
+	}
+	paths.Erofs = rt == sysdep.RuntimeErofs
 
 	runner := cfg.Runner
 	if runner == nil {
@@ -197,6 +213,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.sampler = sample.NewHandler(paths, s.watcher, log, cfg.Now)
 	s.exec = exec.New(paths, runner, log)
+	s.menu = config.New(paths, runner, cfg.MenuPortWait, log)
 	s.warn = warn.New(paths, s.Warn, log, cfg.Now)
 
 	hookPath := cfg.HookSocket
@@ -227,6 +244,9 @@ func New(cfg Config) (*Server, error) {
 	s.watcher.SetRunWindows(s.triggers.RunWindows)
 	return s, nil
 }
+
+// Runtime is the runtime the server was built for.
+func (s *Server) Runtime() sysdep.Runtime { return s.paths.Runtime() }
 
 // HookSocketPath is where agents POST, after Run has created it.
 func (s *Server) HookSocketPath() string { return s.hooks.Addr() }
@@ -267,10 +287,10 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	defer l.Close() //nolint:errcheck // the listener is torn down with the process
 	if s.cfg.DevSocket != "" {
-		s.log.Info("listening on the dev unix socket", "event", "ready", "transport", "unix")
+		s.log.Info("listening on the dev unix socket", "event", "ready", "transport", "unix", "runtime", string(s.paths.Runtime()))
 	} else {
 		s.log.Info(fmt.Sprintf("listening on vsock port %d", s.cfg.VsockPort),
-			"event", "ready", "transport", "vsock", "port", s.cfg.VsockPort)
+			"event", "ready", "transport", "vsock", "port", s.cfg.VsockPort, "runtime", string(s.paths.Runtime()))
 	}
 
 	go s.watcher.Run(ctx)
@@ -295,7 +315,10 @@ func (s *Server) Run(ctx context.Context) error {
 	// up to date by every registration; this covers a guestd that started
 	// without one, such as the first run of a guestd an in-place switch
 	// installed.
-	go s.system.SyncViewRoots(ctx)
+	// An erofs guest has no store to root (DECISIONS I-1474).
+	if !s.paths.Erofs {
+		go s.system.SyncViewRoots(ctx)
+	}
 	go func() {
 		<-ctx.Done()
 		_ = l.Close()

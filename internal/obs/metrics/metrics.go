@@ -58,6 +58,9 @@ var allowedLabels = map[string]bool{
 	// The plan a subscription is on: solo, plus, pro or own (DECISIONS
 	// I-289, I-362, I-1364).
 	"plan": true,
+	// The guest runtimes a host runs, on repose_host_info: on or off
+	// each (DECISIONS I-1484), two values apiece.
+	"nix_mode": true, "erofs": true,
 }
 
 // AllowedLabels lists the permitted metric label names, sorted.

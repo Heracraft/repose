@@ -119,6 +119,11 @@ message GuestStatus {
   // the api can reconcile without resending. False from a hostd older
   // than this, and false is "may burst".
   bool burst_denied = 9;
+  // The base_versions label of the erofs base this guest boots, or last
+  // booted, as hostd recorded it from the BaseImage of its last create,
+  // start or restore (DECISIONS I-1458). Empty for a Nix guest, whose
+  // system is system_closure, and from a hostd older than I-1458.
+  string base_version = 10;
 }
 
 message Hello {
@@ -144,8 +149,13 @@ message Hello {
   // may carry `clone` (DECISIONS I-701). "pause": PauseGuest and
   // WakeGuest (DECISIONS I-818). "burst": this host boots guests at their
   // class ceiling, runs the cpu.max controller and takes SetBurst
-  // (DECISIONS I-1126). Absent from an older hostd, which
-  // answers a command it does not know `invalid_argument`.
+  // (DECISIONS I-1126). "nix": this host builds and boots Nix guests
+  // (system_closure); "erofs": it boots guests from a BaseImage
+  // (DECISIONS I-1458). The api places an erofs project only on a host
+  // that names "erofs", and a Nix project only on a host that names
+  // "nix" or names neither, which is every hostd older than I-1458.
+  // Absent from an older hostd, which answers a command it does not
+  // know `invalid_argument`.
   repeated string features = 9;
   // The host's CPU architecture ("x86_64", "aarch64"), so an already-
   // registered host populates hosts.arch on its first reconnect after
@@ -175,6 +185,43 @@ message Limits {
   uint64 closure_bytes = 4;
 }
 
+// BaseImage is the erofs base an erofs guest boots (DECISIONS I-1458):
+// three files, each fetched and checked against its own sha256 (lower-case
+// hex), so hostd resumes or refetches one file without the others. url is
+// the read-only root filesystem (rootfs.erofs, attached as vda);
+// kernel_url the kernel (a plain bzImage on x86_64, an uncompressed Image
+// on aarch64); initramfs_url the initramfs that mounts vda and vdb and
+// switches root. The api picks the files for the host's arch from the
+// base_versions row; hostd never chooses. version is the base_versions
+// label, [A-Za-z0-9._-]{1,64}, and names hostd's cache directory.
+message BaseImage {
+  string version = 1;
+  string url = 2;
+  string sha256 = 3;
+  string kernel_version = 4;
+  string initramfs_url = 5;
+  string initramfs_sha256 = 6;
+  string kernel_url = 7;
+  string kernel_sha256 = 8;
+}
+// MenuItem is one element of the project's menu selection
+// (config_revisions.menu, docs/interfaces/api.md MenuSelection): exactly
+// one of id (a catalog entry, with its options) or package (a Ubuntu
+// package name the guest installs with apt-get). DECISIONS I-1458.
+message MenuItem {
+  string id = 1;
+  map<string, string> options = 2;
+  string package = 3;
+}
+// MenuSpec is the project's whole menu, in the order the user chose it,
+// for an erofs guest (DECISIONS I-1458). It is a state, not a diff: the
+// guest installs what is in it and removes what an earlier spec had and
+// this one does not. revision_id is the config revision it comes from.
+message MenuSpec {
+  repeated MenuItem items = 1;
+  string revision_id = 2;
+}
+
 message CreateGuest {
   string project_id = 1;
   string guest_id = 2;
@@ -196,6 +243,12 @@ message CreateGuest {
   // The project's whole trigger set (DECISIONS I-1248), as StartGuest
   // carries it.
   repeated Trigger triggers = 17;
+  // An erofs guest (DECISIONS I-1458): set with system_closure empty.
+  // Both set is invalid_argument; neither is invalid_argument as before.
+  BaseImage base_image = 18;
+  // The menu the first boot applies (erofs guests only; ignored beside
+  // system_closure).
+  MenuSpec menu = 19;
 }
 // StartGuest carries the same delivery fields as CreateGuest (DECISIONS
 // I-26) so a host that restarted, and holds nothing on disk, can deliver
@@ -219,6 +272,13 @@ message StartGuest {
   // start for the same reason the secrets do: hostd keeps none of it,
   // so a guest that lost it comes back with it.
   repeated Trigger triggers = 11;
+  // The base this erofs guest boots (DECISIONS I-1458). Different from
+  // the recorded one, hostd boots the new base and records it; empty
+  // keeps the recorded base, and is what a Nix guest's start sends.
+  BaseImage base_image = 12;
+  // The project's menu, replayed after the boot when the base changed or
+  // the spec differs from the one the guest last applied (erofs only).
+  MenuSpec menu = 13;
 }
 message StopGuest { string guest_id = 1; bool snapshot_first = 2; uint32 timeout_s = 3; }
 message DestroyGuest { string guest_id = 1; bool keep_volume = 2; }
@@ -261,7 +321,12 @@ message Build {
   // field existed; a hostd that predates it ignores it.
   bytes personal = 7;
 }
-message ApplyConfig { string guest_id = 1; string system_closure = 2; bool force_reboot = 3; }
+// ApplyConfig switches a running Nix guest to system_closure, or applies
+// menu inside a running erofs guest (DECISIONS I-1458): exactly one of
+// the two; both is invalid_argument. A menu's progress lines arrive as
+// BuildLog under this command_id. An erofs guest's base never changes
+// here: a new base is a StartGuest's base_image.
+message ApplyConfig { string guest_id = 1; string system_closure = 2; bool force_reboot = 3; MenuSpec menu = 4; }
 message Snapshot { string guest_id = 1; string reason = 2; }
 message Restore {
   string project_id = 1;
@@ -290,6 +355,10 @@ message Restore {
   // The project's whole trigger set (DECISIONS I-1248), as StartGuest
   // carries it: a restored machine comes back with its triggers.
   repeated Trigger triggers = 20;
+  // The base the restored erofs guest boots at its next start (DECISIONS
+  // I-1458), recorded and fetched ahead; system_closure empty. Both set
+  // is invalid_argument.
+  BaseImage base_image = 21;
 }
 // RestoreClone names the volume a Restore copies on the host itself.
 // point_id (32 hex digits) names the moment: the first Restore of a fork
@@ -446,8 +515,13 @@ message Result {
 // hypervisor started to guestd's Ready), paths (RegisterPaths), setup
 // (secrets, principals and SetupProject), total (all of it).
 message BootTimings { uint32 volume_ms = 1; uint32 prepare_ms = 2; uint32 ready_ms = 3; uint32 paths_ms = 4; uint32 setup_ms = 5; uint32 total_ms = 6; }
-message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; }
-message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
+// menu_error (DECISIONS I-1458) is set when the guest booted and the
+// first boot's menu did not apply: the guest runs, and the error is the
+// ApplyMenu's code (menu_failed, invalid_argument) and last line.
+message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; Error menu_error = 4; }
+// base_version (I-1458): the erofs base the guest ran when the snapshot
+// was taken; empty for a Nix guest, and accepted empty for one release.
+message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
 message BuildResult { string system_closure = 1; uint64 closure_bytes = 2; bool kernel_changed = 3; }
 message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
 // StartResult says which system a started guest runs. failed_closure is
@@ -465,8 +539,13 @@ message StartResult {
   BootTimings boot = 4;  // the boot that reached running (I-707)
   string guest_ip = 5;
   uint32 vsock_cid = 6;
+  // The erofs base the started guest booted (DECISIONS I-1458); empty for
+  // a Nix guest and from an older hostd.
+  string booted_base_version = 7;
+  // As CreateResult.menu_error: the guest runs, its menu replay failed.
+  Error menu_error = 8;
 }
-message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
+message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; }  // sha256: hex SHA-256 of the uploaded blob (I-462); base_version as StopResult's (I-1458)
 // PauseResult answers a PauseGuest. paused is false with why_not set
 // when the guest was not paused for a reason that is not a failure: it
 // has a command in flight, it is already paused, the host is going down,
@@ -610,7 +689,7 @@ message AgentQuestion {
 // sample. It is NOT a GuestStateChanged: the guest's state does not
 // change, and a state change cancels the project's open questions.
 message GuestResting { string guest_id = 1; bool resting = 2; int64 at = 3; string reason = 4; }
-message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; }
+message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; string base_version = 6; }  // base_version as StopResult's (I-1458)
 message HostWarning { string kind = 1; string detail = 2; }
 // An operator's SSH login to the host, from the PAM hook that runs
 // `hostd audit-login`: what the api turns into the audit_log row 14 §5

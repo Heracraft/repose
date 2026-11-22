@@ -66,8 +66,14 @@ func (h *Handler) Grow(ctx context.Context) (*guestdv1.GrowFsResult, error) {
 	return &guestdv1.GrowFsResult{NewBytes: size}, nil
 }
 
-// rootDevice finds the block device mounted at / from /proc/mounts.
+// rootDevice finds the block device to grow: the one mounted at / from
+// /proc/mounts on a Nix guest, and on an erofs guest the one under
+// /run/repose/rw from mountinfo (it is /dev/vdb), never / itself, which
+// is an overlayfs (DECISIONS I-1474).
 func (h *Handler) rootDevice() (string, error) {
+	if h.paths.Erofs {
+		return h.rwDevice()
+	}
 	f, err := os.Open(h.paths.Mounts())
 	if err != nil {
 		return "", sysdep.Errf(sysdep.CodeInternal, "read mounts: %w", err)
@@ -91,6 +97,22 @@ func (h *Handler) rootDevice() (string, error) {
 		return "", sysdep.Errf(sysdep.CodeInternal, "scan mounts: %w", err)
 	}
 	return "", sysdep.NotFound("grow root filesystem: no mount for /")
+}
+
+// rwDevice is the block device mounted at /run/repose/rw.
+func (h *Handler) rwDevice() (string, error) {
+	ms, err := sysdep.ReadMountinfo(h.paths.Mountinfo())
+	if err != nil {
+		return "", sysdep.Errf(sysdep.CodeInternal, "grow root filesystem: %w", err)
+	}
+	m, ok := sysdep.FindMount(ms, sysdep.ErofsRWMount)
+	if !ok {
+		return "", sysdep.NotFound("grow root filesystem: no mount for %s", sysdep.ErofsRWMount)
+	}
+	if !strings.HasPrefix(m.Source, "/dev/") {
+		return "", sysdep.Invalid("grow root filesystem: %s is mounted from %s, not a block device", sysdep.ErofsRWMount, m.Source)
+	}
+	return m.Source, nil
 }
 
 // size is statfs on the root mount, in bytes.

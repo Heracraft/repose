@@ -15,11 +15,13 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/heracraft/repose/internal/hostd/baseimg"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/console"
 	"github.com/heracraft/repose/internal/hostd/control"
@@ -104,6 +106,34 @@ type Options struct {
 	// (ENG-80, DECISIONS I-1408).
 	PathsTimeout time.Duration
 	SetupTimeout time.Duration
+	// ImagesDir is the erofs base image cache (DECISIONS I-1478): set,
+	// this host boots erofs guests and names `erofs` in Hello.features;
+	// empty, it boots none.
+	ImagesDir string
+	// NixMode "off" builds and boots no Nix guest: the Nix machinery is
+	// not constructed and a Nix guest's command answers nix_unsupported
+	// (DECISIONS I-1484). "on", the default, keeps it, unless no nix is
+	// on PATH, which a host without Nix (an appliance) is.
+	NixMode string
+}
+
+// nixLookPath finds nix; a var so a test runs without one.
+var nixLookPath = func() error { _, err := exec.LookPath("nix"); return err }
+
+// NixEnabled is whether a hostd with these options runs Nix guests, and
+// why not when it does not.
+func NixEnabled(o Options) (bool, string) {
+	switch o.NixMode {
+	case "", "on":
+	case "off":
+		return false, "nix_mode_off"
+	default:
+		return false, "nix_mode_unknown"
+	}
+	if err := nixLookPath(); err != nil {
+		return false, "no_nix_binary"
+	}
+	return true, ""
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -285,8 +315,34 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if o.GuestdUnix {
 		dialer = vsockclient.UnixDialer{Timeouts: vt}
 	}
-	nix := (&nixbuild.Real{R: r, BuildsDir: o.BuildsDir, BaseDir: o.BaseDir, BaseRepoURL: o.BaseRepoURL, BaseSSHKey: o.BaseSSHKey,
-		Roots: gcroot.Roots{Dir: o.GCRootsDir}, UseScope: true, User: o.BuildUser, Timeout: "timeout", Substituters: o.Substituters}).Defaults()
+	// The two guest runtimes (DECISIONS I-1458, I-1484). A host with
+	// neither would name no runtime in Hello, which the api reads as
+	// `nix`, and be sent guests it cannot boot: refused here.
+	nixOn, why := NixEnabled(o)
+	if o.NixMode != "" && o.NixMode != "on" && o.NixMode != "off" {
+		return fmt.Errorf("hostd: --nix-mode %q must be on or off", o.NixMode)
+	}
+	if !nixOn && o.ImagesDir == "" {
+		return errors.New("hostd: no guest runtime: Nix is off (" + why + ") and --images-dir is empty")
+	}
+	var nix nixbuild.Builder
+	var view storeview.View
+	var gcRoots gcroot.Roots
+	if nixOn {
+		nix = (&nixbuild.Real{R: r, BuildsDir: o.BuildsDir, BaseDir: o.BaseDir, BaseRepoURL: o.BaseRepoURL, BaseSSHKey: o.BaseSSHKey,
+			Roots: gcroot.Roots{Dir: o.GCRootsDir}, UseScope: true, User: o.BuildUser, Timeout: "timeout", Substituters: o.Substituters}).Defaults()
+		gcRoots = gcroot.Roots{Dir: o.GCRootsDir}
+	} else {
+		log.Info("nix guests off", "event", "start", "part", "nix", "reason", why)
+	}
+	m.SetHostInfo(nixOn, o.ImagesDir != "", o.Version)
+	var images *baseimg.Cache
+	if o.ImagesDir != "" {
+		if err := os.MkdirAll(o.ImagesDir, 0o755); err != nil {
+			return fmt.Errorf("images dir: %w", err)
+		}
+		images = &baseimg.Cache{Dir: o.ImagesDir, Arch: hostinfo.Arch(), Store: st, Metrics: m, Log: log}
+	}
 	cfg := guest.Config{
 		HostID: id.Host.HostID, GuestsDir: o.GuestsDir, GuestCIDR: id.Host.GuestCIDR, TotalMemBytes: total,
 		MaxOps: o.MaxOps, MaxBuilds: o.MaxBuilds, StoreExport: o.StoreExport, VirtiofsUser: o.VirtiofsUser,
@@ -312,9 +368,12 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	consoles := &consoleSet{log: log}
 	sdr := systemd.NewReal(r)
+	if nixOn {
+		view = &storeview.Real{SD: sdr}
+	}
 	mgr, err := guest.New(cfg, guest.Deps{
-		State: st, LVM: l, Mount: &mount.Real{R: r}, View: &storeview.Real{SD: sdr}, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
-		Roots: gcroot.Roots{Dir: o.GCRootsDir}, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
+		State: st, LVM: l, Mount: &mount.Real{R: r}, View: view, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
+		Roots: gcRoots, Images: images, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 		CgroupCPUUsage: hostinfo.CgroupCPUUsage, SetCgroupCPUMax: hostinfo.SetCgroupCPUMax,
 		SystemStopping: systemStopping(r),
@@ -326,6 +385,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	lh.m = mgr
 	d.mgr = mgr
+	if images != nil {
+		images.Refs = mgr.BaseRefs
+	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
@@ -358,6 +420,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		// cpu.max and every guest stays on the base quota its unit
 		// started with (DECISIONS I-1126).
 		run("burst", func() { mgr.BurstLoop(ctx) })
+	}
+	if images != nil {
+		run("base-image-gc", func() { d.imagesLoop(ctx) })
 	}
 	if se := scheduledEvents(o, mgr, log); se != nil {
 		run("scheduled-events", func() { se.Run(ctx) })
@@ -438,6 +503,23 @@ func (d *Daemon) pruneLoop(ctx context.Context) {
 			d.log.Info("pruned command results", "event", "prune", "count", n)
 		}
 		d.mgr.SweepAuthShares(ctx) // login shares of users gone from this host (I-278)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// imagesLoop runs the base image cache's GC hourly (DECISIONS I-1478):
+// a bundle is removed a day after its last guest went, so an hour's
+// granularity is plenty, and the first run at start publishes the
+// cache's gauges.
+func (d *Daemon) imagesLoop(ctx context.Context) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		d.mgr.GCImages(ctx)
 		select {
 		case <-ctx.Done():
 			return

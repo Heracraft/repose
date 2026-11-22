@@ -118,3 +118,51 @@ func TestFakeCanBeToldToFailAnyRequest(t *testing.T) {
 		t.Fatalf("ping after an injected switch failure: %v %+v", err, resp.GetError())
 	}
 }
+
+// An ApplyMenu streams its lines as Notify frames ahead of the Response,
+// which is what hostd's relay of them as BuildLog depends on
+// (DECISIONS I-1460).
+func TestFakeStreamsApplyMenuProgressBeforeTheResponse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := New()
+	f.MenuLines = []string{"installing postgresql", "postgresql 16 ready on 127.0.0.1:5432"}
+	path := filepath.Join(t.TempDir(), "guestd.sock")
+	if _, err := f.Listen(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := vsockrpc.DialUnix(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	client := vsockrpc.NewClient(conn, func(n *guestdv1.Notify) {
+		if p := n.GetApplyMenuProgress(); p != nil {
+			lines = append(lines, p.GetLine())
+		}
+	})
+	defer client.Close() //nolint:errcheck // test cleanup
+	resp, err := client.Do(ctx, &guestdv1.Request{Req: &guestdv1.Request_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenu{
+		Menu: &hostdv1.MenuSpec{Items: []*hostdv1.MenuItem{{Id: "postgresql"}}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.GetOk() || !resp.GetApplyMenu().GetDone() {
+		t.Fatalf("response %+v", resp)
+	}
+	// The read loop delivers in order, so both lines are in before Do
+	// returned.
+	if len(lines) != 2 || lines[1] != f.MenuLines[1] {
+		t.Fatalf("lines before the response = %q", lines)
+	}
+
+	f.MenuErrorCode = "menu_failed"
+	resp, err = client.Do(ctx, &guestdv1.Request{Req: &guestdv1.Request_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenu{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetOk() || resp.GetError().GetCode() != "menu_failed" || resp.GetApplyMenu().GetErrorCode() != "menu_failed" {
+		t.Fatalf("failed apply answered %+v", resp)
+	}
+}

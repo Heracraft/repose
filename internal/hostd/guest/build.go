@@ -12,6 +12,9 @@ import (
 )
 
 func (m *Manager) build(ctx context.Context, commandID string, c *hostdv1.Build) (*hostdv1.BuildResult, *Error) {
+	if !m.NixOn() {
+		return nil, m.nixUnsupported("build")
+	}
 	if c.ProjectId == "" || c.RevisionId == "" {
 		return nil, errf(CodeInvalidArgument, "project_id and revision_id required")
 	}
@@ -114,8 +117,22 @@ func (m *Manager) apply(ctx context.Context, commandID string, c *hostdv1.ApplyC
 	if gerr != nil {
 		return nil, gerr
 	}
-	if c.SystemClosure == "" {
-		return nil, errf(CodeInvalidArgument, "system_closure required")
+	// Exactly one of system_closure (a Nix guest's switch) and menu (an
+	// erofs guest's packages and services), DECISIONS I-1458.
+	switch {
+	case c.Menu != nil && c.SystemClosure != "":
+		return nil, errf(CodeInvalidArgument, "system_closure and menu are exclusive")
+	case c.Menu != nil:
+		if !isErofs(g) {
+			return nil, errf(CodeInvalidArgument, "menu is for an erofs guest; this one is a Nix guest")
+		}
+		return m.applyMenu(ctx, commandID, g, c.Menu)
+	case c.SystemClosure == "":
+		return nil, errf(CodeInvalidArgument, "system_closure or menu required")
+	case isErofs(g):
+		return nil, errf(CodeInvalidArgument, "system_closure for an erofs guest; its base changes at a start")
+	case !m.NixOn():
+		return nil, m.nixUnsupported("apply")
 	}
 	// A resend of a forced reboot that fell back (I-590): the guest runs,
 	// or is left, on its last good closure; answer as the first run did

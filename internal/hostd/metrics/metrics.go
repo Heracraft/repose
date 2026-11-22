@@ -111,7 +111,43 @@ type M struct {
 	// BurstCPUSecondsTotal is the host's burst time, the quantity the
 	// plan's allowance is in, summed by class.
 	BurstCPUSecondsTotal *prometheus.CounterVec
+	// The erofs base image cache (DECISIONS I-1478). BaseImageFetchErrors
+	// counts fetches of a bundle file that failed, by reason
+	// (BaseImageFetchReasons); BaseImageBytes is what the cache holds on
+	// disk and BaseImageVersions how many bundles; BaseImageFetchDuration
+	// is one bundle's whole fetch, its three files together, that
+	// finished. A start that has to fetch waits for it, so this is part
+	// of a start's time on a host that has not seen the base yet.
+	BaseImageFetchErrors   *prometheus.CounterVec
+	BaseImageBytes         prometheus.Gauge
+	BaseImageVersions      prometheus.Gauge
+	BaseImageFetchDuration prometheus.Histogram
+	// HostInfo is 1 for the one series naming this hostd's runtimes and
+	// version, set once at start from the resolved flags (DECISIONS
+	// I-1484): nix_mode is off with --nix-mode=off or no nix on PATH,
+	// erofs off with an empty --images-dir. Alerts scoped to Nix hosts
+	// join on it.
+	HostInfo *prometheus.GaugeVec
 }
+
+// SetHostInfo publishes repose_host_info for this hostd.
+func (m *M) SetHostInfo(nixOn, erofsOn bool, version string) {
+	onOff := func(b bool) string {
+		if b {
+			return "on"
+		}
+		return "off"
+	}
+	m.HostInfo.Reset()
+	m.HostInfo.WithLabelValues(onOff(nixOn), onOff(erofsOn), version).Set(1)
+}
+
+// BaseImageFetchReasons is the `reason` enum of
+// repose_host_base_image_fetch_errors_total: checksum (the file is not
+// the one the api named; it is removed), status (the server refused or
+// had no such file), stall (no bytes for the stall window), network (the
+// connection failed or broke), disk (the cache could not be written).
+var BaseImageFetchReasons = []string{"checksum", "status", "stall", "network", "disk"}
 
 // BlockedReasons is the `reason` enum of repose_host_egress_blocked_total
 // and repose_host_egress_blocked_guests.
@@ -216,6 +252,15 @@ func NewVersion(version string) *M {
 		BurstGateOpen:         f.gauge("burst_gate_open", "1 while the host is under the burst gate and guests may hold caps above their base cores; 0 while every cap is at its base (I-1126)."),
 		BurstCapMillicores:    f.gauge("burst_cap_millicores", "The CPU cap the burst controller last wrote, in thousandths of a core (I-1126)."),
 		BurstCPUSecondsTotal:  f.counterVec("burst_cpu_seconds_total", "Guest CPU time above the base cores the class sells, summed by class (I-1126).", "class"),
+		BaseImageFetchErrors:  f.counterVec("base_image_fetch_errors_total", "Base image file fetches that failed, by reason: checksum, status, stall, network, disk (I-1478).", "reason"),
+		BaseImageBytes:        f.gauge("base_image_bytes", "Bytes the erofs base image cache holds on disk (I-1478)."),
+		BaseImageVersions:     f.gauge("base_image_versions", "Erofs base bundles in the image cache (I-1478)."),
+		BaseImageFetchDuration: f.hist("base_image_fetch_duration_seconds", "Wall time of one base bundle fetch that finished, its three files together (I-1478).",
+			[]float64{1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800}),
+		HostInfo: f.gaugeVec("info", "1 for this hostd's guest runtimes and version: nix_mode and erofs are on or off (I-1484).", "nix_mode", "erofs", "version"),
+	}
+	for _, r := range BaseImageFetchReasons {
+		m.BaseImageFetchErrors.WithLabelValues(r)
 	}
 	// Every reason exists from startup, so the alert reads 0 rather than
 	// nothing on a host where no guest was ever blocked.

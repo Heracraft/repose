@@ -22,6 +22,9 @@ let
     + lib.optionalString (cfg.baseRepo.sshKeyFile != "") " --base-repo-ssh-key ${lib.escapeShellArg cfg.baseRepo.sshKeyFile}"
     + lib.optionalString (cfg.overlayCache.url != "") " --substituters ${lib.escapeShellArg "https://cache.nixos.org ${cfg.overlayCache.url}"}";
   stateDir = "/var/lib/repose/hostd";
+  # The erofs base image cache (DECISIONS I-1478): every host boots erofs
+  # guests beside its Nix ones, so the flag is unconditional.
+  imagesDir = "/var/lib/repose/images";
   # The idle pause (DECISIONS I-818); nothing when it is off, and then
   # this host reports no `pause` feature and rests nothing.
   pauseFlags = lib.optionalString cfg.pauseIdle "--pause-idle";
@@ -198,7 +201,7 @@ in
       coreutils
     ];
     serviceConfig = {
-      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags} ${readyFlags}${phaseFlags}";
+      ExecStart = "${hostd}/bin/hostd --state ${stateDir} --images-dir ${imagesDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags} ${burstFlags} ${readyFlags}${phaseFlags}";
       Restart = "always";
       RestartSec = 2;
       # A join token that has been used is not retried (03-hostd §6).
@@ -268,6 +271,9 @@ in
     "d /var/lib/repose/users 0711 root root -"
     "d /var/lib/repose/builds 0711 root root -"
     "d /var/lib/repose/base 0755 root root -"
+    # hostd (root) writes the bundles; 0755 and 0644 files so guest@<id>,
+    # running as hostd, reads the one bundle its unit binds in (I-1480).
+    "d ${imagesDir} 0755 root root -"
     "d /var/log/repose 0750 root root -"
   ] ++ lib.optional (cfg.snapshots.blobUrl == "") "d ${cfg.snapshots.localDir} 0700 root root -";
 }

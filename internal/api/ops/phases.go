@@ -62,8 +62,23 @@ const (
 	KindDrain         = "drain"
 )
 
-// PlanCreate is build then create.
-func PlanCreate() []string { return []string{PhaseBuild, PhaseCreateGuest} }
+// PlanCreate is build then create, for a Nix project.
+func PlanCreate() []string { return PlanCreateFor(store.RuntimeNix) }
+
+// PlanCreateFor is the create plan for a guest runtime (DECISIONS
+// I-1464): an erofs project boots a published image and has nothing to
+// build, so its create is the one phase.
+func PlanCreateFor(runtime string) []string {
+	if store.NormalizeRuntime(runtime) == store.RuntimeErofs {
+		return []string{PhaseCreateGuest}
+	}
+	return []string{PhaseBuild, PhaseCreateGuest}
+}
+
+// isErofs reports whether a project boots the erofs base (I-1462).
+func isErofs(p *store.Project) bool {
+	return p != nil && store.NormalizeRuntime(p.GuestRuntime) == store.RuntimeErofs
+}
 
 // PlanStart is build (skipped when the revision is already built), start,
 // then apply a built-but-unapplied revision.
@@ -135,7 +150,9 @@ func PlanRestore(p *store.Project, hasClosure, start bool) []string {
 	if p.GuestID != nil && p.HostID != nil {
 		ph = append(ph, PhaseDestroyGuest)
 	}
-	if !hasClosure {
+	// An erofs project never builds (I-1464): the restore names a base
+	// image and the start boots it.
+	if !hasClosure && !isErofs(p) {
 		ph = append(ph, PhaseBuild)
 	}
 	ph = append(ph, PhaseRestore)
@@ -197,6 +214,28 @@ func PlanBuild(running bool) []string {
 		return []string{PhaseBuild, PhaseWake, PhaseApplyConfig}
 	}
 	return []string{PhaseBuild}
+}
+
+// PlanBuildFor is a configuration change's plan for the project's
+// runtime (DECISIONS I-1464). A Nix project's is PlanBuild. An erofs
+// project's menu is applied inside the running guest, so it is wake then
+// apply whatever the state: both phases skip on a machine that is not
+// running, and the revision then waits as built for the next start,
+// which sends its menu.
+func PlanBuildFor(p *store.Project, running bool) []string {
+	if isErofs(p) {
+		return []string{PhaseWake, PhaseApplyConfig}
+	}
+	return PlanBuild(running)
+}
+
+// PlanStartFor is PlanStart for the project's runtime: an erofs start
+// never builds, and its StartGuest carries the newest menu itself.
+func PlanStartFor(p *store.Project, pendingRevision bool) []string {
+	if isErofs(p) {
+		return []string{PhaseStartGuest}
+	}
+	return PlanStart(pendingRevision)
 }
 
 // ApplyLogLine is the line a build op's log gets when its apply phase is
@@ -592,6 +631,11 @@ func (e *Engine) revisionFor(ctx context.Context, op *store.Op, p *store.Project
 }
 
 func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project) (*hostdv1.Command, uuid.UUID, bool, error) {
+	if isErofs(p) {
+		// Nothing to build (I-1464): an op enqueued with a Nix plan for
+		// an erofs project skips its build rather than sending one.
+		return nil, uuid.Nil, true, nil
+	}
 	if op.Kind == KindStart {
 		rev, needBuild, err := e.resolveStartRevision(ctx, op, p)
 		if err != nil {
@@ -636,69 +680,9 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 	if err != nil {
 		return nil, uuid.Nil, false, err
 	}
-	hostID := p.HostID
-	if hostID == nil {
-		var picked uuid.UUID
-		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
-			// An operator may pin the placement (repose-admin hosts smoke).
-			if want, ok := op.Params["host_id"].(string); ok && want != "" {
-				h, err := store.GetHost(ctx, tx, uuid.MustParse(want))
-				if err != nil {
-					return err
-				}
-				if h.State != "ready" && h.State != "draining" {
-					return &opError{code: "capacity", msg: "host " + h.Name + " is " + h.State}
-				}
-				picked = h.ID
-			} else {
-				t, err := e.target(ctx, tx, p)
-				if err != nil {
-					return err
-				}
-				pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
-				if err != nil {
-					return err
-				}
-				picked = pk.HostID
-			}
-			_, err := tx.Exec(ctx, "update projects set host_id = $2 where id = $1 and host_id is null", p.ID, picked)
-			return err
-		})
-		if errors.Is(err, scheduler.ErrNoCapacity) && e.placementWaits(ctx, op, p) {
-			return nil, uuid.Nil, false, errPlacementWait
-		}
-		if errors.Is(err, scheduler.ErrNoOwnHost) {
-			e.m.ScheduleTotal.WithLabelValues("no_own_host").Inc()
-			e.log.Warn("no host of the account's own has capacity", "event", "schedule_fail",
-				"project_id", p.ID.String(), "class", p.Class, "reason", "no_own_host")
-			return nil, uuid.Nil, false, e.ownHostRefusal(ctx, p)
-		}
-		if errors.Is(err, scheduler.ErrNoCapacity) {
-			// docs/workstreams/10-observability.md §5 requires schedule_fail
-			// and counts placements by result; without these two lines a
-			// fleet that has run out of memory is invisible until a user
-			// complains. The reason separates the two capacity walls: a
-			// fleet out of memory is bought differently from a fleet out
-			// of cores (DECISIONS I-736).
-			reason := "no_capacity"
-			if errors.Is(err, scheduler.ErrNoCPUCapacity) {
-				reason = "no_cpu"
-			}
-			e.m.ScheduleTotal.WithLabelValues(reason).Inc()
-			e.log.Warn("no host has capacity", "event", "schedule_fail",
-				"project_id", p.ID.String(), "class", p.Class, "reason", reason)
-			return nil, uuid.Nil, false, errCapacity()
-		}
-		if err != nil {
-			e.m.ScheduleTotal.WithLabelValues("error").Inc()
-			e.log.Error("placement failed", "event", "schedule_fail",
-				"project_id", p.ID.String(), "class", p.Class, "reason", "error", "err", err.Error())
-			return nil, uuid.Nil, false, err
-		}
-		e.m.ScheduleTotal.WithLabelValues("ok").Inc()
-		e.log.Info("placed project", "event", "schedule", "project_id", p.ID.String(), "host_id", picked.String(), "class", p.Class)
-		hostID = &picked
-		p.HostID = hostID
+	hostID, err := e.placeOp(ctx, op, p)
+	if err != nil {
+		return nil, uuid.Nil, false, err
 	}
 	if op.Kind == KindCreate || op.Kind == KindBuild || op.Kind == KindStart {
 		reused, err := e.reuseBuild(ctx, p, rev, version, *hostID, op.Kind == KindCreate)
@@ -889,6 +873,12 @@ func (e *Engine) reuseBuild(ctx context.Context, p *store.Project, rev *store.Re
 }
 
 func (e *Engine) buildCreate(ctx context.Context, op *store.Op, p *store.Project, u *store.User) (*hostdv1.Command, uuid.UUID, bool, error) {
+	if p.HostID == nil && isErofs(p) {
+		// No build before it to place the project (I-1464).
+		if _, err := e.placeOp(ctx, op, p); err != nil {
+			return nil, uuid.Nil, false, err
+		}
+	}
 	if p.HostID == nil {
 		return nil, uuid.Nil, false, errors.New("create_guest before placement")
 	}
@@ -896,7 +886,13 @@ func (e *Engine) buildCreate(ctx context.Context, op *store.Op, p *store.Project
 	if err != nil {
 		return nil, uuid.Nil, false, err
 	}
-	if rev.SystemClosure == nil {
+	var bi *hostdv1.BaseImage
+	if isErofs(p) {
+		if bi, err = e.erofsBase(ctx, op, p, *p.HostID); err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		op.Params["menu_revision_id"] = rev.ID.String()
+	} else if rev.SystemClosure == nil {
 		return nil, uuid.Nil, false, &opError{code: "internal", msg: "revision has no closure"}
 	}
 	if p.GuestID == nil {
@@ -917,11 +913,17 @@ func (e *Engine) buildCreate(ctx context.Context, op *store.Op, p *store.Project
 	if p.RemoteURL != nil {
 		remote = *p.RemoteURL
 	}
-	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_CreateGuest{CreateGuest: &hostdv1.CreateGuest{
-		ProjectId: p.ID.String(), GuestId: p.GuestID.String(), Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: *rev.SystemClosure,
+	cg := &hostdv1.CreateGuest{
+		ProjectId: p.ID.String(), GuestId: p.GuestID.String(), Class: p.Class, VolumeBytes: uint64(p.VolumeBytes),
 		Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert,
 		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project, Triggers: d.triggers,
-	}}}, *p.HostID, false, nil
+	}
+	if bi != nil {
+		cg.BaseImage, cg.Menu = bi, MenuSpecOf(rev)
+	} else {
+		cg.SystemClosure = *rev.SystemClosure
+	}
+	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_CreateGuest{CreateGuest: cg}}, *p.HostID, false, nil
 }
 
 func (e *Engine) buildStart(ctx context.Context, op *store.Op, p *store.Project, u *store.User) (*hostdv1.Command, uuid.UUID, bool, error) {
@@ -932,14 +934,32 @@ func (e *Engine) buildStart(ctx context.Context, op *store.Op, p *store.Project,
 	if err != nil {
 		return nil, uuid.Nil, false, err
 	}
-	if err := e.setState(ctx, p, "starting"); err != nil {
-		return nil, uuid.Nil, false, err
-	}
-	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_StartGuest{StartGuest: &hostdv1.StartGuest{
+	sg := &hostdv1.StartGuest{
 		GuestId: p.GuestID.String(), Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert, ProjectJson: d.project,
 		Class:    p.Class, // I-260: a class changed while stopped applies at this start
 		Triggers: d.triggers,
-	}}}, *p.HostID, false, nil
+	}
+	if isErofs(p) {
+		// The base the project should boot (its pending one, I-1464) and
+		// its newest menu, which a stopped machine's menu change waits
+		// for.
+		bi, err := e.erofsBase(ctx, op, p, *p.HostID)
+		if err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		rev, err := e.erofsStartRevision(ctx, p)
+		if err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		sg.BaseImage, sg.Menu = bi, MenuSpecOf(rev)
+		if rev != nil {
+			op.Params["menu_revision_id"] = rev.ID.String()
+		}
+	}
+	if err := e.setState(ctx, p, "starting"); err != nil {
+		return nil, uuid.Nil, false, err
+	}
+	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_StartGuest{StartGuest: sg}}, *p.HostID, false, nil
 }
 
 func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Project, u *store.User) (*hostdv1.Command, uuid.UUID, bool, error) {
@@ -1053,6 +1073,14 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project, Triggers: d.triggers,
 	}
 	r.BlobPath, r.Sha256 = snap.BlobPath, sha256Of(snap)
+	if isErofs(p) {
+		// A base image, never a closure (I-1458): both set is refused.
+		bi, err := e.erofsBase(ctx, op, p, hostID)
+		if err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		r.SystemClosure, r.BaseImage = "", bi
+	}
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Restore{Restore: r}}, hostID, false, nil
 }
 
@@ -1079,7 +1107,9 @@ const pendingRevisionSQL = `select id from config_revisions
 // whether a revision for the latest base is now pending (built or
 // building) for the start op.
 func ensureStartBaseRevision(ctx context.Context, q store.Querier, p *store.Project) (bool, error) {
-	if p.State != "stopped" || p.HoldBaseUpdates || p.ConfigRevisionID == nil {
+	if p.State != "stopped" || p.HoldBaseUpdates || p.ConfigRevisionID == nil || isErofs(p) {
+		// An erofs project's base is pending_base_version, sent by the
+		// start itself, not a revision to build (I-1464).
 		return false, nil
 	}
 	latest, err := store.LatestBase(ctx, q)
@@ -1162,6 +1192,9 @@ func (e *Engine) resolveStartRevision(ctx context.Context, op *store.Op, p *stor
 // preparing a base-update revision first when p is stopped, unheld, and
 // behind the newest published base (DECISIONS I-1454).
 func PendingRevision(ctx context.Context, q store.Querier, p *store.Project) (bool, error) {
+	if isErofs(p) {
+		return false, nil // the start carries the newest menu itself (I-1464)
+	}
 	ok, err := ensureStartBaseRevision(ctx, q, p)
 	if err != nil || ok {
 		return ok, err
@@ -1178,6 +1211,9 @@ func PendingRevision(ctx context.Context, q store.Querier, p *store.Project) (bo
 }
 
 func (e *Engine) buildApply(ctx context.Context, op *store.Op, p *store.Project) (*hostdv1.Command, uuid.UUID, bool, error) {
+	if isErofs(p) {
+		return e.buildApplyMenu(ctx, op, p)
+	}
 	// A restart applies to the stopped guest between its stop and its boot:
 	// hostd moves a stopped guest's root without guestd, and the boot comes
 	// up on the new closure (I-157).
@@ -1256,6 +1292,11 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if err := e.resignHostCert(ctx, p, u, c.GuestIp); err != nil {
 			return err
 		}
+		if phase == PhaseCreateGuest && isErofs(p) {
+			if err := e.onErofsBooted(ctx, op, p, "", c.GetMenuError()); err != nil {
+				return err
+			}
+		}
 		if phase == PhaseCreateGuest {
 			rev, err := e.revisionFor(ctx, op, p)
 			if err != nil {
@@ -1307,6 +1348,11 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if st := res.GetStart(); st != nil && st.FailedClosure != "" {
 			return e.onBootFallback(ctx, op, p, st)
 		}
+		if isErofs(p) {
+			if err := e.onErofsBooted(ctx, op, p, res.GetStart().GetBootedBaseVersion(), res.GetStart().GetMenuError()); err != nil {
+				return err
+			}
+		}
 		// A warning an earlier phase of this start left (its apply
 		// failed, I-590) stays the project's last word; otherwise the
 		// start clears the last error.
@@ -1348,7 +1394,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		return e.setState(ctx, p, "running")
 	case PhaseStopGuest:
 		if s := res.GetStop(); s != nil && s.BlobPath != "" {
-			if err := e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, "stop"); err != nil {
+			if err := e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, s.BaseVersion, "stop"); err != nil {
 				return err
 			}
 		}
@@ -1361,7 +1407,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if s == nil || s.BlobPath == "" {
 			return errors.New("snapshot result without a blob path")
 		}
-		return e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, snapshotReason(op))
+		return e.recordSnapshot(ctx, op, p, s.BlobPath, int64(s.Bytes), s.Sha256, s.BaseVersion, snapshotReason(op))
 	case PhaseDestroyGuest:
 		if op.Kind != KindDestroy {
 			// Restore: the old guest is gone and hostd has released its
@@ -1431,7 +1477,7 @@ const ForkSnapshotTTL = 24 * time.Hour
 
 // recordSnapshot writes the snapshot row. sha256 is the digest hostd
 // computed while uploading, "" from a hostd older than I-462.
-func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, sha256, reason string) error {
+func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, sha256, baseVersion, reason string) error {
 	id := store.NewID()
 	var expires *time.Time
 	if op.Kind == KindDestroy {
@@ -1445,10 +1491,10 @@ func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Proj
 		expires = &t
 	}
 	var got uuid.UUID
-	err := e.pool.QueryRow(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, sha256) values ($1, $2, $3, $4, $5, $6, now(), $7, nullif($8, ''))
+	err := e.pool.QueryRow(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, sha256, base_version) values ($1, $2, $3, $4, $5, $6, now(), $7, nullif($8, ''), coalesce(nullif($9, ''), (select base_version from projects where id = $2)))
 		on conflict (blob_path) do update set reason = excluded.reason, bytes = greatest(snapshots.bytes, excluded.bytes), expires_at = coalesce(excluded.expires_at, snapshots.expires_at), sha256 = coalesce(snapshots.sha256, excluded.sha256)
 		where snapshots.project_id = excluded.project_id
-		returning id`, id, p.ID, p.HostID, blobPath, bytes, reason, expires, sha256).Scan(&got)
+		returning id`, id, p.ID, p.HostID, blobPath, bytes, reason, expires, sha256, baseVersion).Scan(&got)
 	if err != nil {
 		return err
 	}
@@ -1489,6 +1535,12 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 	}
 	if phase == PhaseRestore {
 		_, _ = e.pool.Exec(ctx, "update snapshots set restoring_op_id = null where restoring_op_id = $1", op.ID) // release the expiry guard
+	}
+	if phase == PhaseApplyConfig && isErofs(p) && op.RevisionID != nil {
+		// An erofs menu that did not apply (I-1458): the machine keeps
+		// running with what it had, and the revision is not sent again by
+		// the next start until the user changes the menu.
+		_, _ = e.pool.Exec(ctx, "update config_revisions set status = 'failed', error = $2 where id = $1 and status = 'built'", *op.RevisionID, code+": "+msg) // best effort; the op carries the error
 	}
 	if phase == PhaseApplyConfig && code == codeBootFailed && op.RevisionID != nil {
 		// A forced reboot onto the revision never reached Ready and the
@@ -1698,4 +1750,75 @@ func quietFor(last *time.Time, now time.Time) string {
 	default:
 		return strconv.Itoa(int(d.Hours()/24)) + "d"
 	}
+}
+
+// placeOp places a project that has no host yet, as the op's first phase
+// that needs one: a create's build, or an erofs create's create_guest,
+// which has no build before it (DECISIONS I-1464). A placed project
+// answers its host.
+func (e *Engine) placeOp(ctx context.Context, op *store.Op, p *store.Project) (*uuid.UUID, error) {
+	if p.HostID != nil {
+		return p.HostID, nil
+	}
+	var picked uuid.UUID
+	err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
+		// An operator may pin the placement (repose-admin hosts smoke).
+		if want, ok := op.Params["host_id"].(string); ok && want != "" {
+			h, err := store.GetHost(ctx, tx, uuid.MustParse(want))
+			if err != nil {
+				return err
+			}
+			if h.State != "ready" && h.State != "draining" {
+				return &opError{code: "capacity", msg: "host " + h.Name + " is " + h.State}
+			}
+			picked = h.ID
+		} else {
+			t, err := e.target(ctx, tx, p)
+			if err != nil {
+				return err
+			}
+			pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+			if err != nil {
+				return err
+			}
+			picked = pk.HostID
+		}
+		_, err := tx.Exec(ctx, "update projects set host_id = $2 where id = $1 and host_id is null", p.ID, picked)
+		return err
+	})
+	if errors.Is(err, scheduler.ErrNoCapacity) && e.placementWaits(ctx, op, p) {
+		return nil, errPlacementWait
+	}
+	if errors.Is(err, scheduler.ErrNoOwnHost) {
+		e.m.ScheduleTotal.WithLabelValues("no_own_host").Inc()
+		e.log.Warn("no host of the account's own has capacity", "event", "schedule_fail",
+			"project_id", p.ID.String(), "class", p.Class, "reason", "no_own_host")
+		return nil, e.ownHostRefusal(ctx, p)
+	}
+	if errors.Is(err, scheduler.ErrNoCapacity) {
+		// docs/workstreams/10-observability.md §5 requires schedule_fail
+		// and counts placements by result; without these two lines a
+		// fleet that has run out of memory is invisible until a user
+		// complains. The reason separates the two capacity walls: a
+		// fleet out of memory is bought differently from a fleet out
+		// of cores (DECISIONS I-736).
+		reason := "no_capacity"
+		if errors.Is(err, scheduler.ErrNoCPUCapacity) {
+			reason = "no_cpu"
+		}
+		e.m.ScheduleTotal.WithLabelValues(reason).Inc()
+		e.log.Warn("no host has capacity", "event", "schedule_fail",
+			"project_id", p.ID.String(), "class", p.Class, "reason", reason)
+		return nil, errCapacity()
+	}
+	if err != nil {
+		e.m.ScheduleTotal.WithLabelValues("error").Inc()
+		e.log.Error("placement failed", "event", "schedule_fail",
+			"project_id", p.ID.String(), "class", p.Class, "reason", "error", "err", err.Error())
+		return nil, err
+	}
+	e.m.ScheduleTotal.WithLabelValues("ok").Inc()
+	e.log.Info("placed project", "event", "schedule", "project_id", p.ID.String(), "host_id", picked.String(), "class", p.Class)
+	p.HostID = &picked
+	return &picked, nil
 }

@@ -174,7 +174,7 @@
     {
       "type": "stat",
       "title": "Builds running",
-      "description": "At most two per host (DECISIONS R5-4). Two for 45 minutes with nothing finishing is BuildQueueStuck.",
+      "description": "Nix hosts only (I-1500). At most two per host (DECISIONS R5-4). Two for 45 minutes with nothing finishing is BuildQueueStuck.",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"
@@ -532,7 +532,7 @@
     {
       "type": "timeseries",
       "title": "Store and root filesystem",
-      "description": "Every guest reads /nix/store over virtio-fs, so the store is on the host root filesystem. Over 85 percent used is StoreFull.",
+      "description": "Nix hosts only (I-1500): every Nix guest reads /nix/store over virtio-fs, so the store is on the host root filesystem. Over 85 percent used is StoreFull. The erofs base images are under Base images below.",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"
@@ -894,6 +894,306 @@
         "y": 30
       },
       "id": 12
+    },
+    {
+      "type": "row",
+      "title": "Base images",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "Base image cache bytes",
+      "description": "What the erofs base image cache holds on disk (I-1478). Over 8 GiB for an hour is BaseImageDiskHigh (I-1500).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "repose_host_base_image_bytes{host_id=~\"$host_id\"}",
+          "legendFormat": "{{host_id}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 8589934592
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 39
+      },
+      "id": 14
+    },
+    {
+      "type": "timeseries",
+      "title": "Base image versions",
+      "description": "Bundles in the cache. Two or three during a base change; GC keeps every base a guest names and the newest per arch.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "repose_host_base_image_versions{host_id=~\"$host_id\"}",
+          "legendFormat": "{{host_id}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 39
+      },
+      "id": 15
+    },
+    {
+      "type": "timeseries",
+      "title": "Base image fetch p95",
+      "description": "One bundle's whole fetch, its three files together. A start on a base the host does not hold waits for this.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, host_id) (rate(repose_host_base_image_fetch_duration_seconds_bucket{host_id=~\"$host_id\"}[1h])))",
+          "legendFormat": "{{host_id}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 39
+      },
+      "id": 16
+    },
+    {
+      "type": "timeseries",
+      "title": "Base image fetch errors",
+      "description": "By reason: checksum (a bad publish), status (a missing release), stall and network (the path), disk (the host). Any is BaseImageFetchFailed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (increase(repose_host_base_image_fetch_errors_total{host_id=~\"$host_id\"}[30m]))",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 39
+      },
+      "id": 17
     }
   ]
 }
