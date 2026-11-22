@@ -69,3 +69,71 @@ For the conductor, not ranked (dash): the brief says the own-hardware price is n
 
 - nonix-cli: written 2026-11-22, from the two surface reports.
 - nonix-dash: signed 2026-11-22, with corrections and additions, all applied above: (1) row 6 rests on the sequential case, and the concurrent case is fake divergence F5; (2) the missing P1, L1, is row 8a; (3) P2s D8 and D11 to D17 are rows 19 to 26; (4) agrees with D7 at P2, P1 if main ships before PR 6; (5) the price note goes to the conductor. Dashboard counts: 0 P0, 6 P1 (D1-D5, L1), 11 P2, process findings F1-F5.
+
+## Second pass (2026-11-22, afternoon)
+
+Tree: `main` at 424cafcd for the CLI, the dashboard and the fake. Real
+machines on staging at c460b3a2 (Ubuntu base 2026.11.22.8). The staging
+dashboard login does not complete (`/oidc/auth` answers 404), so every
+dashboard reading is against the fake (`-default-runtime erofs`). Surface
+detail: the "Second pass" sections of the CLI and dashboard reports.
+
+**Gate: clean. No P0 is open.** Nothing regressed. Two new P1s are open
+(N1, N2), and so are the not-fixed P2s below.
+
+### Verification
+
+| Row | Finding | Now | Evidence |
+|---|---|---|---|
+| 1 | Dashboard adds an apt package | Fixed: "No package matches "ffmpeg". An apt package: ffmpeg [Add]"; Apply gives menu `[{"package":"ffmpeg"}]`. ffmpeg installs on a real machine. | dash (fake); cli (staging) |
+| 2 | `config --global` on Ubuntu | Fixed: refused on an Ubuntu-only account, exit 1; on a mixed account it names the Ubuntu machines. | cli (fake, staging) |
+| 3 | `scan` | Fixed for scan ("node 18 through mise"). `run`'s carry not re-run. | cli (fake) |
+| 4 | Failed install hidden/misstated | Fixed on both surfaces: the dashboard footer "Not installed: …" is in view at 1440 and 390; the CLI ends "menu is unchanged." Residual on both: the item before the failure is installed and unticked (staging: redis-server present, not in menu). | dash; cli |
+| 5 | Reload mid-install | Fixed: "Installing… / Applying…" then "Applied" with the log. | dash |
+| 6 | Stale tab overwrites | Fixed: "The menu changed elsewhere since you loaded it, and is reloaded." The concurrent case gets the same refusal. B's own tick is dropped and must be redone. | dash |
+| 7 | Resize changes the class | Fixed: Size select, confirm, stop{snapshot:false} → PATCH → start; 4.7 s on the fake. | dash |
+| 8 | Fake fidelity | F1, F2, F3, F5 and the pending base fixed; gateway now local. F4 partly fixed: restore-as-new keeps erofs, but the fake drops the menu ("0 selected" for a 6-item source; the real api copies it). New gap: the fake streams install lines the real system does not (N1). | cli; dash |
+| 8a | Landing page says Nix | Fixed: "Every machine runs Ubuntu 24.04. … any apt package, with repose config add." | dash |
+| 9 | x86 installer | Copy fixed on the dashboard and in the docs. The CLI is not fixed: it prints only the Mac step, and on x86 refuses without naming the installer. The URL still 404s on main; it exists on release/r20261122-10 (contains 424cafcd), so it ships with that batch. | dash; cli |
+| 10 | Waiting base | Fixed on both: status/ls lines; Overview "Base 2026.09.15 · 2026.11.30 at the next restart", list "new base at next restart". | cli; dash (fake) |
+| 11 | `config rm` hint | Fixed. | cli (fake, staging) |
+| 12 | Kind of machine | Partly fixed: status `base 2026.11.22.8, Ubuntu`; `ls` still shows no kind. | cli |
+| 13 | Catalog text | Fixed on both. | cli; dash |
+| 14 | Help texts | Fixed, except `logs --kind build`: the docs now promise install lines, but the real log has only "switching the machine" (N1). | cli |
+| 15 | Error lines | Fixed (`menu_failed:` prefix gone, length named); empty `show` closed by documenting it. | cli |
+| 16 | Re-apply on a failed revision | Not fixed. | dash |
+| 17 | Smaller CLI lines | /v1 hint and restart line fixed. `--temp` twice, `snapshots app`, the 30 s silent timeout: not fixed. | cli |
+| 18 | Agent guide | Fixed in source; the published base 2026.11.22.8 still ships the old tkinter line. All `needs:` commands exist on the machine. | cli (staging `exec`) |
+| 19-26 | D8, D11-D17 | Not fixed (STATUS line 775 lists them as not done). | dash |
+
+### New findings, ranked
+
+| # | Rank | Finding | Evidence |
+|---|---|---|---|
+| N1 | P1 | A real `config add` prints nothing between "Added" and "Applied" (cli: 70.03 s, 15.71 s, 8.0 s on a pseudo-terminal; dash: 66.5 s, 20.5 s). `logs --kind build` holds one line, "build switching the machine". A failure says "apt-get exited 100", not the documented "E: Unable to locate package …". The dashboard's install log has no case for that line, so it would show only that line for a minute (located in apps/web, not rendered against staging). The fake streams lines the real system does not. | cli (cli-a), dash (tmp-vffw) |
+| N2 | P1 | `repose sync` in a checkout whose machine was made with `run --temp` creates a new, permanent, large machine named after the folder, without asking (on a terminal too), and the work goes there. Measured on an exempt account; on Solo it would refuse with exit 7, on Plus it would succeed silently (reasoned, not run). | cli (staging, fake) |
+| N3 | P2 | `snapshots list` shows the last 8 characters of the id; typing the first 4 of what is shown is refused ("has no snapshot 8b28"). | cli (staging) |
+| N4 | P2 | Restoring a temporary machine's snapshot `--as` makes a permanent machine, and nothing says so. | cli (staging) |
+| N5 | P2 | Nix-era words on real Ubuntu operations: op kind `build`, revision status `built`, "switching the machine"; `sync` warns about pushing machine.nix on an all-Ubuntu account. | cli (staging, fake) |
+| N6 | P2 | Add a host says "On an x86 box with Ubuntu 24.04"; own-hardware.md says "Ubuntu 24.04, or Debian 12 or later"; the landing page says "Linux and KVM". | dash |
+| N7 | P2 | The Resize panel always says "320 GB is the largest size." while 80, 160 and 320 GB are all on offer. | dash |
+
+The dashboard reviewer's free hunt may add rows; they go here, under
+their name, when they sign.
+
+### Method
+
+- CLI: fake from 424cafcd, and staging through `repose-stg`, at most two
+  machines of mine at a time by agreement (the dashboard reviewer took
+  one). That cap was broken twice, briefly; see the CLI report.
+  Everything I made is destroyed. Partner's `tmp-vffw` was still running
+  at the time of writing; they destroy it.
+- Dashboard: fake with Playwright and nix Chromium at 1440 and 390; one
+  staging machine for the CLI-side install check.
+- Both: N1 is two reviewers on two machines, four installs. Every other
+  new finding is one reviewer's.
+
+### Signatures
+
+- nonix-cli: written 2026-11-22.
+- nonix-dash: (to sign, or to record disagreement here)
