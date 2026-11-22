@@ -59,6 +59,7 @@ func stashList(t *testing.T, dir string) string {
 // summary names, and the machine's change to a file the laptop did not
 // touch is left where it is.
 func TestOverlapKeepLaptopStashesTheMachinesCopy(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	c := &chooser{keys: []overlapChoice{overlapLaptop}}
 	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{Choose: c.choose})
@@ -94,6 +95,7 @@ func TestOverlapKeepLaptopStashesTheMachinesCopy(t *testing.T) {
 // laptop's work arrives, no "kept for the machine" stash is left behind,
 // and the next sync asks again because the record left that path out.
 func TestOverlapKeepMachineSyncsTheRestAndAsksAgain(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	ctx := context.Background()
 	c := &chooser{keys: []overlapChoice{overlapMachine}}
@@ -135,6 +137,7 @@ func TestOverlapKeepMachineSyncsTheRestAndAsksAgain(t *testing.T) {
 // for the last sync's own and stashes it without asking. That is what
 // repose_drop_pick_paths prevents.
 func TestOverlapKeepMachineRecordProbe(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	ctx := context.Background()
 	c := &chooser{keys: []overlapChoice{overlapMachine}}
@@ -166,6 +169,7 @@ func TestOverlapKeepMachineRecordProbe(t *testing.T) {
 // machine has it dirty. After m the checkout is at the laptop's commit
 // and src/a.ts holds the machine's copy, uncommitted.
 func TestOverlapKeepMachineOverACommit(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	writeAt(t, f.local, "src/a.ts", "laptop v1\n")
@@ -198,6 +202,7 @@ func TestOverlapKeepMachineOverACommit(t *testing.T) {
 // An untracked file on both sides at the same path: `m` keeps the
 // machine's and leaves it untracked.
 func TestOverlapKeepMachineUntracked(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.guestRepo(), "scratch.txt", "the agent's scratch\n")
 	writeAt(t, f.local, "scratch.txt", "the laptop's scratch\n")
@@ -219,6 +224,7 @@ func TestOverlapKeepMachineUntracked(t *testing.T) {
 // key is not stashed: the guard refuses again, naming both, and the
 // menu comes back.
 func TestOverlapKeepLaptopRefusesAFileNotShown(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	writeAt(t, f.local, "lib.go", "package lib\n")
 	c := &chooser{}
@@ -252,6 +258,7 @@ func TestOverlapKeepLaptopRefusesAFileNotShown(t *testing.T) {
 
 // `s` is --stash-machine, to the same stash name and summary.
 func TestOverlapStashIsTheFlag(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	c := &chooser{keys: []overlapChoice{overlapStash}}
 	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{Choose: c.choose})
@@ -276,6 +283,7 @@ func TestOverlapStashIsTheFlag(t *testing.T) {
 // Enter stops: exit 6 with nothing more printed (the refusal and the
 // menu are on the screen already) and nothing on the machine moved.
 func TestOverlapEnterStopsAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	before := mustRun(t, f.guestRepo(), "git", "status", "--porcelain")
 	c := &chooser{}
@@ -296,6 +304,7 @@ func TestOverlapEnterStopsAndChangesNothing(t *testing.T) {
 // Without a Choose (no terminal, or --json) the refusal is what it was:
 // the same text, exit 6, nothing touched.
 func TestOverlapWithoutATerminalIsUnchanged(t *testing.T) {
+	t.Parallel()
 	f := overlapFixture(t)
 	_, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{})
 	wantDirtyRefusal(t, err)
@@ -334,6 +343,7 @@ func TestOverlapAskerIsNilWhereNobodyCanBeAsked(t *testing.T) {
 
 // The menu's keys, read one at a time from a fake terminal.
 func TestOverlapMenuKeys(t *testing.T) {
+	t.Parallel()
 	d := &dirtyTreeError{files: []string{"src/session.ts", "notes.md"}}
 	for name, tc := range map[string]struct {
 		in   string
@@ -365,6 +375,7 @@ func TestOverlapMenuKeys(t *testing.T) {
 
 // The menu as a user reads it, under the refusal's own list.
 func TestOverlapMenuText(t *testing.T) {
+	t.Parallel()
 	var w strings.Builder
 	d := &dirtyTreeError{files: []string{"src/session.ts", "notes.md"}}
 	if _, err := overlapMenu(strings.NewReader("\r"), &w, d); err != nil {
@@ -394,6 +405,7 @@ func TestOverlapMenuText(t *testing.T) {
 // Past dirtyListMax the list still names 8 and a count, and the key acts
 // on every overlapping file (decision 2 of the proposal).
 func TestOverlapKeepLaptopActsOnEveryFile(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	for i := 0; i < 10; i++ {
 		n := string(rune('a'+i)) + ".txt"
@@ -420,6 +432,7 @@ func TestOverlapKeepLaptopActsOnEveryFile(t *testing.T) {
 // A submodule among the overlapping paths is reported as one, so the
 // menu can leave `m` out.
 func TestOverlapNamesASubmodule(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	addSubmodule(t, f.local, newSubRepo(t), "lib")
@@ -440,6 +453,7 @@ func TestOverlapNamesASubmodule(t *testing.T) {
 // second sync the menu starts would wait on them forever. The probe
 // that proves it: without reusable, EnvLater blocks on the second call.
 func TestSyncOptionsReusableAnswerTwice(t *testing.T) {
+	t.Parallel()
 	envs := make(chan []envFile, 1)
 	envs <- []envFile{{Rel: ".env"}}
 	carries := make(chan *credCarry, 1)
@@ -477,6 +491,7 @@ func TestSyncOptionsReusableAnswerTwice(t *testing.T) {
 // menu never offers it, and restoring a submodule from a stash needs a
 // commit of its own.
 func TestOverlapMachineRefusedForASubmodule(t *testing.T) {
+	t.Parallel()
 	d := &dirtyTreeError{files: []string{"lib"}, subs: []string{"lib"}}
 	o := SyncOptions{Choose: func(*dirtyTreeError) (overlapChoice, error) { return overlapMachine, nil }}
 	next, stop, err := overlapAnswer(o, &exitError{code: ExitDirtyRemoteTree, msg: d.Error(), cause: d})

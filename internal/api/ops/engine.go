@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -75,7 +77,16 @@ type Config struct {
 	// 500 ms). Enqueues and results in another process wake it through
 	// Postgres NOTIFY instead (DECISIONS I-163).
 	TickInterval time.Duration
+	// MaxHostBuilds caps how many Build commands the engine has in flight
+	// on one host at once (default DefaultMaxHostBuilds, matching hostd's
+	// builder pool and leaving its 20-slot queue as headroom; DECISIONS
+	// I-1454).
+	MaxHostBuilds int
 }
+
+// DefaultMaxHostBuilds is the default per-host in-flight Build command
+// cap (DECISIONS I-1454).
+const DefaultMaxHostBuilds = 2
 
 // notifyChannel is the Postgres channel a Kick in a process that is not
 // driving the ops raises, so the process holding the ops lock wakes at
@@ -154,6 +165,9 @@ func New(pool *db.Pool, send Sender, c *ca.CA, sec *secrets.Store, logs *buildlo
 	}
 	if cfg.PlacementWait == 0 {
 		cfg.PlacementWait = 3 * time.Minute
+	}
+	if cfg.MaxHostBuilds <= 0 {
+		cfg.MaxHostBuilds = DefaultMaxHostBuilds
 	}
 	return &Engine{pool: pool, send: send, ca: c, sec: sec, logs: logs, events: events, m: m, log: log.With("component", "api"), cfg: cfg,
 		kick: make(chan struct{}, 1), now: time.Now, waiters: map[uuid.UUID][]chan struct{}{}}
@@ -326,6 +340,7 @@ func (e *Engine) Tick(ctx context.Context) {
 		}
 	}
 	rows.Close()
+	var waiting []*store.Op
 	for _, id := range ids {
 		op, err := store.GetOp(ctx, e.pool, id)
 		if err != nil {
@@ -335,6 +350,19 @@ func (e *Engine) Tick(ctx context.Context) {
 			e.checkTimeout(ctx, op)
 			continue
 		}
+		if op.CommandResult != nil {
+			e.advance(ctx, op)
+			continue
+		}
+		waiting = append(waiting, op)
+	}
+	slices.SortFunc(waiting, func(a, b *store.Op) int {
+		if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID.String(), b.ID.String())
+	})
+	for _, op := range waiting {
 		e.advance(ctx, op)
 	}
 }
@@ -506,6 +534,9 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			if e.recoverFrom(ctx, op, code) {
 				return
 			}
+			if e.retryBuildQueueFull(ctx, op, code, msg) {
+				return
+			}
 			if e.skipFailedApply(ctx, op, code, msg) {
 				return
 			}
@@ -524,6 +555,9 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			log.Error("op step", "event", "op_fail", "err", err.Error())
 			return
 		}
+		if ph == PhaseBuild {
+			e.Kick()
+		}
 	}
 	for {
 		ph := currentPhase(op)
@@ -538,8 +572,8 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 				e.failWithLine(ctx, op, oe.code, oe.msg, oe.line)
 				return
 			}
-			if errors.Is(err, errPlacementWait) {
-				return // next tick places again
+			if errors.Is(err, errPlacementWait) || errors.Is(err, errBuildWait) {
+				return // next tick places or dispatches again
 			}
 			if errors.Is(err, secrets.ErrKeyServiceUnavailable) {
 				e.m.KeyVaultErrorsTotal.Inc()
@@ -873,6 +907,26 @@ func errCapacity() error { return &opError{code: "capacity", msg: "no host with 
 // stays where it is and the next tick places it again (I-408).
 var errPlacementWait = errors.New("placement waits for a guest being stopped")
 
+// errBuildWait is a build phase waiting because its host already has
+// MaxHostBuilds Build commands in flight (DECISIONS I-1454).
+var errBuildWait = errors.New("build waits for an in-flight build on the host")
+
+// retryBuildQueueFull turns hostd's "build queue full" refusal during
+// PhaseBuild into retryable backpressure rather than a permanently failed
+// op and revision (DECISIONS I-1454).
+func (e *Engine) retryBuildQueueFull(ctx context.Context, op *store.Op, code, msg string) bool {
+	if currentPhase(op) != PhaseBuild || code != "insufficient_capacity" || !strings.Contains(msg, "build queue full") {
+		return false
+	}
+	op.CommandID, op.CommandResult, op.SentAt = nil, nil, nil
+	if _, err := e.pool.Exec(ctx, "update ops set command_id = null, command_result = null, sent_at = null where id = $1", op.ID); err != nil {
+		e.log.Error("op build backpressure record", "event", "op_fail", "op_id", op.ID.String(), "err", err.Error())
+		return false
+	}
+	e.log.Warn("host build queue full; waiting to retry", "event", "op_retry", "op_id", op.ID.String(), "phase", PhaseBuild)
+	return true
+}
+
 // placementWaits reports whether op's failed placement is tried again:
 // for up to PlacementWait from the op's creation, while a guest being
 // stopped would make room (scheduler.Freeing). The first wait is logged
@@ -952,10 +1006,12 @@ func (e *Engine) failWithLines(ctx context.Context, op *store.Op, code, msg stri
 		e.m.ScheduleTotal.WithLabelValues("capacity").Inc()
 	}
 	op.State = "error"
+	op.Error = errObj
 	e.notifyWaiters(op)
 	if f := e.finishedHook(); f != nil {
 		f(ctx, op)
 	}
+	e.Kick()
 }
 
 func (e *Engine) finish(ctx context.Context, op *store.Op) {
@@ -984,6 +1040,7 @@ func (e *Engine) finish(ctx context.Context, op *store.Op) {
 	if f := e.finishedHook(); f != nil {
 		f(ctx, op)
 	}
+	e.Kick()
 }
 
 func (e *Engine) notifyWaiters(op *store.Op) {

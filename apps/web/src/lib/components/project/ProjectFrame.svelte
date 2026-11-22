@@ -14,18 +14,30 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { restoreProject, startProject, stopProject } from '$lib/api/client';
+	import { listHosts, restoreProject, startProject, stopProject } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
+	import { clock } from '$lib/clock.svelte';
 	import { dateTime } from '$lib/format';
 	import { title } from '$lib/title';
+	import { abuseStopReason } from '$lib/abuse';
+	import { bootFallbackReason } from '$lib/bootfail';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusOnMount } from '$lib/focus';
 	import { withoutBillingURL } from '$lib/refusal';
+	import { projectsStore } from '$lib/projects.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
 	import { tabOf } from './tabs';
+	import { splitTicks } from './ticks';
+	import {
+		capacityRefusalText,
+		errorBannerText,
+		offlineHostText,
+		ownHostName,
+		projectHostLabel
+	} from './host';
 	import ErrorView from '$lib/components/ErrorView.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
@@ -33,7 +45,7 @@
 	import { frozenSince } from '$lib/frozen';
 	import { notFound } from '$lib/notFound.svelte';
 	import { ProjectState, provideProject } from './context.svelte';
-	import type { PaymentRequiredReason, Project } from '$lib/api/types';
+	import type { OwnedHost, PaymentRequiredReason, Project } from '$lib/api/types';
 
 	let { id, children }: { id: string; children: Snippet } = $props();
 
@@ -42,10 +54,55 @@
 	/** Below 640px the header's action is a row of its own under the status line. */
 	const phone = new MediaQuery('max-width: 639.98px');
 
-	onMount(() => pollWhileVisible(ctx.refresh));
+	onMount(() => {
+		const stopClock = clock.use();
+		const stopPoll = pollWhileVisible(ctx.refresh);
+		return () => {
+			stopClock();
+			stopPoll();
+		};
+	});
 
 	let project = $derived(ctx.project);
 	let tab = $derived(tabOf(page.url.pathname, id));
+
+	/**
+	 * The account's own hosts by id, read only while this machine's host
+	 * is quiet (I-1370), so the banner can name how long the Mac has been
+	 * silent. Empty otherwise, so healthy pages issue no extra `/hosts` read.
+	 */
+	let ownHosts = $state(new Map<string, OwnedHost>());
+	// Deliberately not $state: writing ownHosts must not re-trigger this
+	// effect when an account owns no host.
+	let hostsAsked = false;
+	$effect(() => {
+		if (!project?.host_unreachable) {
+			if (hostsAsked) {
+				hostsAsked = false;
+				ownHosts = new Map();
+			}
+			return;
+		}
+		if (hostsAsked) return;
+		hostsAsked = true;
+		listHosts({ passive: true })
+			.then((hosts) => {
+				ownHosts = new Map(hosts.map((h) => [h.id, h]));
+			})
+			// Nothing to say: the banner still names `project.host_name` when present.
+			.catch(() => {});
+	});
+
+	let hostLabel = $derived(
+		project ? projectHostLabel(project, projectsStore.list, ownHosts) : undefined
+	);
+	let errorReason = $derived(project ? errorBannerText(project) : '');
+	let abuseReason = $derived(project ? abuseStopReason(project) : '');
+	let bootReason = $derived(project ? bootFallbackReason(project) : '');
+	let showCapacityBanner = $derived(
+		ctx.startBanner === 'capacity' &&
+			(!errorReason || (ctx.capacityMessage ?? 'No capacity right now.') !== errorReason)
+	);
 
 	/**
 	 * The sentence `repose stop` asks before it ends an agent's turn, or ""
@@ -68,6 +125,7 @@
 		if (ctx.opBusy) return;
 		ctx.opBusy = 'start';
 		ctx.startBanner = undefined;
+		ctx.capacityMessage = undefined;
 		try {
 			const { op_id } = await startProject(id);
 			void ctx.waitForOp(op_id, () => {
@@ -82,6 +140,7 @@
 			}
 			if (err instanceof ApiError && err.code === 'capacity') {
 				ctx.startBanner = err.code;
+				ctx.capacityMessage = capacityRefusalText(err);
 				return;
 			}
 			toastApiError(err, 'Could not start the project.');
@@ -185,8 +244,20 @@
 	);
 	/** Config's Apply bar holds the page's primary there. */
 	let headClass = $derived(ctx.holdPrimary ? 'hk-btn-secondary' : 'hk-btn');
-	let hasNotes = $derived(askingStop || !!ctx.startBanner);
+	let hasNotes = $derived(
+		askingStop ||
+			ctx.startBanner === 'payment_required' ||
+			showCapacityBanner ||
+			!!errorReason ||
+			!!project?.host_unreachable ||
+			!!abuseReason ||
+			!!bootReason
+	);
 </script>
+
+{#snippet ticks(text: string)}{#each splitTicks(text) as part, i (i)}{#if part.code}<code
+				>{part.text}</code
+			>{:else}{part.text}{/if}{/each}{/snippet}
 
 <svelte:head>
 	<title>{pageTitle}</title>
@@ -241,7 +312,10 @@
 <!-- The remote and the state under the title, then (on a phone) Start or
      Stop, then the tabs on the title's rule. -->
 {#snippet tabs()}
-	{#if project}<ProjectMeta {project} />{:else}<div class="meta-hold" aria-hidden="true"></div>{/if}
+	{#if project}<ProjectMeta {project} host={hostLabel} />{:else}<div
+			class="meta-hold"
+			aria-hidden="true"
+		></div>{/if}
 	{#if phone.current}<div class="phone-acts">{@render headActions()}</div>{/if}
 	<ProjectTabs {id} />
 {/snippet}
@@ -317,9 +391,43 @@
 							</div>
 						{/if}
 					</div>
-				{:else if ctx.startBanner === 'capacity'}
-					<div class="hk-banner" role="status">
-						<p>No capacity right now.</p>
+				{:else if showCapacityBanner}
+					<div class="hk-banner" role="status" data-testid="capacity-refusal">
+						<p>{@render ticks(ctx.capacityMessage ?? 'No capacity right now.')}</p>
+					</div>
+				{/if}
+				{#if errorReason}
+					<div class="hk-banner hk-banner--err" role="alert" data-testid="last-error">
+						<p>
+							{@render ticks(errorReason)}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a query appended -->
+							<a
+								href={resolve('/projects/[id]/events', { id }) + '?events_kind=errors'}
+								data-testid="last-error-link">Errors</a
+							>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						</p>
+					</div>
+				{/if}
+				{#if project?.host_unreachable}
+					<div class="hk-banner" role="status" data-testid="host-unreachable">
+						<p>
+							{#if ownHostName(project, ownHosts)}
+								{offlineHostText(project, ownHosts, clock.now)}.
+							{:else}
+								The server running this machine is not answering.
+							{/if}
+						</p>
+					</div>
+				{/if}
+				{#if abuseReason}
+					<div class="hk-banner" role="status" data-testid="abuse-stop">
+						<p>{abuseReason}</p>
+					</div>
+				{/if}
+				{#if bootReason}
+					<div class="hk-banner" role="status" data-testid="boot-fallback">
+						<p>{bootReason}</p>
 					</div>
 				{/if}
 			</div>

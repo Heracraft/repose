@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1059 entries.
+1063 entries.
 
 ## Scope
 
@@ -37,7 +37,7 @@ pointer, not a summary.
 - **R5-2** One in-guest Go agent (`guestd`) on vsock only — L109
 - **R5-4** User builds: substitutes from cache.nixos.org and the platform overlay cache; source builds allowed, capped at 30 minutes and 8 cores; evaluation capped at 60 seconds; per-project closure cap 20 GB — L113
 - **R5-5** Default volumes 20/40/80 GB thin, resizable up, billed on allocated. Egress shaped at 200 Mbit/s, 500 GB/month included — amended by I-585; L118
-- **R4-5** Base bumps apply automatically weekly (security sooner) with a per-project hold flag and a changelog line in status — L121
+- **R4-5** Base bumps apply automatically weekly (security sooner) with a per-project hold flag and a changelog line in status — amended by I-1454; L121
 - **R4-4** Builds run on the project's host; a central builder plus cache comes when there is more than one host — L125
 
 ## Network and access
@@ -237,7 +237,7 @@ pointer, not a summary.
 - **I-157** `repose start` on a project in `error`, or on a running one whose guestd stopped answering, restarts it onto its newest built revision — 2026-09-23; partly amended by I-593; L3267
 - **I-158** Stop, resize and snapshot on a dead guestd — 2026-09-23; L3288
 - **I-159** An op's error message is a sentence; the host's wording is `detail` — 2026-09-23; L3305
-- **I-160** A create reuses a closure the host already runs — 2026-09-23; L3317
+- **I-160** A create reuses a closure the host already runs — 2026-09-23; amended by I-1454; L3317
 - **I-161** The guest boot's critical chain: no wait for Docker, the console or a mount rate limit — 2026-09-23; L3342
 - **I-162** mkfs leaves the inode tables to the guest's lazy init — 2026-09-23; L3387
 - **I-163** An op enqueued in one api process wakes the driver in the other through NOTIFY — 2026-09-23; L3405
@@ -1091,3 +1091,7 @@ pointer, not a summary.
 - **I-1442** A golden that asserts an order sorts it back into the guest's order first: `TestClaudeSettingsMergeGolden` compares the dropped-hook lines after putting `/home/dev` back, not in the order `$TMPDIR` gave them (claude-golden ENG-139, 2026-11-20) — L38765
 - **I-1444** The guest-address write checks for an open op in its own `where`, not before it, and a write that matched no row does not update the caller's copy (hello-addr ENG-111, 2026-11-20) — L38806
 - **I-1446** The home page sells the machine again: the headline is "Your coding agents, on a machine of their own", the hero's picture is the real `repose run` session, 01 compares the two homes instead of listing six layers, and no band names a start time or a memory figure for either home (home-page, 2026-11-20) — L38878
+- **I-1448** Host architecture is its own field (`HostInfo.arch`, `Hello.arch`, `hosts.arch`), never sliced from `hosts.nixos_system` (web-hosts-ux, 2026-11-21) — L38942
+- **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38948
+- **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38954
+- **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — L38970

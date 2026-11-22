@@ -410,10 +410,7 @@ func mcpGuest(t *testing.T) (sshTarget, string) {
 		t.Skip("no ssh")
 	}
 	home := t.TempDir()
-	privPath, pub, err := testguest.GenerateClientKey(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	privPath, pub := cachedClientKey(t)
 	guest, err := testguest.New(home, pub)
 	if err != nil {
 		t.Fatal(err)

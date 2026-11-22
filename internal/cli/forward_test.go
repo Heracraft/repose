@@ -21,6 +21,7 @@ import (
 // vite binds ::1 only, and forwarding onto 127.0.0.1 beside it would send
 // the browser's localhost to the laptop's server.
 func TestLaptopPortTakenOnAnyAddress(t *testing.T) {
+	t.Parallel()
 	for _, host := range []string{"127.0.0.1", "::1", "0.0.0.0", "::"} {
 		l, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
 		if err != nil {
@@ -47,6 +48,7 @@ func TestLaptopPortTakenOnAnyAddress(t *testing.T) {
 }
 
 func TestParseListeners(t *testing.T) {
+	t.Parallel()
 	out := `LISTEN 0 511 0.0.0.0:5173 0.0.0.0:*
 LISTEN 0 4096 127.0.0.1:3000 0.0.0.0:*
 LISTEN 0 4096 [::]:8080 [::]:*
@@ -91,6 +93,7 @@ func fakeForwarder(taken map[int]bool) (*forwarder, *[]string, *[]string, *strin
 }
 
 func TestForwarderFollowsTheGuest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f, ctl, said, ss := fakeForwarder(map[int]bool{3000: true, 1355: true})
 	*ss = "LISTEN 0 511 0.0.0.0:5173 0.0.0.0:*\nLISTEN 0 511 127.0.0.1:3000 0.0.0.0:*\nLISTEN 0 511 127.0.0.1:1355 0.0.0.0:*\n"
@@ -138,6 +141,7 @@ func TestForwarderFollowsTheGuest(t *testing.T) {
 // poll with no command, the tmux status bar lists it, and when the
 // server goes the forward and the status go too.
 func TestForwardOverTheControlMaster(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ssh"); err != nil {
 		t.Skip("no ssh client")
 	}
@@ -283,6 +287,7 @@ func TestForwardOverTheControlMaster(t *testing.T) {
 // laptop and the status bar shows the union; the bar goes back to the
 // global one only when the last of them is gone.
 func TestForwardStatusIsTheUnionOfAttachedCLIs(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if _, err := runSSH(ctx, f.target, "tmux new-session -d -s "+testSlug, nil); err != nil {
@@ -327,21 +332,17 @@ func TestForwardStatusIsTheUnionOfAttachedCLIs(t *testing.T) {
 // that then exits (the ssh the CLI became). It must exit on its own within
 // a couple of polls, cancelling what it held.
 func TestSessionHelperEndsWithItsParent(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("builds the CLI")
 	}
 	f := newSyncFixture(t)
-	bin := filepath.Join(t.TempDir(), "repose")
-	build := exec.Command("go", "build", "-o", bin, "../../cmd/repose")
-	build.Env = append(filterTestEnv(os.Environ(), "HOME", "XDG_CONFIG_HOME"), "HOME="+realHome, "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
-	}
+	bin := builtRepose(t)
 	opts, _ := json.Marshal(sessionOptions{Slug: testSlug, Target: f.target.Args, Forward: true})
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	// The parent starts the helper the way spawnDetached does (own process
-	// group, stdio closed), records its pid, and exits after a second.
-	parent := exec.Command("sh", "-c", `setsid "$0" __session </dev/null >/dev/null 2>&1 & echo $! > "$1"; sleep 1`, bin, pidFile)
+	// group, stdio closed), records its pid, and exits after a moment.
+	parent := exec.Command("sh", "-c", `setsid "$0" __session </dev/null >/dev/null 2>&1 & echo $! > "$1"; sleep 0.2`, bin, pidFile)
 	parent.Env = append(os.Environ(), sessionEnv+"="+base64.StdEncoding.EncodeToString(opts))
 	if err := parent.Run(); err != nil {
 		t.Fatal(err)

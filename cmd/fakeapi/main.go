@@ -156,6 +156,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			SetInstall   bool   `json:"set_install"`
 			StateHost    string `json:"state_host"`
 			State        string `json:"state"`
+			Arch         string `json:"arch"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -179,6 +180,15 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		id := ""
 		if body.Name != "" {
 			id = f.AddOwnedHost(body.Name)
+		}
+		if body.Arch != "" {
+			target := body.ID
+			if target == "" {
+				target = id
+			}
+			if target != "" {
+				f.SetOwnedHostArch(target, body.Arch)
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	})

@@ -17,6 +17,7 @@ import (
 // --discard-machine and --stash-machine move every change on the machine to
 // a named stash and say how many files went and as which stash commit.
 func TestSyncRemoteFlagsStashAndSaySo(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		opts SyncOptions
@@ -66,6 +67,7 @@ func TestSyncRemoteFlagsStashAndSaySo(t *testing.T) {
 
 // A clean machine stashes nothing and says nothing about a stash.
 func TestSyncDiscardRemoteOnACleanMachine(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.local, "laptop.txt", "laptop\n")
 	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{DiscardRemote: true})
@@ -114,6 +116,7 @@ func TestGuestAheadLine(t *testing.T) {
 // The machine's commits since the last sync are counted on the machine,
 // and drop to none once the laptop has fetched them.
 func TestSyncCountsTheMachinesCommits(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if _, err := syncGuest(ctx, f.target, f.local, testSlug, SyncOptions{}); err != nil {

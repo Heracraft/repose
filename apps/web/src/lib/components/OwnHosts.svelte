@@ -15,7 +15,7 @@
 	import { resolve } from '$app/paths';
 	import { listHosts, createHost, deleteHost } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
-	import { ApiError } from '$lib/api/errors';
+	import { ApiError, errorText } from '$lib/api/errors';
 	import { gb, relativeTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
@@ -115,8 +115,7 @@
 				// — was behind the thing they were looking at. The api's
 				// sentences say what the plan includes, so they are the
 				// ones shown, beside the button that was pressed.
-				addError =
-					err instanceof ApiError ? err.message : 'Could not add the host. Try again.';
+				addError = errorText(err, 'Could not add the host.');
 			}
 		} finally {
 			saving = false;
@@ -414,7 +413,7 @@
 						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
 					<div data-testid="host-install">
-						<CodeCopy command={step} what="the install step" />
+						<CodeCopy command={step} what="the install step" wrap />
 					</div>
 					<p class="hdlg-facts">
 						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
@@ -427,7 +426,7 @@
 					     run, so it is never offered as one. -->
 					<p class="hdlg-once">This is its join token. It is not shown again, and it works once.</p>
 					<div data-testid="host-token">
-						<CodeCopy command={made.join_token} what="the join token" />
+						<CodeCopy command={made.join_token} what="the join token" wrap />
 					</div>
 					<p class="hdlg-facts">
 						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
@@ -468,6 +467,11 @@
 	.c-name {
 		font-size: 0.875rem;
 		font-weight: 500;
+		overflow-wrap: anywhere;
+	}
+	.c-name .name {
+		display: block;
+		overflow-wrap: anywhere;
 	}
 	.c-name .arch {
 		display: block;
@@ -475,6 +479,7 @@
 		font-size: 0.75rem;
 		font-weight: 400;
 		color: var(--hk-text-3);
+		overflow-wrap: anywhere;
 	}
 	.c-state,
 	.c-size,
@@ -528,6 +533,13 @@
 		.c-when {
 			display: none;
 		}
+		/* Keep long unbroken host names or arch strings inside the first
+		   column so the table never overflows a 390px phone or pushes Remove
+		   off the right edge (ENG-88). */
+		.list .c-name {
+			width: 100%;
+			max-width: 0;
+		}
 		.phone-meta {
 			display: block;
 			font-size: 0.75rem;
@@ -537,6 +549,11 @@
 		}
 		.nw {
 			white-space: nowrap;
+		}
+	}
+	@media (forced-colors: active) {
+		.c-act button {
+			margin-inline: 0;
 		}
 	}
 	.h-field {

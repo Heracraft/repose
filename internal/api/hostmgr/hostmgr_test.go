@@ -396,3 +396,87 @@ func TestSweepPublishesHostStateByName(t *testing.T) {
 		}
 	}
 }
+
+// Register, Rotate and Hello record hosts.arch from the explicit arch field
+// and reject store paths, so an upgraded already-registered host populates
+// its architecture on its first Hello without re-registering (ENG-89,
+// DECISIONS I-1448).
+func TestRegisterRotateAndHelloRecordArchNotStorePath(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	client := hostdv1.NewHostServiceClient(h.dial(t, nil))
+
+	// A host registering with a real arch alongside a /nix/store/... closure
+	// path records both in their own columns.
+	tok1, err := hostmgr.MintJoinToken(ctx, h.pool, "mac-new", "mac", "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp1, err := client.Register(ctx, &hostdv1.RegisterRequest{
+		JoinToken: tok1,
+		Info: &hostdv1.HostInfo{
+			Hostname:    "mac-new",
+			MemBytes:    18 << 30,
+			Vcpus:       8,
+			Cores:       8,
+			NixosSystem: "/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1-nixos-system-repose-appliance",
+			Arch:        "aarch64",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row1, err := store.GetHost(ctx, h.pool, uuid.MustParse(resp1.HostId))
+	if err != nil || row1.Arch == nil || *row1.Arch != "aarch64" {
+		t.Fatalf("new host arch = %v (%v), want aarch64", row1.Arch, err)
+	}
+
+	// An older hostd registers without arch (and a malformed store path in
+	// arch is rejected too), leaving hosts.arch null until an upgraded hostd
+	// sends Hello with its real arch.
+	tok2, err := hostmgr.MintJoinToken(ctx, h.pool, "mac-old", "mac", "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2, err := client.Register(ctx, &hostdv1.RegisterRequest{
+		JoinToken: tok2,
+		Info: &hostdv1.HostInfo{
+			Hostname:    "mac-old",
+			MemBytes:    18 << 30,
+			Vcpus:       8,
+			Cores:       8,
+			NixosSystem: "/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1-nixos-system-repose-appliance",
+			Arch:        "/nix/store/b9khbvcckcvs6mmjrb77kp0yhznh41s1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2 := uuid.MustParse(resp2.HostId)
+	row2, err := store.GetHost(ctx, h.pool, id2)
+	if err != nil || row2.Arch != nil {
+		t.Fatalf("store path in arch was stored as %v (%v), want nil", row2.Arch, err)
+	}
+
+	cert2, err := tls.X509KeyPair(resp2.ClientCert, resp2.ClientKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2 := hostdv1.NewHostServiceClient(h.dial(t, &cert2))
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream, err := c2.Session(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Hello{Hello: &hostdv1.Hello{
+		HostId: resp2.HostId,
+		Arch:   "aarch64",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Hello to populate hosts.arch", func() bool {
+		r, err := store.GetHost(ctx, h.pool, id2)
+		return err == nil && r.Arch != nil && *r.Arch == "aarch64"
+	})
+}

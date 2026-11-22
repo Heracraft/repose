@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 	_ = os.Unsetenv("HERDR_ENV")
 	lookHerdr = func(string) (string, error) { return "", exec.ErrNotFound }
 	code := m.Run()
+	removeFixtureDir()
 	_ = os.RemoveAll(home)
 	os.Exit(code)
 }

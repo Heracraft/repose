@@ -13,7 +13,7 @@ import (
 // destroy to end and creates a fresh project under the same name, instead
 // of stopping at "is destroying" (I-301).
 func TestRunStartsOverAfterADestroy(t *testing.T) {
-	fake := fakeapi.New(fakeapi.Options{DestroyDelay: 1500 * time.Millisecond})
+	fake := fakeapi.New(fakeapi.Options{DestroyDelay: 250 * time.Millisecond})
 	defer fake.Close()
 	f := newRunFixture(t, fake)
 	ctx := context.Background()
@@ -60,7 +60,7 @@ func TestRunStopsWhenTheDestroyFails(t *testing.T) {
 	old := f.env.Cache.ByRemote[gitRemoteOrigin(f.local)].ProjectID
 	fake.SetState(old, "destroying")
 	go func() {
-		time.Sleep(800 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
 		fake.SetState(old, "error")
 	}()
 	err := runRun(ctx, f.env, RunOptions{NoAttach: true}, false)

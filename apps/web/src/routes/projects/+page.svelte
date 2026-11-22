@@ -29,9 +29,13 @@
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { splitTicks } from '$lib/components/project/ticks';
-	import { abuseStopReason } from '$lib/abuse';
-	import { offlineHostLine } from '$lib/offlinehost';
-	import { bootFallbackReason } from '$lib/bootfail';
+	import {
+		capacityRefusalText,
+		hostCell,
+		offlineHostText,
+		ownHostName,
+		projectRowReason
+	} from '$lib/components/project/host';
 	import { DISK_FULL_PERCENT, diskPercent } from '$lib/disk';
 	import { DESTROYED_PAGE } from '$lib/destroyed';
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
@@ -254,15 +258,14 @@
 	 * one the platform stopped because a miner was running (I-239), or one
 	 * running its previous system because its new one did not boot (I-590).
 	 */
-	function reason(p: Project): string {
-		const abuse = abuseStopReason(p);
-		if (abuse) return abuse;
-		const boot = bootFallbackReason(p);
-		if (boot) return boot;
-		if (p.state !== 'error' || !p.last_error) return '';
-		const i = p.last_error.indexOf(': ');
-		return i > 0 ? p.last_error.slice(i + 2) : p.last_error;
-	}
+	const reason = (p: Project): string => projectRowReason(p);
+
+	/**
+	 * Whether to show where each machine runs (DECISIONS I-1392): shown only
+	 * while at least one listed project is on a host the account owns, from
+	 * each project's own `host_name` with no extra `/hosts` request.
+	 */
+	let showHost = $derived((projects ?? []).some((p) => !!ownHostName(p, ownHosts)));
 
 	onMount(() => {
 		// The State cell's "up 3m" moves with the 30-second clock, not the poll.
@@ -357,7 +360,7 @@
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'payment_required') explainRefusal(err);
 			else if (err instanceof ApiError && err.code === 'capacity')
-				refusal = { message: 'No capacity right now.', projects: [] };
+				refusal = { message: capacityRefusalText(err), projects: [] };
 			else throw err;
 		}
 		await refresh();
@@ -533,7 +536,7 @@
 		<!-- A host going unreachable takes every machine on it at once.
 		     A host the user owns is named, with how long it has been
 		     quiet: they are the one who turns it back on (I-1370). -->
-		<span class="sub">{offlineHostLine(p, ownHosts, clock.now)}</span>
+		<span class="sub">{offlineHostText(p, ownHosts, clock.now)}</span>
 	{/if}
 	{#if p.expires_at}
 		<span class="sub">{tempLeft(p.expires_at)}</span>
@@ -771,11 +774,14 @@
 					     a head row; Running ends on the stopped machines that ran
 					     last and a link to the rest. -->
 					<div class="hk-table-wrap ptable-wrap" use:tabStopWhenScrolls={'Projects'}>
-						<table class="hk-table hk-table--hover ptable">
+						<table class="hk-table hk-table--hover ptable" class:ptable--host={showHost}>
 							<thead>
 								<tr>
 									<th scope="col" class="c-name">Project</th>
 									<th scope="col" class="c-state">State</th>
+									{#if showHost}
+										<th scope="col" class="c-host">Host</th>
+									{/if}
 									<th scope="col" class="c-size">Size</th>
 									<th scope="col" class="c-agents">Agents</th>
 									<th scope="col" class="c-disk hk-num-col">Disk</th>
@@ -786,7 +792,7 @@
 								<tbody data-band={g.band}>
 									{#if headFor(g.band)}
 										<tr class="band-row">
-											<th scope="rowgroup" colspan="6">
+											<th scope="rowgroup" colspan={showHost ? 7 : 6}>
 												<span class="band-head">
 													<span>{headFor(g.band)}</span>
 												</span>
@@ -828,6 +834,14 @@
 												{#if frozen}<Frost kind="row" since={frozen} n={i} />{/if}
 											</td>
 											<td class="c-state">{@render stateCell(p)}</td>
+											{#if showHost}
+												{@const h = hostCell(p, ownHosts)}
+												<td class="c-host" title={h !== '-' ? h : undefined}>
+													<span class={h === '-' ? 'muted' : 'hk-mono'} data-testid="row-host"
+														>{h}</span
+													>
+												</td>
+											{/if}
 											<td class="c-size whitespace-nowrap">
 												<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
 														class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
@@ -841,7 +855,7 @@
 										</tr>
 										{#if askingStop === p.id}
 											<tr class="confirm-row" data-testid="confirm-stop">
-												<td colspan="6">{@render confirmStop(p)}</td>
+												<td colspan={showHost ? 7 : 6}>{@render confirmStop(p)}</td>
 											</tr>
 										{/if}
 									{/each}
@@ -869,6 +883,7 @@
 									{@const agents = p.signals?.agents ?? []}
 									{@const frozen = frozenSince(p)}
 									{@const d = disk(p)}
+									{@const h = showHost ? hostCell(p, ownHosts) : ''}
 									{@const facts = [
 										frozen ? sinceLabel(frozen, 'for', clock.now) : '',
 										p.state === 'stopped'
@@ -895,6 +910,12 @@
 										{/if}
 										<div class="mrow-meta">
 											<StateDot state={p.state} frozen={!!frozen} />
+											{#if h}
+												<span aria-hidden="true">·</span><span
+													class={h === '-' ? '' : 'hk-mono'}
+													data-testid="row-host">{h}</span
+												>
+											{/if}
 											{#each facts as f (f)}<span aria-hidden="true">·</span><span>{f}</span>{/each}
 										</div>
 										<!-- A temporary machine's countdown and the unused warning
@@ -903,7 +924,7 @@
 										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p)}
 											<div class="mrow-sub">
 												{#if p.host_unreachable}<span
-														>{offlineHostLine(p, ownHosts, clock.now)}</span
+														>{offlineHostText(p, ownHosts, clock.now)}</span
 													>{/if}
 												{#if p.state === 'running' && p.idle && !frozen}<span
 														>unused {uptime(p.idle.since)}</span
@@ -1003,6 +1024,9 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	.ptable .c-host {
+		overflow-wrap: anywhere;
+	}
 	/* A frozen row's frost is 18px tall and sits at the row's foot, so
 	   the text above it needs more than 14px of clearance to stay clear
 	   of it (DESIGN-LANGUAGE, "Frost"). */
@@ -1029,6 +1053,18 @@
 	.ptable .c-agents {
 		width: 19%;
 	}
+	.ptable--host .c-name {
+		width: 29%;
+	}
+	.ptable--host .c-state {
+		width: 23%;
+	}
+	.ptable--host .c-host {
+		width: 15%;
+	}
+	.ptable--host .c-agents {
+		width: 20%;
+	}
 	/* Wide enough for the widest thing this cell says. Measured on the
 	   page at 1440 (ENG-24, the customer review): "15.2 GB" needs 74px
 	   and "100% full", which is what it says past 90 percent, needs 84.
@@ -1043,6 +1079,18 @@
 		.ptable .c-state {
 			width: 24%;
 		}
+		.ptable--host .c-name {
+			width: 26%;
+		}
+		.ptable--host .c-state {
+			width: 21%;
+		}
+		.ptable--host .c-host {
+			width: 14%;
+		}
+		.ptable--host .c-agents {
+			width: 17%;
+		}
 	}
 	@container dash (min-width: 800px) {
 		.ptable .c-name {
@@ -1056,6 +1104,21 @@
 		}
 		.ptable .c-agents {
 			width: 17%;
+		}
+		.ptable--host .c-name {
+			width: 21.5%;
+		}
+		.ptable--host .c-state {
+			width: 21%;
+		}
+		.ptable--host .c-host {
+			width: 13%;
+		}
+		.ptable--host .c-size {
+			width: 13%;
+		}
+		.ptable--host .c-agents {
+			width: 14%;
 		}
 	}
 	.ptable .c-act {

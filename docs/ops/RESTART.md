@@ -51,6 +51,14 @@ matter:
 - **The homepage states why somebody would do this, and the rest is
   cut.** Real features over an hour of polish; the value proposition
   first.
+- **Do not spend time on CI where the branch has already run it**
+  (2026-11-20, after an afternoon that did). The honest version, from
+  the conductor who spent it: the evaluate job's seven runner losses
+  were not re-run because a gate demanded it, they were re-run because
+  a red was treated as information when ENG-144 already said it was
+  not. A red whose cause is **already known and filed** is not news.
+  Read §6's three-way split before deciding which kind you have, then
+  either run it locally or leave it.
 - **Hand over properly.** This document exists because they asked for
   it: a session after the reset should *"start perfectly where you
   ended and not scrambling"*.
@@ -209,6 +217,13 @@ subject.
 - **A watcher's own exit code is not the subject's.** `grep -c` returns
   1 when it finds nothing, so a watcher looking for failures reported
   failure *because there were none*.
+
+**The release workflow's "the release has notes" step can run before
+you have set them.** On 2026-11-20 goreleaser finished fast enough that
+the sign job reached the notes check against an unedited draft and the
+workflow failed; `gh run rerun --failed` after setting them fixed it,
+which is what `RELEASE.md` says to do. The window is tighter than the
+procedure reads: set the notes before the tag, not after it.
 
 **`pgrep -f "<pattern>"` matches the waiter's own command line.** An
 `until ! pgrep -f "playwright test"; do sleep ...; done` loop never

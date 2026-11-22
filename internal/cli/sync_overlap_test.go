@@ -36,6 +36,7 @@ func wantFile(t *testing.T, dir, rel, body string) {
 // No overlap: the laptop's commit, edit and untracked file land, and the
 // agent's edit of another tracked file and its untracked files stay.
 func TestSyncKeepsTheGuestsChangesElsewhere(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.local, "lib.go", "package lib\n")
 	mustRun(t, f.local, "git", "add", "lib.go")
@@ -91,6 +92,7 @@ func TestSyncKeepsTheGuestsChangesElsewhere(t *testing.T) {
 // message names that file and not the agent's other one, and nothing in
 // the guest moves.
 func TestSyncRefusesNamingTheOverlap(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.guestRepo(), "README.md", "the agent's README\n")
 	writeAt(t, f.guestRepo(), "agent.txt", "the agent's file\n")
@@ -113,6 +115,7 @@ func TestSyncRefusesNamingTheOverlap(t *testing.T) {
 // agent's scratch directory among them, and new commits on the laptop.
 // It syncs and the untracked files stay.
 func TestSyncWithOnlyUntrackedGuestFilesElsewhere(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.guestRepo(), ".playwright-mcp/page.yml", "snapshot\n")
 	writeAt(t, f.guestRepo(), "q1.yml", "q1\n")
@@ -137,6 +140,7 @@ func TestSyncWithOnlyUntrackedGuestFilesElsewhere(t *testing.T) {
 // checkout would write over it. A file inside an untracked directory the
 // laptop adds counts the same.
 func TestSyncRefusesAGuestUntrackedFileTheLaptopAlsoAdds(t *testing.T) {
+	t.Parallel()
 	for name, laptop := range map[string]func(t *testing.T, f *syncFixture){
 		"untracked": func(t *testing.T, f *syncFixture) { writeAt(t, f.local, "notes/todo.md", "laptop\n") },
 		"committed": func(t *testing.T, f *syncFixture) {
@@ -163,6 +167,7 @@ func TestSyncRefusesAGuestUntrackedFileTheLaptopAlsoAdds(t *testing.T) {
 
 // A rename the agent staged counts at both of its paths.
 func TestSyncRefusesOverTheOldPathOfAGuestRename(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	mustRun(t, f.guestRepo(), "git", "mv", "README.md", "READ.md")
 	writeAt(t, f.local, "README.md", "laptop edit\n")
@@ -177,6 +182,7 @@ func TestSyncRefusesOverTheOldPathOfAGuestRename(t *testing.T) {
 // uncommitted files at other paths, and the laptop has new commits. The
 // laptop's commits are merged into the agent's branch and the files stay.
 func TestSyncMergesBesideTheGuestsUncommittedFiles(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.guestRepo(), "agent.go", "package agent\n")
 	mustRun(t, f.guestRepo(), "git", "add", "agent.go")
@@ -206,6 +212,7 @@ func TestSyncMergesBesideTheGuestsUncommittedFiles(t *testing.T) {
 // per-path record. Its own changes, untouched since, are still the last
 // sync's: stashed whole, not taken for an agent's and refused.
 func TestSyncStashesAnOlderSyncsChangesWithoutTheRecord(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.local, "README.md", "laptop edit\n")
 	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{}); err != nil {
@@ -255,6 +262,7 @@ func agentMidMerge(t *testing.T, f *syncFixture) {
 // refuses too and says why; --discard-machine throws the state away and
 // syncs (I-573).
 func TestSyncRefusesWhileTheAgentIsMidMerge(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		opts SyncOptions
@@ -290,6 +298,7 @@ func TestSyncRefusesWhileTheAgentIsMidMerge(t *testing.T) {
 }
 
 func TestSyncDiscardRemoteEndsTheAgentsMerge(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	agentMidMerge(t, f)
 	g := f.guestRepo()
@@ -321,6 +330,7 @@ func TestSyncDiscardRemoteEndsTheAgentsMerge(t *testing.T) {
 
 // A bisect is named as such.
 func TestSyncRefusesDuringABisect(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	mustRun(t, f.guestRepo(), "git", "bisect", "start")
 	writeAt(t, f.local, "laptop.go", "package laptop\n")
@@ -336,6 +346,7 @@ func TestSyncRefusesDuringABisect(t *testing.T) {
 // The merge's committer is the identity the sync carries, the laptop's,
 // even on a guest whose git has none of its own yet (I-574).
 func TestSyncMergesWithTheLaptopsIdentity(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	g := f.guestRepo()
 	writeAt(t, g, "agent.go", "package agent\n")
@@ -363,6 +374,7 @@ func TestSyncMergesWithTheLaptopsIdentity(t *testing.T) {
 // with nothing new counts the agent's file alone, every untracked file
 // on its own; once the agent's file is gone, nothing is the machine's.
 func TestSyncNothingNewCountsOnlyTheGuestsOwn(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	writeAt(t, f.local, "README.md", "laptop edit\n")
 	writeAt(t, f.local, "notes.md", "laptop notes\n")

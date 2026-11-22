@@ -286,6 +286,12 @@ func TestCLIReassures(t *testing.T) {
 		t.Fatal("fixture: the CLI reassures")
 	}
 }
+
+func TestEveryDocsPageNamesRealCommands(t *testing.T) {
+	if os.Getenv("REPOSE_FIXTURE_CLI_DOCS_FAIL") != "" {
+		t.Fatal("fixture: a docs page names a flag the CLI does not have")
+	}
+}
 EOF
   # a non-Go file under a package directory: it ships with the package above it
   mkdir -p internal/api/mail
@@ -359,8 +365,9 @@ EOF
 EOF
   printf '# Decisions index\n' > docs/DECISIONS-INDEX.md
   cp "$repo/ops/dev/release-queue" ops/dev/release-queue
+  cp "$repo/ops/dev/pr-record" ops/dev/pr-record
   cp "$repo/ops/dev/decisions-index.py" ops/dev/decisions-index.py
-  chmod +x ops/dev/release-queue
+  chmod +x ops/dev/release-queue ops/dev/pr-record
   git add -A
   git commit -qm "the fixture repository"
 }
@@ -641,7 +648,9 @@ t_add_runs_cli_guards() {
   echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
   commit "$wt" "cli"
   local o; o=$(cd "$wt" && REPOSE_FIXTURE_CLI_FAIL=1 PATH="$root/bin:$PATH" REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" ops/dev/release-queue add 2>&1)
-  assert_has "a branch that fails the guards is refused" "$o" "help nobody asked for"
+  assert_has "a branch that fails the guards is refused" "$o" "help nobody asked for" || return 1
+  o=$(cd "$wt" && REPOSE_FIXTURE_CLI_DOCS_FAIL=1 PATH="$root/bin:$PATH" REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" ops/dev/release-queue add 2>&1)
+  assert_has "a branch that fails TestEvery/TestDocs/AgentGuide is refused too" "$o" "TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide"
 }
 
 # DECISIONS I-1398. A `cli` branch is refused when something the CLI
@@ -868,6 +877,300 @@ t_abandon_requeues() {
   local rel; rel=$(cut_release woker)
   q "$root/woker" abandon "$rel" >/dev/null
   assert_has "the branch is queued again" "$(q "$root/woker" ls)" "queued     goes-back"
+}
+
+# install_pr_gh_stub installs a stateful `gh` stub and an origin.git update
+# hook that both append to $1 (event log), so a test can drive the full PR
+# lifecycle (`add`, `add --on`, `cut`, `done`) and assert both the exact `gh`
+# calls and their ordering relative to `git push ... main:refs/heads/integrated`.
+install_pr_gh_stub() { # event_log state_json
+  local log=$1 db=$2
+  printf '{"next":1,"prs":[]}\n' > "$db"
+  cat > "$root/bin/gh" <<'PY'
+#!/usr/bin/env python3
+import json, os, subprocess, sys
+
+db_path = os.environ["REPOSE_FIXTURE_PR_DB"]
+log_path = os.environ["REPOSE_FIXTURE_PR_LOG"]
+origin_git = os.environ["REPOSE_FIXTURE_ORIGIN_GIT"]
+args = sys.argv[1:]
+
+with open(log_path, "a", encoding="utf-8") as f:
+    f.write("gh " + " ".join(args) + "\n")
+
+def load():
+    with open(db_path, encoding="utf-8") as f:
+        return json.load(f)
+
+def save(d):
+    with open(db_path, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+
+def head_oid(branch):
+    r = subprocess.run(
+        ["git", "-C", origin_git, "rev-parse", f"refs/heads/{branch}"],
+        capture_output=True, text=True,
+    )
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+if args[:2] == ["auth", "status"]:
+    sys.exit(0)
+
+if args[:2] == ["run", "list"]:
+    print(json.dumps([{
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://example/green",
+        "createdAt": "2026-11-20T00:00:00Z",
+    }]))
+    sys.exit(0)
+
+if args[:2] == ["pr", "list"]:
+    d = load()
+    head = None
+    label = None
+    jq = None
+    i = 2
+    while i < len(args):
+        if args[i] == "--head":
+            head = args[i + 1]; i += 2
+        elif args[i] == "--label":
+            label = args[i + 1]; i += 2
+        elif args[i] == "--jq":
+            jq = args[i + 1]; i += 2
+        elif args[i] in ("--state", "--limit", "--json"):
+            i += 2
+        else:
+            i += 1
+    prs = [p for p in d["prs"] if p["state"] == "OPEN"]
+    if head is not None:
+        prs = [p for p in prs if p["headRefName"] == head]
+    if label is not None:
+        prs = [p for p in prs if any(l["name"] == label for l in p["labels"])]
+    for p in prs:
+        p["headRefOid"] = head_oid(p["headRefName"])
+    if jq == ".[0].number // empty":
+        if prs:
+            print(prs[0]["number"])
+    else:
+        print(json.dumps(prs))
+    sys.exit(0)
+
+if args[:2] == ["pr", "create"]:
+    d = load()
+    base = head = title = body = ""
+    i = 2
+    while i < len(args):
+        if args[i] == "--base":
+            base = args[i + 1]; i += 2
+        elif args[i] == "--head":
+            head = args[i + 1]; i += 2
+        elif args[i] == "--title":
+            title = args[i + 1]; i += 2
+        elif args[i] == "--body-file":
+            with open(args[i + 1], encoding="utf-8") as bf:
+                body = bf.read()
+            i += 2
+        else:
+            i += 1
+    num = d["next"]
+    d["next"] = num + 1
+    d["prs"].append({
+        "number": num,
+        "headRefName": head,
+        "headRefOid": head_oid(head),
+        "baseRefName": base,
+        "title": title,
+        "body": body,
+        "labels": [],
+        "state": "OPEN",
+        "createdAt": "2026-11-20T00:00:00Z",
+    })
+    save(d)
+    print(f"https://example/pr/{num}")
+    sys.exit(0)
+
+if args[:2] == ["pr", "view"]:
+    num = int(args[2])
+    d = load()
+    pr = next((p for p in d["prs"] if p["number"] == num), None)
+    if pr is None:
+        sys.exit(1)
+    if "--jq" in args:
+        expr = args[args.index("--jq") + 1]
+        if expr == ".baseRefName":
+            print(pr["baseRefName"])
+        elif expr == ".body":
+            print(pr["body"])
+        sys.exit(0)
+    print(json.dumps(pr))
+    sys.exit(0)
+
+if args[:2] == ["pr", "edit"]:
+    num = int(args[2])
+    if os.environ.get("REPOSE_FIXTURE_RETARGET_FAIL") == str(num) and "--base" in args:
+        print("gh: fixture retarget failure", file=sys.stderr)
+        sys.exit(1)
+    d = load()
+    pr = next((p for p in d["prs"] if p["number"] == num), None)
+    if pr is None:
+        sys.exit(1)
+    i = 3
+    while i < len(args):
+        if args[i] == "--base":
+            pr["baseRefName"] = args[i + 1]; i += 2
+        elif args[i] == "--body-file":
+            with open(args[i + 1], encoding="utf-8") as bf:
+                pr["body"] = bf.read()
+            i += 2
+        elif args[i] == "--add-label":
+            name = args[i + 1]
+            if not any(l["name"] == name for l in pr["labels"]):
+                pr["labels"].append({"name": name})
+            i += 2
+        elif args[i] == "--remove-label":
+            name = args[i + 1]
+            pr["labels"] = [l for l in pr["labels"] if l["name"] != name]
+            i += 2
+        else:
+            i += 1
+    save(d)
+    sys.exit(0)
+
+if args[:2] == ["pr", "comment"]:
+    sys.exit(0)
+
+print(f"gh stub: unexpected args: {args}", file=sys.stderr)
+sys.exit(1)
+PY
+  chmod +x "$root/bin/gh"
+
+  cat > "$root/origin.git/hooks/update" <<EOF
+#!/usr/bin/env bash
+echo "git push \$1" >> "$log"
+EOF
+  chmod +x "$root/origin.git/hooks/update"
+}
+
+write_pr_body() { # path
+  cat > "$1" <<'EOF'
+Fixture change for stacked PR test.
+
+**Why.**
+Verify release-queue done retargets stacked PRs before pushing integrated.
+
+<details>
+<summary>In depth</summary>
+
+Fixture body.
+
+</details>
+
+<details>
+<summary>For agents</summary>
+
+Fixture notes.
+
+</details>
+
+<details>
+<summary>Record</summary>
+
+```record
+```
+
+</details>
+EOF
+}
+
+qpr() { # dir args...
+  local d=$1; shift
+  ( cd "$d" && REPOSE_QUEUE_LOCAL=0 PATH="$root/bin:$PATH" \
+      REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
+      REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" \
+      REPOSE_FIXTURE_PR_DB="$root/pr-db.json" \
+      REPOSE_FIXTURE_PR_LOG="$root/pr-events.log" \
+      REPOSE_FIXTURE_ORIGIN_GIT="$root/origin.git" \
+      ops/dev/release-queue "$@" 2>&1 )
+}
+
+# ENG-114. A PR stacked with `--on BRANCH` keeps that branch as its base,
+# and `cut` merges both into main without advancing that base. `done` must
+# retarget the stacked PR's base to `integrated` BEFORE pushing `integrated`,
+# so GitHub sees its commits land in its base and closes it as merged.
+t_done_retargets_stacked_pr_before_push_integrated() {
+  local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
+  : > "$log"
+  install_pr_gh_stub "$log" "$db"
+  write_pr_body "$body"
+
+  local base_wt stack_wt
+  base_wt=$(branch woker base-pr)
+  echo 'const Base = 1' >> "$base_wt/internal/shared/shared.go"
+  commit "$base_wt" "base change"
+  qpr "$base_wt" add --body "$body" >/dev/null || { note "base add failed"; return 1; }
+
+  stack_wt=$(branch woker stacked-pr base-pr)
+  echo 'const Stacked = 2' >> "$stack_wt/internal/clipkg/clipkg.go"
+  commit "$stack_wt" "stacked change"
+  qpr "$stack_wt" add --on base-pr --body "$body" >/dev/null || { note "stacked add failed"; return 1; }
+
+  qpr "$root/woker" cut >/dev/null || { note "cut failed"; return 1; }
+  local rel; rel=$(cut_release woker)
+  git -C "$root/woker" merge -q --ff-only "release/$rel"
+
+  # Clear prior add/cut events so we check exactly what `done` emits and in what order.
+  : > "$log"
+  local o rc=0
+  o=$(qpr "$root/woker" "done" "$rel") || rc=$?
+  assert_eq "done exits 0" "$rc" "0" || { note "$o"; return 1; }
+
+  local events; events=$(cat "$log")
+  assert_has "stacked PR #2 is retargeted to integrated" "$events" "gh pr edit 2 --base integrated" || { note "$events"; return 1; }
+  assert_not "non-stacked PR #1 is not redundantly retargeted" "$events" "gh pr edit 1 --base integrated" || { note "$events"; return 1; }
+  assert_has "integrated is pushed" "$events" "git push refs/heads/integrated" || { note "$events"; return 1; }
+
+  local retarget_line push_line unqueue_line
+  retarget_line=$(grep -nFx "gh pr edit 2 --base integrated" "$log" | head -n1 | cut -d: -f1)
+  push_line=$(grep -nFx "git push refs/heads/integrated" "$log" | head -n1 | cut -d: -f1)
+  unqueue_line=$(grep -nFx "gh pr edit 2 --remove-label queued" "$log" | head -n1 | cut -d: -f1)
+  [ -n "$retarget_line" ] && [ -n "$push_line" ] && [ "$retarget_line" -lt "$push_line" ] || {
+    note "expected retarget (line $retarget_line) before push (line $push_line):"$'\n'"$events"; return 1
+  }
+  [ -n "$unqueue_line" ] && [ "$push_line" -lt "$unqueue_line" ] || {
+    note "expected push (line $push_line) before unqueue (line $unqueue_line):"$'\n'"$events"; return 1
+  }
+}
+
+t_done_survives_retarget_failure() {
+  local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
+  : > "$log"
+  install_pr_gh_stub "$log" "$db"
+  write_pr_body "$body"
+
+  local base_wt stack_wt
+  base_wt=$(branch woker base-pr)
+  echo 'const Base = 1' >> "$base_wt/internal/shared/shared.go"
+  commit "$base_wt" "base change"
+  qpr "$base_wt" add --body "$body" >/dev/null || { note "base add failed"; return 1; }
+
+  stack_wt=$(branch woker stacked-pr base-pr)
+  echo 'const Stacked = 2' >> "$stack_wt/internal/clipkg/clipkg.go"
+  commit "$stack_wt" "stacked change"
+  qpr "$stack_wt" add --on base-pr --body "$body" >/dev/null || { note "stacked add failed"; return 1; }
+
+  qpr "$root/woker" cut >/dev/null || { note "cut failed"; return 1; }
+  local rel; rel=$(cut_release woker)
+  git -C "$root/woker" merge -q --ff-only "release/$rel"
+
+  : > "$log"
+  local o rc=0
+  o=$(REPOSE_FIXTURE_RETARGET_FAIL=2 qpr "$root/woker" "done" "$rel") || rc=$?
+  assert_eq "done still exits 0 when retarget fails" "$rc" "0" || { note "$o"; return 1; }
+  assert_has "done warns about the failed retarget" "$o" "could not retarget PR #2" || { note "$o"; return 1; }
+  local events; events=$(cat "$log")
+  assert_has "integrated is still pushed" "$events" "git push refs/heads/integrated" || { note "$events"; return 1; }
+  assert_has "stacked PR is still unqueued" "$events" "gh pr edit 2 --remove-label queued" || { note "$events"; return 1; }
 }
 
 # ------------------------------------------------------- the script's own age
