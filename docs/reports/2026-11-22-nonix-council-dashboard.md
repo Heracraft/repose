@@ -376,3 +376,132 @@ Names are `<step>-<width>-<scheme>.png`: 01-projects-empty, 02-new-project,
 36-new-project-waiting-host, 37-create-refused-waiting, 38-conflict-refusal,
 39-landing, 40-landing-installed, 41-held-and-pending,
 42-docs-{config,own-hardware,machine}.
+
+## Second pass (2026-11-22, main at 424cafcd)
+
+Gate: **clean. No P0 is open.** No fixed finding has regressed. New
+findings: one P1, which the CLI reviewer and I share (N1), and P2s.
+
+The staging browser login does not complete. `/signin` redirects to
+`http://172.206.225.242:8081/oidc/auth?...`, which answers `404 page not
+found`. The stand-in's discovery document lists only `device_code`,
+`refresh_token` and `client_credentials` grants. So every dashboard reading
+below is from `cmd/fakeapi -default-runtime erofs -config-delay 3s`.
+Real-machine readings come from the staging CLI (`~/repose-ws/repose-stg`,
+build `stg-c460b3a2`, which contains 424cafcd) on one machine, `tmp-vffw`,
+which I destroyed afterwards. `ls` then said "No projects for stgdev".
+
+### Verification
+
+| Joint row | Finding | Result | New behaviour (quoted) |
+|---|---|---|---|
+| 1 | D1, add an apt package | fixed | Searching "ffmpeg" shows `No package matches "ffmpeg".` followed by `An apt package: ffmpeg` with an Add button (accessible name "Add package ffmpeg"). After Apply the footer says `1 selected · Applied`. Menu: `[{"package":"ffmpeg"}]`. |
+| 4 | D2, a failed install out of sight | fixed | The footer next to Apply says `Not installed: repose-fake-missing failed: E: Unable to locate package repose-fake-missing`, in view at 1440 and at 390 (`v-d2-failure-at-click-*.png`). Residual: Redis, ticked in the same Apply, unticks itself while the log says "redis ready". The footer names only the failed package. config.md:37 documents this. |
+| 5 | D3, reload during an install | fixed | Reload 1.0 s into an install. At +0.4 s the footer says `Installing… / Applying…`. At +3.4 s it says `Applied`, with the log. Back then forward shows `Installing…` and the log line `installing deno`. |
+| 6 | D4, stale tab | fixed | Tab B's Apply now says `The menu changed elsewhere since you loaded it, and is reloaded.` RabbitMQ is kept and shows ticked in B. B's own new tick (Ruby) is dropped and must be ticked again. The concurrent case gets the same refusal. |
+| 7 | D5, size class | fixed | Resize… has a Size select and the line `Changing dash-ubu from large to small stops it, which ends every process on it, agents included, then starts it again.` with the buttons [Stop, change and start] and [Keep it running]. It sends `stop {"snapshot":false}`, `PATCH {"class":"small"}`, then `start`. The header says small 4.7 s later. |
+| 8 | Fake F1, F2, F3, F5 | fixed | `-default-runtime erofs`: a machine created in the dashboard is `erofs`. `POST /pending-base` works. Restart moves `base_version` to 2026.11.30 and clears pending. A concurrent PUT is refused. |
+| 8 | Fake F4 | partly fixed | Restore as new now keeps `erofs`. But the fake drops the menu: GET config has no `menu` and does carry a Nix `fragment`, and Config shows `0 selected` for a source machine with 6 items. The real API copies `cur.Menu` (`insertRestored`, restore.go; located, not run). |
+| 8a | L1, landing page | fixed | `Every machine runs Ubuntu 24.04. ... Add a database from the menu, or any apt package, with repose config add.` The word Nix no longer appears on the page. |
+| 9 | D7, x86 line | copy fixed | The dialog says `It keeps your machines' disks in /var/lib/repose/guests.img, or with --device takes over a whole empty disk.` The URL still answers 404 locally and on production, and no `install-host` file exists on main. The script is on `release/r20261122-10` (`apps/web/static/install-host.sh`), which contains 424cafcd, so it ships with that batch. The brief's statement that the installer "fails at its host daemon download step" is true of r10, not of main. |
+| 10 | D9, waiting base | fixed | Overview Details: `Base 2026.09.15 · 2026.11.30 at the next restart`. The project list row says `new base at next restart`. |
+| 13 | D10, catalog copy | fixed | PostgreSQL: `data lives under /var/lib/repose/services/postgresql, one folder per major.` Vercel: `Vercel's CLI, from npm.` On staging, `/var/lib/repose/services/postgresql/16` exists. |
+| 16 | D6, Re-apply on a failed revision | not fixed | The failed row still offers Re-apply. Clicking it gets a 400 and the toast `revision: only a successful revision can be re-applied`. |
+| 19 | D8, failed revision with no reason | not fixed | The row still says only `failed`. |
+| 20 | D11, raw refusals | not fixed | The stale case now has its own sentence. Other refusals are still the API's text. |
+| 21 | D12, Escape loses the join step | not fixed | After Escape, 0 dialogs are open. |
+| 22 | D13, own-hardware.md layout | not fixed | The x86 requirements were rewritten. The disk.raw and ~/Library/Logs paragraph still follows the x86 installer paragraph. There is still no x86 reboot or removal text. |
+| 23 | D14, tabs at 390 | not fixed | Config link left edge at 445, viewport 390, scrollLeft 0. |
+| 24 | D15, machine.nix page | not fixed | `/settings/machine-nix` still opens, with Save. |
+| 25 | D16, "until they are migrated" | not fixed | machine.md:277 is unchanged. |
+| 26 | D17, two names for one state | not fixed | The list says `waiting`; the refusal says `your host host-1 has not registered yet`. |
+
+STATUS.md line 775 lists rows 16 and 19 to 26 as not done, so these
+results are expected.
+
+### New findings, ranked
+
+**N1 (P1, shared with the CLI reviewer): a real install says nothing while
+it runs, and a failure gives no reason.** On staging, `config add postgresql
+ffmpeg` printed `Added postgresql and ffmpeg to tmp-vffw.` and then
+`Applied revision d7ae3dda in 1m07s`, with nothing between them (66.5 s,
+`/usr/bin/time`). `config add redis` did the same in 20.5 s. Afterwards,
+`repose logs tmp-vffw --kind build` held one line: `build switching the
+machine`. config.md:16-20 says each line is "the machine saying what it
+installed" and shows `✓ postgresql 16 ready ...`. The fake streams
+`installing X / X ready`, so the fake hides this. The dashboard's Install
+log prints op lines raw and has no case for "switching the machine" (grep of
+apps/web; located, but I did not render it against staging, because the
+login fails). A dashboard user would see that Nix-era line alone for a
+minute. `config add ffmpeg-typo` exits 10 with `error: ffmpeg-typo failed:
+apt-get exited 100`. config.md:33-34 promises `E: Unable to locate package
+ffmpeg-typo`. On the dashboard this becomes `Not installed: ffmpeg-typo
+failed: apt-get exited 100`. The services themselves are correct:
+`repose-svc-postgresql` and `repose-svc-redis` are active, `psql
+postgres://localhost/dev` answers, and `/usr/bin/ffmpeg` is present.
+Falsifier: a second apply printing item lines. Neither of the two did.
+
+**N6 (P2): three different x86 requirements.** Add a host says "On an x86 box
+with Ubuntu 24.04". own-hardware.md now says "Ubuntu 24.04, or Debian 12 or
+later". The landing page and its FAQ say "an x86 box with Linux and KVM".
+
+**N7 (P2): an always-on line in Resize.** The Resize panel shows "320 GB is
+the largest size." even while 80, 160 and 320 GB are still on offer.
+
+**N8 (P2): searching for a docs name finds nothing.** The menu search does
+not match the entry names that config.md's table lists and that `repose config
+add` takes. `dotnet`, `awscli`, `go-tools`, `shell-extras` and `nodejs` each
+give `No package matches` and no Add row: I-1508 hides Add for a menu id.
+`jdk` matches only because the description says OpenJDK. A customer who
+copies a name from the docs reaches a dead end. Capture: `h-search-dotnet-*`.
+
+**N9 (P2): an invalid name is refused without a reason.** `FFmpeg`, `Bad
+Name!`, `ffmpeg libpq-dev` (two names) and a 130-character name each give
+`No package matches "…"` with no Add row and no reason. config.md:23 gives
+the rule (lower case, digits, `+`, `-`, dots). The page never says it.
+
+**N10 (P2): "Applied" on a stopped machine means "applied at next start".**
+On staging, with the machine stopped, `config add zig` printed `Applied
+revision d5662d1d in 0.5s`. Nothing was installed until `start`, which took
+16.1 s against the 6 s reference; zig was present after the start. config.md:25
+says this ("installs at its next start"), but neither surface says so at the
+moment it happens. The fake streams install lines and `Applied` for a
+stopped machine (fake divergence), so the dashboard's real wording for this
+case cannot be seen on the fake.
+
+**N11 (P2): the Snapshots tab doesn't say where snapshots go on owned
+hardware.** For a machine on an owned host, Snapshots shows "No snapshots
+yet. / Create snapshot". own-hardware.md puts in bold that these snapshots
+stay on that host's disk and that repose keeps no copy. Nothing on the tab
+says so.
+
+**N12 (unverified, fake only): Apply on an offline owned host says
+`Applied`.** The fake applied a menu change to a machine whose host had not
+answered for 14 minutes. I have not checked what the real API does.
+
+**Right, measured:** staging create took 6.0 s (`Created tmp-vffw ... 6.0s`)
+against the 6 s reference. The machine runs `Ubuntu 24.04.5 LTS`. `df -h
+/home/dev` shows `/dev/vdb 20G`. cloudflared, mise and psql are present, and
+rustup has no toolchain, as machine.md says. The agent guide starts "an Ubuntu
+24.04 virtual machine". The Own hardware purchase on the fake: Billing lists
+Own hardware at $10. Before purchase, Add a host is refused in the dialog
+with "Your plan does not include a host of your own. The Own hardware plan is
+$10 a month for one host: choose it at https://repose.run/billing." After
+checkout the plan shows "Trial. First charge of $10 on 2026-11-29." An arm64
+host shows `online 24 GB · 8 cores`. New project offers `mini` by default,
+and the machine created there is `erofs`. With the host quiet, Overview and
+the list say `your host mini has not answered for 14m`.
+
+### Method
+
+Merged main 424cafcd into this branch and rebuilt the fakes, the CLI and the
+dashboard. I made one attempt at a staging browser login, which failed as
+described above. I then re-ran every dashboard row against the fake with
+Playwright and nix Chromium at 1440 and 390, using the new switches
+(`-default-runtime erofs`, `POST /pending-base`). The free hunt was about 30
+minutes: one staging machine for the real install output and the docs
+claims, and the fake for the menu search, the Own hardware flow and owned
+hosts. Rules that applied: "make the fake produce the state" (F4, N10 and
+N12 are where it still cannot); "fakes must mirror refusals" (N1 is the
+fake being kinder than the machine). The captures from this pass are in
+`docs/reports/captures/p2/` (untracked).
