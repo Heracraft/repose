@@ -103,9 +103,13 @@ func TestConfigAddErofsFailure(t *testing.T) {
 	if exitCode(err) != ExitBuildFailed {
 		t.Fatalf("got %v (exit %d)", err, exitCode(err))
 	}
+	// Council finding 4 (I-1514): nothing on stdout says "Added" before
+	// the outcome, the code prefix is gone, and the last line says the
+	// menu kept what it had.
 	got := out.buf.String()
-	if !strings.Contains(got, "error: ") || !strings.Contains(got, fakeapi.FailMenuPackage+" failed: ") || strings.Contains(got, "Nothing changed") {
-		t.Fatalf("stdout:\n%s", got)
+	want := "error: " + fakeapi.FailMenuPackage + " failed: E: Unable to locate package " + fakeapi.FailMenuPackage + "\ntodo-app's menu is unchanged.\n"
+	if got != want {
+		t.Fatalf("stdout:\n%q\nwant\n%q", got, want)
 	}
 	steps := errOut.buf.String()
 	if !strings.Contains(steps, "✓ bun ready") || !strings.Contains(steps, fakeapi.FailMenuPackage+" failed: ") || strings.Contains(steps, "✓ "+fakeapi.FailMenuPackage) {
@@ -281,5 +285,15 @@ func TestRunAndSyncSkipRepoConfigOnErofs(t *testing.T) {
 	}
 	if strings.Contains(errOut.buf.String(), "repose.nix") {
 		t.Fatalf("run or sync named repose.nix:\n%s", errOut.buf.String())
+	}
+}
+
+// Council finding 15: a name past apt's length is told the length, not
+// the character rule it followed.
+func TestConfigAddErofsLongName(t *testing.T) {
+	_, e, _, _, _ := newErofsEnv(t)
+	err := ConfigAddCmd(context.Background(), e, "", []string{strings.Repeat("a", 129)})
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "128 characters at most") {
+		t.Fatalf("got %v", err)
 	}
 }

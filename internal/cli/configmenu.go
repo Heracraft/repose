@@ -257,8 +257,8 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 	}
 	if isErofs(project) {
 		// Nothing is built: the machine installs the items, and the
-		// steps are its own lines (DECISIONS I-1488).
-		_, _ = fmt.Fprintln(e.Out, done)
+		// steps are its own lines (DECISIONS I-1488). "Added ..." waits
+		// for the outcome, so it never stands above a failure (I-1514).
 	} else {
 		_, _ = fmt.Fprintf(e.Out, "%s Building revision %s ...\n", done, shortRev(revisionID))
 	}
@@ -267,14 +267,20 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 		return err
 	}
 	if op.State == "error" && isErofs(project) {
-		// The items before the one that failed stay installed, so
-		// "nothing changed" would be false; the machine's line names
-		// the item and why.
-		_, _ = fmt.Fprintf(e.Out, "error: %s\n", firstLine(op.Error.Message))
-		if rest := strings.Trim(restAfterFirstLine(op.Error.Message), "\n"); rest != "" {
+		// The machine's line names the item and why; the code the api
+		// stores in front of it is no word for a reader (I-1514). The
+		// failed revision never becomes the menu, so the menu is what it
+		// was, whatever the steps above installed.
+		msg := strings.TrimPrefix(strings.TrimPrefix(op.Error.Message, op.Error.Code+": "), "menu_failed: ")
+		_, _ = fmt.Fprintf(e.Out, "error: %s\n", firstLine(msg))
+		if rest := strings.Trim(restAfterFirstLine(msg), "\n"); rest != "" {
 			_, _ = fmt.Fprintf(e.Out, "\n%s\n", rest)
 		}
+		_, _ = fmt.Fprintf(e.Out, "%s's menu is unchanged.\n", project.Name)
 		return silent(ExitBuildFailed)
+	}
+	if isErofs(project) {
+		_, _ = fmt.Fprintln(e.Out, done)
 	}
 	if op.State == "error" {
 		summary := genLocRe.ReplaceAllString(firstLine(op.Error.Message), "")

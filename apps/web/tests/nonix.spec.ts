@@ -198,3 +198,30 @@ test('the Packages search adds an apt package by name on an Ubuntu project', asy
 	await page.getByPlaceholder('Search packages and services…').fill('redis');
 	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
 });
+
+// Council finding 4 (D2, I-1514): the outcome of an install is in view at
+// the Apply bar, failure and success both, at 1440 and 390.
+test('a failed install is said at the Apply bar, in view', async ({ page }) => {
+	const p = await makeProject('ubuntu-fail', 'erofs');
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+		await page.goto(`/projects/${p.id}/config`);
+		const search = page.getByPlaceholder('Search packages and services…');
+		await search.fill('repose-fake-missing');
+		await page.getByRole('button', { name: 'Add package repose-fake-missing' }).click();
+		await page.getByRole('button', { name: 'Apply', exact: true }).click();
+		const status = page.locator('.cbar-status');
+		await expect(status).toContainText(
+			'Not installed: repose-fake-missing failed: E: Unable to locate package repose-fake-missing',
+			{ timeout: 10_000 }
+		);
+		await expect(status).toBeInViewport();
+		await expect(status).not.toContainText('menu_failed');
+		if (width === 1440) await shots(page, 'config-install-failed', status);
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.getByText('Zig', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(page.locator('.cbar-status')).toContainText('Applied', { timeout: 10_000 });
+	await expect(page.locator('.cbar-status')).toBeInViewport();
+});

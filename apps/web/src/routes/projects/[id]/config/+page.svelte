@@ -112,6 +112,16 @@
 	let buildDone = $state(false);
 	let buildError = $state<string | undefined>(undefined);
 	let currentOpId = $state<string | undefined>(undefined);
+	/**
+	 * How the last Apply ended, said at the Apply bar where it was pressed
+	 * (I-1514): the log and its banner are below the fold on any long
+	 * menu. Cleared by the next change to the selection.
+	 */
+	let outcome = $state<{ ok: boolean; text: string } | undefined>(undefined);
+	/** An op's error without the code the api stores in front of it. */
+	function plainError(err: string | undefined): string {
+		return (err ?? '').replace(/^menu_failed: /, '').split('\n')[0];
+	}
 	let eventSource: EventSource | undefined;
 	let logEl = $state<HTMLPreElement | undefined>(undefined);
 
@@ -228,6 +238,7 @@
 	}
 
 	function startBuild(opId: string) {
+		outcome = undefined;
 		currentOpId = opId;
 		buildLines = [];
 		buildDone = false;
@@ -246,13 +257,19 @@
 				es.close();
 				buildDone = true;
 				applying = false;
+				let ended: typeof outcome = undefined;
 				try {
 					const op = await getOp(id, opId);
-					if (op.state === 'error') buildError = op.error;
+					if (op.state === 'error') buildError = plainError(op.error);
+					ended =
+						op.state === 'error'
+							? { ok: false, text: plainError(op.error) }
+							: { ok: true, text: 'Applied' };
 				} catch {
 					// The revision list below still shows failed/applied.
 				}
 				await load();
+				outcome = ended;
 			});
 			es.onerror = () => {
 				es.close();
@@ -683,7 +700,10 @@
 						{selectedCount} selected{#if applying}&nbsp;· {erofs
 								? 'Installing…'
 								: 'Building…'}{:else if menuDirty && !heldNavigation}&nbsp;·
-							<span class="cbar-dirty">Unsaved changes</span>{/if}
+							<span class="cbar-dirty">Unsaved changes</span>{:else if outcome?.ok}&nbsp;·
+							<span class="cbar-ok">{outcome.text}</span>{:else if outcome}&nbsp;·
+							<span class="cbar-err">{erofs ? 'Not installed' : 'Not applied'}: {outcome.text}</span
+							>{/if}
 					{:else if applying}
 						Building…
 					{:else if nixReadonly}
@@ -957,6 +977,13 @@
 	}
 	.cbar-dirty {
 		color: var(--hk-text);
+	}
+	.cbar-ok {
+		color: var(--hk-text);
+	}
+	.cbar-err {
+		color: var(--hk-err);
+		overflow-wrap: anywhere;
 	}
 	.cguard {
 		flex-basis: 100%;

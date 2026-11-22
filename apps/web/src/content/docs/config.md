@@ -14,13 +14,13 @@ There are two ways to install software on a project's machine:
 
 ```
 $ repose config add postgresql bun
-Added postgresql and bun to todo-app.
 ✓ postgresql 16 ready on 127.0.0.1:5432  14s
 ✓ bun ready  2.1s
+Added postgresql and bun to todo-app.
 Applied revision 4f1c2a9e in 17s.
 ```
 
-Each line under the first is the machine saying what it installed. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, as `apt` has them.
+Each ✓ line is the machine saying what it installed. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, at most 128 characters, as `apt` has them.
 
 The machine installs into what's running, so your agents keep running. A stopped machine installs at its next start.
 
@@ -28,13 +28,13 @@ An item that doesn't install fails the command with the machine's own line and e
 
 ```
 $ repose config add bun ffmpeg-typo
-Added bun and ffmpeg-typo to todo-app.
 ✓ bun ready  2.0s
 ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo
 error: ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo
+todo-app's menu is unchanged.
 ```
 
-The items before it stay installed. The machine keeps the revision it had, so the name you got wrong never reaches the menu.
+The menu keeps what it had, so no name from that command reaches it, `bun` included; run it again without the wrong name.
 
 `repose config remove redis` takes an entry or a package out. A service's data stays on the machine, in `/var/lib/repose/services/redis`, and is there again if you add it back.
 
@@ -42,7 +42,7 @@ Press Ctrl-C to stop watching: `Interrupted. The install keeps going on the mach
 
 ## The menu
 
-The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Type a package's name in the search and **Add** puts it under **Extra packages**, as `repose config add NAME` does; each there has **Remove**.
+The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Type a package's name in the search and **Add** puts it under **Extra packages**, as `repose config add NAME` does; each there has **Remove**. When the install ends, the bar with **Apply** says `Applied`, or `Not installed:` and the machine's line for the item that failed, and the menu keeps what it had.
 
 | Group     | Entries                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
