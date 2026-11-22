@@ -37,6 +37,16 @@ func readOnlyRefusal(out string) bool {
 	return strings.Contains(out, "Read-only file system") || strings.Contains(out, "EROFS")
 }
 
+// deviceWriteRefusal is how the guest's kernel refuses a write to a
+// virtio-blk device the host attached readonly=on: the open succeeds and
+// the write answers EPERM, which dd prints as "Operation not permitted"
+// (staging's Ubuntu guest, 2026-11-22). It counts as read-only only for
+// /dev/vda and only beside lsblk's RO=1, which diskVerdict checks first;
+// the store row keeps the filesystem's EROFS.
+func deviceWriteRefusal(out string) bool {
+	return strings.Contains(out, "Operation not permitted") || strings.Contains(out, "EPERM")
+}
+
 // diskVerdict is the disk row's judgement of a probe.
 func diskVerdict(p diskProbe) error {
 	switch p.Runtime {
@@ -55,7 +65,7 @@ func diskVerdict(p diskProbe) error {
 		if p.VdaWriteCode == 0 {
 			return fmt.Errorf("a write to /dev/vda succeeded as root in the guest: %s", strings.TrimSpace(p.VdaWrite))
 		}
-		if !readOnlyRefusal(p.VdaWrite) {
+		if !readOnlyRefusal(p.VdaWrite) && !deviceWriteRefusal(p.VdaWrite) {
 			return fmt.Errorf("a write to /dev/vda failed, but not as read-only (exit %d): %s", p.VdaWriteCode, strings.TrimSpace(p.VdaWrite))
 		}
 		return nil

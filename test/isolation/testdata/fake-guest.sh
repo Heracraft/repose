@@ -11,7 +11,9 @@ case "$script" in
   *"NAME,RO"*)
     printf 'vda    1\nvdb    0\n' ;;
   *"of=/dev/vda"*)
-    echo "dd: failed to open '/dev/vda': Read-only file system"; exit 1 ;;
+    # What staging's Ubuntu guest printed: the open of a readonly=on
+    # virtio-blk device succeeds and the write is refused with EPERM.
+    echo "dd: error writing '/dev/vda': Operation not permitted"; exit 1 ;;
   *"test -e /dev/vg-guests"*)
     exit 1 ;;
   *"findmnt -no FSTYPE,OPTIONS /run/repose/ro"*)
