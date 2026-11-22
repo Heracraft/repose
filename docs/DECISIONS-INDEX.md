@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1091 entries.
+1092 entries.
 
 ## Scope
 
@@ -1098,7 +1098,7 @@ pointer, not a summary.
 - **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — amended by I-1464; L38976
 - **I-1502** The CLI writes the gateway host and port the api names in `POST /certs`, falls back to `ssh.repose.run:22` only when the api names none, and reads the gateway back from `known_hosts` for a reused certificate (cli-gateway-host, 2026-11-22) — L38987
 - **I-1458** hostd carries an erofs guest as `BaseImage` (three files, each with its SHA-256) and its menu as `MenuSpec`; `base_image` beside `system_closure` is `invalid_argument`, and `Hello.features` names `nix` and `erofs` (nonix-contracts-api, 2026-11-22) — L38992
-- **I-1460** guestd's `ApplyMenu` streams progress as `Notify` frames carrying the request's `request_id`, ends with a Response; `Switch` and `RegisterPaths` answer `unimplemented` on an erofs guest (nonix-contracts-api, 2026-11-22) — L39001
+- **I-1460** guestd's `ApplyMenu` streams progress as `Notify` frames carrying the request's `request_id`, ends with a Response; `Switch` and `RegisterPaths` answer `unimplemented` on an erofs guest (nonix-contracts-api, 2026-11-22) — amended by I-1536; L39001
 - **I-1462** `0051_nonix_base_images`: base rows have a format and per-arch files, projects a `guest_runtime` and `pending_base_version`, snapshots a `base_version`; `settings.default_guest_runtime` picks the runtime at create; `{fragment}` on an erofs project is `409 nix_config_retired` (nonix-contracts-api, 2026-11-22) — L39007
 - **I-1464** erofs projects never build: plans drop `PhaseBuild`, the base bump sets `pending_base_version`, placement needs the `erofs` feature and an image for the host's arch, and `repose-admin base publish --format erofs` fetches and checks every file before the row is written (nonix-contracts-api, 2026-11-22) — L39014
 - **I-1478** hostd keeps erofs base bundles in `/var/lib/repose/images/<version>-<arch>/`, fetched file by file with a SHA-256 check while streaming and a Range resume, renamed into place whole, recorded in bbolt and collected a day after the last guest naming them, never the newest (nonix-hostd, 2026-11-22) — amended by I-1504; L39021
@@ -1106,7 +1106,7 @@ pointer, not a summary.
 - **I-1482** hostd sends `ApplyMenu` with `replay_after_base_upgrade` after every erofs boot that has a menu, and guestd decides from `/run/repose/rw/.base-upgraded` whether to install; a base bump fetches before it touches the guest and records the new base on the boot's first state write (nonix-hostd, 2026-11-22) — L39039
 - **I-1484** `hostd --nix-mode=off`, or no `nix` on PATH, constructs no Nix builder, GC roots or store view, names no `nix` feature and answers `nix_unsupported` for a Nix guest; reconcile marks an erofs guest whose bundle is missing instead of failing (nonix-hostd, 2026-11-22) — L39046
 - **I-1474** guestd decides its runtime once, from mountinfo, and every erofs difference branches on that one answer: freeze, grow and statfs target `/run/repose/rw`, commands get Ubuntu's PATH, `Switch` and `RegisterPaths` answer `unimplemented` at once (nonix-guestd, 2026-11-22) — L39051
-- **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — L39059
+- **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — amended by I-1536; L39059
 - **I-1500** The Nix-only alerts skip a host whose `repose_host_info` says `nix_mode="off"`; two base image alerts, a Base images row and `release-assets` checking `guest-<version>` and `hostd-stable` cover the erofs side (nonix-obs-cleanup, 2026-11-22) — L39068
 - **I-1486** Each menu catalog entry names its erofs recipe (`recipe:`, the same string as the id), and a menu's `package` items follow the project's runtime: apt names on erofs (`menu.ValidAptPackage`, `Catalog.ValidateFor`), nixpkgs attribute paths on nix (nonix-config-cli-web, 2026-11-22) — L39077
 - **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — partly amended by I-1514; L39084
@@ -1123,3 +1123,4 @@ pointer, not a summary.
 - **I-1522** `repose status` has a `base` row naming the base and the machine's kind (`2026.11.22, Ubuntu` or `NixOS`), and `status`, `ls`, the Overview's Details and the project list say when a newer base is ready for the next restart (nonix-config-cli-web-2, 2026-11-22) — L39148
 - **I-1528** `PUT /projects/:id/config` takes an optional `base_revision_id`, the revision the client last read; one that is not the project's current revision is `409 menu_stale` (nonix-contracts-2, 2026-11-22) — L39151
 - **I-1524** The Config page sends `base_revision_id` (the revision its last GET returned) with a menu, and on 409 `menu_stale` says in the Apply bar that the menu changed elsewhere and reloads it (nonix-config-cli-web-2, 2026-11-22) — L39158
+- **I-1536** An ApplyMenu says each step of each item as it starts, the api keeps every line of it, and a failed apt install's reason is apt's own `E:` line with the exit code after it (nonix-guestd-2, 2026-11-22) — L39163

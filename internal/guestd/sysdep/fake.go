@@ -60,10 +60,20 @@ func (f *FakeRunner) Run(_ context.Context, spec RunSpec) (RunResult, error) {
 			best, found = pattern, true
 		}
 	}
+	res := f.Results[key]
 	if found {
-		return f.Match[best], nil
+		res = f.Match[best]
 	}
-	return f.Results[key], nil
+	if spec.OnLine != nil {
+		for _, b := range [][]byte{res.Stdout, res.Stderr} {
+			for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+				if l != "" {
+					spec.OnLine(l)
+				}
+			}
+		}
+	}
+	return res, nil
 }
 
 func (f *FakeRunner) key(spec RunSpec) string {

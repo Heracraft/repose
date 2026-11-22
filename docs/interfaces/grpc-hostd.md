@@ -224,7 +224,9 @@ MenuSpec  { repeated MenuItem items; string revision_id; }
   ignored on `CreateGuest` and `StartGuest`, and `invalid_argument` on
   `ApplyConfig`, which takes exactly one of the two.
 - **Progress and failure.** guestd's progress lines reach the api as
-  `BuildLog` under the command's `command_id`, as a Nix build's do, and
+  `BuildLog` under the command's `command_id`, as a Nix build's do (the
+  api binds an `apply_config` command to its op as it binds a build's,
+  I-1536), and
   the CLI shows them through the op's log (`api.md`). A menu that fails on
   `ApplyConfig` answers `menu_failed` (an item did not install or start;
   `message` is guestd's last line) or `invalid_argument` (an unknown

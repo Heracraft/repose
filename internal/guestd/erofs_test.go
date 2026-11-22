@@ -228,7 +228,7 @@ func TestApplyMenuStreamsProgressKeyedByRequestID(t *testing.T) {
 		}
 		break
 	}
-	want := []string{"installing bun", "bun ready", "installing jq", "jq installed", "menu applied"}
+	want := []string{"installing bun", "bun: installing bun@1 with mise", "bun ready", "installing jq", "jq: updating package lists", "jq installed", "menu applied"}
 	if strings.Join(lines, "|") != strings.Join(want, "|") {
 		t.Fatalf("lines before the response %q, want %q", lines, want)
 	}

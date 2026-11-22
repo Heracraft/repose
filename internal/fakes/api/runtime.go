@@ -123,12 +123,13 @@ func (f *Fake) putMenuErofs(w http.ResponseWriter, p *project, raw json.RawMessa
 		n := name(it)
 		lines = append(lines, "installing "+n)
 		if it.Package == FailMenuPackage {
-			lines = append(lines, n+" failed: E: Unable to locate package "+n)
+			lines = append(lines, n+" failed: E: Unable to locate package "+n+" (apt-get exited 100)")
 			failed = n
 			break
 		}
 		if it.Package != "" {
-			lines = append(lines, n+" installed")
+			// guestd's step lines (DECISIONS I-1536).
+			lines = append(lines, n+": installing 1 package (120 kB)", n+": unpacking", n+": setting up", n+" installed")
 		} else {
 			lines = append(lines, n+" ready")
 		}
@@ -137,7 +138,7 @@ func (f *Fake) putMenuErofs(w http.ResponseWriter, p *project, raw json.RawMessa
 	o.lines = lines
 	defer f.delayConfig(p, o, "apply_config")
 	if failed != "" {
-		msg := "menu_failed: " + failed + " failed: E: Unable to locate package " + failed
+		msg := "menu_failed: " + failed + " failed: E: Unable to locate package " + failed + " (apt-get exited 100)"
 		rev := &Revision{ID: f.nextID(), CreatedAt: now, Status: "failed", Error: msg, Menu: raw}
 		p.revisions = append(p.revisions, rev)
 		o.State, o.Error = "error", msg
