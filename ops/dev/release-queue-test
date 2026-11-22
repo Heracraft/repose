@@ -286,6 +286,12 @@ func TestCLIReassures(t *testing.T) {
 		t.Fatal("fixture: the CLI reassures")
 	}
 }
+
+func TestEveryDocsPageNamesRealCommands(t *testing.T) {
+	if os.Getenv("REPOSE_FIXTURE_CLI_DOCS_FAIL") != "" {
+		t.Fatal("fixture: a docs page names a flag the CLI does not have")
+	}
+}
 EOF
   # a non-Go file under a package directory: it ships with the package above it
   mkdir -p internal/api/mail
@@ -642,7 +648,9 @@ t_add_runs_cli_guards() {
   echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
   commit "$wt" "cli"
   local o; o=$(cd "$wt" && REPOSE_FIXTURE_CLI_FAIL=1 PATH="$root/bin:$PATH" REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" ops/dev/release-queue add 2>&1)
-  assert_has "a branch that fails the guards is refused" "$o" "help nobody asked for"
+  assert_has "a branch that fails the guards is refused" "$o" "help nobody asked for" || return 1
+  o=$(cd "$wt" && REPOSE_FIXTURE_CLI_DOCS_FAIL=1 PATH="$root/bin:$PATH" REPOSE_QUEUE_ASSETS="$root/bin/assets-stub" ops/dev/release-queue add 2>&1)
+  assert_has "a branch that fails TestEvery/TestDocs/AgentGuide is refused too" "$o" "TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide"
 }
 
 # DECISIONS I-1398. A `cli` branch is refused when something the CLI

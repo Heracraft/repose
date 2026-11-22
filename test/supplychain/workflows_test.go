@@ -251,6 +251,9 @@ func TestReleaseIsSignedBeforePublishing(t *testing.T) {
 // can go `down 1` on a seeded database, was not running either (DECISIONS
 // I-970, I-1000).
 var ALWAYS_RUN = map[string]string{
+	"ci.yml fast-checks the docs-ahead-of-cli reader still finds a command path":          "must not be hidden by a decisions-index failure above it (I-1456)",
+	"ci.yml fast-checks cross-compile cli for darwin (arm64, amd64)":                      "replaces per-PR GoReleaser/macOS builds; must run even if an earlier fast check fails (I-1456)",
+	"ci.yml fast-checks domain, supplychain, dev harnesses, and cli docs/copy guards":     "unconditional PR gate for domain, supplychain, harnesses and cli docs (I-1456)",
 	"ci.yml go repose-admin db migrate --down 1 on a seeded database":                     "the only proof a migration can roll back; skipped 2026-10-17..2026-11-02",
 	"ci.yml go go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0": "lint cannot run without it",
 	"ci.yml go golangci-lint run ./...":                                                   "ci-green's errcheck fix was unverifiable for sixteen days",
@@ -391,6 +394,100 @@ func TestDevToolHarnessesRun(t *testing.T) {
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err == nil {
 			t.Errorf("UNRUN waives %q (%s) and it passes; remove the waiver:\n%s", rel, reason, out)
+		}
+	}
+}
+
+// TestPRCIHasUnconditionedFastChecksShardedNixAndTieredHeavyWorkflow locks the
+// I-1456 CI tiering invariants (ENG-108, ENG-144):
+//   - ci.yml keeps an unconditioned fast-checks job so every PR gets a required
+//     status even when heavy jobs are path-skipped;
+//   - ci.yml gates go, proto, nix, nix-aarch64-overlay, ops and web on the
+//     pure-bash changes job;
+//   - ci.yml's go job caps package concurrency at -p 2 (ENG-113) and checks
+//     darwin arm64/amd64 cross-compilation;
+//   - ci.yml's nix job evaluates checks.x86_64-linux in shards rather than a
+//     monolithic `nix flake check --no-build ./nix` that OOMs 16 GB runners
+//     (ENG-144);
+//   - ci-heavy.yml holds the GoReleaser matrix, nix run .#repose, install.sh on
+//     Linux and macOS, shell completions, and the Lighthouse accessibility suite.
+func TestPRCIHasUnconditionedFastChecksShardedNixAndTieredHeavyWorkflow(t *testing.T) {
+	wfs := loadWorkflows(t)
+	ci, ok := wfs["ci.yml"]
+	if !ok {
+		t.Fatal("ci.yml missing")
+	}
+	heavy, ok := wfs["ci-heavy.yml"]
+	if !ok {
+		t.Fatal("ci-heavy.yml missing")
+	}
+
+	fast, ok := ci.Jobs["fast-checks"]
+	if !ok {
+		t.Fatal("ci.yml missing fast-checks job")
+	}
+	if strings.TrimSpace(fast.If) != "" {
+		t.Errorf("ci.yml job fast-checks has if=%q; want unconditioned so every PR runs it", fast.If)
+	}
+
+	gated := map[string]string{
+		"go":                  "needs.changes.outputs.go == 'true'",
+		"proto":               "needs.changes.outputs.proto == 'true'",
+		"nix":                 "needs.changes.outputs.nix == 'true'",
+		"nix-aarch64-overlay": "needs.changes.outputs.nix_overlay == 'true'",
+		"ops":                 "needs.changes.outputs.ops == 'true'",
+		"web":                 "needs.changes.outputs.web == 'true'",
+	}
+	for jn, wantIf := range gated {
+		j, ok := ci.Jobs[jn]
+		if !ok {
+			t.Errorf("ci.yml missing job %q", jn)
+			continue
+		}
+		if strings.TrimSpace(j.If) != wantIf {
+			t.Errorf("ci.yml job %s has if=%q, want %q", jn, j.If, wantIf)
+		}
+	}
+
+	sawRaceP2, sawDarwinBuild := false, false
+	for _, s := range ci.Jobs["go"].Steps {
+		if strings.Contains(s.Run, "go test -race -p 2 ./...") {
+			sawRaceP2 = true
+		}
+		if strings.Contains(s.Run, "GOOS=darwin GOARCH=arm64 go build ./cmd/repose") &&
+			strings.Contains(s.Run, "GOOS=darwin GOARCH=amd64 go build ./cmd/repose") {
+			sawDarwinBuild = true
+		}
+	}
+	if !sawRaceP2 {
+		t.Error("ci.yml job go does not run `go test -race -p 2 ./...` (ENG-113)")
+	}
+	if !sawDarwinBuild {
+		t.Error("ci.yml job go does not cross-compile ./cmd/repose for darwin arm64 and amd64")
+	}
+
+	sawShardedEval := false
+	for _, s := range ci.Jobs["nix"].Steps {
+		if strings.Contains(s.Run, "nix flake check --no-build") {
+			t.Error("ci.yml job nix still runs monolithic `nix flake check --no-build`, which OOMs 16 GB runners (ENG-144)")
+		}
+		if strings.Contains(s.Run, "eval_drv_shards checks.x86_64-linux") && strings.Contains(s.Run, ".drvPath") {
+			sawShardedEval = true
+		}
+	}
+	if !sawShardedEval {
+		t.Error("ci.yml job nix does not run sharded drvPath evaluation for checks.x86_64-linux (ENG-144)")
+	}
+
+	for _, s := range ci.Jobs["web"].Steps {
+		if strings.Contains(s.Run, "playwright.a11y.config.ts") {
+			t.Error("ci.yml job web still runs the 18.6-minute lighthouse accessibility suite; it belongs in ci-heavy.yml")
+		}
+	}
+
+	for _, wantJob := range []string{"cli-goreleaser", "cli-nix-run", "cli-install", "cli-completions", "web-a11y"} {
+		if _, ok := heavy.Jobs[wantJob]; !ok {
+			t.Errorf("ci-heavy.yml missing job %q", wantJob)
 		}
 	}
 }

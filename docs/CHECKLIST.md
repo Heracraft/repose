@@ -150,8 +150,8 @@ written so none of them goes unnoticed again.
       the user who runs the command for the hundredth time reads every
       one of them under the table they asked for. State that belongs to a
       row is a column, not a line under the table. Evidence: `go test
-      ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures'`
-      passes (`release-queue add` runs it too), any new
+      ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide'`
+      passes (`just fast-check` and `release-queue add` run it too, DECISIONS I-1456), any new
       `quietAllowed` entry carries a reason a reviewer agrees with, and
       the new success lines are pasted in the commit message (the test
       cannot see a command built at run time).
@@ -445,7 +445,8 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] The accessibility gate passes: `pnpm build`, then `pnpm a11y` in
       `apps/web`, 76 runs (19 pages, light and dark, 1440 and 390), with
       `KNOWN_FAILURES` empty or each entry carrying a reason and, where it
-      fails at one width only, that width.
+      fails at one width only, that width (`ci-heavy.yml` runs it on every
+      push to `main` and nightly, DECISIONS I-1456).
 - [ ] Judged at real size: viewport captures or crops at 1x, 1440 and 390
       wide, light and dark, of every changed page, plus the dark theme
       chosen by the switch on a light OS (CLAUDE.md "Judge visuals at real

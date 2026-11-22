@@ -50,7 +50,7 @@ the part between "a branch is done" and "it is live".
    I-1352).
 
    `add` refuses a body that fails `ops/dev/pr-record check`, a dirty tree, a branch whose CLI output or web text
-   fails the trust-the-reader guards (DECISIONS I-484, I-485; it runs
+   fails the trust-the-reader and docs/agent-guide guards (DECISIONS I-242, I-243, I-484, I-485, I-1456; it runs
    them for a branch that ships as `cli` or `web`), a branch with nothing
    the integration tip lacks, and a branch that conflicts with the tip
    anywhere but `docs/DECISIONS-INDEX.md`. It records the commit, so later
@@ -217,12 +217,12 @@ nothing is lost by waiting. This was written after the release of
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
-     -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures'`
-     (**`TestEvery` matters**: without it the run misses
-     `TestEveryDocsPageNamesRealCommands` and `TestEveryYesHasY`, which is
+     -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide'`
+     (**`TestEvery` and `AgentGuide` matter**: without them the run misses
+     `TestEveryDocsPageNamesRealCommands`, `TestEveryYesHasY` and the agent-guide parity tests, which is
      how a page shipped a flag the CLI does not have past two sessions'
      checks on 2026-11-20; `-run 'TestDocs'` does not match a name that
-     merely contains `Docs`); the
+     merely contains `Docs`; `just fast-check` and `release-queue add` run this same selector, DECISIONS I-1456); the
      `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
      `200` for every URL the CLI fetches on a customer's machine (the
      appliance image the batch pins and its checksum, vfkit, the latest
@@ -425,6 +425,10 @@ hand.
 Nothing deploys from it:
 
 - `ci.yml` and `infra.yml` run on pushes to `main` and on pull requests;
+  `ci-heavy.yml` runs the GoReleaser matrix, `install.sh` on Linux and macOS,
+  `nix run .#repose`, shell completions and the Lighthouse accessibility suite
+  on pushes to `main`, daily at 03:00 UTC, and on pull requests touching
+  `install.sh` or `.goreleaser.yaml` (DECISIONS I-1456);
   `release.yml` on `v*` tags; `bump-agents.yml` on its schedule. A push to
   `integrated` starts none of them.
 - Coolify's `api`, `api-grpc` and `web` deploy pushes to `main` only
