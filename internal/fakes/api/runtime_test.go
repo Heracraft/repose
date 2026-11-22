@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 	"strings"
-	"time"
 	"testing"
+	"time"
 )
 
 // The fake serves guest_runtime and pending_base_version and refuses what
@@ -25,7 +25,9 @@ func TestGuestRuntimeFake(t *testing.T) {
 		t.Fatalf("exempt erofs: %+v", e)
 	}
 	wantErr(t, call(t, f, "PUT", "/v1/projects/"+e.ID+"/config", tok, map[string]any{"fragment": "{ }"}), http.StatusConflict, "nix_config_retired")
-	f.SetPendingBase(e.ID, "2026.11.29.1")
+	if err := f.SetPendingBase(e.ID, "2026.11.29.1"); err != nil {
+		t.Fatal(err)
+	}
 	if got := getProject(t, f, tok, e.ID); got.PendingBaseVersion == nil || *got.PendingBaseVersion != "2026.11.29.1" {
 		t.Fatalf("pending: %+v", got.PendingBaseVersion)
 	}
