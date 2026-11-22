@@ -39,6 +39,11 @@ const DefaultMaxOutput = 64 << 10
 // and this is the floor.
 const GuestPATH = "/run/current-system/sw/bin:/usr/bin:/bin"
 
+// ErofsPATH is an erofs guest's PATH: Ubuntu's, with mise's install
+// directory (/usr/local/bin) and the sbin directories resize2fs, useradd
+// and apt's helpers live in (DECISIONS I-1474).
+const ErofsPATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 // RunResult is what a command produced. Stdout and Stderr are the tail of each
 // stream, capped at MaxOutput.
 type RunResult struct {
@@ -156,7 +161,7 @@ func LookPath(name string, env []string) (string, error) {
 		return name, nil
 	}
 	seen := map[string]bool{}
-	for _, list := range []string{pathFromEnv(env), os.Getenv("PATH"), GuestPATH} {
+	for _, list := range []string{pathFromEnv(env), os.Getenv("PATH"), GuestPATH, ErofsPATH} {
 		for _, dir := range filepath.SplitList(list) {
 			if dir == "" || seen[dir] {
 				continue
@@ -195,8 +200,12 @@ func DevEnv(p Paths, user string) []string {
 	if user == "" || user == "root" {
 		home, name = "/root", "root"
 	}
+	path := GuestPATH
+	if p.Erofs {
+		path = ErofsPATH
+	}
 	env := []string{
-		"PATH=" + GuestPATH,
+		"PATH=" + path,
 		"HOME=" + home,
 		"USER=" + name,
 		"LOGNAME=" + name,
