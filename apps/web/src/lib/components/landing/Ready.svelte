@@ -1,7 +1,7 @@
 <!--
   Ready: what is preinstalled on every machine at first boot. Five coding
   agents with both their marks and visible names, followed by the base
-  runtimes and how your laptop's own tools and Nix packages carry over.
+  runtimes, and how your laptop's tools and the package menu add to them.
 -->
 <script lang="ts">
 	import { agentMarks, toolMarks, type Mark } from '$lib/components/illustrations/marks';
@@ -56,9 +56,9 @@
 
 		<div class="extras">
 			<p class="copy">
-				<code>repose run</code> installs your laptop's global npm, Go, Cargo and uv tools in the
-				background when a machine boots. Add any Nix package to every rebuild with
-				<code>repose config add</code>.
+				Every machine runs Ubuntu 24.04. <code>repose run</code> installs your laptop's global npm,
+				Go, Cargo and uv tools in the background when a machine boots. Add a database from the menu,
+				or any apt package, with <code>repose config add</code>.
 			</p>
 		</div>
 	</div>

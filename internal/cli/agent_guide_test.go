@@ -73,6 +73,7 @@ var guestCommands = map[string]string{
 	"ss":      "system:Ubuntu's base (iproute2); auto-forward reads it too",
 	"fstrim":  "system:Ubuntu's base (util-linux); fstrim.timer runs it daily (I-585)",
 	"python3": "system:Ubuntu 24.04's Python 3.12",
+	"apt-get": "system:Ubuntu's package manager",
 	"nohup":   "system:Ubuntu's base (coreutils)",
 	"pkill":   "system:Ubuntu's base (procps)",
 	// Scheduled jobs are user timers (I-518).

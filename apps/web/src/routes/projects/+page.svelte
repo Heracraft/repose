@@ -532,6 +532,10 @@
 		     (ProjectMeta) — I-896. -->
 		<span class="sub">unused {uptime(p.idle.since)}</span>
 	{/if}
+	{#if p.pending_base_version}
+		<!-- A newer base waits for the machine's next restart (I-1522). -->
+		<span class="sub">new base at next restart</span>
+	{/if}
 	{#if p.host_unreachable}
 		<!-- A host going unreachable takes every machine on it at once.
 		     A host the user owns is named, with how long it has been

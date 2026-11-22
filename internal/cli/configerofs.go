@@ -57,6 +57,9 @@ func validMenuPackage(p *Project, name string) bool {
 // nor a package name of the project's runtime.
 func badPackageName(p *Project, arg string) *exitError {
 	if isErofs(p) {
+		if len(arg) > menu.MaxAptPackageLen {
+			return exitf(ExitUsage, "%q is longer than an apt package name can be (%d characters at most).", arg, menu.MaxAptPackageLen)
+		}
 		return exitf(ExitUsage, "%q is not an apt package name (lower case letters, digits, + - and dots, like ffmpeg or libpq-dev).", arg)
 	}
 	return exitf(ExitUsage, "%q is not a nixpkgs attribute name (letters, digits, _ - + and dots, like gcc or python312Packages.black).", arg)
