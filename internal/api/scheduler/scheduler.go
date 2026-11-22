@@ -173,7 +173,39 @@ type Target struct {
 	// with no plan is true here, because the billing gate has already
 	// refused it with subscription_required before placement runs.
 	Fleet bool
+	// Runtime is the project's guest_runtime, nix or erofs (DECISIONS
+	// I-1464); empty is nix. Arches is, for an erofs project, the host
+	// arches (x86_64, aarch64) the newest erofs bases have an image for.
+	Runtime string
+	Arches  []string
 }
+
+// runtimeSQL is the runtime term for hosts h, with $10 the project's
+// runtime and $11 the arches an erofs image exists for (DECISIONS
+// I-1464). An erofs project goes only to a host that names the erofs
+// feature and whose arch has an image; a nix project only to a host that
+// names nix or names neither, which is every hostd older than I-1458.
+const runtimeSQL = `(case when $10::text = 'erofs'
+		      then 'erofs' = any(h.features) and h.arch = any($11::text[])
+		      else 'nix' = any(h.features) or not ('erofs' = any(h.features)) end)`
+
+// runtimeArgs is the two parameters runtimeSQL reads.
+func (t Target) runtimeArgs() []any {
+	r := "nix"
+	if t.Runtime == "erofs" {
+		r = "erofs"
+	}
+	arches := t.Arches
+	if arches == nil {
+		arches = []string{}
+	}
+	return []any{r, arches}
+}
+
+// ErrNoRuntimeHost is ErrNoCapacity when the runtime term is what
+// refused: no host can run this project's guest runtime, or none has an
+// image for its arch (DECISIONS I-1464). It wraps ErrNoCapacity.
+var ErrNoRuntimeHost = fmt.Errorf("%w: no host runs this guest runtime", ErrNoCapacity)
 
 // ownedSQL is the ownership term for hosts h, with $7 the account, $8
 // whether the project asked for the fleet and $9 whether its plan sells
@@ -245,11 +277,18 @@ func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes,
 	}
 	need := ClassRAM(class)
 	vcpuMilli := ClassMilliVCPU(class)
-	args := []any{now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli, t.Account, t.Hosted, t.Fleet}
+	args := append([]any{now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli, t.Account, t.Hosted, t.Fleet}, t.runtimeArgs()...)
 	var p Pick
 	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), ownedSQL), args...).Scan(&p.HostID, &p.Name, &p.FreeBytes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// The runtime term first (I-1464): an erofs project with no
+			// erofs host anywhere is not a capacity problem, and the
+			// other answers would name the wrong cause.
+			var ignored Pick
+			if err := tx.QueryRow(ctx, pickSQLWith(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), ownedSQL, "($10::text is not null and $11::text[] is not null)"), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
+				return Pick{}, ErrNoRuntimeHost
+			}
 			// Which term refused is the difference between buying memory
 			// and buying cores, and the failure path is the only place
 			// that can say: one more query on a create that has already
@@ -258,7 +297,6 @@ func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes,
 			// referenced, which the extended protocol requires: a
 			// parameter the query does not mention is a bind error, and
 			// an unqualified `$7` has no type to infer.
-			var ignored Pick
 			if err := tx.QueryRow(ctx, pickSQL("$6 >= 0", ownedSQL), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
 				return Pick{}, ErrNoCPUCapacity
 			}
@@ -282,7 +320,10 @@ func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes,
 // pickSQL is PickHost's query with cpuRoom as its CPU condition and
 // owned as its ownership condition, so the same query can be asked again
 // with either satisfied trivially, to find out which one refused.
-func pickSQL(cpuRoom, owned string) string {
+func pickSQL(cpuRoom, owned string) string { return pickSQLWith(cpuRoom, owned, runtimeSQL) }
+
+// pickSQLWith is pickSQL with its runtime condition named too.
+func pickSQLWith(cpuRoom, owned, runtime string) string {
 	return `
 		select h.id, h.name,
 		       least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) as free
@@ -297,6 +338,7 @@ func pickSQL(cpuRoom, owned string) string {
 		   and ` + slotsSQL + `
 		   and ` + cpuRoom + `
 		   and ` + owned + `
+		   and ` + runtime + `
 		   and least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) >= $3
 		 order by free desc, h.name
 		 limit 1`
@@ -337,8 +379,9 @@ func Freeing(ctx context.Context, q interface {
 		   and g.going > 0
 		   and `+cpuRoomSQL("(coalesce(r.vcpu_milli, 0) - g.stopping_vcpu_milli)", "$6")+`
 		   and `+ownedSQL+`
+		   and `+runtimeSQL+`
 		   and least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
-		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class), t.Account, t.Hosted, t.Fleet).Scan(&ok)
+		append([]any{now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class), t.Account, t.Hosted, t.Fleet}, t.runtimeArgs()...)...).Scan(&ok)
 	return ok, err
 }
 

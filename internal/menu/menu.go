@@ -40,14 +40,18 @@ var Kinds = []string{"service", "package", "agent", "runtime"}
 
 // Entry is one catalog item.
 type Entry struct {
-	ID          string   `yaml:"id" json:"id"`
-	Label       string   `yaml:"label" json:"label"`
-	Group       string   `yaml:"group" json:"group"`
-	Kind        string   `yaml:"kind" json:"kind"`
-	Description string   `yaml:"description" json:"description"`
-	HM          string   `yaml:"hm,omitempty" json:"-"`
-	NixOS       string   `yaml:"nixos,omitempty" json:"-"`
-	Options     []Option `yaml:"options,omitempty" json:"options,omitempty"`
+	ID          string `yaml:"id" json:"id"`
+	Label       string `yaml:"label" json:"label"`
+	Group       string `yaml:"group" json:"group"`
+	Kind        string `yaml:"kind" json:"kind"`
+	Description string `yaml:"description" json:"description"`
+	HM          string `yaml:"hm,omitempty" json:"-"`
+	NixOS       string `yaml:"nixos,omitempty" json:"-"`
+	// Recipe names the recipe an erofs guest installs this entry by:
+	// guestd's internal/guestd/config/recipes.yaml, the same string as
+	// the id (DECISIONS I-1486). Not in `GET /catalog`.
+	Recipe  string   `yaml:"recipe" json:"-"`
+	Options []Option `yaml:"options,omitempty" json:"options,omitempty"`
 }
 
 // Option is a per-entry choice; today every option is an enum.
@@ -115,6 +119,28 @@ func PackageNotFound(name string) string {
 	return `nixpkgs has no package "` + name + `"; search https://search.nixos.org/packages`
 }
 
+// Runtimes a project boots (docs/interfaces/api.md, DECISIONS I-1462).
+const (
+	RuntimeNix   = "nix"
+	RuntimeErofs = "erofs"
+)
+
+// MaxAptPackageLen caps an apt package name, as guestd's ApplyMenu does.
+const MaxAptPackageLen = 128
+
+// aptPackageRe is the package name guestd's ApplyMenu takes on an erofs
+// guest (docs/interfaces/vsock-guestd.md "ApplyMenu"), which is Debian's
+// own rule for a package name: lower case letters, digits, + - and dots,
+// starting with a letter or digit. Nothing a shell treats specially
+// matches.
+var aptPackageRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]{0,127}$`)
+
+// ValidAptPackage reports whether name is an acceptable apt package name
+// for a `{package}` item on an erofs project (DECISIONS I-1486).
+func ValidAptPackage(name string) bool {
+	return len(name) <= MaxAptPackageLen && aptPackageRe.MatchString(name)
+}
+
 var funcs = template.FuncMap{
 	"nodots": func(s string) string { return strings.ReplaceAll(s, ".", "") },
 }
@@ -147,6 +173,9 @@ func Parse(b []byte) (*Catalog, error) {
 		}
 		if !contains(Kinds, e.Kind) {
 			return nil, fmt.Errorf("catalog: %s: kind %q is not one of %v", e.ID, e.Kind, Kinds)
+		}
+		if !idRe.MatchString(e.Recipe) {
+			return nil, fmt.Errorf("catalog: %s: recipe %q is not [a-z][a-z0-9-]*", e.ID, e.Recipe)
 		}
 		if e.HM == "" && e.NixOS == "" {
 			return nil, fmt.Errorf("catalog: %s: needs an hm or a nixos snippet", e.ID)
@@ -247,10 +276,32 @@ func renderTemplate(name, text string, opts map[string]string) (string, error) {
 	return b.String(), nil
 }
 
-// Validate checks a selection against the catalog: known ids, no
-// duplicates, known options with allowed values. Unknown ids come back as
-// `invalid` naming the id (docs/interfaces/api.md).
+// Validate checks a selection for a Nix project against the catalog:
+// known ids, no duplicates, known options with allowed values, and
+// packages that are nixpkgs attribute paths. Unknown ids come back as
+// `invalid` naming the id (docs/interfaces/api.md). It is
+// ValidateFor(RuntimeNix, sel).
 func (c *Catalog) Validate(sel Selection) error {
+	return c.validate(sel, RuntimeNix)
+}
+
+// ValidateFor is Validate for a project's runtime (DECISIONS I-1486):
+// "nix" (or "", a project from before I-1462) takes nixpkgs attribute
+// paths as packages, "erofs" takes apt package names (ValidAptPackage),
+// which is what guestd's ApplyMenu installs. The catalog entries are the
+// same for both. Any other runtime is an error, never a selection
+// accepted under the wrong rule.
+func (c *Catalog) ValidateFor(runtime string, sel Selection) error {
+	switch runtime {
+	case RuntimeNix, "":
+		return c.validate(sel, RuntimeNix)
+	case RuntimeErofs:
+		return c.validate(sel, RuntimeErofs)
+	}
+	return fmt.Errorf("menu: unknown runtime %q", runtime)
+}
+
+func (c *Catalog) validate(sel Selection, runtime string) error {
 	seen := map[string]bool{}
 	seenPkg := map[string]bool{}
 	for _, it := range sel {
@@ -258,7 +309,11 @@ func (c *Catalog) Validate(sel Selection) error {
 			if it.ID != "" || len(it.Options) > 0 {
 				return invalid("a menu item has either id (with options) or package, not both")
 			}
-			if !ValidPackage(it.Package) {
+			if runtime == RuntimeErofs {
+				if !ValidAptPackage(it.Package) {
+					return invalid("%q is not an apt package name (lower case letters, digits, + - and dots, at most %d characters)", it.Package, MaxAptPackageLen)
+				}
+			} else if !ValidPackage(it.Package) {
 				return invalid("%q is not a nixpkgs attribute path (letters, digits, _ - + and dots, at most %d characters)", it.Package, MaxPackageLen)
 			}
 			if _, ok := c.byID[it.Package]; ok {

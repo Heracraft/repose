@@ -62,6 +62,15 @@ func (e *Engine) PlaceNew(ctx context.Context, tx db.Tx, p *store.Project) (*uui
 		detail["hosted_allowed"] = t.Fleet
 		return nil, &PlacementRefusal{Code: "capacity", Message: msg, Detail: detail}
 	}
+	if errors.Is(err, scheduler.ErrNoRuntimeHost) {
+		// No host runs this guest runtime, or none has its image for its
+		// arch (DECISIONS I-1464): no stopping guest frees that.
+		e.m.ScheduleTotal.WithLabelValues("no_runtime_host").Inc()
+		e.log.Warn("no host runs the project's guest runtime", "event", "schedule_fail",
+			"project_id", p.ID.String(), "class", p.Class, "reason", "no_runtime_host", "guest_runtime", store.NormalizeRuntime(p.GuestRuntime))
+		return nil, &PlacementRefusal{Code: "capacity", Message: "no host with capacity",
+			Detail: map[string]any{"reason": "no_runtime_host", "hosted_allowed": t.Fleet}}
+	}
 	if errors.Is(err, scheduler.ErrNoCapacity) {
 		// The room is coming (a guest on a host that would fit is being
 		// stopped): the row is written and the op waits for it, as it
