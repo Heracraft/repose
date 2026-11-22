@@ -173,7 +173,7 @@ func TestSyncLeavesItAloneWhenOnlyTheMachineChanged(t *testing.T) {
 	defer fake.Close()
 	f := newRunFixture(t, fake)
 	ctx := context.Background()
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("first runRun: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent\n"), 0o644); err != nil {
@@ -184,7 +184,7 @@ func TestSyncLeavesItAloneWhenOnlyTheMachineChanged(t *testing.T) {
 		Dir: f.env.Dir, Cfg: f.env.Cfg, Cache: f.env.Cache, Cwd: f.local, HomeDir: f.env.HomeDir,
 		Client: f.env.Client, Out: &out, ErrOut: &discardWriter{}, TargetFor: f.env.TargetFor,
 	}
-	if err := runRun(ctx, env2, RunOptions{NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, env2, RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("second runRun: %v", err)
 	}
 	if !strings.Contains(out.String(), "Nothing new to sync. The machine has uncommitted changes to 1 file.\n") {

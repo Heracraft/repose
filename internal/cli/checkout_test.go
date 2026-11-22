@@ -158,7 +158,7 @@ func TestAnOldCheckoutStaysUnderTheSlug(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.env.Cwd = laptop
-	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := readGuestFile(t, f, testSlug+"/n.txt"); got != "n\n" {

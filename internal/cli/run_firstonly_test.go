@@ -95,7 +95,7 @@ func TestRunIsQuietWhenTheLaptopHasNothingNew(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	f := newRunFixture(t, fake)
-	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatal(err)
 	}
 	out := &discardWriter{}
@@ -151,7 +151,7 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "laptop edit\n" {
@@ -163,7 +163,7 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("newer\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("sync beside the agent's timing.txt: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "newer\n" {
@@ -179,7 +179,7 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("newest\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false)
+	err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitDirtyRemoteTree {
 		t.Fatalf("err = %v, want exit %d", err, ExitDirtyRemoteTree)
@@ -194,7 +194,7 @@ func TestSyncCommandSyncsAnExistingCheckout(t *testing.T) {
 			t.Errorf("refusal = %q, names %q", ee.msg, not)
 		}
 	}
-	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, StashRemote: true}, false); err != nil {
+	if err := runRun(context.Background(), f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes, StashRemote: true}, false); err != nil {
 		t.Fatalf("sync --stash-machine: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "newest\n" {
