@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1108 entries.
+1109 entries.
 
 ## Scope
 
@@ -879,7 +879,7 @@ pointer, not a summary.
 - **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26833
 - **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26877
 - **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26991
-- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L27037
+- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; amended by I-1548; L27037
 - **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L27086
 - **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27145
 - **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27177
@@ -1140,3 +1140,4 @@ pointer, not a summary.
 - **I-1544** The CLI says where an own-host machine's snapshot is and what removing the host does: `repose rm` "Its final snapshot is kept on your host NAME; removing the host deletes it." (one line, also in the question), `host rm` "This deletes the N snapshot(s) kept on it; repose has no copy.", `ls --destroyed` and `snapshots list` "gone with host NAME" (nonix-config-cli-web-5, 2026-11-22) — L39255
 - **I-1546** The dashboard says the same: Settings > Hosts' Remove question counts the snapshots it deletes; Recently destroyed and the Snapshots tab show "gone with host NAME" with no Restore; the Overview's Destroy card and its toast say where an own-host machine's snapshot is kept (nonix-config-cli-web-5, 2026-11-22) — L39259
 - **I-1550** Every guest@ unit on a host without Nix stops before the image cache volume goes: its drop-in orders it After= `repose-images-volume.service` and `blk-availability.service` and RequiresMountsFor=/var/lib/repose/images, and build.sh refuses an appliance without it (nonix-appliances-6, 2026-11-22) — L39261
+- **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39266

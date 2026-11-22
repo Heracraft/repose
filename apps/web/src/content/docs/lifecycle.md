@@ -173,6 +173,8 @@ Destroying todo-app.
 
 `repose rm` deletes the machine and its disk. The command returns once the destroy is under way; the project reads `destroying` until it's gone.
 
+A machine whose host is gone (your own host removed, or a server repose has marked lost) is destroyed at once, without the host, and a `repose rm` that failed while the host was not answering finishes on its own once the host is marked gone. No final snapshot is taken. A snapshot your own host kept goes with that host, and `repose ls --destroyed` shows it as `gone with host NAME`. A snapshot repose stored is kept, as for any destroy.
+
 Within 30 days, bring it back, running, with its size, its configuration and its git remote, so your checkout finds it again:
 
 ```
