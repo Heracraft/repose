@@ -2234,6 +2234,15 @@ const hostRepose = "repose"
 // works for it.
 func createRefusal(apiErr *APIError, host string) string {
 	reason, _ := apiErr.Detail["reason"].(string)
+	if reason == "no_runtime_host" {
+		// No host runs this kind of machine (I-1464): stopping one frees
+		// nothing, so the room sentence would be false (I-1538).
+		next := ""
+		if allowed, _ := apiErr.Detail["hosted_allowed"].(bool); allowed && host == "" {
+			next = "`repose run --host " + hostRepose + "` tries repose's servers."
+		}
+		return withNext(noRuntimeHost, next)
+	}
 	if reason != "no_own_host" {
 		return "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it."
 	}
@@ -2243,6 +2252,12 @@ func createRefusal(apiErr *APIError, host string) string {
 	}
 	return withNext(apiErr.Message, next)
 }
+
+// noRuntimeHost is the sentence for a 503 capacity whose reason is
+// no_runtime_host (DECISIONS I-1538): no host runs the kind of machine
+// the account makes, Ubuntu or NixOS. The api names neither the kind nor
+// the hosts' kinds, so the sentence names the cause and not those.
+const noRuntimeHost = "No host can run the kind of machine your account makes (Ubuntu or NixOS), so stopping machines frees nothing for it."
 
 // runDestroyWait bounds how long `repose run` waits for the destroy of
 // the project it resolved to before it creates a fresh one (I-301).

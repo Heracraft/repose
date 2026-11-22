@@ -93,6 +93,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.`** or **`Could not create todo-app: no host with capacity`.** The servers are full. Memory is never oversubscribed, so waiting frees nothing. Right after `repose rm` or `repose stop`, a new machine waits up to three minutes for that memory. A create that failed this way leaves the project in the error state with no machine: `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room.
 
+**`No host can run the kind of machine your account makes (Ubuntu or NixOS), so stopping machines frees nothing for it.`** No host, yours included, runs the kind of machine your account makes, Ubuntu or NixOS, so room is not what is missing. When your plan includes repose's servers, `repose run --host repose` tries them. Otherwise [ask on the feedback board](#something-else): a host runs the kinds it was set up for.
+
 **`repose is full right now`.** [Every seat](/docs/limits#when-repose-is-full) is taken, and choosing a plan put you on the waitlist.
 
 ## Your own hardware
