@@ -1,0 +1,100 @@
+#!/bin/bash
+# Configure br-guests and wg0 from host.json (nix/hosts/network.nix,
+# ported for the appliance and the x86 installer, DECISIONS I-1494).
+# Renders /run/repose/host.env, /run/repose/wg0.conf (0600) and the
+# bridge's address drop-in, then restarts the units that read them.
+# Without host.json the bridge stays unaddressed and, when hub.json is
+# there (the join bundle's place on the hub, I-1380), wg0 is rendered
+# from it so `hostd register` reaches the control plane's hub address.
+# There is no sshd on an owned host, so nothing here renders its files.
+set -euo pipefail
+hostJson=${REPOSE_HOST_JSON:-/var/lib/repose/hostd/host.json}
+run=${REPOSE_RUN_DIR:-/run/repose}
+hubJson="$run/hub.json"
+netd=/run/systemd/network/20-br-guests.network.d
+mkdir -p "$run"
+# 0755 whatever created it first (DECISIONS I-97).
+chmod 0755 "$run"
+umask 022
+
+write_wg0() {
+  # $1: a JSON file with private_key, address, edge_pubkey and
+  # edge_endpoint under the jq prefix $2. Prints 1 when it wrote the file,
+  # 0 when the material is incomplete and the file was removed.
+  local key address edge_pubkey endpoint
+  key=$(jq -r "${2}.private_key // empty" "$1")
+  address=$(jq -r "${2}.address // empty" "$1")
+  edge_pubkey=$(jq -r "${2}.edge_pubkey // empty" "$1")
+  endpoint=$(jq -r "${2}.edge_endpoint // empty" "$1")
+  if [ -n "$key" ] && [ -n "$address" ] && [ -n "$edge_pubkey" ] && [ -n "$endpoint" ]; then
+    (
+      umask 077
+      {
+        echo "[Interface]"
+        echo "PrivateKey = $key"
+        echo "Address = $address"
+        echo
+        echo "[Peer]"
+        echo "PublicKey = $edge_pubkey"
+        echo "Endpoint = $endpoint"
+        echo "AllowedIPs = 10.255.0.0/16"
+        echo "PersistentKeepalive = 25"
+      } > "$run/wg0.conf.tmp"
+      mv "$run/wg0.conf.tmp" "$run/wg0.conf"
+    )
+    echo 1
+  else
+    rm -f "$run/wg0.conf"
+    echo 0
+  fi
+}
+
+if [ ! -s "$hostJson" ]; then
+  echo "no host.json; bridge not configured"
+  rm -f "$run/host.env"
+  rm -rf "$netd"
+  networkctl reload || true
+  if [ -s "$hubJson" ] && [ "$(write_wg0 "$hubJson" "")" = 1 ]; then
+    echo "hub.json applied: wg0 configured for registration"
+    systemctl --no-block restart wg-quick@wg0.service
+  else
+    rm -f "$run/wg0.conf"
+    systemctl --no-block stop wg-quick@wg0.service
+  fi
+  exit 0
+fi
+# Registered: the bootstrap material is spent (I-1380).
+rm -f "$hubJson"
+
+host_id=$(jq -er .host_id "$hostJson")
+guest_cidr=$(jq -er .guest_cidr "$hostJson")
+wg_address=$(jq -r '.wg.address // empty' "$hostJson")
+wg_ip=${wg_address%/*}
+
+IFS='./' read -r a b c d prefix <<< "$guest_cidr"
+bridge_ip="$a.$b.$c.$((d + 1))"
+bridge_address="$bridge_ip/$prefix"
+
+cat > "$run/host.env.tmp" <<ENV
+HOST_ID=$host_id
+GUEST_CIDR=$guest_cidr
+BRIDGE_ADDR=$bridge_ip
+WG_ADDR=$wg_ip
+ENV
+mv "$run/host.env.tmp" "$run/host.env"
+
+if [ "$(write_wg0 "$hostJson" ".wg")" != 1 ]; then
+  echo "no WireGuard material in host.json; wg0 not configured"
+fi
+
+mkdir -p "$netd"
+printf '[Network]\nAddress=%s\n' "$bridge_address" > "$netd/10-address.conf"
+networkctl reload
+networkctl reconfigure br-guests || true
+
+echo "host.json applied: host_id=$host_id guest_cidr=$guest_cidr bridge=$bridge_address"
+if [ -s "$run/wg0.conf" ]; then
+  systemctl --no-block restart wg-quick@wg0.service
+else
+  systemctl --no-block stop wg-quick@wg0.service
+fi

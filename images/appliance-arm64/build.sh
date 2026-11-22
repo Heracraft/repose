@@ -15,20 +15,29 @@
 # and ext4 built in and finds the root by its partition GUID.
 #
 # Runs as root in a Debian trixie container (CI: an arm64 runner; this
-# box: an amd64 container, arm64 code through binfmt). Needs mmdebstrap
+# box: an amd64 container, arm64 code through binfmt). Needs git, mmdebstrap
 # (and arch-test on a foreign architecture),
 # e2fsprogs, dosfstools, mtools, gdisk, zstd, curl, jq.
 #
-#   build.sh --version V --kernel kernel-*.tar.zst --hostd hostd-arm64 --out DIR
+#   build.sh --version V --kernel kernel-*.tar.zst --hostd hostd-arm64
+#            --hostd-commit SHA --out DIR
 #            [--ch DIR]    a directory holding cloud-hypervisor-static-aarch64
 #                          and ch-remote-static-aarch64 (default: fetched, pinned)
+#            [--allow-branch]  build from a tree that is not main's head
+#
+# The image ships what main ships: the tree must be a clean checkout of
+# main's head, and --hostd-commit, the commit the hostd binary was built
+# from, must be that commit. appliance-2026.11.22's first upload carried a
+# branch's hostd without main's split-parts fetch (I-1504) and no first
+# create on a Mac could start. The commit is written to
+# /etc/repose/hostd-version and printed.
 #
 # Output: DIR/repose-appliance-aarch64.raw.zst and its .sha256.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 top=$(cd "$here/../.." && pwd)
-version="" kernel="" hostd="" out="" chdir=""
+version="" kernel="" hostd="" hostd_commit="" out="" chdir="" allow_branch=0
 while [ $# -gt 0 ]; do
   case $1 in
     --version) version=${2:?}; shift 2 ;;
@@ -36,15 +45,36 @@ while [ $# -gt 0 ]; do
     --hostd) hostd=${2:?}; shift 2 ;;
     --out) out=${2:?}; shift 2 ;;
     --ch) chdir=${2:?}; shift 2 ;;
+    --hostd-commit) hostd_commit=${2:?}; shift 2 ;;
+    --allow-branch) allow_branch=1; shift ;;
     *) echo "build.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$version" ] && [ -f "$kernel" ] && [ -f "$hostd" ] && [ -n "$out" ] || {
+[ -n "$version" ] && [ -f "$kernel" ] && [ -f "$hostd" ] && [ -n "$hostd_commit" ] && [ -n "$out" ] || {
   sed -n '/^#   build.sh/,/^# Output/p' "$0" >&2
   exit 2
 }
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
+
+git() { command git -c safe.directory='*' -C "$top" "$@"; }
+head=$(git rev-parse HEAD)
+main=$(git rev-parse --verify -q refs/heads/main || git rev-parse --verify -q refs/remotes/origin/main || true)
+if [ "$allow_branch" = 0 ]; then
+  if [ "$head" != "$main" ]; then
+    echo "build.sh: the tree is at $head, not main's head ${main:-(no main ref)}; build from main, or pass --allow-branch" >&2
+    exit 1
+  fi
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "build.sh: the tree has uncommitted changes; build from a clean checkout of main, or pass --allow-branch" >&2
+    exit 1
+  fi
+  case "$head" in "$hostd_commit"*) ;; *)
+    echo "build.sh: hostd was built from $hostd_commit, the tree is at $head; build hostd from this tree, or pass --allow-branch" >&2
+    exit 1 ;;
+  esac
+fi
+echo "build.sh: tree $head, hostd built from $hostd_commit, main ${main:-unknown}"
 
 # Cloud Hypervisor: the hosts' version, the upstream static build.
 CH_VERSION=53.0
@@ -99,8 +129,15 @@ echo "$CH_SHA256  $chdir/cloud-hypervisor-static-aarch64" | sha256sum -c --quiet
 echo "$CHR_SHA256  $chdir/ch-remote-static-aarch64" | sha256sum -c --quiet -
 install -m 0755 "$chdir/cloud-hypervisor-static-aarch64" "$root/usr/local/bin/cloud-hypervisor"
 install -m 0755 "$chdir/ch-remote-static-aarch64" "$root/usr/local/bin/ch-remote"
-# hostd and systemd-run name it bare; Debian keeps it off PATH.
+# hostd and systemd-run name it bare; Debian keeps it off PATH. The
+# Claude login share's unit passes --translate-uid (I-278), which
+# virtiofsd 1.10 lacks and trixie's 1.13.2 has. An image whose
+# virtiofsd lacks it would boot every guest without the share (I-1540).
 ln -sf /usr/libexec/virtiofsd "$root/usr/local/bin/virtiofsd"
+if ! chroot "$root" /usr/libexec/virtiofsd --help 2>&1 | grep -q -- '--translate-uid'; then
+  echo "build.sh: the image's virtiofsd has no --translate-uid" >&2
+  exit 1
+fi
 
 cp -r "$here"/host/etc/. "$root/etc/"
 cp -r "$here"/mac/etc/. "$root/etc/"
@@ -118,6 +155,7 @@ sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' "$top/nix/hosts/platform.nix" |
 grep -q 'END PUBLIC KEY' "$root/etc/repose/release.pub"
 grep -q 'END CERTIFICATE' "$root/etc/repose/api-ca.pem"
 printf '%s\n' "$version" > "$root/etc/repose/appliance-version"
+printf '%s %s\n' "$("$root/usr/local/bin/hostd" version 2>/dev/null | awk '{ print $2 }' || true)" "$hostd_commit" > "$root/etc/repose/hostd-version"
 
 # ---- the system ---------------------------------------------------------
 echo repose-appliance > "$root/etc/hostname"
@@ -137,8 +175,20 @@ chroot "$root" systemctl enable systemd-networkd.service systemd-resolved.servic
   hostd.service repose-guests-slice.service repose-guest-pool.service repose-host-net.service \
   repose-launcher-join.service repose-register.service repose-guest-park.service \
   repose-snapshot.timer repose-hostd-update.timer repose-fault-around.service repose-nftables.service \
-  repose-guest-vg-init.service repose-mac-grow.service repose-mac-trim.service fstrim.timer >/dev/null
+  repose-guest-vg-init.service repose-mac-grow.service repose-mac-trim.service repose-images-volume.service \
+  fstrim.timer >/dev/null
 chroot "$root" systemctl disable nftables.service >/dev/null 2>&1 || true
+# hostd's image cache is never on the 2 GiB root (I-1494): the volume's
+# unit is enabled, mounts the cache directory, and hostd waits for it.
+units=$root/etc/systemd/system
+if ! { [ -L "$units/multi-user.target.wants/repose-images-volume.service" ] &&
+  grep -q '^dir=/var/lib/repose/images$' "$root/usr/local/lib/repose/repose-images-volume" &&
+  grep -q '^After=.*repose-images-volume.service' "$units/hostd.service" &&
+  grep -q '^Wants=.*repose-images-volume.service' "$units/hostd.service" &&
+  grep -q -- '--images-dir /var/lib/repose/images' "$units/hostd.service"; }; then
+  echo "build.sh: hostd's --images-dir would be on the root partition: repose-images-volume is not enabled, not mounting /var/lib/repose/images, or not before hostd" >&2
+  exit 1
+fi
 rm -rf "$root"/var/lib/apt/lists/* "$root"/var/cache/apt/* "$root"/var/log/*.log "$root"/tmp/*
 
 # ---- the ESP --------------------------------------------------------------
@@ -183,4 +233,4 @@ zstd -q -19 -T0 -f "$disk" -o "$out/repose-appliance-aarch64.raw.zst"
 (cd "$out" && sha256sum repose-appliance-aarch64.raw.zst > repose-appliance-aarch64.raw.zst.sha256)
 compressed=$(stat -c %s "$out/repose-appliance-aarch64.raw.zst")
 used=$(du -B1 "$disk" | awk '{ print $1 }')
-echo "build.sh: version=$version kernel=$release apparent_bytes=$apparent allocated_bytes=$used compressed_bytes=$compressed seconds=$(( $(date +%s) - started ))"
+echo "build.sh: version=$version kernel=$release hostd_commit=$hostd_commit apparent_bytes=$apparent allocated_bytes=$used compressed_bytes=$compressed seconds=$(( $(date +%s) - started ))"
