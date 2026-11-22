@@ -23,19 +23,38 @@ func TestGuestCannotWriteStore(t *testing.T) {
 	t.Logf(".links from the guest: %s", strings.TrimSpace(r.out))
 }
 
-// Row: guest cannot see host block devices; only its own thin volume is a
-// virtio-blk device.
+// Row: guest cannot see host block devices; only its own disks are
+// virtio-blk devices: one, its thin volume, on a Nix guest; exactly vda
+// (the base image, read-only to the guest) and vdb (its thin volume) on
+// an erofs guest (DECISIONS I-1480). The runtime is the guest's own:
+// an erofs guest has its volume mounted at /run/repose/rw;
+// REPOSE_ISOLATION_A_RUNTIME (nix or erofs) overrides it.
 func TestGuestSeesOneDisk(t *testing.T) {
 	need(t, "EXEC_A")
+	rt := env("A_RUNTIME")
+	if rt == "" {
+		r := inA(t, "if mountpoint -q /run/repose/rw; then echo erofs; else echo nix; fi")
+		mustSucceed(t, r, "runtime probe in A")
+		rt = strings.TrimSpace(r.out)
+	}
 	// zram (the guest's swap), loop and ram devices are the guest's own
 	// kernel, not something the hypervisor exposed; the row is about block
 	// devices reaching the guest from the host (host-01 showed [zram0 vda]).
 	r := inA(t, "lsblk -dn -o NAME,TYPE | awk '$2==\"disk\" && $1 !~ /^(zram|loop|ram)/{print $1}'")
 	mustSucceed(t, r, "lsblk in A")
-	disks := strings.Fields(r.out)
-	if len(disks) != 1 {
-		t.Fatalf("guest sees %d disks, want 1: %v", len(disks), disks)
+	p := diskProbe{Runtime: rt, Disks: strings.Fields(r.out)}
+	if rt == runtimeErofs {
+		ro := inA(t, "lsblk -dn -o NAME,RO /dev/vda /dev/vdb")
+		mustSucceed(t, ro, "lsblk RO in A")
+		p.RO = parseRO(ro.out)
+		// One sector of zeros as root, opened for writing without
+		// truncating: the open itself is what a read-only device refuses.
+		w := inA(t, "sudo -n dd if=/dev/zero of=/dev/vda bs=512 count=1 conv=notrunc,fsync 2>&1")
+		p.VdaWrite, p.VdaWriteCode = w.out+w.err, w.code
+	}
+	if err := diskVerdict(p); err != nil {
+		t.Fatal(err)
 	}
 	mustFail(t, inA(t, "test -e /dev/vg-guests"), "host volume group visible in A")
-	t.Logf("guest disk: %s", disks[0])
+	t.Logf("runtime %s, guest disks %v, RO %v", rt, p.Disks, p.RO)
 }
