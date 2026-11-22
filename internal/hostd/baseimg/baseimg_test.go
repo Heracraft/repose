@@ -57,12 +57,12 @@ func (s *server) count(m *sync.Map, path string) *atomic.Int64 {
 }
 
 func (s *server) serve(w http.ResponseWriter, r *http.Request) {
+	s.count(&s.gets, r.URL.Path).Add(1)
 	b, ok := s.files[r.URL.Path]
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	s.count(&s.gets, r.URL.Path).Add(1)
 	if s.hold != nil {
 		<-s.hold
 	}
@@ -345,5 +345,171 @@ func TestFromProtoRefuses(t *testing.T) {
 	}
 	if _, err := FromProto(nil); err == nil {
 		t.Error("nil accepted")
+	}
+}
+
+// publishSplit is publish with rootfs.erofs served only as parts of at
+// most size bytes, <url>.part0, .part1, ... (DECISIONS I-1504); skip
+// leaves that part out.
+func (s *server) publishSplit(version string, rootfs []byte, size int, skip int) *hostdv1.BaseImage {
+	bi := s.publish(version, rootfs)
+	delete(s.files, "/"+version+"/rootfs.erofs")
+	for i := 0; i*size < len(rootfs); i++ {
+		if i == skip {
+			continue
+		}
+		end := min((i+1)*size, len(rootfs))
+		s.files[fmt.Sprintf("/%s/rootfs.erofs.part%d", version, i)] = rootfs[i*size : end]
+	}
+	return bi
+}
+
+func (s *server) n(path string) int64 { return s.count(&s.gets, path).Load() }
+
+// A file published whole is fetched whole: no part is asked for.
+func TestWholeFileNeedsNoParts(t *testing.T) {
+	srv := newServer(t)
+	c, _, _ := newCache(t)
+	if _, err := c.Ensure(context.Background(), spec(t, srv.publish("v-whole", []byte("whole rootfs")))); err != nil {
+		t.Fatal(err)
+	}
+	if srv.n("/v-whole/rootfs.erofs") != 1 || srv.n("/v-whole/rootfs.erofs.part0") != 0 {
+		t.Fatalf("whole %d, part0 %d", srv.n("/v-whole/rootfs.erofs"), srv.n("/v-whole/rootfs.erofs.part0"))
+	}
+}
+
+// A file published as parts: the whole-file URL's 404 is one request,
+// each part is fetched once, the first missing part ends the file, and
+// the whole file's digest is the one checked.
+func TestFetchParts(t *testing.T) {
+	srv := newServer(t)
+	c, _, m := newCache(t)
+	rootfs := bytes.Repeat([]byte("abcdefghij"), 2500) // 25000 bytes, three parts
+	bi := srv.publishSplit("v-parts", rootfs, 10000, -1)
+	b, err := c.Ensure(context.Background(), spec(t, bi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(b.Rootfs)
+	if !bytes.Equal(got, rootfs) {
+		t.Fatalf("rootfs %d bytes, want %d", len(got), len(rootfs))
+	}
+	for path, want := range map[string]int64{
+		"/v-parts/rootfs.erofs": 1, "/v-parts/rootfs.erofs.part0": 1, "/v-parts/rootfs.erofs.part1": 1,
+		"/v-parts/rootfs.erofs.part2": 1, "/v-parts/rootfs.erofs.part3": 1, "/v-parts/vmlinuz.part0": 0,
+	} {
+		if n := srv.n(path); n != want {
+			t.Errorf("%s asked %d times, want %d", path, n, want)
+		}
+	}
+	des, _ := os.ReadDir(b.Dir)
+	if len(des) != 3 {
+		t.Fatalf("bundle dir holds %d entries (a part or sidecar left?)", len(des))
+	}
+	if v := testutil.ToFloat64(m.BaseImageFetchErrors.WithLabelValues("status")); v != 0 {
+		t.Fatalf("the 404 probe counted as a fetch error: %v", v)
+	}
+}
+
+// A part missing in the middle ends the file early: its digest differs,
+// the bundle is refused and nothing of it is kept.
+func TestFetchPartsMissingMiddle(t *testing.T) {
+	srv := newServer(t)
+	c, _, _ := newCache(t)
+	rootfs := bytes.Repeat([]byte("0123456789"), 2500)
+	bi := srv.publishSplit("v-gap", rootfs, 10000, 1)
+	_, err := c.Ensure(context.Background(), spec(t, bi))
+	if !IsChecksum(err) {
+		t.Fatalf("err %v, want a checksum mismatch", err)
+	}
+	if c.Has("v-gap") {
+		t.Fatal("cached")
+	}
+	des, _ := os.ReadDir(c.Dir)
+	for _, d := range des {
+		t.Errorf("left behind: %s", d.Name())
+	}
+	if srv.n("/v-gap/rootfs.erofs.part2") != 0 {
+		t.Fatal("fetched past the missing part")
+	}
+}
+
+// A stall in the middle of a part continues that part with Range.
+func TestFetchPartsStallResumes(t *testing.T) {
+	srv := newServer(t)
+	c, _, _ := newCache(t)
+	rootfs := bytes.Repeat([]byte("klmnopqrst"), 2500)
+	bi := srv.publishSplit("v-pstall", rootfs, 10000, -1)
+	srv.stallAt["/v-pstall/rootfs.erofs.part1"] = 4000
+	b, err := c.Ensure(context.Background(), spec(t, bi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(b.Rootfs)
+	if !bytes.Equal(got, rootfs) {
+		t.Fatalf("rootfs %d bytes, want %d", len(got), len(rootfs))
+	}
+	if n := srv.count(&srv.ranges, "/v-pstall/rootfs.erofs.part1").Load(); n != 1 {
+		t.Fatalf("%d Range requests for part1, want 1", n)
+	}
+	if srv.n("/v-pstall/rootfs.erofs.part0") != 1 {
+		t.Fatal("part0 fetched again after part1's stall")
+	}
+}
+
+// A fetch a hostd restart cut off after part0 continues at part1: the
+// sidecar says how far the part file got.
+func TestFetchPartsContinueAfterRestart(t *testing.T) {
+	srv := newServer(t)
+	c, _, _ := newCache(t)
+	rootfs := bytes.Repeat([]byte("uvwxyz0123"), 2500)
+	bi := srv.publishSplit("v-again", rootfs, 10000, -1)
+	tmp := c.tmpDir("v-again")
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(tmp, RootfsFile)
+	if err := os.WriteFile(dest+".part", rootfs[:10000], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeParts(dest, 1, 10000); err != nil {
+		t.Fatal(err)
+	}
+	b, err := c.Ensure(context.Background(), spec(t, bi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(b.Rootfs)
+	if !bytes.Equal(got, rootfs) {
+		t.Fatal("rootfs differs")
+	}
+	if srv.n("/v-again/rootfs.erofs.part0") != 0 || srv.n("/v-again/rootfs.erofs.part1") != 1 {
+		t.Fatalf("part0 %d part1 %d", srv.n("/v-again/rootfs.erofs.part0"), srv.n("/v-again/rootfs.erofs.part1"))
+	}
+}
+
+// A split bundle on the host's own disk: a missing file:// path is the
+// 404 that sends the fetch to the parts.
+func TestFetchPartsFromDisk(t *testing.T) {
+	c, _, _ := newCache(t)
+	dir := t.TempDir()
+	rootfs := bytes.Repeat([]byte("disk-parts"), 3000)
+	for i := 0; i*12000 < len(rootfs); i++ {
+		end := min((i+1)*12000, len(rootfs))
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("rootfs.erofs.part%d", i)), rootfs[i*12000:end], 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	k, i := []byte("k"), []byte("i")
+	_ = os.WriteFile(filepath.Join(dir, "vmlinuz"), k, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "initramfs.img"), i, 0o644)
+	bi := &hostdv1.BaseImage{Version: "v-disk", Url: "file://" + dir + "/rootfs.erofs", Sha256: sum(rootfs),
+		KernelUrl: "file://" + dir + "/vmlinuz", KernelSha256: sum(k), InitramfsUrl: "file://" + dir + "/initramfs.img", InitramfsSha256: sum(i)}
+	b, err := c.Ensure(context.Background(), spec(t, bi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(b.Rootfs); !bytes.Equal(got, rootfs) {
+		t.Fatal("rootfs differs")
 	}
 }

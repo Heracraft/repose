@@ -254,7 +254,10 @@ export const getProjectRoute = (id: string) => request<Route>(`/projects/${id}/r
 
 // Config.
 export const getConfig = (id: string) => request<Config>(`/projects/${id}/config`);
-export const putConfig = (id: string, body: { fragment: string } | { menu: MenuSelection }) =>
+export const putConfig = (
+	id: string,
+	body: ({ fragment: string } | { menu: MenuSelection }) & { base_revision_id?: string }
+) =>
 	request<{ revision_id: string; op_id: string }>(`/projects/${id}/config`, {
 		method: 'PUT',
 		body

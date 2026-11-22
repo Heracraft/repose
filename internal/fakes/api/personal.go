@@ -129,7 +129,9 @@ func (f *Fake) putPersonal(w http.ResponseWriter, r *http.Request) *apiError {
 	u.personal = append(u.personal, rev)
 	changes := []map[string]any{}
 	for _, p := range f.ownedProjects(u) {
-		if p.PersonalOptOut || p.State == "destroying" || p.State == "error" {
+		// An erofs machine never carries machine.nix (I-1462), as the
+		// api's personalProjectsSQL reads guest_runtime = 'nix'.
+		if p.PersonalOptOut || p.State == "destroying" || p.State == "error" || p.GuestRuntime == "erofs" {
 			continue
 		}
 		pr, o := f.personalRevision(p, text)

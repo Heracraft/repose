@@ -5,7 +5,9 @@
 # to (checksums.txt, its signature against the release key, the four
 # archives) and install.sh. And what hosts fetch: the erofs guest base
 # release guest-<version> (amd64- and arm64- vmlinuz, initramfs.img,
-# rootfs.erofs, manifest.json, and SHA256SUMS) and the hostd-stable
+# rootfs.erofs, manifest.json, and SHA256SUMS; a bundle file over GitHub's
+# 2 GiB asset cap is published as <name>.part0, .part1, ... and every part
+# SHA256SUMS lists must answer) and the hostd-stable
 # manifest.json with the binaries it names (I-1500). Exit 1 when any does
 # not, with the asset and the fix named. DECISIONS I-1398; docs/ops/RELEASE.md.
 #

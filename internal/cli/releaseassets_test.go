@@ -77,6 +77,9 @@ const (
 	// guestFileMinBytes: the smallest of a guest bundle's files is the
 	// initramfs, a few MiB; a file under 1 MiB is a placeholder.
 	guestFileMinBytes = 1 << 20
+	// guestPartMaxBytes: a bundle file over GitHub's 2 GiB asset cap is
+	// published in parts of at most 1900 MiB (DECISIONS I-1504).
+	guestPartMaxBytes = 1900 << 20
 	// hostdChannel is the release hostd's self-update reads
 	// (hostd-<channel>/manifest.json). PR 6 adds the constant in hostd;
 	// this one is replaced by it at integration.
@@ -178,28 +181,68 @@ func (c *releaseAssetCheck) appliance(ctx context.Context, version string) {
 
 // guestRelease checks what hostd fetches for an erofs guest on its base:
 // SHA256SUMS naming the eight files, each file, and each arch's manifest
-// naming this version (DECISIONS I-1478, I-1500).
+// naming this version (DECISIONS I-1478, I-1500). A GitHub release asset
+// is capped at 2 GiB and the amd64 rootfs is larger, so each of the six
+// bundle files may instead be published as <name>.part0, <name>.part1,
+// ..., each at most guestPartMaxBytes; SHA256SUMS then lists the parts
+// and not the whole (DECISIONS I-1504).
 func (c *releaseAssetCheck) guestRelease(ctx context.Context, version string) {
 	base := releaseDownloadURL + "/guest-" + version + "/"
 	fix := "publish it: .github/workflows/guest-image.yml builds and uploads guest-" + version
-	var want []string
-	for _, a := range guestArches {
-		for _, f := range guestFiles {
-			want = append(want, a+"-"+f)
-		}
-	}
-	sort.Strings(want)
+	// parts[name] is the part numbers SHA256SUMS lists for a bundle file.
+	parts := map[string][]int{}
 	if sums, ok := c.get(ctx, base+"SHA256SUMS", "the guest release's SHA256SUMS", fix); ok {
-		var names []string
+		listed := map[string]bool{}
 		for _, line := range strings.Split(strings.TrimSpace(string(sums)), "\n") {
 			f := strings.Fields(line)
 			if len(f) == 2 && hex64.MatchString(f[0]) {
-				names = append(names, strings.TrimPrefix(f[1], "*"))
+				listed[strings.TrimPrefix(f[1], "*")] = true
 			}
 		}
-		sort.Strings(names)
-		if strings.Join(names, " ") != strings.Join(want, " ") {
-			c.fail("%s names %v, not the eight files %v", base+"SHA256SUMS", names, want)
+		known := map[string]bool{}
+		var missing []string
+		for _, a := range guestArches {
+			for _, f := range guestFiles {
+				name := a + "-" + f
+				known[name] = true
+				var nums []int
+				if f != "manifest.json" {
+					for l := range listed {
+						if n, ok := partNumber(l, name); ok {
+							nums = append(nums, n)
+							known[l] = true
+						}
+					}
+				}
+				sort.Ints(nums)
+				switch {
+				case len(nums) > 0 && listed[name]:
+					c.fail("%s lists %s both whole and in parts; publish one or the other", base+"SHA256SUMS", name)
+				case len(nums) > 0:
+					for i, n := range nums {
+						if n != i {
+							c.fail("%s lists %s.part%d but not %s.part%d; the parts are not the whole file", base+"SHA256SUMS", name, n, name, i)
+							break
+						}
+					}
+					parts[name] = nums
+				case !listed[name]:
+					missing = append(missing, name)
+				}
+			}
+		}
+		var extra []string
+		for l := range listed {
+			if !known[l] {
+				extra = append(extra, l)
+			}
+		}
+		sort.Strings(extra)
+		if len(missing) > 0 {
+			c.fail("%s does not list %v, whole or as .part0, .part1, ...", base+"SHA256SUMS", missing)
+		}
+		if len(extra) > 0 {
+			c.fail("%s lists %v, which are not files of a guest release", base+"SHA256SUMS", extra)
 		}
 	}
 	for _, a := range guestArches {
@@ -221,11 +264,48 @@ func (c *releaseAssetCheck) guestRelease(ctx context.Context, version string) {
 				}
 				continue
 			}
+			if nums, ok := parts[name]; ok {
+				var total int64
+				for _, n := range nums {
+					part := fmt.Sprintf("%s.part%d", name, n)
+					sz, ok := c.head(ctx, base+part, fmt.Sprintf("part %d of the %s guest %s", n, a, f), fix)
+					if !ok || sz < 0 {
+						continue
+					}
+					total += sz
+					if sz > guestPartMaxBytes {
+						c.fail("%s is %d bytes, over the %d a part may be; GitHub refuses an asset over 2 GiB", base+part, sz, guestPartMaxBytes)
+					}
+				}
+				if total > 0 && total < guestFileMinBytes {
+					c.fail("the parts of %s add up to %d bytes, under the %d a bundle file has; the upload is not the file", base+name, total, guestFileMinBytes)
+				}
+				continue
+			}
 			if n, ok := c.head(ctx, base+name, "the "+a+" guest "+f, fix); ok && n >= 0 && n < guestFileMinBytes {
 				c.fail("%s is %d bytes, under the %d a bundle file has; the upload is not the file", base+name, n, guestFileMinBytes)
 			}
 		}
 	}
+}
+
+// partNumber is N when asset is name.partN.
+func partNumber(asset, name string) (int, bool) {
+	rest, ok := strings.CutPrefix(asset, name+".part")
+	if !ok || rest == "" {
+		return 0, false
+	}
+	n := 0
+	for _, r := range rest {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+	}
+	if len(rest) > 1 && rest[0] == '0' {
+		return 0, false
+	}
+	return n, true
 }
 
 // hostdRelease checks the manifest an appliance's hostd updates from and
@@ -549,6 +629,56 @@ func TestReleaseAssetsCheckGuestAndHostd(t *testing.T) {
 	errs = run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) })
 	if len(errs) != 1 || !strings.Contains(errs[0], "2026.11.21.1") {
 		t.Errorf("a manifest of another version: %v, want it named", errs)
+	}
+
+	files["/guest-"+version+"/amd64-manifest.json"] = `{"version":"` + version + `","arch":"amd64"}`
+
+	// The amd64 rootfs in two parts (I-1504): SHA256SUMS lists the parts
+	// and not the whole, and the whole is not uploaded.
+	const rootfs = "amd64-rootfs.erofs"
+	delete(files, "/guest-"+version+"/"+rootfs)
+	files["/guest-"+version+"/"+rootfs+".part0"] = big
+	files["/guest-"+version+"/"+rootfs+".part1"] = "tail"
+	withSums := func(names ...string) {
+		var lines []string
+		for _, l := range sums {
+			if !strings.HasSuffix(l, "  "+rootfs) {
+				lines = append(lines, l)
+			}
+		}
+		for _, n := range names {
+			lines = append(lines, strings.Repeat("0", 64)+"  "+n)
+		}
+		files["/guest-"+version+"/SHA256SUMS"] = strings.Join(lines, "\n") + "\n"
+	}
+	withSums(rootfs+".part0", rootfs+".part1")
+	if errs := run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) }); len(errs) != 0 {
+		t.Errorf("a release with the rootfs in parts failed: %v", errs)
+	}
+
+	delete(files, "/guest-"+version+"/"+rootfs+".part1")
+	errs = run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) })
+	if len(errs) != 1 || !strings.Contains(errs[0], "404") || !strings.Contains(errs[0], rootfs+".part1") || !strings.Contains(errs[0], "part 1 of the amd64 guest rootfs.erofs") {
+		t.Errorf("a missing part: %v, want one 404 naming %s.part1", errs, rootfs)
+	}
+	files["/guest-"+version+"/"+rootfs+".part1"] = "tail"
+
+	withSums(rootfs+".part0", rootfs+".part2")
+	errs = run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) })
+	if len(errs) == 0 || !strings.Contains(errs[0], rootfs+".part1") {
+		t.Errorf("SHA256SUMS skipping a part number: %v, want %s.part1 named", errs, rootfs)
+	}
+
+	withSums(rootfs, rootfs+".part0")
+	errs = run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) })
+	if len(errs) == 0 || !strings.Contains(errs[0], "both whole and in parts") {
+		t.Errorf("SHA256SUMS listing whole and parts: %v, want it refused", errs)
+	}
+
+	withSums()
+	errs = run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) })
+	if len(errs) == 0 || !strings.Contains(errs[0], "does not list ["+rootfs+"]") {
+		t.Errorf("SHA256SUMS listing neither: %v, want %s named", errs, rootfs)
 	}
 
 	errs = run(func(c *releaseAssetCheck) { c.hostdRelease(ctx, "beta") })

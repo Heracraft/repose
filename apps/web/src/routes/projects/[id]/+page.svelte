@@ -40,6 +40,8 @@
 	import {
 		destroyProject,
 		resizeProject,
+		startProject,
+		stopProject,
 		listRevisions,
 		getSamples,
 		listProjectQuestions,
@@ -50,7 +52,7 @@
 	import { ApiError, errorText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
-	import { dateOnly } from '$lib/format';
+	import { dateOnly, classMemoryGB, classVCPUs } from '$lib/format';
 	import { billingStore } from '$lib/billing.svelte';
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
@@ -203,14 +205,67 @@
 	// closes once none is left.
 	$effect(() => {
 		if (!showResize) return;
-		if (largerSizes.length === 0) closeResize();
+		if (largerSizes.length === 0) resizeTo = undefined;
 		else if (resizeTo === undefined || !largerSizes.includes(resizeTo)) resizeTo = largerSizes[0];
 	});
 
 	function toggleResize() {
 		if (showResize) return closeResize();
 		resizeTo = largerSizes[0];
+		sizeTo = project?.class;
+		askingSize = false;
 		showResize = true;
+	}
+
+	// The size class, as `repose resize --size` changes it (I-1518): the
+	// api takes a new class only on a stopped machine, so a running one is
+	// stopped with no snapshot, changed and started again, after asking,
+	// since the stop ends every process on it.
+	const CLASSES = ['tiny', 'small', 'large', 'xl'] as const;
+	let sizeTo = $state<string | undefined>(undefined);
+	let askingSize = $state(false);
+	function classLabel(c: string): string {
+		const cores = classVCPUs(c);
+		return `${c} · ${cores} ${cores === 1 ? 'core' : 'cores'} · ${classMemoryGB(c)} GB`;
+	}
+	function askSize() {
+		if (!project || !sizeTo || sizeTo === project.class) return;
+		if (project.state === 'running') askingSize = true;
+		else if (project.state === 'stopped') void changeSize();
+		else
+			toast.error(
+				`${project.slug} is ${project.state}; its size changes once it is running or stopped.`
+			);
+	}
+	async function changeSize() {
+		if (!project || !sizeTo) return;
+		const to = sizeTo;
+		const wasRunning = project.state === 'running';
+		askingSize = false;
+		try {
+			if (wasRunning) {
+				ctx.opBusy = 'stop';
+				const stopped = await ctx.waitForOp((await stopProject(id, false)).op_id, () => {});
+				if (!stopped) return;
+			}
+			ctx.opBusy = 'resize';
+			try {
+				ctx.set(await patchProject(id, { class: to }));
+			} catch (err) {
+				if (err instanceof ApiError && err.code === 'payment_required') await ctx.refuse(err);
+				else toastApiError(err, 'Could not change the size.');
+			}
+			if (wasRunning) {
+				ctx.opBusy = 'start';
+				await ctx.waitForOp((await startProject(id)).op_id, () => {});
+			}
+			closeResize();
+		} catch (err) {
+			toastApiError(err, 'Could not change the size.');
+		} finally {
+			ctx.opBusy = undefined;
+			void ctx.refresh();
+		}
 	}
 
 	/** Closes the panel; focus goes back to Resize… only if it was inside the panel. */
@@ -354,37 +409,81 @@
 				aria-labelledby="resize-title"
 				bind:this={resizePanel}
 			>
-				<h2 id="resize-title" class="hk-sr">Resize the disk</h2>
+				<h2 id="resize-title" class="hk-sr">Resize the machine</h2>
 				<form
 					class="resize-form"
 					onsubmit={(e) => {
 						e.preventDefault();
-						void submitResize();
+						askSize();
 					}}
 				>
-					<label for="resize-to" class="hk-field-label resize-label">Grow to</label>
-					<select
-						id="resize-to"
-						class="hk-select resize-select"
-						bind:value={resizeTo}
-						use:focusOnMount
-					>
-						{#each largerSizes as s (s)}
-							<option value={s}>{s} GB</option>
+					<label for="size-to" class="hk-field-label resize-label">Size</label>
+					<select id="size-to" class="hk-select resize-select" bind:value={sizeTo} use:focusOnMount>
+						{#each CLASSES as c (c)}
+							<option value={c}>{classLabel(c)}</option>
 						{/each}
 					</select>
 					<button
 						type="submit"
 						class="hk-btn-secondary"
-						disabled={!!ctx.opBusy || resizeTo === undefined}
+						disabled={!!ctx.opBusy || !sizeTo || sizeTo === project.class || askingSize}
 					>
-						{ctx.opBusy === 'resize' ? 'Resizing…' : 'Grow'}
+						{ctx.opBusy === 'stop' || ctx.opBusy === 'start' ? 'Changing…' : 'Change size'}
 					</button>
-					<button type="button" class="hk-btn-ghost" onclick={closeResize}>Cancel</button>
-					<p class="resize-note">
+					{#if askingSize}
+						<div class="hk-confirm resize-ask" data-testid="confirm-size">
+							<p>
+								Changing {project.slug} from {project.class} to {sizeTo} stops it, which ends every process
+								on it, agents included, then starts it again.
+							</p>
+							<div class="hk-confirm-actions">
+								<button
+									type="button"
+									class="hk-btn-danger hk-btn-sm"
+									onclick={() => void changeSize()}>Stop, change and start</button
+								>
+								<button
+									type="button"
+									class="hk-btn-ghost hk-btn-sm"
+									onclick={() => (askingSize = false)}>Keep it running</button
+								>
+							</div>
+						</div>
+					{/if}
+				</form>
+				{#if largerSizes.length === 0}
+					<p class="resize-note resize-disk">
 						{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.
 					</p>
-				</form>
+				{:else}
+					<form
+						class="resize-form resize-disk"
+						onsubmit={(e) => {
+							e.preventDefault();
+							void submitResize();
+						}}
+					>
+						<label for="resize-to" class="hk-field-label resize-label">Grow to</label>
+						<select id="resize-to" class="hk-select resize-select" bind:value={resizeTo}>
+							{#each largerSizes as s (s)}
+								<option value={s}>{s} GB</option>
+							{/each}
+						</select>
+						<button
+							type="submit"
+							class="hk-btn-secondary"
+							disabled={!!ctx.opBusy || resizeTo === undefined}
+						>
+							{ctx.opBusy === 'resize' ? 'Resizing…' : 'Grow'}
+						</button>
+						<p class="resize-note">
+							{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.
+						</p>
+					</form>
+				{/if}
+				<button type="button" class="hk-btn-ghost resize-cancel" onclick={closeResize}
+					>Cancel</button
+				>
 			</section>
 		{/if}
 
@@ -503,6 +602,17 @@
 		width: auto;
 		min-width: 8rem;
 		font-variant-numeric: tabular-nums;
+	}
+	.resize-disk {
+		margin-top: 0.75rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--hk-hairline);
+	}
+	.resize-ask {
+		flex-basis: 100%;
+	}
+	.resize-cancel {
+		margin-top: 0.5rem;
 	}
 	.resize-note {
 		flex-basis: 100%;

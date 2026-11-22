@@ -435,9 +435,200 @@ func retryable(err error) bool {
 	return !errors.As(err, &de)
 }
 
-// fetchTo downloads url into dest, checking its SHA-256, in up to Tries
-// attempts that each continue from dest.part.
+// fetchTo downloads url into dest, checking its SHA-256. The file is
+// published whole, or, when it is larger than a release asset may be,
+// as <url>.part0, <url>.part1, ... concatenated in order (DECISIONS
+// I-1504): a whole-file URL that answers 404 is that file's one probe,
+// and the parts are fetched instead.
 func (c *Cache) fetchTo(ctx context.Context, url, dest, want string) (int64, error) {
+	n, err := c.fetchWhole(ctx, url, dest, want)
+	var se *statusError
+	if errors.As(err, &se) && se.status == http.StatusNotFound {
+		return c.fetchParts(ctx, url, dest, want)
+	}
+	return n, err
+}
+
+func (c *Cache) retryWait() time.Duration {
+	if c.RetryWait > 0 {
+		return c.RetryWait
+	}
+	return 2 * time.Second
+}
+
+func (c *Cache) tries() int {
+	if c.Tries > 0 {
+		return c.Tries
+	}
+	return DefaultTries
+}
+
+// MaxPartBytes is the largest part a split bundle file is published in:
+// under GitHub's 2 GiB cap on a release asset, with room (DECISIONS
+// I-1504). hostd does not enforce it; it is the publisher's bound.
+const MaxPartBytes = 1900 << 20
+
+// partsFile is the sidecar beside dest.part that records how many parts
+// are in it and how many bytes they are, so a fetch that a hostd restart
+// cut off continues at the part it was on.
+func partsFile(dest string) string { return dest + ".parts" }
+
+func readParts(dest string) (done int, bytes int64) {
+	b, err := os.ReadFile(partsFile(dest))
+	if err != nil {
+		return 0, 0
+	}
+	if _, err := fmt.Sscanf(string(b), "%d %d", &done, &bytes); err != nil || done < 0 || bytes < 0 {
+		return 0, 0
+	}
+	return done, bytes
+}
+
+func writeParts(dest string, done int, bytes int64) error {
+	tmp := partsFile(dest) + ".new"
+	if err := os.WriteFile(tmp, []byte(fmt.Sprintf("%d %d\n", done, bytes)), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, partsFile(dest))
+}
+
+// fetchParts fetches <url>.part0, .part1, ... into dest.part until the
+// first 404 after at least one part, each part with its own attempts and
+// Range resume, then checks the whole file's digest as fetchOnce does.
+// A part missing in the middle ends the file early, so its digest
+// differs and the bundle is refused.
+func (c *Cache) fetchParts(ctx context.Context, url, dest, want string) (int64, error) {
+	part := dest + ".part"
+	// What a cut-off fetch left: the parts the sidecar counts, and past
+	// them the start of the next part, which its first attempt continues.
+	// A part file shorter than the sidecar says is not trusted.
+	done, base := readParts(dest)
+	if st, err := os.Stat(part); err != nil || st.Size() < base {
+		done, base = 0, 0
+		if err := truncateTo(part, 0); err != nil {
+			return 0, &diskError{err}
+		}
+	}
+	for i := done; ; i++ {
+		u := fmt.Sprintf("%s.part%d", url, i)
+		n, err := c.fetchPart(ctx, u, part, base)
+		var se *statusError
+		if errors.As(err, &se) && se.status == http.StatusNotFound && i > 0 {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		base += n
+		if err := writeParts(dest, i+1, base); err != nil {
+			return 0, &diskError{err}
+		}
+	}
+	h := sha256.New()
+	if _, err := hashFile(h, part); err != nil {
+		return 0, &diskError{err}
+	}
+	_ = os.Remove(partsFile(dest)) // the parts are in; whatever follows starts from the file
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != want {
+		_ = os.Remove(part) // a wrong file is not continued
+		return 0, &checksumError{name: filepath.Base(dest), got: got, want: want}
+	}
+	if err := os.Rename(part, dest); err != nil {
+		return 0, &diskError{err}
+	}
+	return base, nil
+}
+
+// truncateTo makes path exactly n bytes long, creating it when n is 0.
+func truncateTo(path string, n int64) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(n); err != nil {
+		_ = f.Close() // returning the truncate error
+		return err
+	}
+	return f.Close()
+}
+
+// fetchPart is one part's attempts, each continuing from what the last
+// left at the end of part (whose first base bytes are earlier parts).
+func (c *Cache) fetchPart(ctx context.Context, url, part string, base int64) (int64, error) {
+	var err error
+	var n int64
+	for try := 1; ; try++ {
+		n, err = c.fetchPartOnce(ctx, url, part, base)
+		if err == nil || try >= c.tries() || ctx.Err() != nil || !retryable(err) {
+			return n, err
+		}
+		c.log().Warn("base image fetch retrying", "event", "base_image_fetch", "part", filepath.Base(part), "try", try+1, "reason", reason(err))
+		select {
+		case <-ctx.Done():
+			return n, err
+		case <-time.After(c.retryWait()):
+		}
+	}
+}
+
+// fetchPartOnce appends url to part from where an earlier attempt at the
+// same part stopped, and returns the part's whole length.
+func (c *Cache) fetchPartOnce(ctx context.Context, url, part string, base int64) (int64, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	st, err := os.Stat(part)
+	if err != nil {
+		return 0, &diskError{err}
+	}
+	off := st.Size() - base
+	pr := &progressReader{}
+	var fired atomic.Bool
+	done := make(chan struct{})
+	window := c.window()
+	go watch(pr, window, cancel, &fired, done)
+	defer close(done)
+	named := func(err error) error {
+		if fired.Load() {
+			return &stallError{after: off + pr.n.Load(), window: window}
+		}
+		return err
+	}
+	body, start, err := c.openRange(ctx, url, off)
+	if err != nil {
+		return 0, named(err)
+	}
+	defer func() { _ = body.Close() }() // read to the end or abandoned with the attempt
+	if start != off {
+		// The whole part again: what an earlier attempt appended goes.
+		if err := truncateTo(part, base); err != nil {
+			return 0, &diskError{err}
+		}
+		off = 0
+	}
+	f, err := os.OpenFile(part, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, &diskError{err}
+	}
+	pr.r = body
+	n, cerr := io.Copy(f, pr)
+	if cerr == nil {
+		if err := f.Sync(); err != nil {
+			cerr = &diskError{err}
+		}
+	}
+	if err := f.Close(); cerr == nil && err != nil {
+		cerr = &diskError{err}
+	}
+	if cerr != nil {
+		return 0, named(cerr)
+	}
+	return off + n, nil
+}
+
+// fetchWhole is fetchTo for a file published whole: up to Tries attempts
+// that each continue from dest.part.
+func (c *Cache) fetchWhole(ctx context.Context, url, dest, want string) (int64, error) {
 	tries := c.Tries
 	if tries <= 0 {
 		tries = DefaultTries
@@ -500,6 +691,11 @@ func watch(p *progressReader, window time.Duration, cancel context.CancelFunc, f
 func (c *Cache) openRange(ctx context.Context, url string, off int64) (io.ReadCloser, int64, error) {
 	if path, ok := strings.CutPrefix(url, "file://"); ok {
 		f, err := os.Open(path)
+		if errors.Is(err, os.ErrNotExist) {
+			// A local file that is not there reads as a URL that answers
+			// 404, so a split bundle on disk is found by its parts too.
+			return nil, 0, &statusError{status: http.StatusNotFound}
+		}
 		if err != nil {
 			return nil, 0, err
 		}
