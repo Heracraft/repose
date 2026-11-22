@@ -153,7 +153,7 @@ func connectFast(ctx context.Context, e *Env, project *Project) (target sshTarge
 	if !covered {
 		return sshTarget{}, false, nil
 	}
-	if resolves, _ := aliasResolves(project.Slug, handle); !resolves {
+	if resolves, _ := aliasResolves(project.Slug, handle, gatewayFromKnownHosts(sd).Host); !resolves {
 		return sshTarget{}, false, nil
 	}
 	target = e.target(project.Slug)
@@ -242,7 +242,7 @@ func warmTarget(ctx context.Context, e *Env, guess *Project) (t sshTarget, cover
 	if !covered {
 		return sshTarget{}, false, false
 	}
-	if resolves, _ := aliasResolves(guess.Slug, handle); !resolves {
+	if resolves, _ := aliasResolves(guess.Slug, handle, gatewayFromKnownHosts(sd).Host); !resolves {
 		return sshTarget{}, false, false
 	}
 	t = e.target(guess.Slug)
@@ -410,7 +410,7 @@ func startBootProbe(ctx context.Context, e *Env, p *Project, withProbe bool) {
 		if !covered {
 			return // connect's slow path issues the certificate first
 		}
-		if resolves, _ := aliasResolves(p.Slug, handle); !resolves {
+		if resolves, _ := aliasResolves(p.Slug, handle, gatewayFromKnownHosts(sd).Host); !resolves {
 			return
 		}
 		target = e.target(p.Slug)

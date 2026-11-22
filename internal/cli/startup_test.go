@@ -159,7 +159,7 @@ func TestSyncCarryEmpty(t *testing.T) {
 }
 
 func TestHostBlockHandle(t *testing.T) {
-	cfg := renderSSHConfig([]Project{{Slug: "a-b"}, {Slug: "a"}}, "user-x1", "~", true)
+	cfg := renderSSHConfig([]Project{{Slug: "a-b"}, {Slug: "a"}}, "user-x1", defaultGateway, "~", true)
 	for slug, want := range map[string]string{"a": "user-x1", "a-b": "user-x1", "b": ""} {
 		got, ok := hostBlockHandle(cfg, slug)
 		if got != want || ok != (want != "") {
@@ -196,7 +196,7 @@ func TestSSHFilesCover(t *testing.T) {
 		t.Fatal("covered without known_hosts or config")
 	}
 	_ = os.WriteFile(filepath.Join(sd, "known_hosts"), []byte("x\n"), 0o600)
-	_ = os.WriteFile(filepath.Join(sd, sshHostsName), []byte(renderSSHConfig([]Project{*p}, "user-x1", "~", true)), 0o600)
+	_ = os.WriteFile(filepath.Join(sd, sshHostsName), []byte(renderSSHConfig([]Project{*p}, "user-x1", defaultGateway, "~", true)), 0o600)
 	if _, ok := sshFilesCover(sd, p, now); ok {
 		t.Fatal("covered without ~/.ssh/repose/config (a laptop before I-281 has only the blocks there)")
 	}
@@ -220,7 +220,7 @@ func TestSSHFilesCover(t *testing.T) {
 	}
 	// A config from a CLI before I-247 still forwards the agent: not
 	// covered, so the slow path rewrites it.
-	old := strings.Replace(renderSSHConfig([]Project{*p}, "user-x1", "~", true), "ForwardAgent no", "ForwardAgent yes", 1)
+	old := strings.Replace(renderSSHConfig([]Project{*p}, "user-x1", defaultGateway, "~", true), "ForwardAgent no", "ForwardAgent yes", 1)
 	_ = os.WriteFile(filepath.Join(sd, sshHostsName), []byte(old), 0o600)
 	if _, ok := sshFilesCover(sd, p, now); ok {
 		t.Fatal("covered by a config that still has ForwardAgent yes")

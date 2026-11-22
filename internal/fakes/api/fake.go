@@ -49,6 +49,10 @@ type Options struct {
 	// (DECISIONS I-575); other requests are served meanwhile.
 	CreateHold       time.Duration
 	CreateReplyDelay time.Duration
+	// GatewayHost and GatewayPort are the gateway POST /certs names, as
+	// a staging api names its own; empty and zero are ssh.repose.run:22.
+	GatewayHost string
+	GatewayPort int
 	// CLILatest, when set, is sent as every answer's X-Repose-CLI-Latest
 	// header, the newest CLI release (DECISIONS I-626).
 	CLILatest string
