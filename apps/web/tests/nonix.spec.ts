@@ -273,3 +273,30 @@ test('a reload or back and forward during an install shows it again', async ({ p
 	await expect(status).not.toContainText('Installing…', { timeout: 10_000 });
 	await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
 });
+
+// Council finding 7 (D5): Resize changes the size class, as `repose resize
+// --size` does: a stopped machine at once, a running one after asking,
+// with a stop and a start.
+test('Resize changes the machine size, as repose resize --size does', async ({ page }) => {
+	const p = await makeProject('ubuntu-size', 'erofs');
+	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: 'Resize…' }).click();
+	const panel = page.locator('#resize-panel');
+	await panel.getByLabel('Size').selectOption('xl');
+	await panel.getByRole('button', { name: 'Change size' }).click();
+	await expect(panel).toContainText('ends every process on it');
+	await shots(page, 'resize-size-ask', panel);
+	await panel.getByRole('button', { name: 'Stop, change and start' }).click();
+	await expect
+		.poll(
+			async () =>
+				(
+					await (
+						await fetch(`${apiURLFromEnv()}/projects/${p.id}`, { headers: auth })
+					).json()
+				).class,
+			{ timeout: 15_000 }
+		)
+		.toBe('xl');
+	await expect(page.locator('main')).toContainText('running', { timeout: 15_000 });
+});

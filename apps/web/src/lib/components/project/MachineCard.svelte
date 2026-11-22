@@ -53,9 +53,7 @@
 	let diskUsed = $derived(project.root_used_bytes);
 	let diskSize = $derived(project.root_size_bytes || project.volume_bytes);
 	let full = $derived(diskFullPercent(project));
-	/** A volume only grows: Resize… shows while a larger size is left. */
 	let frozen = $derived(frozenSince(project));
-	let canGrow = $derived(DISK_SIZES_GB.some((s) => s * GIB > project.volume_bytes));
 </script>
 
 <section class="hk-section machine" data-testid="machine-card" aria-labelledby="machine-title">
@@ -107,23 +105,15 @@
 						>
 					{/if}
 				</span>
-				{#if canGrow}
-					<button
-						type="button"
-						id="resize-open"
-						class="hk-btn-ghost hk-btn-sm resize"
-						aria-expanded={resizeOpen}
-						aria-controls="resize-panel"
-						disabled={busy && !resizeOpen}
-						onclick={onresizetoggle}>Resize…</button
-					>
-				{:else}
-					<!-- tabindex=-1: after a grow to the largest size, focus comes
-					     here in place of the button that went away. -->
-					<span id="resize-largest" tabindex="-1" class="largest">
-						{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.
-					</span>
-				{/if}
+				<button
+					type="button"
+					id="resize-open"
+					class="hk-btn-ghost hk-btn-sm resize"
+					aria-expanded={resizeOpen}
+					aria-controls="resize-panel"
+					disabled={busy && !resizeOpen}
+					onclick={onresizetoggle}>Resize…</button
+				>
 			</div>
 		</div>
 
@@ -191,9 +181,5 @@
 		.resize {
 			margin-right: 0;
 		}
-	}
-	.largest {
-		margin-left: auto;
-		text-align: right;
 	}
 </style>
