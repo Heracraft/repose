@@ -50,10 +50,10 @@ while [ $# -gt 0 ]; do
     *) echo "build.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$version" ] && [ -f "$kernel" ] && [ -f "$hostd" ] && [ -n "$hostd_commit" ] && [ -n "$out" ] || {
+if [ -z "$version" ] || [ ! -f "$kernel" ] || [ ! -f "$hostd" ] || [ -z "$hostd_commit" ] || [ -z "$out" ]; then
   sed -n '/^#   build.sh/,/^# Output/p' "$0" >&2
   exit 2
-}
+fi
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 
