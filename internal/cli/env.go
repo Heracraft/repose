@@ -257,6 +257,11 @@ func exitCodeFor(err error, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, unreachable.message())
 		return ExitGeneric
 	}
+	var noV1 *missingV1Error
+	if errors.As(err, &noV1) {
+		_, _ = fmt.Fprintln(stderr, noV1.Error())
+		return ExitGeneric
+	}
 	var notAPI *notAPIError
 	if errors.As(err, &notAPI) {
 		_, _ = fmt.Fprintln(stderr, notAPI.Error())

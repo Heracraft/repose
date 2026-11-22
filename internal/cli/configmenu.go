@@ -215,7 +215,9 @@ func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []stri
 		_, _ = fmt.Fprintf(e.Out, "%s %s not in %s's menu.\n", joinNames(missing), isAre(len(missing)), project.Name)
 	}
 	if len(removed) == 0 {
-		if cfg.Menu == nil {
+		if cfg.Menu == nil && !isErofs(project) {
+			// An Ubuntu machine's empty menu is just empty: there is no
+			// hand-written file, and `config edit` is refused there.
 			return exitf(ExitUsage, "%s's repose.nix was written by hand; remove the package with `repose config edit`.", project.Name)
 		}
 		return silent(ExitUsage)

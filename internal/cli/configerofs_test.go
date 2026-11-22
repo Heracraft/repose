@@ -297,3 +297,16 @@ func TestConfigAddErofsLongName(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// Council finding 11: `config rm` on a new Ubuntu machine, whose menu is
+// empty, says the name is not in the menu and points at nothing refused.
+func TestConfigRemoveEmptyUbuntuMenu(t *testing.T) {
+	_, e, _, out, _ := newErofsEnv(t)
+	err := ConfigRemoveCmd(context.Background(), e, "", []string{"redis"})
+	if exitCode(err) != ExitUsage || strings.Contains(err.Error(), "config edit") {
+		t.Fatalf("got %v (exit %d)", err, exitCode(err))
+	}
+	if got := out.buf.String(); got != "redis is not in todo-app's menu.\n" {
+		t.Fatalf("stdout %q", got)
+	}
+}

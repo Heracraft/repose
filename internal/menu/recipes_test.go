@@ -129,3 +129,17 @@ func TestValidateForRuntime(t *testing.T) {
 		t.Fatal("erofs took a catalog id as a package")
 	}
 }
+
+// Council finding 13: the menu's own words agree with what the recipe
+// does, on both surfaces that show them.
+func TestCatalogTextMatchesRecipes(t *testing.T) {
+	c := load(t)
+	pg, _ := c.Entry("postgresql")
+	if !strings.Contains(pg.Description, "/var/lib/repose/services/postgresql") {
+		t.Errorf("postgresql says %q", pg.Description)
+	}
+	v, _ := c.Entry("vercel")
+	if strings.Contains(v.Description, "boot") {
+		t.Errorf("vercel says %q", v.Description)
+	}
+}

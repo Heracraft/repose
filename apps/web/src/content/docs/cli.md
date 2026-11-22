@@ -368,7 +368,7 @@ DISK and `--size` go in one command, the disk first: `repose resize todo-app 160
 
 One of the machine's logs: `--kind console|build|ops`, default `console`. Lines come oldest first. A stopped machine, or one in `error`, still has its logs.
 
-`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration change's log: a build's on a NixOS machine, the install lines on an Ubuntu one. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
 
 ```text
 2026-10-08T21:38:02-04:00 stop done 4.2s
@@ -518,7 +518,7 @@ A machine that runs [herdr](/docs/run-and-attach#herdr-instead-of-tmux) instead 
 | ----------------------------------- | ------------ |
 | `repose config add PACKAGE...`      | Add [menu entries](/docs/config#the-menu) or apt packages and install them on the machine. With no names, list the menu's entries by group. |
 | `repose config remove PACKAGE...`   | Remove them again. Alias `rm`. |
-| `repose config show [PROJECT]`      | Print the project's menu, one entry or package a line. `repose config` alone does the same. |
+| `repose config show [PROJECT]`      | Print the project's menu, one entry or package a line, and nothing when it is empty. `repose config` alone does the same. |
 | `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id and whether each applied. `--json` for JSON, `-q`/`--quiet` for whole ids. |
 | `repose config apply [PATH]`        | With no PATH, apply the newest revision again, on a running machine. `--revision ID` applies an earlier revision to the running machine instead; ID is a whole id or 4 or more characters of either end. |
 | `repose config edit [PROJECT]`      | For an [older machine](/docs/machine#older-machines): edit its configuration file in `$VISUAL` or `$EDITOR`, apply on save. |
@@ -617,7 +617,7 @@ reverse = ["15432:5432"]
 
 ## Other servers
 
-The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
+The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does; one without it says `has no /v1 at its end` and exits 1. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
 
 `repose login --browser` logs in through a browser on this computer instead of a code, and needs a login application that registers a loopback redirect URI. The hosted one registers none, so `--browser` there, where a browser can be opened, waits 5 minutes and exits 3 with `Login failed: timed out waiting for the browser login (5 minutes).`
 

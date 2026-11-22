@@ -128,7 +128,7 @@
   label: PostgreSQL
   group: databases
   kind: service
-  description: A local PostgreSQL on 5432 for user dev (superuser, no password); data lives on the volume under /var/lib/postgresql.
+  description: A local PostgreSQL on 5432 for user dev (superuser, no password); data lives under /var/lib/repose/services/postgresql, one folder per major.
   hm: |
     home.packages = [ pkgs.postgresql_{{.version}} ];
   nixos: |
@@ -309,7 +309,7 @@
   label: Vercel CLI
   group: deploy
   kind: package
-  description: Vercel's CLI, from npm into ~/.npm-global at the first boot after it is chosen.
+  description: Vercel's CLI, from npm.
   hm: |
     systemd.user.services.repose-npm-vercel = {
       Unit.Description = "Install the Vercel CLI once (npm i -g vercel)";
