@@ -1,0 +1,13 @@
+[Unit]
+Description=Take the join bundle from /run/repose/launcher (DECISIONS I-1380)
+RequiresMountsFor=/run/repose/launcher
+After=systemd-tmpfiles-setup.service
+Before=repose-host-net.service repose-register.service hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-launcher-join
+
+[Install]
+WantedBy=multi-user.target

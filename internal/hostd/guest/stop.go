@@ -225,6 +225,9 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 			return errf(CodeInternal, "gcroot revisions: %v", err)
 		}
 	}
+	// The tap went with the guest's stop; the address is free for the
+	// next guest, so its neighbour entry goes too (DECISIONS I-1530).
+	m.flushNeigh(ctx, g)
 	if err := m.d.State.ReleaseIndex(g.GuestID); err != nil {
 		return errf(CodeInternal, "release address: %v", err)
 	}

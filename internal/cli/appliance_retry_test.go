@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -57,25 +58,29 @@ func fakeMac(t *testing.T, freeGB int) (*Env, *bytes.Buffer, appliancePaths) {
 		macExec = func(string, ...string) ([]byte, error) { return nil, nil }
 	})
 
-	// A gzip of one sparse-ish image: unpackSparse writes it whole.
+	// A zstd of one sparse-ish image, the shape the release ships
+	// (DECISIONS I-1494): unpackSparse writes it whole.
 	var raw bytes.Buffer
 	raw.Write(bytes.Repeat([]byte{0}, 1<<16))
 	raw.WriteString("an appliance image")
-	var gz bytes.Buffer
-	zw := gzip.NewWriter(&gz)
+	var packed bytes.Buffer
+	zw, err := zstd.NewWriter(&packed)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, _ = zw.Write(raw.Bytes())
 	_ = zw.Close()
-	body := gz.Bytes()
+	body := packed.Bytes()
 	sum := sha256.Sum256(body)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".sha256") {
-			_, _ = w.Write([]byte(hex.EncodeToString(sum[:]) + "  image.raw.gz\n"))
+			_, _ = w.Write([]byte(hex.EncodeToString(sum[:]) + "  image.raw.zst\n"))
 			return
 		}
-		http.ServeContent(w, r, "image.raw.gz", time.Time{}, bytes.NewReader(body))
+		http.ServeContent(w, r, "image.raw.zst", time.Time{}, bytes.NewReader(body))
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv(envApplianceURL, srv.URL+"/image.raw.gz")
+	t.Setenv(envApplianceURL, srv.URL+"/image.raw.zst")
 	t.Setenv(envVfkitURL, srv.URL+"/vfkit")
 	t.Setenv(envVfkitSHA256, hex.EncodeToString(sum[:]))
 
@@ -88,10 +93,10 @@ func fakeMac(t *testing.T, freeGB int) (*Env, *bytes.Buffer, appliancePaths) {
 // A refusal leaves nothing behind, and the same command run again with
 // nothing freed is refused again rather than installing.
 func TestApplianceRefusalIsAtomicAndRepeats(t *testing.T) {
-	e, _, p := fakeMac(t, 46)
+	e, _, p := fakeMac(t, 36)
 	arg := encodeTokenBundle("rjt_test")
 
-	const want = "the appliance needs a 40 GB disk"
+	const want = "the appliance needs a 20 GB disk"
 	err := applianceInstall(context.Background(), e, arg, "mac-mini", applianceOptions{})
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("first run: %v, want a refusal naming %q", err, want)
@@ -192,7 +197,7 @@ func TestApplianceLeftoversAreRemovable(t *testing.T) {
 // one-host plan refused a second name. Nothing the customer could type
 // recovered it. The refusal must come before the mint.
 func TestApplianceRefusalMintsNoHost(t *testing.T) {
-	e, _, p := fakeMac(t, 46)
+	e, _, p := fakeMac(t, 36)
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	le := newLifecycleEnv(t, fake)
@@ -201,7 +206,7 @@ func TestApplianceRefusalMintsNoHost(t *testing.T) {
 
 	before := fake.Calls("POST /v1/hosts")
 	err := HostAddCmd(context.Background(), e, "mac-mini", applianceOptions{})
-	if err == nil || !strings.Contains(err.Error(), "the appliance needs a 40 GB disk") {
+	if err == nil || !strings.Contains(err.Error(), "the appliance needs a 20 GB disk") {
 		t.Fatalf("host add on a volume that cannot hold it: %v", err)
 	}
 	if n := fake.Calls("POST /v1/hosts") - before; n != 0 {

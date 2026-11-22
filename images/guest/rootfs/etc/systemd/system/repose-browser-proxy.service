@@ -1,0 +1,13 @@
+# Stamps last-cdp at start and exits ten seconds after its last connection
+# (DECISIONS I-1122).
+[Unit]
+Description=repose: proxy 9224 to the agents' browser, starting it
+Requires=repose-browser.service
+BindsTo=repose-browser.service
+After=repose-browser.service
+
+[Service]
+ExecStartPre=+/usr/local/bin/repose-desktop-stamp last-cdp
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=10s 127.0.0.1:9225
+PrivateTmp=yes
+DynamicUser=yes

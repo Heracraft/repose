@@ -1,0 +1,16 @@
+# Its stop trims the volume at shutdown, so a stopped project is counted at
+# what it holds (trim.nix, DECISIONS I-585). The volume is /run/repose/rw;
+# / is an overlay, which fstrim cannot trim.
+[Unit]
+Description=repose: trim the volume when the machine stops
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/sbin/fstrim /run/repose/rw
+TimeoutStopSec=20s
+
+[Install]
+WantedBy=multi-user.target

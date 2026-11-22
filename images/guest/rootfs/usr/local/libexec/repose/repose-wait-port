@@ -1,0 +1,13 @@
+#!/bin/sh
+# repose-wait-port PORT TRIES: wait (0.1 s a try) until PORT listens, so a
+# unit counts as started only once a dependent can connect.
+port=$1
+tries=$2
+i=0
+while [ "$i" -lt "$tries" ]; do
+  if ss -Hltn "sport = :$port" | grep -q LISTEN; then exit 0; fi
+  sleep 0.1
+  i=$((i + 1))
+done
+echo "port $port not listening after $((tries / 10)) s" >&2
+exit 1

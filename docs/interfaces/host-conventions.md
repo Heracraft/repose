@@ -88,6 +88,12 @@ rotates keys does the same restart itself.
 - Guest address = `.2 + index` allocated by hostd from `state.db`; MAC
   `52:54:` plus the first four bytes of sha256(guest id) (DECISIONS
   I-120; a guest record created before then keeps the MAC stored in it).
+  An address is reused once its guest is destroyed, so hostd deletes the
+  host's neighbour entry for it on `br-guests` (`ip neigh del <ip> dev
+  br-guests`, an absent entry ignored) when the destroy has removed the
+  tap, and again at every boot and restore before the guest can be
+  dialled: a STALE entry with the old guest's MAC otherwise left the
+  next guest unreachable for 30 to 55 s (DECISIONS I-1530).
 - Tap per guest `tap-<8 hex of sha256(guest id)>` (I-120: the id's own
   first eight hex are its UUIDv7 timestamp, shared by guests created in
   the same minute; hostd refuses a create whose tap or MAC another record
@@ -519,40 +525,82 @@ repose. Two things follow, and the module asserts the second:
   house, would be a fourth home for a secret, and there are three
   (CLAUDE.md, `docs/features/secrets.md`).
 
-### The Mac appliance (`repose.host.provider = "mac"`, DECISIONS I-1376, I-1380)
+### The Mac appliance (DECISIONS I-1376, I-1380, I-1494)
 
-`nix/hosts/mac.nix`, `nixosConfigurations.mac` (aarch64; `mac-x86` is the
-same modules for the dev box's checks). It is the owned host above with
-these differences:
+Debian 13 arm64 with no Nix, built by `images/appliance-arm64/build.sh`
+and published as the release `appliance-<version>`
+(`repose-appliance-aarch64.raw.zst` and `.sha256`). It is the owned host
+above with these differences. An appliance installed from the NixOS
+image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
+`repose host add` installs the Debian one.
 
-- **One disk, `/dev/vda`** (`repose.host.mac.disk`): GPT, a 1 GB ESP
-  (`disk-os-ESP`), a 32 GiB ext4 root (`disk-os-root`,
-  `repose.host.mac.rootSize`) and a third partition `disk-os-guests`
-  that is the PV of `vg-guests` (`disko-layout.nix` `oneDisk`). No data
-  disk; `repose.host.dataDevice` is unused. The image
-  (`packages.aarch64-linux.mac-appliance-image`, `repose-appliance.raw.gz`)
-  ships with the PV partition at 4 GiB; `repose-mac-grow.service`
-  (after `repose-guest-pool`, before `hostd`, every boot, skipped while
-  `/run/repose/pool-hold` exists) grows the partition, the PV, the
-  pool's metadata and the pool to the disk, and logs
-  `partition_grown|partition_unchanged`, `pv_resized`,
-  `pool_metadata_grown`, `pool_grown|pool_unchanged` with sizes.
-- **The launcher's share** at `/run/repose/launcher` (virtio-fs, tag
-  `repose-launcher`, `nofail`). `repose-launcher-join.service` (before
-  `repose-host-net`, `repose-register` and `hostd`) reads `join` there,
-  writes `/run/repose/join-token` and `/run/repose/hub.json`, deletes
-  `join`, and logs `join_token_written`, `hub_bootstrap_written`,
-  `no_join_file`, `join_ignored reason=registered`, `join_invalid
-  reason=encoding|version|no_token`. A bundle found after `host.json`
-  exists is deleted and ignored.
-- **The api over the hub**: `apiAddr = 10.255.255.1:8443`,
-  `apiServerName` and `apiCA` from `nix/hosts/platform.nix`, the same
-  values `prod.nix` reads.
-- **No Azure, no cloud-init, no `kvm-intel`**, console `hvc0`, the NAT
-  NIC named `wan0` by driver (`repose.host.uplinkInterface`), the park
-  off, the operator bootstrap key off, nix free-space floors 4 and 8
-  GiB. The kernel is the fleet pin and a product constraint (I-1376,
-  `kernel.nix`).
+- **One disk, `/dev/vda`**, GPT with fixed partition GUIDs
+  (`7a1e0c4b-5e2f-4c1d-9b3a-1d6f0e2c8a0<n>`): 1 `esp`, 64 MiB vfat, with
+  systemd-boot and `vmlinuz.efi`; 2 `root`, 2 GiB ext4; 3 `guests`, 2 MiB
+  as shipped. Apparent size 2,217,738,240 bytes (the CLI's
+  `applianceImageApparentBytes`); the launcher grows the file to the
+  user's disk, at least 20 GB. At first boot `repose-guest-vg-init`
+  grows partition 3 and `repose-pool-create` makes `vg-guests/thin` on
+  it (95 percent of the VG, metadata one percent of the PV clamped to
+  1..16 GiB, discards passdown, metadata profile `repose-thin`: autoextend
+  at 80 by 5); it refuses a partition with any other signature.
+  `repose-mac-grow` then runs at every boot as before and logs the same
+  events.
+- **The kernel**: kernel.org 6.18.57 with Debian's cloud-arm64 config,
+  release `6.18.57-repose`, no initramfs (`root=PARTUUID=...-8a02`,
+  `console=hvc0`, the fleet's `transparent_hugepage=madvise hashdist=0
+  panic=30`). 7.0 is never shipped (I-1376).
+- **Files**: hostd at `/usr/local/bin/hostd`, Cloud Hypervisor 53.0 and
+  `ch-remote` at `/usr/local/bin`, `virtiofsd` linked there from
+  `/usr/libexec`; the scripts at `/usr/local/lib/repose/`; hostd's flags
+  in `/etc/repose/hostd.env` (`--nix-mode off`, `--images-dir
+  /var/lib/repose/images`, the api at `10.255.255.1:8443` with the
+  platform CA at `/etc/repose/api-ca.pem`, `--snapshot-dir`, the M4
+  timeouts, the park through the launcher's vsock port 1386); the
+  release key at `/etc/repose/release.pub`.
+- **Units**, ported from `nix/hosts/` with the same names and logs:
+  `hostd`, `guests.slice`, `repose-guests-slice`, `repose-guest-pool`,
+  `repose-host-net` (wg0 is `wg-quick@wg0`, `/etc/wireguard/wg0.conf` a
+  link to `/run/repose/wg0.conf`), `repose-launcher-join` (the share at
+  `/run/repose/launcher`, tag `repose-launcher`), `repose-register`,
+  `repose-guest-park`, the `guest@`, `virtiofsd@` and `virtiofsd-auth@`
+  drop-ins, `repose-snapshot.timer`, `repose-fault-around`,
+  `repose-mac-trim`, and `repose-nftables`, which loads
+  `/etc/repose/nftables.nft` (the tables above, its chains declared and
+  flushed, hostd's chains and sets kept). The input and forward chains
+  end in `host_input` and `host_forward` from
+  `/etc/repose/host-chains.nft`, which are empty, so everything else is
+  dropped; the provider NIC is `wan0`, named by driver.
+- **Not ported**: the npm and Docker Hub caches, node_exporter, Fluent
+  Bit, sshd and the Nix build account, and with them the cache rules and
+  `build_out`. The bridge's forward chain drops on `br-guests` only.
+- **hostd updates** (I-1496): `repose-hostd-update.timer`, every 30
+  minutes, reads
+  `https://github.com/Heracraft/repose/releases/download/hostd-stable/manifest.json`:
+  `{"version", "arches": {"amd64"|"arm64": {"url", "sha256"}},
+  "signature"}`, the signature being the release key's over
+  `repose-hostd-manifest v1\nversion V\namd64 SHA URL\narm64 SHA URL\n`.
+  A bad signature, an older version, a wrong sha256 or a binary that
+  reports another version changes nothing; otherwise the binary is
+  renamed over `/usr/local/bin/hostd` and hostd restarted
+  (`KillMode=process`, guests kept). It logs `manifest_verified`,
+  `sha256_verified`, `updated from= to= seconds=`, `up_to_date` and
+  `update_refused reason=signature|older|sha256|version_mismatch|manifest_shape`.
+  The binaries are the release `hostd-<version>`.
 - **Memory**: the launcher gives the VM three quarters of the Mac's (12
   GiB of 16, 18 of 24) and all but two cores; the reserve inside is the
   fleet rule (I-724). `repose host ls` shows the VM's memory.
+
+### An x86 machine (DECISIONS I-1498)
+
+`ops/install-host-x86.sh`, served as `https://repose.run/install-host.sh`,
+puts the same files and units on Ubuntu 24.04 or Debian 12+ x86_64
+(generated into it from `images/appliance-arm64/host/` by `embed.sh`),
+with these differences: Cloud Hypervisor's x86_64 static build, packages
+from apt, hostd from the signed manifest (or `--hostd-binary PATH`), the
+pool on `--device` or on a file, `/var/lib/repose/guests.img` by
+default, attached at boot by `repose-guest-loop` (`/etc/repose/pool.env`),
+the uplink the default route's interface, `host_input` and
+`host_forward` set to `accept` because the machine's own traffic is its
+owner's, no `repose-mac-*` units and no park. The join argument is
+written to `/run/repose/launcher/join` for `repose-launcher-join`.

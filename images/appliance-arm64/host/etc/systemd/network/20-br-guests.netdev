@@ -1,0 +1,7 @@
+# No STP: taps never form loops (nix/hosts/network.nix).
+[NetDev]
+Kind=bridge
+Name=br-guests
+
+[Bridge]
+STP=false

@@ -1,0 +1,2 @@
+# dev has sudo without a password (users.nix); root has no password and no SSH.
+dev ALL=(ALL:ALL) NOPASSWD: ALL

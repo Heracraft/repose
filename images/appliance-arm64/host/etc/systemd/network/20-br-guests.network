@@ -1,0 +1,12 @@
+# The address is repose-host-net's drop-in, from host.json.
+[Match]
+Name=br-guests
+
+[Network]
+ConfigureWithoutCarrier=yes
+DHCP=no
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+
+[Link]
+RequiredForOnline=no

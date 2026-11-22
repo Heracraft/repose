@@ -1,0 +1,22 @@
+# The project's herdr server (herdr.nix; DECISIONS I-501, I-505, I-551,
+# I-560, I-563).
+[Unit]
+Description=repose: project herdr server
+After=default.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecCondition=/usr/local/bin/repose-multiplexer-is herdr
+ExecStartPre=/usr/local/bin/repose-herdr-config
+ExecStart=/usr/local/bin/repose-herdr-start
+ExecStartPost=/bin/bash -c '/usr/local/bin/repose-herdr-watch &'
+ExecStartPost=-/usr/local/bin/repose-herdr-workspace
+ExitType=cgroup
+EnvironmentFile=-/etc/repose/env
+KillMode=control-group
+Restart=always
+RestartSec=5s
+OOMPolicy=continue
+TasksMax=infinity

@@ -1,0 +1,14 @@
+# The minute record of the agent windows (tmux.nix, DECISIONS I-646).
+[Unit]
+Description=repose: record the agent windows
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=dev
+Environment=HOME=/home/dev XDG_RUNTIME_DIR=/run/user/1000
+ExecCondition=/usr/local/bin/repose-multiplexer-is tmux
+ExecStart=/usr/local/bin/repose-tmux-save --periodic
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30

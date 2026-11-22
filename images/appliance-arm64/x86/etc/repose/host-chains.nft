@@ -1,0 +1,12 @@
+# An x86 machine of the user's own (ops/install-host-x86.sh): what reaches
+# the machine or crosses it that is not a guest's is its owner's (their
+# ssh, their services, their containers), under whatever firewall they
+# run. The repose tables close the guest bridge and the mesh only.
+table inet repose {
+  chain host_input {
+    accept
+  }
+  chain host_forward {
+    accept
+  }
+}

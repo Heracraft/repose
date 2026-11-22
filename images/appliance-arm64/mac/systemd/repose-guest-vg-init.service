@@ -1,0 +1,16 @@
+# The image ships its third partition empty: at the first boot it takes
+# the disk the launcher grew the file to and becomes vg-guests' PV with
+# its thin pool (DECISIONS I-1494). A no-op once the VG exists.
+[Unit]
+Description=Make vg-guests on the appliance's third partition at first boot
+DefaultDependencies=no
+After=local-fs.target systemd-udevd.service
+Before=repose-guest-pool.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'growpart /dev/vda 3 || true; udevadm settle --timeout 30 || true; exec /usr/local/lib/repose/repose-pool-create /dev/vda3'
+
+[Install]
+WantedBy=multi-user.target

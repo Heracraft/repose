@@ -1,0 +1,15 @@
+# The opencode plugin and the Gemini extension at login (agents.nix).
+[Unit]
+Description=repose: install the opencode plugin and the Gemini extension
+ConditionUser=dev
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/repose-agent-setup opencode
+ExecStart=/usr/local/bin/repose-agent-setup gemini
+
+[Install]
+WantedBy=default.target

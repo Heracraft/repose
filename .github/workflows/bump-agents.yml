@@ -44,7 +44,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           scripts/bump-agents.sh
-          if git diff --quiet -- nix/overlay/agents/versions.json; then
+          if git diff --quiet -- nix/overlay/agents/versions.json images/guest/versions.json; then
             echo "changed=0" >> "$GITHUB_OUTPUT"
           else
             echo "changed=1" >> "$GITHUB_OUTPUT"

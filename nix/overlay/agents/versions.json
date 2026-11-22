@@ -81,5 +81,10 @@
       "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-linux-aarch64",
       "hash": "sha256-F9dTby2lCFlSNoDvJ53/ysjkojX05G/o2mwuxEFBiXw="
     }
+  },
+  "playwright-mcp": {
+    "version": "0.0.80",
+    "url": "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.80.tgz",
+    "hash": "sha256-uB7aPwp8xwqcr321IM2tWMSKHdM0tOP88JbAUSyYrw0="
   }
 }

@@ -1,0 +1,28 @@
+# hostd on a host repose does not build with Nix: the Mac appliance and an
+# x86 machine set up by ops/install-host-x86.sh (DECISIONS I-1494). The
+# flags are /etc/repose/hostd.env's. Guests are transient units in
+# guests.slice, not children (KillMode=process): a restart of hostd, an
+# update included, does not stop them, and hostd reconciles them at start.
+[Unit]
+Description=repose hostd: runs tenants' guests on this host
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service lvm2-monitor.service
+
+[Service]
+EnvironmentFile=/etc/repose/hostd.env
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/bin/hostd --state /var/lib/repose/hostd --images-dir /var/lib/repose/images --nix-mode off $HOSTD_API_ARGS $HOSTD_ARGS
+Restart=always
+RestartSec=2
+# A join token that has been used is not retried (03-hostd §6).
+RestartPreventExitStatus=3
+KillMode=process
+LimitNOFILE=1048576
+StateDirectory=repose/hostd
+StateDirectoryMode=0700
+LogsDirectory=repose
+OOMScoreAdjust=-900
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

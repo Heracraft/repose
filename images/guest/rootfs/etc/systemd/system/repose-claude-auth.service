@@ -1,0 +1,14 @@
+# The Claude login share (DECISIONS I-278; nix/guest/base/claude-auth.nix).
+[Unit]
+Description=Claude login shared by this user's machines (I-278)
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-user-sessions.service user@1000.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/repose/repose-claude-auth
+
+[Install]
+WantedBy=multi-user.target

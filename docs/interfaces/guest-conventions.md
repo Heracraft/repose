@@ -1513,3 +1513,112 @@ Re-running the unit changes nothing.
 the key is absent, since Claude Code's first-run onboarding asks for a
 login method even when the shared file holds one.
 
+
+## The erofs guest (DECISIONS I-1466, I-1468, I-1470)
+
+A guest with no Nix: Ubuntu 24.04 built from `images/guest/Dockerfile`,
+for `amd64` and `arm64`. Every section above holds for it unless this one
+says otherwise; the paths, units and scripts are the same names, ported
+from `nix/guest/base/` into `images/guest/rootfs/`. Until the NixOS guest
+is retired both exist, and a project is one or the other.
+
+### The bundle
+
+One per architecture, built together from one kernel package so
+`/lib/modules/<uname -r>` in the erofs is that kernel's own
+(`images/guest/build.sh`):
+
+| File | What |
+|---|---|
+| `vmlinuz` | Ubuntu's kernel: the bzImage on amd64; on arm64 the plain, uncompressed `Image`, the only arm64 form Cloud Hypervisor boots (Ubuntu's 6.8 `vmlinuz` is that Image gzipped; a later kernel's EFI zboot wrapper is unwrapped the same way) |
+| `initramfs.img` | gzip cpio: static BusyBox, `/init` (`images/guest/initramfs/init`), and the modules among `virtio_pci`, `virtio_blk`, `erofs`, `ext4`, `overlay` the kernel does not build in, decompressed, with their load order in `/modules` |
+| `rootfs.erofs` | the root, `mkfs.erofs -zlz4hc,9`, attached read-only as `/dev/vda` |
+| `manifest.json` | `{version, arch, kernel_version, git_sha, files: {NAME: {sha256, size, parts?}}}` for the three files above; `sha256` and `size` are the whole file's, and `parts` (`[{name, sha256, size}]`, in order) is there when the file is published in parts |
+| `SHA256SUMS` | `sha256sum` lines for what is published: each file, or its parts in its place, then `manifest.json` |
+
+A file larger than 1900 MiB (the amd64 `rootfs.erofs`) is published as
+`<name>.part0`, `<name>.part1`, ..., each at most 1900 MiB, which
+concatenated in order are the file byte for byte (DECISIONS I-1504,
+I-1506). `build.sh` keeps the whole file beside its parts on disk.
+
+The GitHub release `guest-<version>` (never marked latest) carries both
+architectures as `amd64-vmlinuz`, `amd64-initramfs.img`,
+`amd64-rootfs.erofs` (or its parts, `amd64-rootfs.erofs.part0`, ...),
+`amd64-manifest.json` and the same with `arm64-`, plus one `SHA256SUMS`
+listing every asset under those names. On disk
+(`out/<version>/<arch>/`) the files keep the plain names above, with a
+per-architecture `SHA256SUMS`; the workflow renames them at upload. `<version>` is `YYYY.MM.DD.N`, the
+string `/etc/repose/base-version` holds.
+
+The runner boots it as Cloud Hypervisor's `--kernel vmlinuz --initramfs
+initramfs.img --disk path=rootfs.erofs,readonly=on --disk
+path=<thin volume>,id=vdb`: the erofs is the first disk (`/dev/vda`), the
+volume the second (`/dev/vdb`, ext4, formatted by hostd), so a resize
+names `vdb`. The command line has no `init=`; the initramfs hands over to
+`/sbin/init` (systemd). `repose.init=PATH` replaces it, and
+`repose.shell` gives a shell where the init would fail, for debugging.
+
+### The volume's layout
+
+hostd formats the volume as an empty ext4; the initramfs creates what is
+missing at each boot, so the first boot of a new volume and every later
+one run the same code:
+
+| Path on `/dev/vdb` | What |
+|---|---|
+| `/.base-version` | the base version the volume last booted, written by the initramfs before it hands over |
+| `/.base-upgraded` | `<old> <new>`: written when the initramfs rotated the upper for a new base; guestd removes it once it has replayed the project's configuration |
+| `/apt-manual.list` | written in the guest, see "What differs from the NixOS guest" |
+| `/home-dev/` | `/home/dev`, a bind mount; seeded from the base's `/etc/skel` (uid 1000) the first time |
+| `/docker/` | `/var/lib/docker`, a bind mount, so Docker's `overlay2` runs on ext4 |
+| `/services/` | `/var/lib/repose/services`, a bind mount: the data of the project's services |
+| `/etc-persist/machine-id` | `/etc/machine-id`, a file bind mount; 32 hex digits made once from `/proc/sys/kernel/random/uuid` |
+| `/overlay/upper/`, `/overlay/work/` | the overlayfs over the erofs that is `/`: what `apt-get` installs and every other change outside the four paths above |
+| `/overlay/upper.prev/` | the upper before the last base change, kept until the next one replaces it |
+
+When `/.base-version` exists and differs from the erofs's
+`/etc/repose/base-version`, the initramfs removes `overlay/upper.prev`,
+renames `overlay/upper` to it, makes `overlay/upper` and `overlay/work`
+empty and writes `/.base-upgraded`, before the overlay is mounted. The
+four bind-mounted paths are never touched by it.
+
+### Mounts in the guest
+
+| Mount point | What |
+|---|---|
+| `/` | overlay: `lowerdir` the erofs, `upperdir` and `workdir` on the volume (its options name `/mnt/ro` and `/mnt/rw`, the paths the initramfs mounted them at before it moved them) |
+| `/run/repose/rw` | the volume, ext4 `rw,noatime,discard`. Its block device is `/dev/vdb`: `resize2fs` and `statfs` for disk use name it or this path, and a snapshot's `fsfreeze -f` freezes this path (`/` is overlayfs, which cannot be frozen) |
+| `/run/repose/ro` | the erofs, read-only |
+| `/home/dev`, `/var/lib/docker`, `/var/lib/repose/services`, `/etc/machine-id` | bind mounts from the volume, as above |
+
+`/run` is a tmpfs the initramfs mounts before `switch_root`; systemd keeps
+it. `fstrim.timer` (daily) and `repose-trim-on-stop.service` trim
+`/run/repose/rw`.
+
+### What differs from the NixOS guest
+
+- Platform commands are in `/usr/local/bin`, their helpers in
+  `/usr/local/libexec/repose`. `/run/current-system/sw/bin` holds a link
+  to every command in `/usr/local/bin`, `/usr/bin` and `/usr/sbin`, so a
+  path or a PATH written for a NixOS guest resolves (for one release;
+  DECISIONS I-1466).
+- `/run/repose/rw/apt-manual.list` lists, one a line and sorted, the
+  packages apt marks manual that the base did not install; an apt hook
+  rewrites it whole after every dpkg run, and guestd reads it to replay
+  them after a base change.
+- `sshd` is Ubuntu's `ssh.service` (`sshd.service` is its alias), started
+  as a service; `ssh.socket` is masked.
+- The agents live in `/opt/repose/<agent>`, wrapped by
+  `/usr/local/bin/<agent>` as "Agent wrappers" says. Chromium is
+  Playwright's, under `/opt/ms-playwright`, seeded into
+  `~/.cache/ms-playwright` at boot; `chromium` on PATH runs it in the
+  user's browser slice.
+- The static environment is `/etc/repose/session.env`, read by PAM
+  (`/etc/environment`), dev's user manager (`/etc/environment.d`) and
+  `/etc/profile.d/repose.sh`.
+- There is no Nix: no `/nix`, no `RegisterPaths`, no
+  `repose-paths.service`, no home-manager, no `repose-store-gc`; a
+  flake's dev shell is not loaded (`.envrc` is). A missing command names
+  its apt package (Ubuntu's command-not-found).
+- `/etc/repose/agent-guide.md` (and `/etc/claude-code/CLAUDE.md`) is
+  rendered from `images/guest/agent-guide.md`.

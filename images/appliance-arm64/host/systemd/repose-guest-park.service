@@ -1,0 +1,20 @@
+# Park running guests before the host shuts down (DECISIONS I-652, I-1386;
+# nix/hosts/park.nix). Enabled only where hostd.env turns the park on: the
+# Mac appliance, whose launcher wraps the image keys. Its ExecStop runs at
+# shutdown before any guest stops (the guest@, virtiofsd@ and
+# virtiofsd-auth@ drop-ins order them before it). TimeoutStopSec is the
+# park deadline plus 150 s (park.nix).
+[Unit]
+Description=Park running guests before the host shuts down
+Wants=hostd.service
+After=hostd.service repose-guest-pool.service local-fs.target network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/true
+ExecStop=/usr/local/bin/hostd park --shutdown
+TimeoutStopSec=270
+
+[Install]
+WantedBy=multi-user.target

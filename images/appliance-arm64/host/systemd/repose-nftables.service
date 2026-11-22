@@ -1,0 +1,20 @@
+# The `repose` nftables tables (docs/interfaces/host-conventions.md,
+# nix/hosts/nftables.nix). Its own unit, not the distribution's
+# nftables.service, whose /etc/nftables.conf flushes the whole ruleset:
+# this one declares and flushes only its own chains, so hostd's chains,
+# sets and counters survive a reload.
+[Unit]
+Description=repose guest isolation ruleset
+DefaultDependencies=no
+Before=network-pre.target hostd.service
+Wants=network-pre.target
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/repose/nftables.nft
+ExecReload=/usr/sbin/nft -f /etc/repose/nftables.nft
+
+[Install]
+WantedBy=multi-user.target

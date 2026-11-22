@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -84,6 +85,23 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 		_, _ = fmt.Fprintf(e.ErrOut, "%s is starting and joins your account in a few minutes.\n", h.Name)
 		return nil
 	}
+	// On a Linux x86 machine the step is the installer, which makes this
+	// machine, or the one the line is carried to, a host (DECISIONS
+	// I-1498); the api's line is the Mac's.
+	if onLinuxX86() {
+		argument := ""
+		if h.Install != nil {
+			argument = h.Install.Argument
+		}
+		if argument == "" && h.JoinToken != "" {
+			argument = encodeTokenBundle(h.JoinToken)
+		}
+		if argument != "" {
+			_, _ = fmt.Fprintf(e.Out, hostInstallX86+"\n", argument)
+			_, _ = fmt.Fprintln(e.ErrOut, hostAddedLine(h, true))
+			return nil
+		}
+	}
 	// stdout is the one thing to carry to the machine, so it pipes: the
 	// install step the api composed, or, while no install line is
 	// recorded for this kind of machine, the token the install takes.
@@ -101,6 +119,14 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 	_, _ = fmt.Fprintln(e.ErrOut, hostAddedLine(h, installed))
 	return nil
 }
+
+// hostInstallX86 is the step `repose host add` prints on a Linux x86
+// machine: ops/install-host-x86.sh as repose.run serves it, run as root,
+// with the join argument (DECISIONS I-1498).
+const hostInstallX86 = "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join %s"
+
+// onLinuxX86 is where that step is the one to print; tests replace it.
+var onLinuxX86 = func() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" }
 
 // hostAddedLine is what `repose host add` says on stderr: where the
 // line on stdout goes, how long it lasts, and, when the api had no
