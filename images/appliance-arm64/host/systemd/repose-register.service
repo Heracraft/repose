@@ -1,0 +1,26 @@
+# One-shot registration before hostd: trades /run/repose/join-token for
+# host.json, cert.pem and key.pem through `hostd register`. Skipped once
+# host.json exists or with no token. A token the api rejects makes hostd
+# exit 3 and the unit stops retrying; a network error retries every 30 s.
+[Unit]
+Description=Register this host with the api using the join token
+Wants=network-online.target repose-launcher-join.service
+After=network-online.target repose-host-net.service wg-quick@wg0.service repose-launcher-join.service
+Before=hostd.service
+ConditionPathExists=!/var/lib/repose/hostd/host.json
+ConditionPathExists=/run/repose/join-token
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/repose/hostd.env
+ExecStart=/usr/local/bin/hostd --state /var/lib/repose/hostd --join-token /run/repose/join-token $HOSTD_API_ARGS register
+# The bridge and wg0 read host.json; apply it now.
+ExecStartPost=/usr/bin/systemctl --no-block restart repose-host-net.service
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=3
+StateDirectory=repose/hostd
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

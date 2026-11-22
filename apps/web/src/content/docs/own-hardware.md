@@ -14,7 +14,7 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
 - 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest. On a 16 GB Mac that share is about 12 GB, of which about 9.6 GB is what your machines may hold at once; repose keeps the rest for itself. `repose host ls` shows the share.
-- At least 20 GB of free disk. The download is about 250 MB; with less free, `repose host add` says how much to free. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
+- At least 40 GB of free disk: the machine's disk is 20 GB at least, and 20 GB of the volume stays free for you. The download is about 85 MB; with less free, `repose host add` says how much to free. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
 
@@ -35,7 +35,7 @@ On the Mac mini, with the [CLI installed](/docs/cli) and logged in:
 repose host add
 ```
 
-It says what it is about to do, then does it: fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 250 MB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd agent that starts it again at every login. While the machine runs, the Mac does not sleep. Nothing needs your password.
+It says what it is about to do, then does it: fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 85 MB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd agent that starts it again at every login. While the machine runs, the Mac does not sleep. Nothing needs your password.
 
 A download that fails is tried twice more, continuing from the bytes already on disk rather than fetching the image again, and one that goes quiet for a minute is given up rather than held open. If all three attempts fail, `repose host add` says what failed and stops. The host is in your account by then, so the command that finishes the install is the one the failure prints, `repose host add --join-file <path>`, which continues from the part of the image already here. The install keeps the argument in that file so you do not have to paste it again, and so it stays off the command line: anything on the Mac can read a command line while it runs. Nothing is running and nothing of the Mac's has changed; to start over instead, `repose host rm` takes the host off your account and the part of the image on disk with it, and `repose host rm --local` clears that part without touching your account.
 
@@ -50,7 +50,7 @@ curl -fsSL https://repose.run/install-host.sh \
 
 It sets repose up and joins your account. It keeps your machines' disks in `/var/lib/repose/guests.img`, 100 GB or the free space less 20 GB, whichever is smaller; with `--device /dev/sdb` it takes over that whole disk instead, and it refuses a disk that holds anything. The dashboard's **Add a host** shows this line beside the Mac's.
 
-The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free, never under 40 GB and never closer than 20 GB to what the volume has (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
+The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free, never under 20 GB and never closer than 20 GB to what the volume has (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
 
 The machine sets repose up and joins your account:
 

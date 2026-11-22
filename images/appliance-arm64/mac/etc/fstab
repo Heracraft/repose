@@ -1,0 +1,5 @@
+# The appliance's one disk: ESP and root by partition label; the third
+# partition is vg-guests' PV. The launcher's share carries the join bundle.
+PARTLABEL=root          /                     ext4      defaults,noatime,discard  0 1
+PARTLABEL=esp           /boot/efi             vfat      umask=0077,noauto,x-systemd.automount  0 2
+repose-launcher         /run/repose/launcher  virtiofs  nofail,x-systemd.device-timeout=5s  0 0

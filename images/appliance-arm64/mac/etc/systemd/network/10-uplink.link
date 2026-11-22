@@ -1,0 +1,7 @@
+# The framework's NAT NIC is the only virtio_net device; named so the
+# nftables rules can name it, whichever PCI slot it is in.
+[Match]
+Driver=virtio_net
+
+[Link]
+Name=wan0

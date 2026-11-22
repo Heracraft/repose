@@ -97,7 +97,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 ## Your own hardware
 
-**`this volume has 46 GB free; the appliance needs a 40 GB disk and leaves 20 GB free, so free up 14 GB first`.** `repose host add` checks free space before it adds a host to your account or downloads anything, so nothing was created or written. Free up space to at least 60 GB (the 40 GB disk floor plus 20 GB kept free for macOS) and run `repose host add` again, or pass `--disk` with a size of 40 GB or more once you have the room ([What a Mac mini needs](/docs/own-hardware#what-a-mac-mini-needs)).
+**`this volume has 36 GB free; the appliance needs a 20 GB disk and leaves 20 GB free, so free up 4 GB first`.** `repose host add` checks free space before it adds a host to your account or downloads anything, so nothing was created or written. Free up space to at least 40 GB (the 20 GB disk floor plus 20 GB kept free for macOS) and run `repose host add` again, or pass `--disk` with a size of 40 GB or more once you have the room ([What a Mac mini needs](/docs/own-hardware#what-a-mac-mini-needs)).
 
 **`macOS ... is older than 15`**, **`... cannot run the appliance; it needs an M3 chip or newer`**, or **`This Mac has ... GB of memory; the appliance needs 16 GB or more`.** Checked before a host is added to your account, so nothing was created. The Mac appliance requires Apple silicon M3 or newer, macOS 15 or later, and at least 16 GB of memory.
 

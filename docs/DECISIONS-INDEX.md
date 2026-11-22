@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1092 entries.
+1095 entries.
 
 ## Scope
 
@@ -1124,3 +1124,6 @@ pointer, not a summary.
 - **I-1528** `PUT /projects/:id/config` takes an optional `base_revision_id`, the revision the client last read; one that is not the project's current revision is `409 menu_stale` (nonix-contracts-2, 2026-11-22) — L39151
 - **I-1524** The Config page sends `base_revision_id` (the revision its last GET returned) with a menu, and on 409 `menu_stale` says in the Apply bar that the menu changed elsewhere and reloads it (nonix-config-cli-web-2, 2026-11-22) — L39158
 - **I-1530** hostd deletes the host's neighbour entry for a guest address on `br-guests` when the guest is destroyed (after its tap is gone) and at every boot and restore (before the guest can be dialled), so an address reused by the next guest does not answer with the old guest's MAC (nonix-hostd-2, 2026-11-22) — L39163
+- **I-1494** The Mac appliance is Debian 13 arm64 built by `images/appliance-arm64/build.sh` (mmdebstrap, no loop device): a 64 MiB ESP with systemd-boot and the kernel, a 2 GiB ext4 root, and a 2 MiB third partition that becomes vg-guests at first boot; the kernel is kernel.org 6.18.57 with Debian trixie's cloud-arm64 config and no initramfs; the host units are ported 1:1 from `nix/hosts/` as plain files under `images/appliance-arm64/host/` (nonix-appliances, 2026-11-22) — L39168
+- **I-1496** hostd on an owned host updates itself from `hostd-stable`'s `manifest.json`, signed with the release key, through `repose-hostd-update` every 30 minutes; a script, not a hostd subcommand (nonix-appliances, 2026-11-22) — L39176
+- **I-1498** A Linux x86_64 machine becomes a host with `ops/install-host-x86.sh` (served as `https://repose.run/install-host.sh`), which carries the appliance's host files inside itself, and `repose host add` on linux/amd64 prints its line with the join argument (nonix-appliances, 2026-11-22) — L39183

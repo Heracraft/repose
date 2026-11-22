@@ -1,0 +1,7 @@
+# nix/hosts/virt.nix: the hostd account runs guest hypervisors.
+KERNEL=="kvm", GROUP="kvm", MODE="0660"
+KERNEL=="vhost-vsock", GROUP="kvm", MODE="0660"
+KERNEL=="vhost-net", GROUP="kvm", MODE="0660"
+# Guest volumes g-<id> in vg-guests are group hostd so an unprivileged
+# guest@<id> can open its disk; snapshots and the pool stay root:disk.
+SUBSYSTEM=="block", KERNEL=="dm-*", ENV{DM_VG_NAME}=="vg-guests", ENV{DM_LV_NAME}=="g-*", GROUP="hostd", MODE="0660"
