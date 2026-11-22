@@ -223,8 +223,8 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(), "base_version", g.BaseVersion,
 		"freeze_ms", t.freeze.Milliseconds(), "read_wait_ms", readWaitMs,
 		"format", format, "raw_reason", why, "journal_replayed", replayed, "used_bytes", used, "volume_bytes", g.VolumeBytes)
-	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum}})
-	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum}, nil
+	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum, BaseVersion: g.BaseVersion}})
+	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum, BaseVersion: g.BaseVersion}, nil
 }
 
 func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.CreateResult, *Error) {

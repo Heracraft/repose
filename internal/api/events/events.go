@@ -615,9 +615,9 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 			ts = now
 		}
 		// The digest fills a row the command's result wrote first (I-462).
-		_, err = i.pool.Exec(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, sha256) values ($1, $2, $3, $4, $5, 'scheduled', $6, nullif($7, ''))
+		_, err = i.pool.Exec(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, sha256, base_version) values ($1, $2, $3, $4, $5, 'scheduled', $6, nullif($7, ''), coalesce(nullif($8, ''), (select base_version from projects where id = $2)))
 			on conflict (blob_path) do update set sha256 = coalesce(snapshots.sha256, excluded.sha256) where snapshots.project_id = excluded.project_id`,
-			store.NewID(), p.ID, p.HostID, e.SnapshotDone.BlobPath, int64(e.SnapshotDone.Bytes), ts, e.SnapshotDone.Sha256)
+			store.NewID(), p.ID, p.HostID, e.SnapshotDone.BlobPath, int64(e.SnapshotDone.Bytes), ts, e.SnapshotDone.Sha256, e.SnapshotDone.BaseVersion)
 		if err != nil {
 			i.log.Error("snapshot event insert", "event", "snapshot_done", "err", err.Error())
 			return false

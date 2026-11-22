@@ -63,6 +63,9 @@ const Usage = `repose-admin <command> [args]
             overage-now HANDLE (send this period's egress line to Polar now)
             polar-bootstrap [--webhook-url URL] [--no-webhook] [--production]  (POLAR_ACCESS_TOKEN and POLAR_ENVIRONMENT in the environment)
   base      publish --rev SHA40 --changelog TEXT [--version V] [--security] [--repo URL] [--branch main] [--unverified-rev] | release ... | list | status V | rollback V
+            publish --format erofs --amd64-url U --amd64-sha256 H --amd64-kernel-url U --amd64-kernel-sha256 H --amd64-initramfs-url U --amd64-initramfs-sha256 H
+                    [the same six for arm64] --kernel-version K --manifest-url U --changelog TEXT [--version V] [--security] (I-1464)
+  settings  get KEY | set KEY VALUE | list   (default_guest_runtime nix|erofs, I-1462)
   ca        init | show | rotate [--user] [--host] | sign-host --principal P... --pubkey FILE | sign-client --name NAME [--operator] [--csr FILE] [--out DIR]
             sign-server --name NAME[,NAME...] [--ttl 43800h] [--csr FILE] [--out DIR]
   operator-cert --pubkey FILE [--ttl 8h] [--name NAME]
@@ -131,6 +134,8 @@ func Run(ctx context.Context, e *Env, args []string) error {
 		return e.seatsCmd(ctx, rest)
 	case "ops":
 		return e.opsCmd(ctx, rest)
+	case "settings":
+		return e.settingsCmd(ctx, rest)
 	}
 	return fmt.Errorf("%w: unknown command %q", ErrUsage, cmd)
 }

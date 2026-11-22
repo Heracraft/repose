@@ -6,6 +6,7 @@ package basebump
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -49,7 +50,8 @@ func (j *Job) Run(ctx context.Context) {
 		case <-time.After(time.Until(next)):
 		case <-time.After(10 * time.Minute):
 			b, err := store.LatestBase(ctx, j.pool)
-			if err != nil || !securityDue(b, lastSweep) {
+			eb, eerr := store.LatestErofsBase(ctx, j.pool, "")
+			if (err != nil || !securityDue(b, lastSweep)) && (eerr != nil || !securityDue(eb, lastSweep)) {
 				continue
 			}
 		}
@@ -85,17 +87,73 @@ func nextRun(now time.Time) time.Time {
 // project with an open op or whose last build against the latest base
 // failed is skipped until its next successful apply.
 func (j *Job) Sweep(ctx context.Context) ([]uuid.UUID, error) {
+	erofs, err := j.sweepErofs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nix, version, err := j.sweepNix(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j.log.Info("base bump sweep", "event", "base_bump", "version", version, "projects", len(nix)+len(erofs), "nix", len(nix), "erofs", len(erofs))
+	return append(nix, erofs...), nil
+}
+
+// sweepErofs marks every unheld live erofs project behind the newest
+// erofs base for its host's arch with that base as pending_base_version
+// (DECISIONS I-1464). No op is enqueued and nothing is built: the next
+// StartGuest boots the base and clears the mark. Running and stopped
+// projects alike, since marking costs nothing.
+func (j *Job) sweepErofs(ctx context.Context) ([]uuid.UUID, error) {
+	var touched []uuid.UUID
+	for _, a := range []struct{ image, host string }{{"amd64", "x86_64"}, {"arm64", "aarch64"}} {
+		latest, err := store.LatestErofsBase(ctx, j.pool, a.image)
+		if errors.Is(err, db.ErrNotFound) || db.IsNoRows(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		rows, err := j.pool.Query(ctx, `update projects p set pending_base_version = $1
+			  from hosts h
+			 where h.id = p.host_id and h.arch = $2
+			   and p.guest_runtime = 'erofs' and p.destroyed_at is null and not p.hold_base_updates
+			   and p.state not in ('destroying', 'destroyed')
+			   and (p.base_version is null or p.base_version <> $1)
+			   and (p.pending_base_version is null or p.pending_base_version <> $1)
+			   and p.user_id <> '00000000-0000-7000-8000-000000000000'
+			returning p.id`, latest.Version, a.host)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err == nil {
+				touched = append(touched, id)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return touched, nil
+}
+
+// sweepNix is the Nix projects' bump: a build op per unheld running
+// project behind the newest nix base.
+func (j *Job) sweepNix(ctx context.Context) ([]uuid.UUID, string, error) {
 	latest, err := store.LatestBase(ctx, j.pool)
 	if err != nil {
 		if db.IsNoRows(err) || err == db.ErrNotFound {
-			return nil, nil
+			return nil, "", nil
 		}
-		return nil, err
+		return nil, "", err
 	}
-	rows, err := j.pool.Query(ctx, `select id from projects where destroyed_at is null and state = 'running' and not hold_base_updates
+	rows, err := j.pool.Query(ctx, `select id from projects where destroyed_at is null and state = 'running' and not hold_base_updates and guest_runtime = 'nix'
 		and (base_version is null or base_version <> $1) and config_revision_id is not null and user_id <> '00000000-0000-7000-8000-000000000000' order by created_at`, latest.Version)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var ids []uuid.UUID
 	for rows.Next() {
@@ -146,8 +204,7 @@ func (j *Job) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 		touched = append(touched, pid)
 	}
 	j.engine.Kick()
-	j.log.Info("base bump sweep", "event", "base_bump", "version", latest.Version, "projects", len(touched))
-	return touched, nil
+	return touched, latest.Version, nil
 }
 
 // OnOpFinished records the outcome of a bump build as an event; wired

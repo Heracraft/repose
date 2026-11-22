@@ -184,14 +184,12 @@ func (m *Manager) applyMenu(ctx context.Context, commandID string, g *state.Gues
 	}()
 	res, err := sess.ApplyMenu(ctx, &guestdv1.ApplyMenu{Menu: menu}, func(line string) { m.buildLog(commandID, line) })
 	if err != nil {
-		code, msg := CodeMenuFailed, err.Error()
+		code, msg := CodeGuestUnresponsive, err.Error()
 		if re, ok := vsockclient.IsRemote(err); ok {
 			code, msg = re.Code, re.Message
 			if code != CodeInvalidArgument {
 				code = CodeMenuFailed
 			}
-		} else {
-			code = CodeGuestUnresponsive
 		}
 		if res != nil && res.GetLine() != "" {
 			msg = res.GetLine()

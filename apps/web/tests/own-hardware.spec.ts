@@ -142,6 +142,13 @@ test('healthy owned hosts show where each machine runs on /projects and project 
 		name: 'unplaced-readout-app',
 		remote_url: 'github.com/heracraft/unplaced-readout-app'
 	});
+	// A stopped machine is the widest state cell: one line, the state and
+	// "last run" side by side. Whether one is left on the list depends on
+	// what ran before, so this spec brings its own.
+	const stopped = await createProject(api, {
+		name: 'stopped-readout-app',
+		remote_url: 'github.com/heracraft/stopped-readout-app'
+	});
 	try {
 		const patch = (q: Record<string, unknown>) => {
 			if (q.id === own.id) {
@@ -153,6 +160,15 @@ test('healthy owned hosts show where each machine runs on /projects and project 
 			} else if (q.id === unplaced.id) {
 				delete q.host_id;
 				delete q.host_name;
+			} else if (q.id === stopped.id) {
+				q.host_id = 'host-02';
+				delete q.host_name;
+				q.state = 'stopped';
+				q.created_at = new Date(Date.now() - 3 * 3600_000).toISOString();
+				q.started_at = new Date(Date.now() - 42 * 60_000).toISOString();
+				delete q.last_snapshot_at;
+				delete q.idle;
+				delete q.resting;
 			}
 		};
 		await page.route(/\/v1\/projects(\/[^/]+)?$/, async (route) => {
@@ -185,18 +201,35 @@ test('healthy owned hosts show where each machine runs on /projects and project 
 		await expect(rowOf(fleet.name).getByTestId('row-host')).toHaveText('repose');
 		await expect(rowOf(unplaced.name).getByTestId('row-host')).toHaveText('-');
 
-		// No cell clips at desktop/tablet widths with the Host column present.
-		for (const width of [1440, 1024, 800]) {
-			await page.setViewportSize({ width, height: 900 });
-			const clipped = await page.locator('.ptable tbody td').evaluateAll((cells) =>
+		// No cell clips at desktop/tablet widths with the Host column present:
+		// the list as it opens, then this spec's machines under All, where
+		// the stopped row is. A stopped row is one line, so its state cell
+		// is the widest; the search keeps it on a list that caps at 20.
+		const clippedCells = () =>
+			page.locator('.ptable tbody td').evaluateAll((cells) =>
 				cells
 					.filter((c) => getComputedStyle(c).overflow === 'hidden')
 					.filter((c) => c.scrollWidth > c.clientWidth + 1)
-					.map((c) => `${c.className}: ${c.clientWidth} of ${c.scrollWidth} for ${c.textContent?.trim()}`)
+					.map(
+						(c) =>
+							`${c.className}: ${c.clientWidth} of ${c.scrollWidth} for ${c.textContent?.trim()}`
+					)
 			);
-			expect(clipped, `clipped at ${width}`).toEqual([]);
+		for (const url of ['/projects', '/projects?state=all&q=readout-app']) {
+			await page.setViewportSize({ width: 1440, height: 900 });
+			await page.goto(url);
+			await expect(page.locator('.ptable thead th')).toContainText(['Host']);
+			if (url !== '/projects') {
+				await expect(rowOf(stopped.name).locator('td.c-state')).toContainText('last run 42m ago');
+			}
+			for (const width of [1440, 1024, 800]) {
+				await page.setViewportSize({ width, height: 900 });
+				expect(await clippedCells(), `clipped at ${width} on ${url}`).toEqual([]);
+			}
 		}
 		await shots(page, 'own-host-list');
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
 
 		// Stacked phone rows carry the host readout too.
 		await page.setViewportSize({ width: 390, height: 844 });
@@ -235,6 +268,7 @@ test('healthy owned hosts show where each machine runs on /projects and project 
 	} finally {
 		await destroyProject(api, own.id);
 		await destroyProject(api, fleet.id);
+		await destroyProject(api, stopped.id);
 		await destroyProject(api, unplaced.id);
 	}
 });
