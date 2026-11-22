@@ -40,8 +40,7 @@ func TestHostAddOnLinuxX86(t *testing.T) {
 	if b, err := decodeJoinBundle(arg); err != nil || b.Token == "" {
 		t.Fatalf("the argument is not a join bundle: %v", err)
 	}
-	if got := errOut.buf.String(); !strings.HasPrefix(got, "box: run this on the machine you are adding.") ||
-		!strings.Contains(got, "A Mac runs `repose host add --join` with the same argument instead.") {
+	if got := errOut.buf.String(); !strings.HasPrefix(got, "box: run this on the machine you are adding.") {
 		t.Fatalf("stderr: %q", got)
 	}
 

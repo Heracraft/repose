@@ -98,7 +98,7 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 		}
 		if argument != "" {
 			_, _ = fmt.Fprintf(e.Out, hostInstallX86+"\n", argument)
-			_, _ = fmt.Fprintln(e.ErrOut, hostAddedLine(h, true)+" A Mac runs `repose host add --join` with the same argument instead.")
+			_, _ = fmt.Fprintln(e.ErrOut, hostAddedLine(h, true))
 			return nil
 		}
 	}
