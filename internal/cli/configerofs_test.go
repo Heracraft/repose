@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -15,7 +16,12 @@ import (
 // create.
 func newErofsEnv(t *testing.T) (*fakeapi.Fake, *Env, *Project, *discardWriter, *discardWriter) {
 	t.Helper()
-	fake := fakeapi.New(fakeapi.Options{})
+	return newErofsEnvWith(t, fakeapi.Options{})
+}
+
+func newErofsEnvWith(t *testing.T, opts fakeapi.Options) (*fakeapi.Fake, *Env, *Project, *discardWriter, *discardWriter) {
+	t.Helper()
+	fake := fakeapi.New(opts)
 	t.Cleanup(fake.Close)
 	fake.SetDefaultGuestRuntime("erofs")
 	e, p := newRoundtripEnv(t, fake)
@@ -29,10 +35,10 @@ func newErofsEnv(t *testing.T) (*fakeapi.Fake, *Env, *Project, *discardWriter, *
 
 // `repose config add` on an erofs machine: the same first line as on a
 // Nix machine without "Building revision", and the same last line
-// (DECISIONS I-1488). The fake's op is done at its first read, so the
-// steps are TestConfigOpErofsShowsApplyMenuLines's.
+// (DECISIONS I-1488), with the machine's ApplyMenu lines streamed as the
+// steps between them.
 func TestConfigAddErofsStreamsApplyMenuLines(t *testing.T) {
-	_, e, p, out, errOut := newErofsEnv(t)
+	_, e, p, out, errOut := newErofsEnvWith(t, fakeapi.Options{ConfigDelay: 300 * time.Millisecond})
 	ctx := context.Background()
 	if err := ConfigAddCmd(ctx, e, "", []string{"postgresql", "bun"}); err != nil {
 		t.Fatalf("add: %v\n%s", err, errOut.buf.String())
@@ -40,6 +46,20 @@ func TestConfigAddErofsStreamsApplyMenuLines(t *testing.T) {
 	got := out.buf.String()
 	if !strings.HasPrefix(got, "Added postgresql and bun to todo-app.\nApplied revision ") || strings.Contains(got, "Building") {
 		t.Fatalf("stdout:\n%s", got)
+	}
+	steps := errOut.buf.String()
+	last := -1
+	for _, want := range []string{"installing postgresql...\n", "✓ postgresql ready  ", "installing bun...\n", "✓ bun ready  "} {
+		i := strings.Index(steps, want)
+		if i < 0 || i < last {
+			t.Fatalf("step %q missing or out of order in:\n%s", want, steps)
+		}
+		last = i
+	}
+	for _, never := range []string{"Building", "Evaluating", "Fetching", "Switching", "nix ›"} {
+		if strings.Contains(steps, never) {
+			t.Fatalf("steps say %q:\n%s", never, steps)
+		}
 	}
 	if sel := menuOf(t, e, p.ID); len(sel) != 2 || sel[0].ID != "postgresql" || sel[1].ID != "bun" {
 		t.Fatalf("selection %+v", sel)
@@ -78,7 +98,7 @@ func TestConfigAddErofsRefusesNixAttribute(t *testing.T) {
 // line, and says nothing about the previous revision, since the items
 // before it stay installed.
 func TestConfigAddErofsFailure(t *testing.T) {
-	_, e, _, out, _ := newErofsEnv(t)
+	_, e, _, out, errOut := newErofsEnvWith(t, fakeapi.Options{ConfigDelay: 300 * time.Millisecond})
 	err := ConfigAddCmd(context.Background(), e, "", []string{"bun", fakeapi.FailMenuPackage})
 	if exitCode(err) != ExitBuildFailed {
 		t.Fatalf("got %v (exit %d)", err, exitCode(err))
@@ -86,6 +106,10 @@ func TestConfigAddErofsFailure(t *testing.T) {
 	got := out.buf.String()
 	if !strings.Contains(got, "error: ") || !strings.Contains(got, fakeapi.FailMenuPackage+" failed: ") || strings.Contains(got, "Nothing changed") {
 		t.Fatalf("stdout:\n%s", got)
+	}
+	steps := errOut.buf.String()
+	if !strings.Contains(steps, "✓ bun ready") || !strings.Contains(steps, fakeapi.FailMenuPackage+" failed: ") || strings.Contains(steps, "✓ "+fakeapi.FailMenuPackage) {
+		t.Fatalf("steps:\n%s", steps)
 	}
 }
 
