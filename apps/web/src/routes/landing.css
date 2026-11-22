@@ -7,7 +7,6 @@
  */
 
 :root:has(main.landing) {
-	scrollbar-gutter: auto !important;
 	overflow-x: clip;
 }
 :root:has(main.landing) body {
@@ -1068,29 +1067,6 @@ main.landing #pricing .hw-what {
 /* The phone has no wheel: no arc fragment behind the 01 heading. */
 .landing #agents .sw-mob-arc {
 	display: none;
-}
-
-/* ---------- The header, on the landing's phone ----------
-
-   The landing is where a phone visitor first meets the name, so below
-   sm the header keeps the word beside the mark, and Sign in is a quiet
-   32px link rather than a bordered button heavier than the logo. */
-@media (max-width: 639.98px) {
-	:root:has(main.landing) .site-header a[aria-label='repose, home'] > .sm\:hidden {
-		display: none;
-	}
-	:root:has(main.landing) .site-header a[aria-label='repose, home'] > .hidden {
-		display: inline;
-	}
-	:root:has(main.landing) .site-header nav .hk-btn-secondary {
-		min-width: 0;
-		height: 2rem;
-		min-height: 2rem;
-		padding-inline: 0.25rem;
-		border-color: transparent;
-		background: none;
-		color: var(--hk-text);
-	}
 }
 
 /* Below 1024px the pause control gets its own strip under the figure,
