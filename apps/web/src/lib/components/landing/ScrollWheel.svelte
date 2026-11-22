@@ -307,7 +307,7 @@
 
 				<div class="sw-copy-stack">
 					{#if step === 0}
-						<h2 class="hk-h2" id="where-h">Pick where each sandbox runs</h2>
+						<h2 class="hk-h2" id="where-h">Our cloud, or a machine you already have</h2>
 					{:else if step === 1}
 						<h2 class="hk-h2" id="where-h">Mix subscriptions and API keys</h2>
 					{:else}
@@ -379,7 +379,7 @@
 			<ol class="sw-mob-beats">
 				<li>
 					<div class="sw-mb-head">
-						<h3>Pick where each sandbox runs</h3>
+						<h3>Our cloud, or a machine you already have</h3>
 					</div>
 					{@render hardwareVisual()}
 				</li>

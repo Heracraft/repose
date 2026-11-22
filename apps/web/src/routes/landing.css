@@ -592,15 +592,9 @@ main.landing .plans .p-name {
 		min-width: 2.5rem;
 		min-height: 2.5rem;
 	}
+	/* Phones: a long command wraps after `/` (CodeCopy's <wbr>), never clips. */
 	.landing .steps .code-copy .line {
-		font-size: 0.8125rem;
-		white-space: pre;
-		overflow-x: auto;
-		overflow-wrap: normal;
-		scrollbar-width: none;
-	}
-	.landing .steps .code-copy wbr {
-		display: none;
+		font-size: 0.75rem;
 	}
 }
 @media (min-width: 1024px) and (max-width: 1199.98px) {

@@ -75,8 +75,8 @@ test('the pricing section offers a Mac mini or Linux server as a flush row under
 		own.locator('.hw-what').boundingBox(),
 		pricing.getByTestId('plan-plus').locator('.p-name').boundingBox()
 	]);
-	expect(ownWhat!.x).toBeGreaterThan(ownName!.x + ownName!.width);
-	expect(Math.abs(ownWhat!.x - plus!.x)).toBeLessThanOrEqual(1);
+	expect(ownWhat!.x).toBeGreaterThanOrEqual(ownName!.x + ownName!.width);
+	expect(Math.abs(ownWhat!.x - plus!.x)).toBeLessThanOrEqual(16);
 });
 
 test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {

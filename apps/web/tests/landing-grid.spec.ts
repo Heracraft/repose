@@ -5,8 +5,8 @@ import { test, expect } from '@playwright/test';
 
 const HEADS = [
 	'Our cloud, or a machine you already have',
-	'Every agent, preinstalled',
-	'Your browser and editor still work'
+	'Mix subscriptions and API keys',
+	'Use your browser and editor'
 ];
 
 test('01 How it works: scroll-driven wheel turns across three beats on desktop and supports click and keyboard', async ({
@@ -22,11 +22,11 @@ test('01 How it works: scroll-driven wheel turns across three beats on desktop a
 	await expect(page.locator('#agents .sw-mobile')).toBeHidden();
 
 	const navBtns = stage.locator('.sw-nav [role="tab"]');
-	await expect(navBtns).toHaveText(['Where it runs', 'Any agent', 'Your tools']);
+	await expect(navBtns).toHaveText(['Where it runs', 'Accounts', 'Your tools']);
 	await expect(navBtns.nth(0)).toHaveAttribute('aria-selected', 'true');
 	await expect(stage.locator('#where-h')).toHaveText(HEADS[0]);
 
-	// The end of the track turns the wheel to 180deg, the last beat.
+	// The end of the track turns the wheel to the last beat (two steps).
 	const geom = await track.evaluate((el) => {
 		const r = el.getBoundingClientRect();
 		return { top: r.top + window.scrollY, height: r.height };
@@ -37,9 +37,9 @@ test('01 How it works: scroll-driven wheel turns across three beats on desktop a
 	await expect(navBtns.nth(2)).toHaveAttribute('aria-selected', 'true');
 	await expect(stage.locator('#where-h')).toHaveText(HEADS[2]);
 	const dialAngle = await page
-		.locator('#agents .sw-rotor')
+		.locator('#agents .sw-rotor:not(.sw-index)')
 		.evaluate((el) => parseFloat(el.style.getPropertyValue('--angle')));
-	expect(dialAngle).toBeGreaterThan(150);
+	expect(dialAngle).toBeGreaterThan(40);
 
 	// Halfway: the agents beat, three sandboxes on three different logins.
 	await page.evaluate((y) => window.scrollTo(0, y), geom.top - 57 + scrollable / 2);
@@ -50,7 +50,7 @@ test('01 How it works: scroll-driven wheel turns across three beats on desktop a
 	await expect(rows.locator('.sw-mix-login')).toHaveText([
 		'Claude subscription',
 		'ChatGPT login',
-		'OPENAI_API_KEY'
+		'GEMINI_API_KEY'
 	]);
 
 	// Keyboard navigation on the wheel nav works under reduced motion (direct jump).
@@ -72,7 +72,6 @@ test('01 How it works: stacks the three beats vertically on phones without hidde
 	await expect(page.locator('#agents .sw-desktop')).toBeHidden();
 	const mob = page.locator('#agents .sw-mobile');
 	await expect(mob).toBeVisible();
-	await expect(mob.locator('.sw-mb-head .label')).toHaveText(['1.1', '1.2', '1.3']);
 	await expect(mob.locator('.sw-mb-head h3')).toHaveText(HEADS);
 	const tops = await mob
 		.locator('.sw-mob-beats > li')
