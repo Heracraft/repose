@@ -244,6 +244,13 @@ MenuSpec  { repeated MenuItem items; string revision_id; }
   names `erofs` and whose `hosts.arch` has an image in the base row, and a
   Nix project only on a host that names `nix` or names neither. A host
   that names `erofs` and not `nix` is never sent `Build`.
+- **Refusals.** Each is `invalid_argument`, decided before hostd touches
+  anything: `base_image` beside `system_closure`; a `base_image` on a host
+  that does not name `erofs`, and a `system_closure` or `Build` on one that
+  does not name `nix`; a `base_image` whose `version` is not a label, or
+  whose three files are not each a non-empty URL with a 64-hex-digit
+  digest; an `ApplyConfig` with both `system_closure` and `menu`, or with
+  the one the guest's runtime does not take.
 - **What an erofs guest does not take.** `Build` is never sent for one.
   hostd never registers store paths in it, so guestd's `RegisterPaths` and
   `Switch` answer `unimplemented` there (`vsock-guestd.md`).
@@ -595,4 +602,10 @@ stored as before (I-650).
 guests as structs, emits Samples on a ticker, completes Build after a
 configurable delay with a fake closure path, and can be told to fail any
 command with any error code. The api's tests and the CLI's end-to-end tests
-use it.
+use it. It names `nix` in `Hello.features` unless `Options.NoNix`, and
+`erofs` with `Options.Erofs`; it records each guest's `base_image` and
+`menu` (`Guest.BaseImage`, `Guest.BaseVersion`, `Guest.Menu`), reports
+`base_version` and `booted_base_version`, and refuses every shape in
+"erofs guests" "Refusals" with hostd's code. `SetMenuFail` fails menus:
+`ApplyConfig` answers the code, and a boot reports it as `menu_error` with
+the guest running (DECISIONS I-1458).

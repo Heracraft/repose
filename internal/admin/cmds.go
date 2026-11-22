@@ -498,16 +498,26 @@ func (e *Env) createProject(ctx context.Context, u *store.User, name, class stri
 	if host != nil {
 		params["host_id"] = host.ID.String()
 	}
+	// The environment's runtime (DECISIONS I-1462), as a create through
+	// the api gets.
+	runtime, err := store.DefaultGuestRuntime(ctx, e.pool)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	fragment := httpapi.DefaultFragment
+	if runtime == store.RuntimeErofs {
+		fragment = ""
+	}
 	var opID uuid.UUID
 	err = db.InTx(ctx, e.pool, func(tx db.Tx) error {
-		if _, err := tx.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, config_revision_id, disk_held_bytes) values ($1, $2, $3, $4, $5, 'creating', $6, $7, $8)", pid, u.ID, name, slug, class, scheduler.DefaultVolume(class), rid, billing.NewProjectHeldBytes); err != nil {
+		if _, err := tx.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes, config_revision_id, disk_held_bytes, guest_runtime) values ($1, $2, $3, $4, $5, 'creating', $6, $7, $8, $9)", pid, u.ID, name, slug, class, scheduler.DefaultVolume(class), rid, billing.NewProjectHeldBytes, runtime); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, pid, httpapi.DefaultFragment); err != nil {
+		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status) values ($1, $2, $3, 'building')", rid, pid, fragment); err != nil {
 			return err
 		}
 		var err error
-		opID, err = eng.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Params: params, Phases: ops.PlanCreate()}, false)
+		opID, err = eng.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Params: params, Phases: ops.PlanCreateFor(runtime)}, false)
 		return err
 	})
 	if err != nil {
@@ -1251,9 +1261,28 @@ func (e *Env) base(ctx context.Context, args []string) error {
 			fs.String("repo", "", "repository hosts clone bases from (default $REPOSE_BASE_REPO, else "+DefaultBaseRepo+")")
 			fs.String("branch", "main", "the branch the rev must be on")
 			fs.Bool("unverified-rev", false, "skip the repository check (the repository host is down); the rev must still be a full sha")
+			// --format erofs (DECISIONS I-1464): an Ubuntu image release.
+			fs.String("format", "nix", "nix (a nix/ revision) or erofs (an image release)")
+			for _, a := range []string{"amd64", "arm64"} {
+				fs.String(a+"-url", "", a+" rootfs.erofs URL")
+				fs.String(a+"-sha256", "", a+" rootfs.erofs SHA-256")
+				fs.String(a+"-kernel-url", "", a+" kernel URL")
+				fs.String(a+"-kernel-sha256", "", a+" kernel SHA-256")
+				fs.String(a+"-initramfs-url", "", a+" initramfs URL")
+				fs.String(a+"-initramfs-sha256", "", a+" initramfs SHA-256")
+			}
+			fs.String("kernel-version", "", "the image kernel's uname -r")
+			fs.String("manifest-url", "", "the release's manifest.json")
 		})
 		if err != nil {
 			return err
+		}
+		switch fs.Lookup("format").Value.String() {
+		case "nix":
+		case "erofs":
+			return e.publishErofs(ctx, fs)
+		default:
+			return fmt.Errorf("%w: --format is nix or erofs", ErrUsage)
 		}
 		rev := fs.Lookup("rev").Value.String()
 		if rev == "" {
@@ -1317,11 +1346,15 @@ func (e *Env) base(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		rows := [][]string{{"VERSION", "REV", "RELEASED", "SECURITY", "PROJECTS ON IT"}}
+		rows := [][]string{{"VERSION", "FORMAT", "REV", "RELEASED", "SECURITY", "PROJECTS ON IT"}}
 		for _, b := range bases {
 			var n int
 			_ = e.pool.QueryRow(ctx, "select count(*) from projects where base_version = $1 and destroyed_at is null", b.Version).Scan(&n)
-			rows = append(rows, []string{b.Version, b.NixRev, fmtTime(&b.ReleasedAt), strconv.FormatBool(b.Security), strconv.Itoa(n)})
+			rev := b.NixRev
+			if b.Format == "erofs" {
+				rev = strings.Join(b.Arches(), ",") // the arches it has images for
+			}
+			rows = append(rows, []string{b.Version, b.Format, rev, fmtTime(&b.ReleasedAt), strconv.FormatBool(b.Security), strconv.Itoa(n)})
 		}
 		e.table(rows)
 		return nil
@@ -1379,6 +1412,87 @@ func (e *Env) base(ctx context.Context, args []string) error {
 	}
 	return fmt.Errorf("%w: base %s", ErrUsage, args[0])
 }
+
+// publishErofs is `base publish --format erofs` (DECISIONS I-1464): every
+// file is fetched anonymously and its digest checked against the
+// release's SHA256SUMS and manifest before the row is written.
+func (e *Env) publishErofs(ctx context.Context, fs *flag.FlagSet) error {
+	get := func(n string) string { return strings.TrimSpace(fs.Lookup(n).Value.String()) }
+	version := get("version")
+	if version == "" {
+		var err error
+		if version, err = e.nextBaseVersion(ctx, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+	if !baseLabel.MatchString(version) {
+		return fmt.Errorf("%w: --version must match [A-Za-z0-9._-]{1,64}", ErrUsage)
+	}
+	kernel, manifestURL := get("kernel-version"), get("manifest-url")
+	if kernel == "" || manifestURL == "" {
+		return fmt.Errorf("%w: --format erofs needs --kernel-version and --manifest-url", ErrUsage)
+	}
+	arch := func(a string) []erofsFile {
+		return []erofsFile{
+			{a, get(a + "-url"), strings.ToLower(get(a + "-sha256"))},
+			{a + "-kernel", get(a + "-kernel-url"), strings.ToLower(get(a + "-kernel-sha256"))},
+			{a + "-initramfs", get(a + "-initramfs-url"), strings.ToLower(get(a + "-initramfs-sha256"))},
+		}
+	}
+	files := arch("amd64")
+	arm := arch("arm64")
+	anyArm := false
+	for _, f := range arm {
+		anyArm = anyArm || f.url != "" || f.sha256 != ""
+	}
+	if anyArm {
+		files = append(files, arm...)
+	}
+	if err := checkErofsFiles(ctx, files, manifestURL, version); err != nil {
+		return err
+	}
+	val := func(i int) any {
+		if i >= len(files) {
+			return nil
+		}
+		return files[i].url
+	}
+	sum := func(i int) any {
+		if i >= len(files) {
+			return nil
+		}
+		return files[i].sha256
+	}
+	changelog := get("changelog")
+	if strings.HasPrefix(changelog, "@") {
+		b, err := os.ReadFile(changelog[1:])
+		if err != nil {
+			return err
+		}
+		changelog = string(b)
+	}
+	security := get("security") == "true"
+	if _, err := e.pool.Exec(ctx, `insert into base_versions (version, nix_rev, changelog, security, format,
+		image_amd64_url, image_amd64_sha256, kernel_amd64_url, kernel_amd64_sha256, initramfs_amd64_url, initramfs_amd64_sha256,
+		image_arm64_url, image_arm64_sha256, kernel_arm64_url, kernel_arm64_sha256, initramfs_arm64_url, initramfs_arm64_sha256,
+		kernel_version, manifest_url)
+		values ($1, '', $2, $3, 'erofs', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		version, changelog, security, val(0), sum(0), val(1), sum(1), val(2), sum(2), val(3), sum(3), val(4), sum(4), val(5), sum(5), kernel, manifestURL); err != nil {
+		return err
+	}
+	arches := "amd64"
+	if anyArm {
+		arches = "amd64,arm64"
+	}
+	if _, err := e.audited(ctx, "base_publish", version, map[string]any{"format": "erofs", "arches": arches, "kernel_version": kernel, "security": security}); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(e.Stdout, "base %s (erofs, %s, kernel %s) published; unheld erofs projects boot it at their next start\n", version, arches, kernel)
+	return nil
+}
+
+// baseLabel is a base_versions label (grpc-hostd.md Build.base_version).
+var baseLabel = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {

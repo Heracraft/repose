@@ -685,3 +685,7 @@ guest-raised events an hour together with the ones hostd relays over vsock
 `internal/fakes/api`: an `httptest.Server` implementing every route above
 with an in-memory store, deterministic ids, and a switch to make any route
 return any error code. The CLI and dashboard tests run against it.
+`guest_runtime` and `pending_base_version` (I-1462) are served on every
+`Project`; `SetDefaultGuestRuntime` stands for the setting and
+`SetPendingBase` for the base bump. A create's `guest_runtime` and a
+`{fragment}` on an erofs project are refused as the api refuses them.

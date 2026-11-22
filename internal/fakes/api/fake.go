@@ -165,6 +165,8 @@ type Fake struct {
 	hostInstall    string
 	hostInstallSet bool
 	hostLimit      *int
+	// defaultRuntime is settings.default_guest_runtime (I-1462); "" is nix.
+	defaultRuntime string
 	gatewayCerts   int // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
@@ -435,6 +437,8 @@ var statusOf = map[string]int{
 	"rate_limited":     http.StatusTooManyRequests,
 	"internal":         http.StatusInternalServerError,
 	"billing_disabled": http.StatusServiceUnavailable,
+	// A Nix file sent to an erofs machine (I-1462).
+	"nix_config_retired": http.StatusConflict,
 }
 
 func errf(code, format string, args ...any) *apiError {

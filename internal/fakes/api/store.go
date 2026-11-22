@@ -66,6 +66,10 @@ type Project struct {
 	// Placement is where the machine goes when it is placed, own or
 	// hosted (I-1366).
 	Placement string `json:"placement"`
+	// GuestRuntime is nix or erofs and PendingBaseVersion the erofs base
+	// the next start boots, null when none (I-1462).
+	GuestRuntime       string  `json:"guest_runtime"`
+	PendingBaseVersion *string `json:"pending_base_version"`
 }
 
 // Idle is Project.idle.

@@ -61,6 +61,12 @@ type Guest struct {
 	// BurstDenied is the api's withdrawal of this guest's burst, which
 	// hostd keeps and reports in Hello (DECISIONS I-1128).
 	BurstDenied bool
+	// BaseVersion and BaseImage are the erofs base the guest boots, and
+	// Menu the menu it last applied (DECISIONS I-1458); empty and nil
+	// for a Nix guest.
+	BaseVersion string
+	BaseImage   *hostdv1.BaseImage
+	Menu        *hostdv1.MenuSpec
 }
 
 // Options tune the fake.
@@ -91,6 +97,15 @@ type Options struct {
 	// it the fake answers SetBurst invalid_argument, as a hostd that
 	// does not burst does.
 	Burst bool
+	// Erofs puts `erofs` in Hello's features and makes this fake take a
+	// BaseImage, as a host that runs erofs guests does (DECISIONS
+	// I-1458). NoNix leaves `nix` out, as an erofs-only appliance does,
+	// and refuses Build and a closure.
+	Erofs bool
+	NoNix bool
+	// Arch is Hello.arch (x86_64, aarch64), which placement matches an
+	// erofs base's images against (I-1448, I-1464); "" sends none.
+	Arch string
 }
 
 // Fake is one fake host.
@@ -129,6 +144,9 @@ type Fake struct {
 	sayReplaced bool
 	sayFailCode string
 	sayFailMsg  string
+	// menuFailCode and menuFailMsg fail every menu (SetMenuFail).
+	menuFailCode string
+	menuFailMsg  string
 }
 
 // Reboot models a host restart under hostd (DECISIONS I-645): the boot id
@@ -374,7 +392,7 @@ func (f *Fake) SetPoolUnavailable(down bool) {
 func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID}
+	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID, Arch: f.opts.Arch}
 	if !f.opts.NoClone {
 		h.Features = append(h.Features, "local_clone")
 	}
@@ -384,6 +402,12 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	if f.opts.Burst {
 		h.Features = append(h.Features, "burst")
 	}
+	if !f.opts.NoNix {
+		h.Features = append(h.Features, "nix")
+	}
+	if f.opts.Erofs {
+		h.Features = append(h.Features, "erofs")
+	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
 	}
@@ -391,7 +415,7 @@ func (f *Fake) Hello() *hostdv1.Hello {
 		h.HostBootAt = f.bootAt.Unix()
 	}
 	for _, g := range f.guests {
-		gs := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure}
+		gs := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure, BaseVersion: g.BaseVersion}
 		if g.Resting {
 			// Reconciled from bbolt and the hypervisor's vm.info, so the
 			// marker survives a hostd or api restart (I-818).
@@ -618,6 +642,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		return g, nil
 	}
+	if r := f.refuseShape(id, cmd); r != nil {
+		return r
+	}
 	switch c := cmd.Cmd.(type) {
 	case *hostdv1.Command_CreateGuest:
 		f.mu.Lock()
@@ -633,6 +660,11 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		g := &Guest{GuestID: c.CreateGuest.GuestId, ProjectID: c.CreateGuest.ProjectId, Class: c.CreateGuest.Class, State: "creating",
 			IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.CreateGuest.SystemClosure, Secrets: map[string][]byte{},
 			ProjectJSON: c.CreateGuest.ProjectJson}
+		var menuErr *hostdv1.Error
+		if bi := c.CreateGuest.GetBaseImage(); bi != nil {
+			g.BaseImage, g.BaseVersion, g.Menu = bi, bi.Version, c.CreateGuest.GetMenu()
+			menuErr = f.menuError(g.Menu)
+		}
 		for _, s := range c.CreateGuest.Secrets {
 			g.Secrets[s.Name] = s.Value
 		}
@@ -651,7 +683,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "running", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true)}}
+			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true), MenuError: menuErr}}
 		})
 	case *hostdv1.Command_StartGuest:
 		f.mu.Lock()
@@ -668,6 +700,12 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			}
 			if c.StartGuest.Class != "" {
 				g.Class = c.StartGuest.Class // I-260, as hostd
+			}
+			if bi := c.StartGuest.GetBaseImage(); bi != nil {
+				g.BaseImage, g.BaseVersion = bi, bi.Version // a new base boots and is recorded (I-1458)
+			}
+			if m := c.StartGuest.GetMenu(); m != nil && g.BaseVersion != "" {
+				g.Menu = m
 			}
 			// A start delivers the current set, as CreateGuest does.
 			g.Secrets = make(map[string][]byte, len(c.StartGuest.Secrets))
@@ -704,11 +742,16 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			f.setState(g, "running", "")
 		}
 		f.mu.Lock()
-		booted := g.Closure
+		booted, base := g.Closure, g.BaseVersion
+		var menuErr *hostdv1.Error
+		if base != "" {
+			menuErr = f.menuError(c.StartGuest.GetMenu())
+		}
 		f.mu.Unlock()
 		return ok(func(r *hostdv1.Result) {
 			// As hostd since I-720: every start reports the guest's address.
-			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false), GuestIp: g.IP, VsockCid: g.CID}}
+			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false), GuestIp: g.IP, VsockCid: g.CID,
+				BootedBaseVersion: base, MenuError: menuErr}}
 		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()
@@ -803,6 +846,23 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			f.mu.Unlock()
 			return unresponsive(id, g)
 		}
+		if e == nil && (g.BaseVersion != "") != (c.ApplyConfig.GetMenu() != nil) {
+			// An erofs guest takes a menu and a Nix guest a closure
+			// (I-1458); the other is refused, as hostd refuses it.
+			f.mu.Unlock()
+			return errResult(id, "invalid_argument", "apply_config: this guest's runtime takes the other field")
+		}
+		if e == nil && c.ApplyConfig.GetMenu() != nil {
+			code, msg := f.menuFailCode, f.menuFailMsg
+			if code == "" {
+				g.Menu = c.ApplyConfig.GetMenu()
+			}
+			f.mu.Unlock()
+			if code != "" {
+				return errResult(id, code, msg)
+			}
+			return ok(func(r *hostdv1.Result) { r.Payload = &hostdv1.Result_Apply{Apply: &hostdv1.ApplyResult{}} })
+		}
 		needsReboot := e == nil && f.opts.KernelChanged && g.Closure != c.ApplyConfig.SystemClosure && !c.ApplyConfig.ForceReboot
 		if console, bad := f.bad[c.ApplyConfig.SystemClosure]; e == nil && bad && g.State == "running" && c.ApplyConfig.ForceReboot {
 			// The forced reboot fell back to the closure it ran (I-590).
@@ -864,6 +924,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		f.nextIP++
 		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure, ProjectJSON: c.Restore.ProjectJson, ClonedFrom: from}
+		if bi := c.Restore.GetBaseImage(); bi != nil {
+			g.BaseImage, g.BaseVersion = bi, bi.Version
+		}
 		f.guests[g.GuestID] = g
 		f.mu.Unlock()
 		f.setState(g, "restoring", "")

@@ -1096,7 +1096,14 @@ func (e *Engine) SetFleetPolicy(f FleetPolicy) { e.fleet = f }
 // project asked for, and whether its plan sells fleet memory
 // (DECISIONS I-1366).
 func (e *Engine) target(ctx context.Context, q store.Querier, p *store.Project) (scheduler.Target, error) {
-	t := scheduler.Target{Account: p.UserID, Hosted: p.Placement == "hosted", Fleet: true}
+	t := scheduler.Target{Account: p.UserID, Hosted: p.Placement == "hosted", Fleet: true, Runtime: store.NormalizeRuntime(p.GuestRuntime)}
+	if t.Runtime == store.RuntimeErofs {
+		arches, err := ErofsHostArches(ctx, q)
+		if err != nil {
+			return t, err
+		}
+		t.Arches = arches
+	}
 	if e.fleet == nil {
 		return t, nil
 	}

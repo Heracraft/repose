@@ -451,7 +451,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	p := &project{
 		Project: Project{
 			ID: f.nextID(), Name: name, Slug: slug, RemoteURL: remoteURL, Class: class,
-			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux, Placement: "own",
+			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux, Placement: "own", GuestRuntime: "nix",
 			VolumeBytes: classes[class], DiskUsedBytes: 1 << 30, CreatedAt: now,
 			RootUsedBytes: 1 << 30, RootSizeBytes: classes[class] - classes[class]/40,
 		},
@@ -496,8 +496,14 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		Multiplexer *string `json:"multiplexer"`
 		// Placement is own (the default) or hosted (I-1366).
 		Placement *string `json:"placement"`
+		// GuestRuntime is nix or erofs (I-1462).
+		GuestRuntime *string `json:"guest_runtime"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
+		return e
+	}
+	runtime, e := f.createRuntime(body.GuestRuntime)
+	if e != nil {
 		return e
 	}
 	if body.Multiplexer != nil {
@@ -553,6 +559,7 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		return e
 	}
 	p.Placement = placement
+	p.GuestRuntime = runtime
 	if ownHostID != "" {
 		p.HostID, p.HostName = ownHostID, f.ownedHostName(ownHostID)
 	}
@@ -1270,6 +1277,10 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	if p.State == "stopping" {
 		// The api's refusal while a stop op is open.
 		return errf("conflict", "%s is %s", p.Slug, p.State)
+	}
+	if body.Fragment != nil && p.GuestRuntime == "erofs" {
+		// An erofs machine takes a menu only (I-1462).
+		return errf("nix_config_retired", "%s", MsgNixConfigRetired).withDetail(map[string]any{"reason": "nix_config_retired"})
 	}
 	var fragment string
 	var menuRaw json.RawMessage
