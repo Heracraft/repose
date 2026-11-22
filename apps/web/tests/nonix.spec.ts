@@ -225,3 +225,51 @@ test('a failed install is said at the Apply bar, in view', async ({ page }) => {
 	await expect(page.locator('.cbar-status')).toContainText('Applied', { timeout: 10_000 });
 	await expect(page.locator('.cbar-status')).toBeInViewport();
 });
+
+// Council finding 5 (D3): a reload, or back then forward, during an
+// install shows the running install again, not an idle page with Apply.
+test('a reload or back and forward during an install shows it again', async ({ page }) => {
+	const p = await makeProject('ubuntu-reload', 'erofs');
+	let hold = true;
+	const released: (() => void)[] = [];
+	// The op reads as running, and its log stays open, until released.
+	await page.route(
+		(url) => /\/ops\/[^/]+$/.test(url.pathname),
+		async (route) => {
+			if (!hold) return route.fallback();
+			const res = await route.fetch();
+			const body = await res.json();
+			await route.fulfill({ response: res, json: { ...body, state: 'running', phase: 'apply_config' } });
+		}
+	);
+	await page.route(
+		(url) => /\/ops\/[^/]+\/log$/.test(url.pathname),
+		async (route) => {
+			if (hold) await new Promise<void>((r) => released.push(r));
+			await route.fallback();
+		}
+	);
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByText('Memcached', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	const status = page.locator('.cbar-status');
+	await expect(status).toContainText('Installing…');
+
+	await page.reload();
+	await expect(status).toContainText('Installing…');
+	await expect(page.getByRole('button', { name: /Apply/ })).toBeDisabled();
+	await shots(page, 'config-install-resumed', status);
+
+	await page.goto(`/projects/${p.id}`);
+	await page.goBack();
+	await expect(status).toContainText('Installing…');
+	await page.goForward();
+	await page.goBack();
+	await expect(status).toContainText('Installing…');
+
+	hold = false;
+	for (const r of released.splice(0)) r();
+	await page.reload();
+	await expect(status).not.toContainText('Installing…', { timeout: 10_000 });
+	await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+});

@@ -165,8 +165,41 @@
 		}
 	}
 
+	// The op an Apply started, kept for this tab (I-1516): a reload, or
+	// back then forward, finds it and shows it again while it runs, so the
+	// page never offers Apply over an install already under way.
+	const opKey = `repose-config-op:${id}`;
+	function rememberOp(opId: string | undefined) {
+		try {
+			if (opId) sessionStorage.setItem(opKey, opId);
+			else sessionStorage.removeItem(opKey);
+		} catch {
+			// Storage refused (a private window): the page works without it.
+		}
+	}
+	async function resumeOp() {
+		let opId: string | null = null;
+		try {
+			opId = sessionStorage.getItem(opKey);
+		} catch {
+			return;
+		}
+		if (!opId || currentOpId) return;
+		try {
+			const op = await getOp(id, opId);
+			if (op.state === 'running' || op.state === 'pending') {
+				applying = true;
+				startBuild(opId);
+				return;
+			}
+		} catch {
+			// Gone or unreadable: nothing to show again.
+		}
+		rememberOp(undefined);
+	}
+
 	onMount(() => {
-		void load();
+		void load().then(resumeOp);
 		// The Apply bar holds the page's primary: the header's Start draws
 		// secondary while this tab is open.
 		ctx.holdPrimary = true;
@@ -240,6 +273,7 @@
 	function startBuild(opId: string) {
 		outcome = undefined;
 		currentOpId = opId;
+		rememberOp(opId);
 		buildLines = [];
 		buildDone = false;
 		buildError = undefined;
@@ -255,6 +289,7 @@
 			};
 			es.addEventListener('done', async () => {
 				es.close();
+				rememberOp(undefined);
 				buildDone = true;
 				applying = false;
 				let ended: typeof outcome = undefined;
