@@ -11,15 +11,18 @@ dst=/var/lib/repose-staging/guest/guest-$v
 for f in vmlinuz initramfs.img rootfs.erofs manifest.json; do test -s "$src/$f" || { echo "missing $src/$f" >&2; exit 1; }; done
 # The modes sshd's StrictModes and a multi-user guest need, read from the
 # artifact itself (2026.11.22.5 and .6 shipped /etc 0775).
-EU=/nix/store/r80xfvq46alb3fqbka1v0c0h1mphlah4-erofs-utils-1.9.4
-[ -x $EU/bin/dump.erofs ] || EU=$(nix build --no-link --print-out-paths nixpkgs#erofs-utils | tail -1)
+# erofs-mode.py reads the raw inode mode: dump.erofs masks Access to 0777
+# and cannot show a sticky or setuid bit.
 bad=0
-for pm in /:0755 /etc:0755 /etc/ssh:0755 /usr:0755 /tmp:1777; do
-	p=${pm%%:*} want=${pm##*:}
-	got=$($EU/bin/dump.erofs --path="$p" "$src/rootfs.erofs" 2>&1 | sed -n 's/.*Access: \([0-7]*\)\/.*/\1/p')
-	echo "mode $p $got (want $want)"
-	[ "$got" = "$want" ] || bad=1
-done
+while read -r p got own; do
+	case $p in
+	/tmp|/var/tmp) want=1777 ;;
+	/usr/bin/sudo) want=4755 ;;
+	*) want=0755 ;;
+	esac
+	echo "mode $p $got owner $own (want $want 0:0)"
+	[ "$got" = "$want" ] && [ "$own" = "0:0" ] || bad=1
+done < <(python3 /mnt/nixstore/tmp/stg-cp/erofs-mode.py "$src/rootfs.erofs" / /etc /etc/ssh /usr /tmp /var/tmp /usr/bin/sudo)
 [ $bad = 0 ] || { [ "${FORCE:-0}" = 1 ] || { echo "refusing to stage: wrong modes (FORCE=1 to stage anyway)" >&2; exit 1; }; }
 ssh $S stg-edge "mkdir -p $dst"
 for f in vmlinuz initramfs.img manifest.json rootfs.erofs; do scp $S -q "$src/$f" "stg-edge:$dst/amd64-$f"; done
