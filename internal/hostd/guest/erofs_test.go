@@ -210,6 +210,20 @@ func TestCreateBadBundleLeavesNothing(t *testing.T) {
 	}
 }
 
+// A stop with snapshot_first reports the base the snapshot was taken on.
+func TestStopSnapshotFirstReportsBase(t *testing.T) {
+	h := newHarness(t, nil)
+	h.mustOK(cmd(h.erofsCreate(gid1, "v1", nil)))
+	st := h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1, SnapshotFirst: true})).GetStop()
+	if st.BlobPath == "" || st.BaseVersion != "v1" {
+		t.Fatalf("stop result %+v", st)
+	}
+	h.create(gid2)
+	if st := h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid2, SnapshotFirst: true})).GetStop(); st.BaseVersion != "" {
+		t.Fatalf("Nix stop result names a base: %+v", st)
+	}
+}
+
 // Stop and start of an erofs guest on the same base: the boot replays
 // the menu with replay_after_base_upgrade, guestd finds nothing to do,
 // and nothing Nix runs; resize names vdb.
@@ -426,6 +440,20 @@ func TestSnapshotRestoreForkCarryTheBase(t *testing.T) {
 	snap := h.mustOK(cmd(&hostdv1.Snapshot{GuestId: gid1, Reason: "manual"})).GetSnapshot()
 	if meta := h.blob.Meta[snap.BlobPath]; meta["base_version"] != "v1" {
 		t.Fatalf("blob meta %v", meta)
+	}
+	if snap.BaseVersion != "v1" {
+		t.Fatalf("SnapshotResult.base_version %q", snap.BaseVersion)
+	}
+	var done *hostdv1.SnapshotDone
+	h.rec.mu.Lock()
+	for _, e := range h.rec.events {
+		if d := e.GetSnapshotDone(); d != nil && d.BlobPath == snap.BlobPath {
+			done = d
+		}
+	}
+	h.rec.mu.Unlock()
+	if done == nil || done.BaseVersion != "v1" {
+		t.Fatalf("SnapshotDone %+v", done)
 	}
 	const gid3 = "0192f0a3-3333-7000-8000-000000000003"
 	r := &hostdv1.Restore{ProjectId: "proj-0192f0a3", GuestId: gid3, BlobPath: snap.BlobPath, Sha256: snap.Sha256, Class: "large", VolumeBytes: 40 << 30, BaseImage: h.baseImage("v2")}
