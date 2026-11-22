@@ -74,3 +74,50 @@ func parseRO(out string) map[string]string {
 	}
 	return ro
 }
+
+// storeProbe is what the store row reads inside an erofs guest: the
+// read-only base's mount, writes into it as dev and as root, and whether
+// a root write under /usr reached the base image.
+type storeProbe struct {
+	Mount         string // findmnt -no FSTYPE,OPTIONS /run/repose/ro
+	DirExists     bool
+	DevWrite      string
+	DevWriteCode  int
+	RootWrite     string
+	RootWriteCode int
+	UsrInBase     bool // /run/repose/ro/usr/<probe> existed after a root write to /usr/<probe>
+}
+
+// erofsStoreVerdict is the store row on an erofs guest: the base at
+// /run/repose/ro is an erofs mounted read-only, writes into it as dev and
+// as root fail as read-only (a missing directory is not evidence of
+// anything), and a root write under /usr, which the overlay's upper
+// directory takes by design, does not reach the base image.
+func erofsStoreVerdict(p storeProbe) error {
+	f := strings.Fields(p.Mount)
+	if len(f) < 2 || f[0] != "erofs" {
+		return fmt.Errorf("/run/repose/ro is not an erofs mount: %q", p.Mount)
+	}
+	if !slices.Contains(strings.Split(f[1], ","), "ro") {
+		return fmt.Errorf("/run/repose/ro is not mounted read-only: %q", p.Mount)
+	}
+	if !p.DirExists {
+		return fmt.Errorf("/run/repose/ro does not exist in the guest, so a refused write there proves nothing")
+	}
+	for _, w := range []struct {
+		who  string
+		out  string
+		code int
+	}{{"dev", p.DevWrite, p.DevWriteCode}, {"root", p.RootWrite, p.RootWriteCode}} {
+		if w.code == 0 {
+			return fmt.Errorf("a write into /run/repose/ro as %s succeeded: %s", w.who, strings.TrimSpace(w.out))
+		}
+		if !readOnlyRefusal(w.out) {
+			return fmt.Errorf("a write into /run/repose/ro as %s failed, but not as read-only (exit %d): %s", w.who, w.code, strings.TrimSpace(w.out))
+		}
+	}
+	if p.UsrInBase {
+		return fmt.Errorf("a root write under /usr reached the base image at /run/repose/ro/usr")
+	}
+	return nil
+}

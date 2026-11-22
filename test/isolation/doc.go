@@ -35,8 +35,8 @@
 //	PROJECT_A,       project ids
 //	PROJECT_B
 //	LOKI_URL         optional; the console-log test also queries Loki
-//	A_RUNTIME        nix or erofs; optional, the disk row reads guest A's
-//	                 runtime from the guest when unset
+//	A_RUNTIME        nix or erofs; optional, the disk and store rows read
+//	                 guest A's runtime from the guest when unset
 //	DIRECT_SSH       set to 1 to run the direct-to-guest sshd test from the
 //	                 host (needs the runbook's temporary input rule)
 //
@@ -46,5 +46,5 @@
 //
 // Run only the CI-level policy tests (no host):
 //
-//	go test ./test/isolation/ -run 'Policy|ProcSample|WatchList|Credentials|DiskVerdict|SeesOneDiskFixture' -v
+//	go test ./test/isolation/ -run 'Policy|ProcSample|WatchList|Credentials|Verdict|Fixture' -v
 package isolation

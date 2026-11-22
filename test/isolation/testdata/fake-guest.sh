@@ -14,6 +14,20 @@ case "$script" in
     echo "dd: failed to open '/dev/vda': Read-only file system"; exit 1 ;;
   *"test -e /dev/vg-guests"*)
     exit 1 ;;
+  *"findmnt -no FSTYPE,OPTIONS /run/repose/ro"*)
+    echo "erofs ro,relatime,user_xattr,acl,cache_strategy=readaround" ;;
+  *"test -d /run/repose/ro"*)
+    exit 0 ;;
+  *"touch /usr/"*)
+    exit 1 ;;  # the write lands in the overlay's upper; the base has no probe
+  *"touch /run/repose/ro/"*)
+    echo "touch: cannot touch '/run/repose/ro/repose-isolation-probe': Read-only file system"; exit 1 ;;
+  *"/nix/store"*|*"/nix/.ro-store"*)
+    [ "$FAKE_RUNTIME" = nix ] || { echo "No such file or directory"; exit 1; }
+    case "$script" in
+      *"ls -A"*) echo; echo 0 ;;
+      *) echo "Read-only file system"; exit 1 ;;
+    esac ;;
   *)
     echo "fake guest: no answer for: $script" >&2; exit 2 ;;
 esac

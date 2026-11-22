@@ -9,8 +9,32 @@ import (
 // Row: guest cannot write the store. Mechanism: virtiofsd (unprivileged,
 // namespace sandbox) serves a read-only bind of the store with `.links`
 // masked by an empty tmpfs; the guest mounts the tag read-only.
+//
+// An erofs guest has no /nix/store, so the Nix check passed there because
+// the path was missing (DECISIONS I-1480): its row is erofsStoreVerdict
+// on /run/repose/ro, the read-only base image.
 func TestGuestCannotWriteStore(t *testing.T) {
 	need(t, "EXEC_A")
+	if guestRuntime(t) == runtimeErofs {
+		const probe = "repose-isolation-probe"
+		p := storeProbe{}
+		m := inA(t, "findmnt -no FSTYPE,OPTIONS /run/repose/ro")
+		mustSucceed(t, m, "findmnt /run/repose/ro in A")
+		p.Mount = strings.TrimSpace(m.out)
+		p.DirExists = inA(t, "test -d /run/repose/ro").code == 0
+		w := inA(t, "touch /run/repose/ro/"+probe+" 2>&1")
+		p.DevWrite, p.DevWriteCode = w.out+w.err, w.code
+		w = inA(t, "sudo -n touch /run/repose/ro/"+probe+" 2>&1")
+		p.RootWrite, p.RootWriteCode = w.out+w.err, w.code
+		// The overlay's upper takes this write by design; the base must not.
+		u := inA(t, "sudo -n touch /usr/"+probe+"; test -e /run/repose/ro/usr/"+probe+"; r=$?; sudo -n rm -f /usr/"+probe+"; exit $r")
+		p.UsrInBase = u.code == 0
+		if err := erofsStoreVerdict(p); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("base %s; writes refused: dev %q, root %q", p.Mount, strings.TrimSpace(p.DevWrite), strings.TrimSpace(p.RootWrite))
+		return
+	}
 	mustFail(t, inA(t, "touch /nix/store/repose-isolation-probe"), "touch /nix/store as dev")
 	mustFail(t, inA(t, "sudo -n touch /nix/.ro-store/repose-isolation-probe"), "touch the virtio-fs share as root")
 	mustFail(t, inA(t, "sudo -n sh -c 'echo x > /nix/.ro-store/.links/repose-isolation-probe'"), "write under .links")
@@ -31,12 +55,7 @@ func TestGuestCannotWriteStore(t *testing.T) {
 // REPOSE_ISOLATION_A_RUNTIME (nix or erofs) overrides it.
 func TestGuestSeesOneDisk(t *testing.T) {
 	need(t, "EXEC_A")
-	rt := env("A_RUNTIME")
-	if rt == "" {
-		r := inA(t, "if mountpoint -q /run/repose/rw; then echo erofs; else echo nix; fi")
-		mustSucceed(t, r, "runtime probe in A")
-		rt = strings.TrimSpace(r.out)
-	}
+	rt := guestRuntime(t)
 	// zram (the guest's swap), loop and ram devices are the guest's own
 	// kernel, not something the hypervisor exposed; the row is about block
 	// devices reaching the guest from the host (host-01 showed [zram0 vda]).
@@ -57,4 +76,17 @@ func TestGuestSeesOneDisk(t *testing.T) {
 	}
 	mustFail(t, inA(t, "test -e /dev/vg-guests"), "host volume group visible in A")
 	t.Logf("runtime %s, guest disks %v, RO %v", rt, p.Disks, p.RO)
+}
+
+// guestRuntime is guest A's runtime: REPOSE_ISOLATION_A_RUNTIME, or read
+// inside the guest (an erofs guest has its volume mounted at
+// /run/repose/rw).
+func guestRuntime(t *testing.T) string {
+	t.Helper()
+	if rt := env("A_RUNTIME"); rt != "" {
+		return rt
+	}
+	r := inA(t, "if mountpoint -q /run/repose/rw; then echo erofs; else echo nix; fi")
+	mustSucceed(t, r, "runtime probe in A")
+	return strings.TrimSpace(r.out)
 }

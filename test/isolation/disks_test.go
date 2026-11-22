@@ -54,3 +54,56 @@ func TestGuestSeesOneDiskFixture(t *testing.T) {
 		})
 	}
 }
+
+// The store row on an erofs guest (DECISIONS I-1480): the base image at
+// /run/repose/ro is an erofs mounted read-only, a write into it fails as
+// read-only (never because the path is missing, which is how the Nix
+// check passed on an erofs guest for the wrong reason), and a root write
+// under /usr lands in the overlay's upper directory, not in the base.
+func TestErofsStoreVerdict(t *testing.T) {
+	ro := "touch: cannot touch '/run/repose/ro/repose-isolation-probe': Read-only file system"
+	good := storeProbe{Mount: "erofs ro,relatime,user_xattr,acl", DirExists: true, DevWrite: ro, DevWriteCode: 1, RootWrite: ro, RootWriteCode: 1}
+	for _, c := range []struct {
+		name string
+		mut  func(p *storeProbe)
+		bad  string
+	}{
+		{"read-only base", func(*storeProbe) {}, ""},
+		{"missing directory", func(p *storeProbe) {
+			p.DirExists = false
+			p.DevWrite = "touch: cannot touch '/run/repose/ro/x': No such file or directory"
+			p.RootWrite = p.DevWrite
+		}, "does not exist"},
+		{"ENOENT not EROFS", func(p *storeProbe) { p.RootWrite = "No such file or directory" }, "not as read-only"},
+		{"permission not EROFS", func(p *storeProbe) { p.DevWrite = "Permission denied" }, "not as read-only"},
+		{"root write went through", func(p *storeProbe) { p.RootWriteCode = 0; p.RootWrite = "" }, "succeeded"},
+		{"mounted rw", func(p *storeProbe) { p.Mount = "erofs rw,relatime" }, "not mounted read-only"},
+		{"not erofs", func(p *storeProbe) { p.Mount = "ext4 ro,relatime" }, "not an erofs"},
+		{"usr reached the base", func(p *storeProbe) { p.UsrInBase = true }, "reached the base image"},
+	} {
+		p := good
+		c.mut(&p)
+		err := erofsStoreVerdict(p)
+		switch {
+		case c.bad == "" && err != nil:
+			t.Errorf("%s: %v", c.name, err)
+		case c.bad != "" && (err == nil || !strings.Contains(err.Error(), c.bad)):
+			t.Errorf("%s: got %v, want an error with %q", c.name, err, c.bad)
+		}
+	}
+}
+
+// The store row's own test through the fixture guest of each runtime.
+func TestGuestCannotWriteStoreFixture(t *testing.T) {
+	script, err := filepath.Abs("testdata/fake-guest.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rt := range []string{runtimeNix, runtimeErofs} {
+		t.Run(rt, func(t *testing.T) {
+			t.Setenv("FAKE_RUNTIME", rt)
+			t.Setenv(envPrefix+"EXEC_A", script)
+			TestGuestCannotWriteStore(t)
+		})
+	}
+}
