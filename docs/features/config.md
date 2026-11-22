@@ -236,15 +236,17 @@ Applying (DECISIONS R3-3):
   dashboard's Revisions list re-applies an earlier one, which rebuilds
   nothing while its closure is still a GC root.
 
-Base bumps (DECISIONS R4-5):
+Base bumps (DECISIONS R4-5, I-1454):
 
 - The platform releases a new base version weekly, sooner for security
   fixes. The api sweeps daily at 04:00 UTC, and within ten minutes of a
-  security release (`internal/api/basebump`). Every project not holding
-  gets its fragment rebuilt against the new base and switched in place.
-  If that needs a reboot, the revision stays `built` and takes effect at
-  the project's next `stop`/`start`; the `base_updated` event says so. No
-  forced overnight reboot is built.
+  security release (`internal/api/basebump`). Every running project not
+  holding gets its fragment rebuilt against the new base (or reuses an
+  identical closure already built on its host) and switched in place. A
+  stopped project is skipped by the sweep and updated on its next
+  `start`. If a running guest's update needs a reboot, the revision stays
+  `built` and takes effect at the project's next `stop`/`start`; the
+  `base_updated` event says so. No forced overnight reboot is built.
 - A rebuild against a new base that fails does not change the project; it
   raises a `base_update_failed` event with the error. A base that breaks
   a fragment is usually the platform's bug.
