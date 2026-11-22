@@ -3648,7 +3648,16 @@ drain).
    the last `stop`) is lost; say so when you tell them, since nothing
    emails it. Tenants' git remotes hold
    whatever their agents pushed.
-3. `repose-admin hosts retire host-NN`; `tofu apply` with it removed.
+3. A project nobody restores is destroyed without the host:
+   `repose-admin projects destroy <id>`, or the owner's `repose rm`. The
+   op sends nothing, finishes at once, and logs `guest_destroy` with
+   `host_gone: true`; the row is `destroyed`, and a snapshot the host
+   kept on its own disk (an owned host) is marked `gone_with_host`
+   (DECISIONS I-1548). Snapshots in the blob store stay. A destroy that
+   failed `host_unreachable` before the host was marked lost or retired
+   is run again by the engine on its own; `repose-admin projects show`
+   then reads `destroyed`.
+4. `repose-admin hosts retire host-NN`; `tofu apply` with it removed.
 
 ## Retiring a host once its projects are moved
 
