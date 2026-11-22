@@ -622,8 +622,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	if !skipSync && !opts.NoSync && !homeRun && target.Checkout == "" && checkout != nil {
 		e.addSecondMachineRemote(project, *checkout)
 	}
-	// The checkout's repose.nix is the machine's configuration (I-489).
-	if !skipSync && !opts.NoSync && !homeRun {
+	// The checkout's repose.nix is the machine's configuration (I-489),
+	// on a Nix machine only: an erofs one takes no Nix file, so the run
+	// and the sync leave it unsent and say nothing (I-1488).
+	if !skipSync && !opts.NoSync && !homeRun && !isErofs(project) {
 		e.applyRepoConfig(ctx, project, gitRepoRoot(e.Cwd), opts.Temp > 0 || project.ExpiresAt != nil)
 	}
 

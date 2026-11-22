@@ -63,6 +63,8 @@ A machine takes its configuration from the menu and nothing else. `repose config
 
 > This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services.
 
+A configuration file committed at the root of the checkout isn't used either: `repose run` and `repose sync` leave it alone.
+
 Dotfiles, aliases and environment variables go in `/home/dev`, which every base update keeps: `~/.bashrc`, `~/.config/...`.
 
 ## Revisions and base updates
