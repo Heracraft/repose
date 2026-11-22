@@ -18,7 +18,7 @@ test('menu tab renders catalog groups and search filters them', async ({ page })
 	await page.getByRole('tab', { name: 'Menu' }).click();
 
 	await expect(page.getByText('runtimes')).toBeVisible();
-	await expect(page.getByText('Services')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
 	await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
 
 	await page.getByPlaceholder('Search packages and services…').fill('postgres');

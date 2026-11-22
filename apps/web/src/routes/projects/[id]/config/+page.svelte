@@ -642,7 +642,7 @@
 								</div>
 							</div>
 						{:else}
-							{#if search.trim() && !addable}
+							{#if search.trim()}
 								<div class="hk-empty-row">
 									<span>No package matches “{search.trim()}”.</span>
 								</div>
