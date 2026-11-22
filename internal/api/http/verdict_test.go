@@ -12,6 +12,7 @@ import (
 	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
 // verdict reads the one rest_verdicts row the tick wrote for this
@@ -95,10 +96,20 @@ func TestAVerdictNamesTheConditionThatKeptTheMachineAwake(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		// The host drains the way a real one does: hostd says so in its
+		// heartbeat and the api moves the row. Writing hosts.state alone
+		// lasts until the next heartbeat, which says "not draining" and
+		// puts the host back to ready -- under CI load, before the tick
+		// read it.
 		{"the host not ready", resting.BlockedHostNotReady, quiet, func(t *testing.T, r *restingEnv) {
-			if _, err := r.e.h.Pool.Exec(r.e.h.Ctx, "update hosts set state = 'draining' where id = (select host_id from projects where id = $1)", r.p.ID); err != nil {
-				t.Fatal(err)
+			if res := r.e.h.Fake.Execute(&hostdv1.Command{Cmd: &hostdv1.Command_Drain{Drain: &hostdv1.Drain{}}}); res.GetError() != nil {
+				t.Fatalf("drain the fake host: %v", res.GetError())
 			}
+			r.e.h.WaitFor("the host draining", func() bool {
+				var state string
+				err := r.e.h.Pool.QueryRow(r.e.h.Ctx, "select state from hosts where id = (select host_id from projects where id = $1)", r.p.ID).Scan(&state)
+				return err == nil && state == "draining"
+			})
 		}},
 		// Nothing was wrong with the machine: the sampler did not report.
 		{"too few samples", resting.BlockedSamplesMissing, quiet, func(t *testing.T, r *restingEnv) {

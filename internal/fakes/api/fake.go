@@ -74,6 +74,11 @@ type Options struct {
 	// long after the stop is accepted: the real api reads "stopping" only
 	// once its engine has picked the op up.
 	StopPickup time.Duration
+	// ConfigDelay makes a PUT /projects/:id/config op stay "running" for
+	// the delay (phase build on a Nix project, apply_config on an erofs
+	// one), with its log streaming one line at a time meanwhile, then end
+	// done or error. Zero keeps the op done at its first read.
+	ConfigDelay time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.
