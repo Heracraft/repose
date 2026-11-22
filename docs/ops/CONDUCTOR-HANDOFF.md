@@ -22,25 +22,15 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-22, 04:30 UTC)
+## Where things stand (2026-11-22, 16:00 UTC)
 
-- **`origin/main` and local `main` are in sync at `81248803` (pushed 2026-11-22 03:51 UTC).** Three batches (`r20261121-1`, `r20261122-1`, `r20261122-2`) plus `r20261120-16` are live on `repose.run` and `api.repose.run`. **The release queue is empty.**
-- **Live checks verified at `03:58 UTC` and `04:00 UTC`:**
-  - `https://repose.run/` (200) serves the redesigned 6-band homepage (`I-1452`, `ENG-147`, ~4,405 px desktop, zero looping cartoons, visible agent labels, aligned `$10` Own hardware row).
-  - `/docs/billing`, `/docs/troubleshooting`, and `/docs/own-hardware` (200) serve the Own hardware `$10` pricing, Mac troubleshooting, stuck-host recovery, and updated restart wording (`ENG-47`, `ENG-57`, `ENG-64`, `ENG-140`).
-  - `api` and `api-grpc` (`20261122T035145`) are healthy with migration `0050_host_arch` applied (`applied: [1..50], pending: []`).
-  - **04:00 UTC base-bump sweep verified live (`ENG-149`, `I-1454`):** `api-grpc` logged `event="base_bump" version="2026.11.20.1" projects=0` — zero stopped projects rebuilt, zero `build_queue_deep`, zero `insufficient_capacity`.
-- **Published artefacts:** CLI `v0.1.54` (`releases/latest`), appliance `appliance-2026.11.20` (`--latest=false`), base `2026.11.20.1`. `bump/agents-20261121` (`claude-code 2.1.330`, `codex 0.171.0`, `gemini-cli 0.70.0`, etc.) is on `main` and its x86_64 + aarch64 overlays are pushed to Cachix; a `repose-admin base publish --rev <main sha>` is ready whenever the owner wants `2026.11.22` published. No host or edge switch was run.
-- **Tiered CI (`I-1456`, `ENG-108`, `ENG-144`, `ENG-113`) is live on `main`:** On `81248803`, `fast checks`, `classify changed paths`, `go build, vet, test, lint` (`-p 2`), `buf lint`, `alert rules`, `aarch64 agent overlay`, **sharded `nix flake check (evaluate)`**, `cli GoReleaser`, `install.sh` (Ubuntu + macOS), `nix run .#repose`, and `shell completions` all passed. The two reds on `81248803` (`own-hardware.spec.ts` `c-state` 18px font-metric clip at 1440 on Ubuntu, and `tests-a11y/a11y.spec.ts:108` still looking for `"Get started"` on `/`) are fixed in this handoff batch (`handoff-and-ci-fix`).
-- **AWS Mac (`h-0b0c0ac94c35a8e93`) is released** (`2026-11-21T21:11:23Z`; `ENG-21` closed; 0 active AWS hosts/instances/volumes/EIPs/snapshots across 17 regions).
-- **Kaneo (`~/.claude/skills/project-board/kaneo`) pagination is fixed (`ENG-145` closed):** `kaneo ls` now paginates `limit=100` across `totalPages` and returns all 149 cards accurately (`Needs you: 2`, `Open: 51`, `In Progress: 6`, `Blocked: 2`, `Parked: 13`, `Done: 74`; `ENG-48` archived/cancelled by owner).
-- **Box hygiene:** `/` is at ~82% (5.3 GB free), `/mnt/nixstore` at 39% (254 GB free). Only `/home/azureuser/projects/factory` (`main`) and `/home/azureuser/projects/kanali-website-overhaul` (held by tmux pane `0:3.1`) remain.
-- **What is next (highest leverage):**
-  1. **`ENG-102` (High, live CLI security defect):** `repose host add --json` prints `install.argument` (live WireGuard private key) to stdout. Needs owner's quick choice on `--json` shape, then a small CLI fix + `v0.1.55` tag.
-  2. **Remaining 3 web/dashboard cards:** `ENG-53` (dark-mode Logto sign-in CSS), `ENG-56` (webhook delivery visibility), `ENG-137` (signed-out dashboard redirect).
-  3. **Owned-host sizing (`ENG-74` / `ENG-90..98`, `ENG-91` entry point)** and **Mac start speed (`ENG-70` 58 s → seconds)** — software profiling/work can proceed locally; final Mac verification waits on hardware (`ENG-138` cold reboot also needs a Mac).
-  4. **Owner decisions in `Needs you` (only 2 left):** `ENG-131` (Own hardware plan while Mac is installing) and `ENG-5` (old unverified git identity commits).
-
+- **The No-Nix Guests and Own-Hardware Appliances program is released.** `origin/main` and local `main` are at `9584b6a0` (pushed 15:13 UTC); batches `r20261122-4` to `-14` are live. The api, the site, host-02 (hostd `74850e0`, switched 13:55 UTC with tenant guests running) and the edge (gateway reloaded 13:56 UTC) run it. The program's record for a cold reader, with every decision and billing event, is `/home/azureuser/briefs/nonix-executive-summary.md`; the measurements are in `docs/research/nonix-staging-e2e/`, `docs/research/nonix-aws-x86-2026-11-22.md` and `docs/research/nonix-aws-mac-2026-11-22.md`; the customer reviews in `docs/reports/2026-11-22-nonix-council*.md`.
+- **Published artefacts:** CLI `v0.1.56` (`releases/latest`; v0.1.55 one hour before it, its notes tell Mac users to upgrade), appliance `appliance-2026.11.22.1` (`--latest=false`; `appliance-2026.11.22` is superseded, its notes say so), guest bases `guest-2026.11.22.8` and `guest-2026.11.22.10` (split files, I-1504). Production base list: `2026.11.22.10` (erofs, amd64+arm64, newest), `2026.11.22.8`, then the Nix bases; `default_guest_runtime = erofs` since 14:13 UTC (D-24), so every new machine is Ubuntu. Not published: `hostd-stable` and `hostd-<version>` (the appliance's update channel) wait for the owner to allow `appliance-*` tags in the `release` environment and push `appliance-2026.11.22.1`; until then the x86 installer needs `--hostd-binary`.
+- **Staging** (`stg-edge`, `host-stg-01`): a real control plane runs on the edge as transient units from main `0ffd4915` (`/home/azureuser/briefs/nonix-staging-control-plane-STATE.md` has the one command that brings it back after a reboot); the host runs hostd `c460b3a`; bases `.10`, `.8`, `.5`; no projects. Both staging VMs were running when the program started and are left running.
+- **AWS lab** (`repose-lab`, eu-west-1): Dedicated Host `h-0bb8c3933099faac7` (mac-m4.metal, allocated 14:04:17 UTC, $1.353/h) with instance `i-020ec7fa1347981e3` still up for the Mac customer review; **release it from 2026-11-23 14:04:17 UTC** with `MACMINI_PROVIDER=aws MACMINI_AWS_REGION=eu-west-1 AWS_PROFILE=repose-lab ops/dev/macmini destroy` (the No-Nix session scheduled a job for 14:09 UTC; it dies with the session). The x86 instance was terminated at 14:35 UTC (0.5 h, about $0.25). A vCPU quota request (16 to 72, case `4d7e4c31…`) is open; bare metal never ran. Billing lines: `/home/azureuser/briefs/nonix-aws-billing.log`.
+- **Open from the program, on the board:** ENG-166 (10 s wake-on-connect inside the 5 s route cache), ENG-167 (a fork keeps the source's machine-id), ENG-168 (api closes some ops 8 s late in bursts), ENG-171 (`Needs you`: own hardware for hosted plans, host count, price), ENG-172 (a machine on a lost host cannot be destroyed; the owner's `live1g` and `pk2` sit in error), ENG-173 (own hosts show provider azure), ENG-174 (api.md and the fake lack `no_runtime_host`), ENG-175 (a removed host cannot be re-added on the same box; hostd keeps running), ENG-176 (20 s first dial at every join), ENG-177 (failure line printed twice), ENG-178 ("about 200 MB" text), ENG-179 (Mac start speed, high), ENG-180 (many hosts per account, high). From before: ENG-102 (`host add --json` prints the join key, high). The second-pass P2s not fixed are listed in the council report.
+- **What is next (the owner's words):** ENG-180 then ENG-179; `/home/azureuser/briefs/next-programs-2026-11-22.md` has the brief, the code's starting points and the test bed (the Mac until 14:04 UTC tomorrow, an hourly x86).
+- **Box hygiene:** worktrees from the program are listed by `ops/dev/release-queue worktrees` once their branches are released; none was deleted by the conductor (the owner's rule). `/mnt/nixstore/tmp/nonix-guest/` holds every built bundle (about 30 GB) and `/mnt/nixstore/tmp/nonix-appliance/` the appliance builds; both can go once the releases are confirmed.
 
 ## The owner's rules this week
 
@@ -96,6 +86,46 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 
 ## Lessons
 
+- `TaskStop` on the harness shell that launched a detached `setsid` job
+  killed the job too (an emulated 40-minute arm64 build, 2026-11-22):
+  leave finished launcher shells alone, or launch long jobs from a
+  `Monitor`/`run_in_background` command of their own.
+- `release-queue resume` and `cut` merge the commit a PR was queued at,
+  not the branch's newest push; a fix pushed to a cut branch is not in the
+  batch until the builder re-runs `release-queue add` (2026-11-22, twice).
+- A release image is built from main's head, in a detached checkout, never
+  from a branch: the first Mac appliance of the No-Nix program carried a
+  hostd from before the split-parts fetch and no Mac could create a
+  machine; `images/appliance-arm64/build.sh` now refuses anything else
+  (I-1540). The Mac program learned the same on 2026-11-19.
+- Boot the image, do not trust the tree: the guest image shipped `/etc`
+  group-writable twice (the checkout's umask through `COPY`, then a later
+  `COPY` undoing the fix); sshd refused every login. `build.sh` now reads
+  the modes from the produced erofs inodes (`dump.erofs` masks special
+  bits; read `i_mode` raw, `erofs-mode.py` in `docs/research/nonix-staging-e2e/`).
+- Never commit to a build script while a 40-minute emulated build is still
+  reading it: bash reads the file as it goes and the arm64 build died on
+  "line 126: t: command not found" (2026-11-22).
+- Sub-agents that go quiet with a command "that never ran" are sitting on
+  a permission prompt the owner is not there to answer, not hung: three
+  builders lost one to two hours each on 2026-11-22 until stopped and
+  resumed by message (which keeps their context). The owner's terminal
+  shows the prompts; check `/permissions` for `ask` rules that match
+  `ssh`, `docker` or the staging CLI before blaming the harness.
+- A tool that lists sizes or modes is not the artefact: one `dump.erofs`
+  reading produced a false sticky-bit finding that nearly went into a
+  build gate (2026-11-22).
+- `.gitignore`'s `bin/` rule swallowed nine appliance scripts for a whole
+  program; `embed.sh --check` on main is the grep that catches it.
+- An owned host that runs only erofs guests cannot create anything while
+  the account's default runtime is nix, and the CLI called it "no room":
+  flip `default_guest_runtime` before telling customers to add a host
+  (D-24 in the program summary; I-1538 for the sentence).
+- Two sparks on one exempt account share its single own-host slot
+  (`ExemptHosts = 1`): sequence hardware checks, or use two accounts.
+- A guest image bundle is 2.86 GB; the appliance root was 2 GiB and held
+  the image cache: `repose-images-volume` (I-1494 amended) is the fix, and
+  "where does the cache live" is a question for every new host shape.
 - A both-sides merge of code is not resolved until it builds and lints;
   a helper left unclosed hid behind 67 svelte-check errors (2026-11-17).
 - A check's exit piped through `tail` is tail's exit; two reds shipped to
