@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1069 entries.
+1072 entries.
 
 ## Scope
 
@@ -1101,3 +1101,6 @@ pointer, not a summary.
 - **I-1462** `0051_nonix_base_images`: base rows have a format and per-arch files, projects a `guest_runtime` and `pending_base_version`, snapshots a `base_version`; `settings.default_guest_runtime` picks the runtime at create; `{fragment}` on an erofs project is `409 nix_config_retired` (nonix-contracts-api, 2026-11-22) — L39002
 - **I-1464** erofs projects never build: plans drop `PhaseBuild`, the base bump sets `pending_base_version`, placement needs the `erofs` feature and an image for the host's arch, and `repose-admin base publish --format erofs` fetches and checks every file before the row is written (nonix-contracts-api, 2026-11-22) — L39009
 - **I-1486** Each menu catalog entry names its erofs recipe (`recipe:`, the same string as the id), and a menu's `package` items follow the project's runtime: apt names on erofs (`menu.ValidAptPackage`, `Catalog.ValidateFor`), nixpkgs attribute paths on nix (nonix-config-cli-web, 2026-11-22) — L39016
+- **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — L39023
+- **I-1490** Dashboard for an erofs project: the Config page shows the menu and the base, a one-line banner with Restart only while `pending_base_version` is set, and no Nix editor or machine.nix switch; Settings lists machine.nix only for an account with a Nix project; Add a host shows the x86 installer beside the Mac step, with the Mac image's download size and free disk (nonix-config-cli-web, 2026-11-22) — L39032
+- **I-1492** The public docs describe the Ubuntu base: Nix appears in one paragraph (machine.md "Older machines"), in the one sentence an erofs machine answers a Nix file with, and in a laptop CLI message; the agent guide test reads `images/guest/agent-guide.md` (nonix-config-cli-web, 2026-11-22) — L39039
