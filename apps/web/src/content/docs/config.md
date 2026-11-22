@@ -79,7 +79,7 @@ The platform updates the base (Ubuntu, agents, tools, kernel) most weeks, sooner
 Base 2026.11.30 is ready. It is used at the next restart.
 ```
 
-**Restart** there stops the machine, with no snapshot, and starts it again; `repose stop todo-app && repose start todo-app` does the same. What a new base keeps is in [The machine](/docs/machine#base-updates). To hold a project on its current base, tick **Hold base updates** on its **Config** tab; there's no CLI flag for it.
+**Restart** there stops the machine, with no snapshot, and starts it again; `repose stop --no-snapshot todo-app && repose start todo-app` does the same. What a new base keeps is in [The machine](/docs/machine#base-updates). To hold a project on its current base, tick **Hold base updates** on its **Config** tab; there's no CLI flag for it.
 
 Holding has a price: a held project doesn't get what a new base adds. [herdr](/docs/run-and-attach#herdr-instead-of-tmux) arrived in base 2026.10.07, so a project on an older base can't switch to it. `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.07 or newer.` Untick the hold and restart it first.
 

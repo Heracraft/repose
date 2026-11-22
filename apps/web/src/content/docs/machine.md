@@ -47,7 +47,7 @@ gpg asks for a passphrase in the terminal; without a terminal, pass `--batch --p
 
 Prebuilt binaries, Prisma's engines, Python wheels, esbuild and `curl | sh` installers run as on any Ubuntu machine.
 
-Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip); there is no system-wide pip, and Python command-line tools install with `uv tool install`. The system `python3` has no Tk, so tkinter and matplotlib's TkAgg need a Python from uv (`uv python install 3.12`).
+Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip); there is no system-wide pip, and Python command-line tools install with `uv tool install`. tkinter and matplotlib's TkAgg need `sudo apt-get install -y python3-tk`.
 
 ## Installing more
 
