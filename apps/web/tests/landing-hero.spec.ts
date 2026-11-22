@@ -23,7 +23,7 @@ test.describe('without scripts', () => {
 	});
 });
 
-test('the hero headline, CTA, install command and HeroVisual fit in the first screen at 1440x900', async ({
+test('the hero headline, CTA and HeroVisual fit in the first screen at 1440x900', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -32,16 +32,14 @@ test('the hero headline, CTA, install command and HeroVisual fit in the first sc
 		const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
 		return {
 			cta: r('.hero .hk-btn'),
-			install: r('.hero .hero-install .code-copy'),
 			hv: r('.hero .hv')
 		};
 	});
 	expect(m.cta.bottom).toBeLessThanOrEqual(900);
-	expect(m.install.bottom).toBeLessThanOrEqual(900);
 	expect(m.hv.bottom).toBeLessThanOrEqual(900);
 });
 
-test('the hero CTA, install bar and top of HeroVisual land above the fold on a phone at 390x844', async ({
+test('the hero CTA and top of HeroVisual land above the fold on a phone at 390x844', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -50,14 +48,10 @@ test('the hero CTA, install bar and top of HeroVisual land above the fold on a p
 		const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
 		return {
 			cta: r('.hero .hk-btn'),
-			install: r('.hero .hero-install .code-copy'),
-			meta: r('.hero .hero-meta'),
 			hv: r('.hero .hv')
 		};
 	});
 	expect(m.cta.bottom).toBeLessThanOrEqual(844);
-	expect(m.install.bottom).toBeLessThanOrEqual(844);
-	expect(m.meta.bottom).toBeLessThanOrEqual(844);
 	expect(m.hv.top).toBeLessThan(844);
 });
 

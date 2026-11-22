@@ -1,6 +1,6 @@
 // Landing page contract: 5-chapter layout (Hero + HeroVisual, 01 How it works
-// ScrollWheel, 02 Safety Wreck, 03 Pricing + the Mac mini or server row, 04 Start
-// with a Cloud / Mac mini or server toggle), live pricing from lib/plans.ts +
+// ScrollWheel, 02 Safety Wreck, 03 Pricing + the Mac mini or Linux server row, 04 Start
+// with a Cloud / Your machine toggle), live pricing from lib/plans.ts +
 // GET /public/seats, strict honesty rules, zero horizontal overflow, and
 // preserved `?hero=orbitv1` gallery contract.
 import { test, expect } from '@playwright/test';
@@ -37,14 +37,13 @@ test('the pricing section shows the three plans and live seats left', async ({ p
 	await expect(pricing.getByText('500 GB disk · 1 TB egress')).toBeVisible();
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText('18 cloud seats left');
-	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
-	await expect(pricing.locator('.pricing-lead')).toHaveText(
-		"7 days free. Stopped sandboxes don't count."
-	);
+	// Each fact once (direction.md A5.3): the button lives in Start, the trial in the button.
+	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toHaveCount(0);
+	await expect(pricing.locator('.pricing-lead')).toHaveText("Stopped sandboxes don't count.");
 	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
-test('the pricing section offers a Mac mini or server as a flush row under the plans', async ({
+test('the pricing section offers a Mac mini or Linux server as a flush row under the plans', async ({
 	page
 }) => {
 	await resetBilling();
@@ -53,24 +52,28 @@ test('the pricing section offers a Mac mini or server as a flush row under the p
 	const pricing = page.locator('#pricing');
 	const own = pricing.getByTestId('plan-own');
 	await expect(
-		own.getByRole('heading', { level: 3, name: 'Your Mac mini or server' })
+		own.getByRole('heading', { level: 3, name: 'Your Mac mini or Linux server' })
 	).toBeVisible();
-	await expect(own.locator('.o-price .o-n')).toHaveText('$10');
-	await expect(own).toContainText('A Mac mini or an x86 box you own');
+	await expect(own.locator('.hw-price .n')).toHaveText('$10');
+	await expect(own).toContainText(
+		'One machine. Run as many sandboxes as its memory and disk hold.'
+	);
+	await expect(own).not.toContainText(/own hardware|box you own|x86/i);
 	await expect(own.locator(':is(a, button)')).toHaveCount(0);
 	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveCount(3);
-	await expect(own).toHaveCSS('border-top-left-radius', '0px');
+	// The plan cells' canvas: no fill of its own, one rule above, no box.
+	await expect(own).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
 	await expect(own).toHaveCSS('border-left-width', '0px');
-	const [ownTop, ownWhat] = await Promise.all([
-		own.locator('.o-top').boundingBox(),
-		own.locator('.o-what').boundingBox()
+	const [ownName, ownWhat, plus] = await Promise.all([
+		own.locator('.hw-name').boundingBox(),
+		own.locator('.hw-what').boundingBox(),
+		pricing.getByTestId('plan-plus').locator('.p-name').boundingBox()
 	]);
-	expect(ownWhat!.x).toBeGreaterThan(ownTop!.x + ownTop!.width);
+	expect(ownWhat!.x).toBeGreaterThan(ownName!.x + ownName!.width);
+	expect(Math.abs(ownWhat!.x - plus!.x)).toBeLessThanOrEqual(1);
 });
 
-test('with no founding places left, Solo and the hero meta show $49 and no founding line', async ({
-	page
-}) => {
+test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {
 	await setBilling({ founding_left: 0 });
 	await page.goto('/');
 	const pricing = page.locator('#pricing');
@@ -78,8 +81,7 @@ test('with no founding places left, Solo and the hero meta show $49 and no found
 	await expect(solo.locator('.p-price .n')).toHaveText('$49');
 	await expect(solo.locator('.p-then')).toHaveCount(0);
 	await expect(solo.locator('.p-price .was')).toHaveCount(0);
-	await expect(pricing.getByText('$39')).toHaveCount(0);
-	await expect(page.locator('.hero-meta')).toContainText('Cloud from $49/mo');
+	await expect(page.locator('main').getByText('$39')).toHaveCount(0);
 	await setBilling({ founding_left: 30 });
 });
 
@@ -96,13 +98,13 @@ test('when full, the line says so with the number waiting and notes your own mac
 	await setBilling({ seats: { total: 30, held: 30, waiting: 41 } });
 	await page.goto('/');
 	const pricing = page.locator('#pricing');
-	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
+	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText(
-		'Cloud full for now. 41 waiting; your own Mac mini or server has no waitlist.'
+		'Cloud full for now, 41 waiting. Your machine has no waitlist.'
 	);
 });
 
-test('the start section toggles between Cloud and a Mac mini or server and copies commands cleanly', async ({
+test('the start section toggles between Cloud and your machine and copies commands cleanly', async ({
 	page,
 	context
 }) => {
@@ -110,8 +112,8 @@ test('the start section toggles between Cloud and a Mac mini or server and copie
 	await page.goto('/');
 	const install = page.locator('#install');
 	const cloudTab = install.getByRole('tab', { name: 'Cloud' });
-	const ownTab = install.getByRole('tab', { name: 'Mac mini or server' });
-	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Start in three commands');
+	const ownTab = install.getByRole('tab', { name: 'Your machine' });
+	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Three commands');
 	await expect(cloudTab).toHaveAttribute('aria-selected', 'true');
 	await expect(ownTab).toHaveAttribute('aria-selected', 'false');
 
@@ -119,7 +121,7 @@ test('the start section toggles between Cloud and a Mac mini or server and copie
 	await expect(step2).toContainText('Sign in');
 	await expect(step2.locator('.code-copy')).toContainText('repose login');
 
-	const step3 = install.locator('.steps li', { hasText: 'Run in any repo' });
+	const step3 = install.locator('.steps li', { hasText: 'Run in a repo' });
 	await expect(step3.locator('.code-copy')).toContainText('repose run');
 	await expect(step3).not.toContainText('cd ~/code/your-project');
 	await step3.getByRole('button', { name: 'Copy repose run' }).click();
@@ -127,32 +129,35 @@ test('the start section toggles between Cloud and a Mac mini or server and copie
 
 	await ownTab.click();
 	await expect(ownTab).toHaveAttribute('aria-selected', 'true');
-	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Start in four commands');
+	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Four commands');
 	// Adding a machine needs an account first, so sign-in stays the second step.
 	await expect(step2).toContainText('Sign in');
 	await expect(step2.locator('.code-copy')).toContainText('repose login');
 	const step3own = install.locator('.steps li').nth(2);
-	await expect(step3own).toContainText('Add your Mac mini or server');
+	await expect(step3own).toContainText('Add your machine');
 	await expect(step3own.locator('.code-copy')).toContainText('repose host add');
 	await step3own.getByRole('button', { name: 'Copy the host add command' }).click();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('repose host add');
 });
 
-// The install command shows twice: in the hero's CodeCopy bar and as step 4.1.
-// Its copy button copies the exact command without the `$ ` prompt.
-test('the install command shows in the hero and the first step, and copies cleanly', async ({
+// The install command shows once, as the first step (direction.md A5.3). Its
+// copy button copies the exact command without the `$ ` prompt.
+test('the install command shows once, in the first step, and copies cleanly', async ({
 	page,
 	context
 }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/');
 	const install = 'curl -fsSL https://repose.run/install.sh | sh';
-	await expect(page.locator('.hero .hero-install .code-copy .line')).toContainText(install);
+	await expect(page.locator('.hero .code-copy')).toHaveCount(0);
 	await expect(page.locator('.steps li').first().locator('.code-copy')).toContainText(install);
 	expect(
 		await page.locator('main').evaluate((m, i) => m.textContent!.split(i).length - 1, install)
-	).toBe(2);
-	const button = page.locator('.hero').getByRole('button', { name: 'Copy the install command' });
+	).toBe(1);
+	const button = page
+		.locator('.steps li')
+		.first()
+		.getByRole('button', { name: 'Copy the install command' });
 	await button.click();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(install);
 });
@@ -191,26 +196,6 @@ test('the page never scrolls sideways', async ({ page }) => {
 	}
 });
 
-// Below 640px the hero install command wraps cleanly after `/` so a phone
-// visitor sees the full `curl ... | sh` command without clipping.
-test('the hero install command shows in full without clipping on a phone', async ({ page }) => {
-	for (const width of [360, 390]) {
-		await page.setViewportSize({ width, height: 844 });
-		await page.goto('/');
-		const line = page.locator('.hero .hero-install .code-copy .line');
-		await expect(line).toHaveCSS('font-size', '12px');
-		const m = await line.evaluate((e) => ({
-			scrollW: e.scrollWidth,
-			clientW: e.clientWidth,
-			right: e.getBoundingClientRect().right,
-			text: e.textContent ?? ''
-		}));
-		expect(m.text, `at ${width}`).toContain('install.sh | sh');
-		expect(m.scrollW, `at ${width}`).toBeLessThanOrEqual(m.clientW + 1);
-		expect(m.right, `at ${width}`).toBeLessThanOrEqual(width);
-	}
-});
-
 test('one numbering: the chapters and start steps', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
@@ -220,7 +205,13 @@ test('one numbering: the chapters and start steps', async ({ page }) => {
 		'03 Pricing',
 		'04 Start'
 	]);
-	await expect(page.locator('.steps .step-title .label')).toHaveText(['4.1', '4.2', '4.3']);
+	// The steps are an ordered list; they carry no 4.n numbers of their own.
+	await expect(page.locator('.steps .step-title .label')).toHaveCount(0);
+	await expect(page.locator('.steps .step-title')).toHaveText([
+		'Install',
+		'Sign in',
+		'Run in a repo'
+	]);
 });
 
 test('the footer links to the refund policy', async ({ page }) => {
@@ -245,11 +236,14 @@ test('the hero and own-hardware copy uphold the product rules and stay honest', 
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 		'Sandboxes for your coding agents'
 	);
-	await expect(page.locator('.hero .hk-lead')).toContainText('Linux VM set up like your laptop');
+	await expect(page.locator('.hero .hk-lead')).toContainText(
+		'A Linux VM per repo, set up like your laptop'
+	);
+	await expect(page.locator('.hero .hk-lead')).toContainText('Mac mini or Linux server');
 	await expect(page.locator('.hero .hk-lead')).toContainText('full permissions');
-	await expect(page.locator('.hero .hero-meta')).toContainText('7 days free');
-	await expect(page.locator('.hero .hero-meta')).toContainText('Cloud from $39/mo');
-	await expect(page.locator('.hero .hero-meta')).toContainText('Your Mac mini or server $10/mo');
+	// Prices live in pricing, the trial in the button (direction.md A5.3).
+	await expect(page.locator('.hero .hero-meta')).toHaveCount(0);
+	await expect(page.locator('.hero')).not.toContainText(/\$\d/);
 	// The agents are drawn by their marks alone, named only for hover and screen readers.
 	const agents = page.locator('.hero .hv .hv-agents li');
 	await expect(agents).toHaveCount(5);

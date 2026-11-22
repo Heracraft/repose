@@ -12,7 +12,6 @@
 	import type { PublicSeats } from '$lib/api/types';
 	import { OWN_HARDWARE, PLANS } from '$lib/plans';
 	import PlanCells from '$lib/components/PlanCells.svelte';
-	import OwnHardwarePlan from '$lib/components/OwnHardwarePlan.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import HeroVisual from '$lib/components/landing/HeroVisual.svelte';
 	import ScrollWheel from '$lib/components/landing/ScrollWheel.svelte';
@@ -47,30 +46,21 @@
 
 	let startMode = $state<'cloud' | 'own'>('cloud');
 
-	const steps = $derived<{ title: string; command: string; what: string }[]>(
-		startMode === 'cloud'
-			? [
-					{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
-					{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
-					{ title: 'Run in any repo', command: 'repose run', what: 'repose run' }
-				]
-			: [
-					{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
-					{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
-					{
-						title: 'Add your Mac mini or server',
-						command: 'repose host add',
-						what: 'the host add command'
-					},
-					{ title: 'Run in any repo', command: 'repose run', what: 'repose run' }
-				]
+	const install = { title: 'Install', command: INSTALL_COMMAND, what: 'the install command' };
+	const login = { title: 'Sign in', command: 'repose login', what: 'the sign-in command' };
+	const run = { title: 'Run in a repo', command: 'repose run', what: 'repose run' };
+	const hostAdd = {
+		title: 'Add your machine',
+		command: 'repose host add',
+		what: 'the host add command'
+	};
+	const steps = $derived(
+		startMode === 'cloud' ? [install, login, run] : [install, login, hostAdd, run]
 	);
 
-	const stepCount = $derived(['', '', '', 'three', 'four'][steps.length] ?? String(steps.length));
+	const stepCount = $derived(['', '', '', 'Three', 'Four'][steps.length] ?? String(steps.length));
 
 	const introEligible = $derived(seats?.founding_left !== 0);
-	const solo = PLANS[0];
-	const soloPrice = $derived(introEligible && solo.intro ? solo.intro.priceCents : solo.priceCents);
 </script>
 
 <svelte:head>
@@ -116,32 +106,15 @@
 			<div class="hero-copy">
 				<h1 class="hk-h1" id="hero-h">Sandboxes for your coding agents</h1>
 				<p class="hk-lead">
-					Each repo gets a Linux VM set up like your laptop. Agents run there with full permissions,
-					and a snapshot rolls back whatever they break.
+					A Linux VM per repo, set up like your laptop, on our cloud or your Mac mini or Linux
+					server. Agents get full permissions; a snapshot undoes what they break.
 				</p>
 				<div class="hero-act">
 					<div class="hero-btns">
 						{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
 						<a class="hk-more hero-docs" href={resolve('/docs')}>Read docs</a>
 					</div>
-					<div class="hero-install">
-						<CodeCopy
-							command={INSTALL_COMMAND}
-							what="the install command"
-							prompt
-							labelFrom={1200}
-						/>
-					</div>
 				</div>
-				<p class="hero-meta">
-					<span class="nw">{solo.trialDays} days free</span>
-					<span class="sep" aria-hidden="true">·</span>
-					<a class="meta-link nw" href="#pricing">Cloud from {price(soloPrice)}/mo</a>
-					<span class="sep" aria-hidden="true">·</span>
-					<a class="meta-link nw" href="#pricing"
-						>Your Mac mini or server {price(OWN_HARDWARE.priceCents)}/mo</a
-					>
-				</p>
 			</div>
 
 			<div class="hero-pane hero-stage">
@@ -178,38 +151,36 @@
 			{@render label('03', 'Pricing')}
 			<div class="pricing-title">
 				<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
-				<p class="copy pricing-lead">
-					{solo.trialDays} days free. Stopped sandboxes don't count.
+				<p class="copy pricing-lead">Stopped sandboxes don't count.</p>
+			</div>
+			{#if !authState.authenticated && seats}
+				<p class="seats side" data-testid="seats-line">
+					{#if seats.free > 0}
+						{seats.free} cloud {seats.free === 1 ? 'seat' : 'seats'} left
+					{:else}
+						Cloud full for now, {seats.waiting} waiting. Your machine has no waitlist.
+					{/if}
 				</p>
-			</div>
-			<div class="cta-row side">
-				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
-				{#if !authState.authenticated && seats}
-					<p class="seats" data-testid="seats-line">
-						{#if seats.free > 0}
-							{seats.free} cloud {seats.free === 1 ? 'seat' : 'seats'} left
-						{:else}
-							Cloud full for now. {seats.waiting} waiting; your own Mac mini or server has no waitlist.
-						{/if}
-					</p>
-				{/if}
-			</div>
+			{/if}
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
-		<div class="own-wrap" id="parts">
-			<OwnHardwarePlan
-				plan={OWN_HARDWARE}
-				variant="public"
-				level={3}
-				name="Your Mac mini or server"
-			/>
+		<div class="hw" id="parts" data-testid="plan-own">
+			<h3 class="hw-name">Your Mac mini or Linux server</h3>
+			<p class="hw-price">
+				<span class="n">{price(OWN_HARDWARE.priceCents)}</span>
+				<span class="per">a month</span>
+			</p>
+			<p class="hw-what">
+				{OWN_HARDWARE.hosts === 1 ? 'One machine.' : `${OWN_HARDWARE.hosts} machines.`} Run as many sandboxes
+				as its memory and disk hold.
+			</p>
 		</div>
 	</section>
 
 	<section class="band install-band" id="install" aria-labelledby="install-h">
 		<div class="head">
 			{@render label('04', 'Start')}
-			<h2 class="hk-h2" id="install-h">Start in {stepCount} commands</h2>
+			<h2 class="hk-h2" id="install-h">{stepCount} commands</h2>
 			<div class="cta-row side start-actions">
 				<div class="hk-tablist" role="tablist" aria-label="Setup path">
 					<button
@@ -222,18 +193,16 @@
 						type="button"
 						role="tab"
 						aria-selected={startMode === 'own'}
-						onclick={() => (startMode = 'own')}>Mac mini or server</button
+						onclick={() => (startMode = 'own')}>Your machine</button
 					>
 				</div>
 				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
 			</div>
 		</div>
 		<ol class="ruled steps">
-			{#each steps as step, i (step.title)}
+			{#each steps as step (step.title)}
 				<li>
-					<h3 class="item-title step-title">
-						<span class="label" aria-hidden="true">4.{i + 1}</span>{step.title}
-					</h3>
+					<h3 class="step-title">{step.title}</h3>
 					<CodeCopy command={step.command} what={step.what} prompt labelFrom={1200} />
 				</li>
 			{/each}

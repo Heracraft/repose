@@ -1,9 +1,12 @@
 <!--
   HeroVisual: the hero's figure. Three things a visitor reads at a glance,
   with as few words as the picture allows (owner, 2026-11-22):
-    1. Your laptop: the repo goes up, keys and personal files stay.
+    1. Your laptop: the repo goes up; keys and personal files, struck
+       through, stay.
     2. The sandbox: the five preinstalled agents, by their marks alone.
-    3. Its snapshots: a rail of restore points, and the undo back to one.
+    3. Its snapshots: a rail of restore points, and the undo back to one,
+       with no times to read (section 02 tells the restore with times).
+  Both windows stand on one top line; the sandbox is the wider, focal one.
   Brand colours only: the slate accent, zinc, and one small status dot.
 -->
 <script lang="ts">
@@ -18,23 +21,6 @@
 				clip-rule={m.evenodd ? 'evenodd' : 'nonzero'}
 			/>{/each}</svg
 	>
-{/snippet}
-
-{#snippet lock()}
-	<svg
-		viewBox="0 0 16 16"
-		width="12"
-		height="12"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="1.5"
-		stroke-linecap="round"
-		stroke-linejoin="round"
-		aria-hidden="true"
-	>
-		<rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-		<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-	</svg>
 {/snippet}
 
 {#snippet folder()}
@@ -76,8 +62,8 @@
 			</p>
 			<ul class="hv-files">
 				<li class="go">{@render folder()}your-project/</li>
-				<li class="stay">{@render lock()}.ssh/</li>
-				<li class="stay">{@render lock()}Documents/</li>
+				<li class="stay">{@render folder()}<s>.ssh/</s></li>
+				<li class="stay">{@render folder()}<s>Documents/</s></li>
 			</ul>
 		</div>
 
@@ -92,14 +78,13 @@
 			<p class="hv-head">
 				<span class="hv-dot"></span>
 				your-project
-				<span class="hv-os">Ubuntu 24.04</span>
 			</p>
 			<ul class="hv-files">
 				<li class="go">{@render folder()}your-project/</li>
 			</ul>
 			<ul class="hv-agents">
 				{#each agentMarks as m (m.name)}
-					<li title={m.name}>{@render mark(m, 18)}</li>
+					<li title={m.name}>{@render mark(m, 22)}</li>
 				{/each}
 			</ul>
 			<div class="hv-snaps">
@@ -109,10 +94,10 @@
 					<path d="M245 15 L250 21 L255 15" fill="none" />
 				</svg>
 				<ol class="hv-rail" aria-hidden="true">
-					<li><i></i>03:00</li>
-					<li><i></i>14:10</li>
-					<li class="back"><i></i>21:25</li>
-					<li class="now"><i></i>now</li>
+					<li><i></i></li>
+					<li><i></i></li>
+					<li class="back"><i></i></li>
+					<li class="now"><i></i></li>
 				</ol>
 			</div>
 		</div>
@@ -135,8 +120,8 @@
 
 	.hv-row {
 		display: grid;
-		grid-template-columns: minmax(0, 0.78fr) auto minmax(0, 1.22fr);
-		align-items: center;
+		grid-template-columns: minmax(0, 0.7fr) auto minmax(0, 1.3fr);
+		align-items: start;
 	}
 
 	.hv-win {
@@ -157,13 +142,6 @@
 		font-size: 0.8125rem;
 		font-weight: 500;
 		color: var(--ink);
-	}
-	.hv-os {
-		margin-left: auto;
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
-		font-weight: 400;
-		color: var(--pic-dim);
 	}
 	.hv-dot {
 		width: 6px;
@@ -193,13 +171,18 @@
 	.hv-files .stay {
 		color: var(--pic-faint);
 	}
+	.hv-files s {
+		text-decoration-thickness: 1px;
+	}
 
 	.hv-wire {
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		width: 6.5rem;
+		width: 5.5rem;
+		/* Level with the middle of the laptop's rows. */
+		padding-top: 3.375rem;
 	}
 	.hv-wire i {
 		position: relative;
@@ -228,31 +211,25 @@
 	}
 	.hv-agents {
 		display: flex;
-		gap: 0.375rem;
+		gap: 1.125rem;
 		margin: 0;
-		padding: 0.5rem 0.75rem 0.75rem;
+		padding: 0.625rem 0.75rem 1rem;
 		list-style: none;
 	}
 	.hv-agents li {
 		display: grid;
 		place-items: center;
-		width: 2.375rem;
-		height: 2.375rem;
-		border: 1px solid var(--rule);
-		border-radius: 6px;
-		background: var(--sunken);
 		color: var(--pic-ink);
 	}
 
 	/* The snapshot rail sits under the sandbox, the width of the figure. */
 	.hv-snaps {
 		position: relative;
-		padding: 0.5rem 0.75rem 0.75rem;
+		padding: 0.5rem 0.75rem 1rem;
 		border-top: 1px solid var(--rule);
-		background: var(--sunken);
 	}
 	.hv-snap-h {
-		margin: 0 0 0.125rem;
+		margin: 0 0 0.25rem;
 		font-family: var(--hk-font-sans);
 		font-size: 0.75rem;
 		color: var(--pic-dim);
@@ -277,8 +254,6 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
-		font-size: 0.75rem;
-		color: var(--pic-dim);
 	}
 	.hv-rail::before {
 		content: '';
@@ -290,9 +265,7 @@
 	}
 	.hv-rail li {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.375rem;
+		justify-content: center;
 	}
 	.hv-rail i {
 		position: relative;
@@ -301,10 +274,6 @@
 		border: 1.5px solid var(--rule-strong);
 		border-radius: 50%;
 		background: var(--surface);
-	}
-	.hv-rail .back {
-		color: var(--pic-accent);
-		font-weight: 500;
 	}
 	.hv-rail .back i {
 		border-color: var(--pic-accent);

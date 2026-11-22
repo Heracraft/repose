@@ -136,10 +136,16 @@ for (const width of [768, 390]) {
 		}
 		expect(plans[1].y).toBeGreaterThan(plans[0].y);
 		expect(plans[2].y).toBeGreaterThan(plans[1].y);
-		const [name, num] = await Promise.all([
-			page.locator('.plans--public .plan .p-name').first().boundingBox(),
-			page.locator('.steps .step-title .label').first().boundingBox()
-		]);
-		expect(Math.round(name!.x)).toBe(Math.round(num!.x));
+		const name = (await page.locator('.plans--public .plan .p-name').first().boundingBox())!;
+		// The step label's text, not its padded box, stands on the plans' line.
+		const label = await page
+			.locator('.steps .step-title')
+			.first()
+			.evaluate((e) => {
+				const r = document.createRange();
+				r.selectNodeContents(e);
+				return r.getBoundingClientRect().x;
+			});
+		expect(Math.round(name.x)).toBe(Math.round(label));
 	});
 }
