@@ -27,6 +27,8 @@
 		cause,
 		stub = false,
 		lit = false,
+		badge,
+		tone = 'accent',
 		class: cls = '',
 		children
 	}: {
@@ -34,6 +36,8 @@
 		cause?: SnapshotCause;
 		stub?: boolean;
 		lit?: boolean;
+		badge?: string;
+		tone?: 'accent' | 'stop' | 'muted';
 		class?: string;
 		children?: Snippet;
 	} = $props();
@@ -48,7 +52,9 @@
 			</svg></span
 		>
 		<span class="s-time">{time}</span>
-		{#if cause}
+		{#if badge}
+			<span class="s-badge s-badge--{tone}">{badge}</span>
+		{:else if cause}
 			<span class="cause">
 				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 					{#if cause === 'nightly'}
@@ -117,6 +123,23 @@
 	}
 	.stub .s-time {
 		color: var(--pic-dim);
+	}
+	.lit.stub .s-time {
+		color: var(--pic-ink);
+	}
+	.s-badge {
+		margin-left: auto;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		font-weight: 500;
+		letter-spacing: 0.02em;
+		color: var(--pic-accent);
+	}
+	.s-badge--stop {
+		color: var(--pic-stop);
+	}
+	.s-badge--muted {
+		color: var(--pic-faint);
 	}
 	.cause {
 		display: flex;

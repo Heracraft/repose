@@ -42,6 +42,8 @@ collaboration or a software factory.
 
 ## The page (I-1452, amending I-1446, I-1212, I-961, I-843, I-287)
 
+**Superseded by I-1552 (2026-11-22).** The page is now: the hero ("A sandbox per repo, with undo", `HeroVisual.svelte`, the install command and the price line), 01 a scroll-driven quarter wheel of three beats (`ScrollWheel.svelte`), 02 Safety (`Wreck.svelte` on a light stage), 03 Pricing, 04 Start (Cloud, or your machine with `repose login` before `repose host add`). The owner's rules behind it are in `docs/design/landing-council/direction.md` (Part A), which wins where it and this file disagree; the list below is the I-1452 page, kept for its reasons.
+
 Guide B 13.1, on the 1200px frame every page shares (I-656), laid out as one
 ruled sheet on a 12-column grid with no full-bleed dark slabs interrupting the
 sheet. Total desktop height is ~4,400px (down from 6,837px). Every band after

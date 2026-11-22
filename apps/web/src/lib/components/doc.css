@@ -210,9 +210,10 @@
    drawn as the kit's dark-tone small copy button, 8px from the pane's top
    right corner. In a text column 624px wide or wider a block's first line
    is written short enough to end before it (I-345); in a narrower column
-   (a phone, or 768 to about 1000px beside the sidebar) the button takes a
-   strip of its own above the code. On a touch screen that strip is there
-   at every width, 44px tall for a thumb. */
+   the button collapses to a compact icon chip in the corner (never adding
+   empty top padding above line 1), while .l1 adds trailing padding so
+   scrolling clears the button completely. On touch screens a transparent
+   ::before expands the hit area to 44px without adding dead height. */
 .hk .doc .code {
 	position: relative;
 	margin: 0 0 1.25rem;
@@ -243,8 +244,9 @@
 		color var(--hk-dur-fast) var(--hk-ease),
 		background-color var(--hk-dur-fast) var(--hk-ease);
 }
-.hk .doc .code .copy::before {
+.hk .doc .code .copy::after {
 	content: '';
+	order: -1;
 	width: 0.875rem;
 	height: 0.875rem;
 	flex: none;
@@ -253,7 +255,7 @@
 	mask: var(--hk-copy-icon) center / contain no-repeat;
 	--hk-copy-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5.5' y='5.5' width='8' height='8' rx='1.5'/%3E%3Cpath d='M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2'/%3E%3C/svg%3E");
 }
-.hk .doc .code .copy.is-copied::before {
+.hk .doc .code .copy.is-copied::after {
 	--hk-copy-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
 }
 .hk .doc .code .copy:hover {
@@ -268,32 +270,45 @@
 	outline-offset: 0;
 }
 @container (max-width: 38.99rem) {
-	.hk .doc .code .copy {
-		top: 0;
-		right: 0.25rem;
-		height: 2.75rem;
-		padding: 0 0.75rem;
-		background: transparent;
+	.hk .doc .code pre code {
+		padding-right: 3rem;
 	}
-	.hk .doc .code pre {
-		padding-top: 2.75rem;
+	.hk .doc .code .l1 {
+		display: inline-block;
+		padding-right: 3.125rem;
+	}
+	.hk .doc .code .copy {
+		top: 0.4375rem;
+		right: 0.4375rem;
+		width: 1.625rem;
+		height: 1.625rem;
+		padding: 0;
+		gap: 0;
+		justify-content: center;
+		font-size: 0;
+		border: 1px solid var(--hk-code-border);
+		background: var(--hk-code-bg);
+		color: color-mix(in srgb, var(--hk-code-text) 78%, transparent);
+	}
+	.hk .doc .code .copy:hover {
+		color: var(--hk-code-text);
+	}
+	.hk .doc .code .copy.is-copied {
+		color: var(--hk-code-ok);
 	}
 }
 @media (pointer: coarse) {
-	.hk .doc .code .copy {
-		top: 0;
-		right: 0.25rem;
-		height: 2.75rem;
-		padding: 0 0.75rem;
-		background: transparent;
-	}
-	.hk .doc .code pre {
-		padding-top: 2.75rem;
+	.hk .doc .code .copy::before {
+		content: '';
+		position: absolute;
+		inset: -0.5625rem;
 	}
 }
 @media (max-width: 639.98px) {
 	.hk .doc pre {
-		font-size: 0.75rem;
+		padding: 0.75rem;
+		font-size: 0.6875rem;
+		line-height: 1.1875rem;
 	}
 }
 

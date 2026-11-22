@@ -81,11 +81,11 @@ test("an experimental page's banner links to the feedback board", async ({ page 
 });
 
 // In a column narrower than 624px (a phone, or 768 to about 1000px wide
-// beside the sidebar) the Copy button sits in the code block's top right
-// corner, in a strip of its own above the first line, so it never hides
-// that line's end.
+// beside the sidebar) the Copy button sits compactly in the top-right corner
+// with no empty gap above line 1, and .l1 adds trailing padding so scrolling
+// clears the button.
 for (const width of [390, 768]) {
-	test(`at ${width} the Copy button sits in the code block corner, over no code`, async ({
+	test(`at ${width} the Copy button sits in the code block corner with no top gap`, async ({
 		page
 	}) => {
 		await page.setViewportSize({ width, height: 844 });
@@ -94,18 +94,21 @@ for (const width of [390, 768]) {
 			.locator('article .code')
 			.first()
 			.evaluate((el) => {
-				const pre = el.querySelector('pre')!.getBoundingClientRect();
+				const preEl = el.querySelector('pre')!;
+				const pre = preEl.getBoundingClientRect();
 				const copy = el.querySelector('.copy')!.getBoundingClientRect();
 				const line = el.querySelector('.l1')!.getBoundingClientRect();
 				return {
 					top: copy.top - pre.top,
 					right: pre.right - copy.right,
-					lineBelowCopy: line.top - copy.bottom
+					lineTopGap: line.top - pre.top,
+					padRight: parseFloat(getComputedStyle(el.querySelector('.l1')!).paddingRight)
 				};
 			});
-		expect(m.top).toBeLessThanOrEqual(8);
-		expect(m.right).toBeLessThanOrEqual(8);
-		expect(m.lineBelowCopy).toBeGreaterThanOrEqual(0);
+		expect(m.top).toBeLessThanOrEqual(10);
+		expect(m.right).toBeLessThanOrEqual(10);
+		expect(m.lineTopGap).toBeLessThanOrEqual(18);
+		expect(m.padRight).toBeGreaterThanOrEqual(36);
 	});
 }
 

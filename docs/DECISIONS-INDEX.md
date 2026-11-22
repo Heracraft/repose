@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1110 entries.
+1111 entries.
 
 ## Scope
 
@@ -1091,7 +1091,7 @@ pointer, not a summary.
 - **I-1442** A golden that asserts an order sorts it back into the guest's order first: `TestClaudeSettingsMergeGolden` compares the dropped-hook lines after putting `/home/dev` back, not in the order `$TMPDIR` gave them (claude-golden ENG-139, 2026-11-20) — L38765
 - **I-1444** The guest-address write checks for an open op in its own `where`, not before it, and a write that matched no row does not update the caller's copy (hello-addr ENG-111, 2026-11-20) — L38806
 - **I-1446** The home page sells the machine again: the headline is "Your coding agents, on a machine of their own", the hero's picture is the real `repose run` session, 01 compares the two homes instead of listing six layers, and no band names a start time or a memory figure for either home (home-page, 2026-11-20) — amended by I-1452; L38878
-- **I-1452** Landing overhaul: cut bloat, drop looping cartoons, sharpen conversion (amends I-1446, I-1212, I-961, I-843, I-287) — L38942
+- **I-1452** Landing overhaul: cut bloat, drop looping cartoons, sharpen conversion (amends I-1446, I-1212, I-961, I-843, I-287) — partly amended by I-1552; L38942
 - **I-1448** Host architecture is its own field (`HostInfo.arch`, `Hello.arch`, `hosts.arch`), never sliced from `hosts.nixos_system` (web-hosts-ux, 2026-11-21) — L38948
 - **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38954
 - **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
@@ -1139,6 +1139,7 @@ pointer, not a summary.
 - **I-1542** A snapshot kept on the account's own host is marked `gone_with_host` (the host's name) when that host is removed, and the api lists it as gone, never restorable, and refuses a restore of it before writing anything (nonix-config-cli-web-5, 2026-11-22) — L39248
 - **I-1544** The CLI says where an own-host machine's snapshot is and what removing the host does: `repose rm` "Its final snapshot is kept on your host NAME; removing the host deletes it." (one line, also in the question), `host rm` "This deletes the N snapshot(s) kept on it; repose has no copy.", `ls --destroyed` and `snapshots list` "gone with host NAME" (nonix-config-cli-web-5, 2026-11-22) — L39255
 - **I-1546** The dashboard says the same: Settings > Hosts' Remove question counts the snapshots it deletes; Recently destroyed and the Snapshots tab show "gone with host NAME" with no Restore; the Overview's Destroy card and its toast say where an own-host machine's snapshot is kept (nonix-config-cli-web-5, 2026-11-22) — L39259
-- **I-1550** Every guest@ unit on a host without Nix stops before the image cache volume goes: its drop-in orders it After= `repose-images-volume.service` and `blk-availability.service` and RequiresMountsFor=/var/lib/repose/images, and build.sh refuses an appliance without it (nonix-appliances-6, 2026-11-22) — L39261
-- **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39266
-- **I-1554** The erofs guest's `/usr/local/bin` scripts are source and tracked in git, and the image build fails when a systemd unit names a `/usr/local` path the root does not have, or one that is not executable (guest-bin-fix, 2026-11-22) — L39273
+- **I-1552** The landing page is redrawn to show rather than tell: a figure hero ("A sandbox per repo, with undo"), a three-beat scroll-driven quarter wheel (where it runs, accounts, your tools), the wreck-and-restore picture on a light stage, pricing with memory bars, and a Start that signs in before `repose host add`; brand colours only, no gradients, never "own hardware" (landing-redesign, 2026-11-22) — L39261
+- **I-1550** Every guest@ unit on a host without Nix stops before the image cache volume goes: its drop-in orders it After= `repose-images-volume.service` and `blk-availability.service` and RequiresMountsFor=/var/lib/repose/images, and build.sh refuses an appliance without it (nonix-appliances-6, 2026-11-22) — L39268
+- **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39273
+- **I-1554** The erofs guest's `/usr/local/bin` scripts are source and tracked in git, and the image build fails when a systemd unit names a `/usr/local` path the root does not have, or one that is not executable (guest-bin-fix, 2026-11-22) — L39280

@@ -273,8 +273,8 @@
 			src="/landing/{name}-light.webp"
 			width="720"
 			height="300"
-			loading="lazy"
-			decoding="async"
+			loading="eager"
+			decoding="sync"
 			{alt}
 		/>
 	</picture>
@@ -564,11 +564,14 @@
 	.port {
 		display: inline-block;
 	}
-	/* On a phone the bar keeps its right end, the forwards and the host
-	   name; before the forwards arrive, the host name alone. */
+	/* On a phone keep the active window label and forwarded port readable at compact mono. */
 	@container (max-width: 420px) {
+		.bar {
+			font-size: 10.5px;
+		}
 		.bar .left {
-			display: none;
+			overflow: hidden;
+			text-overflow: ellipsis;
 		}
 	}
 	.fw {

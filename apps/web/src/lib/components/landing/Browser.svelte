@@ -426,13 +426,13 @@
 								alt=""
 							/>
 						</div>
-						<div class="layer l-bug">
+						<div class="layer l-bug on">
 							<img
 								src="/landing/browser-p-bug.webp"
 								width="574"
 								height="536"
-								loading="lazy"
-								decoding="async"
+								loading="eager"
+								decoding="sync"
 								alt=""
 							/>
 						</div>
@@ -456,7 +456,7 @@
 								alt=""
 							/>
 						</div>
-						<div class="layer l-t2 on">
+						<div class="layer l-t2">
 							<img
 								src="/landing/browser-p-t2.webp"
 								width="574"
@@ -469,21 +469,23 @@
 					</div>
 				</div>
 				<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
-				<svg
-					class="pointer"
-					viewBox="0 0 12 18"
-					aria-hidden="true"
-					style:--px={POINTER.x}
-					style:--py={TB + POINTER.y - PAN.you}
-				>
-					<path
-						d="M1 1v13.2l3.3-3.1 2.2 5.1 2.1-.9-2.2-5h4.6z"
-						fill="#111"
-						stroke="#fff"
-						stroke-width="1.1"
-						stroke-linejoin="round"
-					/>
-				</svg>
+				{#if animated}
+					<svg
+						class="pointer"
+						viewBox="0 0 12 18"
+						aria-hidden="true"
+						style:--px={POINTER.x}
+						style:--py={TB + POINTER.y - PAN.you}
+					>
+						<path
+							d="M1 1v13.2l3.3-3.1 2.2 5.1 2.1-.9-2.2-5h4.6z"
+							fill="#111"
+							stroke="#fff"
+							stroke-width="1.1"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				{/if}
 			</div>
 			<div class="term">
 				<div class="clip">
@@ -514,7 +516,7 @@
 		--chip: var(--pic-accent);
 		/* The log follows the scheme too (the terminals' palette). */
 		--on-log: var(--pic-accent);
-		--pan: 120;
+		--pan: 0;
 		position: relative;
 		display: flex;
 		flex-direction: column;
@@ -709,22 +711,22 @@
 	.term {
 		position: relative;
 		flex: none;
-		height: 55px;
+		height: 62px;
 		overflow: hidden;
 		border-top: 1px solid var(--rule);
 		background: var(--t-bg);
 		color: var(--t-fg);
 		font-family: var(--font-mono);
 		font-size: 12px;
-		line-height: 15px;
+		line-height: 16px;
 		font-variant-ligatures: none;
 	}
 	.clip {
 		position: absolute;
 		left: 0;
 		right: 0;
-		bottom: 5px;
-		height: 45px;
+		top: 7px;
+		bottom: 7px;
 		overflow: hidden;
 	}
 	.rows {
@@ -744,7 +746,7 @@
 	   text colour at 5:1 or more on #0d0d0c. The still frame is the loop's
 	   last beat, where you have taken over and every row rests. */
 	.tr {
-		opacity: 0.7;
+		opacity: 0.85;
 	}
 	/* The call that is acting: a 2px bar at the row's left. A border on a
 	   pseudo-element, not an inset box-shadow, so it fades by opacity alone
@@ -763,22 +765,20 @@
 		opacity: 1;
 	}
 
-	/* On a phone the captures keep a size their text reads at (the
-	   address 11px), and the window crops them on the right into a fade,
-	   as the Editor's rows are cropped, instead of shrinking them to fit
-	   (review round 2, I-961). */
+	/* On a phone scale the captured browser cleanly to fit 100% of the window width
+	   so zero words are clipped off the right edge. */
 	@container (max-width: 400px) {
 		.br {
-			--k: max(calc(100cqw / 562), 0.8px);
-			mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+			--k: calc(100cqw / 562);
 		}
 		.term {
-			font-size: 11px;
+			font-size: 10.5px;
 			line-height: 14px;
-			height: 52px;
+			height: 56px;
 		}
 		.clip {
-			height: 42px;
+			top: 6px;
+			bottom: 6px;
 		}
 		.tr {
 			padding: 0 10px;

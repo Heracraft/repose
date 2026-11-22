@@ -20,7 +20,8 @@
 		current = false,
 		action,
 		variant = 'app',
-		level = 2
+		level = 2,
+		name
 	}: {
 		plan: PlanFigures;
 		/** The account is on this plan: the stronger edge and a badge. */
@@ -28,12 +29,14 @@
 		action?: Snippet<[PlanFigures]>;
 		variant?: 'public' | 'app';
 		level?: 2 | 3;
+		/** The heading in place of the plan's name (the landing's plain wording). */
+		name?: string;
 	} = $props();
 </script>
 
 <div class="own" class:current data-testid="plan-{plan.id}">
 	<div class="o-top">
-		<svelte:element this={`h${level}`} class="o-name">{plan.name}</svelte:element>
+		<svelte:element this={`h${level}`} class="o-name">{name ?? plan.name}</svelte:element>
 		{#if current}<span class="hk-badge hk-badge--outline">Current</span>{/if}
 	</div>
 	<p class="o-price">

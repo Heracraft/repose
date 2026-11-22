@@ -410,20 +410,18 @@
 			// row once past the laptop. Stacked, the commands fill the gap, so
 			// it comes into view on the machine, over its head, and settles.
 			const runChip = rel(pic.querySelector('.hop .pic-chip')!);
-			const askChip = rel(pic.querySelector('.ask .pic-chip')!);
-			// Just over repose run, so it is still behind the laptop's head
+			// Just over repose run, so it stays behind the laptop's head
 			// until it clears the laptop's wall.
-			const band = Math.max(runChip.t - 4 - a.h, askChip.b + 2) - a.t;
-			const flight =
-				wide && runChip.t - askChip.b >= a.h + 4
-					? {
-							x: { to: b.l - a.l, duration: 900, ease: 'inOutCubic' },
-							y: [
-								{ to: band, duration: 300, ease: 'outQuad' },
-								{ to: b.t - a.t, duration: 600, ease: 'inOutQuad' }
-							]
-						}
-					: null;
+			const band = runChip.t - 4 - a.h - a.t;
+			const flight = wide
+				? {
+						x: { to: b.l - a.l, duration: 900, ease: 'inOutCubic' },
+						y: [
+							{ to: band, duration: 300, ease: 'outQuad' },
+							{ to: b.t - a.t, duration: 600, ease: 'inOutQuad' }
+						]
+					}
+				: null;
 
 			// The rail's places: the newest tile on top, filling what the
 			// stubs under it leave (one stub under 21:25, two under the stop
@@ -832,7 +830,11 @@
 	<span class="gl" class:wreck={when === 'wreck'} class:night={when === 'night'}>
 		<i class="gr"
 			><b class="gt acc">your-project/</b><b class="gv"
-				>{when === 'night' ? 'last night' : `${kids.length} changes`}</b
+				>{when === 'night'
+					? 'last night'
+					: when === 'wreck'
+						? 'discarded'
+						: `${kids.length} changes`}</b
 			></i
 		>
 		{#each sys as m (m.n)}
@@ -915,10 +917,30 @@
 	<div class="hero-pic" role="img" aria-label={label} aria-describedby="hero-story" bind:this={pic}>
 		<p id="hero-story" hidden>{story}</p>
 
-		<!-- Your command for a snapshot, typed on the laptop. -->
+		<p class="mob-step mob-s1" aria-hidden="true"><span>2.1</span> Laptop stays walled off</p>
+		<p class="mob-step mob-s2" aria-hidden="true"><span>2.2</span> Agent runs freely inside VM</p>
+		<p class="mob-step mob-s3" aria-hidden="true"><span>2.3</span> Snapshots undo the whole disk</p>
+
+		<!-- Snapshot create connector between sandbox and snapshots (strictly centerline-aligned on desktop) -->
 		<div class="ask" aria-hidden="true">
-			<span class="pic-chip" class:fire={ask}>repose snapshots create</span>
-			<span class="wire arrow"></span>
+			<span class="wire ask-l"></span>
+			<div class="ask-pills">
+				<span class="pic-chip" class:fire={ask}>snapshot</span>
+				{#if restored}<span class="mob-restore"
+						><svg
+							viewBox="0 0 12 12"
+							width="11"
+							height="11"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.6"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"><path d="M6 10V2M3 5l3-3 3 3" /></svg
+						>restore 21:25</span
+					>{/if}
+			</div>
+			<span class="wire arrow ask-r"></span>
 		</div>
 
 		<div class="side laptop" aria-hidden="true">
@@ -953,21 +975,41 @@
 		</div>
 
 		<div class="side right" aria-hidden="true">
-			<i class="link w-snap"><b class="lit"></b></i>
+			<i class="link w-snap"
+				><b class="lit"></b>{#if restored}<span class="snap-restore">← restore 21:25</span>{/if}</i
+			>
 			<div class="rail win">
 				<WinHead who="snapshots" mark={snapMark} />
 				<div class="railbody">
-					<SnapshotTile class="tile t-n-full" time="03:00" cause="nightly"
-						>{@render glyph('night')}</SnapshotTile
+					<SnapshotTile
+						class="tile t-n-full"
+						time="03:00"
+						cause="nightly"
+						badge="nightly"
+						tone="muted">{@render glyph('night')}</SnapshotTile
 					>
 					<SnapshotTile class="tile t-u-full" time="21:25" cause="user"
 						>{@render glyph('work')}</SnapshotTile
 					>
-					<SnapshotTile class="tile t-s-full" time="21:31" cause="stop"
+					<SnapshotTile class="tile t-s-full" time="21:31" cause="stop" badge="wrecked" tone="stop"
 						>{@render glyph('wreck')}</SnapshotTile
 					>
-					<SnapshotTile class="tile t-u-stub" time="21:25" cause="user" stub lit={restored} />
-					<SnapshotTile class="tile t-n-stub" time="03:00" cause="nightly" stub />
+					<SnapshotTile
+						class="tile t-u-stub"
+						time="21:25"
+						cause="user"
+						stub
+						lit={restored}
+						badge={restored ? 'restored' : undefined}
+					/>
+					<SnapshotTile
+						class="tile t-n-stub"
+						time="03:00"
+						cause="nightly"
+						stub
+						badge="nightly"
+						tone="muted"
+					/>
 				</div>
 			</div>
 			<div class="net">
@@ -1563,6 +1605,9 @@
 	.w-snap::after {
 		right: -2.5px;
 	}
+	.snap-restore {
+		display: none;
+	}
 	.link .lit {
 		position: absolute;
 		left: 0;
@@ -1734,12 +1779,59 @@
 		}
 	}
 
-	/* Phone: stacked. The laptop, both commands side by side under it,
-	   the machine, then the snapshots and the globe in one row under the
-	   machine, each wired up to it. */
+	/* Phone: stacked with crisp per-card stage labels and bidirectional snapshot flow. */
+	.mob-step {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin: 0 0 0.4375rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
+	.mob-step span {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--pic-accent);
+	}
+	.mob-s1 {
+		grid-area: s1;
+	}
+	.mob-s2 {
+		grid-area: s2;
+		margin-top: 0.125rem;
+	}
+	.mob-s3 {
+		grid-area: s3;
+		margin-top: 0.125rem;
+	}
+	.ask-pills {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+	.mob-restore {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 8px;
+		border: 1px solid var(--pic-accent);
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--pic-accent) 12%, var(--surface));
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 18px;
+		color: var(--pic-accent);
+		white-space: nowrap;
+	}
+	.ask-l {
+		display: none;
+	}
 	.hero-pic {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-		grid-template-areas: 'lap lap' 'hop ask' 'win win' 'side side';
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: 's1' 'lap' 'hop' 's2' 'win' 'ask' 's3' 'side';
 	}
 	/* Over the copies in flight: the repo row's copy leaves from under
 	   the laptop's wall. */
@@ -1761,7 +1853,8 @@
 	.ask::before {
 		content: '';
 		width: 0;
-		height: 16px;
+		height: 12px;
+		border-left: 1.5px solid var(--pic-accent);
 	}
 	.mwin {
 		grid-area: win;
@@ -1772,7 +1865,7 @@
 		grid-template-columns: minmax(0, 1fr) 40px;
 		align-items: start;
 		gap: 16px;
-		margin-top: 24px;
+		margin-top: 0;
 	}
 	.railbody {
 		flex: none;
@@ -1842,26 +1935,25 @@
 	}
 
 	@media (min-width: 1024px) {
-		/* The machine is the tallest thing on the stage: the laptop stands on
-		   its floor, your snapshot command waits in the room above it, and
-		   the right-hand stack is exactly as tall as the machine. */
+		.mob-step,
+		.mob-restore {
+			display: none;
+		}
+		/* Strictly left-to-right on one crisp top datum line:
+		   laptop -> repose run -> sandbox -> [snapshot / restore] -> snapshots. */
 		.hero-pic {
-			grid-template-columns: minmax(0, 0.82fr) auto minmax(0, 1.7fr) var(--gap) minmax(0, 0.9fr);
-			grid-template-rows: 1fr auto;
-			grid-template-areas:
-				'ask ask win . side'
-				'lap hop win . side';
+			--gap: 164px;
+			grid-template-columns: minmax(0, 0.82fr) auto minmax(0, 1.55fr) var(--gap) minmax(0, 0.92fr);
+			grid-template-rows: auto;
+			grid-template-areas: 'lap hop win ask side';
 		}
 		.laptop {
-			align-self: end;
+			align-self: start;
 		}
 		.mwin,
 		.side.right {
-			grid-row: 1 / 3;
+			grid-row: 1;
 		}
-		/* The rail's foot is level with the rule over the machine's agent
-		   row, and the globe's row is that row: the wire meets the globe
-		   at the agent's height, and the stack ends on the machine's floor. */
 		.side.right {
 			display: flex;
 			align-items: stretch;
@@ -1872,8 +1964,6 @@
 			flex: 1;
 			height: auto;
 		}
-		/* The globe is smaller than the row, so it clears the rail's foot
-		   above it by 10px and stays centred on the wire. */
 		.net {
 			height: calc(var(--agent) + 2px);
 		}
@@ -1881,9 +1971,6 @@
 			width: 24px;
 			height: 24px;
 		}
-		/* Each command's wire lands on the machine's wall at a row: repose
-		   run at the repo row (the laptop's first row), yours at the
-		   machine's first row, level with the snapshot wire across. */
 		.hop {
 			flex-direction: row;
 			align-self: start;
@@ -1892,15 +1979,30 @@
 		}
 		.ask {
 			flex-direction: row;
+			align-items: center;
 			align-self: start;
-			margin-top: calc(1px + var(--shot-head) + var(--pad) + var(--row) / 2 - 12px);
-			padding: 0 0 0 0;
+			gap: 0;
+			margin-top: calc(1px + var(--shot-head) + 12px);
+			padding: 0;
+		}
+		.ask-l {
+			display: block;
+			flex: 1;
+			width: auto;
+		}
+		.ask .pic-chip {
+			flex: none;
+			padding: 2px 9px;
+			font-size: 11px;
+			line-height: 17px;
 		}
 		.ask::before {
 			display: none;
 		}
 		.ask .wire.arrow {
 			flex: 1;
+			width: auto;
+			height: 0;
 		}
 		.wire {
 			width: 16px;
@@ -1926,7 +2028,41 @@
 		.w-snap {
 			left: calc(-1 * var(--gap));
 			width: var(--gap);
-			top: calc(2px + var(--shot-head) + 9px + 13px);
+			top: calc(1px + var(--shot-head) + 136px);
+			border-top: 1.5px solid var(--pic-accent);
+		}
+		.w-snap::before {
+			content: '';
+			left: -1px;
+			top: -5.75px;
+			width: 0;
+			height: 0;
+			border-radius: 0;
+			background: transparent;
+			border: 5px solid transparent;
+			border-right: 6px solid var(--pic-accent);
+			border-left: 0;
+		}
+		.w-snap::after {
+			background: var(--pic-accent);
+		}
+		.snap-restore {
+			display: inline-block;
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			translate: -50% -50%;
+			padding: 2px 9px;
+			border: 1px solid var(--pic-accent);
+			border-radius: 999px;
+			background: color-mix(in srgb, var(--pic-accent) 18%, var(--surface));
+			font-family: var(--font-mono);
+			font-style: normal;
+			font-size: 10.5px;
+			font-weight: 500;
+			line-height: 16px;
+			color: var(--pic-ink);
+			white-space: nowrap;
 		}
 		.w-net {
 			left: calc(-1 * var(--gap));
@@ -1997,41 +2133,30 @@
 	@media (max-width: 480px) {
 		.hero-pic {
 			--row: 26px;
-			/* The two commands stand as a pair centred under the laptop,
-			   8px apart, at the phone's 11px: in equal halves the snapshot
-			   command ran past the windows and the stage (review round 2). */
-			grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
-			grid-template-areas: 'lap lap lap lap' '. hop ask .' 'win win win win' 'side side side side';
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-areas: 's1' 'lap' 'hop' 's2' 'win' 'ask' 's3' 'side';
+		}
+		.path {
+			display: none;
 		}
 		.ask {
-			margin-left: 8px;
+			margin-left: 0;
 		}
 		.hop .pic-chip,
 		.ask .pic-chip {
 			padding: 2px 6px;
 			font-size: 11px;
 		}
-		/* A phone has no room for two columns under the machine: the globe
-		   hangs on its wire at the machine's right corner, and the
-		   snapshots panel takes the full width under it, its wire running
-		   down past the globe. */
 		.side.right {
 			grid-template-columns: minmax(0, 1fr);
-			gap: 8px;
-			margin-top: 16px;
+			gap: 0;
+			margin-top: 0;
 		}
 		.net {
-			order: -1;
-			justify-self: end;
-			width: 40px;
-		}
-		.w-net {
-			top: -16px;
-			height: 16px;
+			display: none;
 		}
 		.w-snap {
-			top: -16px;
-			height: calc(16px + 40px + 8px);
+			display: none;
 		}
 		.wire,
 		.ask::before {

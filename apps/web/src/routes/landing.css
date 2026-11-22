@@ -1,16 +1,17 @@
 /*
- * The landing's layout (Guide B 13.1, Herakraft UI): one ruled sheet on a
- * 12-column grid. The sheet is the frame's content box outset by --edge,
- * half the column gap from 1200px, so every vertical rule stands 16px from
- * the text beside it. Bands stack with no gap: each opens on a full-bleed
- * rule and ends on the next one. No full-bleed dark slabs interrupt the
- * light sheet; the hero terminal is the page's one dark code anchor inside
- * the rails.
- *
- * Spacing is on the Herakraft scale (8 16 24 32 48 64): compact enough to
- * read without scroll fatigue while keeping clear editorial rhythm.
+ * The landing's layout (Herakraft UI): one ruled sheet on a 12-column grid.
+ * The sheet is the frame's content box outset by --edge, half the column gap
+ * from 1200px, so every vertical rule stands 16px from the text beside it.
+ * Bands stack with no gap: each opens on a full-bleed rule and ends on the
+ * next one.
  */
 
+:root:has(main.landing) {
+	overflow-x: clip;
+}
+:root:has(main.landing) body {
+	overflow-x: clip;
+}
 .landing {
 	--band-y: 2.25rem;
 	--head-gap: 1.375rem;
@@ -20,26 +21,26 @@
 	--in: calc(var(--col-gap) / 2);
 	--rule-band: var(--hk-border);
 	--rule-in: var(--hk-hairline);
-	--field-y: 1.75rem;
+	--field-y: 2rem;
 }
 @media (max-width: 639.98px) {
 	.landing {
-		--shot-h: 18rem;
+		--shot-h: 17.5rem;
 	}
 }
 @media (min-width: 768px) {
 	.landing {
 		--band-y: 2.75rem;
 		--head-gap: 1.625rem;
-		--field-y: 2rem;
+		--field-y: 2.5rem;
 	}
 }
 @media (min-width: 1024px) {
 	.landing {
 		--band-y: 3.5rem;
 		--head-gap: 1.875rem;
-		--field-y: 2.25rem;
-		--shot-h: 20.5rem;
+		--field-y: 3.25rem;
+		--shot-h: 21.75rem;
 	}
 }
 @media (min-width: 1200px) {
@@ -55,12 +56,15 @@
 	isolation: isolate;
 	padding-block: var(--band-y) 0;
 }
+.landing .band.band--wheel {
+	padding-block: 0;
+}
 .landing .band + .band {
 	border-top: 1px solid;
 	border-image: linear-gradient(var(--rule-band), var(--rule-band)) 1 / 1px 0 0 / 0 100vw;
 }
 @media (min-width: 1200px) {
-	.landing .band::before {
+	.landing .band:not(.band--dark):not(.band--wheel)::before {
 		content: '';
 		position: absolute;
 		inset: 0 calc(-1 * var(--edge) - 1px);
@@ -68,7 +72,7 @@
 		border-inline: 1px solid var(--rule-band);
 		pointer-events: none;
 	}
-	.landing .band + .band::after,
+	.landing .band:not(.band--dark) + .band:not(.band--dark)::after,
 	:root:has(main.landing) .site-footer > .frame::after,
 	:root:has(main.landing) .site-footer .bottom::before {
 		content: '';
@@ -101,25 +105,23 @@
 :root:has(main.landing) .site-footer > .frame {
 	--edge: var(--frame-x);
 	position: relative;
-	padding-block: 3rem 2rem;
+	padding-block: 2.75rem 1.75rem;
 }
 :root:has(main.landing) .site-footer .bottom {
 	position: relative;
+	margin-top: 2rem;
 	margin-inline: calc(-1 * var(--edge));
-	padding-inline: var(--edge);
-	border-top-color: var(--hk-border);
+	padding: 1.25rem var(--edge) 0;
+	border-top-color: var(--hk-hairline);
 }
 @media (min-width: 1200px) {
 	:root:has(main.landing) .site-footer > .frame {
 		--edge: calc(2rem / 2);
 	}
-	:root:has(main.landing) .site-footer .grid {
-		position: relative;
-	}
-	:root:has(main.landing) .site-footer .grid::before {
+	:root:has(main.landing) .site-footer > .frame::before {
 		content: '';
 		position: absolute;
-		inset: -3rem calc(-1 * var(--edge) - 1px) -2.5rem;
+		inset: 0 calc(var(--frame-x) - var(--edge) - 1px);
 		border-inline: 1px solid var(--hk-border);
 		pointer-events: none;
 	}
@@ -136,11 +138,11 @@
 /* ---------- Type ---------- */
 
 .landing h1.hk-h1 {
-	max-width: 16em;
+	max-width: 14.5ch;
 	margin: 0;
-	font-size: clamp(1.875rem, 0.6rem + 5.2vw, 3.5rem);
-	line-height: 1.05;
-	letter-spacing: -0.025em;
+	font-size: clamp(2.125rem, 1.1rem + 3.4vw, 3.25rem);
+	line-height: 1.06;
+	letter-spacing: -0.028em;
 	text-wrap: balance;
 }
 .landing h2.hk-h2 {
@@ -185,18 +187,22 @@ main.landing .plans .p-name {
 	margin: 0;
 	max-width: 34rem;
 	font-size: 0.9375rem;
-	line-height: 1.6;
+	line-height: 1.55;
 	color: var(--hk-text-2);
 	text-wrap: pretty;
 }
-/* Commands named in prose stay mono without a pill background. */
-.landing :is(.hk-lead, .copy, .faq, .pricing-note) code {
-	padding: 0;
-	border: 0;
-	background: none;
+.landing :is(.hk-lead, .copy, .pricing-note) code {
+	padding: 0.06em 0.32em;
+	border: 1px solid var(--hk-hairline);
+	border-radius: var(--hk-radius-xs);
+	background: var(--hk-surface-2);
 	font-family: var(--hk-font-mono);
-	font-size: 0.875em;
+	font-size: 0.85em;
+	word-spacing: -0.15em;
 	color: var(--hk-text);
+	white-space: nowrap;
+}
+.landing .nw {
 	white-space: nowrap;
 }
 
@@ -214,46 +220,57 @@ main.landing .plans .p-name {
 .landing .head .side {
 	margin-top: 0.25rem;
 }
+.landing .pricing-title {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.landing .pricing-lead {
+	font-size: 0.875rem;
+	color: var(--hk-text-3);
+	text-wrap: balance;
+}
 @media (min-width: 1024px) {
 	.landing .head {
 		grid-template-columns: repeat(12, minmax(0, 1fr));
 		column-gap: var(--col-gap);
-		align-items: end;
 		align-items: last baseline;
 	}
 	.landing .head > .num {
 		grid-column: 1 / -1;
 	}
-	.landing .head > h2 {
+	.landing .head > h2,
+	.landing .head > .pricing-title {
 		grid-column: 1 / 7;
 	}
 	.landing .head > .side {
 		grid-column: 7 / -1;
 		margin-top: 0;
 	}
-	.landing .head > .links {
-		justify-content: flex-end;
+	.landing .head--pricing {
+		align-items: end;
 	}
 }
 
-/* ---------- Hero ---------- */
+/* ---------- Hero (Asymmetric 12-col split on desktop, crisp stack on mobile) ---------- */
 
 .landing .hero {
-	padding-top: 2rem;
+	padding-top: 0;
 }
-@media (min-width: 1024px) {
-	.landing .hero {
-		padding-top: 3rem;
-	}
-}
-.landing .hero-copy {
+.landing .hero-grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
-	padding-bottom: var(--head-gap);
+	margin-inline: calc(-1 * var(--edge));
+}
+.landing .hero-copy {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	padding: 2rem var(--edge) 1.75rem;
 }
 .landing .hero .hk-lead {
-	max-width: 40rem;
-	margin: 1rem 0 0;
+	max-width: 33rem;
+	margin: 1.125rem 0 0;
 	font-size: 1.0625rem;
 	line-height: 1.55;
 	color: var(--hk-text-2);
@@ -261,14 +278,31 @@ main.landing .plans .p-name {
 }
 .landing .hero-act {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
+	flex-direction: column;
+	align-items: flex-start;
 	gap: 0.75rem;
 	min-width: 0;
-	margin-top: 1.375rem;
+	margin-top: 1.625rem;
+}
+.landing .hero-btns {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem 1.25rem;
+	width: 100%;
+}
+.landing .hero-docs {
+	margin: 0;
+	font-size: 0.9375rem;
+	color: var(--hk-text-2);
+	transition: color var(--hk-dur-fast) var(--hk-ease);
+}
+.landing .hero-docs:hover {
+	color: var(--hk-text);
 }
 .landing .hero-install {
 	min-width: 0;
+	width: 100%;
 	max-width: 100%;
 }
 .landing .hero-install .code-copy {
@@ -278,9 +312,16 @@ main.landing .plans .p-name {
 	max-width: 100%;
 	padding: 0.375rem 0.5rem 0.375rem 0.75rem;
 }
-/* From 640px keep the install line single-line; below 640px let CodeCopy
-   wrap after `/` so a mobile visitor reads the entire `curl ... | sh` command. */
 @media (min-width: 640px) {
+	.landing .hero-btns {
+		width: auto;
+	}
+	.landing .hero-install {
+		width: fit-content;
+	}
+	.landing .hero-install .code-copy {
+		width: fit-content;
+	}
 	.landing .hero-install .code-copy .line {
 		overflow-x: auto;
 		scrollbar-width: none;
@@ -291,56 +332,111 @@ main.landing .plans .p-name {
 		display: none;
 	}
 }
-@media (max-width: 639.98px) {
+@media (min-width: 1024px) and (max-width: 1199.98px) {
+	.landing .hero-install .code-copy {
+		padding: 0.375rem 0.375rem 0.375rem 0.625rem;
+	}
 	.landing .hero-install .code-copy .line {
 		font-size: 0.75rem;
 	}
 }
-@media (max-width: 479.98px) {
-	.landing .hero-act > .hk-btn,
-	.landing .hero-install {
-		flex: 1 1 100%;
+@media (max-width: 639.98px) {
+	.landing .hero-install .code-copy {
+		padding: 0.375rem 0.375rem 0.375rem 0.625rem;
+	}
+	/* Below 640px the install line wraps after `/` at 12px (CodeCopy's
+	   <wbr>), so a phone reads the whole `curl ... | sh` (docs/LANDING.md). */
+	.landing .hero-install .code-copy .line {
+		font-size: 0.75rem;
+	}
+	.landing .hero-btns > .hk-btn {
+		flex: 1 1 auto;
+	}
+	.landing .hero-docs {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25em;
+		min-height: 2.75rem;
 	}
 }
 .landing .hero-meta {
-	margin: 0.875rem 0 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.125rem 0.5rem;
+	margin: 1rem 0 0;
 	font-size: 0.8125rem;
 	line-height: 1.45;
-	color: var(--hk-text-3);
-	text-wrap: pretty;
+	color: var(--hk-text-2);
+}
+@media (max-width: 639.98px) {
+	.landing .hero-meta {
+		font-size: 0.71875rem;
+		gap: 0.125rem 0.3125rem;
+	}
+	.landing .hero-meta .meta-link {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+	}
+	.landing .hero-meta .meta-link::before {
+		content: '';
+		position: absolute;
+		inset: -0.875rem -0.25rem;
+	}
+}
+.landing .hero-meta .sep {
+	color: var(--hk-text-4);
 }
 .landing .hero-meta .meta-link {
 	color: var(--hk-text-2);
 	text-decoration: underline;
 	text-decoration-color: var(--hk-border-strong);
-	text-underline-offset: 2px;
-	transition: color var(--hk-dur-fast) var(--hk-ease);
+	text-underline-offset: 3px;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		text-decoration-color var(--hk-dur-fast) var(--hk-ease);
 }
 .landing .hero-meta .meta-link:hover {
 	color: var(--hk-text);
+	text-decoration-color: currentColor;
 }
+
+.landing .hero-pane {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1.5rem var(--edge);
+	border-top: 1px solid var(--rule-in);
+}
+.landing .hero-term {
+	width: 100%;
+	max-width: 39rem;
+}
+
 @media (min-width: 1024px) {
+	.landing .hero-grid {
+		grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+		min-height: clamp(34rem, 66svh, 38rem);
+	}
 	.landing .hero-copy {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		text-align: center;
+		padding: 3.25rem var(--in) 3.25rem var(--edge);
 	}
-	.landing .hero h1 {
-		max-width: 24ch;
-		text-wrap: balance;
+	.landing .hero-pane {
+		border-top: 0;
+		border-left: 1px solid var(--rule-in);
+		padding: 2.75rem var(--edge) 2.75rem var(--in);
 	}
-	.landing .hero .hk-lead {
-		max-width: 42rem;
-		margin-top: 1.125rem;
-		text-wrap: balance;
+}
+/* From 1200px the figure takes the wider half, so the picture, not the
+   stage around it, fills the right. */
+@media (min-width: 1200px) {
+	.landing .hero-grid {
+		grid-template-columns: minmax(0, 11fr) minmax(0, 13fr);
 	}
-	.landing .hero-act {
-		justify-content: center;
-		margin-top: 1.5rem;
-	}
-	.landing .hero-install .code-copy {
-		width: fit-content;
+	.landing .hero-term {
+		max-width: none;
 	}
 }
 
@@ -357,8 +453,10 @@ main.landing .plans .p-name {
 
 /* ---------- Figures ---------- */
 
+/* Desktop-only column captions aligned over Wreck's 3 panels; mobile renders inline captions per card. */
+
 .landing .band > .fig {
-	--pause-y: calc((var(--field-y) - 28px) / 2);
+	--pause-y: 0.5rem;
 	position: relative;
 	margin-inline: calc(-1 * var(--edge));
 	border-top: 1px solid var(--rule-in);
@@ -369,76 +467,8 @@ main.landing .plans .p-name {
 .landing .band > .fig > .stage {
 	padding: var(--field-y) var(--edge);
 }
-/* Focused terminal anchor inside the 1200px sheet, without a full-bleed
-   dark slab interrupting the page. */
-.landing .hero-term {
-	max-width: 46rem;
-	margin-inline: auto;
-}
 
-/* ---------- Three-column flush hairline grid (01 How it works) ---------- */
-
-.landing .cols {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr);
-	margin: 0 calc(-1 * var(--edge));
-	padding: 0;
-	list-style: none;
-	border-top: 1px solid var(--rule-in);
-}
-.landing .cols > li {
-	display: flex;
-	flex-direction: column;
-	min-width: 0;
-	padding: 1.25rem var(--edge) 1.5rem;
-}
-.landing .cols > li + li {
-	border-top: 1px solid var(--rule-in);
-}
-.landing .cols > li > .num {
-	margin-bottom: 0.5rem;
-}
-.landing .cols .copy {
-	margin-top: 0.5rem;
-}
-.landing .cols .cmd {
-	margin-top: auto;
-	padding-top: 0.875rem;
-}
-.landing .cols .item-title {
-	text-wrap: balance;
-}
-@media (min-width: 1024px) {
-	.landing .cols {
-		grid-template-columns:
-			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
-			minmax(0, 1fr);
-	}
-	.landing .cols > li {
-		display: grid;
-		grid-row: span 4;
-		grid-template-rows: subgrid;
-		align-content: start;
-		padding: 1.625rem var(--in) 1.875rem calc(var(--in) - 1px);
-	}
-	.landing .cols > li:nth-child(3n + 1) {
-		padding-left: var(--edge);
-	}
-	.landing .cols > li:nth-child(3n) {
-		padding-right: var(--edge);
-	}
-	.landing .cols > li + li {
-		border-top: 0;
-	}
-	.landing .cols > li:not(:nth-child(3n + 1)) {
-		border-left: 1px solid var(--rule-in);
-	}
-	.landing .cols > li:nth-child(n + 4) {
-		border-top: 1px solid var(--rule-in);
-	}
-}
-
-/* ---------- The workflow grid (02 Workflow) ---------- */
+/* ---------- The workflow grid (03 Workflow) ---------- */
 
 .landing .cells {
 	--cell-pt: 1.375rem;
@@ -462,31 +492,27 @@ main.landing .plans .p-name {
 }
 .landing .cells > li > .shot {
 	flex: none;
-	border-top: 1px solid var(--rule-in);
+	border-top: 0;
 }
 .landing .cell-copy {
 	order: -1;
 	flex: 1;
 	display: flex;
 	flex-direction: column;
-	padding: var(--cell-pt) var(--edge) 1.375rem;
+	padding: var(--cell-pt) var(--edge) 1rem;
 }
 .landing .cell-copy > .num {
-	margin-bottom: 0.5rem;
+	margin-bottom: 0.375rem;
 }
 .landing .cells .item-title {
 	text-wrap: balance;
 }
-.landing .cells .copy {
-	margin-top: 0.5rem;
-}
 .landing .cells .cmd {
-	margin-top: auto;
-	padding-top: 0.875rem;
+	margin-top: 0.375rem;
 }
 @media (min-width: 1024px) {
 	.landing .cells {
-		--cell-pt: 1.625rem;
+		--cell-pt: 1.5rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 	.landing .cells > li + li {
@@ -509,18 +535,15 @@ main.landing .plans .p-name {
 		padding-left: calc(var(--in) - 1px);
 	}
 	.landing .cell-copy {
-		padding-bottom: 1.625rem;
-	}
-	.landing .cells > li.cell--text > .cell-copy {
-		padding-bottom: 1.75rem;
+		padding-bottom: 1rem;
 	}
 }
 .landing .cmd {
-	margin: 0.875rem 0 0;
+	margin: 0.375rem 0 0;
 	font-family: var(--hk-font-mono);
 	font-size: 0.8125rem;
 	line-height: 1.25rem;
-	color: var(--hk-text-2);
+	color: var(--hk-text-3);
 }
 @media (max-width: 639.98px) {
 	.landing .cmd {
@@ -533,12 +556,12 @@ main.landing .plans .p-name {
 .landing .links {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0 1rem;
+	gap: 0 1.125rem;
 	margin: 0;
 }
 .landing .links .hk-more {
 	margin: 0;
-	font-size: 0.9375rem;
+	font-size: 0.875rem;
 	font-weight: 400;
 	color: var(--hk-text-2);
 	transition: color var(--hk-dur-fast) var(--hk-ease);
@@ -553,15 +576,9 @@ main.landing .plans .p-name {
 		gap: 0.25em;
 		min-height: 2.75rem;
 	}
-	.landing .head .links {
-		margin-block: -0.75rem 0;
-	}
-	.landing .head .links .hk-more {
-		margin-bottom: -0.75rem;
-	}
 }
 
-/* ---------- Ruled rows: steps & questions ---------- */
+/* ---------- Ruled rows: steps ---------- */
 
 .landing .ruled {
 	margin: 0;
@@ -579,12 +596,13 @@ main.landing .plans .p-name {
 .landing .step-title {
 	display: flex;
 	align-items: baseline;
-	padding: 0.875rem var(--edge);
-}
-.landing .step-title .label {
-	flex: none;
-	min-width: 2.75em;
-	color: var(--pic-accent);
+	margin: 0;
+	padding: 0.75rem var(--edge);
+	font-family: var(--hk-font-sans);
+	font-size: 0.875rem;
+	font-weight: 400;
+	line-height: 1.25rem;
+	color: var(--hk-text-3);
 }
 .landing .steps .code-copy {
 	width: 100%;
@@ -609,11 +627,13 @@ main.landing .plans .p-name {
 }
 @media (min-width: 1024px) {
 	.landing .steps > li {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns:
+			calc((100% - 2 * var(--edge) + var(--col-gap)) / 4 + var(--edge) - var(--in))
+			minmax(0, 1fr);
 	}
 	.landing .step-title {
 		align-items: center;
-		padding: 1.125rem var(--in) 1.125rem var(--edge);
+		padding: 1rem var(--in) 1rem var(--edge);
 	}
 	.landing .steps .code-copy {
 		min-height: 100%;
@@ -629,7 +649,39 @@ main.landing .plans .p-name {
 .landing .steps .code-copy .hk-copy--labelled .text > .layer {
 	justify-content: flex-end;
 }
-@media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {
+/* The phone: each step is one band on the stage, its name small above
+   its command, the bands 12px apart with no rule between. */
+@media (max-width: 639.98px) {
+	.landing .steps {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.landing .steps > li {
+		border-top: 0;
+		background: var(--stage);
+	}
+	.landing .step-title {
+		padding: 0.625rem var(--edge) 0;
+		font-size: 0.75rem;
+		line-height: 1rem;
+	}
+	.landing .steps > li .code-copy {
+		min-height: 0;
+		padding: 0.125rem 0.25rem 0.25rem var(--edge);
+		border-top: 0;
+		background: none;
+	}
+	.landing .steps .code-copy .hk-copy {
+		min-width: 2.5rem;
+		min-height: 2.5rem;
+	}
+	/* Phones: a long command wraps after `/` (CodeCopy's <wbr>), never clips. */
+	.landing .steps .code-copy .line {
+		font-size: 0.75rem;
+	}
+}
+@media (min-width: 1024px) and (max-width: 1199.98px) {
 	.landing .steps .code-copy .line {
 		font-size: 0.75rem;
 	}
@@ -648,6 +700,53 @@ main.landing .plans .p-name {
 	align-items: center;
 	gap: 0.75rem 1rem;
 }
+/* 04 Start: the title, the path toggle straight over the commands it
+   switches, the commands, then the one call to action. From 1024px the
+   call to action moves up beside the title, on its baseline. */
+.landing .install-band {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: 'head' 'tabs' 'steps' 'cta';
+}
+.landing .install-band > .head {
+	grid-area: head;
+}
+.landing .start-tabs {
+	grid-area: tabs;
+	padding-bottom: 1rem;
+}
+.landing .install-band > .steps {
+	grid-area: steps;
+}
+.landing .start-cta {
+	grid-area: cta;
+	display: flex;
+	padding-block: 1.25rem;
+}
+.landing .start-tabs .hk-tablist button[aria-selected='false'] {
+	color: var(--tab-idle-ink);
+}
+@media (pointer: coarse), (max-width: 639.98px) {
+	.landing .start-tabs .hk-tablist button {
+		min-height: 2.75rem;
+		padding-inline: 0.875rem;
+	}
+}
+@media (max-width: 639.98px) {
+	.landing .start-cta > .hk-btn {
+		flex: 1 1 auto;
+	}
+}
+@media (min-width: 1024px) {
+	.landing .install-band {
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas: 'head cta' 'tabs tabs' 'steps steps';
+	}
+	.landing .start-cta {
+		align-self: end;
+		padding-block: 0 var(--head-gap);
+	}
+}
 @media (max-width: 479.98px) {
 	.landing .cta-row > .hk-btn {
 		flex: 1 1 100%;
@@ -657,14 +756,14 @@ main.landing .plans .p-name {
 	.landing .head > .cta-row {
 		flex-wrap: nowrap;
 		justify-content: flex-end;
-		align-items: last baseline;
+		align-items: center;
 	}
 	.landing .head > .cta-row > .hk-btn {
 		flex: none;
 	}
-	.landing .head > .cta-row > .seats {
-		order: -1;
-		max-width: 20rem;
+	.landing .head > .seats {
+		justify-self: end;
+		max-width: 24rem;
 		text-align: right;
 	}
 }
@@ -673,17 +772,13 @@ main.landing .plans .p-name {
 	font-size: 0.875rem;
 	color: var(--hk-text-3);
 }
-.landing .pricing-sub,
 .landing .pricing-note {
 	margin: 0 calc(-1 * var(--edge));
-	padding: 0.75rem var(--edge);
+	padding: 0.8125rem var(--edge);
 	border-top: 1px solid var(--rule-in);
-	font-size: 0.875rem;
+	font-size: 0.8125rem;
 	line-height: 1.5;
-	color: var(--hk-text-2);
-}
-.landing .pricing-sub {
-	background: var(--stage);
+	color: var(--hk-text-3);
 }
 .landing .pricing-note--split {
 	display: flex;
@@ -700,16 +795,12 @@ main.landing .plans .p-name {
 		justify-content: space-between;
 		gap: 2rem;
 	}
-	.landing .pricing-note--split > p:first-child {
-		max-width: 44rem;
-	}
 	.landing .pricing-note--split .links {
 		flex: none;
 	}
 }
 
-/* Flush plan cells on the sheet, overriding PlanCells' and OwnHardwarePlan's
-   scoped card borders and radii cleanly via element+class specificity. */
+/* Flush plan cells on the sheet */
 main.landing .plans.plans--public {
 	grid-template-columns: minmax(0, 1fr);
 	gap: 0;
@@ -729,9 +820,13 @@ main.landing .plans.plans--public .p-run {
 	padding-inline: var(--pl) var(--pr);
 }
 @media (max-width: 1023.98px) {
+	main.landing .plans.plans--public .plan {
+		padding: 1.5rem var(--edge);
+	}
 	main.landing .plans.plans--public .p-run {
-		margin-top: 0.875rem;
-		padding-top: 0.875rem;
+		margin-top: 0.625rem;
+		padding-top: 0;
+		border-top: 0;
 	}
 }
 main.landing .plans.plans--public .plan + .plan {
@@ -762,87 +857,225 @@ main.landing .plans.plans--public .plan + .plan {
 main.landing .plans--public .p-top {
 	min-height: 1.75rem;
 }
+main.landing .plans--public .p-price {
+	gap: 0.5rem;
+}
 main.landing .plans--public .p-price .was {
 	font-family: var(--hk-font-display);
 	font-size: 1.25rem;
 	line-height: 1.75rem;
-}
-main.landing #pricing .own {
-	margin: 0 calc(-1 * var(--edge));
-	padding: 1.25rem var(--edge) 1.375rem;
-	border: 0;
-	border-top: 1px solid var(--rule-in);
-	border-radius: 0;
-	background: none;
-}
-main.landing #pricing .own .o-price .o-n {
-	font-size: 2.25rem;
-	line-height: 2.5rem;
+	color: var(--was-ink);
 }
 @media (min-width: 1024px) {
-	/* Align Own hardware's description flush with the Plus column's left edge. */
-	main.landing #pricing .own {
-		grid-template-columns: calc((100% - 2 * var(--col-gap)) / 3) minmax(0, 1fr);
-		column-gap: var(--col-gap);
-		padding-block: 1.625rem 1.875rem;
+	main.landing .plans--public [data-testid='plan-solo'] {
+		position: relative;
+	}
+	main.landing .plans--public [data-testid='plan-solo']::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 2px;
+		background: var(--pic-accent);
 	}
 }
 
-/* ---------- Questions ---------- */
-
-.landing .faq {
-	margin-inline: calc(-1 * var(--edge));
-}
-.landing .faq > * {
-	border-top: 1px solid var(--rule-in);
-}
-.landing .faq summary {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 1.5rem;
-	padding: 0.9375rem var(--edge);
-	cursor: pointer;
+/* The memory bars under the plan cards: each plan's room drawn as the
+   4 GB sandboxes it runs at once, out of the largest plan's count. The
+   row continues the cells' columns and rules, so each bar reads as the
+   foot of the plan above it. */
+main.landing #pricing .mem {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	margin: 0 calc(-1 * var(--edge));
+	padding: 0;
 	list-style: none;
-	transition: background-color var(--hk-dur-fast) var(--hk-ease);
 }
-.landing .faq summary:hover {
-	background: var(--hk-hover);
+main.landing #pricing .mem > li {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0 var(--edge) 1.5rem;
 }
-.landing .faq summary:hover .plus {
-	color: var(--hk-text);
+main.landing #pricing .mem-bar {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
+	gap: 3px;
+	max-width: 16rem;
 }
-.landing .faq summary::-webkit-details-marker {
+main.landing #pricing .mem-bar > i {
+	height: 0.5rem;
+	border-radius: 2px;
+	background: var(--rule);
+}
+main.landing #pricing .mem-bar > i.on {
+	background: var(--pic-accent);
+}
+main.landing #pricing .mem-n {
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-3);
+}
+/* Below 1024px the cells stack above, so the bars stand together under
+   them, one row per plan, each named. */
+main.landing #pricing .mem-p {
 	display: none;
 }
-.landing .faq .plus {
-	flex: none;
-	width: 1rem;
-	height: 1rem;
-	stroke-width: 1.5;
-	stroke-linecap: round;
-	color: var(--hk-text-3);
-	transition:
-		transform var(--hk-dur-fast) var(--hk-ease),
-		color var(--hk-dur-fast) var(--hk-ease);
+@media (max-width: 1023.98px) {
+	main.landing #pricing .mem {
+		row-gap: 0.75rem;
+		padding-block: 1.25rem;
+		border-top: 1px solid var(--rule-in);
+	}
+	main.landing #pricing .mem > li {
+		display: grid;
+		grid-template-columns: 2.75rem minmax(0, 7rem) auto;
+		align-items: center;
+		column-gap: 0.75rem;
+		padding-block: 0;
+	}
+	main.landing #pricing .mem-p {
+		display: block;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
 }
-.landing .faq details[open] .plus {
-	transform: rotate(45deg);
+@media (min-width: 1024px) {
+	main.landing #pricing .mem {
+		grid-template-columns:
+			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
+			minmax(0, 1fr);
+	}
+	main.landing #pricing .mem > li {
+		padding: 0 var(--in) 1.875rem calc(var(--in) - 1px);
+	}
+	main.landing #pricing .mem > li:first-child {
+		padding-left: var(--edge);
+	}
+	main.landing #pricing .mem > li:last-child {
+		padding-right: var(--edge);
+	}
+	main.landing #pricing .mem > li + li {
+		border-left: 1px solid var(--rule-in);
+	}
+	main.landing .plans.plans--public .plan {
+		padding-bottom: 1.25rem;
+	}
 }
-.landing .faq details[open] > summary {
-	padding-bottom: 0.5rem;
+
+/* The hardware row under the plan cards: the cells' canvas, one rule above. */
+main.landing #pricing .hw {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 0.25rem;
+	margin-inline: calc(-1 * var(--edge));
+	padding: 1.5rem var(--edge);
+	border-top: 1px solid var(--rule-in);
 }
-.landing .faq summary:focus-visible {
-	outline-offset: -2px;
-}
-.landing .faq details > p {
-	max-width: calc(38rem + 2 * var(--edge));
+main.landing #pricing .hw-name {
 	margin: 0;
-	padding: 0 var(--edge) var(--item-gap);
+	font-family: var(--hk-font-display);
+	font-size: 1.25rem;
+	font-weight: 400;
+	line-height: 1.75rem;
+	letter-spacing: -0.01em;
+	color: var(--hk-text);
 }
-@media (prefers-reduced-motion: reduce) {
-	.landing .faq .plus,
-	.landing .faq summary {
-		transition: none;
+main.landing #pricing .hw-price {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	margin: 0;
+	padding-top: 0.5rem;
+}
+main.landing #pricing .hw-price .n {
+	font-family: var(--hk-font-display);
+	font-size: 2.25rem;
+	line-height: 2.5rem;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+	color: var(--hk-text);
+}
+main.landing #pricing .hw-price .per {
+	font-size: 0.875rem;
+	color: var(--hk-text-3);
+	white-space: nowrap;
+}
+main.landing #pricing .hw-what {
+	max-width: 48ch;
+	margin: 0.25rem 0 0;
+	font-size: 0.875rem;
+	line-height: 1.375rem;
+	color: var(--hk-text-2);
+	text-wrap: pretty;
+}
+/* From 1024px the row stands on the plan cells' columns: the name and
+   price under Solo, the line under Plus. */
+@media (min-width: 1024px) {
+	main.landing #pricing .hw {
+		grid-template-columns:
+			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
+			minmax(0, 1fr);
+		column-gap: 0;
+		align-items: baseline;
+		padding: 1.625rem 0 1.875rem;
+	}
+	main.landing #pricing :is(.hw-name, .hw-price) {
+		grid-column: 1;
+		padding-inline: var(--edge) var(--in);
+	}
+	main.landing #pricing .hw-name {
+		grid-row: 1;
+	}
+	main.landing #pricing .hw-price {
+		grid-row: 2;
+	}
+	main.landing #pricing .hw-what {
+		grid-column: 2 / -1;
+		grid-row: 2;
+		align-self: last baseline;
+		max-width: none;
+		margin: 0;
+		padding: 0 var(--edge) 0 calc(var(--in) - 1px);
+	}
+}
+
+/* ---------- The page's motion control ----------
+
+   On the safety figure the pause control is quiet text at the stage's
+   bottom-right corner: no border and no fill, the pictures' muted grey. */
+.landing #safety .fig .pic-pause.all,
+.landing #safety .fig .pic-pause.all::before {
+	border-color: transparent;
+	background: none;
+}
+.landing #safety .fig .pic-pause.all {
+	top: auto;
+	bottom: calc(var(--field-y) / 2 - 14px);
+	right: calc(var(--edge) - 10px);
+	color: var(--pic-dim);
+}
+.landing #safety .fig .pic-pause.all:hover {
+	color: var(--pic-ink);
+}
+.landing #safety .fig .pic-pause.all[aria-pressed='true'] {
+	color: var(--pic-accent);
+}
+
+/* The phone has no wheel: no arc fragment behind the 01 heading. */
+.landing #agents .sw-mob-arc {
+	display: none;
+}
+
+/* Below 1024px the pause control gets its own strip under the figure,
+   16px clear of the snapshot card, instead of sharing the inset. */
+@media (max-width: 1023.98px) {
+	.landing #safety .fig > .stage {
+		padding-bottom: calc(var(--field-y) + 1.75rem);
+	}
+	.landing #safety .fig .pic-pause.all {
+		bottom: 0.75rem;
 	}
 }
