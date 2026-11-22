@@ -44,7 +44,8 @@ From any other machine, `repose host add` prints one step and nothing else, so y
 On an x86 box the same argument goes to the installer instead, run there as root:
 
 ```shell
-curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join <argument>
+curl -fsSL https://repose.run/install-host.sh \
+  | sudo bash -s -- --join <argument>
 ```
 
 It sets repose up on the system disk, gives the second disk to your machines' volumes, and joins your account. The dashboard's **Add a host** shows this line beside the Mac's.

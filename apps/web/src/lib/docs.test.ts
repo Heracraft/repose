@@ -241,8 +241,6 @@ describe('user docs', () => {
 			expect(out, tok).toContain(`class="${tok}"`);
 		}
 		expect(highlightNix('x = "<b>";')).toContain('&lt;b&gt;');
-		const config = docBySlug('config')!;
-		expect(config.html).toContain('<code class="language-nix"><span');
 	});
 
 	it('highlights shell, toml and json blocks and gives each a copy button', () => {

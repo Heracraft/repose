@@ -61,10 +61,7 @@ Databases listen on `127.0.0.1` only: PostgreSQL on 5432, Redis 6379, MariaDB 33
 
 A machine takes its configuration from the menu and nothing else. `repose config apply FILE`, `repose config edit`, `repose config on` and `repose config off` are refused for it, with exit code 1, and the account-wide file `repose config --global` writes never reaches it:
 
-```
-$ repose config apply repose.nix
-This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services.
-```
+> This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services.
 
 Dotfiles, aliases and environment variables go in `/home/dev`, which every base update keeps: `~/.bashrc`, `~/.config/...`.
 
