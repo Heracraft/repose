@@ -87,9 +87,9 @@ const (
 	// an explicit flag be refused against the same number.
 	applianceMinCPUs      = 4
 	applianceMinMemoryMiB = 8192
-	// applianceImageApparentBytes is the raw image's size as built: 1
-	// MiB of GPT, the 64 MiB ESP, the 2 GiB root, the 1 MiB guest
-	// partition the first boot grows and the backup GPT
+	// applianceImageApparentBytes is the raw image's size as built,
+	// 2115 MiB: the GPT, the 64 MiB ESP, the 2 GiB root, the 2 MiB guest
+	// partition the first boot grows, and the backup GPT
 	// (images/appliance-arm64/build.sh, DECISIONS I-1494). A disk file
 	// smaller than that is a broken unpack.
 	applianceImageApparentBytes = 2115 << 20

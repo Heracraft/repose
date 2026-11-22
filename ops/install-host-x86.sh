@@ -24,8 +24,8 @@
 #                          with --api (default: the platform's)
 #   --uplink IFACE         the interface guests reach the internet through
 #                          (default: the one the default route uses)
-#   --hostd-binary PATH    install this hostd instead of the hostd-stable
-#                          release's (tests)
+#   --hostd-binary PATH    install this hostd instead of the one the
+#                          hostd-stable manifest names
 #   --manifest-url URL     the hostd channel manifest (default: hostd-stable)
 #   --dry-run              print every step and change nothing
 set -euo pipefail

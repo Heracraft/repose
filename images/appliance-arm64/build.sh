@@ -6,7 +6,7 @@
 #   1  esp     64 MiB  vfat: systemd-boot and the kernel (vmlinuz.efi)
 #   2  root     2 GiB  ext4 (mkfs.ext4 -d): the system; nothing writes it
 #                      but the system's own state under /var
-#   3  guests   1 MiB  empty: at the first boot it takes the rest of the
+#   3  guests   2 MiB  empty: at the first boot it takes the rest of the
 #                      disk the launcher grew the file to and becomes
 #                      vg-guests' PV (repose-guest-vg-init, then
 #                      repose-mac-grow at every boot, as nix/hosts/mac.nix)
