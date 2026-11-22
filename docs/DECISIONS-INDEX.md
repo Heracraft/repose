@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1068 entries.
+1069 entries.
 
 ## Scope
 
@@ -1097,6 +1097,7 @@ pointer, not a summary.
 - **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
 - **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — amended by I-1464; L38976
 - **I-1458** hostd carries an erofs guest as `BaseImage` (three files, each with its SHA-256) and its menu as `MenuSpec`; `base_image` beside `system_closure` is `invalid_argument`, and `Hello.features` names `nix` and `erofs` (nonix-contracts-api, 2026-11-22) — L38987
-- **I-1460** guestd's `ApplyMenu` streams progress as `Notify` frames carrying the request's `request_id`, ends with a Response; `Switch` and `RegisterPaths` answer `unimplemented` on an erofs guest (nonix-contracts-api, 2026-11-22) — L38995
-- **I-1462** `0051_nonix_base_images`: base rows have a format and per-arch files, projects a `guest_runtime` and `pending_base_version`, snapshots a `base_version`; `settings.default_guest_runtime` picks the runtime at create; `{fragment}` on an erofs project is `409 nix_config_retired` (nonix-contracts-api, 2026-11-22) — L39001
-- **I-1464** erofs projects never build: plans drop `PhaseBuild`, the base bump sets `pending_base_version`, placement needs the `erofs` feature and an image for the host's arch, and `repose-admin base publish --format erofs` fetches and checks every file before the row is written (nonix-contracts-api, 2026-11-22) — L39008
+- **I-1460** guestd's `ApplyMenu` streams progress as `Notify` frames carrying the request's `request_id`, ends with a Response; `Switch` and `RegisterPaths` answer `unimplemented` on an erofs guest (nonix-contracts-api, 2026-11-22) — L38996
+- **I-1462** `0051_nonix_base_images`: base rows have a format and per-arch files, projects a `guest_runtime` and `pending_base_version`, snapshots a `base_version`; `settings.default_guest_runtime` picks the runtime at create; `{fragment}` on an erofs project is `409 nix_config_retired` (nonix-contracts-api, 2026-11-22) — L39002
+- **I-1464** erofs projects never build: plans drop `PhaseBuild`, the base bump sets `pending_base_version`, placement needs the `erofs` feature and an image for the host's arch, and `repose-admin base publish --format erofs` fetches and checks every file before the row is written (nonix-contracts-api, 2026-11-22) — L39009
+- **I-1486** Each menu catalog entry names its erofs recipe (`recipe:`, the same string as the id), and a menu's `package` items follow the project's runtime: apt names on erofs (`menu.ValidAptPackage`, `Catalog.ValidateFor`), nixpkgs attribute paths on nix (nonix-config-cli-web, 2026-11-22) — L39016
