@@ -449,7 +449,7 @@ image cache instead of a Nix closure (I-1478, I-1480).
   `replay_after_base_upgrade` after `SetupProject` installs the menu again.
   hostd sends that `ApplyMenu` after every erofs boot that has a menu;
   guestd does nothing unless the base changed or the menu did.
-- **Snapshots.** The blob's metadata carries `base_version`. A `Restore`
+- **Snapshots.** The blob's metadata carries `base_version`, and so do `SnapshotResult`, `StopResult` and `SnapshotDone`. A `Restore`
   with `base_image` records it on the new guest and fetches it ahead (a
   fetch that fails there sets `base_needs_fetch` and fails nothing); a
   fork of an erofs guest (`clone`, no `base_image`) takes the source's
