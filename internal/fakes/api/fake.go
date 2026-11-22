@@ -49,6 +49,11 @@ type Options struct {
 	// (DECISIONS I-575); other requests are served meanwhile.
 	CreateHold       time.Duration
 	CreateReplyDelay time.Duration
+	// GatewayHost and GatewayPort are the gateway POST /certs names, as
+	// a staging api names its own; empty and zero are 127.0.0.1 at
+	// FakeGatewayPort, a port nothing listens on.
+	GatewayHost string
+	GatewayPort int
 	// CLILatest, when set, is sent as every answer's X-Repose-CLI-Latest
 	// header, the newest CLI release (DECISIONS I-626).
 	CLILatest string
@@ -74,6 +79,11 @@ type Options struct {
 	// long after the stop is accepted: the real api reads "stopping" only
 	// once its engine has picked the op up.
 	StopPickup time.Duration
+	// ConfigDelay makes a PUT /projects/:id/config op stay "running" for
+	// the delay (phase build on a Nix project, apply_config on an erofs
+	// one), with its log streaming one line at a time meanwhile, then end
+	// done or error. Zero keeps the op done at its first read.
+	ConfigDelay time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.
@@ -97,8 +107,13 @@ var CannedUser = User{
 	GitHubLogin: "heracraft",
 }
 
+// FakeGatewayPort is the gateway port POST /certs names by default, on
+// 127.0.0.1: port 1 binds only as root, so on loopback it refuses at once,
+// and a CLI pointed at the fake never dials the production gateway
+// (council 2026-11-22, CLI C3).
+const FakeGatewayPort = 1
+
 const (
-	gatewayHost = "ssh.repose.run"
 	hostCAPub   = "ssh-ed25519 AAAA...fakeca"
 	userCAPub   = "ssh-ed25519 AAAA...fakeuserca"
 	baseVersion = "2026.09.15"
@@ -439,6 +454,8 @@ var statusOf = map[string]int{
 	"billing_disabled": http.StatusServiceUnavailable,
 	// A Nix file sent to an erofs machine (I-1462).
 	"nix_config_retired": http.StatusConflict,
+	// A config PUT from a client that read an older revision (I-1528).
+	"menu_stale": http.StatusConflict,
 }
 
 func errf(code, format string, args ...any) *apiError {

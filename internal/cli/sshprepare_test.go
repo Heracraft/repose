@@ -149,8 +149,8 @@ func newPlainSSHFixture(t *testing.T) *plainSSHFixture {
 	}
 	for name, body := range map[string]string{
 		"id_ed25519-cert.pub": sshca.Marshal(old) + "\n",
-		"known_hosts":         fmt.Sprintf("@cert-authority %s %s\n", gatewayHost, ca.Host.PublicLine()),
-		sshHostsName:          renderSSHConfig([]Project{*f.todo}, handle, sshPathPrefix(), true),
+		"known_hosts":         fmt.Sprintf("@cert-authority %s %s\n", defaultGatewayHost, ca.Host.PublicLine()),
+		sshHostsName:          renderSSHConfig([]Project{*f.todo}, handle, defaultGateway, sshPathPrefix(), true),
 		"config":              renderSSHEntry(f.bin, sshPathPrefix()),
 	} {
 		if err := writeFileAtomic(filepath.Join(f.sd, name), []byte(body), 0o600); err != nil {

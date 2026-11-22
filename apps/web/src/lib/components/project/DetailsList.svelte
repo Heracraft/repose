@@ -41,6 +41,8 @@
 			<dd>
 				<span class="hk-mono">{project.base_version}</span>{#if project.hold_base_updates}<span
 						class="aside">&nbsp;· held</span
+					>{/if}{#if project.pending_base_version}<span class="aside"
+						>&nbsp;· <span class="hk-mono">{project.pending_base_version}</span> at the next restart</span
 					>{/if}
 			</dd>
 		</div>

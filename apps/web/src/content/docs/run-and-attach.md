@@ -65,7 +65,7 @@ The checkouts share one machine, so they share these:
 
 - Secrets, tool logins and settings. Every checkout sees the machine's secrets.
 - Your git identity. If your laptop picks a different email per folder (an `includeIf` for work repositories), the machine has the one from the folder you ran in last.
-- The machine's configuration. Only its own checkout's `repose.nix` configures the machine; one in an added checkout is never applied ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). A `flake.nix` or `.envrc` dev shell still loads per folder.
+- The machine's configuration: what [`repose config add`](/docs/config) installed is there for every checkout. An `.envrc` [dev environment](/docs/machine#the-projects-dev-environment) still loads per folder.
 - Ports. Two dev servers on port 3000 collide; give one another port.
 - Disk and snapshots. The checkouts fill one disk, `repose snapshots restore` rolls every one of them back, and `repose rm` destroys them all.
 - One record of the `.env` files last sent. Running in two folders by turns sends each set again.
@@ -184,7 +184,7 @@ While you're attached, drag a file onto the terminal, or press `Cmd+V` or `Ctrl+
 - The copies are `dev`'s own, in a 0700 directory with 0600 files. Each new copy deletes the ones over a day old and all but the newest 50.
 - The copies are named on the tmux status line, `repose: copied report.pdf to the machine`. When an agent asks you to paste a path, that line is how you see what left your laptop. On herdr it's a [herdr notification](#herdr-instead-of-tmux).
 
-A paste that is nothing but paths of files on your laptop counts as a drop, so pasting a path you copied works too. Some of those paths are never copied and arrive as the text you pasted: hidden files, anything in a hidden folder such as `~/.ssh`, and private keys. A link counts as the file it points to, so a link to a key in `~/.ssh` isn't copied either. Paths under system folders such as `/etc`, `/usr` and `/nix` are pasted as they are, since they name the machine's own files.
+A paste that is nothing but paths of files on your laptop counts as a drop, so pasting a path you copied works too. Some of those paths are never copied and arrive as the text you pasted: hidden files, anything in a hidden folder such as `~/.ssh`, and private keys. A link counts as the file it points to, so a link to a key in `~/.ssh` isn't copied either. Paths under system folders such as `/etc` and `/usr` are pasted as they are, since they name the machine's own files.
 
 A private key is a file whose name starts with `id_rsa`, `id_dsa`, `id_ecdsa` or `id_ed25519` (`.pub` files still copy), a file ending in `.pem`, `.p12`, `.pfx`, `.p8`, `.ppk`, `.jks`, `.keystore`, `.kdbx`, `.keychain` or `.keychain-db`, or a file of any name whose first 4 KB hold a PEM, OpenSSH or PGP private key or an OpenPGP secret key (`.gpg`, `.pgp`). A `.key` file is refused only when it holds such a key, so Keynote decks still copy; public keys, signatures and encrypted `.gpg` files copy too.
 

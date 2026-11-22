@@ -27,9 +27,19 @@ func main() {
 	billing := flag.Bool("billing", false, "start with billing on and the account active on Solo, instead of billing off (503 billing_disabled, an exempt account)")
 	cliLatest := flag.String("cli-latest", "", "send this as the newest CLI release (X-Repose-CLI-Latest) on every answer")
 	cliOldest := flag.String("cli-oldest", "", "send this as the oldest CLI release answered as documented (X-Repose-CLI-Oldest) on every answer")
+	configDelay := flag.Duration("config-delay", 0, "keep a PUT /config op running this long, streaming its log line by line (0: done at first read)")
+	defaultRuntime := flag.String("default-runtime", "nix", "the guest runtime a new machine gets, nix or erofs (settings.default_guest_runtime)")
+	gatewayHost := flag.String("gateway-host", "", "the gateway POST /certs names (default 127.0.0.1, at a port nothing listens on)")
+	gatewayPort := flag.Int("gateway-port", 0, "the gateway port POST /certs names (default api.FakeGatewayPort)")
 	flag.Parse()
+	if *defaultRuntime != "nix" && *defaultRuntime != "erofs" {
+		fmt.Fprintln(os.Stderr, "fakeapi: -default-runtime is nix or erofs")
+		os.Exit(2)
+	}
 
-	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest})
+	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest, ConfigDelay: *configDelay,
+		GatewayHost: *gatewayHost, GatewayPort: *gatewayPort})
+	f.SetDefaultGuestRuntime(*defaultRuntime)
 	defer f.Close()
 
 	admin, err := newAdminServer(f)
@@ -77,6 +87,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 agent and the summaries are e000.., oldest first (I-414, I-662). The project's creation
 //	                 moves to before the first of them (f.BackdateCreation), so it stays the oldest event
 //	GET  /say        -> f.Says: the messages the fake has taken, for a test to assert what was sent
+//	POST /runtime    {"default": nix|erofs} -> f.SetDefaultGuestRuntime: the runtime every new machine gets (I-1462)
+//	POST /pending-base {"project_id","version"} -> f.SetPendingBase: the base the next start boots; "" clears it (I-1464)
 //	POST /desktop    {"on": bool, "copy": "text"} -> f.SetDesktop: the browser view's stream route
 //	                 serves a static grey screen over RFB instead of refusing, so a test can reach
 //	                 the watching state and its clipboard panel; "copy" is handed to the page as the
@@ -207,6 +219,37 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			return
 		}
 		if err := f.SetProjectDisk(body.ProjectID, body.UsedBytes, body.SizeBytes); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+	})
+	// {default}: the guest runtime a new machine gets, nix or erofs, for
+	// every account (settings.default_guest_runtime, I-1462).
+	mux.HandleFunc("POST /runtime", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Default string `json:"default"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Default != "nix" && body.Default != "erofs" {
+			http.Error(w, "default is nix or erofs", http.StatusBadRequest)
+			return
+		}
+		f.SetDefaultGuestRuntime(body.Default)
+	})
+	// {project_id, version}: the base the project's next start boots, as
+	// the base bump sets it (I-1464); "" clears it.
+	mux.HandleFunc("POST /pending-base", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			Version   string `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := f.SetPendingBase(body.ProjectID, body.Version); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		}
 	})

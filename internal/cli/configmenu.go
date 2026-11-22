@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/heracraft/repose/internal/menu"
 )
 
 // MenuItem is one element of a menu selection (docs/interfaces/api.md
@@ -153,10 +151,10 @@ func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string)
 		switch {
 		case inCatalog[name]:
 			it = MenuItem{ID: name}
-		case menu.ValidPackage(name):
+		case validMenuPackage(project, name):
 			it = MenuItem{Package: name}
 		default:
-			return exitf(ExitUsage, "%q is not a nixpkgs attribute name (letters, digits, _ - + and dots, like gcc or python312Packages.black).", arg)
+			return badPackageName(project, arg)
 		}
 		if have[name] {
 			already = append(already, name)
@@ -217,7 +215,9 @@ func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []stri
 		_, _ = fmt.Fprintf(e.Out, "%s %s not in %s's menu.\n", joinNames(missing), isAre(len(missing)), project.Name)
 	}
 	if len(removed) == 0 {
-		if cfg.Menu == nil {
+		if cfg.Menu == nil && !isErofs(project) {
+			// An Ubuntu machine's empty menu is just empty: there is no
+			// hand-written file, and `config edit` is refused there.
 			return exitf(ExitUsage, "%s's repose.nix was written by hand; remove the package with `repose config edit`.", project.Name)
 		}
 		return silent(ExitUsage)
@@ -250,13 +250,39 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 		return err
 	}
 	if opID == "" {
+		if isErofs(project) {
+			_, _ = fmt.Fprintf(e.Out, "%s %s is still active.\n", done, shortRev(revisionID))
+			return nil
+		}
 		_, _ = fmt.Fprintf(e.Out, "%s Nothing to build; %s is still active.\n", done, shortRev(revisionID))
 		return nil
 	}
-	_, _ = fmt.Fprintf(e.Out, "%s Building revision %s ...\n", done, shortRev(revisionID))
+	if isErofs(project) {
+		// Nothing is built: the machine installs the items, and the
+		// steps are its own lines (DECISIONS I-1488). "Added ..." waits
+		// for the outcome, so it never stands above a failure (I-1514).
+	} else {
+		_, _ = fmt.Fprintf(e.Out, "%s Building revision %s ...\n", done, shortRev(revisionID))
+	}
 	op, pr, err := waitConfigOp(ctx, e, project, opID)
 	if err != nil {
 		return err
+	}
+	if op.State == "error" && isErofs(project) {
+		// The machine's line names the item and why; the code the api
+		// stores in front of it is no word for a reader (I-1514). The
+		// failed revision never becomes the menu, so the menu is what it
+		// was, whatever the steps above installed.
+		msg := strings.TrimPrefix(strings.TrimPrefix(op.Error.Message, op.Error.Code+": "), "menu_failed: ")
+		_, _ = fmt.Fprintf(e.Out, "error: %s\n", firstLine(msg))
+		if rest := strings.Trim(restAfterFirstLine(msg), "\n"); rest != "" {
+			_, _ = fmt.Fprintf(e.Out, "\n%s\n", rest)
+		}
+		_, _ = fmt.Fprintf(e.Out, "%s's menu is unchanged.\n", project.Name)
+		return silent(ExitBuildFailed)
+	}
+	if isErofs(project) {
+		_, _ = fmt.Fprintln(e.Out, done)
 	}
 	if op.State == "error" {
 		summary := genLocRe.ReplaceAllString(firstLine(op.Error.Message), "")

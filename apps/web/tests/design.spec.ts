@@ -89,7 +89,7 @@ test.describe('signed in', () => {
 		const open = page.getByRole('button', { name: 'Resize…' });
 		await open.focus();
 		await page.keyboard.press('Enter');
-		await expect(page.getByLabel('Grow to')).toBeFocused();
+		await expect(page.getByLabel('Size', { exact: true })).toBeFocused();
 		await page.getByRole('button', { name: 'Cancel' }).focus();
 		await page.keyboard.press('Enter');
 		await expect(open).toBeFocused();

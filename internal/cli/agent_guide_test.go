@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -12,21 +13,29 @@ import (
 )
 
 // The machine guide agents in the guest read (DECISIONS I-243) is
-// nix/guest/base/agent-guide.md. These tests keep it in step with the user
-// docs and the guest: every section of the machine, agents and limits pages
-// is summarised by a guide line (or listed below with why not), every
-// reference names a real page and heading, and every command the guide tells
-// an agent to run is on the machine. The guest-agent-guide VM test
-// (nix/guest/tests) checks the same command list with `command -v` on a real
-// guest, and that each agent sends the installed guide to its model.
+// images/guest/agent-guide.md, the Ubuntu base's (I-1492), which
+// images/guest/scripts/configure.sh renders into /etc/claude-code/CLAUDE.md
+// and the other agents' instruction files. These tests keep it in step
+// with the user docs and the guest: every section of the machine, agents
+// and limits pages is summarised by a guide line (or listed below with why
+// not), every reference names a real page and heading, and every command
+// the guide tells an agent to run is on the machine. agent-guide.commands
+// is that command list, for a guest test to run `command -v` on.
 
 const (
-	guidePath         = "../../nix/guest/base/agent-guide.md"
-	guideCommandsPath = "../../nix/guest/base/agent-guide.commands"
+	guidePath         = "../../images/guest/agent-guide.md"
+	guideCommandsPath = "testdata/agent-guide.commands"
 	docsDir           = "../../apps/web/src/content/docs"
+	// guideCopyPath is PR 2's guide at f99e9726 (ws/nonix-guest-image),
+	// read only while images/guest is not on this branch; delete it once
+	// it is.
+	guideCopyPath = "testdata/agent-guide.md"
+	// imageDir holds what the guest is built from; a guestCommands source
+	// under it is checked only when it is here.
+	imageDir = "../../images/guest"
 )
 
-var updateGuideCommands = flag.Bool("update-agent-guide", false, "rewrite nix/guest/base/agent-guide.commands")
+var updateGuideCommands = flag.Bool("update-agent-guide", false, "rewrite internal/cli/testdata/agent-guide.commands")
 
 // guidePages are the pages whose every H2 and H3 the guide must reference:
 // what the machine has, what agents get, what is not allowed.
@@ -42,6 +51,7 @@ var guideSkippedSections = map[string]string{
 	"agents#send-it-a-message":                      "a `repose say` arrives in the agent's own input as the user's next prompt (I-1144); there is nothing for the agent to do about it, and a line narrating it would be help nobody asked for",
 	"agents#continue-a-conversation-on-the-machine": "`repose run --session` reads files on the laptop; an agent on the machine cannot bring one and would only find the conversation already there (I-1328)",
 	"agents#opencode-version":                       "which opencode the platform pins, and the copy a reader installed under version 1; nothing an agent does (I-1050)",
+	"machine#older-machines":                        "machines from before the Ubuntu base; this guide is the Ubuntu base's, and a NixOS machine has its own",
 	"limits#projects":                               "account limits on the number of projects, not the machine",
 	"limits#when-repose-is-full":                    "the seats waitlist gates choosing a plan (I-290); an agent on a machine is past it",
 	"limits#ssh-connections":                        "the gateway limits connections from laptops into machines; an agent on the machine makes none",
@@ -49,45 +59,42 @@ var guideSkippedSections = map[string]string{
 
 // guestCommands is every command the guide may tell an agent to run, with
 // where the guest gets it: "file:word" means the word must appear in that
-// file (the package list or module that installs it), "system:why" is a
-// command every NixOS system has. The VM test runs `command -v` for each.
+// file (the Dockerfile's package lists, the agents' install script),
+// "system:why" is a command the Ubuntu 24.04 base has.
 var guestCommands = map[string]string{
-	"sudo":                "nix/guest/base/users.nix:security.sudo.enable",
-	"nix":                 "system:the Nix the guest's store belongs to",
-	"nix-collect-garbage": "system:the Nix the guest's store belongs to",
-	"sh":                  "system:NixOS's /bin/sh",
-	"bash":                "system:NixOS's base system path (the login shell)",
-	"[":                   "system:a bash builtin (and coreutils)",
-	"grep":                "system:NixOS's base system path",
-	"df":                  "system:NixOS's base system path (coreutils)",
-	"nproc":               "system:NixOS's base system path (coreutils); the guide's cores line (I-1326)",
-	"dmesg":               "system:NixOS's base system path (util-linux)",
-	"ss":                  "system:NixOS's base system path (iproute2); auto-forward reads it too",
-	"fstrim":              "system:NixOS's base system path (util-linux); base/trim.nix runs it daily (I-585)",
-	"curl":                "nix/guest/base/tool-list.nix:curl",
-	"jq":                  "nix/guest/base/tool-list.nix:jq",
-	"git":                 "nix/guest/base/tool-list.nix:git",
-	"gh":                  "nix/guest/base/tool-list.nix:gh",
-	"npm":                 "nix/guest/base/tool-list.nix:nodejs_24",
-	"npx":                 "nix/guest/base/tool-list.nix:nodejs_24",
-	"go":                  "nix/guest/base/tool-list.nix:go",
-	"uv":                  "nix/guest/base/tool-list.nix:uv",
-	"rustup":              "nix/guest/base/tool-list.nix:rustup",
-	"python3":             "nix/guest/base/compat.nix:pythonCompat",
-	"direnv":              "nix/guest/base/tool-list.nix:direnv",
-	"docker":              "nix/guest/base/docker.nix:virtualisation.docker",
-	"claude":              "nix/overlay/agents/default.nix:claude-code",
-	"codex":               "nix/overlay/agents/default.nix:codex",
-	"opencode":            "nix/overlay/agents/default.nix:opencode",
-	"gemini":              "nix/overlay/agents/default.nix:gemini-cli",
-	"pi":                  "nix/overlay/agents/default.nix:pi-coding-agent",
-
+	"sudo":    "images/guest/rootfs/etc/sudoers.d/repose:dev",
+	"sh":      "system:Ubuntu's /bin/sh (dash)",
+	"bash":    "system:Ubuntu's bash (the login shell)",
+	"[":       "system:a bash builtin (and coreutils)",
+	"grep":    "system:Ubuntu's base (grep)",
+	"df":      "system:Ubuntu's base (coreutils)",
+	"nproc":   "system:Ubuntu's base (coreutils); the guide's cores line (I-1326)",
+	"dmesg":   "system:Ubuntu's base (util-linux)",
+	"ss":      "system:Ubuntu's base (iproute2); auto-forward reads it too",
+	"fstrim":  "system:Ubuntu's base (util-linux); fstrim.timer runs it daily (I-585)",
+	"python3": "system:Ubuntu 24.04's Python 3.12",
+	"apt-get": "system:Ubuntu's package manager",
+	"nohup":   "system:Ubuntu's base (coreutils)",
+	"pkill":   "system:Ubuntu's base (procps)",
 	// Scheduled jobs are user timers (I-518).
-	"systemctl": "system:systemd, NixOS's init",
+	"systemctl": "system:systemd, Ubuntu's init",
+	"curl":      "images/guest/Dockerfile:curl",
+	"jq":        "images/guest/Dockerfile:jq",
+	"git":       "images/guest/Dockerfile:git",
+	"gh":        "images/guest/Dockerfile:gh",
+	"npm":       "images/guest/Dockerfile:nodejs",
+	"npx":       "images/guest/Dockerfile:nodejs",
+	"go":        "images/guest/Dockerfile:go",
+	"uv":        "images/guest/Dockerfile:uv",
+	"rustup":    "images/guest/Dockerfile:rustup",
+	"docker":    "images/guest/Dockerfile:docker-ce",
 	// The quick tunnel for an owner who is away (I-1246).
-	"cloudflared": "nix/guest/base/tool-list.nix:cloudflared",
-	"nohup":       "system:NixOS's base system path (coreutils)",
-	"pkill":       "nix/guest/base/tool-list.nix:psmisc",
+	"cloudflared": "images/guest/Dockerfile:cloudflared",
+	"claude":      "images/guest/scripts/install-agents.sh:claude",
+	"codex":       "images/guest/scripts/install-agents.sh:codex",
+	"opencode":    "images/guest/scripts/install-agents.sh:opencode",
+	"gemini":      "images/guest/scripts/install-agents.sh:gemini",
+	"pi":          "images/guest/scripts/install-agents.sh:pi",
 }
 
 // notCommands are backticked words in the guide that are names, not
@@ -103,8 +110,6 @@ var notCommands = map[string]string{
 	"mysql":                "a menu entry",
 	"attached":             "a word repose-presence prints",
 	"away":                 "a word repose-presence prints",
-	"use flake":            "a line for .envrc",
-	"flake.nix":            "a file name",
 	"env_vars":             "a Codex config key",
 	"bearer_token_env_var": "a Codex config key",
 }
@@ -128,6 +133,10 @@ var (
 func readGuide(t *testing.T) []guideLine {
 	t.Helper()
 	b, err := os.ReadFile(guidePath)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Logf("%s is not on this branch; reading the copy in %s", guidePath, guideCopyPath)
+		b, err = os.ReadFile(guideCopyPath)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +227,7 @@ func TestAgentGuideCoversTheMachineDocs(t *testing.T) {
 			key := page + "#" + id
 			have[key] = true
 			if !referenced[key] && guideSkippedSections[key] == "" {
-				t.Errorf("/docs/%s has no line in the agent guide (nix/guest/base/agent-guide.md): summarise what it means for an agent there with a <!-- /docs/%s --> reference, or add it to guideSkippedSections with why", key, key)
+				t.Errorf("/docs/%s has no line in the agent guide (images/guest/agent-guide.md): summarise what it means for an agent there with a <!-- /docs/%s --> reference, or add it to guideSkippedSections with why", key, key)
 			}
 		}
 		for key := range guideSkippedSections {
@@ -314,9 +323,13 @@ func TestAgentGuideCommandsExist(t *testing.T) {
 			}
 		}
 	}
+	_, imageErr := os.Stat(imageDir)
+	if imageErr != nil {
+		t.Logf("%s is not on this branch; the guestCommands sources are not checked", imageDir)
+	}
 	for c, src := range guestCommands {
 		file, word, _ := strings.Cut(src, ":")
-		if file == "system" {
+		if file == "system" || imageErr != nil {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join("../..", file))
@@ -332,7 +345,7 @@ func TestAgentGuideCommandsExist(t *testing.T) {
 	// The list the guest VM test checks with `command -v`.
 	sort.Strings(list)
 	want := "# Generated by internal/cli/agent_guide_test.go (go test ./internal/cli -run AgentGuide -update-agent-guide).\n" +
-		"# Every command nix/guest/base/agent-guide.md names; \"needs\" ones are rendered only where the guest has them.\n" +
+		"# Every command images/guest/agent-guide.md names; \"needs\" ones are rendered only where the guest has them.\n" +
 		strings.Join(list, "\n") + "\n"
 	if *updateGuideCommands {
 		if err := os.WriteFile(guideCommandsPath, []byte(want), 0o644); err != nil {

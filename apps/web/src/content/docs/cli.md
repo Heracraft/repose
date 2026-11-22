@@ -30,7 +30,7 @@ Global flags: `--project NAME`, `-v`/`--verbose` and `--version`. `-v` writes a 
 
 ### `repose run [PROJECT]`
 
-Create or start this checkout's machine and [attach](/docs/run-and-attach). PROJECT is the machine of that name, created if there is none: [a second machine for this checkout](/docs/lifecycle#a-second-machine-for-the-same-repository), or one for a folder with no git remote. A new machine gets a copy of your checkout; in a folder that isn't a git repository, `run` [offers to make one](/docs/sync#repositories-the-sync-cant-handle). One that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. A changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent there can tell when your CLI is older than these docs.
+Create or start this checkout's machine and [attach](/docs/run-and-attach). PROJECT is the machine of that name, created if there is none: [a second machine for this checkout](/docs/lifecycle#a-second-machine-for-the-same-repository), or one for a folder with no git remote. A new machine gets a copy of your checkout; in a folder that isn't a git repository, `run` [offers to make one](/docs/sync#repositories-the-sync-cant-handle). One that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. On an [older machine](/docs/machine#older-machines), a changed configuration file at the repository's root is applied in the background. `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent there can tell when your CLI is older than these docs.
 
 Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the billing page, prints `Waiting for a plan at https://repose.run/billing...` and waits up to 30 minutes for you to choose. Off a terminal it exits 7 with `Choose a plan at https://repose.run/billing first.`
 
@@ -48,7 +48,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 | `--temp [DURATION]`       | A new [temporary machine](/docs/lifecycle#temporary-machines), destroyed with no snapshot after DURATION (`10m` to `24h`, or `1d`; default `24h`). `--temp 3h` works anywhere among the arguments; a duration spelled with a word, such as `3hr`, exits 2. [Your laptop's tools](/docs/machine#your-laptops-tools-come-along) and Claude plugins are not installed on it.                                                                  |
 | `--bridge`                | Also [bridge your Chrome](#repose-browser-bridge-project) to the machine while attached.                                                                                                                                                                           |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                           |
-| `--no-personal`           | Keep your [machine.nix](/docs/config#your-machine-nix) off this machine from now on: a new one is created without it, and one that has it switches without it in the background.                                                                                   |
+| `--no-personal`           | On an [older machine](/docs/machine#older-machines), keep your account's configuration file off it from now on: a new one is created without it, and one that has it switches without it in the background.                                                                                   |
 | `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start, and it stays with the project. Default: [`default_multiplexer`](#config-toml).    |
 | `--session [ID]`          | Bring one of this laptop's [Claude Code conversations](/docs/agents#continue-a-conversation-on-the-machine) to the machine and open a window on it with `claude --resume`. ID is a whole conversation id, its start or its end; bare, it's this checkout's newest, and the line names the one it chose. [`repose sessions`](#repose-sessions) lists them. A window already open on that conversation is used instead of a second one. Not with `-w`, `--worktree`, or `--agent` naming another agent. |
 
@@ -102,7 +102,7 @@ With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines ins
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
-Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it, apart from a leading `~` (below). One quoted word with spaces in it, `'cat ~/out/report.txt | head'`, is a command line and runs in the machine's shell, with its `~`, pipes and globs. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
+Run one command in the checkout on the machine, with your secrets and the project's [dev environment](/docs/machine#the-projects-dev-environment), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it, apart from a leading `~` (below). One quoted word with spaces in it, `'cat ~/out/report.txt | head'`, is a command line and runs in the machine's shell, with its `~`, pipes and globs. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
 
 ```
 $ repose exec npm test
@@ -261,7 +261,7 @@ FOLDER is where in the checkout the conversation ran, and the machine gets it in
 
 ### `repose scan [DIR]`
 
-List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets. A `machine.nix` or a `repose.nix` [takes over a half](/docs/machine#your-laptops-tools-come-along); a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads `~/.config/repose/machine.nix` and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
+List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets, through mise on an Ubuntu machine. It reads which machine the checkout belongs to; on an [older machine](/docs/machine#older-machines), its configuration files take over a half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads the laptop's copy of the account's file and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
 
 ## Projects
 
@@ -275,7 +275,7 @@ AGENTS names the agent and its [state](/docs/agents#agent-states), with how long
 
 HOST is a column only while a listed machine is on [hardware of your own](#your-own-hardware): the host's name for a machine on one of yours, `repose` for one on repose's servers. LEFT is a column only while a temporary machine is listed: its time left, or `up` once that has run out ([Temporary machines](/docs/lifecycle#temporary-machines)). DISK is a column only while a listed project's disk is 90 percent full or more, and reads `93% full`.
 
-A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). The last line is your plan and how much of it is in use: memory running, the disk your projects hold, egress this month. Under it, a line for each limit in the way: disk over the plan ([Projects](/docs/limits#projects)), egress past the allowance ([Egress](/docs/limits#egress)), a payment that failed ([If a payment fails](/docs/billing#if-a-payment-fails)).
+A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). Another names each project whose newer base is ready for its next restart. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, egress this month. Under it, a line for each limit in the way: disk over the plan ([Projects](/docs/limits#projects)), egress past the allowance ([Egress](/docs/limits#egress)), a payment that failed ([If a payment fails](/docs/billing#if-a-payment-fails)).
 
 `--json` prints the full records. `--destroyed` lists the destroyed projects `repose restore` can still bring back, one row per name with the earlier destroys counted; `--all` goes with `--destroyed` and lists every row, each with the `ID` that restores it. `-q`/`--quiet` prints the names alone, one per line:
 
@@ -298,6 +298,7 @@ todo-app  running 2h14m  large
              node :3000 up 2h 120.4 MB, on your laptop at :3001
              postgres :5432 up 3d 40.1 MB
   laptop     :5037 adb, :11434 ollama
+  base       2026.11.22, Ubuntu
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
   last event 14m ago, claude finished "Added auth flow"
   webhooks   stripe 200 2m ago, github 503 stopped 1h04m ago
@@ -307,9 +308,9 @@ A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
-`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. A machine on [hardware of your own](#your-own-hardware) has a `host` row naming it; `-v` adds that row for every machine, with the machine's address beside the host. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
+`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `base` is the base the machine runs and what it is, `Ubuntu` or `NixOS` (an [older machine](/docs/machine#older-machines)). `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. A machine on [hardware of your own](#your-own-hardware) has a `host` row naming it; `-v` adds that row for every machine, with the machine's address beside the host. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
 
-Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
+Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines), a newer base that is ready for the next restart (`base 2026.11.30 is ready; todo-app uses it at its next restart`). Then settings a new project wouldn't get (`setup: agent codex, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -367,7 +368,7 @@ DISK and `--size` go in one command, the disk first: `repose resize todo-app 160
 
 One of the machine's logs: `--kind console|build|ops`, default `console`. Lines come oldest first. A stopped machine, or one in `error`, still has its logs.
 
-`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration change's log: a build's on a NixOS machine, the install lines on an Ubuntu one. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
 
 ```text
 2026-10-08T21:38:02-04:00 stop done 4.2s
@@ -515,16 +516,16 @@ A machine that runs [herdr](/docs/run-and-attach#herdr-instead-of-tmux) instead 
 
 | Command                             | What it does |
 | ----------------------------------- | ------------ |
-| `repose config add PACKAGE...`      | Add [menu entries](/docs/config#the-menu) or nixpkgs packages, build and apply. With no names, list the menu's entries by group. |
+| `repose config add PACKAGE...`      | Add [menu entries](/docs/config#the-menu) or apt packages and install them on the machine. With no names, list the menu's entries by group. |
 | `repose config remove PACKAGE...`   | Remove them again. Alias `rm`. |
-| `repose config show [PROJECT]`      | Print the project's `repose.nix`. `repose config` alone does the same. |
-| `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id, whether it built, and whether it carries your machine.nix. `--json` for JSON, `-q`/`--quiet` for whole ids. |
-| `repose config edit [PROJECT]`      | Edit in `$VISUAL` or `$EDITOR`, apply on save. |
-| `repose config apply [PATH]`        | Apply a file, by default `./repose.nix`. With no PATH and no such file, apply the newest revision that built again, on a running machine. `--revision ID` switches the running machine back to an earlier revision instead; ID is a whole id or 4 or more characters of either end. |
-| `repose config on [PROJECT]`        | Give the project's machine your machine.nix again. |
-| `repose config off [PROJECT]`       | Keep your machine.nix off the project's machine. [`repose run --no-personal`](#repose-run-project) does it at a run. |
+| `repose config show [PROJECT]`      | Print the project's menu, one entry or package a line, and nothing when it is empty. `repose config` alone does the same. |
+| `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id and whether each applied. `--json` for JSON, `-q`/`--quiet` for whole ids. |
+| `repose config apply [PATH]`        | With no PATH, apply the newest revision again, on a running machine. `--revision ID` applies an earlier revision to the running machine instead; ID is a whole id or 4 or more characters of either end. |
+| `repose config edit [PROJECT]`      | For an [older machine](/docs/machine#older-machines): edit its configuration file in `$VISUAL` or `$EDITOR`, apply on save. |
+| `repose config on [PROJECT]`        | For an older machine: give it your account's file again. |
+| `repose config off [PROJECT]`       | For an older machine: keep your account's file off it. [`repose run --no-personal`](#repose-run-project) does it at a run. |
 
-With `--global`, the same commands act on your [machine.nix](/docs/config#your-machine-nix) instead of the project's file. `--global` takes no project; `on` and `off` take one, with or without it. `add` and `remove` edit the file's `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default `~/.config/repose/machine.nix`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
+`repose config apply PATH`, `edit`, `on` and `off` for any other machine exit 1 with the one sentence [Configuration files](/docs/config#configuration-files) shows. `--global` acts on the account's file for older machines instead: it takes no project, and `on` and `off` take one, with or without it; `add` and `remove` edit its package list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default the one in `~/.config/repose/`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
 
 The CLI's own settings are keys in [config.toml](#config-toml); `repose config set` exits 2 and names the file.
 
@@ -616,7 +617,7 @@ reverse = ["15432:5432"]
 
 ## Other servers
 
-The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
+The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does; one without it says `has no /v1 at its end` and exits 1. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
 
 `repose login --browser` logs in through a browser on this computer instead of a code, and needs a login application that registers a loopback redirect URI. The hosted one registers none, so `--browser` there, where a browser can be opened, waits 5 minutes and exits 3 with `Login failed: timed out waiting for the browser login (5 minutes).`
 
@@ -624,12 +625,12 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 
 | Path                | What it holds                                                                                                                                                                                                                                       |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.config/repose/` | `config.toml`, your login at mode 0600, your [`machine.nix`](/docs/config#your-machine-nix) with `machine.nix.state` beside it, and caches that are safe to delete. On macOS the refresh token is in the keychain.                     |
+| `~/.config/repose/` | `config.toml`, your login at mode 0600, the account's configuration file for [older machines](/docs/machine#older-machines) and its state file, and caches that are safe to delete. On macOS the refresh token is in the keychain.                     |
 | `~/.ssh/repose/`    | The CLI's own SSH key, its 24-hour certificate, `hosts` with one `Host` block per project, and the `config` that `~/.ssh/config` includes ([SSH and editors](/docs/ssh-and-editors#how-it-works)).                                                   |
 | `~/.ssh/config`     | The `Include ~/.ssh/repose/config` line at the top, under a `# added by repose` comment. No other line changes.                                                                                                                                      |
 | `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                              |
 
-`repose logout --purge` removes all of these but the `repose` remotes and `machine.nix`, which is yours; `git remote remove repose` removes one remote.
+`repose logout --purge` removes all of these but the `repose` remotes and that configuration file, which is yours; `git remote remove repose` removes one remote.
 
 ## Output
 
@@ -650,7 +651,7 @@ Two lines on stderr are about the CLI itself. One release behind the latest, it 
 | 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
 | 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
-| 10 | The configuration build failed. |
+| 10 | A configuration change failed: a build, or an install on the machine. |
 | 130 | Interrupted with `Ctrl-C`, at a question too. |
 
 Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s; `255` means the connection dropped and the command could not reconnect. `repose cp` returns `scp`'s. `repose exec` returns the command's code once the command has started, so a `4` from your test runner is the test runner's; the codes above come only from failures before it starts, and each prints a message first.

@@ -423,7 +423,7 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	// base_image again, fetches it (I-1480, I-1484).
 	if c.BaseImage != nil {
 		if err := m.ensureBase(ctx, base); err != nil {
-			log.Warn("base image not fetched ahead of the start", "event", "base_image", "base_version", base.Version, "err", err.Message)
+			log.Warn("base image not fetched ahead of the start", "event", "base_image", "base_version", base.Version, "code", err.Code)
 			g.BaseNeedsFetch = true
 		}
 	}

@@ -1,23 +1,36 @@
 <script lang="ts">
 	// Settings' six tabs (DECISIONS I-841, I-1322, I-1366): General,
 	// Notifications, Secrets, API tokens, machine.nix and Hosts, links on PageShell's hairline as
-	// a project's tabs are. The layout draws the title and the tabs, so a tab switch moves
+	// a project's tabs are. machine.nix is listed only for an account with a
+	// Nix project (I-1490): it reaches no other machine. Its page still
+	// opens from a direct link, and its tab shows while it is open. The layout draws the title and the tabs, so a tab switch moves
 	// nothing above the content; each page renders its sections only.
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import { projectsStore } from '$lib/projects.svelte';
+	import { onMount } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
 
-	const tabs = [
+	const machineNix = resolve('/settings/machine-nix');
+	const allTabs = [
 		{ href: resolve('/settings'), label: 'General' },
 		{ href: resolve('/settings/notifications'), label: 'Notifications' },
 		{ href: resolve('/settings/secrets'), label: 'Secrets' },
 		{ href: resolve('/settings/tokens'), label: 'API tokens' },
-		{ href: resolve('/settings/machine-nix'), label: 'machine.nix' },
+		{ href: machineNix, label: 'machine.nix' },
 		{ href: resolve('/settings/hosts'), label: 'Hosts' }
 	];
+	/** A project from before I-1462 has no guest_runtime and is a Nix one. */
+	let hasNix = $derived(!!projectsStore.list?.some((p) => (p.guest_runtime ?? 'nix') === 'nix'));
+	let tabs = $derived(
+		allTabs.filter((t) => t.href !== machineNix || hasNix || page.url.pathname === machineNix)
+	);
+	onMount(() => {
+		void projectsStore.refresh(30_000);
+	});
 </script>
 
 {#snippet nav()}

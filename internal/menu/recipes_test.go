@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// recipeFile is guestd's recipe file (PR 4, DECISIONS I-1476). Until it
+// recipeFile is guestd's recipe file (PR 4, ws/nonix-guestd). Until it
 // is on this branch the test reads the copy in testdata, and says so.
 var recipeFile = filepath.Join("..", "guestd", "config", "recipes.yaml")
 
@@ -127,5 +127,19 @@ func TestValidateForRuntime(t *testing.T) {
 	}
 	if err := c.ValidateFor(RuntimeErofs, Selection{{Package: "postgresql"}}); err == nil {
 		t.Fatal("erofs took a catalog id as a package")
+	}
+}
+
+// Council finding 13: the menu's own words agree with what the recipe
+// does, on both surfaces that show them.
+func TestCatalogTextMatchesRecipes(t *testing.T) {
+	c := load(t)
+	pg, _ := c.Entry("postgresql")
+	if !strings.Contains(pg.Description, "/var/lib/repose/services/postgresql") {
+		t.Errorf("postgresql says %q", pg.Description)
+	}
+	v, _ := c.Entry("vercel")
+	if strings.Contains(v.Description, "boot") {
+		t.Errorf("vercel says %q", v.Description)
 	}
 }

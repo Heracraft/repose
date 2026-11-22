@@ -23,6 +23,11 @@
 	import type { OwnedHost, HostState } from '$lib/api/types';
 
 	const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+	/** The Mac image's download and the free disk it needs (I-1490). The
+	 * api's install answer carries neither, so they are the appliance's
+	 * own figures, as own-hardware.md gives them. */
+	const MAC_DOWNLOAD = 'about 250 MB';
+	const MAC_FREE_DISK = '20 GB';
 
 	let hosts = $state<OwnedHost[] | undefined>(undefined);
 	let loadError = $state<string | undefined>(undefined);
@@ -235,6 +240,17 @@
 				? `repose host add --join ${made.install.argument}`
 				: ''
 	);
+
+	/**
+	 * The same argument for an x86 box, which runs the host installer
+	 * instead of the CLI (I-1490; own-hardware.md "Adding it"). Shown only
+	 * when the api sent the argument, since the line is nothing without it.
+	 */
+	let x86Step = $derived(
+		made?.install?.argument
+			? `curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join ${made.install.argument}`
+			: ''
+	);
 </script>
 
 <section class="hk-section" id="hosts" aria-labelledby="hosts-h">
@@ -412,9 +428,26 @@
 					<p class="hdlg-once">
 						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
+					{#if x86Step}<h3 class="hdlg-where">On a Mac mini</h3>{/if}
 					<div data-testid="host-install">
 						<CodeCopy command={step} what="the install step" wrap />
 					</div>
+					{#if x86Step}
+						<p class="hdlg-facts" data-testid="host-mac-size">
+							It downloads {MAC_DOWNLOAD} and needs {MAC_FREE_DISK} of free disk.
+						</p>
+						<h3 class="hdlg-where">On an x86 box with Ubuntu 24.04</h3>
+						<div data-testid="host-install-x86">
+							<CodeCopy command={x86Step} what="the x86 install step" wrap />
+						</div>
+						<!-- What the installer takes (ops/install-host-x86.sh): a file by
+						     default, or a whole empty disk it refuses to format when it
+						     holds anything (council finding 9). -->
+						<p class="hdlg-facts" data-testid="host-x86-disk">
+							It keeps your machines' disks in /var/lib/repose/guests.img, or with --device takes
+							over a whole empty disk.
+						</p>
+					{/if}
 					<p class="hdlg-facts">
 						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
 							>What this does</a
@@ -585,6 +618,15 @@
 		padding: 0 1.25rem 0.25rem;
 		line-height: 1.25rem;
 		text-wrap: pretty;
+	}
+	.hdlg-where {
+		margin: 1rem 0 0.375rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--hk-text-2);
+	}
+	.hdlg-where:first-of-type {
+		margin-top: 0;
 	}
 	.hdlg-facts {
 		margin: 0.75rem 0 0;

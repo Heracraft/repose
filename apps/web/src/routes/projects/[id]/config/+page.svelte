@@ -17,17 +17,21 @@
 		applyRevision,
 		patchProject,
 		opLogUrl,
-		getOp
+		getOp,
+		startProject,
+		stopProject
 	} from '$lib/api/client';
 	import { toast } from 'svelte-sonner';
 	import { toastApiError } from '$lib/api/toast';
+	import { ApiError } from '$lib/api/errors';
 	import { dateTime } from '$lib/format';
 	import {
 		toggleSelection,
 		groupCatalog,
 		buildMenuSelection,
 		parseMenuSelection,
-		menuEditable
+		menuEditable,
+		validPackageName
 	} from '$lib/menuSelection';
 	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
@@ -38,6 +42,13 @@
 	const ctx = useProject();
 	const id = ctx.id;
 	let project = $derived(ctx.project);
+	// An erofs machine (I-1462) boots the Ubuntu base and takes the menu
+	// alone: no Nix tab, no machine.nix switch, and a newer base waits
+	// for a restart (I-1490).
+	let erofs = $derived(project?.guest_runtime === 'erofs');
+	$effect(() => {
+		if (erofs) activeTab = 'menu';
+	});
 
 	let config = $state<Config | undefined>(undefined);
 	let catalog = $state<CatalogItem[]>([]);
@@ -94,7 +105,7 @@
 	let nixReadonly = $derived(!!config?.menu && !nixOverrideEditable);
 	// A fragment written by hand turns the menu off; the starting file and
 	// one the menu wrote keep it on (the api's "custom fragment" rule).
-	let menuOn = $derived(!!config && menuEditable(config));
+	let menuOn = $derived(!!config && (erofs || menuEditable(config)));
 
 	// Build/apply state, shared by both tabs.
 	let applying = $state(false);
@@ -102,6 +113,16 @@
 	let buildDone = $state(false);
 	let buildError = $state<string | undefined>(undefined);
 	let currentOpId = $state<string | undefined>(undefined);
+	/**
+	 * How the last Apply ended, said at the Apply bar where it was pressed
+	 * (I-1514): the log and its banner are below the fold on any long
+	 * menu. Cleared by the next change to the selection.
+	 */
+	let outcome = $state<{ ok: boolean; text: string; stale?: boolean } | undefined>(undefined);
+	/** An op's error without the code the api stores in front of it. */
+	function plainError(err: string | undefined): string {
+		return (err ?? '').replace(/^menu_failed: /, '').split('\n')[0];
+	}
 	let eventSource: EventSource | undefined;
 	let logEl = $state<HTMLPreElement | undefined>(undefined);
 
@@ -120,7 +141,11 @@
 			]);
 			// The first load picks the tab; a reload after a build keeps the
 			// one the reader is on.
-			if (!tabPicked) activeTab = config && menuEditable(config) ? 'menu' : 'nix';
+			if (!tabPicked)
+				activeTab =
+					ctx.project?.guest_runtime === 'erofs' || (config && menuEditable(config))
+						? 'menu'
+						: 'nix';
 			tabPicked = true;
 			fragmentText = config?.fragment ?? '';
 			const menu = parseMenuSelection(config?.menu);
@@ -141,8 +166,41 @@
 		}
 	}
 
+	// The op an Apply started, kept for this tab (I-1516): a reload, or
+	// back then forward, finds it and shows it again while it runs, so the
+	// page never offers Apply over an install already under way.
+	const opKey = `repose-config-op:${id}`;
+	function rememberOp(opId: string | undefined) {
+		try {
+			if (opId) sessionStorage.setItem(opKey, opId);
+			else sessionStorage.removeItem(opKey);
+		} catch {
+			// Storage refused (a private window): the page works without it.
+		}
+	}
+	async function resumeOp() {
+		let opId: string | null = null;
+		try {
+			opId = sessionStorage.getItem(opKey);
+		} catch {
+			return;
+		}
+		if (!opId || currentOpId) return;
+		try {
+			const op = await getOp(id, opId);
+			if (op.state === 'running' || op.state === 'pending') {
+				applying = true;
+				startBuild(opId);
+				return;
+			}
+		} catch {
+			// Gone or unreadable: nothing to show again.
+		}
+		rememberOp(undefined);
+	}
+
 	onMount(() => {
-		void load();
+		void load().then(resumeOp);
 		// The Apply bar holds the page's primary: the header's Start draws
 		// secondary while this tab is open.
 		ctx.holdPrimary = true;
@@ -188,6 +246,19 @@
 
 	let groups = $derived(groupCatalog(catalog, search));
 
+	// A package the menu lacks, added by name from the search, as `repose
+	// config add NAME` does (I-1508): a valid name for the machine's
+	// runtime that is no menu id and not already added.
+	let addable = $derived.by(() => {
+		const name = search.trim();
+		if (!name || catalog.some((c) => c.id === name) || extraPackages.includes(name)) return '';
+		return validPackageName(project?.guest_runtime, name) ? name : '';
+	});
+	function addPackage(name: string) {
+		extraPackages = [...extraPackages, name];
+		search = '';
+	}
+
 	function toggleItem(item: CatalogItem, checked: boolean) {
 		if (item.kind === 'service') {
 			selectedServices = toggleSelection(selectedServices, item.id, checked);
@@ -201,7 +272,9 @@
 	}
 
 	function startBuild(opId: string) {
+		outcome = undefined;
 		currentOpId = opId;
+		rememberOp(opId);
 		buildLines = [];
 		buildDone = false;
 		buildError = undefined;
@@ -217,15 +290,22 @@
 			};
 			es.addEventListener('done', async () => {
 				es.close();
+				rememberOp(undefined);
 				buildDone = true;
 				applying = false;
+				let ended: typeof outcome = undefined;
 				try {
 					const op = await getOp(id, opId);
-					if (op.state === 'error') buildError = op.error;
+					if (op.state === 'error') buildError = plainError(op.error);
+					ended =
+						op.state === 'error'
+							? { ok: false, text: plainError(op.error) }
+							: { ok: true, text: 'Applied' };
 				} catch {
 					// The revision list below still shows failed/applied.
 				}
 				await load();
+				outcome = ended;
 			});
 			es.onerror = () => {
 				es.close();
@@ -244,10 +324,22 @@
 			extraPackages
 		);
 		try {
-			const { op_id } = await putConfig(id, { menu });
+			// The revision this page loaded (I-1524, api.md I-1528): a menu
+			// changed since, from another tab or the CLI, is refused rather
+			// than replaced by this page's older copy.
+			const { op_id } = await putConfig(id, { menu, base_revision_id: config?.revision_id });
 			startBuild(op_id);
 		} catch (err) {
 			applying = false;
+			if (err instanceof ApiError && err.code === 'menu_stale') {
+				await load();
+				outcome = {
+					ok: false,
+					stale: true,
+					text: 'The menu changed elsewhere since you loaded it, and is reloaded.'
+				};
+				return;
+			}
 			toastApiError(err, 'Could not apply the menu selection.');
 		}
 	}
@@ -329,6 +421,30 @@
 		}
 	}
 
+	// Restart for a pending base (I-1490): a running machine is stopped,
+	// with no snapshot, and started; a stopped one is started. Asked
+	// first, since the machine's processes end.
+	let askingRestart = $state(false);
+	async function restartForBase() {
+		if (!project || ctx.opBusy) return;
+		askingRestart = false;
+		const running = project.state === 'running';
+		ctx.opBusy = running ? 'stop' : 'start';
+		try {
+			if (running) {
+				const stopped = await ctx.waitForOp((await stopProject(id, false)).op_id, () => {});
+				if (!stopped) return;
+				ctx.opBusy = 'start';
+			}
+			await ctx.waitForOp((await startProject(id)).op_id, () => {});
+		} catch (err) {
+			toastApiError(err, 'Could not restart the machine.');
+		} finally {
+			ctx.opBusy = undefined;
+			void ctx.refresh();
+		}
+	}
+
 	// The checkbox follows the project, not the click: on a refusal it is
 	// put back to what the server holds, so it never shows a hold that
 	// was not saved.
@@ -365,18 +481,54 @@
 				Hold base updates
 			</label>
 		</div>
-		<div class="cfact-row">
-			<label class="hk-check">
-				<input
-					type="checkbox"
-					checked={!project.personal_opt_out}
-					disabled={personalSaving}
-					onchange={(e) => void togglePersonal(e.currentTarget)}
-				/>
-				Use your machine.nix on this machine
-			</label>
-			<a class="hk-link mnix-link" href={resolve('/settings/machine-nix')}>Edit machine.nix</a>
-		</div>
+		{#if erofs && project.pending_base_version}
+			<div class="hk-banner cbase" role="status" data-testid="pending-base">
+				{#if askingRestart}
+					<p>Restart {project.slug}? Its processes end; its files and services' data stay.</p>
+					<span class="cbase-buttons">
+						<button
+							type="button"
+							class="hk-btn-secondary hk-btn-sm"
+							aria-disabled={ctx.opBusy ? 'true' : undefined}
+							onclick={() => void restartForBase()}>Restart now</button
+						>
+						<button
+							type="button"
+							class="hk-btn-ghost hk-btn-sm"
+							onclick={() => (askingRestart = false)}>Not now</button
+						>
+					</span>
+				{:else}
+					<p>
+						Base <span class="hk-mono">{project.pending_base_version}</span> is ready. It is used at the
+						next restart.
+					</p>
+					<button
+						type="button"
+						class="hk-banner-action"
+						aria-disabled={ctx.opBusy ? 'true' : undefined}
+						onclick={() => {
+							if (project?.state === 'running') askingRestart = true;
+							else void restartForBase();
+						}}>{ctx.opBusy === 'start' || ctx.opBusy === 'stop' ? 'Restarting…' : 'Restart'}</button
+					>
+				{/if}
+			</div>
+		{/if}
+		{#if !erofs}
+			<div class="cfact-row">
+				<label class="hk-check">
+					<input
+						type="checkbox"
+						checked={!project.personal_opt_out}
+						disabled={personalSaving}
+						onchange={(e) => void togglePersonal(e.currentTarget)}
+					/>
+					Use your machine.nix on this machine
+				</label>
+				<a class="hk-link mnix-link" href={resolve('/settings/machine-nix')}>Edit machine.nix</a>
+			</div>
+		{/if}
 		<div class="cfact-row">
 			<label class="hk-check">
 				<input
@@ -406,33 +558,35 @@
 			<div class="hk-section-head chead">
 				<div class="chead-left">
 					<h2 id="packages-title" class="hk-h2-app">Packages</h2>
-					<div class="hk-tablist" role="tablist" aria-label="Config editor">
-						{#each TABS as [tab, name] (tab)}
-							<button
-								type="button"
-								role="tab"
-								id="config-tab-{tab}"
-								aria-selected={activeTab === tab}
-								aria-controls={activeTab === tab ? `config-panel-${tab}` : undefined}
-								tabindex={activeTab === tab ? 0 : -1}
-								bind:this={tabButtons[tab]}
-								onkeydown={onTabKey}
-								onclick={() => (activeTab = tab)}>{name}</button
-							>
-						{/each}
-					</div>
+					{#if !erofs}
+						<div class="hk-tablist" role="tablist" aria-label="Config editor">
+							{#each TABS as [tab, name] (tab)}
+								<button
+									type="button"
+									role="tab"
+									id="config-tab-{tab}"
+									aria-selected={activeTab === tab}
+									aria-controls={activeTab === tab ? `config-panel-${tab}` : undefined}
+									tabindex={activeTab === tab ? 0 : -1}
+									bind:this={tabButtons[tab]}
+									onkeydown={onTabKey}
+									onclick={() => (activeTab = tab)}>{name}</button
+								>
+							{/each}
+						</div>
+					{/if}
 				</div>
 				{#if config.applied_at}
 					<span class="applied">Applied {dateTime(config.applied_at)}</span>
 				{/if}
 			</div>
 
-			{#if activeTab === 'menu'}
+			{#if erofs || activeTab === 'menu'}
 				<div
 					class="cpanel"
-					role="tabpanel"
+					role={erofs ? undefined : 'tabpanel'}
 					id="config-panel-menu"
-					aria-labelledby="config-tab-menu"
+					aria-labelledby={erofs ? 'packages-title' : 'config-tab-menu'}
 				>
 					{#if !menuOn}
 						<div class="hk-banner" role="status">
@@ -494,6 +648,20 @@
 								</div>
 							{/if}
 						{/each}
+						{#if addable}
+							<div class="hk-empty-row cadd">
+								<span
+									>{erofs ? 'An apt package' : 'A nixpkgs package'}:
+									<span class="hk-mono">{addable}</span></span
+								>
+								<button
+									type="button"
+									class="hk-btn-secondary hk-btn-sm"
+									aria-label={`Add package ${addable}`}
+									onclick={() => addPackage(addable)}>Add</button
+								>
+							</div>
+						{/if}
 						{#if extraPackages.length}
 							<div class="cgroup">
 								<h3 class="group-title">
@@ -538,7 +706,7 @@
 
 			{#if currentOpId}
 				<section class="build" aria-labelledby="build-title">
-					<h3 id="build-title" class="build-title">Build log</h3>
+					<h3 id="build-title" class="build-title">{erofs ? 'Install log' : 'Build log'}</h3>
 					<div class="hk-code">
 						<pre class="hk-code-body build-log" bind:this={logEl}>{buildLines.join('\n')}</pre>
 					</div>
@@ -577,8 +745,16 @@
 						Menu off
 					{:else if activeTab === 'menu'}
 						<!-- While the banner asks, it says "Unsaved changes" once. -->
-						{selectedCount} selected{#if applying}&nbsp;· Building…{:else if menuDirty && !heldNavigation}&nbsp;·
-							<span class="cbar-dirty">Unsaved changes</span>{/if}
+						{selectedCount} selected{#if applying}&nbsp;· {erofs
+								? 'Installing…'
+								: 'Building…'}{:else if menuDirty && !heldNavigation}&nbsp;·
+							<span class="cbar-dirty">Unsaved changes</span>{:else if outcome?.ok}&nbsp;·
+							<span class="cbar-ok">{outcome.text}</span>{:else if outcome}&nbsp;·
+							<span class="cbar-err"
+								>{outcome.stale
+									? outcome.text
+									: `${erofs ? 'Not installed' : 'Not applied'}: ${outcome.text}`}</span
+							>{/if}
 					{:else if applying}
 						Building…
 					{:else if nixReadonly}
@@ -594,7 +770,7 @@
 					disabled={applying ||
 						(activeTab === 'nix' && (nixReadonly || !nixDirty)) ||
 						(activeTab === 'menu' && (!menuOn || !menuDirty))}
-					onclick={activeTab === 'menu' ? applyMenu : applyNix}
+					onclick={erofs || activeTab === 'menu' ? applyMenu : applyNix}
 				>
 					{applying ? 'Applying…' : 'Apply'}
 				</button>
@@ -675,6 +851,21 @@
 	}
 	.mnix-link {
 		font-size: 0.8125rem;
+	}
+	/* A newer base waiting for a restart (I-1490): one line under the
+	   base it replaces, its action at the end. */
+	.cbase {
+		margin: 0 0 0.75rem;
+	}
+	.cadd {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.cbase-buttons {
+		display: flex;
+		gap: 0.25rem;
 	}
 
 	/* ---- Packages ---- */
@@ -837,6 +1028,13 @@
 	}
 	.cbar-dirty {
 		color: var(--hk-text);
+	}
+	.cbar-ok {
+		color: var(--hk-text);
+	}
+	.cbar-err {
+		color: var(--hk-err);
+		overflow-wrap: anywhere;
 	}
 	.cguard {
 		flex-basis: 100%;

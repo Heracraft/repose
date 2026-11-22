@@ -8,6 +8,7 @@ import (
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
+	"github.com/heracraft/repose/internal/guestd/config"
 	"github.com/heracraft/repose/internal/guestd/exec"
 	"github.com/heracraft/repose/internal/guestd/questions"
 	"github.com/heracraft/repose/internal/guestd/sample"
@@ -31,7 +32,12 @@ func (s *Server) dispatch(ctx context.Context, conn *vsockrpc.Conn, id string, r
 	ctx, cancel := context.WithTimeout(ctx, s.deadlineFor(req))
 	defer cancel()
 
-	resp := s.handle(ctx, req)
+	var resp *guestdv1.Response
+	if am, isMenu := req.GetReq().(*guestdv1.Request_ApplyMenu); isMenu {
+		resp = s.applyMenu(ctx, conn, id, am.ApplyMenu)
+	} else {
+		resp = s.handle(ctx, req)
+	}
 	env := &guestdv1.Envelope{RequestId: id, Body: &guestdv1.Envelope_Response{Response: resp}}
 	if err := conn.Send(env); err != nil {
 		s.log.Warn("could not write a response", "event", "ready", "reason", "write_error")
@@ -57,8 +63,18 @@ func (s *Server) deadlineFor(req *guestdv1.Request) time.Duration {
 			d = exec.MaxTimeout
 		}
 		return d + 10*time.Second
-	case *guestdv1.Request_RegisterPaths, *guestdv1.Request_SetupProject:
+	case *guestdv1.Request_RegisterPaths:
 		return BootDeadline
+	case *guestdv1.Request_SetupProject:
+		// An erofs guest's session unit waits on no Nix activation, so
+		// its SetupProject is a file write and a unit start (DECISIONS
+		// I-1474).
+		if s.paths.Erofs {
+			return DefaultDeadline
+		}
+		return BootDeadline
+	case *guestdv1.Request_ApplyMenu:
+		return config.Deadline
 	default:
 		return DefaultDeadline
 	}
@@ -81,6 +97,9 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 		return empty(s.freeze.Thaw())
 
 	case *guestdv1.Request_Switch:
+		if s.paths.Erofs {
+			return fail(errNixOnly("Switch"))
+		}
 		res, err := s.system.Switch(ctx, r.Switch.GetSystemClosure(), r.Switch.GetForceReboot(), r.Switch.GetRegistration())
 		if err != nil {
 			// The output is returned even on failure: it is the only thing
@@ -129,6 +148,9 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 		return empty(s.shutdown(ctx, r.Shutdown.GetTimeoutS()))
 
 	case *guestdv1.Request_RegisterPaths:
+		if s.paths.Erofs {
+			return fail(errNixOnly("RegisterPaths"))
+		}
 		return empty(s.system.RegisterPaths(ctx, r.RegisterPaths.GetRegistration()))
 
 	case *guestdv1.Request_AnswerQuestion:
@@ -160,6 +182,41 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 		// lets hostd degrade per request (docs/workstreams/04-guestd.md §8).
 		return fail(sysdep.Invalid("guestd protocol version %s does not know this request", ProtocolVersion))
 	}
+}
+
+// errNixOnly is the answer of an erofs guest to a request only a Nix
+// guest serves (DECISIONS I-1460). It answers at once and waits on
+// nothing: there is no store to register into and no closure to switch.
+func errNixOnly(req string) error {
+	return sysdep.Unimplemented("%s is for Nix guests; this guest runs an erofs base", req)
+}
+
+// applyMenu serves ApplyMenu (DECISIONS I-1460, I-1476): each progress
+// line goes to hostd as a Notify carrying the request's own id, written
+// on this request's connection directly so that every line is ahead of
+// the Response, and the Response's ApplyMenuProgress, done set, ends it.
+// Lines are tenant content (package names) and are never logged.
+func (s *Server) applyMenu(ctx context.Context, conn *vsockrpc.Conn, id string, m *guestdv1.ApplyMenu) *guestdv1.Response {
+	if !s.paths.Erofs {
+		err := sysdep.Unimplemented("ApplyMenu is for erofs guests; this guest is a Nix guest")
+		return withResult(err, &guestdv1.Response_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenuProgress{
+			Line: err.Error(), Done: true, ErrorCode: sysdep.CodeUnimplemented,
+		}})
+	}
+	progress := func(line string) {
+		env := &guestdv1.Envelope{RequestId: id, Body: &guestdv1.Envelope_Notify{Notify: &guestdv1.Notify{
+			N: &guestdv1.Notify_ApplyMenuProgress{ApplyMenuProgress: &guestdv1.ApplyMenuProgress{Line: line}},
+		}}}
+		// A hostd that went away misses the line; the apply goes on, and
+		// the next ApplyMenu of the same menu answers from the result.
+		_ = conn.Send(env)
+	}
+	res := s.menu.Apply(ctx, m.GetMenu(), m.GetReplayAfterBaseUpgrade(), progress)
+	result := &guestdv1.Response_ApplyMenu{ApplyMenu: res}
+	if res.GetErrorCode() != "" {
+		return withResult(sysdep.Errf(res.GetErrorCode(), "%s", res.GetLine()), result)
+	}
+	return ok(result)
 }
 
 // answerQuestion closes a question a repose-ask is waiting on, or, with
@@ -357,6 +414,8 @@ func assign(resp *guestdv1.Response, result any) {
 	case *guestdv1.Response_Exec:
 		resp.Result = r
 	case *guestdv1.Response_Say:
+		resp.Result = r
+	case *guestdv1.Response_ApplyMenu:
 		resp.Result = r
 	}
 }

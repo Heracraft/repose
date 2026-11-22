@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The fake serves guest_runtime and pending_base_version and refuses what
@@ -24,7 +25,9 @@ func TestGuestRuntimeFake(t *testing.T) {
 		t.Fatalf("exempt erofs: %+v", e)
 	}
 	wantErr(t, call(t, f, "PUT", "/v1/projects/"+e.ID+"/config", tok, map[string]any{"fragment": "{ }"}), http.StatusConflict, "nix_config_retired")
-	f.SetPendingBase(e.ID, "2026.11.29.1")
+	if err := f.SetPendingBase(e.ID, "2026.11.29.1"); err != nil {
+		t.Fatal(err)
+	}
 	if got := getProject(t, f, tok, e.ID); got.PendingBaseVersion == nil || *got.PendingBaseVersion != "2026.11.29.1" {
 		t.Fatalf("pending: %+v", got.PendingBaseVersion)
 	}
@@ -69,5 +72,28 @@ func TestErofsMenuFake(t *testing.T) {
 		if !strings.Contains(log, l) {
 			t.Fatalf("log lacks %q: %s", l, log)
 		}
+	}
+}
+
+// ConfigDelay keeps a config op running while its log streams, then ends
+// it in the state it was decided with.
+func TestConfigDelay(t *testing.T) {
+	f := New(Options{ConfigDelay: 300 * time.Millisecond})
+	defer f.Close()
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "ero", "class": "large", "guest_runtime": "erofs"})
+	want(t, r, http.StatusCreated)
+	var p Project
+	r.json(t, &p)
+	id := opID(t, call(t, f, "PUT", "/v1/projects/"+p.ID+"/config", tok, map[string]any{"menu": []map[string]any{{"package": FailMenuPackage}}}))
+	op := call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id, tok, nil)
+	if !strings.Contains(string(op.body), `"running"`) || !strings.Contains(string(op.body), "apply_config") {
+		t.Fatalf("op at first read: %s", op.body)
+	}
+	log := string(call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id+"/log", tok, nil).body)
+	if !strings.Contains(log, FailMenuPackage+" failed") || !strings.Contains(log, `{"state":"error"}`) {
+		t.Fatalf("streamed log: %s", log)
+	}
+	if op := call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id, tok, nil); !strings.Contains(string(op.body), `"error"`) {
+		t.Fatalf("op after the delay: %s", op.body)
 	}
 }

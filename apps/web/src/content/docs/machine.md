@@ -1,11 +1,11 @@
 ---
 title: The machine
-description: What's installed, installing more, your laptop's tools, ports, the browser, memory and disk.
+description: What's installed, installing more, base updates, your laptop's tools, ports, the browser, memory and disk.
 section: Using repose
 order: 12
 ---
 
-Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
+Each project gets its own virtual machine running Ubuntu 24.04, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
 
 | Size    | Cores | Up to | Memory | Disk  |
 | ------- | ----- | ----- | ------ | ----- |
@@ -33,9 +33,9 @@ run on all of them.
 - **Agents:** [Claude Code, Codex CLI, opencode, Gemini CLI and pi](/docs/agents).
 - **Languages:** Node.js 24 with npm, pnpm and yarn (through corepack), Python 3.12 with uv, Go, and rustup, which comes with no toolchain: run `rustup default stable` once.
 - **Build tools:** gcc, g++, make, cmake and pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client, with `pg_config` and `mysql_config` on `PATH`, so native gems like `pg`, `mysql2` and `nokogiri` build too.
-- **Containers:** Docker with `docker compose`; neither needs `sudo`. A base update leaves Docker and its containers running, and the new Docker runs from the machine's next start.
+- **Containers:** Docker with `docker compose`; neither needs `sudo`. Images, containers and volumes stay through a [base update](#base-updates).
 - **Browser:** Chromium, with fonts for Chinese, Japanese and Korean text and colour emoji. The [agents drive it](#browser).
-- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config#the-menu)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
+- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, [mise](https://mise.jdx.dev), sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config#the-menu)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 The shell is bash with the starship prompt. `man` has the pages of the installed tools. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines.
 
@@ -45,38 +45,36 @@ Your `~/.bashrc` is read in tmux windows, SSH shells and your editor's terminal,
 
 gpg asks for a passphrase in the terminal; without a terminal, pass `--batch --pinentry-mode loopback --passphrase-fd 0`.
 
-Programs built on other Linux systems run as they would on Ubuntu: Prisma's engines, Python wheels, esbuild and binaries from `curl | sh` installers. Scripts that start with `#!/bin/bash` or `#!/usr/bin/python3`, and Makefiles with `SHELL := /bin/bash`, run unchanged.
+Prebuilt binaries, Prisma's engines, Python wheels, esbuild and `curl | sh` installers run as on any Ubuntu machine.
 
-Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip); there is no system-wide pip, and Python command-line tools install with `uv tool install`. The system `python3` has no Tk, so tkinter and matplotlib's TkAgg need a Python from uv (`uv python install 3.12`).
+Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip); there is no system-wide pip, and Python command-line tools install with `uv tool install`. tkinter and matplotlib's TkAgg need `sudo apt-get install -y python3-tk`.
 
 ## Installing more
 
-Installs stay on the machine's disk and on your `PATH`:
+Install with the tools any Ubuntu machine has:
 
 ```
+sudo apt-get update && sudo apt-get install -y ffmpeg
+mise use -g node@20
 npm i -g tsx
 go install github.com/air-verse/air@latest
 cargo install ripgrep-all
 uv tool install httpie
-nix profile add nixpkgs#ffmpeg
 ```
 
-bun, deno, gem and composer installs are on `PATH` too, as are the usual directories of yarn, dotnet, ghcup, cabal, opam, luarocks, mix, nimble, juliaup, krew and volta. `nix profile add` takes any package from nixpkgs.
+`mise use -g` installs a language runtime or a command-line tool at the version you name. npm, go, cargo, uv, bun, deno, gem and composer installs are on your `PATH`, as are the usual directories of yarn, dotnet, ghcup, cabal, opam, luarocks, mix, nimble, juliaup, krew and volta.
 
-Type a command the machine doesn't have and it names the package that has it, with both ways to add it:
+Type a command the machine doesn't have and Ubuntu names the package that has it:
 
 ```
-$ air
-air: command not found
-  nix profile add nixpkgs#air  install it on this machine
-  repose config add air        keep it on every rebuild
-                               (run this on your laptop)
-Other packages with air: air-formatter
+$ ffmpeg
+Command 'ffmpeg' not found, but can be installed with:
+sudo apt install ffmpeg
 ```
 
-The last line appears only when other packages have that command, up to three of them. Typing `repose` gets its own answer: the CLI runs on your laptop, and this machine's commands are `repose-ask`, `repose-notify` and `repose-checkout`.
+Typing `repose` gets its own answer: the CLI runs on your laptop, and this machine's commands are `repose-ask`, `repose-notify` and `repose-checkout`.
 
-These installs aren't part of the project's configuration. For a package on every rebuild, use [`repose config add`](/docs/config#the-menu).
+What you install with `apt-get` is recorded on the machine's disk and installed again after a [base update](#base-updates), as is everything added with [`repose config add`](/docs/config#add-a-package). What `mise`, npm, go, cargo and uv put in `/home/dev` stays as it is.
 
 ## Your laptop's tools come along
 
@@ -88,49 +86,24 @@ Installing 2 of your tools in the background: air, portless
 
 A [temporary](/docs/lifecycle#temporary-machines) or `tiny` machine installs none of them and takes no Node, Ruby or Java pin: the agent installs what it needs ([Installing more](#installing-more)).
 
-A tool comes from nixpkgs when nixpkgs has a package with that command, so its version can differ from your laptop's; otherwise you get your laptop's version, from npm, crates.io, PyPI or its Go module path. A Node major pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) becomes the `node` of new shells. A crate carried from your laptop gets rustup a stable default on the minimal profile first, if it has none.
+Each tool comes from the manager it came from on your laptop: npm, pnpm, bun, go, cargo, uv or pipx, at your laptop's version. A command your scripts call that no manager on your laptop installed comes from Ubuntu's archive, when it has a package by that command's name. A crate carried from your laptop gets rustup a stable default on the minimal profile first, if it has none.
 
-Ruby and Java pins work the same way, from `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and from `.tool-versions`, `.java-version` or `.sdkmanrc`; the first found of each wins. nixpkgs keeps one Ruby per minor version (3.3, 3.4 and 4.0 today) and one JDK per major (8, 11, 17, 21 and 25), so a pin gets its own series, the closest newer one, or the newest when the pin is past them all. A Ruby 3.2.2 pin gets Ruby 3.3; `repose scan` says which before you run. JRuby and TruffleRuby pins are ignored. A Go, Rust or Python version pinned in `go.mod`, `rust-toolchain.toml` or `.python-version` installs nothing: `go` and `uv` fetch their own, and `rustup` installs one at the first `cargo`.
+A Node major pinned in `.nvmrc`, `.node-version`, `.tool-versions`, `volta.node` or `engines.node` (the first found) becomes the `node` of new shells, through `mise use -g`. Ruby and Java pins work the same way, from `.tool-versions`, `.ruby-version` or the Gemfile's `ruby` line, and from `.tool-versions`, `.java-version` or `.sdkmanrc`; the first found of each wins. JRuby and TruffleRuby pins are ignored. A Go, Rust or Python version pinned in `go.mod`, `rust-toolchain.toml` or `.python-version` installs nothing: `go` and `uv` fetch their own, and `rustup` installs one at the first `cargo`.
 
-Gems install into `~/.local/share/gem`. A Ruby 3.4 pin gets Bundler 2.7 there too, because the Bundler 2.6 nixpkgs ships with Ruby 3.4 prints a screen of `already initialized constant` warnings on every `bundle`. A `Gemfile.lock` that says `BUNDLED WITH` 2.6 keeps running 2.6 until you run `bundle update --bundler`.
-
-A `.nix` file takes precedence over this guesswork. With a [machine.nix](/docs/config#your-machine-nix) on your account, `run` leaves your laptop's global tools out. With a `repose.nix` at the checkout root, it leaves out the commands the project's scripts call. The Node, Ruby and Java pins apply in every case.
-
-To see the list without installing anything, and which half a `.nix` file took over:
+To see the list without installing anything:
 
 ```
 repose scan
 ```
 
-## Projects with a flake.nix
+## The project's dev environment
 
 Agents start in the checkout's dev environment, and so does every command they run. That holds for every window, `--worktree` ones and an agent you type in a shell included, and for `repose exec`:
 
-- With an `.envrc`, agents get what it sets. repose runs `direnv allow` on it the first time an agent starts in that checkout, and again after you edit the file. It doesn't ask, because the agent is about to run this checkout's code anyway; the window says `repose: allowed /home/dev/todo-app/.envrc (direnv allow) so claude starts in its environment`. One you ran `direnv deny` on stays out, and no flake is loaded in its place. An `.envrc` of your own that says `use flake` keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`.
-- With a `flake.nix` whose text names a dev shell and no `.envrc`, agents get `devShells.x86_64-linux.default`, from the nearest such flake at or above the folder and below your home folder. Nothing is written to your checkout: when the repository has no `flake.lock`, the one Nix writes is kept outside it.
+- With an `.envrc`, agents get what it sets. repose runs `direnv allow` on it the first time an agent starts in that checkout, and again after you edit the file. It doesn't ask, because the agent is about to run this checkout's code anyway; the window says `repose: allowed /home/dev/todo-app/.envrc (direnv allow) so claude starts in its environment`. One you ran `direnv deny` on stays out.
+- Version pins in `mise.toml`, `.tool-versions`, `.nvmrc`, `.python-version` and `rust-toolchain.toml` apply in the checkout through mise and rustup.
 
-The first load builds the dev shell, and the window says `repose: loading the dev shell from /home/dev/todo-app/flake.nix (the first load can take minutes)`. Anything nixpkgs has to compile takes longer still. `repose run -p` doesn't wait for it: your prompt is on the agent's command line, so the agent takes it when the load finishes. On a herdr project `run` waits for the agent, up to 30 minutes, and shows `Loading the project's dev shell`. Later loads come from the cache in under a second, until `flake.nix` or `flake.lock` changes.
-
-A load that fails prints Nix's error and then `repose: the dev shell from /home/dev/todo-app/flake.nix did not load (the error is above); starting claude without it`. A flake that stopped evaluating ends `starting claude with the last one that did, if any`: nix-direnv keeps the last dev shell it built and doesn't say whether there was one, so the line can't either. `repose exec` prints none of this unless the load takes more than 2 seconds or fails.
-
-A flake input that names `nixpkgs` without a URL (`outputs = { self, nixpkgs }`, or `inputs.nixpkgs.url = "nixpkgs"`) locks offline to the machine's own nixpkgs revision, as a `github:` URL that works on your laptop too.
-
-A flake's own binary caches (`nixConfig.extra-substituters`) apply with `nix develop --accept-flake-config`, or with `--option extra-substituters URL --option extra-trusted-public-keys KEY`; an agent has no terminal for Nix's prompt, so one of those is the only way it gets them. `dev` is a trusted nix user, so `nix run nixpkgs#cachix -- use NAME` works too.
-
-Only the dev shell for `x86_64-linux` is used. `nixosConfigurations`, `nixosModules`, `darwinConfigurations`, `homeConfigurations` and `packages` in the same flake change nothing on the machine; what configures it is [repose config](/docs/config).
-
-Three things to get right in a first flake:
-
-- **Commit `flake.nix`.** Nix only sees files git tracks. An untracked one still reaches the machine, then fails to load with `Path 'flake.nix' in the repository ... is not tracked by Git`.
-- **Commit `flake.lock`.** Without one, each machine locks the flake's inputs on its own first load, so two machines can get different versions. Run `nix flake lock` on your laptop and commit the file; with no Nix there, have the agent commit it and bring it back with `git fetch repose`. An `.envrc` of your own that says `use flake` writes the lock into the checkout instead, and once your laptop and the machine have each written one, [the sync stops on that file](/docs/sync#when-the-machine-has-changes-of-its-own) until it's committed.
-- **Define the dev shell for `x86_64-linux`.** The machine is x86-64 Linux whatever your laptop is. A flake written on a Mac with only `devShells.aarch64-darwin` fails with `does not provide attribute 'devShells.x86_64-linux.default'`. Name both systems, or use `flake-utils.lib.eachDefaultSystem`.
-
-Your own shells get the same dev shell. In `repose ssh`, `ssh todo-app.repose`, an editor's terminal or a tmux window you open, bash loads it when you `cd` into the checkout and unloads it when you leave:
-
-- With a `flake.nix` and no `.envrc`, a later load comes from the agents' cache in under a second. A cold one holds the prompt until it is built, and your shell's loading line ends `Ctrl-C skips it until you leave the folder`. Press that and the shell goes without, until you leave the folder and come back or `flake.nix` changes.
-- With an `.envrc`, it loads once the file is allowed; `repose exec` allows it the same way an agent does.
-
-To keep agents and your shells out of a flake's dev shell, add an `.envrc` that doesn't `use flake`.
+Your own shells get the same environment: in `repose ssh`, `ssh todo-app.repose`, an editor's terminal or a tmux window you open, bash loads the `.envrc` when you `cd` into the checkout and unloads it when you leave.
 
 ## Scheduled jobs
 
@@ -232,7 +205,7 @@ Your browser reads the password after the link's `#` and never sends it anywhere
 
 The dashboard shows the same browser on a project's **Browser** tab, with no forward and no password; clicks and keys go to the machine as they do here. That view stops after two minutes with a still screen, after four hours, or after 2 GB of frames, and **Resume view** starts it again. It keeps the machine out of its [freeze](/docs/lifecycle#frozen-machines) while the screen is moving, and its frames don't count against your [egress allowance](/docs/limits). Clipboards are not joined on that path: under the screen, **Paste into the machine** sends what you put in the field, and **Copied in the machine** shows what the machine copied, to copy out with the button beside it. `repose browser`'s own view joins them instead, because it runs through your SSH forward and not through repose.
 
-`repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser stops after 10 minutes with no browser call and nobody watching, once every agent is finished or waiting on you, or after 30 minutes while an agent is working. The next call starts it again with the same tabs and logins; each page reloads. An agent that has a browser tool open but isn't using it doesn't count: the machine watches for browser calls, not an open connection, so a browser nobody is driving stops and the machine can [freeze](/docs/lifecycle#frozen-machines) as usual. A base update doesn't restart it; the new Chromium runs from its next start.
+`repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser stops after 10 minutes with no browser call and nobody watching, once every agent is finished or waiting on you, or after 30 minutes while an agent is working. The next call starts it again with the same tabs and logins; each page reloads. An agent that has a browser tool open but isn't using it doesn't count: the machine watches for browser calls, not an open connection, so a browser nobody is driving stops and the machine can [freeze](/docs/lifecycle#frozen-machines) as usual.
 
 A headless browser that a script or test started is stopped when the program that started it has exited, nothing is connected to it, and the machine has been quiet for 10 minutes: no SSH session, no terminal attached, every agent finished or waiting on you. A browser whose program still runs is never stopped, and neither is one something is connected to, so to keep one alive keep its launcher alive. `journalctl -u guestd --grep 'stray browser'` lists each one that was stopped.
 
@@ -258,9 +231,9 @@ On a machine out of memory, the kernel kills a process rather than let the machi
 
 The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 739 MB on `tiny`, 1.5 GB on `small`, 3 GB on `large` and 6 GB on `xl`. A tab past that crashes and the browser stays up. A browser a Playwright test launches has no ceiling of its own.
 
-A deleted file's blocks go back to the server at the daily `fstrim`, and at once when the machine stops. Until then the file still counts toward your [plan's disk](/docs/billing#what-a-plan-means), though `df /` on the machine has already forgotten it. `sudo fstrim /` closes the gap now.
+The machine's disk is `/home/dev`, Docker's data and the services' data together, and `df -h /home/dev` shows it. A deleted file's blocks go back to the server at the daily `fstrim`, and at once when the machine stops. Until then the file still counts toward your [plan's disk](/docs/billing#what-a-plan-means), though `df` on the machine has already forgotten it. `sudo fstrim /home/dev` closes the gap now.
 
-Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now. `nix-collect-garbage` and `nix store gc` are safe to run too: they keep the store paths repose shares with the machine, its system included. If an earlier garbage collection hid any of them, the machine's next start puts them back.
+The system itself (Ubuntu and the tools above) comes from the base image, which every machine on the server shares and which doesn't count toward your disk.
 
 `repose status`, `repose ls` and the project's page in the dashboard say when the machine's filesystem is 90 percent full or more, the point past which a build's next write can fail. Grow the disk with `repose resize 80G`, or with **Resize…** under Disk on the project's **Overview**, which offers 20, 40, 80, 160 and 320 GB. Disks can't shrink, and a bigger one raises the ceiling.
 
@@ -279,10 +252,26 @@ Under the charts, folded, are the eight busiest processes of the window: name, C
 
 Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every core is busy, so what you type keeps showing up at once. On an idle machine a build gets every core the size has, and the extra ones in **Up to** while the server has them idle.
 
+## Base updates
+
+The platform publishes a new base (Ubuntu's updates, the agents, the tools above, the kernel) most weeks, sooner for a security fix. A machine boots a new base at its next restart, never while it runs; `repose status` and the project's **Config** tab say when one is waiting ([Revisions and base updates](/docs/config#revisions-and-base-updates)).
+
+A new base keeps:
+
+- your home directory, `/home/dev`, with everything `mise`, npm, go, cargo and uv put there;
+- Docker's images, containers and volumes;
+- the services' data under `/var/lib/repose/services`.
+
+The machine then installs again what you added with `repose config add` and what you installed with `apt-get`. Everything else outside those starts clean: files under `/usr/local` and `/opt`, and edits to `/etc`. Put what must stay in `/home/dev`, or install it with `repose config add`.
+
 ## Changing the size
 
-`repose resize --size tiny|small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size tiny|small|large|xl` changes a project's size. **Resize…** under Disk on the project's **Overview** does the same, with the same question for a running machine. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 
 While the machine runs, its size counts toward [the memory your plan runs at once](/docs/limits#your-plan).
+
+## Older machines
+
+Projects created before the Ubuntu base run NixOS and keep working as before, their `repose.nix`, machine.nix and `repose config edit` included, until they are migrated.

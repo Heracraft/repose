@@ -2,7 +2,10 @@
 
 ## Names
 
-- Gateway address: `ssh.repose.run:22`.
+- Gateway address: `ssh.repose.run:22` in production. `POST /certs`
+  names it as `gateway: {host, port}` (api.md), and the CLI writes that
+  host and port, so a CLI pointed at another api uses that api's gateway;
+  an answer without a host is `ssh.repose.run`, and without a port is 22.
 - Login name: `<project-slug>.<user-handle>`, e.g. `todo-app.heracraft`.
   The gateway splits on the last `.`.
 - Inside the guest the Unix user is always `dev`.
@@ -26,6 +29,8 @@ Two CAs, both ed25519, private keys in the api's secret store:
   key against `<slug>.<handle>`, which it knows from the login name. The
   CLI writes `@cert-authority ssh.repose.run,10.64.* <host ca>`
   to `~/.ssh/repose/known_hosts`, so there is never a host-key prompt.
+  The name is the gateway `POST /certs` named, as `[host]:port` when the
+  port is not 22.
 
 ## Gateway behaviour
 
@@ -194,7 +199,10 @@ The key is the CLI's own, `~/.ssh/repose/id_ed25519`, generated without a
 passphrase and used for nothing else; the user's `~/.ssh/id_*` keys are
 never certified, read or offered (DECISIONS I-149; through v0.1.4 the
 block named `~/.ssh/id_ed25519`, and a certificate for that key is
-re-issued for the new one on the next command). The three `Control`
+re-issued for the new one on the next command). `HostName` is the gateway
+host `POST /certs` named, followed by a `Port` line when its port is not
+22; a reused certificate asks the api nothing, so the CLI reads the
+gateway back from the `@cert-authority` line in `known_hosts`. The three `Control`
 lines multiplex every ssh of a command over one connection; they are
 left out on Windows, whose OpenSSH has no multiplexing. The gateway sees
 one client connection per command (and the master may stay open for up

@@ -242,6 +242,12 @@ func readResponse(resp *http.Response, out any) (*APIError, error) {
 		}
 		env.Error.Status = resp.StatusCode
 		env.Error.RequestID = rid
+		if resp.StatusCode == http.StatusNotFound && env.Error.Code == "not_found" && resp.Request != nil && resp.Request.URL != nil &&
+			!strings.Contains(resp.Request.URL.Path, "/v1/") {
+			// Every route is under /v1: a 404 for a path without it is the
+			// api URL, not the thing asked for (council finding 17).
+			return nil, &missingV1Error{url: apiRoot(resp.Request)}
+		}
 		if s, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && s > 0 {
 			env.Error.RetryAfter = time.Duration(s) * time.Second
 		}
@@ -257,6 +263,14 @@ func readResponse(resp *http.Response, out any) (*APIError, error) {
 		return nil, err
 	}
 	return nil, nil
+}
+
+// missingV1Error is a 404 for a request whose path has no /v1: the api
+// URL lacks the version every route sits under.
+type missingV1Error struct{ url string }
+
+func (e *missingV1Error) Error() string {
+	return fmt.Sprintf("%s has no /v1 at its end; the api answers at %s/v1. Check --api-url or $REPOSE_API_URL.", e.url, e.url)
 }
 
 // notAPIError is a success answer that is not JSON: --api-url or

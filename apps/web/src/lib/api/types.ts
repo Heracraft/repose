@@ -49,6 +49,10 @@ export type ErrorCode =
 	| 'rate_limited'
 	| 'internal'
 	| 'billing_disabled'
+	// A Nix file sent to an Ubuntu machine, and a config change made over a
+	// newer revision than the client loaded (api.md, I-1462, I-1528).
+	| 'nix_config_retired'
+	| 'menu_stale'
 	// The browser view's own refusals (DECISIONS I-1216, api.md).
 	| 'view_expired'
 	| 'view_busy'
@@ -294,7 +298,16 @@ export interface Project {
 	 * it owns none, `hosted` the fleet whatever it owns. Absent from an
 	 * older api, which means own. */
 	placement?: Placement;
+	/** What the machine boots, for life (I-1462): `nix`, or `erofs`, the
+	 * Ubuntu base configured by the menu alone. Absent from an older api,
+	 * which means nix. */
+	guest_runtime?: GuestRuntime;
+	/** erofs only: the newer base the machine boots at its next start
+	 * (I-1462); null otherwise. */
+	pending_base_version?: string | null;
 }
+
+export type GuestRuntime = 'nix' | 'erofs';
 
 export type Placement = 'own' | 'hosted';
 

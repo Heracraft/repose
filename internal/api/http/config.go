@@ -73,6 +73,9 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Fragment *string        `json:"fragment"`
 		Menu     menu.Selection `json:"menu"`
+		// BaseRevisionID is the revision the client last read (DECISIONS
+		// I-1528); absent keeps the old shape for one release.
+		BaseRevisionID *string `json:"base_revision_id"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -82,6 +85,15 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	if p.State == "creating" || p.State == "building" || p.State == "stopping" || p.State == "destroying" || p.State == "destroyed" {
 		return errf("conflict", "%s is %s", p.Slug, p.State)
+	}
+	if body.BaseRevisionID != nil && (p.ConfigRevisionID == nil || *body.BaseRevisionID != p.ConfigRevisionID.String()) {
+		// Another change landed since this client read the configuration
+		// (a second tab): sending this one would undo it (I-1528).
+		cur := ""
+		if p.ConfigRevisionID != nil {
+			cur = p.ConfigRevisionID.String()
+		}
+		return withDetail(errf("menu_stale", "%s", MsgMenuStale), map[string]any{"reason": "menu_stale", "current_revision_id": cur})
 	}
 	if store.NormalizeRuntime(p.GuestRuntime) == store.RuntimeErofs {
 		return s.putMenuErofs(w, r, p, body.Fragment, body.Menu)
@@ -284,3 +296,7 @@ func sameSelection(a, b map[string]any) bool {
 	jb, err2 := json.Marshal(b["selection"])
 	return err1 == nil && err2 == nil && string(ja) == string(jb)
 }
+
+// MsgMenuStale is what a config PUT answers when its base_revision_id is
+// not the project's current revision (DECISIONS I-1528).
+const MsgMenuStale = "The configuration changed since you loaded it; reload it and make your change again."

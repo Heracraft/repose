@@ -507,6 +507,8 @@ trust_reader() {
     # shipped pinning an image whose release was never published
     # (DECISIONS I-1398). The CLI's own release is not the branch's to
     # answer for, so --cli none; release.yml and release-assets.yml check it.
+    # The guest base and hostd-stable are what hosts fetch, not this CLI,
+    # so --guest none --hostd none; release-assets.yml checks them (I-1500).
     # REPOSE_QUEUE_ASSETS names the script, as REPOSE_QUEUE_EQUIV names the
     # closure comparison: the test fixture points it at a stub that answers
     # for it. That is the only way around this gate. It never skips on a
@@ -515,7 +517,7 @@ trust_reader() {
     # running is the failure this gate exists for.
     local assets check=${REPOSE_QUEUE_ASSETS:-$top/ops/dev/release-assets}
     [ -x "$check" ] || die "add: $check is missing, so what this CLI fetches at run time cannot be checked (DECISIONS I-1398)"
-    assets=$("$check" --cli none --install none 2>&1) ||
+    assets=$("$check" --cli none --install none --guest none --hostd none 2>&1) ||
       die "add: an asset this CLI fetches at run time does not answer (DECISIONS I-1398):"$'\n'"$assets"
     # A bypass that is used is a bypass that is seen: the entry records
     # which script answered, and a run against anything but the tree's own

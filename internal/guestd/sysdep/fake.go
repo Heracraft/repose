@@ -133,14 +133,16 @@ type FakeFreezer struct {
 	frozen    bool
 	freezes   int
 	thaws     int
+	paths     []string
 	FreezeErr error
 	ThawErr   error
 }
 
 // Freeze marks the fake filesystem frozen.
-func (f *FakeFreezer) Freeze(string) error {
+func (f *FakeFreezer) Freeze(path string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.paths = append(f.paths, "freeze "+path)
 	if f.FreezeErr != nil {
 		return f.FreezeErr
 	}
@@ -150,15 +152,23 @@ func (f *FakeFreezer) Freeze(string) error {
 }
 
 // Thaw marks it thawed.
-func (f *FakeFreezer) Thaw(string) error {
+func (f *FakeFreezer) Thaw(path string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.paths = append(f.paths, "thaw "+path)
 	if f.ThawErr != nil {
 		return f.ThawErr
 	}
 	f.frozen = false
 	f.thaws++
 	return nil
+}
+
+// Paths is every call in order, as "freeze <path>" or "thaw <path>".
+func (f *FakeFreezer) Paths() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.paths...)
 }
 
 // Frozen reports the current state, and how many times each side was called.
