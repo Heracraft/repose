@@ -59,9 +59,11 @@ Databases listen on `127.0.0.1` only: PostgreSQL on 5432, Redis 6379, MariaDB 33
 
 ## Configuration files
 
-A machine takes its configuration from the menu and nothing else. `repose config apply FILE`, `repose config edit`, `repose config on` and `repose config off` are refused for it, with exit code 1, and the account-wide file `repose config --global` writes never reaches it:
+A machine takes its configuration from the menu and nothing else. `repose config apply FILE`, `repose config edit`, `repose config on` and `repose config off` are refused for it, with exit code 1:
 
 > This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services.
+
+The account-wide file `repose config --global` writes never reaches it either. When every machine of your account runs the Ubuntu base, `repose config --global add`, `edit` and `apply` refuse with exit code 1 and change nothing; with older machines beside them, the save goes ahead and names the Ubuntu machines it doesn't reach.
 
 A configuration file committed at the root of the checkout isn't used either: `repose run` and `repose sync` leave it alone.
 
