@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC1007  # sourced, never run; `local x=` is an empty local on purpose
 # Sourced by every agent wrapper (wrap.nix) right before it execs the agent:
 # loads the checkout's dev environment into the wrapper's own process, so
 # the agent and every command its tools run see the project's tools and
