@@ -55,6 +55,11 @@ for a in "${archs[@]}"; do
 done
 command -v mkfs.erofs >/dev/null || { echo "build.sh: mkfs.erofs (erofs-utils) is not on PATH" >&2; exit 1; }
 
+# COPY keeps the context's modes, directories included, and git keeps no
+# directory modes: a checkout made under umask 002 gave the image a
+# group-writable /etc, which sshd refuses for its CA and principals files.
+find "$here/rootfs" "$here/rootfs-late" -perm /022 ! -type l -exec chmod go-w {} +
+
 sha=$(git -C "$repo" rev-parse HEAD)
 if [ -n "$(git -C "$repo" status --porcelain -- cmd internal proto go.mod go.sum images/guest)" ]; then
   sha="$sha-dirty"
