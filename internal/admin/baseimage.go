@@ -26,6 +26,10 @@ import (
 
 var hexSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// errNotFound is a file URL that answered 404, which for a part-published
+// file (I-1504) sends the check to <url>.part0.
+var errNotFound = errors.New("HTTP 404, not 200")
+
 // erofsFile is one file of an erofs base: its column label, URL and the
 // SHA-256 the operator gave.
 type erofsFile struct {
@@ -53,14 +57,11 @@ func checkErofsFiles(ctx context.Context, files []erofsFile, manifestURL, versio
 		if !hexSHA256.MatchString(f.sha256) {
 			return fmt.Errorf("%w: --%s-sha256 is not 64 lower-case hex digits", ErrUsage, f.label)
 		}
-		if err := reachable(ctx, f.url); err != nil {
-			return fmt.Errorf("%s: %s: %w", f.label, f.url, err)
-		}
 	}
 	// SHA256SUMS beside each file: read once per directory.
 	sums := map[string]map[string]string{}
-	for _, f := range files {
-		dir := dirOf(f.url)
+	sumsOf := func(u string) map[string]string {
+		dir := dirOf(u)
 		if _, ok := sums[dir]; !ok {
 			m, err := fetchSums(ctx, dir+"SHA256SUMS")
 			if err != nil {
@@ -68,7 +69,32 @@ func checkErofsFiles(ctx context.Context, files []erofsFile, manifestURL, versio
 			}
 			sums[dir] = m
 		}
-		if want, ok := sums[dir][path.Base(urlPath(f.url))]; ok && want != f.sha256 {
+		return sums[dir]
+	}
+	for _, f := range files {
+		name := path.Base(urlPath(f.url))
+		err := reachable(ctx, f.url)
+		if errors.Is(err, errNotFound) {
+			// A file over GitHub's asset limit is published as parts,
+			// <name>.part0, .part1, ... concatenated in order (DECISIONS
+			// I-1504), and hostd fetches the parts when the whole-file
+			// URL answers 404. The row keeps the whole-file URL and its
+			// SHA-256, which hostd checks over the joined parts; here the
+			// first part must answer and SHA256SUMS must list it.
+			if perr := reachable(ctx, f.url+".part0"); perr == nil {
+				if _, listed := sumsOf(f.url)[name+".part0"]; !listed {
+					return fmt.Errorf("%s: %s answers 404 and %s.part0 is not listed in SHA256SUMS", f.label, f.url, name)
+				}
+				continue
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %s: %w", f.label, f.url, err)
+		}
+		// A listing that names the parts and not the whole file has
+		// nothing to compare the whole file's digest with (I-1504); the
+		// manifest, below, carries it.
+		if want, ok := sumsOf(f.url)[name]; ok && want != f.sha256 {
 			return fmt.Errorf("%s: SHA256SUMS says %s, --%s-sha256 says %s", f.label, want, f.label, f.sha256)
 		}
 	}
@@ -104,6 +130,9 @@ func reachable(ctx context.Context, u string) error {
 	if code == http.StatusOK {
 		return nil
 	}
+	if code == http.StatusNotFound {
+		return errNotFound
+	}
 	if code == http.StatusMethodNotAllowed || code == http.StatusForbidden || code == http.StatusNotImplemented {
 		code, err = ask(ctx, http.MethodGet, u)
 		if err != nil {
@@ -111,6 +140,9 @@ func reachable(ctx context.Context, u string) error {
 		}
 		if code == http.StatusOK || code == http.StatusPartialContent {
 			return nil
+		}
+		if code == http.StatusNotFound {
+			return errNotFound
 		}
 	}
 	return fmt.Errorf("HTTP %d, not 200", code)

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+home=/home/dev
+target="$home/.claude/.credentials.json"
+as_dev() { setpriv --reuid=dev --regid=dev --init-groups "$@"; }
+
+mkdir -p /run/repose/claude-auth
+if ! findmnt -n --mountpoint /run/repose/claude-auth >/dev/null; then
+  if ! mount -t virtiofs -o nosuid,nodev,noexec claude-auth /run/repose/claude-auth 2>/dev/null; then
+    echo "no Claude login share on this host; Claude Code keeps its login in this machine"
+    exit 0
+  fi
+fi
+# Both files must exist before the bind mount, and as dev: the share
+# maps dev to the host account that owns it.
+[ -e /run/repose/claude-auth/.credentials.json ] || as_dev install -m 0600 /dev/null /run/repose/claude-auth/.credentials.json
+as_dev mkdir -p "$home/.claude"
+if [ -L "$target" ]; then
+  echo "$target is a symlink; not sharing the Claude login into this machine" >&2
+  exit 0
+fi
+[ -e "$target" ] || as_dev install -m 0600 /dev/null "$target"
+findmnt -n --mountpoint "$target" >/dev/null || mount --bind /run/repose/claude-auth/.credentials.json "$target"

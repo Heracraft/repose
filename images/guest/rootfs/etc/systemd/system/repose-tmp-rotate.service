@@ -1,0 +1,16 @@
+# The last boot's /tmp set aside in one rename (tmp.nix, DECISIONS I-417).
+[Unit]
+Description=repose: set the last boot's /tmp aside
+DefaultDependencies=no
+ConditionPathIsMountPoint=!/tmp
+After=systemd-remount-fs.service
+Before=systemd-tmpfiles-setup.service sysinit.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/repose/repose-tmp-rotate
+
+[Install]
+WantedBy=sysinit.target

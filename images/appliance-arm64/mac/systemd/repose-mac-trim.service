@@ -1,0 +1,14 @@
+# The disk file on the Mac costs what it holds: a trim at every boot,
+# before guests run, gives stale blocks back through virtio-blk's discard
+# to APFS (I-1376).
+[Unit]
+Description=Trim the appliance's filesystems so the disk file costs what it holds (I-1376)
+After=repose-mac-grow.service
+Before=hostd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/fstrim -av
+
+[Install]
+WantedBy=multi-user.target

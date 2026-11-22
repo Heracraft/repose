@@ -1,0 +1,16 @@
+# Xvnc as display :99 and the VNC server on 127.0.0.1:5900 (desktop.nix,
+# DECISIONS I-292).
+[Unit]
+Description=repose desktop: Xvnc :99, VNC on 127.0.0.1:5900
+StopWhenUnneeded=yes
+
+[Service]
+User=dev
+Group=dev
+Restart=no
+Environment=DISPLAY=:99
+ExecStartPre=/usr/local/bin/repose-vnc-password
+ExecStart=/usr/bin/Xvnc :99 -geometry 1440x900 -depth 24 -ac -nolisten tcp -noreset -localhost -rfbport 5900 -SecurityTypes VncAuth -PasswordFile /run/repose/desktop/vnc-passwd -AlwaysShared -AcceptSetDesktopSize -FrameRate 60 -desktop repose
+ExecStartPost=/usr/local/libexec/repose/repose-wait-display
+ExecStartPost=/usr/local/libexec/repose/repose-wait-port 5900 100
+ExecStartPost=+/usr/local/bin/repose-desktop-stamp last-client

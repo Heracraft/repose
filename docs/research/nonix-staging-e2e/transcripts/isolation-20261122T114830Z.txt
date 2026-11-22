@@ -1,0 +1,162 @@
+
+### inputs
+host 01a20236-4c0d-7082-80be-69c28fbcf1ef bridge 10.64.0.1 cidr 10.64.0.0/22 other-range probe 10.64.4.1
+A: e2ea 01a2030c-f6b6-7c83-baf2-8afd7d8ec958 guest 01a2030c-f6c1-7624-8b5f-1fa3e094cfd0 ip 10.64.0.2 mac 52:54:cd:cf:fd:48 login e2ea.stgdev
+B: e2eiso 01a20316-0202-7ca5-a90a-2fede7a91abc guest 01a20316-02d2-7e06-b8df-1794681e485c ip 10.64.0.3 tap tap-01a20316 login e2eiso.stgb
+
+
+### go test ./test/isolation/ against host 01a20236-4c0d-7082-80be-69c28fbcf1ef, every row but revocation (full output: /mnt/nixstore/tmp/stg-cp/e2e/20261122-erofs-8/isolation/isolation-go-20261122T114830Z.txt)
+=== RUN   TestOtherUsersProjectIs404NotForbidden
+    api_test.go:31: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:31Z
+--- PASS: TestOtherUsersProjectIs404NotForbidden (0.02s)
+=== RUN   TestSecretsListHasNoValues
+    api_test.go:57: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:31Z
+    api_test.go:75: 0 secrets listed, no value field
+--- PASS: TestSecretsListHasNoValues (0.00s)
+=== RUN   TestCertificateForACannotOpenBAtGateway
+    certs_test.go:42: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:31Z
+    certs_test.go:45: A's certificate at the gateway for B refused as expected: exit 255
+--- PASS: TestCertificateForACannotOpenBAtGateway (0.24s)
+=== RUN   TestCertificateForACannotOpenBDirect
+    certs_test.go:55: needs a real host: set REPOSE_ISOLATION_DIRECT_SSH
+--- SKIP: TestCertificateForACannotOpenBDirect (0.00s)
+=== RUN   TestConsoleLogCarriesNoTerminalContents
+    console_test.go:14: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:32Z
+    console_test.go:39: typed marker absent from console.log
+--- PASS: TestConsoleLogCarriesNoTerminalContents (3.35s)
+=== RUN   TestForgedHookPayloadCannotNameAnotherProject
+    hooks_test.go:16: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:35Z
+--- PASS: TestForgedHookPayloadCannotNameAnotherProject (0.37s)
+=== RUN   TestHypervisorRunsAsHostdUser
+    hypervisor_test.go:12: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:35Z
+    hypervisor_test.go:21: unit:
+--- PASS: TestHypervisorRunsAsHostdUser (0.81s)
+=== RUN   TestForkBombAndMemoryHogLeaveNeighbourWithinTenPercent
+    limits_test.go:35: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:36Z
+    limits_test.go:40: baseline in B: 0.196s
+    limits_test.go:54: during A's fork bomb and memory hog, B: 0.197s (baseline 0.196s, ratio 1.01)
+--- PASS: TestForkBombAndMemoryHogLeaveNeighbourWithinTenPercent (18.24s)
+=== RUN   TestGuestACannotReachGuestB
+    network_test.go:11: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:48:54Z
+    network_test.go:13: ping B from A refused as expected: exit 1
+    network_test.go:17: arping not in the guest; ARP checked by the tcpdump half below
+    network_test.go:20: connect A -> B:22 refused as expected: exit 127
+    network_test.go:20: connect A -> B:5000 refused as expected: exit 127
+    network_test.go:38: tcpdump on B's tap saw nothing from A's MAC
+--- PASS: TestGuestACannotReachGuestB (6.21s)
+=== RUN   TestGuestCannotReachHost
+    network_test.go:51: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:01Z
+    network_test.go:54: connect A -> host:22 refused as expected: exit 127
+    network_test.go:54: connect A -> host:9100 refused as expected: exit 127
+    network_test.go:54: connect A -> host:9101 refused as expected: exit 127
+    network_test.go:54: connect A -> host:8080 refused as expected: exit 127
+    network_test.go:56: hostd metrics from A refused as expected: exit 28
+    network_test.go:59: 40-packet flood to the host: 5% packet loss
+--- PASS: TestGuestCannotReachHost (5.56s)
+=== RUN   TestGuestCannotReachIMDS
+    network_test.go:67: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:06Z
+    network_test.go:68: IMDS from A refused as expected: exit 28
+    network_test.go:69: wire server from A refused as expected: exit 28
+--- PASS: TestGuestCannotReachIMDS (10.05s)
+=== RUN   TestGuestCannotReachOtherHostsGuests
+    network_test.go:74: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:16Z
+    network_test.go:76: ping another host's guest range from A refused as expected: exit 1
+    network_test.go:77: connect A -> other host's guest:22 refused as expected: exit 127
+    network_test.go:79: connect A -> private 10.0.0.4 refused as expected: exit 127
+    network_test.go:79: connect A -> private 172.16.0.1 refused as expected: exit 127
+    network_test.go:79: connect A -> private 192.168.0.1 refused as expected: exit 127
+    network_test.go:79: connect A -> private 100.64.0.1 refused as expected: exit 127
+--- PASS: TestGuestCannotReachOtherHostsGuests (3.20s)
+=== RUN   TestGuestCannotSpoofAnotherAddress
+    network_test.go:87: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:19Z
+    network_test.go:91: egress from A with B's source address refused as expected: exit 28
+    network_test.go:92: ping the host from A with B's source address refused as expected: exit 1
+--- PASS: TestGuestCannotSpoofAnotherAddress (8.14s)
+=== RUN   TestProcSampleCarriesOnlyNameCPUAndMemory
+--- PASS: TestProcSampleCarriesOnlyNameCPUAndMemory (0.00s)
+=== RUN   TestPolicyTextContainsTheRequiredPassages
+--- PASS: TestPolicyTextContainsTheRequiredPassages (0.00s)
+=== RUN   TestWatchListMatchesSecurityDoc
+--- PASS: TestWatchListMatchesSecurityDoc (0.00s)
+=== RUN   TestClaudeCredentialsAppearOnlyAsAnExclusion
+    policy_test.go:157: credentials.json hits (all exclusions): 9
+        internal/cli/carry_claude_test.go:383: ".claude/.credentials.json":               `{"claudeAiOauth":{"accessToken":"NEVER-CLAUDE-CREDS"}}`,
+        internal/cli/carry_claude_test.go:499: for _, rel := range []string{".claude/.credentials.json", ".claude/projects", ".claude/history.jsonl", ".claude.json"} {
+        internal/cli/run_e2e_test.go:146: // ~/.claude/.credentials.json in the guest (the CLI never copies it; it
+        internal/cli/run_integration_test.go:277: write(".claude/.credentials.json", `{"token":"should-never-travel"}`)
+        internal/cli/run_integration_test.go:298: for _, never := range []string{".claude/.credentials.json", ".gemini/oauth_creds.json", ".ssh/id_ed25519"} {
+        internal/cli/sessionimport_test.go:95: mk(".claude/.credentials.json", `{"claudeAiOauth":{"accessToken":"NEVER-CREDS"}}`)
+--- PASS: TestClaudeCredentialsAppearOnlyAsAnExclusion (0.82s)
+=== RUN   TestGuestCannotWriteStore
+    store_test.go:13: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:28Z
+    store_test.go:14: touch /nix/store as dev refused as expected: exit 1
+    store_test.go:15: touch the virtio-fs share as root refused as expected: exit 1
+    store_test.go:16: write under .links refused as expected: exit 2
+    store_test.go:23: .links from the guest: ls: cannot access '/nix/.ro-store/.links': No such file or directory
+--- PASS: TestGuestCannotWriteStore (0.10s)
+=== RUN   TestGuestSeesOneDisk
+    store_test.go:29: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:28Z
+    store_test.go:37: guest sees 2 disks, want 1: [vda vdb]
+--- FAIL: TestGuestSeesOneDisk (0.02s)
+FAIL
+FAIL	github.com/heracraft/repose/test/isolation	57.142s
+FAIL
+
+
+### TestRevokedCertificateRejected, last
+=== RUN   TestRevokedCertificateRejected
+    certs_test.go:63: host=01a20236-4c0d-7082-80be-69c28fbcf1ef date=2026-11-22T11:49:29Z
+    certs_test.go:87: revoked certificate rejected 13s after revocation
+--- PASS: TestRevokedCertificateRejected (17.68s)
+
+
+### row summary
+      1 --- FAIL: TestGuestSeesOneDisk (0.02s)
+      1 --- PASS: TestCertificateForACannotOpenBAtGateway (0.24s)
+      1 --- PASS: TestClaudeCredentialsAppearOnlyAsAnExclusion (0.82s)
+      1 --- PASS: TestConsoleLogCarriesNoTerminalContents (3.35s)
+      1 --- PASS: TestForgedHookPayloadCannotNameAnotherProject (0.37s)
+      1 --- PASS: TestForkBombAndMemoryHogLeaveNeighbourWithinTenPercent (18.24s)
+      1 --- PASS: TestGuestACannotReachGuestB (6.21s)
+      1 --- PASS: TestGuestCannotReachHost (5.56s)
+      1 --- PASS: TestGuestCannotReachIMDS (10.05s)
+      1 --- PASS: TestGuestCannotReachOtherHostsGuests (3.20s)
+      1 --- PASS: TestGuestCannotSpoofAnotherAddress (8.14s)
+      1 --- PASS: TestGuestCannotWriteStore (0.10s)
+      1 --- PASS: TestHypervisorRunsAsHostdUser (0.81s)
+      1 --- PASS: TestOtherUsersProjectIs404NotForbidden (0.02s)
+      1 --- PASS: TestPolicyTextContainsTheRequiredPassages (0.00s)
+      1 --- PASS: TestProcSampleCarriesOnlyNameCPUAndMemory (0.00s)
+      1 --- PASS: TestRevokedCertificateRejected (17.68s)
+      1 --- PASS: TestSecretsListHasNoValues (0.00s)
+      1 --- PASS: TestWatchListMatchesSecurityDoc (0.00s)
+      1 --- SKIP: TestCertificateForACannotOpenBDirect (0.00s)
+
+
+### host sshd journal for the password attempt
+Connection closed by authenticating user root 10.255.0.1 port 49656 [preauth]
+
+
+### edge sshd journal for the password attempt
+Connection closed by authenticating user root 20.102.97.100 port 47544 [preauth]
+
+
+### edge sshd_config
+KbdInteractiveAuthentication no
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+
+
+### host sshd_config and the rendered listen address
+KbdInteractiveAuthentication no
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+TrustedUserCAKeys /run/repose/host_ca.pub
+ListenAddress 10.255.0.2
+
+
+### rows this script cannot run
+hostd for host X cannot act on host Y: one host exists (host-01); the row needs a second registered host. The api's per-stream check is TestRegisterSessionSendSweep locally.
+DIRECT_SSH (B's sshd refusing A's certificate from the host): not run, it would copy the owner's private key to the host; the gateway half of the row ran above.
+
+11:49:51 isolation check finished; evidence in /mnt/nixstore/tmp/stg-cp/e2e/20261122-erofs-8/isolation/isolation-20261122T114830Z.txt

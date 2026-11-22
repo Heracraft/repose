@@ -1,0 +1,9 @@
+[Unit]
+Description=repose desktop: proxy 6080 to the viewer, starting the chain
+Requires=repose-novnc.service
+After=repose-novnc.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=60s 127.0.0.1:6081
+PrivateTmp=yes
+DynamicUser=yes

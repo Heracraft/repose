@@ -1,0 +1,17 @@
+# Fault-around off for the shmem hole-punch race (DECISIONS I-1040,
+# I-1042; nix/hosts/kernel.nix). No condition on the file, deliberately:
+# a kernel without the knob fails this unit, which is how a host finds
+# out the mitigation no longer applies.
+[Unit]
+Description=Switch fault-around off for the shmem hole-punch race (I-1040)
+After=sys-kernel-debug.mount
+Requires=sys-kernel-debug.mount
+Before=hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo 4096 > /sys/kernel/debug/fault_around_bytes'
+
+[Install]
+WantedBy=multi-user.target

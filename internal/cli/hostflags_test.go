@@ -22,9 +22,9 @@ func TestApplianceFlagsRefuseInThisCLIsWords(t *testing.T) {
 	for _, c := range []struct{ name, disk, memory, cpus, want string }{
 		{name: "an explicit zero is not the default", cpus: "0", want: "at least 4 cores"},
 		{name: "memory zero", memory: "0", want: "at least 8192"},
-		{name: "disk zero", disk: "0", want: "at least 40"},
+		{name: "disk zero", disk: "0", want: "at least 20"},
 		{name: "below the floor says the floor", cpus: "1", want: "at least 4 cores"},
-		{name: "disk below the floor", disk: "10", want: "at least 40"},
+		{name: "disk below the floor", disk: "10", want: "at least 20"},
 		{name: "not a number at all", disk: "banana", want: `"banana" is not`},
 		{name: "cores that are not a number", cpus: "banana", want: `"banana" is not`},
 		{name: "a negative", memory: "-1", want: "at least 8192"},

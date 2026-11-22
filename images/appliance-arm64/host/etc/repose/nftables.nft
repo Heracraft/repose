@@ -1,0 +1,177 @@
+#!/usr/sbin/nft -f
+# The `repose` nftables tables (docs/interfaces/host-conventions.md),
+# ported from nix/hosts/nftables.nix for hosts without Nix (DECISIONS
+# I-1494). That file's comment explains every chain; the differences here:
+# no build_out (no Nix builders run on these hosts), no cache rules (no
+# npm or Docker Hub cache runs on them), no bootstrap ssh, and the provider
+# NIC's name comes from /etc/repose/uplink.nft, and what reaches or
+# crosses the host that is neither a guest's nor the mesh's is decided by
+# /etc/repose/host-chains.nft: dropped on the Mac appliance, as on every
+# repose host, and accepted on an x86 machine, whose own services and
+# firewall are its owner's.
+#
+# Loaded by repose-nftables.service. The first part declares and flushes
+# the chains this file owns; hostd's chains (guest_dyn, guest_smtp,
+# guest_stratum, guest_flows), its sets' elements and its counters are
+# never flushed by a reload.
+include "/etc/repose/uplink.nft"
+
+table inet repose {
+  chain input { type filter hook input priority filter; policy drop; }
+  chain output { type filter hook output priority filter; policy accept; }
+  chain guest_fwd { type filter hook forward priority filter; policy drop; }
+  chain guest_meter { type filter hook forward priority filter + 10; policy accept; }
+  chain nat { type nat hook postrouting priority srcnat; policy accept; }
+  chain guest_in { }
+  chain host_input { }
+  chain host_forward { }
+  chain smtp_drop { }
+  chain stratum_drop { }
+  chain flows_drop { }
+}
+flush chain inet repose input
+flush chain inet repose output
+flush chain inet repose guest_fwd
+flush chain inet repose guest_meter
+flush chain inet repose nat
+flush chain inet repose guest_in
+flush chain inet repose smtp_drop
+flush chain inet repose stratum_drop
+flush chain inet repose flows_drop
+flush chain inet repose host_input
+flush chain inet repose host_forward
+table bridge repose {
+  chain forward { type filter hook forward priority filter; policy accept; }
+  chain input { type filter hook input priority filter; policy drop; }
+}
+flush chain bridge repose forward
+flush chain bridge repose input
+include "/etc/repose/host-chains.nft"
+
+table inet repose {
+  chain guest_dyn {
+  }
+  chain guest_smtp {
+  }
+  chain guest_stratum {
+  }
+  chain guest_flows {
+  }
+
+  # One token bucket per guest address for new outbound flows (I-240).
+  set guest_flow_rate {
+    type ipv4_addr
+    size 65535
+    flags dynamic,timeout
+    timeout 1m
+  }
+  # Each guest address's tracked connections (I-453).
+  set guest_conns {
+    type ipv4_addr
+    size 65535
+    flags dynamic
+  }
+
+  chain smtp_drop {
+    jump guest_smtp
+    counter drop
+  }
+  chain stratum_drop {
+    jump guest_stratum
+    counter drop
+  }
+  chain flows_drop {
+    jump guest_flows
+    counter drop
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname "lo" accept
+    iifname "br-guests" jump guest_in
+    ct state established,related accept
+    ct state invalid drop
+
+    # The exporters and hostd's metrics, over WireGuard only.
+    iifname "wg0" tcp dport { 9100, 9101 } accept
+    iifname "wg0" icmp type echo-request accept
+
+    # What else reaches the host is host_input's: closed on the Mac
+    # appliance, the machine's own business on an x86 host.
+    jump host_input
+    counter drop
+  }
+
+  chain guest_in {
+    ct direction reply ct state established,related accept
+    icmp type echo-request limit rate 5/second accept
+    counter drop
+  }
+
+  chain guest_fwd {
+    type filter hook forward priority filter; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+
+    # The edge gateway relays SSH to guests over WireGuard.
+    iifname "wg0" oifname "br-guests" ip daddr 10.64.0.0/12 tcp dport 22 accept
+
+    iifname "br-guests" meta nfproto ipv6 counter drop
+    iifname "br-guests" tcp dport 25 goto smtp_drop
+    iifname "br-guests" tcp dport { 3333, 5555, 7777, 14433, 14444 } goto stratum_drop
+    iifname "br-guests" ct state new add @guest_conns { ip saddr ct count over 16384 } goto flows_drop
+    iifname "br-guests" ct state new update @guest_flow_rate { ip saddr limit rate over 200/second burst 2000 packets } goto flows_drop
+
+    # Cloud instance metadata and the Azure wire server: never from a guest.
+    iifname "br-guests" ip daddr { 169.254.169.254, 168.63.129.16 } counter drop
+    # Other guests, on this host or any other.
+    iifname "br-guests" ip daddr 10.64.0.0/12 counter drop
+    # The edge: hook ingest, and nothing else on the mesh.
+    iifname "br-guests" oifname "wg0" ip daddr 10.255.0.1 tcp dport 8443 accept
+    # Everything private: the owner's LAN, the mesh, link-local.
+    iifname "br-guests" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } counter drop
+    iifname "br-guests" oifname $uplink counter accept
+    iifname "br-guests" counter drop
+    oifname "br-guests" counter drop
+    # Forwarding that is not a guest's is host_forward's (an x86 host's
+    # own containers, say).
+    jump host_forward
+    counter drop
+  }
+
+  chain guest_meter {
+    type filter hook forward priority filter + 10; policy accept;
+    iifname "br-guests" oifname $uplink jump guest_dyn
+  }
+
+  chain nat {
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname $uplink ip saddr 10.64.0.0/12 masquerade
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}
+
+table bridge repose {
+  # hostd-owned: { <mac> . <ip> . tap-<8hex> } per running guest.
+  set guests {
+    type ether_addr . ipv4_addr . ifname
+  }
+
+  # No frame is ever switched between two guests. Only br-guests': an
+  # x86 host's other bridges (Docker's, say) are not this table's.
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    meta ibrname "br-guests" counter drop
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname != "tap-*" accept
+    ether type arp ether saddr . arp saddr ip . iifname @guests accept
+    ether type ip ether saddr . ip saddr . iifname @guests accept
+    counter drop
+  }
+}

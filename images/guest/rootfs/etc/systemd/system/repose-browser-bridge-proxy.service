@@ -1,0 +1,7 @@
+[Unit]
+Description=repose: proxy 9224 to the laptop's Chrome on 127.0.0.1:9226
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:9226
+PrivateTmp=yes
+DynamicUser=yes

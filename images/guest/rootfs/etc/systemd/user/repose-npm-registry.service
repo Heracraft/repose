@@ -1,0 +1,14 @@
+# The host's npm cache in ~/.npmrc, once (caches.nix, DECISIONS I-202, I-231).
+[Unit]
+Description=repose: point npm at the host's cache, once
+ConditionUser=dev
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/repose-npm-registry
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,6 @@
+# hostd creates the taps and attaches them; wg-quick owns wg0.
+[Match]
+Name=tap-* wg0
+
+[Link]
+Unmanaged=yes

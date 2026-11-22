@@ -1,0 +1,19 @@
+#!/bin/sh
+# zstd swap on zram, half the RAM up to 2 GiB, priority 5 (sysctl.nix,
+# DECISIONS I-231).
+set -eu
+case "${1:-}" in
+  start)
+    if grep -q '^/dev/zram0 ' /proc/swaps; then exit 0; fi
+    modprobe zram
+    ram=$(awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo)
+    size=$((ram / 2))
+    max=$((2 * 1024 * 1024 * 1024))
+    [ "$size" -le "$max" ] || size=$max
+    zramctl --algorithm zstd --size "$size" /dev/zram0
+    mkswap -L zram0 /dev/zram0 >/dev/null
+    swapon --priority 5 --discard /dev/zram0
+    ;;
+  stop) swapoff /dev/zram0 || true ;;
+  *) echo "usage: repose-zram-swap start|stop" >&2; exit 64 ;;
+esac

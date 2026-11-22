@@ -1,0 +1,11 @@
+#!/bin/sh
+# The last boot's /tmp, moved aside whole before tmpfiles runs (tmp.nix,
+# DECISIONS I-417); repose-tmp-purge deletes it a minute after the boot.
+set -eu
+trash=/var/lib/repose/tmp-old
+if systemctl is-active --quiet systemd-tmpfiles-setup.service; then exit 0; fi
+[ -d /tmp ] || exit 0
+[ -n "$(ls -A /tmp)" ] || exit 0
+install -d -m 0700 "$trash"
+mv /tmp "$(mktemp -d -p "$trash")/tmp"
+install -d -m 1777 /tmp

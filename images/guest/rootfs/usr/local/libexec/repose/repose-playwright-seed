@@ -1,0 +1,23 @@
+#!/bin/sh
+# Links each of the base's Playwright browser revisions into the writable
+# ~/.cache/ms-playwright unless the user has a real one there, repoints
+# links an older base left, and removes links whose target is gone
+# (compat.nix, DECISIONS I-228).
+set -eu
+dir=/home/dev/.cache/ms-playwright
+base=/opt/ms-playwright
+mkdir -p "$dir"
+for src in "$base"/*; do
+  [ -d "$src" ] || continue
+  dst="$dir/${src##*/}"
+  if [ -L "$dst" ]; then
+    case "$(readlink "$dst")" in "$base"/* | /nix/store/*) ln -sfn "$src" "$dst" ;; esac
+  elif [ ! -e "$dst" ]; then
+    ln -s "$src" "$dst"
+  fi
+done
+for l in "$dir"/*; do
+  if [ -L "$l" ] && [ ! -e "$l" ]; then
+    case "$(readlink "$l")" in "$base"/* | /nix/store/*) rm -f "$l" ;; esac
+  fi
+done

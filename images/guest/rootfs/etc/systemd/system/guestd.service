@@ -1,0 +1,22 @@
+# guestd, the in-guest daemon (nix/guest/base/guestd.nix). Before sshd so
+# Ready is sent by something that saw sshd start; not after docker
+# (DECISIONS I-161). Logs to the serial console too, so a frozen volume
+# never blocks its own writes.
+[Unit]
+Description=repose guestd (vsock control agent)
+Before=ssh.service
+After=systemd-tmpfiles-setup.service network.target
+
+[Service]
+ExecStart=/usr/local/bin/guestd
+Environment=GOMAXPROCS=1
+Restart=always
+RestartSec=2s
+StandardOutput=journal+console
+StandardError=journal+console
+OOMScoreAdjust=-900
+MemoryLow=64M
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

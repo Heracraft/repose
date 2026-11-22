@@ -1,0 +1,8 @@
+[Unit]
+Description=Tenant guests (Cloud Hypervisor and virtiofsd transient units)
+
+[Slice]
+CPUWeight=100
+MemoryAccounting=yes
+CPUAccounting=yes
+IOAccounting=yes

@@ -70,10 +70,10 @@ const (
 	// (2,081,526,806 bytes for 2026.11.19); an asset under this is a
 	// placeholder or a broken upload, not the image.
 	applianceImageMinBytes = 1 << 30
-	// applianceZstMinBytes: the Debian appliance (.raw.zst) is about
-	// 250 MB compressed against a 350 MB target (proposal 2026-11-22
-	// Surface 8); under 100 MiB is not the image.
-	applianceZstMinBytes = 100 << 20
+	// applianceZstMinBytes: the Debian appliance (.raw.zst) is 84,275,749
+	// bytes for 2026.11.22 (DECISIONS I-1494); under 50 MiB is a
+	// placeholder or a broken upload, not the image.
+	applianceZstMinBytes = 50 << 20
 	// guestFileMinBytes: the smallest of a guest bundle's files is the
 	// initramfs, a few MiB; a file under 1 MiB is a placeholder.
 	guestFileMinBytes = 1 << 20

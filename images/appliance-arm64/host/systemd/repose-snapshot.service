@@ -1,0 +1,6 @@
+[Unit]
+Description=Nightly snapshot of every running guest
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hostd snapshot-all

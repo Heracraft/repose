@@ -67,9 +67,11 @@ if [ "$check_only" = 1 ]; then
 fi
 
 cp "$cand" "$versions"
+# The erofs guest's list is the same bytes (DECISIONS I-1470).
+cp "$cand" "$root/images/guest/versions.json"
 branch="bump/agents-$(date -u +%Y%m%d)"
 git -C "$root" checkout -B "$branch"
-git -C "$root" add nix/overlay/agents/versions.json
+git -C "$root" add nix/overlay/agents/versions.json images/guest/versions.json
 git -C "$root" commit -m "$title" -m "Automated by scripts/bump-agents.sh and scripts/bump-agents-pr.sh. Merging changes no guest until repose-admin base publish (docs/workstreams/12-nix-config-pipeline.md)."
 git -C "$root" push -f origin "$branch"
 gh pr create --repo "$(git -C "$root" remote get-url origin | sed -E 's#.*github.com[:/]##; s#\.git$##')" \

@@ -1,0 +1,7 @@
+# 37.5 percent of the guest's memory (browser.nix, DECISIONS I-43, I-1168).
+[Unit]
+Description=repose: the agents' browser
+
+[Slice]
+MemoryMax=37.5%
+MemoryHigh=37.5%

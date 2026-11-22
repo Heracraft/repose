@@ -1,0 +1,115 @@
+# The erofs guest base (DECISIONS I-1466, I-1468): builds the bundle for
+# amd64 and arm64 on native runners with images/guest/build.sh and
+# publishes both as one GitHub release, guest-<version>, whose assets are
+# <arch>-<file>, plus one SHA256SUMS over all eight (guest-conventions.md
+# "The erofs guest").
+#
+# Never "latest": install.sh and `repose version update` follow
+# releases/latest to the CLI, and a guest release marked latest sends
+# every install to a tag with no CLI archives (docs/ops/RELEASE.md,
+# ENG-58). Publishing changes no guest until `repose-admin base publish`
+# names the version. Actions are pinned by commit (DECISIONS I-429).
+
+name: guest-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Base version, YYYY.MM.DD.N"
+        required: true
+        type: string
+      publish:
+        description: "Publish the release (off: build and keep the artifacts only)"
+        required: false
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends erofs-utils
+          docker buildx version
+      - name: build
+        env:
+          VERSION: ${{ inputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          case "$VERSION" in
+            [0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9].[0-9]*) ;;
+            *) echo "::error::version must be YYYY.MM.DD.N, not $VERSION"; exit 1 ;;
+          esac
+          images/guest/build.sh --arch "$ARCH" --version "$VERSION" --out "$RUNNER_TEMP/out"
+          mkdir -p "$RUNNER_TEMP/assets"
+          # What SHA256SUMS lists is what is published: a file over 1900 MiB
+          # as its .partN files (DECISIONS I-1504, I-1506), and manifest.json.
+          while read -r _ f; do
+            mv "$RUNNER_TEMP/out/$VERSION/$ARCH/$f" "$RUNNER_TEMP/assets/$ARCH-$f"
+          done < "$RUNNER_TEMP/out/$VERSION/$ARCH/SHA256SUMS"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: guest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/assets/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: guest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/assets
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          cd "$RUNNER_TEMP/assets"
+          ls -l
+          for a in amd64 arm64; do
+            jq -e --arg v "$VERSION" --arg a "$a" '.version == $v and .arch == $a' "$a-manifest.json" >/dev/null
+            for f in vmlinuz initramfs.img rootfs.erofs; do
+              want=$(jq -r --arg f "$f" '.files[$f].sha256' "$a-manifest.json")
+              parts=$(jq -r --arg f "$f" --arg a "$a" '.files[$f].parts // [] | map($a + "-" + .name) | join(" ")' "$a-manifest.json")
+              # shellcheck disable=SC2086 # part names have no spaces
+              if [ -n "$parts" ]; then got=$(cat $parts | sha256sum | cut -d' ' -f1); else got=$(sha256sum "$a-$f" | cut -d' ' -f1); fi
+              [ "$want" = "$got" ] || { echo "::error::$a-$f is $got, its manifest says $want"; exit 1; }
+            done
+          done
+          kv_amd64=$(jq -r .kernel_version amd64-manifest.json)
+          kv_arm64=$(jq -r .kernel_version arm64-manifest.json)
+          sha256sum amd64-* arm64-* > SHA256SUMS
+          printf 'Guest base %s, built from %s.\n\nKernel %s (amd64), %s (arm64). Each architecture'"'"'s files are named <arch>-<file>, a file over 1900 MiB as <arch>-<file>.partN to concatenate in order; SHA256SUMS lists every asset.\n' \
+            "$VERSION" "$SHA" "$kv_amd64" "$kv_arm64" > notes.md
+          gh release create "guest-$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+            --title "Guest base $VERSION" --notes-file notes.md --latest=false \
+            ./amd64-* ./arm64-* ./SHA256SUMS

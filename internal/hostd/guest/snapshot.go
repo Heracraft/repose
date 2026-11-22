@@ -330,6 +330,7 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	if err := m.setState(g, StateRestoring, ""); err != nil {
 		return nil, errf(CodeInternal, "%v", err)
 	}
+	m.flushNeigh(ctx, g) // the address may be a destroyed guest's (I-1530)
 	log := m.log(g)
 	log.Info("restoring guest", "event", "guest_create", "class", g.Class)
 	start := m.d.Now()

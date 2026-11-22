@@ -1,0 +1,9 @@
+[Unit]
+Description=repose: delete the last boot's /tmp
+ConditionDirectoryNotEmpty=/var/lib/repose/tmp-old
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/bin/find /var/lib/repose/tmp-old -mindepth 1 -delete

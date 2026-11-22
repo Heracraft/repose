@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+mkdir -p /home/dev/.local/share/repose/browser
+prefs=/home/dev/.local/share/repose/browser/Default/Preferences
+# A kill leaves the profile marked as crashed, and Chromium then offers
+# to restore the last session on top of the agent's page.
+/usr/bin/sed -i -e 's/"exit_type":"Crashed"/"exit_type":"Normal"/' \
+  -e 's/"exited_cleanly":false/"exited_cleanly":true/' \
+  "$prefs" 2>/dev/null || true
+# The idle stop takes the agent's pages with it, so the next start
+# brings them back: restore_on_startup 1 is Chromium's "continue
+# where you left off" (DECISIONS I-1122). Each page reloads, so
+# in-page state and form input are lost and the logins in the
+# profile are not. A URL on the command line would be opened beside
+# the restored tabs and leave one more about:blank at every start,
+# so it is passed only for a profile that has never run.
+if [ -s "$prefs" ] \
+   && (umask 077; /usr/bin/jq '.session.restore_on_startup = 1' "$prefs" > "$prefs.repose" 2>/dev/null); then
+  mv -f "$prefs.repose" "$prefs"
+  set --
+else
+  rm -f "$prefs.repose"
+  set -- about:blank
+fi
+exec /usr/local/bin/chromium \
+  --user-data-dir=/home/dev/.local/share/repose/browser \
+  --remote-debugging-port=9225 \
+  --no-first-run --no-default-browser-check \
+  --password-store=basic \
+  --hide-crash-restore-bubble \
+  --disable-gpu --enable-unsafe-swiftshader \
+  --start-maximized --window-position=0,0 \
+  "$@"

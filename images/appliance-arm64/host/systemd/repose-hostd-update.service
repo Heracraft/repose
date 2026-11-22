@@ -1,0 +1,8 @@
+[Unit]
+Description=Update hostd from the signed release manifest (DECISIONS I-1496)
+Wants=network-online.target
+After=network-online.target hostd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/repose/repose-hostd-update

@@ -1,0 +1,8 @@
+# The DevTools endpoint while `repose browser bridge` is on (I-296).
+[Unit]
+Description=repose: the DevTools endpoint on 127.0.0.1:9224, bridged to the laptop's Chrome
+Conflicts=repose-browser.socket
+
+[Socket]
+ListenStream=127.0.0.1:9224
+Service=repose-browser-bridge-proxy.service
