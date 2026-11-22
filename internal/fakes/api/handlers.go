@@ -1071,12 +1071,19 @@ func (f *Fake) opLog(w http.ResponseWriter, r *http.Request) *apiError {
 	f.mu.Lock()
 	_, o, e := f.findOp(userFrom(r), r.PathValue("id"), r.PathValue("op_id"))
 	logLines := buildLines
-	if e == nil && o.lines != nil {
-		logLines = o.lines
+	running := false
+	if e == nil {
+		if o.lines != nil {
+			logLines = o.lines
+		}
+		running = o.State == "running" || o.State == "pending"
 	}
 	f.mu.Unlock()
 	if e != nil {
 		return e
+	}
+	if running {
+		return f.streamRunningLog(w, o, logLines, since)
 	}
 	var frames []string
 	for i, line := range logLines {
@@ -1090,7 +1097,10 @@ func (f *Fake) opLog(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		frames = append(frames, fmt.Sprintf("id: %d\ndata: %s\n\n", seq, b))
 	}
-	frames = append(frames, "event: done\ndata: {\"state\":\"done\"}\n\n")
+	f.mu.Lock()
+	final := o.State
+	f.mu.Unlock()
+	frames = append(frames, "event: done\ndata: {\"state\":\""+final+"\"}\n\n")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
@@ -1310,6 +1320,7 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	now := f.now()
 	o := f.newOp(p, "config")
+	defer f.delayConfig(p, o, "build")
 	// A canned eval failure, for the dashboard and CLI to exercise the
 	// error path (08-dashboard.md §7, nix-build-contract.md "What the user
 	// reads" — the exact first canonical message) without a real Nix
