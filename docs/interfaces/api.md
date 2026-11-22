@@ -697,4 +697,8 @@ return any error code. The CLI and dashboard tests run against it.
 erofs `{menu}` is checked with apt names, and its op's log is ApplyMenu's
 lines (`installing X`, `X ready` or `X installed`, `removing X`, `X
 removed`, `X failed: <reason>`) instead of a Nix build's; the package
-`repose-fake-missing` fails it with `menu_failed`.
+`repose-fake-missing` fails it with `menu_failed`. `Options.ConfigDelay`
+(`cmd/fakeapi --config-delay`) keeps a config op `running` for that long,
+in phase `build` (Nix) or `apply_config` (erofs), with its log streamed a
+line at a time, and the log's `done` event carries the state the op ended
+in, as the api's does.

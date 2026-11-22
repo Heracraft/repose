@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strings"
+	"time"
 	"testing"
 )
 
@@ -69,5 +70,28 @@ func TestErofsMenuFake(t *testing.T) {
 		if !strings.Contains(log, l) {
 			t.Fatalf("log lacks %q: %s", l, log)
 		}
+	}
+}
+
+// ConfigDelay keeps a config op running while its log streams, then ends
+// it in the state it was decided with.
+func TestConfigDelay(t *testing.T) {
+	f := New(Options{ConfigDelay: 300 * time.Millisecond})
+	defer f.Close()
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "ero", "class": "large", "guest_runtime": "erofs"})
+	want(t, r, http.StatusCreated)
+	var p Project
+	r.json(t, &p)
+	id := opID(t, call(t, f, "PUT", "/v1/projects/"+p.ID+"/config", tok, map[string]any{"menu": []map[string]any{{"package": FailMenuPackage}}}))
+	op := call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id, tok, nil)
+	if !strings.Contains(string(op.body), `"running"`) || !strings.Contains(string(op.body), "apply_config") {
+		t.Fatalf("op at first read: %s", op.body)
+	}
+	log := string(call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id+"/log", tok, nil).body)
+	if !strings.Contains(log, FailMenuPackage+" failed") || !strings.Contains(log, `{"state":"error"}`) {
+		t.Fatalf("streamed log: %s", log)
+	}
+	if op := call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+id, tok, nil); !strings.Contains(string(op.body), `"error"`) {
+		t.Fatalf("op after the delay: %s", op.body)
 	}
 }
