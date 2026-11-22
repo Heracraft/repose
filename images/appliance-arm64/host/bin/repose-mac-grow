@@ -1,0 +1,64 @@
+#!/bin/bash
+# First boot on a disk larger than the image: the last partition takes the
+# rest of the disk, the PV follows, the pool's metadata is sized for the
+# new PV and the pool grows to 95 percent of the VG. Every step is a no-op
+# the second time, so the unit runs at every boot and a user who grows
+# the disk file later gets the room at the next boot. Ported 1:1 from
+# nix/hosts/mac.nix (DECISIONS I-1376, I-1494). Logs sizes and names only.
+#
+#   repose-mac-grow [disk] [partition]
+set -euo pipefail
+disk=${1:-/dev/vda}
+part=${2:-3}
+pv="${disk}${part}"
+case "$disk" in /dev/nvme*|/dev/loop*|/dev/mmcblk*) pv="${disk}p${part}" ;; esac
+vg="vg-guests"
+gib=$((1024 * 1024 * 1024))
+
+# 1. The partition, to the end of the disk. growpart exits 1 and says
+# NOCHANGE when it already is; that is the common case.
+rc=0
+out=$(growpart "$disk" "$part" 2>&1) || rc=$?
+case "$rc" in
+  0) echo "repose-mac-grow: event=partition_grown disk=$disk part=$part" ;;
+  1) echo "repose-mac-grow: event=partition_unchanged disk=$disk part=$part" ;;
+  *) echo "repose-mac-grow: event=partition_grow_failed disk=$disk part=$part rc=$rc" >&2; echo "$out" >&2; exit 1 ;;
+esac
+udevadm settle --timeout 30 || true
+
+# 2. The PV, to the partition.
+if ! pvs "$pv" >/dev/null 2>&1; then
+  echo "repose-mac-grow: event=no_pv device=$pv" >&2
+  exit 1
+fi
+pvresize "$pv" >/dev/null
+after=$(pvs --noheadings --units b --nosuffix -o pv_size "$pv" | tr -d ' ')
+echo "repose-mac-grow: event=pv_resized device=$pv size=$after"
+
+# 3. The pool's metadata: one percent of the PV, clamped to 1 to 16 GiB.
+want_meta=$((after / 100))
+[ "$want_meta" -lt $gib ] && want_meta=$gib
+[ "$want_meta" -gt $((16 * gib)) ] && want_meta=$((16 * gib))
+have_meta=$(lvs --noheadings --units b --nosuffix -o lv_metadata_size "$vg/thin" | tr -d ' ')
+if [ "$have_meta" -lt "$want_meta" ]; then
+  lvextend --poolmetadatasize "${want_meta}b" "$vg/thin" >/dev/null
+  echo "repose-mac-grow: event=pool_metadata_grown from=$have_meta to=$want_meta"
+fi
+
+# 4. The pool, to 95 percent of the VG and never past what the VG holds
+# beside the metadata and its spare. In whole extents, so a second run
+# computes the same size and does nothing.
+vg_size=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
+extent=$(vgs --noheadings --units b --nosuffix -o vg_extent_size "$vg" | tr -d ' ')
+meta=$(lvs --noheadings --units b --nosuffix -o lv_metadata_size "$vg/thin" | tr -d ' ')
+want=$(( vg_size * 95 / 100 ))
+cap=$(( vg_size - 2 * meta - 4 * extent ))
+[ "$want" -gt "$cap" ] && want=$cap
+want=$(( want / extent * extent ))
+have=$(lvs --noheadings --units b --nosuffix -o lv_size "$vg/thin" | tr -d ' ')
+if [ "$have" -lt "$want" ]; then
+  lvextend -L "${want}b" "$vg/thin" >/dev/null
+  echo "repose-mac-grow: event=pool_grown from=$have to=$want vg=$vg_size"
+else
+  echo "repose-mac-grow: event=pool_unchanged size=$have vg=$vg_size"
+fi

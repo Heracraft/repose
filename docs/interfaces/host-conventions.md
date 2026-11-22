@@ -546,6 +546,15 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   at 80 by 5); it refuses a partition with any other signature.
   `repose-mac-grow` then runs at every boot as before and logs the same
   events.
+- **The image cache volume**: `vg-guests/images`, 16 GiB thin, ext4
+  labelled `repose-images`, made once by `repose-images-volume` (after
+  the pool and `repose-mac-grow`, before `hostd`, which wants it) and
+  mounted at every boot on `/var/lib/repose/images`, hostd's
+  `--images-dir`; a cache already on the root is moved onto it. It logs
+  `volume_created size=`, `volume_mounted`, `volume_mounted_already`,
+  `cache_moved`. 16 GiB is two arm64 bundles of about 3 GB and a third
+  being fetched during a base rotation, with room for the root image to
+  grow; thin, so it costs what it holds.
 - **The kernel**: kernel.org 6.18.57 with Debian's cloud-arm64 config,
   release `6.18.57-repose`, no initramfs (`root=PARTUUID=...-8a02`,
   `console=hvc0`, the fleet's `transparent_hugepage=madvise hashdist=0
@@ -600,7 +609,8 @@ with these differences: Cloud Hypervisor's x86_64 static build, packages
 from apt, hostd from the signed manifest (or `--hostd-binary PATH`), the
 pool on `--device` or on a file, `/var/lib/repose/guests.img` by
 default, attached at boot by `repose-guest-loop` (`/etc/repose/pool.env`),
-the uplink the default route's interface, `host_input` and
+the image cache volume made the same way on the machine's pool, the
+uplink the default route's interface, `host_input` and
 `host_forward` set to `accept` because the machine's own traffic is its
 owner's, no `repose-mac-*` units and no park. The join argument is
 written to `/run/repose/launcher/join` for `repose-launcher-join`.

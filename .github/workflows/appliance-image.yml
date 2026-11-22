@@ -139,14 +139,16 @@ jobs:
         with:
           path: art
       - name: build the image
+        # --allow-branch: a tag checkout has no main ref to compare with;
+        # appliance-* tags are cut on main, and hostd is this commit's.
         run: |
           v=${VERSION#appliance-}
           docker run --rm --privileged -v "$PWD:/src:ro" -v "$PWD/art:/art" -v "$RUNNER_TEMP:/out" debian:trixie bash -c "
             set -e
             apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends mmdebstrap e2fsprogs dosfstools mtools gdisk zstd curl jq ca-certificates systemd >/dev/null
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git mmdebstrap arch-test e2fsprogs dosfstools mtools gdisk zstd curl jq ca-certificates systemd >/dev/null
             /src/images/appliance-arm64/build.sh --version $v --kernel /art/kernel/kernel-*-arm64.tar.zst \
-              --hostd /art/hostd/hostd-linux-arm64 --out /out/image" | tee "$RUNNER_TEMP/build.log"
+              --hostd /art/hostd/hostd-linux-arm64 --hostd-commit $GITHUB_SHA --allow-branch --out /out/image" | tee "$RUNNER_TEMP/build.log"
       - name: the image is inside its budget
         run: |
           line=$(grep '^build.sh: ' "$RUNNER_TEMP/build.log")

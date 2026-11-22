@@ -293,6 +293,10 @@ func apiErrorExit(apiErr *APIError, stderr io.Writer) int {
 		say("%s", paymentRequiredMessage(apiErr))
 		return ExitPaymentRequired
 	case "capacity":
+		if reason, _ := apiErr.Detail["reason"].(string); reason == "no_runtime_host" {
+			say("%s", noRuntimeHost)
+			return ExitCapacity
+		}
 		say("repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.")
 		return ExitCapacity
 	case "waitlisted":

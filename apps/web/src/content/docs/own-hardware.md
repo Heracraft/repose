@@ -80,12 +80,14 @@ To name it yourself, `repose host add mac-mini`. A name is 1 to 32 characters of
 
 On the dashboard, **New project** has **Runs on** once you have a host: your host, or repose's servers, the same choice as `--host`. While your host is waiting or offline the form says so in the same words and creates nothing, and repose's servers is the way out. Settings → Hosts does the same three things. **Add a host** takes a name, or none, and shows the step to run on the machine once, with a copy button; it is not shown again, and a host that is still waiting can be removed and added again for a fresh one. The list shows each host's state, its memory and cores, how many of your machines are on it and how many are running, and when it last answered.
 
-## Starting a machine takes about four minutes
+## Starting a machine takes about half a minute
 
-A machine on your Mac takes about four minutes to start, the first time and
-every time after. On repose's own servers the same machine starts in about
-[12 seconds](/docs#6-come-back-and-stop). The difference is work repose redoes on the
-Mac at every start, not something the machine carries once it is up.
+A machine on your Mac starts in about 33 seconds, and a new one is ready in
+about 40 seconds once the base image is on the Mac. The first machine also
+downloads that image, 2.9 GB, so it takes about two minutes. On repose's own
+servers the same machine starts in about
+[6 seconds](/docs#6-come-back-and-stop). Measured on an M4 Mac mini on
+2026-11-22.
 
 Once it is running it is a machine like any other. The agents, the builds and
 the tests go at the Mac's own speed: the virtual machine around them costs

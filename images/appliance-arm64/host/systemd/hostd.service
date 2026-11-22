@@ -5,8 +5,8 @@
 # update included, does not stop them, and hostd reconciles them at start.
 [Unit]
 Description=repose hostd: runs tenants' guests on this host
-Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-nftables.service
-After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service lvm2-monitor.service
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service lvm2-monitor.service
 
 [Service]
 EnvironmentFile=/etc/repose/hostd.env
