@@ -26,6 +26,12 @@ state (DECISIONS I-818): it is a marker on a guest that is still
 (`GuestStatus.resting_at`, `GuestSample.resting`), on the row
 (`projects.resting_since`) and in hostd's bbolt record, because the
 guest's vCPUs are stopped but its memory, its processes and the minute it
-bills are all still there. The api's error codes are listed in
-[api.md](api.md) (the error envelope at the top); hostd's are in
-[grpc-hostd.md](grpc-hostd.md).
+bills are all still there. The guest runtime enum is `nix|erofs`
+(DECISIONS I-1462): what a project's machine boots, a Nix closure or the
+Ubuntu erofs base image, on the row (`projects.guest_runtime`), in the
+api's `Project` and as the host feature names in `Hello.features`. The
+api's error codes are listed in [api.md](api.md) (the error envelope at
+the top; `nix_config_retired` joined it with I-1462); hostd's are in
+[grpc-hostd.md](grpc-hostd.md) (`menu_failed` joined them with I-1458),
+and guestd answers `unimplemented` for a request its runtime does not
+have (I-1460).

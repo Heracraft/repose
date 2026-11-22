@@ -165,11 +165,88 @@ Burst cores (DECISIONS I-1126, I-1128), additive:
 beyond the commands every hostd takes: `local_clone`, a `Restore` with
 `clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`; `burst` (I-1126),
 `SetBurst`, and with it a host that boots guests at their class ceiling
-and runs the `cpu.max` controller. The api keeps it
+and runs the `cpu.max` controller; `nix` and `erofs` (I-1458), which
+guests the host can run, below. The api keeps it
 in `hosts.features` and sends a shape only to a host that names it, so a
 host without `pause` is never asked to rest a machine and a host without
 `burst` is never sent a `SetBurst`. A hostd older than
 I-701 sends none.
+
+### erofs guests (DECISIONS I-1458)
+
+An **erofs guest** boots an Ubuntu base image instead of a Nix closure:
+a read-only `rootfs.erofs` as `vda`, the guest's thin volume as `vdb`, and
+a kernel and initramfs from the same release. A **Nix guest** is every
+guest before this. A project's `guest_runtime` (`nix|erofs`,
+`db-schema.md`) says which it is, for life.
+
+```
+BaseImage { string version; string url; string sha256; string kernel_version;
+            string initramfs_url; string initramfs_sha256;
+            string kernel_url; string kernel_sha256; }
+MenuItem  { string id; map<string,string> options; string package; }
+MenuSpec  { repeated MenuItem items; string revision_id; }
+```
+
+- **Three files, each checked.** `url` is `rootfs.erofs`, `kernel_url` the
+  kernel (a plain bzImage on `x86_64`, an uncompressed `Image` on
+  `aarch64`), `initramfs_url` the initramfs. Each `*sha256` is the
+  lower-case hex SHA-256 of that file. hostd fetches each file on its own,
+  resumes or refetches one without the others, and boots nothing whose
+  digest differs (`internal`, "base image checksum mismatch"). `version`
+  is the `base_versions` label (`[A-Za-z0-9._-]{1,64}`) and names hostd's
+  cache directory; `kernel_version` is the kernel's `uname -r`, for logs
+  and the dashboard. The api picks the files for the host's `arch` from
+  the base row (`image_amd64_*` for `x86_64`, `image_arm64_*` for
+  `aarch64`); hostd never chooses a file.
+- **Which guest a command is for.** `CreateGuest` (field 18), `StartGuest`
+  (field 12) and `Restore` (field 21) carry `base_image`. With
+  `base_image` set and `system_closure` empty the command is for an erofs
+  guest; with `system_closure` set and `base_image` absent it is for a Nix
+  guest, exactly as before; **both set is `invalid_argument`**. A
+  `StartGuest` with neither keeps what the guest last booted, as an
+  old-shape `StartGuest` always has. A `StartGuest` whose `base_image`
+  names another version than the recorded one boots the new base; the
+  initramfs rotates the overlay's upper directory and keeps `/home/dev`,
+  `/var/lib/docker` and `/var/lib/repose/services` (proposal §7.3).
+  `system_closure` on all three is **accepted for one release** in its old
+  meaning; it is retired with the last Nix guest.
+- **The menu.** `MenuSpec` is the project's whole `config_revisions.menu`
+  selection in the user's order (`api.md` MenuSelection): each item
+  exactly one of `id` (a catalog entry, with its `options`) or `package`
+  (a Ubuntu package name). It is a state, not a diff. `CreateGuest` (field
+  19) and `StartGuest` (field 13) carry it, and hostd hands it to guestd's
+  `ApplyMenu` with `replay_after_base_upgrade` set once the guest has run
+  `SetupProject`, so the first boot after a base bump installs again what
+  the rotated upper directory dropped. `ApplyConfig` (field 4) carries it
+  for a menu change on a running erofs guest, with
+  `replay_after_base_upgrade` false. A `menu` beside `system_closure` is
+  ignored on `CreateGuest` and `StartGuest`, and `invalid_argument` on
+  `ApplyConfig`, which takes exactly one of the two.
+- **Progress and failure.** guestd's progress lines reach the api as
+  `BuildLog` under the command's `command_id`, as a Nix build's do, and
+  the CLI shows them through the op's log (`api.md`). A menu that fails on
+  `ApplyConfig` answers `menu_failed` (an item did not install or start;
+  `message` is guestd's last line) or `invalid_argument` (an unknown
+  catalog id or option, a bad package name); the guest keeps running with
+  what it had. A menu that fails at a boot does **not** fail the boot:
+  `CreateResult.menu_error` (field 4) or `StartResult.menu_error` (field 8)
+  carries the code and line, and the guest runs.
+- **What the host reports.** `GuestStatus.base_version` (field 10) is the
+  base an erofs guest boots, from hostd's record; `StartResult.booted_base_version`
+  (field 7) the one a start booted, which is what clears the project's
+  `pending_base_version`. Both are empty for a Nix guest and from a hostd
+  older than I-1458.
+- **Which host takes which guest.** `Hello.features` names `nix` when the
+  host builds and boots Nix guests and `erofs` when it boots erofs guests;
+  a host may name both. A hostd older than I-1458 names neither and is
+  read as `nix` alone. The api places an erofs project only on a host that
+  names `erofs` and whose `hosts.arch` has an image in the base row, and a
+  Nix project only on a host that names `nix` or names neither. A host
+  that names `erofs` and not `nix` is never sent `Build`.
+- **What an erofs guest does not take.** `Build` is never sent for one.
+  hostd never registers store paths in it, so guestd's `RegisterPaths` and
+  `Switch` answer `unimplemented` there (`vsock-guestd.md`).
 
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
 `load1`, `running_guests`, `draining` (bool; set after `Drain`, the scheduler
@@ -191,15 +268,15 @@ command_id returns the stored result) and one of:
 
 | Command | Fields | Result payload |
 |---|---|---|
-| `CreateGuest` | project_id, guest_id, class, volume_bytes, system_closure (store path of the built system), secrets (list of name → bytes, delivered to tmpfs), env (TZ, LANG), ssh_ca_pub, principals (list), hooks_config, host_key (guest sshd ed25519 private key, generated by the api), host_cert (its certificate signed by the Host CA with principals guest_ip and `<slug>.<handle>`), user_id, project_slug, remote_url, project_json (I-26) | guest_ip, vsock_cid, boot (I-707: `BootTimings {volume_ms, prepare_ms, ready_ms, paths_ms, setup_ms, total_ms}`, where the boot's time went; absent from a hostd before it, and an api that ignores it reads the result as before) |
-| `StartGuest` | guest_id, plus optionally the same delivery fields as CreateGuest: secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, project_json (I-26: hostd keeps none of them on disk, so the api sends them on every start; a StartGuest with only guest_id is accepted while hostd still has them in memory), and class (I-260: the project's class; when it differs from the recorded one, hostd boots at the new class and records it; empty keeps the recorded class, so an api that does not send it is still accepted) | `StartResult {booted_closure, failed_closure, boot_error}` (I-590; field 16 of the payload, absent from a hostd before it): the closure the guest runs; after a boot that never reached Ready and fell back to the guest's last good closure, `failed_closure` is the one that failed and `boot_error` why (`code`, hostd's fixed `message`, `console_tail`). An api that ignores it reads ok as before. `boot` (I-707) is the BootTimings of the boot that reached running, as on CreateResult. `guest_ip` (field 5) and `vsock_cid` (field 6) are the started guest's address, as on CreateResult (I-720): a start after a create or restore that failed past the guest's own boot is what gives the api an address it never received. Empty and 0 from a hostd before I-720, which the api reads as "unchanged"; an api before it ignores them |
+| `CreateGuest` | project_id, guest_id, class, volume_bytes, system_closure (store path of the built system; or base_image and menu for an erofs guest, I-1458, "erofs guests"), secrets (list of name → bytes, delivered to tmpfs), env (TZ, LANG), ssh_ca_pub, principals (list), hooks_config, host_key (guest sshd ed25519 private key, generated by the api), host_cert (its certificate signed by the Host CA with principals guest_ip and `<slug>.<handle>`), user_id, project_slug, remote_url, project_json (I-26) | guest_ip, vsock_cid, boot (I-707: `BootTimings {volume_ms, prepare_ms, ready_ms, paths_ms, setup_ms, total_ms}`, where the boot's time went; absent from a hostd before it, and an api that ignores it reads the result as before) |
+| `StartGuest` | guest_id, base_image and menu (I-1458, erofs guests; "erofs guests"), plus optionally the same delivery fields as CreateGuest: secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, project_json (I-26: hostd keeps none of them on disk, so the api sends them on every start; a StartGuest with only guest_id is accepted while hostd still has them in memory), and class (I-260: the project's class; when it differs from the recorded one, hostd boots at the new class and records it; empty keeps the recorded class, so an api that does not send it is still accepted) | `StartResult {booted_closure, failed_closure, boot_error}` (I-590; field 16 of the payload, absent from a hostd before it): the closure the guest runs; after a boot that never reached Ready and fell back to the guest's last good closure, `failed_closure` is the one that failed and `boot_error` why (`code`, hostd's fixed `message`, `console_tail`). An api that ignores it reads ok as before. `boot` (I-707) is the BootTimings of the boot that reached running, as on CreateResult. `guest_ip` (field 5) and `vsock_cid` (field 6) are the started guest's address, as on CreateResult (I-720): a start after a create or restore that failed past the guest's own boot is what gives the api an address it never received. Empty and 0 from a hostd before I-720, which the api reads as "unchanged"; an api before it ignores them |
 | `StopGuest` | guest_id, snapshot_first (bool), timeout_s | snapshot_id if taken (assigned by the api), blob_path, bytes (I-26), sha256 (I-462) |
 | `DestroyGuest` | guest_id, keep_volume (bool) | |
 | `ResizeVolume` | guest_id, new_bytes | none; refused with `insufficient_capacity` while the thin pool is 85 percent used or more, data or metadata (as `CreateGuest` and `Restore` are; DECISIONS I-586, which replaced I-449's bound on the sum of the volumes' sizes). `StartGuest` is refused the same way at 95 percent |
-| `Build` | project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp), personal (bytes, field 7: the account's machine.nix written as `personal.nix` beside the fragment; optional, I-490: empty is the build without it, and a hostd that predates the field ignores it) | system_closure, closure_bytes, kernel_changed (bool) |
-| `ApplyConfig` | guest_id, system_closure, force_reboot (bool) | rebooted (bool), reboot_required (bool: the closure changes kernel or initrd and force_reboot was false; nothing was applied). On a stopped guest hostd moves the root after checking the closure's kernel, initrd, init and requisites, else `not_found` (I-591). A Switch error guestd codes `not_found`, `invalid_argument` or `store_path_hidden` keeps its code; any other is `internal` (I-593). `store_path_hidden` (I-589, added with it; a guestd before it answers `not_found`) is guestd refusing a closure, or a path of it, that an overlayfs whiteout in the guest's own store hides; the guest keeps its system, and a start removes the whiteouts (I-587). A forced reboot that never reaches Ready falls back to the guest's last good closure and answers `boot_failed`, the guest running (I-590) |
+| `Build` | (Nix guests only; never sent for an erofs project, I-1458) project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp), personal (bytes, field 7: the account's machine.nix written as `personal.nix` beside the fragment; optional, I-490: empty is the build without it, and a hostd that predates the field ignores it) | system_closure, closure_bytes, kernel_changed (bool) |
+| `ApplyConfig` | guest_id, system_closure, force_reboot (bool); or, for an erofs guest, menu (I-1458: exactly one of the two; progress as `BuildLog`, failure `menu_failed`; "erofs guests") | rebooted (bool), reboot_required (bool: the closure changes kernel or initrd and force_reboot was false; nothing was applied). On a stopped guest hostd moves the root after checking the closure's kernel, initrd, init and requisites, else `not_found` (I-591). A Switch error guestd codes `not_found`, `invalid_argument` or `store_path_hidden` keeps its code; any other is `internal` (I-593). `store_path_hidden` (I-589, added with it; a guestd before it answers `not_found`) is guestd refusing a closure, or a path of it, that an overlayfs whiteout in the guest's own store hides; the guest keeps its system, and a start removes the whiteouts (I-587). A forced reboot that never reaches Ready falls back to the guest's last good closure and answers `boot_failed`, the guest running (I-590) |
 | `Snapshot` | guest_id, reason (`scheduled|stop|manual`) | snapshot_id, blob_path, bytes, sha256 (I-462: hex SHA-256 of the bytes uploaded; hostd checks the store holds `bytes` before answering) |
-| `Restore` | project_id, guest_id (new), blob_path or clone (I-701; see below), class, volume_bytes, system_closure (I-26; empty means the api rebuilds before StartGuest), sha256 (I-462; see below), plus every CreateGuest field (secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, user_id, project_slug, remote_url, project_json) | as CreateGuest; the guest ends `stopped`. A failure removes the new volume (I-461) |
+| `Restore` | project_id, guest_id (new), blob_path or clone (I-701; see below), class, volume_bytes, system_closure (I-26; empty means the api rebuilds before StartGuest) or base_image (I-1458, an erofs guest; both is `invalid_argument`), sha256 (I-462; see below), plus every CreateGuest field (secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, user_id, project_slug, remote_url, project_json) | as CreateGuest; the guest ends `stopped`. A failure removes the new volume (I-461) |
 | `UpdateSecrets` | guest_id, secrets | none. `secrets` is the guest's whole named set; an empty list removes every named secret. The sshd material from the last create, start or restore stays (I-732) |
 | `SetPrincipals` | guest_id, principals | |
 | `Exec` | guest_id, argv, timeout_s, audit_id (required, I-26; operator use only, audited: hostd logs `{audit_id, guest_id, argv}` at notice) | exit_code, stdout, stderr (each capped 64 KB) |
@@ -262,7 +339,7 @@ moment than its siblings.
 copy already `stopped` answers as the first did. Error codes:
 `invalid_argument`, `not_found`, `already_exists`, `insufficient_capacity`,
 `build_failed`, `build_timeout`, `eval_failed`, `closure_too_large`,
-`guest_unresponsive`, `boot_failed`, `store_path_hidden`, `volume_unavailable`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row.
+`guest_unresponsive`, `boot_failed`, `store_path_hidden`, `volume_unavailable`, `menu_failed`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row. `menu_failed` (I-1458) is an erofs guest's menu that did not apply on `ApplyConfig`; see "erofs guests".
 `volume_unavailable` (I-644; an api older than it shows it as it is) is any
 command that needs the thin pool while it is unavailable (as Hello's
 `pool_unavailable`), and a `StartGuest` whose `g-` or `auth-` volume did
