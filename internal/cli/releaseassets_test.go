@@ -78,7 +78,7 @@ const (
 	// initramfs, a few MiB; a file under 1 MiB is a placeholder.
 	guestFileMinBytes = 1 << 20
 	// guestPartMaxBytes: a bundle file over GitHub's 2 GiB asset cap is
-	// published in parts of at most 1900 MiB (conductor D-16).
+	// published in parts of at most 1900 MiB (DECISIONS I-1504).
 	guestPartMaxBytes = 1900 << 20
 	// hostdChannel is the release hostd's self-update reads
 	// (hostd-<channel>/manifest.json). PR 6 adds the constant in hostd;
@@ -185,7 +185,7 @@ func (c *releaseAssetCheck) appliance(ctx context.Context, version string) {
 // is capped at 2 GiB and the amd64 rootfs is larger, so each of the six
 // bundle files may instead be published as <name>.part0, <name>.part1,
 // ..., each at most guestPartMaxBytes; SHA256SUMS then lists the parts
-// and not the whole (conductor D-16).
+// and not the whole (DECISIONS I-1504).
 func (c *releaseAssetCheck) guestRelease(ctx context.Context, version string) {
 	base := releaseDownloadURL + "/guest-" + version + "/"
 	fix := "publish it: .github/workflows/guest-image.yml builds and uploads guest-" + version
@@ -633,7 +633,7 @@ func TestReleaseAssetsCheckGuestAndHostd(t *testing.T) {
 
 	files["/guest-"+version+"/amd64-manifest.json"] = `{"version":"` + version + `","arch":"amd64"}`
 
-	// The amd64 rootfs in two parts (D-16): SHA256SUMS lists the parts
+	// The amd64 rootfs in two parts (I-1504): SHA256SUMS lists the parts
 	// and not the whole, and the whole is not uploaded.
 	const rootfs = "amd64-rootfs.erofs"
 	delete(files, "/guest-"+version+"/"+rootfs)
