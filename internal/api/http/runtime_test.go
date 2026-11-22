@@ -79,7 +79,12 @@ func TestGuestRuntimeField(t *testing.T) {
 	if r.status != 409 || errCode(r) != "nix_config_retired" || r.body["error"].(map[string]any)["message"] != httpapi.MsgNixConfigRetired {
 		t.Fatalf("fragment on erofs: %d %s", r.status, r.raw)
 	}
-	r = e.do(t, tok, "PUT", "/projects/"+pid+"/config", map[string]any{"menu": []map[string]any{{"id": "postgresql"}}})
+	// Package names are apt names on erofs (PR 7's ValidateFor).
+	r = e.do(t, tok, "PUT", "/projects/"+pid+"/config", map[string]any{"menu": []map[string]any{{"package": "python312Packages.black"}}})
+	if r.status != 400 || !strings.Contains(r.body["error"].(map[string]any)["message"].(string), "not an apt package name") {
+		t.Fatalf("nixpkgs path on erofs: %d %s", r.status, r.raw)
+	}
+	r = e.do(t, tok, "PUT", "/projects/"+pid+"/config", map[string]any{"menu": []map[string]any{{"id": "postgresql"}, {"package": "python3.12-venv"}}})
 	if r.status != 202 {
 		t.Fatalf("menu on erofs: %d %s", r.status, r.raw)
 	}

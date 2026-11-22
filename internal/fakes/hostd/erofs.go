@@ -62,7 +62,7 @@ func (f *Fake) refuseShape(id string, cmd *hostdv1.Command) *hostdv1.Result {
 		return nil
 	case *hostdv1.Command_Build:
 		if f.opts.NoNix {
-			return errResult(id, "invalid_argument", "this host does not build Nix guests")
+			return errResult(id, "nix_unsupported", "this host runs with Nix off")
 		}
 		return nil
 	default:
@@ -70,7 +70,7 @@ func (f *Fake) refuseShape(id string, cmd *hostdv1.Command) *hostdv1.Result {
 	}
 	if bi == nil {
 		if closure != "" && f.opts.NoNix {
-			return errResult(id, "invalid_argument", "this host does not run Nix guests")
+			return errResult(id, "nix_unsupported", "this host runs with Nix off")
 		}
 		return nil
 	}

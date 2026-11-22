@@ -105,10 +105,10 @@ func TestErofsShapes(t *testing.T) {
 	}
 
 	erofsOnly := New(Options{HostID: "h3", Erofs: true, NoNix: true})
-	if r := erofsOnly.Execute(create("c7", "g7", "/nix/store/abc-system", nil, nil)); r.Ok || r.Error.Code != "invalid_argument" {
+	if r := erofsOnly.Execute(create("c7", "g7", "/nix/store/abc-system", nil, nil)); r.Ok || r.Error.Code != "nix_unsupported" {
 		t.Fatalf("closure on an erofs-only host: %+v", r)
 	}
-	if r := erofsOnly.Execute(&hostdv1.Command{CommandId: "b1", Cmd: &hostdv1.Command_Build{Build: &hostdv1.Build{ProjectId: "p"}}}); r.Ok || r.Error.Code != "invalid_argument" {
+	if r := erofsOnly.Execute(&hostdv1.Command{CommandId: "b1", Cmd: &hostdv1.Command_Build{Build: &hostdv1.Build{ProjectId: "p"}}}); r.Ok || r.Error.Code != "nix_unsupported" {
 		t.Fatalf("build on an erofs-only host: %+v", r)
 	}
 	if f := erofsOnly.Hello().Features; slices.Contains(f, "nix") || !slices.Contains(f, "erofs") {

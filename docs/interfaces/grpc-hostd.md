@@ -246,11 +246,21 @@ MenuSpec  { repeated MenuItem items; string revision_id; }
   that names `erofs` and not `nix` is never sent `Build`.
 - **Refusals.** Each is `invalid_argument`, decided before hostd touches
   anything: `base_image` beside `system_closure`; a `base_image` on a host
-  that does not name `erofs`, and a `system_closure` or `Build` on one that
-  does not name `nix`; a `base_image` whose `version` is not a label, or
+  that does not name `erofs`; a `base_image` whose `version` is not a label, or
   whose three files are not each a non-empty URL with a 64-hex-digit
   digest; an `ApplyConfig` with both `system_closure` and `menu`, or with
-  the one the guest's runtime does not take.
+  the one the guest's runtime does not take. A `system_closure` create,
+  start or restore, or a `Build`, on a host running with Nix off (one
+  that does not name `nix`) is **`nix_unsupported`** instead: a
+  precondition of the host, which the api fails the op on and never
+  retries, since no resend to that host can succeed.
+- **Snapshots.** `StopResult.base_version` (field 5),
+  `SnapshotResult.base_version` (field 5) and `SnapshotDone.base_version`
+  (field 6) are the erofs base the guest ran when the snapshot was taken;
+  the api stores them as `snapshots.base_version`. hostd may send them
+  empty for one release, and the api then records the project's
+  `base_version`. Empty for a Nix guest. A `Restore` pins the base it
+  boots with its `base_image`; nothing else is needed on the request.
 - **What an erofs guest does not take.** `Build` is never sent for one.
   hostd never registers store paths in it, so guestd's `RegisterPaths` and
   `Switch` answer `unimplemented` there (`vsock-guestd.md`).
@@ -346,7 +356,7 @@ moment than its siblings.
 copy already `stopped` answers as the first did. Error codes:
 `invalid_argument`, `not_found`, `already_exists`, `insufficient_capacity`,
 `build_failed`, `build_timeout`, `eval_failed`, `closure_too_large`,
-`guest_unresponsive`, `boot_failed`, `store_path_hidden`, `volume_unavailable`, `menu_failed`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row. `menu_failed` (I-1458) is an erofs guest's menu that did not apply on `ApplyConfig`; see "erofs guests".
+`guest_unresponsive`, `boot_failed`, `store_path_hidden`, `volume_unavailable`, `menu_failed`, `nix_unsupported`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row. `menu_failed` (I-1458) is an erofs guest's menu that did not apply on `ApplyConfig`, and `nix_unsupported` (I-1458) a Nix command to a host running with Nix off; see "erofs guests".
 `volume_unavailable` (I-644; an api older than it shows it as it is) is any
 command that needs the thin pool while it is unavailable (as Hello's
 `pool_unavailable`), and a `StartGuest` whose `g-` or `auth-` volume did

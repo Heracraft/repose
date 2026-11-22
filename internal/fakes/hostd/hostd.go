@@ -766,12 +766,12 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" {
 			blob = fmt.Sprintf("%s/%s/%d.img.zst", "user", g.ProjectID, time.Now().UnixNano())
-			f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}})
+			f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}})
 		}
 		f.setState(g, "stopping", "")
 		f.setState(g, "stopped", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}
+			r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}
 		})
 	case *hostdv1.Command_DestroyGuest:
 		f.mu.Lock()
@@ -893,9 +893,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			return unresponsive(id, g) // no Freeze without guestd
 		}
 		blob := fmt.Sprintf("%s/%s/%d.img.zst", "user", g.ProjectID, time.Now().UnixNano())
-		f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}})
+		f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}})
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Snapshot{Snapshot: &hostdv1.SnapshotResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob)}}
+			r.Payload = &hostdv1.Result_Snapshot{Snapshot: &hostdv1.SnapshotResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}
 		})
 	case *hostdv1.Command_Restore:
 		// A digest is checked against the one this fake reported for the

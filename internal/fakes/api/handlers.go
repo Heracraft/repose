@@ -1069,13 +1069,17 @@ func (f *Fake) opLog(w http.ResponseWriter, r *http.Request) *apiError {
 		since = n
 	}
 	f.mu.Lock()
-	_, _, e := f.findOp(userFrom(r), r.PathValue("id"), r.PathValue("op_id"))
+	_, o, e := f.findOp(userFrom(r), r.PathValue("id"), r.PathValue("op_id"))
+	logLines := buildLines
+	if e == nil && o.lines != nil {
+		logLines = o.lines
+	}
 	f.mu.Unlock()
 	if e != nil {
 		return e
 	}
 	var frames []string
-	for i, line := range buildLines {
+	for i, line := range logLines {
 		seq := i + 1
 		if seq <= since {
 			continue
@@ -1281,6 +1285,9 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	if body.Fragment != nil && p.GuestRuntime == "erofs" {
 		// An erofs machine takes a menu only (I-1462).
 		return errf("nix_config_retired", "%s", MsgNixConfigRetired).withDetail(map[string]any{"reason": "nix_config_retired"})
+	}
+	if p.GuestRuntime == "erofs" {
+		return f.putMenuErofs(w, p, body.Menu)
 	}
 	var fragment string
 	var menuRaw json.RawMessage
