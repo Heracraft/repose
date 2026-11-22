@@ -809,3 +809,4 @@ month the line is dated in.
 2026-11-22 | release r20261122-18 | conductor, woker-1 | released | 1 branches: ws/nonix-appliances-4 (I-1496) shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261122-18.md
 2026-11-22 | release r20261122-19 | conductor, woker-1 | released | 1 branches: ws/nonix-appliances-5 shipped as cli. Evidence and what is not done: docs/releases/r20261122-19.md
 2026-11-22 | release r20261122-20 | conductor, woker-1 | released | 1 branches: nonix-docs-own-hardware-terms shipped as web. Evidence and what is not done: docs/releases/r20261122-20.md
+2026-11-22 | landing page: redesign pickup (from Antigravity session 4467a189) | Claude Code session (Opus 5.5) | claimed | branch landing-redesign in kanali-landing-redesign; owner feedback 18:40Z + 19:50Z: brand colours only, light sections stay light, show not tell, cut filler copy, no notifications pitch, login step in Start; preview :5185
