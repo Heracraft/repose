@@ -126,6 +126,10 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// run the other one until it stops.
 		"multiplexer": multiplexer.Normalize(p.Multiplexer),
 		"placement":   store.NormalizePlacement(p.Placement),
+		// What the machine boots (I-1462), and the erofs base its next
+		// start boots, null when none.
+		"guest_runtime":        store.NormalizeRuntime(p.GuestRuntime),
+		"pending_base_version": p.PendingBaseVersion,
 	}
 	if p.HostID != nil {
 		// The name the account gave its host, beside the id (I-1392): a
@@ -260,6 +264,26 @@ func (s *Server) abuseGate(ctx context.Context, p *store.Project) error {
 	return withDetail(errf("forbidden", "%s", abuse.HoldMessage(p.Slug, h)), map[string]any{"reason": "abuse_hold"})
 }
 
+// createRuntime is the guest_runtime a create gets (DECISIONS I-1462):
+// the environment's default, or what an exempt account asked for. Any
+// other account asking for the other runtime is refused.
+func (s *Server) createRuntime(ctx context.Context, u *store.User, asked *string) (string, error) {
+	def, err := store.DefaultGuestRuntime(ctx, s.d.Pool)
+	if err != nil {
+		return "", err
+	}
+	if asked == nil {
+		return def, nil
+	}
+	if *asked != store.RuntimeNix && *asked != store.RuntimeErofs {
+		return "", withDetail(errf("invalid", "guest_runtime must be nix or erofs"), map[string]any{"reason": "guest_runtime"})
+	}
+	if *asked != def && u.BillingStatus != "exempt" {
+		return "", withDetail(errf("forbidden", "this account cannot choose the guest runtime; new machines run %s", def), map[string]any{"reason": "guest_runtime"})
+	}
+	return *asked, nil
+}
+
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	u := userFrom(r.Context())
 	ctx := r.Context()
@@ -278,8 +302,15 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		Multiplexer *string `json:"multiplexer"`
 		// Placement is own (the default) or hosted (DECISIONS I-1366).
 		Placement *string `json:"placement"`
+		// GuestRuntime is nix or erofs (DECISIONS I-1462); absent is the
+		// environment's default.
+		GuestRuntime *string `json:"guest_runtime"`
 	}
 	if err := decode(r, &body); err != nil {
+		return err
+	}
+	runtime, err := s.createRuntime(ctx, u, body.GuestRuntime)
+	if err != nil {
 		return err
 	}
 	placement := store.PlacementOwn
@@ -331,8 +362,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if body.Agent != nil {
 		agent = *body.Agent
 	}
-	if mux == multiplexer.Herdr {
-		// The new machine's first build takes the newest base.
+	if mux == multiplexer.Herdr && runtime == store.RuntimeNix {
+		// The new machine's first build takes the newest base. An erofs
+		// base ships herdr (I-1462), so the gate is the Nix bases'.
 		if err := herdrGate(ctx, s.d.Pool, slug, nil, true); err != nil {
 			return err
 		}
@@ -358,6 +390,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	pid := store.NewID()
+	fragment := DefaultFragment
+	if runtime == store.RuntimeErofs {
+		fragment = "" // nothing is built from it (I-1462)
+	}
 	rid := store.NewID()
 	var (
 		opID uuid.UUID
@@ -381,12 +417,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// row in this transaction, which is PickHost's contract.
 		held := billing.NewProjectHeldBytes
 		hostID, err := s.d.Engine.PlaceNew(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
-			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held})
+			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held, GuestRuntime: runtime})
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, host_id) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, held, hostID)
+		_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, host_id, guest_runtime) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, held, hostID, runtime)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -401,15 +437,16 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// a create the host has no closure for comes up on the project
 		// layer first and applies this one right after (deferPersonal).
 		layer := store.PersonalLayer{OptOut: body.PersonalOptOut}
-		if !body.PersonalOptOut {
+		if !body.PersonalOptOut && runtime == store.RuntimeNix {
+			// An erofs project never carries machine.nix (I-1462).
 			if layer, err = store.PersonalFor(ctx, tx, &store.Project{UserID: u.ID}); err != nil {
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, 'building', $4, $5, $6)", rid, pid, DefaultFragment, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
+		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, 'building', $4, $5, $6)", rid, pid, fragment, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}
-		if opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}, false); err != nil {
+		if opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreateFor(runtime)}, false); err != nil {
 			return err
 		}
 		// Read the row inside the transaction: once it commits and the

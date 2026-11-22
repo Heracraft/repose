@@ -4178,12 +4178,15 @@ func (x *CreateResult) GetMenuError() *Error {
 	return nil
 }
 
+// base_version (I-1458): the erofs base the guest ran when the snapshot
+// was taken; empty for a Nix guest, and accepted empty for one release.
 type StopResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
 	BlobPath      string                 `protobuf:"bytes,2,opt,name=blob_path,json=blobPath,proto3" json:"blob_path,omitempty"`
 	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
 	Sha256        string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	BaseVersion   string                 `protobuf:"bytes,5,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4242,6 +4245,13 @@ func (x *StopResult) GetBytes() uint64 {
 func (x *StopResult) GetSha256() string {
 	if x != nil {
 		return x.Sha256
+	}
+	return ""
+}
+
+func (x *StopResult) GetBaseVersion() string {
+	if x != nil {
+		return x.BaseVersion
 	}
 	return ""
 }
@@ -4475,6 +4485,7 @@ type SnapshotResult struct {
 	BlobPath      string                 `protobuf:"bytes,2,opt,name=blob_path,json=blobPath,proto3" json:"blob_path,omitempty"`
 	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
 	Sha256        string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	BaseVersion   string                 `protobuf:"bytes,5,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4533,6 +4544,13 @@ func (x *SnapshotResult) GetBytes() uint64 {
 func (x *SnapshotResult) GetSha256() string {
 	if x != nil {
 		return x.Sha256
+	}
+	return ""
+}
+
+func (x *SnapshotResult) GetBaseVersion() string {
+	if x != nil {
+		return x.BaseVersion
 	}
 	return ""
 }
@@ -5792,6 +5810,7 @@ type SnapshotDone struct {
 	BlobPath      string                 `protobuf:"bytes,3,opt,name=blob_path,json=blobPath,proto3" json:"blob_path,omitempty"`
 	Bytes         uint64                 `protobuf:"varint,4,opt,name=bytes,proto3" json:"bytes,omitempty"`
 	Sha256        string                 `protobuf:"bytes,5,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	BaseVersion   string                 `protobuf:"bytes,6,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5857,6 +5876,13 @@ func (x *SnapshotDone) GetBytes() uint64 {
 func (x *SnapshotDone) GetSha256() string {
 	if x != nil {
 		return x.Sha256
+	}
+	return ""
+}
+
+func (x *SnapshotDone) GetBaseVersion() string {
+	if x != nil {
+		return x.BaseVersion
 	}
 	return ""
 }
@@ -6786,14 +6812,15 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\tvsock_cid\x18\x02 \x01(\rR\bvsockCid\x120\n" +
 	"\x04boot\x18\x03 \x01(\v2\x1c.repose.hostd.v1.BootTimingsR\x04boot\x125\n" +
 	"\n" +
-	"menu_error\x18\x04 \x01(\v2\x16.repose.hostd.v1.ErrorR\tmenuError\"x\n" +
+	"menu_error\x18\x04 \x01(\v2\x16.repose.hostd.v1.ErrorR\tmenuError\"\x9b\x01\n" +
 	"\n" +
 	"StopResult\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
 	"\tblob_path\x18\x02 \x01(\tR\bblobPath\x12\x14\n" +
 	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\x12\x16\n" +
-	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"\x80\x01\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\x12!\n" +
+	"\fbase_version\x18\x05 \x01(\tR\vbaseVersion\"\x80\x01\n" +
 	"\vBuildResult\x12%\n" +
 	"\x0esystem_closure\x18\x01 \x01(\tR\rsystemClosure\x12#\n" +
 	"\rclosure_bytes\x18\x02 \x01(\x04R\fclosureBytes\x12%\n" +
@@ -6811,13 +6838,14 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\tvsock_cid\x18\x06 \x01(\rR\bvsockCid\x12.\n" +
 	"\x13booted_base_version\x18\a \x01(\tR\x11bootedBaseVersion\x125\n" +
 	"\n" +
-	"menu_error\x18\b \x01(\v2\x16.repose.hostd.v1.ErrorR\tmenuError\"|\n" +
+	"menu_error\x18\b \x01(\v2\x16.repose.hostd.v1.ErrorR\tmenuError\"\x9f\x01\n" +
 	"\x0eSnapshotResult\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
 	"\tblob_path\x18\x02 \x01(\tR\bblobPath\x12\x14\n" +
 	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\x12\x16\n" +
-	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"N\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\x12!\n" +
+	"\fbase_version\x18\x05 \x01(\tR\vbaseVersion\"N\n" +
 	"\vPauseResult\x12\x16\n" +
 	"\x06paused\x18\x01 \x01(\bR\x06paused\x12\x17\n" +
 	"\awhy_not\x18\x02 \x01(\tR\x06whyNot\x12\x0e\n" +
@@ -6930,14 +6958,15 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x18\n" +
 	"\aresting\x18\x02 \x01(\bR\aresting\x12\x0e\n" +
 	"\x02at\x18\x03 \x01(\x03R\x02at\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x95\x01\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xb8\x01\n" +
 	"\fSnapshotDone\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
 	"\tblob_path\x18\x03 \x01(\tR\bblobPath\x12\x14\n" +
 	"\x05bytes\x18\x04 \x01(\x04R\x05bytes\x12\x16\n" +
-	"\x06sha256\x18\x05 \x01(\tR\x06sha256\"9\n" +
+	"\x06sha256\x18\x05 \x01(\tR\x06sha256\x12!\n" +
+	"\fbase_version\x18\x06 \x01(\tR\vbaseVersion\"9\n" +
 	"\vHostWarning\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xa5\x01\n" +

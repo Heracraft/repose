@@ -66,6 +66,10 @@ type Project struct {
 	// Placement is where the machine goes when it is placed, own or
 	// hosted (I-1366).
 	Placement string `json:"placement"`
+	// GuestRuntime is nix or erofs and PendingBaseVersion the erofs base
+	// the next start boots, null when none (I-1462).
+	GuestRuntime       string  `json:"guest_runtime"`
+	PendingBaseVersion *string `json:"pending_base_version"`
 }
 
 // Idle is Project.idle.
@@ -270,6 +274,9 @@ type op struct {
 	// finished is when a delayed op ended; an op that ended when it was
 	// made reads as finished at created.
 	finished *time.Time
+	// lines is the op's log when it is not the Nix build's buildLines:
+	// an erofs menu's ApplyMenu lines (I-1460).
+	lines []string
 }
 
 type cert struct {

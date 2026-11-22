@@ -325,7 +325,7 @@ func statusOf(code string) int {
 	// and unavailable are 503, the api's word for "not now".
 	case "view_expired":
 		return http.StatusUnauthorized
-	case "view_busy", "view_budget":
+	case "view_busy", "view_budget", "nix_config_retired":
 		return http.StatusConflict
 	case "view_capacity", "unavailable":
 		return http.StatusServiceUnavailable

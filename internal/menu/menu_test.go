@@ -186,6 +186,7 @@ func TestRenderTwoEntriesWithOptions(t *testing.T) {
 func TestLintRejectsForbiddenPrefix(t *testing.T) {
 	bad := []byte(`
 - id: evil
+  recipe: evil
   label: Evil
   group: databases
   kind: service
@@ -222,11 +223,11 @@ func TestLintRejectsForbiddenPrefix(t *testing.T) {
 func TestCatalogRejectsBadEntries(t *testing.T) {
 	cases := []struct{ yaml, want string }{
 		{"- id: Bad_ID\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n", "is not [a-z]"},
-		{"- id: a\n  label: x\n  group: g\n  kind: thing\n  description: d\n  hm: 'a = 1;'\n", "kind"},
-		{"- id: a\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'home.packages = [ pkgs.{{.v}} ];'\n", "map has no entry"},
-		{"- id: a\n  label: x\n  group: g\n  kind: service\n  description: d\n  hm: 'a = 1;'\n", "needs a nixos snippet"},
-		{"- id: a\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n  options:\n    - id: v\n      type: enum\n      values: ['1']\n      default: '2'\n", "not among values"},
-		{"- id: a\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n- id: a\n  label: y\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n", "duplicate id"},
+		{"- id: a\n  recipe: a\n  label: x\n  group: g\n  kind: thing\n  description: d\n  hm: 'a = 1;'\n", "kind"},
+		{"- id: a\n  recipe: a\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'home.packages = [ pkgs.{{.v}} ];'\n", "map has no entry"},
+		{"- id: a\n  recipe: a\n  label: x\n  group: g\n  kind: service\n  description: d\n  hm: 'a = 1;'\n", "needs a nixos snippet"},
+		{"- id: a\n  recipe: a\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n  options:\n    - id: v\n      type: enum\n      values: ['1']\n      default: '2'\n", "not among values"},
+		{"- id: a\n  recipe: a\n  label: x\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n- id: a\n  recipe: a\n  label: y\n  group: g\n  kind: package\n  description: d\n  hm: 'a = 1;'\n", "duplicate id"},
 	}
 	for _, c := range cases {
 		_, err := Parse([]byte(c.yaml))

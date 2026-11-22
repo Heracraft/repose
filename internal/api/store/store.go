@@ -112,6 +112,11 @@ type Project struct {
 	// Read at a create and at a re-placement, never after, because a
 	// project is pinned to its host for life.
 	Placement string `db:"placement"`
+	// GuestRuntime is what the machine boots, nix or erofs (0051,
+	// DECISIONS I-1462), fixed at create. PendingBaseVersion is the erofs
+	// base its next start boots, set by the base bump; nil when none.
+	GuestRuntime       string  `db:"guest_runtime"`
+	PendingBaseVersion *string `db:"pending_base_version"`
 	// DiskHeldBytes is the bytes the project's volume holds, the figure
 	// the plan's disk counts (0019, DECISIONS I-585): the thin volume's
 	// allocated blocks from the newest sample, or the estimate a new
@@ -140,7 +145,7 @@ func (p *Project) HeldBytes() int64 {
 	return p.VolumeBytes
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake, guest_runtime, pending_base_version`
 
 // Host is a hosts row. Cores is the host's physical cores, which
 // placement counts committed guest vCPUs against (0027, DECISIONS I-735,
@@ -311,9 +316,12 @@ type Snapshot struct {
 	// Sha256 is the hex SHA-256 of the stored blob, which a restore
 	// checks; nil for a snapshot taken before I-462.
 	Sha256 *string `db:"sha256"`
+	// BaseVersion is the base the guest ran when it was taken (0051,
+	// DECISIONS I-1462); nil before 0051.
+	BaseVersion *string `db:"base_version"`
 }
 
-const snapshotCols = `id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, deleted_at, restoring_op_id, created_at, sha256`
+const snapshotCols = `id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, deleted_at, restoring_op_id, created_at, sha256, base_version`
 
 // Event is an events row.
 type Event struct {
@@ -358,9 +366,95 @@ type BaseVersion struct {
 	ReleasedAt time.Time `db:"released_at"`
 	Security   bool      `db:"security"`
 	CreatedAt  time.Time `db:"created_at"`
+	// Format is nix or erofs (0051, DECISIONS I-1462). An erofs row names
+	// three files per architecture, each with its SHA-256; nix_rev is ''.
+	Format               string  `db:"format"`
+	ImageAmd64URL        *string `db:"image_amd64_url"`
+	ImageAmd64SHA256     *string `db:"image_amd64_sha256"`
+	KernelAmd64URL       *string `db:"kernel_amd64_url"`
+	KernelAmd64SHA256    *string `db:"kernel_amd64_sha256"`
+	InitramfsAmd64URL    *string `db:"initramfs_amd64_url"`
+	InitramfsAmd64SHA256 *string `db:"initramfs_amd64_sha256"`
+	ImageArm64URL        *string `db:"image_arm64_url"`
+	ImageArm64SHA256     *string `db:"image_arm64_sha256"`
+	KernelArm64URL       *string `db:"kernel_arm64_url"`
+	KernelArm64SHA256    *string `db:"kernel_arm64_sha256"`
+	InitramfsArm64URL    *string `db:"initramfs_arm64_url"`
+	InitramfsArm64SHA256 *string `db:"initramfs_arm64_sha256"`
+	KernelVersion        *string `db:"kernel_version"`
+	ManifestURL          *string `db:"manifest_url"`
 }
 
-const baseVersionCols = `version, nix_rev, changelog, released_at, security, created_at`
+const baseVersionCols = `version, nix_rev, changelog, released_at, security, created_at, format, image_amd64_url, image_amd64_sha256, kernel_amd64_url, kernel_amd64_sha256, initramfs_amd64_url, initramfs_amd64_sha256, image_arm64_url, image_arm64_sha256, kernel_arm64_url, kernel_arm64_sha256, initramfs_arm64_url, initramfs_arm64_sha256, kernel_version, manifest_url`
+
+// Guest runtimes (DECISIONS I-1462).
+const (
+	RuntimeNix   = "nix"
+	RuntimeErofs = "erofs"
+	// SettingDefaultGuestRuntime is the settings key a project create
+	// reads when the request names no runtime; absent means nix.
+	SettingDefaultGuestRuntime = "default_guest_runtime"
+)
+
+// NormalizeRuntime is the runtime a row carries, nix for anything but
+// erofs.
+func NormalizeRuntime(r string) string {
+	if r == RuntimeErofs {
+		return RuntimeErofs
+	}
+	return RuntimeNix
+}
+
+// ImageArch maps a host's arch (x86_64, aarch64) to the base row's
+// image column suffix (amd64, arm64); "" for anything else.
+func ImageArch(hostArch string) string {
+	switch hostArch {
+	case "x86_64", "amd64":
+		return "amd64"
+	case "aarch64", "arm64":
+		return "arm64"
+	}
+	return ""
+}
+
+// BaseFiles is one architecture's three files of an erofs base.
+type BaseFiles struct {
+	RootfsURL, RootfsSHA256       string
+	KernelURL, KernelSHA256       string
+	InitramfsURL, InitramfsSHA256 string
+}
+
+// Files returns the base's files for an image arch (amd64, arm64), and
+// false when the row has none for it.
+func (b *BaseVersion) Files(arch string) (BaseFiles, bool) {
+	s := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+	var f BaseFiles
+	switch arch {
+	case "amd64":
+		f = BaseFiles{s(b.ImageAmd64URL), s(b.ImageAmd64SHA256), s(b.KernelAmd64URL), s(b.KernelAmd64SHA256), s(b.InitramfsAmd64URL), s(b.InitramfsAmd64SHA256)}
+	case "arm64":
+		f = BaseFiles{s(b.ImageArm64URL), s(b.ImageArm64SHA256), s(b.KernelArm64URL), s(b.KernelArm64SHA256), s(b.InitramfsArm64URL), s(b.InitramfsArm64SHA256)}
+	default:
+		return BaseFiles{}, false
+	}
+	return f, f.RootfsURL != "" && f.KernelURL != "" && f.InitramfsURL != ""
+}
+
+// Arches lists the image arches (amd64, arm64) an erofs row has files for.
+func (b *BaseVersion) Arches() []string {
+	var out []string
+	for _, a := range []string{"amd64", "arm64"} {
+		if _, ok := b.Files(a); ok {
+			out = append(out, a)
+		}
+	}
+	return out
+}
 
 // Certificate is a certificates row.
 type Certificate struct {
@@ -705,9 +799,34 @@ func CountEvents(ctx context.Context, q Querier, projectID uuid.UUID, kinds ...s
 
 // --- base versions ----------------------------------------------------
 
-// LatestBase returns the newest base version, or ErrNotFound.
+// LatestBase returns the newest nix base version, or ErrNotFound. An
+// erofs row is never a Nix project's base (DECISIONS I-1462).
 func LatestBase(ctx context.Context, q Querier) (*BaseVersion, error) {
-	return one[BaseVersion](ctx, q, "select "+baseVersionCols+" from base_versions order by released_at desc limit 1")
+	return one[BaseVersion](ctx, q, "select "+baseVersionCols+" from base_versions where format = 'nix' order by released_at desc limit 1")
+}
+
+// LatestErofsBase returns the newest erofs base that has files for the
+// image arch (amd64, arm64), or ErrNotFound; arch "" means any.
+func LatestErofsBase(ctx context.Context, q Querier, arch string) (*BaseVersion, error) {
+	switch arch {
+	case "amd64":
+		return one[BaseVersion](ctx, q, "select "+baseVersionCols+" from base_versions where format = 'erofs' and image_amd64_url is not null order by released_at desc limit 1")
+	case "arm64":
+		return one[BaseVersion](ctx, q, "select "+baseVersionCols+" from base_versions where format = 'erofs' and image_arm64_url is not null order by released_at desc limit 1")
+	case "":
+		return one[BaseVersion](ctx, q, "select "+baseVersionCols+" from base_versions where format = 'erofs' order by released_at desc limit 1")
+	}
+	return nil, db.ErrNotFound
+}
+
+// DefaultGuestRuntime is settings.default_guest_runtime, nix when absent
+// or anything else (DECISIONS I-1462).
+func DefaultGuestRuntime(ctx context.Context, q Querier) (string, error) {
+	v, err := Setting(ctx, q, SettingDefaultGuestRuntime)
+	if err != nil {
+		return RuntimeNix, err
+	}
+	return NormalizeRuntime(v), nil
 }
 
 // GetBase fetches one base version.

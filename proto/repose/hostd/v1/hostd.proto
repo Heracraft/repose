@@ -519,7 +519,9 @@ message BootTimings { uint32 volume_ms = 1; uint32 prepare_ms = 2; uint32 ready_
 // first boot's menu did not apply: the guest runs, and the error is the
 // ApplyMenu's code (menu_failed, invalid_argument) and last line.
 message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; Error menu_error = 4; }
-message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
+// base_version (I-1458): the erofs base the guest ran when the snapshot
+// was taken; empty for a Nix guest, and accepted empty for one release.
+message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
 message BuildResult { string system_closure = 1; uint64 closure_bytes = 2; bool kernel_changed = 3; }
 message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
 // StartResult says which system a started guest runs. failed_closure is
@@ -543,7 +545,7 @@ message StartResult {
   // As CreateResult.menu_error: the guest runs, its menu replay failed.
   Error menu_error = 8;
 }
-message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
+message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; }  // sha256: hex SHA-256 of the uploaded blob (I-462); base_version as StopResult's (I-1458)
 // PauseResult answers a PauseGuest. paused is false with why_not set
 // when the guest was not paused for a reason that is not a failure: it
 // has a command in flight, it is already paused, the host is going down,
@@ -687,7 +689,7 @@ message AgentQuestion {
 // sample. It is NOT a GuestStateChanged: the guest's state does not
 // change, and a state change cancels the project's open questions.
 message GuestResting { string guest_id = 1; bool resting = 2; int64 at = 3; string reason = 4; }
-message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; }
+message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; string base_version = 6; }  // base_version as StopResult's (I-1458)
 message HostWarning { string kind = 1; string detail = 2; }
 // An operator's SSH login to the host, from the PAM hook that runs
 // `hostd audit-login`: what the api turns into the audit_log row 14 §5

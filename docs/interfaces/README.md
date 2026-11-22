@@ -32,6 +32,6 @@ Ubuntu erofs base image, on the row (`projects.guest_runtime`), in the
 api's `Project` and as the host feature names in `Hello.features`. The
 api's error codes are listed in [api.md](api.md) (the error envelope at
 the top; `nix_config_retired` joined it with I-1462); hostd's are in
-[grpc-hostd.md](grpc-hostd.md) (`menu_failed` joined them with I-1458),
+[grpc-hostd.md](grpc-hostd.md) (`menu_failed` and `nix_unsupported` joined them with I-1458),
 and guestd answers `unimplemented` for a request its runtime does not
 have (I-1460).
