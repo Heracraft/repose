@@ -278,7 +278,7 @@ func TestSyncDirtyRemoteTreeRefusesWithExitSix(t *testing.T) {
 	f := newRunFixture(t, fake)
 	ctx := context.Background()
 
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("first runRun: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("agent left this dirty\n"), 0o644); err != nil {
@@ -293,7 +293,7 @@ func TestSyncDirtyRemoteTreeRefusesWithExitSix(t *testing.T) {
 		Dir: f.env.Dir, Cfg: f.env.Cfg, Cache: f.env.Cache, Cwd: f.local, HomeDir: f.env.HomeDir,
 		Client: f.env.Client, Out: &discardWriter{}, ErrOut: &discardWriter{}, TargetFor: f.env.TargetFor,
 	}
-	err := runRun(ctx, env2, RunOptions{NoAttach: true, Sync: true}, false)
+	err := runRun(ctx, env2, RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitDirtyRemoteTree {
 		t.Fatalf("err = %v, want an exitError with code %d", err, ExitDirtyRemoteTree)
@@ -326,18 +326,18 @@ func TestSyncTwiceWithADirtyLaptopTree(t *testing.T) {
 		}
 	}
 
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("first runRun: %v", err)
 	}
 	if st := mustRun(t, f.guestRepo(), "git", "status", "--porcelain"); !strings.Contains(st, "README.md") || !strings.Contains(st, "notes/") {
 		t.Fatalf("the first sync did not leave the laptop's changes in the guest: %q", st)
 	}
 	// The same laptop tree, and then one edited further: both go through.
-	if err := runRun(ctx, newEnv(), RunOptions{NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, newEnv(), RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("second runRun with the same laptop tree: %v", err)
 	}
 	write(f.local, "README.md", "edited again on the laptop\n")
-	if err := runRun(ctx, newEnv(), RunOptions{NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, newEnv(), RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("third runRun after a laptop edit: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(f.guestRepo(), "README.md")); string(b) != "edited again on the laptop\n" {
@@ -350,7 +350,7 @@ func TestSyncTwiceWithADirtyLaptopTree(t *testing.T) {
 	for i, change := range []struct{ rel, body string }{{"notes/todo.md", "the agent's edit\n"}, {"agent-scratch.txt", "new\n"}} {
 		write(f.guestRepo(), change.rel, change.body)
 		write(f.local, "README.md", fmt.Sprintf("edited on the laptop, round %d\n", i))
-		err := runRun(ctx, newEnv(), RunOptions{NoAttach: true, Sync: true}, false)
+		err := runRun(ctx, newEnv(), RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false)
 		ee, ok := err.(*exitError)
 		if !ok || ee.code != ExitDirtyRemoteTree {
 			t.Fatalf("after the agent wrote %s: err = %v, want exit %d", change.rel, err, ExitDirtyRemoteTree)

@@ -37,7 +37,7 @@ The checkout goes over the sync's own SSH connection, so [repose never gets a co
 
 ## Sending later work
 
-`repose sync` sends your laptop's current work over the machine's checkout and returns without attaching. It creates or starts the machine first if it needs to. With nothing to send and nothing on the machine it says `Nothing new to sync: the machine already has this checkout.`
+`repose sync` sends your laptop's current work over the machine's checkout and returns without attaching. It starts the machine first if it needs to. With no machine for the checkout it makes none on its own: on a terminal it asks first, naming the machine and its size, and without one it exits 4 and names `repose run`, which creates one. With nothing to send and nothing on the machine it says `Nothing new to sync: the machine already has this checkout.`
 
 A `repose run` that finds the checkout already there leaves it alone and says what your laptop still has, in your terminal and again on the machine's status line (a [herdr notification](/docs/run-and-attach#herdr-instead-of-tmux) on herdr), because the attach covers the terminal before you've read it:
 

@@ -144,6 +144,10 @@ jobs:
       # routable page but /callback, light and dark, at 1440 and 390
       # (DECISIONS I-389). Moved from per-PR ci.yml to ci-heavy.yml
       # (DECISIONS I-1456).
+      # The fixtures start with `go run`, and the suite waits 15 s for the
+      # fake api's first line; a cold runner spent that on the compile
+      # (2026-11-22, twice). Build both once so the run is a start.
+      - run: go build -o /dev/null ./cmd/fakeapi ./cmd/fake-logto
       - name: lighthouse accessibility
         run: |
           npm i -g lighthouse@13.5.0
