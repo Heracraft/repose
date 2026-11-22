@@ -47,10 +47,28 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # erofs-utils from source, pinned by sha256: noble's apt 1.7.1 built
+      # guest 2026.11.22.11, whose kernel could not read its small files
+      # (DECISIONS I-1556). build.sh refuses anything older than 1.9.4.
+      # MAX_BLOCK_SIZE=4096 matches the nixpkgs build local images use.
       - name: tools
+        env:
+          EROFS_UTILS_VERSION: "1.9.4"
+          EROFS_UTILS_SHA256: 7d135aa2550326a5acf20f53c518aea5a8900015ce50700044e40f818c31dd80
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends erofs-utils
+          sudo apt-get install -y --no-install-recommends autoconf automake libtool pkg-config liblz4-dev uuid-dev
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o erofs-utils.tar.gz "https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git/snapshot/erofs-utils-$EROFS_UTILS_VERSION.tar.gz"
+          echo "$EROFS_UTILS_SHA256  erofs-utils.tar.gz" | sha256sum -c -
+          tar -xzf erofs-utils.tar.gz
+          cd "erofs-utils-$EROFS_UTILS_VERSION"
+          ./autogen.sh >/dev/null
+          ./configure --quiet --enable-lz4 --disable-fuse MAX_BLOCK_SIZE=4096
+          make -s -j"$(nproc)"
+          sudo make -s install >/dev/null
+          mkfs.erofs -V
+          fsck.erofs -V
           docker buildx version
       - name: build
         env:
