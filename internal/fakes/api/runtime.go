@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/heracraft/repose/internal/menu"
 )
@@ -125,6 +127,7 @@ func (f *Fake) putMenuErofs(w http.ResponseWriter, p *project, raw json.RawMessa
 	}
 	o := f.newOp(p, "config")
 	o.lines = lines
+	defer f.delayConfig(p, o, "apply_config")
 	if failed != "" {
 		msg := "menu_failed: " + failed + " failed: E: Unable to locate package " + failed
 		rev := &Revision{ID: f.nextID(), CreatedAt: now, Status: "failed", Error: msg, Menu: raw}
@@ -140,4 +143,68 @@ func (f *Fake) putMenuErofs(w http.ResponseWriter, p *project, raw json.RawMessa
 	f.event(p, "config.applied", "", "revision applied")
 	writeJSON(w, http.StatusAccepted, map[string]string{"revision_id": rev.ID, "op_id": o.id})
 	return nil
+}
+
+// delayConfig holds a config op "running" in phase for ConfigDelay, then
+// gives it back the state it was decided with (done or error). Called
+// under f.mu, after the op's outcome is set.
+func (f *Fake) delayConfig(p *project, o *op, phase string) {
+	d := f.opts.ConfigDelay
+	if d <= 0 {
+		return
+	}
+	final, finalErr := o.State, o.Error
+	o.State, o.Error, o.phase = "running", "", phase
+	p.OpID = o.id
+	go func() {
+		time.Sleep(d)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		o.State, o.Error, o.phase = final, finalErr, ""
+		if p.OpID == o.id {
+			p.OpID = ""
+		}
+	}()
+}
+
+// streamRunningLog is the log of an op still running: its lines one at a
+// time across ConfigDelay, then the done event once the op has ended,
+// with the state it ended in.
+func (f *Fake) streamRunningLog(w http.ResponseWriter, o *op, lines []string, since int) *apiError {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	send := func(s string) bool {
+		if _, err := fmt.Fprint(w, s); err != nil {
+			return false
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return true
+	}
+	step := f.opts.ConfigDelay / time.Duration(len(lines)+1)
+	for i, line := range lines {
+		seq := i + 1
+		if seq <= since {
+			continue
+		}
+		time.Sleep(step)
+		b, _ := json.Marshal(map[string]any{"seq": seq, "line": line})
+		if !send(fmt.Sprintf("id: %d\ndata: %s\n\n", seq, b)) {
+			return nil
+		}
+	}
+	deadline := time.Now().Add(f.opts.ConfigDelay + 5*time.Second)
+	for {
+		f.mu.Lock()
+		st := o.State
+		f.mu.Unlock()
+		if (st != "running" && st != "pending") || time.Now().After(deadline) {
+			send("event: done\ndata: {\"state\":\"" + st + "\"}\n\n")
+			return nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
