@@ -1,0 +1,28 @@
+#!/bin/bash
+# At a host shutdown, power a guest off through ACPI rather than letting
+# systemd's SIGTERM end Cloud Hypervisor without telling the guest, which
+# loses what its page cache held (DECISIONS I-650). Only at a system
+# shutdown: hostd's own stops ask guestd first. Ported from
+# nix/hosts/hostd.nix (I-1494).
+set -uo pipefail
+id=$1
+case "$(systemctl is-system-running 2>/dev/null || true)" in
+  running | degraded | starting | initializing | maintenance) exit 0 ;;
+esac
+[ -n "${MAINPID:-}" ] || exit 0
+sock=/var/lib/repose/guests/$id/ch.sock
+# A guest the idle pause left resting cannot service the ACPI event
+# (I-818, I-824): resume it first; on a running VM this is refused and
+# harmless.
+curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.resume >/dev/null || true
+curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.power-button >/dev/null || exit 0
+echo "repose-guest-clean-stop: event=guest_power_button guest_id=$id"
+start=$(date +%s)
+while kill -0 "$MAINPID" 2>/dev/null; do
+  if [ $(( $(date +%s) - start )) -ge 20 ]; then
+    echo "repose-guest-clean-stop: event=guest_power_button_timeout guest_id=$id"
+    exit 0
+  fi
+  sleep 0.2
+done
+echo "repose-guest-clean-stop: event=guest_powered_off guest_id=$id seconds=$(( $(date +%s) - start ))"

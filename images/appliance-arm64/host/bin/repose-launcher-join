@@ -1,0 +1,60 @@
+#!/bin/bash
+# The join bundle (hostmgr.JoinBundle, docs/interfaces/api.md): one
+# base64url string carrying {"v":1,"token":...,"wg":{...}}. Split into the
+# two files the host reads: /run/repose/join-token for repose-register and
+# /run/repose/hub.json for repose-host-net's bootstrap tunnel. On the Mac
+# appliance the launcher shares the bundle in over virtio-fs; on an x86
+# machine ops/install-host-x86.sh writes it to the same path. Ported from
+# nix/hosts/mac.nix (DECISIONS I-1380, I-1494). Logs name events only; the
+# token and the key never reach a line.
+set -euo pipefail
+join=${REPOSE_JOIN_FILE:-/run/repose/launcher/join}
+run=${REPOSE_RUN_DIR:-/run/repose}
+stateJson=${REPOSE_HOST_JSON:-/var/lib/repose/hostd/host.json}
+umask 077
+mkdir -p "$run"
+chmod 0755 "$run"
+if [ ! -s "$join" ]; then
+  echo "repose-launcher-join: event=no_join_file"
+  exit 0
+fi
+if [ -s "$stateJson" ]; then
+  # Registered already: a used bundle is dead, and a new one for a
+  # registered host is `repose host rm` and `host add` again.
+  echo "repose-launcher-join: event=join_ignored reason=registered"
+  rm -f "$join" || true
+  exit 0
+fi
+raw=$(tr -d '[:space:]' < "$join")
+# base64url without padding: GNU basenc wants it padded.
+pad=$(( (4 - ${#raw} % 4) % 4 ))
+padded="$raw$(printf '%*s' "$pad" "" | tr ' ' '=')"
+if ! decoded=$(printf '%s' "$padded" | basenc --base64url -d 2>/dev/null); then
+  echo "repose-launcher-join: event=join_invalid reason=encoding" >&2
+  exit 1
+fi
+if [ "$(printf '%s' "$decoded" | jq -r '.v // 0')" != "1" ]; then
+  echo "repose-launcher-join: event=join_invalid reason=version" >&2
+  exit 1
+fi
+token=$(printf '%s' "$decoded" | jq -r '.token // empty')
+if [ -z "$token" ]; then
+  echo "repose-launcher-join: event=join_invalid reason=no_token" >&2
+  exit 1
+fi
+if [ ! -e "$run/join-token" ]; then
+  printf '%s\n' "$token" > "$run/join-token.tmp"
+  chmod 0600 "$run/join-token.tmp"
+  mv "$run/join-token.tmp" "$run/join-token"
+  echo "repose-launcher-join: event=join_token_written"
+fi
+if printf '%s' "$decoded" | jq -e '.wg.private_key and .wg.address and .wg.edge_pubkey and .wg.edge_endpoint' >/dev/null; then
+  printf '%s' "$decoded" | jq '.wg' > "$run/hub.json.tmp"
+  chmod 0600 "$run/hub.json.tmp"
+  mv "$run/hub.json.tmp" "$run/hub.json"
+  echo "repose-launcher-join: event=hub_bootstrap_written"
+else
+  echo "repose-launcher-join: event=no_hub_in_join"
+fi
+# Single use: nothing of the bundle outlives the registration it was for.
+rm -f "$join" || echo "repose-launcher-join: event=join_file_kept reason=share_read_only"

@@ -1,0 +1,60 @@
+#!/bin/bash
+# Make vg-guests and its thin pool on one empty block device, the shape
+# disko-layout.nix gives a data disk at install: the pool at 95 percent of
+# the VG, its metadata one percent of the PV clamped to 1..16 GiB,
+# discards passed down, new blocks zeroed (DECISIONS I-1494). The Mac
+# appliance runs it at first boot on its third partition
+# (repose-guest-vg-init.service) and ops/install-host-x86.sh on --device
+# or the loop device of --loop-file.
+#
+# A device that already carries vg-guests is left alone and is success. A
+# device with any other signature is refused: this never formats
+# something it did not make.
+#
+#   repose-pool-create <device>
+set -euo pipefail
+dev=${1:?usage: repose-pool-create <device>}
+vg="vg-guests"
+gib=$((1024 * 1024 * 1024))
+say() { echo "repose-pool-create: $*"; }
+
+if pvs --noheadings -o vg_name "$dev" 2>/dev/null | grep -qx "[[:space:]]*$vg"; then
+  if lvs "$vg/thin" >/dev/null 2>&1; then
+    say "event=pool_present device=$dev"
+    exit 0
+  fi
+elif sig=$(blkid -p -o value -s TYPE "$dev" 2>/dev/null) && [ -n "$sig" ]; then
+  say "event=device_refused device=$dev reason=signature_$sig" >&2
+  exit 1
+else
+  pvcreate -q "$dev"
+  vgcreate -q "$vg" "$dev"
+  say "event=vg_created device=$dev"
+fi
+
+pv=$(blockdev --getsize64 "$dev")
+meta=$((pv / 100))
+[ "$meta" -lt $gib ] && meta=$gib
+[ "$meta" -gt $((16 * gib)) ] && meta=$((16 * gib))
+# 95 percent of the VG, and never past what it holds beside the metadata
+# and its spare (on a small disk those two are more than 5 percent), in
+# whole extents: the same sum repose-mac-grow makes, so its first run
+# after this changes nothing.
+vg_size=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
+extent=$(vgs --noheadings --units b --nosuffix -o vg_extent_size "$vg" | tr -d ' ')
+meta=$(( (meta + extent - 1) / extent * extent ))
+want=$(( vg_size * 95 / 100 ))
+cap=$(( vg_size - 2 * meta - 4 * extent ))
+[ "$want" -gt "$cap" ] && want=$cap
+want=$(( want / extent * extent ))
+if [ "$want" -le 0 ]; then
+  say "event=device_too_small device=$dev pv_bytes=$pv" >&2
+  exit 1
+fi
+lvcreate -q -y --type thin-pool -L "${want}b" --poolmetadatasize "${meta}b" \
+  --discards passdown --zero y -n thin "$vg"
+# repose-guest-pool owns activation (I-643).
+vgchange -q --setautoactivation n "$vg"
+# The pool's autoextend (I-643), as a profile so the machine's own VGs keep theirs.
+vgchange -q --metadataprofile repose-thin "$vg"
+say "event=pool_created device=$dev pv_bytes=$pv metadata_bytes=$meta"
