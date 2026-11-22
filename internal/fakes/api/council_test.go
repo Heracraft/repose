@@ -26,23 +26,14 @@ func TestFakeRestoreKeepsRuntime(t *testing.T) {
 	f := New(Options{})
 	defer f.Close()
 	p := mkErofs(t, f, "app")
-	r := call(t, f, "POST", "/v1/projects/"+p.ID+"/snapshots", tok, nil)
-	var snap struct {
-		SnapshotID string `json:"snapshot_id"`
-		ID         string `json:"id"`
-	}
-	r.json(t, &snap)
-	sid := snap.SnapshotID
-	if sid == "" {
-		sid = snap.ID
-	}
+	want(t, call(t, f, "POST", "/v1/projects/"+p.ID+"/snapshots", tok, nil), http.StatusAccepted)
 	snaps := call(t, f, "GET", "/v1/projects/"+p.ID+"/snapshots", tok, nil)
 	var list []Snapshot
 	snaps.json(t, &list)
 	if len(list) == 0 {
 		t.Fatalf("no snapshot: %s", snaps.body)
 	}
-	r = call(t, f, "POST", "/v1/projects/"+p.ID+"/snapshots/"+list[0].ID+"/restore", tok, map[string]any{"as_new_project": "app-fork"})
+	r := call(t, f, "POST", "/v1/projects/"+p.ID+"/snapshots/"+list[0].ID+"/restore", tok, map[string]any{"as_new_project": "app-fork"})
 	want(t, r, http.StatusAccepted)
 	var res struct {
 		ProjectID string `json:"project_id"`
