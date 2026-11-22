@@ -49,6 +49,14 @@ type Fake struct {
 	Fail map[string]*guestdv1.Error
 	// Frozen tracks Freeze and Thaw.
 	Frozen bool
+	// MenuLines are the progress lines an ApplyMenu streams, each as a
+	// Notify carrying the request's id, before its Response
+	// (DECISIONS I-1460).
+	MenuLines []string
+	// MenuErrorCode, when set, is the final ApplyMenuProgress's
+	// error_code (menu_failed, invalid_argument, unimplemented), and the
+	// Response is not ok.
+	MenuErrorCode string
 }
 
 // New builds a fake with harmless defaults.
@@ -86,6 +94,19 @@ func (f *Fake) Serve(ctx context.Context, c net.Conn) {
 		req := env.GetRequest()
 		if req == nil {
 			continue
+		}
+		if req.GetApplyMenu() != nil {
+			f.mu.Lock()
+			lines := append([]string(nil), f.MenuLines...)
+			f.mu.Unlock()
+			for _, line := range lines {
+				_ = conn.Send(&guestdv1.Envelope{
+					RequestId: env.GetRequestId(),
+					Body: &guestdv1.Envelope_Notify{Notify: &guestdv1.Notify{N: &guestdv1.Notify_ApplyMenuProgress{
+						ApplyMenuProgress: &guestdv1.ApplyMenuProgress{Line: line},
+					}}},
+				})
+			}
 		}
 		resp := f.answer(req)
 		if err := conn.Send(&guestdv1.Envelope{
@@ -214,6 +235,17 @@ func (f *Fake) answer(req *guestdv1.Request) *guestdv1.Response {
 		}}}
 	case *guestdv1.Request_Exec:
 		return &guestdv1.Response{Ok: true, Result: &guestdv1.Response_Exec{Exec: f.ExecResult}}
+	case *guestdv1.Request_ApplyMenu:
+		last := "nothing to do"
+		if n := len(f.MenuLines); n > 0 {
+			last = f.MenuLines[n-1]
+		}
+		res := &guestdv1.ApplyMenuProgress{Line: last, Done: true, ErrorCode: f.MenuErrorCode}
+		resp := &guestdv1.Response{Ok: f.MenuErrorCode == "", Result: &guestdv1.Response_ApplyMenu{ApplyMenu: res}}
+		if f.MenuErrorCode != "" {
+			resp.Error = &guestdv1.Error{Code: f.MenuErrorCode, Message: last}
+		}
+		return resp
 	default:
 		return &guestdv1.Response{Ok: true}
 	}
@@ -250,6 +282,8 @@ func Kind(req *guestdv1.Request) string {
 		return "exec"
 	case *guestdv1.Request_Shutdown:
 		return "shutdown"
+	case *guestdv1.Request_ApplyMenu:
+		return "apply_menu"
 	default:
 		return "unknown"
 	}

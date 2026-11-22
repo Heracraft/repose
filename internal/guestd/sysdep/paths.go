@@ -199,16 +199,18 @@ func (p Paths) BaseUpgraded() string { return p.join("run", "repose", "rw", ".ba
 // ApplyMenu last applied and how each item went (DECISIONS I-1460).
 func (p Paths) MenuApplied() string { return p.join("run", "repose", "rw", "menu-applied.json") }
 
-// AptManual is /run/repose/rw/apt-manual.list: the package names installed
-// outside a catalog recipe, one per line, which a replay after a base
-// upgrade installs again. It is on the volume's own root and not under
-// /var/lib/repose, which is in the overlay's upper directory and rotates
-// away with it (DECISIONS I-1476).
+// AptManual is /run/repose/rw/apt-manual.list: the packages marked
+// manual that the base does not carry, one per line, which a replay after
+// a base upgrade installs again. The base's DPkg::Post-Invoke hook owns
+// it and rewrites it whole at every dpkg run; guestd only reads it. It is
+// on the volume's own root and not under /var/lib/repose, which is in the
+// overlay's upper directory and rotates away with it (DECISIONS I-1476).
 func (p Paths) AptManual() string { return p.join("run", "repose", "rw", "apt-manual.list") }
 
 // AptManualLegacy is /var/lib/repose/apt-manual.list, where the proposal
 // first put the list; read on a replay, from the live overlay and from
-// the rotated upper (AptManualRotated), never written (DECISIONS I-1476).
+// the rotated upper (AptManualRotated), never written. Both reads are
+// accepted for one release, then removed (DECISIONS I-1476).
 func (p Paths) AptManualLegacy() string { return p.join("var", "lib", "repose", "apt-manual.list") }
 
 // AptManualRotated is that legacy list in the upper directory the last

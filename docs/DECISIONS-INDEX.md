@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1068 entries.
+1070 entries.
 
 ## Scope
 
@@ -1100,3 +1100,5 @@ pointer, not a summary.
 - **I-1460** guestd's `ApplyMenu` streams progress as `Notify` frames carrying the request's `request_id`, ends with a Response; `Switch` and `RegisterPaths` answer `unimplemented` on an erofs guest (nonix-contracts-api, 2026-11-22) — L38995
 - **I-1462** `0051_nonix_base_images`: base rows have a format and per-arch files, projects a `guest_runtime` and `pending_base_version`, snapshots a `base_version`; `settings.default_guest_runtime` picks the runtime at create; `{fragment}` on an erofs project is `409 nix_config_retired` (nonix-contracts-api, 2026-11-22) — L39001
 - **I-1464** erofs projects never build: plans drop `PhaseBuild`, the base bump sets `pending_base_version`, placement needs the `erofs` feature and an image for the host's arch, and `repose-admin base publish --format erofs` fetches and checks every file before the row is written (nonix-contracts-api, 2026-11-22) — L39008
+- **I-1474** guestd decides its runtime once, from mountinfo, and every erofs difference branches on that one answer: freeze, grow and statfs target `/run/repose/rw`, commands get Ubuntu's PATH, `Switch` and `RegisterPaths` answer `unimplemented` at once (nonix-guestd, 2026-11-22) — L39015
+- **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — L39023

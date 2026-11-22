@@ -26,7 +26,7 @@ import (
 // Error codes of an ApplyMenu's final ApplyMenuProgress
 // (docs/interfaces/vsock-guestd.md).
 const (
-	CodeMenuFailed      = "menu_failed"
+	CodeMenuFailed      = sysdep.CodeMenuFailed
 	CodeInvalidArgument = sysdep.CodeInvalidArgument
 )
 
@@ -561,9 +561,9 @@ func (a *apply) ensurePackage(ctx context.Context, w *want) ([]string, error) {
 		installed = []string{w.pkg}
 		a.progress(w.pkg + " installed")
 	}
-	if err := a.h.addManual(w.pkg); err != nil {
-		return installed, errors.New("installed, but the package list could not be written")
-	}
+	// apt-get install marks the package manual, and PR 2's dpkg hook
+	// writes it into apt-manual.list; guestd never writes that file
+	// (DECISIONS I-1476).
 	return installed, nil
 }
 
@@ -596,7 +596,6 @@ func (a *apply) replayManual(ctx context.Context, wants []*want) {
 			a.progress("could not install " + name + " again: " + err.Error())
 			continue
 		}
-		_ = a.h.addManual(name)
 		a.progress(name + " installed")
 	}
 }
@@ -611,9 +610,6 @@ func (a *apply) remove(ctx context.Context, it appliedItem) error {
 			if err := a.aptRemove(ctx, []string{it.Package}); err != nil {
 				return err
 			}
-		}
-		if err := a.h.dropManual(it.Package); err != nil {
-			return errors.New("the package list could not be written")
 		}
 		a.progress(it.Package + " removed")
 		return nil
@@ -894,8 +890,10 @@ func (h *Handler) saveApplied(a applied) error {
 	return sysdep.WriteFileAtomic(h.paths.MenuApplied(), append(b, '\n'), 0o600, 0, 0)
 }
 
-// manualList is every name in the three apt-manual lists, sorted, each
-// a valid package name.
+// manualList is every name in the apt-manual lists, sorted, each a valid
+// package name. /run/repose/rw/apt-manual.list is the dpkg hook's (the
+// base rewrites it whole at every dpkg run); the two legacy paths are
+// read for one release (DECISIONS I-1476). guestd only reads them.
 func (h *Handler) manualList() []string {
 	seen := map[string]bool{}
 	for _, path := range []string{h.paths.AptManual(), h.paths.AptManualLegacy(), h.paths.AptManualRotated()} {
@@ -916,53 +914,6 @@ func (h *Handler) manualList() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func (h *Handler) readManual() []string {
-	b, err := os.ReadFile(h.paths.AptManual())
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, line := range strings.Split(string(b), "\n") {
-		if name := strings.TrimSpace(line); ValidPackage(name) {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-func (h *Handler) writeManual(names []string) error {
-	body := ""
-	if len(names) > 0 {
-		body = strings.Join(names, "\n") + "\n"
-	}
-	if err := os.MkdirAll(filepath.Dir(h.paths.AptManual()), 0o755); err != nil {
-		return err
-	}
-	return sysdep.WriteFileAtomic(h.paths.AptManual(), []byte(body), 0o644, 0, 0)
-}
-
-func (h *Handler) addManual(name string) error {
-	names := h.readManual()
-	if contains(names, name) {
-		return nil
-	}
-	return h.writeManual(append(names, name))
-}
-
-func (h *Handler) dropManual(name string) error {
-	names := h.readManual()
-	out := names[:0]
-	for _, n := range names {
-		if n != name {
-			out = append(out, n)
-		}
-	}
-	if len(out) == len(names) {
-		return nil
-	}
-	return h.writeManual(out)
 }
 
 func mergeSorted(a, b []string) []string {
