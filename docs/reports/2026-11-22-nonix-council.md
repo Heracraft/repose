@@ -78,8 +78,7 @@ dashboard login does not complete (`/oidc/auth` answers 404), so every
 dashboard reading is against the fake (`-default-runtime erofs`). Surface
 detail: the "Second pass" sections of the CLI and dashboard reports.
 
-**Gate: clean. No P0 is open.** Nothing regressed. Two new P1s are open
-(N1, N2), and so are the not-fixed P2s below.
+**Gate: clean. No P0 is open.** Nothing regressed. Second-pass new findings: 2 P1 (N1, N2), 9 P2 (N3-N11), 1 unverified (N12); the not-fixed P2s below stay open.
 
 ### Verification
 
@@ -117,9 +116,13 @@ detail: the "Second pass" sections of the CLI and dashboard reports.
 | N5 | P2 | Nix-era words on real Ubuntu operations: op kind `build`, revision status `built`, "switching the machine"; `sync` warns about pushing machine.nix on an all-Ubuntu account. | cli (staging, fake) |
 | N6 | P2 | Add a host says "On an x86 box with Ubuntu 24.04"; own-hardware.md says "Ubuntu 24.04, or Debian 12 or later"; the landing page says "Linux and KVM". | dash |
 | N7 | P2 | The Resize panel always says "320 GB is the largest size." while 80, 160 and 320 GB are all on offer. | dash |
+| N8 | P2 | The dashboard's menu search does not match the entry names config.md's table lists and `repose config add` takes: `dotnet`, `awscli`, `go-tools`, `shell-extras` and `nodejs` each give `No package matches` and no Add row, because I-1508 hides Add for a menu id. A customer who copies a name from the docs reaches a dead end. | dash (fake, capture h-search-dotnet) |
+| N9 | P2 | An invalid apt name is refused without a reason: `FFmpeg`, `Bad Name!`, `ffmpeg libpq-dev` and a 130-character name each give `No package matches "…"`, with no Add row and no rule. config.md:23 states the rule; the page never does. | dash (fake) |
+| N10 | P2 | "Applied" on a stopped machine means applied at the next start. On staging, with tmp-vffw stopped, `config add zig` printed `Applied revision d5662d1d in 0.5s`. Nothing was installed until `start` (16.1 s, against 6 s), and after it zig was in mise's installs. config.md:25 documents it, but neither surface says it at the moment. The fake streams install lines and "Applied" for a stopped machine, so the dashboard's real wording here cannot be seen. | dash (staging CLI, fake) |
+| N11 | P2 | For a machine on an owned host, the Snapshots tab says only "No snapshots yet. / Create snapshot". own-hardware.md puts in bold that these snapshots stay on that host's disk and repose keeps no copy; the tab says nothing. | dash (fake, arm64 host "mini") |
+| N12 | unverified | On the fake, Apply on a machine whose owned host has been quiet for 14 minutes answers "Applied" and streams install lines. The real api's behaviour is not checked. | dash (fake) |
 
-The dashboard reviewer's free hunt may add rows; they go here, under
-their name, when they sign.
+The dashboard reviewer's free-hunt rows are N8 to N12.
 
 ### Method
 
@@ -127,7 +130,8 @@ their name, when they sign.
   machines of mine at a time by agreement (the dashboard reviewer took
   one). That cap was broken twice, briefly; see the CLI report.
   Everything I made is destroyed. Partner's `tmp-vffw` was still running
-  at the time of writing; they destroy it.
+  at the time of writing; it is now destroyed, and staging `ls` says
+  "No projects for stgdev" (dashboard reviewer).
 - Dashboard: fake with Playwright and nix Chromium at 1440 and 390; one
   staging machine for the CLI-side install check.
 - Both: N1 is two reviewers on two machines, four installs. Every other
@@ -136,4 +140,4 @@ their name, when they sign.
 ### Signatures
 
 - nonix-cli: written 2026-11-22.
-- nonix-dash: (to sign, or to record disagreement here)
+- nonix-dash: signed 2026-11-22. The verification rows marked dash and N1, N6 and N7 match my second-pass report (f40fb3dc). N8 to N12 are mine and are added above. I agree the gate is clean: no P0 is open, and nothing regressed. One note on row 9: the brief's 'the x86 installer fails at its host daemon download step' is true of release/r20261122-10, not of main, where the script itself answers 404.
