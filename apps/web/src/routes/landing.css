@@ -270,7 +270,7 @@ main.landing .plans .p-name {
 	padding: 2rem var(--edge) 1.75rem;
 }
 .landing .hero .hk-lead {
-	max-width: 31rem;
+	max-width: 33rem;
 	margin: 1.125rem 0 0;
 	font-size: 1.0625rem;
 	line-height: 1.55;
@@ -334,7 +334,7 @@ main.landing .plans .p-name {
 @media (min-width: 1024px) {
 	.landing .hero-grid {
 		grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-		min-height: clamp(39rem, 76svh, 43.5rem);
+		min-height: clamp(34rem, 66svh, 38rem);
 	}
 	.landing .hero-copy {
 		padding: 3.25rem var(--in) 3.25rem var(--edge);
@@ -345,9 +345,14 @@ main.landing .plans .p-name {
 		padding: 2.75rem var(--edge) 2.75rem var(--in);
 	}
 }
+/* From 1200px the figure takes the wider half, so the picture, not the
+   stage around it, fills the right. */
 @media (min-width: 1200px) {
 	.landing .hero-grid {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1.06fr);
+		grid-template-columns: minmax(0, 11fr) minmax(0, 13fr);
+	}
+	.landing .hero-term {
+		max-width: none;
 	}
 }
 
@@ -538,7 +543,9 @@ main.landing .plans .p-name {
 }
 @media (min-width: 1024px) {
 	.landing .steps > li {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns:
+			calc((100% - 2 * var(--edge) + var(--col-gap)) / 4 + var(--edge) - var(--in))
+			minmax(0, 1fr);
 	}
 	.landing .step-title {
 		align-items: center;
@@ -558,12 +565,35 @@ main.landing .plans .p-name {
 .landing .steps .code-copy .hk-copy--labelled .text > .layer {
 	justify-content: flex-end;
 }
+/* The phone: each step is one band on the stage, its name small above
+   its command, the bands 12px apart with no rule between. */
 @media (max-width: 639.98px) {
-	.landing .steps .code-copy {
-		padding: 0.5rem 0.625rem 0.5rem var(--edge);
+	.landing .steps {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.landing .steps > li {
+		border-top: 0;
+		background: var(--stage);
+	}
+	.landing .step-title {
+		padding: 0.625rem var(--edge) 0;
+		font-size: 0.75rem;
+		line-height: 1rem;
+	}
+	.landing .steps > li .code-copy {
+		min-height: 0;
+		padding: 0.125rem 0.25rem 0.25rem var(--edge);
+		border-top: 0;
+		background: none;
+	}
+	.landing .steps .code-copy .hk-copy {
+		min-width: 2.5rem;
+		min-height: 2.5rem;
 	}
 	.landing .steps .code-copy .line {
-		font-size: 0.65625rem;
+		font-size: 0.8125rem;
 		white-space: pre;
 		overflow-x: auto;
 		overflow-wrap: normal;
@@ -592,17 +622,51 @@ main.landing .plans .p-name {
 	align-items: center;
 	gap: 0.75rem 1rem;
 }
-.landing .start-actions {
-	justify-content: flex-start;
-	gap: 0.75rem 1.5rem;
+/* 04 Start: the title, the path toggle straight over the commands it
+   switches, the commands, then the one call to action. From 1024px the
+   call to action moves up beside the title, on its baseline. */
+.landing .install-band {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: 'head' 'tabs' 'steps' 'cta';
 }
-.landing .start-actions .hk-tablist button[aria-selected='false'] {
+.landing .install-band > .head {
+	grid-area: head;
+}
+.landing .start-tabs {
+	grid-area: tabs;
+	padding-bottom: 1rem;
+}
+.landing .install-band > .steps {
+	grid-area: steps;
+}
+.landing .start-cta {
+	grid-area: cta;
+	display: flex;
+	padding-block: 1.25rem;
+}
+.landing .start-tabs .hk-tablist button[aria-selected='false'] {
 	color: var(--tab-idle-ink);
 }
 @media (pointer: coarse), (max-width: 639.98px) {
-	.landing .start-actions .hk-tablist button {
+	.landing .start-tabs .hk-tablist button {
 		min-height: 2.75rem;
 		padding-inline: 0.875rem;
+	}
+}
+@media (max-width: 639.98px) {
+	.landing .start-cta > .hk-btn {
+		flex: 1 1 auto;
+	}
+}
+@media (min-width: 1024px) {
+	.landing .install-band {
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas: 'head cta' 'tabs tabs' 'steps steps';
+	}
+	.landing .start-cta {
+		align-self: end;
+		padding-block: 0 var(--head-gap);
 	}
 }
 @media (max-width: 479.98px) {
@@ -739,6 +803,90 @@ main.landing .plans--public .p-price .was {
 	}
 }
 
+/* The memory bars under the plan cards: each plan's room drawn as the
+   4 GB sandboxes it runs at once, out of the largest plan's count. The
+   row continues the cells' columns and rules, so each bar reads as the
+   foot of the plan above it. */
+main.landing #pricing .mem {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	margin: 0 calc(-1 * var(--edge));
+	padding: 0;
+	list-style: none;
+}
+main.landing #pricing .mem > li {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0 var(--edge) 1.5rem;
+}
+main.landing #pricing .mem-bar {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
+	gap: 3px;
+	max-width: 16rem;
+}
+main.landing #pricing .mem-bar > i {
+	height: 0.5rem;
+	border-radius: 2px;
+	background: var(--rule);
+}
+main.landing #pricing .mem-bar > i.on {
+	background: var(--pic-accent);
+}
+main.landing #pricing .mem-n {
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-3);
+}
+/* Below 1024px the cells stack above, so the bars stand together under
+   them, one row per plan, each named. */
+main.landing #pricing .mem-p {
+	display: none;
+}
+@media (max-width: 1023.98px) {
+	main.landing #pricing .mem {
+		row-gap: 0.75rem;
+		padding-block: 1.25rem;
+		border-top: 1px solid var(--rule-in);
+	}
+	main.landing #pricing .mem > li {
+		display: grid;
+		grid-template-columns: 2.75rem minmax(0, 7rem) auto;
+		align-items: center;
+		column-gap: 0.75rem;
+		padding-block: 0;
+	}
+	main.landing #pricing .mem-p {
+		display: block;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
+}
+@media (min-width: 1024px) {
+	main.landing #pricing .mem {
+		grid-template-columns:
+			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
+			minmax(0, 1fr);
+	}
+	main.landing #pricing .mem > li {
+		padding: 0 var(--in) 1.875rem calc(var(--in) - 1px);
+	}
+	main.landing #pricing .mem > li:first-child {
+		padding-left: var(--edge);
+	}
+	main.landing #pricing .mem > li:last-child {
+		padding-right: var(--edge);
+	}
+	main.landing #pricing .mem > li + li {
+		border-left: 1px solid var(--rule-in);
+	}
+	main.landing .plans.plans--public .plan {
+		padding-bottom: 1.25rem;
+	}
+}
+
 /* The hardware row under the plan cards: the cells' canvas, one rule above. */
 main.landing #pricing .hw {
 	display: grid;
@@ -793,7 +941,7 @@ main.landing #pricing .hw-what {
 			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
 			minmax(0, 1fr);
 		column-gap: 0;
-		align-items: center;
+		align-items: baseline;
 		padding: 1.625rem 0 1.875rem;
 	}
 	main.landing #pricing :is(.hw-name, .hw-price) {
@@ -808,9 +956,11 @@ main.landing #pricing .hw-what {
 	}
 	main.landing #pricing .hw-what {
 		grid-column: 2 / -1;
-		grid-row: 1 / span 2;
+		grid-row: 2;
+		align-self: last baseline;
+		max-width: none;
 		margin: 0;
-		padding-left: calc(var(--in) - 1px);
+		padding: 0 var(--edge) 0 calc(var(--in) - 1px);
 	}
 }
 
@@ -839,4 +989,38 @@ main.landing #pricing .hw-what {
 /* The phone has no wheel: no arc fragment behind the 01 heading. */
 .landing #agents .sw-mob-arc {
 	display: none;
+}
+
+/* ---------- The header, on the landing's phone ----------
+
+   The landing is where a phone visitor first meets the name, so below
+   sm the header keeps the word beside the mark, and Sign in is a quiet
+   32px link rather than a bordered button heavier than the logo. */
+@media (max-width: 639.98px) {
+	:root:has(main.landing) .site-header a[aria-label='repose, home'] > .sm\:hidden {
+		display: none;
+	}
+	:root:has(main.landing) .site-header a[aria-label='repose, home'] > .hidden {
+		display: inline;
+	}
+	:root:has(main.landing) .site-header nav .hk-btn-secondary {
+		min-width: 0;
+		height: 2rem;
+		min-height: 2rem;
+		padding-inline: 0.25rem;
+		border-color: transparent;
+		background: none;
+		color: var(--hk-text);
+	}
+}
+
+/* Below 1024px the pause control gets its own strip under the figure,
+   16px clear of the snapshot card, instead of sharing the inset. */
+@media (max-width: 1023.98px) {
+	.landing #safety .fig > .stage {
+		padding-bottom: calc(var(--field-y) + 1.75rem);
+	}
+	.landing #safety .fig .pic-pause.all {
+		bottom: 0.75rem;
+	}
 }

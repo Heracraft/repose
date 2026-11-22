@@ -1,32 +1,26 @@
 <!--
   The safety figure (section 02): the agent wrecks the sandbox, a snapshot
-  puts it back. Two windows and one wire, nothing else (landing council,
-  2026-11-22: the laptop, the globe, the `repose run` and `snapshot` chips,
-  the copied tables and the snapshot cards inside a card are gone; the hero
-  already shows the laptop).
+  puts it back. One window and one unboxed timeline (landing council,
+  round 2: no status rows to decipher, no boxed list, no chip on a wire).
 
-  Left, your sandbox: the repo with three files, the app's own state that
-  git knows nothing about (postgres and its rows, node), and Claude Code in
-  its bypass permissions mode. Right, its snapshots as a plain list, oldest
-  first: the nightly at 03:00, yours at 21:25, and 21:31, the snapshot the
-  stop took of the wreck. Between them the one accent chip, `restore 21:25`,
-  on a wire that points back at the sandbox.
+  Left, your sandbox: the repo with three files, and Claude Code in its
+  bypass permissions mode. Right, its snapshots on one rail, oldest first:
+  the nightly at 03:00, yours at 21:25, and 21:31, the snapshot the stop
+  took of the wreck, as a red dot. An accent arc, "restore 21:25", runs
+  from 21:31 back to 21:25.
 
   The still frame, which is also what reduced motion, no script and the
-  first paint show, is the story's end: the sandbox restored, 21:31 marked
-  wrecked in red, 21:25 lit as restored, and the chip on the wire. With
-  motion the loop runs from that frame: the chip and 21:31 go and the
-  sandbox works (3.5s); the agent turns red, the files are struck, the
-  database reads 0 rows, node is not found and the stop snapshot 21:31
-  lands (3s); then the chip comes, 21:25 lights and the sandbox is back,
-  which is the still frame again (held 5.5s). Only CSS transitions move,
-  on a phase the script steps through, so pausing holds the phase.
+  first paint show, is the story's end: the sandbox whole, 21:31 red, 21:25
+  lit and the arc drawn. With motion the loop runs from that frame: the
+  arc and 21:31 go and the sandbox works (3.5s); the agent turns red, the
+  repo and its files are struck and the stop snapshot 21:31 lands (3s);
+  then the arc comes, 21:25 lights and the sandbox is back, which is the
+  still frame again (held 5.5s). Only CSS transitions move, on a phase the
+  script steps through, so pausing holds the phase.
 
-  Provenance. The machine's own state is real on the recruiting machine
-  (2026-09-26): 3,532 rows in its postgres, node v24.20.0. The snapshot
-  times are illustrative, on one clock: nightly snapshots and one on every
-  stop are /docs/lifecycle. Claude Code runs in bypassPermissions mode on
-  every machine (/docs/agents).
+  Provenance. The snapshot times are illustrative, on one clock: nightly
+  snapshots and one on every stop are /docs/lifecycle. Claude Code runs in
+  bypassPermissions mode on every machine (/docs/agents).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -49,11 +43,10 @@
 
 	const label = 'An agent wrecks your sandbox; a snapshot restores it';
 	const story =
-		'Your sandbox holds your repo, the app’s Postgres database with 3,532 rows, and node, with ' +
-		'Claude Code running in bypass permissions mode. Its snapshots are a nightly one from 03:00 and ' +
-		'yours from 21:25. The agent wrecks the machine: its edits are gone, the database is empty and ' +
-		'node is not found. Stopping it takes one more snapshot, 21:31, of the wreck. Restoring 21:25 ' +
-		'brings the edits, all 3,532 rows and node back.';
+		'Your sandbox holds your repo, with Claude Code running in bypass permissions mode. Its ' +
+		'snapshots are a nightly one from 03:00 and yours from 21:25. The agent wrecks the machine ' +
+		'and the repo is gone. Stopping it takes one more snapshot, 21:31, of the wreck. Restoring ' +
+		'21:25 brings the whole machine back as it was.';
 
 	onMount(() => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -137,26 +130,6 @@
 	</svg>
 {/snippet}
 
-{#snippet dbIcon()}
-	<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" class="fi">
-		<g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round">
-			<ellipse cx="8" cy="3.8" rx="5" ry="1.9" />
-			<path
-				d="M3 3.8v8.4c0 1.05 2.24 1.9 5 1.9s5-.85 5-1.9V3.8M3 8c0 1.05 2.24 1.9 5 1.9s5-.85 5-1.9"
-			/>
-		</g>
-	</svg>
-{/snippet}
-
-{#snippet toolIcon()}
-	<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" class="fi">
-		<g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round">
-			<rect x="1.8" y="2.5" width="12.4" height="11" />
-			<path d="M4.5 6.2l2.2 1.8-2.2 1.8M8.3 10.3h3.2" stroke-linecap="round" />
-		</g>
-	</svg>
-{/snippet}
-
 <div class="hero-frame" use:picture.frame>
 	<div
 		class="hero-pic wk"
@@ -168,22 +141,13 @@
 	>
 		<p id="wreck-story" hidden>{story}</p>
 
-		<div class="win box" aria-hidden="true">
+		<div class="win box side laptop" aria-hidden="true">
 			<WinHead who="machine" dot />
 			<ul class="rows">
-				<li class="fr repo">{@render repoIcon()}<span>your-project/</span></li>
+				<li class="fr repo">{@render repoIcon()}<span class="fname">your-project/</span></li>
 				{#each files as f (f)}
 					<li class="fr kid">{@render fileIcon()}<span class="fname">{f}</span></li>
 				{/each}
-				<li class="fr sys first">
-					{@render dbIcon()}<span>postgres</span>
-					<span class="val"><span class="ok">3,532 rows</span><span class="bad">0 rows</span></span>
-				</li>
-				<li class="fr sys">
-					{@render toolIcon()}<span>node</span>
-					<span class="val"><span class="ok">v24.20.0</span><span class="bad">not found</span></span
-					>
-				</li>
 			</ul>
 			<div class="agentrow">
 				<svg viewBox="0 0 24 24" width="20" height="20" class="agent">
@@ -193,32 +157,39 @@
 			</div>
 		</div>
 
-		<div class="wire" aria-hidden="true">
-			<span class="pic-chip restore">restore 21:25</span>
-			<i class="line"></i>
-		</div>
-
-		<div class="win snaps" aria-hidden="true">
-			<WinHead who="snapshots" />
-			<ol class="list">
-				<li class="snap night"><span class="t">03:00</span><span class="why">nightly</span></li>
-				<li class="snap mine">
-					<span class="t">21:25</span><span class="why"><span>restored</span></span>
-				</li>
-				<li class="snap stop"><span class="t">21:31</span><span class="why">wrecked</span></li>
+		<div class="tl side right" aria-hidden="true">
+			<p class="tl-h">
+				<svg viewBox="0 0 16 16" width="14" height="14">
+					<path d="M8 8V0A8 8 0 0 0 0 8Z" fill="currentColor" />
+					<path d="M8 8V16A8 8 0 0 0 16 8Z" fill="currentColor" opacity="0.45" />
+				</svg>
+				Snapshots
+			</p>
+			<div class="tl-arc">
+				<span class="restore">restore 21:25</span>
+				<svg viewBox="0 0 100 24" preserveAspectRatio="none">
+					<path d="M83.33 23 C 83.33 1, 50 1, 50 20" fill="none" />
+				</svg>
+				<i class="tip"></i>
+			</div>
+			<ol class="tl-rail">
+				<li class="snap night"><i></i><span class="t">03:00</span></li>
+				<li class="snap mine"><i></i><span class="t">21:25</span></li>
+				<li class="snap stop"><i></i><span class="t">21:31</span></li>
 			</ol>
 		</div>
 	</div>
 </div>
 
 <style>
-	/* ---------- Layout: sandbox, wire, snapshots ---------- */
+	/* ---------- Layout: the sandbox, then its snapshots, top-aligned ---------- */
 	.wk {
 		--ease: cubic-bezier(0.33, 1, 0.68, 1);
 		display: grid;
-		grid-template-columns: minmax(0, 27rem) minmax(9rem, 12rem) minmax(0, 17rem);
+		grid-template-columns: minmax(0, 26rem) minmax(0, 21rem);
+		column-gap: 6rem;
 		justify-content: center;
-		align-items: center;
+		align-items: start;
 		color: var(--pic-ink);
 		font-family: var(--font-mono);
 		font-size: 13px;
@@ -235,14 +206,14 @@
 	/* ---------- The sandbox ---------- */
 	.rows {
 		margin: 0;
-		padding: 8px 0;
+		padding: 10px 0;
 		list-style: none;
 	}
 	.fr {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		height: 28px;
+		height: 30px;
 		padding: 0 14px;
 		white-space: nowrap;
 	}
@@ -257,7 +228,7 @@
 		position: relative;
 		transition: color 0.3s var(--ease);
 	}
-	/* The strike across a lost file, drawn from the left. */
+	/* The strike across what the agent took, drawn from the left. */
 	.fname::after {
 		content: '';
 		position: absolute;
@@ -269,25 +240,6 @@
 		transform: scaleX(0);
 		transform-origin: left;
 		transition: transform 0.35s var(--ease);
-	}
-	.sys.first {
-		margin-top: 8px;
-		border-top: 1px solid var(--rule);
-		height: 37px;
-		padding-top: 8px;
-	}
-	.val {
-		display: grid;
-		margin-left: auto;
-		text-align: right;
-	}
-	.val > span {
-		grid-area: 1 / 1;
-		transition: opacity 0.3s var(--ease);
-	}
-	.val .bad {
-		opacity: 0;
-		color: var(--pic-stop);
 	}
 	.agentrow {
 		display: flex;
@@ -307,93 +259,133 @@
 		color: var(--pic-dim);
 	}
 
-	/* ---------- The wire: the one chip, pointing back at the sandbox ---------- */
-	.wire {
-		position: relative;
+	/* ---------- The snapshots: one rail, no box ---------- */
+	.tl {
+		min-width: 0;
+	}
+	.tl-h {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
 		gap: 8px;
-		padding: 0 14px;
+		height: 28px;
+		margin: 0;
+		font-family: var(--font-sans);
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--pic-ink);
 	}
-	.line {
+	.tl-h svg {
+		flex: none;
+	}
+	.tl-arc {
 		position: relative;
-		display: block;
-		width: 100%;
-		border-top: 1.5px solid var(--pic-accent);
-		transform-origin: right;
-		transition:
-			transform 0.45s var(--ease),
-			opacity 0.3s var(--ease);
+		height: 34px;
+		margin-top: 40px;
+		transition: opacity 0.35s var(--ease);
 	}
-	.line::before {
-		content: '';
+	.tl-arc svg {
 		position: absolute;
-		left: -1px;
-		top: -5.5px;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+	}
+	.tl-arc path {
+		stroke: var(--pic-accent);
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		vector-effect: non-scaling-stroke;
+	}
+	/* The arrowhead lands on 21:25, the middle dot. */
+	.tip {
+		position: absolute;
+		left: 50%;
+		bottom: -4px;
 		border: 4.5px solid transparent;
-		border-right: 6px solid var(--pic-accent);
-		border-left: 0;
+		border-top: 6px solid var(--pic-accent);
+		border-bottom: 0;
+		transform: translateX(-50%);
 	}
 	.restore {
-		transition: opacity 0.3s var(--ease);
+		position: absolute;
+		left: 66.67%;
+		top: -24px;
+		transform: translateX(-50%);
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--pic-accent);
+		white-space: nowrap;
 	}
-
-	/* ---------- The snapshots: a plain list, oldest first ---------- */
-	.list {
-		margin: 0;
+	.tl-rail {
+		position: relative;
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		margin: 8px 0 0;
 		padding: 0;
 		list-style: none;
 	}
+	.tl-rail::before {
+		content: '';
+		position: absolute;
+		left: 16.67%;
+		right: 16.67%;
+		top: 5px;
+		border-top: 1px solid var(--rule-strong);
+	}
 	.snap {
 		display: flex;
-		align-items: baseline;
-		gap: 12px;
-		height: 40px;
-		padding: 10px 14px 0;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
 		transition: opacity 0.35s var(--ease);
 	}
-	.snap + .snap {
-		border-top: 1px solid var(--rule);
+	.snap i {
+		position: relative;
+		width: 11px;
+		height: 11px;
+		border: 1.5px solid var(--rule-strong);
+		border-radius: 50%;
+		background: var(--surface);
+		transition:
+			background-color 0.3s var(--ease),
+			border-color 0.3s var(--ease);
 	}
 	.t {
 		font-weight: 500;
+		color: var(--pic-dim);
 		transition: color 0.3s var(--ease);
 	}
-	.why {
-		margin-left: auto;
-		font-family: var(--font-sans);
-		font-size: 12px;
-		color: var(--pic-dim);
+	.stop i {
+		border-color: var(--pic-stop);
+		background: var(--pic-stop);
 	}
-	.why > span {
-		transition: opacity 0.3s var(--ease);
-	}
-	.stop .why {
+	.stop .t {
 		color: var(--pic-stop);
 	}
 
 	/* ---------- The still frame (restored) ---------- */
-	.mine .t,
-	.mine .why {
+	.mine i {
+		border-color: var(--pic-accent);
+		background: var(--pic-accent);
+	}
+	.mine .t {
 		color: var(--pic-accent);
 	}
 
 	/* ---------- Work: the sandbox runs, nothing to restore yet ---------- */
-	.wk[data-phase='work'] :is(.restore, .stop),
-	.wk[data-phase='wreck'] .restore,
-	.wk:not([data-phase='restored']) .mine .why > span {
+	.wk[data-phase='work'] .stop,
+	.wk:not([data-phase='restored']) .tl-arc {
 		opacity: 0;
 	}
-	.wk:not([data-phase='restored']) .line {
-		transform: scaleX(0);
-		opacity: 0;
+	.wk:not([data-phase='restored']) .mine i {
+		border-color: var(--rule-strong);
+		background: var(--surface);
 	}
 	.wk:not([data-phase='restored']) .mine .t {
-		color: var(--pic-ink);
+		color: var(--pic-dim);
 	}
 
-	/* ---------- Wreck: the agent turns red and takes what git can't bring back ---------- */
+	/* ---------- Wreck: the agent turns red and takes the repo ---------- */
 	.wk[data-phase='wreck'] .agent {
 		fill: var(--pic-stop);
 	}
@@ -403,18 +395,14 @@
 	.wk[data-phase='wreck'] .fname::after {
 		transform: scaleX(1);
 	}
+	.wk[data-phase='wreck'] .kid:nth-child(2) .fname::after {
+		transition-delay: 0.1s;
+	}
 	.wk[data-phase='wreck'] .kid:nth-child(3) .fname::after {
-		transition-delay: 0.12s;
+		transition-delay: 0.2s;
 	}
 	.wk[data-phase='wreck'] .kid:nth-child(4) .fname::after {
-		transition-delay: 0.24s;
-	}
-	.wk[data-phase='wreck'] .val .ok {
-		opacity: 0;
-	}
-	.wk[data-phase='wreck'] .val .bad {
-		opacity: 1;
-		transition-delay: 0.4s;
+		transition-delay: 0.3s;
 	}
 	.wk[data-phase='wreck'] .stop {
 		transition-delay: 1.2s;
@@ -423,35 +411,15 @@
 		background: var(--rule-strong);
 	}
 
-	/* ---------- Phone and tablet: stacked, the wire points up ---------- */
+	/* ---------- Phone and tablet: stacked, the snapshots under the sandbox ---------- */
 	@media (max-width: 1023.98px) {
 		.wk {
 			grid-template-columns: minmax(0, 30rem);
+			row-gap: 24px;
 			align-items: stretch;
 		}
-		.wire {
-			flex-direction: row-reverse;
-			justify-content: center;
-			gap: 12px;
-			height: 64px;
-			padding: 0;
-		}
-		.line {
-			width: 0;
-			height: 100%;
-			border-top: 0;
-			border-left: 1.5px solid var(--pic-accent);
-			transform-origin: bottom;
-		}
-		.line::before {
-			left: -5.25px;
-			top: -1px;
-			border: 4.5px solid transparent;
-			border-bottom: 6px solid var(--pic-accent);
-			border-top: 0;
-		}
-		.wk:not([data-phase='restored']) .line {
-			transform: scaleY(0);
+		.tl-arc {
+			margin-top: 28px;
 		}
 	}
 

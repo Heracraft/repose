@@ -10,11 +10,11 @@ test.afterAll(async () => {
 	await resetBilling();
 });
 
-test('the pricing section shows the three plans and live seats left', async ({ page }) => {
+test('the pricing section shows the three plans and what each runs at once', async ({ page }) => {
 	await resetBilling();
 	await page.goto('/');
 	const pricing = page.locator('section#pricing');
-	await expect(pricing.getByRole('heading', { name: 'Launch prices' })).toBeVisible();
+	await expect(pricing.getByRole('heading', { name: 'Pay for what runs at once' })).toBeVisible();
 	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveText([
 		'Solo',
 		'Plus',
@@ -36,10 +36,18 @@ test('the pricing section shows the three plans and live seats left', async ({ p
 	await expect(pricing.getByText('32 GB running at once')).toBeVisible();
 	await expect(pricing.getByText('500 GB disk · 1 TB egress')).toBeVisible();
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
-	await expect(page.getByTestId('seats-line')).toHaveText('18 cloud seats left');
+	// Each plan's memory drawn as the 4 GB sandboxes it runs at once.
+	await expect(pricing.getByTestId('mem-solo')).toContainText('Two 4 GB sandboxes');
+	await expect(pricing.getByTestId('mem-plus')).toContainText('Four 4 GB sandboxes');
+	await expect(pricing.getByTestId('mem-pro')).toContainText('Eight 4 GB sandboxes');
+	await expect(pricing.locator('[data-testid="mem-solo"] .mem-bar i.on')).toHaveCount(2);
+	// Free cloud seats are not counted out loud; only the full state is said.
+	await expect(page.getByTestId('seats-line')).toHaveCount(0);
 	// Each fact once (direction.md A5.3): the button lives in Start, the trial in the button.
 	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toHaveCount(0);
-	await expect(pricing.locator('.pricing-lead')).toHaveText("Stopped sandboxes don't count.");
+	await expect(pricing.locator('.pricing-lead')).toHaveText(
+		"Stopped sandboxes don't count against your memory."
+	);
 	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
@@ -51,12 +59,10 @@ test('the pricing section offers a Mac mini or Linux server as a flush row under
 	await page.goto('/');
 	const pricing = page.locator('#pricing');
 	const own = pricing.getByTestId('plan-own');
-	await expect(
-		own.getByRole('heading', { level: 3, name: 'Your Mac mini or Linux server' })
-	).toBeVisible();
+	await expect(own.getByRole('heading', { level: 3, name: 'Your machine' })).toBeVisible();
 	await expect(own.locator('.hw-price .n')).toHaveText('$10');
 	await expect(own).toContainText(
-		'One machine. Run as many sandboxes as its memory and disk hold.'
+		'For one machine. Run as many sandboxes as its memory and disk hold.'
 	);
 	await expect(own).not.toContainText(/own hardware|box you own|x86/i);
 	await expect(own.locator(':is(a, button)')).toHaveCount(0);
@@ -85,10 +91,11 @@ test('with no founding places left, Solo shows $49 and no founding line', async 
 	await setBilling({ founding_left: 30 });
 });
 
-test('one seat free: the line is singular', async ({ page }) => {
+test('seats free: no seat count is shown', async ({ page }) => {
 	await setBilling({ seats: { total: 30, held: 29, waiting: 0 } });
 	await page.goto('/');
-	await expect(page.getByTestId('seats-line')).toHaveText('1 cloud seat left');
+	await expect(page.locator('#pricing .plan').first()).toBeVisible();
+	await expect(page.getByTestId('seats-line')).toHaveCount(0);
 	await resetBilling();
 });
 
@@ -113,7 +120,7 @@ test('the start section toggles between Cloud and your machine and copies comman
 	const install = page.locator('#install');
 	const cloudTab = install.getByRole('tab', { name: 'Cloud' });
 	const ownTab = install.getByRole('tab', { name: 'Your machine' });
-	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Three commands');
+	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Run it in your repo');
 	await expect(cloudTab).toHaveAttribute('aria-selected', 'true');
 	await expect(ownTab).toHaveAttribute('aria-selected', 'false');
 
@@ -129,7 +136,7 @@ test('the start section toggles between Cloud and your machine and copies comman
 
 	await ownTab.click();
 	await expect(ownTab).toHaveAttribute('aria-selected', 'true');
-	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Four commands');
+	await expect(install.getByRole('heading', { level: 2 })).toHaveText('Run it in your repo');
 	// Adding a machine needs an account first, so sign-in stays the second step.
 	await expect(step2).toContainText('Sign in');
 	await expect(step2.locator('.code-copy')).toContainText('repose login');
@@ -199,7 +206,7 @@ test('the page never scrolls sideways', async ({ page }) => {
 test('one numbering: the chapters and start steps', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
-	await expect(page.locator('#agents .sw-desktop .num')).toHaveText('01 How it works');
+	await expect(page.locator('#agents .sw-desktop .num')).toHaveText('01 Setup');
 	await expect(page.locator('main .band > .head > .num')).toHaveText([
 		'02 Safety',
 		'03 Pricing',
@@ -233,12 +240,8 @@ test('the hero and own-hardware copy uphold the product rules and stay honest', 
 		/isolated Linux VMs with whole-disk undo/
 	);
 	await expect(page.locator('.hero .eyebrow')).toHaveCount(0);
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-		'Sandboxes for your coding agents'
-	);
-	await expect(page.locator('.hero .hk-lead')).toContainText(
-		'A Linux VM per repo, set up like your laptop'
-	);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('A sandbox per repo, with undo');
+	await expect(page.locator('.hero .hk-lead')).toContainText('a Linux VM set up like your laptop');
 	await expect(page.locator('.hero .hk-lead')).toContainText('Mac mini or Linux server');
 	await expect(page.locator('.hero .hk-lead')).toContainText('full permissions');
 	// Prices live in pricing, the trial in the button (direction.md A5.3).

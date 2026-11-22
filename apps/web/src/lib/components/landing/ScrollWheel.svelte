@@ -1,8 +1,9 @@
 <!--
   ScrollWheel: the scroll-driven quarter-wheel (owner, 2026-11-22). On desktop
   (>= 1024px, motion allowed) a tall track pins a full-viewport stage; a
-  large dial, its centre past the sheet's left edge, turns a quarter per beat
-  as the visitor scrolls: where it runs, the agents, the tools. Phones stack
+  large dial, its centre past the sheet's left edge, turns one step per beat
+  as the visitor scrolls, bringing each beat's marker to a fixed index point:
+  where it runs, the accounts, the tools. Phones stack
   the three beats. Each beat is a picture with a title, not a paragraph.
 -->
 <script lang="ts">
@@ -11,21 +12,27 @@
 
 	const BEATS = [
 		{ id: 'hardware', short: 'Where it runs' },
-		{ id: 'agents', short: 'Logins' },
+		{ id: 'agents', short: 'Accounts' },
 		{ id: 'tools', short: 'Your tools' }
 	] as const;
 	const LAST = BEATS.length - 1;
 	/* The chapter number, with the space the label's text needs after it. */
 	const chapter = '01 ';
 
-	/* Three agents, each on its own login: the mix the beat shows. Logins per
-	   docs/agents: Claude Code logs in once with a claude.ai subscription,
-	   Codex's login is copied from the laptop, Gemini CLI takes
-	   GEMINI_API_KEY as a secret. The hero already shows all five agents' icons. */
+	/* The dial turns STEP degrees per beat. STEP is no multiple of the 5, 15
+	   and 30 degree tick spacing, so the ticks visibly move at every stop. */
+	const STEP = 24;
+	/* The fixed index point, degrees clockwise from noon: the beat whose
+	   marker sits here is the active one. */
+	const INDEX = 24;
+
+	/* Three agents in one sandbox, each on its own account. Per docs/agents:
+	   Claude Code logs in once with a claude.ai subscription, Codex's login is
+	   copied from the laptop, Gemini CLI takes GEMINI_API_KEY as a secret. */
 	const PARALLEL = [
-		{ mark: agentMarks[0], login: 'Claude subscription' },
-		{ mark: agentMarks[1], login: 'ChatGPT login' },
-		{ mark: agentMarks[3], login: 'GEMINI_API_KEY' }
+		{ mark: agentMarks[0], login: 'Claude subscription', key: false },
+		{ mark: agentMarks[1], login: 'ChatGPT login', key: false },
+		{ mark: agentMarks[3], login: 'GEMINI_API_KEY', key: true }
 	];
 
 	let trackEl = $state<HTMLElement | null>(null);
@@ -40,7 +47,7 @@
 			const idx = BEATS.findIndex((b) => b.id === q || String(BEATS.indexOf(b)) === q);
 			if (idx >= 0) {
 				step = idx;
-				angle = idx * 90;
+				angle = idx * STEP;
 				pinnedParam = true;
 			}
 		}
@@ -52,7 +59,7 @@
 		function updateMode() {
 			scrollDriven = mqWide.matches && !mqReduce.matches && !pinnedParam;
 			if (!scrollDriven) {
-				angle = step * 90;
+				angle = step * STEP;
 			} else {
 				syncFromScroll();
 			}
@@ -70,7 +77,7 @@
 			const eased = frac < 0.22 ? 0 : frac > 0.78 ? 1 : (frac - 0.22) / 0.56;
 			const smooth = eased * eased * (3 - 2 * eased);
 			const pos = Math.min(LAST, base + smooth);
-			angle = pos * 90;
+			angle = pos * STEP;
 			step = Math.min(LAST, Math.round(pos));
 		}
 
@@ -106,7 +113,7 @@
 			window.scrollTo({ top: y, behavior: 'smooth' });
 		} else {
 			step = target;
-			angle = target * 90;
+			angle = target * STEP;
 		}
 	}
 
@@ -121,11 +128,17 @@
 	}
 
 	const rimTicks = Array.from({ length: 72 }, (_, i) => i * 5);
-	const quads = [0, 90, 180, 270];
-	/* Beat n's quarter carries n index dots, 2.5 degrees apart, so the dial
-	   reads differently at each stop instead of repeating itself. */
-	const beatDots = (idx: number) =>
-		idx < BEATS.length ? Array.from({ length: idx + 1 }, (_, k) => 4 + k * 2.5) : [];
+	/* A point on the dial (viewBox 1200, centre 600) at deg clockwise from noon. */
+	const at = (deg: number, r: number) => {
+		const t = (deg * Math.PI) / 180;
+		return `${(600 + r * Math.sin(t)).toFixed(1)} ${(600 - r * Math.cos(t)).toFixed(1)}`;
+	};
+	/* Beat i's marker sits at INDEX + i * STEP on the dial; turning the dial
+	   back by i * STEP brings it to the index point. One accent arc runs
+	   through the three markers and moves with them. */
+	const markers = BEATS.map((_, i) => INDEX + i * STEP);
+	const beatArc = `M ${at(INDEX - 6, 552)} A 552 552 0 0 1 ${at(INDEX + LAST * STEP + 6, 552)}`;
+	const notch = `M ${at(INDEX, 566)} L ${at(INDEX, 590)}`;
 </script>
 
 {#snippet mark(m: Mark, size: number)}
@@ -144,77 +157,71 @@
 	>
 {/snippet}
 
-{#snippet sandbox(repo: string, m: Mark)}
-	<li class="sw-sb">
-		<span class="sw-sb-dot" aria-hidden="true"></span>
-		<span class="sw-sb-repo">{repo}</span>
-		<span class="sw-sb-mark" title={m.name}>{@render mark(m, 14)}</span>
-	</li>
-{/snippet}
-
 {#snippet hardwareVisual()}
 	<div
 		class="sw-hw"
-		aria-label="The same sandboxes run on repose's cloud or on a Mac mini or Linux server of yours."
+		aria-label="billing-api and web-app run on repose cloud; ml-notebook runs on your machine."
 	>
-		<div class="sw-host">
-			<p class="sw-host-head">
-				<svg
-					viewBox="0 0 24 24"
-					width="18"
-					height="18"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.1 4.75 4.75 0 0 0 7 18.5z" />
-				</svg>
-				repose cloud
-			</p>
-			<ul class="sw-sbs">
-				{@render sandbox('billing-api', agentMarks[0])}
-				{@render sandbox('web-app', agentMarks[1])}
+		<div class="sw-place">
+			<svg
+				class="sw-place-art"
+				viewBox="0 0 64 48"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M17 40h31a10.5 10.5 0 0 0 1.6-20.9A16 16 0 0 0 19.2 15 12.5 12.5 0 0 0 17 40z" />
+			</svg>
+			<p class="sw-place-name">repose cloud</p>
+			<ul class="sw-chips">
+				<li>billing-api</li>
+				<li>web-app</li>
 			</ul>
 		</div>
-		<div class="sw-host">
-			<p class="sw-host-head">
-				<svg
-					viewBox="0 0 24 24"
-					width="18"
-					height="18"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<rect x="3" y="8" width="18" height="8" rx="2.5" />
-					<path d="M6.5 13.5h2" stroke-linecap="round" />
-				</svg>
-				Your Mac mini or Linux server
-			</p>
-			<ul class="sw-sbs">
-				{@render sandbox('billing-api', agentMarks[0])}
-				{@render sandbox('web-app', agentMarks[1])}
+		<div class="sw-place">
+			<svg
+				class="sw-place-art"
+				viewBox="0 0 64 48"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<rect x="6" y="18" width="52" height="18" rx="5" />
+				<path d="M12 40h40" stroke-linecap="round" />
+				<circle cx="49" cy="27" r="1.6" fill="currentColor" stroke="none" />
+			</svg>
+			<p class="sw-place-name">Your machine</p>
+			<ul class="sw-chips">
+				<li>ml-notebook</li>
 			</ul>
 		</div>
 	</div>
 {/snippet}
 
 {#snippet agentsVisual()}
-	<ul
+	<div
 		class="sw-mix"
-		aria-label="Claude Code on a Claude subscription, Codex on a ChatGPT login, Gemini CLI on a Gemini API key."
+		aria-label="Claude Code on a Claude subscription, Codex on a ChatGPT login and Gemini CLI on a Gemini API key, all in one sandbox."
 	>
-		{#each PARALLEL as vm (vm.login)}
-			<li>
-				<span class="sw-mix-mark" title={vm.mark.name}>{@render mark(vm.mark, 22)}</span>
-				<span class="sw-mix-login">{vm.login}</span>
-			</li>
-		{/each}
-	</ul>
+		<ul class="sw-mix-list">
+			{#each PARALLEL as vm (vm.login)}
+				<li>
+					<span class="sw-mix-mark" title={vm.mark.name}>{@render mark(vm.mark, 22)}</span>
+					<span class="sw-mix-login" class:sw-mix-key={vm.key}>{vm.login}</span>
+				</li>
+			{/each}
+		</ul>
+		<svg class="sw-mix-join" viewBox="0 0 100 300" preserveAspectRatio="none" aria-hidden="true">
+			<path d="M0 50 C 55 50, 45 150, 100 150" />
+			<path d="M0 150 L 100 150" />
+			<path d="M0 250 C 55 250, 45 150, 100 150" />
+		</svg>
+		<p class="sw-mix-box">your-project</p>
+	</div>
 {/snippet}
 
 {#snippet toolsVisual()}
@@ -226,19 +233,16 @@
 		<div class="sw-wins">
 			<div class="sw-win">
 				<p class="sw-win-bar"><span class="sw-url">localhost:5173</span></p>
-				<div class="sw-win-body" aria-hidden="true">
-					<i style="width: 42%" class="sw-sk sw-sk--head"></i>
-					<i style="width: 78%" class="sw-sk"></i>
-					<i style="width: 64%" class="sw-sk"></i>
+				<div class="sw-page" aria-hidden="true">
+					<p class="sw-page-h">Todos</p>
+					<p class="sw-page-t">3 open, 1 done</p>
 				</div>
 			</div>
 			<div class="sw-win">
-				<p class="sw-win-bar"><span class="sw-host-name">your-project.repose</span></p>
-				<div class="sw-win-body sw-code" aria-hidden="true">
-					<i style="width: 36%" class="sw-sk"></i>
-					<i style="width: 58%; margin-left: 1rem" class="sw-sk"></i>
-					<i style="width: 46%; margin-left: 1rem" class="sw-sk"></i>
-				</div>
+				<p class="sw-win-bar"><span class="sw-host-name">SSH: your-project.repose</span></p>
+				<pre class="sw-code" aria-hidden="true">export function <b>App</b>() &#123;
+  return &lt;Todos /&gt;;
+&#125;</pre>
 			</div>
 		</div>
 	</div>
@@ -263,29 +267,17 @@
 					<circle cx="600" cy="600" r="326" class="sw-ring-inner sw-ring-faint" />
 					<circle cx="600" cy="600" r="184" class="sw-ring-inner sw-ring-faint" />
 
-					{#each quads as rot, idx (rot)}
-						<g transform="rotate({rot} 600 600)">
-							<path
-								d="M 614 48.2 A 552 552 0 0 1 1151.8 586"
-								class="sw-arc-halo"
-								class:sw-arc-halo--active={step === idx}
-							/>
-							<path
-								d="M 614 48.2 A 552 552 0 0 1 1151.8 586"
-								class="sw-arc"
-								class:sw-arc--active={step === idx}
-							/>
-							{#each beatDots(idx) as d (d)}
-								<circle
-									cx="600"
-									cy="48"
-									r="3.2"
-									transform="rotate({d} 600 600)"
-									class="sw-node"
-									class:sw-node--active={step === idx}
-								/>
-							{/each}
-						</g>
+					<path d={beatArc} class="sw-arc-halo" />
+					<path d={beatArc} class="sw-arc" />
+					{#each markers as d, idx (d)}
+						<circle
+							cx="600"
+							cy="48"
+							r="5"
+							transform="rotate({d} 600 600)"
+							class="sw-node"
+							class:sw-node--active={step === idx}
+						/>
 					{/each}
 
 					{#each rimTicks as deg (deg)}
@@ -300,21 +292,26 @@
 					{/each}
 				</svg>
 			</div>
+			<!-- The index point stays put while the dial turns under it. -->
+			<div class="sw-rotor sw-index">
+				<svg class="sw-dial-svg" viewBox="0 0 1200 1200" fill="none">
+					<path d={notch} class="sw-notch" />
+				</svg>
+			</div>
 		</div>
 
 		<!-- Desktop monumental scroll-driven layout (>= 1024px) -->
 		<div class="sw-inner sw-desktop">
 			<div class="sw-rail">
-				<p class="label num"><span class="n">{chapter}</span>How it works</p>
+				<p class="label num"><span class="n">{chapter}</span>Setup</p>
 
 				<div class="sw-copy-stack">
 					{#if step === 0}
-						<h2 class="hk-h2" id="where-h">Our cloud, or a machine you already have</h2>
+						<h2 class="hk-h2" id="where-h">Pick where each sandbox runs</h2>
 					{:else if step === 1}
-						<h2 class="hk-h2" id="where-h">Mix and match subscriptions and API keys</h2>
+						<h2 class="hk-h2" id="where-h">Mix subscriptions and API keys</h2>
 					{:else}
-						<h2 class="hk-h2" id="where-h">Use your own browser and editor</h2>
-						<p class="sw-lead">Dev servers open on your localhost, and editors connect over SSH.</p>
+						<h2 class="hk-h2" id="where-h">Use your browser and editor</h2>
 					{/if}
 				</div>
 
@@ -376,28 +373,25 @@
 		<!-- Mobile stacked showcase (< 1024px): all 4 beats visible on natural scroll with zero hidden tabs -->
 		<div class="sw-mobile" aria-label="How repose works">
 			<div class="sw-mob-head">
-				<p class="label num"><span class="n">{chapter}</span>How it works</p>
+				<p class="label num"><span class="n">{chapter}</span>Setup</p>
 			</div>
 
 			<ol class="sw-mob-beats">
 				<li>
 					<div class="sw-mb-head">
-						<h3>Our cloud, or a machine you already have</h3>
+						<h3>Pick where each sandbox runs</h3>
 					</div>
 					{@render hardwareVisual()}
 				</li>
 				<li>
 					<div class="sw-mb-head">
-						<h3>Mix and match subscriptions and API keys</h3>
+						<h3>Mix subscriptions and API keys</h3>
 					</div>
 					{@render agentsVisual()}
 				</li>
 				<li>
 					<div class="sw-mb-head">
-						<h3>Use your own browser and editor</h3>
-						<p class="sw-mb-lead">
-							Dev servers open on your localhost, and editors connect over SSH.
-						</p>
+						<h3>Use your browser and editor</h3>
 					</div>
 					{@render toolsVisual()}
 				</li>
@@ -423,16 +417,6 @@
 		z-index: 3;
 		padding: 2.5rem var(--edge) 3rem;
 		background: var(--hk-bg);
-		--sw-glow: #4b6496;
-	}
-	@media (prefers-color-scheme: dark) {
-		:global(:root:not(.light):not([data-theme='light'])) .sw-sticky {
-			--sw-glow: #93a7d0;
-		}
-	}
-	:global(:root[data-theme='dark']) .sw-sticky,
-	:global(:root.dark) .sw-sticky {
-		--sw-glow: #93a7d0;
 	}
 	@media (min-width: 1024px) {
 		.sw-track--scroll .sw-sticky {
@@ -491,6 +475,10 @@
 			transform: rotate(calc(var(--angle) * -1));
 			will-change: transform;
 		}
+		.sw-rotor.sw-index {
+			transform: none;
+			will-change: auto;
+		}
 	}
 	@media (min-width: 1200px) {
 		.sw-rotor {
@@ -529,32 +517,28 @@
 		opacity: 0.34;
 	}
 	.sw-arc-halo {
-		stroke: transparent;
-		stroke-width: 11;
-		opacity: 0.11;
-		transition: stroke 300ms ease;
-	}
-	.sw-arc-halo--active {
 		stroke: var(--pic-accent);
+		stroke-width: 11;
+		opacity: 0.1;
 	}
 	.sw-arc {
-		stroke: transparent;
+		stroke: var(--pic-accent);
 		stroke-width: 2.25;
 		opacity: 0.72;
-		transition: stroke 280ms ease;
-	}
-	.sw-arc--active {
-		stroke: var(--pic-accent);
 	}
 	.sw-node {
-		fill: var(--surface);
-		stroke: var(--rule-strong);
-		stroke-width: 1.25;
+		fill: var(--hk-bg);
+		stroke: var(--pic-accent);
+		stroke-width: 1.5;
+		transition: fill 200ms ease;
 	}
 	.sw-node--active {
 		fill: var(--pic-accent);
+	}
+	.sw-notch {
 		stroke: var(--pic-accent);
-		opacity: 0.8;
+		stroke-width: 2.5;
+		stroke-linecap: round;
 	}
 	.sw-tick {
 		stroke: var(--rule);
@@ -617,9 +601,10 @@
 			z-index: 2;
 			width: 100%;
 			display: grid;
-			grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
-			gap: 3.5rem;
+			grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+			gap: 3rem;
 			align-items: center;
+			align-self: stretch;
 		}
 	}
 
@@ -634,15 +619,7 @@
 		flex-direction: column;
 		justify-content: flex-start;
 		gap: 0.625rem;
-		height: 10.5rem;
-	}
-	.sw-lead {
-		margin: 0;
-		max-width: 21.5rem;
-		font-size: 0.96875rem;
-		line-height: 1.55;
-		color: var(--hk-text-2);
-		text-wrap: pretty;
+		height: 7rem;
 	}
 
 	.sw-nav {
@@ -690,12 +667,16 @@
 	.sw-pill-t {
 		font-weight: 500;
 	}
-	/* ---------- Desktop Right Stage (uniform ~360px visual height across all 4 beats) ---------- */
+	/* ---------- Desktop right stage: the figure sits past the dial's rim, in
+	   the top-right corner the quarter leaves open. ---------- */
 	.sw-stage {
 		position: relative;
 		display: grid;
-		align-items: center;
-		min-height: 22.5rem;
+	}
+	@media (min-width: 1024px) {
+		.sw-stage {
+			align-self: start;
+		}
 	}
 	.sw-panel-wrap {
 		grid-area: 1 / 1;
@@ -709,7 +690,12 @@
 	@media (min-width: 1024px) {
 		.sw-panel-wrap {
 			justify-self: end;
-			width: min(100%, 22rem);
+			width: min(100%, 24rem);
+		}
+	}
+	@media (min-width: 1200px) {
+		.sw-panel-wrap {
+			width: min(100%, 27.5rem);
 		}
 	}
 	.sw-panel-wrap.is-active {
@@ -724,87 +710,96 @@
 		}
 	}
 
-	/* ---------- Beat 1: the same sandboxes, on our cloud or your machine ---------- */
+	/* ---------- Beat 1: two places, each with its own sandboxes ---------- */
 	.sw-hw {
-		border: 1px solid var(--rule);
-		border-radius: 8px;
-		background: var(--surface);
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem;
 	}
-	.sw-host + .sw-host {
-		border-top: 1px solid var(--rule);
-	}
-	.sw-host-head {
+	.sw-place {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--rule-strong);
+	}
+	.sw-place-art {
+		width: 4rem;
+		height: 3rem;
+		color: var(--pic-ink);
+	}
+	.sw-place-name {
+		margin: 0;
+		font-size: 0.9375rem;
+		font-weight: 500;
+		color: var(--hk-text);
+	}
+	.sw-chips {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
 		gap: 0.5rem;
 		margin: 0;
-		padding: 0.875rem 1rem 0.375rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: var(--ink);
-	}
-	.sw-host-head svg {
-		color: var(--pic-accent);
-		flex: none;
-	}
-	.sw-sbs {
-		margin: 0;
-		padding: 0 1rem 0.25rem 2.625rem;
+		padding: 0;
 		list-style: none;
 	}
-	.sw-sb {
-		display: flex;
-		align-items: center;
-		gap: 0.625rem;
-		padding: 0.6875rem 0;
+	.sw-chips li,
+	.sw-mix-box {
+		padding: 0.375rem 0.625rem;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+		background: var(--surface);
 		font-family: var(--hk-font-mono);
 		font-size: 0.75rem;
 		color: var(--pic-ink);
 	}
-	.sw-sb + .sw-sb {
-		border-top: 1px solid var(--rule);
-	}
-	.sw-sb-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--hk-ok-dot);
-		flex: none;
-	}
-	.sw-sb-mark {
-		display: inline-flex;
-		margin-left: auto;
-		color: var(--pic-dim);
-	}
 
-	/* ---------- Beat 2: three agents, three logins ---------- */
+	/* ---------- Beat 2: three accounts, one sandbox ---------- */
 	.sw-mix {
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: auto minmax(2rem, 1fr) auto;
+		align-items: center;
+	}
+	.sw-mix-list {
+		display: grid;
+		grid-auto-rows: 3.5rem;
 		margin: 0;
-		padding: 0.25rem 1.25rem;
-		border: 1px solid var(--rule);
-		border-radius: 8px;
-		background: var(--surface);
+		padding: 0;
 		list-style: none;
 	}
-	.sw-mix li {
+	.sw-mix-list li {
 		display: flex;
 		align-items: center;
-		gap: 1rem;
-		padding: 1rem 0;
-	}
-	.sw-mix li + li {
-		border-top: 1px solid var(--rule);
+		gap: 0.75rem;
+		padding-right: 0.75rem;
 	}
 	.sw-mix-mark {
 		display: inline-flex;
 		color: var(--pic-ink);
 	}
 	.sw-mix-login {
+		font-size: 0.875rem;
+		color: var(--hk-text);
+	}
+	.sw-mix-key {
 		font-family: var(--hk-font-mono);
 		font-size: 0.8125rem;
-		color: var(--pic-ink);
+		color: var(--pic-accent);
+	}
+	.sw-mix-join {
+		width: 100%;
+		height: 10.5rem;
+		fill: none;
+	}
+	.sw-mix-join path {
+		stroke: var(--rule-strong);
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
+	}
+	.sw-mix-box {
+		margin: 0;
+		padding: 0.5rem 0.75rem;
 	}
 
 	/* ---------- Beat 3: dev server to the browser, the checkout to the editor ---------- */
@@ -818,13 +813,20 @@
 		align-items: center;
 		gap: 0.5rem;
 		margin: 0;
-		padding: 0.625rem 0.875rem;
+		padding: 0.5rem 0.75rem;
 		border: 1px solid var(--rule);
 		border-radius: 6px;
 		background: var(--surface);
 		font-family: var(--hk-font-mono);
 		font-size: 0.75rem;
 		color: var(--pic-ink);
+	}
+	.sw-sb-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--hk-ok-dot);
+		flex: none;
 	}
 	.sw-wins {
 		display: flex;
@@ -875,27 +877,32 @@
 	.sw-host-name {
 		color: var(--pic-dim);
 	}
-	.sw-win-body {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 0.875rem 0.75rem 1rem;
+	.sw-page {
+		padding: 0.875rem 0.875rem 1rem;
 	}
-	.sw-sk {
-		display: block;
-		height: 6px;
-		border-radius: 3px;
-		background: var(--rule);
+	.sw-page-h {
+		margin: 0;
+		font-family: var(--hk-font-display);
+		font-size: 0.875rem;
+		color: var(--hk-text);
 	}
-	.sw-sk--head {
-		height: 9px;
-		margin-bottom: 0.125rem;
-		background: var(--rule-strong);
-	}
-	.sw-mb-lead {
-		margin: 0.375rem 0 0;
-		font-size: 0.9375rem;
-		line-height: 1.5;
+	.sw-page-t {
+		margin: 0.25rem 0 0;
+		font-size: 0.75rem;
 		color: var(--hk-text-2);
+	}
+	.sw-code {
+		margin: 0;
+		padding: 0.875rem;
+		font-family: var(--hk-font-mono);
+		font-size: 0.6875rem;
+		line-height: 1.7;
+		color: var(--pic-ink);
+		white-space: pre;
+		overflow: hidden;
+	}
+	.sw-code b {
+		font-weight: 400;
+		color: var(--pic-accent);
 	}
 </style>

@@ -58,7 +58,12 @@
 		startMode === 'cloud' ? [install, login, run] : [install, login, hostAdd, run]
 	);
 
-	const stepCount = $derived(['', '', '', 'Three', 'Four'][steps.length] ?? String(steps.length));
+	/* Sandboxes of the default `small` size (4 GB, docs/machine) that a
+	   plan's memory runs at once: the bar under each plan draws them. */
+	const SMALL_GB = 4;
+	const COUNT = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
+	const fits = (gb: number) => Math.floor(gb / SMALL_GB);
+	const maxFit = Math.max(...PLANS.map((p) => fits(p.memoryGB)));
 
 	const introEligible = $derived(seats?.founding_left !== 0);
 </script>
@@ -67,7 +72,7 @@
 	<title>repose: sandboxes for your coding agents</title>
 	<meta
 		name="description"
-		content="Run Claude Code, Codex, and other coding agents with full permissions in isolated Linux VMs with whole-disk undo. On our cloud, or your own Mac mini or Linux server."
+		content="Run Claude Code, Codex, and other coding agents with full permissions in isolated Linux VMs with whole-disk undo. On our cloud, or your Mac mini or Linux server."
 	/>
 </svelte:head>
 
@@ -104,10 +109,10 @@
 	<section class="band hero" aria-labelledby="hero-h">
 		<div class="hero-grid">
 			<div class="hero-copy">
-				<h1 class="hk-h1" id="hero-h">Sandboxes for your coding agents</h1>
+				<h1 class="hk-h1" id="hero-h">A sandbox per repo, with undo</h1>
 				<p class="hk-lead">
-					A Linux VM per repo, set up like your laptop, on our cloud or your Mac mini or Linux
-					server. Agents get full permissions; a snapshot undoes what they break.
+					Agents get full permissions in a Linux VM set up like your laptop, on our cloud or your
+					Mac mini or Linux server.
 				</p>
 				<div class="hero-act">
 					<div class="hero-btns">
@@ -136,7 +141,7 @@
 	<section class="band" id="safety" aria-labelledby="safety-h">
 		<div class="head">
 			{@render label('02', 'Safety')}
-			<h2 class="hk-h2" id="safety-h">Let it break the whole machine</h2>
+			<h2 class="hk-h2" id="safety-h">Let the agent break the whole machine</h2>
 		</div>
 		<div class="fig">
 			<div class="stage">
@@ -150,29 +155,41 @@
 		<div class="head head--pricing">
 			{@render label('03', 'Pricing')}
 			<div class="pricing-title">
-				<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
-				<p class="copy pricing-lead">Stopped sandboxes don't count.</p>
+				<h2 class="hk-h2" id="pricing-h">Pay for what runs at once</h2>
+				<p class="copy pricing-lead">Stopped sandboxes don't count against your memory.</p>
 			</div>
-			{#if !authState.authenticated && seats}
+			{#if !authState.authenticated && seats && seats.free === 0}
+				<!-- Only the full state is said: it stops a visitor, and names the way round it. -->
 				<p class="seats side" data-testid="seats-line">
-					{#if seats.free > 0}
-						{seats.free} cloud {seats.free === 1 ? 'seat' : 'seats'} left
-					{:else}
-						Cloud full for now, {seats.waiting} waiting. Your machine has no waitlist.
-					{/if}
+					Cloud full for now, {seats.waiting} waiting. Your machine has no waitlist.
 				</p>
 			{/if}
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
+		<ul class="mem" aria-label="Sandboxes each plan runs at once">
+			{#each PLANS as p (p.id)}
+				{@const n = fits(p.memoryGB)}
+				<li data-testid="mem-{p.id}">
+					<span class="mem-p">{p.name}</span>
+					<span class="mem-bar" aria-hidden="true">
+						{#each Array.from({ length: maxFit }, (_v, i) => i) as i (i)}<i class:on={i < n}
+							></i>{/each}
+					</span>
+					<span class="mem-n"
+						>{COUNT[n] ?? n} {SMALL_GB} GB {n === 1 ? 'sandbox' : 'sandboxes'}</span
+					>
+				</li>
+			{/each}
+		</ul>
 		<div class="hw" id="parts" data-testid="plan-own">
-			<h3 class="hw-name">Your Mac mini or Linux server</h3>
+			<h3 class="hw-name">Your machine</h3>
 			<p class="hw-price">
 				<span class="n">{price(OWN_HARDWARE.priceCents)}</span>
 				<span class="per">a month</span>
 			</p>
 			<p class="hw-what">
-				{OWN_HARDWARE.hosts === 1 ? 'One machine.' : `${OWN_HARDWARE.hosts} machines.`} Run as many sandboxes
-				as its memory and disk hold.
+				{OWN_HARDWARE.hosts === 1 ? 'For one machine.' : `For ${OWN_HARDWARE.hosts} machines.`} Run as
+				many sandboxes as its memory and disk hold.
 			</p>
 		</div>
 	</section>
@@ -180,23 +197,22 @@
 	<section class="band install-band" id="install" aria-labelledby="install-h">
 		<div class="head">
 			{@render label('04', 'Start')}
-			<h2 class="hk-h2" id="install-h">{stepCount} commands</h2>
-			<div class="cta-row side start-actions">
-				<div class="hk-tablist" role="tablist" aria-label="Setup path">
-					<button
-						type="button"
-						role="tab"
-						aria-selected={startMode === 'cloud'}
-						onclick={() => (startMode = 'cloud')}>Cloud</button
-					>
-					<button
-						type="button"
-						role="tab"
-						aria-selected={startMode === 'own'}
-						onclick={() => (startMode = 'own')}>Your machine</button
-					>
-				</div>
-				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+			<h2 class="hk-h2" id="install-h">Run it in your repo</h2>
+		</div>
+		<div class="start-tabs">
+			<div class="hk-tablist" role="tablist" aria-label="Setup path">
+				<button
+					type="button"
+					role="tab"
+					aria-selected={startMode === 'cloud'}
+					onclick={() => (startMode = 'cloud')}>Cloud</button
+				>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={startMode === 'own'}
+					onclick={() => (startMode = 'own')}>Your machine</button
+				>
 			</div>
 		</div>
 		<ol class="ruled steps">
@@ -207,5 +223,8 @@
 				</li>
 			{/each}
 		</ol>
+		<div class="start-cta">
+			{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+		</div>
 	</section>
 </main>

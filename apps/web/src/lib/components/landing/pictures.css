@@ -252,19 +252,7 @@
 	color: var(--surface);
 }
 
-/* ---------- The hero's field ---------- */
-.landing .hero-stage {
-	background:
-		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
-		var(--stage);
-	--hero-dot: #dcdce0;
-}
-@media (prefers-color-scheme: dark) {
-	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
-		--hero-dot: #24262e;
-	}
-}
-:root[data-theme='dark'] .landing .hero-stage,
-:root.dark .landing .hero-stage {
-	--hero-dot: #24262e;
-}
+/* ---------- The hero's field ----------
+
+   The hero's figure stands on the plain stage, as every other picture
+   does: one frame (the window) on one ground, no dot field between. */

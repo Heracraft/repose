@@ -13,7 +13,7 @@ test.describe('without scripts', () => {
 		const hv = page.locator('.hero .hv');
 		await expect(hv).toContainText('Your laptop');
 		await expect(hv).toContainText('snapshots');
-		await expect(page.locator('#agents')).toContainText('Our cloud, or a machine you already have');
+		await expect(page.locator('#agents')).toContainText('Pick where each sandbox runs');
 		const wreck = page.locator('#safety .hero-pic');
 		await expect(wreck).toHaveAttribute('role', 'img');
 		await expect(wreck.locator('.side.laptop')).toBeVisible();
