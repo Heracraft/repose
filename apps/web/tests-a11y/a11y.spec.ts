@@ -105,7 +105,8 @@ const PAGES: Target[] = [
 		name: '/',
 		signedIn: false,
 		url: () => '/',
-		ready: (page) => expect(page.getByRole('link', { name: 'Get started' })).toBeVisible()
+		ready: (page) =>
+			expect(page.locator('.hero').getByRole('link', { name: 'Start a free week' })).toBeVisible()
 	},
 	{ name: '/docs', signedIn: false, url: () => '/docs', ready: heading },
 	// A docs page with prompts, output and a copy button in its code blocks.

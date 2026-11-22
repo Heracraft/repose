@@ -1106,10 +1106,10 @@
 			width: 17%;
 		}
 		.ptable--host .c-name {
-			width: 21.5%;
+			width: 20%;
 		}
 		.ptable--host .c-state {
-			width: 21%;
+			width: 24%;
 		}
 		.ptable--host .c-host {
 			width: 13%;
@@ -1118,7 +1118,7 @@
 			width: 13%;
 		}
 		.ptable--host .c-agents {
-			width: 14%;
+			width: 12.5%;
 		}
 	}
 	.ptable .c-act {
