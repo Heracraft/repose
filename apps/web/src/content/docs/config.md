@@ -42,7 +42,7 @@ Press Ctrl-C to stop watching: `Interrupted. The install keeps going on the mach
 
 ## The menu
 
-The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Type a package's name in the search and **Add** puts it under **Extra packages**, as `repose config add NAME` does; each there has **Remove**. When the install ends, the bar with **Apply** says `Applied`, or `Not installed:` and the machine's line for the item that failed, and the menu keeps what it had.
+The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Type a package's name in the search and **Add** puts it under **Extra packages**, as `repose config add NAME` does; each there has **Remove**. When the install ends, the bar with **Apply** says `Applied`, or `Not installed:` and the machine's line for the item that failed, and the menu keeps what it had. If the menu changed since the page loaded, in another tab or from the CLI, **Apply** changes nothing, the bar says so, and the page shows the menu as it is now.
 
 | Group     | Entries                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |

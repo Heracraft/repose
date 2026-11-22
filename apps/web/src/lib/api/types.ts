@@ -49,6 +49,10 @@ export type ErrorCode =
 	| 'rate_limited'
 	| 'internal'
 	| 'billing_disabled'
+	// A Nix file sent to an Ubuntu machine, and a config change made over a
+	// newer revision than the client loaded (api.md, I-1462, I-1528).
+	| 'nix_config_retired'
+	| 'menu_stale'
 	// The browser view's own refusals (DECISIONS I-1216, api.md).
 	| 'view_expired'
 	| 'view_busy'

@@ -23,6 +23,7 @@
 	} from '$lib/api/client';
 	import { toast } from 'svelte-sonner';
 	import { toastApiError } from '$lib/api/toast';
+	import { ApiError } from '$lib/api/errors';
 	import { dateTime } from '$lib/format';
 	import {
 		toggleSelection,
@@ -117,7 +118,7 @@
 	 * (I-1514): the log and its banner are below the fold on any long
 	 * menu. Cleared by the next change to the selection.
 	 */
-	let outcome = $state<{ ok: boolean; text: string } | undefined>(undefined);
+	let outcome = $state<{ ok: boolean; text: string; stale?: boolean } | undefined>(undefined);
 	/** An op's error without the code the api stores in front of it. */
 	function plainError(err: string | undefined): string {
 		return (err ?? '').replace(/^menu_failed: /, '').split('\n')[0];
@@ -323,10 +324,22 @@
 			extraPackages
 		);
 		try {
-			const { op_id } = await putConfig(id, { menu });
+			// The revision this page loaded (I-1524, api.md I-1528): a menu
+			// changed since, from another tab or the CLI, is refused rather
+			// than replaced by this page's older copy.
+			const { op_id } = await putConfig(id, { menu, base_revision_id: config?.revision_id });
 			startBuild(op_id);
 		} catch (err) {
 			applying = false;
+			if (err instanceof ApiError && err.code === 'menu_stale') {
+				await load();
+				outcome = {
+					ok: false,
+					stale: true,
+					text: 'The menu changed elsewhere since you loaded it, and is reloaded.'
+				};
+				return;
+			}
 			toastApiError(err, 'Could not apply the menu selection.');
 		}
 	}
@@ -737,7 +750,10 @@
 								: 'Building…'}{:else if menuDirty && !heldNavigation}&nbsp;·
 							<span class="cbar-dirty">Unsaved changes</span>{:else if outcome?.ok}&nbsp;·
 							<span class="cbar-ok">{outcome.text}</span>{:else if outcome}&nbsp;·
-							<span class="cbar-err">{erofs ? 'Not installed' : 'Not applied'}: {outcome.text}</span
+							<span class="cbar-err"
+								>{outcome.stale
+									? outcome.text
+									: `${erofs ? 'Not installed' : 'Not applied'}: ${outcome.text}`}</span
 							>{/if}
 					{:else if applying}
 						Building…

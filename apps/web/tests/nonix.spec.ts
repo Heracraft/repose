@@ -330,3 +330,30 @@ test('a waiting base shows on the Overview and the project list', async ({ page 
 	const row = page.getByRole('row').filter({ hasText: p.slug });
 	await expect(row).toContainText('new base at next restart');
 });
+
+// Council finding 6 (D4, I-1524): a stale tab's Apply is refused with
+// menu_stale instead of dropping what another tab installed; the page
+// says so in one line and reloads the menu.
+test('a stale tab cannot drop what another tab installed', async ({ page, context }) => {
+	const p = await makeProject('ubuntu-tabs', 'erofs');
+	await page.goto(`/projects/${p.id}/config`);
+	const other = await context.newPage();
+	await other.goto(`/projects/${p.id}/config`);
+	await other.getByText('RabbitMQ', { exact: true }).click();
+	await other.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(other.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
+	await other.close();
+
+	await page.getByText('Ruby', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	const status = page.locator('.cbar-status');
+	await expect(status).toContainText('changed elsewhere', { timeout: 10_000 });
+	await shots(page, 'config-menu-stale', status);
+	const cfg = await (
+		await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, { headers: auth })
+	).json();
+	expect(JSON.stringify(cfg.menu)).toContain('"rabbitmq"');
+	// Reloaded: RabbitMQ is ticked now, Ruby is not.
+	await expect(page.getByRole('checkbox', { name: /RabbitMQ/ })).toBeChecked();
+	await expect(page.getByRole('checkbox', { name: /^Ruby/ })).not.toBeChecked();
+});
