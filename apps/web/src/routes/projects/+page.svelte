@@ -1269,12 +1269,20 @@
 	.prow--rest .premote:not(.premote--hit) {
 		display: none;
 	}
-	.prow--rest .c-state {
-		white-space: nowrap;
+	/* One line where the cell has room for it. Where it does not -- the
+	   Host column at a 1024 window leaves the state 147px, and "stopped
+	   last run 42m ago" needs 200 -- "last run" goes under the state
+	   rather than being cut to "last r...". The gap is the state's own
+	   right margin, so a wrapped line starts flush with the dot. */
+	.prow--rest .c-state :global(.state) {
+		margin-right: 0.5rem;
 	}
 	.prow--rest .sub {
 		display: inline;
-		margin: 0 0 0 0.5rem;
+		margin: 0;
+	}
+	.prow--rest .sub:not(.sub--reason) {
+		white-space: nowrap;
 	}
 
 	/* ---- The toolbar ---- */
