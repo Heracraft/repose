@@ -1395,11 +1395,18 @@ func (f *Fake) issueCert(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		line = sshca.Marshal(signed)
 	}
+	gwHost, gwPort := gatewayHost, 22
+	if f.opts.GatewayHost != "" {
+		gwHost = f.opts.GatewayHost
+	}
+	if f.opts.GatewayPort != 0 {
+		gwPort = f.opts.GatewayPort
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"certificate": line,
 		"serial":      c.serial,
 		"expires_at":  c.expiresAt,
-		"gateway":     map[string]any{"host": gatewayHost, "port": 22, "host_ca_pub": f.hostCAPub()},
+		"gateway":     map[string]any{"host": gwHost, "port": gwPort, "host_ca_pub": f.hostCAPub()},
 	})
 	return nil
 }

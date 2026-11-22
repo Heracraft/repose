@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1064 entries.
+1065 entries.
 
 ## Scope
 
@@ -1096,3 +1096,4 @@ pointer, not a summary.
 - **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38954
 - **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
 - **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — L38976
+- **I-1502** The CLI writes the gateway host and port the api names in `POST /certs`, falls back to `ssh.repose.run:22` only when the api names none, and reads the gateway back from `known_hosts` for a reused certificate (cli-gateway-host, 2026-11-22) — L38987

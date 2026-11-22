@@ -332,7 +332,7 @@ options?}]` only, is the same array without `package` items and stays valid.
 
 | Method | Path | Body / result |
 |---|---|---|
-| POST | `/certs` | `{public_key (OpenSSH format), project_ids: [..]}` → `{certificate (OpenSSH cert), expires_at, gateway: {host, port, host_ca_pub}}`; one cert may carry several principals |
+| POST | `/certs` | `{public_key (OpenSSH format), project_ids: [..]}` → `{certificate (OpenSSH cert), expires_at, gateway: {host, port, host_ca_pub}}`; one cert may carry several principals. `gateway.host` and `port` are the gateway the CLI writes into `~/.ssh/repose/hosts` and `known_hosts` (ssh-gateway.md "CLI side") |
 | POST | `/certs/revoke` | `{serial}` or `{all: true}` → `{revoked}`, how many certificates were revoked. The connections they opened close within 30 seconds |
 
 ## Secrets

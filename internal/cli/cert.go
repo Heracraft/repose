@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -191,7 +192,7 @@ func ensureCert(ctx context.Context, client *Client, params certParams, now func
 	}
 	_, knownErr := os.Stat(filepath.Join(sd, "known_hosts"))
 	if !params.Force && knownErr == nil && certUsableFor(existing, ids, now(), certReuseMargin) {
-		problem, err := writeSSHFiles(sd, params, "")
+		problem, err := writeSSHFiles(sd, params, gatewayFromKnownHosts(sd), "")
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +206,7 @@ func ensureCert(ctx context.Context, client *Client, params certParams, now func
 		if errors.As(err, &apiErr) && apiErr.Code == "rate_limited" && knownErr == nil {
 			if existing != nil && time.Unix(int64(existing.ValidBefore), 0).After(now()) {
 				_, _ = fmt.Fprintf(os.Stderr, "warning: certificate rate limited; reusing the one on disk (%s left)\n", time.Unix(int64(existing.ValidBefore), 0).Sub(now()).Round(time.Minute))
-				problem, err := writeSSHFiles(sd, params, "")
+				problem, err := writeSSHFiles(sd, params, gatewayFromKnownHosts(sd), "")
 				if err != nil {
 					return nil, err
 				}
@@ -218,7 +219,7 @@ func ensureCert(ctx context.Context, client *Client, params certParams, now func
 	if err := writeFileAtomic(certPath, []byte(strings.TrimSpace(resp.Certificate)+"\n"), 0o600); err != nil {
 		return nil, err
 	}
-	problem, err := writeSSHFiles(sd, params, resp.Gateway.HostCAPub)
+	problem, err := writeSSHFiles(sd, params, gatewayFrom(resp.Gateway.Host, resp.Gateway.Port), resp.Gateway.HostCAPub)
 	if err != nil {
 		return nil, err
 	}
@@ -260,17 +261,17 @@ var muxStop = func(ctx context.Context, sd, alias string) {
 
 // writeSSHFiles writes known_hosts (when the host CA is known), the Host
 // blocks (~/.ssh/repose/hosts), ~/.ssh/repose/config, and the Include line; then, when asked, proves the
-// alias resolves. Only a failure to write ~/.ssh/repose/ is an error; a
+// alias resolves. gw is the gateway the api named: both files point at it. Only a failure to write ~/.ssh/repose/ is an error; a
 // ~/.ssh/config the CLI cannot or should not edit becomes the returned
 // problem text.
-func writeSSHFiles(sshDirPath string, params certParams, hostCAPub string) (string, error) {
+func writeSSHFiles(sshDirPath string, params certParams, gw gatewayAddr, hostCAPub string) (string, error) {
 	if hostCAPub != "" {
-		known := fmt.Sprintf("@cert-authority %s,10.64.* %s\n", gatewayHost, strings.TrimSpace(hostCAPub))
+		known := fmt.Sprintf("@cert-authority %s,10.64.* %s\n", gw.knownHostsName(), strings.TrimSpace(hostCAPub))
 		if err := writeFileAtomic(filepath.Join(sshDirPath, "known_hosts"), []byte(known), 0o600); err != nil {
 			return "", err
 		}
 	}
-	cfg := renderSSHConfig(params.Projects, params.Handle, sshPathPrefix(), goos() != "windows")
+	cfg := renderSSHConfig(params.Projects, params.Handle, gw, sshPathPrefix(), goos() != "windows")
 	if err := writeFileAtomic(filepath.Join(sshDirPath, sshHostsName), []byte(cfg), 0o600); err != nil {
 		return "", err
 	}
@@ -289,7 +290,7 @@ func writeSSHFiles(sshDirPath string, params certParams, hostCAPub string) (stri
 		return "", nil
 	}
 	p := params.Projects[0]
-	if ok, got := aliasResolves(p.Slug, params.Handle); !ok {
+	if ok, got := aliasResolves(p.Slug, params.Handle, gw.Host); !ok {
 		if includeErr != nil {
 			return includeProblemText(usc, includeErr), nil
 		}
@@ -310,7 +311,7 @@ func includeProblemText(path string, err error) string {
 // HostName and User (I-151). ok is true when ssh is missing entirely:
 // there is nothing to check against, and every connection will fail
 // with its own clear error. got describes what ssh resolved otherwise.
-func aliasResolves(slug, handle string) (ok bool, got string) {
+func aliasResolves(slug, handle, gatewayHost string) (ok bool, got string) {
 	out, err := exec.Command("ssh", "-G", slug+".repose").Output()
 	if err != nil {
 		return true, ""
@@ -331,7 +332,93 @@ func aliasResolves(slug, handle string) (ok bool, got string) {
 	return false, fmt.Sprintf("host %q, user %q", host, user)
 }
 
-const gatewayHost = "ssh.repose.run"
+// defaultGatewayHost and defaultGatewayPort are the gateway an api that
+// names none means: production's, which is what every api sent before
+// the CLI read the field.
+const (
+	defaultGatewayHost = "ssh.repose.run"
+	defaultGatewayPort = 22
+)
+
+// gatewayAddr is the SSH gateway the api named in POST /certs
+// (docs/interfaces/api.md): the HostName in ~/.ssh/repose/hosts and the
+// name the host CA is trusted for in ~/.ssh/repose/known_hosts. A CLI
+// pointed at a staging api writes the staging gateway, never
+// production's.
+type gatewayAddr struct {
+	Host string
+	Port int
+}
+
+var defaultGateway = gatewayAddr{Host: defaultGatewayHost, Port: defaultGatewayPort}
+
+// gatewayFrom is the api's answer with the default for what it left out.
+// The host is written into an ssh config file, so anything but a host
+// name or address (whitespace, a newline that would start a directive of
+// its own) is not taken.
+func gatewayFrom(host string, port int) gatewayAddr {
+	gw := defaultGateway
+	if validGatewayHost(host) {
+		gw.Host = host
+	}
+	if port > 0 && port <= 65535 {
+		gw.Port = port
+	}
+	return gw
+}
+
+func validGatewayHost(h string) bool {
+	if h == "" || len(h) > 253 {
+		return false
+	}
+	for _, r := range h {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '.' && r != '-' && r != ':' {
+			return false
+		}
+	}
+	return true
+}
+
+// knownHostsName is the gateway as ssh names it in known_hosts: the bare
+// host on port 22, `[host]:port` otherwise.
+func (g gatewayAddr) knownHostsName() string {
+	if g.Port == defaultGatewayPort {
+		return g.Host
+	}
+	return fmt.Sprintf("[%s]:%d", g.Host, g.Port)
+}
+
+// gatewayFromKnownHosts reads back the gateway the last issued
+// certificate's answer named, from the @cert-authority line written with
+// it: a reused certificate asks the api nothing, and its Host blocks must
+// still point where the api said. A missing or unreadable file is the
+// default, which is what a CLI before this wrote there anyway.
+func gatewayFromKnownHosts(sd string) gatewayAddr {
+	b, err := os.ReadFile(filepath.Join(sd, "known_hosts"))
+	if err != nil {
+		return defaultGateway
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[0] != "@cert-authority" {
+			continue
+		}
+		name, _, _ := strings.Cut(f[1], ",")
+		if rest, ok := strings.CutPrefix(name, "["); ok {
+			h, p, ok := strings.Cut(rest, "]:")
+			if !ok {
+				return defaultGateway
+			}
+			port, err := strconv.Atoi(p)
+			if err != nil {
+				return defaultGateway
+			}
+			return gatewayFrom(h, port)
+		}
+		return gatewayFrom(name, defaultGatewayPort)
+	}
+	return defaultGateway
+}
 
 // renderSSHConfig builds ~/.ssh/repose/hosts: one Host block per project,
 // in slug order for a stable diff (docs/interfaces/ssh-gateway.md "CLI
@@ -339,7 +426,7 @@ const gatewayHost = "ssh.repose.run"
 // keeps it current (I-281). prefix spells the home directory
 // (sshPathPrefix). multiplex adds the ControlMaster lines (not on Windows,
 // whose OpenSSH has no multiplexing).
-func renderSSHConfig(projects []Project, handle, prefix string, multiplex bool) string {
+func renderSSHConfig(projects []Project, handle string, gw gatewayAddr, prefix string, multiplex bool) string {
 	sorted := append([]Project(nil), projects...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Slug < sorted[j].Slug })
 
@@ -350,7 +437,10 @@ func renderSSHConfig(projects []Project, handle, prefix string, multiplex bool) 
 		// The id the certificate must carry for this host: `repose
 		// ssh-prepare` checks it without asking the api (I-281).
 		_, _ = fmt.Fprintf(&b, "  # project %s\n", p.ID)
-		_, _ = fmt.Fprintf(&b, "  HostName %s\n", gatewayHost)
+		_, _ = fmt.Fprintf(&b, "  HostName %s\n", gw.Host)
+		if gw.Port != defaultGatewayPort {
+			_, _ = fmt.Fprintf(&b, "  Port %d\n", gw.Port)
+		}
 		_, _ = fmt.Fprintf(&b, "  User %s.%s\n", p.Slug, handle)
 		// The CLI's own passphrase-less key and its certificate, and only
 		// those: with an agent loaded, ssh otherwise offers the agent's
