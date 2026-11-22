@@ -67,6 +67,7 @@ Data your machines send to the internet, and what a [webhook route](/docs/webhoo
 
 ## Disk and console
 
+- A machine's disk holds `/home/dev`, Docker's data and the services' data, and that is what counts toward [your plan's disk](/docs/billing#what-a-plan-means). The system comes from the base image, which the machines on a server share, and counts toward nobody's.
 - Disk reads and writes together are limited by size: `tiny` 1,000 operations a second and 40 MB/s, `small` 2,000 and 80 MB/s, `large` 3,000 and 120 MB/s, `xl` 4,000 and 150 MB/s. A machine takes a new limit when it next starts.
 - A disk can grow only as far as the server it runs on has room, even when your plan's disk has plenty. A [resize](/docs/machine#memory-and-disk) past that is refused with exit code 8 and `the host's disk pool is full, so the disk cannot grow until the operator grows the pool`, and so is starting a stopped project on a server whose disk is nearly full.
 - The machine's serial console log ([`repose logs --kind console`](/docs/cli#repose-logs-project)) takes 1 MB at once and then 2 KB a second. Output past that is dropped, and the log gets a line saying how much went: `[repose: N bytes of console output dropped, over the limit of 2048 bytes a second]`. Your programs' own output in a terminal or a log file isn't affected.

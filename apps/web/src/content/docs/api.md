@@ -30,7 +30,7 @@ A token has a name, one or more scopes, a project or all of them, and an end: 30
 | ---------- | ------------------------------------------------------------------ |
 | `read`     | every project's status, events, questions, triggers and settings   |
 | `projects` | create, start, stop, resize, snapshot, restore and remove projects |
-| `config`   | change machine.nix and a project's config                          |
+| `config`   | change a project's config                                          |
 | `secrets`  | set and remove secrets (never read a value)                        |
 | `triggers` | make, change, fire and remove triggers and webhook routes          |
 | `agents`   | message an agent and answer its questions                          |

@@ -62,6 +62,8 @@ todo-app is running (large), ready in 9s.
 
 Each agent's window opens again with the conversation it was in ([When the machine stops](/docs/run-and-attach#when-the-machine-stops)). `attach`, `run`, `ssh` and `code` start a stopped machine too; during a stop they wait for it to finish, say so if it failed, and start the machine again. `rm`, `resize`, `snapshots create`, a restore and a config change wait the stop out and then do their work.
 
+A start is when a machine takes a [new base](/docs/machine#base-updates): one published while it ran or was stopped boots at its next start, and nothing changes under a running machine.
+
 `repose start` is also the way out of the `error` state: it restarts the machine on its newest configuration. A project in `error` has **Restart** on its own page.
 
 ## When a machine's server restarts
@@ -136,7 +138,7 @@ repose snapshots create
 repose snapshots list
 ```
 
-A snapshot holds the whole disk: the checkout, the home directory, logins made on the machine, installed tools. Secrets are kept in memory, and your [Claude Code login](/docs/agents#log-in) outside the machines, so a snapshot holds neither. Snapshots from the last 7 days are kept, and the newest one always.
+A snapshot holds the machine's own disk: the home directory with the checkout and logins made on the machine, Docker's data, the services' data, and the list of what you installed with `apt-get` and `repose config add`. The system itself comes from the base, so it isn't in the snapshot; a restore onto a newer base installs that list again, as a [base update](/docs/machine#base-updates) does. Secrets are kept in memory, and your [Claude Code login](/docs/agents#log-in) outside the machines, so a snapshot holds neither. Snapshots from the last 7 days are kept, and the newest one always.
 
 To put a project back to a snapshot, stop it first:
 

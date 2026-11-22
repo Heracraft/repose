@@ -64,6 +64,6 @@ Put them in the conductor's prompt or in the repository's `CLAUDE.md`, where eve
 ## When it gets big
 
 - **Memory.** Six agents plus their test runs want more than a small machine. [`repose resize --size large`](/docs/machine#changing-the-size) or `xl` before a round starts.
-- **Nix and other heavy builds.** Have the conductor serialize them (one lock file everyone `flock`s) or the machine spends the round swapping.
+- **Heavy builds.** Have the conductor serialize them (one lock file everyone `flock`s) or the machine spends the round swapping.
 - **A second machine for a second front.** [`repose run NAME`](/docs/lifecycle#a-second-machine-for-the-same-repository) makes another machine from this checkout; a conductor there can take a different branch of the plan.
 - **You are the rate limit.** The conductor should batch its questions, and needs a notification channel you'll see.

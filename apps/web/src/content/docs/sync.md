@@ -31,10 +31,9 @@ A second repository can live on the same machine in [a checkout of its own](/doc
 - **Commits.** Your current branch, including commits you haven't pushed. Private repositories work with no setup on the machine.
 - **Uncommitted changes** to tracked files.
 - **Untracked files** that git isn't ignoring.
-- **`repose.nix`.** At the root of the repository, it's applied as the machine's configuration when it changed ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)).
 - **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each, anywhere in the checkout. If the machine's copy is newer, it's kept and the CLI says which. They're files on the machine's disk, so they're in its snapshots. [Turn them off](/docs/secrets#choose-what-is-copied) and they stay on your laptop.
 
-The checkout goes over the sync's own SSH connection, so [repose never gets a copy of your code](/docs/secrets#what-repose-stores). `repose.nix` is the exception: it goes to repose too, which builds it and keeps every version as a [revision](/docs/config#revisions-and-base-updates).
+The checkout goes over the sync's own SSH connection, so [repose never gets a copy of your code](/docs/secrets#what-repose-stores).
 
 ## Sending later work
 
