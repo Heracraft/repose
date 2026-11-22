@@ -854,9 +854,18 @@ REPOSE_HOST_FILE
   install_file 0644 /etc/systemd/system/guest@.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
 # Every guest@ unit, running ones included: a shutdown stops the guest
 # before its shares and powers it off through ACPI (DECISIONS I-650), and
-# parks it first where the park is on (I-652).
+# parks it first where the park is on (I-652). The guest binds its base
+# bundle from the image cache volume, so a shutdown stops it before that
+# volume goes: before its mount unit stops, and before
+# blk-availability.service's ExecStop (`blkdeactivate -u -l wholevg`,
+# enabled on Ubuntu and Debian), which unmounts every filesystem on a
+# device-mapper device and deactivates its volume group at the start of
+# a shutdown. Otherwise the clean stop's ExecStop cannot set up the
+# unit's mount namespace (226/NAMESPACE) and Cloud Hypervisor gets a
+# plain SIGTERM (DECISIONS I-1550).
 [Unit]
-After=virtiofsd@%i.service virtiofsd-auth@%i.service
+After=virtiofsd@%i.service virtiofsd-auth@%i.service repose-images-volume.service blk-availability.service
+RequiresMountsFor=/var/lib/repose/images
 Before=repose-guest-park.service
 
 [Service]
