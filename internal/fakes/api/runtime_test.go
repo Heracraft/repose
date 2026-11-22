@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 	"strings"
-	"time"
 	"testing"
+	"time"
 )
 
 // The fake serves guest_runtime and pending_base_version and refuses what
