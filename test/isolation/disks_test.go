@@ -21,6 +21,8 @@ func TestDiskVerdict(t *testing.T) {
 		{"nix one disk", diskProbe{Runtime: "nix", Disks: []string{"vda"}}, ""},
 		{"nix two disks", diskProbe{Runtime: "nix", Disks: []string{"vda", "vdb"}}, "want 1"},
 		{"erofs vda ro and vdb", diskProbe{Runtime: "erofs", Disks: []string{"vda", "vdb"}, RO: map[string]string{"vda": "1", "vdb": "0"}, VdaWrite: refused, VdaWriteCode: 1}, ""},
+		{"erofs EPERM from the read-only device (staging)", diskProbe{Runtime: "erofs", Disks: []string{"vda", "vdb"}, RO: map[string]string{"vda": "1", "vdb": "0"}, VdaWrite: "dd: error writing '/dev/vda': Operation not permitted", VdaWriteCode: 1}, ""},
+		{"erofs EPERM with RO=0", diskProbe{Runtime: "erofs", Disks: []string{"vda", "vdb"}, RO: map[string]string{"vda": "0", "vdb": "0"}, VdaWrite: "dd: error writing '/dev/vda': Operation not permitted", VdaWriteCode: 1}, "vda is RO=0"},
 		{"erofs EROFS errno", diskProbe{Runtime: "erofs", Disks: []string{"vda", "vdb"}, RO: map[string]string{"vda": "1", "vdb": "0"}, VdaWrite: "open: EROFS", VdaWriteCode: 1}, ""},
 		{"erofs one disk", diskProbe{Runtime: "erofs", Disks: []string{"vdb"}, RO: map[string]string{"vdb": "0"}, VdaWrite: refused, VdaWriteCode: 1}, "want exactly [vda vdb]"},
 		{"erofs a third disk", diskProbe{Runtime: "erofs", Disks: []string{"vda", "vdb", "vdc"}, RO: map[string]string{"vda": "1", "vdb": "0", "vdc": "0"}, VdaWrite: refused, VdaWriteCode: 1}, "want exactly [vda vdb]"},
