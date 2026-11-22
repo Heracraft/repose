@@ -1,0 +1,10 @@
+#!/bin/sh
+# Xvnc needs a moment to open its X socket.
+i=0
+while [ "$i" -lt 100 ]; do
+  [ -S /tmp/.X11-unix/X99 ] && exit 0
+  sleep 0.1
+  i=$((i + 1))
+done
+echo "display :99 not up after 10 s" >&2
+exit 1

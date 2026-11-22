@@ -1,0 +1,1 @@
+{"permissions":{"defaultMode":"bypassPermissions"},"skipDangerousModePermissionPrompt":true,"tui":"fullscreen","hooks":{"Notification":[{"matcher":"","hooks":[{"type":"command","command":"repose-hook"}]}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"repose-hook"}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"repose-hook"}]}]}}

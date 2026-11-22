@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1064 entries.
+1068 entries.
 
 ## Scope
 
@@ -1060,7 +1060,7 @@ pointer, not a summary.
 - **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36529
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36689
-- **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — L36798
+- **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36798
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; L37067
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37232
@@ -1096,3 +1096,7 @@ pointer, not a summary.
 - **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38954
 - **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
 - **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — L38976
+- **I-1466** The erofs guest: Ubuntu 24.04 from `images/guest/Dockerfile`, flattened to `rootfs.erofs`, booted through a BusyBox initramfs that composes it with the project's ext4 volume, with `nix/guest/base` ported as files (nonix-guest-image, 2026-11-22) — L38987
+- **I-1468** The guest base is published as one GitHub release `guest-<version>` per version, never marked latest, with each architecture's files named `<arch>-<file>` (nonix-guest-image, 2026-11-22) — L38997
+- **I-1470** `images/guest/versions.json` is the agents' list; `scripts/bump-agents.sh` writes it and copies it byte for byte to `nix/overlay/agents/versions.json`, and it pins `playwright-mcp` (nonix-guest-image, 2026-11-22) — L39003
+- **I-1472** The erofs guest's machine guide is `images/guest/agent-guide.md`; `nix/guest/base/agent-guide.md` stays the NixOS guest's (nonix-guest-image, 2026-11-22) — L39008

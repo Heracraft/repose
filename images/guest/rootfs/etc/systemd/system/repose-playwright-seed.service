@@ -1,0 +1,14 @@
+# The base's Playwright browsers linked into ~/.cache/ms-playwright
+# (compat.nix, DECISIONS I-228).
+[Unit]
+Description=repose: link the base's Playwright browsers into ~/.cache/ms-playwright
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=dev
+Group=dev
+ExecStart=/usr/local/libexec/repose/repose-playwright-seed
+
+[Install]
+WantedBy=multi-user.target

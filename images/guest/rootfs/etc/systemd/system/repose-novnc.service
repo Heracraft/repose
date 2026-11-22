@@ -1,0 +1,16 @@
+[Unit]
+Description=repose desktop: the viewer (websockify) on 127.0.0.1:6081
+Requires=repose-xvnc.service
+Wants=repose-openbox.service repose-vncconfig.service repose-browser.service
+After=repose-xvnc.service repose-openbox.service
+BindsTo=repose-xvnc.service
+
+[Service]
+User=dev
+Group=dev
+Restart=no
+Environment=DISPLAY=:99
+ExecStartPre=/usr/local/bin/repose-desktop-web
+ExecStart=/opt/repose/websockify/bin/websockify --file-only --web /run/repose/desktop/web 127.0.0.1:6081 127.0.0.1:5900
+ExecStartPost=/usr/local/libexec/repose/repose-wait-port 6081 100
+ExecStartPost=+/usr/local/bin/repose-desktop-stamp last-client

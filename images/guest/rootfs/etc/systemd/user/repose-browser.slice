@@ -1,0 +1,6 @@
+[Unit]
+Description=repose: browsers and browser MCP servers
+
+[Slice]
+MemoryMax=37.5%
+MemoryHigh=37.5%

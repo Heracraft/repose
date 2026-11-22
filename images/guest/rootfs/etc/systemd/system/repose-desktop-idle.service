@@ -1,0 +1,6 @@
+[Unit]
+Description=repose desktop: stop the viewer
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop repose-novnc-proxy.service repose-novnc.service

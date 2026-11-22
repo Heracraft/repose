@@ -1,0 +1,23 @@
+# The agents' Chromium on :99, DevTools on 127.0.0.1:9225 (browser.nix,
+# DECISIONS I-246, I-1122).
+[Unit]
+Description=repose: the agents' Chromium on :99, DevTools on 127.0.0.1:9225
+Requires=repose-xvnc.service
+BindsTo=repose-xvnc.service
+Wants=repose-openbox.service
+After=repose-xvnc.service repose-openbox.service
+
+[Service]
+User=dev
+Group=dev
+Slice=repose-browser.slice
+Environment=DISPLAY=:99 HOME=/home/dev LANG=C.UTF-8
+EnvironmentFile=-/etc/repose/env
+ExecStartPre=/usr/local/bin/repose-browser-unlock /home/dev/.local/share/repose/browser
+ExecStart=/usr/local/libexec/repose/repose-browser-start
+ExecStartPost=/usr/local/libexec/repose/repose-wait-port 9225 200
+ExecStartPost=+/usr/local/bin/repose-desktop-stamp last-cdp
+OOMPolicy=continue
+Restart=no
+TimeoutStopSec=10
+SuccessExitStatus=0 15 SIGTERM

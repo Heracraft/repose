@@ -1,0 +1,13 @@
+#!/bin/sh
+# BROWSER (browser.nix, DECISIONS I-541, I-634, I-1108): prints the URL and
+# leaves https links, and links on this machine's loopback, for an
+# attached laptop to open.
+printf 'Open in your browser: %s\n' "$@" >&2
+d="$HOME/.cache/repose"
+for u in "$@"; do
+  case "$u" in
+    https://* | http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]* | "http://[::1]" | "http://[::1]"[:/]*)
+      mkdir -p "$d" 2>/dev/null && printf '%s %s\n' "$(date +%s)" "$u" >> "$d/open-urls" 2>/dev/null ;;
+  esac
+done
+exit 0

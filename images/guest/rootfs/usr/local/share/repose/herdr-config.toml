@@ -1,0 +1,8 @@
+[terminal]
+shell_mode = "login"
+
+[update]
+version_check = false
+
+[ui.toast]
+delivery = "herdr"

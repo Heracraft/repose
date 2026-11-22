@@ -1,0 +1,10 @@
+[Unit]
+Description=repose: the agents' browser DevTools endpoint on 127.0.0.1:9224
+Conflicts=repose-browser-bridge.socket
+
+[Socket]
+ListenStream=127.0.0.1:9224
+Service=repose-browser-proxy.service
+
+[Install]
+WantedBy=sockets.target

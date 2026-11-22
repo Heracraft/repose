@@ -1,0 +1,16 @@
+#!/bin/sh
+# Writes /run/repose/rw/apt-manual.list: one package a line, sorted, the
+# packages apt marks manual that the base did not install
+# (/usr/local/share/repose/apt-manual.base). Replaced whole, by rename, at
+# every dpkg run, so a removal leaves the list too. Silent; never fails apt.
+out=/run/repose/rw/apt-manual.list
+base=/usr/local/share/repose/apt-manual.base
+[ -d /run/repose/rw ] && [ -r "$base" ] || exit 0
+tmp=$(mktemp /run/repose/rw/.apt-manual.XXXXXX) || exit 0
+if apt-mark showmanual 2>/dev/null | sort | comm -23 - "$base" > "$tmp"; then
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$out"
+else
+  rm -f "$tmp"
+fi
+exit 0

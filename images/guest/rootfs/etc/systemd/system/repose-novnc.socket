@@ -1,0 +1,9 @@
+[Unit]
+Description=repose desktop: viewer entry point on 127.0.0.1:6080
+
+[Socket]
+ListenStream=127.0.0.1:6080
+Service=repose-novnc-proxy.service
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,18 @@
+# The project's tmux session (tmux.nix; DECISIONS I-494, I-496, I-503,
+# I-551, I-560). guestd starts it at SetupProject.
+[Unit]
+Description=repose: project tmux session
+After=default.target
+ConditionPathExists=%h/.repose/project.json
+
+[Service]
+Type=forking
+ExecCondition=/usr/local/bin/repose-multiplexer-is tmux
+ExecStart=/usr/local/bin/repose-tmux-session
+Restart=on-success
+RestartForceExitStatus=SIGKILL SIGSEGV SIGABRT SIGBUS
+RestartSec=5s
+KillMode=control-group
+CPUWeight=1000
+MemoryLow=48M
+OOMPolicy=continue

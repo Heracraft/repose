@@ -1,0 +1,13 @@
+[Unit]
+Description=repose desktop: clipboard between the display and the viewer
+Requires=repose-xvnc.service
+After=repose-xvnc.service
+BindsTo=repose-xvnc.service
+StopWhenUnneeded=yes
+
+[Service]
+User=dev
+Group=dev
+Restart=no
+Environment=DISPLAY=:99
+ExecStart=/usr/bin/vncconfig -nowin

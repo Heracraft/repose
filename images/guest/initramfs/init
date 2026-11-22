@@ -1,0 +1,145 @@
+#!/bin/sh
+# repose erofs guest initramfs (DECISIONS I-1466; guest-conventions.md
+# "The erofs guest"). BusyBox only. It composes the root the guest boots:
+#
+#   /dev/vda  rootfs.erofs, read-only, the base         -> /run/repose/ro
+#   /dev/vdb  the project's thin volume, ext4 (hostd     -> /run/repose/rw
+#             formats it; this init lays it out)
+#
+# and hands over to systemd with / an overlayfs (lower the erofs, upper
+# and work on vdb), and /home/dev, /var/lib/docker,
+# /var/lib/repose/services and /etc/machine-id bind-mounted straight from
+# vdb, so Docker's overlay2, the home and the services' data never sit on
+# overlayfs (proposal §2.3 #1-#3). When the base version on vdb differs
+# from the erofs's, the old upper is rotated aside before the overlay is
+# mounted (§2.3 #4).
+#
+# Kernel command line: repose.shell drops to a shell instead of failing
+# (local debugging only); repose.init=PATH replaces /sbin/init.
+
+PATH=/bin
+export PATH
+
+ro=/mnt/ro
+rw=/mnt/rw
+root=/sysroot
+
+say() {
+  echo "repose-init: $*"
+  echo "<5>repose-init: $*" > /dev/kmsg 2>/dev/null || true
+}
+
+fail() {
+  echo "repose-init: $*"
+  echo "<2>repose-init: $*" > /dev/kmsg 2>/dev/null || true
+  if grep -qw repose.shell /proc/cmdline 2>/dev/null; then
+    exec sh
+  fi
+  # panic=-1 on the command line: the kernel's panic at init's exit
+  # ends the VM, which hostd reports as a failed start.
+  exit 1
+}
+
+# 1. The API filesystems.
+mount -t devtmpfs -o nosuid,mode=0755 devtmpfs /dev || fail "cannot mount /dev"
+mount -t proc -o nosuid,nodev,noexec proc /proc || fail "cannot mount /proc"
+mount -t sysfs -o nosuid,nodev,noexec sysfs /sys || fail "cannot mount /sys"
+
+init=/sbin/init
+read -r cmdline < /proc/cmdline
+for arg in $cmdline; do
+  case "$arg" in
+    repose.init=*) init=${arg#repose.init=} ;;
+  esac
+done
+
+# The modules the kernel does not build in, in load order (make-bundle.sh).
+while read -r m; do
+  [ -n "$m" ] || continue
+  insmod "/lib/modules/$m" 2>/dev/null || true
+done < /modules
+
+# 2. The two disks.
+n=0
+while [ ! -b /dev/vda ] || [ ! -b /dev/vdb ]; do
+  n=$((n + 1))
+  [ "$n" -le 500 ] || fail "no /dev/vda and /dev/vdb after 5 s"
+  sleep 0.01
+done
+mount -t erofs -o ro /dev/vda "$ro" || fail "cannot mount the base (/dev/vda, erofs)"
+mount -t ext4 -o rw,noatime,discard /dev/vdb "$rw" || fail "cannot mount the volume (/dev/vdb, ext4)"
+
+base=$(cat "$ro/etc/repose/base-version" 2>/dev/null)
+[ -n "$base" ] || fail "the base has no /etc/repose/base-version"
+
+# 3. The volume's layout. An empty ext4 (hostd's mkfs, the first boot)
+# gets it here; every directory is created only when missing, so this is
+# a no-op on every later boot.
+first=""
+[ -e "$rw/.base-version" ] || first=1
+# The volume's root stays root's, readable by all and writable by root
+# alone: guestd reads it, dev never writes there.
+chown 0:0 "$rw" && chmod 0755 "$rw"
+for d in overlay/upper overlay/work docker services etc-persist; do
+  mkdir -p "$rw/$d" || fail "cannot create $d on the volume"
+done
+if [ ! -d "$rw/home-dev" ]; then
+  mkdir -p "$rw/home-dev.new" || fail "cannot create home-dev on the volume"
+  cp -a "$ro/etc/skel/." "$rw/home-dev.new/" || fail "cannot seed home-dev"
+  chown -R 1000:1000 "$rw/home-dev.new"
+  chmod 0750 "$rw/home-dev.new"
+  mv "$rw/home-dev.new" "$rw/home-dev" || fail "cannot seed home-dev"
+fi
+if [ ! -s "$rw/etc-persist/machine-id" ]; then
+  id=$(tr -d '-' < /proc/sys/kernel/random/uuid)
+  echo "$id" > "$rw/etc-persist/machine-id.new" || fail "cannot write the machine id"
+  mv "$rw/etc-persist/machine-id.new" "$rw/etc-persist/machine-id" || fail "cannot write the machine id"
+  chmod 0444 "$rw/etc-persist/machine-id"
+fi
+
+# A new base under an old upper: the old upper (packages installed with
+# apt, /etc edits) is moved to upper.prev, replacing the one an earlier
+# bump kept, and the new base boots clean. guestd replays the project's
+# configuration and removes .base-upgraded (proposal §2.3 #4).
+if [ -z "$first" ]; then
+  was=$(cat "$rw/.base-version" 2>/dev/null)
+  if [ "$was" != "$base" ]; then
+    say "base $was -> $base: rotating overlay/upper to overlay/upper.prev"
+    rm -rf "$rw/overlay/upper.prev"
+    mv "$rw/overlay/upper" "$rw/overlay/upper.prev" || fail "cannot rotate overlay/upper"
+    rm -rf "$rw/overlay/work"
+    mkdir -p "$rw/overlay/upper" "$rw/overlay/work" || fail "cannot recreate overlay/upper"
+    printf '%s %s\n' "$was" "$base" > "$rw/.base-upgraded"
+  fi
+fi
+echo "$base" > "$rw/.base-version.new" || fail "cannot stamp the base version"
+mv "$rw/.base-version.new" "$rw/.base-version" || fail "cannot stamp the base version"
+
+# 4. The root.
+mount -t overlay -o "lowerdir=$ro,upperdir=$rw/overlay/upper,workdir=$rw/overlay/work" overlay "$root" \
+  || fail "cannot mount the overlay root"
+
+# 5-6. What bypasses the overlay: the home, Docker's data, the services'
+# data, and the machine id (a file bind, so systemd sees a valid,
+# writable, persistent id from its first instruction).
+mkdir -p "$root/home/dev" "$root/var/lib/docker" "$root/var/lib/repose/services"
+[ -e "$root/etc/machine-id" ] || : > "$root/etc/machine-id"
+mount --bind "$rw/home-dev" "$root/home/dev" || fail "cannot bind /home/dev"
+mount --bind "$rw/docker" "$root/var/lib/docker" || fail "cannot bind /var/lib/docker"
+mount --bind "$rw/services" "$root/var/lib/repose/services" || fail "cannot bind /var/lib/repose/services"
+mount --bind "$rw/etc-persist/machine-id" "$root/etc/machine-id" || fail "cannot bind /etc/machine-id"
+
+# The volume stays mounted in the guest at /run/repose/rw (what a
+# snapshot's fsfreeze freezes) and the base at /run/repose/ro. /run is
+# mounted here, so systemd keeps it.
+mount -t tmpfs -o nosuid,nodev,mode=0755 tmpfs "$root/run" || fail "cannot mount /run"
+mkdir -p "$root/run/repose/rw" "$root/run/repose/ro"
+mount --move "$rw" "$root/run/repose/rw" || fail "cannot move the volume to /run/repose/rw"
+mount --move "$ro" "$root/run/repose/ro" || fail "cannot move the base to /run/repose/ro"
+
+# 7. systemd.
+mount --move /dev "$root/dev"
+mount --move /proc "$root/proc"
+mount --move /sys "$root/sys"
+say "base $base; switching to $init"
+exec switch_root "$root" "$init"

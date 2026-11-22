@@ -1,0 +1,15 @@
+# Docker starts at every boot, but nothing waits for it (DECISIONS I-161,
+# I-1466): a target orders itself after every unit it wants, so a
+# docker.service wanted by multi-user.target held the boot for dockerd's
+# 1-3.5 s start. This queues the start and returns; docker.socket also
+# starts it on the first `docker` call.
+[Unit]
+Description=repose: start Docker without holding the boot
+After=basic.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start --no-block docker.service
+
+[Install]
+WantedBy=multi-user.target
