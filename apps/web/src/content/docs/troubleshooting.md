@@ -69,7 +69,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`todo-app is in an error state: ...`** The rest of the line is what failed, for example `repose's service on the machine stopped answering`. `repose start todo-app` restarts it. When a boot failed, `repose logs todo-app --kind console` shows what the machine printed.
 
-**`todo-app is in an error state: the machine started but did not finish loading its system in time`.** The machine booted and answered, and then the step that gives it the list of its own software ran out of time. `repose start todo-app` tries again, and `repose logs todo-app --kind console` shows what the machine printed. On [your own Mac](/docs/own-hardware#starting-a-machine-takes-about-four-minutes) this step is the slowest part of a start.
+**`todo-app is in an error state: the machine started but did not finish loading its system in time`.** The machine booted and answered, and then the step that gives it the list of its own software ran out of time. `repose start todo-app` tries again, and `repose logs todo-app --kind console` shows what the machine printed. On [your own Mac](/docs/own-hardware#starting-a-machine-takes-about-half-a-minute) this step is the slowest part of a start.
 
 **`todo-app is in an error state: the machine started but did not finish setting up the project in time`.** The machine booted and answered, and then the step that prepares your home directory and the project's folder ran out of time. `repose start todo-app` tries again, and `repose logs todo-app --kind console` shows what the machine printed.
 
