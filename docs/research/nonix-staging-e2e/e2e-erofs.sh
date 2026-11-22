@@ -48,6 +48,9 @@ adm() { local q="" a; for a in "$@"; do q="$q $(printf '%q' "$a")"; done; ssh -F
 psql_q() { ssh -F "$SSHCFG" stg-edge "/var/lib/repose-staging/psql -At -F'|' -c $(printf '%q' "$1")"; }
 hostsh() { ssh -F "$SSHCFG" stg-host-wg "$@"; }
 gx() { local p=$1; shift; "$R" exec "$p" -- sh -c "$*"; } # a shell line in a guest as dev
+# pgq PROJECT SQL: SQL as dev through psql, carried base64 so no quote is lost
+# on the way through the CLI and the guest shell.
+pgq() { gx "$1" "echo $(printf '%s' "$2" | base64 -w0) | base64 -d | psql -X -At -v ON_ERROR_STOP=1"; }
 now() { date +%s.%N; }
 since() { echo "$(now) - $1" | bc; }
 # t LABEL CMD...: run, print "LABEL wall=S rc=N", and record it.
@@ -236,9 +239,10 @@ step_06-notify-ask() {
 	note "question visible after $(since "$s")s"
 	"$R" questions "$A" 2>&1 | tee -a "$SUMMARY"
 	t "repose reply $A yes" "$R" reply "$A" yes
-	for k in $(seq 1 30); do gx "$A" 'test -s /tmp/e2e-ask.out' && break; sleep 1; done
-	q=$(gx "$A" 'cat /tmp/e2e-ask.out'); note "repose-ask printed: $q"
-	check "repose-ask received yes" bash -c "printf '%s' '$q' | grep -qx yes"
+	# repose-ask prints "repose-ask: asked <id>" at once and the answer when it comes.
+	for k in $(seq 1 60); do gx "$A" 'grep -qx yes /tmp/e2e-ask.out' && break; sleep 1; done
+	q=$(gx "$A" 'cat /tmp/e2e-ask.out' | tr '\n' '|'); note "repose-ask printed: $q"
+	check "repose-ask received yes" gx "$A" 'grep -qx yes /tmp/e2e-ask.out'
 	note "ask round trip $(since "$s")s"
 	gx "$A" "tmux kill-window -t '$A:ask'" >/dev/null 2>&1
 }
@@ -275,7 +279,8 @@ services:
     depends_on: [web]
     command: sh -c "sleep 2; wget -qO- http://web/ | grep -o \"Welcome to nginx\""
 EOF'
-	t "docker compose up (two services)" "$R" exec "$A" -- sh -c 'cd ~/e2e-compose && docker compose up --abort-on-container-exit --exit-code-from client 2>&1 | tail -5; rc=$?; docker compose down -v >/dev/null 2>&1; exit $rc'
+	t "docker compose up (two services)" "$R" exec "$A" -- sh -c 'cd ~/e2e-compose && docker compose up --abort-on-container-exit --exit-code-from client >/tmp/e2e-compose.log 2>&1; rc=$?; grep "client-1" /tmp/e2e-compose.log | tail -3; docker compose down -v >/dev/null 2>&1; exit $rc'
+	gx "$A" 'grep -q "client-1.*Welcome to nginx" /tmp/e2e-compose.log' && note "ok: the client fetched the web service by name" || { note "FAIL: the client did not fetch the web service"; }
 }
 
 step_09-browser() {
@@ -293,12 +298,12 @@ step_10-config-add() {
 	cd "$RUN/work/a" || return 1
 	t "config add postgresql redis bun awscli" timeout 1800 "$R" config add postgresql redis bun awscli
 	t "versions" "$R" exec "$A" -- sh -lc 'psql --version; redis-cli --version; bun --version; aws --version'
-	gx "$A" "psql -c 'create table if not exists e2e(v text); insert into e2e values (''kept-across-restarts'');' 2>&1 || sudo -u postgres psql -c 'create table if not exists e2e(v text); insert into e2e values (''kept-across-restarts'');'" | tee -a "$SUMMARY"
+	pgq "$A" "create table if not exists e2e(v text); insert into e2e values ('kept-across-restarts');" 2>&1 | tee -a "$SUMMARY"
 	close_cm
 	t "stop --wait" "$R" stop -y --wait "$A"
 	t "start" "$R" start "$A"
 	t "versions after stop/start" "$R" exec "$A" -- sh -lc 'psql --version; redis-cli ping; bun --version; aws --version'
-	gx "$A" "psql -Atc 'select v from e2e' 2>/dev/null || sudo -u postgres psql -Atc 'select v from e2e'" | tee "$RUN/work/pg.txt"
+	pgq "$A" "select v from e2e" | tee "$RUN/work/pg.txt"
 	check "PostgreSQL data survived stop/start" grep -q kept-across-restarts "$RUN/work/pg.txt"
 	"$R" config show "$A" 2>&1 | tee -a "$SUMMARY"
 }
@@ -332,7 +337,7 @@ step_12-snapshot-restore-fork() {
 	t "restore $A" "$R" restore "$A"
 	gx "$A" 'cat ~/marker.txt; ls -la ~/blob.bin' | tee "$RUN/work/restore.txt"
 	check "restore has the marker" grep -qf "$RUN/work/marker.txt" "$RUN/work/restore.txt"
-	gx "$A" "psql -Atc 'select v from e2e' 2>/dev/null || sudo -u postgres psql -Atc 'select v from e2e'" | tee "$RUN/work/pg-restore.txt"
+	pgq "$A" "select v from e2e" | tee "$RUN/work/pg-restore.txt"
 	check "restore has the PostgreSQL row" grep -q kept-across-restarts "$RUN/work/pg-restore.txt"
 	hostsh "journalctl -u hostd -o cat --no-pager --since -10min | grep -E 'snapshot_done|restore_done' | cut -c1-400" | tee -a "$SUMMARY"
 }
@@ -367,8 +372,22 @@ step_15-base-rotate() {
 	local before
 	before=$(status_json "$A" | jget 'd.get("base_version")'); note "base before: $before"
 	gx "$A" 'echo home-kept-$(date +%s) > ~/home-marker.txt; cat ~/home-marker.txt' | tee "$RUN/work/home-marker.txt"
-	t "publish base $BASE2_VERSION" env RELEASE_URL="$BASE2_RELEASE_URL" VERSION="$BASE2_VERSION" KERNEL_VERSION="$BASE2_KERNEL_VERSION" CHANGELOG="$BASE2_CHANGELOG" \
+	# The base bump sweeps daily at 04:00 UTC, or within ten minutes of a
+	# security release (internal/api/basebump). The rotation test publishes
+	# the second base as a security release (SECURITY=1) and waits for the
+	# mark; an earlier non-security row of the same version is withdrawn
+	# first with `base rollback` to the version before it.
+	if adm base list | awk 'NR>1{print $1}' | grep -qx "$BASE2_VERSION"; then
+		t "withdraw the earlier $BASE2_VERSION row" adm base rollback "$before"
+	fi
+	t "publish base $BASE2_VERSION (security)" env SECURITY=1 RELEASE_URL="$BASE2_RELEASE_URL" VERSION="$BASE2_VERSION" KERNEL_VERSION="$BASE2_KERNEL_VERSION" CHANGELOG="$BASE2_CHANGELOG" \
 		/mnt/nixstore/tmp/stg-cp/publish-erofs.sh
+	local k s=$(now)
+	for k in $(seq 1 130); do
+		[ "$(status_json "$A" | jget 'd.get("pending_base_version")')" = "$BASE2_VERSION" ] && break
+		sleep 5
+	done
+	note "pending_base_version set $(since "$s")s after publish"
 	status_json "$A" | jget 'd.get("pending_base_version")' | tee "$RUN/work/pending.txt"
 	check "pending_base_version is $BASE2_VERSION" grep -qx "$BASE2_VERSION" "$RUN/work/pending.txt"
 	close_cm
@@ -378,7 +397,7 @@ step_15-base-rotate() {
 	check "base_version is now $BASE2_VERSION" grep -qx "$BASE2_VERSION" "$RUN/work/after.txt"
 	gx "$A" 'cat ~/home-marker.txt ~/marker.txt; uname -r; head -2 /etc/os-release' | tee "$RUN/work/after-home.txt"
 	check "/home/dev intact" grep -qf "$RUN/work/home-marker.txt" "$RUN/work/after-home.txt"
-	gx "$A" "psql -Atc 'select v from e2e' 2>/dev/null || sudo -u postgres psql -Atc 'select v from e2e'" | tee "$RUN/work/pg-after.txt"
+	pgq "$A" "select v from e2e" | tee "$RUN/work/pg-after.txt"
 	check "PostgreSQL data intact" grep -q kept-across-restarts "$RUN/work/pg-after.txt"
 	t "menu replayed: versions" "$R" exec "$A" -- sh -lc 'psql --version && redis-cli ping && bun --version && aws --version'
 	hostsh "journalctl -u hostd -o cat --no-pager --since -10min | grep -iE 'menu|image|boot timings' | cut -c1-400 | tail -12" | tee -a "$SUMMARY"
@@ -395,6 +414,8 @@ step_16-isolation() {
 		GOMODCACHE=/home/azureuser/go/pkg/mod GOFLAGS=-p=2 PROJECT=$A PROJECT_B=e2eiso LOGIN_B=e2eiso.stgb OUT=$RUN/isolation REVOKE_A=1 \
 		timeout 2400 bash "$CHECKS/isolation-host01.sh" >"$RUN/work/isolation.txt" 2>&1
 	grep -A30 '### row summary' "$RUN/work/isolation.txt" | head -25 | tee -a "$SUMMARY"
+	check "isolation suite ran (row summary present)" grep -q '### row summary' "$RUN/work/isolation.txt"
+	check "no isolation row failed" bash -c "! grep -q -- '--- FAIL' $RUN/work/isolation.txt"
 	adm projects destroy e2eiso >/dev/null 2>&1
 }
 
