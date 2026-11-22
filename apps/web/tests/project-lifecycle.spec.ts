@@ -35,7 +35,7 @@ test('resize grows the volume', async ({ page }) => {
 	await expect(volume).toHaveText('20 GB disk');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
-	await page.getByRole('combobox').selectOption('40');
+	await page.getByLabel('Grow to').selectOption('40');
 	await page.getByRole('button', { name: 'Grow' }).click();
 	await expect(volume).toHaveText('40 GB disk', { timeout: 10_000 });
 	// The panel closed and gave focus back to Resize….
@@ -82,7 +82,9 @@ test('a disk at the largest size has no Grow to offer', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('disk-volume')).toHaveText('320 GB disk');
-	await expect(page.getByRole('button', { name: 'Resize…' })).toHaveCount(0);
+	// Resize… stays for the size class (I-1518); the disk has nothing to grow to.
+	await page.getByRole('button', { name: 'Resize…' }).click();
+	await expect(page.getByLabel('Grow to')).toHaveCount(0);
 	await expect(page.getByText('320 GB is the largest size.')).toBeVisible();
 });
 

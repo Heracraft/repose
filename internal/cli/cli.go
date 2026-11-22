@@ -598,7 +598,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "do not sync the checkout, even into a new machine")
 	cmd.Flags().BoolVarP(&opts.NoAttach, "no-attach", "d", false, "do not attach; with -p, print the window the agent is in")
-	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "keep your machine.nix off this machine from now on")
+	cmd.Flags().BoolVar(&opts.NoPersonal, "no-personal", false, "on a NixOS machine, keep your machine.nix off it from now on")
 	addMultiplexerFlag(cmd, &opts.Multiplexer)
 	cmd.Flags().BoolVar(&opts.Worktree, "worktree", false, "start the agent in its own git worktree, on branch worktree-N")
 	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "type -p's text and Enter into this agent `WINDOW` (a name or number from repose ps) instead of starting an agent")
@@ -1292,11 +1292,11 @@ when it changed; repose config off PROJECT keeps it off one machine.
 The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 		Example: "  repose config add gcc air\n  repose config --global add ripgrep fd\n  repose config --global edit"}
 	var global bool
-	root.PersistentFlags().BoolVar(&global, "global", false, "act on your machine.nix, which every machine of your account gets")
+	root.PersistentFlags().BoolVar(&global, "global", false, "act on your machine.nix, which every NixOS machine of your account gets")
 	// globalEnv is env() with --global's refusal of a project argument.
 	globalEnv := func() (*Env, error) {
 		if global && g.project != "" {
-			return nil, cobraUsageError{fmt.Errorf("--global takes no --project (%s): machine.nix applies to every machine of your account", g.project)}
+			return nil, cobraUsageError{fmt.Errorf("--global takes no --project (%s): machine.nix applies to every NixOS machine of your account", g.project)}
 		}
 		return env()
 	}
@@ -1308,7 +1308,7 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 			return nil, "", err
 		}
 		if global && project != "" {
-			return nil, "", cobraUsageError{fmt.Errorf("--global takes no project (%s): machine.nix applies to every machine of your account", project)}
+			return nil, "", cobraUsageError{fmt.Errorf("--global takes no project (%s): machine.nix applies to every NixOS machine of your account", project)}
 		}
 		e, err := env()
 		return e, project, err
@@ -1426,7 +1426,7 @@ A Nix project whose repose.nix was edited by hand has no menu; add packages
 there with repose config edit.
 
 With --global, the names go into the home.packages list of your
-machine.nix, every machine of your account gets them, and the menu's
+machine.nix, every NixOS machine of your account gets them, and the menu's
 services are not available.`,
 		Example: "  repose config add postgresql bun\n  repose config add ffmpeg libpq-dev\n  repose config --global add ripgrep",
 		Args:    cobra.ArbitraryArgs,

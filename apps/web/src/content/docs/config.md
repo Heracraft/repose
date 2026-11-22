@@ -14,13 +14,13 @@ There are two ways to install software on a project's machine:
 
 ```
 $ repose config add postgresql bun
-Added postgresql and bun to todo-app.
 ✓ postgresql 16 ready on 127.0.0.1:5432  14s
 ✓ bun ready  2.1s
+Added postgresql and bun to todo-app.
 Applied revision 4f1c2a9e in 17s.
 ```
 
-Each line under the first is the machine saying what it installed. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, as `apt` has them.
+Each ✓ line is the machine saying what it installed. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, at most 128 characters, as `apt` has them.
 
 The machine installs into what's running, so your agents keep running. A stopped machine installs at its next start.
 
@@ -28,13 +28,13 @@ An item that doesn't install fails the command with the machine's own line and e
 
 ```
 $ repose config add bun ffmpeg-typo
-Added bun and ffmpeg-typo to todo-app.
 ✓ bun ready  2.0s
 ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo
 error: ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo
+todo-app's menu is unchanged.
 ```
 
-The items before it stay installed. The machine keeps the revision it had, so the name you got wrong never reaches the menu.
+The menu keeps what it had, so no name from that command reaches it, `bun` included; run it again without the wrong name.
 
 `repose config remove redis` takes an entry or a package out. A service's data stays on the machine, in `/var/lib/repose/services/redis`, and is there again if you add it back.
 
@@ -42,7 +42,7 @@ Press Ctrl-C to stop watching: `Interrupted. The install keeps going on the mach
 
 ## The menu
 
-The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Packages that aren't menu entries show under **Extra packages**, each with **Remove**.
+The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Type a package's name in the search and **Add** puts it under **Extra packages**, as `repose config add NAME` does; each there has **Remove**. When the install ends, the bar with **Apply** says `Applied`, or `Not installed:` and the machine's line for the item that failed, and the menu keeps what it had. If the menu changed since the page loaded, in another tab or from the CLI, **Apply** changes nothing, the bar says so, and the page shows the menu as it is now.
 
 | Group     | Entries                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -59,9 +59,11 @@ Databases listen on `127.0.0.1` only: PostgreSQL on 5432, Redis 6379, MariaDB 33
 
 ## Configuration files
 
-A machine takes its configuration from the menu and nothing else. `repose config apply FILE`, `repose config edit`, `repose config on` and `repose config off` are refused for it, with exit code 1, and the account-wide file `repose config --global` writes never reaches it:
+A machine takes its configuration from the menu and nothing else. `repose config apply FILE`, `repose config edit`, `repose config on` and `repose config off` are refused for it, with exit code 1:
 
 > This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services.
+
+The account-wide file `repose config --global` writes never reaches it either. When every machine of your account runs the Ubuntu base, `repose config --global add`, `edit` and `apply` refuse with exit code 1 and change nothing; with older machines beside them, the save goes ahead and names the Ubuntu machines it doesn't reach.
 
 A configuration file committed at the root of the checkout isn't used either: `repose run` and `repose sync` leave it alone.
 
@@ -71,13 +73,13 @@ Dotfiles, aliases and environment variables go in `/home/dev`, which every base 
 
 Every change to a project's configuration is saved as a revision. `repose config revisions` lists them with the error of any that failed. To get back from a change that broke something, `repose config apply --revision 9c41d2e7` applies an earlier revision to the running machine; the project's **Config** tab re-applies one from its **Revisions** list.
 
-The platform updates the base (Ubuntu, agents, tools, kernel) most weeks, sooner for a security fix. A machine gets a new base when it restarts, never while it runs. Until then the project's **Config** tab says so under the base it runs:
+The platform updates the base (Ubuntu, agents, tools, kernel) most weeks, sooner for a security fix. A machine gets a new base when it restarts, never while it runs. Until then `repose status`, `repose ls`, the project's **Overview** and its **Config** tab say so; the Config tab puts it under the base it runs:
 
 ```text
 Base 2026.11.30 is ready. It is used at the next restart.
 ```
 
-**Restart** there stops the machine, with no snapshot, and starts it again; `repose stop todo-app && repose start todo-app` does the same. What a new base keeps is in [The machine](/docs/machine#base-updates). To hold a project on its current base, tick **Hold base updates** on its **Config** tab; there's no CLI flag for it.
+**Restart** there stops the machine, with no snapshot, and starts it again; `repose stop --no-snapshot todo-app && repose start todo-app` does the same. What a new base keeps is in [The machine](/docs/machine#base-updates). To hold a project on its current base, tick **Hold base updates** on its **Config** tab; there's no CLI flag for it.
 
 Holding has a price: a held project doesn't get what a new base adds. [herdr](/docs/run-and-attach#herdr-instead-of-tmux) arrived in base 2026.10.07, so a project on an older base can't switch to it. `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.07 or newer.` Untick the hold and restart it first.
 

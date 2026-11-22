@@ -23,7 +23,7 @@ Repose runs on your Mac as one virtual machine, and nothing of yours is touched:
 ## What an x86 box needs
 
 - x86_64 with hardware virtualization and `/dev/kvm`. Bare metal, Intel or AMD. A virtual machine works only if its own host passes virtualization through, which on Proxmox or libvirt is one setting; most cheap VPSes do not.
-- Ubuntu 24.04 on the system disk, and a second disk for your machines' volumes, which the installer wipes.
+- Ubuntu 24.04, or Debian 12 or later, and room for your machines' disks: 40 GB free on the system disk, or a whole empty disk.
 - 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once.
 - Outbound UDP 51820 and TCP 443. No inbound port.
 
@@ -48,7 +48,7 @@ curl -fsSL https://repose.run/install-host.sh \
   | sudo bash -s -- --join <argument>
 ```
 
-It sets repose up on the system disk, gives the second disk to your machines' volumes, and joins your account. The dashboard's **Add a host** shows this line beside the Mac's.
+It sets repose up and joins your account. It keeps your machines' disks in `/var/lib/repose/guests.img`, 100 GB or the free space less 20 GB, whichever is smaller; with `--device /dev/sdb` it takes over that whole disk instead, and it refuses a disk that holds anything. The dashboard's **Add a host** shows this line beside the Mac's.
 
 The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free, never under 40 GB and never closer than 20 GB to what the volume has (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
 

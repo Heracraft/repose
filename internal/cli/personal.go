@@ -234,9 +234,9 @@ func personalWhere(ch []PersonalChange) string {
 
 // ---- repose config --global ----
 
-const machineNixTemplate = `# machine.nix: a home-manager module every repose machine of your account
-# gets, beside each project's own configuration.
-# https://repose.run/docs/config#your-machine-nix
+const machineNixTemplate = `# machine.nix: a home-manager module every NixOS machine of your account
+# gets, beside each project's own configuration. Ubuntu machines don't use it.
+# https://repose.run/docs/machine#older-machines
 { pkgs, ... }:
 {
   home.packages = with pkgs; [
@@ -313,6 +313,9 @@ func (e *Env) prepareLocal(ctx context.Context) (*personalView, string, error) {
 // GlobalEditCmd is `repose config --global edit`: the laptop's copy in
 // $EDITOR, pushed when saved changed.
 func GlobalEditCmd(ctx context.Context, e *Env, editor func(path string) error) error {
+	if err := e.refuseMachineNixOnUbuntu(ctx); err != nil {
+		return err
+	}
 	v, base, err := e.prepareLocal(ctx)
 	if err != nil {
 		return err
@@ -351,6 +354,12 @@ func GlobalApplyCmd(ctx context.Context, e *Env, path string) error {
 			return exitf(ExitUsage, "No %s yet. `repose config --global edit` starts one, or `repose config --global add ripgrep`.", e.displayPath(path))
 		}
 		return fileReadError(path, err)
+	}
+	if strings.TrimSpace(string(b)) != "" {
+		// Removing it stays possible; saving one nothing uses does not.
+		if err := e.refuseMachineNixOnUbuntu(ctx); err != nil {
+			return err
+		}
 	}
 	return pushPersonal(ctx, e, string(b), nil, path)
 }
@@ -473,6 +482,11 @@ func GlobalPackagesCmd(ctx context.Context, e *Env, args []string, add bool) err
 		}
 		names = append(names, n)
 	}
+	if add {
+		if err := e.refuseMachineNixOnUbuntu(ctx); err != nil {
+			return err
+		}
+	}
 	v, base, err := e.prepareLocal(ctx)
 	if err != nil {
 		return err
@@ -499,6 +513,37 @@ func GlobalPackagesCmd(ctx context.Context, e *Env, args []string, add bool) err
 		_, _ = fmt.Fprintf(e.Out, "Removed %s from %s.\n", joinNames(changed), p)
 	}
 	return pushPersonal(ctx, e, text, &base, e.machineNixPath())
+}
+
+// machineNixUbuntuOnly is the refusal for an account whose machines all
+// run the Ubuntu base (DECISIONS I-1510): machine.nix reaches none of them.
+const machineNixUbuntuOnly = "Your machines run the Ubuntu base and don't use machine.nix; `repose config add NAME` installs a package on one."
+
+// ubuntuMachines lists the account's machines that run the Ubuntu base,
+// which machine.nix never reaches (I-1462), and whether every machine is
+// one. An account with no machines, or a list that could not be read,
+// answers none: the save goes ahead as before.
+func (e *Env) ubuntuMachines(ctx context.Context) (slugs []string, all bool) {
+	projects, err := e.Client.ListProjects(ctx)
+	if err != nil || len(projects) == 0 {
+		return nil, false
+	}
+	for i := range projects {
+		if isErofs(&projects[i]) {
+			slugs = append(slugs, projects[i].Slug)
+		}
+	}
+	return slugs, len(slugs) == len(projects)
+}
+
+// refuseMachineNixOnUbuntu is the check `config --global` makes before it
+// writes anything: nil unless every machine of the account runs the
+// Ubuntu base.
+func (e *Env) refuseMachineNixOnUbuntu(ctx context.Context) error {
+	if _, all := e.ubuntuMachines(ctx); all {
+		return exitf(ExitGeneric, "%s", machineNixUbuntuOnly)
+	}
+	return nil
 }
 
 // pushPersonal saves text as the account's machine.nix and follows the
@@ -532,6 +577,16 @@ func pushPersonal(ctx context.Context, e *Env, text string, base *string, localP
 		_, _ = fmt.Fprintf(e.Out, "Removed machine.nix from your account; %s.\n", rebuildWhat(res.Projects))
 		return nil
 	}
+	defer func() {
+		// A mixed account: name the machines the file never reaches.
+		if slugs, all := e.ubuntuMachines(ctx); len(slugs) > 0 && !all {
+			verb := "runs the Ubuntu base and doesn't use machine.nix."
+			if len(slugs) > 1 {
+				verb = "run the Ubuntu base and don't use machine.nix."
+			}
+			_, _ = fmt.Fprintf(e.Out, "%s %s\n", joinNames(slugs), verb)
+		}
+	}()
 	if len(res.Projects) == 0 {
 		_, _ = fmt.Fprintln(e.Out, "Saved machine.nix to your account.")
 		return nil

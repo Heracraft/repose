@@ -5,6 +5,7 @@ import {
 	buildMenuSelection,
 	parseMenuSelection,
 	menuEditable,
+	validPackageName,
 	DEFAULT_FRAGMENT
 } from './menuSelection';
 import type { CatalogItem } from './api/types';
@@ -124,5 +125,27 @@ describe('menuEditable', () => {
 		expect(
 			menuEditable({ menu: null, fragment: '{ pkgs, ... }: { home.packages = [ pkgs.jq ]; }' })
 		).toBe(false);
+	});
+});
+
+describe('validPackageName', () => {
+	it('takes apt names on erofs and nixpkgs paths on nix, as internal/menu does', () => {
+		for (const ok of ['ffmpeg', 'libpq-dev', 'g++', 'python3.12-venv', 'a'.repeat(128)]) {
+			expect(validPackageName('erofs', ok), ok).toBe(true);
+		}
+		for (const bad of [
+			'',
+			'FFmpeg',
+			'-rf',
+			'a b',
+			'a;b',
+			'python312Packages.black',
+			'a'.repeat(129)
+		]) {
+			expect(validPackageName('erofs', bad), bad).toBe(false);
+		}
+		expect(validPackageName('nix', 'python312Packages.black')).toBe(true);
+		expect(validPackageName(undefined, 'gcc')).toBe(true);
+		expect(validPackageName('nix', 'python3.12-venv')).toBe(false);
 	});
 });

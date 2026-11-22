@@ -261,7 +261,7 @@ FOLDER is where in the checkout the conversation ran, and the machine gets it in
 
 ### `repose scan [DIR]`
 
-List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets. On an [older machine](/docs/machine#older-machines), its configuration files take over a half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads the laptop's copy of the account's file and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
+List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets, through mise on an Ubuntu machine. It reads which machine the checkout belongs to; on an [older machine](/docs/machine#older-machines), its configuration files take over a half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads the laptop's copy of the account's file and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
 
 ## Projects
 
@@ -275,7 +275,7 @@ AGENTS names the agent and its [state](/docs/agents#agent-states), with how long
 
 HOST is a column only while a listed machine is on [hardware of your own](#your-own-hardware): the host's name for a machine on one of yours, `repose` for one on repose's servers. LEFT is a column only while a temporary machine is listed: its time left, or `up` once that has run out ([Temporary machines](/docs/lifecycle#temporary-machines)). DISK is a column only while a listed project's disk is 90 percent full or more, and reads `93% full`.
 
-A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). The last line is your plan and how much of it is in use: memory running, the disk your projects hold, egress this month. Under it, a line for each limit in the way: disk over the plan ([Projects](/docs/limits#projects)), egress past the allowance ([Egress](/docs/limits#egress)), a payment that failed ([If a payment fails](/docs/billing#if-a-payment-fails)).
+A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). Another names each project whose newer base is ready for its next restart. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, egress this month. Under it, a line for each limit in the way: disk over the plan ([Projects](/docs/limits#projects)), egress past the allowance ([Egress](/docs/limits#egress)), a payment that failed ([If a payment fails](/docs/billing#if-a-payment-fails)).
 
 `--json` prints the full records. `--destroyed` lists the destroyed projects `repose restore` can still bring back, one row per name with the earlier destroys counted; `--all` goes with `--destroyed` and lists every row, each with the `ID` that restores it. `-q`/`--quiet` prints the names alone, one per line:
 
@@ -298,6 +298,7 @@ todo-app  running 2h14m  large
              node :3000 up 2h 120.4 MB, on your laptop at :3001
              postgres :5432 up 3d 40.1 MB
   laptop     :5037 adb, :11434 ollama
+  base       2026.11.22, Ubuntu
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
   last event 14m ago, claude finished "Added auth flow"
   webhooks   stripe 200 2m ago, github 503 stopped 1h04m ago
@@ -307,9 +308,9 @@ A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
-`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. A machine on [hardware of your own](#your-own-hardware) has a `host` row naming it; `-v` adds that row for every machine, with the machine's address beside the host. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
+`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `base` is the base the machine runs and what it is, `Ubuntu` or `NixOS` (an [older machine](/docs/machine#older-machines)). `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. A machine on [hardware of your own](#your-own-hardware) has a `host` row naming it; `-v` adds that row for every machine, with the machine's address beside the host. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
 
-Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
+Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines), a newer base that is ready for the next restart (`base 2026.11.30 is ready; todo-app uses it at its next restart`). Then settings a new project wouldn't get (`setup: agent codex, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -367,7 +368,7 @@ DISK and `--size` go in one command, the disk first: `repose resize todo-app 160
 
 One of the machine's logs: `--kind console|build|ops`, default `console`. Lines come oldest first. A stopped machine, or one in `error`, still has its logs.
 
-`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration change's log: a build's on a NixOS machine, the install lines on an Ubuntu one. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
 
 ```text
 2026-10-08T21:38:02-04:00 stop done 4.2s
@@ -517,7 +518,7 @@ A machine that runs [herdr](/docs/run-and-attach#herdr-instead-of-tmux) instead 
 | ----------------------------------- | ------------ |
 | `repose config add PACKAGE...`      | Add [menu entries](/docs/config#the-menu) or apt packages and install them on the machine. With no names, list the menu's entries by group. |
 | `repose config remove PACKAGE...`   | Remove them again. Alias `rm`. |
-| `repose config show [PROJECT]`      | Print the project's menu, one entry or package a line. `repose config` alone does the same. |
+| `repose config show [PROJECT]`      | Print the project's menu, one entry or package a line, and nothing when it is empty. `repose config` alone does the same. |
 | `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id and whether each applied. `--json` for JSON, `-q`/`--quiet` for whole ids. |
 | `repose config apply [PATH]`        | With no PATH, apply the newest revision again, on a running machine. `--revision ID` applies an earlier revision to the running machine instead; ID is a whole id or 4 or more characters of either end. |
 | `repose config edit [PROJECT]`      | For an [older machine](/docs/machine#older-machines): edit its configuration file in `$VISUAL` or `$EDITOR`, apply on save. |
@@ -616,7 +617,7 @@ reverse = ["15432:5432"]
 
 ## Other servers
 
-The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
+The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.run/v1` does; one without it says `has no /v1 at its end` and exits 1. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
 
 `repose login --browser` logs in through a browser on this computer instead of a code, and needs a login application that registers a loopback redirect URI. The hosted one registers none, so `--browser` there, where a browser can be opened, waits 5 minutes and exits 3 with `Login failed: timed out waiting for the browser login (5 minutes).`
 

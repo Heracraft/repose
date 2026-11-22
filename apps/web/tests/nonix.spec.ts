@@ -3,19 +3,20 @@
 // the next base with Restart; the Nix shape is unchanged; the settings
 // nav lists machine.nix only for an account with a Nix project; the add
 // host dialog shows the x86 installer beside the Mac's step.
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { signIn, apiURLFromEnv, pruneProjects, ownedHost } from './helpers';
 
 const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
 
 /** Captures the viewport at 1x, at 1440 and 390, light and dark (CLAUDE.md "Judge visuals at real size"). */
-async function shots(page: Page, name: string): Promise<void> {
+async function shots(page: Page, name: string, region?: Locator): Promise<void> {
 	const dir = process.env.REPOSE_SHOTS_DIR;
 	if (!dir) return;
 	for (const width of [1440, 390]) {
 		for (const scheme of ['light', 'dark'] as const) {
 			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
 			await page.emulateMedia({ colorScheme: scheme });
+			if (region) await region.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
 		}
 	}
@@ -40,7 +41,7 @@ async function makeProject(
 /** Serves the project with pending_base_version set, as the base bump would. */
 async function withPendingBase(page: Page, id: string, version: string): Promise<void> {
 	await page.route(
-		(url) => url.pathname.endsWith(`/projects/${id}`),
+		(url) => url.pathname.endsWith(`/v1/projects/${id}`),
 		async (route) => {
 			if (route.request().method() !== 'GET') return route.fallback();
 			const res = await route.fetch();
@@ -155,6 +156,10 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 		await expect(dialog.getByTestId('host-mac-size')).toHaveText(
 			'It downloads about 250 MB and needs 20 GB of free disk.'
 		);
+		// Finding 9: what the installer takes for the machines' disks.
+		await expect(dialog.getByTestId('host-x86-disk')).toHaveText(
+			"It keeps your machines' disks in /var/lib/repose/guests.img, or with --device takes over a whole empty disk."
+		);
 		const x86 = dialog.getByTestId('host-install-x86');
 		await expect(x86).toContainText(
 			'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join '
@@ -174,4 +179,181 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 		}
 		await ownedHost({ limit: 1, set_install: false });
 	}
+});
+
+// Council finding 1 (D1): a package name the menu lacks is added from the
+// search, as `repose config add NAME` does (I-1508).
+test('the Packages search adds an apt package by name on an Ubuntu project', async ({ page }) => {
+	const p = await makeProject('ubuntu-apt', 'erofs');
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByPlaceholder('Search packages and services…').fill('ffmpeg');
+	await shots(page, 'config-add-apt', page.locator('.cadd'));
+	await page.getByRole('button', { name: 'Add package ffmpeg' }).click();
+	await expect(page.locator('.extras')).toContainText('ffmpeg');
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
+	const cfg = await (
+		await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, { headers: auth })
+	).json();
+	expect(JSON.stringify(cfg.menu)).toContain('"package":"ffmpeg"');
+	// A name apt would refuse, or a menu id, offers no Add.
+	await page.getByPlaceholder('Search packages and services…').fill('FFmpeg');
+	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
+	await page.getByPlaceholder('Search packages and services…').fill('redis');
+	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
+});
+
+// Council finding 4 (D2, I-1514): the outcome of an install is in view at
+// the Apply bar, failure and success both, at 1440 and 390.
+test('a failed install is said at the Apply bar, in view', async ({ page }) => {
+	const p = await makeProject('ubuntu-fail', 'erofs');
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+		await page.goto(`/projects/${p.id}/config`);
+		const search = page.getByPlaceholder('Search packages and services…');
+		await search.fill('repose-fake-missing');
+		await page.getByRole('button', { name: 'Add package repose-fake-missing' }).click();
+		await page.getByRole('button', { name: 'Apply', exact: true }).click();
+		const status = page.locator('.cbar-status');
+		await expect(status).toContainText(
+			'Not installed: repose-fake-missing failed: E: Unable to locate package repose-fake-missing',
+			{ timeout: 10_000 }
+		);
+		await expect(status).toBeInViewport();
+		await expect(status).not.toContainText('menu_failed');
+		if (width === 1440) await shots(page, 'config-install-failed', status);
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.getByText('Zig', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(page.locator('.cbar-status')).toContainText('Applied', { timeout: 10_000 });
+	await expect(page.locator('.cbar-status')).toBeInViewport();
+});
+
+// Council finding 5 (D3): a reload, or back then forward, during an
+// install shows the running install again, not an idle page with Apply.
+test('a reload or back and forward during an install shows it again', async ({ page }) => {
+	const p = await makeProject('ubuntu-reload', 'erofs');
+	let hold = true;
+	const released: (() => void)[] = [];
+	// The op reads as running, and its log stays open, until released.
+	await page.route(
+		(url) => /\/ops\/[^/]+$/.test(url.pathname),
+		async (route) => {
+			if (!hold) return route.fallback();
+			const res = await route.fetch();
+			const body = await res.json();
+			await route.fulfill({ response: res, json: { ...body, state: 'running', phase: 'apply_config' } });
+		}
+	);
+	await page.route(
+		(url) => /\/ops\/[^/]+\/log$/.test(url.pathname),
+		async (route) => {
+			if (hold) await new Promise<void>((r) => released.push(r));
+			await route.fallback();
+		}
+	);
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByText('Memcached', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	const status = page.locator('.cbar-status');
+	await expect(status).toContainText('Installing…');
+
+	await page.reload();
+	await expect(status).toContainText('Installing…');
+	await expect(page.getByRole('button', { name: /Apply/ })).toBeDisabled();
+	await shots(page, 'config-install-resumed', status);
+
+	await page.goto(`/projects/${p.id}`);
+	await page.goBack();
+	await expect(status).toContainText('Installing…');
+	await page.goForward();
+	await page.goBack();
+	await expect(status).toContainText('Installing…');
+
+	hold = false;
+	for (const r of released.splice(0)) r();
+	await page.reload();
+	await expect(status).not.toContainText('Installing…', { timeout: 10_000 });
+	await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+});
+
+// Council finding 7 (D5): Resize changes the size class, as `repose resize
+// --size` does: a stopped machine at once, a running one after asking,
+// with a stop and a start.
+test('Resize changes the machine size, as repose resize --size does', async ({ page }) => {
+	const p = await makeProject('ubuntu-size', 'erofs');
+	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: 'Resize…' }).click();
+	const panel = page.locator('#resize-panel');
+	await panel.getByLabel('Size').selectOption('xl');
+	await panel.getByRole('button', { name: 'Change size' }).click();
+	await expect(panel).toContainText('ends every process on it');
+	await shots(page, 'resize-size-ask', panel);
+	await panel.getByRole('button', { name: 'Stop, change and start' }).click();
+	await expect
+		.poll(
+			async () =>
+				(
+					await (
+						await fetch(`${apiURLFromEnv()}/projects/${p.id}`, { headers: auth })
+					).json()
+				).class,
+			{ timeout: 15_000 }
+		)
+		.toBe('xl');
+	await expect(page.locator('main')).toContainText('running', { timeout: 15_000 });
+});
+
+// Council finding 10 (D9): a waiting base shows on the Overview and the
+// project list, not only on the Config tab (I-1522).
+test('a waiting base shows on the Overview and the project list', async ({ page }) => {
+	const p = await makeProject('ubuntu-waits', 'erofs');
+	await withPendingBase(page, p.id, '2026.11.30');
+	await page.route(
+		(url) => url.pathname.endsWith('/v1/projects'),
+		async (route) => {
+			if (route.request().method() !== 'GET') return route.fallback();
+			const res = await route.fetch();
+			const list = (await res.json()) as { id: string }[];
+			await route.fulfill({
+				response: res,
+				json: list.map((x) => (x.id === p.id ? { ...x, pending_base_version: '2026.11.30' } : x))
+			});
+		}
+	);
+	await page.goto(`/projects/${p.id}`);
+	const details = page.locator('.details');
+	await expect(details).toContainText('2026.11.30 at the next restart');
+	await shots(page, 'overview-pending-base', details);
+	await page.goto('/projects');
+	const row = page.getByRole('row').filter({ hasText: p.slug });
+	await expect(row).toContainText('new base at next restart');
+});
+
+// Council finding 6 (D4, I-1524): a stale tab's Apply is refused with
+// menu_stale instead of dropping what another tab installed; the page
+// says so in one line and reloads the menu.
+test('a stale tab cannot drop what another tab installed', async ({ page, context }) => {
+	const p = await makeProject('ubuntu-tabs', 'erofs');
+	await page.goto(`/projects/${p.id}/config`);
+	const other = await context.newPage();
+	await other.goto(`/projects/${p.id}/config`);
+	await other.getByText('RabbitMQ', { exact: true }).click();
+	await other.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(other.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
+	await other.close();
+
+	await page.getByText('Ruby', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	const status = page.locator('.cbar-status');
+	await expect(status).toContainText('changed elsewhere', { timeout: 10_000 });
+	await shots(page, 'config-menu-stale', status);
+	const cfg = await (
+		await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, { headers: auth })
+	).json();
+	expect(JSON.stringify(cfg.menu)).toContain('"rabbitmq"');
+	// Reloaded: RabbitMQ is ticked now, Ruby is not.
+	await expect(page.getByRole('checkbox', { name: /RabbitMQ/ })).toBeChecked();
+	await expect(page.getByRole('checkbox', { name: /^Ruby/ })).not.toBeChecked();
 });

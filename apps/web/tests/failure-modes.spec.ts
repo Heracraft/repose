@@ -139,7 +139,7 @@ test('disk_limit on a resize is told like a start refusal, with a Change plan li
 	await expect(page.getByRole('button', { name: /^(Start|Stop)$/ }).first()).toBeVisible();
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.getByRole('button', { name: 'Resize…' }).click();
-	await page.locator('select.hk-select').selectOption('320');
+	await page.getByLabel('Grow to').selectOption('320');
 	await page.getByRole('button', { name: 'Grow' }).click();
 	const refusal = page.getByTestId('refusal');
 	await expect(refusal).toHaveAttribute('data-reason', 'disk_limit');
