@@ -156,6 +156,10 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 		await expect(dialog.getByTestId('host-mac-size')).toHaveText(
 			'It downloads about 250 MB and needs 20 GB of free disk.'
 		);
+		// Finding 9: what the installer takes for the machines' disks.
+		await expect(dialog.getByTestId('host-x86-disk')).toHaveText(
+			"It keeps your machines' disks in /var/lib/repose/guests.img, or with --device takes over a whole empty disk."
+		);
 		const x86 = dialog.getByTestId('host-install-x86');
 		await expect(x86).toContainText(
 			'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join '
