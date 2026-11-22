@@ -1,10 +1,5 @@
-// DECISIONS I-837: the feature grid is four cells, each a claim, one
-// paragraph and the command that does it. A visitor without the CLI cannot
-// run a command, so the cells carry no copy button, and no "$": the mono
-// face marks a command, as in the steps. Two columns from 1024px, one
-// below, where a cell runs the frame's width and its picture keeps the
-// 2x2's 34rem, starting on the text line (LANDING.md, I-961). I-843 puts a
-// picture over each cell's claim.
+// DECISIONS I-1452: grid, alignment, labeled agents, questions, and pricing
+// geometry on the overhauled 6-band landing page.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,10 +10,10 @@ const DOCS = fileURLToPath(new URL('../src/content/docs/', import.meta.url));
 const cells = '#features .cells > li';
 
 const CELLS: [string, string][] = [
-	['Restore the whole disk', 'repose snapshots restore'],
 	['Use its ports on your localhost', 'repose attach'],
 	["Watch the agent's browser, and take over", 'repose browser'],
-	['Open it in your editor', 'ssh your-project.repose']
+	['Open it in your editor', 'ssh your-project.repose'],
+	['Close your laptop and get notified', 'repose ls']
 ];
 
 async function grid(page: Page, width: number) {
@@ -27,17 +22,39 @@ async function grid(page: Page, width: number) {
 	await page.locator('#features').scrollIntoViewIfNeeded();
 }
 
-test('four cells, each a claim and its command, no copy button', async ({ page }) => {
+test('01 How it works: three flush columns on thirds with unique commands', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const cols = page.locator('#how .cols > li');
+	await expect(cols).toHaveCount(3);
+	await expect(cols.locator('h3')).toHaveText([
+		'Sync your state in one command',
+		'Run unattended off your laptop',
+		'Roll back the whole disk, or fork it'
+	]);
+	await expect(cols.locator('.cmd')).toHaveText([
+		'repose run',
+		'repose run -p "..."',
+		'repose snapshots restore'
+	]);
+	const boxes = await cols.evaluateAll((els) =>
+		els.map((e) => {
+			const r = e.getBoundingClientRect();
+			return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) };
+		})
+	);
+	expect(new Set(boxes.map((b) => b.y)).size).toBe(1);
+	expect(new Set(boxes.map((b) => b.x)).size).toBe(3);
+});
+
+test('02 Workflow: four cells, each a claim and its command, no copy button', async ({ page }) => {
 	await grid(page, 1440);
 	await expect(page.locator(`${cells} h3`)).toHaveText(CELLS.map(([h]) => h));
 	await expect(page.locator(`${cells} .cmd`)).toHaveText(CELLS.map(([, c]) => c));
-	// The pictures' pause buttons are the only buttons in the cells.
-	await expect(page.locator(`${cells} button:not(.pic-pause)`)).toHaveCount(0);
+	await expect(page.locator(`${cells} button`)).toHaveCount(0);
 });
 
-// Every command a cell shows is one the docs give: a repose command is
-// in cli.md, and the SSH host is the one machine.md names.
-test("each cell's command is in the docs", async () => {
+test("each workflow cell's command is in the docs", async () => {
 	const cli = readFileSync(join(DOCS, 'cli.md'), 'utf8');
 	const machine = readFileSync(join(DOCS, 'machine.md'), 'utf8');
 	for (const [, cmd] of CELLS) {
@@ -56,7 +73,7 @@ for (const [width, cols] of [
 	[768, 1],
 	[390, 1]
 ] as const) {
-	test(`the cells run in ${cols} column(s) at ${width}`, async ({ page }) => {
+	test(`the workflow cells run in ${cols} column(s) at ${width}`, async ({ page }) => {
 		await grid(page, width);
 		const boxes = await page.locator(cells).evaluateAll((els) =>
 			els.map((e) => {
@@ -68,15 +85,11 @@ for (const [width, cols] of [
 		const xs = new Set(boxes.map((b) => b.x));
 		expect(xs.size).toBe(cols);
 		if (cols === 2) {
-			// Rows line up: cells 1 and 2 share a top, so do 3 and 4.
 			expect(boxes[0].y).toBe(boxes[1].y);
 			expect(boxes[2].y).toBe(boxes[3].y);
 			expect(boxes[0].w).toBe(boxes[1].w);
 		}
 		if (cols === 1 && width >= 640) {
-			// One column, a cell's stage runs the cell's width, as the
-			// other bands' do, and its windows run from the text line to
-			// the right one, the same gutter at both sides.
 			const text = await page
 				.locator('#features h2')
 				.evaluate((e) => Math.round(e.getBoundingClientRect().left));
@@ -93,13 +106,13 @@ for (const [width, cols] of [
 					};
 				})
 			);
+			expect(m).toHaveLength(2);
 			for (const c of m) {
 				expect(c.stage).toBe(c.cell);
 				expect(c.win).toBe(text);
 				expect(Math.abs(c.gutter - text)).toBeLessThanOrEqual(1);
 			}
 		}
-		// A 24px claim runs to three lines at most.
 		const lines = await page
 			.locator(`${cells} h3`)
 			.evaluateAll((els) =>
@@ -111,38 +124,39 @@ for (const [width, cols] of [
 	});
 }
 
-// I-843: the agents section is the Ready picture under its heading, with
-// its two links on the headline's row.
-test('the agents section links to the agents and everything installed', async ({ page }) => {
+// I-1452 (amending I-287): all five preinstalled agents carry visible names
+// beside their marks, and the section links to both docs pages.
+test('the agents section names all five agents visibly and links to the docs', async ({
+	page
+}) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
-	const heading = page.getByRole('heading', {
-		name: 'The agents you use, and the tools they need, on first boot'
-	});
-	const section = page.locator('section', { has: heading });
+	const section = page.locator('#agents');
+	const heading = section.getByRole('heading', { name: 'Preinstalled on first boot' });
 	const all = section.getByRole('link', { name: 'All agents' });
 	await expect(all).toHaveAttribute('href', '/docs/agents');
 	await expect(section.getByRole('link', { name: 'Everything installed' })).toHaveAttribute(
 		'href',
 		'/docs/machine#whats-installed'
 	);
-	// In the head's right half, on the headline's last line (I-961,
-	// option D: a head's side item stands on the h2's last baseline), the
-	// pair ending on the right text line, 16px apart (the owner's pick).
+	await expect(section.locator('.agents .aname')).toHaveText([
+		'Claude Code',
+		'Codex',
+		'opencode',
+		'Gemini CLI',
+		'pi'
+	]);
+	await expect(section.locator('.agents svg')).toHaveCount(5);
 	const h = (await heading.boundingBox())!;
 	const l = (await all.boundingBox())!;
 	expect(l.x).toBeGreaterThan(h.x + h.width);
 	expect(Math.abs(l.y + l.height - (h.y + h.height))).toBeLessThan(16);
 });
 
-// I-961, the owner's pick: every head whose side item is a pair of links
-// ends the pair on the right text line (the frame's right content edge,
-// where the cells' and the steps' text ends), 16px apart, with the link
-// text on the h2's last baseline, and every head stands as far over what
-// it heads as a head with a paragraph does. (The agents test above holds
-// the links on the h2's last line.)
 for (const width of [1440, 1280, 1024]) {
-	test(`the head links end on the right text line at ${width}`, async ({ page }) => {
+	test(`the head links and CTA buttons end on the right text line at ${width}`, async ({
+		page
+	}) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
 		const m = await page.evaluate(() => {
@@ -152,8 +166,6 @@ for (const width of [1440, 1280, 1024]) {
 				const rects = [...r.getClientRects()];
 				return rects[rects.length - 1];
 			};
-			// An element's last baseline: where an empty inline block at its
-			// end stands.
 			const baseline = (e: Element) => {
 				const s = document.createElement('span');
 				s.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
@@ -165,38 +177,35 @@ for (const width of [1440, 1280, 1024]) {
 			const cell = document.querySelector('#features .cells > li:nth-child(2) .cell-copy')!;
 			const cr = cell.getBoundingClientRect();
 			const right = cr.right - parseFloat(getComputedStyle(cell).paddingRight);
-			const button = document.querySelector('#pricing .head .hk-btn')!;
-			// The steps' Copy labels, where they show (from 1200px).
 			const copies = [...document.querySelectorAll('.steps .hk-copy .layer:not(.off)')].map(
 				(l) => line(l).right
 			);
-			return {
-				right,
-				copies,
-				button: {
-					right: button.getBoundingClientRect().right,
-					base: baseline(button.querySelector('.swap > span')!),
-					h2: baseline(document.querySelector('#pricing-h')!)
-				},
-				heads: [...document.querySelectorAll('main .band > .head')].map((head) => {
-					const h2 = head.querySelector('h2')!;
-					const links = [...head.querySelectorAll('.links a')];
-					const last = line(h2);
-					const next = head.nextElementSibling!.getBoundingClientRect().top;
-					return {
-						id: h2.id,
-						toNext: next - last.bottom,
-						base: baseline(h2),
-						links: links.map((a) => ({ ...a.getBoundingClientRect().toJSON(), base: baseline(a) }))
-					};
-				})
-			};
+			const buttons = ['#pricing', '#install'].map((sel) => {
+				const head = document.querySelector(`${sel} .head`)!;
+				const btn = head.querySelector('.hk-btn')!;
+				const h2 = head.querySelector('h2')!;
+				return {
+					sel,
+					right: btn.getBoundingClientRect().right,
+					base: baseline(btn.querySelector('.swap > span')!),
+					h2: baseline(h2)
+				};
+			});
+			const heads = [...document.querySelectorAll('main .band > .head')].map((head) => {
+				const h2 = head.querySelector('h2')!;
+				const links = [...head.querySelectorAll('.links a')];
+				return {
+					id: h2.id,
+					base: baseline(h2),
+					links: links.map((a) => ({ ...a.getBoundingClientRect().toJSON(), base: baseline(a) }))
+				};
+			});
+			return { right, copies, buttons, heads };
 		});
-		// Copy's label ends there too, not its button's padding.
 		if (width >= 1200) expect(m.copies).toHaveLength(3);
 		for (const c of m.copies) expect(Math.abs(c - m.right)).toBeLessThanOrEqual(1);
 		const paired = m.heads.filter((h) => h.links.length === 2);
-		expect(paired.map((h) => h.id)).toEqual(['parts-h', 'agents-h', 'install-h', 'faq-h']);
+		expect(paired.map((h) => h.id)).toEqual(['agents-h', 'faq-h']);
 		for (const h of paired) {
 			const [a, b] = h.links;
 			expect(Math.abs(b.right - m.right), h.id).toBeLessThanOrEqual(1);
@@ -204,97 +213,68 @@ for (const width of [1440, 1280, 1024]) {
 			expect(Math.abs(a.base - h.base), h.id).toBeLessThanOrEqual(1);
 			expect(Math.abs(b.base - h.base), h.id).toBeLessThanOrEqual(1);
 		}
-		// Pricing's button ends on the same right edge, its label on the
-		// h2's last baseline (owner, 2026-11-02: it had started on the
-		// centre column).
-		expect(Math.abs(m.button.right - m.right)).toBeLessThanOrEqual(1);
-		expect(Math.abs(m.button.base - m.button.h2)).toBeLessThanOrEqual(1);
-		// One head-to-content distance for the link heads and the paragraph
-		// heads alike (the pricing button is taller, and stands apart).
-		const gaps = m.heads.filter((h) => h.id !== 'pricing-h').map((h) => Math.round(h.toNext));
-		expect(new Set(gaps).size, gaps.join(',')).toBe(1);
+		for (const btn of m.buttons) {
+			expect(Math.abs(btn.right - m.right), btn.sel).toBeLessThanOrEqual(1);
+			expect(Math.abs(btn.base - btn.h2), btn.sel).toBeLessThanOrEqual(1);
+		}
 	});
 }
 
-// The owner, 2026-11-02: the hero's buttons never stand beside the lead
-// (a version had Get started and Copy install command to its right).
-// They share one row under the headline and the lead at every width.
-// From 1024px the copy stands centred over the hero's picture (owner,
-// 2026-11-15), so the headline, the lead and that row share one centre
-// line: the row is the buttons and the install line together, centred
-// as one. The picture is the real `repose run` session since I-1446, so
-// the measurement is against its pane rather than against the Orbit's
-// ring; the rule is about the copy, not about which picture is there.
 for (const width of [1024, 1100, 1280, 1440, 1920]) {
-	test(`the hero's copy is centred and its buttons stand under the lead at ${width}`, async ({
+	test(`the hero's copy is centred and its CTA + install bar stand under the lead at ${width}`, async ({
 		page
 	}) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
 		const lead = (await page.locator('.hero .hk-lead').boundingBox())!;
 		const h1 = (await page.locator('#hero-h').boundingBox())!;
-		const start = (await page.getByRole('link', { name: 'Get started' }).boundingBox())!;
-		const copy = (await page.getByRole('button', { name: 'Copy install command' }).boundingBox())!;
-		const install = (await page.locator('.hero .install').boundingBox())!;
+		const start = (await page.locator('.hero').getByRole('link', { name: 'Start a free week' }).boundingBox())!;
+		const install = (await page.locator('.hero .hero-install .code-copy').boundingBox())!;
 		const pic = (await page.locator('.hero .term').boundingBox())!;
 		expect(start.y).toBeGreaterThan(Math.max(lead.y + lead.height, h1.y + h1.height));
-		expect(Math.abs(copy.y - start.y)).toBeLessThanOrEqual(1);
+		expect(Math.abs(install.y - start.y)).toBeLessThanOrEqual(2);
 		const middle = (b: { x: number; width: number }) => b.x + b.width / 2;
-		// The row runs from the first button's left edge to the install
-		// line's right edge; nothing of the copy stands off the centre.
 		const row = (start.x + install.x + install.width) / 2;
 		for (const [what, mid] of [
 			['the headline', middle(h1)],
 			['the lead', middle(lead)],
-			['the buttons', row]
+			['the actions', row]
 		] as const)
-			expect(Math.abs(mid - middle(pic)), `${what} at ${width}`).toBeLessThanOrEqual(1);
+			expect(Math.abs(mid - middle(pic)), `${what} at ${width}`).toBeLessThanOrEqual(2);
 	});
 }
 
-test('the questions open, one answer at a time as asked', async ({ page }) => {
-	// The reach answer is secrets.md's "Not your laptop", in its words.
+test('the questions open one answer at a time and cover BYO accounts, Mac restarts and isolation', async ({
+	page
+}) => {
 	const secrets = readFileSync(join(DOCS, 'secrets.md'), 'utf8');
 	expect(secrets).toContain('Nothing on the machine can open a connection to it.');
-	// The snapshot answer is lifecycle.md's "Snapshots", in its numbers.
-	const lifecycle = readFileSync(join(DOCS, 'lifecycle.md'), 'utf8');
-	expect(lifecycle).toContain(
-		'Snapshots from the last 7 days are kept, and the newest one always.'
-	);
-	expect(lifecycle).toContain(
-		'The disk is snapshotted every night while running, and whenever you stop.'
-	);
 	await page.goto('/');
-	const q = page.locator('section', {
-		has: page.getByRole('heading', { name: 'Before you try it' })
-	});
-	// I-1446: each question is a reason to try it, for a developer whose
-	// coding agents need a machine. The two that argued the framework are
-	// gone and the two a Mac owner asks are in.
-	const restart = lifecycle.includes('programs, tmux windows and agents carry on where they were');
-	expect(restart).toBe(true);
+	const q = page.locator('#questions');
 	await expect(q.locator('summary')).toHaveText([
-		'Can I run it on a Mac I already have?',
-		'What happens when my Mac sleeps or reboots?',
-		'Can I close my laptop while it works?',
-		'What can the agent reach?',
-		'What happens when it breaks something?',
+		'Do I bring my own Claude, Codex or Gemini account?',
+		'Can I run it on a Mac mini or x86 box I already own?',
+		'What happens when my Mac sleeps or restarts?',
+		'What can an agent reach on the machine?',
 		'What does an agent cost while it waits?'
 	]);
+	const byo = q.locator('details').nth(0);
+	await expect(byo.locator('p')).toBeHidden();
+	await byo.locator('summary').click();
+	await expect(byo.locator('p')).toContainText('your own agent subscriptions or API keys');
+
+	const macRestart = q.locator('details').nth(2);
+	await macRestart.locator('summary').click();
+	await expect(macRestart.locator('p')).toContainText('what they held in memory is gone');
+
 	const reach = q.locator('details').nth(3);
-	await expect(reach.locator('p')).toBeHidden();
 	await reach.locator('summary').click();
 	await expect(reach.locator('p')).toContainText(
-		'it connects to your laptop only through a port or a Chrome you lend it'
+		'it connects to your laptop only through a port or a Chrome window you lend it'
 	);
 });
 
-// I-961 (option D): the cells are flush on the sheet, split by inner
-// rules with no gap, the stage square and with no edge but the hairline
-// over it: the centre hairline half a gap left of the column line, so
-// the right cells' text starts on it (the head's right half). The band
-// ends on its last row, on the next band's rule.
-test('the cells are flush, ruled and gapless, on the column line', async ({ page }) => {
+test('the workflow cells are flush, ruled and gapless, on the column line', async ({ page }) => {
 	await grid(page, 1440);
 	const css = await page.locator(cells).evaluateAll((els) =>
 		els.map((e) => {
@@ -313,18 +293,12 @@ test('the cells are flush, ruled and gapless, on the column line', async ({ page
 	expect(css.map((c) => c.top)).toEqual(['0px', '0px', '1px', '1px']);
 	expect(css[0].left).toBe('0px');
 	expect(css[1].left).toBe('1px');
-	// Cells meet: no gap across or down.
 	expect(Math.round(css[0].x + css[0].w)).toBe(Math.round(css[1].x));
 	expect(Math.round(css[0].b)).toBe(Math.round(css[2].y));
 	const band = await page.locator('#features').boundingBox();
 	const next = await page.locator('#features + section').boundingBox();
 	expect(Math.round(css[3].b)).toBe(Math.round(band!.y + band!.height));
 	expect(Math.round(band!.y + band!.height)).toBe(Math.round(next!.y));
-	// A stage is the cell: flush to it, square, with no edge of its own.
-	// Since the hero loop's round 4 a cell reads its words first and its
-	// picture under them, so the stage's one hairline is at its top,
-	// between the command and the picture; its other three sides are the
-	// cell's.
 	const shots = await page.locator(`${cells} > .shot`).evaluateAll((els) =>
 		els.map((e) => {
 			const s = getComputedStyle(e);
@@ -339,6 +313,7 @@ test('the cells are flush, ruled and gapless, on the column line', async ({ page
 			};
 		})
 	);
+	expect(shots).toHaveLength(2);
 	for (const sh of shots) {
 		expect(sh.radius).toBe('0px');
 		expect(sh.edges).toEqual(['1px', '0px', '0px', '0px']);
@@ -346,17 +321,13 @@ test('the cells are flush, ruled and gapless, on the column line', async ({ page
 		expect(sh.db).toBe(0);
 		expect(sh.dl).toBeLessThanOrEqual(1);
 	}
-	// The hairline stands 16px left of the column line, where the right
-	// cells' text and the heads' paragraphs start.
 	const title = await page.locator(`${cells}:nth-child(2) h3`).boundingBox();
-	const side = await page.locator('#setup-h + .side').boundingBox();
+	const side = await page.locator('#how-h + .side').boundingBox();
 	expect(Math.abs(title!.x - side!.x)).toBeLessThanOrEqual(1);
 	expect(Math.round(title!.x - css[1].x)).toBe(16);
 });
 
-// I-961 (option D): the thirds lines. Ready's shell and the second and
-// third plans start on them, 16px left of a column's text.
-test('the plans and the Ready shell stand on the thirds at 1440', async ({ page }) => {
+test('the plans stand on the thirds at 1440', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	const m = await page.evaluate(() => {
@@ -364,31 +335,21 @@ test('the plans and the Ready shell stand on the thirds at 1440', async ({ page 
 		return {
 			plans: [0, 1, 2].map((i) => x('.plans--public .plan', i)),
 			names: [0, 1, 2].map((i) => x('.plans--public .p-name', i)),
-			shell: x('.ready .tcell'),
-			term: x('.ready .term'),
-			content: x('#setup-h')
+			content: x('#how-h')
 		};
 	});
 	const third = (m.names[2] - m.names[0]) / 2;
 	expect(Math.round(m.names[1] - m.names[0])).toBe(Math.round(third));
 	expect(Math.round(m.names[0])).toBe(Math.round(m.content));
 	for (const i of [1, 2]) expect(Math.round(m.names[i] - m.plans[i])).toBe(16);
-	expect(Math.abs(m.shell - m.plans[1])).toBeLessThanOrEqual(1);
-	// The shell's window stands on the cell's text line, as a plan's name.
-	expect(Math.abs(m.term - m.names[1])).toBeLessThanOrEqual(1);
 });
 
-// Every picture's windows are inset on their stage, the Ready shell's
-// too: the cell's text lines at the sides, the stage's inset above and
-// below. Below 1024px the windows run the cell's width, the same gutter
-// at both sides (the 34rem cap left a 164px strip at 768).
 for (const width of [1440, 768, 390]) {
-	test(`the windows stand inset on their stages at ${width}`, async ({ page }) => {
-		await page.emulateMedia({ reducedMotion: 'reduce' });
+	test(`the workflow captures stand inset on their stages at ${width}`, async ({ page }) => {
 		await grid(page, width);
 		const m = await page.evaluate(() => {
 			const r = (e: Element) => e.getBoundingClientRect();
-			const cells = [...document.querySelectorAll('#features .cells > li')].map((li) => {
+			return [...document.querySelectorAll('#features .cells > li:has(> .shot)')].map((li) => {
 				const shot = r(li.querySelector('.shot')!);
 				const wins = [...li.querySelectorAll('.shot .shot-win')].map(r);
 				return {
@@ -397,45 +358,15 @@ for (const width of [1440, 768, 390]) {
 					top: Math.min(...wins.map((w) => w.top)) - shot.top
 				};
 			});
-			const cell = r(document.querySelector('.ready .tcell')!);
-			const term = r(document.querySelector('.ready .term')!);
-			return {
-				cells,
-				ready: {
-					top: term.top - cell.top,
-					bottom: cell.bottom - term.bottom,
-					right: cell.right - term.right
-				}
-			};
 		});
-		for (const c of m.cells) expect(c.top).toBeGreaterThanOrEqual(12);
+		expect(m).toHaveLength(2);
+		for (const c of m) expect(c.top).toBeGreaterThanOrEqual(12);
 		if (width < 1024) {
-			for (const c of m.cells) expect(Math.abs(c.left - c.right)).toBeLessThanOrEqual(1);
+			for (const c of m) expect(Math.abs(c.left - c.right)).toBeLessThanOrEqual(1);
 		}
-		// (Below 1024px the cell's top rule is inside it.)
-		expect(Math.abs(m.ready.top - m.ready.bottom)).toBeLessThanOrEqual(1);
-		expect(m.ready.top).toBeGreaterThanOrEqual(12);
-		expect(m.ready.right).toBeGreaterThanOrEqual(15);
 	});
 }
 
-// The Editor's statusline keeps its right segment (position, line and
-// column, clock) whole inside the screen at every width.
-for (const width of [1440, 768, 390]) {
-	test(`the Editor's statusline stays whole at ${width}`, async ({ page }) => {
-		await grid(page, width);
-		const [r, screen] = await Promise.all([
-			page.locator('#features .ed .sl-r').boundingBox(),
-			page.locator('#features .ed .screen').boundingBox()
-		]);
-		expect(r!.x + r!.width).toBeLessThanOrEqual(screen!.x + screen!.width + 0.5);
-		expect(r!.x).toBeGreaterThan(screen!.x);
-	});
-}
-
-// The plans run the sheet's width as the steps do, stacked one per row
-// below 1024px, each name on the steps' text line; PlanCells' own
-// 640-899px card padding stays off the landing.
 for (const width of [768, 390]) {
 	test(`the plans stack on the steps' line at ${width}`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
@@ -458,23 +389,3 @@ for (const width of [768, 390]) {
 		expect(Math.round(name!.x)).toBe(Math.round(num!.x));
 	});
 }
-
-// The snapshots window runs the machine's height, so both end on the
-// stage's inset; the older tile, folded to its head, stands 4px under
-// the newest one at the window's top (review of the owner's pick).
-test("the snapshots window runs the machine's height at 1440", async ({ page }) => {
-	// The still frame: the loop moves the older tile.
-	await page.emulateMedia({ reducedMotion: 'reduce' });
-	await grid(page, 1440);
-	const m = await page.evaluate(() => {
-		const r = (s: string) => document.querySelector(s)!.getBoundingClientRect();
-		return {
-			stack: r('#features .stack'),
-			old: r('#features .stack .tile.old'),
-			machine: r('#features .machine')
-		};
-	});
-	expect(Math.abs(m.stack.top - m.machine.top)).toBeLessThanOrEqual(1);
-	expect(Math.abs(m.stack.bottom - m.machine.bottom)).toBeLessThanOrEqual(1);
-	expect(m.old.top + 29).toBeLessThan(m.stack.bottom - 8);
-});

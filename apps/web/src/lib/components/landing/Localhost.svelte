@@ -116,6 +116,8 @@
 		{ text: ' ms', style: 'color:var(--t-dim);' }
 	];
 
+	let { animated = true }: { animated?: boolean } = $props();
+
 	let pic: HTMLDivElement;
 	const picture = new Picture({ group: 'grid' });
 	// The seam (ms): the frame equals the still frame here.
@@ -124,6 +126,7 @@
 	let typing = $state(false);
 
 	onMount(() => {
+		if (!animated) return;
 		let dead = false;
 		let visible = false;
 		let tl: { pause(): unknown; play(): unknown } | null = null;

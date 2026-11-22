@@ -1,60 +1,45 @@
 /*
- * The landing's layout (Guide B 13.1, DECISIONS I-837, I-961): one ruled
- * sheet on a 12-column grid. The sheet is the frame's content box outset
- * by --edge, half the column gap from 1024px, so every vertical rule (the
- * two rails, the centre hairline, the thirds lines) stands 16px from the
- * text beside it. Bands stack with no gap: each opens on a full-bleed
- * rule and ends on the next one. Every band after the hero opens with the
- * same head (the h2, and its one side item on the h2's last baseline); a
- * stage is the cell itself, flush from rule to rule, and a looping
- * picture's pause button stands at its corner (a band's) or on its
- * title's line (a cell's). The hero's field is the one place the sheet
- * breaks: a dark plate that runs to the window's edges, carries the dot
- * grid, and the rails stop at it. Type, colour, buttons and the plan cards come from the kit
- * (lib/hk) and PlanCells; this file places them. docs/LANDING.md records
- * the rules.
+ * The landing's layout (Guide B 13.1, Herakraft UI): one ruled sheet on a
+ * 12-column grid. The sheet is the frame's content box outset by --edge,
+ * half the column gap from 1200px, so every vertical rule stands 16px from
+ * the text beside it. Bands stack with no gap: each opens on a full-bleed
+ * rule and ends on the next one. No full-bleed dark slabs interrupt the
+ * light sheet; the hero terminal is the page's one dark code anchor inside
+ * the rails.
  *
- * Spacing is one scale, 8 16 24 32 48 64 96: a band opens with --band-y
- * (96 from 1024px, 64 from 768, 48 on a phone), a head is --head-gap
- * above what it heads, and the columns are --col-gap apart.
- *
- * Imported by routes/+page.svelte alone, unlayered, so every rule is
- * scoped under .landing (or, for the footer, under a page holding
- * main.landing) and sets no colour the kit's tokens do not give.
+ * Spacing is on the Herakraft scale (8 16 24 32 48 64): compact enough to
+ * read without scroll fatigue while keeping clear editorial rhythm.
  */
 
 .landing {
-	--band-y: 3rem;
-	--head-gap: 2rem;
+	--band-y: 2.25rem;
+	--head-gap: 1.375rem;
 	--col-gap: 2rem;
-	--item-gap: 1.5rem;
-	/* How far a sheet element (a figure, the cells, the steps, the plans,
-	   the questions) runs past the content box, and so how far its text
-	   is padded back in on the sheet's outer sides: the frame's gutter, so
-	   the sheet is the window, until the rails show (1200px, where the
-	   frame stops growing), and half a column gap from there. --in pads text off a rule inside the sheet
-	   (the centre hairline, the thirds). */
+	--item-gap: 1.25rem;
 	--edge: var(--frame-x);
 	--in: calc(var(--col-gap) / 2);
-	/* Two rule weights: the rails and the bands' rules, then every rule
-	   inside a band. */
 	--rule-band: var(--hk-border);
 	--rule-in: var(--hk-hairline);
-	/* A band picture's field above and below its windows: half a band,
-	   and never under 48px, so its pause button (28px, 44px to a finger)
-	   stands in the field's top right corner. */
-	--field-y: max(calc(var(--band-y) / 2), 3rem);
+	--field-y: 1.75rem;
+}
+@media (max-width: 639.98px) {
+	.landing {
+		--shot-h: 18rem;
+	}
 }
 @media (min-width: 768px) {
 	.landing {
-		--band-y: 4rem;
-		--head-gap: 2.5rem;
+		--band-y: 2.75rem;
+		--head-gap: 1.625rem;
+		--field-y: 2rem;
 	}
 }
 @media (min-width: 1024px) {
 	.landing {
-		--band-y: 6rem;
-		--head-gap: 3rem;
+		--band-y: 3.5rem;
+		--head-gap: 1.875rem;
+		--field-y: 2.25rem;
+		--shot-h: 20.5rem;
 	}
 }
 @media (min-width: 1200px) {
@@ -70,18 +55,10 @@
 	isolation: isolate;
 	padding-block: var(--band-y) 0;
 }
-/* A band's rule runs the window's width from the frame (border-image
-   outset paints past the box without widening the page). */
 .landing .band + .band {
 	border-top: 1px solid;
 	border-image: linear-gradient(var(--rule-band), var(--rule-band)) 1 / 1px 0 0 / 0 100vw;
 }
-/* The rails: the sheet's two edges, drawn from 1200px, where the frame
-   stops growing and page shows beside it, under the band's content so
-   the hero field's spread fill covers them. A 9px cross marks each band
-   rule where it meets a rail, the field's top edge and the footer's
-   last rule. The sticky header covers the first band's top, so the
-   rails start under it with no cross. */
 @media (min-width: 1200px) {
 	.landing .band::before {
 		content: '';
@@ -92,7 +69,6 @@
 		pointer-events: none;
 	}
 	.landing .band + .band::after,
-	.landing .fig--field::after,
 	:root:has(main.landing) .site-footer > .frame::after,
 	:root:has(main.landing) .site-footer .bottom::before {
 		content: '';
@@ -109,32 +85,15 @@
 			linear-gradient(var(--hk-text-4), var(--hk-text-4)) right 0 top 4px / 9px 1px no-repeat;
 		pointer-events: none;
 	}
-	/* The field's top edge: the figure is the sheet, so the cross sits
-	   on its own edges. */
-	.landing .fig--field::after {
-		left: -5px;
-		right: -5px;
-	}
 }
 
-/* ---------- The header, on the landing ---------- */
+/* ---------- The header and footer, on the landing ---------- */
 
-/* The sticky header is opaque here: its translucent blur picked up the
-   hero's dark plate as the page scrolled under it and turned a muddy
-   grey in the light scheme. */
 :root:has(main.landing) .site-header {
 	background: var(--hk-bg);
 	backdrop-filter: none;
 	-webkit-backdrop-filter: none;
 }
-
-/* ---------- The footer, on the landing ---------- */
-
-/* The sheet runs on into the footer and closes there: its padding moves
-   inside its frame, the rails run down to the rule over the theme
-   switch, and that rule, a band rule from rail to rail (window to window
-   below 1200px), ends them with a cross pair. The docs and dashboard
-   footers are untouched. */
 :root:has(main.landing) .site-footer {
 	padding-block: 0;
 	border-top-color: var(--hk-border);
@@ -176,28 +135,25 @@
 
 /* ---------- Type ---------- */
 
-/* One display size per level and one title for every item on the page:
-   the cells, the steps, the plans and the questions. The h1 never sets
-   smaller than an h2: on a 390px phone it holds two lines at 32px. */
 .landing h1.hk-h1 {
-	max-width: 15em;
+	max-width: 16em;
 	margin: 0;
-	font-size: clamp(1.875rem, 0.6rem + 5.7vw, 3.75rem);
-	line-height: 1.04;
+	font-size: clamp(1.875rem, 0.6rem + 5.2vw, 3.5rem);
+	line-height: 1.05;
 	letter-spacing: -0.025em;
 	text-wrap: balance;
 }
 .landing h2.hk-h2 {
-	max-width: 20em;
+	max-width: 22em;
 	margin: 0;
-	font-size: clamp(1.75rem, 1.25rem + 1.6vw, 2.5rem);
-	line-height: 1.1;
+	font-size: clamp(1.625rem, 1.15rem + 1.4vw, 2.25rem);
+	line-height: 1.12;
 	letter-spacing: -0.02em;
 	text-wrap: balance;
 }
 .landing .item-title,
-.landing .own .o-name,
-.landing .plans .p-name {
+main.landing .own .o-name,
+main.landing .plans .p-name {
 	margin: 0;
 	font-family: var(--hk-font-display);
 	font-size: 1.25rem;
@@ -207,11 +163,6 @@
 	text-transform: none;
 	color: var(--hk-text);
 }
-/* The page's one label: 12px Geist Mono, upper case and tracked, in the
-   third grey. The bands' and cells' numbered labels and the step
-   numbers take it; a number stands in the second grey at a fixed width,
-   so the names after it start on one line. The hero has no label: its
-   headline opens the page (I-1212). */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
@@ -227,8 +178,6 @@
 	min-width: 2.75em;
 	color: var(--pic-accent);
 }
-/* The page's numbers (bands, cells, steps) take the pictures' muted slate
-   blue, the one accent the page's own type carries (owner, 2026-11-12). */
 .landing span.label {
 	color: var(--pic-accent);
 }
@@ -240,37 +189,27 @@
 	color: var(--hk-text-2);
 	text-wrap: pretty;
 }
-/* A command named in a sentence is set as the commands under the cells
-   are: mono, in the sentence's grey, with no chip, so the page has one
-   inline treatment for a command it names. */
-.landing .copy code,
-.landing .faq code {
+/* Commands named in prose stay mono without a pill background. */
+.landing :is(.hk-lead, .copy, .faq, .pricing-note) code {
 	padding: 0;
 	border: 0;
 	background: none;
 	font-family: var(--hk-font-mono);
 	font-size: 0.875em;
-	color: inherit;
+	color: var(--hk-text);
 	white-space: nowrap;
 }
 
-/* ---------- Heads ----------
+/* ---------- Heads ---------- */
 
-   Every band after the hero opens the same way: its numbered label, the
-   h2 under it, and from 1024px the band's one side item in the right
-   half, standing on the h2's last baseline. A paragraph starts on the
-   column line; an action ends on the right text line: a pair of links
-   16px apart, or pricing's button (see Pricing).
-   Its foot is the inner rule that opens what it heads, across the
-   sheet. */
 .landing .head {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
-	row-gap: 0.75rem;
+	row-gap: 0.625rem;
 	padding-bottom: var(--head-gap);
 }
 .landing .head > .num {
-	margin-bottom: 0.25rem;
+	margin-bottom: 0.125rem;
 }
 .landing .head .side {
 	margin-top: 0.25rem;
@@ -300,11 +239,11 @@
 /* ---------- Hero ---------- */
 
 .landing .hero {
-	padding-top: 3rem;
+	padding-top: 2rem;
 }
 @media (min-width: 1024px) {
 	.landing .hero {
-		padding-top: 4rem;
+		padding-top: 3rem;
 	}
 }
 .landing .hero-copy {
@@ -313,28 +252,73 @@
 	padding-bottom: var(--head-gap);
 }
 .landing .hero .hk-lead {
-	max-width: 34rem;
-	margin: 2rem 0 0;
+	max-width: 40rem;
+	margin: 1rem 0 0;
 	font-size: 1.0625rem;
-	line-height: 1.6;
+	line-height: 1.55;
 	color: var(--hk-text-2);
 	text-wrap: pretty;
 }
 .landing .hero-act {
-	min-width: 0;
-	margin-top: 2rem;
-}
-.landing .ctas {
 	display: flex;
 	flex-wrap: wrap;
+	align-items: center;
 	gap: 0.75rem;
+	min-width: 0;
+	margin-top: 1.375rem;
 }
-/* From 1024px the hero's copy stands centred over the centred picture
-   (owner, 2026-11-15, I-1212: no asymmetry): the headline in two
-   balanced lines, the lead under it on its measure, and the buttons
-   with the install line on one centred row under both, never beside
-   the lead (owner, 2026-11-02). The I-961 twelve-column hero, the
-   headline and lead side by side from 1200px, went with it. */
+.landing .hero-install {
+	min-width: 0;
+	max-width: 100%;
+}
+.landing .hero-install .code-copy {
+	min-height: 2.5rem;
+	min-width: 0;
+	width: 100%;
+	max-width: 100%;
+	padding: 0.375rem 0.5rem 0.375rem 0.75rem;
+}
+/* From 640px keep the install line single-line; below 640px let CodeCopy
+   wrap after `/` so a mobile visitor reads the entire `curl ... | sh` command. */
+@media (min-width: 640px) {
+	.landing .hero-install .code-copy .line {
+		overflow-x: auto;
+		scrollbar-width: none;
+		white-space: pre;
+		overflow-wrap: normal;
+	}
+	.landing .hero-install .code-copy wbr {
+		display: none;
+	}
+}
+@media (max-width: 639.98px) {
+	.landing .hero-install .code-copy .line {
+		font-size: 0.75rem;
+	}
+}
+@media (max-width: 479.98px) {
+	.landing .hero-act > .hk-btn,
+	.landing .hero-install {
+		flex: 1 1 100%;
+	}
+}
+.landing .hero-meta {
+	margin: 0.875rem 0 0;
+	font-size: 0.8125rem;
+	line-height: 1.45;
+	color: var(--hk-text-3);
+	text-wrap: pretty;
+}
+.landing .hero-meta .meta-link {
+	color: var(--hk-text-2);
+	text-decoration: underline;
+	text-decoration-color: var(--hk-border-strong);
+	text-underline-offset: 2px;
+	transition: color var(--hk-dur-fast) var(--hk-ease);
+}
+.landing .hero-meta .meta-link:hover {
+	color: var(--hk-text);
+}
 @media (min-width: 1024px) {
 	.landing .hero-copy {
 		display: flex;
@@ -343,62 +327,23 @@
 		text-align: center;
 	}
 	.landing .hero h1 {
-		max-width: 26ch;
+		max-width: 24ch;
 		text-wrap: balance;
 	}
 	.landing .hero .hk-lead {
-		max-width: 36rem;
-		margin: 1.5rem 0 0;
+		max-width: 42rem;
+		margin-top: 1.125rem;
+		text-wrap: balance;
 	}
 	.landing .hero-act {
-		display: flex;
-		align-items: center;
 		justify-content: center;
-		margin-top: 2.25rem;
+		margin-top: 1.5rem;
 	}
-	.landing .hero-act > .ctas {
-		flex: none;
+	.landing .hero-install .code-copy {
+		width: fit-content;
 	}
-}
-/* On a phone the hero's two buttons take the column's width, one above
-   the other; pricing's does too (see Pricing). */
-@media (max-width: 479.98px) {
-	.landing .hero .ctas > * {
-		flex: 1 1 100%;
-	}
-}
-/* The install command the copy button copies, as it is copied, on one
-   line: 13px, 12px under 640px. Where the line is narrower than the
-   command (a phone) it scrolls under a fade, as CodeCopy's line does,
-   and takes a tab stop. */
-.landing .install {
-	margin: 1rem 0 0;
-	overflow-x: auto;
-	scrollbar-width: none;
-	font-family: var(--hk-font-mono);
-	font-size: 0.8125rem;
-	line-height: 1.25rem;
-	white-space: pre;
-	color: var(--hk-text-2);
-}
-@media (max-width: 639.98px) {
-	.landing .install {
-		font-size: 0.75rem;
-	}
-}
-@media (min-width: 1024px) {
-	.landing .hero-act > .install {
-		flex: 0 1 auto;
-		min-width: 0;
-		margin: 0 0 0 1rem;
-	}
-}
-.landing .install[data-scrolls='true']:not([data-end='true']) {
-	mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
 }
 
-/* Both labels of a sign-in button share one grid cell; the one not shown
-   keeps the width (see +page.svelte, authLabel). */
 .landing .swap {
 	display: inline-grid;
 }
@@ -410,19 +355,13 @@
 	visibility: hidden;
 }
 
-/* ---------- Figures ----------
+/* ---------- Figures ---------- */
 
-   A band's picture (the hero's, the setup's) runs the sheet's width and
-   ends on the next band's rule: a field --field-y deep above and below
-   its windows, which stand on the text line. Its pause button stands in
-   the field's top right corner, its chip's right edge on the text line.
-   The frame holding a picture gives up its own positioning, so the
-   button is placed from the figure (PauseButton.svelte: --pause-y is
-   the chip's top, --pause-r its right edge). */
 .landing .band > .fig {
 	--pause-y: calc((var(--field-y) - 28px) / 2);
 	position: relative;
 	margin-inline: calc(-1 * var(--edge));
+	border-top: 1px solid var(--rule-in);
 }
 .landing .fig :is(.pic-frame, .stage) {
 	position: static;
@@ -430,47 +369,15 @@
 .landing .band > .fig > .stage {
 	padding: var(--field-y) var(--edge);
 }
-/* The setup's field opens on an inner rule under its head; the wreck
-   picture's dark field opens on its own edge. */
-.landing .band > .fig:not(.fig--field) {
-	border-top: 1px solid var(--rule-in);
+/* Focused terminal anchor inside the 1200px sheet, without a full-bleed
+   dark slab interrupting the page. */
+.landing .hero-term {
+	max-width: 46rem;
+	margin-inline: auto;
 }
 
-/* The wreck picture's flights and trail are measured against its
-   windows; while the window narrows with the picture on screen they keep
-   the old width for a frame or two, so its frame clips them at the sides
-   and they never widen the page (its pause button is placed from the
-   figure, outside the clip). */
-.landing .fig--wreck .hero-frame {
-	overflow-x: clip;
-}
+/* ---------- Three-column flush hairline grid (01 How it works) ---------- */
 
-/* ---------- The dark plates ----------
-
-   The page has two dark moments, a rhythm in place of one slab (judges,
-   2026-11-12): the hero's field, where you see what it runs, and the
-   install band, where you start. Each is the wreck's old plate
-   (pictures.css, .field-stage): its dark tokens, run to the window's
-   edges by a spread fill that adds no scroll width. */
-/* The dark plate's colours and spread fill: pictures.css, "The two dark
-   moments" (the landing's own palette lives there, I-843). */
-
-/* ---------- The hero's picture ----------
-
-   The Orbit (HeroOrbitV1.svelte) stands on the hero's field: the
-   stage's tone across the sheet, from under the buttons to the next
-   band's rule, carrying the 16px dot grid the wreck's field carried,
-   with its parts on the text lines and the page's one motion control
-   in the field's top right corner, as a band picture's. */
-/* The hero's dot grid and its colours: pictures.css, "The hero's field". */
-
-/* ---------- The layers: six cells on the thirds (I-1167, I-1169) ------
-
-   Six cells on the thirds of the sheet in two rows, split by inner
-   rules with no gap, as the plans are: each its numbered label, its
-   serif title, one paragraph and the command it names, set as the
-   feature grid's are. Below 1024px they stack, each under its own
-   rule. */
 .landing .cols {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
@@ -483,7 +390,7 @@
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
-	padding: 1.5rem var(--edge) 2rem;
+	padding: 1.25rem var(--edge) 1.5rem;
 }
 .landing .cols > li + li {
 	border-top: 1px solid var(--rule-in);
@@ -496,45 +403,23 @@
 }
 .landing .cols .cmd {
 	margin-top: auto;
-	padding-top: 1rem;
+	padding-top: 0.875rem;
 }
 .landing .cols .item-title {
 	text-wrap: balance;
 }
-/* Two cells stand on the halves line instead of the thirds, for a band
-   that compares two things rather than listing six (I-1446). Below
-   1024px they stack like any other .cols. */
-@media (min-width: 1024px) {
-	.landing .cols--halves {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-	}
-	.landing .cols--halves > li:nth-child(2) {
-		border-left: 1px solid var(--rule-in);
-		padding-right: var(--edge);
-	}
-	.landing .cols--halves > li:nth-child(1) {
-		padding-left: var(--edge);
-		padding-right: var(--in);
-	}
-}
-/* From 1024px the cells stand on the thirds lines as the plans do: the
-   middle cell is a third of the content plus a gap, so the two inner
-   rules stand half a gap before the fifth and ninth column lines. */
 @media (min-width: 1024px) {
 	.landing .cols {
 		grid-template-columns:
 			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
 			minmax(0, 1fr);
 	}
-	/* The cells of a row share its tracks (label, title, paragraph,
-	   command), so the paragraphs start on one line whatever the
-	   titles' lengths. */
 	.landing .cols > li {
 		display: grid;
 		grid-row: span 4;
 		grid-template-rows: subgrid;
 		align-content: start;
-		padding: 2rem var(--in) 2.5rem calc(var(--in) - 1px);
+		padding: 1.625rem var(--in) 1.875rem calc(var(--in) - 1px);
 	}
 	.landing .cols > li:nth-child(3n + 1) {
 		padding-left: var(--edge);
@@ -553,33 +438,18 @@
 	}
 }
 
-/* ---------- The feature grid ----------
+/* ---------- The workflow grid (02 Workflow) ---------- */
 
-   Four cells flush on the sheet, split by inner rules: one column, and
-   from 1024px a 2x2 whose centre hairline stands half a gap left of the
-   column line, so the right cells' text starts on it. Each cell is its
-   picture's stage (ruled at its foot), then the title, one paragraph and
-   the command, set as the hero's install line is (a command to read,
-   not to run here). A looping picture's pause button stands at the right
-   end of its title's line. The pictures' windows stand on the cell's
-   text lines (--shot-l, --shot-r). The last row ends on the next band's
-   rule. */
 .landing .cells {
+	--cell-pt: 1.375rem;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	margin: 0 calc(-1 * var(--edge));
 	padding: 0;
 	list-style: none;
-}
-.landing .cells {
-	--cell-pt: 1.5rem;
 	border-top: 1px solid var(--rule-in);
 }
-/* A cell reads top down: its label, title, paragraph and command, then
-   its picture, which ends on the cell's foot, so the pictures of a row
-   stand level and each sits under its own words. */
 .landing .cells > li {
-	--pause-y: calc(var(--cell-pt) + 1rem + 0.5rem + (1.75rem - 28px) / 2);
 	--shot-l: var(--edge);
 	--shot-r: var(--edge);
 	position: relative;
@@ -599,19 +469,24 @@
 	flex: 1;
 	display: flex;
 	flex-direction: column;
-	padding: var(--cell-pt) var(--edge) 2rem;
+	padding: var(--cell-pt) var(--edge) 1.375rem;
 }
-/* The cell's numbered label, 8px over its title. */
 .landing .cell-copy > .num {
 	margin-bottom: 0.5rem;
 }
-/* The title keeps clear of the pause button at its line's end. */
-.landing .cell-copy > .item-title {
-	padding-right: 2.5rem;
+.landing .cells .item-title {
+	text-wrap: balance;
+}
+.landing .cells .copy {
+	margin-top: 0.5rem;
+}
+.landing .cells .cmd {
+	margin-top: auto;
+	padding-top: 0.875rem;
 }
 @media (min-width: 1024px) {
 	.landing .cells {
-		--cell-pt: 2rem;
+		--cell-pt: 1.625rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 	.landing .cells > li + li {
@@ -625,7 +500,6 @@
 		border-top: 1px solid var(--rule-in);
 	}
 	.landing .cells > li:nth-child(odd) {
-		--pause-r: var(--in);
 		--shot-r: var(--in);
 	}
 	.landing .cells > li:nth-child(odd) > .cell-copy {
@@ -635,17 +509,14 @@
 		padding-left: calc(var(--in) - 1px);
 	}
 	.landing .cell-copy {
-		padding-bottom: 2.5rem;
+		padding-bottom: 1.625rem;
+	}
+	.landing .cells > li.cell--text > .cell-copy {
+		padding-bottom: 1.75rem;
 	}
 }
-/* One column (below 1024px), a cell runs the window's width and its
-   stage does too; the picture's windows run between the cell's text
-   lines, the same inset at both sides, as at 1440 and on a phone. */
-.landing .cells .copy {
-	margin-top: 0.5rem;
-}
 .landing .cmd {
-	margin: 1rem 0 0;
+	margin: 0.875rem 0 0;
 	font-family: var(--hk-font-mono);
 	font-size: 0.8125rem;
 	line-height: 1.25rem;
@@ -657,7 +528,7 @@
 	}
 }
 
-/* ---------- Agents ---------- */
+/* ---------- Links ---------- */
 
 .landing .links {
 	display: flex;
@@ -675,7 +546,6 @@
 .landing .links .hk-more:hover {
 	color: var(--hk-text);
 }
-/* On touch each link is a 44px target. */
 @media (pointer: coarse), (max-width: 639.98px) {
 	.landing .links .hk-more {
 		display: inline-flex;
@@ -683,10 +553,6 @@
 		gap: 0.25em;
 		min-height: 2.75rem;
 	}
-	/* The targets overhang the text's line by 0.75rem above and below.
-	   Each link gives up 0.75rem at its foot, so a pair that wraps (the
-	   install pair at 320px) stands its second line 2rem under the first,
-	   the targets overlapping, instead of a whole target lower. */
 	.landing .head .links {
 		margin-block: -0.75rem 0;
 	}
@@ -695,19 +561,13 @@
 	}
 }
 
-/* ---------- Ruled rows: the steps, the plans, the questions ---------- */
+/* ---------- Ruled rows: steps & questions ---------- */
 
 .landing .ruled {
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
-
-/* A step: its number and name in the left half, its command filling the
-   right half flush from the centre hairline to the rail, on the stage's
-   tone, with Copy at the cell's right end. On a phone the name is over
-   the command, and the command's cell runs the window's width under its
-   own rule. */
 .landing .steps {
 	margin-inline: calc(-1 * var(--edge));
 }
@@ -716,28 +576,36 @@
 	grid-template-columns: minmax(0, 1fr);
 	border-top: 1px solid var(--rule-in);
 }
-/* A step's number is a numbered label's number (4.1 under 04): the
-   second grey at the label's fixed width, so the step names start where
-   the band label's name does. */
 .landing .step-title {
 	display: flex;
 	align-items: baseline;
-	padding: 1rem var(--edge);
+	padding: 0.875rem var(--edge);
 }
 .landing .step-title .label {
 	flex: none;
 	min-width: 2.75em;
-	color: var(--hk-text-2);
+	color: var(--pic-accent);
 }
 .landing .steps .code-copy {
 	width: 100%;
 	min-width: 0;
 	max-width: none;
 	min-height: 3rem;
-	padding: 0.375rem var(--edge);
+	padding: 0.5rem var(--edge);
 	border: 0;
 	border-top: 1px solid var(--rule-in);
 	border-radius: 0;
+}
+@media (min-width: 640px) {
+	.landing .steps .code-copy .line {
+		overflow-x: auto;
+		scrollbar-width: none;
+		white-space: pre;
+		overflow-wrap: normal;
+	}
+	.landing .steps .code-copy wbr {
+		display: none;
+	}
 }
 @media (min-width: 1024px) {
 	.landing .steps > li {
@@ -745,106 +613,46 @@
 	}
 	.landing .step-title {
 		align-items: center;
-		padding: 1.5rem var(--in) 1.5rem var(--edge);
+		padding: 1.125rem var(--in) 1.125rem var(--edge);
 	}
 	.landing .steps .code-copy {
 		min-height: 100%;
+		padding-block: 0.375rem;
 		padding-left: calc(var(--in) - 1px);
 		border-top: 0;
 		border-left: 1px solid var(--rule-in);
 	}
 }
-/* The command keeps to one line at every width and scrolls under its
-   fade where the cell is narrower: the kit's break points after each
-   slash are for a wrapping box. */
-.landing .steps .code-copy .line {
-	overflow-x: auto;
-	scrollbar-width: none;
-	white-space: pre;
-	overflow-wrap: normal;
-}
-/* Copy's label ends on the right text line, as the link pairs and
-   pricing's button do: the ghost button gives up its padding and edge
-   there, its hover ground overhanging the line, and its two faces (Copy,
-   Copied, which keeps the width) end on the right. */
 .landing .steps .code-copy .hk-copy--labelled {
 	margin-right: calc(-0.5rem - 1px);
 }
 .landing .steps .code-copy .hk-copy--labelled .text > .layer {
 	justify-content: flex-end;
 }
-.landing .steps .code-copy wbr {
-	display: none;
-}
-/* The job agent's rows (I-1167) take the steps' layout, with what each
-   step runs on in place of a command to copy: the reference treatment,
-   on the stage's tone, one line scrolling under a fade where the cell is
-   narrower, and no Copy. */
-.landing .refs .ref {
-	display: flex;
-	align-items: center;
-	min-width: 0;
-	min-height: 3rem;
-	margin: 0;
-	padding: 0.375rem var(--edge);
-	border-top: 1px solid var(--rule-in);
-	background: var(--stage);
-	font-family: var(--hk-font-mono);
-	font-size: 0.8125rem;
-	line-height: 1.25rem;
-	color: var(--hk-text-2);
-}
-.landing .refs .ref > span {
-	min-width: 0;
-	overflow-x: auto;
-	scrollbar-width: none;
-	white-space: pre;
-}
-.landing .refs .ref > span[data-scrolls='true'] {
-	mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
-}
-@media (min-width: 1024px) {
-	.landing .refs .ref {
-		min-height: 100%;
-		padding-left: calc(var(--in) - 1px);
-		border-top: 0;
-		border-left: 1px solid var(--rule-in);
-	}
-}
-@media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {
-	.landing .refs .ref {
-		font-size: 0.75rem;
-	}
-}
-
-/* Between 1024 and 1199px the install line fits its half at 12px, with
-   Copy as its icon (labelFrom in +page.svelte). */
 @media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {
 	.landing .steps .code-copy .line {
 		font-size: 0.75rem;
 	}
 }
+.landing .steps-foot {
+	margin: 0 calc(-1 * var(--edge));
+	padding: 0.875rem var(--edge);
+	border-top: 1px solid var(--rule-in);
+}
 
 /* ---------- Pricing ---------- */
 
-/* The head's side item: the button, the seats line beside it. */
 .landing .cta-row {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.75rem 1rem;
 }
-/* On a phone the button takes the column's width, as the hero's do, and
-   the seats line goes under it. */
 @media (max-width: 479.98px) {
 	.landing .cta-row > .hk-btn {
 		flex: 1 1 100%;
 	}
 }
-/* From 1024px the button ends on the right text line, as the heads' link
-   pairs do, its label on the h2's last baseline, and the seats line
-   stands before it, its last line on the same baseline (owner,
-   2026-11-02). */
 @media (min-width: 1024px) {
 	.landing .head > .cta-row {
 		flex-wrap: nowrap;
@@ -865,109 +673,135 @@
 	font-size: 0.875rem;
 	color: var(--hk-text-3);
 }
-/* The plans as flush cells on the sheet, split by inner rules with no
-   card edge, gap or radius: stacked below 1024px, and from 1024px three
-   across on the thirds lines. .plans.plans--public: PlanCells' scoped
-   640-899px rule (0,4,0) pads a card 20px on every side. */
-.landing .plans.plans--public {
+.landing .pricing-sub,
+.landing .pricing-note {
+	margin: 0 calc(-1 * var(--edge));
+	padding: 0.75rem var(--edge);
+	border-top: 1px solid var(--rule-in);
+	font-size: 0.875rem;
+	line-height: 1.5;
+	color: var(--hk-text-2);
+}
+.landing .pricing-sub {
+	background: var(--stage);
+}
+.landing .pricing-note--split {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.landing .pricing-note--split p {
+	margin: 0;
+}
+@media (min-width: 1024px) {
+	.landing .pricing-note--split {
+		flex-direction: row;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 2rem;
+	}
+	.landing .pricing-note--split > p:first-child {
+		max-width: 44rem;
+	}
+	.landing .pricing-note--split .links {
+		flex: none;
+	}
+}
+
+/* Flush plan cells on the sheet, overriding PlanCells' and OwnHardwarePlan's
+   scoped card borders and radii cleanly via element+class specificity. */
+main.landing .plans.plans--public {
 	grid-template-columns: minmax(0, 1fr);
 	gap: 0;
 	margin-inline: calc(-1 * var(--edge));
 	border-top: 1px solid var(--rule-in);
 }
-.landing .plans.plans--public .plan {
+main.landing .plans.plans--public .plan {
 	--pl: var(--edge);
 	--pr: var(--edge);
-	padding: 1.5rem var(--pr) 2rem var(--pl);
+	padding: 1.125rem var(--pr) 1.25rem var(--pl);
 	border: 0;
 	border-radius: 0;
 	background: none;
 }
-/* The rule over a plan's memory line runs the cell's width, so it meets
-   the rules round the cell, as every inner rule on the sheet does. */
-.landing .plans.plans--public .p-run {
+main.landing .plans.plans--public .p-run {
 	margin-inline: calc(-1 * var(--pl)) calc(-1 * var(--pr));
 	padding-inline: var(--pl) var(--pr);
 }
-.landing .plans.plans--public .plan + .plan {
+@media (max-width: 1023.98px) {
+	main.landing .plans.plans--public .p-run {
+		margin-top: 0.875rem;
+		padding-top: 0.875rem;
+	}
+}
+main.landing .plans.plans--public .plan + .plan {
 	border-top: 1px solid var(--rule-in);
 }
 @media (min-width: 1024px) {
-	/* The middle third is the grid's (four columns and their gaps), so
-	   the dividers stand on the thirds lines whatever the sheet's edge. */
-	.landing .plans.plans--public {
+	main.landing .plans.plans--public {
 		grid-template-columns:
 			minmax(0, 1fr) calc((100% - 2 * var(--edge) + var(--col-gap)) / 3)
 			minmax(0, 1fr);
 	}
-	.landing .plans.plans--public .plan {
+	main.landing .plans.plans--public .plan {
 		--pl: calc(var(--in) - 1px);
 		--pr: var(--in);
-		padding-block: 2rem 2.5rem;
+		padding-block: 1.625rem 1.875rem;
 	}
-	.landing .plans.plans--public .plan:first-child {
+	main.landing .plans.plans--public .plan:first-child {
 		--pl: var(--edge);
 	}
-	.landing .plans.plans--public .plan:last-child {
+	main.landing .plans.plans--public .plan:last-child {
 		--pr: var(--edge);
 	}
-	.landing .plans.plans--public .plan + .plan {
+	main.landing .plans.plans--public .plan + .plan {
 		border-top: 0;
 		border-left: 1px solid var(--rule-in);
 	}
 }
-.landing .plans--public .p-top {
+main.landing .plans--public .p-top {
 	min-height: 1.75rem;
 }
-/* The Own hardware row under the three cells: the same flush cell on the
-   sheet, one more inner rule, no card edge, and the cells' own name and
-   price faces, so the row reads as one of them (I-1364). */
-.landing .own .o-price .o-n {
-	font-size: 2.25rem;
-	line-height: 2.5rem;
+main.landing .plans--public .p-price .was {
+	font-family: var(--hk-font-display);
+	font-size: 1.25rem;
+	line-height: 1.75rem;
 }
-.landing .own {
+main.landing #pricing .own {
 	margin: 0 calc(-1 * var(--edge));
-	padding: 1.5rem var(--edge) 2rem;
+	padding: 1.25rem var(--edge) 1.375rem;
 	border: 0;
 	border-top: 1px solid var(--rule-in);
 	border-radius: 0;
 	background: none;
 }
+main.landing #pricing .own .o-price .o-n {
+	font-size: 2.25rem;
+	line-height: 2.5rem;
+}
 @media (min-width: 1024px) {
-	.landing .own {
-		padding-block: 2rem 2.5rem;
+	/* Align Own hardware's description flush with the Plus column's left edge. */
+	main.landing #pricing .own {
+		grid-template-columns: calc((100% - 2 * var(--col-gap)) / 3) minmax(0, 1fr);
+		column-gap: var(--col-gap);
+		padding-block: 1.625rem 1.875rem;
 	}
 }
-/* The struck founding-era price in the price's own face, at the item
-   title's size, so the price line is one face. */
-.landing .plans--public .p-price .was {
-	font-family: var(--hk-font-display);
-	font-size: 1.25rem;
-	line-height: 1.75rem;
-}
 
-/* ---------- Questions ----------
+/* ---------- Questions ---------- */
 
-   The band's head, as every band's, then the questions as ruled rows
-   across the sheet, from rail to rail: the question at the text line,
-   the plus at the row's right end, the answer under the question at the
-   copy's measure. The last row ends on the footer's rule. */
 .landing .faq {
 	margin-inline: calc(-1 * var(--edge));
 }
 .landing .faq > * {
 	border-top: 1px solid var(--rule-in);
 }
-/* A question's row: its title at the text line, the plus at the right
-   end, the hover wash and the focus ring (drawn inside it) across the
-   row. */
 .landing .faq summary {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 1.5rem;
-	padding: 1.125rem var(--edge);
+	padding: 0.9375rem var(--edge);
 	cursor: pointer;
 	list-style: none;
 	transition: background-color var(--hk-dur-fast) var(--hk-ease);
@@ -995,9 +829,6 @@
 .landing .faq details[open] .plus {
 	transform: rotate(45deg);
 }
-/* An open question's title sits 8px over its answer; the focus ring is
-   drawn 2px inside the row, clear of the rule over it and of the
-   answer's first line. */
 .landing .faq details[open] > summary {
 	padding-bottom: 0.5rem;
 }
@@ -1005,7 +836,7 @@
 	outline-offset: -2px;
 }
 .landing .faq details > p {
-	max-width: calc(34rem + 2 * var(--edge));
+	max-width: calc(38rem + 2 * var(--edge));
 	margin: 0;
 	padding: 0 var(--edge) var(--item-gap);
 }

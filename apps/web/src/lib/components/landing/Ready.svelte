@@ -1,14 +1,9 @@
 <!--
-  Ready: what is on a machine the moment it boots. The five agents are the
-  hero, as their marks alone (owner, 2026-09-27, I-287: no names or
-  commands under them; the aria-label names them, and each mark's title
-  names it under the pointer);
-  below them the toolchain, and a shell on the machine where a missing
-  command prints the real command-not-found hint (nix/guest/base/devtools.nix,
-  captured for real on a repose machine).
+  Ready: what is preinstalled on every machine at first boot. Five coding
+  agents with both their marks and visible names, followed by the base
+  runtimes and how your laptop's own tools and Nix packages carry over.
 -->
 <script lang="ts">
-	import WinHead from './WinHead.svelte';
 	import { agentMarks, toolMarks, type Mark } from '$lib/components/illustrations/marks';
 
 	// Labels from docs/machine.md "What's installed".
@@ -19,48 +14,9 @@
 	};
 
 	const everyday = 'uv gcc make cmake git gh tmux jq ripgrep psql neovim Chromium';
-
-	// A real capture from a repose machine (tmux capture-pane -p -e -J,
-	// 2026-09-25): pgcli typed in the checkout, the command-not-found hint, the
-	// suggested install, the tool running. Colours as the capture set them,
-	// mapped as ops/dev/hero/convert.py maps them. The first line of each
-	// two-line starship prompt ('dev in job-alerts in' and the checkout's
-	// folder, an internal name) is cropped out, as rows are cropped out of
-	// the browser card's log; each command keeps its ❯ line, and the status
-	// bar still names the machine (I-397).
-	type Row = [string, string][];
-	const rows: (Row | 'hint')[] = [
-		[
-			['❯', 'g b'],
-			[' pgcli -p 5433', '']
-		],
-		[['pgcli: command not found', '']],
-		'hint',
-		[['Other packages with pgcli: python314Packages.pgcli, python313Packages.pgcli', '']],
-		[],
-		[
-			['❯', 'r'],
-			[' nix profile add nixpkgs#pgcli', '']
-		],
-		[],
-		[
-			['❯', 'g b'],
-			[' pgcli --version', '']
-		],
-		[['Version: 4.6.0', '']]
-	];
-	// The status bar as a client on that window drew it (the mode flag
-	// cropped, and its first 10 columns, the session name, cropped off the
-	// left so it starts at the window list).
-	const barHost = '"your-project" ';
-	const barDate = ' 25-Sep-26';
-	const hint = [
-		['  nix profile add nixpkgs#pgcli', 'install it on this machine'],
-		['  repose config add pgcli      ', 'keep it on every rebuild (run this on your laptop)']
-	];
 </script>
 
-{#snippet mark(m: Mark, size: number, named = false)}
+{#snippet mark(m: Mark, size: number)}
 	<svg
 		viewBox="0 0 24 24"
 		width={size}
@@ -68,7 +24,7 @@
 		class="shrink-0"
 		fill="currentColor"
 		aria-hidden="true"
-		>{#if named}<title>{m.name}</title>{/if}{#each m.paths as d (d)}<path
+		>{#each m.paths as d (d)}<path
 				{d}
 				fill-rule={m.evenodd ? 'evenodd' : 'nonzero'}
 				clip-rule={m.evenodd ? 'evenodd' : 'nonzero'}
@@ -76,256 +32,132 @@
 	>
 {/snippet}
 
-<div
-	class="ready"
-	role="img"
-	aria-label="A new machine has five coding agents installed: Claude Code, Codex CLI, opencode, Gemini CLI and pi. Also Node.js 24, pnpm, Python 3.12, Go, rustup, Docker, Nix, Chromium and everyday tools. A shell on the machine: typing pgcli, which is not installed, prints how to install it with nix profile add nixpkgs#pgcli or keep it on every rebuild with repose config add pgcli; after the install, pgcli --version prints 4.6.0."
->
-	<ul class="agents" aria-hidden="true">
+<div class="ready">
+	<ul class="agents" aria-label="Preinstalled coding agents">
 		{#each agentMarks as m (m.name)}
 			<li>
-				<span class="am">{@render mark(m, 32, true)}</span>
+				<span class="am">{@render mark(m, 20)}</span>
+				<span class="aname">{m.name}</span>
 			</li>
 		{/each}
 	</ul>
 
-	<div class="below" aria-hidden="true">
+	<div class="below">
 		<div class="kit">
-			<ul class="tools">
+			<ul class="tools" aria-label="Preinstalled runtimes">
 				{#each toolMarks as m (m.name)}
 					<li>
-						{@render mark(m, 16)}{toolLabel[m.name] ?? m.name}
+						{@render mark(m, 16)}<span>{toolLabel[m.name] ?? m.name}</span>
 					</li>
 				{/each}
 			</ul>
-			<p class="more">
-				{everyday} …
-			</p>
+			<p class="more">{everyday}</p>
 		</div>
 
-		<div class="tcell">
-			<div class="shot-win term">
-				<WinHead who="machine" />
-				<div class="lines">
-					{#each rows as row, i (i)}
-						{#if row === 'hint'}
-							{#each hint as [cmd, what] (cmd)}
-								<div class="hint">
-									<span>{cmd}</span><span>&nbsp;&nbsp;</span><span>{what}</span>
-								</div>
-							{/each}
-						{:else}
-							<div>
-								{#each row as [text, cls], j (j)}<span class={cls}>{text}</span
-									>{/each}{#if row.length === 0}&nbsp;{/if}
-							</div>
-						{/if}
-					{/each}
-				</div>
-				<div class="bar">
-					<span class="pre">0:shell- 1:dev&nbsp; 2:ready*</span><span class="clock"
-						><span class="long">{barHost}</span>19:49<span class="long">{barDate}</span></span
-					>
-				</div>
-			</div>
+		<div class="extras">
+			<p class="copy">
+				<code>repose run</code> installs your laptop's global npm, Go, Cargo and uv tools in the
+				background when a machine boots. Add any Nix package to every rebuild with
+				<code>repose config add</code>.
+			</p>
 		</div>
 	</div>
 </div>
 
 <style>
-	/* Ready fills its figure from rail to rail (landing.css, .fig): the
-	   five marks on the stage's tone, an inner rule, then two flush cells
-	   on the page's thirds line, the toolchain, and the machine's shell
-	   in a closed window under the grid's head, inset on the stage as the
-	   Machine cells' windows are: the stage's inset above and below, the
-	   cell's text lines at the sides (pictures.css, I-961). Text in each
-	   cell stands on the page's text lines (--edge out, 16px in from a
-	   rule). */
 	.ready {
 		display: grid;
 	}
 	.agents {
 		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 8px;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem 1rem;
 		margin: 0;
-		padding: 36px var(--edge, 16px);
+		padding: 1.375rem var(--edge, 16px);
 		list-style: none;
 		background:
 			radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
 		box-shadow: inset 0 1px 0 var(--stage-top);
 	}
+	@media (min-width: 640px) {
+		.agents {
+			grid-template-columns: repeat(5, minmax(0, 1fr));
+			padding-block: 1.5rem;
+		}
+	}
 	.agents li {
 		display: flex;
-		justify-content: center;
+		align-items: center;
+		gap: 0.625rem;
+		min-width: 0;
+	}
+	@media (min-width: 640px) {
+		.agents li {
+			justify-content: center;
+		}
 	}
 	.am {
 		display: flex;
 		color: var(--ink);
 	}
+	.aname {
+		font-size: 0.875rem;
+		font-weight: 500;
+		line-height: 1.25rem;
+		color: var(--ink);
+		white-space: nowrap;
+	}
 	.below {
 		display: grid;
 		border-top: 1px solid var(--rule-in, var(--rule));
 	}
-	/* The toolchain stands on the stage's tone with the marks over it, so
-	   the figure is two materials: the stage, and the shell. */
-	.kit {
-		padding: 32px var(--edge, 16px);
-		background: var(--stage);
+	.kit,
+	.extras {
+		padding: 1.25rem var(--edge, 16px);
+	}
+	.extras {
+		border-top: 1px solid var(--rule-in, var(--rule));
+		display: flex;
+		align-items: center;
 	}
 	.tools {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 12px 16px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.9rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 	.tools li {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
-		gap: 10px;
-		font-size: 13px;
-		line-height: 20px;
+		gap: 0.4rem;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
 		color: var(--pic-ink);
+		white-space: nowrap;
 	}
 	.tools li :global(svg) {
 		color: var(--pic-dim);
 	}
 	.more {
-		margin: 16px 0 0;
+		margin: 0.625rem 0 0;
 		font-family: var(--font-mono);
-		font-size: 12px;
-		line-height: 20px;
+		font-size: 0.75rem;
+		line-height: 1.25rem;
 		color: var(--ink-faint);
 	}
-	/* From 1024px the two cells split on the thirds line: the tools on
-	   the first third, the shell on the other two. Narrower, the tools
-	   stand over the shell, each the sheet's width. */
 	@media (min-width: 1024px) {
 		.below {
-			grid-template-columns:
-				calc(var(--edge) + (100% - 2 * var(--edge) + var(--col-gap)) / 3 - var(--col-gap) / 2)
-				minmax(0, 1fr);
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 		.kit {
-			padding-right: var(--in);
+			padding: 1.5rem var(--in) 1.5rem var(--edge, 16px);
 		}
-		.tcell {
-			padding-left: calc(var(--in) - 1px);
+		.extras {
+			border-top: 0;
 			border-left: 1px solid var(--rule-in, var(--rule));
-		}
-	}
-	/* One column, the shell's window runs between the page's text lines;
-	   from 640px the tools take one row of four. */
-	@media (max-width: 1023.98px) {
-		.tcell {
-			border-top: 1px solid var(--rule-in, var(--rule));
-		}
-	}
-	@media (min-width: 640px) and (max-width: 1023.98px) {
-		.tools {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-		}
-	}
-
-	/* The shell's cell: the stage, the window inset on it. */
-	.tcell {
-		display: flex;
-		min-width: 0;
-		padding: var(--shot-in, 24px) var(--edge, 16px);
-		background:
-			radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
-	}
-	/* The shell, in the terminals' palette (pictures.css): the window's
-	   head, the rows, the tmux bar at the window's foot. */
-	.term {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-		container-type: inline-size;
-		font-family: var(--font-mono);
-		font-size: 12px;
-		line-height: 19px;
-		background: var(--t-bg);
-		color: var(--t-fg);
-	}
-	/* A terminal does not re-flow: rows keep white-space: pre and a narrow
-	   cell crops them on the right into a fade, as the editor and browser
-	   captures are cropped (I-397). */
-	.lines {
-		flex: 1;
-		padding: 12px;
-		overflow: hidden;
-		white-space: pre;
-		background: var(--t-bg);
-		mask-image: linear-gradient(to left, transparent 0, #000 32px);
-	}
-	.y {
-		color: var(--t-yellow);
-	}
-	.g {
-		color: var(--t-green);
-	}
-	.c {
-		color: var(--t-cyan);
-	}
-	.r {
-		color: var(--t-red);
-	}
-	.pre,
-	.clock span {
-		white-space: pre;
-	}
-	.pre {
-		min-width: 0;
-		overflow: hidden;
-	}
-	.clock {
-		flex: none;
-	}
-	/* A shell narrower than its rows (a phone) drops the bar's host and
-	   date. */
-	@container (max-width: 560px) {
-		.long {
-			display: none;
-		}
-	}
-	.b {
-		font-weight: 700;
-	}
-	/* The window list gives way before the clock: the right part keeps
-	   its width, the left one crops. */
-	.bar {
-		display: flex;
-		justify-content: space-between;
-		gap: 2ch;
-		padding: 2px 12px;
-		border-top: 1px solid var(--rule);
-		background: var(--t-bar);
-		color: var(--t-bar-fg);
-		white-space: nowrap;
-		overflow: hidden;
-	}
-	@media (max-width: 639px) {
-		.term {
-			font-size: 11px;
-			line-height: 17px;
-		}
-		.lines {
-			padding-block: 12px 14px;
-		}
-		.agents {
-			gap: 4px;
-			padding: 28px var(--edge, 16px);
-		}
-		.agents :global(svg) {
-			width: 24px;
-			height: 24px;
-		}
-		.kit {
-			padding-block: 24px;
+			padding: 1.5rem var(--edge, 16px) 1.5rem calc(var(--in) - 1px);
 		}
 	}
 </style>

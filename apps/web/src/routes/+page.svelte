@@ -8,25 +8,20 @@
 	import { signinHref, type ReturnPath } from '$lib/signin';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { publicSeats } from '$lib/api/client';
-	import { tabStopWhenScrolls } from '$lib/scroller';
+	import { price } from '$lib/format';
 	import type { PublicSeats } from '$lib/api/types';
 	import { OWN_HARDWARE, PLANS } from '$lib/plans';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import OwnHardwarePlan from '$lib/components/OwnHardwarePlan.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
-	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import Terminal from '$lib/components/landing/Terminal.svelte';
 	import PauseButton from '$lib/components/landing/PauseButton.svelte';
 	import { loadHero } from '$lib/components/landing/heroes';
-	import Wreck from '$lib/components/landing/Wreck.svelte';
-	import OneCommand from '$lib/components/landing/OneCommand.svelte';
-	import ComesBack from '$lib/components/landing/ComesBack.svelte';
 	import Localhost from '$lib/components/landing/Localhost.svelte';
 	import Browser from '$lib/components/landing/Browser.svelte';
-	import Editor from '$lib/components/landing/Editor.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
 
-	/** The hero picture: the Orbit, or the candidate ?hero= names, loaded after mount. */
+	/** The hero picture: the real `repose run` terminal, or a `?hero=` gallery candidate. */
 	let Hero = $state<Component>(Terminal);
 	onMount(async () => {
 		const name = new URLSearchParams(window.location.search).get('hero');
@@ -53,14 +48,8 @@
 		}
 	});
 
-	/** The hero's install line, scrolled to its end, shows its last characters unfaded. */
-	function markEnd(e: Event) {
-		const el = e.currentTarget as HTMLElement;
-		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
-	}
-
-	// Each row shows exactly what its Copy puts on the clipboard, and that
-	// runs on a visitor's laptop: the row's title names the folder.
+	// Each row shows exactly what its Copy puts on the clipboard, and runs
+	// on a visitor's laptop.
 	const steps: { title: string; command: string; what: string }[] = [
 		{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
 		{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
@@ -71,21 +60,22 @@
 	// before it answers (the prerendered page); once it says none, Solo
 	// shows its list price alone.
 	const introEligible = $derived(seats?.founding_left !== 0);
+	const solo = PLANS[0];
+	const soloPrice = $derived(
+		introEligible && solo.intro ? solo.intro.priceCents : solo.priceCents
+	);
 </script>
 
 <svelte:head>
-	<title>repose: a machine of its own for your coding agents</title>
+	<title>repose: isolated Linux machines for your coding agents</title>
 	<meta
 		name="description"
-		content="repose run copies your checkout, tools and logins to a machine where your coding agents keep working after you close your laptop. On our servers, or on a Mac mini you own for $10 a month."
+		content="repose run gives your repo an isolated Linux VM where Claude Code, Codex and other agents keep working after you close your laptop. On our servers, or on a Mac mini or x86 box you own."
 	/>
 </svelte:head>
 
-<!-- A sign-in button, or the dashboard link once signed in. The page is
-     prerendered signed out and learns who you are after it mounts, so
-     both labels share one grid cell and the box is as wide as the longer
-     one from the first paint: the swap moves nothing (CLS 0). The hidden
-     label is out of the accessibility tree. -->
+<!-- A sign-in button, or the dashboard link once signed in. Both labels
+     share one grid cell so the swap after mount moves nothing (CLS 0). -->
 {#snippet authLabel(shown: string, other: string)}
 	<span class="swap"><span>{shown}</span><span aria-hidden="true">{other}</span></span>
 {/snippet}
@@ -96,11 +86,6 @@
 			>{@render authLabel(signedIn, signedOut)}</a
 		>
 	{:else}
-		<!-- A link, not a button: this page is prerendered, and a press
-		     that lands before the bundle has hydrated used to do nothing at
-		     all, with no feedback (DECISIONS I-864, I-878). The href starts
-		     the flow at `GET /signin`; once hydrated, a plain left click
-		     takes the browser flow instead. -->
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- signinHref() calls resolve('/signin') and adds the return path (lib/signin) -->
 		<a
 			href={signinHref(returnTo)}
@@ -111,10 +96,6 @@
 	{/if}
 {/snippet}
 
-<!-- The page's one numbering: a band's number and name, and a cell's
-     (2.1 to 2.4), in the mono label, the number at a fixed width. The
-     space after the number is text, so a screen reader and a copy read
-     "01 Setup"; it hangs at the span's end inside the fixed width. -->
 {#snippet label(n: string, name: string)}
 	<p class="label num"><span class="n">{n + ' '}</span>{name}</p>
 {/snippet}
@@ -130,178 +111,139 @@
 		<div class="hero-copy">
 			<h1 class="hk-h1" id="hero-h">Your coding agents, on a machine of their own</h1>
 			<p class="hk-lead">
-				<code>repose run</code> copies your checkout, tools and logins to a machine where the agents
-				keep working after you close your laptop. On our servers, or on a Mac mini you own.
+				<code>repose run</code> gives your repo an isolated Linux VM where Claude Code, Codex and
+				other agents keep working after you close your laptop. On our servers, or on a Mac mini or
+				x86 box you own.
 			</p>
 			<div class="hero-act">
-				<div class="ctas">
-					{@render authAction('Get started', 'Open the dashboard')}
-					<CopyButton text={INSTALL_COMMAND} label="Copy install command" size="lg" tone="page" />
+				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+				<div class="hero-install">
+					<CodeCopy command={INSTALL_COMMAND} what="the install command" prompt labelFrom={640} />
 				</div>
-				<pre
-					class="install"
-					use:tabStopWhenScrolls={'Install command'}
-					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
+			<p class="hero-meta">
+				{solo.trialDays} days free · Bring your own agent subscriptions or API keys ·
+				<a class="meta-link" href="#pricing"
+					>Hosted from {price(soloPrice)}/mo or own hardware {price(OWN_HARDWARE.priceCents)}/mo</a
+				>
+			</p>
 		</div>
-		<div class="fig fig--hero field-stage">
-			<div class="stage field-stage hero-stage">
-				<!-- The hero is the Quickstart's real `repose run` session
-				     (Terminal.svelte, I-837): the page leads with the product
-				     running, and the Orbit it replaces drew the always-on pitch
-				     the headline no longer makes (I-1446). `?hero=<name>` still
-				     draws any candidate in its place, in the browser only
-				     (heroes.ts), the Orbit among them. -->
-				<Hero />
+		<div class="fig fig--hero">
+			<div class="stage hero-stage">
+				<div class="hero-term">
+					<Hero />
+				</div>
 			</div>
-			<!-- The page's one control, in the hero's field (I-666): it holds
-			     EVERY looping picture, not the hero's, and shows itself when
-			     any loop runs (`motion.live > 0` in PauseButton). It stays
-			     when the hero does not loop, because the wreck, the setup and
-			     the grid still do. -->
+			<!-- Shown only when a looping `?hero=` gallery candidate is active. -->
 			<PauseButton />
 		</div>
 	</section>
 
-	<section class="band" id="parts" aria-labelledby="parts-h">
+	<section class="band" id="how" aria-labelledby="how-h">
 		<div class="head">
-			{@render label('01', 'Where it runs')}
-			<h2 class="hk-h2" id="parts-h">Where it runs</h2>
-			<p class="links side">
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
-					>Your own hardware</a
-				>
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'billing' })}>Pricing</a>
-			</p>
+			{@render label('01', 'How it works')}
+			<h2 class="hk-h2" id="how-h">What repose handles for you</h2>
+			<p class="copy side">One command replaces manual server setup and ad-hoc SSH tunnels.</p>
 		</div>
-		<!-- Two homes, one band (I-1446). No start time for either while the
-		     Mac's is too slow to print (ENG-70), and no memory figure until
-		     what a size means on an owned host is settled (ENG-91): two cells
-		     under one heading, one with a number and one without, is an
-		     implication rather than an omission. -->
-		<ul class="cols cols--halves">
+		<ul class="cols">
 			<li>
-				{@render label('1.1', 'On our servers')}
-				<h3 class="item-title">We run the machine</h3>
+				{@render label('1.1', 'One-command sync')}
+				<h3 class="item-title">Sync your state in one command</h3>
 				<p class="copy">
-					Your plan's memory is what runs at once, around the clock, however many hours the
-					machines run. Snapshots go to cloud storage, so a machine comes back even when the
-					server under it does not.
+					<code>repose run</code> copies your branch, uncommitted edits, untracked files,
+					<code>.env</code> and CLI logins to a fresh Linux VM while skipping
+					<code>node_modules</code>. Pull the agent's commits back with
+					<code>git fetch repose</code>.
 				</p>
 				<p class="cmd">repose run</p>
 			</li>
 			<li>
-				{@render label('1.2', 'On a Mac mini you own')}
-				<h3 class="item-title">Or the Mac on your desk does</h3>
+				{@render label('1.2', 'Full permissions')}
+				<h3 class="item-title">Run unattended off your laptop</h3>
 				<p class="copy">
-					An M3 or newer on macOS 15 with 16 GB, and $10 a month. One command puts a single
-					virtual machine on it and changes nothing else; your projects go there and nobody
-					else's, and their snapshots stay on its disk.
+					Each project runs in its own virtual machine as <code>dev</code> with <code>sudo</code>
+					and full permissions. The agent can touch that machine and the logins on it, while your
+					laptop and other repos stay walled off.
 				</p>
-				<p class="cmd">repose host add</p>
+				<p class="cmd">repose run -p "..."</p>
+			</li>
+			<li>
+				{@render label('1.3', 'Snapshots')}
+				<h3 class="item-title">Roll back the whole disk, or fork it</h3>
+				<p class="copy">
+					repose snapshots the disk nightly and at every stop, keeping seven days plus the newest.
+					Restore a broken database or checkout in place, or clone a snapshot to a new machine with
+					<code>--as</code>.
+				</p>
+				<p class="cmd">repose snapshots restore</p>
 			</li>
 		</ul>
 	</section>
 
-	<section class="band" aria-labelledby="wreck-h">
-		<div class="head">
-			{@render label('02', 'Permissions')}
-			<h2 class="hk-h2" id="wreck-h">Let it run with full permissions</h2>
-			<p class="copy side">
-				You don't approve its commands one by one. It can touch its machine and anything the logins
-				on it can, and restoring a snapshot brings the machine back as it was.
-			</p>
-		</div>
-		<div class="fig fig--wreck">
-			<div class="stage">
-				<Wreck />
-			</div>
-		</div>
-	</section>
-
-	<section class="band" aria-labelledby="setup-h">
-		<div class="head">
-			{@render label('03', 'Setup')}
-			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
-			<p class="copy side">
-				You spend an hour setting up a cloud machine: install the CLIs, log in to GitHub, paste the
-				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
-			</p>
-		</div>
-		<div class="fig">
-			<div class="stage">
-				<OneCommand animated />
-			</div>
-		</div>
-	</section>
-
 	<section class="band" id="features" aria-labelledby="features-h">
 		<div class="head">
-			{@render label('04', 'Machine')}
-			<h2 class="hk-h2" id="features-h">Work on the machine as you would on your laptop</h2>
+			{@render label('02', 'Workflow')}
+			<h2 class="hk-h2" id="features-h">Feels like localhost, runs while you're away</h2>
 			<p class="copy side">
-				Each project gets a machine of its own, and you reach it from the tools already on your
-				laptop.
+				Use the tools already on your laptop while attached, and close the lid once the agent is
+				underway.
 			</p>
 		</div>
 		<ul class="cells">
 			<li class="fig">
-				<ComesBack />
+				<Localhost animated={false} />
 				<div class="cell-copy">
-					{@render label('4.1', 'Snapshots')}
-					<h3 class="item-title">Restore the whole disk</h3>
-					<p class="copy">
-						A snapshot holds the checkout, the installed tools and the logins made on the machine. A
-						restore puts it back on the stopped machine, or on a new one with <code>--as</code>.
-					</p>
-					<p class="cmd">repose snapshots restore</p>
-				</div>
-			</li>
-			<li class="fig">
-				<Localhost />
-				<div class="cell-copy">
-					{@render label('4.2', 'Ports')}
+					{@render label('2.1', 'Ports')}
 					<h3 class="item-title">Use its ports on your localhost</h3>
 					<p class="copy">
-						Ports your servers listen on, from 1024 up, appear on your localhost while you're
-						attached, so cookies and OAuth redirects behave as they do locally.
+						Ports your servers listen on, from 1024 up, forward to your laptop's localhost while
+						you're attached, so cookies and OAuth redirects behave as they do locally.
 					</p>
 					<p class="cmd">repose attach</p>
 				</div>
 			</li>
 			<li class="fig">
-				<Browser />
+				<Browser animated={false} />
 				<div class="cell-copy">
-					{@render label('4.3', 'Browser')}
+					{@render label('2.2', 'Browser')}
 					<h3 class="item-title">Watch the agent's browser, and take over</h3>
 					<p class="copy">
-						The agents' browser runs on the machine. Open it on your laptop to watch, or to do a
-						login or a captcha for them.
+						Every agent gets Playwright and Chrome DevTools wired to Chromium on the machine. Open
+						the view on your laptop to watch, log in or clear a captcha yourself.
 					</p>
 					<p class="cmd">repose browser</p>
 				</div>
 			</li>
-			<li class="fig">
-				<Editor />
+			<li class="cell--text">
 				<div class="cell-copy">
-					{@render label('4.4', 'Editor')}
+					{@render label('2.3', 'Editor')}
 					<h3 class="item-title">Open it in your editor</h3>
 					<p class="copy">
-						Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
-						your laptop.
+						Each machine is an SSH host in your config. Open it from your laptop in VS Code, Cursor
+						or Zed, or run Neovim directly on the machine.
 					</p>
 					<p class="cmd">ssh your-project.repose</p>
+				</div>
+			</li>
+			<li class="cell--text">
+				<div class="cell-copy">
+					{@render label('2.4', 'Away & idle')}
+					<h3 class="item-title">Close your laptop and get notified</h3>
+					<p class="copy">
+						Agents keep working after you disconnect and notify you by email or phone when they
+						finish or ask a question. On hosted plans, quiet machines freeze after 15 minutes and
+						wake when a command or webhook arrives.
+					</p>
+					<p class="cmd">repose ls</p>
 				</div>
 			</li>
 		</ul>
 	</section>
 
-	<section class="band" aria-labelledby="agents-h">
+	<section class="band" id="agents" aria-labelledby="agents-h">
 		<div class="head">
-			{@render label('05', 'Agents')}
-			<h2 class="hk-h2" id="agents-h">
-				The agents you use, and the tools they need, on first boot
-			</h2>
+			{@render label('03', 'Agents & tools')}
+			<h2 class="hk-h2" id="agents-h">Preinstalled on first boot</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
@@ -315,18 +257,120 @@
 		</div>
 	</section>
 
-	<section class="band field-stage band--dark" aria-labelledby="install-h">
+	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head">
-			{@render label('06', 'Install')}
-			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
-			<p class="links side">
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
-					>Install and sign in</a
-				>
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'run-and-attach' })}
-					>Run and attach</a
-				>
+			{@render label('04', 'Pricing')}
+			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
+			<div class="cta-row side">
+				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+				{#if !authState.authenticated && seats}
+					<p class="seats" data-testid="seats-line">
+						{#if seats.free > 0}
+							{seats.free}
+							{seats.free === 1 ? 'seat' : 'seats'} left
+						{:else}
+							Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat
+							frees.
+						{/if}
+					</p>
+				{/if}
+			</div>
+		</div>
+		<p class="pricing-sub">
+			{solo.trialDays} days free on every plan. You pay for memory running at once and bring your own
+			agent subscriptions or API keys.
+		</p>
+		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
+		<p class="pricing-note">
+			Mix <code>tiny</code> (2 GB), <code>small</code> (4 GB), <code>large</code> (8 GB) and
+			<code>xl</code> (16 GB) machines up to your plan's running memory; stopped projects count only
+			toward disk. Up to 100 projects per account, with snapshots in cloud storage.
+		</p>
+		<OwnHardwarePlan plan={OWN_HARDWARE} variant="public" level={3} />
+		<!-- No start time for either home while the Mac's is on the board (ENG-70),
+		     and no Mac memory sizing claims until ENG-91 lands. -->
+		<div class="pricing-note pricing-note--split" id="parts">
+			<p>
+				Needs an M3 or newer Mac on macOS 15 with 16 GB, or an x86 box with Linux and KVM. Snapshots
+				stay on its disk.
 			</p>
+			<p class="links">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}
+					>Your own hardware</a
+				>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'billing' })}>Billing</a>
+			</p>
+		</div>
+	</section>
+
+	<section class="band faq-band" id="questions" aria-labelledby="faq-h">
+		<div class="head">
+			{@render label('05', 'Questions')}
+			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
+			<p class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'billing' })}>Billing</a>
+			</p>
+		</div>
+		<div class="ruled faq">
+			<details>
+				<summary class="item-title"
+					>Do I bring my own Claude, Codex or Gemini account?{@render plus()}</summary
+				>
+				<p class="copy">
+					Yes. repose gives your agents their machine and tools, and you use your own agent
+					subscriptions or API keys. Claude Code logs in once inside a machine; Codex, opencode and
+					<code>gh</code> logins copy from your laptop unless you opt out.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title"
+					>Can I run it on a Mac mini or x86 box I already own?{@render plus()}</summary
+				>
+				<p class="copy">
+					Yes, on the Own hardware plan for {price(OWN_HARDWARE.priceCents)} a month. You need an M3
+					or newer Mac on macOS 15 with 16 GB, or an x86 box with Linux and KVM.
+					<code>repose host add</code> puts one virtual machine on a Mac and leaves the rest untouched,
+					and <code>repose host rm</code> takes it off again with its disk.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title"
+					>What happens when my Mac sleeps or restarts?{@render plus()}</summary
+				>
+				<p class="copy">
+					Your machines are out of reach until the Mac answers again, and what they wrote to disk is
+					kept. A restart starts them fresh: their disks stay as they were, and what they held in
+					memory is gone.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title">What can an agent reach on the machine?{@render plus()}</summary
+				>
+				<p class="copy">
+					It runs as <code>dev</code> with <code>sudo</code> on its own machine, with the logins you
+					copied and the secrets you set. Other projects live on separate machines it cannot reach,
+					and it connects to your laptop only through a port or a Chrome window you lend it.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title">What does an agent cost while it waits?{@render plus()}</summary>
+				<p class="copy">
+					On hosted plans, a quiet machine freezes after about 15 minutes and wakes in a second or
+					two when a command or webhook arrives. You pay for the memory your plan runs at once, so a
+					waiting or stopped project adds no extra charge.
+				</p>
+			</details>
+		</div>
+	</section>
+
+	<section class="band install-band" id="install" aria-labelledby="install-h">
+		<div class="head">
+			{@render label('06', 'Start')}
+			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
+			<div class="cta-row side">
+				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+			</div>
 		</div>
 		<ol class="ruled steps">
 			{#each steps as step, i (step.title)}
@@ -338,99 +382,15 @@
 				</li>
 			{/each}
 		</ol>
-	</section>
-
-	<section class="band" id="pricing" aria-labelledby="pricing-h">
-		<div class="head">
-			{@render label('07', 'Pricing')}
-			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
-			<div class="cta-row side">
-				<!-- Signing up here comes back to Billing, where the plans are. -->
-				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
-				{#if !authState.authenticated && seats}
-					<p class="seats" data-testid="seats-line">
-						{#if seats.free > 0}
-							{seats.free}
-							{seats.free === 1 ? 'seat' : 'seats'} left
-						{:else}
-							Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
-						{/if}
-					</p>
-				{/if}
-			</div>
-		</div>
-		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
-		<!-- The fourth thing for sale, and not a fourth card: it sells one
-		     host the visitor owns and none of the three figures above
-		     (I-1364). -->
-		<OwnHardwarePlan plan={OWN_HARDWARE} variant="public" level={3} />
-	</section>
-
-	<section class="band faq-band" aria-labelledby="faq-h">
-		<div class="head">
-			{@render label('08', 'Questions')}
-			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
-			<p class="links side">
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'billing' })}>Billing</a>
+		<div class="steps-foot">
+			<p class="links">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
+					>Install and sign in</a
+				>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'run-and-attach' })}
+					>Run and attach</a
+				>
 			</p>
-		</div>
-		<div class="ruled faq">
-			<details>
-				<summary class="item-title"
-					>Can I run it on a Mac I already have?{@render plus()}</summary
-				>
-				<p class="copy">
-					An M3 or newer on macOS 15 with 16 GB of memory, for $10 a month. <code
-						>repose host add</code
-					> puts one virtual machine on it, keeps the Mac awake while your machines run, and
-					<code>repose host rm</code> takes it off again with its disk.
-				</p>
-			</details>
-			<details>
-				<summary class="item-title"
-					>What happens when my Mac sleeps or reboots?{@render plus()}</summary
-				>
-				<p class="copy">
-					Your machines are out of reach until it answers again, and what they wrote to disk is
-					kept. A restart starts them fresh: their disks are as they were, and what they held in
-					memory is gone.
-				</p>
-			</details>
-			<details>
-				<summary class="item-title">Can I close my laptop while it works?{@render plus()}</summary>
-				<p class="copy">
-					The agent keeps working on its machine, and you hear by email or on your phone when it's
-					done or needs you. Attach again, or open the machine in your editor, to see where it got
-					to.
-				</p>
-			</details>
-			<details>
-				<summary class="item-title">What can the agent reach?{@render plus()}</summary>
-				<p class="copy">
-					It runs as <code>dev</code> with sudo on its own machine, with the logins you copied and the
-					secrets you set. Your other projects are separate machines it can't reach, and it connects to
-					your laptop only through a port or a Chrome you lend it.
-				</p>
-			</details>
-			<details>
-				<summary class="item-title">What happens when it breaks something?{@render plus()}</summary>
-				<p class="copy">
-					You restore a snapshot and the whole disk comes back: the checkout, the tools and the
-					logins made on the machine, Claude Code's aside. repose takes one each night and at every
-					stop, or you run <code>repose snapshots create</code> first; they're kept seven days, and the
-					newest stays.
-				</p>
-			</details>
-			<details>
-				<summary class="item-title">What does an agent cost while it waits?{@render plus()}</summary
-				>
-				<p class="copy">
-					A machine nobody is using freezes after about 15 minutes of quiet, and a webhook, a
-					scheduled job or your next command wakes it in a second or two. You pay for the memory
-					your plan runs at once, so a waiting agent costs nothing on top.
-				</p>
-			</details>
 		</div>
 	</section>
 </main>

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1063 entries.
+1064 entries.
 
 ## Scope
 
@@ -365,7 +365,7 @@ pointer, not a summary.
 - **I-283** No auto-mode offer on a machine in bypass mode — 2026-09-27; L7490
 - **I-284** The nothing-new check trusts the commits the last sync recorded, not the guest's ref tips — 2026-09-27; L7518
 - **I-286** The repository is `Heracraft/repose` — 2026-09-27; L7550
-- **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7563
+- **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; amended by I-1452; L7563
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7588
 - **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; amended by I-604; amended by I-1128; L7610
 - **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; amended by I-739; amended by I-902; amended by I-1033; amended by I-1090; L7688
@@ -827,7 +827,7 @@ pointer, not a summary.
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24220
 - **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24252
 - **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; amended by I-1216; amended by I-1322; L24379
-- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24728
+- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; amended by I-1452; L24728
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24791
 - **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24846
 - **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24884
@@ -899,7 +899,7 @@ pointer, not a summary.
 - **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27572
 - **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27630
 - **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27674
-- **I-961** The landing is one quiet, gapless composition: bands that end on the next band's rule, one two-column line from 1024px, one stage and one terminal palette — 2026-11-02; L27746
+- **I-961** The landing is one quiet, gapless composition: bands that end on the next band's rule, one two-column line from 1024px, one stage and one terminal palette — 2026-11-02; amended by I-1452; L27746
 - **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L28026
 - **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L28083
 - **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L28098
@@ -998,7 +998,7 @@ pointer, not a summary.
 - **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33739
 - **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33897
 - **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33982
-- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — L33999
+- **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — amended by I-1452; L33999
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34036
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L34087
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; L34131
@@ -1090,8 +1090,9 @@ pointer, not a summary.
 - **I-1440** `repose host rm --local` says how many machines go with the appliance, and names the host still on the account afterwards; it stays offline-capable and never refuses on what it could not read (host-rm-local ENG-141, 2026-11-20) — L38717
 - **I-1442** A golden that asserts an order sorts it back into the guest's order first: `TestClaudeSettingsMergeGolden` compares the dropped-hook lines after putting `/home/dev` back, not in the order `$TMPDIR` gave them (claude-golden ENG-139, 2026-11-20) — L38765
 - **I-1444** The guest-address write checks for an open op in its own `where`, not before it, and a write that matched no row does not update the caller's copy (hello-addr ENG-111, 2026-11-20) — L38806
-- **I-1446** The home page sells the machine again: the headline is "Your coding agents, on a machine of their own", the hero's picture is the real `repose run` session, 01 compares the two homes instead of listing six layers, and no band names a start time or a memory figure for either home (home-page, 2026-11-20) — L38878
-- **I-1448** Host architecture is its own field (`HostInfo.arch`, `Hello.arch`, `hosts.arch`), never sliced from `hosts.nixos_system` (web-hosts-ux, 2026-11-21) — L38942
-- **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38948
-- **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38954
-- **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — L38970
+- **I-1446** The home page sells the machine again: the headline is "Your coding agents, on a machine of their own", the hero's picture is the real `repose run` session, 01 compares the two homes instead of listing six layers, and no band names a start time or a memory figure for either home (home-page, 2026-11-20) — amended by I-1452; L38878
+- **I-1452** Landing overhaul: cut bloat, drop looping cartoons, sharpen conversion (amends I-1446, I-1212, I-961, I-843, I-287) — L38942
+- **I-1448** Host architecture is its own field (`HostInfo.arch`, `Hello.arch`, `hosts.arch`), never sliced from `hosts.nixos_system` (web-hosts-ux, 2026-11-21) — L38948
+- **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38954
+- **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
+- **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — L38976
