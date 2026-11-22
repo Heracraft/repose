@@ -525,7 +525,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			b.gc, b.gcErr = buildGitCarry(repoRoot, e.HomeDir)
 			b.cc, _ = buildClaudeCarry(e.HomeDir)
 			if !noBuilds(project) { // I-1346
-				b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceFor(e.personalOn, repoRoot)) // I-221, I-222, I-490
+				b.tc = buildToolsCarry(e.HomeDir, repoRoot, precedenceForProject(e.personalOn, repoRoot, project)) // I-221, I-222, I-490, I-1512
 			}
 			b.mc, b.mcNotes = buildMCPCarry(e.HomeDir, gitRepoRoot(repoRoot), project.Slug, target.Checkout, toolBinsOf(b.tc)) // I-556
 			carryDone <- b
@@ -2411,7 +2411,7 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 	noted := newCarryNoter(e.Dir, project.ID) // DECISIONS I-618
 	co := carryOptions{TZ: tz, RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers, NoBuilds: noBuilds(project)}
 	if !co.NoBuilds { // I-1346
-		co.Tools = buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))
+		co.Tools = buildToolsCarry(e.HomeDir, repoDir, precedenceForProject(e.personalOn, repoDir, project))
 	}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)

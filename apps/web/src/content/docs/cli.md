@@ -261,7 +261,7 @@ FOLDER is where in the checkout the conversation ran, and the machine gets it in
 
 ### `repose scan [DIR]`
 
-List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets. On an [older machine](/docs/machine#older-machines), its configuration files take over a half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads the laptop's copy of the account's file and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
+List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets, through mise on an Ubuntu machine. It reads which machine the checkout belongs to; on an [older machine](/docs/machine#older-machines), its configuration files take over a half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads the laptop's copy of the account's file and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
 
 ## Projects
 
