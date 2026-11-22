@@ -17,7 +17,8 @@ gib=$((1024 * 1024 * 1024))
 
 # 1. The partition, to the end of the disk. growpart exits 1 and says
 # NOCHANGE when it already is; that is the common case.
-out=$(growpart "$disk" "$part" 2>&1) && rc=0 || rc=$?
+rc=0
+out=$(growpart "$disk" "$part" 2>&1) || rc=$?
 case "$rc" in
   0) echo "repose-mac-grow: event=partition_grown disk=$disk part=$part" ;;
   1) echo "repose-mac-grow: event=partition_unchanged disk=$disk part=$part" ;;
