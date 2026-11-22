@@ -185,8 +185,10 @@ if ! { [ -L "$units/multi-user.target.wants/repose-images-volume.service" ] &&
   grep -q '^dir=/var/lib/repose/images$' "$root/usr/local/lib/repose/repose-images-volume" &&
   grep -q '^After=.*repose-images-volume.service' "$units/hostd.service" &&
   grep -q '^Wants=.*repose-images-volume.service' "$units/hostd.service" &&
-  grep -q -- '--images-dir /var/lib/repose/images' "$units/hostd.service"; }; then
-  echo "build.sh: hostd's --images-dir would be on the root partition: repose-images-volume is not enabled, not mounting /var/lib/repose/images, or not before hostd" >&2
+  grep -q -- '--images-dir /var/lib/repose/images' "$units/hostd.service" &&
+  grep -q '^After=.*repose-images-volume.service.*blk-availability.service' "$units/guest@.service.d/10-repose.conf" &&
+  grep -q '^RequiresMountsFor=/var/lib/repose/images$' "$units/guest@.service.d/10-repose.conf"; }; then
+  echo "build.sh: hostd's --images-dir would be on the root partition, or a shutdown would take it from under a running guest: repose-images-volume is not enabled, not mounting /var/lib/repose/images, not before hostd, or not after every guest@ (I-1550)" >&2
   exit 1
 fi
 rm -rf "$root"/var/lib/apt/lists/* "$root"/var/cache/apt/* "$root"/var/log/*.log "$root"/tmp/*

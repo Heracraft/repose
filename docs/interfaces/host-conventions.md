@@ -573,7 +573,9 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   link to `/run/repose/wg0.conf`), `repose-launcher-join` (the share at
   `/run/repose/launcher`, tag `repose-launcher`), `repose-register`,
   `repose-guest-park`, the `guest@`, `virtiofsd@` and `virtiofsd-auth@`
-  drop-ins, `repose-snapshot.timer`, `repose-fault-around`,
+  drop-ins (`guest@` also after `repose-images-volume`,
+  `blk-availability` and the cache's mount, so a shutdown stops guests
+  before their base bundle's volume goes, I-1550), `repose-snapshot.timer`, `repose-fault-around`,
   `repose-mac-trim`, and `repose-nftables`, which loads
   `/etc/repose/nftables.nft` (the tables above, its chains declared and
   flushed, hostd's chains and sets kept). The input and forward chains
