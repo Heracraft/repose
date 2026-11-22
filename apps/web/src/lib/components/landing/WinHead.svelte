@@ -3,9 +3,9 @@
   --shot-head (28px) tall, 10px in from the window's sides, with the
   place's 16px mark and its name at 12px, the same in the hero, the
   setup section, the feature grid and Ready. `machine` is the cloud and
-  "Your sandbox" (the hero passes `dot` for the running dot its
+  "your cloud machine" (the hero passes `dot` for the running dot its
   stop greys; elsewhere the head names the place alone); `laptop` is the laptop
-  and "Your laptop"; `snapshots` is the safety figure's snapshots list, whose
+  and "your laptop"; `snapshots` is the hero's snapshots panel, whose
   pinwheel the hero passes as `mark` so its loop can turn it. Whatever
   the caller puts in `children` follows the name (Localhost's address
   bar, OneCommand's ready time, which brings its own dot: `dot={false}`).
@@ -14,9 +14,9 @@
 	import type { Snippet } from 'svelte';
 
 	const NAME = {
-		machine: 'Your sandbox',
-		laptop: 'Your laptop',
-		snapshots: 'Snapshots'
+		machine: 'your sandbox',
+		laptop: 'your laptop',
+		snapshots: 'snapshots'
 	} as const;
 
 	let {
@@ -91,8 +91,8 @@
 	}
 	.win-dot {
 		flex: none;
-		width: 6px;
-		height: 6px;
+		width: 7px;
+		height: 7px;
 		margin-left: auto;
 		border-radius: 50%;
 		background: var(--hk-ok-dot);

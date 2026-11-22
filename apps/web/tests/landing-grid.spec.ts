@@ -4,7 +4,7 @@
 import { test, expect } from '@playwright/test';
 
 const HEADS = [
-	'Our cloud, or a machine you already have',
+	'Pick where each sandbox runs',
 	'Mix subscriptions and API keys',
 	'Use your browser and editor'
 ];

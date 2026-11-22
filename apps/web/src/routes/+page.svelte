@@ -66,6 +66,8 @@
 	const maxFit = Math.max(...PLANS.map((p) => fits(p.memoryGB)));
 
 	const introEligible = $derived(seats?.founding_left !== 0);
+	const solo = PLANS[0];
+	const soloPrice = $derived(introEligible && solo.intro ? solo.intro.priceCents : solo.priceCents);
 </script>
 
 <svelte:head>
@@ -119,7 +121,24 @@
 						{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
 						<a class="hk-more hero-docs" href={resolve('/docs')}>Read docs</a>
 					</div>
+					<div class="hero-install">
+						<CodeCopy
+							command={INSTALL_COMMAND}
+							what="the install command"
+							prompt
+							labelFrom={1200}
+						/>
+					</div>
 				</div>
+				<p class="hero-meta">
+					<span class="nw">{solo.trialDays} days free</span>
+					<span class="sep" aria-hidden="true">·</span>
+					<a class="meta-link nw" href="#pricing">Cloud from {price(soloPrice)}/mo</a>
+					<span class="sep" aria-hidden="true">·</span>
+					<a class="meta-link nw" href="#pricing"
+						>Your Mac mini or Linux server {price(OWN_HARDWARE.priceCents)}/mo</a
+					>
+				</p>
 			</div>
 
 			<div class="hero-pane hero-stage">
@@ -158,12 +177,18 @@
 				<h2 class="hk-h2" id="pricing-h">Pay for what runs at once</h2>
 				<p class="copy pricing-lead">Stopped sandboxes don't count against your memory.</p>
 			</div>
-			{#if !authState.authenticated && seats && seats.free === 0}
-				<!-- Only the full state is said: it stops a visitor, and names the way round it. -->
-				<p class="seats side" data-testid="seats-line">
-					Cloud full for now, {seats.waiting} waiting. Your machine has no waitlist.
-				</p>
-			{/if}
+			<div class="cta-row side">
+				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+				{#if !authState.authenticated && seats}
+					<p class="seats" data-testid="seats-line">
+						{#if seats.free > 0}
+							{seats.free} cloud {seats.free === 1 ? 'seat' : 'seats'} left
+						{:else}
+							Cloud full for now, {seats.waiting} waiting. Your machine has no waitlist.
+						{/if}
+					</p>
+				{/if}
+			</div>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
 		<ul class="mem" aria-label="Sandboxes each plan runs at once">

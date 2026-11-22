@@ -307,7 +307,7 @@
 
 				<div class="sw-copy-stack">
 					{#if step === 0}
-						<h2 class="hk-h2" id="where-h">Our cloud, or a machine you already have</h2>
+						<h2 class="hk-h2" id="where-h">Pick where each sandbox runs</h2>
 					{:else if step === 1}
 						<h2 class="hk-h2" id="where-h">Mix subscriptions and API keys</h2>
 					{:else}
@@ -379,7 +379,7 @@
 			<ol class="sw-mob-beats">
 				<li>
 					<div class="sw-mb-head">
-						<h3>Our cloud, or a machine you already have</h3>
+						<h3>Pick where each sandbox runs</h3>
 					</div>
 					{@render hardwareVisual()}
 				</li>
@@ -667,15 +667,15 @@
 	.sw-pill-t {
 		font-weight: 500;
 	}
-	/* ---------- Desktop right stage: the figure sits past the dial's rim, in
-	   the top-right corner the quarter leaves open. ---------- */
+	/* ---------- Desktop right stage: the figure stands centred beside the
+	   copy, large enough to hold the stage (owner: no empty quarter). ---------- */
 	.sw-stage {
 		position: relative;
 		display: grid;
 	}
 	@media (min-width: 1024px) {
 		.sw-stage {
-			align-self: start;
+			align-self: center;
 		}
 	}
 	.sw-panel-wrap {
@@ -690,12 +690,14 @@
 	@media (min-width: 1024px) {
 		.sw-panel-wrap {
 			justify-self: end;
-			width: min(100%, 24rem);
+			width: min(100%, 32rem);
+			zoom: 1.12;
 		}
 	}
 	@media (min-width: 1200px) {
 		.sw-panel-wrap {
-			width: min(100%, 27.5rem);
+			width: min(100%, 36rem);
+			zoom: 1.2;
 		}
 	}
 	.sw-panel-wrap.is-active {
