@@ -22,6 +22,11 @@ type LVM interface {
 	Mkfs(ctx context.Context, name string) error
 	// MkfsShare makes the small ext4 of a login-share volume (I-464).
 	MkfsShare(ctx context.Context, name string) error
+	// MkfsRW makes an erofs guest's writable volume, vdb (DECISIONS
+	// I-1480): ext4 labelled repose-rw, which the guest's initramfs lays
+	// out on its first boot. Like Mkfs, it leaves a volume that already
+	// has a filesystem alone.
+	MkfsRW(ctx context.Context, name string) error
 	RemoveVolume(ctx context.Context, name string) error
 	ExtendVolume(ctx context.Context, name string, bytes uint64) error
 	Snapshot(ctx context.Context, name, snap string) error
@@ -236,6 +241,21 @@ func (l *Real) Mkfs(ctx context.Context, name string) error {
 	return err
 }
 
+// MkfsRW implements LVM: Mkfs's ext4 under the repose-rw label, the
+// default features (filetype, so Docker's overlay2 on the volume has
+// d_type) and the same lazy inode tables (I-162).
+func (l *Real) MkfsRW(ctx context.Context, name string) error {
+	has, err := l.HasFilesystem(ctx, name)
+	if err != nil || has {
+		return err
+	}
+	_, err = l.R.Run(ctx, "mkfs.ext4", "-q", "-L", RWLabel, "-E", "lazy_itable_init=1", l.DevPath(name))
+	return err
+}
+
+// RWLabel is the ext4 label of an erofs guest's volume.
+const RWLabel = "repose-rw"
+
 // MkfsShare implements LVM: no reserved blocks and 256 inodes, which bounds
 // the file count as the volume size bounds the bytes (DECISIONS I-464).
 func (l *Real) MkfsShare(ctx context.Context, name string) error {
@@ -401,6 +421,8 @@ type FakeVolume struct {
 	Size  uint64
 	Used  uint64
 	HasFS bool
+	// Label is the filesystem's label when MkfsRW made it.
+	Label string
 	Data  []byte
 }
 
@@ -543,6 +565,19 @@ func (f *Fake) Mkfs(_ context.Context, name string) error {
 
 // MkfsShare implements LVM.
 func (f *Fake) MkfsShare(ctx context.Context, name string) error { return f.Mkfs(ctx, name) }
+
+// MkfsRW implements LVM, recording the label on the volume.
+func (f *Fake) MkfsRW(ctx context.Context, name string) error {
+	if err := f.Mkfs(ctx, name); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if v := f.Volumes[name]; v != nil {
+		v.Label = RWLabel
+	}
+	return nil
+}
 
 // RemoveVolume implements LVM.
 func (f *Fake) RemoveVolume(_ context.Context, name string) error {

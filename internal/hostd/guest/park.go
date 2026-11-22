@@ -839,7 +839,7 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 	chv, _ := m.d.CH.Version(ctx) // empty is recorded as unknown and compared as such
 	rec := &park.Record{
 		GuestID: id, State: park.StateWriting, Reason: reason, CreatedAt: m.d.Now().UTC(), HostBootID: m.bootID(),
-		Closure: g.SystemClosure, Class: g.Class, VolumeBytes: g.VolumeBytes, CHVersion: chv, FS: m.d.Park.Image.FS(),
+		Closure: g.SystemClosure, BaseVersion: g.BaseVersion, Class: g.Class, VolumeBytes: g.VolumeBytes, CHVersion: chv, FS: m.d.Park.Image.FS(),
 		AuthShare: m.argsHaveAuthShare(id), KeyID: keyID, WrappedKey: wrapped, KeyCheck: park.KeyCheck(key),
 	}
 	if err := recs.Put(rec); err != nil {
@@ -1247,7 +1247,7 @@ func unparkDiscardedReason(r ParkResult) string {
 		return "incomplete"
 	case "image older than the restore window":
 		return "too_old"
-	case "closure changed since the park", "class changed since the park",
+	case "closure changed since the park", "base changed since the park", "base image missing since the park", "class changed since the park",
 		"volume resized since the park", "guest volume changed since the park",
 		"no volume fingerprint", "hypervisor version changed since the park":
 		return "changed"
@@ -1387,6 +1387,12 @@ func (m *Manager) prepareUnpark(ctx, uctx context.Context, id string) (*unparkPr
 		return discard("guest state changed since the park")
 	case rec.Closure != g.SystemClosure:
 		return discard("closure changed since the park")
+	case rec.BaseVersion != g.BaseVersion:
+		return discard("base changed since the park")
+	case isErofs(g) && (m.d.Images == nil || !m.d.Images.Has(g.BaseVersion)):
+		// The hypervisor's image names the bundle's files; without them
+		// the restore cannot open its disks (I-1480).
+		return discard("base image missing since the park")
 	case rec.Class != g.Class:
 		return discard("class changed since the park")
 	case rec.VolumeBytes != g.VolumeBytes:
@@ -1634,25 +1640,29 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 		return fmt.Errorf("shape: %w", err)
 	}
 	phase("net")
-	vcfg := virtiofs.Config{SharedDir: m.cfg.StoreExport, User: m.cfg.VirtiofsUser, Group: m.cfg.VirtiofsUser, SocketGroup: m.cfg.GuestUser, Binary: m.cfg.VirtiofsBinary}
-	if err := virtiofs.Start(ctx, m.d.Systemd, vcfg, g.GuestID, ch.VirtiofsSocket(dir)); err != nil {
-		return fmt.Errorf("virtiofsd: %w", err)
+	// An erofs guest has no store share or store view to bring back: its
+	// root is the bundle's rootfs.erofs, a disk in the image (I-1480).
+	if !isErofs(g) {
+		vcfg := virtiofs.Config{SharedDir: m.cfg.StoreExport, User: m.cfg.VirtiofsUser, Group: m.cfg.VirtiofsUser, SocketGroup: m.cfg.GuestUser, Binary: m.cfg.VirtiofsBinary}
+		if err := virtiofs.Start(ctx, m.d.Systemd, vcfg, g.GuestID, ch.VirtiofsSocket(dir)); err != nil {
+			return fmt.Errorf("virtiofsd: %w", err)
+		}
+		if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
+			return fmt.Errorf("virtiofsd: %w", err)
+		}
+		phase("virtiofsd")
+		if err := m.extendView(ctx, g.GuestID, m.viewClosures(g)); err != nil {
+			return fmt.Errorf("store view: %w", err)
+		}
+		phase("store_view")
 	}
-	if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
-		return fmt.Errorf("virtiofsd: %w", err)
-	}
-	phase("virtiofsd")
-	if err := m.extendView(ctx, g.GuestID, m.viewClosures(g)); err != nil {
-		return fmt.Errorf("store view: %w", err)
-	}
-	phase("store_view")
 	if rec.AuthShare && !m.startAuthShare(ctx, g, dir) {
 		return errors.New("the login share the image has did not start")
 	}
 	for _, s := range []string{"ch.sock", "vsock.sock"} {
 		_ = os.Remove(filepath.Join(dir, s)) // the hypervisor makes them anew; a stale one fails its bind
 	}
-	props := GuestUnitProps(Classes[g.Class], m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)))
+	props := GuestUnitProps(Classes[g.Class], m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
 	argv := ch.RestoreArgs(dir, m.snapDir(g.GuestID))
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, argv); err != nil {
 		return fmt.Errorf("hypervisor: %w", err)

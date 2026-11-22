@@ -161,7 +161,7 @@ func goodRoot(guestID string) string { return "good-" + guestID }
 // markGood records closure as the newest one the guest's disk is known to
 // run and roots it. Called with the record about to be written.
 func (m *Manager) markGood(g *state.Guest, closure string) {
-	if closure == "" || g.LastGoodClosure == closure {
+	if closure == "" || g.LastGoodClosure == closure || !m.NixOn() {
 		return
 	}
 	if err := m.d.Roots.Set(goodRoot(g.GuestID), closure); err != nil {
@@ -231,7 +231,7 @@ func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID,
 // the guest's address (I-720) and, after a fallback, which closure
 // failed and why.
 func startResult(g *state.Guest, fb *state.BootFallback, consoleTail string, boot *hostdv1.BootTimings) *hostdv1.StartResult {
-	r := &hostdv1.StartResult{BootedClosure: g.SystemClosure, Boot: boot, GuestIp: g.IP, VsockCid: g.CID}
+	r := &hostdv1.StartResult{BootedClosure: g.SystemClosure, BootedBaseVersion: g.BaseVersion, Boot: boot, GuestIp: g.IP, VsockCid: g.CID}
 	if fb != nil {
 		r.FailedClosure = fb.Failed
 		r.BootError = &hostdv1.Error{Code: fb.Code, Message: fb.Message, ConsoleTail: consoleTail}

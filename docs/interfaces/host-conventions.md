@@ -391,6 +391,75 @@ that fails to start is logged (`auth_share`) and the guest boots without
 it. `repose.host.claudeLoginShare = false` (hostd
 `--claude-login-share=false`) starts no share at all.
 
+## Base images on the host
+
+An erofs guest (DECISIONS I-1458) boots a base bundle from the host's
+image cache instead of a Nix closure (I-1478, I-1480).
+
+| Path | What |
+|---|---|
+| `/var/lib/repose/images/` | The cache, `0755 root`, `hostd --images-dir` (the default; `repose.host` passes it on every host, `nix/hosts/hostd.nix`). An empty `--images-dir` boots no erofs guest and drops `erofs` from `Hello.features`. |
+| `/var/lib/repose/images/<version>-<arch>/` | One bundle: `vmlinuz`, `initramfs.img`, `rootfs.erofs`, `0644 root`. `<version>` is the `base_versions` label (`[A-Za-z0-9._-]{1,64}`), `<arch>` the host's (`x86_64`, `aarch64`). A directory under this name is always whole and verified: it only ever appears by rename. |
+| `/var/lib/repose/images/.tmp-<version>-<arch>/` | A fetch in progress: each file arrives as `<name>.part`, is checked against the `BaseImage`'s SHA-256 as it streams, continues with a `Range` request after a 60 s stall or a broken connection (three attempts, I-1414's pattern), and is renamed to `<name>` once its digest matches. When all three are in, the directory is renamed to `<version>-<arch>/`. A file whose digest differs removes the whole directory and the fetch answers `internal` ("base image checksum mismatch"). The name is fixed, not random, so a hostd that restarts mid-fetch continues from the part files. A second command for a version being fetched waits for the first fetch. GC removes one older than 24 h that no fetch is using. |
+
+- **Records.** bbolt's `base_images` bucket holds one record per bundle,
+  `{key, version, arch, bytes, fetched_at, unreferenced_since}` (additive,
+  no schema bump). A guest row's `base_version` names its bundle; a Nix
+  guest's is empty. `base_needs_fetch` is set by reconcile on a guest whose
+  bundle directory is missing (a disk wipe, a GC race): the guest is
+  reported as it is, and its next start fetches the bundle from that
+  start's `base_image`; a start with none answers `not_found` ("base image
+  ... missing from the host; api must resend base_image"). `menu` is the
+  last `MenuSpec` a create, start or `ApplyConfig` carried, kept so a
+  boot's replay has it (I-1482); package names are tenant content and are
+  never logged.
+- **GC**, hourly and at start: a bundle no guest names (running, stopped,
+  restoring, any state) and that is not the newest fetched for its arch is
+  marked `unreferenced_since`; one still unreferenced 24 h later is removed
+  with its record. A guest naming it again clears the mark.
+- **Metrics**: `repose_host_base_image_fetch_errors_total{reason}`
+  (`checksum`, `status`, `stall`, `network`, `disk`),
+  `repose_host_base_image_bytes`, `repose_host_base_image_versions`,
+  `repose_host_base_image_fetch_duration_seconds`.
+- **Cloud Hypervisor.** An erofs guest's argv differs from a Nix guest's
+  ("Cloud Hypervisor invocation" above) in four places: `--kernel` and
+  `--initramfs` are the bundle's `vmlinuz` and `initramfs.img`; the
+  disks are `--disk path=<bundle>/rootfs.erofs,image_type=raw,readonly=on,id=vda`
+  then `--disk path=/dev/vg-guests/g-<id>,image_type=raw,direct=on,id=vdb,<the class's limits>`;
+  there is no `--fs tag=ro-store` (the login share's `--fs tag=claude-auth`
+  stays); and `--cmdline` is `console=<tty> ip=... systemd.hostname=<slug>
+  panic=-1 reboot=t`, with no `init=` (the initramfs mounts vda and vdb
+  and switches root to `/sbin/init`). `vm.resize-disk` names `vdb` on an
+  erofs guest and `_disk0` on a Nix guest, so a resize never reaches the
+  read-only disk. No `virtiofsd@<id>` runs for an erofs guest.
+- **The unit.** `guest@<id>` of an erofs guest has the Nix guest's whole
+  property list plus `TemporaryFileSystem=/var/lib/repose/images` and
+  `BindReadOnlyPaths=/var/lib/repose/images/<version>-<arch>`, after
+  `ReadWritePaths=<guest dir>`: the hypervisor sees its own bundle,
+  read-only, and no other version (`internal/hostd/guest/testdata/unit-erofs.golden`).
+- **The volume.** The first create of an erofs guest formats its thin
+  volume `mkfs.ext4 -q -L repose-rw -E lazy_itable_init=1`; the guest's
+  initramfs lays out `/home-dev`, `/docker`, `/services`, `/etc-persist`
+  and `/overlay` on its first boot (`guest-conventions.md`, "The erofs
+  guest").
+- **A base bump.** A `StartGuest` whose `base_image` names another version
+  fetches it first (a failed fetch leaves the guest as it was and answers
+  the error), records it on the guest and boots it; the initramfs rotates
+  the overlay's upper directory, and hostd's `ApplyMenu` with
+  `replay_after_base_upgrade` after `SetupProject` installs the menu again.
+  hostd sends that `ApplyMenu` after every erofs boot that has a menu;
+  guestd does nothing unless the base changed or the menu did.
+- **Snapshots.** The blob's metadata carries `base_version`. A `Restore`
+  with `base_image` records it on the new guest and fetches it ahead (a
+  fetch that fails there sets `base_needs_fetch` and fails nothing); a
+  fork of an erofs guest (`clone`, no `base_image`) takes the source's
+  base, or the newest cached one when the cache no longer holds it.
+- **`--nix-mode off`** (default `on`): no Nix builder, GC roots or store
+  view are constructed, `Hello.features` drops `nix`, and `CreateGuest`,
+  `StartGuest`, `Restore`, `Build` and `ApplyConfig` for a Nix guest answer
+  `nix_unsupported`. A host with no `nix` on PATH is the same. hostd
+  refuses to start with Nix off and `--images-dir` empty.
+
 ## Operator access
 
 Operators reach hosts over the edge's WireGuard (`ssh root@10.255.0.x` with
