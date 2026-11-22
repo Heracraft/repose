@@ -14,23 +14,31 @@ There are two ways to install software on a project's machine:
 
 ```
 $ repose config add postgresql bun
+postgresql: updating package lists
+postgresql: installing 6 packages (50.0 MB)
+postgresql: unpacking
+postgresql: setting up
+postgresql: starting repose-svc-postgresql.service
 ✓ postgresql 16 ready on 127.0.0.1:5432  14s
-✓ bun ready  2.1s
+bun: installing bun@1 with mise
+✓ bun ready  2.4s
 Added postgresql and bun to todo-app.
 Applied revision 4f1c2a9e in 17s.
 ```
 
-Each ✓ line is the machine saying what it installed. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, at most 128 characters, as `apt` has them.
+The lines come from the machine as each step starts; each ✓ line is an item in place. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, at most 128 characters, as `apt` has them.
 
 The machine installs into what's running, so your agents keep running. A stopped machine installs at its next start.
 
 An item that doesn't install fails the command with the machine's own line and exit code 10:
 
 ```
-$ repose config add bun ffmpeg-typo
+$ repose config add bun qq
+bun: installing bun@1 with mise
 ✓ bun ready  2.0s
-ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo
-error: ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo
+qq: updating package lists
+qq failed: E: Unable to locate package qq (apt-get exited 100)
+error: qq failed: E: Unable to locate package qq (apt-get exited 100)
 todo-app's menu is unchanged.
 ```
 
