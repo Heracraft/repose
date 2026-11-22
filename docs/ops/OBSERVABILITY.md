@@ -87,7 +87,7 @@ field.
 
 | Series | Labels | What it is |
 |---|---|---|
-| `repose_host_info` | `nix_mode` (`on`, `off`), `erofs` (`on`, `off`), `version` | 1 for each hostd. `nix_mode` is `--nix-mode`; `erofs` is on when `--images-dir` is set. `StoreFull` and `BuildQueueStuck` skip a host with `nix_mode="off"` |
+| `repose_host_info` | `nix_mode` (`on`, `off`), `erofs` (`on`, `off`), `version` | 1 for each hostd, from hostd's flags at start (I-1484). `nix_mode` is off with `--nix-mode off` or no `nix` on PATH; `erofs` is off with an empty `--images-dir`. `StoreFull` and `BuildQueueStuck` skip a host with `nix_mode="off"` |
 | `repose_host_base_image_bytes` | none | bytes the cache holds on disk. Over 8 GiB for an hour is `BaseImageDiskHigh` |
 | `repose_host_base_image_versions` | none | bundles in the cache, one per base version and arch |
 | `repose_host_base_image_fetch_duration_seconds` | none (histogram) | one bundle's whole fetch that finished, its three files together; a start on a base the host does not hold waits for it |
