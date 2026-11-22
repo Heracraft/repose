@@ -15,7 +15,7 @@ import (
 // what host-conventions.md "Cloud Hypervisor invocation" lists.
 func TestGuestUnitPropsGolden(t *testing.T) {
 	dir := "/var/lib/repose/guests/0192f0a1-1111-7000-8000-000000000001"
-	got := strings.Join(GuestUnitProps(Classes["large"], "hostd", "/var/lib/repose/guests", dir, "/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001"), "\n") + "\n"
+	got := strings.Join(GuestUnitProps(Classes["large"], "hostd", "/var/lib/repose/guests", dir, "/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001", UnitBundle{}), "\n") + "\n"
 	want, err := os.ReadFile("testdata/unit.golden")
 	if err != nil {
 		t.Fatal(err)
@@ -30,12 +30,49 @@ func TestGuestUnitPropsGolden(t *testing.T) {
 	}
 }
 
+// An erofs guest's unit is the Nix guest's sandbox plus its bundle, bound
+// read-only into an otherwise empty images directory (DECISIONS I-1480):
+// the whole list is pinned, so nothing of the sandbox can go missing
+// beside the addition.
+func TestGuestUnitPropsGoldenErofs(t *testing.T) {
+	dir := "/var/lib/repose/guests/0192f0a1-1111-7000-8000-000000000001"
+	b := UnitBundle{ImagesDir: "/var/lib/repose/images", Dir: "/var/lib/repose/images/2026.11.22.1-x86_64"}
+	props := GuestUnitProps(Classes["large"], "hostd", "/var/lib/repose/guests", dir, "/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001", b)
+	got := strings.Join(props, "\n") + "\n"
+	want, err := os.ReadFile("testdata/unit-erofs.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Fatalf("properties differ from testdata/unit-erofs.golden:\n%s", got)
+	}
+	for _, need := range []string{"BindReadOnlyPaths=" + b.Dir, "TemporaryFileSystem=" + b.ImagesDir, "DevicePolicy=closed",
+		"ProtectSystem=strict", "RestrictAddressFamilies=AF_UNIX AF_VSOCK"} {
+		if !slices.Contains(props, need) {
+			t.Fatalf("erofs unit lacks %q", need)
+		}
+	}
+	// The read-only bundle is the only addition: the rest is the Nix list.
+	nix := GuestUnitProps(Classes["large"], "hostd", "/var/lib/repose/guests", dir, "/dev/vg-guests/g-0192f0a1-1111-7000-8000-000000000001", UnitBundle{})
+	if len(props) != len(nix)+2 {
+		t.Fatalf("erofs unit has %d properties, the Nix one %d", len(props), len(nix))
+	}
+	for _, p := range nix {
+		if strings.HasPrefix(p, "BindReadOnlyPaths=") || p == "TemporaryFileSystem="+b.ImagesDir {
+			t.Fatalf("the Nix unit carries %q", p)
+		}
+		if !slices.Contains(props, p) {
+			t.Fatalf("erofs unit dropped %q", p)
+		}
+	}
+}
+
 // Contention divides in proportion to the class, not equally (DECISIONS
 // I-737): every class's weight is its vCPUs times one multiplier, and
 // inside systemd's 1..10000.
 func TestCPUWeightIsProportionalToTheClass(t *testing.T) {
 	for name, c := range Classes {
-		props := GuestUnitProps(c, "hostd", "/var/lib/repose/guests", "/var/lib/repose/guests/"+gid1, "/dev/vg-guests/g-"+gid1)
+		props := GuestUnitProps(c, "hostd", "/var/lib/repose/guests", "/var/lib/repose/guests/"+gid1, "/dev/vg-guests/g-"+gid1, UnitBundle{})
 		w := c.MilliVCPUs * CPUWeightPerVCPU / 1000
 		if want := fmt.Sprintf("CPUWeight=%d", w); !slices.Contains(props, want) {
 			t.Fatalf("class %s: properties lack %q: %v", name, want, props)

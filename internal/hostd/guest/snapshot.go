@@ -12,6 +12,7 @@ import (
 	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/baseimg"
 	"github.com/heracraft/repose/internal/hostd/snapshot"
 	"github.com/heracraft/repose/internal/hostd/state"
 )
@@ -171,6 +172,13 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	}
 	blobPath := BlobPath(g, t.start)
 	meta := map[string]string{"guest_id": g.GuestID, "class": g.Class, "volume_bytes": fmt.Sprint(g.VolumeBytes), "reason": t.reason}
+	// An erofs guest's snapshot names the base its volume was last booted
+	// on, which is what the initramfs compares at the restored guest's
+	// first boot; the api keeps the same label as snapshots.base_version
+	// from the guest's base_version (DECISIONS I-1480).
+	if g.BaseVersion != "" {
+		meta["base_version"] = g.BaseVersion
+	}
 	// The digest of exactly the bytes handed to the store goes back to the
 	// api, which keeps it in Postgres; a restore checks the blob against
 	// it, so bytes changed in the store are never restored (I-462).
@@ -212,11 +220,11 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	if rt, ok := r.(snapshot.ReadTimer); ok {
 		readWaitMs = rt.ReadDuration().Milliseconds()
 	}
-	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(),
+	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(), "base_version", g.BaseVersion,
 		"freeze_ms", t.freeze.Milliseconds(), "read_wait_ms", readWaitMs,
 		"format", format, "raw_reason", why, "journal_replayed", replayed, "used_bytes", used, "volume_bytes", g.VolumeBytes)
-	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum}})
-	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum}, nil
+	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum, BaseVersion: g.BaseVersion}})
+	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum, BaseVersion: g.BaseVersion}, nil
 }
 
 func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.CreateResult, *Error) {
@@ -267,6 +275,35 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 			return nil, errf(CodeNotFound, "snapshot %s not in the store", c.BlobPath)
 		}
 	}
+	// Which guest the restore makes (DECISIONS I-1458, I-1480): an erofs
+	// guest with base_image, or a fork of an erofs guest, whose base is
+	// the source's (or, if the cache no longer holds it, the newest
+	// cached one); a Nix guest otherwise, its closure named or rebuilt
+	// before the start as always.
+	var base baseimg.Spec
+	var baseVersion string
+	switch {
+	case c.BaseImage != nil && c.SystemClosure != "":
+		return nil, errf(CodeInvalidArgument, "base_image and system_closure are exclusive")
+	case c.BaseImage != nil:
+		var perr *Error
+		if base, perr = parseBase(c.BaseImage); perr != nil {
+			return nil, perr
+		}
+		if m.d.Images == nil {
+			return nil, errf(CodeInvalidArgument, "this host boots no erofs guests (no --images-dir)")
+		}
+		baseVersion = base.Version
+	case src != nil && isErofs(src) && c.SystemClosure == "":
+		baseVersion = src.BaseVersion
+		if m.d.Images != nil && !m.d.Images.Has(baseVersion) {
+			if n := m.d.Images.Newest(); n != "" {
+				baseVersion = n
+			}
+		}
+	case !m.NixOn():
+		return nil, m.nixUnsupported("restore")
+	}
 	if c.SystemClosure != "" {
 		if ok, err := m.d.Nix.PathExists(ctx, c.SystemClosure); err != nil {
 			return nil, errf(CodeInternal, "nix path-info: %v", err)
@@ -285,6 +322,10 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 		Class: c.Class, VolumeBytes: c.VolumeBytes, SystemClosure: c.SystemClosure,
 		IP: m.ipForIndex(idx), MAC: mac, Tap: tap, CID: cidForIndex(idx), IPIndex: idx,
 		Env: c.Env, Principals: c.Principals, SSHCAPub: c.SshCaPub, HooksConfig: c.HooksConfig, ProjectJSON: c.ProjectJson,
+		BaseVersion: baseVersion,
+	}
+	if src != nil && isErofs(src) {
+		g.Menu = src.Menu
 	}
 	if err := m.setState(g, StateRestoring, ""); err != nil {
 		return nil, errf(CodeInternal, "%v", err)
@@ -375,6 +416,15 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	if g.SystemClosure != "" {
 		if err := m.d.Roots.Set(g.GuestID, g.SystemClosure); err != nil {
 			return fail(errf(CodeInternal, "gcroot: %v", err))
+		}
+	}
+	// The base is fetched ahead, so the start finds it; a fetch that fails
+	// here fails nothing: the guest is marked and its start, which carries
+	// base_image again, fetches it (I-1480, I-1484).
+	if c.BaseImage != nil {
+		if err := m.ensureBase(ctx, base); err != nil {
+			log.Warn("base image not fetched ahead of the start", "event", "base_image", "base_version", base.Version, "err", err.Message)
+			g.BaseNeedsFetch = true
 		}
 	}
 	m.cacheTriggers(g.GuestID, c.Triggers)

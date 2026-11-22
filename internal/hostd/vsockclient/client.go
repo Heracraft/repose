@@ -41,6 +41,9 @@ const (
 	// SetupTimeout is SetupProject's: guestd gave it 3 minutes, since it
 	// waits for home-manager's first activation (DECISIONS I-705).
 	SetupTimeout = 3 * time.Minute
+	// MenuTimeout is ApplyMenu's: apt and mise installs of a whole menu
+	// (DECISIONS I-1460), the erofs guest's counterpart of a Switch.
+	MenuTimeout = 20 * time.Minute
 )
 
 // Timeouts bound a session's calls per request family. A zero field takes
@@ -107,6 +110,13 @@ type Session interface {
 	// WriteTriggerPrompt writes one trigger's prompt into the machine as
 	// dev, which is what a browser has in place of SSH (DECISIONS I-1266).
 	WriteTriggerPrompt(ctx context.Context, m *guestdv1.WriteTriggerPrompt) error
+	// ApplyMenu makes an erofs guest's packages and services match menu
+	// (DECISIONS I-1460). line gets each progress line guestd sends
+	// before its answer; it runs on the session's read loop and must not
+	// block. The result is the final ApplyMenuProgress; a failure is a
+	// RemoteError with guestd's code (menu_failed, invalid_argument), and
+	// the result, when guestd sent one, is returned beside it.
+	ApplyMenu(ctx context.Context, m *guestdv1.ApplyMenu, line func(string)) (*guestdv1.ApplyMenuProgress, error)
 	Notifications() <-chan *guestdv1.Notify
 	Done() <-chan struct{}
 	Close() error
@@ -312,6 +322,27 @@ func (s *session) RunTrigger(ctx context.Context, m *guestdv1.RunTrigger) (*gues
 		return nil, err
 	}
 	return r.GetTriggerRun(), nil
+}
+
+func (s *session) ApplyMenu(ctx context.Context, m *guestdv1.ApplyMenu, line func(string)) (*guestdv1.ApplyMenuProgress, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, MenuTimeout)
+		defer cancel()
+	}
+	var progress func(*guestdv1.Notify)
+	if line != nil {
+		progress = func(n *guestdv1.Notify) {
+			if p := n.GetApplyMenuProgress(); p != nil && p.GetLine() != "" {
+				line(p.GetLine())
+			}
+		}
+	}
+	r, err := s.cl.CallStream(ctx, &guestdv1.Request{Req: &guestdv1.Request_ApplyMenu{ApplyMenu: m}}, progress)
+	if r != nil && r.GetApplyMenu() != nil {
+		return r.GetApplyMenu(), err
+	}
+	return nil, err
 }
 
 func (s *session) Notifications() <-chan *guestdv1.Notify { return s.cl.Notifications() }

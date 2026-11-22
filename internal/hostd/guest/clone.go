@@ -41,6 +41,22 @@ func Features(pauseIdle, burst bool) []string {
 	return f
 }
 
+// Features is this manager's Hello.features: Features' list, then `nix`
+// when the Nix machinery is on and `erofs` when there is an image cache
+// (DECISIONS I-1458, I-1484). A host that names neither is read by the
+// api as `nix`, so a host with both off would be sent Nix guests it
+// cannot run; hostd refuses to start that way (app.go).
+func (m *Manager) Features() []string {
+	f := Features(m.cfg.PauseIdle, m.cfg.Burst)
+	if m.NixOn() {
+		f = append(f, FeatureNix)
+	}
+	if m.ErofsOn() {
+		f = append(f, FeatureErofs)
+	}
+	return f
+}
+
 // ForkPointTTL is how long a fork point outlives a fork whose siblings do
 // not all arrive (the api failed one before its restore): it pins the
 // source's blocks as they were, so the pool pays for every block the

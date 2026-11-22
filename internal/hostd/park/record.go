@@ -42,7 +42,11 @@ type Record struct {
 	DoneAt     time.Time `json:"done_at,omitempty"`
 	HostBootID string    `json:"host_boot_id"`
 	// What the guest ran and on what: a restore needs all of it unchanged.
-	Closure     string `json:"closure"`
+	Closure string `json:"closure"`
+	// BaseVersion is an erofs guest's base at the park (DECISIONS
+	// I-1480); the unpark discards an image whose guest now names
+	// another, or whose bundle the cache no longer holds.
+	BaseVersion string `json:"base_version,omitempty"`
 	Class       string `json:"class"`
 	VolumeBytes uint64 `json:"volume_bytes"`
 	CHVersion   string `json:"ch_version"`

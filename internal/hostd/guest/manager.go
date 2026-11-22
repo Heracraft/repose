@@ -24,6 +24,7 @@ import (
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/baseimg"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/gcroot"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
@@ -435,8 +436,15 @@ type Deps struct {
 	Systemd systemd.Systemd
 	CH      ch.Client
 	Guestd  vsockclient.Dialer
-	Nix     nixbuild.Builder
-	Roots   gcroot.Roots
+	// Nix, Roots and View are the Nix machinery: nil Nix (and View, and
+	// a Roots with no Dir) on a host with --nix-mode=off or no nix on
+	// PATH, which then answers nix_unsupported for a Nix guest
+	// (DECISIONS I-1484).
+	Nix   nixbuild.Builder
+	Roots gcroot.Roots
+	// Images is the erofs base image cache (DECISIONS I-1478); nil on a
+	// host without --images-dir, which boots no erofs guest.
+	Images  *baseimg.Cache
 	Blob    snapshot.Blob
 	Stream  snapshot.Streamer
 	Emit    Emitter
@@ -528,7 +536,10 @@ type Manager struct {
 	monitors map[string]*monitor
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
-	boots    map[string]*hostdv1.BootTimings
+	boots map[string]*hostdv1.BootTimings
+	// menuErrs is each erofs guest's menu replay failure at its last
+	// boot, for the create or start result (I-1482).
+	menuErrs map[string]*hostdv1.Error
 	blocked  *blockedTracker
 	ops      chan struct{}
 	buildCh  chan job
@@ -985,11 +996,11 @@ func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features(m.cfg.PauseIdle, m.cfg.Burst), Arch: hostinfo.Arch()}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: m.Features(), Arch: hostinfo.Arch()}
 	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
-		gst := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure}
+		gst := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure, BaseVersion: g.BaseVersion}
 		if g.Interrupted != nil {
 			gst.InterruptedBootId, gst.InterruptedAt = g.Interrupted.BootID, g.Interrupted.At.Unix()
 		}

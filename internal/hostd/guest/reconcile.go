@@ -283,6 +283,7 @@ func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 
 func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive, poolUp bool) {
 	m.reconcileGood(g, g.State == StateRunning && unitActive)
+	m.markBaseMissing(g)
 	switch g.State {
 	case StateRunning, StateStarting, StateCreating, StateStopping:
 		if unitActive {
@@ -386,6 +387,9 @@ func (m *Manager) reconcileResting(ctx context.Context, g *state.Guest) {
 // gives a guest found running with none, one running across the hostd
 // upgrade that added it, the closure it runs: guestd answered on it.
 func (m *Manager) reconcileGood(g *state.Guest, running bool) {
+	if isErofs(g) || !m.NixOn() {
+		return
+	}
 	if g.LastGoodClosure == "" {
 		if !running || g.SystemClosure == "" {
 			return

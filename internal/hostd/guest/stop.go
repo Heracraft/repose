@@ -78,7 +78,7 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 	if u.err != nil {
 		return nil, u.err
 	}
-	res.SnapshotId, res.BlobPath, res.Bytes, res.Sha256 = u.sr.SnapshotId, u.sr.BlobPath, u.sr.Bytes, u.sr.Sha256
+	res.SnapshotId, res.BlobPath, res.Bytes, res.Sha256, res.BaseVersion = u.sr.SnapshotId, u.sr.BlobPath, u.sr.Bytes, u.sr.Sha256, u.sr.BaseVersion
 	return res, nil
 }
 
@@ -210,17 +210,20 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 			return lvmErr("lvremove", err)
 		}
 	}
-	if err := m.d.Roots.Remove(g.GuestID); err != nil {
-		return errf(CodeInternal, "gcroot: %v", err)
-	}
-	if err := m.d.Roots.Remove(goodRoot(g.GuestID)); err != nil {
-		return errf(CodeInternal, "gcroot: %v", err)
-	}
-	// The project's revision roots go with the guest (host-conventions.md:
-	// "removed on destroy"; DECISIONS I-115). A restore of a destroyed
-	// project rebuilds its closure instead of expecting it in the store.
-	if _, err := m.d.Roots.PruneRevisions(g.ProjectID, 0); err != nil {
-		return errf(CodeInternal, "gcroot revisions: %v", err)
+	// A host without the Nix machinery has no GC roots to remove.
+	if m.NixOn() {
+		if err := m.d.Roots.Remove(g.GuestID); err != nil {
+			return errf(CodeInternal, "gcroot: %v", err)
+		}
+		if err := m.d.Roots.Remove(goodRoot(g.GuestID)); err != nil {
+			return errf(CodeInternal, "gcroot: %v", err)
+		}
+		// The project's revision roots go with the guest (host-conventions.md:
+		// "removed on destroy"; DECISIONS I-115). A restore of a destroyed
+		// project rebuilds its closure instead of expecting it in the store.
+		if _, err := m.d.Roots.PruneRevisions(g.ProjectID, 0); err != nil {
+			return errf(CodeInternal, "gcroot revisions: %v", err)
+		}
 	}
 	if err := m.d.State.ReleaseIndex(g.GuestID); err != nil {
 		return errf(CodeInternal, "release address: %v", err)
@@ -273,7 +276,7 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 	if g.State == StateRunning {
 		// The hypervisor read the volume's size when the guest started;
 		// tell it about the new one before asking the guest to grow.
-		if err := m.d.CH.ResizeDisk(ctx, ch.APISocket(m.guestDir(g.GuestID)), ch.DiskID, c.NewBytes); err != nil {
+		if err := m.d.CH.ResizeDisk(ctx, ch.APISocket(m.guestDir(g.GuestID)), volumeDiskID(g), c.NewBytes); err != nil {
 			return errf(CodeInternal, "cloud-hypervisor resize-disk: %v", err)
 		}
 		sess, err := m.sessionAwake(ctx, g)

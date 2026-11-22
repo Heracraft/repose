@@ -13,6 +13,7 @@ import (
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/baseimg"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/nixbuild"
@@ -141,19 +142,46 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 			return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
 		}
 	}
-	if c.SystemClosure == "" {
-		return nil, errf(CodeInvalidArgument, "system_closure required")
+	// An erofs guest (base_image) or a Nix guest (system_closure), never
+	// both (DECISIONS I-1458).
+	erofs := c.BaseImage != nil
+	switch {
+	case erofs && c.SystemClosure != "":
+		return nil, errf(CodeInvalidArgument, "base_image and system_closure are exclusive")
+	case !erofs && c.SystemClosure == "":
+		return nil, errf(CodeInvalidArgument, "system_closure or base_image required")
+	case !erofs && !m.NixOn():
+		return nil, m.nixUnsupported("create")
+	}
+	if existing != nil && (existing.BaseVersion != "") != erofs {
+		return nil, errf(CodeAlreadyExists, "guest %s exists as another kind of guest", c.GuestId)
 	}
 	if err := validateSecretNames(c.Secrets); err != nil {
 		return nil, err
 	}
-	if ok, err := m.d.Nix.PathExists(ctx, c.SystemClosure); err != nil {
+	var base baseimg.Spec
+	if erofs {
+		var perr *Error
+		if base, perr = parseBase(c.BaseImage); perr != nil {
+			return nil, perr
+		}
+		if m.d.Images == nil {
+			return nil, errf(CodeInvalidArgument, "this host boots no erofs guests (no --images-dir)")
+		}
+	} else if ok, err := m.d.Nix.PathExists(ctx, c.SystemClosure); err != nil {
 		return nil, errf(CodeInternal, "nix path-info: %v", err)
 	} else if !ok {
 		return nil, errf(CodeNotFound, "system closure %s is not in the host store", c.SystemClosure)
 	}
 	if err := m.capacityCheck(c.GuestId, c.Class, c.VolumeBytes, existing == nil || existing.State != StateCreating); err != nil {
 		return nil, err
+	}
+	// The bundle before anything is allocated: a fetch that fails leaves
+	// no record, no address and no volume (I-1482).
+	if erofs {
+		if err := m.ensureBase(ctx, base); err != nil {
+			return nil, err
+		}
 	}
 
 	// Step 2: allocate address and record.
@@ -182,6 +210,10 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 		IP: m.ipForIndex(idx), MAC: mac, Tap: tap, CID: cidForIndex(idx), IPIndex: idx,
 		Env: c.Env, Principals: c.Principals, SSHCAPub: c.SshCaPub, HooksConfig: c.HooksConfig, ProjectJSON: c.ProjectJson,
 	}
+	if erofs {
+		g.BaseVersion = base.Version
+		recordMenu(g, c.Menu)
+	}
 	if existing != nil {
 		g.CreatedAt = existing.CreatedAt
 	}
@@ -198,17 +230,25 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.d.LVM.CreateVolume(ctx, VolumeName(g.GuestID), g.VolumeBytes); err != nil {
 		return nil, m.fail(g, stepVolume, err)
 	}
-	if err := m.d.LVM.Mkfs(ctx, VolumeName(g.GuestID)); err != nil {
+	// An erofs guest's volume is vdb, ext4 labelled repose-rw; its
+	// initramfs lays it out on the first boot (I-1480).
+	mkfs := m.d.LVM.Mkfs
+	if erofs {
+		mkfs = m.d.LVM.MkfsRW
+	}
+	if err := mkfs(ctx, VolumeName(g.GuestID)); err != nil {
 		return nil, m.fail(g, stepVolume, err)
 	}
 	volume := m.d.Now().Sub(volStart)
 
-	// Step 4: GC root.
-	if err := m.injected(stepGCRoot); err != nil {
-		return nil, m.fail(g, stepGCRoot, err)
-	}
-	if err := m.d.Roots.Set(g.GuestID, g.SystemClosure); err != nil {
-		return nil, m.fail(g, stepGCRoot, err)
+	// Step 4: GC root. An erofs guest has no closure to root.
+	if !erofs {
+		if err := m.injected(stepGCRoot); err != nil {
+			return nil, m.fail(g, stepGCRoot, err)
+		}
+		if err := m.d.Roots.Set(g.GuestID, g.SystemClosure); err != nil {
+			return nil, m.fail(g, stepGCRoot, err)
+		}
 	}
 
 	// Step 7 comes before the boot so secrets are ready when Ready arrives.
@@ -223,7 +263,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.boot(ctx, g, stepRunner, "create", volume); err != nil {
 		return nil, err
 	}
-	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID)}, nil
+	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID), MenuError: m.lastMenuErr(g.GuestID)}, nil
 }
 
 // fail records a create or start failure, rolling back everything but the
@@ -249,6 +289,7 @@ func (m *Manager) fail(g *state.Guest, step int, err error) *Error {
 // that reaches running logs (DECISIONS I-707).
 func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op string, volume time.Duration) *Error {
 	bootStart := m.d.Now()
+	m.setMenuErr(g.GuestID, nil)
 	class := Classes[g.Class]
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
@@ -259,23 +300,38 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	if err := m.injected(stepRunner); err != nil {
 		return m.fail(g, stepRunner, err)
 	}
-	info, err := nixbuild.ClosureInfo(g.SystemClosure)
-	if err != nil {
-		return m.fail(g, stepRunner, err)
-	}
+	erofs := isErofs(g)
 	spec := ch.Spec{
-		GuestDir: dir, Kernel: info.Kernel, Initrd: info.Initrd, Init: info.Init, KernelParams: info.KernelParams, StoreDisk: info.StoreDisk,
-		IP: g.IP, Gateway: m.gateway(), Netmask: m.netmask(), Tap: g.Tap, MAC: g.MAC, CID: g.CID,
+		GuestDir: dir,
+		IP:       g.IP, Gateway: m.gateway(), Netmask: m.netmask(), Tap: g.Tap, MAC: g.MAC, CID: g.CID,
 		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: m.bootVCPUs(class), MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
 		FreePageReporting: m.cfg.FreePageReporting,
 	}
+	if erofs {
+		// The bundle from the image cache: vda the rootfs.erofs, the
+		// kernel and initramfs beside it (I-1480).
+		b, err := m.bundleFor(g)
+		if err != nil {
+			return m.fail(g, stepRunner, err)
+		}
+		spec.Kernel, spec.Initrd, spec.RootImage = b.Kernel, b.Initrd, b.Rootfs
+	} else {
+		if !m.NixOn() {
+			return m.fail(g, stepRunner, m.nixUnsupported("boot"))
+		}
+		info, err := nixbuild.ClosureInfo(g.SystemClosure)
+		if err != nil {
+			return m.fail(g, stepRunner, err)
+		}
+		spec.Kernel, spec.Initrd, spec.Init, spec.KernelParams, spec.StoreDisk = info.Kernel, info.Initrd, info.Init, info.KernelParams, info.StoreDisk
+	}
 	argv := spec.Args()
 	if err := os.WriteFile(filepath.Join(dir, "ch.args"), []byte(strings.Join(argv, "\n")+"\n"), 0o640); err != nil {
 		return m.fail(g, stepRunner, err)
 	}
-	g.Kernel, g.Initrd = info.Kernel, info.Initrd
+	g.Kernel, g.Initrd = spec.Kernel, spec.Initrd
 
 	// Step 6: network.
 	if err := m.injected(stepNetwork); err != nil {
@@ -297,15 +353,18 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	if err := m.injected(stepVirtiofsd); err != nil {
 		return m.fail(g, stepVirtiofsd, err)
 	}
-	vcfg := virtiofs.Config{SharedDir: m.cfg.StoreExport, User: m.cfg.VirtiofsUser, Group: m.cfg.VirtiofsUser, SocketGroup: m.cfg.GuestUser, Binary: m.cfg.VirtiofsBinary}
-	if err := virtiofs.Start(ctx, m.d.Systemd, vcfg, g.GuestID, ch.VirtiofsSocket(dir)); err != nil {
-		return m.fail(g, stepVirtiofsd, err)
-	}
-	if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
-		return m.fail(g, stepVirtiofsd, err)
-	}
-	if err := m.extendView(ctx, g.GuestID, m.viewClosures(g)); err != nil {
-		return m.fail(g, stepVirtiofsd, err)
+	// An erofs guest has no store share and no store view (I-1480).
+	if !erofs {
+		vcfg := virtiofs.Config{SharedDir: m.cfg.StoreExport, User: m.cfg.VirtiofsUser, Group: m.cfg.VirtiofsUser, SocketGroup: m.cfg.GuestUser, Binary: m.cfg.VirtiofsBinary}
+		if err := virtiofs.Start(ctx, m.d.Systemd, vcfg, g.GuestID, ch.VirtiofsSocket(dir)); err != nil {
+			return m.fail(g, stepVirtiofsd, err)
+		}
+		if err := m.waitSocket(ctx, virtiofs.Unit(g.GuestID), ch.VirtiofsSocket(dir)); err != nil {
+			return m.fail(g, stepVirtiofsd, err)
+		}
+		if err := m.extendView(ctx, g.GuestID, m.viewClosures(g)); err != nil {
+			return m.fail(g, stepVirtiofsd, err)
+		}
 	}
 	// The user's Claude login share (DECISIONS I-278), attached only when
 	// its virtiofsd is up; the hypervisor would otherwise wait on its socket.
@@ -324,7 +383,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	if err := m.setState(g, StateStarting, ""); err != nil {
 		return m.fail(g, stepHypervisr, err)
 	}
-	props := GuestUnitProps(class, m.cfg.GuestUser, m.cfg.GuestsDir, dir, spec.VolumeDev)
+	props := GuestUnitProps(class, m.cfg.GuestUser, m.cfg.GuestsDir, dir, spec.VolumeDev, m.unitBundle(g))
 	// This boot's console starts here in the log, which earlier boots
 	// wrote too (I-592).
 	consoleFrom := m.consoleSize(g.GuestID)
@@ -336,10 +395,15 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	// not after its guestd answers: `nix-store -qR` and `--dump-db` took
 	// 70 ms of every start's critical path on host-01 (DECISIONS I-232).
 	dump := make(chan dumpResult, 1)
-	go func(closure string) {
-		b, err := m.d.Nix.DumpDB(ctx, closure)
-		dump <- dumpResult{b, err}
-	}(g.SystemClosure)
+	if erofs {
+		// Nothing to register: the erofs guest's packages are its own.
+		dump <- dumpResult{}
+	} else {
+		go func(closure string) {
+			b, err := m.d.Nix.DumpDB(ctx, closure)
+			dump <- dumpResult{b, err}
+		}(g.SystemClosure)
+	}
 
 	// Step 10: wait for guestd, deliver, mark running.
 	if err := m.injected(stepReady); err != nil {
@@ -373,7 +437,15 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	}
 	// The closure reached Ready and took its delivery: it is what a later
 	// boot that fails falls back to (I-590). setState writes the record.
-	m.markGood(g, g.SystemClosure)
+	// An erofs guest has no closure; its menu is replayed instead, after
+	// SetupProject, and a replay that fails leaves the guest running with
+	// the failure in the result (I-1482).
+	if erofs {
+		g.BaseNeedsFetch = false
+		m.setMenuErr(g.GuestID, m.replayMenu(ctx, g, sess))
+	} else {
+		m.markGood(g, g.SystemClosure)
+	}
 	if err := m.setState(g, StateRunning, ""); err != nil {
 		return m.fail(g, stepReady, err)
 	}
@@ -667,13 +739,41 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	default:
 		return nil, errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)
 	}
-	if g.SystemClosure == "" {
-		return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
-	}
-	if ok, err := m.d.Roots.Exists(g.GuestID); err != nil {
-		return nil, errf(CodeInternal, "gcroot: %v", err)
-	} else if !ok {
-		return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
+	// Which system the start boots: the erofs guest's base (a new one
+	// when base_image names another version, fetched before anything is
+	// touched, I-1482), or the Nix guest's rooted closure.
+	var newBase string
+	if isErofs(g) {
+		switch {
+		case c.BaseImage != nil:
+			base, perr := parseBase(c.BaseImage)
+			if perr != nil {
+				return nil, perr
+			}
+			if err := m.ensureBase(ctx, base); err != nil {
+				return nil, err
+			}
+			if base.Version != g.BaseVersion {
+				newBase = base.Version
+			}
+		case m.d.Images == nil || !m.d.Images.Has(g.BaseVersion):
+			return nil, errf(CodeNotFound, "base image %s missing from the host; api must resend base_image", g.BaseVersion)
+		}
+	} else {
+		if c.BaseImage != nil {
+			return nil, errf(CodeInvalidArgument, "base_image for a Nix guest")
+		}
+		if !m.NixOn() {
+			return nil, m.nixUnsupported("start")
+		}
+		if g.SystemClosure == "" {
+			return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
+		}
+		if ok, err := m.d.Roots.Exists(g.GuestID); err != nil {
+			return nil, errf(CodeInternal, "gcroot: %v", err)
+		} else if !ok {
+			return nil, errf(CodeNotFound, "system closure missing; api must rebuild")
+		}
 	}
 	// The pool first (DECISIONS I-644): a start on a host whose pool is
 	// down is refused before anything is booted, so it can never reach
@@ -743,6 +843,17 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	if len(c.ProjectJson) > 0 {
 		g.ProjectJSON = c.ProjectJson
 	}
+	if isErofs(g) {
+		recordMenu(g, c.Menu)
+		if newBase != "" {
+			// The record names the new base from this boot's first state
+			// write; the initramfs rotates the overlay's upper directory
+			// when it sees the version on vdb differ, and the replay after
+			// SetupProject installs the menu again (I-1482).
+			m.log(g).Info("guest base changed", "event", "guest_start", "base_version", newBase, "prev", g.BaseVersion)
+			g.BaseVersion = newBase
+		}
+	}
 	// An UpdateSecrets since hostd restarted brings the named set but no
 	// sshd material, so the host key is what says the api sent a delivery.
 	if !m.cachedHostKey(g.GuestID) {
@@ -754,7 +865,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		if err := m.boot(ctx, g, stepRunner, "start", 0); err != nil {
 			return nil, err
 		}
-		return startResult(g, resent, "", m.lastBoot(g.GuestID)), nil
+		r := startResult(g, resent, "", m.lastBoot(g.GuestID))
+		r.MenuError = m.lastMenuErr(g.GuestID)
+		return r, nil
 	}
 	// A fallback another command made is over once this one boots.
 	g.BootFallback = nil
@@ -762,7 +875,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	if err != nil {
 		return nil, err
 	}
-	return startResult(g, fb, tail, m.lastBoot(g.GuestID)), nil
+	r := startResult(g, fb, tail, m.lastBoot(g.GuestID))
+	r.MenuError = m.lastMenuErr(g.GuestID)
+	return r, nil
 }
 
 // --- monitor ----------------------------------------------------------
@@ -1198,6 +1313,9 @@ func (mon *monitor) checkUnits() {
 		mon.cancel()
 		m.enqueue(g.GuestID, job{internal: func(ctx context.Context) { m.unexpectedExit(ctx, g.GuestID, "hypervisor exited "+code) }})
 		return
+	}
+	if isErofs(g) {
+		return // no store share to watch (I-1480)
 	}
 	vActive, err := m.d.Systemd.IsActive(mon.ctx, virtiofs.Unit(g.GuestID))
 	if err == nil && !vActive {

@@ -48,6 +48,7 @@ func (b benchLVM) HasFilesystem(ctx context.Context, n string) (bool, error) {
 }
 func (b benchLVM) Mkfs(ctx context.Context, n string) error      { return b.r.Mkfs(ctx, bn(n)) }
 func (b benchLVM) MkfsShare(ctx context.Context, n string) error { return b.r.MkfsShare(ctx, bn(n)) }
+func (b benchLVM) MkfsRW(ctx context.Context, n string) error    { return b.r.MkfsRW(ctx, bn(n)) }
 func (b benchLVM) RemoveVolume(ctx context.Context, n string) error {
 	return b.r.RemoveVolume(ctx, bn(n))
 }

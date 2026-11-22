@@ -24,8 +24,15 @@ import (
 // is the sandbox.
 // They take effect when the unit starts: a running guest keeps the shape
 // it was started with until its next start (reconcile never restarts one).
-func GuestUnitProps(class Class, user, guestsDir, dir, volumeDev string) []string {
-	return []string{
+//
+// bundle is an erofs guest's base bundle (DECISIONS I-1480): the images
+// directory is replaced by an empty tmpfs in the unit's mount namespace
+// and the one bundle the guest boots is bound into it read-only, as the
+// guests directory is for the guest's own directory, so the hypervisor
+// reads its kernel, initramfs and rootfs.erofs and sees no other
+// version. The zero UnitBundle is a Nix guest and adds nothing.
+func GuestUnitProps(class Class, user, guestsDir, dir, volumeDev string, bundle UnitBundle) []string {
+	p := []string{
 		fmt.Sprintf("MemoryMax=%dM", class.MemMiB+OverheadMiB),
 		fmt.Sprintf("MemoryHigh=%dM", class.MemMiB+OverheadMiB-HighMarginMiB),
 		// Both from MilliVCPUs, the CPU the class sells: a quota in
@@ -64,6 +71,27 @@ func GuestUnitProps(class Class, user, guestsDir, dir, volumeDev string) []strin
 		"DeviceAllow=" + volumeDev + " rw",
 		"RestrictAddressFamilies=AF_UNIX AF_VSOCK",
 	}
+	if bundle.Dir == "" {
+		return p
+	}
+	// After ReadWritePaths and before the device policy, beside the
+	// guests directory's own pair; systemd applies mounts by path, so the
+	// place in the list is for the reader.
+	out := make([]string, 0, len(p)+2)
+	for _, prop := range p {
+		out = append(out, prop)
+		if prop == "ReadWritePaths="+dir {
+			out = append(out, "TemporaryFileSystem="+bundle.ImagesDir, "BindReadOnlyPaths="+bundle.Dir)
+		}
+	}
+	return out
+}
+
+// UnitBundle names an erofs guest's bundle for GuestUnitProps: the images
+// directory and the bundle's own directory under it.
+type UnitBundle struct {
+	ImagesDir string
+	Dir       string
 }
 
 // LookupUser returns a user's uid and primary gid.
