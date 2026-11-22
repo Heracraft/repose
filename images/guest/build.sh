@@ -111,13 +111,39 @@ for arch in "${archs[@]}"; do
 
   install -m 0644 "$work/bundle/vmlinuz" "$work/bundle/initramfs.img" "$dest/"
   kv=$(cat "$work/bundle/kernel-version")
-  (cd "$dest" && sha256sum vmlinuz initramfs.img rootfs.erofs > SHA256SUMS)
-  jq -n --arg version "$version" --arg arch "$arch" --arg kv "$kv" --arg sha "$sha" \
-    --rawfile sums "$dest/SHA256SUMS" \
-    --argjson sizes "$(cd "$dest" && for f in vmlinuz initramfs.img rootfs.erofs; do printf '{"%s":%s}\n' "$f" "$(stat -c %s "$f")"; done | jq -s add)" \
-    '{version: $version, arch: $arch, kernel_version: $kv, git_sha: $sha,
-      files: ($sums | split("\n") | map(select(length > 0) | split("  ") | {key: .[1], value: {sha256: .[0]}}) | from_entries
-              | with_entries(.value.size = $sizes[.key]))}' > "$dest/manifest.json"
+  # A file over 1900 MiB is published as <name>.part0, .part1, ... of at
+  # most 1900 MiB, which concatenated in order are the file (DECISIONS
+  # I-1504, I-1506): GitHub caps a release asset at 2 GiB. The whole file
+  # stays here for a local boot; SHA256SUMS lists what is published (the
+  # parts in its place) and the manifest keeps the whole file's sha256 and
+  # size with its parts.
+  part_max=$((1900 * 1024 * 1024))
+  files='{}'
+  : > "$dest/SHA256SUMS"
+  for f in vmlinuz initramfs.img rootfs.erofs; do
+    size=$(stat -c %s "$dest/$f")
+    sum=$(sha256sum "$dest/$f" | cut -d' ' -f1)
+    entry=$(jq -n --arg s "$sum" --argjson z "$size" '{sha256: $s, size: $z}')
+    if [ "$size" -gt "$part_max" ]; then
+      (cd "$dest" && split -b "$part_max" --numeric-suffixes=0 -a 1 "$f" "$f.part")
+      parts='[]'
+      # One suffix digit (-a 1): part0..part9 sort as the glob lists them.
+      plist=("$dest/$f".part*)
+      for p in "${plist[@]##*/}"; do
+        psum=$(sha256sum "$dest/$p" | cut -d' ' -f1)
+        printf '%s  %s\n' "$psum" "$p" >> "$dest/SHA256SUMS"
+        parts=$(jq --arg n "$p" --arg s "$psum" --argjson z "$(stat -c %s "$dest/$p")" '. + [{name: $n, sha256: $s, size: $z}]' <<<"$parts")
+      done
+      [ "$(cat "${plist[@]}" | sha256sum | cut -d' ' -f1)" = "$sum" ] \
+        || { echo "build.sh: the parts of $f do not concatenate to it" >&2; exit 1; }
+      entry=$(jq --argjson p "$parts" '. + {parts: $p}' <<<"$entry")
+    else
+      printf '%s  %s\n' "$sum" "$f" >> "$dest/SHA256SUMS"
+    fi
+    files=$(jq --arg f "$f" --argjson e "$entry" '. + {($f): $e}' <<<"$files")
+  done
+  jq -n --arg version "$version" --arg arch "$arch" --arg kv "$kv" --arg sha "$sha" --argjson files "$files" \
+    '{version: $version, arch: $arch, kernel_version: $kv, git_sha: $sha, files: $files}' > "$dest/manifest.json"
   (cd "$dest" && sha256sum manifest.json >> SHA256SUMS)
   rm -rf "$work"
   echo "== $arch: done in $(( $(date +%s) - start )) s"

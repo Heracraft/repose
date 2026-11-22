@@ -1533,13 +1533,19 @@ One per architecture, built together from one kernel package so
 | `vmlinuz` | Ubuntu's kernel: the bzImage on amd64; on arm64 the plain, uncompressed `Image`, the only arm64 form Cloud Hypervisor boots (Ubuntu's 6.8 `vmlinuz` is that Image gzipped; a later kernel's EFI zboot wrapper is unwrapped the same way) |
 | `initramfs.img` | gzip cpio: static BusyBox, `/init` (`images/guest/initramfs/init`), and the modules among `virtio_pci`, `virtio_blk`, `erofs`, `ext4`, `overlay` the kernel does not build in, decompressed, with their load order in `/modules` |
 | `rootfs.erofs` | the root, `mkfs.erofs -zlz4hc,9`, attached read-only as `/dev/vda` |
-| `manifest.json` | `{version, arch, kernel_version, git_sha, files: {NAME: {sha256, size}}}` for the three files above |
-| `SHA256SUMS` | `sha256sum` lines for the three files, then `manifest.json` |
+| `manifest.json` | `{version, arch, kernel_version, git_sha, files: {NAME: {sha256, size, parts?}}}` for the three files above; `sha256` and `size` are the whole file's, and `parts` (`[{name, sha256, size}]`, in order) is there when the file is published in parts |
+| `SHA256SUMS` | `sha256sum` lines for what is published: each file, or its parts in its place, then `manifest.json` |
+
+A file larger than 1900 MiB (the amd64 `rootfs.erofs`) is published as
+`<name>.part0`, `<name>.part1`, ..., each at most 1900 MiB, which
+concatenated in order are the file byte for byte (DECISIONS I-1504,
+I-1506). `build.sh` keeps the whole file beside its parts on disk.
 
 The GitHub release `guest-<version>` (never marked latest) carries both
-architectures as eight files, `amd64-vmlinuz`, `amd64-initramfs.img`,
-`amd64-rootfs.erofs`, `amd64-manifest.json` and the same with `arm64-`,
-plus one `SHA256SUMS` listing all eight under those names. On disk
+architectures as `amd64-vmlinuz`, `amd64-initramfs.img`,
+`amd64-rootfs.erofs` (or its parts, `amd64-rootfs.erofs.part0`, ...),
+`amd64-manifest.json` and the same with `arm64-`, plus one `SHA256SUMS`
+listing every asset under those names. On disk
 (`out/<version>/<arch>/`) the files keep the plain names above, with a
 per-architecture `SHA256SUMS`; the workflow renames them at upload. `<version>` is `YYYY.MM.DD.N`, the
 string `/etc/repose/base-version` holds.

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1084 entries.
+1085 entries.
 
 ## Scope
 
@@ -1097,7 +1097,7 @@ pointer, not a summary.
 - **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38960
 - **I-1454** `basebump.Sweep` touches only running projects, stopped unheld projects update on next `start`, `ops.Engine` paces per-host `Build` commands and reuses built closures across `KindBuild` and `KindStart`, and `failWithLines` attaches `op.Error` before `OnOpFinished` (fix-basebump-queue, 2026-11-22) — amended by I-1464; L38976
 - **I-1466** The erofs guest: Ubuntu 24.04 from `images/guest/Dockerfile`, flattened to `rootfs.erofs`, booted through a BusyBox initramfs that composes it with the project's ext4 volume, with `nix/guest/base` ported as files (nonix-guest-image, 2026-11-22) — L38987
-- **I-1468** The guest base is published as one GitHub release `guest-<version>` per version, never marked latest, with each architecture's files named `<arch>-<file>` (nonix-guest-image, 2026-11-22) — L38997
+- **I-1468** The guest base is published as one GitHub release `guest-<version>` per version, never marked latest, with each architecture's files named `<arch>-<file>` (nonix-guest-image, 2026-11-22) — partly amended by I-1506; L38997
 - **I-1470** `images/guest/versions.json` is the agents' list; `scripts/bump-agents.sh` writes it and copies it byte for byte to `nix/overlay/agents/versions.json`, and it pins `playwright-mcp` (nonix-guest-image, 2026-11-22) — L39003
 - **I-1472** The erofs guest's machine guide is `images/guest/agent-guide.md`; `nix/guest/base/agent-guide.md` stays the NixOS guest's (nonix-guest-image, 2026-11-22) — L39008
 - **I-1502** The CLI writes the gateway host and port the api names in `POST /certs`, falls back to `ssh.repose.run:22` only when the api names none, and reads the gateway back from `known_hosts` for a reused certificate (cli-gateway-host, 2026-11-22) — L39012
@@ -1116,3 +1116,4 @@ pointer, not a summary.
 - **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — L39109
 - **I-1490** Dashboard for an erofs project: the Config page shows the menu and the base, a one-line banner with Restart only while `pending_base_version` is set, and no Nix editor or machine.nix switch; Settings lists machine.nix only for an account with a Nix project; Add a host shows the x86 installer beside the Mac step, with the Mac image's download size and free disk (nonix-config-cli-web, 2026-11-22) — L39119
 - **I-1492** The public docs describe the Ubuntu base: Nix appears in one paragraph (machine.md "Older machines"), in the one sentence an erofs machine answers a Nix file with, and in a laptop CLI message; the agent guide test reads `images/guest/agent-guide.md` (nonix-config-cli-web, 2026-11-22) — L39126
+- **I-1506** `images/guest/build.sh` writes a bundle file over 1900 MiB also as `<name>.part0..N`, and `guest-image.yml` publishes the parts in its place, as I-1504 says (nonix-guest-image, 2026-11-22) — L39132

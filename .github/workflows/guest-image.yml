@@ -63,9 +63,11 @@ jobs:
           esac
           images/guest/build.sh --arch "$ARCH" --version "$VERSION" --out "$RUNNER_TEMP/out"
           mkdir -p "$RUNNER_TEMP/assets"
-          for f in vmlinuz initramfs.img rootfs.erofs manifest.json; do
+          # What SHA256SUMS lists is what is published: a file over 1900 MiB
+          # as its .partN files (DECISIONS I-1504, I-1506), and manifest.json.
+          while read -r _ f; do
             mv "$RUNNER_TEMP/out/$VERSION/$ARCH/$f" "$RUNNER_TEMP/assets/$ARCH-$f"
-          done
+          done < "$RUNNER_TEMP/out/$VERSION/$ARCH/SHA256SUMS"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: guest-${{ matrix.arch }}
@@ -97,14 +99,16 @@ jobs:
             jq -e --arg v "$VERSION" --arg a "$a" '.version == $v and .arch == $a' "$a-manifest.json" >/dev/null
             for f in vmlinuz initramfs.img rootfs.erofs; do
               want=$(jq -r --arg f "$f" '.files[$f].sha256' "$a-manifest.json")
-              got=$(sha256sum "$a-$f" | cut -d' ' -f1)
+              parts=$(jq -r --arg f "$f" --arg a "$a" '.files[$f].parts // [] | map($a + "-" + .name) | join(" ")' "$a-manifest.json")
+              # shellcheck disable=SC2086 # part names have no spaces
+              if [ -n "$parts" ]; then got=$(cat $parts | sha256sum | cut -d' ' -f1); else got=$(sha256sum "$a-$f" | cut -d' ' -f1); fi
               [ "$want" = "$got" ] || { echo "::error::$a-$f is $got, its manifest says $want"; exit 1; }
             done
           done
           kv_amd64=$(jq -r .kernel_version amd64-manifest.json)
           kv_arm64=$(jq -r .kernel_version arm64-manifest.json)
           sha256sum amd64-* arm64-* > SHA256SUMS
-          printf 'Guest base %s, built from %s.\n\nKernel %s (amd64), %s (arm64). Each architecture'"'"'s files are named <arch>-<file>; SHA256SUMS lists all eight.\n' \
+          printf 'Guest base %s, built from %s.\n\nKernel %s (amd64), %s (arm64). Each architecture'"'"'s files are named <arch>-<file>, a file over 1900 MiB as <arch>-<file>.partN to concatenate in order; SHA256SUMS lists every asset.\n' \
             "$VERSION" "$SHA" "$kv_amd64" "$kv_arm64" > notes.md
           gh release create "guest-$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
             --title "Guest base $VERSION" --notes-file notes.md --latest=false \
