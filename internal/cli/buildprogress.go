@@ -32,6 +32,14 @@ type buildView struct {
 	fetchSize         string
 	drvN, drvDone     int
 	stage             int // 0 before nix build's lists, 1 fetching, 2 building, 3 built
+
+	// menu is set for an erofs machine (DECISIONS I-1462, I-1488): its
+	// log is guestd's ApplyMenu lines, nothing is built, and each line is
+	// shown as guestd wrote it (menuLine). waitConfigOp sets it from the
+	// project's runtime; a create's view, which does not know it, sets it
+	// at the first line that only ApplyMenu writes.
+	menu     bool
+	menuStep string // the ApplyMenu line whose step is open, "" for none
 }
 
 const (
@@ -60,6 +68,11 @@ func countOf(s string) int {
 // and showed each step twice, the raw copy first (I-755). Nix's own
 // output goes to raw behind the step it belongs to.
 func (v *buildView) Line(line string) {
+	if v.menu || isMenuStart(line) {
+		v.menu = true
+		v.menuLine(line)
+		return
+	}
 	if v.step(line) {
 		return
 	}
@@ -164,8 +177,10 @@ func (v *buildView) nixLine(line string) {
 }
 
 // Phase takes the op's phase from an op read (an apply op has no log).
+// An erofs machine's apply is its ApplyMenu lines, so it gets no
+// "Switching the machine" step.
 func (v *buildView) Phase(phase string) {
-	if phase == "apply_config" {
+	if phase == "apply_config" && !v.menu {
 		v.switching()
 	}
 }
@@ -200,7 +215,7 @@ func (v *buildView) buildLabel() (string, string) {
 // without the CLI and exits 130.
 func waitConfigOp(ctx context.Context, e *Env, project *Project, opID string) (*Op, *progress, error) {
 	pr := e.newProgress()
-	v := &buildView{pr: pr}
+	v := &buildView{pr: pr, menu: isErofs(project)}
 	switch {
 	case pr == nil:
 		v.raw = e.ErrOut // --json: no steps, the log as before, off stdout

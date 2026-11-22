@@ -40,6 +40,14 @@ func ConfigShowCmd(ctx context.Context, e *Env, projectArg string, revisions boo
 	if e.JSON {
 		return writeJSONOut(e.Out, cfg)
 	}
+	if isErofs(project) {
+		sel, err := currentMenu(cfg)
+		if err != nil {
+			return err
+		}
+		printMenu(e.Out, sel)
+		return nil
+	}
 	_, _ = fmt.Fprint(e.Out, cfg.Fragment)
 	return nil
 }
@@ -52,6 +60,9 @@ func applyFragmentAndRender(ctx context.Context, e *Env, project *Project, fragm
 	}
 	revisionID, opID, err := e.Client.PutConfigFragment(ctx, project.ID, fragment)
 	if err != nil {
+		if refused, ok := asNixConfigRetired(err); ok {
+			return refused
+		}
 		var apiErr *APIError
 		if ok := asAPIError(err, &apiErr); ok && apiErr.Code == "invalid" {
 			RenderBuildError(e.Out, apiErr.Code, apiErr.Message, localFragmentPath, mustReadFragment(localFragmentPath))
@@ -133,6 +144,9 @@ func ConfigApplyCmd(ctx context.Context, e *Env, projectArg, path string) error 
 // one whose switch failed or was never sent; either way the machine ends
 // up on the configuration the project says it has.
 func reapplyRevision(ctx context.Context, e *Env, project *Project) error {
+	if isErofs(project) {
+		return reapplyMenu(ctx, e, project)
+	}
 	if project.State != "running" {
 		return exitf(ExitUsage, "No ./repose.nix here, and %s is %s. A stopped machine starts on its newest built revision: `repose start %s`.", project.Slug, project.State, project.Slug)
 	}
@@ -154,6 +168,34 @@ func reapplyRevision(ctx context.Context, e *Env, project *Project) error {
 		_, _ = fmt.Fprintf(e.Out, "No ./repose.nix here; applying the active revision %s again.\n", shortRev(rev.ID))
 	} else {
 		_, _ = fmt.Fprintf(e.Out, "No ./repose.nix here; applying revision %s, which built but is not applied yet.\n", shortRev(rev.ID))
+	}
+	return applyRevision(ctx, e, project, rev)
+}
+
+// reapplyMenu is reapplyRevision on an erofs machine, which has no
+// repose.nix to look for: its newest revision's menu, applied again.
+func reapplyMenu(ctx context.Context, e *Env, project *Project) error {
+	if project.State != "running" {
+		return exitf(ExitUsage, "%s is %s; a stopped machine applies its menu when it starts: `repose start %s`.", project.Slug, project.State, project.Slug)
+	}
+	revs, err := e.Client.ListRevisions(ctx, project.ID)
+	if err != nil {
+		return err
+	}
+	var rev *Revision
+	for i := range revs { // newest first
+		if revs[i].Status == "built" || revs[i].Status == "applied" {
+			rev = &revs[i]
+			break
+		}
+	}
+	if rev == nil {
+		return exitf(ExitUsage, "%s has no revision to apply again.", project.Slug)
+	}
+	if rev.Status == "applied" {
+		_, _ = fmt.Fprintf(e.Out, "Applying the active revision %s again.\n", shortRev(rev.ID))
+	} else {
+		_, _ = fmt.Fprintf(e.Out, "Applying revision %s, which is not applied yet.\n", shortRev(rev.ID))
 	}
 	return applyRevision(ctx, e, project, rev)
 }
@@ -279,6 +321,9 @@ func PersonalSwitchCmd(ctx context.Context, e *Env, projectArg string, on bool) 
 	if err != nil {
 		return err
 	}
+	if isErofs(project) {
+		return errNixConfigRetired("")
+	}
 	word, with := "off", "without"
 	if on {
 		word, with = "on", "with"
@@ -305,6 +350,9 @@ func ConfigEditCmd(ctx context.Context, e *Env, projectArg string, editor func(p
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
+	}
+	if isErofs(project) {
+		return errNixConfigRetired("")
 	}
 	cfg, err := e.Client.GetConfig(ctx, project.ID)
 	if err != nil {
