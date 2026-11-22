@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1091 entries.
+1092 entries.
 
 ## Scope
 
@@ -1123,3 +1123,4 @@ pointer, not a summary.
 - **I-1522** `repose status` has a `base` row naming the base and the machine's kind (`2026.11.22, Ubuntu` or `NixOS`), and `status`, `ls`, the Overview's Details and the project list say when a newer base is ready for the next restart (nonix-config-cli-web-2, 2026-11-22) — L39148
 - **I-1528** `PUT /projects/:id/config` takes an optional `base_revision_id`, the revision the client last read; one that is not the project's current revision is `409 menu_stale` (nonix-contracts-2, 2026-11-22) — L39151
 - **I-1524** The Config page sends `base_revision_id` (the revision its last GET returned) with a menu, and on 409 `menu_stale` says in the Apply bar that the menu changed elsewhere and reloads it (nonix-config-cli-web-2, 2026-11-22) — L39158
+- **I-1530** hostd deletes the host's neighbour entry for a guest address on `br-guests` when the guest is destroyed (after its tap is gone) and at every boot and restore (before the guest can be dialled), so an address reused by the next guest does not answer with the old guest's MAC (nonix-hostd-2, 2026-11-22) — L39163
