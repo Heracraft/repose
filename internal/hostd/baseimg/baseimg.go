@@ -37,6 +37,7 @@ import (
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/metrics"
 	"github.com/heracraft/repose/internal/hostd/state"
+	"github.com/heracraft/repose/internal/obs"
 )
 
 // The bundle's files, by the names PR 2's build gives them
@@ -181,7 +182,7 @@ func (c *Cache) log() *slog.Logger {
 	if c.Log != nil {
 		return c.Log
 	}
-	return slog.New(slog.DiscardHandler)
+	return obs.Nop(obs.ComponentHostd)
 }
 
 // Key is a bundle's record key and directory name.
@@ -369,7 +370,9 @@ func (c *Cache) fetch(ctx context.Context, spec Spec) (Bundle, error) {
 				// wrong release.
 				_ = os.RemoveAll(tmp) // the error being returned is the mismatch; a leftover is swept by GC
 			}
-			log.Error("base image fetch failed", "event", "base_image_fetch", "file", f.name, "reason", reason(err), "err", err.Error())
+			// The part's name and the reason only: the error's text can
+			// carry the URL, which is not a field the log may hold.
+			log.Error("base image fetch failed", "event", "base_image_fetch", "part", f.name, "reason", reason(err))
 			return Bundle{}, fmt.Errorf("base image %s, %s: %w", spec.Version, f.name, err)
 		}
 		total += n
@@ -450,7 +453,7 @@ func (c *Cache) fetchTo(ctx context.Context, url, dest, want string) (int64, err
 		if err == nil || try >= tries || ctx.Err() != nil || !retryable(err) {
 			return n, err
 		}
-		c.log().Warn("base image fetch retrying", "event", "base_image_fetch", "file", filepath.Base(dest), "try", try+1, "reason", reason(err))
+		c.log().Warn("base image fetch retrying", "event", "base_image_fetch", "part", filepath.Base(dest), "try", try+1, "reason", reason(err))
 		select {
 		case <-ctx.Done():
 			return n, err
