@@ -11,21 +11,20 @@ live plane, then `CLAUDE.md` and `docs/README.md`. Do not read the whole
 board before starting: §5 carries the inventory, and the board's own
 listing is unreliable (§8).
 
-## 1. The state in one screen
+## 1. The state in one screen (updated 2026-11-22 04:30 UTC)
 
 | | |
 |---|---|
-| Published CLI | **v0.1.53**, `releases/latest` resolves to it |
-| Published base | **2026.11.20.1** |
-| Published appliance | **appliance-2026.11.20** (`--latest=false`), pinned by v0.1.53 |
-| `origin/main` | `f6aab4f2` |
-| local `main` | **ahead of origin** at `0089a8fd` (r20261120-12, -13 integrated, unpushed) |
-| `mac-mini` | fully merged into `main`; the branch is done |
-| Unmerged branches | `landing-overhaul` (4 commits, the web work), `tmpdir-split` (1 commit) |
-| Open pull request | **#99**, the conductor handoff, queued and uncut |
-| Host switch / edge switch | **none**, and none needed by anything released |
-| Production enforcement | billing enforced, `settings.billing_enforce` true |
-| The Own hardware plan | `available: true`, $10, **7-day trial**, purchasable today |
+| Published CLI | **v0.1.54**, `releases/latest` resolves to it |
+| Published base | **2026.11.20.1** (`bump/agents-20261121` merged on `main`, ready to publish as `2026.11.22`) |
+| Published appliance | **appliance-2026.11.20** (`--latest=false`), pinned by v0.1.53+ |
+| `origin/main` & `main` | **`81248803`** (`r20261121-1`, `r20261122-1`, `r20261122-2` live on `repose.run` & `api.repose.run`) |
+| Release queue | **empty** |
+| AWS Mac (`h-0b0c0ac94c35a8e93`) | **released** (`2026-11-21T21:11:23Z`, 0 active AWS resources billing; `ENG-21` closed) |
+| Host switch / edge switch | **none** run (`host-02` switch optional to pick up `I-1448` `arch` reporting) |
+| Production enforcement | billing enforced, `settings.billing_enforce` true; migration `0050_host_arch` applied |
+| The Own hardware plan | `available: true`, $10, **7-day trial**, purchasable today, documented on `/`, `/docs/billing`, `/docs/own-hardware` |
+| Kaneo board (`kaneo ls`) | **fixed (`ENG-145`)**: paginates all 149 cards accurately (`Needs you: 2`, `Open: 51`, `Done: 74`) |
 
 **What shipped today.** A 197-commit repair batch (`r20261120-10`) for
 bring your own hardware, then two releases: **v0.1.52**, which pinned

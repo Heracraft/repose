@@ -22,84 +22,24 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-20, 18:00 UTC)
+## Where things stand (2026-11-22, 04:30 UTC)
 
-- **Four batches are integrated and none of them is released.** Local
-  `main` is **`a9c5039b`** and `origin/main` is still `f6aab4f2`, which
-  is v0.1.53. That is **34 commits**, shipping **api, cli and web**:
-  `r20261120-11` through `-14`. `integrated` on GitHub holds all of it
-  and deploys nothing. **The queue is empty.**
-- **It is waiting on one sentence, and the sentence has to be typed in
-  the conductor's own session.** The owner told the mac-mini conductor
-  to publish everything that works. That reached this session as a
-  relay, and a relay is not the word: a push cycles production and a
-  peer cannot grant it. Both conductors have asked, twice each, and
-  neither will push on the other's account. **If you are the conductor
-  and the owner says it to you, everything below is one command.**
-- **The release is staged to be boring.** `ops/dev/docs-ahead-of-cli`
-  is green on this main, 115 documented commands against v0.1.53, so no
-  command is new and the tag does not have to chase the push (RELEASE.md
-  step 2b). The v0.1.54 notes are drafted, over the sign job's 400-byte
-  floor, saying two things: `host rm --local` counts the machines that
-  go with the appliance and names the host left on the account, and on
-  repose's side a machine's address can no longer be rewritten or
-  released while work on it is still running. The order is push main,
-  watch CI, annotated tag, notes on the draft before the sign job's
-  notes step, `release-assets` after, then the two owed live checks.
-- **What the four batches carry.** `r20261120-14` is the big one: the
-  new home page with the plan's price on it, which retires the held
-  `7db572b5` by shipping its copy with the page that makes it true
-  (I-1446); **ENG-111** fixed after five weeks, the guest-address write
-  and release each checking for an open op in one statement (I-1444);
-  ENG-148's bound; and both handoffs. `-13` has `host rm --local`
-  (I-1440) and the golden (I-1442). `-12` and `-11` are documents and
-  the appliance pin.
-- **Two live checks are owed at the release**, named in
-  `docs/releases/r20261120-14.md`: that `repose-admin projects show` on
-  a running project prints a `guest_ip` and no `guest_address` line with
-  `change=held` appears for a project with no open op, and that
-  repose.run shows the new headline and the Own hardware price.
-- **CI's `nix flake check (evaluate)` lost its runner seven times
-  today**, every time on a commit touching nothing the evaluation reads,
-  every re-run green. Five of those failures lasted 46m00s, 46m01s,
-  47m00s, 48m00s and 46m00s, against 8 to 11 minutes when it passes, so
-  a fixed platform timeout is pronouncing a runner dead long after it
-  stopped answering. **ENG-144** has the measurements: the command
-  exceeds 8.47 GiB in one process on a 16 GB runner, `checks.x86_64-linux`
-  alone is the peak, and four shards of ten put the worst process at
-  6.06 GiB and finish faster. It also says why that is not a one-line
-  change, because `nix flake check` validates output shapes a sharded
-  `nix eval` would silently stop checking. **Expect the red, re-run it,
-  and do not spend an hour on it.** It cost this shift an afternoon of
-  queue latency.
-- **Three kinds of red looked identical in a run summary today, and
-  only one was a flake.** The runner losses above are the platform.
-  `TestOverlapMenuOnARealTerminal` is genuine load and is recorded as
-  such from 2026-11-11. `TestParallelRangesErrors` was a test that had
-  been wrong since it was written and needed `-race` to expose it, found
-  because it was run locally instead of re-run on CI. **Run it here
-  before you re-run the job**: the first two cost a re-run, the third
-  costs a defect.
-- **`kaneo ls` shows about a third of the board**, measured from the api
-  behind it: 50 cards returned, 94 missing, including every card this
-  shift wrote to. Cards answer individually, so `show`, `note` and
-  `done` work. **ENG-145.** `docs/ops/RESTART.md` carries a grouped
-  inventory inline for that reason, and it is the document to read first
-  after a stop.
-- **The mac-mini program**: three builders are out, 19e on the aarch64
-  findings, 19f on the half of ENG-79 no code fix reaches, and
-  `factory-3f` with the Mac and ENG-138's three unknowns. The review's
-  second pass is parked on the owner's capacity decision with its
-  worktrees and briefs staged. The weekly model limit resets Saturday
-  2026-11-22 at 07:00 UTC.
-- Open and unowned, in the order they would hurt: **ENG-119** with its
-  siblings ENG-120, ENG-121 and ENG-122. **ENG-144** above. **ENG-146**,
-  the Hello reconcile's state write, which is ENG-111's sibling and left
-  deliberately because what should happen when an op opens mid-reconcile
-  is a question about states, not a race on a column. **ENG-10**, where
-  a killed Playwright run's fixtures keep the port and the next run
-  silently tests the old build. **ENG-147**, the home page's length.
-  **ENG-113**, the suite at `-p 2`.
+- **`origin/main` and local `main` are in sync at `81248803` (pushed 2026-11-22 03:51 UTC).** Three batches (`r20261121-1`, `r20261122-1`, `r20261122-2`) plus `r20261120-16` are live on `repose.run` and `api.repose.run`. **The release queue is empty.**
+- **Live checks verified at `03:58 UTC` and `04:00 UTC`:**
+  - `https://repose.run/` (200) serves the redesigned 6-band homepage (`I-1452`, `ENG-147`, ~4,405 px desktop, zero looping cartoons, visible agent labels, aligned `$10` Own hardware row).
+  - `/docs/billing`, `/docs/troubleshooting`, and `/docs/own-hardware` (200) serve the Own hardware `$10` pricing, Mac troubleshooting, stuck-host recovery, and updated restart wording (`ENG-47`, `ENG-57`, `ENG-64`, `ENG-140`).
+  - `api` and `api-grpc` (`20261122T035145`) are healthy with migration `0050_host_arch` applied (`applied: [1..50], pending: []`).
+  - **04:00 UTC base-bump sweep verified live (`ENG-149`, `I-1454`):** `api-grpc` logged `event="base_bump" version="2026.11.20.1" projects=0` — zero stopped projects rebuilt, zero `build_queue_deep`, zero `insufficient_capacity`.
+- **Published artefacts:** CLI `v0.1.54` (`releases/latest`), appliance `appliance-2026.11.20` (`--latest=false`), base `2026.11.20.1`. `bump/agents-20261121` (`claude-code 2.1.330`, `codex 0.171.0`, `gemini-cli 0.70.0`, etc.) is on `main` and its x86_64 + aarch64 overlays are pushed to Cachix; a `repose-admin base publish --rev <main sha>` is ready whenever the owner wants `2026.11.22` published. No host or edge switch was run.
+- **Tiered CI (`I-1456`, `ENG-108`, `ENG-144`, `ENG-113`) is live on `main`:** On `81248803`, `fast checks`, `classify changed paths`, `go build, vet, test, lint` (`-p 2`), `buf lint`, `alert rules`, `aarch64 agent overlay`, **sharded `nix flake check (evaluate)`**, `cli GoReleaser`, `install.sh` (Ubuntu + macOS), `nix run .#repose`, and `shell completions` all passed. The two reds on `81248803` (`own-hardware.spec.ts` `c-state` 18px font-metric clip at 1440 on Ubuntu, and `tests-a11y/a11y.spec.ts:108` still looking for `"Get started"` on `/`) are fixed in this handoff batch (`handoff-and-ci-fix`).
+- **AWS Mac (`h-0b0c0ac94c35a8e93`) is released** (`2026-11-21T21:11:23Z`; `ENG-21` closed; 0 active AWS hosts/instances/volumes/EIPs/snapshots across 17 regions).
+- **Kaneo (`~/.claude/skills/project-board/kaneo`) pagination is fixed (`ENG-145` closed):** `kaneo ls` now paginates `limit=100` across `totalPages` and returns all 149 cards accurately (`Needs you: 2`, `Open: 51`, `In Progress: 6`, `Blocked: 2`, `Parked: 13`, `Done: 74`; `ENG-48` archived/cancelled by owner).
+- **Box hygiene:** `/` is at ~82% (5.3 GB free), `/mnt/nixstore` at 39% (254 GB free). Only `/home/azureuser/projects/factory` (`main`) and `/home/azureuser/projects/kanali-website-overhaul` (held by tmux pane `0:3.1`) remain.
+- **What is next (highest leverage):**
+  1. **`ENG-102` (High, live CLI security defect):** `repose host add --json` prints `install.argument` (live WireGuard private key) to stdout. Needs owner's quick choice on `--json` shape, then a small CLI fix + `v0.1.55` tag.
+  2. **Remaining 3 web/dashboard cards:** `ENG-53` (dark-mode Logto sign-in CSS), `ENG-56` (webhook delivery visibility), `ENG-137` (signed-out dashboard redirect).
+  3. **Owned-host sizing (`ENG-74` / `ENG-90..98`, `ENG-91` entry point)** and **Mac start speed (`ENG-70` 58 s → seconds)** — software profiling/work can proceed locally; final Mac verification waits on hardware (`ENG-138` cold reboot also needs a Mac).
+  4. **Owner decisions in `Needs you` (only 2 left):** `ENG-131` (Own hardware plan while Mac is installing) and `ENG-5` (old unverified git identity commits).
 
 
 ## The owner's rules this week
