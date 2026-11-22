@@ -49,9 +49,10 @@ import (
 //     here: the base version is a database row, not a constant, so
 //     ops/dev/release-assets passes the newest guest-* release, or
 //     "unpublished" when there is none. Unset is "none".
-//   - REPOSE_RELEASE_ASSETS_HOSTD=stable|none: the hostd-<channel>
-//     release whose manifest.json an appliance's hostd updates from
-//     (default stable).
+//   - REPOSE_RELEASE_ASSETS_HOSTD=<version>|none|unpublished: the
+//     release hostd-<version> whose manifest.json an owned host's hostd
+//     updates from (DECISIONS I-1496): ops/dev/release-assets passes the
+//     newest hostd-* release that carries one. Unset is "none".
 //
 // The appliance image is the one the code pins (applianceURL), so the
 // switch from .raw.gz to .raw.zst is a change of that constant, not of
@@ -80,10 +81,6 @@ const (
 	// guestPartMaxBytes: a bundle file over GitHub's 2 GiB asset cap is
 	// published in parts of at most 1900 MiB (DECISIONS I-1504).
 	guestPartMaxBytes = 1900 << 20
-	// hostdChannel is the release hostd's self-update reads
-	// (hostd-<channel>/manifest.json). PR 6 adds the constant in hostd;
-	// this one is replaced by it at integration.
-	hostdChannel = "stable"
 )
 
 // guestArches and guestFiles are the names of a guest-<version>
@@ -125,10 +122,13 @@ func TestReleaseAssetsAnswerAnonymously(t *testing.T) {
 		c.guestRelease(ctx, v)
 	}
 
-	switch ch := envOr(envReleaseAssetsHostd, hostdChannel); ch {
+	switch v := envOr(envReleaseAssetsHostd, "none"); v {
 	case "none":
+	case "unpublished":
+		c.checked++
+		c.fail("no hostd-<version> release with a manifest.json is published; publish it: an appliance-* tag runs the hostd job in .github/workflows/appliance-image.yml")
 	default:
-		c.hostdRelease(ctx, ch)
+		c.hostdRelease(ctx, v)
 	}
 
 	switch want := envOr(envReleaseAssetsCLI, "latest"); want {
@@ -308,12 +308,12 @@ func partNumber(asset, name string) (int, bool) {
 	return n, true
 }
 
-// hostdRelease checks the manifest an appliance's hostd updates from and
-// every binary it names.
-func (c *releaseAssetCheck) hostdRelease(ctx context.Context, channel string) {
-	u := releaseDownloadURL + "/hostd-" + channel + "/manifest.json"
-	fix := "publish it: the hostd release job in .github/workflows/appliance-image.yml"
-	body, ok := c.get(ctx, u, "the hostd-"+channel+" manifest", fix)
+// hostdRelease checks the manifest of hostd-<version>, the release an
+// owned host's hostd updates from (I-1496), and every binary it names.
+func (c *releaseAssetCheck) hostdRelease(ctx context.Context, version string) {
+	u := releaseDownloadURL + "/hostd-" + version + "/manifest.json"
+	fix := "publish it: an appliance-* tag runs the hostd job in .github/workflows/appliance-image.yml"
+	body, ok := c.get(ctx, u, "the hostd-"+version+" manifest", fix)
 	if !ok {
 		return
 	}
@@ -322,8 +322,8 @@ func (c *releaseAssetCheck) hostdRelease(ctx context.Context, channel string) {
 		c.fail("%s is not JSON: %v", u, err)
 		return
 	}
-	if v, _ := m["version"].(string); v == "" {
-		c.fail("%s names no version", u)
+	if v, _ := m["version"].(string); v != version {
+		c.fail("%s names version %q, not %s", u, v, version)
 	}
 	urls := manifestURLs(m)
 	if len(urls) == 0 {
@@ -560,7 +560,7 @@ func TestReleaseAssetURLsAreAllChecked(t *testing.T) {
 }
 
 // TestReleaseAssetsCheckGuestAndHostd runs the guest-<version> and
-// hostd-<channel> checks against a local server, offline: a complete
+// hostd-<version> checks against a local server, offline: a complete
 // release passes, and each way of being incomplete is named (I-1500).
 func TestReleaseAssetsCheckGuestAndHostd(t *testing.T) {
 	const version = "2026.11.22.1"
@@ -581,12 +581,12 @@ func TestReleaseAssetsCheckGuestAndHostd(t *testing.T) {
 	files["/guest-"+version+"/SHA256SUMS"] = strings.Join(sums, "\n") + "\n"
 	var srvURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/hostd-stable/manifest.json" {
-			_, _ = fmt.Fprintf(w, `{"version":"v0.1.60","arches":{"arm64":{"url":%q,"sha256":"x"},"amd64":{"url":%q,"sha256":"x"}}}`,
-				srvURL+"/hostd-stable/hostd-arm64", srvURL+"/hostd-stable/hostd-amd64")
+		if r.URL.Path == "/hostd-2026.11.22.2/manifest.json" {
+			_, _ = fmt.Fprintf(w, `{"version":"2026.11.22.2","arches":{"arm64":{"url":%q,"sha256":"x"},"amd64":{"url":%q,"sha256":"x"}}}`,
+				srvURL+"/hostd-2026.11.22.2/hostd-linux-arm64", srvURL+"/hostd-2026.11.22.2/hostd-linux-amd64")
 			return
 		}
-		if r.URL.Path == "/hostd-stable/hostd-arm64" || r.URL.Path == "/hostd-stable/hostd-amd64" {
+		if r.URL.Path == "/hostd-2026.11.22.2/hostd-linux-arm64" || r.URL.Path == "/hostd-2026.11.22.2/hostd-linux-amd64" {
 			_, _ = io.WriteString(w, "bin")
 			return
 		}
@@ -614,7 +614,7 @@ func TestReleaseAssetsCheckGuestAndHostd(t *testing.T) {
 	if errs := run(func(c *releaseAssetCheck) { c.guestRelease(ctx, version) }); len(errs) != 0 {
 		t.Errorf("a complete guest release failed: %v", errs)
 	}
-	if errs := run(func(c *releaseAssetCheck) { c.hostdRelease(ctx, "stable") }); len(errs) != 0 {
+	if errs := run(func(c *releaseAssetCheck) { c.hostdRelease(ctx, "2026.11.22.2") }); len(errs) != 0 {
 		t.Errorf("a complete hostd release failed: %v", errs)
 	}
 
@@ -681,8 +681,8 @@ func TestReleaseAssetsCheckGuestAndHostd(t *testing.T) {
 		t.Errorf("SHA256SUMS listing neither: %v, want %s named", errs, rootfs)
 	}
 
-	errs = run(func(c *releaseAssetCheck) { c.hostdRelease(ctx, "beta") })
-	if len(errs) != 1 || !strings.Contains(errs[0], "404") || !strings.Contains(errs[0], "hostd-beta") {
-		t.Errorf("a missing hostd channel: %v, want one 404 naming it", errs)
+	errs = run(func(c *releaseAssetCheck) { c.hostdRelease(ctx, "2026.11.22.1") })
+	if len(errs) != 1 || !strings.Contains(errs[0], "404") || !strings.Contains(errs[0], "hostd-2026.11.22.1") {
+		t.Errorf("a hostd release with no manifest: %v, want one 404 naming it", errs)
 	}
 }

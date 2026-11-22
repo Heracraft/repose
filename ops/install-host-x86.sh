@@ -25,8 +25,9 @@
 #   --uplink IFACE         the interface guests reach the internet through
 #                          (default: the one the default route uses)
 #   --hostd-binary PATH    install this hostd instead of the one the
-#                          hostd-stable manifest names
-#   --manifest-url URL     the hostd channel manifest (default: hostd-stable)
+#                          newest hostd release names
+#   --manifest-url URL     a hostd manifest to install and update from,
+#                          instead of the newest hostd-<version> release's
 #   --dry-run              print every step and change nothing
 set -euo pipefail
 
@@ -43,7 +44,6 @@ VIRTIOFSD_VERSION=1.14.0
 VIRTIOFSD_ZIP=https://gitlab.com/-/project/21523468/uploads/f505704014ae7a816e515f2a05a93d8b/virtiofsd-v1.14.0.zip
 VIRTIOFSD_ZIP_SHA256=2e4fe9571f492b00baa34bc4e708e950039c5da05b830b31a8d179cb6ac8978e
 VIRTIOFSD_SHA256=15b2e72a78cc08a9bd8a6943e89fb69c88cb3cbeb63069efceade835342ac7d4
-MANIFEST_URL=https://github.com/Heracraft/repose/releases/download/hostd-stable/manifest.json
 # The api over the hub (DECISIONS I-1382), as the Mac appliance dials it:
 # the control plane's WireGuard address, its internal name and the
 # platform host CA (nix/hosts/platform.nix). Public material.
@@ -67,7 +67,7 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEq1BgpU75F46qQ3iMHL1E0VOqye+4
 -----END PUBLIC KEY-----'
 
 join="" join_file="" device="" loop_file="" size="" uplink=""
-api="" api_name="" api_ca_file="" hostd_binary="" manifest_url=$MANIFEST_URL dry=0
+api="" api_name="" api_ca_file="" hostd_binary="" manifest_url="" dry=0
 while [ $# -gt 0 ]; do
   case $1 in
     --join) join=${2:?--join needs the argument}; shift 2 ;;
@@ -512,35 +512,43 @@ REPOSE_HOST_FILE
 # appliance and a machine ops/install-host-x86.sh set up (DECISIONS
 # I-1496). repose-hostd-update.timer runs it every 30 minutes.
 #
-# It reads the channel's manifest.json, a GitHub release asset:
+# The channel is the newest release `hostd-<version>` that is not a draft
+# and carries a `manifest.json`, found through GitHub's releases API,
+# anonymously, in version order (sort -V: 2026.11.23 after 2026.11.22.10).
+# The repository's releases are immutable, so there is no moving channel
+# release; `hostd-stable` is a dead name and is passed over. The lookup is
+# not the trust; the manifest's signature is:
 #   {"version": "...",
 #    "arches": {"amd64": {"url": "...", "sha256": "..."},
 #               "arm64": {"url": "...", "sha256": "..."}},
 #    "signature": "<base64>"}
-# The signature is the release key's (install.sh RELEASE_PUBKEY, the key
-# release.yml signs the CLI with) over this text, one line each, the
-# arches in that order:
+# signed with the release key (install.sh RELEASE_PUBKEY) over this text,
+# one line each, the arches in that order:
 #   repose-hostd-manifest v1
 #   version <version>
 #   amd64 <sha256> <url>
 #   arm64 <sha256> <url>
-# so a manifest is trusted for nothing its signature does not cover. A
-# manifest that does not verify, a version older than the running one, or
-# a binary whose sha256 differs changes nothing. Otherwise the binary is
-# written beside /usr/local/bin/hostd, asked its version, renamed over the
-# old one and hostd restarted; hostd.service has KillMode=process, so the
-# guests keep running and hostd reconciles them at its start.
+# Each verified manifest is kept in the state directory; a lookup the API
+# refuses (403 or 429: its anonymous rate limit) uses the kept one, which
+# for a host already on it is nothing to do, and exits 0. A manifest that
+# does not verify, a version older than the running one, or a binary whose
+# sha256 differs changes nothing. Otherwise the binary is written beside
+# /usr/local/bin/hostd, asked its version, renamed over the old one and
+# hostd restarted; hostd.service has KillMode=process, so the guests keep
+# running and hostd reconciles them at its start.
 #
 #   repose-hostd-update [--manifest-url URL] [--force]
 #
-# Environment (tests): REPOSE_HOSTD_BIN, REPOSE_RELEASE_PUBKEY_FILE,
+# Environment (tests): REPOSE_HOSTD_RELEASES_URL, REPOSE_HOSTD_MANIFEST_URL,
+# REPOSE_HOSTD_BIN, REPOSE_HOSTD_STATE_DIR, REPOSE_RELEASE_PUBKEY_FILE,
 # REPOSE_HOSTD_RESTART (the command that restarts hostd).
 set -euo pipefail
 
-channel=stable
-url="https://github.com/Heracraft/repose/releases/download/hostd-$channel/manifest.json"
+releases="https://api.github.com/repos/Heracraft/repose/releases?per_page=30"
+url=""
 # shellcheck source=/dev/null
 [ -r /etc/repose/hostd-update.env ] && . /etc/repose/hostd-update.env
+releases=${REPOSE_HOSTD_RELEASES_URL:-$releases}
 url=${REPOSE_HOSTD_MANIFEST_URL:-$url}
 force=0
 while [ $# -gt 0 ]; do
@@ -551,6 +559,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 bin=${REPOSE_HOSTD_BIN:-/usr/local/bin/hostd}
+state=${REPOSE_HOSTD_STATE_DIR:-/var/lib/repose/hostd-update}
 pubkey=${REPOSE_RELEASE_PUBKEY_FILE:-/etc/repose/release.pub}
 restart=${REPOSE_HOSTD_RESTART:-systemctl restart hostd.service}
 say() { echo "repose-hostd-update: $*"; }
@@ -564,11 +573,40 @@ esac
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-if ! curl -fsSL --max-time 60 -o "$tmp/manifest.json" "$url"; then
+m=$tmp/manifest.json
+cached=$state/manifest.json
+from_cache=0
+
+if [ -z "$url" ]; then
+  code=$(curl -sS --max-time 60 -H 'Accept: application/vnd.github+json' -o "$tmp/releases.json" -w '%{http_code}' "$releases" 2>/dev/null) || code=000
+  if [ "$code" != 200 ]; then
+    say "event=lookup_failed status=$code"
+    case $code in
+      403 | 429) ;;
+      *) [ -s "$cached" ] || exit 1 ;;
+    esac
+    if [ ! -s "$cached" ]; then
+      say "event=nothing_to_do reason=no_cached_manifest"
+      exit 0
+    fi
+    cp "$cached" "$m"
+    from_cache=1
+  else
+    tag=$(jq -r '.[] | select((.draft | not) and (.tag_name | test("^hostd-[0-9]")) and any(.assets[]?; .name == "manifest.json")) | .tag_name' "$tmp/releases.json" |
+      sed 's/^hostd-//' | sort -V | tail -1)
+    if [ -z "$tag" ]; then
+      say "event=no_release"
+      exit 0
+    fi
+    tag=hostd-$tag
+    url=$(jq -r --arg t "$tag" '.[] | select(.tag_name == $t) | .assets[] | select(.name == "manifest.json") | .browser_download_url' "$tmp/releases.json" | head -1)
+    say "event=release_found tag=$tag"
+  fi
+fi
+if [ "$from_cache" = 0 ] && ! curl -fsSL --max-time 60 -o "$m" "$url"; then
   say "event=manifest_fetch_failed" >&2
   exit 1
 fi
-m=$tmp/manifest.json
 field() { jq -er "$1" "$m" 2>/dev/null; }
 if ! version=$(field .version) || ! sig=$(field .signature) ||
   ! a_url=$(field .arches.amd64.url) || ! a_sum=$(field .arches.amd64.sha256) ||
@@ -584,6 +622,10 @@ if ! printf '%s' "$sig" | base64 -d > "$tmp/sig" 2>/dev/null ||
   exit 1
 fi
 say "event=manifest_verified version=$version"
+if [ "$from_cache" = 0 ]; then
+  mkdir -p "$state"
+  cp "$m" "$cached.tmp" && mv -f "$cached.tmp" "$cached"
+fi
 
 current=$("$bin" version 2>/dev/null | awk '{ print $2 }') || current=""
 if [ "$current" = "$version" ] && [ "$force" = 0 ]; then
@@ -1387,6 +1429,7 @@ d /var/lib/repose/images 0755 root root -
 d /var/lib/repose/snapshots 0700 root root -
 d /var/log/repose 0750 root root -
 L /etc/wireguard/wg0.conf - - - - /run/repose/wg0.conf
+d /var/lib/repose/hostd-update 0700 root root -
 REPOSE_HOST_FILE
   install_file 0644 /etc/udev/rules.d/90-repose.rules <<'REPOSE_HOST_FILE'
 # nix/hosts/virt.nix: the hostd account runs guest hypervisors.
@@ -1473,15 +1516,19 @@ install_file 0644 /etc/repose/release.pub < "$tmp/release.pub"
 if [ -n "$hostd_binary" ]; then
   install_file 0755 /usr/local/bin/hostd < "$hostd_binary"
 elif [ "$dry" = 1 ]; then
-  echo "would: fetch hostd from $manifest_url, check its signature and sha256, and install it as /usr/local/bin/hostd"
+  echo "would: fetch hostd from ${manifest_url:-the newest hostd-<version> release}, check its signature and sha256, and install it as /usr/local/bin/hostd"
 else
-  echo "==> fetch hostd from $manifest_url"
+  echo "==> fetch hostd from ${manifest_url:-the newest hostd-<version> release}"
   # The update script does the fetch and both checks; it is the same one
   # the timer runs every 30 minutes.
   install -d /usr/local/bin
   REPOSE_RELEASE_PUBKEY_FILE=$tmp/release.pub REPOSE_HOSTD_BIN=/usr/local/bin/hostd REPOSE_HOSTD_RESTART=true \
     REPOSE_HOSTD_MANIFEST_URL=$manifest_url /usr/local/lib/repose/repose-hostd-update ||
     die "hostd did not install; nothing is registered yet, and running this again continues."
+  # A lookup GitHub refused (its anonymous rate limit) installs nothing
+  # and is not an error for the timer; here it is.
+  [ -x /usr/local/bin/hostd ] ||
+    die "hostd did not install: GitHub's releases API refused the lookup. Nothing is registered yet; run this again in an hour, or pass --manifest-url."
 fi
 
 {
@@ -1501,7 +1548,7 @@ else
   printf '%s\n' "$API_CA" | install_file 0644 /etc/repose/api-ca.pem
 fi
 printf 'define uplink = "%s"\n' "$uplink" | install_file 0644 /etc/repose/uplink.nft
-if [ -n "$manifest_url" ] && [ "$manifest_url" != "$MANIFEST_URL" ]; then
+if [ -n "$manifest_url" ]; then
   printf 'url=%s\n' "$manifest_url" | install_file 0644 /etc/repose/hostd-update.env
 fi
 

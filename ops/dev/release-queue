@@ -507,7 +507,7 @@ trust_reader() {
     # shipped pinning an image whose release was never published
     # (DECISIONS I-1398). The CLI's own release is not the branch's to
     # answer for, so --cli none; release.yml and release-assets.yml check it.
-    # The guest base and hostd-stable are what hosts fetch, not this CLI,
+    # The guest base and the hostd release are what hosts fetch, not this CLI,
     # so --guest none --hostd none; release-assets.yml checks them (I-1500).
     # REPOSE_QUEUE_ASSETS names the script, as REPOSE_QUEUE_EQUIV names the
     # closure comparison: the test fixture points it at a stub that answers

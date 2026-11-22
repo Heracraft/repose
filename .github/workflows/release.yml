@@ -107,7 +107,7 @@ jobs:
         # exist, and `repose host add` answered 404 on every Mac for 47
         # minutes (DECISIONS I-1398). The CLI's own assets are still a
         # draft here, so --cli none; they are checked once published, below.
-        # The guest base and hostd-stable are not this tag's (I-1500).
+        # The guest base and the hostd release are not this tag's (I-1500, I-1496).
         run: ops/dev/release-assets --cli none --guest none --hostd none
       - name: upload the signature and publish
         run: |

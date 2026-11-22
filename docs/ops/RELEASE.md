@@ -227,8 +227,8 @@ nothing is lost by waiting. This was written after the release of
      `200` for every URL the CLI fetches on a customer's machine (the
      appliance image the batch pins and its checksum, vfkit, the latest
      CLI release's six assets, `install.sh`) and what hosts fetch (the
-     newest `guest-*` release's files, a file over 2 GiB in `.partN` parts and the `hostd-stable`
-     manifest, I-1500), and exits 1 naming the one that does not
+     newest `guest-*` release's files, a file over 2 GiB in `.partN` parts and the newest
+     `hostd-<version>` release's manifest, I-1500, I-1496), and exits 1 naming the one that does not
      (DECISIONS I-1398).
      `DATABASE_URL` is not a detail of convenience and "a real Postgres"
      was the wrong way to say it: `internal/db/testdb` starts a throwaway
