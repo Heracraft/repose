@@ -88,6 +88,7 @@ func (e *Engine) ApplyPersonal(ctx context.Context, tx db.Tx, p *store.Project, 
 // the layer at its next configuration change or base update.
 const personalProjectsSQL = `select id from projects where user_id = $1 and destroyed_at is null
 	and state not in ('destroying', 'destroyed', 'error') and not personal_opt_out and config_revision_id is not null
+	and guest_runtime = 'nix'  -- an erofs project never carries machine.nix (I-1462)
 	order by (state = 'running') desc, created_at limit $2`
 
 // FanOutPersonal applies the account's current personal layer to every

@@ -27,9 +27,10 @@ func main() {
 	billing := flag.Bool("billing", false, "start with billing on and the account active on Solo, instead of billing off (503 billing_disabled, an exempt account)")
 	cliLatest := flag.String("cli-latest", "", "send this as the newest CLI release (X-Repose-CLI-Latest) on every answer")
 	cliOldest := flag.String("cli-oldest", "", "send this as the oldest CLI release answered as documented (X-Repose-CLI-Oldest) on every answer")
+	configDelay := flag.Duration("config-delay", 0, "keep a PUT /config op running this long, streaming its log line by line (0: done at first read)")
 	flag.Parse()
 
-	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest})
+	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest, ConfigDelay: *configDelay})
 	defer f.Close()
 
 	admin, err := newAdminServer(f)

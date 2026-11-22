@@ -451,7 +451,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	p := &project{
 		Project: Project{
 			ID: f.nextID(), Name: name, Slug: slug, RemoteURL: remoteURL, Class: class,
-			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux, Placement: "own",
+			State: "creating", AgentDefault: "claude", BaseVersion: baseVersion, Multiplexer: multiplexer.Tmux, Placement: "own", GuestRuntime: "nix",
 			VolumeBytes: classes[class], DiskUsedBytes: 1 << 30, CreatedAt: now,
 			RootUsedBytes: 1 << 30, RootSizeBytes: classes[class] - classes[class]/40,
 		},
@@ -496,8 +496,14 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		Multiplexer *string `json:"multiplexer"`
 		// Placement is own (the default) or hosted (I-1366).
 		Placement *string `json:"placement"`
+		// GuestRuntime is nix or erofs (I-1462).
+		GuestRuntime *string `json:"guest_runtime"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
+		return e
+	}
+	runtime, e := f.createRuntime(body.GuestRuntime)
+	if e != nil {
 		return e
 	}
 	if body.Multiplexer != nil {
@@ -553,6 +559,7 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		return e
 	}
 	p.Placement = placement
+	p.GuestRuntime = runtime
 	if ownHostID != "" {
 		p.HostID, p.HostName = ownHostID, f.ownedHostName(ownHostID)
 	}
@@ -1062,13 +1069,24 @@ func (f *Fake) opLog(w http.ResponseWriter, r *http.Request) *apiError {
 		since = n
 	}
 	f.mu.Lock()
-	_, _, e := f.findOp(userFrom(r), r.PathValue("id"), r.PathValue("op_id"))
+	_, o, e := f.findOp(userFrom(r), r.PathValue("id"), r.PathValue("op_id"))
+	logLines := buildLines
+	running := false
+	if e == nil {
+		if o.lines != nil {
+			logLines = o.lines
+		}
+		running = o.State == "running" || o.State == "pending"
+	}
 	f.mu.Unlock()
 	if e != nil {
 		return e
 	}
+	if running {
+		return f.streamRunningLog(w, o, logLines, since)
+	}
 	var frames []string
-	for i, line := range buildLines {
+	for i, line := range logLines {
 		seq := i + 1
 		if seq <= since {
 			continue
@@ -1079,7 +1097,10 @@ func (f *Fake) opLog(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		frames = append(frames, fmt.Sprintf("id: %d\ndata: %s\n\n", seq, b))
 	}
-	frames = append(frames, "event: done\ndata: {\"state\":\"done\"}\n\n")
+	f.mu.Lock()
+	final := o.State
+	f.mu.Unlock()
+	frames = append(frames, "event: done\ndata: {\"state\":\""+final+"\"}\n\n")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
@@ -1271,6 +1292,13 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 		// The api's refusal while a stop op is open.
 		return errf("conflict", "%s is %s", p.Slug, p.State)
 	}
+	if body.Fragment != nil && p.GuestRuntime == "erofs" {
+		// An erofs machine takes a menu only (I-1462).
+		return errf("nix_config_retired", "%s", MsgNixConfigRetired).withDetail(map[string]any{"reason": "nix_config_retired"})
+	}
+	if p.GuestRuntime == "erofs" {
+		return f.putMenuErofs(w, p, body.Menu)
+	}
 	var fragment string
 	var menuRaw json.RawMessage
 	if body.Fragment != nil {
@@ -1292,6 +1320,7 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	now := f.now()
 	o := f.newOp(p, "config")
+	defer f.delayConfig(p, o, "build")
 	// A canned eval failure, for the dashboard and CLI to exercise the
 	// error path (08-dashboard.md §7, nix-build-contract.md "What the user
 	// reads" — the exact first canonical message) without a real Nix

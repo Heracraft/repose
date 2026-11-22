@@ -4327,7 +4327,11 @@ the CLI printed `no capacity right now; you have not been charged`.
    `no_cpu` when a host had the memory and the pool room but was already
    committed past 1.5 guest vCPUs per physical core, `no_own_host` when
    the account owns its host and that host could not take the machine
-   (below), and `no_capacity` for every other full fleet.
+   (below), `no_runtime_host` when the project is an erofs one and no
+   ready host names the `erofs` feature with an image for its arch
+   (DECISIONS I-1464: publish one with `repose-admin base publish
+   --format erofs`, or switch a host that runs erofs guests; waiting does
+   not clear it), and `no_capacity` for every other full fleet.
 2. `repose-admin hosts list`: no host is `ready` with free memory above
    the reserve for the class, pool room for the volume, and cores for the
    class's guest vCPUs. Draining, unreachable and stale-heartbeat hosts

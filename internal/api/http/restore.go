@@ -296,8 +296,8 @@ func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, sr
 	if err != nil {
 		return uuid.Nil, err
 	}
-	_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, base_version, config_revision_id, personal_opt_out, multiplexer, disk_held_bytes) values ($1, $2, $3, $4, $5, $6, 'stopped', $7, $8, $9, $10, $11, $12, $13, $14)`,
-		newID, u.ID, name, Slug(name), remote, class, src.VolumeBytes, src.TZ, src.AgentDefault, src.BaseVersion, rid, src.PersonalOptOut, mux, src.HeldBytes())
+	_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, base_version, config_revision_id, personal_opt_out, multiplexer, disk_held_bytes, guest_runtime) values ($1, $2, $3, $4, $5, $6, 'stopped', $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		newID, u.ID, name, Slug(name), remote, class, src.VolumeBytes, src.TZ, src.AgentDefault, src.BaseVersion, rid, src.PersonalOptOut, mux, src.HeldBytes(), store.NormalizeRuntime(src.GuestRuntime))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
