@@ -624,6 +624,51 @@ $restart
 end=$(date +%s.%N)
 say "event=updated from=${current:-none} to=$version seconds=$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.2f", b - a }')"
 REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-images-volume <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# The base image cache on its own thin volume (DECISIONS I-1494): hostd's
+# --images-dir, /var/lib/repose/images, holds up to two bundles and a
+# download in progress (I-1478's rotation), about 3 GB each for arm64, and
+# the appliance's 2 GiB root cannot hold one (the first create on a Mac
+# failed with "no space left on device"). After the pool is active and
+# before hostd: make vg-guests/images once, 16 GiB thin, ext4, and mount
+# it. Every step is skipped when already done.
+set -euo pipefail
+vg="vg-guests"
+lv=images
+size=${REPOSE_IMAGES_SIZE:-16G}
+dir=/var/lib/repose/images
+say() { echo "repose-images-volume: $*"; }
+
+if ! lvs "$vg/$lv" >/dev/null 2>&1; then
+  lvcreate -q -y -V "$size" -T "$vg/thin" -n "$lv"
+  udevadm settle --timeout 30 || true
+  mkfs.ext4 -q -L repose-images -E lazy_itable_init=1 "/dev/$vg/$lv"
+  say "event=volume_created size=$size"
+fi
+if [ "$(lvs --noheadings -o lv_active "$vg/$lv" | tr -d ' ')" != active ]; then
+  lvchange -ay "$vg/$lv"
+fi
+mkdir -p "$dir"
+if mountpoint -q "$dir"; then
+  say "event=volume_mounted_already"
+else
+  # A cache written to the root before this volume existed is moved in,
+  # not hidden under the mount.
+  if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+    tmp=$(mktemp -d /run/repose-images.XXXXXX)
+    mount -o noatime,discard "/dev/$vg/$lv" "$tmp"
+    cp -a "$dir"/. "$tmp"/
+    umount "$tmp"
+    rmdir "$tmp"
+    find "$dir" -mindepth 1 -delete
+    say "event=cache_moved"
+  fi
+  mount -o noatime,discard "/dev/$vg/$lv" "$dir"
+  say "event=volume_mounted"
+fi
+chmod 0755 "$dir"
+REPOSE_HOST_FILE
   install_file 0755 /usr/local/lib/repose/repose-launcher-join <<'REPOSE_HOST_FILE'
 #!/bin/bash
 # The join bundle (hostmgr.JoinBundle, docs/interfaces/api.md): one
@@ -793,8 +838,8 @@ REPOSE_HOST_FILE
 # update included, does not stop them, and hostd reconciles them at start.
 [Unit]
 Description=repose hostd: runs tenants' guests on this host
-Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-nftables.service
-After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service lvm2-monitor.service
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service lvm2-monitor.service
 
 [Service]
 EnvironmentFile=/etc/repose/hostd.env
@@ -926,6 +971,23 @@ Unit=repose-hostd-update.service
 
 [Install]
 WantedBy=timers.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-images-volume.service <<'REPOSE_HOST_FILE'
+# hostd's base image cache on vg-guests/images (DECISIONS I-1494).
+[Unit]
+Description=Mount the base image cache volume on /var/lib/repose/images
+After=repose-guest-pool.service repose-mac-grow.service
+Wants=repose-guest-pool.service
+Before=hostd.service
+ConditionPathExists=!/run/repose/pool-hold
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-images-volume
+
+[Install]
+WantedBy=multi-user.target
 REPOSE_HOST_FILE
   install_file 0644 /etc/systemd/system/repose-launcher-join.service <<'REPOSE_HOST_FILE'
 [Unit]
@@ -1493,7 +1555,7 @@ fi
 
 # ---- the units -----------------------------------------------------------------
 units=(systemd-networkd.service repose-nftables.service repose-fault-around.service
-  repose-guests-slice.service repose-guest-pool.service repose-launcher-join.service
+  repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service
   repose-host-net.service repose-register.service hostd.service
   repose-snapshot.timer repose-hostd-update.timer)
 if [ "$dry" = 1 ]; then
@@ -1510,11 +1572,11 @@ else
     esac
   done
   systemctl start repose-fault-around.service || say "warning: fault-around could not be set (no debugfs?); see docs/ops for I-1040"
-  systemctl start repose-guests-slice.service repose-guest-pool.service repose-launcher-join.service repose-host-net.service
+  systemctl start repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service repose-host-net.service
   systemctl start --no-block repose-register.service
   restart_hostd=0
   for f in "${changed[@]}"; do
-    case $f in /usr/local/bin/hostd | /etc/repose/hostd.env | /etc/repose/api-ca.pem) restart_hostd=1 ;; esac
+    case $f in /usr/local/bin/hostd | /etc/repose/hostd.env | /etc/repose/api-ca.pem | /etc/systemd/system/hostd.service) restart_hostd=1 ;; esac
   done
   if [ "$restart_hostd" = 1 ] && systemctl is-active -q hostd.service; then
     systemctl restart hostd.service

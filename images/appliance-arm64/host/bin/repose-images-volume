@@ -1,0 +1,43 @@
+#!/bin/bash
+# The base image cache on its own thin volume (DECISIONS I-1494): hostd's
+# --images-dir, /var/lib/repose/images, holds up to two bundles and a
+# download in progress (I-1478's rotation), about 3 GB each for arm64, and
+# the appliance's 2 GiB root cannot hold one (the first create on a Mac
+# failed with "no space left on device"). After the pool is active and
+# before hostd: make vg-guests/images once, 16 GiB thin, ext4, and mount
+# it. Every step is skipped when already done.
+set -euo pipefail
+vg="vg-guests"
+lv=images
+size=${REPOSE_IMAGES_SIZE:-16G}
+dir=/var/lib/repose/images
+say() { echo "repose-images-volume: $*"; }
+
+if ! lvs "$vg/$lv" >/dev/null 2>&1; then
+  lvcreate -q -y -V "$size" -T "$vg/thin" -n "$lv"
+  udevadm settle --timeout 30 || true
+  mkfs.ext4 -q -L repose-images -E lazy_itable_init=1 "/dev/$vg/$lv"
+  say "event=volume_created size=$size"
+fi
+if [ "$(lvs --noheadings -o lv_active "$vg/$lv" | tr -d ' ')" != active ]; then
+  lvchange -ay "$vg/$lv"
+fi
+mkdir -p "$dir"
+if mountpoint -q "$dir"; then
+  say "event=volume_mounted_already"
+else
+  # A cache written to the root before this volume existed is moved in,
+  # not hidden under the mount.
+  if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+    tmp=$(mktemp -d /run/repose-images.XXXXXX)
+    mount -o noatime,discard "/dev/$vg/$lv" "$tmp"
+    cp -a "$dir"/. "$tmp"/
+    umount "$tmp"
+    rmdir "$tmp"
+    find "$dir" -mindepth 1 -delete
+    say "event=cache_moved"
+  fi
+  mount -o noatime,discard "/dev/$vg/$lv" "$dir"
+  say "event=volume_mounted"
+fi
+chmod 0755 "$dir"

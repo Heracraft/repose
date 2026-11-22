@@ -175,8 +175,20 @@ chroot "$root" systemctl enable systemd-networkd.service systemd-resolved.servic
   hostd.service repose-guests-slice.service repose-guest-pool.service repose-host-net.service \
   repose-launcher-join.service repose-register.service repose-guest-park.service \
   repose-snapshot.timer repose-hostd-update.timer repose-fault-around.service repose-nftables.service \
-  repose-guest-vg-init.service repose-mac-grow.service repose-mac-trim.service fstrim.timer >/dev/null
+  repose-guest-vg-init.service repose-mac-grow.service repose-mac-trim.service repose-images-volume.service \
+  fstrim.timer >/dev/null
 chroot "$root" systemctl disable nftables.service >/dev/null 2>&1 || true
+# hostd's image cache is never on the 2 GiB root (I-1494): the volume's
+# unit is enabled, mounts the cache directory, and hostd waits for it.
+units=$root/etc/systemd/system
+if ! { [ -L "$units/multi-user.target.wants/repose-images-volume.service" ] &&
+  grep -q '^dir=/var/lib/repose/images$' "$root/usr/local/lib/repose/repose-images-volume" &&
+  grep -q '^After=.*repose-images-volume.service' "$units/hostd.service" &&
+  grep -q '^Wants=.*repose-images-volume.service' "$units/hostd.service" &&
+  grep -q -- '--images-dir /var/lib/repose/images' "$units/hostd.service"; }; then
+  echo "build.sh: hostd's --images-dir would be on the root partition: repose-images-volume is not enabled, not mounting /var/lib/repose/images, or not before hostd" >&2
+  exit 1
+fi
 rm -rf "$root"/var/lib/apt/lists/* "$root"/var/cache/apt/* "$root"/var/log/*.log "$root"/tmp/*
 
 # ---- the ESP --------------------------------------------------------------
