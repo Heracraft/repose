@@ -7,7 +7,7 @@ order: 29
 
 Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing#own-hardware) ($10 a month) it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
 
-Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. `repose run --host repose` makes one on repose's servers instead, `repose run --host mac-mini` names your hardware, and a project made through the [API](/docs/api#where-a-project-runs) says the same with `placement`. Repose's servers need a plan that buys memory there. A machine stays on its host for life; it moves only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore).
+Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. `repose run --host repose` makes one on repose's servers instead, `repose run --host mac-mini` names your hardware, and a project made through the [API](/docs/api#where-a-project-runs) says the same with `placement`. Repose's servers need a plan that buys memory there. A machine stays on its host for life. It does not move to repose's servers or to another host, and a machine on repose's servers does not move to your hardware: a snapshot is only readable where it was taken.
 
 ## What a Mac mini needs
 
@@ -140,7 +140,7 @@ repose host rm mac-mini
 
 Repose asks once, naming how many snapshots the host keeps (`This deletes the 2 snapshots kept on it; repose has no copy.`), then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
 
-A host that is answering and still holds machines is not removed. A machine moves hardware only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore) elsewhere, so `repose rm` each of them first, and `repose host rm` then tells you which are in the way.
+A host that is answering and still holds machines is not removed. A machine does not move to other hardware, so `repose rm` each of them first (keep in your git remote anything you would miss), and `repose host rm` then tells you which are in the way.
 
 A host that has **stopped** answering is removed, machines and all, because the alternative is a dead end: the machines on it cannot be destroyed while repose still believes the host may come back, so refusing to remove the host would leave you unable to do either, or to add a replacement. The question says how many machines go with it and that their disks were on that host; `--yes` skips it, as everywhere. Afterwards the machines are still listed and `repose rm` finishes each of them without the host. If the Mac was only asleep, turn it on and wait for `online` instead: once a host is removed it cannot rejoin, and whatever was on its disk is gone.
 
