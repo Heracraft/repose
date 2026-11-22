@@ -14,7 +14,7 @@
 	import type { Snippet } from 'svelte';
 
 	const NAME = {
-		machine: 'your cloud machine',
+		machine: 'your sandbox',
 		laptop: 'your laptop',
 		snapshots: 'snapshots'
 	} as const;

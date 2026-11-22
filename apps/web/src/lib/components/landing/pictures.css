@@ -53,6 +53,12 @@
 	--pic-faint: var(--hk-text-3);
 	--pic-stop: var(--hk-err);
 	--pic-add: var(--hk-ok);
+	--tab-idle-ink: var(--hk-text-2);
+	--was-ink: var(--hk-text-3);
+	--own-btn-bg: var(--hk-surface);
+	--own-btn-border: var(--hk-border-strong);
+	--own-btn-hover-bg: var(--hk-surface-2);
+	--own-btn-hover-border: var(--hk-border-strong);
 
 	/* The terminals' one palette (Ready, Localhost's tmux, the Browser's
 	   log, the Editor's nvim): the captures' own colours mapped by role
@@ -84,31 +90,37 @@
 		--shot-in: 12px;
 	}
 }
-/* Dark: the same ladder, each step a little lighter than the one under
-   it, with a cool sheen on the stage's top-left. */
+/* Dark: 3-tier luminance ladder (#09090b canvas -> #0f1014 stage -> #171920 surface)
+   with crisp hairline elevation and cool radial sheen so dark mode reads art-directed. */
 @media (prefers-color-scheme: dark) {
 	:root:not(.light):not([data-theme='light']) .landing {
-		--stage: #0e0e10;
-		--stage-edge: rgb(255 255 255 / 0.08);
-		--stage-sheen: rgb(147 167 208 / 0.07);
-		--stage-top: rgb(255 255 255 / 0.06);
-		--sunken: #141416;
-		--surface: #18181b;
-		--rule: #26262a;
-		--rule-strong: #3f3f46;
-		--sh-accent: #7f95c4;
+		--stage: #0f1014;
+		--stage-edge: rgb(255 255 255 / 0.1);
+		--stage-sheen: rgb(147 167 208 / 0.11);
+		--stage-top: rgb(255 255 255 / 0.08);
+		--sunken: #13151b;
+		--surface: #181a21;
+		--rule: #282a34;
+		--rule-strong: #3e414f;
+		--sh-accent: #8da5d4;
 		--pic-accent: var(--color-blue-400);
-		--sh-grey: #71717a;
-		--sh-light: #52525b;
-		--sh-ink: #a1a1aa;
-		--pic-ink: #e4e4e7;
-		--pic-dim: #a1a1aa;
-		--t-bg: #141416;
-		--t-bg-2: #111113;
-		--t-sel: #212126;
-		--t-fg: #d4d4d8;
-		--t-dim: #8b8b94;
-		--t-faint: #5f5f68;
+		--sh-grey: #858894;
+		--sh-light: #5c5f6b;
+		--sh-ink: #b4b7c2;
+		--pic-ink: #ededf0;
+		--pic-dim: #b4b7c2;
+		--tab-idle-ink: #b4b8c8;
+		--was-ink: #a1a6b8;
+		--own-btn-bg: #1b1e28;
+		--own-btn-border: #454a5c;
+		--own-btn-hover-bg: #232734;
+		--own-btn-hover-border: #5c6278;
+		--t-bg: #14151b;
+		--t-bg-2: #101116;
+		--t-sel: #22242d;
+		--t-fg: #e2e4ea;
+		--t-dim: #9ea2b0;
+		--t-faint: #6c707e;
 		--t-blue: #93a7d0;
 		--t-cyan: #8cbcc4;
 		--t-green: #9dc28f;
@@ -116,34 +128,40 @@
 		--t-orange: #d9a172;
 		--t-magenta: #bba2d6;
 		--t-red: #e48c86;
-		--t-bar: #1e1e22;
-		--t-bar-fg: #a1a1aa;
+		--t-bar: #1e2028;
+		--t-bar-fg: #b4b7c2;
 	}
 }
 :root[data-theme='dark'] .landing,
 :root.dark .landing,
 .landing .field-stage {
-	--stage: #0e0e10;
-	--stage-edge: rgb(255 255 255 / 0.08);
-	--stage-sheen: rgb(147 167 208 / 0.07);
-	--stage-top: rgb(255 255 255 / 0.06);
-	--sunken: #141416;
-	--surface: #18181b;
-	--rule: #26262a;
-	--rule-strong: #3f3f46;
-	--sh-accent: #7f95c4;
+	--stage: #0f1014;
+	--stage-edge: rgb(255 255 255 / 0.1);
+	--stage-sheen: rgb(147 167 208 / 0.11);
+	--stage-top: rgb(255 255 255 / 0.08);
+	--sunken: #13151b;
+	--surface: #181a21;
+	--rule: #282a34;
+	--rule-strong: #3e414f;
+	--sh-accent: #8da5d4;
 	--pic-accent: var(--color-blue-400);
-	--sh-grey: #71717a;
-	--sh-light: #52525b;
-	--sh-ink: #a1a1aa;
-	--pic-ink: #e4e4e7;
-	--pic-dim: #a1a1aa;
-	--t-bg: #141416;
-	--t-bg-2: #111113;
-	--t-sel: #212126;
-	--t-fg: #d4d4d8;
-	--t-dim: #8b8b94;
-	--t-faint: #5f5f68;
+	--sh-grey: #858894;
+	--sh-light: #5c5f6b;
+	--sh-ink: #b4b7c2;
+	--pic-ink: #ededf0;
+	--pic-dim: #b4b7c2;
+	--tab-idle-ink: #b4b8c8;
+	--was-ink: #a1a6b8;
+	--own-btn-bg: #1b1e28;
+	--own-btn-border: #454a5c;
+	--own-btn-hover-bg: #232734;
+	--own-btn-hover-border: #5c6278;
+	--t-bg: #14151b;
+	--t-bg-2: #101116;
+	--t-sel: #22242d;
+	--t-fg: #e2e4ea;
+	--t-dim: #9ea2b0;
+	--t-faint: #6c707e;
 	--t-blue: #93a7d0;
 	--t-cyan: #8cbcc4;
 	--t-green: #9dc28f;
@@ -151,23 +169,20 @@
 	--t-orange: #d9a172;
 	--t-magenta: #bba2d6;
 	--t-red: #e48c86;
-	--t-bar: #1e1e22;
-	--t-bar-fg: #a1a1aa;
+	--t-bar: #1e2028;
+	--t-bar-fg: #b4b7c2;
 }
-/* The wreck picture's field (the hero's until I-1167) is one dark
-   plate in both schemes, the page's one moment of contrast: under the
-   picture's dark palette (above) it takes the kit's dark text, state
-   and code colours, so the picture draws as it does on the dark page. In the dark scheme the plate stands a
-   step lighter than the page, with a lit edge. */
+/* Unified full-bleed dark chapter for Permissions / Safety: crisp slate-black
+   in light mode, elevated slate-charcoal with lit top/bottom rules in dark mode. */
 .landing .field-stage {
 	color-scheme: dark;
 	--hk-text: #f4f4f5;
-	--hk-text-2: #a1a1aa;
-	--hk-text-3: #8b8b94;
-	--hk-text-4: #5f5f68;
-	--hk-border: #27272a;
-	--hk-border-strong: #3f3f46;
-	--hk-hairline: #1c1c1f;
+	--hk-text-2: #cdd0dc;
+	--hk-text-3: #a6aab9;
+	--hk-text-4: #787d8f;
+	--hk-border: #2a2d38;
+	--hk-border-strong: #424654;
+	--hk-hairline: #1f212a;
 	--hk-ok: #34d399;
 	--hk-ok-dot: #34d399;
 	--hk-err: #f87171;
@@ -175,14 +190,15 @@
 	--ink-muted: var(--hk-text-2);
 	--ink-faint: var(--hk-text-3);
 	--control-edge: var(--hk-text-4);
-	--pic-faint: var(--hk-text-3);
-	--pic-stop: var(--hk-err);
+	--pic-dim: #b8bcc9;
+	--pic-faint: #a1a6b8;
+	--pic-stop: #fb7185;
 	--pic-add: var(--hk-ok);
 	--color-emerald-500: var(--hk-ok-dot);
-	--stage-hero: #101012;
-	--stage-hero-edge: #101012;
-	--stage-dot: #2a2a2f;
-	--stage-sheen: rgb(147 167 208 / 0.1);
+	--stage-hero: #0e1015;
+	--stage-hero-edge: #242733;
+	--stage-dot: #2b2e3b;
+	--stage-sheen: rgb(147 167 208 / 0.14);
 	color: var(--hk-text);
 }
 .landing .field-stage .hero-pic {
@@ -190,16 +206,16 @@
 }
 @media (prefers-color-scheme: dark) {
 	:root:not(.light):not([data-theme='light']) .landing .field-stage {
-		--stage-hero: #131316;
-		--stage-hero-edge: #2a2a2f;
-		--stage-dot: #2c2c31;
+		--stage-hero: #131620;
+		--stage-hero-edge: #303445;
+		--stage-dot: #2f3444;
 	}
 }
 :root[data-theme='dark'] .landing .field-stage,
 :root.dark .landing .field-stage {
-	--stage-hero: #131316;
-	--stage-hero-edge: #2a2a2f;
-	--stage-dot: #2c2c31;
+	--stage-hero: #131620;
+	--stage-hero-edge: #303445;
+	--stage-dot: #2f3444;
 }
 
 /* ---------- The stage ----------
@@ -304,41 +320,58 @@
 	color: var(--surface);
 }
 
-/* ---------- The two dark moments (landing.css, "band--dark") ----------
-
-   The hero's field and the install band: the wreck's old plate, its dark
-   tokens run to the window's edges by a spread fill that adds no scroll
-   width. The colours live here with the rest of the landing's palette
-   (I-843); the layout that uses them is in routes/landing.css. */
+/* Unified full-bleed dark chapter for Permissions / Safety (header + Wreck stage together). */
 .landing .band.band--dark {
-	background: var(--stage-hero);
+	background:
+		radial-gradient(60% 70% at 50% 0%, var(--stage-sheen), transparent 72%),
+		var(--stage-hero);
 	box-shadow: 0 0 0 100vmax var(--stage-hero);
 	clip-path: inset(0 -100vmax);
-	--rule-band: #2a2a2f;
-	--rule-in: #1f1f23;
+	--rule-band: var(--stage-hero-edge);
+	--rule-in: var(--hk-border);
 	color: var(--hk-text);
 	padding-bottom: var(--field-y);
+}
+.landing .band.band--dark > .fig {
+	border-top: 0;
+}
+.landing .band.band--dark > .fig > .stage {
+	padding-block: 0.5rem 0;
+	border-top: 0;
+	border-image: none;
+	box-shadow: none;
+	clip-path: none;
+	background:
+		radial-gradient(50% 100% at 50% 0%, transparent 45%, var(--stage-hero) 100%),
+		radial-gradient(circle at 1px 1px, var(--stage-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
+		transparent;
 }
 .landing .band--dark .steps .code-copy {
 	background: #18181b;
 }
 
-/* ---------- The hero's field ----------
-
-   The stage's tone across the sheet with the 16px dot grid the wreck's
-   field carried; the dot's colour pairs the OS rule with the switch's. */
+/* ---------- The hero's field ---------- */
 .landing .hero-stage {
 	background:
+		radial-gradient(70% 80% at 65% 20%, var(--stage-sheen), transparent 70%),
 		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
 		var(--stage);
 	--hero-dot: #dcdce0;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
-		--hero-dot: #232327;
+		background:
+			radial-gradient(66% 54% at 50% 48%, rgb(96 165 250 / 0.12), transparent 70%),
+			radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
+			#09090c;
+		--hero-dot: #232634;
 	}
 }
 :root[data-theme='dark'] .landing .hero-stage,
 :root.dark .landing .hero-stage {
-	--hero-dot: #232327;
+	background:
+		radial-gradient(66% 54% at 50% 48%, rgb(96 165 250 / 0.12), transparent 70%),
+		radial-gradient(circle at 1px 1px, var(--hero-dot) 1px, transparent 1.5px) 0 0 / 16px 16px,
+		#09090c;
+	--hero-dot: #232634;
 }
