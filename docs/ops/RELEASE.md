@@ -226,8 +226,10 @@ nothing is lost by waiting. This was written after the release of
      `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
      `200` for every URL the CLI fetches on a customer's machine (the
      appliance image the batch pins and its checksum, vfkit, the latest
-     CLI release's six assets, `install.sh`) and exits 1 naming the one
-     that does not (DECISIONS I-1398).
+     CLI release's six assets, `install.sh`) and what hosts fetch (the
+     newest `guest-*` release's nine files and the `hostd-stable`
+     manifest, I-1500), and exits 1 naming the one that does not
+     (DECISIONS I-1398).
      `DATABASE_URL` is not a detail of convenience and "a real Postgres"
      was the wrong way to say it: `internal/db/testdb` starts a throwaway
      cluster **per test process** when the variable is unset, which is
@@ -373,7 +375,7 @@ else integrated with it.
 4. **Ship the rest**, in this order when present: `base` publish (the rev
    is the pushed main commit), `cli` tag (the next `v0.1.N`; **every
    artefact URL the CLI hard-codes must answer 200 anonymously before the
-   tag**: `ops/dev/release-assets --cli none` on the commit being tagged,
+   tag**: `ops/dev/release-assets --cli none --guest none --hostd none` on the commit being tagged,
    and the sign job runs the same check and leaves the draft unpublished
    when it fails; after the job, `ops/dev/release-assets --cli v0.1.N`
    says the new release is what `releases/latest` resolves to and that

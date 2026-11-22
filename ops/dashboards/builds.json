@@ -1,7 +1,7 @@
 {
   "uid": "repose-builds",
-  "title": "repose / Builds",
-  "description": "Every guest system closure is built on the project's host (DECISIONS R4-4). A build that fails is a user watching a stream of Nix output.",
+  "title": "repose / Builds (Nix hosts only)",
+  "description": "Nix hosts only (I-1500): erofs guests apply a menu and build nothing, so every panel here reads Nix guests. Every Nix guest system closure is built on the project's host (DECISIONS R4-4). A build that fails is a user watching a stream of Nix output.",
   "tags": [
     "repose"
   ],

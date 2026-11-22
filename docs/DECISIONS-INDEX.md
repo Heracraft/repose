@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1072 entries.
+1073 entries.
 
 ## Scope
 
@@ -1104,3 +1104,4 @@ pointer, not a summary.
 - **I-1480** An erofs guest boots `vda` = the bundle's `rootfs.erofs` (`readonly=on,id=vda`) and `vdb` = its thin volume (`direct=on,id=vdb` with the class's limits), with no store share and no `init=`; `vm.resize-disk` names `vdb`; its unit binds its one bundle read-only into an empty images directory (nonix-hostd, 2026-11-22) — L39023
 - **I-1482** hostd sends `ApplyMenu` with `replay_after_base_upgrade` after every erofs boot that has a menu, and guestd decides from `/run/repose/rw/.base-upgraded` whether to install; a base bump fetches before it touches the guest and records the new base on the boot's first state write (nonix-hostd, 2026-11-22) — L39033
 - **I-1484** `hostd --nix-mode=off`, or no `nix` on PATH, constructs no Nix builder, GC roots or store view, names no `nix` feature and answers `nix_unsupported` for a Nix guest; reconcile marks an erofs guest whose bundle is missing instead of failing (nonix-hostd, 2026-11-22) — L39040
+- **I-1500** The Nix-only alerts skip a host whose `repose_host_info` says `nix_mode="off"`; two base image alerts, a Base images row and `release-assets` checking `guest-<version>` and `hostd-stable` cover the erofs side (nonix-obs-cleanup, 2026-11-22) — L39046

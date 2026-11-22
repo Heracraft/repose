@@ -778,7 +778,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "1 - ( node_filesystem_avail_bytes{job=\"hosts\",mountpoint=\"/\",fstype!~\"tmpfs|ramfs\"} / node_filesystem_size_bytes{job=\"hosts\",mountpoint=\"/\",fstype!~\"tmpfs|ramfs\"} )"
+              expr: "( 1 - ( node_filesystem_avail_bytes{job=\"hosts\",mountpoint=\"/\",fstype!~\"tmpfs|ramfs\"} / node_filesystem_size_bytes{job=\"hosts\",mountpoint=\"/\",fstype!~\"tmpfs|ramfs\"} ) > 0.85 ) unless on (host_id) (repose_host_info{nix_mode=\"off\"} == 1)"
               instant: true
               range: false
               intervalMs: 1000
@@ -815,7 +815,7 @@ groups:
                   evaluator:
                     type: gt
                     params:
-                      - 0.85
+                      - 0
                   operator:
                     type: and
                   query:
@@ -922,7 +922,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "repose_host_builds_running >= 2 unless on (instance) sum by (instance) (increase(repose_host_build_duration_seconds_count[45m])) > 0"
+              expr: "( repose_host_builds_running >= 2 unless on (instance) sum by (instance) (increase(repose_host_build_duration_seconds_count[45m])) > 0 ) unless on (host_id) (repose_host_info{nix_mode=\"off\"} == 1)"
               instant: true
               range: false
               intervalMs: 1000
@@ -960,6 +960,150 @@ groups:
                     type: gt
                     params:
                       - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-baseimagefetchfailed
+        title: BaseImageFetchFailed
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "base image fetches on {{ $labels.host_id }} are failing ({{ $labels.reason }})"
+          description: "{{ if $values.B }}{{ $values.B.Value | printf \"%.0f\" }}{{ end }} failed in 30 minutes. A create or start on a base this host does not hold fails until a fetch succeeds."
+          runbook: "docs/ops/RUNBOOK.md#baseimagefetchfailed"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (host_id, reason) (increase(repose_host_base_image_fetch_errors_total[30m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-baseimagediskhigh
+        title: BaseImageDiskHigh
+        condition: C
+        for: 1h
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "the base image cache on {{ $labels.host_id }} holds over 8 GiB"
+          description: "{{ if $values.B }}{{ $values.B.Value | humanize1024 }}{{ end }}B in the cache. GC keeps every base a guest names, so old bases stay until their guests restart on the new one."
+          runbook: "docs/ops/RUNBOOK.md#baseimagediskhigh"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_host_base_image_bytes
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 8589934592
                   operator:
                     type: and
                   query:

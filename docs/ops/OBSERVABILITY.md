@@ -78,6 +78,24 @@ above their base, which is the quantity a plan's allowance is in
 (I-1128). None of the three carries a guest id; which guest is in the
 `burst` log line.
 
+Base images (DECISIONS I-1478, I-1500). A host that runs erofs guests
+keeps their base bundles in `/var/lib/repose/images/`, and hostd exports
+the cache and what kind of host it is. The Base images row of "Host
+capacity" reads the first four. No series carries a guest id, a path
+inside a guest or a URL; the fetch URL is in neither a label nor a log
+field.
+
+| Series | Labels | What it is |
+|---|---|---|
+| `repose_host_info` | `nix_mode` (`on`, `off`), `erofs` (`on`, `off`), `version` | 1 for each hostd. `nix_mode` is `--nix-mode`; `erofs` is on when `--images-dir` is set. `StoreFull` and `BuildQueueStuck` skip a host with `nix_mode="off"` |
+| `repose_host_base_image_bytes` | none | bytes the cache holds on disk. Over 8 GiB for an hour is `BaseImageDiskHigh` |
+| `repose_host_base_image_versions` | none | bundles in the cache, one per base version and arch |
+| `repose_host_base_image_fetch_duration_seconds` | none (histogram) | one bundle's whole fetch that finished, its three files together; a start on a base the host does not hold waits for it |
+| `repose_host_base_image_fetch_errors_total` | `reason` (`checksum`, `status`, `stall`, `network`, `disk`) | file fetches that failed. Any increase in 30 minutes is `BaseImageFetchFailed` |
+
+The "Builds" dashboard and the store panels read Nix guests only: an
+erofs guest applies a menu and builds nothing.
+
 Is the kernel one you can trust (DECISIONS I-1010)?
 `repose_host_kernel_tainted{reason}` is the kernel's own latched verdict:
 `die`, `machine_check` and `bad_page` page as `HostKernelTainted`, and

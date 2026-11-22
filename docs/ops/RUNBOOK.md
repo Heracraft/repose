@@ -1077,6 +1077,41 @@ Two builds running on a host with no completion for 45 minutes.
 3. If both builds are legitimately slow (big closures, cold cache), wait;
    the alert clears on completion. Consider the central builder (deferred).
 
+## BaseImageFetchFailed
+
+A host failed to fetch a file of an erofs base bundle in the last 30
+minutes (I-1478, I-1500). A create or start on a base the host does not
+hold waits for the fetch and fails with it; guests already on a cached
+base are not affected.
+
+1. The `reason` label says where to look. `checksum`: the published file
+   is not the one the base row names; the bundle was re-uploaded or the
+   row is wrong, so compare the release's `SHA256SUMS` with the row.
+   `status`: the release or a file in it is missing; run
+   `ops/dev/release-assets --guest <version>`. `stall` or `network`: the
+   host's path to GitHub. `disk`: the images directory cannot be written;
+   see BaseImageDiskHigh and `df -h /var/lib/repose/images`.
+2. On the host: `journalctl -u hostd | grep base_image_fetch` names the
+   file, the reason and each retry.
+3. A fetch that failed is retried on the next command that needs the
+   base. The alert clears 30 minutes after the last failure.
+
+## BaseImageDiskHigh
+
+The erofs base image cache on a host has held over 8 GiB for an hour
+(I-1500). Two or three bundles of about 1.5 GB each are normal during a
+base change; more means GC is not removing bundles.
+
+1. `ls -la /var/lib/repose/images/` on the host. Each `<version>-<arch>/`
+   directory is one bundle; a `.tmp-*` directory older than a day is a
+   fetch GC should have removed.
+2. GC keeps every base a guest names, in any state, and the newest per
+   arch. Old bases held by stopped guests stay until those guests start
+   on the new base. That is correct, not a fault.
+3. `journalctl -u hostd | grep base_image_gc`: a `base image not removed`
+   line names the version and the error. GC refuses to run when the
+   guest table cannot be read, so look for that first.
+
 ## GatewayAuthSpike
 
 More than one auth failure per second at the gateway.
