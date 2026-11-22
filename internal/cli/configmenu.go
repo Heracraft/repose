@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/heracraft/repose/internal/menu"
 )
 
 // MenuItem is one element of a menu selection (docs/interfaces/api.md
@@ -153,10 +151,10 @@ func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string)
 		switch {
 		case inCatalog[name]:
 			it = MenuItem{ID: name}
-		case menu.ValidPackage(name):
+		case validMenuPackage(project, name):
 			it = MenuItem{Package: name}
 		default:
-			return exitf(ExitUsage, "%q is not a nixpkgs attribute name (letters, digits, _ - + and dots, like gcc or python312Packages.black).", arg)
+			return badPackageName(project, arg)
 		}
 		if have[name] {
 			already = append(already, name)
@@ -250,13 +248,33 @@ func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuI
 		return err
 	}
 	if opID == "" {
+		if isErofs(project) {
+			_, _ = fmt.Fprintf(e.Out, "%s %s is still active.\n", done, shortRev(revisionID))
+			return nil
+		}
 		_, _ = fmt.Fprintf(e.Out, "%s Nothing to build; %s is still active.\n", done, shortRev(revisionID))
 		return nil
 	}
-	_, _ = fmt.Fprintf(e.Out, "%s Building revision %s ...\n", done, shortRev(revisionID))
+	if isErofs(project) {
+		// Nothing is built: the machine installs the items, and the
+		// steps are its own lines (DECISIONS I-1488).
+		_, _ = fmt.Fprintln(e.Out, done)
+	} else {
+		_, _ = fmt.Fprintf(e.Out, "%s Building revision %s ...\n", done, shortRev(revisionID))
+	}
 	op, pr, err := waitConfigOp(ctx, e, project, opID)
 	if err != nil {
 		return err
+	}
+	if op.State == "error" && isErofs(project) {
+		// The items before the one that failed stay installed, so
+		// "nothing changed" would be false; the machine's line names
+		// the item and why.
+		_, _ = fmt.Fprintf(e.Out, "error: %s\n", firstLine(op.Error.Message))
+		if rest := strings.Trim(restAfterFirstLine(op.Error.Message), "\n"); rest != "" {
+			_, _ = fmt.Fprintf(e.Out, "\n%s\n", rest)
+		}
+		return silent(ExitBuildFailed)
 	}
 	if op.State == "error" {
 		summary := genLocRe.ReplaceAllString(firstLine(op.Error.Message), "")

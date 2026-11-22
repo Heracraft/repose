@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// recipeFile is guestd's recipe file (PR 4, DECISIONS I-1476). Until it
+// recipeFile is guestd's recipe file (PR 4, ws/nonix-guestd). Until it
 // is on this branch the test reads the copy in testdata, and says so.
 var recipeFile = filepath.Join("..", "guestd", "config", "recipes.yaml")
 

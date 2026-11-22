@@ -23,7 +23,7 @@ repose run --agent codex -p "port the build scripts to bun"
 
 All five get new versions with platform updates.
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. An agent gets the checkout's [dev environment](/docs/machine#projects-with-a-flake-nix) however it was started.
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. An agent gets the checkout's [dev environment](/docs/machine#the-projects-dev-environment) however it was started.
 
 ## Permissions
 
@@ -197,7 +197,7 @@ Gemini CLI on the machine doesn't ask whether you trust a folder. Turning `secur
 
 ## What agents are told about the machine
 
-repose gives every agent on the machine a short guide to it: that the machine is its own and can't reach your laptop, how to install a missing tool and keep it (`repose config add`), where your secrets are and never to print them, and how to reach you. It also points the agent at [/llms.txt](https://repose.run/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. Your own `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are never changed, and what they say comes on top of the guide, which changes only with a platform update. To read the guide, on the machine:
+repose gives every agent on the machine a short guide to it: that the machine is its own Ubuntu machine and can't reach your laptop, how to install a missing tool with `apt-get` or `mise` and what a base update keeps, where your secrets are and never to print them, and how to reach you. It also points the agent at [/llms.txt](https://repose.run/llms.txt), these docs as plain markdown, so a `repose` command it suggests to you is checked against them. Your own `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are never changed, and what they say comes on top of the guide, which changes only with a platform update. To read the guide, on the machine:
 
 ```
 cat /etc/claude-code/CLAUDE.md

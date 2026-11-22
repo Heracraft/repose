@@ -4,7 +4,7 @@
 # the copy then (DECISIONS I-1486).
 
 # How an erofs (Ubuntu 24.04) guest installs each menu catalog entry
-# (DECISIONS I-1476). guestd's ApplyMenu embeds this file; the catalog
+# (PR 4's recipe decision). guestd's ApplyMenu embeds this file; the catalog
 # (internal/menu/catalog.yaml) is what the user picks from, and every
 # catalog id has exactly one recipe here under the same id
 # (TestEveryCatalogEntryHasARecipe holds the two together).

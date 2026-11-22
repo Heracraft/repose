@@ -79,11 +79,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`todo-app: its new system did not boot, so it runs its previous one: ...`** A start, or a reboot for a new base, gave the machine a system that didn't boot. repose booted the one it ran before, so your work is there and the machine runs. The rest of the line is the reason, and `repose logs todo-app --kind console` shows what the failed boot printed. Nothing tries that system again: the next base update, or a change to the configuration, builds a new one.
 
-**`todo-app: a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one`.** A garbage collection run on the machine on an older base deleted store paths repose shares with it and that the new system needs. `repose stop todo-app`, then `repose start todo-app`: the start puts the paths back and switches to the new system.
-
-**`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** The machine's store doesn't show paths the new system needs: the garbage collection above, or a server that no longer has them. The configuration stays queued, and a `repose stop todo-app` then `repose start todo-app` tries the switch again.
-
-**`error while loading shared libraries: libpq.so.5: cannot open shared object file`** from a program you built on the machine. The program names a library by the exact path it had when you compiled it, and a later platform update moved that library. The machine keeps the libraries of the base it runs, so building the program again is the usual fix. To keep the old build, `repose-store-repair ./your-program` on the machine downloads the libraries it names, well under a second each, as long as the machine can reach the internet. If it says the path is empty, `repose stop` and `repose start` the machine, then run it again.
+**`error while loading shared libraries: libpq.so.5: cannot open shared object file`** from a program you built on the machine. The program names a library by the version it had when you compiled it, and a [base update](/docs/machine#base-updates) brought a newer one. Build the program again on the machine.
 
 **`environment is frozen and did not wake; try again shortly`**, on a machine `repose ls` marks `frozen`. The wake failed, not the machine: it is still `running`, with its processes, open files and memory as they were. `repose attach todo-app` asks for the wake again, and so does any other command that reaches the machine. `repose stop todo-app` then `repose start todo-app` is the last resort: the stop ends every process on it ([Frozen machines](/docs/lifecycle#frozen-machines)).
 
@@ -123,8 +119,6 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`Not synced: the machine changed 2 files that your laptop changed too`.** Something on the machine, usually an agent, changed the files the message lists, and your laptop's work changes them too. Commit or move them on the machine, or run `repose sync --stash-machine` to move the machine's uncommitted changes to `git stash` there. Changes at [any other path](/docs/sync#when-the-machine-has-changes-of-its-own) never stop a sync.
 
-**The same message names only `flake.lock`.** The repository has an `.envrc` with `use flake` and no committed `flake.lock`, so your laptop and the machine each wrote one of their own on the first dev shell load. Commit one; [Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix) says how with no Nix on your laptop. Until then `repose sync --stash-machine` is safe, because the next load writes the file again.
-
 **`Not synced: the machine's checkout is in the middle of a git rebase`.** An agent left a merge, rebase, `am`, cherry-pick, revert or bisect unfinished, and the message names which. Finish or abort it on the machine. `repose sync --discard-machine` ends it from here instead and moves the machine's uncommitted changes to `git stash` there.
 
 **`The machine's main has commits that could not be merged with yours`.** An agent committed on the branch, and git couldn't merge its commits with your laptop's cleanly, or they change a file you have uncommitted. The machine is on your laptop's commit, detached, and the branch keeps the agent's commits. Run `git fetch repose`, merge `repose/main` on your laptop, then `repose sync` again.
@@ -141,21 +135,25 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 ## On the machine
 
-**A command isn't found.** The machine names the nixpkgs package that has it and [the two ways to add it](/docs/machine#installing-more). `air is still being installed; try again in a moment` means it's one of your laptop's tools, still arriving in the background.
+**A command isn't found.** Ubuntu names the package that has it, and `sudo apt-get install` adds it ([Installing more](/docs/machine#installing-more)). `air is still being installed; try again in a moment` means it's one of your laptop's tools, still arriving in the background.
 
-**A tool from the project's `flake.nix` is missing.** The [dev shell](/docs/machine#projects-with-a-flake-nix) didn't load. In an agent's window or `repose exec`, Nix's error is above the agent's first screen or the command's output; an untracked `flake.nix` and a dev shell defined only for macOS are the usual causes. In your own shell it loads when you `cd` into the checkout, and a Ctrl-C while it loads keeps it out until you leave the folder and come back. An `.envrc` of your own loads only once you've run `direnv allow` on it.
+**A tool from the project's `.envrc` is missing.** The [dev environment](/docs/machine#the-projects-dev-environment) didn't load. An `.envrc` loads only once it's allowed: repose allows it for agents and `repose exec`, and in your own shell you run `direnv allow` once. A `use flake` line in it fails on the machine; set the tools up with mise or `repose config add` instead.
+
+**A package is missing after a base update.** The machine installs again what you added with `repose config add` and what you installed with `apt-get`, in the background after its first start on the new base, so give it a minute. What lived outside `/home/dev`, Docker's data and the services' data, such as files under `/usr/local` or `/opt`, starts clean ([Base updates](/docs/machine#base-updates)): install it again, or keep it with `repose config add NAME`. A package Ubuntu no longer has can't come back; install what replaced it.
+
+**Your plan counts more disk than `df` on the machine shows.** A deleted file counts until the daily `fstrim` gives its blocks back. `sudo fstrim /home/dev` on the machine does it now.
 
 **The browser view asks for a password.** The machine runs base 2026.09.27.2 or older, whose viewer page ignores the password in the link and asks for it instead. Run `repose ssh`, then `repose-guest-profile desktop start` on the machine: it prints the password to type. The new page comes with the next base update. A CLI at v0.1.20 or older has no `repose browser` at all: [update](/docs/install#update) it.
 
-**A tool from your laptop didn't arrive.** The next `repose run` says so once: `Could not install tinygo: no nixpkgs package has bin/tinygo`. `~/.repose/tools-install.log` on the machine keeps every failure. A tool that failed isn't tried again until its entry on your laptop changes, its version included. `repose scan` says whether the CLI saw it at all.
+**A tool from your laptop didn't arrive.** The next `repose run` says so once, naming the tool. `~/.repose/tools-install.log` on the machine keeps every failure. A tool that failed isn't tried again until its entry on your laptop changes, its version included. `repose scan` says whether the CLI saw it at all.
 
-**A program you installed isn't on `PATH`.** Every package manager's user bin dir is [on `PATH` in every shell](/docs/machine#installing-more), so a program that doesn't resolve was installed outside them: a prefix of your own, a `make install`, or a tool that manages `PATH` from its own shell setup. Add it to `PATH` in `~/.bashrc`, or to [`home.sessionPath`](/docs/config#write-it-in-nix) for every process on the machine; shells already open keep the `PATH` they started with.
+**A program you installed isn't on `PATH`.** Every package manager's user bin dir is [on `PATH` in every shell](/docs/machine#installing-more), so a program that doesn't resolve was installed outside them: a prefix of your own, a `make install`, or a tool that manages `PATH` from its own shell setup. Add it to `PATH` in `~/.bashrc`; shells already open keep the `PATH` they started with.
 
 **Processes get killed, or the machine is slow under load.** It ran out of memory. `sudo dmesg | grep -i killed` names what the kernel stopped, and `repose status` lists what's still listening. Stop what you don't need, or [give the machine more memory](/docs/machine#changing-the-size).
 
 **A secret isn't in a program's environment.** Programs read their environment when they start. Restart the program or the agent, or open a new tmux window.
 
-**`config error` or exit code 10.** The configuration didn't build, so nothing on the machine changed. The message names the problem; `repose logs --kind build` has the full log. Fix it with `repose config edit` or `repose config remove`.
+**`error: NAME failed: ...` or exit code 10 from `repose config add`.** An item didn't install, and the rest of the line is the machine's reason, `E: Unable to locate package` for a name Ubuntu doesn't have. The items before it stay installed. Check the name with `apt-cache search` on the machine, then `repose config add` the right one.
 
 ## Agents
 
@@ -173,8 +171,6 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 **The browser view shows nothing the agent is doing.** An agent session started before September 25, 2026 has a headless browser of its own that the view can't show; restart the agent to switch it over.
 
 **`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing files its background server needs; base 2026.10.05 ships them. `codex --no-daemon` starts it until the machine gets a newer [base](/docs/config#revisions-and-base-updates).
-
-**`bundled bubblewrap digest mismatch` when Codex runs a command.** Base 2026.10.05 ships Codex with a sandbox helper it refuses, and 2026.10.05.1 replaced it. `nix profile add nixpkgs#bubblewrap` on the machine gives Codex a bwrap it takes instead.
 
 **`no server running` on `repose attach` to a herdr project.** Your repose CLI is older than 0.1.31 and attaches to tmux. [Update](/docs/install#update) it.
 
