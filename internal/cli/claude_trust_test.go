@@ -223,7 +223,7 @@ func TestPromptNotTypedIntoTrustDialog(t *testing.T) {
 	// (the script's path) never matches pane_current_command, as when
 	// tmux shows a wrapper's name, and the deadline still checks.
 	defer func(d time.Duration) { paneIdleTimeout = d }(paneIdleTimeout)
-	paneIdleTimeout = 2 * time.Second
+	paneIdleTimeout = 400 * time.Millisecond
 	err := startAgentWindow(ctx, f.target, testSlug, "cat", "~/"+testSlug, script, "the prompt", "", false, nil, mcpApprovals{})
 	if err == nil {
 		t.Fatal("the prompt was sent into the trust dialog")
@@ -231,7 +231,7 @@ func TestPromptNotTypedIntoTrustDialog(t *testing.T) {
 	if _, ok := err.(*agentDialogError); !ok {
 		t.Fatalf("err = %v, want *agentDialogError", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	if b, _ := os.ReadFile(got); len(b) != 0 {
 		t.Fatalf("the agent got input %q", b)
 	}

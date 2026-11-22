@@ -83,6 +83,7 @@ func TestSyncLeavesTheGuestAloneWhenTheLaptopHasNothingNew(t *testing.T) {
 // the guest stays on its branch (not checked out detached at the laptop's
 // older commit), and the line says what is there.
 func TestSyncLeavesTheGuestsCommitsAlone(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{}); err != nil {
 		t.Fatal(err)
@@ -113,6 +114,7 @@ func TestSyncLeavesTheGuestsCommitsAlone(t *testing.T) {
 // names only those paths (eight, then a count) and the two flags; the
 // machine's changes elsewhere are not listed (I-573).
 func TestSyncRefusalNamesOnlyTheOverlap(t *testing.T) {
+	t.Parallel()
 	f := syncedWithALaptopEdit(t)
 	for i := 0; i < 27; i++ {
 		if err := os.WriteFile(filepath.Join(f.guestRepo(), fmt.Sprintf("agent%02d.txt", i)), []byte("x\n"), 0o644); err != nil {
@@ -201,6 +203,7 @@ func TestSyncLeavesItAloneWhenOnlyTheMachineChanged(t *testing.T) {
 // 2026-09-27: the run checked the laptop's older commit out detached over
 // an agent's branch.
 func TestSyncLeavesTheGuestAloneWhenItPulledPastTheLaptop(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{}); err != nil {
 		t.Fatal(err)

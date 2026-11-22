@@ -31,6 +31,9 @@ func TestOverlapMenuOnARealTerminal(t *testing.T) {
 	if !canAskOverlap() {
 		t.Fatal("canAskOverlap said no on a pty on both stdin and stderr")
 	}
+	screenBuf := &syncBuffer{}
+	go func() { _, _ = io.Copy(screenBuf, ptmx) }()
+
 	d := &dirtyTreeError{files: []string{"src/session.ts", "notes.md"}}
 	type result struct {
 		ch  overlapChoice
@@ -43,11 +46,12 @@ func TestOverlapMenuOnARealTerminal(t *testing.T) {
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if st, err := getTermios(tty); err == nil && !st.echo && !st.canonical {
+		st, err := getTermios(tty)
+		if err == nil && !st.echo && !st.canonical && strings.Contains(screenBuf.String(), "Choose l, m or s, or Enter to stop: ") {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the terminal never went raw, so the menu would need Enter")
+			t.Fatalf("the terminal never went raw with the menu prompt; screen:\n%s", screenBuf.String())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -67,10 +71,11 @@ func TestOverlapMenuOnARealTerminal(t *testing.T) {
 	if st, err := getTermios(tty); err != nil || !st.echo || !st.canonical {
 		t.Fatalf("the terminal was left %+v (%v), want cooked with echo", st, err)
 	}
-	_ = ptmx.SetReadDeadline(time.Now().Add(2 * time.Second))
-	buf := make([]byte, 4096)
-	n, _ := ptmx.Read(buf)
-	screen := string(buf[:n])
+	echoDeadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(screenBuf.String(), "Choose l, m or s, or Enter to stop: l\r\n") && time.Now().Before(echoDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	screen := screenBuf.String()
 	// Every line ends CR LF: raw mode turns off the terminal's own
 	// CR-for-LF, and without the CR each line starts under the end of
 	// the one above it.
@@ -131,7 +136,11 @@ func TestSyncOverlapMenuEndToEndOnATerminal(t *testing.T) {
 	}()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		if st, err := getTermios(tty); err == nil && !st.echo && !st.canonical {
+		st, err := getTermios(tty)
+		screen.mu.Lock()
+		prompted := strings.Contains(screen.buf.String(), "Choose l, m or s, or Enter to stop: ")
+		screen.mu.Unlock()
+		if err == nil && !st.echo && !st.canonical && prompted {
 			break
 		}
 		if time.Now().After(deadline) {

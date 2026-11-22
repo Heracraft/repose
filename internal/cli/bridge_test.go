@@ -157,11 +157,7 @@ func bridgeGuest(t *testing.T) (target sshTarget, log string) {
 		t.Skip("no ssh")
 	}
 	home := t.TempDir()
-	keyDir := t.TempDir()
-	privPath, pub, err := testguest.GenerateClientKey(keyDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	privPath, pub := cachedClientKey(t)
 	guest, err := testguest.New(home, pub)
 	if err != nil {
 		t.Fatal(err)

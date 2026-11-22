@@ -24,18 +24,10 @@ func wantDirtyRefusal(t *testing.T, err error) {
 // submodule.recurse=true would make a reset restore the file. Any
 // submodule change means the tree is not the last sync's own.
 func TestSyncedTreeWithASubmoduleChangeRefuses(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	subBare := t.TempDir()
-	mustRun(t, subBare, "git", "init", "--bare", "-q", "-b", "main", ".")
-	seed := t.TempDir()
-	mustRun(t, seed, "git", "clone", "-q", subBare, ".")
-	if err := os.WriteFile(filepath.Join(seed, "s"), []byte("sub v1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustRun(t, seed, "git", "add", "s")
-	mustRun(t, seed, "git", "-c", "user.email=s@x", "-c", "user.name=s", "commit", "-q", "-m", "sub")
-	mustRun(t, seed, "git", "push", "-q", "origin", "main")
+	subBare := newSubRepo(t)
 	mustRun(t, f.local, "git", "-c", "protocol.file.allow=always", "submodule", "add", "-q", subBare, "sub")
 	mustRun(t, f.local, "git", "commit", "-q", "-m", "add sub")
 
@@ -67,6 +59,7 @@ func TestSyncedTreeWithASubmoduleChangeRefuses(t *testing.T) {
 // plain `git status`: a sync that left only untracked files must still
 // fingerprint them, and the agent's edit of one must still refuse.
 func TestSyncedTreeIgnoresShowUntrackedFilesNo(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	mustRun(t, f.guestRepo(), "git", "config", "status.showUntrackedFiles", "no")
@@ -98,6 +91,7 @@ func TestSyncedTreeIgnoresShowUntrackedFilesNo(t *testing.T) {
 // misjudged can be recovered, and the summary says so. --discard-machine
 // stashes the whole tree under its own name (I-618).
 func TestSyncedTreeIsStashed(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop\n"), 0o644); err != nil {
@@ -138,6 +132,7 @@ func TestSyncedTreeIsStashed(t *testing.T) {
 // The last-sync stashes are capped at the newest ten; the user's own
 // stashes (and --stash-machine's "repose run") are never dropped.
 func TestSyncedStashesAreCapped(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if err := os.WriteFile(filepath.Join(f.guestRepo(), "README.md"), []byte("the user's own work\n"), 0o644); err != nil {
@@ -169,6 +164,7 @@ func TestSyncedStashesAreCapped(t *testing.T) {
 // apply refuses too: the untracked tar would otherwise overwrite a file at
 // a path the laptop also sends.
 func TestSyncRefusesAWriteIntoACleanTreeAfterTheProbe(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	if err := os.WriteFile(filepath.Join(f.local, "notes.md"), []byte("laptop\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -187,6 +183,7 @@ func TestSyncRefusesAWriteIntoACleanTreeAfterTheProbe(t *testing.T) {
 // run (no git-lfs) still fingerprints: the second run from the same
 // laptop tree goes through instead of exiting 6 every time.
 func TestSyncedFingerprintWithoutGitLFS(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	mustRun(t, f.guestRepo(), "git", "config", "filter.lfs.clean", "git-lfs-not-installed clean -- %f")
@@ -210,6 +207,7 @@ func TestSyncedFingerprintWithoutGitLFS(t *testing.T) {
 // call, so GIT_INDEX_FILE=... repose_git add -A staged into the real
 // index there).
 func TestSyncedFingerprintLeavesTheIndexUnderPOSIXSh(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	mustRun(t, repo, "git", "init", "-q", "-b", "main")
 	if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("x\n"), 0o644); err != nil {
@@ -229,6 +227,7 @@ func TestSyncedFingerprintLeavesTheIndexUnderPOSIXSh(t *testing.T) {
 // dropping (a git wrapper does it on the prune's first rev-parse or drop):
 // every index shifts, and none of the ten newest last-sync stashes may go.
 func TestSyncStashPruneSurvivesAShift(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	mustRun(t, repo, "git", "init", "-q", "-b", "main")
 	mustRun(t, repo, "git", "config", "user.email", "t@x")
@@ -289,6 +288,7 @@ exec ` + realGit + ` "$@"
 // A refused run leaves nothing behind in the guest's object store: the
 // probe's fingerprint hashes the agent's files without writing them.
 func TestSyncedProbeWritesNoObjects(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if err := os.WriteFile(filepath.Join(f.local, "README.md"), []byte("laptop\n"), 0o644); err != nil {
