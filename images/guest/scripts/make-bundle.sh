@@ -16,17 +16,25 @@ kv=$(ls /lib/modules)
 [ "$(printf '%s\n' "$kv" | wc -l)" = 1 ] || { echo "make-bundle: more than one kernel in /lib/modules: $kv" >&2; exit 1; }
 printf '%s\n' "$kv" > "$out/kernel-version"
 
-# The kernel. amd64: the bzImage as Ubuntu ships it. arm64: Ubuntu's
-# vmlinuz is an EFI zboot PE ("MZ", then "zimg" at offset 4), which Cloud
-# Hypervisor refuses; the plain Image is its payload, at the offset and
-# size the header names, compressed with the method named at 0x18.
+# The kernel. amd64: the bzImage as Ubuntu ships it. arm64: Cloud
+# Hypervisor boots only a plain Image; Ubuntu's 6.8 vmlinuz is that Image
+# gzipped, and a later one is an EFI zboot PE ("MZ", then "zimg" at offset
+# 4) whose payload is the Image, at the offset and size the header names,
+# compressed with the method named at 0x18.
 k=/boot/vmlinuz-$kv
-magic=$(dd if="$k" bs=1 skip=4 count=4 2>/dev/null)
-if [ "$magic" = zimg ]; then
+# bytes FILE OFFSET COUNT: those bytes as text, NULs dropped.
+bytes() { dd if="$1" bs=1 skip="$2" count="$3" 2>/dev/null | tr -d '\0'; }
+magic=$(bytes "$k" 4 4)
+if [ "$(od -An -tx1 -N2 "$k" | tr -d ' ')" = 1f8b ]; then
+  # Ubuntu's arm64 vmlinuz up to 6.8: the plain Image, gzip-compressed.
+  gzip -dc "$k" > "$out/vmlinuz"
+  [ "$(bytes "$out/vmlinuz" 56 4)" = ARMd ] \
+    || { echo "make-bundle: the gunzipped kernel has no arm64 ARMd magic" >&2; exit 1; }
+elif [ "$magic" = zimg ]; then
   le32() { od -An -tu4 -j "$1" -N4 "$k" | tr -d ' '; }
   off=$(le32 8)
   size=$(le32 12)
-  comp=$(dd if="$k" bs=1 skip=24 count=8 2>/dev/null | tr -d '\0')
+  comp=$(bytes "$k" 24 8)
   case "$comp" in
     gzip) dec="gzip -dc" ;;
     zstd) dec="zstd -dc" ;;
@@ -36,11 +44,11 @@ if [ "$magic" = zimg ]; then
   esac
   tail -c +"$((off + 1))" "$k" | head -c "$size" | $dec > "$out/vmlinuz"
   # A plain arm64 Image has "ARMd" at offset 56.
-  [ "$(dd if="$out/vmlinuz" bs=1 skip=56 count=4 2>/dev/null)" = ARMd ] \
+  [ "$(bytes "$out/vmlinuz" 56 4)" = ARMd ] \
     || { echo "make-bundle: the extracted arm64 Image has no ARMd magic" >&2; exit 1; }
-elif [ "$(dd if="$k" bs=1 skip=56 count=4 2>/dev/null)" = ARMd ]; then
+elif [ "$(bytes "$k" 56 4)" = ARMd ]; then
   cp "$k" "$out/vmlinuz"
-elif [ "$(dd if="$k" bs=1 skip=514 count=4 2>/dev/null)" = HdrS ]; then
+elif [ "$(bytes "$k" 514 4)" = HdrS ]; then
   cp "$k" "$out/vmlinuz"
 else
   echo "make-bundle: $k is neither a bzImage, an arm64 Image nor a zboot image" >&2

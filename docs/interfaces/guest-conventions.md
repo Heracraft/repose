@@ -1530,7 +1530,7 @@ One per architecture, built together from one kernel package so
 
 | File | What |
 |---|---|
-| `vmlinuz` | Ubuntu's kernel: the bzImage on amd64; on arm64 the plain `Image` taken out of Ubuntu's EFI zboot wrapper, which Cloud Hypervisor refuses |
+| `vmlinuz` | Ubuntu's kernel: the bzImage on amd64; on arm64 the plain, uncompressed `Image`, the only arm64 form Cloud Hypervisor boots (Ubuntu's 6.8 `vmlinuz` is that Image gzipped; a later kernel's EFI zboot wrapper is unwrapped the same way) |
 | `initramfs.img` | gzip cpio: static BusyBox, `/init` (`images/guest/initramfs/init`), and the modules among `virtio_pci`, `virtio_blk`, `erofs`, `ext4`, `overlay` the kernel does not build in, decompressed, with their load order in `/modules` |
 | `rootfs.erofs` | the root, `mkfs.erofs -zlz4hc,9`, attached read-only as `/dev/vda` |
 | `manifest.json` | `{version, arch, kernel_version, git_sha, files: {NAME: {sha256, size}}}` for the three files above |
