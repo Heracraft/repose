@@ -254,7 +254,7 @@ Your SSH sessions and the tmux or herdr server get the CPU before the programs i
 
 ## Base updates
 
-The platform publishes a new base (Ubuntu's updates, the agents, the tools above, the kernel) most weeks, sooner for a security fix. A machine boots a new base at its next restart, never while it runs; its project's **Config** tab says when one is waiting ([Revisions and base updates](/docs/config#revisions-and-base-updates)).
+The platform publishes a new base (Ubuntu's updates, the agents, the tools above, the kernel) most weeks, sooner for a security fix. A machine boots a new base at its next restart, never while it runs; `repose status` and the project's **Config** tab say when one is waiting ([Revisions and base updates](/docs/config#revisions-and-base-updates)).
 
 A new base keeps:
 

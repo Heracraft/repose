@@ -41,7 +41,7 @@ async function makeProject(
 /** Serves the project with pending_base_version set, as the base bump would. */
 async function withPendingBase(page: Page, id: string, version: string): Promise<void> {
 	await page.route(
-		(url) => url.pathname.endsWith(`/projects/${id}`),
+		(url) => url.pathname.endsWith(`/v1/projects/${id}`),
 		async (route) => {
 			if (route.request().method() !== 'GET') return route.fallback();
 			const res = await route.fetch();
@@ -303,4 +303,30 @@ test('Resize changes the machine size, as repose resize --size does', async ({ p
 		)
 		.toBe('xl');
 	await expect(page.locator('main')).toContainText('running', { timeout: 15_000 });
+});
+
+// Council finding 10 (D9): a waiting base shows on the Overview and the
+// project list, not only on the Config tab (I-1522).
+test('a waiting base shows on the Overview and the project list', async ({ page }) => {
+	const p = await makeProject('ubuntu-waits', 'erofs');
+	await withPendingBase(page, p.id, '2026.11.30');
+	await page.route(
+		(url) => url.pathname.endsWith('/v1/projects'),
+		async (route) => {
+			if (route.request().method() !== 'GET') return route.fallback();
+			const res = await route.fetch();
+			const list = (await res.json()) as { id: string }[];
+			await route.fulfill({
+				response: res,
+				json: list.map((x) => (x.id === p.id ? { ...x, pending_base_version: '2026.11.30' } : x))
+			});
+		}
+	);
+	await page.goto(`/projects/${p.id}`);
+	const details = page.locator('.details');
+	await expect(details).toContainText('2026.11.30 at the next restart');
+	await shots(page, 'overview-pending-base', details);
+	await page.goto('/projects');
+	const row = page.getByRole('row').filter({ hasText: p.slug });
+	await expect(row).toContainText('new base at next restart');
 });

@@ -73,7 +73,7 @@ Dotfiles, aliases and environment variables go in `/home/dev`, which every base 
 
 Every change to a project's configuration is saved as a revision. `repose config revisions` lists them with the error of any that failed. To get back from a change that broke something, `repose config apply --revision 9c41d2e7` applies an earlier revision to the running machine; the project's **Config** tab re-applies one from its **Revisions** list.
 
-The platform updates the base (Ubuntu, agents, tools, kernel) most weeks, sooner for a security fix. A machine gets a new base when it restarts, never while it runs. Until then the project's **Config** tab says so under the base it runs:
+The platform updates the base (Ubuntu, agents, tools, kernel) most weeks, sooner for a security fix. A machine gets a new base when it restarts, never while it runs. Until then `repose status`, `repose ls`, the project's **Overview** and its **Config** tab say so; the Config tab puts it under the base it runs:
 
 ```text
 Base 2026.11.30 is ready. It is used at the next restart.

@@ -373,6 +373,9 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 		if l := idleLine(p, now); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
 		}
+		if l := pendingBaseLine(p); l != "" {
+			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
+		}
 		// A host that is not answering is the whole account of the row,
 		// in whatever state it left the machine, and it is the line in
 		// place of the error reason: nothing can start there yet, so the
@@ -390,6 +393,29 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, withNext(r, ""))
 		}
 	}
+}
+
+// pendingBaseLine is the line for a newer base waiting for a restart
+// (DECISIONS I-1522): the dashboard's Config tab says it, and a reader
+// who lives in the terminal reads it here; "" when none waits.
+func pendingBaseLine(p *Project) string {
+	if p.PendingBaseVersion == nil || *p.PendingBaseVersion == "" {
+		return ""
+	}
+	return fmt.Sprintf("base %s is ready; %s uses it at its next restart", *p.PendingBaseVersion, p.Slug)
+}
+
+// baseCell is the status row for the base the machine runs and what it
+// is, Ubuntu or NixOS (I-1522), since docs and help branch on that.
+func baseCell(p *Project) string {
+	if p.BaseVersion == "" {
+		return ""
+	}
+	kind := "NixOS"
+	if isErofs(p) {
+		kind = "Ubuntu"
+	}
+	return p.BaseVersion + ", " + kind
 }
 
 func orDash(s string) string {
@@ -491,6 +517,9 @@ func writeStatus(w io.Writer, v statusView) {
 	if l := setupLine(p, v.defaultAgent); l != "" {
 		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}
+	if l := pendingBaseLine(p); l != "" {
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
+	}
 	// The host, not the machine (DECISIONS I-1370): said here as `repose
 	// ls` says it, and in place of the error reason, whose `repose start`
 	// cannot work while the host is quiet.
@@ -538,6 +567,9 @@ func writeStatus(w io.Writer, v statusView) {
 	writeListening(w, v.procs)
 	if cell := laptopPortsCell(v.forwards); cell != "" {
 		statusRow(w, "laptop", cell)
+	}
+	if b := baseCell(p); b != "" {
+		statusRow(w, "base", b)
 	}
 	statusRow(w, "disk", statusDisk(p, gd)+", "+snapshotCell(p, v.snaps))
 	if last := newestEvent(v.events); last != nil {
