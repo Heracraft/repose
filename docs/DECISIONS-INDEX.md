@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1080 entries.
+1081 entries.
 
 ## Scope
 
@@ -1101,7 +1101,7 @@ pointer, not a summary.
 - **I-1460** guestd's `ApplyMenu` streams progress as `Notify` frames carrying the request's `request_id`, ends with a Response; `Switch` and `RegisterPaths` answer `unimplemented` on an erofs guest (nonix-contracts-api, 2026-11-22) — L39001
 - **I-1462** `0051_nonix_base_images`: base rows have a format and per-arch files, projects a `guest_runtime` and `pending_base_version`, snapshots a `base_version`; `settings.default_guest_runtime` picks the runtime at create; `{fragment}` on an erofs project is `409 nix_config_retired` (nonix-contracts-api, 2026-11-22) — L39007
 - **I-1464** erofs projects never build: plans drop `PhaseBuild`, the base bump sets `pending_base_version`, placement needs the `erofs` feature and an image for the host's arch, and `repose-admin base publish --format erofs` fetches and checks every file before the row is written (nonix-contracts-api, 2026-11-22) — L39014
-- **I-1478** hostd keeps erofs base bundles in `/var/lib/repose/images/<version>-<arch>/`, fetched file by file with a SHA-256 check while streaming and a Range resume, renamed into place whole, recorded in bbolt and collected a day after the last guest naming them, never the newest (nonix-hostd, 2026-11-22) — L39021
+- **I-1478** hostd keeps erofs base bundles in `/var/lib/repose/images/<version>-<arch>/`, fetched file by file with a SHA-256 check while streaming and a Range resume, renamed into place whole, recorded in bbolt and collected a day after the last guest naming them, never the newest (nonix-hostd, 2026-11-22) — amended by I-1504; L39021
 - **I-1480** An erofs guest boots `vda` = the bundle's `rootfs.erofs` (`readonly=on,id=vda`) and `vdb` = its thin volume (`direct=on,id=vdb` with the class's limits), with no store share and no `init=`; `vm.resize-disk` names `vdb`; its unit binds its one bundle read-only into an empty images directory (nonix-hostd, 2026-11-22) — L39029
 - **I-1482** hostd sends `ApplyMenu` with `replay_after_base_upgrade` after every erofs boot that has a menu, and guestd decides from `/run/repose/rw/.base-upgraded` whether to install; a base bump fetches before it touches the guest and records the new base on the boot's first state write (nonix-hostd, 2026-11-22) — L39039
 - **I-1484** `hostd --nix-mode=off`, or no `nix` on PATH, constructs no Nix builder, GC roots or store view, names no `nix` feature and answers `nix_unsupported` for a Nix guest; reconcile marks an erofs guest whose bundle is missing instead of failing (nonix-hostd, 2026-11-22) — L39046
@@ -1112,3 +1112,4 @@ pointer, not a summary.
 - **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — L39084
 - **I-1490** Dashboard for an erofs project: the Config page shows the menu and the base, a one-line banner with Restart only while `pending_base_version` is set, and no Nix editor or machine.nix switch; Settings lists machine.nix only for an account with a Nix project; Add a host shows the x86 installer beside the Mac step, with the Mac image's download size and free disk (nonix-config-cli-web, 2026-11-22) — L39094
 - **I-1492** The public docs describe the Ubuntu base: Nix appears in one paragraph (machine.md "Older machines"), in the one sentence an erofs machine answers a Nix file with, and in a laptop CLI message; the agent guide test reads `images/guest/agent-guide.md` (nonix-config-cli-web, 2026-11-22) — L39101
+- **I-1504** A published bundle file is whole, or parts `<name>.part0`, `<name>.part1`, ... of at most 1900 MiB each concatenated in order; SHA256SUMS lists the parts, `<arch>-manifest.json` carries the whole file's SHA-256 and its parts, and a host fetches the parts when the whole-file URL answers 404 and checks the whole file's SHA-256 from the base row (nonix-hostd-parts, 2026-11-22) — L39107
