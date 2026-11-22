@@ -29,7 +29,10 @@ type DestroyedProject struct {
 	DestroyedAt     time.Time  `json:"destroyed_at"`
 	NameFree        bool       `json:"name_free"`
 	RestorableUntil *time.Time `json:"restorable_until"`
-	Snapshot        Snapshot   `json:"snapshot"`
+	// GoneWithHost names the removed host of the account's own the
+	// snapshot was kept on (I-1542); the row is listed, not restorable.
+	GoneWithHost *string  `json:"gone_with_host,omitempty"`
+	Snapshot     Snapshot `json:"snapshot"`
 }
 
 // RestoreRequest is POST /projects/restore's body.
@@ -419,6 +422,9 @@ func destroyedCells(d DestroyedProject) (until, destroyed, snap, size string) {
 	until = "-"
 	if d.RestorableUntil != nil {
 		until = d.RestorableUntil.Local().Format("2006-01-02")
+	}
+	if d.GoneWithHost != nil {
+		until = "gone with host " + *d.GoneWithHost
 	}
 	return until, d.DestroyedAt.Local().Format("2006-01-02 15:04"), d.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(d.Snapshot.Bytes)
 }

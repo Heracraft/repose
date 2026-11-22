@@ -141,7 +141,9 @@
 							     of its own. -->
 							<span class="dsub block sm:hidden">
 								<span class="hk-mono">{d.class}</span> · destroyed {relativeTime(d.destroyed_at)}
-								{#if until}
+								{#if d.gone_with_host}
+									<span class="block">gone with host {d.gone_with_host}</span>
+								{:else if until}
 									<span class="block whitespace-nowrap"
 										>until {until} · {timeLeft(d.restorable_until)}</span
 									>
@@ -162,12 +164,16 @@
 							{bytes(d.snapshot.bytes)}
 						</td>
 						<td class="hidden whitespace-nowrap sm:table-cell">
-							{#if until}
+							{#if d.gone_with_host}
+								<!-- Kept on a host of the account's own that was removed,
+								     which deleted it (I-1546): nothing to restore. -->
+								<span class="muted">gone with host {d.gone_with_host}</span>
+							{:else if until}
 								<span title={timeLeft(d.restorable_until)}>{until}</span>
 							{/if}
 						</td>
 						<td class="dcell-action">
-							{#if openFor !== d.id}
+							{#if openFor !== d.id && !d.gone_with_host}
 								<button
 									type="button"
 									id={`restore-open-${d.id}`}

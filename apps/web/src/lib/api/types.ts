@@ -331,6 +331,8 @@ export interface OwnedHost {
 	projects: number;
 	/** Those of them in a state that holds memory. */
 	running_projects: number;
+	/** Snapshots kept on its disk, which removing it deletes (I-1542). */
+	snapshots?: number;
 	last_heartbeat_at?: string;
 	registered_at?: string;
 	created_at: string;
@@ -387,6 +389,8 @@ export interface DestroyedProject {
 	/** Whether a restore can take the old name (no live project holds it). */
 	name_free: boolean;
 	restorable_until?: string | null;
+	/** Its snapshot went with a removed host of the account's own (I-1542). */
+	gone_with_host?: string | null;
 	snapshot: Snapshot;
 }
 
@@ -632,6 +636,9 @@ export interface Snapshot {
 	bytes: number;
 	reason: string;
 	expires_at?: string | null;
+	/** The account's own host it was kept on when that host was removed,
+	 * which deleted it (I-1542); null otherwise and from an older api. */
+	gone_with_host?: string | null;
 }
 
 export interface ProjectEvent {

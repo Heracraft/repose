@@ -43,7 +43,7 @@ func (s *Server) listAllSnapshots(w http.ResponseWriter, r *http.Request) error 
 	}
 	rows, err := s.d.Pool.Query(r.Context(), `
 		select sn.id, sn.project_id, p.slug, p.destroyed_at is not null as project_destroyed,
-		       sn.taken_at, sn.bytes, sn.reason, sn.expires_at
+		       sn.taken_at, sn.bytes, sn.reason, sn.expires_at, sn.gone_with_host
 		from snapshots sn join projects p on p.id = sn.project_id
 		where p.user_id = $1 and sn.deleted_at is null
 		  and ($2::uuid is null or (sn.taken_at, sn.id) < (select b.taken_at, b.id from snapshots b join projects bp on bp.id = b.project_id where b.id = $2 and bp.user_id = $1))
@@ -62,13 +62,14 @@ func (s *Server) listAllSnapshots(w http.ResponseWriter, r *http.Request) error 
 			takenAt       time.Time
 			bytes         int64
 			expiresAt     *time.Time
+			gone          *string
 		)
-		if err := rows.Scan(&id, &projectID, &slug, &destroyed, &takenAt, &bytes, &reason, &expiresAt); err != nil {
+		if err := rows.Scan(&id, &projectID, &slug, &destroyed, &takenAt, &bytes, &reason, &expiresAt, &gone); err != nil {
 			return err
 		}
 		out = append(out, map[string]any{
 			"id": id, "project_id": projectID, "project": slug, "project_destroyed": destroyed,
-			"created_at": takenAt, "bytes": bytes, "reason": reason, "expires_at": expiresAt,
+			"created_at": takenAt, "bytes": bytes, "reason": reason, "expires_at": expiresAt, "gone_with_host": gone,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -89,7 +90,7 @@ func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]map[string]any, 0, len(snaps))
 	for _, sn := range snaps {
-		out = append(out, map[string]any{"id": sn.ID, "created_at": sn.TakenAt, "bytes": sn.Bytes, "reason": sn.Reason, "expires_at": sn.ExpiresAt})
+		out = append(out, map[string]any{"id": sn.ID, "created_at": sn.TakenAt, "bytes": sn.Bytes, "reason": sn.Reason, "expires_at": sn.ExpiresAt, "gone_with_host": sn.GoneWithHost})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -141,6 +142,9 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) error {
 	snap, err := store.GetSnapshot(ctx, s.d.Pool, sid)
 	if err != nil || snap.ProjectID != src.ID || snap.DeletedAt != nil {
 		return db.ErrNotFound
+	}
+	if err := snapshotGone(snap); err != nil {
+		return err
 	}
 	var body struct {
 		AsNewProject *string `json:"as_new_project"`

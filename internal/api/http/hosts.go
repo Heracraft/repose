@@ -115,6 +115,15 @@ func (s *Server) hostCounts(r *http.Request, hostID uuid.UUID) (projects, runnin
 	return projects, running, err
 }
 
+// hostSnapshots counts the live snapshots kept on the host's disk, which
+// removing the host deletes (DECISIONS I-1542): the host rm question
+// names the number.
+func (s *Server) hostSnapshots(r *http.Request, hostID uuid.UUID) (n int, err error) {
+	err = s.d.Pool.QueryRow(r.Context(), `select count(*) from snapshots s
+		  where s.host_id = $1 and s.gone_with_host is null and `+store.RestorableSnapshotWhere, hostID).Scan(&n)
+	return n, err
+}
+
 func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 	u := userFrom(r.Context())
 	hosts, err := store.ListAccountHosts(r.Context(), s.d.Pool, u.ID)
@@ -127,7 +136,13 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		out = append(out, hostJSON(&hosts[i], projects, running, "", nil, nil))
+		snaps, err := s.hostSnapshots(r, hosts[i].ID)
+		if err != nil {
+			return err
+		}
+		row := hostJSON(&hosts[i], projects, running, "", nil, nil)
+		row["snapshots"] = snaps
+		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -292,9 +307,19 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) error {
 	// is refused whatever certificate it holds (I-432), and the join
 	// token with them, so a token minted and never used cannot register
 	// a retired host.
-	if _, err := s.d.Pool.Exec(r.Context(), `update hosts set state = 'retired', draining = true,
+	// The snapshots kept on its disk go with it (I-1542): marked in the
+	// same transaction as the retire, by name, so a host of the same
+	// name added later never brings them back.
+	if err := db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
+		if _, err := tx.Exec(r.Context(), `update hosts set state = 'retired', draining = true,
 		    cert_serial = null, prev_cert_serial = null, join_token_hash = null
 		  where id = $1`, h.ID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(r.Context(), `update snapshots set gone_with_host = $2
+		  where host_id = $1 and gone_with_host is null and deleted_at is null`, h.ID, h.Name)
+		return err
+	}); err != nil {
 		return err
 	}
 	// What the host's absence wrote on the account's machines goes with
