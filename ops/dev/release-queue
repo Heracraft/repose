@@ -500,8 +500,8 @@ exact_nix() {  # base-commit targets...
 trust_reader() {
   local needs=$1 top; top=$(git rev-parse --show-toplevel)
   if [[ " $needs " == *" cli "* ]]; then
-    (cd "$top" && go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures' -count=1 >/dev/null) ||
-      die "add: the CLI prints help nobody asked for (DECISIONS I-484); see: go test ./internal/cli -run 'TestSuccessOutputNamesNoCommand|TestCLIReassures'"
+    (cd "$top" && go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide' -count=1 >/dev/null) ||
+      die "add: the CLI prints help nobody asked for or fails the docs/agent-guide contract (DECISIONS I-242, I-243, I-484, I-1456); see: go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide'"
     # What this CLI would fetch on a customer's machine exists and is
     # public: the appliance image it pins, its checksum, vfkit. v0.1.51
     # shipped pinning an image whose release was never published

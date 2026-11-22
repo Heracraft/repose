@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1061 entries.
+1062 entries.
 
 ## Scope
 
@@ -1093,3 +1093,4 @@ pointer, not a summary.
 - **I-1446** The home page sells the machine again: the headline is "Your coding agents, on a machine of their own", the hero's picture is the real `repose run` session, 01 compares the two homes instead of listing six layers, and no band names a start time or a memory figure for either home (home-page, 2026-11-20) — L38878
 - **I-1448** Host architecture is its own field (`HostInfo.arch`, `Hello.arch`, `hosts.arch`), never sliced from `hosts.nixos_system` (web-hosts-ux, 2026-11-21) — L38942
 - **I-1450** Modal `<dialog>` refusals render inside the dialog rather than moving `Toaster` into the top layer (web-hosts-ux, 2026-11-21) — L38948
+- **I-1456** Three-tier CI with pure-bash path filtering, sharded Nix evaluation, `-p 2` Go test concurrency, and `ci-heavy.yml` for packaging and Lighthouse accessibility (ci-tiering, 2026-11-22) — L38954

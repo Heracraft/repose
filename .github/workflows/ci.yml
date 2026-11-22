@@ -1,10 +1,10 @@
-# The checks docs/CHECKLIST.md asks for, on every push to main and every
-# pull request. VM tests under nix/ need KVM, which hosted runners lack, so
-# the Nix job evaluates every output without building; the VM tests run on
-# the dev box and on hosts (docs/ops/DEV-BOX.md). The `cli` and
-# `cli-completions` jobs are 07-cli.md's release checklist: the GoReleaser
-# matrix, install.sh on both platforms, `nix run .#repose`, and every
-# completion script loading cleanly.
+# Tier-1 pull-request and main-push CI (DECISIONS I-1456).
+# `fast-checks` runs unconditionally on every pull request and push to main
+# (~15s, no Nix install). `changes` classifies the diff with pure bash and
+# `git diff --name-only` (every gate opens on a push to main or an edit to
+# .github/workflows/). The full CLI packaging matrix and the 18.6-minute
+# Lighthouse accessibility audit run in ci-heavy.yml on main pushes, nightly
+# schedule, workflow_dispatch, and PRs touching install.sh or .goreleaser.yaml.
 
 name: ci
 
@@ -17,8 +17,81 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: classify changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      proto: ${{ steps.filter.outputs.proto }}
+      web: ${{ steps.filter.outputs.web }}
+      nix: ${{ steps.filter.outputs.nix }}
+      nix_overlay: ${{ steps.filter.outputs.nix_overlay }}
+      ops: ${{ steps.filter.outputs.ops }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - id: filter
+        name: classify changed paths
+        run: |
+          go=false
+          proto=false
+          web=false
+          nix=false
+          nix_overlay=false
+          ops=false
+          all=false
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            all=true
+          else
+            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" || true)
+            if [ -z "$files" ] || grep -qE '^\.github/workflows/' <<<"$files"; then
+              all=true
+            fi
+          fi
+
+          if [ "$all" = true ]; then
+            go=true; proto=true; web=true; nix=true; nix_overlay=true; ops=true
+          else
+            grep -qE '^(go\.(mod|sum)$|cmd/|internal/|test/|proto/|\.golangci\.yml$)' <<<"$files" && go=true
+            grep -qE '^(proto/|buf\.)' <<<"$files" && proto=true
+            grep -qE '^(apps/web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|install\.sh$|internal/fakes/api/|cmd/fakeapi/|cmd/fake-logto/|test/fake-logto/)' <<<"$files" && web=true
+            grep -qE '^(nix/|go\.(mod|sum)$|cmd/|internal/|docs/features/config-examples/)' <<<"$files" && nix=true
+            grep -qE '^nix/(overlay/|flake\.(nix|lock)$)' <<<"$files" && nix_overlay=true
+            grep -qE '^ops/' <<<"$files" && ops=true
+          fi
+
+          for k in go proto web nix nix_overlay ops; do
+            echo "$k=${!k}"
+            echo "$k=${!k}" >> "$GITHUB_OUTPUT"
+          done
+
+  fast-checks:
+    name: fast checks (decisions, supplychain, domain, cli docs, darwin build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: the decisions index is current and no id is cited without an entry
+        run: python3 ops/dev/decisions-index.py --check
+      - name: the docs-ahead-of-cli reader still finds a command path
+        if: ${{ !cancelled() }}
+        run: python3 ops/dev/docs-ahead-of-cli --selftest
+      - name: cross-compile cli for darwin (arm64, amd64)
+        if: ${{ !cancelled() }}
+        run: |
+          GOOS=darwin GOARCH=arm64 go build ./cmd/repose
+          GOOS=darwin GOARCH=amd64 go build ./cmd/repose
+      - name: domain, supplychain, dev harnesses, and cli docs/copy guards
+        if: ${{ !cancelled() }}
+        run: go test ./test/domain/... ./test/supplychain/... ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide'
+
   go:
     name: go build, vet, test, lint
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     # The api's integration tests run against a real Postgres
     # (docs/workstreams/05-control-plane-api.md §7).
@@ -64,8 +137,14 @@ jobs:
           sudo make install
           tmux -V
       - run: go build ./...
+      - name: cross-compile cli for darwin (arm64, amd64)
+        run: |
+          GOOS=darwin GOARCH=arm64 go build ./cmd/repose
+          GOOS=darwin GOARCH=amd64 go build ./cmd/repose
       - run: go vet ./...
-      - run: go test -race ./...
+      # -p 2 caps concurrent test packages against the single shared Postgres
+      # service (ENG-113, DECISIONS I-1456).
+      - run: go test -race -p 2 ./...
       # The steps below do not depend on the tests passing, and until
       # 2026-11-02 they were ordered as if they did: `go test -race` failed
       # on every run of `main` from 2026-10-17, so each of these was
@@ -95,6 +174,8 @@ jobs:
 
   proto:
     name: buf lint and breaking
+    needs: [changes]
+    if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -125,6 +206,8 @@ jobs:
 
   nix:
     name: nix flake check (evaluate)
+    needs: [changes]
+    if: needs.changes.outputs.nix == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -137,8 +220,53 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             system-features = kvm
-      - name: evaluate every output
-        run: nix flake check --no-build ./nix
+      # Monolithic `nix flake check --no-build ./nix` evaluates every output in
+      # one Nix heap, reaching 8.47 to 12 GiB RSS and OOM-killing 16 GB hosted
+      # runners (ENG-144). Evaluating checks.x86_64-linux in 4 shards of ~10
+      # checks each (equivalent to `nix eval --raw ./nix#checks.x86_64-linux.<attr>.drvPath`
+      # across each shard), plus separate processes for checks.aarch64-linux,
+      # packages, devShells, formatter and nixosConfigurations, asserts each
+      # output is a derivation and forces its drvPath while releasing the heap
+      # between shards so peak RSS stays <= 6.06 GiB (DECISIONS I-1456).
+      - name: evaluate every output (sharded, ENG-144)
+        run: |
+          eval_drv_shards() {
+            local target=$1 size=$2
+            mapfile -t attrs < <(nix eval --json "./nix#$target" --apply builtins.attrNames | tr -d '[]"' | tr ',' '\n' | sed '/^$/d')
+            [ "${#attrs[@]}" -gt 0 ] || { echo "no attributes under $target" >&2; exit 1; }
+            local i=0 shard=0
+            while [ "$i" -lt "${#attrs[@]}" ]; do
+              shard=$((shard + 1))
+              local slice=("${attrs[@]:$i:$size}")
+              local nix_list="" a
+              for a in "${slice[@]}"; do nix_list="$nix_list \"$a\""; done
+              echo "--- $target shard $shard (${#slice[@]} attrs: ${slice[*]}) ---"
+              nix eval --raw "./nix#$target" --apply "c: builtins.concatStringsSep \"\n\" (map (a: assert (c.\${a}.type or null) == \"derivation\"; a + \" -> \" + c.\${a}.drvPath) [ $nix_list ])"
+              echo
+              i=$((i + size))
+            done
+          }
+          eval_drv_shards checks.x86_64-linux 11
+          eval_drv_shards checks.aarch64-linux 10
+          eval_drv_shards packages.x86_64-linux 12
+          eval_drv_shards packages.aarch64-linux 12
+          eval_drv_shards devShells.x86_64-linux 10
+          eval_drv_shards devShells.aarch64-linux 10
+          nix eval --raw ./nix#formatter --apply 'f: builtins.concatStringsSep "\n" (map (s: assert (f.${s}.type or null) == "derivation"; s + " -> " + f.${s}.drvPath) (builtins.attrNames f))'
+          echo
+          mapfile -t hosts < <(nix eval --json ./nix#nixosConfigurations --apply builtins.attrNames | tr -d '[]"' | tr ',' '\n' | sed '/^$/d')
+          [ "${#hosts[@]}" -gt 0 ] || { echo "no nixosConfigurations" >&2; exit 1; }
+          i=0; shard=0
+          while [ "$i" -lt "${#hosts[@]}" ]; do
+            shard=$((shard + 1))
+            slice=("${hosts[@]:$i:6}")
+            nix_list=""
+            for a in "${slice[@]}"; do nix_list="$nix_list \"$a\""; done
+            echo "--- nixosConfigurations shard $shard (${#slice[@]} hosts: ${slice[*]}) ---"
+            nix eval --raw ./nix#nixosConfigurations --apply "c: builtins.concatStringsSep \"\n\" (map (a: assert (c.\${a}.config.system.build.toplevel.type or null) == \"derivation\"; a + \" -> \" + c.\${a}.config.system.build.toplevel.drvPath) [ $nix_list ])"
+            echo
+            i=$((i + 6))
+          done
       # Every step below is conditioned, not just the ones that need to
       # outlive a failure: once one step in a job carries
       # `!cancelled()`, an unconditioned step after it is skipped by the
@@ -211,6 +339,8 @@ jobs:
   # never pushed on either architecture (the cache's tier, I-46).
   nix-aarch64-overlay:
     name: aarch64 agent overlay (build, push to Cachix)
+    needs: [changes]
+    if: needs.changes.outputs.nix_overlay == 'true'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -229,108 +359,10 @@ jobs:
           nix profile install --inputs-from "git+file://$GITHUB_WORKSPACE?dir=nix" nixpkgs#cachix
           nix build --print-out-paths --no-link ./nix#packages.aarch64-linux.claude-code ./nix#packages.aarch64-linux.opencode ./nix#packages.aarch64-linux.codex ./nix#packages.aarch64-linux.gemini-cli ./nix#packages.aarch64-linux.pi-coding-agent ./nix#packages.aarch64-linux.chrome-devtools-mcp ./nix#packages.aarch64-linux.playwright-mcp | cachix push repose
 
-  cli-goreleaser:
-    name: cli GoReleaser matrix build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
-        with:
-          version: v2.18.2
-          args: build --snapshot --clean
-      - name: assert all four targets built
-        run: |
-          test -x dist/repose_darwin_amd64_v1/repose
-          test -x dist/repose_darwin_arm64_v8.0/repose
-          test -x dist/repose_linux_amd64_v1/repose
-          test -x dist/repose_linux_arm64_v8.0/repose
-
-  cli-nix-run:
-    name: nix run .#repose
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
-        with:
-          install_url: https://releases.nixos.org/nix/nix-2.35.2/install
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-      - run: nix run "git+file://$GITHUB_WORKSPACE?dir=nix#repose" -- version
-
-  cli-install:
-    name: install.sh (${{ matrix.os }})
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: build and package a fake release, like GoReleaser would
-        run: |
-          set -e
-          case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; esac
-          case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; esac
-          mkdir -p /tmp/fake-release
-          go build -ldflags "-s -w -X main.version=v0.0.0-ci" -o /tmp/fake-release/repose ./cmd/repose
-          tar -czf "/tmp/fake-release/repose_v0.0.0-ci_${os}_${arch}.tar.gz" -C /tmp/fake-release repose
-          (cd /tmp/fake-release && shasum -a 256 "repose_v0.0.0-ci_${os}_${arch}.tar.gz" > checksums.txt)
-          # Signed with a throwaway key, as release.yml signs with the real
-          # one (DECISIONS I-430); install.sh takes the test key only with
-          # REPOSE_INSTALL_BASE_URL set.
-          openssl ecparam -name prime256v1 -genkey -noout -out /tmp/ci-release-key.pem
-          openssl ec -in /tmp/ci-release-key.pem -pubout -out /tmp/ci-release-key.pub.pem
-          openssl dgst -sha256 -sign /tmp/ci-release-key.pem -out /tmp/fake-release/checksums.txt.sig /tmp/fake-release/checksums.txt
-      - name: serve it locally
-        run: |
-          cd /tmp/fake-release && nohup python3 -m http.server 8791 > /tmp/http.log 2>&1 &
-          sleep 1
-      - name: install.sh refuses an unsigned or tampered release
-        env:
-          REPOSE_INSTALL_BASE_URL: http://127.0.0.1:8791
-          REPOSE_INSTALL_PUBKEY: /tmp/ci-release-key.pub.pem
-        run: |
-          cd /tmp/fake-release
-          mv checksums.txt.sig sig.keep
-          if sh "$GITHUB_WORKSPACE/install.sh" --version v0.0.0-ci; then echo "installed without a signature"; exit 1; fi
-          mv sig.keep checksums.txt.sig
-          cp checksums.txt sums.keep
-          echo "0000000000000000000000000000000000000000000000000000000000000000  other.tar.gz" >> checksums.txt
-          if sh "$GITHUB_WORKSPACE/install.sh" --version v0.0.0-ci; then echo "installed with a tampered checksums.txt"; exit 1; fi
-          mv sums.keep checksums.txt
-          test ! -e "$HOME/.local/bin/repose"
-      - name: install.sh --version v0.0.0-ci
-        env:
-          REPOSE_INSTALL_BASE_URL: http://127.0.0.1:8791
-          REPOSE_INSTALL_PUBKEY: /tmp/ci-release-key.pub.pem
-        run: sh install.sh --version v0.0.0-ci
-      - name: repose version prints the tag
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          repose version | grep -q 'v0.0.0-ci'
-
-  cli-completions:
-    name: shell completions load in bash, zsh, fish
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - run: sudo apt-get update && sudo apt-get install -y zsh fish
-      - run: go build -o /tmp/repose ./cmd/repose
-      - run: /tmp/repose completion bash > /tmp/repose.bash && bash -c "source /tmp/repose.bash"
-      - run: /tmp/repose completion zsh > /tmp/repose.zsh && zsh -c "autoload -U compinit && compinit -u && source /tmp/repose.zsh"
-      - run: /tmp/repose completion fish > /tmp/repose.fish && fish -c "source /tmp/repose.fish"
-
   ops:
     name: alert rules, dashboards
+    needs: [changes]
+    if: needs.changes.outputs.ops == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -365,6 +397,8 @@ jobs:
 
   web:
     name: dashboard unit + e2e tests, Docker build
+    needs: [changes]
+    if: needs.changes.outputs.web == 'true'
     # Pinned, not `ubuntu-latest`: the runner image rolled to Ubuntu
     # 26.04 and Playwright 1.58.2 refuses to install a browser on it
     # ("Playwright does not support chromium on ubuntu26.04-x64"), which
@@ -395,31 +429,12 @@ jobs:
       - name: playwright browsers
         run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web exec playwright test
-      # Accessibility, against the same fixtures: Lighthouse audits every
-      # routable page but /callback, 13 of them, light and dark, at 1440 and
-      # 390, 52 runs (DECISIONS I-389). It runs in a Playwright persistent
-      # context, so the signed-in pages are audited with a real session and
-      # a bounced audit fails on its path. A run fails on a score under 90
-      # or on any binary audit that scores 0 (colour contrast, target size,
-      # landmark-one-main and the rest), since one contrast failure still
-      # scores above 90.
-      - name: lighthouse accessibility
-        run: |
-          npm i -g lighthouse@13.5.0
-          pnpm --filter web exec playwright test --config playwright.a11y.config.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: playwright-report
           path: apps/web/playwright-report/
           retention-days: 7
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: lighthouse-reports
-          path: apps/web/test-results/lighthouse/
-          retention-days: 7
-          if-no-files-found: ignore
       - name: docker build
         run: docker build -f apps/web/Dockerfile -t repose-web:ci .
       - name: image under 200 MB
