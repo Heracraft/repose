@@ -58,6 +58,10 @@ type Net interface {
 	TapStats(tap string) (rx, tx uint64, err error)
 	// ListTaps returns the repose taps present on the host.
 	ListTaps(ctx context.Context) ([]string, error)
+	// FlushNeigh removes the host's neighbour entry for a guest address on
+	// the guest bridge; an address with no entry is not an error
+	// (DECISIONS I-1530).
+	FlushNeigh(ctx context.Context, ip string) error
 }
 
 // CounterName is the nft counter for a guest.
@@ -515,6 +519,30 @@ func (f *Fake) AddTap(_ context.Context, tap string) error {
 		f.Stats[tap] = [2]uint64{} // a new tap's counters start at zero
 	}
 	f.Taps[tap] = true
+	return nil
+}
+
+// FlushNeigh implements Net: `ip neigh del <ip> dev <bridge>`. The entry
+// a destroyed guest left (its MAC, STALE) otherwise answers for the next
+// guest given the address until the kernel gives up on it, 30 to 55 s on
+// staging, and every TCP dial the gateway makes to the new guest times
+// out meanwhile (DECISIONS I-1530). ip exits non-zero when there is no
+// entry ("No such file or directory"), which is the common case and not
+// an error; a runner failure is.
+func (n *Real) FlushNeigh(ctx context.Context, ip string) error {
+	_, err := n.R.Run(ctx, "ip", "neigh", "del", ip, "dev", n.Bridge)
+	var ee *shell.ExitError
+	if err != nil && !errors.As(err, &ee) {
+		return err
+	}
+	return nil
+}
+
+// FlushNeigh implements Net, recording "neigh-<ip>".
+func (f *Fake) FlushNeigh(_ context.Context, ip string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Ops = append(f.Ops, "neigh-"+ip)
 	return nil
 }
 

@@ -88,6 +88,12 @@ rotates keys does the same restart itself.
 - Guest address = `.2 + index` allocated by hostd from `state.db`; MAC
   `52:54:` plus the first four bytes of sha256(guest id) (DECISIONS
   I-120; a guest record created before then keeps the MAC stored in it).
+  An address is reused once its guest is destroyed, so hostd deletes the
+  host's neighbour entry for it on `br-guests` (`ip neigh del <ip> dev
+  br-guests`, an absent entry ignored) when the destroy has removed the
+  tap, and again at every boot and restore before the guest can be
+  dialled: a STALE entry with the old guest's MAC otherwise left the
+  next guest unreachable for 30 to 55 s (DECISIONS I-1530).
 - Tap per guest `tap-<8 hex of sha256(guest id)>` (I-120: the id's own
   first eight hex are its UUIDv7 timestamp, shared by guests created in
   the same minute; hostd refuses a create whose tap or MAC another record

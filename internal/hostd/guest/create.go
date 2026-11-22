@@ -341,6 +341,10 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		return m.fail(g, stepNetwork, err)
 	}
 	m.resetCursor(g.GuestID)
+	// The address may have been another guest's moments ago; its MAC in
+	// the host's neighbour table would swallow the new guest's first
+	// half minute of connections (DECISIONS I-1530).
+	m.flushNeigh(ctx, g)
 	if err := m.d.Net.AddGuestRules(ctx, g.GuestID, g.IP, g.MAC, g.Tap); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
@@ -1339,4 +1343,17 @@ func (m *Manager) unexpectedExit(ctx context.Context, id, reason string) {
 	m.log(g).Error("guest died", "event", "guest_state", "reason", reason)
 	m.teardown(ctx, g)
 	_ = m.setState(g, StateError, reason) // the failure is already logged above; the state write is best effort here
+}
+
+// flushNeigh removes the host's neighbour entry for g's address on the
+// guest bridge (DECISIONS I-1530): at every boot and restore, before the
+// guest can be dialled, and at destroy, once its tap is gone. A failure is
+// logged and nothing else: the entry still expires on its own.
+func (m *Manager) flushNeigh(ctx context.Context, g *state.Guest) {
+	if g.IP == "" {
+		return
+	}
+	if err := m.d.Net.FlushNeigh(ctx, g.IP); err != nil {
+		m.log(g).Warn("neighbour entry not flushed", "event", "guest_network", "err", err.Error())
+	}
 }
