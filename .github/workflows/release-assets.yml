@@ -5,7 +5,7 @@
 # what customers fetch today. Both runs also resolve releases/latest, which
 # must be a CLI tag, and fetch install.sh from repose.run. The main job
 # also checks what hosts fetch, which no CLI tag pins: the newest guest-*
-# release and the hostd-stable manifest (I-1500). gh reads the release
+# release and the newest hostd-<version> manifest (I-1500, I-1496). gh reads the release
 # list with the job's token; every asset is fetched anonymously.
 #
 # A red run is the signal; it reaches whoever GitHub notifies of a failed
@@ -72,7 +72,7 @@ jobs:
       - env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          # The guest base and hostd-stable are the main job's: a CLI tag
+          # The guest base and the hostd release are the main job's: a CLI tag
           # pins neither. A tag whose script predates the flags checks
           # neither anyway.
           if grep -q -- '--guest)' ops/dev/release-assets 2>/dev/null; then

@@ -299,6 +299,9 @@ type Snapshot struct {
 	ProjectID        string `json:"project_id,omitempty"`
 	Project          string `json:"project,omitempty"`
 	ProjectDestroyed bool   `json:"project_destroyed,omitempty"`
+	// GoneWithHost names the account's own host the snapshot was kept
+	// on when that host was removed, which deleted it (I-1542).
+	GoneWithHost *string `json:"gone_with_host,omitempty"`
 }
 
 // EventLink is the link an agent attached to an event or a question.

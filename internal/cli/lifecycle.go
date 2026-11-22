@@ -634,6 +634,8 @@ func destroyPrompt(projects []*Project) string {
 	if len(projects) == 1 {
 		if len(temp) == 1 {
 			fmt.Fprintf(&b, "%s is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy %s? [y/N] ", all, all)
+		} else if projects[0].HostName != "" {
+			fmt.Fprintf(&b, "Destroy %s? %s [y/N] ", all, ownHostSnapshotLine(projects[0].HostName))
 		} else {
 			fmt.Fprintf(&b, "Destroy %s? A final snapshot is kept for 30 days. [y/N] ", all)
 		}
@@ -839,6 +841,11 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 			// case promising one is a sentence the user can check and
 			// find false.
 			r.out = append(r.out, fmt.Sprintf("Destroying %s.", project.Slug))
+		case project.HostName != "":
+			// On a host of the account's own the snapshot is on that
+			// host's disk, so the 30 days hold only while the host is
+			// there (DECISIONS I-1544).
+			r.out = append(r.out, fmt.Sprintf("Destroying %s. %s", project.Slug, ownHostSnapshotLine(project.HostName)))
 		default:
 			// The snapshot is taken in the next minute or so; its 30 days
 			// run from then.
@@ -903,6 +910,10 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 		return r
 	}
 	snapLine := "Its final snapshot is kept for 30 days."
+	if project.HostName != "" {
+		r.out = append(r.out, fmt.Sprintf("Destroyed %s in %s. %s", project.Slug, took, ownHostSnapshotLine(project.HostName)))
+		return r
+	}
 	if snaps, err := e.Client.ListSnapshots(ctx, project.ID); err == nil {
 		if latest := newestSnapshot(snaps); latest != nil {
 			until := latest.CreatedAt.AddDate(0, 0, 30)
@@ -914,6 +925,13 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 	}
 	r.out = append(r.out, fmt.Sprintf("Destroyed %s in %s. %s", project.Slug, took, snapLine))
 	return r
+}
+
+// ownHostSnapshotLine is where a machine's final snapshot is when the
+// machine is on a host of the account's own (I-1544): that host's disk,
+// which removing the host deletes.
+func ownHostSnapshotLine(host string) string {
+	return fmt.Sprintf("Its final snapshot is kept on your host %s; removing the host deletes it.", host)
 }
 
 // newestSnapshot is the most recent of snaps, or nil. The api lists them

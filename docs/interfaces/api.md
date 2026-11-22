@@ -87,11 +87,18 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 
 ```
 Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
-       projects, running_projects, last_heartbeat_at?, registered_at?,
+       projects, running_projects, snapshots?, last_heartbeat_at?, registered_at?,
        created_at,
        join_token?, join_token_expires_at?,     -- the POST answer only
        install?: {command, argument, url} }     -- the POST answer only
 ```
+
+`snapshots` (I-1542, GET only) counts the live snapshots kept on the
+host's disk: a snapshot of a machine on a host of the account's own is
+written there and repose keeps no copy, so removing the host deletes
+them. `DELETE /hosts/{id}` marks each of them `gone_with_host` (the
+host's name) in the same transaction as the retire; a host added again
+under that name does not bring them back.
 
 `state` is `hosts.state`: `registering` (the token is minted and nothing
 has used it yet), `ready`, `draining`, `unreachable` (no heartbeat for 90
@@ -186,8 +193,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
                                                        -- absent on a host repose runs (I-1392)
 
 DestroyedProject { id, name, slug, class, remote_url?, volume_bytes,
-          destroyed_at, name_free, restorable_until?,
-          snapshot: {id, created_at, bytes, reason, expires_at?} }
+          destroyed_at, name_free, restorable_until?, gone_with_host?,
+          snapshot: {id, created_at, bytes, reason, expires_at?, gone_with_host?} }
 ```
 
 `disk_used_bytes` is the thin volume's allocated blocks from the newest
@@ -266,6 +273,15 @@ outbound connection it must not drop. It is set through `PATCH
 A `DestroyedProject`'s `snapshot` is its newest restorable snapshot and
 `restorable_until` that snapshot's `expires_at` (30 days after the
 destroy); `name_free` says whether a restore can take the old name.
+`gone_with_host` (I-1542) names the account's own host the snapshot was
+kept on when that host was removed: the snapshot is deleted, the row
+stays listed so the reader learns it, and `restorable_until` is null.
+A restore of such a snapshot (`POST /projects/restore`, or
+`/projects/:id/snapshots/:sid/restore`) is refused before anything is
+written: `409 conflict`, `detail: {reason: "snapshot_gone", host}`, the
+message "That snapshot was kept on your host NAME, which was removed, so
+it is gone; repose had no copy". A client older than I-1542 ignores the
+field.
 
 `slug` is `name` lowercased, `[a-z0-9-]`, unique per user; it is the first
 half of the SSH login name and the tmux session name.
@@ -496,8 +512,8 @@ and once across a restart (I-1252).
 
 | Method | Path | Body / result |
 |---|---|---|
-| GET | `/snapshots?limit=&before=` | `[{id, project_id, project, project_destroyed, created_at, bytes, reason, expires_at}]` across the user's projects, newest `taken_at` first, at most 200 (default 100); `before` is a snapshot id and pages by keyset on `(taken_at, id)`. Destroyed projects' snapshots are included, with `project_destroyed: true`: they are kept 30 days and are the set a home folder could not otherwise reach. Added with I-904; an older api answers `404` and the CLI falls back to naming a project |
-| GET | `/projects/:id/snapshots` | `[{id, created_at, bytes, reason, expires_at}]`; `reason` is `scheduled`, `stop` or `manual`. `fork` (I-703) is no longer written: `repose fork` is gone (I-1082), and a migration narrows the column once no `fork` row is live |
+| GET | `/snapshots?limit=&before=` | `[{id, project_id, project, project_destroyed, created_at, bytes, reason, expires_at, gone_with_host}]` (`gone_with_host`, I-1542, null unless the snapshot went with a removed host of the account's own) across the user's projects, newest `taken_at` first, at most 200 (default 100); `before` is a snapshot id and pages by keyset on `(taken_at, id)`. Destroyed projects' snapshots are included, with `project_destroyed: true`: they are kept 30 days and are the set a home folder could not otherwise reach. Added with I-904; an older api answers `404` and the CLI falls back to naming a project |
+| GET | `/projects/:id/snapshots` | `[{id, created_at, bytes, reason, expires_at, gone_with_host}]` (`gone_with_host` as on `/snapshots`, I-1542); `reason` is `scheduled`, `stop` or `manual`. `fork` (I-703) is no longer written: `repose fork` is gone (I-1082), and a migration narrows the column once no `fork` row is live |
 | POST | `/projects/:id/snapshots` | `{reason?: "fork"}` (body optional) → `{op_id}`; the op, once `done`, carries `result: {snapshot_id}` (the api has always set it; documented with I-254). No body is a manual snapshot. `reason: "fork"` (I-703) is accepted for one release after I-1082 and is then refused as `invalid`: only an old CLI's fork fallback ever sent it, and nothing reaches that fallback now |
 | POST | `/projects/:id/snapshots/:sid/restore` | `{as_new_project?: name, start?: bool=true}` → `{op_id, project_id}`; without `as_new_project`, replaces the stopped project's volume. `:id` may be a destroyed project. `POST /projects/restore` is the same restore resolved by name |
 | POST | `/projects/:id/fork` | **Removed** (I-1082, superseding I-254 and I-701). Every body answers `400 invalid` with `detail: {reason: "fork_removed"}` and the message `repose fork was removed; ``repose run --worktree -p PROMPT`` runs another agent on its own branch on the same machine`, which an old CLI prints after its own `Could not fork X:`. The route itself goes one release after v0.1.45 |

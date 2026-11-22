@@ -70,16 +70,19 @@ var hostNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // is taken by the row of GET /internal/hosts, which is the edge's view
 // of the fleet and a different thing entirely.
 type OwnedHost struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	State           string     `json:"state"`
-	Provider        string     `json:"provider,omitempty"`
-	Arch            string     `json:"arch,omitempty"`
-	MemBytes        int64      `json:"mem_bytes"`
-	VCPUs           int        `json:"vcpus"`
-	Cores           int        `json:"cores"`
-	Projects        int        `json:"projects"`
-	RunningProjects int        `json:"running_projects"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	State           string `json:"state"`
+	Provider        string `json:"provider,omitempty"`
+	Arch            string `json:"arch,omitempty"`
+	MemBytes        int64  `json:"mem_bytes"`
+	VCPUs           int    `json:"vcpus"`
+	Cores           int    `json:"cores"`
+	Projects        int    `json:"projects"`
+	RunningProjects int    `json:"running_projects"`
+	// Snapshots counts the live snapshots kept on the host's disk, which
+	// removing it deletes (I-1542).
+	Snapshots       int        `json:"snapshots"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at,omitempty"`
 	RegisteredAt    *time.Time `json:"registered_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -189,6 +192,7 @@ func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
 		row := h.OwnedHost
 		row.JoinToken, row.JoinTokenExpiresAt, row.Install = "", nil, nil
 		row.Projects, row.RunningProjects = f.machinesOn(h.ID)
+		row.Snapshots = f.snapshotsOn(h.ID)
 		out = append(out, &row)
 	}
 	writeJSON(w, 200, out)
@@ -323,10 +327,32 @@ func (f *Fake) deleteHost(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		h.State = "retired"
 		h.JoinToken = ""
+		// Its snapshots were on its disk and go with it (I-1542).
+		name := h.Name
+		for _, p := range f.projects {
+			for _, s := range p.snapshots {
+				if s.hostID == h.ID && s.GoneWithHost == nil {
+					s.GoneWithHost = &name
+				}
+			}
+		}
 		w.WriteHeader(204)
 		return nil
 	}
 	return notFound("host " + id)
+}
+
+// snapshotsOn counts the live snapshots kept on a host's disk.
+func (f *Fake) snapshotsOn(hostID string) int {
+	n := 0
+	for _, p := range f.projects {
+		for _, s := range p.snapshots {
+			if s.hostID == hostID && s.GoneWithHost == nil && (s.ExpiresAt == nil || s.ExpiresAt.After(f.now())) {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // slugsOnHost names the account's live projects placed on the host, in

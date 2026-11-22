@@ -94,6 +94,7 @@ type DestroyedProject struct {
 	DestroyedAt     time.Time  `json:"destroyed_at"`
 	NameFree        bool       `json:"name_free"`
 	RestorableUntil *time.Time `json:"restorable_until"`
+	GoneWithHost    *string    `json:"gone_with_host"`
 	Snapshot        Snapshot   `json:"snapshot"`
 }
 
@@ -119,6 +120,12 @@ type Snapshot struct {
 	Bytes     int64      `json:"bytes"`
 	Reason    string     `json:"reason"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// GoneWithHost names the account's own host the snapshot was kept
+	// on when that host was removed (I-1542); null otherwise.
+	GoneWithHost *string `json:"gone_with_host"`
+	// hostID is the host it was taken on, which keeps it on its disk
+	// when that host is one of the account's own.
+	hostID string
 }
 
 // Event is one row of GET /projects/:id/events.

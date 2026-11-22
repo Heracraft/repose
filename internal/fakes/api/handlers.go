@@ -393,7 +393,7 @@ func (f *Fake) run(p *project) {
 }
 
 func (f *Fake) snapshot(p *project, reason string) *Snapshot {
-	s := &Snapshot{ID: f.nextID(), CreatedAt: f.now(), Bytes: p.DiskUsedBytes, Reason: reason}
+	s := &Snapshot{ID: f.nextID(), CreatedAt: f.now(), Bytes: p.DiskUsedBytes, Reason: reason, hostID: p.HostID}
 	p.snapshots = append(p.snapshots, s)
 	at := s.CreatedAt
 	p.LastSnapshotAt = &at
@@ -1750,6 +1750,9 @@ func (f *Fake) restoreSnapshot(w http.ResponseWriter, r *http.Request) *apiError
 	if snap == nil {
 		return notFound("snapshot")
 	}
+	if e := snapshotGone(snap); e != nil {
+		return e
+	}
 	if body.AsNewProject != "" {
 		np, e := f.restoreAsNew(u, p, snap, body.AsNewProject)
 		if e != nil {
@@ -1843,6 +1846,16 @@ func (f *Fake) restorable(p *project) *Snapshot {
 }
 
 // listDestroyed is GET /projects/destroyed (I-167).
+// snapshotGone is the api's refusal of a snapshot that went with its
+// host (I-1542), before anything is created.
+func snapshotGone(s *Snapshot) *apiError {
+	if s.GoneWithHost == nil {
+		return nil
+	}
+	return errf("conflict", "That snapshot was kept on your host %s, which was removed, so it is gone; repose had no copy", *s.GoneWithHost).
+		withDetail(map[string]any{"reason": "snapshot_gone", "host": *s.GoneWithHost})
+}
+
 func (f *Fake) listDestroyed(w http.ResponseWriter, r *http.Request) *apiError {
 	u := userFrom(r)
 	live := map[string]bool{}
@@ -1858,8 +1871,12 @@ func (f *Fake) listDestroyed(w http.ResponseWriter, r *http.Request) *apiError {
 		if s == nil {
 			continue
 		}
+		until := s.ExpiresAt
+		if s.GoneWithHost != nil {
+			until = nil // gone with its host (I-1542): listed, never restorable
+		}
 		out = append(out, DestroyedProject{ID: p.ID, Name: p.Name, Slug: p.Slug, Class: p.Class, RemoteURL: p.RemoteURL,
-			VolumeBytes: p.VolumeBytes, DestroyedAt: p.destroyedAt, NameFree: !live[p.Slug], RestorableUntil: s.ExpiresAt, Snapshot: *s})
+			VolumeBytes: p.VolumeBytes, DestroyedAt: p.destroyedAt, NameFree: !live[p.Slug], RestorableUntil: until, GoneWithHost: s.GoneWithHost, Snapshot: *s})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].DestroyedAt.Equal(out[j].DestroyedAt) {
@@ -1943,6 +1960,9 @@ func (f *Fake) restoreByName(w http.ResponseWriter, r *http.Request) *apiError {
 		if snap == nil {
 			return errf("not_found", "%s has no snapshot left to restore", cands[0].Slug).withDetail(map[string]any{"reason": "no_snapshot"})
 		}
+	}
+	if e := snapshotGone(snap); e != nil {
+		return e
 	}
 	name := src.Name
 	if body.Name != nil {

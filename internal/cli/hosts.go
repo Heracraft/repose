@@ -415,10 +415,26 @@ func hostRemovePrompt(h *Host) string {
 		if h.Projects > 1 {
 			what, disks = fmt.Sprintf("the %d machines on it", h.Projects), "their disks are"
 		}
-		return fmt.Sprintf("Remove %s? It is not answering, and %s cannot be recovered: %s on that host and repose has no copy. [y/N] ",
-			h.Name, what, disks)
+		return fmt.Sprintf("Remove %s? It is not answering, and %s cannot be recovered: %s on that host and repose has no copy.%s [y/N] ",
+			h.Name, what, disks, hostSnapshotsSentence(h))
 	}
-	return fmt.Sprintf("Remove %s? Snapshots taken on it stay on its disk, and repose has no copy. [y/N] ", h.Name)
+	if h.Snapshots == 0 {
+		return fmt.Sprintf("Remove %s? [y/N] ", h.Name)
+	}
+	return fmt.Sprintf("Remove %s?%s [y/N] ", h.Name, hostSnapshotsSentence(h))
+}
+
+// hostSnapshotsSentence says what removing the host deletes besides its
+// machines (DECISIONS I-1544): the snapshots kept on its disk, counted,
+// of which repose has no copy. "" when it keeps none.
+func hostSnapshotsSentence(h *Host) string {
+	switch h.Snapshots {
+	case 0:
+		return ""
+	case 1:
+		return " This deletes the 1 snapshot kept on it; repose has no copy."
+	}
+	return fmt.Sprintf(" This deletes the %d snapshots kept on it; repose has no copy.", h.Snapshots)
 }
 
 // hostErr turns the api's answers on the host routes into the line the

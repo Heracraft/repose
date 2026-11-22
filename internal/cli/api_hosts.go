@@ -28,8 +28,11 @@ type Host struct {
 	Cores    int   `json:"cores"`
 	// Projects is how many of the account's live machines are placed on
 	// it; RunningProjects how many of those hold memory right now.
-	Projects        int        `json:"projects"`
-	RunningProjects int        `json:"running_projects"`
+	Projects        int `json:"projects"`
+	RunningProjects int `json:"running_projects"`
+	// Snapshots counts the snapshots kept on its disk, which removing it
+	// deletes (DECISIONS I-1542); 0 from an api older than that.
+	Snapshots       int        `json:"snapshots,omitempty"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at"`
 	RegisteredAt    *time.Time `json:"registered_at"`
 	CreatedAt       time.Time  `json:"created_at"`

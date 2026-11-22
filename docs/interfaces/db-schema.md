@@ -204,8 +204,10 @@ snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes big
                             -- I-1082 removed repose fork, and a later migration narrows the check)
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
               sha256 text null,  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
-              base_version text null)  -- the base the guest ran when it was taken (0051, I-1462);
+              base_version text null,  -- the base the guest ran when it was taken (0051, I-1462);
                                        -- null before 0051
+              gone_with_host text null)  -- the account's own host it was kept on, set when that
+                                         -- host is removed, which deleted it (0052, I-1542)
 
 events       (id pk, project_id fk null, user_id fk null,  -- one of them is set (0007, I-269):
               -- user_id alone for an account event (waitlist_invited, the plan emails of I-291)

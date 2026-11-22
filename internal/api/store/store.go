@@ -319,9 +319,12 @@ type Snapshot struct {
 	// BaseVersion is the base the guest ran when it was taken (0051,
 	// DECISIONS I-1462); nil before 0051.
 	BaseVersion *string `db:"base_version"`
+	// GoneWithHost names the account's own host the snapshot was kept on
+	// when that host was removed, which deleted it (0052, I-1542).
+	GoneWithHost *string `db:"gone_with_host"`
 }
 
-const snapshotCols = `id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, deleted_at, restoring_op_id, created_at, sha256, base_version`
+const snapshotCols = `id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at, deleted_at, restoring_op_id, created_at, sha256, base_version, gone_with_host`
 
 // Event is an events row.
 type Event struct {
