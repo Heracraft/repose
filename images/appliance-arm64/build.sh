@@ -163,10 +163,18 @@ truncate -s $((ROOT_MIB * MIB)) "$work/root.img"
 mkfs.ext4 -q -L root -d "$root" -E lazy_itable_init=0,lazy_journal_init=0 "$work/root.img"
 disk=$work/repose-appliance-aarch64.raw
 truncate -s $(( (1 + ESP_MIB + ROOT_MIB + GUESTS_MIB + 1) * MIB )) "$disk"
-sgdisk -q -U "$DISK_GUID" \
+# sgdisk's -q writes nothing and says nothing (2026-11-22: an image with
+# no partition table at all), and -U wants a table that exists: the
+# table first, its GUID second, and both read back.
+sgdisk -o \
   -n 1:1M:+${ESP_MIB}M -t 1:ef00 -c 1:esp -u 1:"$ESP_GUID" \
   -n 2:0:+${ROOT_MIB}M -t 2:8305 -c 2:root -u 2:"$ROOT_GUID" \
-  -n 3:0:0 -t 3:8e00 -c 3:guests -u 3:"$GUESTS_GUID" "$disk"
+  -n 3:0:0 -t 3:8e00 -c 3:guests -u 3:"$GUESTS_GUID" "$disk" >/dev/null
+sgdisk -U "$DISK_GUID" "$disk" >/dev/null
+for n in 1 2 3; do
+  guid=$(case $n in 1) echo "$ESP_GUID" ;; 2) echo "$ROOT_GUID" ;; 3) echo "$GUESTS_GUID" ;; esac)
+  sgdisk -i "$n" "$disk" | grep -qi "unique GUID: $guid" || { echo "build.sh: partition $n is not in the table" >&2; exit 1; }
+done
 dd if="$work/esp.img" of="$disk" bs=1M seek=1 conv=notrunc,sparse status=none
 dd if="$work/root.img" of="$disk" bs=1M seek=$((1 + ESP_MIB)) conv=notrunc,sparse status=none
 
