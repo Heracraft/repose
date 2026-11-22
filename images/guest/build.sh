@@ -21,8 +21,8 @@
 #              else images/guest/out
 #   --builder  a buildx builder (a container builder whose state lives off
 #              the root disk, on a small dev box); default the current one
-# Needs: docker with buildx (binfmt for a foreign arch), go, mkfs.erofs
-# (erofs-utils), jq, sha256sum.
+# Needs: docker with buildx (binfmt for a foreign arch), go, mkfs.erofs and
+# dump.erofs (erofs-utils), python3, jq, sha256sum.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -105,6 +105,9 @@ for arch in "${archs[@]}"; do
   # --tar=f reads the tar straight into the image; the uid, gid and modes
   # are the tar's, and every file's time is the build's (-T0, reproducible).
   mkfs.erofs -zlz4hc,9 -T0 --tar=f "$dest/rootfs.erofs" "$work/rootfs.tar" >/dev/null
+  # The artifact gate: the modes and owners sshd, sudo and every user's
+  # temp files depend on, read from the produced image's inodes.
+  python3 "$here/scripts/erofs-gate.py" "$(command -v dump.erofs)" "$dest/rootfs.erofs"
 
   install -m 0644 "$work/bundle/vmlinuz" "$work/bundle/initramfs.img" "$dest/"
   kv=$(cat "$work/bundle/kernel-version")
