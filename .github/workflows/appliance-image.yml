@@ -6,11 +6,13 @@
 #
 # On a tag `appliance-<version>` (`git tag appliance-2026.11.22 && git push
 # origin appliance-2026.11.22`):
-#   hostd     hostd for amd64 and arm64 at <version>, published as the
-#             release hostd-<version>, and hostd-stable's manifest.json
-#             pointed at them, signed with the release key. Every
-#             appliance and x86 host reads that manifest every 30 minutes
-#             (repose-hostd-update.timer).
+#   hostd     hostd for amd64 and arm64 at <version> and their
+#             manifest.json, signed with the release key, published
+#             together as the release hostd-<version>. Every appliance and
+#             x86 host finds the newest such release through the releases
+#             API every 30 minutes (repose-hostd-update.timer). There is no
+#             moving channel release: releases here are immutable, and
+#             hostd-stable is a dead name (I-1496).
 #   kernel    kernel.org 6.18.57 with Debian's cloud-arm64 config.
 #   image     the Mac appliance image, published as the release
 #             appliance-<version>: repose-appliance-aarch64.raw.zst and
@@ -74,7 +76,7 @@ jobs:
         with:
           name: hostd
           path: dist/
-      - name: publish hostd-<version> and point hostd-stable at it
+      - name: publish hostd-<version> with its signed manifest
         env:
           REPOSE_RELEASE_SIGNING_KEY: ${{ secrets.REPOSE_RELEASE_SIGNING_KEY }}
         run: |
@@ -90,19 +92,17 @@ jobs:
             dist/hostd-linux-amd64 "$base/hostd-linux-amd64" \
             dist/hostd-linux-arm64 "$base/hostd-linux-arm64" "$key" > dist/manifest.json
           rm -f "$key"
+          # One create with every asset: the repository's releases are
+          # immutable once published, so nothing can be added later, and a
+          # host finds this release by its manifest.json (I-1496).
           gh release create "hostd-$v" --repo "$GITHUB_REPOSITORY" --latest=false \
             --title "hostd $v" --notes "hostd $v for hosts without Nix (the Mac appliance and ops/install-host-x86.sh)." \
-            dist/hostd-linux-amd64 dist/hostd-linux-arm64 dist/SHA256SUMS
-          # The binaries answer anonymously before any host is told of them.
-          for a in amd64 arm64; do
-            curl -fsSL -o "$RUNNER_TEMP/h" "$base/hostd-linux-$a"
-            cmp "$RUNNER_TEMP/h" "dist/hostd-linux-$a"
+            dist/hostd-linux-amd64 dist/hostd-linux-arm64 dist/SHA256SUMS dist/manifest.json
+          # The binaries and the manifest answer anonymously.
+          for f in hostd-linux-amd64 hostd-linux-arm64 manifest.json; do
+            curl -fsSL -o "$RUNNER_TEMP/h" "$base/$f"
+            cmp "$RUNNER_TEMP/h" "dist/$f"
           done
-          if ! gh release view hostd-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create hostd-stable --repo "$GITHUB_REPOSITORY" --latest=false \
-              --title "hostd stable channel" --notes "manifest.json: the hostd every own-hardware host runs (DECISIONS I-1496)."
-          fi
-          gh release upload hostd-stable --repo "$GITHUB_REPOSITORY" --clobber dist/manifest.json
 
   kernel:
     if: startsWith(github.ref, 'refs/tags/appliance-')

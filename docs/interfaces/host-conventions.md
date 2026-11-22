@@ -584,18 +584,24 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   Bit, sshd and the Nix build account, and with them the cache rules and
   `build_out`. The bridge's forward chain drops on `br-guests` only.
 - **hostd updates** (I-1496): `repose-hostd-update.timer`, every 30
-  minutes, reads
-  `https://github.com/Heracraft/repose/releases/download/hostd-stable/manifest.json`:
+  minutes, lists `https://api.github.com/repos/Heracraft/repose/releases?per_page=30`
+  anonymously and takes the newest non-draft `hostd-<version>` (version
+  order, `sort -V`) that carries a `manifest.json`; `hostd-stable` is a
+  dead name, never read. The manifest is
   `{"version", "arches": {"amd64"|"arm64": {"url", "sha256"}},
   "signature"}`, the signature being the release key's over
   `repose-hostd-manifest v1\nversion V\namd64 SHA URL\narm64 SHA URL\n`.
-  A bad signature, an older version, a wrong sha256 or a binary that
-  reports another version changes nothing; otherwise the binary is
+  Each verified manifest is kept in `/var/lib/repose/hostd-update/`
+  (0700 root); a lookup answered 403 or 429 (the API's anonymous rate
+  limit) uses the kept one and exits 0, which for a host on it restarts
+  nothing. A bad signature, an older version, a wrong sha256 or a binary
+  that reports another version changes nothing; otherwise the binary is
   renamed over `/usr/local/bin/hostd` and hostd restarted
-  (`KillMode=process`, guests kept). It logs `manifest_verified`,
-  `sha256_verified`, `updated from= to= seconds=`, `up_to_date` and
+  (`KillMode=process`, guests kept). It logs `release_found tag=`,
+  `lookup_failed status=`, `nothing_to_do reason=no_cached_manifest`,
+  `no_release`, `manifest_verified`, `sha256_verified`,
+  `updated from= to= seconds=`, `up_to_date` and
   `update_refused reason=signature|older|sha256|version_mismatch|manifest_shape`.
-  The binaries are the release `hostd-<version>`.
 - **Memory**: the launcher gives the VM three quarters of the Mac's (12
   GiB of 16, 18 of 24) and all but two cores; the reserve inside is the
   fleet rule (I-724). `repose host ls` shows the VM's memory.
