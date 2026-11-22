@@ -22,7 +22,8 @@ client certificate, a host's included, fails the TLS handshake (I-431). Errors: 
 `forbidden`, `not_found`, `invalid`, `conflict`, `payment_required`,
 `capacity`, `waitlisted`, `rate_limited`, `billing_disabled`,
 `nix_config_retired` (409, I-1462: a Nix file sent to a machine that runs
-the Ubuntu base; see Config), `internal`.
+the Ubuntu base; see Config), `menu_stale` (409, I-1528: a config change
+from a client that read an older revision; see Config), `internal`.
 Three codes come with a 503 and are answers: `capacity` (no
 host can take the machine), `waitlisted` and `billing_disabled`; any other
 5xx is the api failing. This is the one list; the dashboard's outage bar
@@ -321,7 +322,7 @@ keeps the project's.
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/projects/:id/config` | `{revision_id, fragment, menu?: MenuSelection, base_version, applied_at?, personal, personal_revision_id, personal_opt_out}`; `personal` is the `machine.nix` text the active revision carries (`""` for none) and `personal_revision_id` the account revision it came from (added with I-490) |
-| PUT | `/projects/:id/config` | `{fragment}` or `{menu: MenuSelection}` (the api renders menu → fragment) → `{revision_id, op_id}`; build starts immediately; apply happens when the build succeeds. On an `erofs` project (I-1462) only `{menu}` is taken: nothing is built, a running machine applies the menu in place (the op's log carries the install lines, its error code `menu_failed` when an item did not install), a stopped one at its next start, and the revision carries no `machine.nix`. `{fragment}` there is `409 nix_config_retired` with the message "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services." and `detail.reason = "nix_config_retired"`. The revision carries the account's current `machine.nix` unless the project opted out (I-490). Open personal builds (queued by a `machine.nix` save) do not refuse it with `conflict`: one not started yet is superseded (its revision becomes `failed` with `superseded by revision <id>`), one already building is queued behind. A project that is `creating`, `building`, `stopping` (since I-710), `destroying` or `destroyed` answers `409 conflict` "<slug> is <state>" |
+| PUT | `/projects/:id/config` | `{fragment}` or `{menu: MenuSelection}` (the api renders menu → fragment) → `{revision_id, op_id}`; build starts immediately; apply happens when the build succeeds. On an `erofs` project (I-1462) only `{menu}` is taken: nothing is built, a running machine applies the menu in place (the op's log carries the install lines, its error code `menu_failed` when an item did not install), a stopped one at its next start, and the revision carries no `machine.nix`. `{fragment}` there is `409 nix_config_retired` with the message "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services." and `detail.reason = "nix_config_retired"`. The revision carries the account's current `machine.nix` unless the project opted out (I-490). Open personal builds (queued by a `machine.nix` save) do not refuse it with `conflict`: one not started yet is superseded (its revision becomes `failed` with `superseded by revision <id>`), one already building is queued behind. A project that is `creating`, `building`, `stopping` (since I-710), `destroying` or `destroyed` answers `409 conflict` "<slug> is <state>". While the project has another op pending or running (a second tab's change, a start), the PUT is `409 conflict` "a build is in progress", except that open `machine.nix` builds are superseded or queued as above. `base_revision_id` (optional, I-1528) is the `revision_id` the client's last `GET /config` returned: when it is present and is not the project's current revision, the PUT is `409 menu_stale` with the message "The configuration changed since you loaded it; reload it and make your change again." and `detail: {reason: "menu_stale", current_revision_id}`, and nothing is written, so a stale tab cannot drop what another tab installed. Absent, the PUT is taken as before; the old shape is accepted for one release |
 | GET | `/projects/:id/config/revisions` | list, newest first, with `{revision_id, created_at, status: building\|applied\|failed, error?, fragment_line?, personal, personal_opt_out, personal_revision_id?, personal_line?}`; `personal` (bool) says the revision carries `machine.nix`, `personal_line` is an error's line in it (added with I-490) |
 | POST | `/projects/:id/config/revisions/:rev/apply` | re-apply an older successful revision |
 | GET | `/catalog` | menu catalog: `[{id, label, group, kind, description, options?: [{id, type, values, default}]}]` (packages and services the dashboard menu offers; `kind` is `service|package|agent|runtime`, `options` are enums the menu shows as selects; from `internal/menu`, DECISIONS I-44) |
@@ -697,7 +698,16 @@ return any error code. The CLI and dashboard tests run against it.
 erofs `{menu}` is checked with apt names, and its op's log is ApplyMenu's
 lines (`installing X`, `X ready` or `X installed`, `removing X`, `X
 removed`, `X failed: <reason>`) instead of a Nix build's; the package
-`repose-fake-missing` fails it with `menu_failed`. `Options.ConfigDelay`
+`repose-fake-missing` fails it with `menu_failed`. The fake refuses a
+config PUT while an op it holds open runs (`409 conflict`) and a stale
+`base_revision_id` (`409 menu_stale`), copies the source's
+`guest_runtime` on a restore, fans `machine.nix` out to `nix` projects
+only, and a start boots `pending_base_version` into `base_version`. Its
+`POST /certs` names the gateway `127.0.0.1` at `FakeGatewayPort` (1),
+where nothing listens, unless `Options.GatewayHost`/`GatewayPort` say
+otherwise. `cmd/fakeapi` takes `-default-runtime`, `-gateway-host` and
+`-gateway-port`, and its admin listener `POST /runtime {default}` and
+`POST /pending-base {project_id, version}`. `Options.ConfigDelay`
 (`cmd/fakeapi --config-delay`) keeps a config op `running` for that long,
 in phase `build` (Nix) or `apply_config` (erofs), with its log streamed a
 line at a time, and the log's `done` event carries the state the op ended

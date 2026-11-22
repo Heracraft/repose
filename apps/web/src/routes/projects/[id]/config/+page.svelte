@@ -23,13 +23,15 @@
 	} from '$lib/api/client';
 	import { toast } from 'svelte-sonner';
 	import { toastApiError } from '$lib/api/toast';
+	import { ApiError } from '$lib/api/errors';
 	import { dateTime } from '$lib/format';
 	import {
 		toggleSelection,
 		groupCatalog,
 		buildMenuSelection,
 		parseMenuSelection,
-		menuEditable
+		menuEditable,
+		validPackageName
 	} from '$lib/menuSelection';
 	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
@@ -111,6 +113,16 @@
 	let buildDone = $state(false);
 	let buildError = $state<string | undefined>(undefined);
 	let currentOpId = $state<string | undefined>(undefined);
+	/**
+	 * How the last Apply ended, said at the Apply bar where it was pressed
+	 * (I-1514): the log and its banner are below the fold on any long
+	 * menu. Cleared by the next change to the selection.
+	 */
+	let outcome = $state<{ ok: boolean; text: string; stale?: boolean } | undefined>(undefined);
+	/** An op's error without the code the api stores in front of it. */
+	function plainError(err: string | undefined): string {
+		return (err ?? '').replace(/^menu_failed: /, '').split('\n')[0];
+	}
 	let eventSource: EventSource | undefined;
 	let logEl = $state<HTMLPreElement | undefined>(undefined);
 
@@ -154,8 +166,41 @@
 		}
 	}
 
+	// The op an Apply started, kept for this tab (I-1516): a reload, or
+	// back then forward, finds it and shows it again while it runs, so the
+	// page never offers Apply over an install already under way.
+	const opKey = `repose-config-op:${id}`;
+	function rememberOp(opId: string | undefined) {
+		try {
+			if (opId) sessionStorage.setItem(opKey, opId);
+			else sessionStorage.removeItem(opKey);
+		} catch {
+			// Storage refused (a private window): the page works without it.
+		}
+	}
+	async function resumeOp() {
+		let opId: string | null = null;
+		try {
+			opId = sessionStorage.getItem(opKey);
+		} catch {
+			return;
+		}
+		if (!opId || currentOpId) return;
+		try {
+			const op = await getOp(id, opId);
+			if (op.state === 'running' || op.state === 'pending') {
+				applying = true;
+				startBuild(opId);
+				return;
+			}
+		} catch {
+			// Gone or unreadable: nothing to show again.
+		}
+		rememberOp(undefined);
+	}
+
 	onMount(() => {
-		void load();
+		void load().then(resumeOp);
 		// The Apply bar holds the page's primary: the header's Start draws
 		// secondary while this tab is open.
 		ctx.holdPrimary = true;
@@ -201,6 +246,19 @@
 
 	let groups = $derived(groupCatalog(catalog, search));
 
+	// A package the menu lacks, added by name from the search, as `repose
+	// config add NAME` does (I-1508): a valid name for the machine's
+	// runtime that is no menu id and not already added.
+	let addable = $derived.by(() => {
+		const name = search.trim();
+		if (!name || catalog.some((c) => c.id === name) || extraPackages.includes(name)) return '';
+		return validPackageName(project?.guest_runtime, name) ? name : '';
+	});
+	function addPackage(name: string) {
+		extraPackages = [...extraPackages, name];
+		search = '';
+	}
+
 	function toggleItem(item: CatalogItem, checked: boolean) {
 		if (item.kind === 'service') {
 			selectedServices = toggleSelection(selectedServices, item.id, checked);
@@ -214,7 +272,9 @@
 	}
 
 	function startBuild(opId: string) {
+		outcome = undefined;
 		currentOpId = opId;
+		rememberOp(opId);
 		buildLines = [];
 		buildDone = false;
 		buildError = undefined;
@@ -230,15 +290,22 @@
 			};
 			es.addEventListener('done', async () => {
 				es.close();
+				rememberOp(undefined);
 				buildDone = true;
 				applying = false;
+				let ended: typeof outcome = undefined;
 				try {
 					const op = await getOp(id, opId);
-					if (op.state === 'error') buildError = op.error;
+					if (op.state === 'error') buildError = plainError(op.error);
+					ended =
+						op.state === 'error'
+							? { ok: false, text: plainError(op.error) }
+							: { ok: true, text: 'Applied' };
 				} catch {
 					// The revision list below still shows failed/applied.
 				}
 				await load();
+				outcome = ended;
 			});
 			es.onerror = () => {
 				es.close();
@@ -257,10 +324,22 @@
 			extraPackages
 		);
 		try {
-			const { op_id } = await putConfig(id, { menu });
+			// The revision this page loaded (I-1524, api.md I-1528): a menu
+			// changed since, from another tab or the CLI, is refused rather
+			// than replaced by this page's older copy.
+			const { op_id } = await putConfig(id, { menu, base_revision_id: config?.revision_id });
 			startBuild(op_id);
 		} catch (err) {
 			applying = false;
+			if (err instanceof ApiError && err.code === 'menu_stale') {
+				await load();
+				outcome = {
+					ok: false,
+					stale: true,
+					text: 'The menu changed elsewhere since you loaded it, and is reloaded.'
+				};
+				return;
+			}
 			toastApiError(err, 'Could not apply the menu selection.');
 		}
 	}
@@ -569,6 +648,20 @@
 								</div>
 							{/if}
 						{/each}
+						{#if addable}
+							<div class="hk-empty-row cadd">
+								<span
+									>{erofs ? 'An apt package' : 'A nixpkgs package'}:
+									<span class="hk-mono">{addable}</span></span
+								>
+								<button
+									type="button"
+									class="hk-btn-secondary hk-btn-sm"
+									aria-label={`Add package ${addable}`}
+									onclick={() => addPackage(addable)}>Add</button
+								>
+							</div>
+						{/if}
 						{#if extraPackages.length}
 							<div class="cgroup">
 								<h3 class="group-title">
@@ -655,7 +748,13 @@
 						{selectedCount} selected{#if applying}&nbsp;· {erofs
 								? 'Installing…'
 								: 'Building…'}{:else if menuDirty && !heldNavigation}&nbsp;·
-							<span class="cbar-dirty">Unsaved changes</span>{/if}
+							<span class="cbar-dirty">Unsaved changes</span>{:else if outcome?.ok}&nbsp;·
+							<span class="cbar-ok">{outcome.text}</span>{:else if outcome}&nbsp;·
+							<span class="cbar-err"
+								>{outcome.stale
+									? outcome.text
+									: `${erofs ? 'Not installed' : 'Not applied'}: ${outcome.text}`}</span
+							>{/if}
 					{:else if applying}
 						Building…
 					{:else if nixReadonly}
@@ -757,6 +856,12 @@
 	   base it replaces, its action at the end. */
 	.cbase {
 		margin: 0 0 0.75rem;
+	}
+	.cadd {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
 	}
 	.cbase-buttons {
 		display: flex;
@@ -923,6 +1028,13 @@
 	}
 	.cbar-dirty {
 		color: var(--hk-text);
+	}
+	.cbar-ok {
+		color: var(--hk-text);
+	}
+	.cbar-err {
+		color: var(--hk-err);
+		overflow-wrap: anywhere;
 	}
 	.cguard {
 		flex-basis: 100%;

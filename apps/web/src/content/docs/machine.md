@@ -47,7 +47,7 @@ gpg asks for a passphrase in the terminal; without a terminal, pass `--batch --p
 
 Prebuilt binaries, Prisma's engines, Python wheels, esbuild and `curl | sh` installers run as on any Ubuntu machine.
 
-Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip); there is no system-wide pip, and Python command-line tools install with `uv tool install`. The system `python3` has no Tk, so tkinter and matplotlib's TkAgg need a Python from uv (`uv python install 3.12`).
+Python packages go in a virtual environment (`uv venv`, or `python3 -m venv .venv` and then pip); there is no system-wide pip, and Python command-line tools install with `uv tool install`. tkinter and matplotlib's TkAgg need `sudo apt-get install -y python3-tk`.
 
 ## Installing more
 
@@ -254,7 +254,7 @@ Your SSH sessions and the tmux or herdr server get the CPU before the programs i
 
 ## Base updates
 
-The platform publishes a new base (Ubuntu's updates, the agents, the tools above, the kernel) most weeks, sooner for a security fix. A machine boots a new base at its next restart, never while it runs; its project's **Config** tab says when one is waiting ([Revisions and base updates](/docs/config#revisions-and-base-updates)).
+The platform publishes a new base (Ubuntu's updates, the agents, the tools above, the kernel) most weeks, sooner for a security fix. A machine boots a new base at its next restart, never while it runs; `repose status` and the project's **Config** tab say when one is waiting ([Revisions and base updates](/docs/config#revisions-and-base-updates)).
 
 A new base keeps:
 
@@ -266,7 +266,7 @@ The machine then installs again what you added with `repose config add` and what
 
 ## Changing the size
 
-`repose resize --size tiny|small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size tiny|small|large|xl` changes a project's size. **Resize…** under Disk on the project's **Overview** does the same, with the same question for a running machine. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 
