@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1076 entries.
+1077 entries.
 
 ## Scope
 
@@ -1108,3 +1108,4 @@ pointer, not a summary.
 - **I-1474** guestd decides its runtime once, from mountinfo, and every erofs difference branches on that one answer: freeze, grow and statfs target `/run/repose/rw`, commands get Ubuntu's PATH, `Switch` and `RegisterPaths` answer `unimplemented` at once (nonix-guestd, 2026-11-22) — L39051
 - **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — L39059
 - **I-1500** The Nix-only alerts skip a host whose `repose_host_info` says `nix_mode="off"`; two base image alerts, a Base images row and `release-assets` checking `guest-<version>` and `hostd-stable` cover the erofs side (nonix-obs-cleanup, 2026-11-22) — L39068
+- **I-1486** Each menu catalog entry names its erofs recipe (`recipe:`, the same string as the id), and a menu's `package` items follow the project's runtime: apt names on erofs (`menu.ValidAptPackage`, `Catalog.ValidateFor`), nixpkgs attribute paths on nix (nonix-config-cli-web, 2026-11-22) — L39077
