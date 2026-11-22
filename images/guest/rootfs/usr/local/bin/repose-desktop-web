@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+rm -rf /run/repose/desktop/web
+mkdir -p /run/repose/desktop/web
+for f in /usr/local/share/repose/desktop-viewer/*; do
+  ln -s "$f" /run/repose/desktop/web/
+done
+project=/home/dev/.repose/project.json
+if [ -s "$project" ]; then
+  name=$(jq -r '.name // .slug // empty' "$project" 2>/dev/null || true)
+fi
+[ -n "${name:-}" ] || name=$(cat /proc/sys/kernel/hostname)
+jq -n --arg name "$name" --argjson idle 30 \
+  '{name: $name, idle_minutes: $idle}' > /run/repose/desktop/web/project.json

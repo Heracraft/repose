@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+login_path=$(repose-login-path || true)
+if [ -n "$login_path" ]; then
+  export PATH="$login_path"
+fi
+unset __NIXOS_SET_ENVIRONMENT_DONE __ETC_PROFILE_DONE __ETC_PROFILE_SOURCED \
+  __ETC_BASHRC_SOURCED __HM_SESS_VARS_SOURCED __HM_ZSH_SESS_VARS_SOURCED
+if [ -r /etc/repose/session-vars.names ]; then
+  for n in $(< /etc/repose/session-vars.names); do
+    unset "$n" 2>/dev/null || true
+  done
+fi
+if command -v herdr >/dev/null 2>&1; then
+  exec herdr server
+fi
+exec /usr/local/bin/herdr server

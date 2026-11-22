@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Ported from nix/guest/base for the erofs guest (DECISIONS I-1466).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# guestd runs this with no locale (POSIX), where tmux prints the
+# \037 below as `_` and no line splits (I-640). Any UTF-8 locale
+# passes it through; C.UTF-8 is built into glibc.
+export LC_ALL=C.UTF-8
+periodic=""
+if [ "${1:-}" = "--periodic" ]; then
+  periodic=1
+fi
+dir="$HOME/.repose"
+out="$dir/agent-windows"
+live="$out.live"
+slug=$(jq -r '.slug // empty' "$dir/project.json" 2>/dev/null || true)
+[ -n "$slug" ] || exit 0
+project_id=$(jq -r '.project_id // empty' "$dir/project.json" 2>/dev/null || true)
+tmp=""
+trap '[ -z "${tmp:-}" ] || rm -f "$tmp"' EXIT
+exec 9>>"$dir/agent-windows.lock"
+if [ -n "$periodic" ]; then
+  # The restore or the stop's save has it: this minute is skipped.
+  flock -n 9 || exit 0
+  # A run killed mid-write (TimeoutStartSec, a full disk) leaves its
+  # temp file; with the lock held no other writer has one open.
+  rm -f -- "$dir"/agent-windows.?????? "$dir"/agent-windows.live.??????
+else
+  flock -w 3 9 || true
+fi
+boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+# \037, not a tab: read collapses empty fields between tabs.
+us=$(printf '\037')
+if ! rows=$(tmux list-windows -t "=$slug" -F "#{window_name}$us#{pane_current_command}$us#{@repose-state}$us#{pane_current_path}$us#{@repose-session}" 2>/dev/null); then
+  # At a stop, no tmux means no agent runs (they die with the
+  # server): nothing is to reopen, as before I-646. The minute
+  # record goes too; only a save cut short leaves it.
+  if [ -z "$periodic" ]; then
+    rm -f "$out" "$live"
+    sync "$dir" || true
+  fi
+  exit 0
+fi
+if [ -n "$periodic" ]; then
+  [ -n "$boot" ] || exit 0
+  if [ -e "$live" ]; then
+    live_boot=$(sed -n '1s/^#boot \([^ ]*\).*/\1/p' "$live" 2>/dev/null || true)
+    if [ "$live_boot" != "$boot" ]; then
+      # Another boot's record is the restore's to consume. A session
+      # that has lived two minutes without consuming it was not
+      # created by the session unit (a tmux started over ssh, I-560),
+      # and then this boot's record replaces it.
+      created=$(tmux display-message -p -t "=$slug:" '#{session_created}' 2>/dev/null || echo 0)
+      case "$created" in ""|*[!0-9]*) created=0 ;; esac
+      [ $(( $(date +%s) - created )) -ge 120 ] || exit 0
+    fi
+  fi
+fi
+body=""
+exited_body=""
+while IFS="$us" read -r name command state cwd sid; do
+  base=${name##*/}
+  [[ $base =~ ^(claude|codex|opencode|gemini|pi)(-[0-9]+)?$ ]] || continue
+  agent=${base%-[0-9]*}
+  # A window whose agent exited holds a shell: it has no
+  # conversation to resume, but the window is still the user's, so
+  # it is recorded with `exited` in the state field and the restore
+  # brings it back as the shell it held instead of dropping it
+  # (DECISIONS I-757). guestd unsets @repose-state on such a window
+  # (I-631), so the marker cannot be a state it announced.
+  if [ -z "$state" ]; then
+    case "$command" in bash|sh|zsh|fish|"") state=exited ;; esac
+  fi
+  # A stop's row is 4 fields, which a restore from before I-757
+  # reads; an exited row carries the marker as a 5th, which such a
+  # restore drops into the field it ignores.
+  #
+  # Exited rows are held back and appended after every live one, so
+  # that a restore from BEFORE I-757 is safe on a base rollback.
+  # That restore has no `exited` and dedupes a row with no session
+  # id by "$agent:$cwd", first row wins: an exited row written
+  # ahead of a live one in the same folder would take the key and
+  # the live window would be the one that did not come back --
+  # worse than the bug this entry fixes. Ordered this way the live
+  # row claims the key and the exited row is the one dropped, which
+  # is exactly the old behaviour.
+  if [ -n "$periodic" ] || [ "$state" = exited ]; then
+    row=$(printf '%s\037%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid" "$state")$'\n'
+  else
+    row=$(printf '%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid")$'\n'
+  fi
+  if [ "$state" = exited ]; then
+    exited_body+=$row
+  else
+    body+=$row
+  fi
+done <<< "$rows"
+body+=$exited_body
+if [ -n "$periodic" ]; then
+  target="$live"
+  body="#boot $boot${project_id:+ $project_id}"$'\n'"$body"
+  if [ -e "$live" ] && [ "$(cat "$live")"$'\n' = "$body" ]; then
+    exit 0
+  fi
+else
+  target="$out"
+  if [ -z "$body" ]; then
+    rm -f "$out" "$live"
+    sync "$dir" || true
+    exit 0
+  fi
+  # The restore of an older base skips this line (no folder); this
+  # one skips a record of another project.
+  [ -z "$project_id" ] || body="#project $project_id"$'\n'"$body"
+fi
+tmp=$(mktemp "$target.XXXXXX")
+printf '%s' "$body" > "$tmp"
+sync "$tmp"
+mv -f "$tmp" "$target"
+tmp=""
+[ -n "$periodic" ] || rm -f "$live"
+sync "$dir"

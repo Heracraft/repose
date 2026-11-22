@@ -129,6 +129,11 @@ FROM base AS rootfs
 RUN rm -f /boot/vmlinuz* /boot/initrd.img* /boot/System.map* && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt/* /tmp/* /root/.cache /root/.npm && \
     : > /etc/machine-id && rm -f /var/lib/dbus/machine-id
+# The unit-path gate (DECISIONS I-1554): every /usr/local path a unit's
+# Exec* line names is in this root, executable. The script is bind-mounted,
+# so it leaves nothing in the image.
+RUN --mount=type=bind,source=scripts/unit-paths-gate.py,target=/tmp/unit-paths-gate.py \
+    python3 /tmp/unit-paths-gate.py /
 # Last, as files: during a RUN BuildKit mounts its own over these two, and
 # its tar output holds empty placeholders.
 COPY rootfs-late/ /
