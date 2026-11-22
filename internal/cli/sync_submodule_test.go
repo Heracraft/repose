@@ -14,13 +14,7 @@ import (
 func newSubRepo(t *testing.T) string {
 	t.Helper()
 	bare := t.TempDir()
-	mustRun(t, bare, "git", "init", "--bare", "-q", "-b", "main", ".")
-	seed := t.TempDir()
-	mustRun(t, seed, "git", "clone", "-q", bare, ".")
-	writeFile(t, filepath.Join(seed, "s"), "sub v1\n")
-	mustRun(t, seed, "git", "add", "s")
-	mustRun(t, seed, "git", "-c", "user.email=s@x", "-c", "user.name=s", "commit", "-q", "-m", "sub")
-	mustRun(t, seed, "git", "push", "-q", "origin", "main")
+	copySubRepoTemplate(t, bare)
 	return bare
 }
 
@@ -52,6 +46,7 @@ func subStatus(t *testing.T, dir string) string {
 // with nothing new is "unchanged", not refused as dirty, and a run with
 // new laptop work stashes the last sync's submodule changes and goes on.
 func TestSyncCarriesSubmodules(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	addSubmodule(t, f.local, newSubRepo(t), "lib")
@@ -143,6 +138,7 @@ func TestSyncCarriesSubmodules(t *testing.T) {
 // with both checked out, and a submodule added on the laptop and only
 // staged arrives staged, so `git status` reads the same on both sides.
 func TestSyncNestedAndNewSubmodulesIntoAnEmptyGuest(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	if err := os.RemoveAll(f.guestRepo()); err != nil {
@@ -188,6 +184,7 @@ func TestSyncNestedAndNewSubmodulesIntoAnEmptyGuest(t *testing.T) {
 // An agent's commit inside a submodule, with nothing new on the laptop,
 // is the guest moving on (I-248): the run attaches, the commit stays.
 func TestSyncLeavesAnAgentsSubmoduleCommitAlone(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	addSubmodule(t, f.local, newSubRepo(t), "lib")
@@ -215,6 +212,7 @@ func TestSyncLeavesAnAgentsSubmoduleCommitAlone(t *testing.T) {
 // submodule knows; with nothing new on the laptop the submodule is left
 // alone all the same (I-284, the submodule half).
 func TestSyncLeavesASubmoduleThatPulledPastTheLaptopAlone(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	subBare := newSubRepo(t)
@@ -256,6 +254,7 @@ func TestSyncLeavesASubmoduleThatPulledPastTheLaptopAlone(t *testing.T) {
 // the guest fetches it itself, and when that fails (here git refuses the
 // file:// remote) the run goes on with a warning naming it.
 func TestSyncShallowSubmoduleFailsSoftly(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	bare := newSubRepo(t)
@@ -292,6 +291,7 @@ func TestSyncShallowSubmoduleFailsSoftly(t *testing.T) {
 // Under a plain POSIX sh the fingerprint lists every checked-out
 // submodule, nested ones too, and moves when a file inside one changes.
 func TestSyncedFingerprintCoversSubmodulesUnderPOSIXSh(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	inner, outer := newSubRepo(t), newSubRepo(t)
 	seed := t.TempDir()
@@ -320,6 +320,7 @@ func TestSyncedFingerprintCoversSubmodulesUnderPOSIXSh(t *testing.T) {
 // .env files inside a checked-out submodule travel like the
 // superproject's, with paths from the superproject.
 func TestEnvCarryIncludesSubmodules(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	addSubmodule(t, f.local, newSubRepo(t), "lib")
 	sub := filepath.Join(f.local, "lib")

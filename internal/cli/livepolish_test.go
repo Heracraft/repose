@@ -133,7 +133,7 @@ func TestRestoreWaitsForADestroyInProgress(t *testing.T) {
 	}
 	fake.SetState(p.ID, "destroying")
 	go func() {
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 		fake.SetState(p.ID, "running")
 		_, _ = e.Client.DestroyProject(ctx, p.ID) // the fake destroys at once, final snapshot included
 	}()

@@ -48,7 +48,15 @@ func pendingTmux(t *testing.T, screen string) (run func(string) (string, error),
 	if err := os.Symlink(bash, filepath.Join(bin, "claude")); err != nil {
 		t.Fatal(err)
 	}
-	env := append(filterEnvKeys(os.Environ(), "HOME", "TMUX", "TMUX_TMPDIR"), "HOME="+home, "TMUX_TMPDIR="+dir)
+	realSleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("needs sleep")
+	}
+	if err := os.WriteFile(filepath.Join(bin, "sleep"), []byte("#!/bin/sh\nexec "+shQuote(realSleep)+" 0.05\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := append(filterEnvKeys(os.Environ(), "HOME", "TMUX", "TMUX_TMPDIR", "PATH"),
+		"HOME="+home, "TMUX_TMPDIR="+dir, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	run = func(script string) (string, error) {
 		c := exec.Command("sh", "-c", script)
 		c.Env = env
@@ -58,6 +66,16 @@ func pendingTmux(t *testing.T, screen string) (run func(string) (string, error),
 	t.Cleanup(func() { _, _ = run("tmux kill-server") })
 	if out, err := run("tmux -f /dev/null new-session -d -s todo -n shell -x 120 -y 30 && tmux new-window -d -t todo -n claude " + shQuote("printf '%s\\n' "+shQuote(screen)+"; exec "+filepath.Join(bin, "claude")+" -c 'while IFS= read -r l; do echo \"$l\"; done'")); err != nil {
 		t.Fatalf("tmux: %v %s", err, out)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, screen) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("initial screen %q never rendered", screen)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	return run, home
 }
@@ -92,7 +110,7 @@ func pendingGone(t *testing.T, run func(string) (string, error), prompt string) 
 		if time.Now().After(deadline) {
 			return strings.TrimSpace(out)
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 
@@ -105,7 +123,7 @@ func TestPendingPromptTypesAfterLogin(t *testing.T) {
 	if out, err := run(pendingPromptTmux("todo", "claude", prompt)); err != nil {
 		t.Fatalf("waiter: %v %s", err, out)
 	}
-	time.Sleep(3 * time.Second)
+	time.Sleep(300 * time.Millisecond)
 	if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, prompt) {
 		t.Fatalf("typed before the login:\n%s", pane)
 	}
@@ -121,7 +139,7 @@ func TestPendingPromptTypesAfterLogin(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("never typed:\n%s", pane)
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 
@@ -136,7 +154,7 @@ func TestPendingPromptWaitsOnBlockers(t *testing.T) {
 	if out, err := run(pendingPromptTmux("todo", "claude", prompt)); err != nil {
 		t.Fatalf("waiter: %v %s", err, out)
 	}
-	time.Sleep(7 * time.Second)
+	time.Sleep(400 * time.Millisecond)
 	if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, prompt) {
 		t.Fatalf("typed into the login's Enter screen:\n%s", pane)
 	}

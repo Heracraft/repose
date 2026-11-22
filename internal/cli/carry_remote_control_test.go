@@ -53,6 +53,7 @@ func TestLoadConfigRemoteControl(t *testing.T) {
 // repose-remote-control. A machine that never heard of it and a switch
 // that is off is sent nothing at all (I-1134).
 func TestRemoteControlCarry(t *testing.T) {
+	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	home := t.TempDir()
