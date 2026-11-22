@@ -96,6 +96,42 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 
 ## Lessons
 
+- `release-queue resume` and `cut` merge the commit a PR was queued at,
+  not the branch's newest push; a fix pushed to a cut branch is not in the
+  batch until the builder re-runs `release-queue add` (2026-11-22, twice).
+- A release image is built from main's head, in a detached checkout, never
+  from a branch: the first Mac appliance of the No-Nix program carried a
+  hostd from before the split-parts fetch and no Mac could create a
+  machine; `images/appliance-arm64/build.sh` now refuses anything else
+  (I-1540). The Mac program learned the same on 2026-11-19.
+- Boot the image, do not trust the tree: the guest image shipped `/etc`
+  group-writable twice (the checkout's umask through `COPY`, then a later
+  `COPY` undoing the fix); sshd refused every login. `build.sh` now reads
+  the modes from the produced erofs inodes (`dump.erofs` masks special
+  bits; read `i_mode` raw, `erofs-mode.py` in `docs/research/nonix-staging-e2e/`).
+- Never commit to a build script while a 40-minute emulated build is still
+  reading it: bash reads the file as it goes and the arm64 build died on
+  "line 126: t: command not found" (2026-11-22).
+- Sub-agents that go quiet with a command "that never ran" are sitting on
+  a permission prompt the owner is not there to answer, not hung: three
+  builders lost one to two hours each on 2026-11-22 until stopped and
+  resumed by message (which keeps their context). The owner's terminal
+  shows the prompts; check `/permissions` for `ask` rules that match
+  `ssh`, `docker` or the staging CLI before blaming the harness.
+- A tool that lists sizes or modes is not the artefact: one `dump.erofs`
+  reading produced a false sticky-bit finding that nearly went into a
+  build gate (2026-11-22).
+- `.gitignore`'s `bin/` rule swallowed nine appliance scripts for a whole
+  program; `embed.sh --check` on main is the grep that catches it.
+- An owned host that runs only erofs guests cannot create anything while
+  the account's default runtime is nix, and the CLI called it "no room":
+  flip `default_guest_runtime` before telling customers to add a host
+  (D-24 in the program summary; I-1538 for the sentence).
+- Two sparks on one exempt account share its single own-host slot
+  (`ExemptHosts = 1`): sequence hardware checks, or use two accounts.
+- A guest image bundle is 2.86 GB; the appliance root was 2 GiB and held
+  the image cache: `repose-images-volume` (I-1494 amended) is the fix, and
+  "where does the cache live" is a question for every new host shape.
 - A both-sides merge of code is not resolved until it builds and lints;
   a helper left unclosed hid behind 67 svelte-check errors (2026-11-17).
 - A check's exit piped through `tail` is tail's exit; two reds shipped to
