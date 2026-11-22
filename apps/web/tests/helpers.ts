@@ -5,7 +5,10 @@ import { BASE_URL } from './fixtures';
 export async function signIn(page: Page): Promise<void> {
 	await page.goto('/');
 	// A link since I-878; hydrated, its click handler runs the browser flow.
-	await page.getByRole('link', { name: 'Get started' }).click();
+	await page
+		.getByRole('navigation', { name: 'Site' })
+		.getByRole('link', { name: 'Sign in', exact: true })
+		.click();
 	await page.waitForURL(/\/oidc\/auth/);
 	await page.getByRole('button', { name: 'Continue as heracraft' }).click();
 	await page.waitForURL(/\/projects/);

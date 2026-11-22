@@ -4,7 +4,9 @@ import { signIn } from './helpers';
 
 test('sign-in, callback and sign-out round trip', async ({ page }) => {
 	await page.goto('/');
-	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
+	await expect(
+		page.locator('.hero').getByRole('link', { name: 'Start a free week' })
+	).toBeVisible();
 
 	await signIn(page);
 	await expect(page).toHaveURL(/\/projects/);
@@ -17,7 +19,9 @@ test('sign-in, callback and sign-out round trip', async ({ page }) => {
 	await page.getByRole('button', { name: 'Account', exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL('/');
-	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
+	await expect(
+		page.locator('.hero').getByRole('link', { name: 'Start a free week' })
+	).toBeVisible();
 });
 
 // DECISIONS I-330: a signed-in visitor can read the landing page; it offers
@@ -31,7 +35,7 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 	await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeVisible();
 	// exact: the install step's docs link reads "Install and sign in".
 	await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('link', { name: 'Get started' })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: 'Start a free week' })).toHaveCount(0);
 	// Give a stray redirect time to fire before asserting it did not.
 	await page.waitForTimeout(500);
 	await expect(page).toHaveURL('/');
@@ -127,7 +131,9 @@ test('sign-out does not flash the landing page before leaving for Logto', async 
 	await page.getByRole('button', { name: 'Account', exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL('/');
-	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
+	await expect(
+		page.locator('.hero').getByRole('link', { name: 'Start a free week' })
+	).toBeVisible();
 	// The observer lived only in the signed-in document; it saw no landing.
 	expect(seen).not.toContain('landing-rendered');
 });
@@ -164,20 +170,19 @@ test('every sign-in surface is a link to /signin', async ({ page, request }) => 
 	// landing's are "./signin".
 	const prerendered = await (await request.get('/')).text();
 	expect(prerendered).toMatch(/href="\.?\/signin"/);
-	expect(prerendered).not.toContain('Get started</button');
+	expect(prerendered).not.toContain('Start a free week</button');
 
 	await page.goto('/');
-	const cta = page.getByRole('link', { name: 'Get started' });
-	await expect(cta).toHaveAttribute('href', '/signin');
 	await expect(
 		page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Sign in' })
 	).toHaveAttribute('href', '/signin');
-	// Start a free week comes back to /billing (I-837), so its href names
+	// Start a free week comes back to /billing (I-837, I-1452), so its href names
 	// that return path; /signin refuses anything not on the allow-list.
-	await expect(page.getByRole('link', { name: 'Start a free week' })).toHaveAttribute(
-		'href',
-		'/signin?return=%2Fbilling'
-	);
+	const ctas = page.getByRole('link', { name: 'Start a free week' });
+	expect(await ctas.count()).toBeGreaterThanOrEqual(2);
+	for (const cta of await ctas.all()) {
+		await expect(cta).toHaveAttribute('href', '/signin?return=%2Fbilling');
+	}
 });
 
 // The body carries data-sveltekit-preload-data="hover", and a hover that
@@ -186,7 +191,7 @@ test('every sign-in surface is a link to /signin', async ({ page, request }) => 
 // /signin is an endpoint, so it leaves this one alone.
 test('hovering the call to action starts no flow', async ({ page, context }) => {
 	await page.goto('/');
-	await page.getByRole('link', { name: 'Get started' }).hover();
+	await page.locator('.hero').getByRole('link', { name: 'Start a free week' }).hover();
 	await page.waitForTimeout(500);
 	const cookies = await context.cookies();
 	expect(cookies.find((c) => c.name === 'repose_signin')).toBeUndefined();
@@ -258,7 +263,7 @@ test.describe('with JavaScript disabled', () => {
 
 	test('the call to action still starts sign-in', async ({ page, context }) => {
 		await page.goto('/');
-		await page.getByRole('link', { name: 'Get started' }).click();
+		await page.locator('.hero').getByRole('link', { name: 'Start a free week' }).click();
 
 		await page.waitForURL(/\/oidc\/auth/);
 		await expect(page.getByRole('heading', { name: /fake Logto/ })).toBeVisible();
@@ -296,7 +301,9 @@ test('a signed-out visitor on a dashboard page is told, and comes back to it', a
 	await page.goto('/projects');
 	// The landing page, as before.
 	await expect(page).toHaveURL(/\/$/);
-	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
+	await expect(
+		page.locator('.hero').getByRole('link', { name: 'Start a free week' })
+	).toBeVisible();
 	// And a word, naming the page they asked for, which is also how they
 	// can see it was not thrown away.
 	await expect(page.getByText('Sign in to open /projects.')).toBeVisible();
@@ -305,7 +312,10 @@ test('a signed-out visitor on a dashboard page is told, and comes back to it', a
 	// luck: /settings is a page the sign-in link itself may not name.
 	await page.goto('/settings/hosts');
 	await expect(page.getByText('Sign in to open /settings/hosts.')).toBeVisible();
-	await page.getByRole('link', { name: 'Get started' }).click();
+	await page
+		.getByRole('navigation', { name: 'Site' })
+		.getByRole('link', { name: 'Sign in', exact: true })
+		.click();
 	await page.waitForURL(/\/oidc\/auth/);
 	await page.getByRole('button', { name: 'Continue as heracraft' }).click();
 	await page.waitForURL(/\/settings\/hosts$/);
