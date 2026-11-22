@@ -3,6 +3,8 @@ package ops_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/heracraft/repose/internal/api/apitest"
 	"github.com/heracraft/repose/internal/api/ops"
 )
@@ -99,9 +101,19 @@ func TestFailedDestroyRerunsWhenHostGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.Engine.Kick()
-	h.WaitFor("the project destroyed without its host", func() bool {
-		return h.Project(pid).State == "destroyed"
+	// The re-run is enqueued on a tick, and the row reads destroyed a
+	// moment before its op is marked done (markDestroyed runs inside the
+	// last phase's result), so wait for the op itself, then read both.
+	var rerun uuid.UUID
+	h.WaitFor("a fresh destroy op", func() bool {
+		return h.Pool.QueryRow(ctx, "select id from ops where project_id = $1 and kind = 'destroy' and state <> 'error' order by created_at desc limit 1", pid).Scan(&rerun) == nil
 	})
+	if op := h.WaitOp(rerun); op.State != "done" {
+		t.Fatalf("re-run destroy: %s %+v", op.State, op.Error)
+	}
+	if got := h.Project(pid); got.State != "destroyed" {
+		t.Fatalf("row after the re-run: %s", got.State)
+	}
 	var n int
 	if err := h.Pool.QueryRow(ctx, "select count(*) from ops where project_id = $1 and kind = 'destroy' and state = 'done'", pid).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("done destroy ops %d %v", n, err)
