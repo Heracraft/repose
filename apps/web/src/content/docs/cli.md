@@ -64,7 +64,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 ### `repose sync [PROJECT]`
 
-Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
+Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It starts the machine if needed, and never makes one on its own: with no machine for the checkout, or none named PROJECT, on a terminal it asks `No machine for this checkout. Create todo-app (large: 2 cores, 8 GB) and sync to it? [y/N]`, where no or Enter creates nothing and exits 1; without a terminal it exits 4 with ``No repose machine for this checkout; `repose run` creates one.`` `--temp` asks for a new temporary machine, so it makes one without the question. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
 
 It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. From a terminal it asks which copy to keep before it stops. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
 

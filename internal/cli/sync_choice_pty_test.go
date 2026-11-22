@@ -105,7 +105,7 @@ func TestSyncOverlapMenuEndToEndOnATerminal(t *testing.T) {
 	defer fake.Close()
 	f := newRunFixture(t, fake)
 	ctx := context.Background()
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
 	writeAt(t, f.guestRepo(), "README.md", "the agent's README\n")

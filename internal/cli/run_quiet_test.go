@@ -29,14 +29,14 @@ func TestSecondRunIsQuietAboutAnUnchangedSync(t *testing.T) {
 	ctx := context.Background()
 	var out strings.Builder
 	f.env.Out = &out
-	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("first runRun: %v", err)
 	}
 	if !strings.Contains(out.String(), "Synced: ") {
 		t.Fatalf("first run: %q", out.String())
 	}
 	out.Reset()
-	if err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false); err != nil {
+	if err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false); err != nil {
 		t.Fatalf("second runRun: %v", err)
 	}
 	if strings.Contains(out.String(), "Synced: ") || !strings.Contains(out.String(), "Nothing new to sync: the machine already has this checkout.") {
