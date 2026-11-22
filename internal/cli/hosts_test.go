@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,51 @@ import (
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
+
+// On a Linux x86 machine `repose host add` prints the x86 installer with
+// the join argument in it, whatever line the api recorded for a Mac, and
+// the argument is the one the api minted, hub and all (DECISIONS I-1498).
+func TestHostAddOnLinuxX86(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	out, errOut := &discardWriter{}, &discardWriter{}
+	e.Out, e.ErrOut = out, errOut
+	onLinuxX86 = func() bool { return true }
+	t.Cleanup(func() { onLinuxX86 = func() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" } })
+
+	fake.SetHostInstall("repose host add --join %s")
+	if err := HostAddCmd(context.Background(), e, "box", applianceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	step := strings.TrimRight(out.buf.String(), "\n")
+	const prefix = "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join "
+	if strings.Contains(step, "\n") || !strings.HasPrefix(step, prefix) {
+		t.Fatalf("stdout is the x86 install step alone: %q", out.buf.String())
+	}
+	arg := strings.TrimPrefix(step, prefix)
+	if arg == "" || strings.ContainsAny(arg, " '\"") {
+		t.Fatalf("the argument is one shell word: %q", arg)
+	}
+	if b, err := decodeJoinBundle(arg); err != nil || b.Token == "" {
+		t.Fatalf("the argument is not a join bundle: %v", err)
+	}
+	if got := errOut.buf.String(); !strings.HasPrefix(got, "box: run this on the machine you are adding.") ||
+		!strings.Contains(got, "A Mac runs `repose host add --join` with the same argument instead.") {
+		t.Fatalf("stderr: %q", got)
+	}
+
+	// With no line recorded the token is still made into the argument.
+	fake.SetHostInstall("")
+	fake.SetHostLimit(2)
+	out.buf.Reset()
+	if err := HostAddCmd(context.Background(), e, "box2", applianceOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.buf.String(), prefix) {
+		t.Fatalf("no recorded line: %q", out.buf.String())
+	}
+}
 
 // `repose host add|ls|rm` (DECISIONS I-1370): add prints the install
 // step alone on stdout and where it goes on stderr; ls is the one table
@@ -22,6 +68,10 @@ func TestHostAddListRm(t *testing.T) {
 	ctx := context.Background()
 	out, errOut := &discardWriter{}, &discardWriter{}
 	e.Out, e.ErrOut = out, errOut
+	// The api's line, as anywhere but a Linux x86 machine prints it;
+	// TestHostAddOnLinuxX86 has the installer's.
+	onLinuxX86 = func() bool { return false }
+	t.Cleanup(func() { onLinuxX86 = func() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" } })
 
 	// Nothing of the user's own yet.
 	if err := HostLsCmd(ctx, e); err != nil {

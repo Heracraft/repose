@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // The Mac appliance's launcher (DECISIONS I-1380), the parts a Linux box
@@ -44,15 +46,15 @@ func TestApplianceSizing(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ free, asked, want int }{
-		{500, 0, 100}, {60, 0, 40}, {500, 200, 200}, {62, 200, 42},
+		{500, 0, 100}, {60, 0, 40}, {500, 200, 200}, {62, 200, 42}, {40, 0, 20},
 	} {
 		if got, err := diskGB(c.free, c.asked); got != c.want || err != nil {
 			t.Errorf("diskGB(%d, %d) = %d, %v, want %d", c.free, c.asked, got, err, c.want)
 		}
 	}
-	// Below the image's own size the disk would lose its root partition
-	// (lab image 6, 2026-11-19): refuse, naming the shortfall.
-	for _, c := range []struct{ free, asked int }{{52, 0}, {59, 45}, {10, 0}} {
+	// Below the 20 GB floor, or with the 20 GB the user keeps, refuse,
+	// naming the shortfall (DECISIONS I-1494).
+	for _, c := range []struct{ free, asked int }{{39, 0}, {35, 25}, {10, 0}} {
 		if gb, err := diskGB(c.free, c.asked); err == nil || !strings.Contains(err.Error(), "free up") {
 			t.Errorf("diskGB(%d, %d) = %d, %v; want a refusal", c.free, c.asked, gb, err)
 		}
@@ -98,30 +100,66 @@ func TestApplianceJoinBundle(t *testing.T) {
 
 func TestApplianceUnpackIsSparse(t *testing.T) {
 	// 3 MB of data, an 8 MiB hole, then a tail: the holes are not
-	// written, the bytes come back equal.
+	// written, the bytes come back equal. zstd is the image since the
+	// Debian appliance (DECISIONS I-1494); gzip, every image before it,
+	// still unpacks; anything else is refused by name.
 	data := bytes.Repeat([]byte("repose"), 500000)
 	data = append(data, make([]byte, 8<<20)...)
 	data = append(data, []byte("tail")...)
-	var gz bytes.Buffer
-	w := gzip.NewWriter(&gz)
-	if _, err := w.Write(data); err != nil {
-		t.Fatal(err)
+	for _, format := range []string{"zstd", "gzip"} {
+		t.Run(format, func(t *testing.T) {
+			var packed bytes.Buffer
+			switch format {
+			case "zstd":
+				w, err := zstd.NewWriter(&packed)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := w.Write(data); err != nil {
+					t.Fatal(err)
+				}
+				_ = w.Close()
+			case "gzip":
+				w := gzip.NewWriter(&packed)
+				if _, err := w.Write(data); err != nil {
+					t.Fatal(err)
+				}
+				_ = w.Close()
+			}
+			dest := filepath.Join(t.TempDir(), "disk.raw")
+			written, err := unpackSparse(&packed, dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, data) {
+				t.Fatal("the unpacked image differs from the image")
+			}
+			if written >= int64(len(data)) {
+				t.Fatalf("wrote %d of %d bytes; the hole was written", written, len(data))
+			}
+		})
 	}
-	_ = w.Close()
-	dest := filepath.Join(t.TempDir(), "disk.raw")
-	written, err := unpackSparse(&gz, dest)
-	if err != nil {
-		t.Fatal(err)
+	_, err := unpackSparse(bytes.NewReader([]byte("not an image at all")), filepath.Join(t.TempDir(), "disk.raw"))
+	if err == nil || !strings.Contains(err.Error(), "neither zstd nor gzip") {
+		t.Fatalf("an image in neither format: %v", err)
 	}
-	got, err := os.ReadFile(dest)
-	if err != nil {
-		t.Fatal(err)
+}
+
+// The image the code pins is the zstd one, at the size build.sh makes,
+// and the disk floor leaves the pool room after it.
+func TestApplianceImageConstants(t *testing.T) {
+	if !strings.HasSuffix(applianceURL, "/appliance-"+applianceVersion+"/repose-appliance-aarch64.raw.zst") {
+		t.Fatalf("applianceURL %s is not the release's .raw.zst", applianceURL)
 	}
-	if !bytes.Equal(got, data) {
-		t.Fatal("the unpacked image differs from the image")
+	if applianceImageApparentBytes >= 4<<30 {
+		t.Fatalf("applianceImageApparentBytes %d is not under 4 GiB", applianceImageApparentBytes)
 	}
-	if written >= int64(len(data)) {
-		t.Fatalf("wrote %d of %d bytes; the hole was written", written, len(data))
+	if int64(applianceDiskMinGB)<<30 < applianceImageApparentBytes+10<<30 {
+		t.Fatalf("a %d GB disk leaves under 10 GiB after the %d-byte image", applianceDiskMinGB, applianceImageApparentBytes)
 	}
 }
 

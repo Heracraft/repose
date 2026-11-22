@@ -1,0 +1,1477 @@
+#!/usr/bin/env bash
+# Make this Linux x86_64 machine a repose host (DECISIONS I-1498): hostd
+# without Nix, Cloud Hypervisor, the guest pool, the guest isolation
+# ruleset and the units, the same as the Mac appliance's
+# (images/appliance-arm64/), then register it with the join argument
+# `repose host add` printed. Served as https://repose.run/install-host.sh:
+#
+#   curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join <argument>
+#
+# Ubuntu 24.04 or Debian 12 and later, x86_64, systemd, /dev/kvm. Run as
+# root. Every step is printed before it runs; a second run changes only
+# what differs and re-registers nothing.
+#
+#   --join ARGUMENT        the argument `repose host add` printed
+#   --join-file PATH       the same, read from a file
+#   --device DEV           a whole empty block device for the guests
+#   --loop-file PATH       a file on this machine's disk for the guests
+#                          instead (the default: /var/lib/repose/guests.img)
+#   --size GIB             the file's size (default: 100, or the free space
+#                          less 20, never under 20)
+#   --api HOST:PORT        the api's gRPC address (default: the control
+#                          plane's hub address, 10.255.255.1:8443)
+#   --api-server-name NAME, --api-ca FILE   the api's TLS name and CA,
+#                          with --api (default: the platform's)
+#   --uplink IFACE         the interface guests reach the internet through
+#                          (default: the one the default route uses)
+#   --hostd-binary PATH    install this hostd instead of the hostd-stable
+#                          release's (tests)
+#   --manifest-url URL     the hostd channel manifest (default: hostd-stable)
+#   --dry-run              print every step and change nothing
+set -euo pipefail
+
+# Cloud Hypervisor: the hosts' version, the upstream static build.
+CH_VERSION=53.0
+CH_SHA256=448af3d4e59b22c2987f7df94c213ad40fb53a10d437e42b5ee6c4fce7c29ecc
+CHR_SHA256=13f32ba952e6791fd901f2279be2055fbacc64005f96c42a8e90d58860df84a7
+CH_BASE=https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v$CH_VERSION
+MANIFEST_URL=https://github.com/Heracraft/repose/releases/download/hostd-stable/manifest.json
+# The api over the hub (DECISIONS I-1382), as the Mac appliance dials it:
+# the control plane's WireGuard address, its internal name and the
+# platform host CA (nix/hosts/platform.nix). Public material.
+API_ADDR=10.255.255.1:8443
+API_SERVER_NAME=api.repose.herakraft.co
+API_CA='-----BEGIN CERTIFICATE-----
+MIIBYzCCAQmgAwIBAgIBATAKBggqhkjOPQQDAjAZMRcwFQYDVQQDEw5yZXBvc2Ug
+aG9zdCBjYTAeFw0yNjA5MjAxNDM1NDRaFw0zNjA5MTcxNTM1NDRaMBkxFzAVBgNV
+BAMTDnJlcG9zZSBob3N0IGNhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEf0Z
+a+ShTl8C17TyIihGfxGA8/+LPSztZO7U+1jkulN/0PyP+u0mFtoz1No7eNIsLQdI
+4XqvAoE1SQ5NJMb9+6NCMEAwDgYDVR0PAQH/BAQDAgKEMA8GA1UdEwEB/wQFMAMB
+Af8wHQYDVR0OBBYEFJ3mh/uToG0kXZreInW+yRCV7Vv0MAoGCCqGSM49BAMCA0gA
+MEUCIQD4CrivKkoYjKlkHwnK7Ors2lohLv4cFQ+yUU5IhKmIUgIgRiWHt/xsWPzy
+pgFYxi/RgOzA9GSronavaaOscYi+Vng=
+-----END CERTIFICATE-----'
+# The release key (install.sh RELEASE_PUBKEY, DECISIONS I-430): the hostd
+# manifest is signed with its private half.
+RELEASE_PUBKEY='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEq1BgpU75F46qQ3iMHL1E0VOqye+4
+3/u1m873IxGrYRM2AZyYkK6QqN92G2qBuMvUi+qb4OYeF7KRF1MQ5oiIdw==
+-----END PUBLIC KEY-----'
+
+join="" join_file="" device="" loop_file="" size="" uplink=""
+api="" api_name="" api_ca_file="" hostd_binary="" manifest_url=$MANIFEST_URL dry=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --join) join=${2:?--join needs the argument}; shift 2 ;;
+    --join-file) join_file=${2:?--join-file needs a path}; shift 2 ;;
+    --device) device=${2:?--device needs a block device}; shift 2 ;;
+    --loop-file) loop_file=${2:?--loop-file needs a path}; shift 2 ;;
+    --size) size=${2:?--size needs a number of GiB}; shift 2 ;;
+    --api) api=${2:?--api needs HOST:PORT}; shift 2 ;;
+    --api-server-name) api_name=${2:?}; shift 2 ;;
+    --api-ca) api_ca_file=${2:?}; shift 2 ;;
+    --uplink) uplink=${2:?}; shift 2 ;;
+    --hostd-binary) hostd_binary=${2:?}; shift 2 ;;
+    --manifest-url) manifest_url=${2:?}; shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
+    *) echo "install-host: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+
+die() { echo "install-host: $*" >&2; exit 1; }
+say() { echo "install-host: $*"; }
+# step DESCRIPTION -- COMMAND...: printed, then run unless --dry-run.
+step() {
+  local what=$1; shift
+  [ "${1:-}" = -- ] && shift
+  if [ "$dry" = 1 ]; then
+    echo "would: $what"
+    return 0
+  fi
+  echo "==> $what"
+  "$@"
+}
+
+# ---- what this machine is ------------------------------------------------
+[ "$(uname -m)" = x86_64 ] || die "this installer is for x86_64; this machine is $(uname -m). A Mac runs \`repose host add --join\`."
+[ "$dry" = 1 ] || [ "$(id -u)" = 0 ] || die "run it as root (sudo bash -s -- ...)."
+[ -d /run/systemd/system ] || die "systemd is not running here; repose's units need it."
+[ -c /dev/kvm ] || die "/dev/kvm is missing: enable virtualization (VT-x or AMD-V) in the firmware, or use a bare-metal or nested-virtualization instance."
+# shellcheck source=/dev/null
+. /etc/os-release
+case "$ID:${VERSION_ID%%.*}" in
+  ubuntu:2[4-9] | ubuntu:[3-9][0-9] | debian:1[2-9]) ;;
+  *) die "this is $PRETTY_NAME; the installer supports Ubuntu 24.04 and Debian 12 or later." ;;
+esac
+# The kernel. Below 6.8, the kernel Ubuntu 24.04 shipped with, the parts
+# hostd relies on (nftables' per-address connection count, erofs with
+# file-backed images, vhost-vsock as Cloud Hypervisor 53 uses it) are not
+# what repose is tested on: refused. Below 6.18 is the window where
+# CVE-2026-99999, a guest-to-host escape through a tap's checksum
+# metadata, is fixed only if the distribution backported it (repose's own
+# hosts run 6.18.57 or later, nix/hosts/kernel.nix): warned.
+kver=$(uname -r)
+kmaj=${kver%%.*} krest=${kver#*.} kmin=${krest%%[!0-9]*}
+if [ "$kmaj" -lt 6 ] || { [ "$kmaj" = 6 ] && [ "$kmin" -lt 8 ]; }; then
+  die "kernel $kver is older than 6.8; upgrade the kernel first."
+fi
+if [ "$kmaj" = 6 ] && [ "$kmin" -lt 18 ]; then
+  say "warning: kernel $kver is older than 6.18. Repose's own hosts run 6.18.57 or later for the fix to CVE-2026-99999 (a guest-to-host escape); use a kernel with that fix."
+fi
+if [ -n "$join_file" ]; then
+  [ -r "$join_file" ] || die "cannot read $join_file"
+  join=$(tr -d '[:space:]' < "$join_file")
+fi
+registered=0
+[ -s /var/lib/repose/hostd/host.json ] && registered=1
+if [ -z "$join" ] && [ "$registered" = 0 ]; then
+  die "--join is missing: pass the argument \`repose host add\` printed."
+fi
+if [ -n "$device" ] && [ -n "$loop_file" ]; then
+  die "--device and --loop-file are two places for the same pool; pass one."
+fi
+if [ -n "$api" ] && [ -z "$api_ca_file" ] && [ -z "$api_name" ]; then
+  say "--api without --api-ca or --api-server-name: the api's certificate is checked against the platform host CA as $API_SERVER_NAME."
+fi
+if [ -z "$uplink" ]; then
+  uplink=$(ip -o route show default 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }')
+  [ -n "$uplink" ] || die "no default route; pass --uplink with the interface guests reach the internet through."
+fi
+if [ -e /etc/wireguard/wg0.conf ] && [ "$(readlink /etc/wireguard/wg0.conf || true)" != /run/repose/wg0.conf ]; then
+  die "/etc/wireguard/wg0.conf is this machine's own; repose's tunnel is wg0 too. Move it to another name first."
+fi
+if [ -z "$device" ]; then
+  loop_file=${loop_file:-/var/lib/repose/guests.img}
+  if [ -z "$size" ] && [ ! -e "$loop_file" ]; then
+    mkdir -p "$(dirname "$loop_file")" 2>/dev/null || true
+    free=$(df -BG --output=avail "$(dirname "$loop_file")" 2>/dev/null | tail -1 | tr -dc 0-9)
+    size=100
+    [ -n "$free" ] && [ $((free - 20)) -lt "$size" ] && size=$((free - 20))
+  fi
+  if [ ! -e "$loop_file" ] && [ "${size:-0}" -lt 20 ]; then
+    die "the guest pool needs 20 GiB and this disk has under 40 GiB free (20 stay free for the machine); free up space, or pass --device."
+  fi
+else
+  [ -b "$device" ] || die "$device is not a block device."
+fi
+say "machine: $PRETTY_NAME, kernel $kver, uplink $uplink, guests on ${device:-$loop_file${size:+ ($size GiB)}}"
+
+# ---- packages ------------------------------------------------------------
+packages=(lvm2 thin-provisioning-tools nftables wireguard-tools iproute2 util-linux
+  e2fsprogs zstd curl ca-certificates jq openssl virtiofsd)
+missing=()
+for p in "${packages[@]}"; do
+  dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  step "apt-get install ${missing[*]}" -- bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$@" >/dev/null' _ "${missing[@]}"
+else
+  say "packages: all present"
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# install_file MODE DEST: stdin to DEST when it differs; prints which.
+changed=()
+install_file() {
+  local mode=$1 dest=$2 new=$tmp/new
+  cat > "$new"
+  if [ -f "$dest" ] && cmp -s "$new" "$dest" && [ "$(stat -c %a "$dest")" = "${mode#0}" ]; then
+    return 0
+  fi
+  changed+=("$dest")
+  if [ "$dry" = 1 ]; then
+    echo "would: write $dest"
+    return 0
+  fi
+  echo "==> write $dest"
+  mkdir -p "$(dirname "$dest")"
+  install -m "$mode" "$new" "$dest.repose-new"
+  mv -f "$dest.repose-new" "$dest"
+}
+# fetch_verified URL SHA256 DEST MODE
+fetch_verified() {
+  local url=$1 sum=$2 dest=$3 mode=$4
+  if [ -f "$dest" ] && echo "$sum  $dest" | sha256sum -c --quiet - 2>/dev/null; then
+    return 0
+  fi
+  changed+=("$dest")
+  if [ "$dry" = 1 ]; then
+    echo "would: fetch $url to $dest (sha256 $sum)"
+    return 0
+  fi
+  echo "==> fetch $url"
+  curl -fsSL --retry 3 -o "$tmp/fetch" "$url"
+  echo "$sum  $tmp/fetch" | sha256sum -c --quiet - || die "$url does not match its pinned sha256"
+  install -m "$mode" "$tmp/fetch" "$dest.repose-new"
+  mv -f "$dest.repose-new" "$dest"
+}
+
+# BEGIN GENERATED HOST FILES (images/appliance-arm64/embed.sh)
+# Do not edit by hand: the sources are under images/appliance-arm64/.
+write_host_files() {
+  install_file 0755 /usr/local/lib/repose/repose-guest-clean-stop <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# At a host shutdown, power a guest off through ACPI rather than letting
+# systemd's SIGTERM end Cloud Hypervisor without telling the guest, which
+# loses what its page cache held (DECISIONS I-650). Only at a system
+# shutdown: hostd's own stops ask guestd first. Ported from
+# nix/hosts/hostd.nix (I-1494).
+set -uo pipefail
+id=$1
+case "$(systemctl is-system-running 2>/dev/null || true)" in
+  running | degraded | starting | initializing | maintenance) exit 0 ;;
+esac
+[ -n "${MAINPID:-}" ] || exit 0
+sock=/var/lib/repose/guests/$id/ch.sock
+# A guest the idle pause left resting cannot service the ACPI event
+# (I-818, I-824): resume it first; on a running VM this is refused and
+# harmless.
+curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.resume >/dev/null || true
+curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.power-button >/dev/null || exit 0
+echo "repose-guest-clean-stop: event=guest_power_button guest_id=$id"
+start=$(date +%s)
+while kill -0 "$MAINPID" 2>/dev/null; do
+  if [ $(( $(date +%s) - start )) -ge 20 ]; then
+    echo "repose-guest-clean-stop: event=guest_power_button_timeout guest_id=$id"
+    exit 0
+  fi
+  sleep 0.2
+done
+echo "repose-guest-clean-stop: event=guest_powered_off guest_id=$id seconds=$(( $(date +%s) - start ))"
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-guest-pool <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# repose-guest-pool (DECISIONS I-643), ported from nix/hosts/storage.nix
+# (I-1494): the one thing that activates vg-guests/thin after boot.
+# Exit 0: pool active. Exit 1: the VG never appeared, or three attempts
+# failed. Exit 2: thin_check says the metadata is damaged; never retried
+# and never repaired. Every failure leaves /run/repose/pool-hold, which
+# the unit's ExecCondition reads, so a failed pool is not retried at
+# every hostd restart. Log lines carry VG, volume and dm names and exit
+# codes only.
+set -euo pipefail
+vg="vg-guests"
+pool=thin
+# dm names double the dashes of the VG and LV names.
+dmpool="vg--guests-thin"
+hold_file=/run/repose/pool-hold
+vg_wait=${REPOSE_POOL_VG_WAIT:-300}
+say() { echo "repose-guest-pool: $*"; }
+hold() {
+  mkdir -p "$(dirname "$hold_file")"
+  : > "$hold_file"
+  exit "$1"
+}
+
+if [ "${1:-}" = --held ]; then
+  # The unit's ExecCondition: skipped, not failed, while held.
+  if [ -e "$hold_file" ]; then
+    say "event=pool_held marker=$hold_file"
+    exit 1
+  fi
+  exit 0
+fi
+rm -f "$hold_file"
+
+udevadm settle --timeout=60 || true
+waited=0
+until vgs "$vg" >/dev/null 2>&1; do
+  if [ "$waited" -ge "$vg_wait" ]; then
+    say "event=pool_vg_missing vg=$vg waited_s=$waited"
+    hold 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+
+if [ "$(vgs --noheadings -o autoactivation "$vg" | tr -d ' ')" = enabled ]; then
+  vgchange --setautoactivation n "$vg"
+  say "event=pool_autoactivation_off vg=$vg"
+fi
+
+lvm_says_active() {
+  [ "$(lvs --noheadings -o lv_active "$vg/$pool" 2>/dev/null | tr -d ' ')" = active ]
+}
+pool_active() {
+  local table
+  lvm_says_active || return 1
+  table=$(dmsetup table "$dmpool-tpool" 2>/dev/null || dmsetup table "$dmpool" 2>/dev/null || true)
+  grep -q ' thin-pool ' <<< "$table"
+}
+open_count() { dmsetup info -c --noheadings -o open "$1" 2>/dev/null | tr -d ' '; }
+
+clear_leftovers() {
+  local d n names
+  if lvm_says_active; then
+    say "event=pool_leftover_held reason=pool_reported_active"
+    return 1
+  fi
+  names=$(dmsetup info -c --noheadings -o name 2>/dev/null || true)
+  if grep -qE "^vg--guests-(g--|auth--|repose--cache)" <<< "$names"; then
+    say "event=pool_leftover_held reason=thin_volume_device_present"
+    return 1
+  fi
+  for d in "$dmpool" "$dmpool-tpool" "$dmpool"_tdata "$dmpool"_tmeta; do
+    dmsetup info "$d" >/dev/null 2>&1 || continue
+    n=$(open_count "$d")
+    if [ "$n" != 0 ]; then
+      say "event=pool_leftover_held device=$d open_count=$n"
+      return 1
+    fi
+    dmsetup remove "$d"
+    say "event=pool_leftover_removed device=$d"
+  done
+}
+
+attempt() {
+  local err rc status
+  if pool_active; then
+    say "event=pool_already_active vg=$vg"
+  else
+    clear_leftovers || return 1
+    err=$(mktemp)
+    rc=0
+    lvchange -ay "$vg/$pool" 2>"$err" || rc=$?
+    if [ "$rc" != 0 ]; then
+      status=$(grep -oE 'Check of pool .* failed \(status:-?[0-9]+\)' "$err" | grep -oE -- '-?[0-9]+\)$' | tr -d ')' || true)
+      rm -f "$err"
+      if [ -n "$status" ] && [ "$status" -gt 0 ]; then
+        say "event=pool_check_failed vg=$vg pool=$pool status=$status"
+        hold 2
+      fi
+      say "event=pool_activate_failed vg=$vg pool=$pool exit=$rc"
+      return 1
+    fi
+    rm -f "$err"
+    say "event=pool_activated vg=$vg pool=$pool"
+  fi
+  vgchange -ay "$vg" >/dev/null || say "event=pool_volumes_partial vg=$vg"
+  pool_active || return 1
+  return 0
+}
+
+delays=(10 30 60)
+ok=0
+for i in 1 2 3; do
+  if attempt; then ok=1; break; fi
+  [ "$i" = 3 ] && break
+  sleep "${REPOSE_POOL_RETRY_DELAY:-${delays[$((i - 1))]}}"
+done
+if [ "$ok" != 1 ]; then
+  say "event=pool_unavailable vg=$vg attempts=3"
+  hold 1
+fi
+
+inactive=$(lvs --noheadings -o lv_name,lv_active "$vg" | awk '$1 ~ /^(g|auth)-/ && $2 != "active" { n++ } END { print n + 0 }')
+if [ "$inactive" != 0 ]; then
+  say "event=pool_volumes_inactive vg=$vg count=$inactive"
+fi
+
+# dmeventd: autoextend acts only on a monitored pool.
+systemctl start dm-event.service || true
+lvchange --monitor y "$vg/$pool" || true
+if [ "$(lvs --noheadings -o seg_monitor "$vg/$pool" | tr -d ' ')" = monitored ]; then
+  say "event=pool_monitored vg=$vg pool=$pool"
+else
+  say "event=pool_unmonitored vg=$vg pool=$pool"
+fi
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-guests-slice <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# guests.slice gets everything but the host reserve: an eighth of RAM,
+# floor 2 GiB, ceiling 16 GiB, the rule of the api's scheduler.HostReserve
+# and hostd's HostReserveBytes (DECISIONS I-724). Ported from
+# nix/hosts/hostd.nix (I-1494).
+set -euo pipefail
+total=$(awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo)
+gib=$((1024 * 1024 * 1024))
+reserve=$((total / 8))
+if [ "$reserve" -lt $((2 * gib)) ]; then reserve=$((2 * gib)); fi
+if [ "$reserve" -gt $((16 * gib)) ]; then reserve=$((16 * gib)); fi
+max=$((total - reserve))
+if [ "$max" -le 0 ]; then max=$((total / 2)); fi
+systemctl set-property --runtime guests.slice MemoryMax="$max"
+echo "guests.slice MemoryMax=$max (total=$total reserve=$reserve)"
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-host-net <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# Configure br-guests and wg0 from host.json (nix/hosts/network.nix,
+# ported for the appliance and the x86 installer, DECISIONS I-1494).
+# Renders /run/repose/host.env, /run/repose/wg0.conf (0600) and the
+# bridge's address drop-in, then restarts the units that read them.
+# Without host.json the bridge stays unaddressed and, when hub.json is
+# there (the join bundle's place on the hub, I-1380), wg0 is rendered
+# from it so `hostd register` reaches the control plane's hub address.
+# There is no sshd on an owned host, so nothing here renders its files.
+set -euo pipefail
+hostJson=${REPOSE_HOST_JSON:-/var/lib/repose/hostd/host.json}
+run=${REPOSE_RUN_DIR:-/run/repose}
+hubJson="$run/hub.json"
+netd=/run/systemd/network/20-br-guests.network.d
+mkdir -p "$run"
+# 0755 whatever created it first (DECISIONS I-97).
+chmod 0755 "$run"
+umask 022
+
+write_wg0() {
+  # $1: a JSON file with private_key, address, edge_pubkey and
+  # edge_endpoint under the jq prefix $2. Prints 1 when it wrote the file,
+  # 0 when the material is incomplete and the file was removed.
+  local key address edge_pubkey endpoint
+  key=$(jq -r "${2}.private_key // empty" "$1")
+  address=$(jq -r "${2}.address // empty" "$1")
+  edge_pubkey=$(jq -r "${2}.edge_pubkey // empty" "$1")
+  endpoint=$(jq -r "${2}.edge_endpoint // empty" "$1")
+  if [ -n "$key" ] && [ -n "$address" ] && [ -n "$edge_pubkey" ] && [ -n "$endpoint" ]; then
+    (
+      umask 077
+      {
+        echo "[Interface]"
+        echo "PrivateKey = $key"
+        echo "Address = $address"
+        echo
+        echo "[Peer]"
+        echo "PublicKey = $edge_pubkey"
+        echo "Endpoint = $endpoint"
+        echo "AllowedIPs = 10.255.0.0/16"
+        echo "PersistentKeepalive = 25"
+      } > "$run/wg0.conf.tmp"
+      mv "$run/wg0.conf.tmp" "$run/wg0.conf"
+    )
+    echo 1
+  else
+    rm -f "$run/wg0.conf"
+    echo 0
+  fi
+}
+
+if [ ! -s "$hostJson" ]; then
+  echo "no host.json; bridge not configured"
+  rm -f "$run/host.env"
+  rm -rf "$netd"
+  networkctl reload || true
+  if [ -s "$hubJson" ] && [ "$(write_wg0 "$hubJson" "")" = 1 ]; then
+    echo "hub.json applied: wg0 configured for registration"
+    systemctl --no-block restart wg-quick@wg0.service
+  else
+    rm -f "$run/wg0.conf"
+    systemctl --no-block stop wg-quick@wg0.service
+  fi
+  exit 0
+fi
+# Registered: the bootstrap material is spent (I-1380).
+rm -f "$hubJson"
+
+host_id=$(jq -er .host_id "$hostJson")
+guest_cidr=$(jq -er .guest_cidr "$hostJson")
+wg_address=$(jq -r '.wg.address // empty' "$hostJson")
+wg_ip=${wg_address%/*}
+
+IFS='./' read -r a b c d prefix <<< "$guest_cidr"
+bridge_ip="$a.$b.$c.$((d + 1))"
+bridge_address="$bridge_ip/$prefix"
+
+cat > "$run/host.env.tmp" <<ENV
+HOST_ID=$host_id
+GUEST_CIDR=$guest_cidr
+BRIDGE_ADDR=$bridge_ip
+WG_ADDR=$wg_ip
+ENV
+mv "$run/host.env.tmp" "$run/host.env"
+
+if [ "$(write_wg0 "$hostJson" ".wg")" != 1 ]; then
+  echo "no WireGuard material in host.json; wg0 not configured"
+fi
+
+mkdir -p "$netd"
+printf '[Network]\nAddress=%s\n' "$bridge_address" > "$netd/10-address.conf"
+networkctl reload
+networkctl reconfigure br-guests || true
+
+echo "host.json applied: host_id=$host_id guest_cidr=$guest_cidr bridge=$bridge_address"
+if [ -s "$run/wg0.conf" ]; then
+  systemctl --no-block restart wg-quick@wg0.service
+else
+  systemctl --no-block stop wg-quick@wg0.service
+fi
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-hostd-update <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# hostd's unattended update on a host repose does not rebuild: the Mac
+# appliance and a machine ops/install-host-x86.sh set up (DECISIONS
+# I-1496). repose-hostd-update.timer runs it every 30 minutes.
+#
+# It reads the channel's manifest.json, a GitHub release asset:
+#   {"version": "...",
+#    "arches": {"amd64": {"url": "...", "sha256": "..."},
+#               "arm64": {"url": "...", "sha256": "..."}},
+#    "signature": "<base64>"}
+# The signature is the release key's (install.sh RELEASE_PUBKEY, the key
+# release.yml signs the CLI with) over this text, one line each, the
+# arches in that order:
+#   repose-hostd-manifest v1
+#   version <version>
+#   amd64 <sha256> <url>
+#   arm64 <sha256> <url>
+# so a manifest is trusted for nothing its signature does not cover. A
+# manifest that does not verify, a version older than the running one, or
+# a binary whose sha256 differs changes nothing. Otherwise the binary is
+# written beside /usr/local/bin/hostd, asked its version, renamed over the
+# old one and hostd restarted; hostd.service has KillMode=process, so the
+# guests keep running and hostd reconciles them at its start.
+#
+#   repose-hostd-update [--manifest-url URL] [--force]
+#
+# Environment (tests): REPOSE_HOSTD_BIN, REPOSE_RELEASE_PUBKEY_FILE,
+# REPOSE_HOSTD_RESTART (the command that restarts hostd).
+set -euo pipefail
+
+channel=stable
+url="https://github.com/Heracraft/repose/releases/download/hostd-$channel/manifest.json"
+# shellcheck source=/dev/null
+[ -r /etc/repose/hostd-update.env ] && . /etc/repose/hostd-update.env
+url=${REPOSE_HOSTD_MANIFEST_URL:-$url}
+force=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --manifest-url) url=${2:?}; shift 2 ;;
+    --force) force=1; shift ;;
+    *) echo "repose-hostd-update: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+bin=${REPOSE_HOSTD_BIN:-/usr/local/bin/hostd}
+pubkey=${REPOSE_RELEASE_PUBKEY_FILE:-/etc/repose/release.pub}
+restart=${REPOSE_HOSTD_RESTART:-systemctl restart hostd.service}
+say() { echo "repose-hostd-update: $*"; }
+start=$(date +%s.%N)
+
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64) arch=arm64 ;;
+  *) say "event=update_refused reason=arch arch=$(uname -m)" >&2; exit 1 ;;
+esac
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if ! curl -fsSL --max-time 60 -o "$tmp/manifest.json" "$url"; then
+  say "event=manifest_fetch_failed" >&2
+  exit 1
+fi
+m=$tmp/manifest.json
+field() { jq -er "$1" "$m" 2>/dev/null; }
+if ! version=$(field .version) || ! sig=$(field .signature) ||
+  ! a_url=$(field .arches.amd64.url) || ! a_sum=$(field .arches.amd64.sha256) ||
+  ! r_url=$(field .arches.arm64.url) || ! r_sum=$(field .arches.arm64.sha256); then
+  say "event=update_refused reason=manifest_shape" >&2
+  exit 1
+fi
+printf 'repose-hostd-manifest v1\nversion %s\namd64 %s %s\narm64 %s %s\n' \
+  "$version" "$a_sum" "$a_url" "$r_sum" "$r_url" > "$tmp/signed"
+if ! printf '%s' "$sig" | base64 -d > "$tmp/sig" 2>/dev/null ||
+  ! openssl dgst -sha256 -verify "$pubkey" -signature "$tmp/sig" "$tmp/signed" >/dev/null 2>&1; then
+  say "event=update_refused reason=signature version=$version" >&2
+  exit 1
+fi
+say "event=manifest_verified version=$version"
+
+current=$("$bin" version 2>/dev/null | awk '{ print $2 }') || current=""
+if [ "$current" = "$version" ] && [ "$force" = 0 ]; then
+  say "event=up_to_date version=$version"
+  exit 0
+fi
+if [ -n "$current" ] && [ "$current" != dev ] && [ "$force" = 0 ] &&
+  [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" = "$current" ]; then
+  say "event=update_refused reason=older version=$version running=$current" >&2
+  exit 1
+fi
+
+if [ "$arch" = amd64 ]; then want_url=$a_url want_sum=$a_sum; else want_url=$r_url want_sum=$r_sum; fi
+# Beside the binary, so the rename below is one filesystem's and atomic.
+new="$(dirname "$bin")/.hostd.new"
+rm -f "$new"
+if ! curl -fsSL --max-time 300 -o "$new" "$want_url"; then
+  rm -f "$new"
+  say "event=binary_fetch_failed version=$version" >&2
+  exit 1
+fi
+got=$(sha256sum "$new" | awk '{ print $1 }')
+if [ "$got" != "$want_sum" ]; then
+  rm -f "$new"
+  say "event=update_refused reason=sha256 version=$version" >&2
+  exit 1
+fi
+say "event=sha256_verified version=$version"
+chmod 0755 "$new"
+said=$("$new" version 2>/dev/null | awk '{ print $2 }') || said=""
+if [ "$said" != "$version" ]; then
+  rm -f "$new"
+  say "event=update_refused reason=version_mismatch version=$version binary=$said" >&2
+  exit 1
+fi
+mv -f "$new" "$bin"
+$restart
+end=$(date +%s.%N)
+say "event=updated from=${current:-none} to=$version seconds=$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.2f", b - a }')"
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-launcher-join <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# The join bundle (hostmgr.JoinBundle, docs/interfaces/api.md): one
+# base64url string carrying {"v":1,"token":...,"wg":{...}}. Split into the
+# two files the host reads: /run/repose/join-token for repose-register and
+# /run/repose/hub.json for repose-host-net's bootstrap tunnel. On the Mac
+# appliance the launcher shares the bundle in over virtio-fs; on an x86
+# machine ops/install-host-x86.sh writes it to the same path. Ported from
+# nix/hosts/mac.nix (DECISIONS I-1380, I-1494). Logs name events only; the
+# token and the key never reach a line.
+set -euo pipefail
+join=${REPOSE_JOIN_FILE:-/run/repose/launcher/join}
+run=${REPOSE_RUN_DIR:-/run/repose}
+stateJson=${REPOSE_HOST_JSON:-/var/lib/repose/hostd/host.json}
+umask 077
+mkdir -p "$run"
+chmod 0755 "$run"
+if [ ! -s "$join" ]; then
+  echo "repose-launcher-join: event=no_join_file"
+  exit 0
+fi
+if [ -s "$stateJson" ]; then
+  # Registered already: a used bundle is dead, and a new one for a
+  # registered host is `repose host rm` and `host add` again.
+  echo "repose-launcher-join: event=join_ignored reason=registered"
+  rm -f "$join" || true
+  exit 0
+fi
+raw=$(tr -d '[:space:]' < "$join")
+# base64url without padding: GNU basenc wants it padded.
+pad=$(( (4 - ${#raw} % 4) % 4 ))
+padded="$raw$(printf '%*s' "$pad" "" | tr ' ' '=')"
+if ! decoded=$(printf '%s' "$padded" | basenc --base64url -d 2>/dev/null); then
+  echo "repose-launcher-join: event=join_invalid reason=encoding" >&2
+  exit 1
+fi
+if [ "$(printf '%s' "$decoded" | jq -r '.v // 0')" != "1" ]; then
+  echo "repose-launcher-join: event=join_invalid reason=version" >&2
+  exit 1
+fi
+token=$(printf '%s' "$decoded" | jq -r '.token // empty')
+if [ -z "$token" ]; then
+  echo "repose-launcher-join: event=join_invalid reason=no_token" >&2
+  exit 1
+fi
+if [ ! -e "$run/join-token" ]; then
+  printf '%s\n' "$token" > "$run/join-token.tmp"
+  chmod 0600 "$run/join-token.tmp"
+  mv "$run/join-token.tmp" "$run/join-token"
+  echo "repose-launcher-join: event=join_token_written"
+fi
+if printf '%s' "$decoded" | jq -e '.wg.private_key and .wg.address and .wg.edge_pubkey and .wg.edge_endpoint' >/dev/null; then
+  printf '%s' "$decoded" | jq '.wg' > "$run/hub.json.tmp"
+  chmod 0600 "$run/hub.json.tmp"
+  mv "$run/hub.json.tmp" "$run/hub.json"
+  echo "repose-launcher-join: event=hub_bootstrap_written"
+else
+  echo "repose-launcher-join: event=no_hub_in_join"
+fi
+# Single use: nothing of the bundle outlives the registration it was for.
+rm -f "$join" || echo "repose-launcher-join: event=join_file_kept reason=share_read_only"
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-pool-create <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# Make vg-guests and its thin pool on one empty block device, the shape
+# disko-layout.nix gives a data disk at install: the pool at 95 percent of
+# the VG, its metadata one percent of the PV clamped to 1..16 GiB,
+# discards passed down, new blocks zeroed (DECISIONS I-1494). The Mac
+# appliance runs it at first boot on its third partition
+# (repose-guest-vg-init.service) and ops/install-host-x86.sh on --device
+# or the loop device of --loop-file.
+#
+# A device that already carries vg-guests is left alone and is success. A
+# device with any other signature is refused: this never formats
+# something it did not make.
+#
+#   repose-pool-create <device>
+set -euo pipefail
+dev=${1:?usage: repose-pool-create <device>}
+vg="vg-guests"
+gib=$((1024 * 1024 * 1024))
+say() { echo "repose-pool-create: $*"; }
+
+if pvs --noheadings -o vg_name "$dev" 2>/dev/null | grep -qx "[[:space:]]*$vg"; then
+  if lvs "$vg/thin" >/dev/null 2>&1; then
+    say "event=pool_present device=$dev"
+    exit 0
+  fi
+elif sig=$(blkid -p -o value -s TYPE "$dev" 2>/dev/null) && [ -n "$sig" ]; then
+  say "event=device_refused device=$dev reason=signature_$sig" >&2
+  exit 1
+else
+  pvcreate -q "$dev"
+  vgcreate -q "$vg" "$dev"
+  say "event=vg_created device=$dev"
+fi
+
+pv=$(blockdev --getsize64 "$dev")
+meta=$((pv / 100))
+[ "$meta" -lt $gib ] && meta=$gib
+[ "$meta" -gt $((16 * gib)) ] && meta=$((16 * gib))
+# 95 percent of the VG, and never past what it holds beside the metadata
+# and its spare (on a small disk those two are more than 5 percent), in
+# whole extents: the same sum repose-mac-grow makes, so its first run
+# after this changes nothing.
+vg_size=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
+extent=$(vgs --noheadings --units b --nosuffix -o vg_extent_size "$vg" | tr -d ' ')
+meta=$(( (meta + extent - 1) / extent * extent ))
+want=$(( vg_size * 95 / 100 ))
+cap=$(( vg_size - 2 * meta - 4 * extent ))
+[ "$want" -gt "$cap" ] && want=$cap
+want=$(( want / extent * extent ))
+if [ "$want" -le 0 ]; then
+  say "event=device_too_small device=$dev pv_bytes=$pv" >&2
+  exit 1
+fi
+lvcreate -q -y --type thin-pool -L "${want}b" --poolmetadatasize "${meta}b" \
+  --discards passdown --zero y -n thin "$vg"
+# repose-guest-pool owns activation (I-643).
+vgchange -q --setautoactivation n "$vg"
+# The pool's autoextend (I-643), as a profile so the machine's own VGs keep theirs.
+vgchange -q --metadataprofile repose-thin "$vg"
+say "event=pool_created device=$dev pv_bytes=$pv metadata_bytes=$meta"
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-guest-loop <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# Attach the file that holds vg-guests on a machine with one disk
+# (ops/install-host-x86.sh --loop-file) to a loop device, at every boot
+# before repose-guest-pool. Attached already is success.
+#
+#   repose-guest-loop <file>
+set -euo pipefail
+file=${1:?usage: repose-guest-loop <file>}
+if [ -n "$(losetup -j "$file" -O NAME -n)" ]; then
+  echo "repose-guest-loop: event=loop_present device=$(losetup -j "$file" -O NAME -n)"
+  exit 0
+fi
+dev=$(losetup --find --show --direct-io=on "$file")
+echo "repose-guest-loop: event=loop_attached device=$dev"
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/guest@.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
+# Every guest@ unit, running ones included: a shutdown stops the guest
+# before its shares and powers it off through ACPI (DECISIONS I-650), and
+# parks it first where the park is on (I-652).
+[Unit]
+After=virtiofsd@%i.service virtiofsd-auth@%i.service
+Before=repose-guest-park.service
+
+[Service]
+ExecStop=/usr/local/lib/repose/repose-guest-clean-stop %i
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/guests.slice <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Tenant guests (Cloud Hypervisor and virtiofsd transient units)
+
+[Slice]
+CPUWeight=100
+MemoryAccounting=yes
+CPUAccounting=yes
+IOAccounting=yes
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/hostd.service <<'REPOSE_HOST_FILE'
+# hostd on a host repose does not build with Nix: the Mac appliance and an
+# x86 machine set up by ops/install-host-x86.sh (DECISIONS I-1494). The
+# flags are /etc/repose/hostd.env's. Guests are transient units in
+# guests.slice, not children (KillMode=process): a restart of hostd, an
+# update included, does not stop them, and hostd reconciles them at start.
+[Unit]
+Description=repose hostd: runs tenants' guests on this host
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service lvm2-monitor.service
+
+[Service]
+EnvironmentFile=/etc/repose/hostd.env
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/bin/hostd --state /var/lib/repose/hostd --images-dir /var/lib/repose/images --nix-mode off $HOSTD_API_ARGS $HOSTD_ARGS
+Restart=always
+RestartSec=2
+# A join token that has been used is not retried (03-hostd §6).
+RestartPreventExitStatus=3
+KillMode=process
+LimitNOFILE=1048576
+StateDirectory=repose/hostd
+StateDirectoryMode=0700
+LogsDirectory=repose
+OOMScoreAdjust=-900
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-fault-around.service <<'REPOSE_HOST_FILE'
+# Fault-around off for the shmem hole-punch race (DECISIONS I-1040,
+# I-1042; nix/hosts/kernel.nix). No condition on the file, deliberately:
+# a kernel without the knob fails this unit, which is how a host finds
+# out the mitigation no longer applies.
+[Unit]
+Description=Switch fault-around off for the shmem hole-punch race (I-1040)
+After=sys-kernel-debug.mount
+Requires=sys-kernel-debug.mount
+Before=hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo 4096 > /sys/kernel/debug/fault_around_bytes'
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-guest-park.service <<'REPOSE_HOST_FILE'
+# Park running guests before the host shuts down (DECISIONS I-652, I-1386;
+# nix/hosts/park.nix). Enabled only where hostd.env turns the park on: the
+# Mac appliance, whose launcher wraps the image keys. Its ExecStop runs at
+# shutdown before any guest stops (the guest@, virtiofsd@ and
+# virtiofsd-auth@ drop-ins order them before it). TimeoutStopSec is the
+# park deadline plus 150 s (park.nix).
+[Unit]
+Description=Park running guests before the host shuts down
+Wants=hostd.service
+After=hostd.service repose-guest-pool.service local-fs.target network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/true
+ExecStop=/usr/local/bin/hostd park --shutdown
+TimeoutStopSec=270
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-guest-pool.service <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Activate the guest pool vg-guests/thin (DECISIONS I-643)
+After=systemd-udevd.service dm-event.socket repose-guest-vg-init.service repose-guest-loop.service
+Wants=dm-event.socket
+Before=hostd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# thin_check of a large pool after a crash takes minutes.
+TimeoutStartSec=30min
+# A failed run held the unit: skipped, not failed.
+ExecCondition=/usr/local/lib/repose/repose-guest-pool --held
+ExecStart=/usr/local/lib/repose/repose-guest-pool
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-guests-slice.service <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Set guests.slice memory cap from the host's RAM
+Before=hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-guests-slice
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-host-net.service <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Configure br-guests, wg0 and per-host files from host.json
+After=systemd-networkd.service repose-nftables.service repose-launcher-join.service
+Wants=systemd-networkd.service
+Before=hostd.service wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-host-net
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-hostd-update.service <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Update hostd from the signed release manifest (DECISIONS I-1496)
+Wants=network-online.target
+After=network-online.target hostd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/repose/repose-hostd-update
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-hostd-update.timer <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Check for a new hostd every 30 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+Unit=repose-hostd-update.service
+
+[Install]
+WantedBy=timers.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-launcher-join.service <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Take the join bundle from /run/repose/launcher (DECISIONS I-1380)
+RequiresMountsFor=/run/repose/launcher
+After=systemd-tmpfiles-setup.service
+Before=repose-host-net.service repose-register.service hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-launcher-join
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-nftables.service <<'REPOSE_HOST_FILE'
+# The `repose` nftables tables (docs/interfaces/host-conventions.md,
+# nix/hosts/nftables.nix). Its own unit, not the distribution's
+# nftables.service, whose /etc/nftables.conf flushes the whole ruleset:
+# this one declares and flushes only its own chains, so hostd's chains,
+# sets and counters survive a reload.
+[Unit]
+Description=repose guest isolation ruleset
+DefaultDependencies=no
+Before=network-pre.target hostd.service
+Wants=network-pre.target
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/repose/nftables.nft
+ExecReload=/usr/sbin/nft -f /etc/repose/nftables.nft
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-register.service <<'REPOSE_HOST_FILE'
+# One-shot registration before hostd: trades /run/repose/join-token for
+# host.json, cert.pem and key.pem through `hostd register`. Skipped once
+# host.json exists or with no token. A token the api rejects makes hostd
+# exit 3 and the unit stops retrying; a network error retries every 30 s.
+[Unit]
+Description=Register this host with the api using the join token
+Wants=network-online.target repose-launcher-join.service
+After=network-online.target repose-host-net.service wg-quick@wg0.service repose-launcher-join.service
+Before=hostd.service
+ConditionPathExists=!/var/lib/repose/hostd/host.json
+ConditionPathExists=/run/repose/join-token
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/repose/hostd.env
+ExecStart=/usr/local/bin/hostd --state /var/lib/repose/hostd --join-token /run/repose/join-token $HOSTD_API_ARGS register
+# The bridge and wg0 read host.json; apply it now.
+ExecStartPost=/usr/bin/systemctl --no-block restart repose-host-net.service
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=3
+StateDirectory=repose/hostd
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-snapshot.service <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Nightly snapshot of every running guest
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hostd snapshot-all
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-snapshot.timer <<'REPOSE_HOST_FILE'
+[Unit]
+Description=Nightly snapshot at 03:00 local time
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=false
+RandomizedDelaySec=10min
+Unit=repose-snapshot.service
+
+[Install]
+WantedBy=timers.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/virtiofsd-auth@.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
+[Unit]
+Before=repose-guest-park.service
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/virtiofsd@.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
+[Unit]
+Before=repose-guest-park.service
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/wg-quick@wg0.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
+# /etc/wireguard/wg0.conf is a link to /run/repose/wg0.conf, which
+# repose-host-net renders from host.json or the join's hub.json.
+[Unit]
+ConditionPathExists=/run/repose/wg0.conf
+After=repose-host-net.service
+PartOf=repose-host-net.service
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-guest-loop.service <<'REPOSE_HOST_FILE'
+# vg-guests' PV is a file on this machine's one disk (DECISIONS I-1498).
+[Unit]
+Description=Attach the guest pool's file to a loop device
+DefaultDependencies=no
+After=local-fs.target
+Before=repose-guest-pool.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/repose/pool.env
+ExecStart=/usr/local/lib/repose/repose-guest-loop $REPOSE_POOL_FILE
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/lvm/profile/repose-thin.profile <<'REPOSE_HOST_FILE'
+# vg-guests' metadata profile (vgchange --metadataprofile repose-thin):
+# grow the pool by 5 percent into the VG headroom when it passes 80
+# percent full (DECISIONS I-643, storage.nix). A profile and not lvm.conf,
+# so a machine's own volume groups keep their settings.
+activation {
+  thin_pool_autoextend_threshold = 80
+  thin_pool_autoextend_percent = 5
+}
+REPOSE_HOST_FILE
+  install_file 0644 /etc/modules-load.d/repose.conf <<'REPOSE_HOST_FILE'
+# nix/hosts/kernel.nix's boot.kernelModules, less kvm-intel (the kernel
+# loads its KVM module for the CPU it finds).
+vhost_vsock
+vhost_net
+tun
+nf_tables
+nf_conntrack
+nft_connlimit
+dm_thin_pool
+dm_snapshot
+overlay
+bridge
+sch_htb
+sch_fq_codel
+sch_ingress
+cls_flower
+act_police
+act_gact
+erofs
+REPOSE_HOST_FILE
+  install_file 0644 /etc/repose/nftables.nft <<'REPOSE_HOST_FILE'
+#!/usr/sbin/nft -f
+# The `repose` nftables tables (docs/interfaces/host-conventions.md),
+# ported from nix/hosts/nftables.nix for hosts without Nix (DECISIONS
+# I-1494). That file's comment explains every chain; the differences here:
+# no build_out (no Nix builders run on these hosts), no cache rules (no
+# npm or Docker Hub cache runs on them), no bootstrap ssh, and the provider
+# NIC's name comes from /etc/repose/uplink.nft, and what reaches or
+# crosses the host that is neither a guest's nor the mesh's is decided by
+# /etc/repose/host-chains.nft: dropped on the Mac appliance, as on every
+# repose host, and accepted on an x86 machine, whose own services and
+# firewall are its owner's.
+#
+# Loaded by repose-nftables.service. The first part declares and flushes
+# the chains this file owns; hostd's chains (guest_dyn, guest_smtp,
+# guest_stratum, guest_flows), its sets' elements and its counters are
+# never flushed by a reload.
+include "/etc/repose/uplink.nft"
+
+table inet repose {
+  chain input { type filter hook input priority filter; policy drop; }
+  chain output { type filter hook output priority filter; policy accept; }
+  chain guest_fwd { type filter hook forward priority filter; policy drop; }
+  chain guest_meter { type filter hook forward priority filter + 10; policy accept; }
+  chain nat { type nat hook postrouting priority srcnat; policy accept; }
+  chain guest_in { }
+  chain host_input { }
+  chain host_forward { }
+  chain smtp_drop { }
+  chain stratum_drop { }
+  chain flows_drop { }
+}
+flush chain inet repose input
+flush chain inet repose output
+flush chain inet repose guest_fwd
+flush chain inet repose guest_meter
+flush chain inet repose nat
+flush chain inet repose guest_in
+flush chain inet repose smtp_drop
+flush chain inet repose stratum_drop
+flush chain inet repose flows_drop
+flush chain inet repose host_input
+flush chain inet repose host_forward
+table bridge repose {
+  chain forward { type filter hook forward priority filter; policy accept; }
+  chain input { type filter hook input priority filter; policy drop; }
+}
+flush chain bridge repose forward
+flush chain bridge repose input
+include "/etc/repose/host-chains.nft"
+
+table inet repose {
+  chain guest_dyn {
+  }
+  chain guest_smtp {
+  }
+  chain guest_stratum {
+  }
+  chain guest_flows {
+  }
+
+  # One token bucket per guest address for new outbound flows (I-240).
+  set guest_flow_rate {
+    type ipv4_addr
+    size 65535
+    flags dynamic,timeout
+    timeout 1m
+  }
+  # Each guest address's tracked connections (I-453).
+  set guest_conns {
+    type ipv4_addr
+    size 65535
+    flags dynamic
+  }
+
+  chain smtp_drop {
+    jump guest_smtp
+    counter drop
+  }
+  chain stratum_drop {
+    jump guest_stratum
+    counter drop
+  }
+  chain flows_drop {
+    jump guest_flows
+    counter drop
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname "lo" accept
+    iifname "br-guests" jump guest_in
+    ct state established,related accept
+    ct state invalid drop
+
+    # The exporters and hostd's metrics, over WireGuard only.
+    iifname "wg0" tcp dport { 9100, 9101 } accept
+    iifname "wg0" icmp type echo-request accept
+
+    # What else reaches the host is host_input's: closed on the Mac
+    # appliance, the machine's own business on an x86 host.
+    jump host_input
+    counter drop
+  }
+
+  chain guest_in {
+    ct direction reply ct state established,related accept
+    icmp type echo-request limit rate 5/second accept
+    counter drop
+  }
+
+  chain guest_fwd {
+    type filter hook forward priority filter; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+
+    # The edge gateway relays SSH to guests over WireGuard.
+    iifname "wg0" oifname "br-guests" ip daddr 10.64.0.0/12 tcp dport 22 accept
+
+    iifname "br-guests" meta nfproto ipv6 counter drop
+    iifname "br-guests" tcp dport 25 goto smtp_drop
+    iifname "br-guests" tcp dport { 3333, 5555, 7777, 14433, 14444 } goto stratum_drop
+    iifname "br-guests" ct state new add @guest_conns { ip saddr ct count over 16384 } goto flows_drop
+    iifname "br-guests" ct state new update @guest_flow_rate { ip saddr limit rate over 200/second burst 2000 packets } goto flows_drop
+
+    # Cloud instance metadata and the Azure wire server: never from a guest.
+    iifname "br-guests" ip daddr { 169.254.169.254, 168.63.129.16 } counter drop
+    # Other guests, on this host or any other.
+    iifname "br-guests" ip daddr 10.64.0.0/12 counter drop
+    # The edge: hook ingest, and nothing else on the mesh.
+    iifname "br-guests" oifname "wg0" ip daddr 10.255.0.1 tcp dport 8443 accept
+    # Everything private: the owner's LAN, the mesh, link-local.
+    iifname "br-guests" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } counter drop
+    iifname "br-guests" oifname $uplink counter accept
+    iifname "br-guests" counter drop
+    oifname "br-guests" counter drop
+    # Forwarding that is not a guest's is host_forward's (an x86 host's
+    # own containers, say).
+    jump host_forward
+    counter drop
+  }
+
+  chain guest_meter {
+    type filter hook forward priority filter + 10; policy accept;
+    iifname "br-guests" oifname $uplink jump guest_dyn
+  }
+
+  chain nat {
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname $uplink ip saddr 10.64.0.0/12 masquerade
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}
+
+table bridge repose {
+  # hostd-owned: { <mac> . <ip> . tap-<8hex> } per running guest.
+  set guests {
+    type ether_addr . ipv4_addr . ifname
+  }
+
+  # No frame is ever switched between two guests. Only br-guests': an
+  # x86 host's other bridges (Docker's, say) are not this table's.
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    meta ibrname "br-guests" counter drop
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname != "tap-*" accept
+    ether type arp ether saddr . arp saddr ip . iifname @guests accept
+    ether type ip ether saddr . ip saddr . iifname @guests accept
+    counter drop
+  }
+}
+REPOSE_HOST_FILE
+  install_file 0644 /etc/sysctl.d/90-repose.conf <<'REPOSE_HOST_FILE'
+# nix/hosts/kernel.nix's sysctls (DECISIONS I-1494); that file says why
+# each is set. A leading - ignores a key whose module is not loaded yet.
+kernel.panic_on_oops = 1
+net.ipv4.ip_forward = 1
+fs.inotify.max_user_instances = 8192
+vm.overcommit_memory = 1
+net.ipv4.ip_nonlocal_bind = 1
+-net.netfilter.nf_conntrack_max = 1048576
+-net.netfilter.nf_conntrack_tcp_timeout_established = 86400
+-net.bridge.bridge-nf-call-iptables = 0
+-net.bridge.bridge-nf-call-ip6tables = 0
+-net.bridge.bridge-nf-call-arptables = 0
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/network/20-br-guests.netdev <<'REPOSE_HOST_FILE'
+# No STP: taps never form loops (nix/hosts/network.nix).
+[NetDev]
+Kind=bridge
+Name=br-guests
+
+[Bridge]
+STP=false
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/network/20-br-guests.network <<'REPOSE_HOST_FILE'
+# The address is repose-host-net's drop-in, from host.json.
+[Match]
+Name=br-guests
+
+[Network]
+ConfigureWithoutCarrier=yes
+DHCP=no
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+
+[Link]
+RequiredForOnline=no
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/network/30-repose-unmanaged.network <<'REPOSE_HOST_FILE'
+# hostd creates the taps and attaches them; wg-quick owns wg0.
+[Match]
+Name=tap-* wg0
+
+[Link]
+Unmanaged=yes
+REPOSE_HOST_FILE
+  install_file 0644 /etc/sysusers.d/repose.conf <<'REPOSE_HOST_FILE'
+# nix/hosts/virt.nix's accounts: hostd runs the guest hypervisors and owns
+# the taps; virtiofsd and repose-auth serve the shares and are in group
+# hostd to reach their sockets (DECISIONS I-51, I-69, I-278).
+g hostd -
+u hostd -:hostd "repose guest hypervisors" /var/empty
+m hostd kvm
+u virtiofsd - "repose virtiofsd" /var/empty
+m virtiofsd hostd
+u repose-auth - "repose Claude login share" /var/empty
+m repose-auth hostd
+REPOSE_HOST_FILE
+  install_file 0644 /etc/tmpfiles.d/repose.conf <<'REPOSE_HOST_FILE'
+# The state directories of docs/interfaces/host-conventions.md.
+d /run/repose 0755 root root -
+d /run/repose/launcher 0700 root root -
+d /run/repose/store-view 0755 root root -
+d /var/lib/repose 0755 root root -
+d /var/lib/repose/guests 0711 root root -
+d /var/lib/repose/users 0711 root root -
+d /var/lib/repose/images 0755 root root -
+d /var/lib/repose/snapshots 0700 root root -
+d /var/log/repose 0750 root root -
+L /etc/wireguard/wg0.conf - - - - /run/repose/wg0.conf
+REPOSE_HOST_FILE
+  install_file 0644 /etc/udev/rules.d/90-repose.rules <<'REPOSE_HOST_FILE'
+# nix/hosts/virt.nix: the hostd account runs guest hypervisors.
+KERNEL=="kvm", GROUP="kvm", MODE="0660"
+KERNEL=="vhost-vsock", GROUP="kvm", MODE="0660"
+KERNEL=="vhost-net", GROUP="kvm", MODE="0660"
+# Guest volumes g-<id> in vg-guests are group hostd so an unprivileged
+# guest@<id> can open its disk; snapshots and the pool stay root:disk.
+SUBSYSTEM=="block", KERNEL=="dm-*", ENV{DM_VG_NAME}=="vg-guests", ENV{DM_LV_NAME}=="g-*", GROUP="hostd", MODE="0660"
+REPOSE_HOST_FILE
+  install_file 0644 /etc/repose/host-chains.nft <<'REPOSE_HOST_FILE'
+# An x86 machine of the user's own (ops/install-host-x86.sh): what reaches
+# the machine or crosses it that is not a guest's is its owner's (their
+# ssh, their services, their containers), under whatever firewall they
+# run. The repose tables close the guest bridge and the mesh only.
+table inet repose {
+  chain host_input {
+    accept
+  }
+  chain host_forward {
+    accept
+  }
+}
+REPOSE_HOST_FILE
+}
+# END GENERATED HOST FILES
+
+# ---- the host's files -------------------------------------------------------
+write_host_files
+
+# ---- Cloud Hypervisor and hostd -------------------------------------------
+fetch_verified "$CH_BASE/cloud-hypervisor-static" "$CH_SHA256" /usr/local/bin/cloud-hypervisor 0755
+fetch_verified "$CH_BASE/ch-remote-static" "$CHR_SHA256" /usr/local/bin/ch-remote 0755
+if [ ! -e /usr/local/bin/virtiofsd ]; then
+  step "link /usr/local/bin/virtiofsd to /usr/libexec/virtiofsd" -- ln -s /usr/libexec/virtiofsd /usr/local/bin/virtiofsd
+fi
+printf '%s\n' "$RELEASE_PUBKEY" > "$tmp/release.pub"
+install_file 0644 /etc/repose/release.pub < "$tmp/release.pub"
+if [ -n "$hostd_binary" ]; then
+  install_file 0755 /usr/local/bin/hostd < "$hostd_binary"
+elif [ "$dry" = 1 ]; then
+  echo "would: fetch hostd from $manifest_url, check its signature and sha256, and install it as /usr/local/bin/hostd"
+else
+  echo "==> fetch hostd from $manifest_url"
+  # The update script does the fetch and both checks; it is the same one
+  # the timer runs every 30 minutes.
+  install -d /usr/local/bin
+  REPOSE_RELEASE_PUBKEY_FILE=$tmp/release.pub REPOSE_HOSTD_BIN=/usr/local/bin/hostd REPOSE_HOSTD_RESTART=true \
+    REPOSE_HOSTD_MANIFEST_URL=$manifest_url /usr/local/lib/repose/repose-hostd-update ||
+    die "hostd did not install; nothing is registered yet, and running this again continues."
+fi
+
+{
+  echo "# hostd's flags on an x86 host (ops/install-host-x86.sh, DECISIONS I-1498)."
+  if [ -n "$api" ]; then
+    echo "HOSTD_API_ARGS=--api-addr $api${api_name:+ --api-server-name $api_name} --api-ca /etc/repose/api-ca.pem"
+  else
+    echo "HOSTD_API_ARGS=--api-addr $API_ADDR --api-server-name $API_SERVER_NAME --api-ca /etc/repose/api-ca.pem"
+  fi
+  echo "# Snapshots on its own disk (DECISIONS I-1372); no park: an x86 host has"
+  echo "# no launcher and no Key Vault to wrap the image key with."
+  echo "HOSTD_ARGS=--snapshot-dir /var/lib/repose/snapshots"
+} | install_file 0644 /etc/repose/hostd.env
+if [ -n "$api_ca_file" ]; then
+  install_file 0644 /etc/repose/api-ca.pem < "$api_ca_file"
+else
+  printf '%s\n' "$API_CA" | install_file 0644 /etc/repose/api-ca.pem
+fi
+printf 'define uplink = "%s"\n' "$uplink" | install_file 0644 /etc/repose/uplink.nft
+if [ -n "$manifest_url" ] && [ "$manifest_url" != "$MANIFEST_URL" ]; then
+  printf 'url=%s\n' "$manifest_url" | install_file 0644 /etc/repose/hostd-update.env
+fi
+
+if [ "$dry" = 0 ]; then
+  step "create the accounts, directories and device rules" -- bash -c '
+    systemd-sysusers /etc/sysusers.d/repose.conf
+    systemd-tmpfiles --create /etc/tmpfiles.d/repose.conf
+    udevadm control --reload && udevadm trigger --subsystem-match=misc --subsystem-match=block --action=change
+    systemctl restart systemd-modules-load.service
+    sysctl -q --system'
+  step "reload systemd" -- systemctl daemon-reload
+else
+  echo "would: create the accounts, directories and device rules; load the modules and sysctls; reload systemd"
+fi
+
+# ---- the guest pool ----------------------------------------------------------
+if vgs vg-guests >/dev/null 2>&1 && lvs vg-guests/thin >/dev/null 2>&1; then
+  say "guest pool: vg-guests/thin present"
+  if [ -n "$loop_file" ] && [ -e "$loop_file" ]; then
+    printf 'REPOSE_POOL_FILE=%s\n' "$loop_file" | install_file 0644 /etc/repose/pool.env
+    step "enable the pool's loop device at boot" -- systemctl enable repose-guest-loop.service
+  fi
+elif [ -n "$device" ]; then
+  step "make vg-guests and its thin pool on $device" -- /usr/local/lib/repose/repose-pool-create "$device"
+else
+  if [ ! -e "$loop_file" ]; then
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    step "make $loop_file, ${size} GiB, sparse" -- bash -c 'mkdir -p "$(dirname "$1")" && truncate -s "$2G" "$1"' _ "$loop_file" "$size"
+  fi
+  printf 'REPOSE_POOL_FILE=%s\n' "$loop_file" | install_file 0644 /etc/repose/pool.env
+  step "attach $loop_file at every boot" -- systemctl enable --now repose-guest-loop.service
+  if [ "$dry" = 1 ]; then
+    echo "would: make vg-guests and its thin pool on the loop device of $loop_file"
+  else
+    dev=$(losetup -j "$loop_file" -O NAME -n | head -1)
+    [ -n "$dev" ] || die "$loop_file did not attach to a loop device"
+    step "make vg-guests and its thin pool on $dev" -- /usr/local/lib/repose/repose-pool-create "$dev"
+  fi
+fi
+
+# ---- the join ---------------------------------------------------------------
+if [ "$registered" = 1 ]; then
+  say "registered already (/var/lib/repose/hostd/host.json); the join argument is not used again"
+elif [ "$dry" = 1 ]; then
+  echo "would: write the join argument to /run/repose/launcher/join (0600) for repose-launcher-join"
+else
+  echo "==> write the join argument to /run/repose/launcher/join"
+  install -d -m 0700 /run/repose/launcher
+  (umask 077 && printf '%s\n' "$join" > /run/repose/launcher/join)
+fi
+
+# ---- the units -----------------------------------------------------------------
+units=(systemd-networkd.service repose-nftables.service repose-fault-around.service
+  repose-guests-slice.service repose-guest-pool.service repose-launcher-join.service
+  repose-host-net.service repose-register.service hostd.service
+  repose-snapshot.timer repose-hostd-update.timer)
+if [ "$dry" = 1 ]; then
+  echo "would: systemctl enable --now ${units[*]}"
+else
+  echo "==> systemctl enable --now ${units[*]}"
+  systemctl enable -q systemd-networkd.service "${units[@]:1}"
+  systemctl start systemd-networkd.service repose-nftables.service
+  # A changed ruleset, script or unit takes effect now; hostd's restart
+  # keeps its guests (KillMode=process).
+  for f in "${changed[@]}"; do
+    case $f in
+      /etc/repose/nftables.nft | /etc/repose/host-chains.nft | /etc/repose/uplink.nft) systemctl reload repose-nftables.service ;;
+    esac
+  done
+  systemctl start repose-fault-around.service || say "warning: fault-around could not be set (no debugfs?); see docs/ops for I-1040"
+  systemctl start repose-guests-slice.service repose-guest-pool.service repose-launcher-join.service repose-host-net.service
+  systemctl start --no-block repose-register.service
+  restart_hostd=0
+  for f in "${changed[@]}"; do
+    case $f in /usr/local/bin/hostd | /etc/repose/hostd.env | /etc/repose/api-ca.pem) restart_hostd=1 ;; esac
+  done
+  if [ "$restart_hostd" = 1 ] && systemctl is-active -q hostd.service; then
+    systemctl restart hostd.service
+  else
+    systemctl start hostd.service
+  fi
+  systemctl start repose-snapshot.timer repose-hostd-update.timer
+  if [ "$registered" = 1 ]; then
+    say "hostd is $(systemctl is-active hostd.service)."
+  else
+    say "hostd is $(systemctl is-active hostd.service); it registers through the hub and joins your account in a minute or two."
+  fi
+fi

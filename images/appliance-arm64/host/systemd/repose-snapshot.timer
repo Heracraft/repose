@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly snapshot at 03:00 local time
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=false
+RandomizedDelaySec=10min
+Unit=repose-snapshot.service
+
+[Install]
+WantedBy=timers.target

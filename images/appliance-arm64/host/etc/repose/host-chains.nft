@@ -1,0 +1,13 @@
+# The Mac appliance: nothing reaches the host or crosses it but what the
+# repose tables accept (nix/hosts/nftables.nix's input chain).
+table inet repose {
+  chain host_input {
+    # The provider NIC: DHCP, ICMP that keeps TCP working, IPv6 ND.
+    iifname $uplink udp sport 67 udp dport 68 accept
+    iifname $uplink icmp type { destination-unreachable, time-exceeded, parameter-problem } accept
+    iifname $uplink icmp type echo-request limit rate 5/second accept
+    iifname $uplink icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept
+  }
+  chain host_forward {
+  }
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Set guests.slice memory cap from the host's RAM
+Before=hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-guests-slice
+
+[Install]
+WantedBy=multi-user.target

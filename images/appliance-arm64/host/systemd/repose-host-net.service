@@ -1,0 +1,13 @@
+[Unit]
+Description=Configure br-guests, wg0 and per-host files from host.json
+After=systemd-networkd.service repose-nftables.service repose-launcher-join.service
+Wants=systemd-networkd.service
+Before=hostd.service wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-host-net
+
+[Install]
+WantedBy=multi-user.target

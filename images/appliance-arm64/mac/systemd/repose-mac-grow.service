@@ -1,0 +1,14 @@
+[Unit]
+Description=Grow the guest partition, PV and pool to the disk at boot (I-1376)
+After=repose-guest-pool.service
+Wants=repose-guest-pool.service
+Before=hostd.service
+ConditionPathExists=!/run/repose/pool-hold
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-mac-grow /dev/vda 3
+
+[Install]
+WantedBy=multi-user.target

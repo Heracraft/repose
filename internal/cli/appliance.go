@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -26,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sys/unix"
 
 	"github.com/heracraft/repose/internal/parkkey"
@@ -62,20 +64,22 @@ import (
 // every machine starts fresh after one.
 
 const (
-	applianceVersion  = "2026.11.20"
-	applianceURL      = "https://github.com/Heracraft/repose/releases/download/appliance-" + applianceVersion + "/repose-appliance-aarch64.raw.gz"
+	applianceVersion  = "2026.11.22"
+	applianceURL      = "https://github.com/Heracraft/repose/releases/download/appliance-" + applianceVersion + "/repose-appliance-aarch64.raw.zst"
 	vfkitVersion      = "0.6.4"
 	vfkitURL          = "https://github.com/crc-org/vfkit/releases/download/v" + vfkitVersion + "/vfkit"
 	vfkitSHA256       = "0ed83fc8ca7aa708598835480dba1362406aa7cd1dab3b27464eb76327d9652d"
 	applianceLabel    = "run.repose.appliance"
 	applianceShareTag = "repose-launcher"
 	applianceDiskGB   = 100
-	// applianceDiskMinGB is the smallest disk the image fits: the raw
-	// image is 37 GiB as built (its root partition ends there), so a disk
-	// file truncated below it loses the root partition's end and the
-	// pool's partition, and the appliance never finds its root (the lab
-	// image 6 install, 2026-11-19, on a Mac with 52 GB free).
-	applianceDiskMinGB = 40
+	// applianceDiskMinGB is the smallest disk the appliance is installed
+	// on: the image's 2.1 GiB (its ESP and its 2 GiB root) and a pool
+	// that holds a small machine's 10 GB volume beside its metadata, its
+	// spare and the snapshots' headroom (DECISIONS I-1494). Below the
+	// image's own size a disk file would lose the root partition's end,
+	// which the 37 GiB NixOS image did at 40 GB (the lab image 6 install,
+	// 2026-11-19).
+	applianceDiskMinGB = 20
 	// applianceDiskKeepGB stays free on the volume for the user.
 	applianceDiskKeepGB = 20
 	// applianceMinCPUs and applianceMinMemoryMiB are the floors the
@@ -83,9 +87,12 @@ const (
 	// an explicit flag be refused against the same number.
 	applianceMinCPUs      = 4
 	applianceMinMemoryMiB = 8192
-	// applianceImageApparentBytes is the raw image's size as built (37
-	// GiB): a disk file smaller than that is a broken unpack.
-	applianceImageApparentBytes = 37 << 30
+	// applianceImageApparentBytes is the raw image's size as built: 1
+	// MiB of GPT, the 64 MiB ESP, the 2 GiB root, the 1 MiB guest
+	// partition the first boot grows and the backup GPT
+	// (images/appliance-arm64/build.sh, DECISIONS I-1494). A disk file
+	// smaller than that is a broken unpack.
+	applianceImageApparentBytes = 2115 << 20
 	// applianceStopGrace is how long a stop (launchd's SIGTERM at a
 	// restart or a logout, `repose host rm`) gives the appliance to park
 	// its machines and power off before the plug is pulled. The worst
@@ -386,15 +393,18 @@ func vfkitArgs(p appliancePaths, c applianceConfig) []string {
 	}
 }
 
-// unpackSparse writes the gzipped image to dest as a sparse file: the
-// image is 37 GiB of which a few are data, and writing every zero would
-// cost the volume the whole 37 GiB (measured on the lab Mac). Whole
-// zero blocks of 1 MiB become holes.
+// unpackSparse writes the compressed image to dest as a sparse file:
+// whole zero blocks of 1 MiB become holes, so the volume pays for the
+// image's data and not its zeros (the 37 GiB NixOS image cost the whole
+// 37 GiB unpacked with gunzip on the lab Mac). The image is zstd since
+// the Debian appliance (DECISIONS I-1494); a gzip one, which every image
+// before it was, is read too, told apart by its first bytes.
 func unpackSparse(r io.Reader, dest string) (written int64, err error) {
-	zr, err := gzip.NewReader(r)
+	zr, closeZ, err := decompressor(r)
 	if err != nil {
 		return 0, err
 	}
+	defer closeZ()
 	f, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return 0, err
@@ -432,6 +442,30 @@ func unpackSparse(r io.Reader, dest string) (written int64, err error) {
 		return pos, err
 	}
 	return written, nil
+}
+
+// decompressor reads r as zstd or gzip, whichever its magic says.
+func decompressor(r io.Reader) (io.Reader, func(), error) {
+	br := bufio.NewReader(r)
+	magic, err := br.Peek(4)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading the image: %w", err)
+	}
+	switch {
+	case bytes.Equal(magic, []byte{0x28, 0xb5, 0x2f, 0xfd}):
+		zr, err := zstd.NewReader(br)
+		if err != nil {
+			return nil, nil, err
+		}
+		return zr, zr.Close, nil
+	case magic[0] == 0x1f && magic[1] == 0x8b:
+		zr, err := gzip.NewReader(br)
+		if err != nil {
+			return nil, nil, err
+		}
+		return zr, func() { _ = zr.Close() }, nil
+	}
+	return nil, nil, errors.New("the image is neither zstd nor gzip")
 }
 
 // applianceStallWindow is how long a download may make no progress
@@ -944,7 +978,7 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 
 	if st, err := os.Stat(p.Disk); err != nil || st.Size() < applianceImageApparentBytes {
 		url := envOr(envApplianceURL, applianceURL)
-		_, _ = fmt.Fprintf(e.ErrOut, "fetching the appliance image %s (about 2 GB)\n", applianceVersion)
+		_, _ = fmt.Fprintf(e.ErrOut, "fetching the appliance image %s (about 200 MB)\n", applianceVersion)
 		sum, err := fetchText(ctx, client, url+".sha256")
 		if err != nil {
 			return exitf(ExitGeneric, "%s", applianceFetchFailed("The appliance image's checksum", err, p.Argument, hostName))
@@ -952,12 +986,12 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 		if f := strings.Fields(sum); len(f) > 0 {
 			sum = f[0]
 		}
-		gz := filepath.Join(p.Dir, "image.raw.gz")
-		if _, err := fetchTo(ctx, client, e.ErrOut, url, gz, sum); err != nil {
+		img := filepath.Join(p.Dir, "image.raw.zst")
+		if _, err := fetchTo(ctx, client, e.ErrOut, url, img, sum); err != nil {
 			return exitf(ExitGeneric, "%s", applianceFetchFailed("The appliance image", err, p.Argument, hostName))
 		}
 		_, _ = fmt.Fprintln(e.ErrOut, "unpacking the image")
-		in, err := os.Open(gz)
+		in, err := os.Open(img)
 		if err != nil {
 			return err
 		}
@@ -969,7 +1003,7 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 		if err := os.Rename(p.Disk+".part", p.Disk); err != nil {
 			return err
 		}
-		_ = os.Remove(gz)
+		_ = os.Remove(img)
 	}
 
 	// The disk the user chose, as a sparse file APFS fills as the
@@ -982,7 +1016,7 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 	// its disk has machines on it.
 	if !installed {
 		// Grow only, never shrink. Every real plan is a grow (the floor
-		// is 40 GB and the image is 37 GiB), so this costs nothing and it
+		// is 20 GB and the image is 2.1 GiB), so this costs nothing and it
 		// closes the one window where a resize could destroy a live
 		// disk: two `host add` on one Mac at once, where the second
 		// still reads `installed` false while the first has written its

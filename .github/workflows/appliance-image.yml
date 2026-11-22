@@ -1,0 +1,165 @@
+# The own-hardware hosts' release (DECISIONS I-1494, I-1496, I-1498).
+#
+# On a pull request touching them: the installer carries exactly the
+# files the appliance is built from (embed.sh --check), and every script
+# is shellcheck clean.
+#
+# On a tag `appliance-<version>` (`git tag appliance-2026.11.22 && git push
+# origin appliance-2026.11.22`):
+#   hostd     hostd for amd64 and arm64 at <version>, published as the
+#             release hostd-<version>, and hostd-stable's manifest.json
+#             pointed at them, signed with the release key. Every
+#             appliance and x86 host reads that manifest every 30 minutes
+#             (repose-hostd-update.timer).
+#   kernel    kernel.org 6.18.57 with Debian's cloud-arm64 config.
+#   image     the Mac appliance image, published as the release
+#             appliance-<version>: repose-appliance-aarch64.raw.zst and
+#             its .sha256, refused over 350 MB compressed or 4 GiB
+#             apparent.
+# Every release here is --latest=false: releases/latest is the CLI's, and
+# install.sh and `repose version` read it.
+#
+# The signing key is the release environment's secret; the owner limits
+# that environment to tags, and `appliance-*` must be among its patterns.
+name: appliance-image
+on:
+  pull_request:
+    paths:
+      - images/appliance-arm64/**
+      - ops/install-host-x86.sh
+      - .github/workflows/appliance-image.yml
+  push:
+    tags: ["appliance-*"]
+permissions: {}
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the installer carries the appliance's files
+        run: images/appliance-arm64/embed.sh --check
+      - name: shellcheck
+        run: shellcheck ops/install-host-x86.sh images/appliance-arm64/*.sh images/appliance-arm64/host/bin/* images/appliance-arm64/x86/bin/*
+      - name: the installer's dry run
+        run: bash ops/install-host-x86.sh --dry-run --join e30 --loop-file "$RUNNER_TEMP/guests.img" --size 20 --uplink eth0
+
+  hostd:
+    if: startsWith(github.ref, 'refs/tags/appliance-')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build hostd
+        run: |
+          v=${VERSION#appliance-}
+          mkdir dist
+          for a in amd64 arm64; do
+            GOOS=linux GOARCH=$a CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$v" \
+              -o "dist/hostd-linux-$a" ./cmd/hostd
+          done
+          (cd dist && sha256sum hostd-linux-* > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hostd
+          path: dist/
+      - name: publish hostd-<version> and point hostd-stable at it
+        env:
+          REPOSE_RELEASE_SIGNING_KEY: ${{ secrets.REPOSE_RELEASE_SIGNING_KEY }}
+        run: |
+          v=${VERSION#appliance-}
+          if [ -z "$REPOSE_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::REPOSE_RELEASE_SIGNING_KEY is not set in the release environment; nothing is published"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/release-signing-key.pem"
+          (umask 077 && printf '%s\n' "$REPOSE_RELEASE_SIGNING_KEY" > "$key")
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/hostd-$v"
+          images/appliance-arm64/hostd-manifest.sh "$v" \
+            dist/hostd-linux-amd64 "$base/hostd-linux-amd64" \
+            dist/hostd-linux-arm64 "$base/hostd-linux-arm64" "$key" > dist/manifest.json
+          rm -f "$key"
+          gh release create "hostd-$v" --repo "$GITHUB_REPOSITORY" --latest=false \
+            --title "hostd $v" --notes "hostd $v for hosts without Nix (the Mac appliance and ops/install-host-x86.sh)." \
+            dist/hostd-linux-amd64 dist/hostd-linux-arm64 dist/SHA256SUMS
+          # The binaries answer anonymously before any host is told of them.
+          for a in amd64 arm64; do
+            curl -fsSL -o "$RUNNER_TEMP/h" "$base/hostd-linux-$a"
+            cmp "$RUNNER_TEMP/h" "dist/hostd-linux-$a"
+          done
+          if ! gh release view hostd-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create hostd-stable --repo "$GITHUB_REPOSITORY" --latest=false \
+              --title "hostd stable channel" --notes "manifest.json: the hostd every own-hardware host runs (DECISIONS I-1496)."
+          fi
+          gh release upload hostd-stable --repo "$GITHUB_REPOSITORY" --clobber dist/manifest.json
+
+  kernel:
+    if: startsWith(github.ref, 'refs/tags/appliance-')
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: build the kernel
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            build-essential flex bison bc libssl-dev libelf-dev kmod cpio zstd python3 rsync bsdextrautils
+          images/appliance-arm64/kernel.sh "$RUNNER_TEMP/kernel"
+          mkdir kernel && mv "$RUNNER_TEMP"/kernel/kernel-*-arm64.tar.zst kernel/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kernel
+          path: kernel/
+
+  image:
+    needs: [hostd, kernel]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: art
+      - name: build the image
+        run: |
+          v=${VERSION#appliance-}
+          docker run --rm --privileged -v "$PWD:/src:ro" -v "$PWD/art:/art" -v "$RUNNER_TEMP:/out" debian:trixie bash -c "
+            set -e
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends mmdebstrap e2fsprogs dosfstools mtools gdisk zstd curl jq ca-certificates systemd >/dev/null
+            /src/images/appliance-arm64/build.sh --version $v --kernel /art/kernel/kernel-*-arm64.tar.zst \
+              --hostd /art/hostd/hostd-linux-arm64 --out /out/image" | tee "$RUNNER_TEMP/build.log"
+      - name: the image is inside its budget
+        run: |
+          line=$(grep '^build.sh: ' "$RUNNER_TEMP/build.log")
+          compressed=$(echo "$line" | sed -E 's/.*compressed_bytes=([0-9]+).*/\1/')
+          apparent=$(echo "$line" | sed -E 's/.*apparent_bytes=([0-9]+).*/\1/')
+          echo "$line"
+          test "$compressed" -lt $((350 * 1000 * 1000)) || { echo "::error::$compressed bytes compressed, over 350 MB"; exit 1; }
+          test "$apparent" -lt $((4 << 30)) || { echo "::error::$apparent bytes apparent, over 4 GiB"; exit 1; }
+          want=$(sed -nE 's/^\s*applianceImageApparentBytes = ([0-9]+) << 20.*/\1/p' internal/cli/appliance.go)
+          test "$apparent" -eq $((want << 20)) || { echo "::error::the image is $apparent bytes; internal/cli/appliance.go pins $((want << 20))"; exit 1; }
+      - name: publish appliance-<version>
+        run: |
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --latest=false \
+            --title "Mac appliance ${VERSION#appliance-}" \
+            --notes "The Mac mini appliance image ${VERSION#appliance-}: Debian 13 arm64, kernel 6.18.57, hostd ${VERSION#appliance-}. \`repose host add\` on a Mac fetches it." \
+            "$RUNNER_TEMP/image/repose-appliance-aarch64.raw.zst" "$RUNNER_TEMP/image/repose-appliance-aarch64.raw.zst.sha256"

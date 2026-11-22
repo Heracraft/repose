@@ -1,0 +1,18 @@
+[Unit]
+Description=Activate the guest pool vg-guests/thin (DECISIONS I-643)
+After=systemd-udevd.service dm-event.socket repose-guest-vg-init.service repose-guest-loop.service
+Wants=dm-event.socket
+Before=hostd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# thin_check of a large pool after a crash takes minutes.
+TimeoutStartSec=30min
+# A failed run held the unit: skipped, not failed.
+ExecCondition=/usr/local/lib/repose/repose-guest-pool --held
+ExecStart=/usr/local/lib/repose/repose-guest-pool
+
+[Install]
+WantedBy=multi-user.target
