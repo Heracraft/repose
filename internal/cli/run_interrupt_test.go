@@ -21,7 +21,7 @@ func TestSyncInterruptedAfterCreateForgetsTheProject(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(time.Second, cancel)
 
-	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false)
+	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitInterrupted {
 		t.Fatalf("err = %v, want exit %d", err, ExitInterrupted)
@@ -109,7 +109,7 @@ func TestSyncInterruptedDuringTheCreateRequestNamesTheProject(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(time.Second, cancel)
 
-	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false)
+	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitInterrupted {
 		t.Fatalf("err = %v, want exit %d", err, ExitInterrupted)
@@ -138,7 +138,7 @@ func TestSyncInterruptedBeforeTheCreateLandedSaysItMayExist(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(time.Second, cancel)
 
-	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true}, false)
+	err := runRun(ctx, f.env, RunOptions{NoAttach: true, Sync: true, Confirm: syncYes}, false)
 	ee, ok := err.(*exitError)
 	if !ok || ee.code != ExitInterrupted {
 		t.Fatalf("err = %v, want exit %d", err, ExitInterrupted)
