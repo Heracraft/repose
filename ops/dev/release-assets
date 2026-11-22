@@ -3,8 +3,11 @@
 # a client with no credentials: the appliance image and its .sha256, vfkit
 # against its pinned checksum, the CLI release that releases/latest resolves
 # to (checksums.txt, its signature against the release key, the four
-# archives) and install.sh. Exit 1 when any does not, with the asset and
-# the fix named. DECISIONS I-1398; docs/ops/RELEASE.md.
+# archives) and install.sh. And what hosts fetch: the erofs guest base
+# release guest-<version> (amd64- and arm64- vmlinuz, initramfs.img,
+# rootfs.erofs, manifest.json, and SHA256SUMS) and the hostd-stable
+# manifest.json with the binaries it names (I-1500). Exit 1 when any does
+# not, with the asset and the fix named. DECISIONS I-1398; docs/ops/RELEASE.md.
 #
 # The check is TestReleaseAssetsAnswerAnonymously in internal/cli, so the
 # URLs are the constants the code fetches, not a list kept here.
@@ -14,6 +17,11 @@
 #   ops/dev/release-assets --cli v0.1.51        that tag's assets, and that releases/latest resolves to it
 #   ops/dev/release-assets --appliance 2026.11.18   a version other than the one the code pins (to see it red)
 #   ops/dev/release-assets --install none       skip install.sh (a checkout whose web deploy is not live)
+#   ops/dev/release-assets --appliance none     skip the appliance image and its .sha256
+#   ops/dev/release-assets --guest 2026.11.22.1 that guest base release; the default is the newest
+#                                               guest-* release (gh release list), since the base
+#                                               version is a database row, not a constant
+#   ops/dev/release-assets --guest none --hostd none   only what the CLI fetches (release-queue add, release.yml)
 set -euo pipefail
 
 usage() {
@@ -21,10 +29,12 @@ usage() {
   exit 2
 }
 
-appliance="" cli="" install=""
+appliance="" cli="" install="" guest="" hostd=""
 while [ $# -gt 0 ]; do
   case $1 in
     --appliance) appliance=${2:?}; shift 2 ;;
+    --guest) guest=${2:?}; shift 2 ;;
+    --hostd) hostd=${2:?}; shift 2 ;;
     --cli) cli=${2:?}; shift 2 ;;
     --install) install=${2:?}; shift 2 ;;
     -h | --help) usage ;;
@@ -36,6 +46,17 @@ command -v go >/dev/null || { echo "release-assets: go is not on PATH; run it in
 top=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$top"
 
+if [ -z "$guest" ]; then
+  # The newest guest-* release, published or not to customers: gh lists
+  # newest first. The lookup reads the API with gh's credentials; the
+  # assets themselves are fetched anonymously by the test.
+  command -v gh >/dev/null || { echo "release-assets: gh is not on PATH, so the newest guest-* release cannot be found; pass --guest <version> or --guest none" >&2; exit 1; }
+  tags=$(gh release list --repo Heracraft/repose --limit 200 --json tagName --jq '.[].tagName') ||
+    { echo "release-assets: gh release list failed; pass --guest <version> or --guest none" >&2; exit 1; }
+  guest=$(printf '%s\n' "$tags" | sed -n 's/^guest-//p' | head -1)
+  guest=${guest:-unpublished}
+fi
+
 out=$(mktemp)
 trap 'rm -f "$out"' EXIT
 set +e
@@ -43,6 +64,8 @@ env REPOSE_RELEASE_ASSETS=1 \
   ${appliance:+REPOSE_RELEASE_ASSETS_APPLIANCE="$appliance"} \
   ${cli:+REPOSE_RELEASE_ASSETS_CLI="$cli"} \
   ${install:+REPOSE_RELEASE_ASSETS_INSTALL="$install"} \
+  REPOSE_RELEASE_ASSETS_GUEST="$guest" \
+  ${hostd:+REPOSE_RELEASE_ASSETS_HOSTD="$hostd"} \
   go test ./internal/cli -run '^TestReleaseAssetsAnswerAnonymously$' -count=1 -v >"$out" 2>&1
 rc=$?
 set -e

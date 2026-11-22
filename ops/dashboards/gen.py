@@ -270,7 +270,7 @@ def host_capacity() -> dict:
             panel(
                 "stat", "Builds running",
                 [q('sum by (host_id) (repose_host_builds_running{host_id=~"$host_id"})', "{{host_id}}", instant=True)],
-                desc="At most two per host (DECISIONS R5-4). Two for 45 minutes with nothing finishing is BuildQueueStuck.",
+                desc="Nix hosts only (I-1500). At most two per host (DECISIONS R5-4). Two for 45 minutes with nothing finishing is BuildQueueStuck.",
                 w=6, h=6, thresholds=[("green", None), ("yellow", 2)],
             ),
             panel(
@@ -303,7 +303,7 @@ def host_capacity() -> dict:
                 "timeseries", "Store and root filesystem",
                 [q('repose_host_store_bytes{host_id=~"$host_id"}', "store {{host_id}}"),
                  q('node_filesystem_size_bytes{job="hosts",mountpoint="/",fstype!~"tmpfs|ramfs",host_id=~"$host_id"} - node_filesystem_avail_bytes{job="hosts",mountpoint="/",fstype!~"tmpfs|ramfs",host_id=~"$host_id"}', "root used {{host_id}}")],
-                desc="Every guest reads /nix/store over virtio-fs, so the store is on the host root filesystem. Over 85 percent used is StoreFull.",
+                desc="Nix hosts only (I-1500): every Nix guest reads /nix/store over virtio-fs, so the store is on the host root filesystem. Over 85 percent used is StoreFull. The erofs base images are under Base images below.",
                 unit="bytes",
             ),
             panel(
@@ -329,6 +329,32 @@ def host_capacity() -> dict:
                 [q('repose_build_info{component="hostd"}', "{{version}}")],
                 desc="Which hostd is running where, so a rollout can be seen finishing.",
                 w=12, h=6,
+            ),
+            row("Base images"),
+            panel(
+                "timeseries", "Base image cache bytes",
+                [q('repose_host_base_image_bytes{host_id=~"$host_id"}', "{{host_id}}")],
+                desc="What the erofs base image cache holds on disk (I-1478). Over 8 GiB for an hour is BaseImageDiskHigh (I-1500).",
+                unit="bytes", w=6, h=8,
+                thresholds=[("green", None), ("red", 8589934592)],
+            ),
+            panel(
+                "timeseries", "Base image versions",
+                [q('repose_host_base_image_versions{host_id=~"$host_id"}', "{{host_id}}")],
+                desc="Bundles in the cache. Two or three during a base change; GC keeps every base a guest names and the newest per arch.",
+                w=6, h=8, decimals=0,
+            ),
+            panel(
+                "timeseries", "Base image fetch p95",
+                [q('histogram_quantile(0.95, sum by (le, host_id) (rate(repose_host_base_image_fetch_duration_seconds_bucket{host_id=~"$host_id"}[1h])))', "{{host_id}}")],
+                desc="One bundle's whole fetch, its three files together. A start on a base the host does not hold waits for this.",
+                unit="s", w=6, h=8,
+            ),
+            panel(
+                "timeseries", "Base image fetch errors",
+                [q('sum by (reason) (increase(repose_host_base_image_fetch_errors_total{host_id=~"$host_id"}[30m]))', "{{reason}}")],
+                desc="By reason: checksum (a bad publish), status (a missing release), stall and network (the path), disk (the host). Any is BaseImageFetchFailed.",
+                w=6, h=8, stack=True,
             ),
         ],
     )
@@ -415,8 +441,8 @@ def per_guest() -> dict:
 def builds() -> dict:
     return dashboard(
         "repose-builds",
-        "repose / Builds",
-        desc="Every guest system closure is built on the project's host (DECISIONS R4-4). A build that fails is a user watching a stream of Nix output.",
+        "repose / Builds (Nix hosts only)",
+        desc="Nix hosts only (I-1500): erofs guests apply a menu and build nothing, so every panel here reads Nix guests. Every Nix guest system closure is built on the project's host (DECISIONS R4-4). A build that fails is a user watching a stream of Nix output.",
         variables=[HOST_VAR],
         time_from="now-24h",
         panels=[

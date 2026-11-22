@@ -419,6 +419,62 @@ tests:
               description: "90% used. The store is the usual cause; check the per-project closure cap before deleting anything."
               runbook: "docs/ops/RUNBOOK.md#storefull"
 
+  - interval: 1m
+    name: StoreFull fires on a host that reports nix_mode on (I-1500)
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="hosts",instance="10.255.0.7:9100",host_id="host-01",mountpoint="/",fstype="ext4"}'
+        values: "10+0x20"
+      - series: 'node_filesystem_size_bytes{job="hosts",instance="10.255.0.7:9100",host_id="host-01",mountpoint="/",fstype="ext4"}'
+        values: "100+0x20"
+      - series: 'repose_host_info{job="hostd",instance="10.255.0.7:9101",host_id="host-01",nix_mode="on",erofs="on",version="v0.1.60"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: StoreFull
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hosts
+              instance: 10.255.0.7:9100
+              host_id: host-01
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: "root filesystem on host-01 is over 85 percent full"
+              description: "90% used. The store is the usual cause; check the per-project closure cap before deleting anything."
+              runbook: "docs/ops/RUNBOOK.md#storefull"
+
+  - interval: 1m
+    name: StoreFull stays quiet on a host with nix_mode off, and fires on the Nix host beside it (I-1500)
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="hosts",instance="10.255.0.8:9100",host_id="host-03",mountpoint="/",fstype="ext4"}'
+        values: "10+0x20"
+      - series: 'node_filesystem_size_bytes{job="hosts",instance="10.255.0.8:9100",host_id="host-03",mountpoint="/",fstype="ext4"}'
+        values: "100+0x20"
+      - series: 'repose_host_info{job="hostd",instance="10.255.0.8:9101",host_id="host-03",nix_mode="off",erofs="on",version="v0.1.60"}'
+        values: "1+0x20"
+      - series: 'node_filesystem_avail_bytes{job="hosts",instance="10.255.0.7:9100",host_id="host-01",mountpoint="/",fstype="ext4"}'
+        values: "10+0x20"
+      - series: 'node_filesystem_size_bytes{job="hosts",instance="10.255.0.7:9100",host_id="host-01",mountpoint="/",fstype="ext4"}'
+        values: "100+0x20"
+      - series: 'repose_host_info{job="hostd",instance="10.255.0.7:9101",host_id="host-01",nix_mode="on",erofs="off",version="v0.1.60"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: StoreFull
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hosts
+              instance: 10.255.0.7:9100
+              host_id: host-01
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: "root filesystem on host-01 is over 85 percent full"
+              description: "90% used. The store is the usual cause; check the per-project closure cap before deleting anything."
+              runbook: "docs/ops/RUNBOOK.md#storefull"
+
   # --- GuestdLost ---------------------------------------------------------
   - interval: 1m
     name: GuestdLost fires on one lost guest
@@ -475,6 +531,73 @@ tests:
       - eval_time: 50m
         alertname: BuildQueueStuck
         exp_alerts: []
+
+  - interval: 1m
+    name: BuildQueueStuck stays quiet on a host with nix_mode off (I-1500)
+    input_series:
+      - series: 'repose_host_builds_running{job="hostd",instance="10.255.0.8:9101",host_id="host-03"}'
+        values: "2+0x60"
+      - series: 'repose_host_build_duration_seconds_count{job="hostd",instance="10.255.0.8:9101",host_id="host-03",result="ok"}'
+        values: "7+0x60"
+      - series: 'repose_host_info{job="hostd",instance="10.255.0.8:9101",host_id="host-03",nix_mode="off",erofs="on",version="v0.1.60"}'
+        values: "1+0x60"
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: BuildQueueStuck
+        exp_alerts: []
+
+  # --- BaseImageFetchFailed -----------------------------------------------
+  - interval: 1m
+    name: BaseImageFetchFailed fires on one failed fetch, by reason, and clears 30 minutes later
+    input_series:
+      - series: 'repose_host_base_image_fetch_errors_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="checksum"}'
+        values: "0 0 0 0 0 1+0x60"
+      - series: 'repose_host_base_image_fetch_errors_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="network"}'
+        values: "0+0x65"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaseImageFetchFailed
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: BaseImageFetchFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+              reason: checksum
+            exp_annotations:
+              summary: "base image fetches on host-01 are failing (checksum)"
+              description: "1 failed in 30 minutes. A create or start on a base this host does not hold fails until a fetch succeeds."
+              runbook: "docs/ops/RUNBOOK.md#baseimagefetchfailed"
+      - eval_time: 40m
+        alertname: BaseImageFetchFailed
+        exp_alerts: []
+
+  # --- BaseImageDiskHigh --------------------------------------------------
+  - interval: 1m
+    name: BaseImageDiskHigh fires above 8 GiB held for an hour and not at 8 GiB
+    input_series:
+      # 9 GiB on host-01, exactly 8 GiB on host-03.
+      - series: 'repose_host_base_image_bytes{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "9663676416+0x70"
+      - series: 'repose_host_base_image_bytes{job="hostd",instance="10.255.0.8:9101",host_id="host-03"}'
+        values: "8589934592+0x70"
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: BaseImageDiskHigh
+        exp_alerts: []
+      - eval_time: 61m
+        alertname: BaseImageDiskHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "the base image cache on host-01 holds over 8 GiB"
+              description: "9GiB in the cache. GC keeps every base a guest names, so old bases stay until their guests restart on the new one."
+              runbook: "docs/ops/RUNBOOK.md#baseimagediskhigh"
 
   # --- HostScrapeDown -----------------------------------------------------
   - interval: 1m

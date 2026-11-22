@@ -138,6 +138,7 @@ BOOLEAN_EXPRS = {
     "ApiMetricsAbsent": "absent() returns 1",
     "BuildQueueStuck": "the value is repose_host_builds_running, and the rule needs it >= 2",
     "BootSlow": "the value is the slow-boot share, and the rule needs it > 0.5",
+    "StoreFull": "the value is the used share of the root filesystem, and the rule needs it > 0.85 (the `unless` that scopes it to Nix hosts, I-1500, moved the comparison inside)",
     "HostNotInTargets": "the value is the ready-state gauge, which is 1",
     "NotifyFailing": "both sides of the `or` are counts the rule needs above 0",
     # Arm 1 is `max(1 - check) > 0`, which is 1 for a failing check; arm 2

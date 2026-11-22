@@ -3,7 +3,10 @@
 # I-1398). Two checkouts, because they pin different things: `main` pins
 # what the next CLI release will fetch, and the latest CLI release pins
 # what customers fetch today. Both runs also resolve releases/latest, which
-# must be a CLI tag, and fetch install.sh from repose.run.
+# must be a CLI tag, and fetch install.sh from repose.run. The main job
+# also checks what hosts fetch, which no CLI tag pins: the newest guest-*
+# release and the hostd-stable manifest (I-1500). gh reads the release
+# list with the job's token; every asset is fetched anonymously.
 #
 # A red run is the signal; it reaches whoever GitHub notifies of a failed
 # scheduled workflow. On 2026-11-19 the appliance image was missing for 47
@@ -33,7 +36,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: ops/dev/release-assets
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: ops/dev/release-assets
 
   released:
     name: what the latest CLI release pins
@@ -67,7 +72,12 @@ jobs:
       - env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          if [ -x ops/dev/release-assets ]; then
+          # The guest base and hostd-stable are the main job's: a CLI tag
+          # pins neither. A tag whose script predates the flags checks
+          # neither anyway.
+          if grep -q -- '--guest)' ops/dev/release-assets 2>/dev/null; then
+            ops/dev/release-assets --cli "$TAG" --guest none --hostd none
+          elif [ -x ops/dev/release-assets ]; then
             ops/dev/release-assets --cli "$TAG"
           else
             echo "::notice::$TAG predates ops/dev/release-assets; the main job's pins are the check until the next CLI release"

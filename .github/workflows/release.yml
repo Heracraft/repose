@@ -107,7 +107,8 @@ jobs:
         # exist, and `repose host add` answered 404 on every Mac for 47
         # minutes (DECISIONS I-1398). The CLI's own assets are still a
         # draft here, so --cli none; they are checked once published, below.
-        run: ops/dev/release-assets --cli none
+        # The guest base and hostd-stable are not this tag's (I-1500).
+        run: ops/dev/release-assets --cli none --guest none --hostd none
       - name: upload the signature and publish
         run: |
           gh release upload "$TAG" dist/checksums.txt.sig --repo "$GITHUB_REPOSITORY"
@@ -117,4 +118,4 @@ jobs:
         # 200 with no credentials: what install.sh and `repose version
         # update` fetch. The redirect lags the publish by up to a minute;
         # the check waits for it.
-        run: ops/dev/release-assets --cli "$TAG"
+        run: ops/dev/release-assets --cli "$TAG" --guest none --hostd none

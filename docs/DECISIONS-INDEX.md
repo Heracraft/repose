@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1075 entries.
+1076 entries.
 
 ## Scope
 
@@ -1107,3 +1107,4 @@ pointer, not a summary.
 - **I-1484** `hostd --nix-mode=off`, or no `nix` on PATH, constructs no Nix builder, GC roots or store view, names no `nix` feature and answers `nix_unsupported` for a Nix guest; reconcile marks an erofs guest whose bundle is missing instead of failing (nonix-hostd, 2026-11-22) — L39046
 - **I-1474** guestd decides its runtime once, from mountinfo, and every erofs difference branches on that one answer: freeze, grow and statfs target `/run/repose/rw`, commands get Ubuntu's PATH, `Switch` and `RegisterPaths` answer `unimplemented` at once (nonix-guestd, 2026-11-22) — L39051
 - **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — L39059
+- **I-1500** The Nix-only alerts skip a host whose `repose_host_info` says `nix_mode="off"`; two base image alerts, a Base images row and `release-assets` checking `guest-<version>` and `hostd-stable` cover the erofs side (nonix-obs-cleanup, 2026-11-22) — L39068

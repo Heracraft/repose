@@ -242,11 +242,20 @@ groups:
         # The host's root filesystem holds /nix/store, which every guest
         # reads over virtio-fs. A full store fails builds and, worse, a
         # `nix-collect-garbage` that races a create.
+        #
+        # Nix hosts only (I-1500): a host whose hostd runs --nix-mode off
+        # keeps no store, so its root filesystem filling is not this
+        # alert. `unless` on repose_host_info{nix_mode="off"} rather than
+        # `and` on "on": a host whose hostd predates the series keeps the
+        # alert, which is the safe side of a missing label.
         expr: |
-          1 - (
-            node_filesystem_avail_bytes{job="hosts",mountpoint="/",fstype!~"tmpfs|ramfs"}
-            / node_filesystem_size_bytes{job="hosts",mountpoint="/",fstype!~"tmpfs|ramfs"}
-          ) > 0.85
+          (
+            1 - (
+              node_filesystem_avail_bytes{job="hosts",mountpoint="/",fstype!~"tmpfs|ramfs"}
+              / node_filesystem_size_bytes{job="hosts",mountpoint="/",fstype!~"tmpfs|ramfs"}
+            ) > 0.85
+          )
+          unless on (host_id) (repose_host_info{nix_mode="off"} == 1)
         for: 15m
         labels:
           severity: warn
@@ -273,11 +282,15 @@ groups:
         # hostd runs at most two builds at once (DECISIONS R5-4). Two
         # running with nothing completing for 45 minutes is a build that will
         # not finish inside its 30-minute cap, which means the cap is not
-        # being enforced.
+        # being enforced. Nix hosts only, the way StoreFull is (I-1500):
+        # erofs guests apply a menu, they do not build.
         expr: |
-          repose_host_builds_running >= 2
-          unless on (instance)
-          sum by (instance) (increase(repose_host_build_duration_seconds_count[45m])) > 0
+          (
+            repose_host_builds_running >= 2
+            unless on (instance)
+            sum by (instance) (increase(repose_host_build_duration_seconds_count[45m])) > 0
+          )
+          unless on (host_id) (repose_host_info{nix_mode="off"} == 1)
         for: 5m
         labels:
           severity: warn
@@ -285,6 +298,37 @@ groups:
           summary: "build queue on {{ $labels.host_id }} has not completed a build in 45 minutes"
           description: "Both build slots are busy and no build has finished. A build past its 30-minute cap is not being killed."
           runbook: "docs/ops/RUNBOOK.md#buildqueuestuck"
+
+      - alert: BaseImageFetchFailed
+        # A host that cannot fetch an erofs base bundle cannot create or
+        # start a guest on a base it has not seen: the command waits for
+        # the fetch and fails with it (I-1478). Any failure in 30 minutes
+        # warns, and the reason label says which: checksum is a bad
+        # publish, status a release that is missing, stall and network
+        # the path, disk the host (I-1500).
+        expr: sum by (host_id, reason) (increase(repose_host_base_image_fetch_errors_total[30m])) > 0
+        labels:
+          severity: warn
+        annotations:
+          summary: "base image fetches on {{ $labels.host_id }} are failing ({{ $labels.reason }})"
+          description: '{{ $value | printf "%.0f" }} failed in 30 minutes. A create or start on a base this host does not hold fails until a fetch succeeds.'
+          runbook: "docs/ops/RUNBOOK.md#baseimagefetchfailed"
+
+      - alert: BaseImageDiskHigh
+        # The cache holds the bundles guests name and the newest per arch;
+        # GC removes the rest a day after the last guest leaves them. One
+        # bundle is about 1.5 GB and a rolling base change holds two or
+        # three (proposal 2026-11-22, "Host disk caching"), so 8 GiB (8589934592) is
+        # past what a rolling change needs and a sign that GC is not
+        # reaping, or that guests are pinned to many old bases (I-1500).
+        expr: repose_host_base_image_bytes > 8589934592
+        for: 1h
+        labels:
+          severity: warn
+        annotations:
+          summary: "the base image cache on {{ $labels.host_id }} holds over 8 GiB"
+          description: "{{ $value | humanize1024 }}B in the cache. GC keeps every base a guest names, so old bases stay until their guests restart on the new one."
+          runbook: "docs/ops/RUNBOOK.md#baseimagediskhigh"
 
       - alert: HostdDown
         # Prometheus cannot scrape hostd over the edge's WireGuard: the host
