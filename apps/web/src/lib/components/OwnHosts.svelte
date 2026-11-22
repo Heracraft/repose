@@ -440,6 +440,13 @@
 						<div data-testid="host-install-x86">
 							<CodeCopy command={x86Step} what="the x86 install step" wrap />
 						</div>
+						<!-- What the installer takes (ops/install-host-x86.sh): a file by
+						     default, or a whole empty disk it refuses to format when it
+						     holds anything (council finding 9). -->
+						<p class="hdlg-facts" data-testid="host-x86-disk">
+							It keeps your machines' disks in /var/lib/repose/guests.img, or with --device takes
+							over a whole empty disk.
+						</p>
 					{/if}
 					<p class="hdlg-facts">
 						<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}

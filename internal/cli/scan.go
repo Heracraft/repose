@@ -911,6 +911,39 @@ type scanPersonal struct {
 	// Why names the source: "your account has a machine.nix", or the
 	// laptop's copy when the account could not be asked.
 	Why string
+	// Erofs is set when the checkout's project runs the Ubuntu base
+	// (DECISIONS I-1512): no .nix file takes a half over there, and the
+	// pins go through mise.
+	Erofs bool
+}
+
+// precedenceForProject is precedenceFor for the machine the carry goes
+// to: on an Ubuntu (erofs) machine neither machine.nix nor repose.nix is
+// used (I-1462), so neither takes a half over (I-1512).
+func precedenceForProject(personal bool, repoDir string, p *Project) toolPrecedence {
+	if isErofs(p) {
+		return toolPrecedence{}
+	}
+	return precedenceFor(personal, repoDir)
+}
+
+// ubuntuNotes rewrites the pins' notes for an Ubuntu machine, where mise
+// installs a pinned node, ruby or java (I-1512); the notes that say which
+// pin wins, or that nothing is installed, stand.
+func ubuntuNotes(sc *scanResult) *scanResult {
+	c := *sc
+	c.Versions = append([]scanVersion(nil), sc.Versions...)
+	for i, v := range c.Versions {
+		if !strings.Contains(v.Note, "nix") {
+			continue
+		}
+		want := v.Major
+		if want == "" {
+			want = v.Version
+		}
+		c.Versions[i].Note = v.Tool + " " + want + " through mise when the machine's " + v.Tool + " is another version"
+	}
+	return &c
 }
 
 // ScanCmd prints what `repose run` would install in a guest for this
@@ -927,6 +960,10 @@ func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool, personal scanPers
 	global := readGlobalTools(te)
 	sc := scanProject(abs)
 	prec := precedenceFor(personal.Has, abs)
+	if personal.Erofs {
+		prec = toolPrecedence{}
+		sc = ubuntuNotes(sc)
+	}
 	if jsonOut {
 		return writeJSONOut(out, scanJSON(global, sc, prec, personal))
 	}
@@ -1008,6 +1045,12 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 		how := "nixpkgs, looked up on the machine"
 		if c.Manager == "npm" {
 			how = "nixpkgs, else npm " + c.Pkg
+		}
+		if personal.Erofs {
+			how = "apt, looked up on the machine"
+			if c.Manager == "npm" {
+				how = "npm " + c.Pkg
+			}
 		}
 		p("  %-20s %s; from %s\n", c.Name, how, c.Why)
 	}
@@ -1096,6 +1139,34 @@ func scanPersonalFor(ctx context.Context, env func() (*Env, error), homeDir stri
 	return scanPersonal{Has: true, Why: "your account has a machine.nix"}
 }
 
+// scanErofsFor reports whether the checkout at dir belongs to a project
+// that runs the Ubuntu base (DECISIONS I-1512). A checkout with no
+// project, a logged-out laptop or an api out of reach answers false, the
+// NixOS reading scan gave before.
+func scanErofsFor(ctx context.Context, env func() (*Env, error), dir string) bool {
+	if env == nil {
+		return false
+	}
+	e, err := env()
+	if err != nil || e.Client == nil {
+		return false
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	if root := gitRepoRoot(abs); root != "" {
+		abs = root
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := resolveProject(ctx, e.Client, e.Dir, abs, "", &e.Cache, defaultResolveDeps())
+	if err != nil || res == nil {
+		return false
+	}
+	return isErofs(res.Project)
+}
+
 func newScanCmd(env func() (*Env, error)) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
@@ -1105,13 +1176,13 @@ func newScanCmd(env func() (*Env, error)) *cobra.Command {
 the tools this laptop installed globally (npm, pnpm, bun, go, cargo, uv, pipx),
 the commands the checkout's scripts run that neither the machine's base nor the
 project's own dependencies provide, and the node, ruby and java versions the
-checkout pins, with the version the machine gets (the closest nixpkgs has when
-it lacks the pinned one). Nothing is installed and nothing leaves the laptop.
-DIR defaults to the current checkout.
+checkout pins, with the version the machine gets. Nothing is installed and
+nothing leaves the laptop. DIR defaults to the current checkout.
 
-A .nix file takes precedence over the scan: with a machine.nix on your account
-the laptop's tools are skipped, and with a repose.nix at the checkout root the
-scripts' commands are. The listing says which half was skipped and why.`,
+On a NixOS machine a .nix file takes precedence over the scan: with a
+machine.nix on your account the laptop's tools are skipped, and with a
+repose.nix at the checkout root the scripts' commands are. The listing says
+which half was skipped and why.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return cobraUsageError{fmt.Errorf("repose scan takes at most one DIR, got %s", gotArgs(args))}
@@ -1130,7 +1201,9 @@ scripts' commands are. The listing says which half was skipped and why.`,
 			if err != nil {
 				return err
 			}
-			return ScanCmd(cmd.OutOrStdout(), home, dir, jsonOut, scanPersonalFor(cmd.Context(), env, home))
+			personal := scanPersonalFor(cmd.Context(), env, home)
+			personal.Erofs = scanErofsFor(cmd.Context(), env, dir)
+			return ScanCmd(cmd.OutOrStdout(), home, dir, jsonOut, personal)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON")
