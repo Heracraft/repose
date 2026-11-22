@@ -335,6 +335,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	} else {
 		log.Info("nix guests off", "event", "start", "part", "nix", "reason", why)
 	}
+	m.SetHostInfo(nixOn, o.ImagesDir != "", o.Version)
 	var images *baseimg.Cache
 	if o.ImagesDir != "" {
 		if err := os.MkdirAll(o.ImagesDir, 0o755); err != nil {

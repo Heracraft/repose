@@ -122,6 +122,24 @@ type M struct {
 	BaseImageBytes         prometheus.Gauge
 	BaseImageVersions      prometheus.Gauge
 	BaseImageFetchDuration prometheus.Histogram
+	// HostInfo is 1 for the one series naming this hostd's runtimes and
+	// version, set once at start from the resolved flags (DECISIONS
+	// I-1484): nix_mode is off with --nix-mode=off or no nix on PATH,
+	// erofs off with an empty --images-dir. Alerts scoped to Nix hosts
+	// join on it.
+	HostInfo *prometheus.GaugeVec
+}
+
+// SetHostInfo publishes repose_host_info for this hostd.
+func (m *M) SetHostInfo(nixOn, erofsOn bool, version string) {
+	onOff := func(b bool) string {
+		if b {
+			return "on"
+		}
+		return "off"
+	}
+	m.HostInfo.Reset()
+	m.HostInfo.WithLabelValues(onOff(nixOn), onOff(erofsOn), version).Set(1)
 }
 
 // BaseImageFetchReasons is the `reason` enum of
@@ -239,6 +257,7 @@ func NewVersion(version string) *M {
 		BaseImageVersions:     f.gauge("base_image_versions", "Erofs base bundles in the image cache (I-1478)."),
 		BaseImageFetchDuration: f.hist("base_image_fetch_duration_seconds", "Wall time of one base bundle fetch that finished, its three files together (I-1478).",
 			[]float64{1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800}),
+		HostInfo: f.gaugeVec("info", "1 for this hostd's guest runtimes and version: nix_mode and erofs are on or off (I-1484).", "nix_mode", "erofs", "version"),
 	}
 	for _, r := range BaseImageFetchReasons {
 		m.BaseImageFetchErrors.WithLabelValues(r)

@@ -2,10 +2,13 @@ package guest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +19,7 @@ import (
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/baseimg"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	fakeguestd "github.com/heracraft/repose/internal/hostd/fakeguestd"
 	"github.com/heracraft/repose/internal/hostd/gcroot"
@@ -120,6 +124,14 @@ type harness struct {
 	badClosure map[string]string
 	cfg        Config
 	logs       lockedBuffer // every line the manager logged, JSON
+	// images is the erofs base image cache; srcDir holds the bundles
+	// baseImage publishes as file:// URLs. lastRoot and applied are
+	// each erofs guest's last booted rootfs and last applied menu, so the
+	// next boot's fake sees what its volume would hold.
+	images   *baseimg.Cache
+	srcDir   string
+	lastRoot map[string]string
+	applied  map[string][]byte
 }
 
 // lockedBuffer is a bytes.Buffer the manager's goroutines may write at once.
@@ -163,6 +175,14 @@ func fakeClosure(t *testing.T, name string) string {
 }
 
 func newHarness(t *testing.T, mut func(*Config)) *harness {
+	t.Helper()
+	return newHarnessWith(t, mut, nil)
+}
+
+// newHarnessWith is newHarness with the Deps open to a test: a host with
+// the Nix machinery off sets Nix, View and Roots to their zero values
+// (DECISIONS I-1484).
+func newHarnessWith(t *testing.T, mut func(*Config), dmut func(*Deps)) *harness {
 	t.Helper()
 	h := &harness{t: t, guestds: map[string]*fakeguestd.Server{}, noBoot: map[string]bool{}, badClosure: map[string]string{}}
 	st, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
@@ -219,10 +239,33 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 				return f.Close()
 			}
 		}
+		opts := h.gopts
+		// An erofs guest's fake is an erofs guestd (DECISIONS I-1460);
+		// the menu it applied lives on its volume across boots, and a
+		// boot on another base than the last finds the initramfs's
+		// .base-upgraded marker (I-1482).
+		if root := rootImage(argv); root == "" && slices.Contains(argv, "--restore") && h.lastRoot[id] != "" {
+			// An unparked erofs guest: its devices come from the image.
+			opts.Erofs = true
+			opts.AppliedMenu = h.applied[id]
+		} else if root != "" {
+			opts.Erofs = true
+			if prev := h.lastRoot[id]; prev != "" && prev != root {
+				opts.BaseUpgraded = true
+			}
+			if h.lastRoot == nil {
+				h.lastRoot = map[string]string{}
+			}
+			h.lastRoot[id] = root
+			opts.AppliedMenu = h.applied[id]
+		}
 		if old := h.guestds[id]; old != nil {
+			if opts.Erofs && h.lastRoot[id] != "" {
+				opts.AppliedMenu = old.Applied()
+			}
 			_ = old.Close()
 		}
-		srv, err := fakeguestd.Listen(filepath.Join(h.sockDir, id+".sock"), h.gopts)
+		srv, err := fakeguestd.Listen(filepath.Join(h.sockDir, id+".sock"), opts)
 		if err != nil {
 			return err
 		}
@@ -238,6 +281,10 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		if old := h.guestds[id]; old != nil {
+			if h.applied == nil {
+				h.applied = map[string][]byte{}
+			}
+			h.applied[id] = old.Applied()
 			_ = old.Close()
 			delete(h.guestds, id)
 		}
@@ -259,8 +306,10 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	// (docs/workstreams/10-observability.md §5).
 	logger := obs.NewTestLogger(t, obs.ComponentHostd, &h.logs)
 	h.metrics = metrics.New()
-	m, err := New(cfg, Deps{
-		State: st, LVM: harnessLVM(h), Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
+	h.srcDir = t.TempDir()
+	h.images = &baseimg.Cache{Dir: filepath.Join(t.TempDir(), "images"), Arch: "x86_64", Store: st, RetryWait: time.Millisecond}
+	d := Deps{
+		State: st, LVM: harnessLVM(h), Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Images: h.images, Blob: h.blob,
 		Stream: h.stream, Emit: h.rec, Metrics: h.metrics, Log: logger,
 		// The session's phase deadlines come from the same config the
 		// manager reports them from, as app.go builds them, so a test
@@ -277,9 +326,16 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 			}
 			return h.cgWait.Load(), nil
 		},
-	})
+	}
+	if dmut != nil {
+		dmut(&d)
+	}
+	m, err := New(cfg, d)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if h.images != nil {
+		h.images.Refs = m.BaseRefs
 	}
 	m.Run()
 	h.m = m
@@ -452,4 +508,48 @@ func idleSample() *guestdv1.SampleResult {
 		Signals: &hostdv1.GuestSignals{GuestdOk: true,
 			Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "idle"}}},
 	}
+}
+
+// rootImage is the rootfs.erofs path on a rendered argv, "" for a Nix
+// guest's.
+func rootImage(argv []string) string {
+	for i, a := range argv {
+		if a == "--disk" && i+1 < len(argv) && strings.HasSuffix(argv[i+1], ",id=vda") {
+			return strings.TrimPrefix(strings.Split(argv[i+1], ",")[0], "path=")
+		}
+	}
+	return ""
+}
+
+// baseImage publishes a bundle for version under the harness's source
+// directory and returns its BaseImage with file:// URLs and digests, as
+// the api would send it.
+func (h *harness) baseImage(version string) *hostdv1.BaseImage {
+	h.t.Helper()
+	dir := filepath.Join(h.srcDir, version)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		h.t.Fatal(err)
+	}
+	bi := &hostdv1.BaseImage{Version: version, KernelVersion: "6.8.0-generic"}
+	for _, f := range []struct {
+		name     string
+		url, sum *string
+	}{{"vmlinuz", &bi.KernelUrl, &bi.KernelSha256}, {"initramfs.img", &bi.InitramfsUrl, &bi.InitramfsSha256}, {"rootfs.erofs", &bi.Url, &bi.Sha256}} {
+		b := []byte(f.name + " of " + version)
+		p := filepath.Join(dir, f.name)
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			h.t.Fatal(err)
+		}
+		s := sha256.Sum256(b)
+		*f.url, *f.sum = "file://"+p, hex.EncodeToString(s[:])
+	}
+	return bi
+}
+
+// erofsCreate is createReq for an erofs guest on base version.
+func (h *harness) erofsCreate(id, version string, menu *hostdv1.MenuSpec) *hostdv1.CreateGuest {
+	req := createReq(id)
+	req.BaseImage = h.baseImage(version)
+	req.Menu = menu
+	return req
 }
