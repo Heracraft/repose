@@ -302,6 +302,14 @@ func ConfigRevisionsCmd(ctx context.Context, e *Env, projectArg string) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
+	if isErofs(project) {
+		// No machine.nix ever reaches an erofs machine (I-1462).
+		_, _ = fmt.Fprintln(tw, "REVISION\tCREATED\tSTATUS\tERROR")
+		for _, r := range revs {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortRev(r.ID), r.CreatedAt.Local().Format("2006-01-02 15:04"), r.Status, firstLine(r.Error))
+		}
+		return tw.Flush()
+	}
 	_, _ = fmt.Fprintln(tw, "REVISION\tCREATED\tSTATUS\tMACHINE.NIX\tERROR")
 	for _, r := range revs {
 		personal := "-"

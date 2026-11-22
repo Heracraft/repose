@@ -227,7 +227,11 @@ func waitConfigOp(ctx context.Context, e *Env, project *Project, opID string) (*
 	if err != nil {
 		pr.Fail()
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			_, _ = fmt.Fprintln(e.ErrOut, "Interrupted. The build keeps going on the machine.")
+			if v.menu {
+				_, _ = fmt.Fprintln(e.ErrOut, "Interrupted. The install keeps going on the machine.")
+			} else {
+				_, _ = fmt.Fprintln(e.ErrOut, "Interrupted. The build keeps going on the machine.")
+			}
 			return nil, pr, silent(ExitInterrupted)
 		}
 		return nil, pr, err
