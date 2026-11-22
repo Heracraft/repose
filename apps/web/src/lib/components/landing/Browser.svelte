@@ -170,10 +170,13 @@
 		'--rh': r.h + 8
 	});
 
+	let { animated = true }: { animated?: boolean } = $props();
+
 	let pic: HTMLDivElement;
 	const picture = new Picture({ group: 'grid' });
 
 	onMount(() => {
+		if (!animated) return;
 		let dead = false;
 		let visible = false;
 		let tl: { pause(): unknown; play(): unknown } | null = null;

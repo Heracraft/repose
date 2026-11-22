@@ -40,7 +40,76 @@ public docs say a user can do. Never on the page: burst cores, bare
 metal or your own hardware, user or customer counts, a rival's name,
 collaboration or a software factory.
 
-## The page (I-837, I-843)
+## The page (I-1452, amending I-1446, I-1212, I-961, I-843, I-287)
+
+Guide B 13.1, on the 1200px frame every page shares (I-656), laid out as one
+ruled sheet on a 12-column grid with no full-bleed dark slabs interrupting the
+sheet. Total desktop height is ~4,400px (down from 6,837px). Every band after
+the hero opens with the same head (`01` to `06`) and carries zero looping
+`anime.js` animations on `/`. In order:
+
+1. **Hero.** No eyebrow and no number: the serif headline "Your coding agents,
+   on a machine of their own", then a tight two-sentence lead naming
+   `repose run`, isolated Linux VMs, Claude Code/Codex and other agents working
+   after the laptop closes, and both homes (our servers, or a Mac mini or x86
+   box you own). Under the copy, one centred row from 1024px (left-aligned
+   below): `Start a free week` (`hk-btn-lg`, returning to `/billing`) beside a
+   single `CodeCopy` install bar (`curl -fsSL https://repose.run/install.sh |
+   sh`; single-line from 640px, wrapping after `/` below 640px so `| sh` is
+   never clipped on phones). Under that row, one factual meta line reading
+   `trialDays`, the live Solo price and `OWN_HARDWARE.priceCents` from
+   `lib/plans.ts`, stating BYO agent subscriptions/API keys and linking to
+   `#pricing`. Under the copy, the Quickstart's real `repose run` session
+   (`landing/Terminal.svelte`, centred at `max-width: 46rem`) inside the 1200px
+   sheet on `--stage` with its 16px dot grid. No `PauseButton` appears on `/`
+   because nothing loops; looping `?hero=` gallery candidates still mount
+   `PauseButton` automatically when `motion.live > 0`.
+2. **01 How it works** (`#how`). "What repose handles for you", with "One
+   command replaces manual server setup and ad-hoc SSH tunnels." on the right.
+   Three flush columns on the thirds (`1.1 One-command sync`, `1.2 Full
+   permissions`, `1.3 Snapshots`), each with a 1-line serif title, two factual
+   sentences, and a unique reference command (`repose run`, `repose run -p
+   "..."`, `repose snapshots restore`). Replaces the redundant `Wreck`,
+   `OneCommand` and `ComesBack` animated cartoons.
+3. **02 Workflow** (`#features`). "Feels like localhost, runs while you're
+   away", with a 2x2 flush hairline grid:
+   - Row 1 carries the two genuinely non-obvious real captures rendered
+     **statically** (`animated={false}`, zero loops): `2.1 Ports` (`Localhost`,
+     `repose attach`) and `2.2 Browser` (`Browser`, `repose browser`).
+   - Row 2 carries two compact text-only hairline cells: `2.3 Editor`
+     (`ssh your-project.repose`) and `2.4 Away & idle` (`repose ls`, surfacing
+     phone/email notifications and hosted 15-minute auto-freeze/wake directly on
+     the page).
+4. **03 Agents & tools** (`#agents`). "Preinstalled on first boot", with "All
+   agents" and "Everything installed" links on the right, then `Ready.svelte`:
+   the five preinstalled agents drawn with BOTH their marks and visible names
+   (`Claude Code`, `Codex`, `opencode`, `Gemini CLI`, `pi`, amending I-287),
+   over a two-column flush strip listing preinstalled runtimes/everyday tools
+   and background installation of your laptop's global tools plus `repose
+   config add`.
+5. **04 Pricing** (`#pricing`). "Launch prices", with `Start a free week` and
+   the live `seats-line` from `GET /public/seats` on the heading's last line.
+   A flush sub-bar states the 7-day free trial, concurrent-memory billing, and
+   BYO agent subscriptions/API keys. Under it: `PlanCells` (`Solo`, `Plus`,
+   `Pro` from `lib/plans.ts`), a one-line hosted size guide (`tiny` 2 GB to `xl`
+   16 GB, up to 100 projects, cloud snapshots), `OwnHardwarePlan` (`$10 a month`
+   from `OWN_HARDWARE`) styled as a true flush hairline row whose description
+   aligns with the `Plus` column at 1024px+, and a compact `#parts` note stating
+   Mac/x86 requirements with links to `/docs/own-hardware` and `/docs/billing`.
+   **Neither the pricing section nor `#parts` names a start time or a Mac memory
+   sizing claim** (holding I-1446 while ENG-70 and ENG-91 remain open).
+6. **05 Questions** (`#questions`). "Before you try it", with "Limits" and
+   "Billing" links and five `<details>` rows answering the real buyer
+   objections: BYO Claude/Codex/Gemini accounts, running on a Mac mini or x86
+   box, Mac sleep/restart behaviour (explicitly stating restarts keep disk and
+   clear memory), what an agent can reach, and hosted idle freeze billing.
+7. **06 Start** (`#install`). "Start in three commands", with a closing
+   `Start a free week` CTA on the heading's last baseline, three light ruled
+   `CodeCopy` rows (`6.1 Install the CLI`, `6.2 Sign in`, `6.3 Run in any
+   checkout`, wrapping below 640px), and a flush footer strip linking "Install
+   and sign in" and "Run and attach".
+
+## Earlier page structure (I-837, I-843, I-1446 — superseded by I-1452)
 
 Guide B 13.1, on the 1200px frame every page shares (I-656), the
 headline centred over the hero's picture from 1024px and starting
