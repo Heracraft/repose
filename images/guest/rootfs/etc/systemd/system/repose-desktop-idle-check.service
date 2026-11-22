@@ -1,0 +1,6 @@
+[Unit]
+Description=repose desktop: stop the viewer after 30 minutes unused, the browser after 10
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/repose-desktop-idle-check

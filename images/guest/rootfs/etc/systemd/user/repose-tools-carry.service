@@ -1,0 +1,17 @@
+# The carried tools the guest lacks (tools-carry.nix, DECISIONS I-221,
+# I-1348).
+[Unit]
+Description=repose: install the carried tools the guest lacks
+ConditionUser=dev
+ConditionPathExists=%h/.repose/tools-wanted.json
+
+[Service]
+Type=exec
+ExecStart=/bin/bash -lc 'exec /usr/local/bin/repose-tools-install run'
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=20
+MemoryHigh=40%
+
+[Install]
+WantedBy=default.target

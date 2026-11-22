@@ -1,0 +1,20 @@
+#!/bin/sh
+# sshd's ExecStartPre (nix/guest/base/ssh.nix): a throwaway key until
+# hostd delivers the real one; an empty CA file trusts nobody, so a guest
+# that never got its CA refuses everyone.
+set -eu
+run=/run/repose
+mkdir -p "$run" /etc/ssh/principals
+if [ ! -s "$run/ssh_host_ed25519_key" ]; then
+  ssh-keygen -q -t ed25519 -N "" -C repose-bootstrap -f "$run/ssh_host_ed25519_key"
+  chmod 0600 "$run/ssh_host_ed25519_key"
+  rm -f "$run/ssh_host_ed25519_key.pub"
+fi
+if [ ! -e "$run/user_ca.pub" ]; then
+  : > "$run/user_ca.pub"
+  chmod 0644 "$run/user_ca.pub"
+fi
+if [ ! -e /etc/ssh/principals/dev ]; then
+  : > /etc/ssh/principals/dev
+  chmod 0644 /etc/ssh/principals/dev
+fi

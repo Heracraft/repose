@@ -1,0 +1,16 @@
+# Compressed swap on zram, off the boot path (sysctl.nix, DECISIONS I-231).
+[Unit]
+Description=repose: compressed swap on zram
+DefaultDependencies=no
+After=local-fs.target
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/repose/repose-zram-swap start
+ExecStop=/usr/local/libexec/repose/repose-zram-swap stop
+
+[Install]
+WantedBy=multi-user.target

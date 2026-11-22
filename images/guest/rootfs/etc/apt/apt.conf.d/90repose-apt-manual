@@ -1,0 +1,4 @@
+// After every dpkg run, the packages installed by name beyond the base's
+// (DECISIONS I-1466): on the volume's root, where a base change does not
+// rotate it away; guestd reads it to replay them.
+DPkg::Post-Invoke { "/usr/local/libexec/repose/repose-apt-manual || true"; };

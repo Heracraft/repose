@@ -1,0 +1,12 @@
+{
+  "storage-driver": "overlay2",
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "50m", "max-file": "3" },
+  "default-address-pools": [ { "base": "172.20.0.0/14", "size": 24 } ],
+  "bip": "172.20.0.1/24",
+  "dns": [ "172.20.0.1" ],
+  "live-restore": true,
+  "ipv6": false,
+  "registry-mirrors": [ "http://10.63.255.254:5000" ],
+  "insecure-registries": [ "10.63.255.254:5000" ]
+}

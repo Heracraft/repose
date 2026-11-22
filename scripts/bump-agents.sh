@@ -15,21 +15,36 @@
 # (DECISIONS I-428). Merging the PR changes no guest until
 # `repose-admin base publish`.
 #
-# Needs: bash, curl, jq, nix (flakes), git.
-# Usage: scripts/bump-agents.sh [--only <agent>[,<agent>]] [--check]
+# images/guest/versions.json is the list (DECISIONS I-1470): the erofs
+# guest installs from it (images/guest/scripts/install-agents.sh) and adds
+# playwright-mcp, which the NixOS guest takes from nixpkgs. Every rewrite
+# here is copied to nix/overlay/agents/versions.json, so the two files are
+# always the same bytes while both guests exist.
+#
+# Without Nix (--no-nix, or no nix on PATH) hashes are computed with curl
+# and openssl and nothing is built: images/guest/build.sh checks every hash
+# again and the guest boot runs each `--version`.
+#
+# Needs: bash, curl, jq, git; nix (flakes) for the build and the smoke run,
+# openssl without it.
+# Usage: scripts/bump-agents.sh [--only <agent>[,<agent>]] [--check] [--no-nix]
 #   --check   only report which agents are behind; exit 2 if any
 set -euo pipefail
 
 root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
-versions="$root/nix/overlay/agents/versions.json"
+versions="$root/images/guest/versions.json"
+nix_versions="$root/nix/overlay/agents/versions.json"
 check=0
+use_nix=1
+command -v nix >/dev/null 2>&1 || use_nix=0
 only=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --pr) echo "$0: --pr moved to scripts/bump-agents-pr.sh (DECISIONS I-428)" >&2; exit 64 ;;
     --check) check=1 ;;
     --only) only="$2"; shift ;;
-    *) echo "usage: $0 [--check] [--only a,b]" >&2; exit 64 ;;
+    --no-nix) use_nix=0 ;;
+    *) echo "usage: $0 [--check] [--only a,b] [--no-nix]" >&2; exit 64 ;;
   esac
   shift
 done
@@ -40,6 +55,25 @@ curl_gh() {
   else
     curl -fsSL "$@"
   fi
+}
+
+# prefetch <url>: the SRI sha256 of the file at url.
+prefetch() {
+  if [ "$use_nix" = 1 ]; then
+    nix store prefetch-file --json "$1" | jq -r .hash
+  else
+    local f
+    f=$(mktemp)
+    curl -fsSL --retry 3 -o "$f" "$1"
+    printf 'sha256-%s\n' "$(openssl dgst -sha256 -binary "$f" | base64 -w0)"
+    rm -f "$f"
+  fi
+}
+
+# save: the rewritten list, copied to the Nix overlay's.
+save() {
+  mv "$1" "$versions"
+  cp "$versions" "$nix_versions"
 }
 
 # The architectures a binary agent is pinned for (DECISIONS I-1374): one
@@ -94,6 +128,11 @@ latest() {
     chrome-devtools-mcp)
       local v; v=$(curl -fsSL https://registry.npmjs.org/chrome-devtools-mcp/latest | jq -r .version)
       echo "$v https://registry.npmjs.org/chrome-devtools-mcp/-/chrome-devtools-mcp-$v.tgz" ;;
+    playwright-mcp)
+      # The erofs guest's only (DECISIONS I-1470); the NixOS guest's comes
+      # from nixpkgs.
+      local v; v=$(curl -fsSL https://registry.npmjs.org/@playwright/mcp/latest | jq -r .version)
+      echo "$v https://registry.npmjs.org/@playwright/mcp/-/mcp-$v.tgz" ;;
     *) echo "unknown agent $a" >&2; return 1 ;;
   esac
 }
@@ -104,7 +143,7 @@ latest() {
 slots() {
   case "$1" in
     gemini-cli) echo npm ;;
-    chrome-devtools-mcp) echo "" ;;
+    chrome-devtools-mcp|playwright-mcp) echo "" ;;
     *) echo "$archs" ;;
   esac
 }
@@ -143,13 +182,13 @@ for a in $agents; do
   echo "$a: $cur -> $new ($url)"
   tmp=$(mktemp)
   jq --arg a "$a" --arg v "$new" '.[$a].version = $v' "$versions" > "$tmp"
-  mv "$tmp" "$versions"
+  save "$tmp"
   if [ -z "$(slots "$a")" ]; then
-    hash=$(nix store prefetch-file --json "$url" | jq -r .hash)
+    hash=$(prefetch "$url")
     tmp=$(mktemp)
     jq --arg a "$a" --arg u "$url" --arg h "$hash" \
       '.[$a].url = $u | .[$a].hash = $h' "$versions" > "$tmp"
-    mv "$tmp" "$versions"
+    save "$tmp"
   fi
   for s in $(slots "$a"); do
     if [ "$s" = npm ]; then
@@ -161,27 +200,27 @@ for a in $agents; do
         exit 1
       fi
     fi
-    hash=$(nix store prefetch-file --json "$surl" | jq -r .hash)
+    hash=$(prefetch "$surl")
     tmp=$(mktemp)
     jq --arg a "$a" --arg s "$s" --arg u "$surl" --arg h "$hash" \
       '.[$a][$s].url = $u | .[$a][$s].hash = $h' "$versions" > "$tmp"
-    mv "$tmp" "$versions"
+    save "$tmp"
     # Codex runs shell commands through a second release asset, pinned
     # beside the binary at the same version and under the same
     # architecture's slot (DECISIONS I-426, I-1374).
     if [ "$a" = codex ]; then
       hurl=${surl/\/codex-/\/codex-code-mode-host-}
-      hhash=$(nix store prefetch-file --json "$hurl" | jq -r .hash)
+      hhash=$(prefetch "$hurl")
       tmp=$(mktemp)
       jq --arg s "$s" --arg u "$hurl" --arg h "$hhash" '.codex[$s]["code-mode-host"] = {url: $u, hash: $h}' "$versions" > "$tmp"
-      mv "$tmp" "$versions"
+      save "$tmp"
       # And its bundled bwrap, which it checks against a digest built into
       # the binary, so it moves with the version too (DECISIONS I-495).
       burl=${surl/\/codex-/\/bwrap-}
-      bhash=$(nix store prefetch-file --json "$burl" | jq -r .hash)
+      bhash=$(prefetch "$burl")
       tmp=$(mktemp)
       jq --arg s "$s" --arg u "$burl" --arg h "$bhash" '.codex[$s].bwrap = {url: $u, hash: $h}' "$versions" > "$tmp"
-      mv "$tmp" "$versions"
+      save "$tmp"
     fi
   done
   changed+=("$a $new")
@@ -200,6 +239,11 @@ if [ ${#changed[@]} -eq 0 ]; then
   exit 0
 fi
 
+if [ "$use_nix" = 0 ]; then
+  echo "agents (hashes only, no Nix build): $(printf '%s, ' "${changed[@]}" | sed 's/, $//')"
+  exit 0
+fi
+
 # Build what changed for this machine's architecture and prove each
 # binary starts. The other architecture's package is built by ci.yml's
 # aarch64 overlay job (or the x86 one, on an arm64 machine) once the
@@ -209,6 +253,7 @@ for c in "${changed[@]}"; do
   case "$a" in
     chrome-devtools-mcp) attr="chrome-devtools-mcp"; b="chrome-devtools-mcp" ;;
     herdr) attr="herdr"; b="herdr" ;;
+    playwright-mcp) continue ;; # the erofs guest's; images/guest/build.sh checks it
     *) attr="$a.unwrapped"; b=$(binary "$a") ;;
   esac
   # git+file, like ci.yml's builds: a bare absolute path is a path flake,
