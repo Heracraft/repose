@@ -37,7 +37,12 @@
 
 	let trackEl = $state<HTMLElement | null>(null);
 	let step = $state(0);
-	let angle = $state(0);
+	let rotorEl = $state<HTMLElement | null>(null);
+	/* The dial's turn goes straight to the element: no component update per
+	   scroll frame. */
+	function turn(deg: number) {
+		rotorEl?.style.setProperty('--angle', `${deg}deg`);
+	}
 	let scrollDriven = $state(false);
 	let pinnedParam = $state(false);
 
@@ -47,7 +52,7 @@
 			const idx = BEATS.findIndex((b) => b.id === q || String(BEATS.indexOf(b)) === q);
 			if (idx >= 0) {
 				step = idx;
-				angle = idx * STEP;
+				turn(idx * STEP);
 				pinnedParam = true;
 			}
 		}
@@ -59,7 +64,7 @@
 		function updateMode() {
 			scrollDriven = mqWide.matches && !mqReduce.matches && !pinnedParam;
 			if (!scrollDriven) {
-				angle = step * STEP;
+				turn(step * STEP);
 			} else {
 				syncFromScroll();
 			}
@@ -77,8 +82,9 @@
 			const eased = frac < 0.22 ? 0 : frac > 0.78 ? 1 : (frac - 0.22) / 0.56;
 			const smooth = eased * eased * (3 - 2 * eased);
 			const pos = Math.min(LAST, base + smooth);
-			angle = pos * STEP;
-			step = Math.min(LAST, Math.round(pos));
+			turn(pos * STEP);
+			const next = Math.min(LAST, Math.round(pos));
+			if (next !== step) step = next;
 		}
 
 		function onScroll() {
@@ -113,7 +119,7 @@
 			window.scrollTo({ top: y, behavior: 'smooth' });
 		} else {
 			step = target;
-			angle = target * STEP;
+			turn(target * STEP);
 		}
 	}
 
@@ -139,6 +145,45 @@
 	const markers = BEATS.map((_, i) => INDEX + i * STEP);
 	const beatArc = `M ${at(INDEX - 6, 552)} A 552 552 0 0 1 ${at(INDEX + LAST * STEP + 6, 552)}`;
 	const notch = `M ${at(INDEX, 566)} L ${at(INDEX, 590)}`;
+
+	/* The dial is drawn once per scheme as an image the browser rasterizes
+	   once and turns as a bitmap. A live SVG this size, turned on every
+	   scroll frame, made Firefox repaint it each frame (owner: "very laggy").
+	   Colours are the landing's tokens for each scheme (pictures.css). */
+	type Ink = { strong: string; rule: string; accent: string; bg: string };
+	const LIGHT: Ink = { strong: '#d4d4d8', rule: '#e4e4e7', accent: '#4b6496', bg: '#fafafa' };
+	const DARK: Ink = { strong: '#3e414f', rule: '#282a34', accent: '#93a7d0', bg: '#09090b' };
+	function dial(c: Ink): string {
+		const ring = (r: number, stroke: string, w: number, op: number, dash = '') =>
+			`<circle cx="600" cy="600" r="${r}" fill="none" stroke="${stroke}" stroke-width="${w}" opacity="${op}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+		const ticks = rimTicks
+			.map(
+				(deg) =>
+					`<line x1="600" y1="${deg % 30 === 0 ? 54 : deg % 15 === 0 ? 57 : 63}" x2="600" y2="72" stroke="${deg % 15 === 0 ? c.strong : c.rule}" stroke-width="${deg % 15 === 0 ? 1.15 : 1}" transform="rotate(${deg} 600 600)"/>`
+			)
+			.join('');
+		const nodes = markers
+			.map(
+				(d) =>
+					`<circle cx="600" cy="48" r="5" fill="${c.bg}" stroke="${c.accent}" stroke-width="1.5" transform="rotate(${d} 600 600)"/>`
+			)
+			.join('');
+		const svg =
+			`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">` +
+			ring(552, c.strong, 1.25, 0.72) +
+			ring(522, c.rule, 1, 1, '3 9') +
+			ring(452, c.rule, 1, 0.56) +
+			ring(326, c.rule, 1, 0.19) +
+			ring(184, c.rule, 1, 0.19) +
+			`<path d="${beatArc}" fill="none" stroke="${c.accent}" stroke-width="11" opacity="0.1"/>` +
+			`<path d="${beatArc}" fill="none" stroke="${c.accent}" stroke-width="2.25" opacity="0.72"/>` +
+			nodes +
+			ticks +
+			`</svg>`;
+		return 'data:image/svg+xml,' + encodeURIComponent(svg);
+	}
+	const dialLight = dial(LIGHT);
+	const dialDark = dial(DARK);
 </script>
 
 {#snippet mark(m: Mark, size: number)}
@@ -160,7 +205,7 @@
 {#snippet hardwareVisual()}
 	<div
 		class="sw-hw"
-		aria-label="billing-api and web-app run on repose cloud; ml-notebook runs on your machine."
+		aria-label="billing-api, web-app and docs-site run on repose cloud; ml-notebook and scraper run on your machine."
 	>
 		<div class="sw-place">
 			<svg
@@ -176,8 +221,9 @@
 			</svg>
 			<p class="sw-place-name">repose cloud</p>
 			<ul class="sw-chips">
-				<li>billing-api</li>
-				<li>web-app</li>
+				<li><i></i>billing-api</li>
+				<li><i></i>web-app</li>
+				<li><i></i>docs-site</li>
 			</ul>
 		</div>
 		<div class="sw-place">
@@ -196,7 +242,8 @@
 			</svg>
 			<p class="sw-place-name">Your machine</p>
 			<ul class="sw-chips">
-				<li>ml-notebook</li>
+				<li><i></i>ml-notebook</li>
+				<li><i></i>scraper</li>
 			</ul>
 		</div>
 	</div>
@@ -210,7 +257,7 @@
 		<ul class="sw-mix-list">
 			{#each PARALLEL as vm (vm.login)}
 				<li>
-					<span class="sw-mix-mark" title={vm.mark.name}>{@render mark(vm.mark, 22)}</span>
+					<span class="sw-mix-mark" title={vm.mark.name}>{@render mark(vm.mark, 36)}</span>
 					<span class="sw-mix-login" class:sw-mix-key={vm.key}>{vm.login}</span>
 				</li>
 			{/each}
@@ -259,38 +306,14 @@
 		<!-- Full-bleed monumental background: 400%-scale quarter-wheel anchored on the 1200px left sheet rail -->
 		<div class="sw-backdrop" aria-hidden="true">
 			<div class="sw-dotfield"></div>
-			<div class="sw-rotor" class:sw-rotor--snap={!scrollDriven} style="--angle: {angle}deg">
-				<svg class="sw-dial-svg" viewBox="0 0 1200 1200" fill="none">
-					<circle cx="600" cy="600" r="552" class="sw-ring-outer" />
-					<circle cx="600" cy="600" r="522" class="sw-ring-dash" />
-					<circle cx="600" cy="600" r="452" class="sw-ring-inner" />
-					<circle cx="600" cy="600" r="326" class="sw-ring-inner sw-ring-faint" />
-					<circle cx="600" cy="600" r="184" class="sw-ring-inner sw-ring-faint" />
-
-					<path d={beatArc} class="sw-arc-halo" />
-					<path d={beatArc} class="sw-arc" />
-					{#each markers as d, idx (d)}
-						<circle
-							cx="600"
-							cy="48"
-							r="5"
-							transform="rotate({d} 600 600)"
-							class="sw-node"
-							class:sw-node--active={step === idx}
-						/>
-					{/each}
-
-					{#each rimTicks as deg (deg)}
-						<line
-							x1="600"
-							y1={deg % 30 === 0 ? 54 : deg % 15 === 0 ? 57 : 63}
-							x2="600"
-							y2="72"
-							class={deg % 15 === 0 ? 'sw-tick-mid' : 'sw-tick'}
-							transform="rotate({deg} 600 600)"
-						/>
-					{/each}
-				</svg>
+			<div
+				class="sw-rotor"
+				class:sw-rotor--snap={!scrollDriven}
+				bind:this={rotorEl}
+				style="--angle: 0deg"
+			>
+				<img class="sw-dial-img sw-dial-light" src={dialLight} alt="" />
+				<img class="sw-dial-img sw-dial-dark" src={dialDark} alt="" />
 			</div>
 			<!-- The index point stays put while the dial turns under it. -->
 			<div class="sw-rotor sw-index">
@@ -494,59 +517,40 @@
 			transition: none;
 		}
 	}
-	.sw-dial-svg {
+	.sw-dial-svg,
+	.sw-dial-img {
+		display: block;
 		width: 100%;
 		height: 100%;
 	}
-	.sw-ring-outer {
-		stroke: var(--rule-strong);
-		stroke-width: 1.25;
-		opacity: 0.72;
+	.sw-dial-img {
+		position: absolute;
+		inset: 0;
+		user-select: none;
 	}
-	.sw-ring-dash {
-		stroke: var(--rule);
-		stroke-width: 1;
-		stroke-dasharray: 3 9;
+	.sw-dial-dark {
+		display: none;
 	}
-	.sw-ring-inner {
-		stroke: var(--rule);
-		stroke-width: 1;
-		opacity: 0.56;
+	@media (prefers-color-scheme: dark) {
+		:global(:root:not(.light):not([data-theme='light'])) .sw-dial-light {
+			display: none;
+		}
+		:global(:root:not(.light):not([data-theme='light'])) .sw-dial-dark {
+			display: block;
+		}
 	}
-	.sw-ring-faint {
-		opacity: 0.34;
+	:global(:root[data-theme='dark']) .sw-dial-light,
+	:global(:root.dark) .sw-dial-light {
+		display: none;
 	}
-	.sw-arc-halo {
-		stroke: var(--pic-accent);
-		stroke-width: 11;
-		opacity: 0.1;
-	}
-	.sw-arc {
-		stroke: var(--pic-accent);
-		stroke-width: 2.25;
-		opacity: 0.72;
-	}
-	.sw-node {
-		fill: var(--hk-bg);
-		stroke: var(--pic-accent);
-		stroke-width: 1.5;
-		transition: fill 200ms ease;
-	}
-	.sw-node--active {
-		fill: var(--pic-accent);
+	:global(:root[data-theme='dark']) .sw-dial-dark,
+	:global(:root.dark) .sw-dial-dark {
+		display: block;
 	}
 	.sw-notch {
 		stroke: var(--pic-accent);
 		stroke-width: 2.5;
 		stroke-linecap: round;
-	}
-	.sw-tick {
-		stroke: var(--rule);
-		stroke-width: 1;
-	}
-	.sw-tick-mid {
-		stroke: var(--rule-strong);
-		stroke-width: 1.15;
 	}
 
 	/* ---------- Responsive mode toggle: Desktop Wheel vs Mobile Stacked Beats ---------- */
@@ -690,14 +694,12 @@
 	@media (min-width: 1024px) {
 		.sw-panel-wrap {
 			justify-self: end;
-			width: min(100%, 32rem);
-			zoom: 1.12;
+			width: 100%;
 		}
 	}
 	@media (min-width: 1200px) {
 		.sw-panel-wrap {
-			width: min(100%, 36rem);
-			zoom: 1.2;
+			width: 100%;
 		}
 	}
 	.sw-panel-wrap.is-active {
@@ -716,37 +718,59 @@
 	.sw-hw {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 1.5rem;
+		gap: 2.5rem;
 	}
 	.sw-place {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		gap: 0.75rem;
-		padding-top: 1rem;
+		gap: 1rem;
+		padding-top: 1.5rem;
 		border-top: 1px solid var(--rule-strong);
+		/* The page's ground, so the dial passes behind the figure, not through it. */
+		background: var(--hk-bg);
 	}
 	.sw-place-art {
-		width: 4rem;
-		height: 3rem;
+		width: 7.5rem;
+		height: 5.625rem;
 		color: var(--pic-ink);
 	}
 	.sw-place-name {
 		margin: 0;
-		font-size: 0.9375rem;
+		font-family: var(--hk-font-display);
+		font-size: 1.5rem;
+		font-weight: 400;
 		font-weight: 500;
 		color: var(--hk-text);
 	}
 	.sw-chips {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.5rem;
-		margin: 0;
+		align-self: stretch;
+		gap: 0.625rem;
+		margin: 0.5rem 0 0;
 		padding: 0;
 		list-style: none;
 	}
-	.sw-chips li,
+	.sw-chips li {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0.875rem 1rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--surface);
+		font-family: var(--hk-font-mono);
+		font-size: 0.875rem;
+		color: var(--pic-ink);
+	}
+	.sw-chips li i {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--hk-ok-dot);
+		flex: none;
+	}
 	.sw-mix-box {
 		padding: 0.375rem 0.625rem;
 		border: 1px solid var(--rule);
@@ -762,10 +786,14 @@
 		display: grid;
 		grid-template-columns: auto minmax(2rem, 1fr) auto;
 		align-items: center;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--rule-strong);
+		/* The page's ground, so the dial passes behind the figure. */
+		background: var(--hk-bg);
 	}
 	.sw-mix-list {
 		display: grid;
-		grid-auto-rows: 3.5rem;
+		grid-auto-rows: 6rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -773,7 +801,7 @@
 	.sw-mix-list li {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 1rem;
 		padding-right: 0.75rem;
 	}
 	.sw-mix-mark {
@@ -781,17 +809,17 @@
 		color: var(--pic-ink);
 	}
 	.sw-mix-login {
-		font-size: 0.875rem;
+		font-size: 1.0625rem;
 		color: var(--hk-text);
 	}
 	.sw-mix-key {
 		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
+		font-size: 0.9375rem;
 		color: var(--pic-accent);
 	}
 	.sw-mix-join {
 		width: 100%;
-		height: 10.5rem;
+		height: 18rem;
 		fill: none;
 	}
 	.sw-mix-join path {
@@ -801,7 +829,9 @@
 	}
 	.sw-mix-box {
 		margin: 0;
-		padding: 0.5rem 0.75rem;
+		padding: 1.25rem 1.5rem;
+		border-radius: 8px;
+		font-size: 1rem;
 	}
 
 	/* ---------- Beat 3: dev server to the browser, the checkout to the editor ---------- */
