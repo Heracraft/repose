@@ -82,6 +82,11 @@ ln -s /run/repose/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
 ln -s /run/repose/ssh_host_ed25519_key-cert.pub /etc/ssh/ssh_host_ed25519_key-cert.pub
 ln -s /run/repose/user_ca.pub /etc/ssh/user_ca.pub
 chmod 0755 /usr/local/libexec/repose/* /usr/local/bin/*
+# What COPY brought keeps the build machine's modes; a umask of 002 there
+# made /etc and /etc/ssh group-writable, which sshd refuses (bad ownership
+# or modes for directory /etc/ssh). Nothing the platform adds is group- or
+# world-writable.
+find /etc /usr/local /opt/repose -xdev \( -type d -o -type f \) -perm /022 -exec chmod go-w {} +
 
 # --- units. ssh.socket is Ubuntu's default; the guest runs sshd as a
 # service that guestd reloads (ssh.nix).
@@ -143,6 +148,11 @@ touch /var/lib/systemd/linger/dev
 
 # Predictable interface names off: the one NIC is eth0 (network.nix).
 ln -sf /dev/null /etc/systemd/network/99-default.link
+
+# Ubuntu's two first-login notices (the sudo hint in every interactive
+# shell until a sudo succeeds, the MOTD on each SSH login): a new home
+# starts without them (Trust the reader).
+touch /etc/skel/.sudo_as_admin_successful /etc/skel/.hushlogin
 
 # /home/dev in the image is the mount point; its content comes from
 # /etc/skel on the volume's first boot (initramfs/init).

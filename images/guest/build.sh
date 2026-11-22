@@ -90,6 +90,13 @@ for arch in "${archs[@]}"; do
   docker buildx build "${common[@]}" --target rootfs --output "type=tar,dest=$work/rootfs.tar" "$here"
 
   echo "== $arch: rootfs.erofs"
+  # BuildKit's tar has no entry for the root directory, and mkfs.erofs then
+  # gives / the caller's uid and mode 0777: a "./" entry, root 0755, goes
+  # first.
+  mkdir -m 0755 "$work/empty"
+  tar -C "$work/empty" --owner=0 --group=0 --numeric-owner -cf "$work/root.tar" .
+  tar --concatenate -f "$work/root.tar" "$work/rootfs.tar"
+  mv "$work/root.tar" "$work/rootfs.tar"
   # --tar=f reads the tar straight into the image; the uid, gid and modes
   # are the tar's, and every file's time is the build's (-T0, reproducible).
   mkfs.erofs -zlz4hc,9 -T0 --tar=f "$dest/rootfs.erofs" "$work/rootfs.tar" >/dev/null
