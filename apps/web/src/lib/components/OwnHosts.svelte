@@ -203,9 +203,19 @@
 		if (h.projects && (h.state === 'unreachable' || h.state === 'lost')) {
 			const what = h.projects === 1 ? 'the machine on it' : `the ${h.projects} machines on it`;
 			const disks = h.projects === 1 ? 'its disk is' : 'their disks are';
-			return `It is not answering, and ${what} cannot be recovered: ${disks} on that host and repose has no copy.`;
+			return `It is not answering, and ${what} cannot be recovered: ${disks} on that host and repose has no copy.${snapshotsGo(h)}`;
 		}
-		return 'It stops taking your projects, and it joins again only with a new install.';
+		return `It stops taking your projects, and it joins again only with a new install.${snapshotsGo(h)}`;
+	}
+
+	/** What removing it deletes besides machines: the snapshots kept on its
+	 * disk, counted (I-1546). */
+	function snapshotsGo(h: OwnedHost): string {
+		const n = h.snapshots ?? 0;
+		if (n === 0) return '';
+		return n === 1
+			? ' This deletes the 1 snapshot kept on it; repose has no copy.'
+			: ` This deletes the ${n} snapshots kept on it; repose has no copy.`;
 	}
 
 	function heard(h: OwnedHost): string {

@@ -38,6 +38,7 @@ type destroyedRow struct {
 	SnapReason  string     `db:"snap_reason"`
 	SnapExpires *time.Time `db:"snap_expires"`
 	NameFree    bool       `db:"name_free"`
+	SnapGone    *string    `db:"snap_gone"`
 }
 
 // listDestroyed is GET /v1/projects/destroyed: the user's destroyed
@@ -65,7 +66,7 @@ func (s *Server) listDestroyed(w http.ResponseWriter, r *http.Request) error {
 	}
 	rows, err := s.d.Pool.Query(r.Context(), `
 		select p.id, p.name, p.slug, p.class, p.remote_url, p.volume_bytes, p.destroyed_at,
-		       s.id as snap_id, s.taken_at as snap_taken, s.bytes as snap_bytes, s.reason as snap_reason, s.expires_at as snap_expires,
+		       s.id as snap_id, s.taken_at as snap_taken, s.bytes as snap_bytes, s.reason as snap_reason, s.expires_at as snap_expires, s.gone_with_host as snap_gone,
 		       not exists (select 1 from projects l where l.user_id = p.user_id and l.slug = p.slug and l.destroyed_at is null) as name_free
 		from projects p
 		join lateral (
@@ -85,11 +86,17 @@ func (s *Server) listDestroyed(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]map[string]any, 0, len(list))
 	for _, d := range list {
+		// A snapshot that went with its host (I-1542) stays listed, so
+		// the reader learns it is gone, with no restorable date.
+		var until any = d.SnapExpires
+		if d.SnapGone != nil {
+			until = nil
+		}
 		out = append(out, map[string]any{
 			"id": d.ID, "name": d.Name, "slug": d.Slug, "class": d.Class, "remote_url": d.RemoteURL,
 			"volume_bytes": d.VolumeBytes, "destroyed_at": d.DestroyedAt, "name_free": d.NameFree,
-			"restorable_until": d.SnapExpires,
-			"snapshot":         map[string]any{"id": d.SnapID, "created_at": d.SnapTaken, "bytes": d.SnapBytes, "reason": d.SnapReason, "expires_at": d.SnapExpires},
+			"restorable_until": until, "gone_with_host": d.SnapGone,
+			"snapshot": map[string]any{"id": d.SnapID, "created_at": d.SnapTaken, "bytes": d.SnapBytes, "reason": d.SnapReason, "expires_at": d.SnapExpires, "gone_with_host": d.SnapGone},
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -167,6 +174,9 @@ func (s *Server) resolveRestore(ctx context.Context, userID uuid.UUID, slug stri
 		if (projectID != nil && *projectID != src.ID) || (slug != "" && slug != src.Slug) {
 			return nil, nil, notFound("that snapshot is not one of " + slugOr(slug, src.Slug) + "'s")
 		}
+		if err := snapshotGone(snap); err != nil {
+			return nil, nil, err
+		}
 		return src, snap, nil
 	}
 	var candidates []store.Project
@@ -218,7 +228,23 @@ func (s *Server) resolveRestore(ctx context.Context, userID uuid.UUID, slug stri
 	if best == nil {
 		return nil, nil, withDetail(errf("not_found", "%s has no snapshot left to restore", candidates[0].Slug), map[string]any{"reason": "no_snapshot"})
 	}
+	if err := snapshotGone(best); err != nil {
+		return nil, nil, err
+	}
 	return from, best, nil
+}
+
+// snapshotGone refuses a snapshot that was kept on the account's own host
+// when that host was removed (DECISIONS I-1542): the removal deleted it
+// and repose has no copy. Refused before anything is written, so a
+// restore of it leaves no project behind.
+func snapshotGone(snap *store.Snapshot) error {
+	if snap.GoneWithHost == nil {
+		return nil
+	}
+	host := *snap.GoneWithHost
+	return withDetail(errf("conflict", "That snapshot was kept on your host %s, which was removed, so it is gone; repose had no copy", host),
+		map[string]any{"reason": "snapshot_gone", "host": host})
 }
 
 func slugOr(a, b string) string {

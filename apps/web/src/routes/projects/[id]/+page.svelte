@@ -324,7 +324,9 @@
 			toast.success(
 				temporary
 					? `Destroying ${project.name}. It was temporary, so there is no snapshot to restore.`
-					: `Destroying ${project.name}. It can be restored from "Recently destroyed" for 30 days.`
+					: project.host_name
+						? `Destroying ${project.name}. Its final snapshot is kept on your host ${project.host_name}; removing the host deletes it.`
+						: `Destroying ${project.name}. It can be restored from "Recently destroyed" for 30 days.`
 			);
 			await goto(resolve('/projects'));
 		} catch (err) {
@@ -501,7 +503,9 @@
 				<p>
 					{temporary
 						? 'Deletes the disk. It is temporary: destroying it keeps no snapshot and it cannot be restored.'
-						: 'Deletes the disk. The last snapshot is kept 30 days.'}
+						: project.host_name
+							? `Deletes the disk. The last snapshot is kept on your host ${project.host_name}; removing the host deletes it.`
+							: 'Deletes the disk. The last snapshot is kept 30 days.'}
 				</p>
 			</div>
 			<div class="destroy-act" class:destroy-act--open={askingDestroy}>

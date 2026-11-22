@@ -64,9 +64,18 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 	// The id's random end (I-619); -q and --json give the whole id.
 	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSTORED\tREASON")
 	for _, s := range snaps {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), snapshotReasonCell(s))
 	}
 	return tw.Flush()
+}
+
+// snapshotReasonCell is the REASON cell, with "gone with host NAME" for
+// a snapshot its host's removal deleted (DECISIONS I-1544).
+func snapshotReasonCell(s Snapshot) string {
+	if s.GoneWithHost != nil {
+		return s.Reason + ", gone with host " + *s.GoneWithHost
+	}
+	return s.Reason
 }
 
 // noProjectHere is whether this folder belongs to no project, so a
@@ -110,7 +119,7 @@ func snapshotsListAll(ctx context.Context, e *Env) error {
 		if s.ProjectDestroyed {
 			name += " (destroyed)"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), snapshotReasonCell(s))
 	}
 	return tw.Flush()
 }

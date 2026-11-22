@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1104 entries.
+1107 entries.
 
 ## Scope
 
@@ -1136,3 +1136,6 @@ pointer, not a summary.
 - **I-1498** A Linux x86_64 machine becomes a host with `ops/install-host-x86.sh` (served as `https://repose.run/install-host.sh`), which carries the appliance's host files inside itself, and `repose host add` on linux/amd64 prints its line with the join argument (nonix-appliances, 2026-11-22) — amended by I-1540; L39228
 - **I-1538** A 503 `capacity` whose `detail.reason` is `no_runtime_host` reads "No host can run the kind of machine your account makes (Ubuntu or NixOS), so stopping machines frees nothing for it.", with `repose run --host repose` as the next step on a create when `hosted_allowed` and no `--host` was given (nonix-config-cli-web-4, 2026-11-22) — L39235
 - **I-1540** An x86 host runs virtiofsd 1.14.0, the NixOS hosts' version, as upstream's static build pinned by sha256, with an AppArmor `userns` profile where Ubuntu restricts user namespaces; the installer refuses to enable anything if its virtiofsd lacks `--translate-uid`; the appliance's build checks the same of trixie's 1.13.2, and refuses to build from anything but main's head (nonix-appliances-2, 2026-11-22) — L39239
+- **I-1542** A snapshot kept on the account's own host is marked `gone_with_host` (the host's name) when that host is removed, and the api lists it as gone, never restorable, and refuses a restore of it before writing anything (nonix-config-cli-web-5, 2026-11-22) — L39247
+- **I-1544** The CLI says where an own-host machine's snapshot is and what removing the host does: `repose rm` "Its final snapshot is kept on your host NAME; removing the host deletes it." (one line, also in the question), `host rm` "This deletes the N snapshot(s) kept on it; repose has no copy.", `ls --destroyed` and `snapshots list` "gone with host NAME" (nonix-config-cli-web-5, 2026-11-22) — L39254
+- **I-1546** The dashboard says the same: Settings > Hosts' Remove question counts the snapshots it deletes; Recently destroyed and the Snapshots tab show "gone with host NAME" with no Restore; the Overview's Destroy card and its toast say where an own-host machine's snapshot is kept (nonix-config-cli-web-5, 2026-11-22) — L39258

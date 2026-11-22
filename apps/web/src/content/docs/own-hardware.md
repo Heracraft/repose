@@ -126,6 +126,8 @@ Snapshots of machines on repose's servers go to cloud storage. **Snapshots of ma
 
 This is on purpose. The alternative is the keys to a storage bucket sitting on a machine in your house, which is a kind of credential repose does not keep anywhere ([secrets](/docs/secrets)).
 
+So a destroyed machine's final snapshot is kept on the host too, for 30 days while the host is there: `repose rm` says `Its final snapshot is kept on your host mac-mini; removing the host deletes it.` [Taking the host off](#taking-it-off) deletes every snapshot on it. After that `repose ls --destroyed` and the dashboard show `gone with host mac-mini` in place of a date, and a restore is refused with `That snapshot was kept on your host mac-mini, which was removed, so it is gone; repose had no copy` and creates nothing.
+
 ## What runs on it, and what it reaches
 
 Only your own projects run on your hardware; nobody else's is ever placed there. On repose's network it reaches the control plane and nothing else: not another host, not the gateway's own services. Repose reaches it over the tunnel the install sets up, the same way it reaches its own servers, with no port open on your side.
@@ -136,7 +138,7 @@ Only your own projects run on your hardware; nobody else's is ever placed there.
 repose host rm mac-mini
 ```
 
-Repose asks once, then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
+Repose asks once, naming how many snapshots the host keeps (`This deletes the 2 snapshots kept on it; repose has no copy.`), then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
 
 A host that is answering and still holds machines is not removed. A machine moves hardware only by [restoring a snapshot](/docs/lifecycle#destroy-and-restore) elsewhere, so `repose rm` each of them first, and `repose host rm` then tells you which are in the way.
 

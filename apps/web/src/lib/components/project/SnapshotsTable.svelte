@@ -78,6 +78,7 @@
 	}
 
 	function expiry(s: Snapshot): string {
+		if (s.gone_with_host) return `gone with host ${s.gone_with_host}`;
 		if (!s.expires_at) return 'kept';
 		const left = timeUntil(s.expires_at);
 		return left ? `in ${left}` : 'expired';
@@ -133,7 +134,7 @@
 							<span class="sub block sm:hidden"
 								>{gb(s.bytes)} · {s.reason} ·
 								<span title={s.expires_at ? dateTime(s.expires_at) : undefined}
-									>{s.expires_at ? `expires ${expiry(s)}` : expiry(s)}</span
+									>{s.expires_at && !s.gone_with_host ? `expires ${expiry(s)}` : expiry(s)}</span
 								></span
 							>
 						</td>
@@ -143,7 +144,7 @@
 							<span title={s.expires_at ? dateTime(s.expires_at) : undefined}>{expiry(s)}</span>
 						</td>
 						<td class="act">
-							{#if !isOpen}
+							{#if !isOpen && !s.gone_with_host}
 								<button
 									type="button"
 									id={`restore-${s.id}`}

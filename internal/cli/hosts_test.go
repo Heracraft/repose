@@ -172,8 +172,9 @@ func TestHostAddListRm(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Nothing removed.") {
 		t.Fatalf("a no removes nothing: %v", err)
 	}
-	// The question says the one thing the user cannot discover later.
-	if !strings.Contains(asked, "Remove spare?") || !strings.Contains(asked, "stay on its disk, and repose has no copy") {
+	// A host that keeps no snapshot costs nothing more to remove; the
+	// count when it keeps some is TestOwnHostSnapshotsGoWithTheHost's.
+	if asked != "Remove spare? [y/N] " {
 		t.Fatalf("prompt: %q", asked)
 	}
 	yes := func(string) (bool, error) { return true, nil }
