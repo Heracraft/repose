@@ -96,6 +96,10 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
 
 ## Lessons
 
+- `TaskStop` on the harness shell that launched a detached `setsid` job
+  killed the job too (an emulated 40-minute arm64 build, 2026-11-22):
+  leave finished launcher shells alone, or launch long jobs from a
+  `Monitor`/`run_in_background` command of their own.
 - `release-queue resume` and `cut` merge the commit a PR was queued at,
   not the branch's newest push; a fix pushed to a cut branch is not in the
   batch until the builder re-runs `release-queue add` (2026-11-22, twice).
