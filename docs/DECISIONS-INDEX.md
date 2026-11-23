@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1116 entries.
+1117 entries.
 
 ## Scope
 
@@ -820,7 +820,7 @@ pointer, not a summary.
 - **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; amended by I-936; L23547
 - **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23614
 - **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23640
-- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23671
+- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; amended by I-1562; L23671
 - **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — partly amended by I-1126; amended by I-1168; L23684
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23923
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23989
@@ -937,7 +937,7 @@ pointer, not a summary.
 - **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29616
 - **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29706
 - **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29761
-- **I-1050** opencode on the machine is version 2, and version 1 is gone — 2026-11-04; L29852
+- **I-1050** opencode on the machine is version 2, and version 1 is gone — 2026-11-04; amended by I-1562; L29852
 - **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L30130
 - **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; amended by I-1232; L30178
 - **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L30214
@@ -1144,7 +1144,8 @@ pointer, not a summary.
 - **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39273
 - **I-1554** The erofs guest's `/usr/local/bin` scripts are source and tracked in git, and the image build fails when a systemd unit names a `/usr/local` path the root does not have, or one that is not executable (guest-bin-fix, 2026-11-22) — L39280
 - **I-1556** The erofs guest image is built with erofs-utils 1.9.4 or later: CI builds 1.9.4 from a sha256-pinned source tarball instead of Ubuntu's apt package, build.sh refuses an older mkfs.erofs, fsck.erofs or dump.erofs, and every build reads its rootfs.erofs back with `fsck.erofs --extract` and a gate that checks each inode against what the guest kernel accepts (guest-ci-erofs, 2026-11-22) — L39286
-- **I-1558** A menu apply on an erofs machine is bounded by guestd's silence, not by wall clock: guestd sends an empty `apply_menu_progress` line at once and every 30 s while an ApplyMenu runs, hostd gives up after 2 minutes with no frame once one has arrived (`guest_unresponsive`, "the machine stopped answering while it applied the menu: nothing from it for 2 minutes"), and the outer bounds sit past guestd's own: hostd's ApplyMenu 65 minutes (was 20), the api's erofs `apply_config` phase 70 minutes (was the default 10) (mac-apply, 2026-11-23) — L39292
-- **I-1560** guestd runs a menu's `apt-get` (update, install, remove) below the agents: in a transient scope under `repose_menu.slice`, a slice of the root that the erofs base gives CPUWeight=20 and IOWeight=20 against user.slice's 100, at nice 10 and best-effort I/O priority 7. A menu apply restarts nothing of the agent's (mac-apply, 2026-11-23) — L39299
-- **I-1564** The Mac appliance's launchd job is a LaunchDaemon that runs as the user, so a Mac that restarts with nobody logged in brings the appliance and its machines back; `repose host add` installs it with sudo once, falls back to the login agent with a line that says so when sudo refuses, and `repose host boot` moves an existing appliance to it (mac-host, 2026-11-23) — L39305
-- **I-1566** What fits on a Mac is stated as the host's own rule, measured: the appliance takes three quarters of the Mac and holds it while it runs, repose keeps an eighth of that (never under 2 GiB), and each machine counts its class plus 512 MiB; so 6 tiny, or 3 small, or 1 large and 1 small on a 24 GB Mac, and 3 tiny, or 2 small, or 1 large on a 16 GB one, and an xl on neither (mac-host, 2026-11-23) — L39315
+- **I-1562** `repose run -p` and a trigger start opencode with `--standalone`: the TUI runs its own server as its child, not the machine's background service, so a busy machine slows the prompt down and no longer loses it (mac-opencode, 2026-11-23) — L39292
+- **I-1558** A menu apply on an erofs machine is bounded by guestd's silence, not by wall clock: guestd sends an empty `apply_menu_progress` line at once and every 30 s while an ApplyMenu runs, hostd gives up after 2 minutes with no frame once one has arrived (`guest_unresponsive`, "the machine stopped answering while it applied the menu: nothing from it for 2 minutes"), and the outer bounds sit past guestd's own: hostd's ApplyMenu 65 minutes (was 20), the api's erofs `apply_config` phase 70 minutes (was the default 10) (mac-apply, 2026-11-23) — L39302
+- **I-1560** guestd runs a menu's `apt-get` (update, install, remove) below the agents: in a transient scope under `repose_menu.slice`, a slice of the root that the erofs base gives CPUWeight=20 and IOWeight=20 against user.slice's 100, at nice 10 and best-effort I/O priority 7. A menu apply restarts nothing of the agent's (mac-apply, 2026-11-23) — L39309
+- **I-1564** The Mac appliance's launchd job is a LaunchDaemon that runs as the user, so a Mac that restarts with nobody logged in brings the appliance and its machines back; `repose host add` installs it with sudo once, falls back to the login agent with a line that says so when sudo refuses, and `repose host boot` moves an existing appliance to it (mac-host, 2026-11-23) — L39315
+- **I-1566** What fits on a Mac is stated as the host's own rule, measured: the appliance takes three quarters of the Mac and holds it while it runs, repose keeps an eighth of that (never under 2 GiB), and each machine counts its class plus 512 MiB; so 6 tiny, or 3 small, or 1 large and 1 small on a 24 GB Mac, and 3 tiny, or 2 small, or 1 large on a 16 GB one, and an xl on neither (mac-host, 2026-11-23) — L39325
