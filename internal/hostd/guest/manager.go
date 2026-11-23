@@ -482,6 +482,11 @@ type Deps struct {
 	// Park is the guest park's key, image volume and fingerprint
 	// (I-652, I-653); empty when the park is off.
 	Park ParkDeps
+	// AfterHypervisorExit is called once a guest's hypervisor is gone
+	// (teardown). On the Mac appliance it resets the host's CPUs, which a
+	// powered-off guest leaves busy in macOS (package cpureset, DECISIONS
+	// I-1578). It must not block. Nil does nothing.
+	AfterHypervisorExit func()
 }
 
 type job struct {
