@@ -58,7 +58,8 @@ From any other machine, `repose host add` prints one step and nothing else, so y
 On an x86 box the same argument goes to the installer instead, run there as root:
 
 ```shell
-printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh \
+printf '%s\n' <argument> > repose-join
+curl -fsSL https://repose.run/install-host.sh \
   | sudo bash -s -- --join-file repose-join
 ```
 
@@ -172,7 +173,8 @@ Settings → Hosts has the same Remove, with the same question and the same mach
 On an x86 box, removing the host leaves repose running there, holding its disk. `repose host rm` prints the line that takes it off, to run on the box as root:
 
 ```shell
-curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall
+curl -fsSL https://repose.run/install-host.sh \
+  | sudo bash -s -- --uninstall
 ```
 
 It stops hostd and the machines, and removes the machines' disks with `/var/lib/repose/guests.img`, or releases the `--device` disk with no signature left on it (its bytes are not overwritten). It also removes the tunnel, repose's firewall tables, its services, programs, accounts and files. The packages it installed from apt stay, and the kernel settings it changed, IP forwarding among them, last until the next boot. It refuses while the box is still a host on your account, so `repose host rm` comes first; `--force` skips that, and the host then stays on your account, offline, until you remove it. A second run finds nothing to do. `repose host rm --local` on the box prints the same line rather than running it.
