@@ -836,3 +836,4 @@ month the line is dated in.
 2026-11-23 | release r20261123-2 | conductor, woker-1 | released | 3 branches: mac-apply (I-1558,I-1560), mac-host (I-1564,I-1566), landing-heading-order shipped as api,base,cli,host,web. Evidence and what is not done: docs/releases/r20261123-2.md
 2026-11-23 | release r20261123-3 | conductor, woker-1 | released | 1 branches: mac-appliance-pin shipped as cli. Evidence and what is not done: docs/releases/r20261123-3.md
 2026-11-23 | release r20261123-4 | conductor, woker-1 | released | 1 branches: mac-opencode (I-1562) shipped as base,cli,web. Evidence and what is not done: docs/releases/r20261123-4.md
+2026-11-23 | mac-idle (ENG-196, N2) | builder mac-idle, woker-1 | queued | hostd resets the Mac appliance CPUs after a hypervisor exits (I-1578); proven 3 of 3 in a debug copy of the appliance on the M4; not done: proof through repose run and rm on the real appliance, which needs the hostd release (live check). I-1580 unused

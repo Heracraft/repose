@@ -25,6 +25,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/console"
 	"github.com/heracraft/repose/internal/hostd/control"
+	"github.com/heracraft/repose/internal/hostd/cpureset"
 	"github.com/heracraft/repose/internal/hostd/gcroot"
 	"github.com/heracraft/repose/internal/hostd/guest"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
@@ -115,6 +116,11 @@ type Options struct {
 	// (DECISIONS I-1484). "on", the default, keeps it, unless no nix is
 	// on PATH, which a host without Nix (an appliance) is.
 	NixMode string
+	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
+	// offline and back after a guest's hypervisor exits. auto is on
+	// under Apple's Virtualization framework, the Mac appliance, where a
+	// powered-off guest leaves CPUs busy in macOS (DECISIONS I-1578).
+	CPUReset string
 }
 
 // nixLookPath finds nix; a var so a test runs without one.
@@ -368,6 +374,14 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	consoles := &consoleSet{log: log}
 	sdr := systemd.NewReal(r)
+	resetOn, err := cpureset.Enabled(o.CPUReset, cpureset.SysRoot)
+	if err != nil {
+		return err
+	}
+	var resetter *cpureset.Resetter
+	if resetOn {
+		resetter = cpureset.New(cpureset.SysRoot, log)
+	}
 	if nixOn {
 		view = &storeview.Real{SD: sdr}
 	}
@@ -378,7 +392,8 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		CgroupCPUUsage: hostinfo.CgroupCPUUsage, SetCgroupCPUMax: hostinfo.SetCgroupCPUMax,
 		SystemStopping: systemStopping(r),
 		BootID:         hostinfo.BootID, BootTime: hostinfo.BootTime,
-		Park: fdeps,
+		Park:                fdeps,
+		AfterHypervisorExit: resetter.Kick,
 	})
 	if err != nil {
 		return err
@@ -412,6 +427,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("rotation", func() { d.rotationLoop(ctx, roots) })
 	run("prune", func() { d.pruneLoop(ctx) })
 	run("metrics", func() { d.serveMetrics(ctx) })
+	if resetter != nil {
+		run("cpu-reset", func() { resetter.Run(ctx) })
+	}
 	if fdeps.Sealer != nil && fcfg.Enabled {
 		run("park-key", func() { parkKeyLoop(ctx, fdeps.Sealer, log) })
 	}

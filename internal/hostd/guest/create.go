@@ -615,6 +615,11 @@ func (m *Manager) teardown(ctx context.Context, g *state.Guest) {
 	for _, s := range []string{"ch.sock", "vsock.sock", "console.sock", filepath.Join("virtiofsd", "virtiofsd.sock"), filepath.Join("virtiofsd-auth", "virtiofsd.sock")} {
 		_ = os.Remove(filepath.Join(m.guestDir(g.GuestID), s)) // stale sockets confuse the next boot only if left behind
 	}
+	// The hypervisor is gone: on the Mac appliance the CPUs its vCPUs
+	// last ran on stay busy in macOS until reset (DECISIONS I-1578).
+	if m.d.AfterHypervisorExit != nil {
+		m.d.AfterHypervisorExit()
+	}
 }
 
 // extendView adds the closures' paths to the guest's store view (I-463):
