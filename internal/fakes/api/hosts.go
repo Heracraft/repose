@@ -28,9 +28,10 @@ import (
 // a test takes it away again.
 const FakeHostInstall = "repose host add --join %s"
 
-// maxFakeHosts is the host count the plans allow: one on the Own
-// hardware plan (DECISIONS I-1366).
-const maxFakeHosts = 1
+// maxFakeHosts is billing.ExemptHosts: the hosts a billing-exempt
+// account, or an api with billing off, may own (DECISIONS I-1366,
+// I-1582). TestExemptHostsIsTheApis holds the two equal.
+const maxFakeHosts = 8
 
 // ownHardwareRequired is billing.OwnHardwareRequiredMessage's sentence,
 // word for word, built from the fake's own plan table so that a change
@@ -152,9 +153,9 @@ func (f *Fake) SetHostLimit(n int) {
 	f.hostLimit = &n
 }
 
-// hostsAllowed is the plan's figure in the real api. The fake allows
-// one to every account, exempt or not (billing.ExemptHosts is one too),
-// and SetHostLimit is how a test asks for a plan that sells none.
+// hostsAllowed is the plan's figure in the real api: maxFakeHosts for
+// an exempt account or billing off, the plan's own figure otherwise, and
+// SetHostLimit is how a test asks for a figure of its own.
 func (f *Fake) hostsAllowed() int {
 	if f.hostLimit != nil {
 		return *f.hostLimit
@@ -462,49 +463,68 @@ func (f *Fake) ownedHostName(hostID string) string {
 }
 
 // placeNew is where an `own` project goes (DECISIONS I-1366, I-1390),
-// answered at the create as the api answers it: the account's own host
-// when it owns one that is online; a `capacity` refusal that names the
-// host and its state when the one it owns is waiting, offline or being
-// removed; the fleet (no host yet, f.run picks the fleet's) when it owns
+// answered at the create as the api answers it: a host of the account's
+// own that is online; a `capacity` refusal that names the host and its
+// state when none it owns is online, and every host when it owns several
+// (I-1582); the fleet (no host yet, f.run picks the fleet's) when it owns
 // none. `hosted` is the fleet whatever it owns. The refusal's detail is
-// the api's: `reason` no_own_host, `host`, `host_state`, and
-// `hosted_allowed`, whether the plan sells memory on repose's servers.
+// the api's: `reason` no_own_host, `host` and `host_state` (the oldest
+// host's), and `hosted_allowed`, whether the plan sells memory on
+// repose's servers.
 func (f *Fake) placeNew(u *userRec, class, placement string) (string, *apiError) {
 	if placement == "hosted" {
 		return "", nil
 	}
-	var own *ownedHostRec
+	var own []*ownedHostRec
 	for _, h := range f.ownedHosts {
 		if h.owner == u.ID && h.State != "retired" && h.State != "lost" {
-			own = h
-			break
+			if h.State == "ready" {
+				return h.ID, nil
+			}
+			own = append(own, h)
 		}
 	}
-	if own == nil {
+	if len(own) == 0 {
 		return "", nil
 	}
-	if own.State == "ready" {
-		return own.ID, nil
-	}
-	msg := "your host " + own.Name + " has no room for a " + class + " machine"
-	switch own.State {
-	case "registering":
-		msg = "your host " + own.Name + " has not registered yet"
-	case "unreachable":
-		quiet := "90s"
-		if own.LastHeartbeatAt != nil {
-			quiet = quietFor(f.now().Sub(*own.LastHeartbeatAt))
+	msg := "your host " + own[0].Name + " " + f.ownHostWhy(own[0], class, false)
+	if len(own) > 1 {
+		why := make([]string, len(own))
+		for i, h := range own {
+			why[i] = h.Name + " " + f.ownHostWhy(h, class, true)
 		}
-		msg = "your host " + own.Name + " has not answered for " + quiet
-	case "draining":
-		msg = "your host " + own.Name + " is being removed, so nothing can be placed on it"
+		msg = "none of your hosts can take a " + class + " machine: " + strings.Join(why, "; ")
 	}
 	// A plan that sells a host sells no fleet memory (I-1364), so `hosted`
 	// is refused on it. De Morgan of !(set && above zero); the nil check
 	// still short-circuits the deref.
 	hostedAllowed := f.hostLimit == nil || *f.hostLimit <= 0
 	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
-		"reason": "no_own_host", "host": own.Name, "host_state": own.State, "hosted_allowed": hostedAllowed})
+		"reason": "no_own_host", "host": own[0].Name, "host_state": own[0].State, "hosted_allowed": hostedAllowed})
+}
+
+// ownHostWhy is the api's ops.Engine.ownHostWhy: why one host took no
+// placement, as the words after its name.
+func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
+	switch h.State {
+	case "registering":
+		return "has not registered yet"
+	case "unreachable":
+		quiet := "90s"
+		if h.LastHeartbeatAt != nil {
+			quiet = quietFor(f.now().Sub(*h.LastHeartbeatAt))
+		}
+		return "has not answered for " + quiet
+	case "draining":
+		if short {
+			return "is being removed"
+		}
+		return "is being removed, so nothing can be placed on it"
+	}
+	if short {
+		return "has no room"
+	}
+	return "has no room for a " + class + " machine"
 }
 
 // quietFor is how long a host has been silent, in the api's shortest

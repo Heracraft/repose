@@ -1723,6 +1723,11 @@ func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
 // request-time refusal carries (PlaceNew, I-1390): `reason`
 // `no_own_host`, and the host's name and state when there is one, so a
 // client can name the way out without parsing the sentence.
+//
+// An account with several hosts (an exempt one, I-1582) is told about
+// every one of them: naming the first alone said "your host a has not
+// answered" while b, online and full, was the host the machine needed
+// room on. `host` and `host_state` stay the first host's, the oldest.
 func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project) (string, map[string]any) {
 	detail := map[string]any{"reason": "no_own_host"}
 	hosts, err := store.ListAccountHosts(ctx, e.pool, p.UserID)
@@ -1730,32 +1735,58 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project) (st
 		// The sentence is the only thing lost; the refusal stands.
 		e.log.Warn("own host lookup", "event", "schedule_fail", "project_id", p.ID.String(), "err", err.Error())
 	}
+	var live []store.Host
 	for _, h := range hosts {
 		if h.State == "retired" || h.State == "lost" {
 			// Not a host the account has any more: the placement filter
 			// does not count these either, so they explain nothing.
 			continue
 		}
-		detail["host"], detail["host_state"] = h.Name, h.State
-		switch h.State {
-		case "registering":
-			return "your host " + h.Name + " has not registered yet", detail
-		case "unreachable":
-			// How long it has been quiet, not just that it is: a user
-			// reading "14m" knows their Mac went to sleep, and one
-			// reading "3d" knows they never turned it back on. One
-			// wording across `repose ls`, `repose status`, `run`'s wait
-			// and the dashboard (19c); a host of repose's reads "its
-			// server is not answering" instead, because that one is not
-			// the user's to fix.
-			return "your host " + h.Name + " has not answered for " + quietFor(h.LastHeartbeatAt, e.now()), detail
-		case "draining":
-			return "your host " + h.Name + " is being removed, so nothing can be placed on it", detail
-		default:
-			return "your host " + h.Name + " has no room for a " + p.Class + " machine", detail
-		}
+		live = append(live, h)
 	}
-	return "you own no host yet; `repose host add` prints the step that adds one", detail
+	switch len(live) {
+	case 0:
+		return "you own no host yet; `repose host add` prints the step that adds one", detail
+	case 1:
+		h := live[0]
+		detail["host"], detail["host_state"] = h.Name, h.State
+		return "your host " + h.Name + " " + e.ownHostWhy(h, p.Class, false), detail
+	}
+	detail["host"], detail["host_state"] = live[0].Name, live[0].State
+	why := make([]string, len(live))
+	for i, h := range live {
+		why[i] = h.Name + " " + e.ownHostWhy(h, p.Class, true)
+	}
+	return "none of your hosts can take a " + p.Class + " machine: " + strings.Join(why, "; "), detail
+}
+
+// ownHostWhy is why one host of the account's own took no placement, as
+// the words after its name. short is the form in a list of several,
+// where the class is already said once and the consequence of a removal
+// is plain.
+func (e *Engine) ownHostWhy(h store.Host, class string, short bool) string {
+	switch h.State {
+	case "registering":
+		return "has not registered yet"
+	case "unreachable":
+		// How long it has been quiet, not just that it is: a user
+		// reading "14m" knows their Mac went to sleep, and one
+		// reading "3d" knows they never turned it back on. One
+		// wording across `repose ls`, `repose status`, `run`'s wait
+		// and the dashboard (19c); a host of repose's reads "its
+		// server is not answering" instead, because that one is not
+		// the user's to fix.
+		return "has not answered for " + quietFor(h.LastHeartbeatAt, e.now())
+	case "draining":
+		if short {
+			return "is being removed"
+		}
+		return "is being removed, so nothing can be placed on it"
+	}
+	if short {
+		return "has no room"
+	}
+	return "has no room for a " + class + " machine"
 }
 
 // quietFor is how long a host has been silent, in the shortest true

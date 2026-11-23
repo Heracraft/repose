@@ -46,7 +46,8 @@ func TestFakeHostsWalkthrough(t *testing.T) {
 		t.Fatalf("list %+v", list)
 	}
 
-	// One host per plan.
+	// The plan's limit: one, as the Own hardware plan sells.
+	f.SetHostLimit(1)
 	r = call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "spare"})
 	wantErr(t, r, 409, "conflict")
 	if detailOf(t, r)["reason"] != "host_limit" {
@@ -191,14 +192,14 @@ func TestFakeHostFollowsTheBillingMode(t *testing.T) {
 		name    string
 		mode    string
 		plan    string
-		allowed bool
+		allowed int
 	}{
-		{"billing off is the exempt account", BillingOff, "", true},
-		{"a billing-exempt account", BillingExempt, "", true},
-		{"no plan at all", BillingNone, "", false},
-		{"a hosted plan sells no host", BillingActive, "solo", false},
-		{"the Own hardware plan", BillingActive, "own", true},
-		{"on trial on Own hardware", BillingTrial, "own", true},
+		{"billing off is the exempt account", BillingOff, "", 8},
+		{"a billing-exempt account", BillingExempt, "", 8},
+		{"no plan at all", BillingNone, "", 0},
+		{"a hosted plan sells no host", BillingActive, "solo", 0},
+		{"the Own hardware plan", BillingActive, "own", 1},
+		{"on trial on Own hardware", BillingTrial, "own", 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := New(Options{})
@@ -211,10 +212,16 @@ func TestFakeHostFollowsTheBillingMode(t *testing.T) {
 			if err := f.SetBillingState(state); err != nil {
 				t.Fatal(err)
 			}
+			for i := 1; i <= c.allowed; i++ {
+				if r := call(t, f, "POST", "/v1/hosts", tok, nil); r.status != 201 {
+					t.Fatalf("mode %s plan %q: host %d: %d %s, want a host", c.mode, c.plan, i, r.status, r.body)
+				}
+			}
 			r := call(t, f, "POST", "/v1/hosts", tok, nil)
-			if c.allowed {
-				if r.status != 201 {
-					t.Fatalf("mode %s plan %q: %d %s, want a host", c.mode, c.plan, r.status, r.body)
+			if c.allowed > 0 {
+				wantErr(t, r, 409, "conflict")
+				if d := detailOf(t, r); d["reason"] != "host_limit" || d["limit"] != float64(c.allowed) {
+					t.Fatalf("mode %s plan %q: host %d: detail %v, want host_limit %d", c.mode, c.plan, c.allowed+1, d, c.allowed)
 				}
 				return
 			}
@@ -223,5 +230,42 @@ func TestFakeHostFollowsTheBillingMode(t *testing.T) {
 				t.Fatalf("mode %s plan %q: detail %v", c.mode, c.plan, detailOf(t, r))
 			}
 		})
+	}
+}
+
+// TestFakePlacementWithSeveralOwnHosts: as the api, an `own` project
+// goes to a host of the account's that is online whichever of its hosts
+// that is, and a refusal while none is names every one (I-1582).
+func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	for _, name := range []string{"e2e-x86-1", "e2e-x86-2"} {
+		want(t, call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": name}), 201)
+	}
+	var list []OwnedHost
+	call(t, f, "GET", "/v1/hosts", tok, nil).json(t, &list)
+	f.SetOwnedHostOffline(list[1].ID, 14*time.Minute)
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "one", "class": "small"})
+	wantErr(t, r, 503, "capacity")
+	if d := detailOf(t, r); d["reason"] != "no_own_host" || d["host"] != "e2e-x86-1" || d["host_state"] != "registering" {
+		t.Fatalf("detail %v", d)
+	}
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	r.json(t, &body)
+	if want := "none of your hosts can take a small machine: e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
+		t.Fatalf("message %q, want %q", body.Error.Message, want)
+	}
+
+	third := f.AddOwnedHost("e2e-x86-3")
+	var p Project
+	r = call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "one", "class": "small"})
+	want(t, r, 201)
+	r.json(t, &p)
+	if p.HostID != third {
+		t.Fatalf("placed on %q, want the online host %q", p.HostID, third)
 	}
 }
