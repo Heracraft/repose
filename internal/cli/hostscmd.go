@@ -33,8 +33,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Add a machine of your own",
 		Long: "Add a machine of yours. On a Mac with Apple silicon this installs repose's\n" +
 			"virtual machine here and starts it: vfkit and the appliance image are\n" +
-			"fetched, the disk file is made, and a launchd agent runs `repose host run`\n" +
-			"at every login. Anywhere else it prints, on stdout alone so it pipes, the\n" +
+			"fetched, the disk file is made, and a launchd job runs `repose host run`\n" +
+			"whenever the Mac boots, before anyone logs in; sudo asks for your password\n" +
+			"once to install it, and without sudo the job runs at your login instead.\n" +
+			"Anywhere else it prints, on stdout alone so it pipes, the\n" +
 			"one step to run on the machine being added, which carries a token that\n" +
 			"works once. Without NAME, repose names it.\n\n" +
 			"https://repose.run/docs/own-hardware has what the machine needs first.",
@@ -80,9 +82,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Use:   "run",
 		Short: "Hold the appliance on this Mac (what launchd runs)",
 		Long: "Run repose's virtual machine on this Mac in the foreground, until it is\n" +
-			"stopped. The launchd agent `repose host add` installs runs this at every\n" +
-			"login. A stop asks the appliance to keep every running machine's memory\n" +
-			"in an encrypted image on its disk and power off, and the next run brings\n" +
+			"stopped. The launchd job `repose host add` installs runs this when the Mac\n" +
+			"boots, or at your login without sudo. A stop asks the appliance to keep\n" +
+			"every running machine's memory in an encrypted image on its disk and power\n" +
+			"off, and the next run brings\n" +
 			"the machines back where they were; the key for those images is one item\n" +
 			"in your keychain, made the first time it is needed.",
 		Args: noArgs,
@@ -92,6 +95,23 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return err
 			}
 			return applianceRun(cmd.Context(), e)
+		},
+	}
+
+	boot := &cobra.Command{
+		Use:   "boot",
+		Short: "Start the appliance on this Mac when it boots, before anyone logs in",
+		Long: "Move the appliance on this Mac from a launchd agent, which starts it at\n" +
+			"your login, to a launchd daemon, which starts it when the Mac boots with\n" +
+			"nobody logged in. It runs as you. sudo asks for your password once. The\n" +
+			"appliance restarts, and the machines on it start fresh.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			return ApplianceBootCmd(e)
 		},
 	}
 
@@ -163,7 +183,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	rm.Flags().BoolVarP(&yes, "yes", "y", false, "skip the confirmation")
 	rm.Flags().BoolVar(&local, "local", false, "remove the appliance on this Mac, disk included, and nothing on your account")
 
-	root.AddCommand(add, run, list, rm)
+	root.AddCommand(add, run, boot, list, rm)
 	bareRuns(root, list)
 	return root
 }

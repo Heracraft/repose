@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1114 entries.
+1116 entries.
 
 ## Scope
 
@@ -1061,8 +1061,8 @@ pointer, not a summary.
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36689
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36798
-- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
-- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; L37067
+- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; L36910
+- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; L37067
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37295
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37346
@@ -1146,3 +1146,5 @@ pointer, not a summary.
 - **I-1556** The erofs guest image is built with erofs-utils 1.9.4 or later: CI builds 1.9.4 from a sha256-pinned source tarball instead of Ubuntu's apt package, build.sh refuses an older mkfs.erofs, fsck.erofs or dump.erofs, and every build reads its rootfs.erofs back with `fsck.erofs --extract` and a gate that checks each inode against what the guest kernel accepts (guest-ci-erofs, 2026-11-22) — L39286
 - **I-1558** A menu apply on an erofs machine is bounded by guestd's silence, not by wall clock: guestd sends an empty `apply_menu_progress` line at once and every 30 s while an ApplyMenu runs, hostd gives up after 2 minutes with no frame once one has arrived (`guest_unresponsive`, "the machine stopped answering while it applied the menu: nothing from it for 2 minutes"), and the outer bounds sit past guestd's own: hostd's ApplyMenu 65 minutes (was 20), the api's erofs `apply_config` phase 70 minutes (was the default 10) (mac-apply, 2026-11-23) — L39292
 - **I-1560** guestd runs a menu's `apt-get` (update, install, remove) below the agents: in a transient scope under `repose_menu.slice`, a slice of the root that the erofs base gives CPUWeight=20 and IOWeight=20 against user.slice's 100, at nice 10 and best-effort I/O priority 7. A menu apply restarts nothing of the agent's (mac-apply, 2026-11-23) — L39299
+- **I-1564** The Mac appliance's launchd job is a LaunchDaemon that runs as the user, so a Mac that restarts with nobody logged in brings the appliance and its machines back; `repose host add` installs it with sudo once, falls back to the login agent with a line that says so when sudo refuses, and `repose host boot` moves an existing appliance to it (mac-host, 2026-11-23) — L39305
+- **I-1566** What fits on a Mac is stated as the host's own rule, measured: the appliance takes three quarters of the Mac and holds it while it runs, repose keeps an eighth of that (never under 2 GiB), and each machine counts its class plus 512 MiB; so 6 tiny, or 3 small, or 1 large and 1 small on a 24 GB Mac, and 3 tiny, or 2 small, or 1 large on a 16 GB one, and an xl on neither (mac-host, 2026-11-23) — L39315

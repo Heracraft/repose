@@ -196,7 +196,16 @@ func HostLsCmd(ctx context.Context, e *Env) error {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\n",
 			h.Name, hostStateWord(h.State), orDash(hostMemory(h)), h.Projects, h.RunningProjects, orDash(hostSeen(h)))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// On the Mac itself, the one fact the table cannot show and that
+	// costs every machine on it after a power cut: an appliance under
+	// the login agent stays off until someone logs in (ENG-187, I-1564).
+	if _, installed := localAppliance(e); installed && !bootJobInstalled() {
+		_, _ = fmt.Fprintln(e.ErrOut, "This Mac's appliance starts at your login, not when the Mac boots; `repose host boot` makes it start with nobody logged in.")
+	}
+	return nil
 }
 
 // hostMemory is the host's memory, "" before it has registered and said

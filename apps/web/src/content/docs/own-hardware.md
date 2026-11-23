@@ -13,12 +13,25 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
-- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes a share of the memory and leaves macOS the rest. On a 16 GB Mac that share is about 12 GB, of which about 9.6 GB is what your machines may hold at once; repose keeps the rest for itself. `repose host ls` shows the share.
+- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes three quarters of the memory and leaves macOS the rest. [What fits](#what-fits-on-a-mac) says how many machines that holds.
 - At least 40 GB of free disk: the machine's disk is 20 GB at least, and 20 GB of the volume stays free for you. The download is about 85 MB; with less free, `repose host add` says how much to free. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
 
-Repose runs on your Mac as one virtual machine, and nothing of yours is touched: no disk is wiped, no system setting is changed, nothing needs your password, and your Mac stays a Mac. Remove the host and the virtual machine goes with it.
+Repose runs on your Mac as one virtual machine, and nothing of yours is touched: no disk is wiped, no system setting is changed, and your Mac stays a Mac. The one thing outside your home folder is the launchd job that starts the virtual machine when the Mac boots, which is why `repose host add` asks for your password once. Remove the host and the virtual machine goes with it.
+
+## What fits on a Mac
+
+Repose's virtual machine takes three quarters of the Mac's memory, and macOS keeps the other quarter: 4 GB of 16, 6 GB of 24. The virtual machine holds its share for as long as it runs, whether machines run in it or not.
+
+Of that share, repose keeps an eighth for itself, never less than 2 GB, and each machine counts its size plus half a gigabyte. So this is what runs at once:
+
+| Mac | Machines at once |
+|---|---|
+| 16 GB | 1 `large`, or 2 `small`, or 3 `tiny` |
+| 24 GB | 1 `large` and 1 `small`, or 3 `small`, or 6 `tiny` |
+
+An `xl` fits on neither; it needs a Mac with 32 GB. The 24 GB row is measured, on an M4 Mac mini on 2026-11-22; the 16 GB row is the same rule worked out. `--memory` at `repose host add` changes the share, and the same rule applies to what you give it. `repose host ls` shows the share under MEMORY. A machine that does not fit is refused with exit code 8.
 
 ## What an x86 box needs
 
@@ -35,7 +48,7 @@ On the Mac mini, with the [CLI installed](/docs/cli) and logged in:
 repose host add
 ```
 
-It says what it is about to do, then does it: fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 85 MB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd agent that starts it again at every login. While the machine runs, the Mac does not sleep. Nothing needs your password.
+It says what it is about to do, then does it: fetches [vfkit](https://github.com/crc-org/vfkit) and repose's virtual machine image (about 85 MB), puts them under `~/Library/Application Support/repose`, and starts the machine from a launchd job that starts it again whenever the Mac boots, before anyone logs in. sudo asks for your password once, to put that job in `/Library/LaunchDaemons`; the job runs as you, not as root. Without sudo, the job runs at your login instead, and `repose host add` says so. macOS lists the job under System Settings → General → Login Items, as allowed in the background; turning it off there keeps the machine off. While the machine runs, the Mac does not sleep.
 
 A download that fails is tried twice more, continuing from the bytes already on disk rather than fetching the image again, and one that goes quiet for a minute is given up rather than held open. If all three attempts fail, `repose host add` says what failed and stops. The host is in your account by then, so the command that finishes the install is the one the failure prints, `repose host add --join-file <path>`, which continues from the part of the image already here. The install keeps the argument in that file so you do not have to paste it again, and so it stays off the command line: anything on the Mac can read a command line while it runs. Nothing is running and nothing of the Mac's has changed; to start over instead, `repose host rm` takes the host off your account and the part of the image on disk with it, and `repose host rm --local` clears that part without touching your account.
 
@@ -116,7 +129,12 @@ A Mac that is only off the network keeps running your machines, and they are rea
 
 ## Restart your Mac and your machines start fresh
 
-When you restart or shut down your Mac, your machines stop and start again at your next login, cold: their disks are as they were, and what they held in memory is gone: programs, tmux windows, an agent mid-task. Stop anything you would miss before you restart, the way you would on a laptop.
+When you restart or shut down your Mac, or it loses power, your machines stop. When it is back, the virtual machine starts with the Mac, with nobody logged in, and repose starts the machines that were running, cold: their disks are as they were, and what they held in memory is gone: programs, tmux windows, an agent mid-task. Stop anything you would miss before you restart, the way you would on a laptop.
+
+Two things keep the machines off until someone is at the Mac:
+
+- **FileVault.** With FileVault on, macOS waits at its unlock screen after a power cut, before it starts anything. A restart you begin with `sudo fdesetup authrestart` unlocks itself once and comes back on its own.
+- **No sudo at `repose host add`.** The job then starts at your login, and `repose host ls` on the Mac says so. `repose host boot` moves it to boot once you can use sudo; the virtual machine restarts, and the machines on it start fresh.
 
 macOS gives repose about a second when the Mac goes down, measured, and writing a machine's memory takes longer than that. Machines on repose's servers do keep their memory across a server restart ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)); your own Mac does not, today.
 
@@ -138,7 +156,7 @@ Only your own projects run on your hardware; nobody else's is ever placed there.
 repose host rm mac-mini
 ```
 
-Repose asks once, naming how many snapshots the host keeps (`This deletes the 2 snapshots kept on it; repose has no copy.`), then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
+Repose asks once, naming how many snapshots the host keeps (`This deletes the 2 snapshots kept on it; repose has no copy.`), then stops placing projects there and retires the host. Run on the Mac that runs it, the command also stops the machine and removes it, disk and snapshots included, and sudo asks for your password to remove the launchd job; run anywhere else, the machine itself is untouched and keeps running until you turn it off, and `repose host rm --local` on the Mac removes it.
 
 A host that is answering and still holds machines is not removed. A machine does not move to other hardware, so `repose rm` each of them first (keep in your git remote anything you would miss), and `repose host rm` then tells you which are in the way.
 
