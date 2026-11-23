@@ -11,14 +11,14 @@
     }
   },
   "opencode": {
-    "version": "2.3.2",
+    "version": "2.4.0",
     "x86_64-linux": {
-      "url": "https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-2.3.2.tgz",
-      "hash": "sha256-hFRo41qlorV0lFoLlmdeZMYE9Sec7ZqnJFBo2MC29rs="
+      "url": "https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-2.4.0.tgz",
+      "hash": "sha256-Fj95De/tWRHlL+jWabamtzf7zx2OAHEgc6qrsKRw5Ho="
     },
     "aarch64-linux": {
-      "url": "https://registry.npmjs.org/@opencode/cli-linux-arm64/-/cli-linux-arm64-2.3.2.tgz",
-      "hash": "sha256-kak3Ep79ro64wMUBiuUz+fNRF/Jv/ZpNH3pfnaHmkwY="
+      "url": "https://registry.npmjs.org/@opencode/cli-linux-arm64/-/cli-linux-arm64-2.4.0.tgz",
+      "hash": "sha256-C25uKiWTm7oua919B+hskSfBr8UvXwwISHD1eG7D9HQ="
     }
   },
   "codex": {
@@ -83,8 +83,8 @@
     }
   },
   "playwright-mcp": {
-    "version": "0.0.80",
-    "url": "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.80.tgz",
-    "hash": "sha256-uB7aPwp8xwqcr321IM2tWMSKHdM0tOP88JbAUSyYrw0="
+    "version": "0.0.86",
+    "url": "https://registry.npmjs.org/@playwright/mcp/-/mcp-0.0.86.tgz",
+    "hash": "sha256-pyuCRmTr+APzrletlQClDt4Sr0QgNILnS8xk+RSdbqE="
   }
 }
