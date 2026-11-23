@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,10 +53,17 @@ func fakeMac(t *testing.T, freeGB int) (*Env, *bytes.Buffer, appliancePaths) {
 		}
 		return nil, nil // launchctl, xattr
 	}
+	// No test reaches the real sudo or /Library: the boot job's plist
+	// lands in a directory of the test's, and sudo refuses unless a test
+	// says otherwise (DECISIONS I-1564).
+	launchDaemonsDir = t.TempDir()
+	macSudo = func(...string) error { return errors.New("exit status 1") }
 	t.Cleanup(func() {
 		onAppleSilicon = func() bool { return false }
 		freeGBOf = func(dir string) int { return 0 }
 		macExec = func(string, ...string) ([]byte, error) { return nil, nil }
+		launchDaemonsDir = "/Library/LaunchDaemons"
+		macSudo = func(...string) error { return errors.New("sudo in a test") }
 	})
 
 	// A zstd of one sparse-ish image, the shape the release ships

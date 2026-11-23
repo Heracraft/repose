@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +14,12 @@ var HumanErrorForTest = humanError
 
 // PhaseTimeoutForTest is phaseTimeout for the external tests.
 var PhaseTimeoutForTest = phaseTimeout
+
+// TimeoutForTest is the timeout checkTimeout applies to op's current
+// phase.
+func (e *Engine) TimeoutForTest(ctx context.Context, op *store.Op) time.Duration {
+	return e.timeoutFor(ctx, op)
+}
 
 // RecordGuestAddressForTest is the address write on its own, for the
 // external test package (ENG-111, DECISIONS I-1444).

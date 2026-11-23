@@ -524,10 +524,31 @@ func (e *Engine) checkTimeout(ctx context.Context, op *store.Op) {
 			return
 		}
 	}
-	if age > phaseTimeout(currentPhase(op)) {
-		e.fail(ctx, op, "timeout", fmt.Sprintf("%s did not complete in %s", currentPhase(op), phaseTimeout(currentPhase(op))))
+	if limit := e.timeoutFor(ctx, op); age > limit {
+		e.fail(ctx, op, "timeout", fmt.Sprintf("%s did not complete in %s", currentPhase(op), limit))
 	}
 }
+
+// timeoutFor is the current phase's timeout: phaseTimeout, except an
+// erofs machine's apply_config, which is MenuApplyTimeout.
+func (e *Engine) timeoutFor(ctx context.Context, op *store.Op) time.Duration {
+	ph := currentPhase(op)
+	if ph == PhaseApplyConfig && op.ProjectID != nil {
+		if p, err := store.GetProject(ctx, e.pool, *op.ProjectID); err == nil && isErofs(p) {
+			return MenuApplyTimeout
+		}
+	}
+	return phaseTimeout(ph)
+}
+
+// MenuApplyTimeout is an erofs machine's apply_config phase (DECISIONS
+// I-1558): past hostd's own bound on an ApplyMenu (vsockclient
+// MenuTimeout, 65 minutes), so hostd always answers first, with guestd's
+// reason or with its own two-minute silence guard. It used the default
+// 10 minutes until then, which cut off an apt install slowed by an agent
+// working in the machine while hostd and guestd still waited (ENG-184:
+// `config add postgresql` failed `timeout` at 10 min on the Mac).
+const MenuApplyTimeout = 70 * time.Minute
 
 // advance processes a waiting result and sends the next phase.
 func (e *Engine) advance(ctx context.Context, op *store.Op) {

@@ -197,6 +197,12 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// which was false on every Mac start it was shown for.
 			return "the environment did not answer while it was starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 		}
+		if phase == PhaseApplyConfig && strings.Contains(msg, "while it applied the menu") {
+			// hostd's silence guard on an ApplyMenu (DECISIONS I-1558):
+			// guestd's keepalive stopped, which a slow install never
+			// does.
+			return "the machine stopped answering while it applied the menu: nothing from it for 2 minutes; `repose start` restarts it", true
+		}
 		switch kind {
 		case KindResize:
 			return "the disk grew but the filesystem inside did not: the environment's agent (guestd) stopped answering. `repose start` restarts it, then resize again", true

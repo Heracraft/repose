@@ -70,6 +70,13 @@ type Options struct {
 	// MenuLines are the progress lines an ApplyMenu that installs sends
 	// as Notify frames before its answer; nil sends one per item.
 	MenuLines []string
+	// MenuWork is how long an ApplyMenu that installs works before its
+	// lines and answer. MenuKeepalive, when set, is guestd's keepalive
+	// (DECISIONS I-1558): an empty line at once and then at that interval
+	// while it works; zero is a guestd from before it, which sends none.
+	// MenuKeepaliveFor, when set, stops the keepalive after that long
+	// while the work goes on: a guestd that hung.
+	MenuWork, MenuKeepalive, MenuKeepaliveFor time.Duration
 }
 
 // Server is one fake guest listening on a unix socket.
@@ -364,6 +371,21 @@ func (s *Server) applyMenu(ctx context.Context, r *guestdv1.ApplyMenu) *guestdv1
 		}
 	}
 	id := vsockrpc.RequestID(ctx)
+	if w := s.opts.MenuWork; w > 0 {
+		start := time.Now()
+		every := s.opts.MenuKeepalive
+		for time.Since(start) < w {
+			alive := every > 0 && (s.opts.MenuKeepaliveFor <= 0 || time.Since(start) < s.opts.MenuKeepaliveFor)
+			if alive && conn != nil {
+				_ = conn.NotifyFor(id, &guestdv1.Notify{N: &guestdv1.Notify_ApplyMenuProgress{ApplyMenuProgress: &guestdv1.ApplyMenuProgress{}}}) // the peer may be gone
+			}
+			step := w / 20
+			if every > 0 {
+				step = every
+			}
+			time.Sleep(step)
+		}
+	}
 	for _, l := range lines {
 		if conn != nil {
 			_ = conn.NotifyFor(id, &guestdv1.Notify{N: &guestdv1.Notify_ApplyMenuProgress{ApplyMenuProgress: &guestdv1.ApplyMenuProgress{Line: l}}}) // the peer may be gone

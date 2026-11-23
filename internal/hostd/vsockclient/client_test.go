@@ -2,11 +2,13 @@ package vsockclient
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	fakeguestd "github.com/heracraft/repose/internal/hostd/fakeguestd"
 )
 
@@ -141,5 +143,89 @@ func TestSetupProjectOutlivesTheDefaultTimeout(t *testing.T) {
 	// The control: a default-bound call with the same delay runs out.
 	if err := s.SetPrincipals(bg, []string{"dev"}); err == nil {
 		t.Fatal("SetPrincipals answered past its 100 ms bound without an error")
+	}
+}
+
+// ENG-184 (DECISIONS I-1558): an ApplyMenu is given up on when guestd
+// goes silent, not when it is slow. Scaled down: the idle bound is
+// 150 ms and every apply works 600 ms, four times the bound.
+func TestApplyMenuGivesUpOnSilenceNotOnLength(t *testing.T) {
+	menu := &guestdv1.ApplyMenu{Menu: &hostdv1.MenuSpec{Items: []*hostdv1.MenuItem{{Id: "postgresql"}}}}
+	for _, c := range []struct {
+		name       string
+		opts       fakeguestd.Options
+		wantSilent bool
+	}{
+		// A starved apt step that says nothing for minutes, with the
+		// keepalive coming: finishes.
+		{"slow with keepalive", fakeguestd.Options{MenuKeepalive: 30 * time.Millisecond}, false},
+		// A guestd from before the keepalive: the idle guard never arms,
+		// and only MenuTimeout bounds it, as before.
+		{"slow from an old guestd", fakeguestd.Options{}, false},
+		// A guestd that stops sending mid-apply: given up on with the
+		// silence named.
+		{"keepalive stops", fakeguestd.Options{MenuKeepalive: 30 * time.Millisecond, MenuKeepaliveFor: 100 * time.Millisecond}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			c.opts.Erofs = true
+			c.opts.MenuWork = 600 * time.Millisecond
+			srv, err := fakeguestd.Listen(filepath.Join(dir, "guestd.sock"), c.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = srv.Close() }()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			sess, err := UnixDialer{}.Dial(ctx, Target{GuestID: "g", Dir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = sess.Close() }()
+			s := sess.(*session)
+			s.menuIdle = 150 * time.Millisecond
+			start := time.Now()
+			var lines []string
+			res, err := s.ApplyMenu(context.Background(), menu, func(l string) { lines = append(lines, l) })
+			took := time.Since(start)
+			if c.wantSilent {
+				if !errors.Is(err, ErrMenuSilent) {
+					t.Fatalf("err %v after %s, want ErrMenuSilent", err, took)
+				}
+				if took > 500*time.Millisecond {
+					t.Fatalf("gave up after %s; the keepalive stopped at 100 ms and the bound is 150 ms", took)
+				}
+				return
+			}
+			if err != nil || !res.GetDone() {
+				t.Fatalf("a 600 ms apply against a 150 ms idle bound: %v (%+v) after %s", err, res, took)
+			}
+			for _, l := range lines {
+				if l == "" {
+					t.Fatal("a keepalive reached the line callback")
+				}
+			}
+			t.Logf("%s: done in %s, lines %q", c.name, took, lines)
+		})
+	}
+}
+
+// The deadlines of one menu apply nest outward (DECISIONS I-1558): guestd
+// bounds each step (20 min) and the whole menu (60 min) and says why, so
+// hostd's outer bound must be past guestd's, or hostd cuts off an apply
+// guestd is still entitled to finish. hostd's was 20 minutes of wall
+// clock; on the Mac a postgresql install under an agent's load ran past
+// it (ENG-184: the host logged `menu not applied ... guest_unresponsive`
+// exactly 20 min after the apply started).
+func TestMenuTimeoutIsPastGuestdsOwnDeadline(t *testing.T) {
+	// guestd's config.Deadline, restated with its source: hostd does not
+	// import the guest's packages.
+	const guestdMenuDeadline = 60 * time.Minute
+	if MenuTimeout <= guestdMenuDeadline {
+		t.Errorf("MenuTimeout %s is not past guestd's %s menu deadline", MenuTimeout, guestdMenuDeadline)
+	}
+	// The idle bound is several keepalives (30 s) long.
+	if MenuIdle < 3*30*time.Second {
+		t.Errorf("MenuIdle %s is under three 30 s keepalives", MenuIdle)
 	}
 }

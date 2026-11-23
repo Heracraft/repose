@@ -41,10 +41,24 @@ const (
 	// SetupTimeout is SetupProject's: guestd gave it 3 minutes, since it
 	// waits for home-manager's first activation (DECISIONS I-705).
 	SetupTimeout = 3 * time.Minute
-	// MenuTimeout is ApplyMenu's: apt and mise installs of a whole menu
-	// (DECISIONS I-1460), the erofs guest's counterpart of a Switch.
-	MenuTimeout = 20 * time.Minute
+	// MenuTimeout is ApplyMenu's outer bound: guestd's own deadline for
+	// a whole menu (config.Deadline, 60 minutes) and five more, so guestd,
+	// which bounds each step at 20 minutes and says why, always answers
+	// first (DECISIONS I-1558). It was 20 minutes of wall clock, which
+	// cut off an apt install slowed by an agent working in the guest
+	// (ENG-184).
+	MenuTimeout = 65 * time.Minute
+	// MenuIdle is how long an ApplyMenu may go with no frame at all from
+	// guestd once guestd has shown it sends keepalives: an empty progress
+	// line every 30 seconds (DECISIONS I-1558). A guestd that is gone is
+	// given up on in two minutes; one that is only slow never is. A guestd
+	// from before the keepalive sends none, and only MenuTimeout bounds it.
+	MenuIdle = 2 * time.Minute
 )
+
+// ErrMenuSilent is the error of an ApplyMenu whose guestd stopped sending
+// its keepalive.
+var ErrMenuSilent = errors.New("the machine stopped answering while it applied the menu: nothing from it for 2 minutes")
 
 // Timeouts bound a session's calls per request family. A zero field takes
 // the constant above, so a caller sets only what its host overrides.
@@ -192,6 +206,8 @@ var defaultTimeouts = timeouts{def: DefaultTimeout, sw: SwitchTimeout, paths: Pa
 type session struct {
 	cl *vsockrpc.Client
 	t  timeouts
+	// menuIdle overrides MenuIdle (tests).
+	menuIdle time.Duration
 }
 
 func newSessionWith(c net.Conn, t Timeouts) *session {
@@ -330,15 +346,55 @@ func (s *session) ApplyMenu(ctx context.Context, m *guestdv1.ApplyMenu, line fun
 		ctx, cancel = context.WithTimeout(ctx, MenuTimeout)
 		defer cancel()
 	}
-	var progress func(*guestdv1.Notify)
-	if line != nil {
-		progress = func(n *guestdv1.Notify) {
-			if p := n.GetApplyMenuProgress(); p != nil && p.GetLine() != "" {
-				line(p.GetLine())
+	idle := s.menuIdle
+	if idle <= 0 {
+		idle = MenuIdle
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	// The idle guard arms at guestd's first keepalive and is pushed back
+	// by every frame of this ApplyMenu (DECISIONS I-1558).
+	var timer *time.Timer
+	frames := make(chan struct{}, 1)
+	go func() {
+		var fire <-chan time.Time
+		for {
+			select {
+			case <-ctx.Done():
+				if timer != nil {
+					timer.Stop()
+				}
+				return
+			case <-frames:
+				if timer == nil {
+					timer = time.NewTimer(idle)
+				} else {
+					timer.Reset(idle)
+				}
+				fire = timer.C
+			case <-fire:
+				cancel(ErrMenuSilent)
+				return
 			}
+		}
+	}()
+	progress := func(n *guestdv1.Notify) {
+		p := n.GetApplyMenuProgress()
+		if p == nil {
+			return
+		}
+		select {
+		case frames <- struct{}{}:
+		default:
+		}
+		if line != nil && p.GetLine() != "" {
+			line(p.GetLine())
 		}
 	}
 	r, err := s.cl.CallStream(ctx, &guestdv1.Request{Req: &guestdv1.Request_ApplyMenu{ApplyMenu: m}}, progress)
+	if err != nil && errors.Is(context.Cause(ctx), ErrMenuSilent) {
+		err = ErrMenuSilent
+	}
 	if r != nil && r.GetApplyMenu() != nil {
 		return r.GetApplyMenu(), err
 	}
