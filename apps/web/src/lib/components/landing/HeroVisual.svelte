@@ -187,9 +187,11 @@
 	.hv-files .go {
 		color: var(--pic-ink);
 	}
-	/* What stays on the laptop: faded, not struck. */
+	/* What stays on the laptop: faded, not struck. The picture's dim
+	   colour rather than opacity, which took the text under 4.5:1
+	   (lighthouse color-contrast, CI on 7b93f8c1). */
 	.hv-files .stay {
-		opacity: 0.4;
+		color: var(--pic-dim);
 	}
 
 	.hv-wire {
