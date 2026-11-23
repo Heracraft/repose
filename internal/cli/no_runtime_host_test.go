@@ -49,3 +49,23 @@ func TestRunNoRuntimeHostSaysWhy(t *testing.T) {
 		t.Fatalf("generic: exit %d, said %q", code, errOut.String())
 	}
 }
+
+// TestCapacityRefusalOwnHost: a `capacity` refusal from the user's own
+// host prints the api's sentence, which names the host and the figure
+// (I-1586), on every path that prints a capacity refusal; the fleet's
+// keeps I-724's sentence.
+func TestCapacityRefusalOwnHost(t *testing.T) {
+	own := &APIError{Code: "capacity", Status: 503, Message: "your host e2e-x86-a has 5 GB of memory free for machines, and a large machine needs 8 GB",
+		Detail: map[string]any{"reason": "no_own_host", "host": "e2e-x86-a", "host_state": "ready"}}
+	if got, want := capacityRefusal(own), "your host e2e-x86-a has 5 GB of memory free for machines, and a large machine needs 8 GB."; got != want {
+		t.Fatalf("own host: %q, want %q", got, want)
+	}
+	var buf bytes.Buffer
+	if code := apiErrorExit(own, &buf); code != ExitCapacity || !strings.Contains(buf.String(), "e2e-x86-a has 5 GB") {
+		t.Fatalf("apiErrorExit: %d %q", code, buf.String())
+	}
+	fleet := &APIError{Code: "capacity", Status: 503, Message: "no host with capacity", Detail: map[string]any{"reason": "no_capacity"}}
+	if got := capacityRefusal(fleet); !strings.HasPrefix(got, "repose has no room for this machine.") {
+		t.Fatalf("fleet: %q", got)
+	}
+}
