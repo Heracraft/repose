@@ -831,3 +831,6 @@ month the line is dated in.
 2026-11-22 | release r20261122-25 | conductor, woker-1 | released | 2 branches: nonix-handoff-close, guest-bin-fix (I-1554) shipped as nothing to deploy. Evidence and what is not done: docs/releases/r20261122-25.md
 2026-11-22 | release r20261122-26 | conductor, woker-1 | released | 2 branches: landing-redesign (I-1552), guest-ci-erofs (I-1556) shipped as web. Evidence and what is not done: docs/releases/r20261122-26.md
 2026-11-23 | release r20261123-1 | conductor, woker-1 | released | 1 branches: hero-contrast shipped as web. Evidence and what is not done: docs/releases/r20261123-1.md
+2026-11-23 | release r20261123-2 | conductor, woker-1 | released | 3 branches: mac-apply (I-1558,I-1560), mac-host (I-1564,I-1566), landing-heading-order shipped as api,base,cli,host,web. Evidence and what is not done: docs/releases/r20261123-2.md
+2026-11-23 | release r20261123-3 | conductor, woker-1 | released | 1 branches: mac-appliance-pin shipped as cli. Evidence and what is not done: docs/releases/r20261123-3.md
+2026-11-23 | release r20261123-4 | conductor, woker-1 | released | 1 branches: mac-opencode (I-1562) shipped as base,cli,web. Evidence and what is not done: docs/releases/r20261123-4.md
