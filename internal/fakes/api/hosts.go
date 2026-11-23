@@ -110,15 +110,16 @@ type ownedHostRec struct {
 // SetOwnedHostState moves one of an account's hosts to a state, which is what
 // a registration, a heartbeat or a silence would have done. The host
 // gets its memory and its registration times with `ready`, so a test
-// does not have to fill them in. A removed (`retired`) host of that
-// name is left alone: names are free again once a host is removed, and
-// moving every host ever called mac-mini brought removed ones back into
-// `GET /hosts` for the next test file.
+// does not have to fill them in. A name is the live host's, as in the
+// api, where a removed host's name is free again: a retired or lost
+// host keeps its state. Moving every row of that name brought the
+// hosts earlier tests had removed back as `registering`, and a create
+// then named six waiting mac-minis (main 49b140b0, I-1582).
 func (f *Fake) SetOwnedHostState(name, state string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, h := range f.ownedHosts {
-		if h.Name != name || h.State == "retired" {
+		if h.Name != name || h.State == "retired" || h.State == "lost" {
 			continue
 		}
 		h.State = state

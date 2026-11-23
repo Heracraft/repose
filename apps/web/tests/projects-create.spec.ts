@@ -10,6 +10,7 @@ import {
 	destroyProject,
 	ownedHost,
 	pruneProjects,
+	removeOwnedHosts,
 	resetBilling,
 	setBilling
 } from './helpers';
@@ -70,20 +71,6 @@ async function openForm(page: Page) {
 }
 
 /** The project the fake api holds under this name, read straight from it. */
-/**
- * Removes every host the account has. Other files leave theirs behind,
- * and Runs on lists every one (I-1584), so a test of it starts clean.
- */
-async function removeHosts(api: string) {
-	const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
-	for (const h of (await res.json()) as { id: string }[]) {
-		await fetch(`${api}/hosts/${h.id}`, {
-			method: 'DELETE',
-			headers: { Authorization: 'Bearer playwright' }
-		});
-	}
-}
-
 async function fromApi(name: string) {
 	const res = await fetch(`${apiURLFromEnv()}/projects`, {
 		headers: { Authorization: 'Bearer playwright' }
@@ -304,7 +291,6 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	page
 }) => {
 	const api = apiURLFromEnv();
-	await removeHosts(api);
 	// Without a host there is nothing to choose, so no control.
 	await openForm(page);
 	await expect(form(page).getByLabel('Runs on')).toHaveCount(0);
@@ -312,7 +298,10 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	// The default plan: one host, and memory on repose's servers too, so
 	// repose's servers is a way out. hosts.spec.ts sets a limit of its
 	// own, which the fake reads as the Own hardware plan, and the files
-	// run in name order whatever the command line says.
+	// run in name order whatever the command line says. Those files
+	// leave hosts behind, so the account starts with none: one waiting
+	// host is what this test is about.
+	await removeOwnedHosts(api);
 	await ownedHost({ limit: -1 });
 	await ownedHost({ name: 'mac-mini' });
 	await ownedHost({ state_host: 'mac-mini', state: 'registering' });
@@ -342,14 +331,9 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		litter.push(made!.id);
 		expect(made!.placement).toBe('hosted');
 	} finally {
-		// The host would refuse every other file's creates.
-		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
-		for (const h of (await res.json()) as { id: string }[]) {
-			await fetch(`${api}/hosts/${h.id}`, {
-				method: 'DELETE',
-				headers: { Authorization: 'Bearer playwright' }
-			});
-		}
+		// The host would refuse every other file's creates. A throw here
+		// would hide the failure that sent us here.
+		await removeOwnedHosts(api).catch(() => {});
 	}
 });
 
@@ -361,7 +345,7 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 // held one of two hosts.
 test('Runs on lists every host and the one chosen is the one used', async ({ page }) => {
 	const api = apiURLFromEnv();
-	await removeHosts(api);
+	await removeOwnedHosts(api);
 	await ownedHost({ limit: -1 });
 	await ownedHost({ name: 'box-a' });
 	await ownedHost({ name: 'box-b' });
@@ -398,12 +382,6 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 		// A host with a machine on it is not removed, so the machine goes
 		// first; the hosts would refuse every other file's creates.
 		if (madeId) await destroyProject(api, madeId);
-		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
-		for (const h of (await res.json()) as { id: string }[]) {
-			await fetch(`${api}/hosts/${h.id}`, {
-				method: 'DELETE',
-				headers: { Authorization: 'Bearer playwright' }
-			});
-		}
+		await removeOwnedHosts(api).catch(() => {});
 	}
 });
