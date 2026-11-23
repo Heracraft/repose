@@ -118,15 +118,16 @@ Request and answer bodies are not listed here. They are what the CLI sends and r
 
 ## Where a project runs
 
-`POST /projects` takes `placement`: `own`, the default, is a host [you own](/docs/own-hardware) when you have one and repose's servers when you have none; `hosted` is repose's servers whatever you own. `repose run --host` sends it. A project stays on its host for life, so `PATCH /projects/:id` does not take it.
+`POST /projects` takes `placement`: `own`, the default, is a host [you own](/docs/own-hardware) when you have one and repose's servers when you have none; `hosted` is repose's servers whatever you own. `host` names one of your hosts, by its id or its name: the project goes there or is refused, never to another host; without it, the host with the most room takes it. `repose run --host` sends both. A project stays on its host for life, so `PATCH /projects/:id` does not take it.
 
 | Answer | When |
 | ------ | ---- |
 | `201` | The project, with `host_id`, `host_name` when that host is one you own, and `placement`. Placement is decided before anything is written. |
-| `503 capacity`, `detail.reason: "no_own_host"` | Your host cannot take it: `detail.host` and `detail.host_state` (`registering`, `unreachable`, `draining`, or `ready` with no room) name which and why, and the message says it in words. Nothing is created. `detail.hosted_allowed` is whether `placement: "hosted"` would work on your plan. |
+| `503 capacity`, `detail.reason: "no_own_host"` | Your host cannot take it: `detail.host` and `detail.host_state` (`registering`, `unreachable`, `draining`, or `ready` with no room) name which and why, and the message says it in words. With `host`, that is the host named. Nothing is created. `detail.hosted_allowed` is whether `placement: "hosted"` would work on your plan. |
 | `503 capacity`, `detail.reason: "no_capacity"` or `"no_cpu"` | Repose's servers have no room. Nothing is created. |
 | `402 payment_required`, `detail.reason: "hosted_plan_required"` | `hosted` on a plan that buys no memory on repose's servers. |
 | `400 invalid`, `detail.reason: "placement"` | A value other than `own` or `hosted`. |
+| `400 invalid`, `detail.reason: "host"` | `host` names no host you have, or comes with `placement: "hosted"`. |
 
 ## Give an agent a token
 

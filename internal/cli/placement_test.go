@@ -213,3 +213,36 @@ func TestHostReadoutComesFromTheProjectRecord(t *testing.T) {
 		t.Fatalf("the readout cost %d /hosts read(s); the name is on the project", n)
 	}
 }
+
+// TestRunHostPicksOneOfSeveral is `--host NAME` with two hosts of the
+// account's own (DECISIONS I-1584): the machine is made on the host
+// named, the create line names it, and a named host that is offline
+// refuses as that host with exit 8 rather than using the other.
+func TestRunHostPicksOneOfSeveral(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	e, _, errOut := freshEnv(f.env, f.local)
+	a := fake.AddOwnedHost("box-a")
+	b := fake.AddOwnedHost("box-b")
+
+	if err := runRun(ctx, e, RunOptions{Name: "web", Host: "box-b", NoSync: true, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	if p := bySlug(listed(t, e), "web"); p == nil || p.HostID != b {
+		t.Fatalf("--host box-b made %+v, want it on box-b", p)
+	}
+	if out := errOut.buf.String(); !strings.Contains(out, "Created web on box-b (") {
+		t.Fatalf("create output does not name the host:\n%s", out)
+	}
+
+	fake.SetOwnedHostOffline(a, 14*time.Minute)
+	err := runRun(ctx, e, RunOptions{Name: "api", Host: "box-a", NoSync: true, NoAttach: true}, false)
+	if exitCodeOf(err) != ExitCapacity || err.Error() != "your host box-a has not answered for 14m." {
+		t.Fatalf("--host on an offline host: %v, want exit 8 naming box-a alone", err)
+	}
+	if bySlug(listed(t, e), "api") != nil {
+		t.Fatal("a refused --host made a project on the other host")
+	}
+}

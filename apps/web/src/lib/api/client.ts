@@ -206,6 +206,9 @@ export const createProject = (body: {
 	expires_in_s?: number;
 	/** Where it runs (I-1390): a host the account owns, or repose's servers. */
 	placement?: Placement;
+	/** One host the account owns, by id (I-1584): that host or a refusal
+	 * that names it. Absent lets the api pick among the account's hosts. */
+	host?: string;
 }) => request<Project>('/projects', { method: 'POST', body });
 export const patchProject = (
 	id: string,

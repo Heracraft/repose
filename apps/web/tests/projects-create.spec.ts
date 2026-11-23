@@ -70,6 +70,20 @@ async function openForm(page: Page) {
 }
 
 /** The project the fake api holds under this name, read straight from it. */
+/**
+ * Removes every host the account has. Other files leave theirs behind,
+ * and Runs on lists every one (I-1584), so a test of it starts clean.
+ */
+async function removeHosts(api: string) {
+	const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
+	for (const h of (await res.json()) as { id: string }[]) {
+		await fetch(`${api}/hosts/${h.id}`, {
+			method: 'DELETE',
+			headers: { Authorization: 'Bearer playwright' }
+		});
+	}
+}
+
 async function fromApi(name: string) {
 	const res = await fetch(`${apiURLFromEnv()}/projects`, {
 		headers: { Authorization: 'Bearer playwright' }
@@ -83,6 +97,7 @@ async function fromApi(name: string) {
 		remote_url: string;
 		expires_at?: string;
 		placement?: string;
+		host_name?: string;
 	}[];
 	return list.find((p) => p.name === name);
 }
@@ -220,7 +235,7 @@ test('an account with no plan is refused in place, with a link to the plan', asy
 // nothing is refused, and Create makes the machine, so the page and the
 // next action agree (ENG-34, I-1396). Before this the page said creating
 // was refused, in red, and the dashboard created anyway.
-test('a billing-exempt account past every plan\'s disk is told nothing is refused, and Create makes the machine', async ({
+test("a billing-exempt account past every plan's disk is told nothing is refused, and Create makes the machine", async ({
 	page
 }) => {
 	await setBilling({ mode: 'exempt', disk_held_gb: 612.3 });
@@ -289,6 +304,7 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	page
 }) => {
 	const api = apiURLFromEnv();
+	await removeHosts(api);
 	// Without a host there is nothing to choose, so no control.
 	await openForm(page);
 	await expect(form(page).getByLabel('Runs on')).toHaveCount(0);
@@ -327,6 +343,61 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		expect(made!.placement).toBe('hosted');
 	} finally {
 		// The host would refuse every other file's creates.
+		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
+		for (const h of (await res.json()) as { id: string }[]) {
+			await fetch(`${api}/hosts/${h.id}`, {
+				method: 'DELETE',
+				headers: { Authorization: 'Bearer playwright' }
+			});
+		}
+	}
+});
+
+// Runs on with several hosts (DECISIONS I-1584): every host the account
+// owns is an option with its state, after "Any of your hosts", which is
+// the default and lets the api pick. Naming a host that is waiting is
+// refused as that host, not placed on the other; naming the online one
+// puts the machine there. The x86 pass of 2026-11-23 found the select
+// held one of two hosts.
+test('Runs on lists every host and the one chosen is the one used', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeHosts(api);
+	await ownedHost({ limit: -1 });
+	await ownedHost({ name: 'box-a' });
+	await ownedHost({ name: 'box-b' });
+	await ownedHost({ state_host: 'box-b', state: 'registering' });
+	const name = unique('on-box');
+	let madeId: string | undefined;
+	try {
+		await openForm(page);
+		const runsOn = form(page).getByLabel('Runs on');
+		await expect(runsOn).toHaveValue('own');
+		await expect(runsOn.locator('option')).toHaveText([
+			'Any of your hosts',
+			'box-a',
+			'box-b · waiting',
+			"repose's servers"
+		]);
+		await form(page).getByLabel('Name').fill(name);
+		await runsOn.selectOption({ label: 'box-b · waiting' });
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		await expect(form(page).getByTestId('new-project-error')).toHaveText(
+			'your host box-b has not registered yet'
+		);
+		expect(await fromApi(name)).toBeUndefined();
+		await shots(page, 'new-project-runs-on-several');
+
+		await runsOn.selectOption({ label: 'box-a' });
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		await page.waitForURL(/\/projects\/[^/]+$/);
+		const made = await fromApi(name);
+		expect(made).toBeTruthy();
+		madeId = made!.id;
+		expect(made!.host_name).toBe('box-a');
+	} finally {
+		// A host with a machine on it is not removed, so the machine goes
+		// first; the hosts would refuse every other file's creates.
+		if (madeId) await destroyProject(api, madeId);
 		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
 		for (const h of (await res.json()) as { id: string }[]) {
 			await fetch(`${api}/hosts/${h.id}`, {

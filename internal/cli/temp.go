@@ -167,15 +167,22 @@ func tempLine(p *Project, now time.Time) string {
 }
 
 // createdLabel is the create phase's done line. It names herdr, and
-// says nothing for tmux (I-502).
+// says nothing for tmux (I-502). It names the host when the machine is
+// on one the account owns (host_name, I-1392): with several, which box
+// took it is the one fact the user cannot otherwise see (I-1584). A
+// machine on repose's servers, or one not placed yet, says nothing.
 func createdLabel(p *Project, class string) string {
 	if multiplexer.Normalize(p.Multiplexer) == multiplexer.Herdr {
 		class += ", herdr"
 	}
-	if p.ExpiresAt == nil {
-		return fmt.Sprintf("Created %s (%s)", p.Slug, class)
+	slug := p.Slug
+	if p.HostName != "" {
+		slug += " on " + p.HostName
 	}
-	return fmt.Sprintf("Created %s (%s, temporary until %s)", p.Slug, class, p.ExpiresAt.Local().Format("Jan 2 15:04"))
+	if p.ExpiresAt == nil {
+		return fmt.Sprintf("Created %s (%s)", slug, class)
+	}
+	return fmt.Sprintf("Created %s (%s, temporary until %s)", slug, class, p.ExpiresAt.Local().Format("Jan 2 15:04"))
 }
 
 // parseKeepDuration reads `repose keep PROJECT DURATION`: a Go duration

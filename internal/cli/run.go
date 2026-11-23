@@ -2107,6 +2107,12 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			return nil, err
 		}
 		req.Placement = placement
+		if placement == "own" {
+			// The name itself, so the api puts it on that host or
+			// refuses as that host (I-1584); `own` alone let it pick
+			// any of the account's hosts.
+			req.Host = opts.Host
+		}
 	}
 
 	waited := map[string]bool{}
@@ -2204,8 +2210,9 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 
 // placementFor is what --host asks the api for (DECISIONS I-1390):
 // `repose` is repose's servers (`hosted`), anything else is one of the
-// account's own hosts by name (`own`). A name the account has no host
-// under exits 2, before anything is created.
+// account's own hosts by name (`own`, with the name sent as `host`,
+// I-1584). A name the account has no host under exits 2, before
+// anything is created.
 func placementFor(ctx context.Context, e *Env, host string) (string, error) {
 	if host == hostRepose {
 		return "hosted", nil

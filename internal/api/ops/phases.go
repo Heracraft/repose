@@ -1715,7 +1715,7 @@ func bootTimings(b *hostdv1.BootTimings) map[string]any {
 // The code is still `capacity`, so the api answers 503 and the op can be
 // retried once the machine is back, exactly as a fleet placement can.
 func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
-	msg, _ := e.ownHostRefusalDetail(ctx, p)
+	msg, _ := e.ownHostRefusalDetail(ctx, p, uuid.Nil)
 	return &opError{code: "capacity", msg: msg}
 }
 
@@ -1728,7 +1728,11 @@ func (e *Engine) ownHostRefusal(ctx context.Context, p *store.Project) error {
 // every one of them: naming the first alone said "your host a has not
 // answered" while b, online and full, was the host the machine needed
 // room on. `host` and `host_state` stay the first host's, the oldest.
-func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project) (string, map[string]any) {
+//
+// pin is the host the project named (I-1584), or uuid.Nil: a named host
+// is the only one the sentence is about, because it is the only one the
+// placement was allowed to use.
+func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin uuid.UUID) (string, map[string]any) {
 	detail := map[string]any{"reason": "no_own_host"}
 	hosts, err := store.ListAccountHosts(ctx, e.pool, p.UserID)
 	if err != nil {
@@ -1740,6 +1744,9 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project) (st
 		if h.State == "retired" || h.State == "lost" {
 			// Not a host the account has any more: the placement filter
 			// does not count these either, so they explain nothing.
+			continue
+		}
+		if pin != uuid.Nil && h.ID != pin {
 			continue
 		}
 		live = append(live, h)
