@@ -211,7 +211,32 @@ func (s *Server) applyMenu(ctx context.Context, conn *vsockrpc.Conn, id string, 
 		// the next ApplyMenu of the same menu answers from the result.
 		_ = conn.Send(env)
 	}
+	// The keepalive (DECISIONS I-1558): an empty line at once and then
+	// every interval until the apply ends, so hostd tells an apply that
+	// is slow (a starved apt step may say nothing for minutes) from a
+	// guestd that is gone, without a fixed limit on the apply's length.
+	// It stops before the Response is written, so no line follows it.
+	every := s.cfg.MenuKeepalive
+	if every <= 0 {
+		every = config.KeepaliveInterval
+	}
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			progress("")
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+			}
+		}
+	}()
 	res := s.menu.Apply(ctx, m.GetMenu(), m.GetReplayAfterBaseUpgrade(), progress)
+	close(stop)
+	<-stopped
 	result := &guestdv1.Response_ApplyMenu{ApplyMenu: res}
 	if res.GetErrorCode() != "" {
 		return withResult(sysdep.Errf(res.GetErrorCode(), "%s", res.GetLine()), result)

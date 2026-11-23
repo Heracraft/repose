@@ -111,6 +111,10 @@ type Config struct {
 	// (tests). Nil is the real check of /proc/net/tcp.
 	MenuPortWait config.PortWaiter
 
+	// MenuKeepalive is how often a running ApplyMenu sends its empty
+	// progress line (tests). Zero is config.KeepaliveInterval.
+	MenuKeepalive time.Duration
+
 	// SkipReadyProbe makes Ready fire immediately instead of waiting for
 	// sshd. Tests set it; a guest never does.
 	SkipReadyProbe bool

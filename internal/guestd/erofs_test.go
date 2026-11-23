@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -203,6 +204,7 @@ func TestApplyMenuStreamsProgressKeyedByRequestID(t *testing.T) {
 		t.Fatal(err)
 	}
 	var lines []string
+	keepalives := 0
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	for ctx.Err() == nil {
@@ -214,6 +216,10 @@ func TestApplyMenuStreamsProgressKeyedByRequestID(t *testing.T) {
 			if p := n.GetApplyMenuProgress(); p != nil {
 				if env.GetRequestId() != "r-menu-1" {
 					t.Fatalf("progress line with request_id %q", env.GetRequestId())
+				}
+				if p.GetLine() == "" {
+					keepalives++
+					continue
 				}
 				lines = append(lines, p.GetLine())
 			}
@@ -232,6 +238,59 @@ func TestApplyMenuStreamsProgressKeyedByRequestID(t *testing.T) {
 	if strings.Join(lines, "|") != strings.Join(want, "|") {
 		t.Fatalf("lines before the response %q, want %q", lines, want)
 	}
+	if keepalives == 0 {
+		t.Fatal("no keepalive (empty line) before the response")
+	}
+}
+
+// A slow step says nothing for longer than hostd's idle limit; the
+// keepalive keeps coming while it runs (DECISIONS I-1558, ENG-184).
+func TestApplyMenuKeepaliveRunsThroughASilentStep(t *testing.T) {
+	h := newHarness(t, erofsGuest, func(h *harness) {
+		h.menuKeepalive = 20 * time.Millisecond
+		h.runner.Hook = func(spec sysdep.RunSpec) {
+			if len(spec.Argv) > 0 && spec.Argv[0] == "apt-get" && slices.Contains(spec.Argv, "install") {
+				time.Sleep(300 * time.Millisecond) // a starved apt step that prints nothing
+			}
+		}
+	})
+	conn, err := vsockrpc.DialUnix(h.srv.cfg.DevSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := vsockrpc.NewConn(conn)
+	defer c.Close() //nolint:errcheck // test cleanup
+	if err := c.Send(&guestdv1.Envelope{RequestId: "r-menu-2", Body: &guestdv1.Envelope_Request{Request: &guestdv1.Request{
+		Req: &guestdv1.Request_ApplyMenu{ApplyMenu: &guestdv1.ApplyMenu{Menu: &hostdv1.MenuSpec{Items: []*hostdv1.MenuItem{{Package: "jq"}}}}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	keepalives := 0
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	for ctx.Err() == nil {
+		env, err := c.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p := env.GetNotify().GetApplyMenuProgress(); p != nil {
+			if p.GetLine() == "" {
+				keepalives++
+			}
+			continue
+		}
+		if r := env.GetResponse(); r != nil && env.GetRequestId() == "r-menu-2" {
+			if !r.GetOk() {
+				t.Fatalf("response %+v", r)
+			}
+			break
+		}
+	}
+	// 300 ms of silent apt at a 20 ms interval: well over five.
+	if keepalives < 5 {
+		t.Fatalf("%d keepalives through a 300 ms silent step at 20 ms", keepalives)
+	}
+	t.Logf("%d keepalives through a 300 ms silent apt step", keepalives)
 }
 
 func mkdirAll(path string) error { return os.MkdirAll(path, 0o755) }

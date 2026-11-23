@@ -38,6 +38,8 @@ type harness struct {
 	docker  *sysdep.FakeDocker
 	// herdrSock, when a setup sets it, is the fake herdr's socket.
 	herdrSock string
+	// menuKeepalive, when a setup sets it, is Config.MenuKeepalive.
+	menuKeepalive time.Duration
 
 	mu       sync.Mutex
 	notifies []*guestdv1.Notify
@@ -114,6 +116,7 @@ func newHarness(t *testing.T, setup ...func(*harness)) *harness {
 		SkipReadyProbe: true,
 		HerdrSocket:    h.herdrSock,
 		HerdrUID:       os.Getuid(),
+		MenuKeepalive:  h.menuKeepalive,
 	})
 	if err != nil {
 		t.Fatalf("new: %v", err)

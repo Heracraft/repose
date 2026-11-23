@@ -38,6 +38,12 @@ const (
 // handler that would otherwise live forever.
 const Deadline = 60 * time.Minute
 
+// KeepaliveInterval is how often a running ApplyMenu sends an empty
+// progress line (DECISIONS I-1558): hostd gives up on a guestd that sent
+// nothing for hostd's MenuIdle (two minutes), and never on an apply
+// that is only slow.
+const KeepaliveInterval = 30 * time.Second
+
 // StepTimeout bounds one command (an apt-get install, a mise use, a
 // download): the slowest of them above, three times over.
 const StepTimeout = 20 * time.Minute
@@ -743,7 +749,7 @@ func (a *apply) aptUpdate(ctx context.Context) error {
 		return nil
 	}
 	a.step("updating package lists")
-	if err := a.root(ctx, "apt-get", "apt-get", "-o", "DPkg::Lock::Timeout=300", "-q", "update"); err != nil {
+	if err := a.runStep(ctx, "apt-get", sysdep.RunSpec{Argv: []string{"apt-get", "-o", "DPkg::Lock::Timeout=300", "-q", "update"}, Env: a.h.rootEnv(), Background: true}); err != nil {
 		return err
 	}
 	a.aptUpdated = true
@@ -756,7 +762,10 @@ func (a *apply) aptInstall(ctx context.Context, pkgs []string) error {
 	}
 	argv := append([]string{"apt-get", "-o", "DPkg::Lock::Timeout=300", "-q", "-y", "--no-install-recommends", "install"}, pkgs...)
 	ph := &aptPhases{step: a.step}
-	return a.runStep(ctx, "apt-get", sysdep.RunSpec{Argv: argv, Env: a.h.rootEnv(), OnLine: ph.line})
+	// Below the agent (DECISIONS I-1560): an install shares the machine
+	// with an agent at work, whose own liveness checks give up on it
+	// when apt takes an equal share (ENG-186).
+	return a.runStep(ctx, "apt-get", sysdep.RunSpec{Argv: argv, Env: a.h.rootEnv(), OnLine: ph.line, Background: true})
 }
 
 var (
@@ -820,7 +829,7 @@ func aptError(out []byte) string {
 
 func (a *apply) aptRemove(ctx context.Context, pkgs []string) error {
 	argv := append([]string{"apt-get", "-o", "DPkg::Lock::Timeout=300", "-q", "-y", "remove"}, pkgs...)
-	return a.root(ctx, "apt-get", argv...)
+	return a.runStep(ctx, "apt-get", sysdep.RunSpec{Argv: argv, Env: a.h.rootEnv(), Background: true})
 }
 
 // aptStatus is which of pkgs dpkg has installed.
@@ -869,6 +878,10 @@ func (a *apply) runStep(ctx context.Context, what string, spec sysdep.RunSpec) e
 	spec.MaxOutput = 8 << 10
 	res, err := a.h.run.Run(cctx, spec)
 	if err != nil {
+		if ctx.Err() != nil {
+			// The whole apply's bound, not this step's.
+			return fmt.Errorf("%s was stopped: the menu did not finish within %d min", what, int(Deadline.Minutes()))
+		}
 		if cctx.Err() != nil {
 			return fmt.Errorf("%s did not finish within %d min", what, int(StepTimeout.Minutes()))
 		}

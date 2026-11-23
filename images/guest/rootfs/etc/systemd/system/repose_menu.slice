@@ -1,0 +1,9 @@
+# Menu installs (guestd's ApplyMenu apt steps): beside user.slice, where
+# dev's agents run, at a fifth of its weight, so an install takes what an
+# agent at work leaves (DECISIONS I-1560, ENG-186).
+[Unit]
+Description=repose: menu installs, below the agents
+
+[Slice]
+CPUWeight=20
+IOWeight=20

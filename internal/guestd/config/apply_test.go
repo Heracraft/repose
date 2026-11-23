@@ -27,6 +27,9 @@ type simGuest struct {
 	active   map[string]bool
 	failPkgs map[string]bool
 	calls    [][]string
+	// fg is every apt-get call that did not ask to run below the agent
+	// (RunSpec.Background, DECISIONS I-1560).
+	fg [][]string
 }
 
 func newSim() *simGuest {
@@ -38,6 +41,9 @@ func (g *simGuest) Run(_ context.Context, spec sysdep.RunSpec) (sysdep.RunResult
 	defer g.mu.Unlock()
 	argv := spec.Argv
 	g.calls = append(g.calls, append([]string(nil), argv...))
+	if argv[0] == "apt-get" && !spec.Background {
+		g.fg = append(g.fg, append([]string(nil), argv...))
+	}
 	switch argv[0] {
 	case "dpkg-query":
 		var out strings.Builder
@@ -574,5 +580,33 @@ func TestApplyMenuSaysEachStepAndAptsError(t *testing.T) {
 		if strings.Contains(l, "Get:") || strings.Contains(l, "libjemalloc") || strings.Contains(l, "Reading package") {
 			t.Fatalf("apt output reached a line: %q", l)
 		}
+	}
+}
+
+// Every apt-get of an apply runs below the agent (DECISIONS I-1560,
+// ENG-186): an install, its package-list update and a removal all ask
+// for RunSpec.Background, which the real runner turns into a scope at a
+// fifth of the agent's CPU weight, nice 10 and I/O priority 7.
+func TestAptRunsBelowTheAgent(t *testing.T) {
+	p := erofsRoot(t)
+	g := newSim()
+	h := newHandler(t, p, g)
+	if res, lines := run(h, menuOf(&hostdv1.MenuItem{Id: "redis"}, pkg("jq")), false); res.GetErrorCode() != "" {
+		t.Fatalf("%+v %q", res, lines)
+	}
+	if res, lines := run(h, menuOf(&hostdv1.MenuItem{Id: "redis"}), false); res.GetErrorCode() != "" {
+		t.Fatalf("removal: %+v %q", res, lines)
+	}
+	apt := 0
+	for _, c := range g.ran() {
+		if c[0] == "apt-get" {
+			apt++
+		}
+	}
+	if apt < 3 {
+		t.Fatalf("%d apt-get calls; the test needs an update, an install and a remove", apt)
+	}
+	if len(g.fg) != 0 {
+		t.Fatalf("apt-get at the agent's priority: %q", g.fg)
 	}
 }

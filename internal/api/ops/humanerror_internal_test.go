@@ -168,3 +168,19 @@ func TestAHostTheUserRemovedIsNotComingBack(t *testing.T) {
 		t.Errorf("the sentence names nothing the user can run: %q", gone)
 	}
 }
+
+// An ApplyMenu that hostd gave up on because guestd's keepalive stopped
+// says so, with the figure, rather than the generic guestd sentence
+// (DECISIONS I-1558). hostd's message is vsockclient.ErrMenuSilent's.
+func TestSilentMenuApplySaysTheMachineStoppedAnswering(t *testing.T) {
+	got, ok := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive,
+		"the machine stopped answering while it applied the menu: nothing from it for 2 minutes", false)
+	if !ok || got != "the machine stopped answering while it applied the menu: nothing from it for 2 minutes; `repose start` restarts it" {
+		t.Fatalf("%q %v", got, ok)
+	}
+	// Any other guest_unresponsive in the phase keeps the guestd sentence.
+	other, _ := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive, "guestd unreachable for guest g", false)
+	if !strings.Contains(other, "(guestd) stopped answering") {
+		t.Fatalf("%q", other)
+	}
+}
