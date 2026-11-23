@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1112 entries.
+1114 entries.
 
 ## Scope
 
@@ -1061,8 +1061,8 @@ pointer, not a summary.
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36648
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36689
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36798
-- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — L36910
-- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; L37067
+- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; L36910
+- **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; L37067
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37232
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37295
 - **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37346
@@ -1144,3 +1144,5 @@ pointer, not a summary.
 - **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39273
 - **I-1554** The erofs guest's `/usr/local/bin` scripts are source and tracked in git, and the image build fails when a systemd unit names a `/usr/local` path the root does not have, or one that is not executable (guest-bin-fix, 2026-11-22) — L39280
 - **I-1556** The erofs guest image is built with erofs-utils 1.9.4 or later: CI builds 1.9.4 from a sha256-pinned source tarball instead of Ubuntu's apt package, build.sh refuses an older mkfs.erofs, fsck.erofs or dump.erofs, and every build reads its rootfs.erofs back with `fsck.erofs --extract` and a gate that checks each inode against what the guest kernel accepts (guest-ci-erofs, 2026-11-22) — L39286
+- **I-1564** The Mac appliance's launchd job is a LaunchDaemon that runs as the user, so a Mac that restarts with nobody logged in brings the appliance and its machines back; `repose host add` installs it with sudo once, falls back to the login agent with a line that says so when sudo refuses, and `repose host boot` moves an existing appliance to it (mac-host, 2026-11-23) — L39292
+- **I-1566** What fits on a Mac is stated as the host's own rule, measured: the appliance takes three quarters of the Mac and holds it while it runs, repose keeps an eighth of that (never under 2 GiB), and each machine counts its class plus 512 MiB; so 6 tiny, or 3 small, or 1 large and 1 small on a 24 GB Mac, and 3 tiny, or 2 small, or 1 large on a 16 GB one, and an xl on neither (mac-host, 2026-11-23) — L39302

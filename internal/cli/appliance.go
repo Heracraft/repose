@@ -29,6 +29,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/heracraft/repose/internal/parkkey"
 )
@@ -41,10 +42,13 @@ import (
 // framework, checksum pinned below) rather than by this binary itself:
 // the CLI's darwin build is cross-compiled without cgo, and driving the
 // framework from Go needs cgo and a signed, entitled binary built on a
-// macOS runner, which is a later step. Nothing here needs sudo and
-// nothing of the Mac's is changed: the VM, its disk and its logs live
-// under the user's own Library, and `caffeinate` holds a sleep assertion
-// while the VM runs instead of a `pmset` setting.
+// macOS runner, which is a later step. One step takes sudo: the launchd
+// job that starts the VM goes in /Library/LaunchDaemons, so a Mac that
+// restarts with nobody logged in brings it back (DECISIONS I-1564); it
+// runs as the user, and without sudo the job is a login agent instead.
+// Nothing else of the Mac's is changed: the VM, its disk and its logs
+// live under the user's own Library, and `caffeinate` holds a sleep
+// assertion while the VM runs instead of a `pmset` setting.
 //
 // Everything lives under ~/Library/Application Support/repose:
 // bin/vfkit, disk.raw (the appliance's one disk: the machines' volumes
@@ -356,6 +360,23 @@ func (randomSource) Read(p []byte) (int, error) {
 // after its SIGTERM before it kills the launcher, and with it the VM:
 // the default is 20 s, which no park fits in.
 func launchdPlist(self, dir, launcherLog string) string {
+	return plistFor(self, dir, launcherLog, "")
+}
+
+// bootPlist is the same job as a LaunchDaemon (DECISIONS I-1564): in the
+// system domain, so launchd starts it when the Mac boots and nobody has
+// to log in, and run as the user who added the appliance, so it reads
+// the same files under their Library and nothing runs as root. launchd
+// gives a daemon no HOME of its own, and `host run` finds everything
+// from it.
+func bootPlist(self, dir, launcherLog, user, home string) string {
+	return plistFor(self, dir, launcherLog, `  <key>UserName</key><string>`+user+`</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>HOME</key><string>`+home+`</string><key>USER</key><string>`+user+`</string></dict>
+`)
+}
+
+func plistFor(self, dir, launcherLog, extra string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -363,7 +384,7 @@ func launchdPlist(self, dir, launcherLog string) string {
   <key>Label</key><string>` + applianceLabel + `</string>
   <key>ProgramArguments</key>
   <array><string>` + self + `</string><string>host</string><string>run</string></array>
-  <key>RunAtLoad</key><true/>
+` + extra + `  <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ExitTimeOut</key><integer>` + strconv.Itoa(int((applianceStopGrace+30*time.Second)/time.Second)) + `</integer>
   <key>ProcessType</key><string>Interactive</string>
@@ -1060,9 +1081,6 @@ func applianceInstall(ctx context.Context, e *Env, argument, hostName string, o 
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(p.Plist, []byte(launchdPlist(self, p.Dir, p.LauncherLog)), 0o644); err != nil {
-		return err
-	}
 	return applianceStart(e, p, self)
 }
 
@@ -1101,12 +1119,124 @@ func launchdDomain() string {
 	return "user/" + uid
 }
 
-// applianceStart hands the agent to launchd, and when launchd takes no
-// agent (a session-less domain, "Bad request"), starts `host run`
+// launchDaemonsDir is where the boot job's plist goes; tests move it.
+var launchDaemonsDir = "/Library/LaunchDaemons"
+
+func bootPlistPath() string { return filepath.Join(launchDaemonsDir, applianceLabel+".plist") }
+
+// bootJobInstalled is whether the appliance starts when the Mac boots:
+// its plist is in /Library/LaunchDaemons, which anyone may read.
+func bootJobInstalled() bool {
+	_, err := os.Stat(bootPlistPath())
+	return err == nil
+}
+
+// macSudo runs `sudo` with the terminal, so it can ask for the password
+// once, and with -n when there is no terminal to ask on, so it fails
+// rather than hangs; tests replace it.
+var macSudo = func(args ...string) error {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return exec.Command("sudo", append([]string{"-n"}, args...)...).Run()
+	}
+	cmd := exec.Command("sudo", args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stderr, os.Stderr
+	return cmd.Run()
+}
+
+// macUser is the login name `host run` runs as from the boot job. The
+// darwin build has no cgo, so os/user cannot read the directory service.
+func macUser() (string, error) {
+	out, err := macExec("id", "-un")
+	u := strings.TrimSpace(string(out))
+	if err != nil || u == "" {
+		return "", fmt.Errorf("id -un: %v", err)
+	}
+	return u, nil
+}
+
+// applianceAtBoot makes the appliance a LaunchDaemon (DECISIONS I-1564):
+// launchd's system domain starts it at boot, with no login, as the user
+// who added it. Installing into /Library/LaunchDaemons takes sudo, once;
+// nothing else of repose's runs as root. The login agent goes first,
+// stopping the VM it holds, so two launchers never hold one disk. What
+// the boot job cannot reach is the login keychain, which stays locked
+// until someone logs in: until then a stop of the appliance does not
+// keep the machines' memory (I-1434 already says a restart does not).
+func applianceAtBoot(e *Env, p appliancePaths, self string) error {
+	user, err := macUser()
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(p.Dir, "boot.plist")
+	if err := os.WriteFile(tmp, []byte(bootPlist(self, p.Dir, p.LauncherLog, user, e.HomeDir)), 0o644); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	// The log exists, as the user's, before launchd opens it for the
+	// job: a file launchd made would be root's, in the user's Library.
+	if f, err := os.OpenFile(p.LauncherLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		_ = f.Close()
+	}
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		_, _ = fmt.Fprintln(e.ErrOut, "sudo asks for your password to start the appliance when this Mac boots, before anyone logs in")
+	}
+	if err := macSudo("install", "-m", "0644", "-o", "root", "-g", "wheel", tmp, bootPlistPath()); err != nil {
+		return fmt.Errorf("sudo refused: %v", err)
+	}
+	if _, err := os.Stat(p.Plist); err == nil {
+		applianceStopAgent(p)
+		_ = os.Remove(p.Plist)
+	}
+	if applianceRunning(p) {
+		// A `host run` started by hand, or the detached one from an ssh
+		// install: the boot job must not start a second VM on its disk.
+		applianceShutdown(p, applianceStopGrace)
+	}
+	if err := macSudo("launchctl", "bootstrap", "system", bootPlistPath()); err == nil {
+		return nil
+	}
+	// Loaded already: a retry of `host add`, or `host boot` run twice.
+	if err := macSudo("launchctl", "kickstart", "-k", "system/"+applianceLabel); err != nil {
+		// A plist launchd would not take must not start a second VM at
+		// the next boot beside the login agent that replaces it.
+		_ = macSudo("rm", "-f", bootPlistPath())
+		return fmt.Errorf("launchctl took no boot job: %v", err)
+	}
+	return nil
+}
+
+// applianceStart starts the appliance once it is installed: as the
+// boot job when sudo allows it, else as the login agent, with the line
+// that says what the second costs.
+func applianceStart(e *Env, p appliancePaths, self string) error {
+	err := applianceAtBoot(e, p, self)
+	if err == nil {
+		applianceFileVaultLine(e)
+		return nil
+	}
+	_, _ = fmt.Fprintf(e.ErrOut, "The appliance starts at your login, not when this Mac boots (%v): a Mac nobody logs in to after a restart needs `repose host boot`, or automatic login.\n", err)
+	if err := os.WriteFile(p.Plist, []byte(launchdPlist(self, p.Dir, p.LauncherLog)), 0o644); err != nil {
+		return err
+	}
+	return applianceStartAgent(e, p, self)
+}
+
+// applianceFileVaultLine says the one thing the boot job cannot do: with
+// FileVault on, macOS itself waits at its unlock screen after a power
+// cut, before any job of anyone's runs.
+func applianceFileVaultLine(e *Env) {
+	out, err := macExec("fdesetup", "status")
+	if err == nil && strings.Contains(string(out), "FileVault is On") {
+		_, _ = fmt.Fprintln(e.ErrOut, "FileVault is on: after a power cut or a restart this Mac waits at its unlock screen, and the appliance starts once someone unlocks it")
+	}
+}
+
+// applianceStartAgent hands the agent to launchd, and when launchd takes
+// no agent (a session-less domain, "Bad request"), starts `host run`
 // detached from a subshell with every descriptor off the terminal,
 // because `nohup` under a tty does not detach on macOS and the VM died
 // with the lab's ssh session. The agent takes over at the next login.
-func applianceStart(e *Env, p appliancePaths, self string) error {
+func applianceStartAgent(e *Env, p appliancePaths, self string) error {
 	dom := launchdDomain()
 	if _, err := macExec("launchctl", "bootstrap", dom, p.Plist); err == nil {
 		return nil
@@ -1132,6 +1262,26 @@ func applianceStart(e *Env, p appliancePaths, self string) error {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+// ApplianceBootCmd implements `repose host boot`: an appliance added
+// before the boot job existed, or one whose `host add` had no sudo,
+// moves from the login agent to the boot job. Its VM restarts.
+func ApplianceBootCmd(e *Env) error {
+	if _, installed := localAppliance(e); !installed {
+		return exitf(ExitGeneric, "There is no appliance on this Mac; `repose host add` puts one here.")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	p := applianceFor(e.HomeDir)
+	if err := applianceAtBoot(e, p, self); err != nil {
+		return exitf(ExitGeneric, "The appliance still starts at your login, not when this Mac boots: %v.", err)
+	}
+	applianceFileVaultLine(e)
+	_, _ = fmt.Fprintln(e.ErrOut, "The appliance on this Mac now starts when the Mac boots, with nobody logged in.")
+	return nil
 }
 
 // ---- run ----------------------------------------------------------------
@@ -1246,31 +1396,64 @@ func applianceShutdown(p appliancePaths, grace time.Duration) {
 
 // ---- stop and remove --------------------------------------------------
 
-// applianceStop stops the VM cleanly: through launchd when the agent
-// holds it, else through vfkit's socket.
-func applianceStop(p appliancePaths) {
-	dom := launchdDomain()
-	if _, err := os.Stat(p.Plist); err == nil {
-		if _, err := macExec("launchctl", "print", dom+"/"+applianceLabel); err == nil {
-			_, _ = macExec("launchctl", "bootout", dom+"/"+applianceLabel)
-			deadline := time.Now().Add(applianceStopGrace + 10*time.Second)
-			for applianceRunning(p) && time.Now().Before(deadline) {
-				time.Sleep(time.Second)
+// applianceStop stops the VM cleanly: through launchd when a job holds
+// it (the boot job needs sudo for that), else through vfkit's socket.
+func applianceStop(p appliancePaths) error {
+	if bootJobInstalled() {
+		if _, err := macExec("launchctl", "print", "system/"+applianceLabel); err == nil {
+			if err := macSudo("launchctl", "bootout", "system/"+applianceLabel); err != nil {
+				return fmt.Errorf("the appliance starts at boot, and stopping it takes sudo, which refused: %v", err)
 			}
-			return
+			waitStopped(p)
+			return nil
 		}
+	}
+	if applianceStopAgent(p) {
+		return nil
 	}
 	if applianceRunning(p) {
 		applianceShutdown(p, applianceStopGrace)
 	}
+	return nil
+}
+
+// applianceStopAgent boots the login agent out, when it holds the VM,
+// and waits for the VM to stop; false when no agent was loaded.
+func applianceStopAgent(p appliancePaths) bool {
+	dom := launchdDomain()
+	if _, err := os.Stat(p.Plist); err != nil {
+		return false
+	}
+	if _, err := macExec("launchctl", "print", dom+"/"+applianceLabel); err != nil {
+		return false
+	}
+	_, _ = macExec("launchctl", "bootout", dom+"/"+applianceLabel)
+	waitStopped(p)
+	return true
+}
+
+func waitStopped(p appliancePaths) {
+	deadline := time.Now().Add(applianceStopGrace + 10*time.Second)
+	for applianceRunning(p) && time.Now().Before(deadline) {
+		time.Sleep(time.Second)
+	}
 }
 
 // applianceRemove takes the appliance off this Mac: the VM stopped, the
-// agent gone, the directory with the disk, every machine's volume and
-// snapshot in it, removed.
+// launchd job gone, the directory with the disk, every machine's volume
+// and snapshot in it, removed. The boot job's plist is root's, so it
+// goes first and through sudo; a refusal leaves everything in place
+// rather than a job that restarts a VM on a disk that is gone.
 func applianceRemove(e *Env) error {
 	p := applianceFor(e.HomeDir)
-	applianceStop(p)
+	if err := applianceStop(p); err != nil {
+		return err
+	}
+	if bootJobInstalled() {
+		if err := macSudo("rm", "-f", bootPlistPath()); err != nil {
+			return fmt.Errorf("removing %s takes sudo, which refused: %v", bootPlistPath(), err)
+		}
+	}
 	_, _ = macExec("launchctl", "bootout", launchdDomain()+"/"+applianceLabel)
 	_ = os.Remove(p.Plist)
 	return os.RemoveAll(p.Dir)
@@ -1289,7 +1472,7 @@ func appliancePresent(e *Env) bool {
 		return false
 	}
 	p := applianceFor(e.HomeDir)
-	if _, err := os.Stat(p.Plist); err == nil {
+	if _, err := os.Stat(p.Plist); err == nil || bootJobInstalled() {
 		return true
 	}
 	ents, err := os.ReadDir(p.Dir)
