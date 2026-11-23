@@ -85,7 +85,15 @@ var promptArgs = map[string]func(prompt string) ([]string, bool){
 	// hand-made window) on 1.18.30, where the guest pins 1.18.34: the
 	// prompt appears as the submitted user message, the model answered
 	// it, and the TUI stayed interactive.
-	"opencode": func(p string) ([]string, bool) { return []string{"--prompt=" + p}, true },
+	// `--standalone` first ("Run with a private server instead of the
+	// background service", `opencode --help` on 2.3.2): opencode 2's TUI
+	// checks the machine's background service with 2000 ms requests, kills
+	// it after three go unanswered, starts another, and exits after
+	// 120000 ms (read out of the 2.3.2 binary). On a busy machine a
+	// starting service cannot answer in 2 s, so the prompt never ran: the
+	// review Mac, 3 of 3 (2026-11-22 council report M4), and a guest under
+	// CPUQuota=10%, where the private server ran it (DECISIONS I-1562).
+	"opencode": func(p string) ([]string, bool) { return []string{"--standalone", "--prompt=" + p}, true },
 	// pi: `pi [options] [--] [@files...] [messages...]`, "message
 	// Provide an initial prompt", "`--` Stop option parsing so a prompt
 	// can begin with `-`", and "With terminal stdin and stdout, Pi opens

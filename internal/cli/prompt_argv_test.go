@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/heracraft/repose/internal/agentwindow"
 )
 
 // I-780: the window that `repose run -p PROMPT` opens starts the agent with
@@ -27,7 +29,7 @@ func TestAgentWindowCommandCarriesThePrompt(t *testing.T) {
 		{"claude", `''\''claude'\'' '\''--'\'' '\''fix the flaky test'\'''`},
 		{"codex", `''\''codex'\'' '\''--'\'' '\''fix the flaky test'\'''`},
 		{"gemini", `''\''gemini'\'' '\''--prompt-interactive=fix the flaky test'\'''`},
-		{"opencode", `''\''opencode'\'' '\''--prompt=fix the flaky test'\'''`},
+		{"opencode", `''\''opencode'\'' '\''--standalone'\'' '\''--prompt=fix the flaky test'\'''`},
 		{"pi", `''\''pi'\'' '\''--'\'' '\''fix the flaky test'\'''`},
 		// No form: the command line is the binary alone, as it was
 		// before I-780, and submitPromptScript types the prompt.
@@ -44,6 +46,22 @@ func TestAgentWindowCommandCarriesThePrompt(t *testing.T) {
 				t.Fatalf("%s carries the prompt = %v", c.binary, carried)
 			}
 		})
+	}
+}
+
+// The CLI's forms are the ones guestd starts a trigger's agent with
+// (internal/agentwindow, I-1256). Two copies drifted once already: the
+// opencode form moved to a private server (I-1562), and a trigger's
+// opencode would otherwise keep the form that never ran on a busy machine.
+func TestPromptFormsMatchTheTriggers(t *testing.T) {
+	for _, a := range agentNames {
+		for _, p := range []string{"fix the flaky test", "-dash first", "@notes.md read this"} {
+			got, gok := agentPromptArgv(a, p)
+			want, wok := agentwindow.PromptArgv(a, p)
+			if gok != wok || !slices.Equal(got, want) {
+				t.Errorf("%s(%q): cli %q %v, agentwindow %q %v", a, p, got, gok, want, wok)
+			}
+		}
 	}
 }
 

@@ -627,7 +627,8 @@ one a trigger uses: I-752's typing path submitted **1 prompt in 10** on a
 fresh window, and a trigger's window is always fresh. The command line is
 built by the same leaf package the CLI uses, so there is one copy of each
 agent's form (`claude -- PROMPT`, `codex -- PROMPT`,
-`gemini --prompt-interactive=PROMPT`, `opencode --prompt=PROMPT`,
+`gemini --prompt-interactive=PROMPT`, `opencode --standalone --prompt=PROMPT`
+(I-1562),
 `pi -- PROMPT`) and one copy of the quoting its tests cover.
 
 I-780 names one prompt no form takes: a prompt beginning with `@` on

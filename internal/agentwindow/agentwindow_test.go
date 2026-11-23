@@ -59,13 +59,20 @@ func TestEveryAgentsPromptFormSurvivesALeadingDash(t *testing.T) {
 			continue
 		}
 		joined := strings.Join(args, " ")
-		if !strings.Contains(joined, "-dash first") {
-			t.Errorf("%s: %q does not carry the prompt", agent, joined)
+		at := -1
+		for i, a := range args {
+			if strings.Contains(a, "-dash first") {
+				at = i
+			}
 		}
-		// Either option parsing is stopped with `--`, or the prompt is
-		// one word joined to its flag with `=`; a separate word after a
-		// flag loses a leading dash.
-		if args[0] != "--" && !strings.Contains(args[0], "=") {
+		if at < 0 {
+			t.Errorf("%s: %q does not carry the prompt", agent, joined)
+			continue
+		}
+		// Either option parsing is stopped with `--` right before the
+		// prompt, or the prompt is one word joined to its flag with `=`;
+		// a separate word after a flag loses a leading dash.
+		if (at == 0 || args[at-1] != "--") && !strings.Contains(args[at], "=") {
 			t.Errorf("%s: %q would read the prompt as a flag", agent, joined)
 		}
 	}
@@ -163,5 +170,20 @@ func TestNewWindowTrustsTheFolderThenOpensOneWindow(t *testing.T) {
 	open := strings.Index(got, "tmux new-window")
 	if trust < 0 || trust > open {
 		t.Error("the trust script does not run before the window opens (I-486)")
+	}
+}
+
+// opencode takes the prompt on a private server (DECISIONS I-1562). On
+// the machine's background service, opencode 2.3.2's TUI kills a service
+// that misses three 2-second checks and gives up after 120 s, so on a busy
+// machine `repose run -p` printed Ready and the prompt never ran.
+func TestOpencodeTakesThePromptOnAPrivateServer(t *testing.T) {
+	args, ok := agentwindow.PromptArgv("opencode", "create hello.txt")
+	if !ok {
+		t.Fatal("opencode does not take a prompt on its argv")
+	}
+	want := []string{"--standalone", "--prompt=create hello.txt"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("opencode argv = %q, want %q", args, want)
 	}
 }
