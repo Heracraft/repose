@@ -102,9 +102,11 @@ servers the same machine starts in about
 [6 seconds](/docs#6-come-back-and-stop). Measured on an M4 Mac mini on
 2026-11-22.
 
-Once it is running it is a machine like any other. The agents, the builds and
-the tests go at the Mac's own speed: the virtual machine around them costs
-nothing we can measure.
+Once it is running it is a machine like any other. Agents start as fast as on
+repose's servers: on an M4 Mac mini a small machine showed Claude Code's first
+screen in half a second and Gemini CLI's in 1.5 to 2 seconds, and opencode,
+started with `repose run -d --agent opencode -p`, wrote a one-line file 31 to
+40 seconds after the command. Measured on 2026-11-23.
 
 ## When your hardware is offline
 
