@@ -269,3 +269,36 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 		t.Fatalf("placed on %q, want the online host %q", p.HostID, third)
 	}
 }
+
+// TestSetOwnedHostStateLeavesRemovedHostsRemoved: a name is the live
+// host's, as in the api. A removed mac-mini stays removed when a test
+// moves the new mac-mini, so a create names one waiting host, not every
+// mac-mini the account ever had (main 49b140b0).
+func TestSetOwnedHostStateLeavesRemovedHostsRemoved(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	old := f.AddOwnedHost("mac-mini")
+	if r := call(t, f, "DELETE", "/v1/hosts/"+old, tok, nil); r.status != 204 {
+		t.Fatalf("remove: %d %s", r.status, r.body)
+	}
+	f.AddOwnedHost("mac-mini")
+	f.SetOwnedHostState("mac-mini", "registering")
+	var list []OwnedHost
+	call(t, f, "GET", "/v1/hosts", tok, nil).json(t, &list)
+	for _, h := range list {
+		if h.ID == old && h.State != "retired" {
+			t.Fatalf("the removed mac-mini is %s again", h.State)
+		}
+	}
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "one", "class": "small"})
+	wantErr(t, r, 503, "capacity")
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	r.json(t, &body)
+	if want := "your host mac-mini has not registered yet"; body.Error.Message != want {
+		t.Fatalf("message %q, want %q", body.Error.Message, want)
+	}
+}
