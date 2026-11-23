@@ -162,6 +162,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if name == "" && !local {
 				return cobraUsageError{errors.New("rm takes one NAME, or --local")}
 			}
+			if name == "" && !onAppleSilicon() {
+				// Nothing is removed off a Mac, so nothing is asked.
+				return HostRmLocalCmd(cmd.Context(), e, true, nil)
+			}
 			var confirm func(string) (bool, error)
 			if !yes {
 				if !canPrompt(os.Stdin) {
@@ -181,7 +185,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	rm.Flags().BoolVarP(&yes, "yes", "y", false, "skip the confirmation")
-	rm.Flags().BoolVar(&local, "local", false, "remove the appliance on this Mac, disk included, and nothing on your account")
+	rm.Flags().BoolVar(&local, "local", false, "remove the appliance on this Mac, disk included, and nothing on your account; on a Linux host, print the installer's uninstall line")
 
 	root.AddCommand(add, run, boot, list, rm)
 	bareRuns(root, list)

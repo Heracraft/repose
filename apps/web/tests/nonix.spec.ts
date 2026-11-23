@@ -161,8 +161,10 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 			"It keeps your machines' disks in /var/lib/repose/guests.img, or with --device takes over a whole empty disk."
 		);
 		const x86 = dialog.getByTestId('host-install-x86');
+		// ENG-206: the argument goes through a file, never sudo's command line.
+		await expect(x86).toContainText("printf '%s\\n' ");
 		await expect(x86).toContainText(
-			'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join '
+			' > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join'
 		);
 		for (const width of [1440, 390]) {
 			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
@@ -178,6 +180,41 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 			await fetch(`${apiURLFromEnv()}/hosts/${h.id}`, { method: 'DELETE', headers: auth });
 		}
 		await ownedHost({ limit: 1, set_install: false });
+	}
+});
+
+// ENG-204: removing an x86 host names the line that takes repose off the
+// box, which nothing else does; a Mac's appliance goes with the CLI.
+test('removing an x86 host shows the uninstall line', async ({ page }) => {
+	await ownedHost({ limit: 2 });
+	await ownedHost({ name: 'box', arch: 'x86_64' });
+	await ownedHost({ name: 'mini' });
+	try {
+		await page.goto('/settings/hosts');
+		await page.getByRole('button', { name: 'Remove mini…' }).click();
+		await expect(page.getByTestId('host-uninstall-x86')).toHaveCount(0);
+		await page.getByRole('button', { name: 'Keep it' }).click();
+		await page.getByRole('button', { name: 'Remove box…' }).click();
+		const confirm = page.getByTestId('confirm-remove-host');
+		await expect(confirm.getByTestId('host-uninstall-x86')).toHaveText(
+			'Repose keeps running on the box until you run this there as root:'
+		);
+		await expect(confirm).toContainText(
+			'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall'
+		);
+		for (const width of [1440, 390]) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			const pre = confirm.locator('pre');
+			const o = await pre.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
+			expect(o.s, `uninstall line scrolled sideways at ${width}px`).toBeLessThanOrEqual(o.c + 1);
+		}
+		await shots(page, 'hosts-x86-remove');
+	} finally {
+		const res = await fetch(`${apiURLFromEnv()}/hosts`, { headers: auth });
+		for (const h of (await res.json()) as { id: string }[]) {
+			await fetch(`${apiURLFromEnv()}/hosts/${h.id}`, { method: 'DELETE', headers: auth });
+		}
+		await ownedHost({ limit: 1 });
 	}
 });
 
