@@ -66,14 +66,25 @@ made, unless the owner says to keep it.
 6. `repose host rm`, then `ops/dev/latitude destroy`, then `status` to see
    it gone. Read the billing log's last two lines.
 
-## Untested
+## What the first run confirmed
 
-The helper was written from the API reference on 2026-11-23, before a key
-existed. Confirmed live on 2026-11-23: the key authenticates, both projects list,
-`plans` reads stock and prices (curl needs `-g` for the `filter[...]`
-brackets, now in the helper), and `ubuntu_24_04_x64_lts` is a real OS
-slug. Not confirmed live: whether
-`ssh_keys` takes the key's id (assumed) or its name; the project ssh-key
-path, which the spec marks deprecated; the user the Ubuntu image logs in
-as (`ubuntu` assumed, `LATITUDE_SSH_USER` changes it). The first run is
-the test; fix the helper in the same branch as what it finds.
+Run live on 2026-11-23 for the first x86 multi-host review
+(`docs/reports/2026-11-23-x86-multihost-1.md`): `ssh-key` on the project
+path works and `ssh_keys` takes the key's id; the Ubuntu image logs in as
+`ubuntu`; `create`, `wait`, `ssh` and `destroy` work, and `destroy` gives a
+404 on the server straight after. Servers came from a ready pool: `wait`
+answered 3 seconds after `create`, with the box up for hours already.
+
+Two servers at once: give the second its own state file,
+`LATITUDE_STATE=$HOME/.config/repose/latitude-lab-b.state`. The key id is
+kept apart from the per-server state (`latitude-lab.ssh-key`), so the
+second box needs no second `ssh-key`.
+
+Stock moves by the minute: NYC and CHI ran out of m4-metal-small between
+two creates five minutes apart, and DAL had it. A 422
+`SERVERS_OUT_OF_STOCK` means another `LATITUDE_SITE` from `plans`.
+
+The provider's power switch, for a "box loses power" test, is the raw
+call: `ops/dev/latitude api POST /servers/<id>/actions
+'{"data":{"type":"actions","attributes":{"action":"power_off"}}}'`
+(`power_on` to bring it back; about 95 seconds to `online` again).

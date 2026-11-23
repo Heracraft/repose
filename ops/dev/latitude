@@ -29,14 +29,21 @@
 # proj_ZWr75ZQOvNA91, repose-boyh), LATITUDE_SSH_PUBKEY (~/.ssh/id_ed25519.pub),
 # LATITUDE_SSH_USER (ubuntu), LATITUDE_BILLING_LOG (~/briefs/latitude-billing.log).
 #
-# UNTESTED as of 2026-11-23: written from the API reference before the key
-# existed. Slugs (plan, site, OS) come from the spec's enums, not a live
-# answer; the first `plans` run is the check. The first run is the test.
+# Run live on 2026-11-23 (docs/reports/2026-11-23-x86-multihost-1.md): the
+# project ssh-key path, `ssh_keys` taking the key's id, the `ubuntu` login,
+# create, wait, ssh and destroy all work. A second server at once needs its
+# own LATITUDE_STATE file; the key id is shared. Stock runs out by site
+# (NYC and CHI went out of m4-metal-small within minutes): a 422
+# SERVERS_OUT_OF_STOCK means try another LATITUDE_SITE from `plans`.
 set -euo pipefail
 
 API=https://api.latitude.sh
 KEY=${LATITUDE_KEY_FILE:-$HOME/.config/repose/latitude-api-key}
 STATE=${LATITUDE_STATE:-$HOME/.config/repose/latitude-lab.state}
+# The project's ssh key is uploaded once and serves every server, so its id
+# lives apart from the per-server state: a second box (LATITUDE_STATE set to
+# another file) finds it without uploading the key again.
+KEYID=${LATITUDE_SSH_KEY_STATE:-$HOME/.config/repose/latitude-lab.ssh-key}
 PLAN=${LATITUDE_PLAN:-m4-metal-small}
 SITE=${LATITUDE_SITE:-NYC}
 OS=${LATITUDE_OS:-ubuntu_24_04_x64_lts}
@@ -83,10 +90,10 @@ case ${1:-} in
     body=$(jq -nc --arg n "repose-lab-$(hostname)" --rawfile k "$PUB" \
       '{data:{type:"ssh_keys",attributes:{name:$n,public_key:($k|rtrimstr("\n"))}}}')
     id=$(api_ok POST "/projects/$p/ssh_keys" "$body" | jq -r '.data.id')
-    echo "ssh_key=$id" >>"$STATE"; echo "ssh key $id" ;;
+    echo "ssh_key=$id" >"$KEYID"; echo "ssh key $id" ;;
   create)
     [ -z "$(field id)" ] || die "a server is already recorded ($(field id)); destroy it first or remove $STATE"
-    name=${2:-repose-x86-lab}; p=$(project); k=$(field ssh_key)
+    name=${2:-repose-x86-lab}; p=$(project); k=$(sed -n 's/^ssh_key=//p' "$KEYID" 2>/dev/null); [ -n "$k" ] || k=$(field ssh_key)
     [ -n "$k" ] || die "run 'ops/dev/latitude ssh-key' first"
     body=$(jq -nc --arg p "$p" --arg plan "$PLAN" --arg s "$SITE" --arg os "$OS" --arg h "$name" --arg k "$k" \
       '{data:{type:"servers",attributes:{project:$p,plan:$plan,site:$s,operating_system:$os,hostname:$h,ssh_keys:[$k],billing:"hourly"}}}')
