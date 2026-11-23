@@ -200,11 +200,18 @@ cp "$root/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" "$esp/EFI/BOOT/BOOTAA64
 cp "$root/boot/vmlinuz.efi" "$esp/vmlinuz.efi"
 printf 'default repose.conf\ntimeout 0\n' > "$esp/loader/loader.conf"
 # The kernel parameters nix/hosts/kernel.nix sets on every host, the
-# framework's virtio console, and the root by GUID.
+# framework's virtio console, and the root by GUID. One more, the
+# appliance's own: transparent_hugepage_shmem=advise lets Cloud
+# Hypervisor's memfd guest RAM (it asks with MADV_HUGEPAGE) be mapped in
+# 2 MiB blocks. Under Apple's nested virtualization each 4 KiB stage-2
+# fault a guest takes is an exit to this kernel costing 25 to 35 us, and
+# a JavaScript agent starting takes hundreds of thousands of them, so
+# without it every agent starts 6 to 12 times slower than on repose's
+# servers (DECISIONS I-1574, which amends I-1040 for the appliance).
 cat > "$esp/loader/entries/repose.conf" <<ENTRY
 title repose appliance $version
 linux /vmlinuz.efi
-options root=PARTUUID=$ROOT_GUID rootfstype=ext4 rootwait rw console=hvc0 transparent_hugepage=madvise hashdist=0 panic=30
+options root=PARTUUID=$ROOT_GUID rootfstype=ext4 rootwait rw console=hvc0 transparent_hugepage=madvise transparent_hugepage_shmem=advise hashdist=0 panic=30
 ENTRY
 rm -f "$root/boot/vmlinuz.efi"
 
