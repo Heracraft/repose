@@ -66,8 +66,7 @@ field() { [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" || true; }
 bill() { mkdir -p "$(dirname "$BILL")"; printf '%s | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$BILL"; }
 
 project() {
-  echo "${LATITUDE_PROJECT:-proj_ZWr75ZQOvNA91}"; return  # repose-boyh, the lab project
-  api_ok GET /projects | jq -r '.data[0].id // empty' | grep . || die "no project visible; set LATITUDE_PROJECT"
+  echo "${LATITUDE_PROJECT:-proj_ZWr75ZQOvNA91}"  # repose-boyh, the lab project
 }
 
 server_json() { api_ok GET "/servers/$1"; }
