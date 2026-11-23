@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1120 entries.
+1121 entries.
 
 ## Scope
 
@@ -738,7 +738,7 @@ pointer, not a summary.
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20601
 - **I-734** The oversubscription ratio is counted against physical cores, not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15) — amended by I-784; L20670
 - **I-735** Hosts report physical cores, and the api records them (cpu-weight, 2026-10-15) — L20727
-- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; L20768
+- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; amended by I-1586; L20768
 - **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; amended by I-1168; L20827
 - **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20865
 - **I-746** The validity pass stops eating the boot deadline and blaming `--load-db` for it (cpu-weight, 2026-10-15) — L20911
@@ -1059,7 +1059,7 @@ pointer, not a summary.
 - **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — partly amended by I-1582; L36426
 - **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36531
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36650
-- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36691
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; partly amended by I-1586; L36691
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36800
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; L36912
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; L37069
@@ -1152,3 +1152,4 @@ pointer, not a summary.
 - **I-1578** On the Mac appliance, hostd takes each CPU offline and back online after a guest's hypervisor exits (`--cpu-reset auto`, on when the DMI product name starts "Apple Virtualization"): a guest that powers itself off leaves every appliance CPU its vCPUs last ran on burning a whole core in macOS, with the appliance's own kernel counting that CPU idle, and a PSCI CPU_OFF and CPU_ON of it is the only reset found short of another guest's vCPU running there (mac-idle, 2026-11-23) — L39334
 - **I-1574** The Mac appliance boots with `transparent_hugepage_shmem=advise`, so Cloud Hypervisor's memfd guest RAM is mapped in 2 MiB blocks: under Apple's nested virtualization a 4 KiB stage-2 fault is an exit to the appliance kernel costing 25 to 35 us, and a JavaScript agent starting takes hundreds of thousands of them. Amends I-1040 for the appliance; repose's x86 hosts keep `shmem_enabled` at `never` (mac-jit, 2026-11-23) — L39344
 - **I-1582** A billing-exempt account may own eight hosts, not one: `billing.ExemptHosts` is 8, and the Own hardware plan still sells one (exempt-hosts, 2026-11-23) — L39355
+- **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — L39364

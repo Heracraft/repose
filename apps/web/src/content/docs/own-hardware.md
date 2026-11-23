@@ -31,13 +31,13 @@ Of that share, repose keeps an eighth for itself, never less than 2 GB, and each
 | 16 GB | 1 `large`, or 2 `small`, or 3 `tiny` |
 | 24 GB | 1 `large` and 1 `small`, or 3 `small`, or 6 `tiny` |
 
-An `xl` fits on neither; it needs a Mac with 32 GB. The 24 GB row is measured, on an M4 Mac mini on 2026-11-22; the 16 GB row is the same rule worked out. `--memory` at `repose host add` changes the share, and the same rule applies to what you give it. `repose host ls` shows the share under MEMORY. A machine that does not fit is refused with exit code 8.
+An `xl` fits on neither; it needs a Mac with 32 GB. The 24 GB row is measured, on an M4 Mac mini on 2026-11-22; the 16 GB row is the same rule worked out. `--memory` at `repose host add` changes the share, and the same rule applies to what you give it. `repose host ls` shows the share under MEMORY. A machine that does not fit is refused with exit code 8, and the refusal names the host, the memory it has free and what the machine needs: `your host mac-mini has 5 GB of memory free for machines, and a large machine needs 8 GB`.
 
 ## What an x86 box needs
 
 - x86_64 with hardware virtualization and `/dev/kvm`. Bare metal, Intel or AMD. A virtual machine works only if its own host passes virtualization through, which on Proxmox or libvirt is one setting; most cheap VPSes do not.
 - Ubuntu 24.04, or Debian 12 or later, and room for your machines' disks: 40 GB free on the system disk, or a whole empty disk.
-- 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once.
+- 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once, each counting its size plus half a gigabyte. The number of cores does not limit how many machines run; memory and disk do.
 - Outbound UDP 51820 and TCP 443. No inbound port.
 
 ## Adding it

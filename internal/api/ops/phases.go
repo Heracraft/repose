@@ -1744,27 +1744,34 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project) (st
 		}
 		live = append(live, h)
 	}
-	switch len(live) {
-	case 0:
+	if len(live) == 0 {
 		return "you own no host yet; `repose host add` prints the step that adds one", detail
-	case 1:
-		h := live[0]
-		detail["host"], detail["host_state"] = h.Name, h.State
-		return "your host " + h.Name + " " + e.ownHostWhy(h, p.Class, false), detail
+	}
+	// The figures a ready host refused with (I-1586). Without them the
+	// sentence is I-1366's "has no room", still true.
+	rooms, err := scheduler.OwnedRooms(ctx, e.pool, p.UserID, p.HeldBytes(), p.VolumeBytes)
+	if err != nil {
+		e.log.Warn("own host room lookup", "event", "schedule_fail", "project_id", p.ID.String(), "err", err.Error())
 	}
 	detail["host"], detail["host_state"] = live[0].Name, live[0].State
+	if len(live) == 1 {
+		h := live[0]
+		return "your host " + h.Name + " " + e.ownHostWhy(h, p.Class, false, rooms), detail
+	}
 	why := make([]string, len(live))
 	for i, h := range live {
-		why[i] = h.Name + " " + e.ownHostWhy(h, p.Class, true)
+		why[i] = h.Name + " " + e.ownHostWhy(h, p.Class, true, rooms)
 	}
-	return "none of your hosts can take a " + p.Class + " machine: " + strings.Join(why, "; "), detail
+	return "none of your hosts can take a " + p.Class + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
 }
 
 // ownHostWhy is why one host of the account's own took no placement, as
 // the words after its name. short is the form in a list of several,
-// where the class is already said once and the consequence of a removal
-// is plain.
-func (e *Engine) ownHostWhy(h store.Host, class string, short bool) string {
+// where the class and its memory are already said once and the
+// consequence of a removal is plain. rooms is scheduler.OwnedRooms: a
+// ready host is refused by its memory or its disk, and the sentence
+// names which, with what it has and what the machine needs (I-1586).
+func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uuid.UUID]scheduler.Room) string {
 	switch h.State {
 	case "registering":
 		return "has not registered yet"
@@ -1783,10 +1790,49 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool) string {
 		}
 		return "is being removed, so nothing can be placed on it"
 	}
+	if r, ok := rooms[h.ID]; ok {
+		if why := roomWhy(r, class, short); why != "" {
+			return why
+		}
+	}
 	if short {
 		return "has no room"
 	}
 	return "has no room for a " + class + " machine"
+}
+
+// roomWhy is the figure that keeps a machine of class off a ready host
+// with room r, as the words after the host's name, or "" when neither
+// memory nor disk is short (a host that missed a heartbeat, or one at
+// its guest slots), which "has no room" still covers. Memory first: it
+// is what the user frees by stopping a machine. The memory is
+// placement's own figure, so a host that is "6 GB free" here took a
+// small and refuses a large.
+func roomWhy(r scheduler.Room, class string, short bool) string {
+	need := scheduler.ClassRAM(class)
+	switch {
+	case r.FreeBytes < need:
+		if short {
+			return "has " + gbText(r.FreeBytes) + " free"
+		}
+		return "has " + gbText(r.FreeBytes) + " of memory free for machines, and a " + class + " machine needs " + gbText(need) +
+			". A machine holds its memory while it runs, so stopping one frees room for it"
+	case r.PoolUnavailable:
+		return "cannot use its disk for machines"
+	case r.PoolFreeBytes < r.PoolNeedBytes:
+		if short {
+			return "has " + gbText(r.PoolFreeBytes) + " of disk free, " + gbText(r.PoolNeedBytes) + " needed"
+		}
+		return "has " + gbText(r.PoolFreeBytes) + " of disk free, and a new machine needs " + gbText(r.PoolNeedBytes) + " free"
+	}
+	return ""
+}
+
+// gbText is a size in the GB the docs and `repose host ls` use (GiB),
+// whole when it is whole and to one decimal otherwise: "8 GB", "5.5 GB".
+func gbText(b int64) string {
+	t := strconv.FormatFloat(float64(b)/(1<<30), 'f', 1, 64)
+	return strings.TrimSuffix(t, ".0") + " GB"
 }
 
 // quietFor is how long a host has been silent, in the shortest true

@@ -55,6 +55,13 @@ func (e *Engine) PlaceNew(ctx context.Context, tx db.Tx, p *store.Project) (*uui
 		return &pk.HostID, nil
 	}
 	if errors.Is(err, scheduler.ErrNoOwnHost) {
+		// A host of the account's own that is full but for a guest being
+		// stopped waits for it, as a fleet host does (I-408): every
+		// refusal on an owned host comes here since I-1586, the full
+		// ones included.
+		if ok, ferr := scheduler.Freeing(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now()); ferr == nil && ok {
+			return nil, nil
+		}
 		e.m.ScheduleTotal.WithLabelValues("no_own_host").Inc()
 		e.log.Warn("no host of the account's own has capacity", "event", "schedule_fail",
 			"project_id", p.ID.String(), "class", p.Class, "reason", "no_own_host")

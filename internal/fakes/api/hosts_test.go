@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/base64"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -256,7 +257,7 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "none of your hosts can take a small machine: e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
+	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 
@@ -267,5 +268,38 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 	r.json(t, &p)
 	if p.HostID != third {
 		t.Fatalf("placed on %q, want the online host %q", p.HostID, third)
+	}
+}
+
+// TestFakeOwnHostFullNamesTheFigure: as the api (I-1586), a host of the
+// account's own takes machines to its memory line, past any CPU ratio,
+// and the one past the line is refused with the host's name, what it has
+// and what the machine needs. The fake's Mac is 24 GiB: 21 for machines.
+func TestFakeOwnHostFullNamesTheFigure(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	mac := f.AddOwnedHost("mac-mini")
+	for i, class := range []string{"xl", "small"} { // 20 of 21 GiB
+		var p Project
+		r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": fmt.Sprintf("m%d", i), "class": class})
+		want(t, r, 201)
+		r.json(t, &p)
+		if p.HostID != mac {
+			t.Fatalf("%s placed on %q, want mac-mini", class, p.HostID)
+		}
+	}
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m2", "class": "tiny"})
+	wantErr(t, r, 503, "capacity")
+	if d := detailOf(t, r); d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "ready" {
+		t.Fatalf("detail %v", d)
+	}
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	r.json(t, &body)
+	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
+		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 }
