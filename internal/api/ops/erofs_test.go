@@ -311,3 +311,30 @@ func assertOpLog(t *testing.T, h *apitest.Harness, opID uuid.UUID, want ...strin
 	}
 	t.Fatalf("op log %q want %q", got, want)
 }
+
+// ENG-184 (DECISIONS I-1558): an erofs machine's apply_config waits past
+// hostd's own bound on an ApplyMenu, so the api never gives up on a menu
+// that hostd and guestd are still applying. It used the default 10
+// minutes: on the Mac `config add postgresql` failed `timeout` at 10 min
+// while hostd still waited (its 20 min) and apt was still installing.
+// A Nix machine's apply_config keeps its 10 minutes.
+func TestErofsApplyConfigOutlastsHostdsMenuBound(t *testing.T) {
+	h := erofsHarness(t)
+	u := h.NewUser("ines")
+	ubu := newErofsProject(t, h, u, "ubu")
+	nix := h.NewProject(u, "nixy", "small")
+	op := func(p uuid.UUID) *store.Op {
+		return &store.Op{ProjectID: &p, Kind: ops.KindBuild, Step: 1, Params: map[string]any{"phases": []any{ops.PhaseWake, ops.PhaseApplyConfig}}}
+	}
+	got := h.Engine.TimeoutForTest(h.Ctx, op(ubu.ID))
+	// hostd's vsockclient.MenuTimeout, restated: the api does not import
+	// hostd's packages.
+	const hostdMenuTimeout = 65 * time.Minute
+	if got <= hostdMenuTimeout {
+		t.Fatalf("erofs apply_config times out at %s, not past hostd's %s ApplyMenu bound", got, hostdMenuTimeout)
+	}
+	if n := h.Engine.TimeoutForTest(h.Ctx, op(nix.ID)); n != 10*time.Minute {
+		t.Fatalf("Nix apply_config times out at %s, want the 10 min it had", n)
+	}
+	t.Logf("apply_config: erofs %s, Nix %s", got, h.Engine.TimeoutForTest(h.Ctx, op(nix.ID)))
+}

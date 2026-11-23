@@ -185,6 +185,9 @@ func (m *Manager) applyMenu(ctx context.Context, commandID string, g *state.Gues
 	res, err := sess.ApplyMenu(ctx, &guestdv1.ApplyMenu{Menu: menu}, func(line string) { m.buildLog(commandID, line) })
 	if err != nil {
 		code, msg := CodeGuestUnresponsive, err.Error()
+		if errors.Is(err, context.DeadlineExceeded) {
+			msg = fmt.Sprintf("the menu did not finish within %d minutes", int(vsockclient.MenuTimeout.Minutes()))
+		}
 		if re, ok := vsockclient.IsRemote(err); ok {
 			code, msg = re.Code, re.Message
 			if code != CodeInvalidArgument {

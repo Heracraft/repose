@@ -157,6 +157,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`error: NAME failed: ...` or exit code 10 from `repose config add`.** An item didn't install, and the rest of the line is the machine's reason, `E: Unable to locate package` for a name Ubuntu doesn't have. The items before it stay installed. Check the name with `apt-cache search` on the machine, then `repose config add` the right one.
 
+**`the machine stopped answering while it applied the menu: nothing from it for 2 minutes`.** The machine itself stopped answering during a `repose config add` or `remove`; a slow install never ends this way. `repose start` restarts it, then run the command again.
+
 ## Agents
 
 **`Claude Code is not logged in on todo-app.`** Claude Code's login is never copied from your laptop ([Log in](/docs/agents#log-in)). With `--no-attach` nothing opened and nothing was typed: attach, log in there, then run the prompt again.

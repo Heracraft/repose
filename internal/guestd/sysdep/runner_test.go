@@ -155,3 +155,40 @@ func TestOnLineStreamsWhileTheCommandRuns(t *testing.T) {
 	}
 	t.Logf("first line %s after start, command took %s", firstAt.Sub(start), end.Sub(start))
 }
+
+// RunSpec.Background (DECISIONS I-1560): a root command runs through
+// systemd-run's scope, nice and ionice, and its output and exit code
+// come back as the command's own. Fakes of the three on PATH record
+// their arguments and exec the rest.
+func TestBackgroundRunsInALowWeightScope(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "log")
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("systemd-run", `echo "systemd-run $*" >> `+log+`; while [ "$1" != "--" ]; do shift; done; shift; exec "$@"`)
+	write("nice", `echo "nice $1 $2" >> `+log+`; shift 2; exec "$@"`)
+	write("ionice", `echo "ionice $1 $2" >> `+log+`; shift 2; exec "$@"`)
+	env := []string{"PATH=" + dir + ":/usr/bin:/bin"}
+	res, err := ExecRunner{}.Run(context.Background(), RunSpec{Argv: []string{"sh", "-c", "echo hi; exit 3"}, Env: env, Background: true})
+	if err != nil || res.ExitCode != 3 || strings.TrimSpace(string(res.Stdout)) != "hi" {
+		t.Fatalf("res %+v err %v", res, err)
+	}
+	b, _ := os.ReadFile(log)
+	got := string(b)
+	for _, want := range []string{"systemd-run --scope --quiet --collect --slice=repose_menu.slice -- ", "nice -n 10", "ionice -c2 -n7"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("wrapper log %q has no %q", got, want)
+		}
+	}
+	// Without Background nothing wraps it.
+	_ = os.Remove(log)
+	if res, err := (ExecRunner{}).Run(context.Background(), RunSpec{Argv: []string{"true"}, Env: env}); err != nil || res.ExitCode != 0 {
+		t.Fatalf("plain run: %+v %v", res, err)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatal("a command without Background went through the wrapper")
+	}
+}
