@@ -441,6 +441,29 @@ export async function ownedHost(body: {
 }
 
 /**
+ * Removes every host the shared account still owns, and fails when one
+ * stays. A test about one host starts from none: with eight allowed
+ * (I-1582) a host another file left behind turns the create's refusal
+ * into "none of your hosts can take ...", which names them all.
+ */
+export async function removeOwnedHosts(apiURL: string): Promise<void> {
+	const auth = { Authorization: 'Bearer playwright' };
+	const list = async () =>
+		(await (await fetch(`${apiURL}/hosts`, { headers: auth })).json()) as {
+			id: string;
+			name: string;
+			state: string;
+		}[];
+	for (const h of await list()) {
+		if (h.state === 'retired' || h.state === 'lost') continue;
+		await fetch(`${apiURL}/hosts/${h.id}`, { method: 'DELETE', headers: auth });
+	}
+	const left = (await list()).filter((h) => h.state !== 'retired' && h.state !== 'lost');
+	if (left.length > 0)
+		throw new Error(`removeOwnedHosts: still owned: ${left.map((h) => h.name).join(', ')}`);
+}
+
+/**
  * The root-filesystem figures a machine's Disk column reads (I-567).
  * Every machine the fake makes is at 1 GiB used, which draws the
  * narrowest figure that column ever shows; a test about whether the

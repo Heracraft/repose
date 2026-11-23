@@ -10,6 +10,7 @@ import {
 	destroyProject,
 	ownedHost,
 	pruneProjects,
+	removeOwnedHosts,
 	resetBilling,
 	setBilling
 } from './helpers';
@@ -220,7 +221,7 @@ test('an account with no plan is refused in place, with a link to the plan', asy
 // nothing is refused, and Create makes the machine, so the page and the
 // next action agree (ENG-34, I-1396). Before this the page said creating
 // was refused, in red, and the dashboard created anyway.
-test('a billing-exempt account past every plan\'s disk is told nothing is refused, and Create makes the machine', async ({
+test("a billing-exempt account past every plan's disk is told nothing is refused, and Create makes the machine", async ({
 	page
 }) => {
 	await setBilling({ mode: 'exempt', disk_held_gb: 612.3 });
@@ -296,7 +297,10 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	// The default plan: one host, and memory on repose's servers too, so
 	// repose's servers is a way out. hosts.spec.ts sets a limit of its
 	// own, which the fake reads as the Own hardware plan, and the files
-	// run in name order whatever the command line says.
+	// run in name order whatever the command line says. Those files
+	// leave hosts behind, so the account starts with none: one waiting
+	// host is what this test is about.
+	await removeOwnedHosts(api);
 	await ownedHost({ limit: -1 });
 	await ownedHost({ name: 'mac-mini' });
 	await ownedHost({ state_host: 'mac-mini', state: 'registering' });
@@ -328,14 +332,9 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		litter.push(made!.id);
 		expect(made!.placement).toBe('hosted');
 	} finally {
-		// The host would refuse every other file's creates.
-		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
-		for (const h of (await res.json()) as { id: string }[]) {
-			await fetch(`${api}/hosts/${h.id}`, {
-				method: 'DELETE',
-				headers: { Authorization: 'Bearer playwright' }
-			});
-		}
+		// The host would refuse every other file's creates. A throw here
+		// would hide the failure that sent us here.
+		await removeOwnedHosts(api).catch(() => {});
 	}
 });
 
