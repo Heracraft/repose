@@ -402,19 +402,19 @@
 			<ol class="sw-mob-beats">
 				<li>
 					<div class="sw-mb-head">
-						<h3>Pick where each sandbox runs</h3>
+						<h2>Pick where each sandbox runs</h2>
 					</div>
 					{@render hardwareVisual()}
 				</li>
 				<li>
 					<div class="sw-mb-head">
-						<h3>Mix subscriptions and API keys</h3>
+						<h2>Mix subscriptions and API keys</h2>
 					</div>
 					{@render agentsVisual()}
 				</li>
 				<li>
 					<div class="sw-mb-head">
-						<h3>Use your browser and editor</h3>
+						<h2>Use your browser and editor</h2>
 					</div>
 					{@render toolsVisual()}
 				</li>
@@ -586,7 +586,7 @@
 		display: flex;
 		flex-direction: column;
 	}
-	.sw-mb-head h3 {
+	.sw-mb-head h2 {
 		margin: 0;
 		font-family: var(--hk-font-display);
 		font-size: 1.25rem;
