@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1124 entries.
+1125 entries.
 
 ## Scope
 
@@ -1065,7 +1065,7 @@ pointer, not a summary.
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; L37069
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37234
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37297
-- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — L37348
+- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — amended by I-1584; L37348
 - **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37418
 - **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37476
 - **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37547
@@ -1152,7 +1152,8 @@ pointer, not a summary.
 - **I-1578** On the Mac appliance, hostd takes each CPU offline and back online after a guest's hypervisor exits (`--cpu-reset auto`, on when the DMI product name starts "Apple Virtualization"): a guest that powers itself off leaves every appliance CPU its vCPUs last ran on burning a whole core in macOS, with the appliance's own kernel counting that CPU idle, and a PSCI CPU_OFF and CPU_ON of it is the only reset found short of another guest's vCPU running there (mac-idle, 2026-11-23) — L39334
 - **I-1574** The Mac appliance boots with `transparent_hugepage_shmem=advise`, so Cloud Hypervisor's memfd guest RAM is mapped in 2 MiB blocks: under Apple's nested virtualization a 4 KiB stage-2 fault is an exit to the appliance kernel costing 25 to 35 us, and a JavaScript agent starting takes hundreds of thousands of them. Amends I-1040 for the appliance; repose's x86 hosts keep `shmem_enabled` at `never` (mac-jit, 2026-11-23) — L39344
 - **I-1582** A billing-exempt account may own eight hosts, not one: `billing.ExemptHosts` is 8, and the Own hardware plan still sells one (exempt-hosts, 2026-11-23) — L39355
-- **I-1588** The x86 installer warns about CVE-2026-99999 only for a kernel it cannot show carries the fix, says it at the end of its output with the remedy for Ubuntu 24.04 and Debian, and installs anyway; a kernel carries the fix when it is 6.18.57 or a later 6.18, or when its package changelog names the CVE or the fix's subject (x86-installer, 2026-11-23) — L39364
-- **I-1590** The x86 installer takes repose off the machine with `--uninstall`, refused while the host is on the account unless `--force`; `repose host rm` of an x86 host prints that line, and `repose host rm --local` on Linux prints it instead of "There is no appliance on this Mac." (x86-installer, 2026-11-23) — L39372
-- **I-1592** The x86 install line passes the join argument through a file, `printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`, and the installer deletes that file once it has copied the argument to `/run/repose/launcher/join` (x86-installer, 2026-11-23) — L39380
-- **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — L39385
+- **I-1584** A create may name one host of the account's own: `POST /projects` takes `host` (id or name), the scheduler considers that host alone and refuses as that host, `repose run --host NAME` sends it, the create line names the host, and the dashboard's Runs on lists every host (host-pin, 2026-11-23) — L39364
+- **I-1588** The x86 installer warns about CVE-2026-99999 only for a kernel it cannot show carries the fix, says it at the end of its output with the remedy for Ubuntu 24.04 and Debian, and installs anyway; a kernel carries the fix when it is 6.18.57 or a later 6.18, or when its package changelog names the CVE or the fix's subject (x86-installer, 2026-11-23) — L39374
+- **I-1590** The x86 installer takes repose off the machine with `--uninstall`, refused while the host is on the account unless `--force`; `repose host rm` of an x86 host prints that line, and `repose host rm --local` on Linux prints it instead of "There is no appliance on this Mac." (x86-installer, 2026-11-23) — L39382
+- **I-1592** The x86 install line passes the join argument through a file, `printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`, and the installer deletes that file once it has copied the argument to `/run/repose/launcher/join` (x86-installer, 2026-11-23) — L39390
+- **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — L39395

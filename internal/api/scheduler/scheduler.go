@@ -178,6 +178,28 @@ type Target struct {
 	// arches (x86_64, aarch64) the newest erofs bases have an image for.
 	Runtime string
 	Arches  []string
+	// Host, when set, is the one host of the account's own the project
+	// asked for (POST /projects `host`, DECISIONS I-1584): no other host
+	// is chosen, and when it cannot take the project the error is
+	// ErrPinnedHost. The caller has already checked that the account owns
+	// it; ownedSQL still holds, so a host of another account's is never
+	// chosen whatever this says. uuid.Nil is no pin.
+	Host uuid.UUID
+}
+
+// pinSQL is the pin term for hosts h, with $12 the pinned host or null
+// (DECISIONS I-1584).
+const pinSQL = `($12::uuid is null or h.id = $12::uuid)`
+
+// args is the parameters every placement query reads, $1 to $12.
+func (t Target) args(now time.Time, class string, holdBytes, volumeBytes int64) []any {
+	var pin *uuid.UUID
+	if t.Host != uuid.Nil {
+		h := t.Host
+		pin = &h
+	}
+	a := []any{now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class), t.Account, t.Hosted, t.Fleet}
+	return append(append(a, t.runtimeArgs()...), pin)
 }
 
 // runtimeSQL is the runtime term for hosts h, with $10 the project's
@@ -255,6 +277,14 @@ var ErrNoCPUCapacity = fmt.Errorf("%w: committed guest vCPUs per physical core",
 // at all to someone whose Mac is asleep.
 var ErrNoOwnHost = fmt.Errorf("%w: no host of this account's own", ErrNoCapacity)
 
+// ErrPinnedHost is ErrNoOwnHost when the project named its host
+// (Target.Host, DECISIONS I-1584) and that host cannot take it: it is
+// not ready, not answering, being removed, or full in memory, disk or
+// cores. It wraps ErrNoOwnHost, so the refusal names that host and why,
+// and nothing falls back to another host the account owns: a user who
+// asked for box A and got box B has been told nothing true.
+var ErrPinnedHost = fmt.Errorf("%w: the host the project named", ErrNoOwnHost)
+
 // PickHost chooses a host inside tx and takes the placement lock; the
 // caller must record the placement (projects.host_id) in the same
 // transaction so the next placement sees it. A host whose thin pool is
@@ -275,9 +305,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes,
 	if _, err := tx.Exec(ctx, "select pg_advisory_xact_lock($1)", LockPlacement); err != nil {
 		return Pick{}, err
 	}
-	need := ClassRAM(class)
-	vcpuMilli := ClassMilliVCPU(class)
-	args := append([]any{now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpuMilli, t.Account, t.Hosted, t.Fleet}, t.runtimeArgs()...)
+	args := t.args(now, class, holdBytes, volumeBytes)
 	var p Pick
 	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), ownedSQL), args...).Scan(&p.HostID, &p.Name, &p.FreeBytes)
 	if err != nil {
@@ -288,6 +316,12 @@ func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes,
 			var ignored Pick
 			if err := tx.QueryRow(ctx, pickSQLWith(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), ownedSQL, "($10::text is not null and $11::text[] is not null)"), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
 				return Pick{}, ErrNoRuntimeHost
+			}
+			// A named host that cannot take it is refused as that host,
+			// whichever term refused (I-1584): the user asked for one
+			// box, and the sentence is about that box.
+			if t.Host != uuid.Nil {
+				return Pick{}, ErrPinnedHost
 			}
 			// A placement that only the account's own hardware may take
 			// is refused by that hardware, whichever term refused it, so
@@ -345,6 +379,7 @@ func pickSQLWith(cpuRoom, owned, runtime string) string {
 		   and ` + cpuRoom + `
 		   and ` + owned + `
 		   and ` + runtime + `
+		   and ` + pinSQL + `
 		   and least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) >= $3
 		 order by free desc, h.name
 		 limit 1`
@@ -386,8 +421,9 @@ func Freeing(ctx context.Context, q interface {
 		   and `+cpuRoomSQL("(coalesce(r.vcpu_milli, 0) - g.stopping_vcpu_milli)", "$6")+`
 		   and `+ownedSQL+`
 		   and `+runtimeSQL+`
+		   and `+pinSQL+`
 		   and least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
-		append([]any{now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassMilliVCPU(class), t.Account, t.Hosted, t.Fleet}, t.runtimeArgs()...)...).Scan(&ok)
+		t.args(now, class, holdBytes, volumeBytes)...).Scan(&ok)
 	return ok, err
 }
 

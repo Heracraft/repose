@@ -225,6 +225,81 @@ func TestCreateWithSeveralOwnHosts(t *testing.T) {
 	}
 }
 
+// TestCreateOnANamedHost: `host` on POST /projects puts the machine on
+// that host of the account's own or refuses it as that host, never on
+// another (DECISIONS I-1584). Without it the scheduler picks, as before.
+func TestCreateOnANamedHost(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-owner", "owner")
+	uid := e.exempt(t, "sub-owner")
+	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "e2e-x86-b"}); r.status != 201 {
+		t.Fatalf("add e2e-x86-b: %d %s", r.status, r.raw)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set state = 'unreachable', last_heartbeat_at = now() - interval '14 minutes' where owner_account_id = $1 and name = 'e2e-x86-b'", uid); err != nil {
+		t.Fatal(err)
+	}
+	// The env's online host becomes the account's second, as e2e-x86-a.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1, name = 'e2e-x86-a' where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "on-b", "class": "small", "host": "e2e-x86-b"})
+	d := detailOf(t, r)
+	msg, _ := r.body["error"].(map[string]any)["message"].(string)
+	if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "e2e-x86-b" || d["host_state"] != "unreachable" || msg != "your host e2e-x86-b has not answered for 14m" {
+		t.Fatalf("offline named host: %d %s, want 503 naming e2e-x86-b", r.status, r.raw)
+	}
+	var n int
+	if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects where name = 'on-b'").Scan(&n); err != nil || n != 0 {
+		t.Fatalf("refused create left %d rows (%v)", n, err)
+	}
+
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "on-a", "class": "small", "host": "e2e-x86-a"})
+	if r.status != 201 || r.body["host_id"] != e.h.HostID.String() || r.body["host_name"] != "e2e-x86-a" {
+		t.Fatalf("named online host: %d %s, want 201 on e2e-x86-a", r.status, r.raw)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "by-id", "class": "small", "host": e.h.HostID.String()})
+	if r.status != 201 || r.body["host_id"] != e.h.HostID.String() {
+		t.Fatalf("host by id: %d %s, want 201 on e2e-x86-a", r.status, r.raw)
+	}
+
+	// Full: the named host is refused as that host, with its figure
+	// (I-1586).
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set free_mem_bytes = 1 where id = $1", e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "full", "class": "small", "host": "e2e-x86-a"})
+	msg, _ = r.body["error"].(map[string]any)["message"].(string)
+	if r.status != 503 || detailOf(t, r)["host"] != "e2e-x86-a" || !strings.HasPrefix(msg, "your host e2e-x86-a has 0 GB of memory free for machines, and a small machine needs 4 GB") {
+		t.Fatalf("full named host: %d %s, want 503 naming e2e-x86-a", r.status, r.raw)
+	}
+
+	for _, c := range []struct {
+		why  string
+		body map[string]any
+	}{
+		{"a name the account has no host under", map[string]any{"name": "x1", "class": "small", "host": "e2e-x86-z"}},
+		{"a host with placement hosted", map[string]any{"name": "x2", "class": "small", "host": "e2e-x86-a", "placement": "hosted"}},
+	} {
+		r = e.do(t, tok, "POST", "/projects", c.body)
+		if r.status != 400 || detailOf(t, r)["reason"] != "host" {
+			t.Fatalf("%s: %d %s, want 400 invalid host", c.why, r.status, r.raw)
+		}
+	}
+
+	// Another account's host, by id or by its name, is no host of this
+	// account's: the same 400, which says nothing about the host.
+	stok := e.signIn(t, "sub-stranger", "stranger")
+	e.exempt(t, "sub-stranger")
+	for _, h := range []string{e.h.HostID.String(), "e2e-x86-a"} {
+		r = e.do(t, stok, "POST", "/projects", map[string]any{"name": "theirs", "class": "small", "host": h})
+		if r.status != 400 || detailOf(t, r)["reason"] != "host" {
+			t.Fatalf("stranger naming %s: %d %s, want 400 invalid host", h, r.status, r.raw)
+		}
+	}
+}
+
 // TestHostNames: the api names a host the caller did not name, a bad
 // name is refused, and a name is free per account rather than globally
 // (migration 0048) -- two users may both call their machine mac-mini and

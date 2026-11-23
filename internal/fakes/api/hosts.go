@@ -476,9 +476,24 @@ func (f *Fake) ownedHostName(hostID string) string {
 // the api's: `reason` no_own_host, `host` and `host_state` (the oldest
 // host's), and `hosted_allowed`, whether the plan sells memory on
 // repose's servers.
-func (f *Fake) placeNew(u *userRec, class, placement string) (string, *apiError) {
+//
+// pin is the host the create named (`host`, I-1584): that host when it
+// is online, else a refusal about it alone, never another host.
+func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) (string, *apiError) {
 	if placement == "hosted" {
 		return "", nil
+	}
+	// A plan that sells a host sells no fleet memory (I-1364), so `hosted`
+	// is refused on it. De Morgan of !(set && above zero); the nil check
+	// still short-circuits the deref.
+	hostedAllowed := f.hostLimit == nil || *f.hostLimit <= 0
+	if pin != nil {
+		// The pinned host alone, under the same memory term (I-1586).
+		if pin.State == "ready" && f.ownedHostFree(pin) >= int64(classGB[class])<<30 {
+			return pin.ID, nil
+		}
+		return "", errf("capacity", "your host %s %s", pin.Name, f.ownHostWhy(pin, class, false)).withDetail(map[string]any{
+			"reason": "no_own_host", "host": pin.Name, "host_state": pin.State, "hosted_allowed": hostedAllowed})
 	}
 	var own []*ownedHostRec
 	best, bestFree := "", int64(-1)
@@ -507,12 +522,28 @@ func (f *Fake) placeNew(u *userRec, class, placement string) (string, *apiError)
 		}
 		msg = "none of your hosts can take a " + class + " machine (" + gbText(need) + "): " + strings.Join(why, "; ")
 	}
-	// A plan that sells a host sells no fleet memory (I-1364), so `hosted`
-	// is refused on it. De Morgan of !(set && above zero); the nil check
-	// still short-circuits the deref.
-	hostedAllowed := f.hostLimit == nil || *f.hostLimit <= 0
 	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
 		"reason": "no_own_host", "host": own[0].Name, "host_state": own[0].State, "hosted_allowed": hostedAllowed})
+}
+
+// hostPin is the api's createHostPin (I-1584): POST /projects' `host`,
+// one live host the account owns by id or name, refused as `invalid`
+// with reason `host` beside `hosted` or when the account has no such
+// host. nil is no pin.
+func (f *Fake) hostPin(u *userRec, host *string, placement string) (*ownedHostRec, *apiError) {
+	if host == nil || strings.TrimSpace(*host) == "" {
+		return nil, nil
+	}
+	want := strings.TrimSpace(*host)
+	if placement == "hosted" {
+		return nil, invalid("host names one of your hosts and placement hosted is repose's servers; send one of them").withDetail(map[string]any{"reason": "host"})
+	}
+	for _, h := range f.ownedHosts {
+		if h.owner == u.ID && (h.ID == want || h.Name == want) && h.State != "retired" && h.State != "lost" {
+			return h, nil
+		}
+	}
+	return nil, invalid("you have no host called %s", want).withDetail(map[string]any{"reason": "host", "host": want})
 }
 
 // ownHostWhy is the api's ops.Engine.ownHostWhy: why one host took no

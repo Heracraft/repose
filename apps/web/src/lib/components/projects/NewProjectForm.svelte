@@ -25,6 +25,12 @@
   machine anywhere. The api answers placement before it writes anything,
   so a host that is waiting or offline refuses in its own words and the
   form keeps what was typed.
+
+  An account with several hosts (I-1584) gets every one of them, each
+  with its state, after "Any of your hosts", which is the default and
+  sends what `repose run` without --host sends: the api picks the host
+  with the most room. Naming one sends its id as `host`, and the api
+  puts the machine there or refuses as that host.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -69,11 +75,12 @@
 	let repo = $state('');
 	/** 0 keeps the machine; anything else makes it temporary. */
 	let life = $state(0);
-	/** The host the account owns, if any: Runs on shows only then. */
-	let host = $state<OwnedHost | undefined>(undefined);
+	/** The hosts the account owns: Runs on shows only when there is one. */
+	let hosts = $state<OwnedHost[]>([]);
 	/** `own` is the api's default, so a user who leaves it alone gets what
-	 * `repose run` gives them. */
-	let placement = $state<Placement>('own');
+	 * `repose run` gives them; `hosted` is repose's servers, and a host's
+	 * id names that host (I-1584). */
+	let runsOn = $state<string>('own');
 	let saving = $state(false);
 	let error = $state<string | undefined>(undefined);
 
@@ -81,12 +88,22 @@
 		// A side read: an account that owns no host gets the form it
 		// always had, and so does one whose /hosts did not answer.
 		try {
-			const hosts = await listHosts({ passive: true });
-			host = hosts.find((h) => h.state !== 'retired' && h.state !== 'lost');
+			const all = await listHosts({ passive: true });
+			hosts = all.filter((h) => h.state !== 'retired' && h.state !== 'lost');
 		} catch {
-			host = undefined;
+			hosts = [];
 		}
 	});
+	/** Runs on's value as the create's fields: `own`, `hosted`, or a
+	 * host's id sent as `host`. */
+	function placementBody(v: string): { placement: Placement; host?: string } {
+		if (v === 'own' || v === 'hosted') return { placement: v };
+		return { placement: 'own', host: v };
+	}
+	/** A host as Runs on names it: its name, and its state unless online. */
+	function hostLabel(h: OwnedHost): string {
+		return h.state === 'ready' ? h.name : `${h.name} · ${hostStateWord(h.state)}`;
+	}
 	/** A plan or capacity refusal: the api's sentence plus the plan's page. */
 	let billingRefusal = $state(false);
 
@@ -111,7 +128,7 @@
 					: undefined),
 				...(life === 0 ? undefined : { expires_in_s: life }),
 				...(zone ? { tz: zone } : undefined),
-				...(host ? { placement } : undefined)
+				...(hosts.length === 0 ? undefined : placementBody(runsOn))
 			});
 			onsaved(p);
 		} catch (err) {
@@ -162,13 +179,18 @@
 					{/each}
 				</select>
 			</div>
-			{#if host}
+			{#if hosts.length > 0}
 				<div class="npfield">
 					<label for="np-host" class="hk-field-label">Runs on</label>
-					<select id="np-host" class="hk-select" bind:value={placement}>
-						<option value="own"
-							>{host.name}{host.state === 'ready' ? '' : ` · ${hostStateWord(host.state)}`}</option
-						>
+					<select id="np-host" class="hk-select" bind:value={runsOn}>
+						{#if hosts.length === 1}
+							<option value="own">{hostLabel(hosts[0])}</option>
+						{:else}
+							<option value="own">Any of your hosts</option>
+							{#each hosts as h (h.id)}
+								<option value={h.id}>{hostLabel(h)}</option>
+							{/each}
+						{/if}
 						<option value="hosted">repose's servers</option>
 					</select>
 				</div>

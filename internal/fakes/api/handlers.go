@@ -501,6 +501,8 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		Multiplexer *string `json:"multiplexer"`
 		// Placement is own (the default) or hosted (I-1366).
 		Placement *string `json:"placement"`
+		// Host names one host the account owns, by id or name (I-1584).
+		Host *string `json:"host"`
 		// GuestRuntime is nix or erofs (I-1462).
 		GuestRuntime *string `json:"guest_runtime"`
 	}
@@ -555,7 +557,11 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	// host the account owns takes an `own` project when it is online and
 	// refuses it in the api's words when it is not, so a refused create
 	// strands nothing.
-	ownHostID, e := f.placeNew(u, body.Class, placement)
+	pin, e := f.hostPin(u, body.Host, placement)
+	if e != nil {
+		return e
+	}
+	ownHostID, e := f.placeNew(u, body.Class, placement, pin)
 	if e != nil {
 		return e
 	}

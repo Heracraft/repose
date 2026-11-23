@@ -302,6 +302,9 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		Multiplexer *string `json:"multiplexer"`
 		// Placement is own (the default) or hosted (DECISIONS I-1366).
 		Placement *string `json:"placement"`
+		// Host names one host the account owns, by id or by name
+		// (DECISIONS I-1584): that host or a refusal, never another.
+		Host *string `json:"host"`
 		// GuestRuntime is nix or erofs (DECISIONS I-1462); absent is the
 		// environment's default.
 		GuestRuntime *string `json:"guest_runtime"`
@@ -319,6 +322,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 			return withDetail(errf("invalid", "placement must be own or hosted"), map[string]any{"reason": "placement"})
 		}
 		placement = *body.Placement
+	}
+	pin, err := s.createHostPin(ctx, u, body.Host, placement)
+	if err != nil {
+		return err
 	}
 	mux := multiplexer.Tmux
 	if body.Multiplexer != nil {
@@ -416,8 +423,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// project in `error` per attempt. The pick is recorded on the
 		// row in this transaction, which is PickHost's contract.
 		held := billing.NewProjectHeldBytes
-		hostID, err := s.d.Engine.PlaceNew(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
-			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held, GuestRuntime: runtime})
+		hostID, err := s.d.Engine.PlaceNewOn(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
+			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held, GuestRuntime: runtime}, pin)
 		if err != nil {
 			return err
 		}
@@ -472,6 +479,45 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	j["op_id"] = opID
 	writeJSON(w, http.StatusCreated, j)
 	return nil
+}
+
+// createHostPin resolves POST /projects' `host` (DECISIONS I-1584): one
+// host the account owns, by its id or by the name the account gave it,
+// that is not retired or lost. Absent or empty is no pin (uuid.Nil),
+// which is placement as it was. A host is the account's own hardware, so
+// it goes with `own` only; with `hosted` it is a contradiction and is
+// refused rather than one of the two being ignored. A name the account
+// has no live host under is refused before anything is written, in the
+// words the CLI used to print for itself.
+func (s *Server) createHostPin(ctx context.Context, u *store.User, host *string, placement string) (uuid.UUID, error) {
+	if host == nil || strings.TrimSpace(*host) == "" {
+		return uuid.Nil, nil
+	}
+	want := strings.TrimSpace(*host)
+	if placement == store.PlacementHosted {
+		return uuid.Nil, withDetail(errf("invalid", "host names one of your hosts and placement hosted is repose's servers; send one of them"), map[string]any{"reason": "host"})
+	}
+	var h *store.Host
+	if id, perr := uuid.Parse(want); perr == nil {
+		got, err := store.GetHost(ctx, s.d.Pool, id)
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return uuid.Nil, err
+		}
+		if got != nil && got.OwnerAccountID != nil && *got.OwnerAccountID == u.ID {
+			h = got
+		}
+	}
+	if h == nil {
+		got, err := store.GetAccountHostByName(ctx, s.d.Pool, u.ID, want)
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return uuid.Nil, err
+		}
+		h = got
+	}
+	if h == nil || h.State == "retired" || h.State == "lost" {
+		return uuid.Nil, withDetail(errf("invalid", "you have no host called %s", want), map[string]any{"reason": "host", "host": want})
+	}
+	return h.ID, nil
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) error {

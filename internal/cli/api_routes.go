@@ -94,6 +94,10 @@ type CreateProjectRequest struct {
 	// DECISIONS I-1390): `own` for a host of the account's, `hosted` for
 	// repose's servers; empty leaves the api's default, own.
 	Placement string `json:"placement,omitempty"`
+	// Host is the one host of the account's own the machine is made on
+	// (repose run --host NAME, DECISIONS I-1584): that host or a refusal
+	// that names it; empty lets the api pick among them.
+	Host string `json:"host,omitempty"`
 }
 
 func (c *Client) CreateProject(ctx context.Context, req CreateProjectRequest) (*Project, error) {

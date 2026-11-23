@@ -710,6 +710,72 @@ func TestFreeingRespectsOwnership(t *testing.T) {
 	}
 }
 
+// TestPinnedHost: a project that names one of its account's hosts goes
+// there or is refused as that host, never placed on another (DECISIONS
+// I-1584). The x86 pass of 2026-11-23 measured the defect: `--host a`
+// landed on b half the time, and `--host <offline b>` landed on a.
+func TestPinnedHost(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	// b has more free memory, so "most free wins" picks b without a pin.
+	a := addHost(t, pool, host{"box-a", "ready", false, 64 << 30, 30 << 30, 1 << 40, now})
+	b := addHost(t, pool, host{"box-b", "ready", false, 64 << 30, 50 << 30, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+	stranger := addAccount(t, pool, "stranger")
+	own(t, pool, a, owner)
+	own(t, pool, b, owner)
+
+	t.Run("no pin is the scheduler's pick", func(t *testing.T) {
+		if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true}, "large", 1<<30, 40<<30); err != nil || p.Name != "box-b" {
+			t.Fatalf("placed on %+v %v, want box-b", p, err)
+		}
+	})
+	t.Run("a pin wins over most free", func(t *testing.T) {
+		if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true, Host: a}, "large", 1<<30, 40<<30); err != nil || p.Name != "box-a" {
+			t.Fatalf("placed on %+v %v, want box-a", p, err)
+		}
+	})
+	t.Run("a full pinned host is refused as that host", func(t *testing.T) {
+		// xl needs 16 GiB; a has 30 free: fill it to 8.
+		if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", a, int64(8<<30)); err != nil {
+			t.Fatal(err)
+		}
+		if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true, Host: a}, "xl", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrPinnedHost) {
+			t.Fatalf("placed on %+v %v, want ErrPinnedHost", p, err)
+		}
+	})
+	t.Run("an offline pinned host is refused, not swapped for the other", func(t *testing.T) {
+		if _, err := pool.Exec(ctx, "update hosts set state = 'unreachable' where id = $1", b); err != nil {
+			t.Fatal(err)
+		}
+		p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true, Host: b}, "small", 1<<30, 40<<30)
+		if !errors.Is(err, scheduler.ErrPinnedHost) || !errors.Is(err, scheduler.ErrNoOwnHost) || !errors.Is(err, scheduler.ErrNoCapacity) {
+			t.Fatalf("placed on %+v %v, want ErrPinnedHost wrapping ErrNoOwnHost", p, err)
+		}
+	})
+	t.Run("a pin on another account's host takes nothing", func(t *testing.T) {
+		// The api never sends one; ownership still holds if it did.
+		if p, err := pickFor(t, pool, scheduler.Target{Account: stranger, Fleet: true, Host: a}, "small", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrPinnedHost) {
+			t.Fatalf("stranger placed on %+v %v, want ErrPinnedHost", p, err)
+		}
+	})
+	t.Run("freeing asks about the pinned host only", func(t *testing.T) {
+		// A guest stopping on a would free room there and not on b.
+		if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, 'p', 'p', 'xl', 'stopping', $3, 1)`,
+			uuid.Must(uuid.NewV7()), owner, a); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := scheduler.Freeing(ctx, pool, scheduler.Target{Account: owner, Fleet: true, Host: a}, "xl", 1<<30, 40<<30, now); err != nil || !ok {
+			t.Fatalf("freeing on a %v %v, want true", ok, err)
+		}
+		if ok, err := scheduler.Freeing(ctx, pool, scheduler.Target{Account: owner, Fleet: true, Host: b}, "xl", 1<<30, 40<<30, now); err != nil || ok {
+			t.Fatalf("freeing on offline b %v %v, want false", ok, err)
+		}
+	})
+}
+
 // TestOwnedHostIsBoundByMemoryNotCores is the x86 pass's F3 (DECISIONS
 // I-1586): a Latitude m4-metal-small, 6 cores and 61.9 GiB, held 9 vCPU
 // of machines (36 GiB) because the commit ratio counted its cores, where
