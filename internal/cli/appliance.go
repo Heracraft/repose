@@ -68,7 +68,7 @@ import (
 // every machine starts fresh after one.
 
 const (
-	applianceVersion  = "2026.11.22.2"
+	applianceVersion  = "2026.11.22.3"
 	applianceURL      = "https://github.com/Heracraft/repose/releases/download/appliance-" + applianceVersion + "/repose-appliance-aarch64.raw.zst"
 	vfkitVersion      = "0.6.4"
 	vfkitURL          = "https://github.com/crc-org/vfkit/releases/download/v" + vfkitVersion + "/vfkit"
