@@ -621,4 +621,9 @@ the image cache volume made the same way on the machine's pool, the
 uplink the default route's interface, `host_input` and
 `host_forward` set to `accept` because the machine's own traffic is its
 owner's, no `repose-mac-*` units and no park. The join argument is
-written to `/run/repose/launcher/join` for `repose-launcher-join`.
+written to `/run/repose/launcher/join` for `repose-launcher-join`, and a
+`--join-file` it came from is deleted (I-1592). `--uninstall` removes
+all of it again, the pool's volume group and physical volume label
+included, and is refused while hostd's journal does not show the api's
+`host is retired` or `host is lost` for a registered host, unless
+`--force` (I-1590).

@@ -297,7 +297,7 @@ func apiErrorExit(apiErr *APIError, stderr io.Writer) int {
 			say("%s", noRuntimeHost)
 			return ExitCapacity
 		}
-		say("repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.")
+		say("%s", capacityRefusal(apiErr))
 		return ExitCapacity
 	case "waitlisted":
 		// A first project while the fleet is near full (DECISIONS

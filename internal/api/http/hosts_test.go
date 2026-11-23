@@ -2,11 +2,13 @@ package httpapi_test
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	httpapi "github.com/heracraft/repose/internal/api/http"
+	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/billing"
 )
@@ -208,7 +210,7 @@ func TestCreateWithSeveralOwnHosts(t *testing.T) {
 		t.Fatalf("both hosts down: %d %s, want 503 no_own_host naming e2e-x86-1 first", r.status, r.raw)
 	}
 	msg, _ := r.body["error"].(map[string]any)["message"].(string)
-	if want := "none of your hosts can take a small machine: e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; msg != want {
+	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; msg != want {
 		t.Fatalf("message %q, want %q", msg, want)
 	}
 
@@ -262,13 +264,14 @@ func TestCreateOnANamedHost(t *testing.T) {
 		t.Fatalf("host by id: %d %s, want 201 on e2e-x86-a", r.status, r.raw)
 	}
 
-	// Full: the named host is refused as that host, in memory terms.
+	// Full: the named host is refused as that host, with its figure
+	// (I-1586).
 	if _, err := e.h.Pool.Exec(ctx, "update hosts set free_mem_bytes = 1 where id = $1", e.h.HostID); err != nil {
 		t.Fatal(err)
 	}
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "full", "class": "small", "host": "e2e-x86-a"})
 	msg, _ = r.body["error"].(map[string]any)["message"].(string)
-	if r.status != 503 || detailOf(t, r)["host"] != "e2e-x86-a" || msg != "your host e2e-x86-a has no room for a small machine" {
+	if r.status != 503 || detailOf(t, r)["host"] != "e2e-x86-a" || !strings.HasPrefix(msg, "your host e2e-x86-a has 0 GB of memory free for machines, and a small machine needs 4 GB") {
 		t.Fatalf("full named host: %d %s, want 503 naming e2e-x86-a", r.status, r.raw)
 	}
 
@@ -808,5 +811,96 @@ func TestHostArchNeverReturnsStorePath(t *testing.T) {
 	row = list.list[0].(map[string]any)
 	if row["arch"] != "x86_64" {
 		t.Fatalf("tuple nixos_system arch = %v, want x86_64", row["arch"])
+	}
+}
+
+// TestCreateOnAFullOwnHostNamesTheFigure is the x86 pass's F3 refusal
+// (DECISIONS I-1586): a host of the account's own that is full answers
+// with its name, the memory it has and the memory the machine needs, and
+// not with "no host with capacity", which the CLI turned into "repose has
+// no room" about servers the customer does not use.
+func TestCreateOnAFullOwnHostNamesTheFigure(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-owner", "owner")
+	uid := e.exempt(t, "sub-owner")
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	var mem int64
+	if err := e.h.Pool.QueryRow(ctx, "select name, mem_bytes from hosts where id = $1", e.h.HostID).Scan(&name, &mem); err != nil {
+		t.Fatal(err)
+	}
+	// Running xl machines until less than a large's 8 GiB is left.
+	placeable := mem - scheduler.HostReserve(mem)
+	for i := 0; placeable >= 8<<30; i++ {
+		if _, err := e.h.Pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes)
+			values ($1, $2, $3, $3, 'xl', 'running', $4, 1)`, store.NewID(), uid, fmt.Sprintf("big-%d", i), e.h.HostID); err != nil {
+			t.Fatal(err)
+		}
+		placeable -= 16 << 30
+	}
+	var free int64
+	if err := e.h.Pool.QueryRow(ctx, "select greatest(least(free_mem_bytes, $2::bigint - (select coalesce(sum(reserved_bytes), 0) from host_reservations where host_id = $1)), 0) from hosts where id = $1",
+		e.h.HostID, mem-scheduler.HostReserve(mem)).Scan(&free); err != nil {
+		t.Fatal(err)
+	}
+	if free >= 8<<30 {
+		t.Fatalf("free %d after filling, want under 8 GiB", free)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "large"})
+	if d := detailOf(t, r); r.status != 503 || d["reason"] != "no_own_host" || d["host"] != name || d["host_state"] != "ready" {
+		t.Fatalf("a large on a full own host: %d %s, want 503 no_own_host naming %s", r.status, r.raw, name)
+	}
+	gb := strings.TrimSuffix(strconv.FormatFloat(float64(free)/(1<<30), 'f', 1, 64), ".0")
+	want := "your host " + name + " has " + gb + " GB of memory free for machines, and a large machine needs 8 GB. A machine holds its memory while it runs, so stopping one frees room for it"
+	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != want {
+		t.Fatalf("message %q, want %q", msg, want)
+	}
+}
+
+// TestStartRefusedOnAFullOwnHostNamesTheFigure: a start that hostd
+// refuses for memory on a host the user owns names the host and hostd's
+// figures, not "the host has no free memory" (I-1586). A start keeps its
+// host, so placement never answers it; hostd does.
+func TestStartRefusedOnAFullOwnHostNamesTheFigure(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-owner", "owner")
+	uid := e.exempt(t, "sub-owner")
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	pid := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	if r := e.do(t, tok, "POST", "/projects/"+pid+"/stop", nil); r.status != 202 {
+		t.Fatalf("stop: %d %s", r.status, r.raw)
+	} else if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("stop op: %+v", op.Error)
+	}
+	e.h.Fake.SetFail("StartGuest", "insufficient_capacity")
+	e.h.Fake.SetFailMessage("StartGuest", "not enough free memory for a small guest")
+	var name string
+	if err := e.h.Pool.QueryRow(ctx, "select name from hosts where id = $1", e.h.HostID).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	st := e.do(t, tok, "POST", "/projects/"+pid+"/start", nil)
+	if st.status != 202 {
+		t.Fatalf("start: %d %s", st.status, st.raw)
+	}
+	op := e.waitOp(t, st)
+	// The free figure is the fake hostd's last heartbeat, which this
+	// test does not pin; the host and the need are the point.
+	msg, _ := op.Error["message"].(string)
+	if op.State != "error" || !strings.HasPrefix(msg, "your host "+name+" has ") ||
+		!strings.Contains(msg, " GB of memory free for machines, and a small machine needs 4.5 GB there. A machine holds its memory while it runs") {
+		t.Fatalf("start op %s %v, want the host's name and figures", op.State, op.Error)
 	}
 }

@@ -1678,7 +1678,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			return exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(apiErr))
 		}
 		if errors.As(err, &apiErr) && apiErr.Code == "capacity" {
-			return exitf(ExitCapacity, "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.")
+			return exitf(ExitCapacity, "%s", capacityRefusal(apiErr))
 		}
 		return err
 	}
@@ -2251,13 +2251,24 @@ func createRefusal(apiErr *APIError, host string) string {
 		return withNext(noRuntimeHost, next)
 	}
 	if reason != "no_own_host" {
-		return "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it."
+		return capacityRefusal(apiErr)
 	}
 	next := ""
 	if allowed, _ := apiErr.Detail["hosted_allowed"].(bool); allowed && host == "" {
 		next = "`repose run --host " + hostRepose + "` makes it on repose's servers instead."
 	}
 	return withNext(apiErr.Message, next)
+}
+
+// capacityRefusal is the sentence for a `capacity` refusal with no next
+// step to add: the api's own words when the user's own host refused
+// (they name the host and the figure, I-1586), and I-724's sentence
+// about repose's servers otherwise.
+func capacityRefusal(apiErr *APIError) string {
+	if reason, _ := apiErr.Detail["reason"].(string); reason == "no_own_host" && strings.TrimSpace(apiErr.Message) != "" {
+		return withNext(apiErr.Message, "")
+	}
+	return "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it."
 }
 
 // noRuntimeHost is the sentence for a 503 capacity whose reason is

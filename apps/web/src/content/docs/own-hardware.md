@@ -31,13 +31,14 @@ Of that share, repose keeps an eighth for itself, never less than 2 GB, and each
 | 16 GB | 1 `large`, or 2 `small`, or 3 `tiny` |
 | 24 GB | 1 `large` and 1 `small`, or 3 `small`, or 6 `tiny` |
 
-An `xl` fits on neither; it needs a Mac with 32 GB. The 24 GB row is measured, on an M4 Mac mini on 2026-11-22; the 16 GB row is the same rule worked out. `--memory` at `repose host add` changes the share, and the same rule applies to what you give it. `repose host ls` shows the share under MEMORY. A machine that does not fit is refused with exit code 8.
+An `xl` fits on neither; it needs a Mac with 32 GB. The 24 GB row is measured, on an M4 Mac mini on 2026-11-22; the 16 GB row is the same rule worked out. `--memory` at `repose host add` changes the share, and the same rule applies to what you give it. `repose host ls` shows the share under MEMORY. A machine that does not fit is refused with exit code 8, and the refusal names the host, the memory it has free and what the machine needs: `your host mac-mini has 5 GB of memory free for machines, and a large machine needs 8 GB`.
 
 ## What an x86 box needs
 
 - x86_64 with hardware virtualization and `/dev/kvm`. Bare metal, Intel or AMD. A virtual machine works only if its own host passes virtualization through, which on Proxmox or libvirt is one setting; most cheap VPSes do not.
 - Ubuntu 24.04, or Debian 12 or later, and room for your machines' disks: 40 GB free on the system disk, or a whole empty disk.
-- 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once.
+- A kernel with the fix for CVE-2026-99999, through which code in one of your machines could take over the box. Ubuntu 24.04's kernels carry it from 6.8.0-149 (`sudo apt-get update && sudo apt-get full-upgrade`, then reboot); Debian 13's from 6.12.113-1; Debian 12's did not on 2026-11-23. A kernel carries it when its changelog names the CVE or `ipv4: validate checksum_start before completing checksum`, which is what the installer reads. When it cannot show the fix, it says so at the end and installs anyway, since the only machines on the box are yours; run it again after the reboot to check.
+- 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once, each counting its size plus half a gigabyte. The number of cores does not limit how many machines run; memory and disk do.
 - Outbound UDP 51820 and TCP 443. No inbound port.
 
 ## Adding it
@@ -57,11 +58,11 @@ From any other machine, `repose host add` prints one step and nothing else, so y
 On an x86 box the same argument goes to the installer instead, run there as root:
 
 ```shell
-curl -fsSL https://repose.run/install-host.sh \
-  | sudo bash -s -- --join <argument>
+printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh \
+  | sudo bash -s -- --join-file repose-join
 ```
 
-It sets repose up and joins your account. It keeps your machines' disks in `/var/lib/repose/guests.img`, 100 GB or the free space less 20 GB, whichever is smaller; with `--device /dev/sdb` it takes over that whole disk instead, and it refuses a disk that holds anything. The dashboard's **Add a host** shows this line beside the Mac's.
+It sets repose up and joins your account. The argument goes through the file so that it is on no command line and not in the copy of the command sudo logs; the installer deletes the file once it has read it. It keeps your machines' disks in `/var/lib/repose/guests.img`, 100 GB or the free space less 20 GB, whichever is smaller; with `--device /dev/sdb` it takes over that whole disk instead, and it refuses a disk that holds anything. The dashboard's **Add a host** shows this line beside the Mac's.
 
 The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free, never under 20 GB and never closer than 20 GB to what the volume has (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
 
@@ -167,6 +168,14 @@ A host that has **stopped** answering is removed, machines and all, because the 
 Removing the appliance first is the other order, and it takes one more step. `repose host rm --local` works with no session and with repose unreachable, because the appliance is on your Mac and removing it needs nobody's permission. The question it asks says how many machines go with it when your account can be read, and says that it could not be read when it cannot. The host stays on your account either way, holding machines that no longer have anywhere to run: wait until `repose host ls` shows it `offline` (about 90 seconds), run `repose host rm <name>` to retire it, and then `repose rm` each stranded machine.
 
 Settings → Hosts has the same Remove, with the same question and the same machines named.
+
+On an x86 box, removing the host leaves repose running there, holding its disk. `repose host rm` prints the line that takes it off, to run on the box as root:
+
+```shell
+curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall
+```
+
+It stops hostd and the machines, and removes the machines' disks with `/var/lib/repose/guests.img`, or releases the `--device` disk with no signature left on it (its bytes are not overwritten). It also removes the tunnel, repose's firewall tables, its services, programs, accounts and files. The packages it installed from apt stay, and the kernel settings it changed, IP forwarding among them, last until the next boot. It refuses while the box is still a host on your account, so `repose host rm` comes first; `--force` skips that, and the host then stays on your account, offline, until you remove it. A second run finds nothing to do. `repose host rm --local` on the box prints the same line rather than running it.
 
 Once a host is off, your new projects go to repose's servers again if your plan buys memory there.
 

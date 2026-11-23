@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1121 entries.
+1125 entries.
 
 ## Scope
 
@@ -738,7 +738,7 @@ pointer, not a summary.
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20601
 - **I-734** The oversubscription ratio is counted against physical cores, not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15) — amended by I-784; L20670
 - **I-735** Hosts report physical cores, and the api records them (cpu-weight, 2026-10-15) — L20727
-- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; L20768
+- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; amended by I-1586; L20768
 - **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; amended by I-1168; L20827
 - **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20865
 - **I-746** The validity pass stops eating the boot deadline and blaming `--load-db` for it (cpu-weight, 2026-10-15) — L20911
@@ -1059,7 +1059,7 @@ pointer, not a summary.
 - **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — partly amended by I-1582; L36426
 - **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36531
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36650
-- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; L36691
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; partly amended by I-1586; L36691
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36800
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; L36912
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; L37069
@@ -1133,7 +1133,7 @@ pointer, not a summary.
 - **I-1530** hostd deletes the host's neighbour entry for a guest address on `br-guests` when the guest is destroyed (after its tap is gone) and at every boot and restore (before the guest can be dialled), so an address reused by the next guest does not answer with the old guest's MAC (nonix-hostd-2, 2026-11-22) — L39209
 - **I-1494** The Mac appliance is Debian 13 arm64 built by `images/appliance-arm64/build.sh` (mmdebstrap, no loop device): a 64 MiB ESP with systemd-boot and the kernel, a 2 GiB ext4 root, and a 2 MiB third partition that becomes vg-guests at first boot; the kernel is kernel.org 6.18.57 with Debian trixie's cloud-arm64 config and no initramfs; the host units are ported 1:1 from `nix/hosts/` as plain files under `images/appliance-arm64/host/` (nonix-appliances, 2026-11-22) — amended by I-1540; amended by I-1550; L39214
 - **I-1496** hostd on an owned host updates itself from the newest `hostd-<version>` release's `manifest.json`, found through GitHub's releases API and signed with the release key, through `repose-hostd-update` every 30 minutes; a script, not a hostd subcommand (nonix-appliances, 2026-11-22; amended the same day: no moving channel release) — L39223
-- **I-1498** A Linux x86_64 machine becomes a host with `ops/install-host-x86.sh` (served as `https://repose.run/install-host.sh`), which carries the appliance's host files inside itself, and `repose host add` on linux/amd64 prints its line with the join argument (nonix-appliances, 2026-11-22) — amended by I-1540; L39231
+- **I-1498** A Linux x86_64 machine becomes a host with `ops/install-host-x86.sh` (served as `https://repose.run/install-host.sh`), which carries the appliance's host files inside itself, and `repose host add` on linux/amd64 prints its line with the join argument (nonix-appliances, 2026-11-22) — amended by I-1540; partly amended by I-1588; amended by I-1590; partly amended by I-1592; L39231
 - **I-1538** A 503 `capacity` whose `detail.reason` is `no_runtime_host` reads "No host can run the kind of machine your account makes (Ubuntu or NixOS), so stopping machines frees nothing for it.", with `repose run --host repose` as the next step on a create when `hosted_allowed` and no `--host` was given (nonix-config-cli-web-4, 2026-11-22) — L39238
 - **I-1540** An x86 host runs virtiofsd 1.14.0, the NixOS hosts' version, as upstream's static build pinned by sha256, with an AppArmor `userns` profile where Ubuntu restricts user namespaces; the installer refuses to enable anything if its virtiofsd lacks `--translate-uid`; the appliance's build checks the same of trixie's 1.13.2, and refuses to build from anything but main's head (nonix-appliances-2, 2026-11-22) — L39242
 - **I-1542** A snapshot kept on the account's own host is marked `gone_with_host` (the host's name) when that host is removed, and the api lists it as gone, never restorable, and refuses a restore of it before writing anything (nonix-config-cli-web-5, 2026-11-22) — L39250
@@ -1153,3 +1153,7 @@ pointer, not a summary.
 - **I-1574** The Mac appliance boots with `transparent_hugepage_shmem=advise`, so Cloud Hypervisor's memfd guest RAM is mapped in 2 MiB blocks: under Apple's nested virtualization a 4 KiB stage-2 fault is an exit to the appliance kernel costing 25 to 35 us, and a JavaScript agent starting takes hundreds of thousands of them. Amends I-1040 for the appliance; repose's x86 hosts keep `shmem_enabled` at `never` (mac-jit, 2026-11-23) — L39344
 - **I-1582** A billing-exempt account may own eight hosts, not one: `billing.ExemptHosts` is 8, and the Own hardware plan still sells one (exempt-hosts, 2026-11-23) — L39355
 - **I-1584** A create may name one host of the account's own: `POST /projects` takes `host` (id or name), the scheduler considers that host alone and refuses as that host, `repose run --host NAME` sends it, the create line names the host, and the dashboard's Runs on lists every host (host-pin, 2026-11-23) — L39364
+- **I-1588** The x86 installer warns about CVE-2026-99999 only for a kernel it cannot show carries the fix, says it at the end of its output with the remedy for Ubuntu 24.04 and Debian, and installs anyway; a kernel carries the fix when it is 6.18.57 or a later 6.18, or when its package changelog names the CVE or the fix's subject (x86-installer, 2026-11-23) — L39374
+- **I-1590** The x86 installer takes repose off the machine with `--uninstall`, refused while the host is on the account unless `--force`; `repose host rm` of an x86 host prints that line, and `repose host rm --local` on Linux prints it instead of "There is no appliance on this Mac." (x86-installer, 2026-11-23) — L39382
+- **I-1592** The x86 install line passes the join argument through a file, `printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`, and the installer deletes that file once it has copied the argument to `/run/repose/launcher/join` (x86-installer, 2026-11-23) — L39390
+- **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — L39395

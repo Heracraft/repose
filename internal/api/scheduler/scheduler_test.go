@@ -3,6 +3,7 @@ package scheduler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -773,4 +774,77 @@ func TestPinnedHost(t *testing.T) {
 			t.Fatalf("freeing on offline b %v %v, want false", ok, err)
 		}
 	})
+}
+
+// TestOwnedHostIsBoundByMemoryNotCores is the x86 pass's F3 (DECISIONS
+// I-1586): a Latitude m4-metal-small, 6 cores and 61.9 GiB, held 9 vCPU
+// of machines (36 GiB) because the commit ratio counted its cores, where
+// own-hardware.md promises seven eighths of its memory. Owned, it takes
+// machines to the memory line and past 150 percent of its cores; the same
+// box as a host repose runs still stops at 9 vCPU.
+func TestOwnedHostIsBoundByMemoryNotCores(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	const mem = 66471268352 // box A's mem_bytes, measured
+	box := addHostCores(t, pool, host{"e2e-x86-a", "ready", false, mem, 60 << 30, 1 << 40, now}, 6)
+	owner := addAccount(t, pool, "owner")
+	own(t, pool, box, owner)
+	target := scheduler.Target{Account: owner}
+	for i, c := range []string{"small", "small", "xl", "large", "small"} { // 9 vCPU, 36 GiB: the measured line
+		commit(t, pool, box, c, fmt.Sprintf("m%d", i))
+	}
+	for _, c := range []string{"xl", "tiny"} { // 13.5 vCPU on 6 cores, 54 GiB
+		p, err := pickFor(t, pool, target, c, 1<<30, 10<<30)
+		if err != nil || p.Name != "e2e-x86-a" {
+			t.Fatalf("an owned %s past 150%% of cores: %+v %v, want e2e-x86-a", c, p, err)
+		}
+		commit(t, pool, box, c, "past-"+c)
+	}
+	// Memory is the line: 54 of 54.17 GiB placeable, so a tiny is
+	// refused, by the account's own host.
+	if p, err := pickFor(t, pool, target, "tiny", 1<<30, 10<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
+		t.Fatalf("a tiny past the memory line: %+v %v, want ErrNoOwnHost", p, err)
+	}
+	rooms, err := scheduler.OwnedRooms(ctx, pool, owner, 1<<30, 10<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rooms[box].FreeBytes, mem-scheduler.HostReserve(mem)-54<<30; got != want {
+		t.Fatalf("OwnedRooms free %d, want %d", got, want)
+	}
+
+	// The same box as a host repose runs keeps I-736's ratio.
+	fleet := addHostCores(t, pool, host{"fleet-x86", "ready", false, mem, 60 << 30, 1 << 40, now}, 6)
+	for i, c := range []string{"small", "small", "xl", "large", "small"} {
+		commit(t, pool, fleet, c, fmt.Sprintf("f%d", i))
+	}
+	if p, err := pickFor(t, pool, fleetTarget(), "tiny", 1<<30, 10<<30); !errors.Is(err, scheduler.ErrNoCPUCapacity) {
+		t.Fatalf("a fleet tiny past 9 vCPU on 6 cores: %+v %v, want ErrNoCPUCapacity", p, err)
+	}
+}
+
+// TestFullOwnedHostIsTheOwnersRefusal: an account with fleet memory whose
+// own host is full is refused by that host, not by repose's servers,
+// whatever the fleet has (I-1586); the room says which figure refused.
+func TestFullOwnedHostIsTheOwnersRefusal(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	mac := addHostPool(t, pool, host{"mac-mini", "ready", false, 24 << 30, 20 << 30, 100 << 30, now}, 200<<30)
+	owner := addAccount(t, pool, "owner")
+	own(t, pool, mac, owner)
+	commit(t, pool, mac, "xl", "big") // 16 of 21 GiB
+	if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true}, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
+		t.Fatalf("a large on a full own host: %+v %v, want ErrNoOwnHost", p, err)
+	}
+	rooms, err := scheduler.OwnedRooms(ctx, pool, owner, 1<<30, 40<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rooms[mac]
+	if r.FreeBytes != 5<<30 || r.PoolFreeBytes != 100<<30 || r.PoolNeedBytes != (200<<30)/100*30+1<<30 {
+		t.Fatalf("room %+v, want 5 GiB free, 100 GiB of pool free against 61 GiB", r)
+	}
 }

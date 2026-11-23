@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -487,20 +488,28 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 	// still short-circuits the deref.
 	hostedAllowed := f.hostLimit == nil || *f.hostLimit <= 0
 	if pin != nil {
-		if pin.State == "ready" {
+		// The pinned host alone, under the same memory term (I-1586).
+		if pin.State == "ready" && f.ownedHostFree(pin) >= int64(classGB[class])<<30 {
 			return pin.ID, nil
 		}
 		return "", errf("capacity", "your host %s %s", pin.Name, f.ownHostWhy(pin, class, false)).withDetail(map[string]any{
 			"reason": "no_own_host", "host": pin.Name, "host_state": pin.State, "hosted_allowed": hostedAllowed})
 	}
 	var own []*ownedHostRec
+	best, bestFree := "", int64(-1)
+	need := int64(classGB[class]) << 30
 	for _, h := range f.ownedHosts {
 		if h.owner == u.ID && h.State != "retired" && h.State != "lost" {
-			if h.State == "ready" {
-				return h.ID, nil
+			// The api's memory term, and no CPU term on a host the user
+			// owns (I-1586): the most free first, as the scheduler orders.
+			if free := f.ownedHostFree(h); h.State == "ready" && free >= need && free > bestFree {
+				best, bestFree = h.ID, free
 			}
 			own = append(own, h)
 		}
+	}
+	if best != "" {
+		return best, nil
 	}
 	if len(own) == 0 {
 		return "", nil
@@ -511,7 +520,7 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 		for i, h := range own {
 			why[i] = h.Name + " " + f.ownHostWhy(h, class, true)
 		}
-		msg = "none of your hosts can take a " + class + " machine: " + strings.Join(why, "; ")
+		msg = "none of your hosts can take a " + class + " machine (" + gbText(need) + "): " + strings.Join(why, "; ")
 	}
 	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
 		"reason": "no_own_host", "host": own[0].Name, "host_state": own[0].State, "hosted_allowed": hostedAllowed})
@@ -555,10 +564,39 @@ func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
 		}
 		return "is being removed, so nothing can be placed on it"
 	}
+	// The api names the figure that refused (I-1586); the fake has no
+	// disk, so memory is the only one it can.
+	free := f.ownedHostFree(h)
 	if short {
-		return "has no room"
+		return "has " + gbText(free) + " free"
 	}
-	return "has no room for a " + class + " machine"
+	return "has " + gbText(free) + " of memory free for machines, and a " + class + " machine needs " + gbText(int64(classGB[class])<<30) +
+		". A machine holds its memory while it runs, so stopping one frees room for it"
+}
+
+// ownedHostFree is the memory the api's placement counts free on an
+// owned host: its memory, less the eighth it keeps (never under 2 GiB,
+// never over 16), less the class memory of every machine on it that
+// holds memory (the host_reservations view's states).
+func (f *Fake) ownedHostFree(h *ownedHostRec) int64 {
+	reserve := min(max(h.MemBytes/8, 2<<30), 16<<30)
+	free := h.MemBytes - reserve
+	for _, p := range f.projects {
+		if p.destroyed || p.HostID != h.ID {
+			continue
+		}
+		switch p.State {
+		case "creating", "building", "starting", "running", "stopping", "restoring":
+			free -= int64(classGB[p.Class]) << 30
+		}
+	}
+	return max(free, 0)
+}
+
+// gbText is the api's ops.gbText: GiB, whole or to one decimal.
+func gbText(b int64) string {
+	t := strconv.FormatFloat(float64(b)/(1<<30), 'f', 1, 64)
+	return strings.TrimSuffix(t, ".0") + " GB"
 }
 
 // quietFor is how long a host has been silent, in the api's shortest

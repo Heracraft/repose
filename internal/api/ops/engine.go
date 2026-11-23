@@ -420,6 +420,29 @@ func (e *Engine) hostGone(ctx context.Context, hostID uuid.UUID) (bool, error) {
 	return state == "lost" || state == "retired", err
 }
 
+// guestOverheadBytes is hostd's guest.OverheadMiB: what each guest's
+// unit may hold beyond its RAM, which hostd's admission counts.
+const guestOverheadBytes = 512 << 20
+
+// ownHostMemoryRefusal is the sentence for hostd's "not enough free
+// memory" on a host the user owns (DECISIONS I-1586): the host's name,
+// the free memory its hostd last reported and what the project's class
+// needs there, its size plus the overhead hostd counts. ok is false for
+// a host repose runs, which keeps humanError's sentence, and when the
+// rows cannot be read.
+func (e *Engine) ownHostMemoryRefusal(ctx context.Context, hostID, projectID uuid.UUID) (string, bool) {
+	var name, class string
+	var free int64
+	var owned bool
+	err := e.pool.QueryRow(ctx, `select h.name, h.free_mem_bytes, h.owner_account_id is not null, p.class
+		  from hosts h, projects p where h.id = $1 and p.id = $2`, hostID, projectID).Scan(&name, &free, &owned, &class)
+	if err != nil || !owned {
+		return "", false
+	}
+	return "your host " + name + " has " + gbText(max(free, 0)) + " of memory free for machines, and a " + class + " machine needs " +
+		gbText(scheduler.ClassRAM(class)+guestOverheadBytes) + " there. A machine holds its memory while it runs, so stopping one frees room for it", true
+}
+
 // restingNow reports whether the api believes the op's project rests.
 func (e *Engine) restingNow(ctx context.Context, op *store.Op) bool {
 	if op.ProjectID == nil {
@@ -1061,9 +1084,18 @@ func (e *Engine) failWithLines(ctx context.Context, op *store.Op, code, msg stri
 			gone = g
 		}
 	}
+	hostMsg := msg
 	if human, ok := humanError(op.Kind, currentPhase(op), code, msg, gone); ok {
 		errObj["message"], errObj["detail"] = human, msg
 		msg = human
+	}
+	// A start or create that hostd refused for memory on a host the user
+	// owns names that host and hostd's own figures (I-1586).
+	if code == "insufficient_capacity" && strings.Contains(hostMsg, "not enough free memory") && op.HostID != nil && op.ProjectID != nil {
+		if own, ok := e.ownHostMemoryRefusal(ctx, *op.HostID, *op.ProjectID); ok {
+			errObj["message"], errObj["detail"] = own, hostMsg
+			msg = own
+		}
 	}
 	if line > 0 {
 		errObj["fragment_line"] = line

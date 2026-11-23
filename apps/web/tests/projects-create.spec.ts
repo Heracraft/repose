@@ -316,7 +316,9 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		await form(page).getByLabel('Name').fill(name);
 		await form(page).getByRole('button', { name: 'Create' }).click();
 		const error = form(page).getByTestId('new-project-error');
-		await expect(error).toContainText('your host mac-mini has not registered yet');
+		// Hosts other files left behind make it the several-host form
+		// (I-1582), which names mac-mini the same way.
+		await expect(error).toContainText('mac-mini has not registered yet');
 		// Nothing was made: the form is still here with the name typed,
 		// and the api holds no such project.
 		await expect(form(page).getByLabel('Name')).toHaveValue(name);
@@ -383,5 +385,44 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 		// first; the hosts would refuse every other file's creates.
 		if (madeId) await destroyProject(api, madeId);
 		await removeOwnedHosts(api).catch(() => {});
+	}
+});
+
+// A host of the customer's own that is full says which host and what it
+// has against what the machine needs, as the CLI does (I-1586). The
+// x86 pass measured "repose has no room for this machine" here, which
+// named neither. The fake's Mac is 24 GB: 21 GB for machines, so after
+// an xl (16 GB) a large (8 GB) does not fit.
+test('a full host of your own names itself and the memory it has', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await ownedHost({ limit: -1 });
+	await ownedHost({ name: 'mac-full' });
+	try {
+		const res = await fetch(`${api}/projects`, {
+			method: 'POST',
+			headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name: unique('big'), class: 'xl', placement: 'own' })
+		});
+		expect(res.status).toBe(201);
+		litter.push(((await res.json()) as { id: string }).id);
+
+		const name = unique('no-room');
+		await openForm(page);
+		await form(page).getByLabel('Name').fill(name);
+		await form(page).getByLabel('Size').selectOption('large');
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		await expect(form(page).getByTestId('new-project-error')).toContainText(
+			'your host mac-full has 5 GB of memory free for machines, and a large machine needs 8 GB'
+		);
+		expect(await fromApi(name)).toBeUndefined();
+	} finally {
+		while (litter.length) await destroyProject(api, litter.pop()!);
+		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
+		for (const h of (await res.json()) as { id: string }[]) {
+			await fetch(`${api}/hosts/${h.id}`, {
+				method: 'DELETE',
+				headers: { Authorization: 'Bearer playwright' }
+			});
+		}
 	}
 });

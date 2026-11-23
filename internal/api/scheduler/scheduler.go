@@ -323,26 +323,32 @@ func PickHost(ctx context.Context, tx pgx.Tx, t Target, class string, holdBytes,
 			if t.Host != uuid.Nil {
 				return Pick{}, ErrPinnedHost
 			}
+			// A placement that only the account's own hardware may take
+			// is refused by that hardware, whichever term refused it, so
+			// it gets its own error and its own sentence (I-1366): the
+			// user reads which of their hosts and what it lacks, not
+			// "repose has no room" about servers they do not use
+			// (I-1586). Asked before the CPU term, which never applies
+			// to an owned host.
+			if !t.Hosted || !t.Fleet {
+				var owns bool
+				if err := tx.QueryRow(ctx, `select exists (select 1 from hosts
+					 where owner_account_id = $1 and state not in ('retired', 'lost'))`, t.Account).Scan(&owns); err != nil {
+					return Pick{}, err
+				}
+				if owns || !t.Fleet {
+					return Pick{}, ErrNoOwnHost
+				}
+			}
 			// Which term refused is the difference between buying memory
 			// and buying cores, and the failure path is the only place
 			// that can say: one more query on a create that has already
-			// failed (I-736). `$6 >= 0` and `$7::uuid is not null or $8
-			// or $9` hold for every placement and keep the parameters
-			// referenced, which the extended protocol requires: a
-			// parameter the query does not mention is a bind error, and
-			// an unqualified `$7` has no type to infer.
+			// failed (I-736). `$6 >= 0` holds for every placement and
+			// keeps the parameter referenced, which the extended protocol
+			// requires: a parameter the query does not mention is a bind
+			// error.
 			if err := tx.QueryRow(ctx, pickSQL("$6 >= 0", ownedSQL), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
 				return Pick{}, ErrNoCPUCapacity
-			}
-			// Ownership last, so a host of the account's own that is
-			// merely full is reported as capacity and not as a host
-			// problem. A placement that only its own hardware may take
-			// is the one a user reads as "my machine is off", so it gets
-			// its own error and its own sentence (I-1366).
-			if !t.Hosted || !t.Fleet {
-				if err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpu_milli, 0)", "$6"), "($7::uuid is not null or $8 or $9)"), args...).Scan(&ignored.HostID, &ignored.Name, &ignored.FreeBytes); err == nil {
-					return Pick{}, ErrNoOwnHost
-				}
 			}
 			return Pick{}, ErrNoCapacity
 		}
@@ -421,6 +427,56 @@ func Freeing(ctx context.Context, q interface {
 	return ok, err
 }
 
+// Room is what one host has for one more machine, in placement's own
+// terms (DECISIONS I-1586): the memory a machine may still take
+// (PickHost's free column) and the disk its thin pool has free against
+// what PlacementPoolPct asks of it. A refusal on a host the user owns
+// names these, so they read the figure that refused them and not "no
+// room".
+type Room struct {
+	// FreeBytes is the memory placement counts free, never below 0.
+	FreeBytes int64
+	// PoolFreeBytes and PoolNeedBytes are the thin pool's free bytes and
+	// what a new volume needs free there: PlacementPoolPct's headroom
+	// plus what the volume holds at first, or the volume's whole size
+	// from a hostd that reports no pool size.
+	PoolFreeBytes, PoolNeedBytes int64
+	// PoolUnavailable is hosts.pool_unavailable (I-644).
+	PoolUnavailable bool
+}
+
+// OwnedRooms is Room for every host account owns, by host id, computed
+// by the same expressions PickHost places with.
+func OwnedRooms(ctx context.Context, q interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}, account uuid.UUID, holdBytes, volumeBytes int64) (map[uuid.UUID]Room, error) {
+	rows, err := q.Query(ctx, `
+		select h.id,
+		       greatest(least(h.free_mem_bytes, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0)), 0),
+		       h.pool_free_bytes,
+		       case when h.pool_bytes > 0
+		            then h.pool_bytes / 100 * (100 - `+strconv.Itoa(PlacementPoolPct)+`) + $2
+		            else $3 end,
+		       h.pool_unavailable
+		  from hosts h
+		  left join host_reservations r on r.host_id = h.id
+		 where h.owner_account_id = $1`, account, holdBytes, volumeBytes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]Room{}
+	for rows.Next() {
+		var id uuid.UUID
+		var r Room
+		if err := rows.Scan(&id, &r.FreeBytes, &r.PoolFreeBytes, &r.PoolNeedBytes, &r.PoolUnavailable); err != nil {
+			return nil, err
+		}
+		out[id] = r
+	}
+	return out, rows.Err()
+}
+
 // classRAMSQL is ClassRAM for a projects row aliased p.
 const classRAMSQL = `(case p.class when 'tiny' then 2::bigint<<30 when 'small' then 4::bigint<<30 when 'xl' then 16::bigint<<30 else 8::bigint<<30 end)`
 
@@ -476,6 +532,12 @@ const PlacementVCPUPct = 150
 // asks for -- a staging or dev host -- can still run something, since
 // every placement this asks about adds exactly one guest.
 //
+// A host a user owns is exempt as well (DECISIONS I-1586): its cores
+// are the customer's, the ratio above was measured for strangers sharing
+// repose's servers, and on an x86 box with few cores it refused a third
+// of the memory own-hardware.md promises. Memory and disk are what bound
+// an owned host, as hostd's own admission already does.
+//
 // What this does not do: a project keeps its host for life, so `repose
 // start` of a stopped machine never asks placement again, hostd's own
 // admission checks memory and the pool and never CPU, and an operator
@@ -489,6 +551,7 @@ func cpuRoomSQL(committed, want string) string {
 	// truncated, which cost a host up to one whole committed vCPU of
 	// room on an odd core count.
 	return `(h.cores <= 0
+		        or h.owner_account_id is not null
 		        or ` + want + ` = 0
 		        or ` + committed + ` = 0
 		        or ` + committed + ` + ` + want + ` <= h.cores * ` + strconv.Itoa(PlacementVCPUPct*10) + `)`
