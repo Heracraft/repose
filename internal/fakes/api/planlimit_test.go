@@ -68,3 +68,11 @@ func TestOwnHardwareRefusalIsTheApis(t *testing.T) {
 		t.Errorf("the refusal does not name the price and the host count: %q", got)
 	}
 }
+
+// The fake's exempt host figure is the api's (I-1582): a client test of
+// the owner's several hosts passes here exactly where it passes there.
+func TestExemptHostsIsTheApis(t *testing.T) {
+	if maxFakeHosts != billing.ExemptHosts {
+		t.Errorf("fake %d, api %d", maxFakeHosts, billing.ExemptHosts)
+	}
+}

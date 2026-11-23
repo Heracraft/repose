@@ -35,11 +35,14 @@ const (
 	ReasonHostedPlanRequired = "hosted_plan_required"
 )
 
-// ExemptHosts is how many hosts a billing-exempt account may own. One,
-// the same as the Own hardware plan: an exempt account pays for nothing
-// and is refused nothing (I-1090), and the owner adding their own Mac
-// must not have to sell themselves a plan first.
-const ExemptHosts = 1
+// ExemptHosts is how many hosts a billing-exempt account may own, and
+// an api that does not enforce billing. An exempt account pays for
+// nothing and is refused nothing (I-1090), and the owner adding their
+// own Mac must not have to sell themselves a plan first. It was one, the
+// Own hardware plan's figure, until the several-host program needed the
+// owner's account to hold two x86 test hosts beside the Mac (I-1582).
+// It is not the plan's figure: what a customer is sold is Plan.Hosts.
+const ExemptHosts = 8
 
 // planHosts is the plan's own answer: the hosts an account's live
 // subscription sells it, and ExemptHosts for a billing-exempt account,

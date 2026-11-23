@@ -1,23 +1,24 @@
 package httpapi_test
 
 import (
-	"github.com/heracraft/repose/internal/billing"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/store"
+	"github.com/heracraft/repose/internal/billing"
 )
 
 // The three routes of api.md "Hosts you own" (DECISIONS I-1366).
 //
 // Every test runs as a billing-exempt account, because the three hosted
 // plans sell no host (`billing.Plan.Hosts` is the zero value on Solo,
-// Plus and Pro) and 19d's Own hardware plan is not on this branch: an
-// exempt account is allowed one host whatever the plans say, which is
-// also how the owner adds their own Mac without selling themselves a
-// plan.
+// Plus and Pro): an exempt account is allowed billing.ExemptHosts
+// whatever the plans say, which is also how the owner adds their own
+// Mac, and test hosts beside it, without selling themselves a plan
+// (I-1582). TestHostLimit holds the limit on both kinds of account.
 
 // detailOf is the error envelope's detail object.
 func detailOf(t *testing.T, r resp) map[string]any {
@@ -95,12 +96,6 @@ func TestHostAddListRemove(t *testing.T) {
 		t.Fatalf("a host that never registered has a heartbeat: %v", row)
 	}
 
-	// A second host is refused: the plan allows one.
-	r = e.do(t, tok, "POST", "/hosts", map[string]any{"name": "spare"})
-	if r.status != 409 || detailOf(t, r)["reason"] != "host_limit" || detailOf(t, r)["limit"] != float64(1) {
-		t.Fatalf("second host: %d %s, want conflict host_limit limit 1", r.status, r.raw)
-	}
-
 	// Remove, then remove again: the second answers 204 so a client that
 	// lost the first answer can ask again.
 	if r := e.do(t, tok, "DELETE", "/hosts/"+id, nil); r.status != 204 {
@@ -143,6 +138,88 @@ func TestHostAddListRemove(t *testing.T) {
 	}
 	if draining || revivedSerial != "" {
 		t.Fatalf("the revived host is draining=%v with serial %q", draining, revivedSerial)
+	}
+}
+
+// TestHostLimit: an exempt account holds billing.ExemptHosts (eight)
+// hosts and is refused the ninth, and a paying Own hardware account is
+// still refused its second (I-1582): the exempt figure is not the
+// plan's, and what a customer is sold stays Plan.Hosts.
+func TestHostLimit(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-owner", "owner")
+	e.exempt(t, "sub-owner")
+	if billing.ExemptHosts != 8 {
+		t.Fatalf("billing.ExemptHosts = %d, want 8", billing.ExemptHosts)
+	}
+	for i := 1; i <= billing.ExemptHosts; i++ {
+		name := fmt.Sprintf("e2e-x86-%d", i)
+		if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": name}); r.status != 201 || r.body["name"] != name {
+			t.Fatalf("exempt host %d: %d %s, want 201", i, r.status, r.raw)
+		}
+	}
+	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != billing.ExemptHosts {
+		t.Fatalf("list: %d, %d hosts, want %d", r.status, len(r.list), billing.ExemptHosts)
+	}
+	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "e2e-x86-9"})
+	if r.status != 409 || detailOf(t, r)["reason"] != "host_limit" || detailOf(t, r)["limit"] != float64(8) {
+		t.Fatalf("ninth exempt host: %d %s, want conflict host_limit limit 8", r.status, r.raw)
+	}
+	if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your plan includes 8 hosts") {
+		t.Fatalf("ninth exempt host said %q", msg)
+	}
+
+	// A paying Own hardware account: one host, and the second refused.
+	tok = e.signIn(t, "sub-own", "own")
+	e.subscribe(t, "sub-own", "own")
+	if p, _ := billing.PlanByID("own"); p.Hosts != 1 {
+		t.Fatalf("the Own hardware plan sells %d hosts, want 1", p.Hosts)
+	}
+	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"}); r.status != 201 {
+		t.Fatalf("Own hardware first host: %d %s, want 201", r.status, r.raw)
+	}
+	r = e.do(t, tok, "POST", "/hosts", map[string]any{"name": "spare"})
+	if r.status != 409 || detailOf(t, r)["reason"] != "host_limit" || detailOf(t, r)["limit"] != float64(1) {
+		t.Fatalf("Own hardware second host: %d %s, want conflict host_limit limit 1", r.status, r.raw)
+	}
+}
+
+// TestCreateWithSeveralOwnHosts: an account with two hosts of its own
+// (an exempt one, I-1582) is told about both when neither can take the
+// machine, and is placed on the one that can while the other waits.
+// Naming only the first said "your host e2e-x86-1 has not registered
+// yet" about a placement the second refused too.
+func TestCreateWithSeveralOwnHosts(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-owner", "owner")
+	uid := e.exempt(t, "sub-owner")
+	for _, name := range []string{"e2e-x86-1", "e2e-x86-2"} {
+		if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": name}); r.status != 201 {
+			t.Fatalf("add %s: %d %s", name, r.status, r.raw)
+		}
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set state = 'unreachable', last_heartbeat_at = now() - interval '14 minutes' where owner_account_id = $1 and name = 'e2e-x86-2'", uid); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
+	d := detailOf(t, r)
+	if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "e2e-x86-1" || d["host_state"] != "registering" {
+		t.Fatalf("both hosts down: %d %s, want 503 no_own_host naming e2e-x86-1 first", r.status, r.raw)
+	}
+	msg, _ := r.body["error"].(map[string]any)["message"].(string)
+	if want := "none of your hosts can take a small machine: e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; msg != want {
+		t.Fatalf("message %q, want %q", msg, want)
+	}
+
+	// A third host of the account's that is online takes the machine,
+	// though the oldest two still cannot.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
+	if r.status != 201 || r.body["host_id"] != e.h.HostID.String() {
+		t.Fatalf("with an online host: %d %s, want 201 on %s", r.status, r.raw, e.h.HostID)
 	}
 }
 
