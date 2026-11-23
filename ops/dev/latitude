@@ -18,15 +18,15 @@
 # with `read -rs`. It is sent through a header file on a pipe, so it never
 # appears in argv, a process list or shell history. Never print it.
 #
-# Money: on-demand metal bills by the hour (price per their page: m4.metal.small
-# $0.41/h, m4.metal.medium $0.62/h on 2026-11-23); the docs state no minimum and
+# Money: on-demand metal bills by the hour (API price 2026-11-23: m4-metal-small
+# $0.81/h, m4-metal-medium $1.25/h; `plans` prints the live price); the docs state no minimum and
 # say a deletion "may take up to an hour" to reach the billing summary. The
 # account holds a $100 credit. Every create and destroy appends a line to
 # LATITUDE_BILLING_LOG. Destroy what you create the same day.
 #
-# Knobs: LATITUDE_PLAN (m4-metal-small), LATITUDE_SITE (ASH),
-# LATITUDE_OS (ubuntu_24_04_x64_lts), LATITUDE_PROJECT (id or slug; default:
-# the first project the key can see), LATITUDE_SSH_PUBKEY (~/.ssh/id_ed25519.pub),
+# Knobs: LATITUDE_PLAN (m4-metal-small), LATITUDE_SITE (NYC),
+# LATITUDE_OS (ubuntu_24_04_x64_lts), LATITUDE_PROJECT (id or slug; default
+# proj_ZWr75ZQOvNA91, repose-boyh), LATITUDE_SSH_PUBKEY (~/.ssh/id_ed25519.pub),
 # LATITUDE_SSH_USER (ubuntu), LATITUDE_BILLING_LOG (~/briefs/latitude-billing.log).
 #
 # UNTESTED as of 2026-11-23: written from the API reference before the key
@@ -38,7 +38,7 @@ API=https://api.latitude.sh
 KEY=${LATITUDE_KEY_FILE:-$HOME/.config/repose/latitude-api-key}
 STATE=${LATITUDE_STATE:-$HOME/.config/repose/latitude-lab.state}
 PLAN=${LATITUDE_PLAN:-m4-metal-small}
-SITE=${LATITUDE_SITE:-ASH}
+SITE=${LATITUDE_SITE:-NYC}
 OS=${LATITUDE_OS:-ubuntu_24_04_x64_lts}
 PUB=${LATITUDE_SSH_PUBKEY:-$HOME/.ssh/id_ed25519.pub}
 SSHUSER=${LATITUDE_SSH_USER:-ubuntu}
@@ -52,7 +52,7 @@ command -v jq >/dev/null || die "needs jq"
 # from a file descriptor: the key is never an argument of any process.
 api() {
   local method=$1 path=$2 body=${3:-}
-  local args=(-sS -X "$method" -H 'Accept: application/json' -w '\n%{http_code}')
+  local args=(-gsS -X "$method" -H 'Accept: application/json' -w '\n%{http_code}')
   [ -z "$body" ] || args+=(-H 'Content-Type: application/json' --data-binary "$body")
   curl "${args[@]}" -H @<(printf 'Authorization: Bearer %s\n' "$(cat "$KEY")") "$API$path"
 }
@@ -66,8 +66,7 @@ field() { [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" || true; }
 bill() { mkdir -p "$(dirname "$BILL")"; printf '%s | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$BILL"; }
 
 project() {
-  if [ -n "${LATITUDE_PROJECT:-}" ]; then echo "$LATITUDE_PROJECT"; return; fi
-  api_ok GET /projects | jq -r '.data[0].id // empty' | grep . || die "no project visible; set LATITUDE_PROJECT"
+  echo "${LATITUDE_PROJECT:-proj_ZWr75ZQOvNA91}"  # repose-boyh, the lab project
 }
 
 server_json() { api_ok GET "/servers/$1"; }
@@ -75,8 +74,8 @@ server_json() { api_ok GET "/servers/$1"; }
 case ${1:-} in
   plans)
     api_ok GET '/plans?filter[in_stock]=true' | jq -r '
-      .data[] | .attributes as $a | ($a.regions // [])[] |
-      [$a.slug, (.locations.in_stock // [] | join(",")), (.pricing.USD.hour // .pricing.USD // "?" | tostring)] | @tsv' |
+      .data[] | .attributes as $a | ($a.regions // [])[] | select((.locations.in_stock // []) | length > 0) |
+      [$a.slug, .name, (.locations.in_stock | join(",")), "$\(.pricing.USD.hour)/h"] | @tsv' |
       column -t -s $'\t' ;;
   ssh-key)
     [ -s "$PUB" ] || die "no public key at $PUB"

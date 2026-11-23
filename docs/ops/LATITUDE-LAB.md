@@ -34,20 +34,24 @@ never in argv. `test -s` is the only check an agent runs on it.
 
 ## Money
 
-On-demand metal bills by the hour. Their pricing page on 2026-11-23:
-m4.metal.small (6 cores, 48 GB, 2 x 960 GB NVMe) $0.41 an hour, the
-default and the size of a real home server; m4.metal.medium (16 cores,
-128 GB) $0.62. The $100 is about 240 hours of the small one. Their docs
-state no minimum charge and say a deletion "may take up to an hour" to
-show on the billing summary. Every `create` and `destroy` appends a line
+On-demand metal bills by the hour. The API's own hourly prices, read
+2026-11-23, are about twice the pricing page's (the page's figures are the
+monthly rate, which is 50% off): m4-metal-small (6 cores, 48 GB,
+2 x 960 GB NVMe) $0.81 an hour in the US, UK, Netherlands and Canada, the
+default and the size of a real home server; m4-metal-medium (16 cores,
+128 GB) $1.25. The $100 is about 120 hours of the small one. `plans`
+prints the live price per region. Their docs state no minimum charge and
+say a deletion "may take up to an hour" to show on the billing summary.
+Every `create` and `destroy` appends a line
 to `~/briefs/latitude-billing.log`. Destroy the server the day it was
 made, unless the owner says to keep it.
 
 ## A run, as a customer
 
 1. `ops/dev/latitude plans`: check the plan is in stock where you want it
-   (default `ASH`, Ashburn). The slugs come from the API spec's enums and
-   were not seen live before the first run.
+   (default `NYC`; Ashburn had no m4-metal-small on 2026-11-23). The
+   account has two projects; the lab's is `repose-boyh`
+   (`proj_ZWr75ZQOvNA91`), the helper's default.
 2. `ops/dev/latitude ssh-key` once per project, then
    `ops/dev/latitude create`, then `ops/dev/latitude wait`.
 3. On the box, check the customer's preconditions before installing:
@@ -65,7 +69,10 @@ made, unless the owner says to keep it.
 ## Untested
 
 The helper was written from the API reference on 2026-11-23, before a key
-existed. Not confirmed live: the plan, site and OS slugs; whether
+existed. Confirmed live on 2026-11-23: the key authenticates, both projects list,
+`plans` reads stock and prices (curl needs `-g` for the `filter[...]`
+brackets, now in the helper), and `ubuntu_24_04_x64_lts` is a real OS
+slug. Not confirmed live: whether
 `ssh_keys` takes the key's id (assumed) or its name; the project ssh-key
 path, which the spec marks deprecated; the user the Ubuntu image logs in
 as (`ubuntu` assumed, `LATITUDE_SSH_USER` changes it). The first run is
