@@ -72,7 +72,7 @@ test('01 How it works: stacks the three beats vertically on phones without hidde
 	await expect(page.locator('#agents .sw-desktop')).toBeHidden();
 	const mob = page.locator('#agents .sw-mobile');
 	await expect(mob).toBeVisible();
-	await expect(mob.locator('.sw-mb-head h3')).toHaveText(HEADS);
+	await expect(mob.locator('.sw-mb-head h2')).toHaveText(HEADS);
 	const tops = await mob
 		.locator('.sw-mob-beats > li')
 		.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));

@@ -34,6 +34,30 @@ type RunSpec struct {
 	// ApplyMenu reads apt's phases from while apt runs. It is called from
 	// the reader goroutines, one line at a time, and must not block.
 	OnLine func(line string)
+	// Background runs a root command below the agent (DECISIONS I-1560):
+	// in a transient scope under BackgroundSlice, at nice 10 and
+	// best-effort I/O priority 7, so a menu's apt install takes what the
+	// agent leaves rather than an equal share. It is ignored for dev, and
+	// where systemd-run is not on PATH.
+	Background bool
+}
+
+// BackgroundSlice is where a Background command's scope goes: a slice of
+// the root, beside user.slice (dev's agents) and system.slice, which the
+// erofs base gives CPUWeight=20 and IOWeight=20 against their 100
+// (images/guest/rootfs/etc/systemd/system/repose_menu.slice). The
+// underscore is load-bearing: systemd reads a dash in a slice's name as
+// nesting, and repose-menu.slice sat under a repose.slice of weight 100,
+// as a weight on the scope alone sits under system.slice; both left the
+// agent at half the machine (measured on e2e-mac-apply, 2026-11-23).
+const BackgroundSlice = "repose_menu.slice"
+
+// BackgroundArgv is argv (argv[0] resolved) run as RunSpec.Background
+// says, given systemd-run, nice and ionice at those paths.
+func BackgroundArgv(systemdRun, nice, ionice string, argv []string) []string {
+	out := []string{systemdRun, "--scope", "--quiet", "--collect", "--slice=" + BackgroundSlice, "--",
+		nice, "-n", "10", ionice, "-c2", "-n7"}
+	return append(out, argv...)
 }
 
 // DefaultMaxOutput is the per-stream cap when a RunSpec does not set one.
@@ -87,6 +111,13 @@ func (r ExecRunner) Run(ctx context.Context, spec RunSpec) (RunResult, error) {
 		argv, err = r.setprivArgv(argv, spec.Env)
 		if err != nil {
 			return RunResult{}, err
+		}
+	} else if spec.Background {
+		sr, e1 := LookPath("systemd-run", spec.Env)
+		ni, e2 := LookPath("nice", spec.Env)
+		ion, e3 := LookPath("ionice", spec.Env)
+		if e1 == nil && e2 == nil && e3 == nil {
+			argv = BackgroundArgv(sr, ni, ion, argv)
 		}
 	}
 

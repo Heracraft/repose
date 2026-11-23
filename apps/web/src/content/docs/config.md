@@ -28,7 +28,7 @@ Applied revision 4f1c2a9e in 17s.
 
 The lines come from the machine as each step starts; each ✓ line is an item in place. A name that isn't a [menu entry](#the-menu) is a package from Ubuntu 24.04's archive, installed with `apt-get`: `repose config add ffmpeg libpq-dev`. Package names are lower case letters, digits, `+`, `-` and dots, at most 128 characters, as `apt` has them.
 
-The machine installs into what's running, so your agents keep running. A stopped machine installs at its next start.
+The machine installs into what's running, so your agents keep running. The install runs at a lower priority than your agents, so while one works the install takes longer and the agent keeps its share of the machine. There's no limit on how long a menu takes while the machine keeps answering, except that one step (an `apt-get install`, a download) fails its item after 20 minutes, and the whole menu after 60. A stopped machine installs at its next start.
 
 An item that doesn't install fails the command with the machine's own line and exit code 10:
 
