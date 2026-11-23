@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Rent a bare-metal x86 server on Latitude.sh as a stand-in for the box a
+# customer brings to the Own hardware plan (apps/web/src/content/docs/
+# own-hardware.md, "What an x86 box needs": bare metal, Intel or AMD,
+# /dev/kvm, Ubuntu 24.04), drive it, and give it back. The runbook is
+# docs/ops/LATITUDE-LAB.md.
+#
+#   ops/dev/latitude plans            in-stock bare-metal plans and where, with hourly price
+#   ops/dev/latitude ssh-key          upload LATITUDE_SSH_PUBKEY to the project, once
+#   ops/dev/latitude create [NAME]    deploy one server (LATITUDE_PLAN, LATITUDE_SITE, Ubuntu 24.04)
+#   ops/dev/latitude wait             until it is on, has an IPv4 and sshd answers
+#   ops/dev/latitude status           id, state, ip, plan, site, hours since create
+#   ops/dev/latitude ssh [cmd]        log in as ubuntu (LATITUDE_SSH_USER)
+#   ops/dev/latitude destroy          delete it; 204 means gone
+#   ops/dev/latitude api METHOD PATH [JSON]   raw call, for anything above that is wrong
+#
+# Key: ~/.config/repose/latitude-api-key, mode 0600, written by the owner
+# with `read -rs`. It is sent through a header file on a pipe, so it never
+# appears in argv, a process list or shell history. Never print it.
+#
+# Money: on-demand metal bills by the hour (price per their page: m4.metal.small
+# $0.41/h, m4.metal.medium $0.62/h on 2026-11-23); the docs state no minimum and
+# say a deletion "may take up to an hour" to reach the billing summary. The
+# account holds a $100 credit. Every create and destroy appends a line to
+# LATITUDE_BILLING_LOG. Destroy what you create the same day.
+#
+# Knobs: LATITUDE_PLAN (m4-metal-small), LATITUDE_SITE (ASH),
+# LATITUDE_OS (ubuntu_24_04_x64_lts), LATITUDE_PROJECT (id or slug; default:
+# the first project the key can see), LATITUDE_SSH_PUBKEY (~/.ssh/id_ed25519.pub),
+# LATITUDE_SSH_USER (ubuntu), LATITUDE_BILLING_LOG (~/briefs/latitude-billing.log).
+#
+# UNTESTED as of 2026-11-23: written from the API reference before the key
+# existed. Slugs (plan, site, OS) come from the spec's enums, not a live
+# answer; the first `plans` run is the check. The first run is the test.
+set -euo pipefail
+
+API=https://api.latitude.sh
+KEY=${LATITUDE_KEY_FILE:-$HOME/.config/repose/latitude-api-key}
+STATE=${LATITUDE_STATE:-$HOME/.config/repose/latitude-lab.state}
+PLAN=${LATITUDE_PLAN:-m4-metal-small}
+SITE=${LATITUDE_SITE:-ASH}
+OS=${LATITUDE_OS:-ubuntu_24_04_x64_lts}
+PUB=${LATITUDE_SSH_PUBKEY:-$HOME/.ssh/id_ed25519.pub}
+SSHUSER=${LATITUDE_SSH_USER:-ubuntu}
+BILL=${LATITUDE_BILLING_LOG:-$HOME/briefs/latitude-billing.log}
+
+die() { echo "latitude: $*" >&2; exit 1; }
+[ -s "$KEY" ] || die "no key at $KEY (docs/ops/LATITUDE-LAB.md, 'The key')"
+command -v jq >/dev/null || die "needs jq"
+
+# The bearer header is built by printf, a shell builtin, and read by curl
+# from a file descriptor: the key is never an argument of any process.
+api() {
+  local method=$1 path=$2 body=${3:-}
+  local args=(-sS -X "$method" -H 'Accept: application/json' -w '\n%{http_code}')
+  [ -z "$body" ] || args+=(-H 'Content-Type: application/json' --data-binary "$body")
+  curl "${args[@]}" -H @<(printf 'Authorization: Bearer %s\n' "$(cat "$KEY")") "$API$path"
+}
+# api_ok METHOD PATH [JSON]: the body on 2xx, else the status and body on stderr.
+api_ok() {
+  local out code
+  out=$(api "$@"); code=${out##*$'\n'}; out=${out%$'\n'*}
+  case $code in 2??) printf '%s' "$out" ;; *) echo "latitude: $1 $2 -> HTTP $code" >&2; printf '%s\n' "$out" >&2; return 1 ;; esac
+}
+field() { [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" || true; }
+bill() { mkdir -p "$(dirname "$BILL")"; printf '%s | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$BILL"; }
+
+project() {
+  if [ -n "${LATITUDE_PROJECT:-}" ]; then echo "$LATITUDE_PROJECT"; return; fi
+  api_ok GET /projects | jq -r '.data[0].id // empty' | grep . || die "no project visible; set LATITUDE_PROJECT"
+}
+
+server_json() { api_ok GET "/servers/$1"; }
+
+case ${1:-} in
+  plans)
+    api_ok GET '/plans?filter[in_stock]=true' | jq -r '
+      .data[] | .attributes as $a | ($a.regions // [])[] |
+      [$a.slug, (.locations.in_stock // [] | join(",")), (.pricing.USD.hour // .pricing.USD // "?" | tostring)] | @tsv' |
+      column -t -s $'\t' ;;
+  ssh-key)
+    [ -s "$PUB" ] || die "no public key at $PUB"
+    p=$(project)
+    body=$(jq -nc --arg n "repose-lab-$(hostname)" --rawfile k "$PUB" \
+      '{data:{type:"ssh_keys",attributes:{name:$n,public_key:($k|rtrimstr("\n"))}}}')
+    id=$(api_ok POST "/projects/$p/ssh_keys" "$body" | jq -r '.data.id')
+    echo "ssh_key=$id" >>"$STATE"; echo "ssh key $id" ;;
+  create)
+    [ -z "$(field id)" ] || die "a server is already recorded ($(field id)); destroy it first or remove $STATE"
+    name=${2:-repose-x86-lab}; p=$(project); k=$(field ssh_key)
+    [ -n "$k" ] || die "run 'ops/dev/latitude ssh-key' first"
+    body=$(jq -nc --arg p "$p" --arg plan "$PLAN" --arg s "$SITE" --arg os "$OS" --arg h "$name" --arg k "$k" \
+      '{data:{type:"servers",attributes:{project:$p,plan:$plan,site:$s,operating_system:$os,hostname:$h,ssh_keys:[$k],billing:"hourly"}}}')
+    id=$(api_ok POST /servers "$body" | jq -r '.data.id')
+    printf 'id=%s\nname=%s\nplan=%s\nsite=%s\ncreated=%s\n' "$id" "$name" "$PLAN" "$SITE" "$(date -u +%s)" >>"$STATE"
+    bill "create server | $id | $PLAN $SITE $OS hourly | x86 own-hardware lab"
+    echo "created $id ($PLAN in $SITE); 'ops/dev/latitude wait' next" ;;
+  wait)
+    id=$(field id); [ -n "$id" ] || die "no server recorded"
+    for _ in $(seq 1 120); do
+      j=$(server_json "$id"); st=$(jq -r '.data.attributes.status' <<<"$j"); ip=$(jq -r '.data.attributes.primary_ipv4 // empty' <<<"$j")
+      if [ "$st" = on ] && [ -n "$ip" ] && timeout 5 bash -c ">/dev/tcp/$ip/22" 2>/dev/null; then echo "on, $ip, sshd answers"; exit 0; fi
+      case $st in failed_deployment) die "deployment failed";; esac
+      sleep 15
+    done; die "not up after 30 min (last status $st)" ;;
+  status)
+    id=$(field id); [ -n "$id" ] || { echo "no server recorded"; exit 0; }
+    j=$(server_json "$id"); c=$(field created)
+    jq -r --arg h "$(( ($(date -u +%s) - ${c:-0}) / 3600 ))" \
+      '.data | "\(.id)  \(.attributes.status)  \(.attributes.primary_ipv4 // "-")  \(.attributes.hostname)  ~\($h) h since create"' <<<"$j" ;;
+  ssh)
+    shift; id=$(field id); [ -n "$id" ] || die "no server recorded"
+    ip=$(server_json "$id" | jq -r '.data.attributes.primary_ipv4 // empty'); [ -n "$ip" ] || die "no IPv4 yet"
+    exec ssh -o StrictHostKeyChecking=accept-new "$SSHUSER@$ip" "$@" ;;
+  destroy)
+    id=$(field id); [ -n "$id" ] || die "no server recorded"
+    api_ok DELETE "/servers/$id?reason=lab%20done" >/dev/null
+    bill "destroy server | $id | billing ends (docs: up to an hour to show)"
+    sed -i '/^\(id\|name\|plan\|site\|created\)=/d' "$STATE"; echo "destroyed $id" ;;
+  api)
+    shift; api_ok "$@"; echo ;;
+  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
