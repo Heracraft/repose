@@ -5,14 +5,16 @@
 # (images/appliance-arm64/), then register it with the join argument
 # `repose host add` printed. Served as https://repose.run/install-host.sh:
 #
-#   curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join <argument>
+#   printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join
+#   curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall
 #
 # Ubuntu 24.04 or Debian 12 and later, x86_64, systemd, /dev/kvm. Run as
 # root. Every step is printed before it runs; a second run changes only
 # what differs and re-registers nothing.
 #
-#   --join ARGUMENT        the argument `repose host add` printed
-#   --join-file PATH       the same, read from a file
+#   --join-file PATH       a file holding the argument `repose host add`
+#                          printed; deleted once the install has read it
+#   --join ARGUMENT        the argument itself, which sudo's log then keeps
 #   --device DEV           a whole empty block device for the guests
 #   --loop-file PATH       a file on this machine's disk for the guests
 #                          instead (the default: /var/lib/repose/guests.img)
@@ -28,6 +30,12 @@
 #                          newest hostd release names
 #   --manifest-url URL     a hostd manifest to install and update from,
 #                          instead of the newest hostd-<version> release's
+#   --uninstall            take repose off this machine: hostd, the guests
+#                          and their pool (the loop file, or --device's
+#                          disk left with no signature), wg0, the nftables
+#                          tables, the units, binaries and state. Refused
+#                          while the host is still on the account
+#   --force                with --uninstall, do it although it is
 #   --dry-run              print every step and change nothing
 set -euo pipefail
 
@@ -68,6 +76,7 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEq1BgpU75F46qQ3iMHL1E0VOqye+4
 
 join="" join_file="" device="" loop_file="" size="" uplink=""
 api="" api_name="" api_ca_file="" hostd_binary="" manifest_url="" dry=0
+uninstall=0 force=0
 while [ $# -gt 0 ]; do
   case $1 in
     --join) join=${2:?--join needs the argument}; shift 2 ;;
@@ -82,6 +91,8 @@ while [ $# -gt 0 ]; do
     --hostd-binary) hostd_binary=${2:?}; shift 2 ;;
     --manifest-url) manifest_url=${2:?}; shift 2 ;;
     --dry-run) dry=1; shift ;;
+    --uninstall) uninstall=1; shift ;;
+    --force) force=1; shift ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "install-host: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -101,6 +112,50 @@ step() {
   "$@"
 }
 
+# kernel_fix_shown KVER: whether this kernel is shown to carry the fix for
+# CVE-2026-99999 (docs/security/cve-2026-99999.md, DECISIONS I-778,
+# I-1588): a 6.18 from 6.18.57 on, the first 6.18 with the backport of
+# 6785011f8b16; or any kernel whose package changelog names the CVE or
+# that commit's subject, which is how a distribution kernel that took the
+# backport says so: Ubuntu 24.04's linux 6.8.0-149 lists the subject under
+# its 2026-10-21 stable patchset, Debian 13's linux 6.12.113-1 lists it
+# with the CVE. The changelog is read from the package's own copy, and
+# from `apt-get changelog` when the machine has none (minimal images leave
+# /usr/share/doc out). Ubuntu's signed image package's changelog is only
+# a version bump, so its modules package is read first. A changelog that
+# cannot be read shows nothing, which is why this warns and never
+# refuses.
+kernel_fix_shown() {
+  local kver=$1 v maj rest min pat pkg f log
+  v=${kver%%-*}
+  maj=${v%%.*} rest=${v#*.}
+  min=${rest%%.*}
+  pat=0
+  [ "$rest" != "$min" ] && pat=${rest#*.}
+  pat=${pat%%[!0-9]*}
+  if [ "$maj" = 6 ] && [ "$min" = 18 ] && [ "${pat:-0}" -ge 57 ]; then
+    return 0
+  fi
+  for pkg in "linux-modules-$kver" "linux-image-unsigned-$kver" "linux-image-$kver-unsigned" "linux-image-$kver"; do
+    for f in "/usr/share/doc/$pkg/changelog.Debian.gz" "/usr/share/doc/$pkg/changelog.gz"; do
+      [ -r "$f" ] || continue
+      if zgrep -q -F -e CVE-2026-99999 -e 'validate checksum_start before completing checksum' "$f" 2>/dev/null; then
+        return 0
+      fi
+    done
+  done
+  command -v apt-get >/dev/null || return 1
+  for pkg in "linux-modules-$kver" "linux-image-unsigned-$kver" "linux-image-$kver-unsigned" "linux-image-$kver"; do
+    log=$(timeout 60 apt-get changelog -qq "$pkg" 2>/dev/null || true)
+    [ -n "$log" ] || continue
+    if grep -q -F -e CVE-2026-99999 -e 'validate checksum_start before completing checksum' <<< "$log"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+prepare_install() {
 # ---- what this machine is ------------------------------------------------
 [ "$(uname -m)" = x86_64 ] || die "this installer is for x86_64; this machine is $(uname -m). A Mac runs \`repose host add --join\`."
 [ "$dry" = 1 ] || [ "$(id -u)" = 0 ] || die "run it as root (sudo bash -s -- ...)."
@@ -115,17 +170,23 @@ esac
 # The kernel. Below 6.8, the kernel Ubuntu 24.04 shipped with, the parts
 # hostd relies on (nftables' per-address connection count, erofs with
 # file-backed images, vhost-vsock as Cloud Hypervisor 53 uses it) are not
-# what repose is tested on: refused. Below 6.18 is the window where
-# CVE-2026-99999, a guest-to-host escape through a tap's checksum
-# metadata, is fixed only if the distribution backported it (repose's own
-# hosts run 6.18.57 or later, nix/hosts/kernel.nix): warned.
+# what repose is tested on: refused. A kernel not shown to carry the fix
+# for CVE-2026-99999, a guest-to-host escape through a tap's checksum
+# metadata, is warned about at the end, where the output is read, and
+# installed on: the only guests on this machine are its owner's
+# (DECISIONS I-1588).
 kver=$(uname -r)
 kmaj=${kver%%.*} krest=${kver#*.} kmin=${krest%%[!0-9]*}
 if [ "$kmaj" -lt 6 ] || { [ "$kmaj" = 6 ] && [ "$kmin" -lt 8 ]; }; then
   die "kernel $kver is older than 6.8; upgrade the kernel first."
 fi
-if [ "$kmaj" = 6 ] && [ "$kmin" -lt 18 ]; then
-  say "warning: kernel $kver is older than 6.18. Repose's own hosts run 6.18.57 or later for the fix to CVE-2026-99999 (a guest-to-host escape); use a kernel with that fix."
+kernel_note=""
+if ! kernel_fix_shown "$kver"; then
+  kernel_note="warning: kernel $kver is not shown to carry the fix for CVE-2026-99999, through which code in one of your machines could take over this box."
+  case $ID in
+    ubuntu) kernel_note+=" Ubuntu 24.04's kernels carry it from 6.8.0-149: apt-get update && apt-get full-upgrade, then reboot and run this installer again to check." ;;
+    debian) kernel_note+=" Debian 13's kernel carries it from 6.12.113-1, and Debian 12's did not on 2026-11-23; with a kernel that does, reboot and run this installer again to check." ;;
+  esac
 fi
 if [ -n "$join_file" ]; then
   [ -r "$join_file" ] || die "cannot read $join_file"
@@ -177,6 +238,10 @@ if [ "${#missing[@]}" -gt 0 ]; then
 else
   say "packages: all present"
 fi
+}
+
+kernel_note=""
+[ "$uninstall" = 1 ] || prepare_install
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -1466,6 +1531,168 @@ REPOSE_HOST_FILE
 }
 # END GENERATED HOST FILES
 
+# ---- --uninstall ---------------------------------------------------------------
+# Take repose off this machine (ENG-204, DECISIONS I-1590): the reverse of
+# everything below, run as root, each step only where there is something
+# to undo, so a second run changes nothing. The files the generated block
+# writes are listed by running it with install_file recording instead of
+# writing, so the two lists cannot drift apart.
+#
+# Refused while this machine is still a host on the account: hostd logs
+# the api's "host is retired" (or "lost") at its first heartbeat after
+# `repose host rm`, which is how this machine knows. --force skips that.
+uninstall_host() {
+  [ "$dry" = 1 ] || [ "$(id -u)" = 0 ] || die "run it as root (sudo bash -s -- --uninstall)."
+  local hj=/var/lib/repose/hostd/host.json
+  if [ -s "$hj" ] && [ "$force" = 0 ] &&
+    ! journalctl -u hostd.service -o cat --no-pager 2>/dev/null | grep -E 'host is (retired|lost)' >/dev/null; then
+    die "this machine is still a host on your account. Remove it there first with \`repose host rm <name>\` (the name \`repose host ls\` shows), wait 15 seconds for this machine to hear, and run this again. --force removes repose from here without that, and the host stays on your account, offline, until you remove it there."
+  fi
+
+  local files=() units=() f u pool_file="" pvs_list="" dev
+  install_file() { cat > /dev/null; files+=("$2"); }
+  write_host_files
+  files+=(/etc/repose/release.pub /etc/repose/hostd.env /etc/repose/api-ca.pem
+    /etc/repose/uplink.nft /etc/repose/hostd-update.env /etc/repose/pool.env
+    /etc/apparmor.d/repose-virtiofsd /usr/local/bin/hostd /usr/local/bin/.hostd.new)
+  for f in "${files[@]}"; do
+    case $f in
+      /etc/systemd/system/*.service | /etc/systemd/system/*.timer)
+        [ -e "$f" ] && units+=("$(basename "$f")") ;;
+    esac
+  done
+  pool_file=$(sed -n 's/^REPOSE_POOL_FILE=//p' /etc/repose/pool.env 2>/dev/null || true)
+  if command -v pvs >/dev/null; then
+    pvs_list=$(pvs --noheadings -o pv_name -S vg_name=vg-guests 2>/dev/null | tr -d ' ' || true)
+  fi
+
+  if [ "${#units[@]}" = 0 ] && [ ! -e /etc/repose ] && [ ! -e /var/lib/repose ] && [ -z "$pvs_list" ] &&
+    [ ! -e /usr/local/bin/hostd ]; then
+    say "repose is not on this machine."
+    return 0
+  fi
+
+  # hostd and its timers first, so nothing starts a guest again; then the
+  # guests, which with their host gone have nowhere else to be.
+  # shellcheck disable=SC2329 # run through step
+  quiet() { "$@" >/dev/null 2>&1 || true; }
+  step "stop hostd and its timers" -- quiet systemctl stop repose-hostd-update.timer repose-snapshot.timer \
+    repose-hostd-update.service repose-snapshot.service repose-register.service hostd.service
+  local guests
+  guests=$(systemctl list-units --all --plain --no-legend 'guest@*' 'virtiofsd@*' 'virtiofsd-auth@*' 2>/dev/null | awk '{ print $1 }')
+  if [ -n "$guests" ]; then
+    # shellcheck disable=SC2086 # one unit name a word
+    step "stop the machines on this host" -- quiet systemctl stop $guests
+  fi
+  local mounts
+  mounts=$(findmnt -rn -o TARGET 2>/dev/null | grep -E '^(/var/lib/repose|/run/repose)(/|$)' | sort -r || true)
+  for f in $mounts; do
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    step "unmount $f" -- bash -c 'umount "$1" 2>/dev/null || umount -l "$1"' _ "$f"
+  done
+  if [ "${#units[@]}" -gt 0 ]; then
+    step "stop and disable ${units[*]}" -- bash -c 'systemctl disable --now -q "$@" 2>/dev/null || true' _ "${units[@]}"
+  fi
+
+  # The network: wg0 (only when its config is repose's link), the taps on
+  # br-guests and the bridge, and the two repose tables.
+  if [ "$(readlink /etc/wireguard/wg0.conf 2>/dev/null || true)" = /run/repose/wg0.conf ]; then
+    step "stop wg0" -- bash -c 'systemctl stop wg-quick@wg0.service 2>/dev/null || true
+      ip link show wg0 >/dev/null 2>&1 && ip link del wg0
+      rm -f /etc/wireguard/wg0.conf'
+  fi
+  if ip link show br-guests >/dev/null 2>&1; then
+    # shellcheck disable=SC2016 # expanded by the inner bash
+    step "remove br-guests and its taps" -- bash -c '
+      for t in $(ip -o link show master br-guests 2>/dev/null | awk -F": " "{ print \$2 }" | cut -d@ -f1); do
+        case $t in tap-*) ip link del "$t" 2>/dev/null || true ;; esac
+      done
+      ip link del br-guests'
+  fi
+  for f in "inet repose" "bridge repose"; do
+    # shellcheck disable=SC2086 # family and name, two words
+    if command -v nft >/dev/null && nft list table $f >/dev/null 2>&1; then
+      # shellcheck disable=SC2086
+      step "delete the nftables table $f" -- nft delete table $f
+    fi
+  done
+
+  # The pool: its volumes, the volume group, the physical volume's label,
+  # then the loop device and its file. A --device disk keeps its bytes and
+  # loses its signature, so the machine sees it as an empty disk.
+  if [ -n "$pvs_list" ]; then
+    step "remove vg-guests and its volumes" -- bash -c 'vgchange -q -an vg-guests >/dev/null 2>&1 || true; vgremove -q -ff -y vg-guests'
+    for dev in $pvs_list; do
+      # shellcheck disable=SC2016 # expanded by the inner bash
+      step "release $dev" -- bash -c 'pvremove -q -ff -y "$1"; lvmdevices --deldev "$1" >/dev/null 2>&1 || true' _ "$dev"
+    done
+  fi
+  if [ -n "$pool_file" ]; then
+    for dev in $(losetup -j "$pool_file" -O NAME -n 2>/dev/null || true); do
+      step "detach $dev" -- losetup -d "$dev"
+    done
+    if [ -e "$pool_file" ]; then
+      step "delete $pool_file" -- rm -f -- "$pool_file"
+    fi
+  fi
+
+  # The files, the binaries the installer fetched (by their pinned sha256,
+  # so one the machine's owner put there is left), the state, the accounts.
+  if [ -e /etc/apparmor.d/repose-virtiofsd ] && command -v apparmor_parser >/dev/null; then
+    step "unload /etc/apparmor.d/repose-virtiofsd" -- quiet apparmor_parser -R /etc/apparmor.d/repose-virtiofsd
+  fi
+  local gone=()
+  for f in "${files[@]}"; do
+    [ -e "$f" ] && gone+=("$f")
+  done
+  local path sum
+  for f in "/usr/local/bin/cloud-hypervisor $CH_SHA256" "/usr/local/bin/ch-remote $CHR_SHA256" "/usr/local/bin/virtiofsd $VIRTIOFSD_SHA256"; do
+    read -r path sum <<< "$f"
+    if [ -f "$path" ] && echo "$sum  $path" | sha256sum -c --quiet - >/dev/null 2>&1; then
+      gone+=("$path")
+    fi
+  done
+  if [ "${#gone[@]}" -gt 0 ]; then
+    step "delete ${#gone[@]} files of repose's" -- rm -f -- "${gone[@]}"
+  fi
+  # The drop-in directories only when nothing of anyone else's is in them.
+  for f in /etc/systemd/system/guest@.service.d /etc/systemd/system/virtiofsd@.service.d \
+    /etc/systemd/system/virtiofsd-auth@.service.d /etc/systemd/system/wg-quick@wg0.service.d; do
+    if [ -d "$f" ] && [ -z "$(ls -A "$f")" ]; then
+      step "delete $f" -- rmdir -- "$f"
+    fi
+  done
+  for f in /usr/local/lib/repose /etc/repose /run/systemd/network/20-br-guests.network.d \
+    /var/lib/repose /run/repose /var/log/repose; do
+    if [ -e "$f" ]; then
+      step "delete $f" -- rm -rf --one-file-system -- "$f"
+    fi
+  done
+  for u in repose-auth virtiofsd hostd; do
+    if getent passwd "$u" >/dev/null; then
+      step "delete the account $u" -- userdel "$u"
+    fi
+  done
+  if getent group hostd >/dev/null; then
+    step "delete the group hostd" -- groupdel hostd
+  fi
+  if [ "$dry" = 1 ]; then
+    echo "would: reload systemd, udev and networkd"
+  else
+    echo "==> reload systemd, udev and networkd"
+    systemctl daemon-reload
+    systemctl reset-failed >/dev/null 2>&1 || true
+    udevadm control --reload >/dev/null 2>&1 || true
+    networkctl reload >/dev/null 2>&1 || true
+  fi
+  say "repose is off this machine. The apt packages it installed stay, and its kernel settings (IP forwarding among them) last until the next boot."
+}
+
+if [ "$uninstall" = 1 ]; then
+  uninstall_host
+  exit 0
+fi
+
 # ---- the host's files -------------------------------------------------------
 write_host_files
 
@@ -1607,6 +1834,11 @@ else
   echo "==> write the join argument to /run/repose/launcher/join"
   install -d -m 0700 /run/repose/launcher
   (umask 077 && printf '%s\n' "$join" > /run/repose/launcher/join)
+  # The file the argument came in is spent now: the copy above is the one
+  # registration reads, and the token works once (ENG-206).
+  if [ -n "$join_file" ]; then
+    rm -f -- "$join_file" || say "could not delete $join_file; the argument in it works only for this install."
+  fi
 fi
 
 # ---- the units -----------------------------------------------------------------
@@ -1645,4 +1877,7 @@ else
   else
     say "hostd is $(systemctl is-active hostd.service); it registers through the hub and joins your account in a minute or two."
   fi
+fi
+if [ -n "$kernel_note" ]; then
+  say "$kernel_note"
 fi

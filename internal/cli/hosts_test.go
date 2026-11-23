@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -29,11 +31,18 @@ func TestHostAddOnLinuxX86(t *testing.T) {
 		t.Fatal(err)
 	}
 	step := strings.TrimRight(out.buf.String(), "\n")
-	const prefix = "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join "
-	if strings.Contains(step, "\n") || !strings.HasPrefix(step, prefix) {
+	// ENG-206: the argument reaches the installer through a file written
+	// by printf, a shell builtin, so sudo's log of the command holds no
+	// token.
+	const prefix = "printf '%s\\n' "
+	const suffix = " > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join"
+	if strings.Contains(step, "\n") || !strings.HasPrefix(step, prefix) || !strings.HasSuffix(step, suffix) {
 		t.Fatalf("stdout is the x86 install step alone: %q", out.buf.String())
 	}
-	arg := strings.TrimPrefix(step, prefix)
+	if sudo := step[strings.Index(step, "sudo"):]; strings.Contains(sudo, strings.TrimSuffix(strings.TrimPrefix(step, prefix), suffix)) {
+		t.Fatalf("the argument is on sudo's command line: %q", step)
+	}
+	arg := strings.TrimSuffix(strings.TrimPrefix(step, prefix), suffix)
 	if arg == "" || strings.ContainsAny(arg, " '\"") {
 		t.Fatalf("the argument is one shell word: %q", arg)
 	}
@@ -462,5 +471,61 @@ func TestRemovingAHostThatIsGoneSaysWhatGoesWithIt(t *testing.T) {
 	// Two machines read as two.
 	if got := hostRemovePrompt(&Host{Name: "mac-rig2", State: "lost", Projects: 2}); !strings.Contains(got, "the 2 machines on it cannot be recovered") || !strings.Contains(got, "their disks are") {
 		t.Errorf("two machines: %q", got)
+	}
+}
+
+// ENG-204, DECISIONS I-1590: an x86 box keeps hostd and its disk until
+// its installer's --uninstall runs there, so removing the host says the
+// one line to run; a Mac's does not, since the appliance is the CLI's.
+func TestHostRmOfAnX86BoxSaysHowToUninstall(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	onAppleSilicon = func() bool { return false }
+	t.Cleanup(func() { onAppleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" } })
+
+	for _, c := range []struct{ arch, want string }{
+		{"x86_64", "Repose still runs on box until this runs there as root:\n  " + hostUninstallX86 + "\n"},
+		{"aarch64", ""},
+	} {
+		errOut := &discardWriter{}
+		e.Out, e.ErrOut = &discardWriter{}, errOut
+		id := fake.AddOwnedHost("box")
+		fake.SetOwnedHostArch(id, c.arch)
+		if err := HostRmCmd(ctx, e, "box", true, nil); err != nil {
+			t.Fatalf("%s: %v", c.arch, err)
+		}
+		if got := errOut.buf.String(); got != c.want {
+			t.Errorf("%s: stderr %q, want %q", c.arch, got, c.want)
+		}
+	}
+}
+
+// ENG-204: on Linux, `repose host rm --local` said "There is no appliance
+// on this Mac." It now names the installer's uninstall on a box the
+// installer made, and says there is no host anywhere else.
+func TestHostRmLocalOnLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the Linux answer")
+	}
+	onAppleSilicon = func() bool { return false }
+	t.Cleanup(func() { onAppleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" } })
+	marker := filepath.Join(t.TempDir(), "hostd.env")
+	old := x86HostMarker
+	x86HostMarker = marker
+	t.Cleanup(func() { x86HostMarker = old })
+	e := &Env{Out: &discardWriter{}, ErrOut: &discardWriter{}}
+
+	err := HostRmLocalCmd(context.Background(), e, true, nil)
+	if err == nil || err.Error() != "There is no repose host on this machine." {
+		t.Fatalf("no install: %v", err)
+	}
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = HostRmLocalCmd(context.Background(), e, true, nil)
+	if err == nil || !strings.Contains(err.Error(), hostUninstallX86) || strings.Contains(err.Error(), "Mac") {
+		t.Fatalf("an x86 install: %v", err)
 	}
 }

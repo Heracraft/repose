@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"runtime"
 	"slices"
@@ -122,8 +123,29 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 
 // hostInstallX86 is the step `repose host add` prints on a Linux x86
 // machine: ops/install-host-x86.sh as repose.run serves it, run as root,
-// with the join argument (DECISIONS I-1498).
-const hostInstallX86 = "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join %s"
+// with the join argument (DECISIONS I-1498). The argument goes to a file
+// through printf, a shell builtin, so it is in no process's argv and not
+// in the COMMAND sudo logs; the installer deletes the file once read
+// (ENG-206, DECISIONS I-1592).
+const hostInstallX86 = "printf '%%s\\n' %s > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join"
+
+// hostUninstallX86 takes repose off a Linux x86 machine again (ENG-204,
+// DECISIONS I-1590).
+const hostUninstallX86 = "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall"
+
+// x86HostMarker is a file the x86 installer writes and its --uninstall
+// removes; tests replace it.
+var x86HostMarker = "/etc/repose/hostd.env"
+
+// x86HostHere is whether this Linux machine was made a host by the x86
+// installer.
+func x86HostHere() bool {
+	if runtime.GOOS != "linux" && !onLinuxX86() {
+		return false
+	}
+	_, err := os.Stat(x86HostMarker)
+	return err == nil
+}
 
 // onLinuxX86 is where that step is the one to print; tests replace it.
 var onLinuxX86 = func() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" }
@@ -290,12 +312,29 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 	default:
 		_, _ = fmt.Fprintf(e.ErrOut, "This Mac's appliance was added with --join and stays.\n")
 	}
+	// An x86 box keeps hostd, the guest pool and its disk until its
+	// installer takes them off; nothing here can reach the box to do it
+	// (ENG-204, DECISIONS I-1590).
+	if h.Arch == "x86_64" {
+		_, _ = fmt.Fprintf(e.ErrOut, "Repose still runs on %s until this runs there as root:\n  %s\n", h.Name, hostUninstallX86)
+	}
 	return nil
 }
 
 // HostRmLocalCmd implements `repose host rm --local`: the appliance on
 // this Mac, and nothing on the account.
 func HostRmLocalCmd(ctx context.Context, e *Env, yes bool, confirm func(prompt string) (bool, error)) error {
+	// Off a Mac there is no appliance. An x86 box made a host by the
+	// installer is taken off by the installer, as root, which this
+	// command does not do for the user (ENG-204, DECISIONS I-1590).
+	if !onAppleSilicon() {
+		if x86HostHere() {
+			return exitf(ExitGeneric, "Repose comes off this machine with its installer, run here as root:\n  %s", hostUninstallX86)
+		}
+		if runtime.GOOS != "darwin" {
+			return exitf(ExitGeneric, "There is no repose host on this machine.")
+		}
+	}
 	name, installed := localAppliance(e)
 	// Present, not installed: an install that stopped before its config.
 	// It still holds the bytes, so it is still what this command is for

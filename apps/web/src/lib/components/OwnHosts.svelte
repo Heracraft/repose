@@ -28,6 +28,9 @@
 	 * own figures, as own-hardware.md gives them. */
 	const MAC_DOWNLOAD = 'about 250 MB';
 	const MAC_FREE_DISK = '20 GB';
+	/** What takes repose off an x86 box again (I-1590); `repose host rm` prints it too. */
+	const X86_UNINSTALL =
+		'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall';
 
 	let hosts = $state<OwnedHost[] | undefined>(undefined);
 	let loadError = $state<string | undefined>(undefined);
@@ -255,10 +258,12 @@
 	 * The same argument for an x86 box, which runs the host installer
 	 * instead of the CLI (I-1490; own-hardware.md "Adding it"). Shown only
 	 * when the api sent the argument, since the line is nothing without it.
+	 * The argument goes through a file so sudo's log keeps no copy
+	 * (ENG-206, I-1592); the same line `repose host add` prints.
 	 */
 	let x86Step = $derived(
 		made?.install?.argument
-			? `curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join ${made.install.argument}`
+			? `printf '%s\\n' ${made.install.argument} > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`
 			: ''
 	);
 </script>
@@ -347,6 +352,14 @@
 										<p>
 											Remove <code>{h.name}</code>? {removeWarning(h)}
 										</p>
+										{#if h.arch === 'x86_64'}
+											<!-- An x86 box keeps hostd and its disk until the installer's
+											     --uninstall runs there (ENG-204, I-1590). -->
+											<p data-testid="host-uninstall-x86">
+												Repose keeps running on the box until you run this there as root:
+											</p>
+											<CodeCopy command={X86_UNINSTALL} what="the uninstall step" wrap />
+										{/if}
 										<div class="hk-confirm-actions">
 											<button
 												type="button"

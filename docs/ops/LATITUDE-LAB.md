@@ -58,12 +58,15 @@ made, unless the owner says to keep it.
    `ls -l /dev/kvm`, `nproc`, `free -g`, `df -h /`, the OS release.
 4. From a logged-in CLI here, `repose host add` prints the join argument
    for an x86 box; run the installer on the server as the docs give it
-   (`curl -fsSL https://repose.run/install-host.sh | sudo bash -s --
-   --join <argument>`). Machines made on it are throwaway `e2e-*`
+   (`printf '%s\n' <argument> > repose-join && curl -fsSL
+   https://repose.run/install-host.sh | sudo bash -s -- --join-file
+   repose-join`, I-1592). Machines made on it are throwaway `e2e-*`
    projects, never the owner's (docs/ops/RELEASE.md).
 5. `repose host ls` until `online`, then `repose run e2e-x86-... --temp`
    and the checks the change under test needs.
-6. `repose host rm`, then `ops/dev/latitude destroy`, then `status` to see
+6. `repose host rm`, then on the box `curl -fsSL
+   https://repose.run/install-host.sh | sudo bash -s -- --uninstall`
+   (I-1590), then `ops/dev/latitude destroy`, then `status` to see
    it gone. Read the billing log's last two lines.
 
 ## What the first run confirmed
