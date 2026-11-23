@@ -831,7 +831,19 @@ func TestResumeOwnersStartOpenAtHello(t *testing.T) {
 	e := newEnv(t, false)
 	u := e.h.NewUser("ann")
 	p := e.h.CreateRunning(u, "todo-app")
-	e.h.WaitOp(e.h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &p.ID, Phases: ops.PlanStop()}))
+	stopID := e.h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &p.ID, Phases: ops.PlanStop()})
+	e.h.WaitOp(stopID)
+	// The stop came before the host went down: the host was heard after
+	// it. The resumer reads "went down" as the last heartbeat before the
+	// Hello (host_lost_at), and a stop op made after that counts as the
+	// owner's word to keep the machine down. The fake beats every 100ms,
+	// and on a loaded CI runner none landed between the stop and the
+	// reboot, so the row closed user_stopped (main 49b140b0). Wait for one.
+	e.h.WaitFor("a heartbeat after the stop", func() bool {
+		var heard bool
+		err := e.h.Pool.QueryRow(e.ctx, "select h.last_heartbeat_at > o.created_at from hosts h, ops o where h.id = $1 and o.id = $2", e.h.HostID, stopID).Scan(&heard)
+		return err == nil && heard
+	})
 	e.h.StopEngine()
 	startID := e.h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &p.ID, Phases: ops.PlanStart(false)})
 	// hostd had the guest starting when the host went down.
