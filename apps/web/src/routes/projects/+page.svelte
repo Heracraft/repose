@@ -6,6 +6,7 @@
 	import { listDestroyed, listHosts, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { billingStore } from '$lib/billing.svelte';
+	import { planRoom } from '$lib/planRoom';
 	import { projectsStore } from '$lib/projects.svelte';
 	import { title } from '$lib/title';
 	import { withoutBillingURL } from '$lib/refusal';
@@ -278,7 +279,7 @@
 	});
 
 	/**
-	 * The New machine form is open (I-1354, I-1602): by its button, by
+	 * The New project form is open (I-1354, I-1602): by its button, by
 	 * `n`, by `/projects?new` (with `size` and `name` to fill in, so a
 	 * link can start one), and on an account with no machine yet, where
 	 * it is the first thing to do.
@@ -312,7 +313,7 @@
 		void focusAfterRender('new-machine-open');
 	}
 
-	/** `n` opens New machine, as `c` opens Linear's create, unless a field has the keys. */
+	/** `n` opens New project, as `c` opens Linear's create, unless a field has the keys. */
 	function onWindowKey(e: KeyboardEvent) {
 		if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
 		const t = e.target as HTMLElement | null;
@@ -661,8 +662,8 @@
 				id="new-machine-open"
 				class="hk-btn-secondary hk-btn-sm"
 				aria-keyshortcuts="n"
-				title="New machine (n)"
-				onclick={() => (creating = true)}>New machine</button
+				title="New project (n)"
+				onclick={() => (creating = true)}>New project</button
 			>
 		{/if}
 	{/snippet}
@@ -674,6 +675,11 @@
 			taken={(projects ?? []).map((p) => p.name)}
 			size={page.url.searchParams.get('size') ?? undefined}
 			named={page.url.searchParams.get('name') ?? undefined}
+			room={planRoom(billingStore.mode, billingStore.info, projects)}
+			onstop={(id) => {
+				const p = (projects ?? []).find((x) => x.id === id);
+				if (p) pressed(p, 'stop');
+			}}
 			onsaved={created}
 			oncancel={closeForm}
 		/>

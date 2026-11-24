@@ -1,4 +1,4 @@
-// New machine on /projects: the dashboard makes a machine (DECISIONS
+// New project on /projects: the dashboard makes a machine (DECISIONS
 // I-1354), in one action (I-1602): the name is offered and selected, so
 // Enter makes it with the defaults `repose run` gives, and Options holds
 // the rest. A project made here is an empty machine; Repository is the
@@ -69,7 +69,7 @@ const form = (page: Page) => page.getByTestId('new-machine-form');
 async function openForm(page: Page) {
 	await page.goto('/projects');
 	await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
-	const open = page.getByRole('button', { name: 'New machine' });
+	const open = page.getByRole('button', { name: 'New project' });
 	// An account with no machine opens on the form.
 	if (await open.isVisible()) await open.click();
 	await expect(form(page)).toBeVisible();
@@ -80,6 +80,17 @@ async function options(page: Page) {
 	const t = form(page).getByRole('button', { name: 'Options' });
 	if (await t.isVisible()) await t.click();
 	await expect(form(page).getByLabel('Size')).toBeVisible();
+}
+
+/** A running project made straight on the fake, of this class. */
+async function createProjectAs(api: string, name: string, cls: string) {
+	const res = await fetch(`${api}/projects`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ name, class: cls })
+	});
+	expect(res.status).toBe(201);
+	return (await res.json()) as { id: string; name: string };
 }
 
 /** The project the fake api holds under this name, read straight from it. */
@@ -108,7 +119,7 @@ test('an account with no machine opens on the form, the name offered and selecte
 }) => {
 	await page.goto('/projects');
 	await expect(form(page)).toBeVisible();
-	await expect(page.getByRole('button', { name: 'New machine' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'New project' })).toHaveCount(0);
 	const field = form(page).getByLabel('Name');
 	await expect(field).toBeFocused();
 	await expect(field).toHaveValue(/^[a-z]+-[a-z]+$/);
@@ -122,10 +133,10 @@ test('an account with no machine opens on the form, the name offered and selecte
 	);
 });
 
-// The fastest path (I-1602): New machine, then Enter. The machine has the
+// The fastest path (I-1602): New project, then Enter. The machine has the
 // offered name and what `repose run` gives: the api's default size, kept,
 // no remote.
-test('New machine then Enter makes a machine with the defaults', async ({ page }) => {
+test('New project then Enter makes a machine with the defaults', async ({ page }) => {
 	await openForm(page);
 	const name = await form(page).getByLabel('Name').inputValue();
 	await form(page).getByLabel('Name').press('Enter');
@@ -180,6 +191,54 @@ test('a repository names the machine while the name is the one offered', async (
 	await form(page).getByLabel('Name').fill('mine');
 	await form(page).getByLabel('Repository').fill('github.com/heracraft/other');
 	await expect(form(page).getByLabel('Name')).toHaveValue('mine');
+});
+
+// On a plan that meters memory, the fast path never defaults into a
+// refusal (I-1612, ENG-227): the size starts on what fits beside the
+// running machines, the line says what is free, and when nothing fits
+// the form says so before Enter with a Stop for each machine. The fake's
+// billing refuses as the api's gate does, so Enter here proves the api
+// would take it.
+test('on a full Solo plan New project starts on the size that fits, and says when none does', async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	await pruneProjects(api);
+	await setBilling({ mode: 'active', plan: 'solo' });
+	const first = await createProjectAs(api, unique('solo-one'), 'small');
+	litter.push(first.id);
+
+	await openForm(page);
+	const summary = form(page).getByTestId('nm-summary');
+	await expect(summary).toContainText("small · 1 core · 4 GB · 4 GB of your plan's 8 GB free");
+	await expect(form(page).getByTestId('nm-room')).toHaveCount(0);
+	const name = await form(page).getByLabel('Name').inputValue();
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	expect(made!.class).toBe('small');
+
+	// Now the plan's 8 GB is in use: the form says so before Enter, with
+	// the way out.
+	await openForm(page);
+	const room = form(page).getByTestId('nm-room');
+	await expect(room).toHaveText(/Your plan's 8 GB is in use\. Stop a machine to make one here\./);
+	await expect(summary).toContainText("0 GB of your plan's 8 GB free");
+	await expect(room.getByRole('button', { name: /^Stop / })).toHaveCount(2);
+	await shots(page, 'new-project-plan-full');
+	await room.getByRole('button', { name: `Stop ${first.name}` }).click();
+	// Stopped, the room is back and so is the size that fits.
+	await expect(form(page).getByTestId('nm-room')).toHaveCount(0);
+	await expect(summary).toContainText("small · 1 core · 4 GB · 4 GB of your plan's 8 GB free");
+
+	// A size picked in Options that does not fit says what it needs.
+	await options(page);
+	await form(page).getByLabel('Size').selectOption('large');
+	await expect(form(page).getByTestId('nm-room')).toHaveText(
+		'A large machine needs 8 GB; 4 GB is free.'
+	);
 });
 
 test('Options make a machine of the size and repository asked for, which opens on its page and is in the list', async ({
@@ -339,7 +398,7 @@ test("a billing-exempt account past every plan's disk is told nothing is refused
 // The form and the machine it made, at the two widths and both schemes,
 // at 1x, to be read at that size (CLAUDE.md "Judge visuals at real
 // size"). As tokens.spec's "API tokens shots" does.
-test('New machine shots', async ({ page }, testInfo) => {
+test('New project shots', async ({ page }, testInfo) => {
 	const shot = (name: string) =>
 		page.screenshot({ path: testInfo.outputPath(`${name}.png`), animations: 'disabled' });
 	for (const width of [1440, 390]) {
@@ -371,15 +430,15 @@ test('New machine shots', async ({ page }, testInfo) => {
 	await page.emulateMedia({ colorScheme: null });
 });
 
-test('Cancel and Escape close the form and put focus back on New machine', async ({ page }) => {
+test('Cancel and Escape close the form and put focus back on New project', async ({ page }) => {
 	await openForm(page);
 	await form(page).getByRole('button', { name: 'Cancel' }).click();
 	await expect(form(page)).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'New machine' })).toBeFocused();
-	await page.getByRole('button', { name: 'New machine' }).click();
+	await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
+	await page.getByRole('button', { name: 'New project' }).click();
 	await form(page).getByLabel('Name').press('Escape');
 	await expect(form(page)).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'New machine' })).toBeFocused();
+	await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
 });
 
 // Runs on (DECISIONS I-1390): the dashboard's `repose run --host`. The
@@ -428,7 +487,7 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		// and the api holds no such project.
 		await expect(form(page).getByLabel('Name')).toHaveValue(name);
 		expect(await fromApi(name)).toBeUndefined();
-		await shots(page, 'new-machine-runs-on-refused');
+		await shots(page, 'new-project-runs-on-refused');
 
 		await runsOn.selectOption('hosted');
 		await form(page).getByRole('button', { name: 'Create' }).click();
@@ -477,7 +536,7 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 			'your host box-b has not registered yet'
 		);
 		expect(await fromApi(name)).toBeUndefined();
-		await shots(page, 'new-machine-runs-on-several');
+		await shots(page, 'new-project-runs-on-several');
 
 		await runsOn.selectOption({ label: 'box-a' });
 		await form(page).getByRole('button', { name: 'Create' }).click();
