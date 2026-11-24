@@ -611,6 +611,9 @@ func (p *Polar) CreatePlanProduct(ctx context.Context, plan Plan, meterID, key s
 // say the product is.
 func PlanProductDescription(plan Plan) string {
 	if plan.OwnHardware() {
+		if plan.Hosts >= UnlimitedHosts {
+			return "Any number of hosts you own, in your repose account: your projects run on your own machines, and their memory and disk are the limits."
+		}
 		return fmt.Sprintf("%d host you own, in your repose account: your projects run on your own machine, and its memory and disk are the limits.", plan.Hosts)
 	}
 	return fmt.Sprintf("%d GB of memory for running machines, %d GB disk, %d GB egress a month; egress past the allowance $0.05 a GB.", plan.MemoryGB, plan.DiskGB, plan.EgressGB)

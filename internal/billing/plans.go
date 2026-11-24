@@ -10,6 +10,11 @@
 // place the two meet.
 package billing
 
+import (
+	"fmt"
+	"math"
+)
+
 // Plan is one row of the table in docs/PRICING.md. The numbers live here
 // and in that doc and nowhere else (PRICING.md "Changing prices");
 // TestPlansMatchPricingDoc parses the doc's table and fails when they
@@ -25,10 +30,10 @@ type Plan struct {
 	DiskGB     int // may be allocated; 0 on an own-hardware plan
 	EgressGB   int // a period; 0 on an own-hardware plan
 	// Hosts is how many hosts of their own the plan lets the account add
-	// (DECISIONS I-1364, I-1366): one on Own hardware, none on the plans
-	// that sell memory on repose's own fleet. `POST /hosts` and /me's
-	// `limits.hosts` read this and nothing else holds the figure, so
-	// selling a second host is one number here.
+	// (DECISIONS I-1364, I-1366): UnlimitedHosts on Own hardware since
+	// I-1594, none on the plans that sell memory on repose's own fleet.
+	// `POST /hosts` and /me's `limits.hosts` read this and nothing else
+	// holds the figure, so a plan's host count is one number here.
 	//
 	// A plan with Hosts > 0 sells no fleet memory, disk or egress at all:
 	// the host the user owns is the only limit, so MemoryGB, DiskGB and
@@ -65,11 +70,36 @@ var (
 	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, BurstCoreHours: 20, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
 	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, BurstCoreHours: 50}
 	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, BurstCoreHours: 120}
-	// Own is the Mac mini or x86 box the user owns: one host, no seat on
-	// the fleet, and no memory, disk or egress of ours to sell, because
-	// the machine is theirs. The hosted plans are untouched by it.
-	Own = Plan{ID: "own", Name: "Own hardware", PriceCents: 1000, Currency: "USD", TrialDays: 7, Hosts: 1}
+	// Own is the Mac minis or x86 boxes the user owns: as many hosts as
+	// they add (DECISIONS I-1594), no seat on the fleet, and no memory,
+	// disk or egress of ours to sell, because the machines are theirs.
+	// The hosted plans are untouched by it.
+	Own = Plan{ID: "own", Name: "Own hardware", PriceCents: 1000, Currency: "USD", TrialDays: 7, Hosts: UnlimitedHosts}
 )
+
+// UnlimitedHosts is the Hosts figure of a plan that sells as many hosts
+// as the account adds (DECISIONS I-1594). It is a finite number, not a
+// sentinel such as -1 or 0, so that every reader that compares reads it
+// right without knowing about it: `POST /hosts`'s count never reaches it,
+// Plan.OwnHardware's `Hosts > 0` still says the plan sells hosts, and 0
+// keeps its one meaning, a plan that sells none. Only a reader that
+// prints the figure must know it, and says "any number" (HostsPhrase).
+// It is math.MaxInt32 so that a 32-bit reader and JavaScript hold it
+// exactly. apps/web/src/lib/plans.ts's UNLIMITED_HOSTS is the same
+// number, and plans.test.ts holds the two equal.
+const UnlimitedHosts = math.MaxInt32
+
+// HostsPhrase is a hosts figure as the product says it: "one host",
+// "3 hosts", or "any number of hosts" for UnlimitedHosts.
+func HostsPhrase(n int) string {
+	switch {
+	case n >= UnlimitedHosts:
+		return "any number of hosts"
+	case n == 1:
+		return "one host"
+	}
+	return fmt.Sprintf("%d hosts", n)
+}
 
 // Plans lists the plans in the order the dashboard shows them: the three
 // hosted ones, then Own hardware.

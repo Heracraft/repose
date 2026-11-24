@@ -12,7 +12,7 @@ import (
 	"github.com/heracraft/repose/internal/db/testdb"
 )
 
-// The Own hardware plan (DECISIONS I-1364): $10 a month for one host the
+// The Own hardware plan (DECISIONS I-1364, I-1594): $10 a month for any number of hosts the
 // user owns, selling none of repose's compute.
 
 // withOwn is testConfig with the Own hardware product configured, which
@@ -175,17 +175,17 @@ func TestAPlanThatSellsFleetMemoryIsGatedOnIt(t *testing.T) {
 			usage.DiskOver(), usage.EgressStopped(), usage.OverageCents)
 	}
 	// The product half of the plan is untouched: it is still the Own
-	// hardware product, still one host, still no change across the kinds.
+	// hardware product, still any number of hosts, still no change across the kinds.
 	if !billing.SameKind(hybrid, hybrid) || billing.SameKind(hybrid, billing.Solo) {
 		t.Fatal("a plan with a host is still the own-hardware kind")
 	}
-	if hybrid.Hosts != 1 {
+	if hybrid.Hosts != billing.UnlimitedHosts {
 		t.Fatalf("hosts %d", hybrid.Hosts)
 	}
 }
 
 // The usage block and the limits of an own-hardware account: zeros that
-// mean "the plan caps nothing", one host, every class allowed, and no
+// mean "the plan caps nothing", any number of hosts, every class allowed, and no
 // overage however much egress the account's machines sent.
 func TestOwnHardwareUsageAndLimits(t *testing.T) {
 	pool := testdb.Open(t)
@@ -221,10 +221,10 @@ func TestOwnHardwareUsageAndLimits(t *testing.T) {
 
 	u := user(t, pool, a)
 	l := billing.LimitsFor(u, sub)
-	if l.Hosts != 1 || l.XL != 1 || l.MemoryGB != 0 || l.DiskGB != 0 || l.EgressGB != 0 {
+	if l.Hosts != billing.UnlimitedHosts || l.XL != 1 || l.MemoryGB != 0 || l.DiskGB != 0 || l.EgressGB != 0 {
 		t.Fatalf("own-hardware limits: %+v", l)
 	}
-	if l.JSON()["hosts"] != 1 {
+	if l.JSON()["hosts"] != billing.UnlimitedHosts {
 		t.Fatalf("limits JSON: %v", l.JSON())
 	}
 	// /me's limits.hosts is the figure POST /hosts refuses past
@@ -239,7 +239,7 @@ func TestOwnHardwareUsageAndLimits(t *testing.T) {
 		}
 		return n
 	}
-	if n := hosts(a); n != 1 || l.Hosts != n {
+	if n := hosts(a); n != billing.UnlimitedHosts || l.Hosts != n {
 		t.Fatalf("own hardware: the route allows %d hosts, /me says %d", n, l.Hosts)
 	}
 	solo := seedAccount(t, pool, "solo", "active", "", "")
@@ -303,7 +303,7 @@ func TestOwnPlanIsSoldOnlyWhereItsProductIs(t *testing.T) {
 		t.Fatalf("with the product id the plan is listed last: %v", ids)
 	}
 	own := planRow(out, "own")
-	if own["price_cents"] != int64(1000) || own["hosts"] != 1 || own["seats"] != 0 || own["trial_days"] != 7 ||
+	if own["price_cents"] != int64(1000) || own["hosts"] != billing.UnlimitedHosts || own["seats"] != 0 || own["trial_days"] != 7 ||
 		own["memory_gb"] != 0 || own["disk_gb"] != 0 || own["egress_gb"] != 0 || own["available"] != true {
 		t.Fatalf("the own-hardware row: %v", own)
 	}

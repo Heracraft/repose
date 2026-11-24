@@ -95,8 +95,16 @@ export const PLANS: PlanFigures[] = [
 ];
 
 /**
+ * billing.UnlimitedHosts: the hosts figure of a plan that sells any number
+ * (I-1594). A finite number rather than 0 or -1, so `hosts > 0` still
+ * reads "sells hosts" and 0 still means none; a page that prints a figure
+ * says "any number" for it (hostsPhrase). plans.test.ts holds it to Go's.
+ */
+export const UNLIMITED_HOSTS = 2147483647;
+
+/**
  * The Own hardware plan (internal/billing/plans.go's Own, I-1364): $10 a
- * month for one host the user owns. It is not in PLANS, because it is
+ * month for any number of hosts the user owns (I-1594). It is not in PLANS, because it is
  * not one of the three cards: it sells no memory, disk or egress, so
  * every row of a card would be blank. The landing and /docs/billing draw
  * it as a row under them, and /billing draws the api's own copy of it.
@@ -110,8 +118,12 @@ export const OWN_HARDWARE: PlanFigures = {
 	memoryGB: 0,
 	diskGB: 0,
 	egressGB: 0,
-	hosts: 1
+	hosts: UNLIMITED_HOSTS
 };
+
+/** A hosts figure as the pages say it (billing.HostsPhrase). */
+export const hostsPhrase = (n: number) =>
+	n >= UNLIMITED_HOSTS ? 'Any number of hosts' : n === 1 ? 'One host' : `${n} hosts`;
 
 /** Whether a plan sells a host the user owns rather than memory on the
  *  fleet (billing.Plan.OwnHardware). The three cards, the seat count and

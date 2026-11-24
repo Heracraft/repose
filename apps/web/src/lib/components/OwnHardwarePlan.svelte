@@ -1,6 +1,6 @@
 <!--
   The Own hardware plan (I-1364), beside the three plan cards rather than
-  among them: it sells one host the user owns and none of repose's
+  among them: it sells any number of hosts the user owns and none of repose's
   memory, disk or egress, so its figures are not the cards' figures and a
   fourth card would hold three blank rows where they are.
 
@@ -13,7 +13,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { price } from '$lib/format';
-	import type { PlanFigures } from '$lib/plans';
+	import { hostsPhrase, type PlanFigures } from '$lib/plans';
 
 	let {
 		plan,
@@ -44,9 +44,8 @@
 		<span class="o-per">a month</span>
 	</p>
 	<p class="o-what">
-		A Mac mini or an x86 box you own, in your account. {plan.hosts === 1
-			? 'One host'
-			: `${plan.hosts} hosts`}; its memory and disk are the limits.
+		Mac minis or x86 boxes you own, in your account. {hostsPhrase(plan.hosts ?? 0)}; their memory
+		and disk are the limits.
 	</p>
 	{#if action && variant === 'app'}
 		<div class="o-act">{@render action(plan)}</div>

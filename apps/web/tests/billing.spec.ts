@@ -818,8 +818,8 @@ test.describe('the plan outside /billing', () => {
 	});
 });
 
-// The Own hardware plan (DECISIONS I-1364): $10 a month for one host the
-// user owns. It is a row beside the three cards, not a fourth card, it is
+// The Own hardware plan (DECISIONS I-1364, I-1594): $10 a month for any
+// number of hosts the user owns. It is a row beside the three cards, not a fourth card, it is
 // offered only where the api lists it (where POLAR_PRODUCT_OWN is set),
 // and on it the page has no meters to draw, because the plan caps
 // nothing.
@@ -865,7 +865,7 @@ test.describe('the Own hardware plan', () => {
 		const own = page.getByTestId('plan-own');
 		await expect(own.getByRole('heading', { level: 2, name: 'Own hardware' })).toBeVisible();
 		await expect(own.locator('.o-price .o-n')).toHaveText('$10');
-		await expect(own).toContainText('One host; its memory and disk are the limits.');
+		await expect(own).toContainText('Any number of hosts; their memory and disk are the limits.');
 		// The three cards are untouched: still three, still their figures.
 		await expect(page.locator('.plans .plan')).toHaveCount(3);
 		await expect(page.getByTestId('plan-solo')).toContainText('8 GB running at once');
@@ -880,7 +880,9 @@ test.describe('the Own hardware plan', () => {
 		});
 		await page.goto('/billing');
 		// The fleet is full and says so: the hosted plans cannot be bought.
-		await expect(page.getByTestId('full').getByRole('heading', { name: 'repose is full' })).toBeVisible();
+		await expect(
+			page.getByTestId('full').getByRole('heading', { name: 'repose is full' })
+		).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveCount(0);
 		// Own hardware is still buyable, and its checkout opens.
 		const choose = page.getByRole('button', { name: 'Choose Own hardware' });

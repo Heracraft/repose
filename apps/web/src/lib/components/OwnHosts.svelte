@@ -119,7 +119,7 @@
 				// in the browser's top layer, which no z-index reaches,
 				// so a toast raised while it is open renders under the
 				// backdrop: the customer pressed Add, nothing appeared
-				// to happen, and the reason — the plan's one-host limit
+				// to happen, and the reason — then the plan's one-host limit
 				// — was behind the thing they were looking at. The api's
 				// sentences say what the plan includes, so they are the
 				// ones shown, beside the button that was pressed.

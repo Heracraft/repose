@@ -143,46 +143,49 @@ func TestHostAddListRemove(t *testing.T) {
 	}
 }
 
-// TestHostLimit: an exempt account holds billing.ExemptHosts (eight)
-// hosts and is refused the ninth, and a paying Own hardware account is
-// still refused its second (I-1582): the exempt figure is not the
-// plan's, and what a customer is sold stays Plan.Hosts.
+// TestHostLimit: the Own hardware plan sells any number of hosts
+// (I-1594), so a paying Own hardware account adds a second and a third
+// host, and /me says the same figure the route counts against. An exempt
+// account has the same rule: it was refused its ninth under I-1582's
+// eight, and is not now.
 func TestHostLimit(t *testing.T) {
 	e := newEnv(t)
 	tok := e.signIn(t, "sub-owner", "owner")
 	e.exempt(t, "sub-owner")
-	if billing.ExemptHosts != 8 {
-		t.Fatalf("billing.ExemptHosts = %d, want 8", billing.ExemptHosts)
+	if billing.ExemptHosts != billing.UnlimitedHosts {
+		t.Fatalf("billing.ExemptHosts = %d, want UnlimitedHosts", billing.ExemptHosts)
 	}
-	for i := 1; i <= billing.ExemptHosts; i++ {
+	for i := 1; i <= 9; i++ {
 		name := fmt.Sprintf("e2e-x86-%d", i)
 		if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": name}); r.status != 201 || r.body["name"] != name {
 			t.Fatalf("exempt host %d: %d %s, want 201", i, r.status, r.raw)
 		}
 	}
-	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != billing.ExemptHosts {
-		t.Fatalf("list: %d, %d hosts, want %d", r.status, len(r.list), billing.ExemptHosts)
-	}
-	r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "e2e-x86-9"})
-	if r.status != 409 || detailOf(t, r)["reason"] != "host_limit" || detailOf(t, r)["limit"] != float64(8) {
-		t.Fatalf("ninth exempt host: %d %s, want conflict host_limit limit 8", r.status, r.raw)
-	}
-	if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your plan includes 8 hosts") {
-		t.Fatalf("ninth exempt host said %q", msg)
+	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 9 {
+		t.Fatalf("list: %d, %d hosts, want 9", r.status, len(r.list))
 	}
 
-	// A paying Own hardware account: one host, and the second refused.
+	// A paying Own hardware account: a second and a third host go in.
 	tok = e.signIn(t, "sub-own", "own")
 	e.subscribe(t, "sub-own", "own")
-	if p, _ := billing.PlanByID("own"); p.Hosts != 1 {
-		t.Fatalf("the Own hardware plan sells %d hosts, want 1", p.Hosts)
+	if p, _ := billing.PlanByID("own"); p.Hosts != billing.UnlimitedHosts {
+		t.Fatalf("the Own hardware plan sells %d hosts, want UnlimitedHosts", p.Hosts)
 	}
-	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"}); r.status != 201 {
-		t.Fatalf("Own hardware first host: %d %s, want 201", r.status, r.raw)
+	for _, name := range []string{"mac-mini", "box-b", "box-c"} {
+		if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": name}); r.status != 201 || r.body["name"] != name {
+			t.Fatalf("Own hardware host %s: %d %s, want 201", name, r.status, r.raw)
+		}
 	}
-	r = e.do(t, tok, "POST", "/hosts", map[string]any{"name": "spare"})
-	if r.status != 409 || detailOf(t, r)["reason"] != "host_limit" || detailOf(t, r)["limit"] != float64(1) {
-		t.Fatalf("Own hardware second host: %d %s, want conflict host_limit limit 1", r.status, r.raw)
+	if r := e.do(t, tok, "GET", "/hosts", nil); r.status != 200 || len(r.list) != 3 {
+		t.Fatalf("list: %d, %d hosts, want 3", r.status, len(r.list))
+	}
+	// The route's figure is /me's: a client reading limits.hosts sees
+	// the number the count is made against, and it is not 0, which
+	// means a plan that sells none.
+	r := e.do(t, tok, "GET", "/me", nil)
+	limits, _ := r.body["limits"].(map[string]any)
+	if r.status != 200 || limits["hosts"] != float64(billing.UnlimitedHosts) {
+		t.Fatalf("/me limits: %d %v, want hosts %d", r.status, limits, billing.UnlimitedHosts)
 	}
 }
 
@@ -416,7 +419,7 @@ func TestHostNeedsAPlanThatSellsOne(t *testing.T) {
 	// who committed hardware without ever being told (ENG-39). The
 	// figure is billing.Own's; a literal here would be a second price.
 	msg, _ := r.body["error"].(map[string]any)["message"].(string)
-	if want := billing.Dollars(billing.Own.PriceCents) + " a month for one host"; !strings.Contains(msg, want) {
+	if want := billing.Dollars(billing.Own.PriceCents) + " a month for any number of hosts"; !strings.Contains(msg, want) {
 		t.Fatalf("the refusal %q does not say %q", msg, want)
 	}
 }

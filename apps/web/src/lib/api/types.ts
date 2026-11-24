@@ -21,7 +21,7 @@ export type GuestState =
  * `none` is an account with no plan yet, `trial` a trialing one. */
 export type BillingStatus = 'none' | 'trial' | 'active' | 'past_due' | 'suspended' | 'exempt';
 
-/** A plan id. `own` is the Own hardware plan: one host the user owns, and
+/** A plan id. `own` is the Own hardware plan: any number of hosts the user owns, and
  *  none of repose's memory, disk or egress (I-1364). */
 export type PlanId = 'solo' | 'plus' | 'pro' | 'own';
 
@@ -356,13 +356,7 @@ export interface OwnedHost {
 /** hosts.state: `registering` is minted and never used, `unreachable` is
  * 90 seconds without a heartbeat, which for a machine at home is
  * switched off. */
-export type HostState =
-	| 'registering'
-	| 'ready'
-	| 'draining'
-	| 'unreachable'
-	| 'retired'
-	| 'lost';
+export type HostState = 'registering' | 'ready' | 'draining' | 'unreachable' | 'retired' | 'lost';
 
 /**
  * POST /projects/:id/browser/view (DECISIONS I-1216): the answer to a

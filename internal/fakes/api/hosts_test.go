@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,7 +48,8 @@ func TestFakeHostsWalkthrough(t *testing.T) {
 		t.Fatalf("list %+v", list)
 	}
 
-	// The plan's limit: one, as the Own hardware plan sells.
+	// A limit of one, as the Own hardware plan sold before I-1594: the
+	// refusal stays for a plan with a figure, and an older api answers it.
 	f.SetHostLimit(1)
 	r = call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "spare"})
 	wantErr(t, r, 409, "conflict")
@@ -184,23 +186,24 @@ func TestFakeProjectPlacement(t *testing.T) {
 // TestFakeHostFollowsTheBillingMode: the fake refuses a host exactly
 // where the api does, from its own billing mode, rather than handing one
 // to every account. The api reads the plan (billing.Gate.HostsAllowed:
-// exempt or enforcement off gets one, no live subscription gets none,
-// otherwise the plan's Hosts), and a fake that said yes where the api
-// says no is how a reviewer reports "nothing stopped me" against a
-// contract that does stop them (ENG-36).
+// exempt or enforcement off gets any number, no live subscription gets
+// none, otherwise the plan's Hosts, any number on Own hardware since
+// I-1594), and a fake that said yes where the api says no is how a
+// reviewer reports "nothing stopped me" against a contract that does
+// stop them (ENG-36).
 func TestFakeHostFollowsTheBillingMode(t *testing.T) {
 	for _, c := range []struct {
-		name    string
-		mode    string
-		plan    string
-		allowed int
+		name  string
+		mode  string
+		plan  string
+		sells bool
 	}{
-		{"billing off is the exempt account", BillingOff, "", 8},
-		{"a billing-exempt account", BillingExempt, "", 8},
-		{"no plan at all", BillingNone, "", 0},
-		{"a hosted plan sells no host", BillingActive, "solo", 0},
-		{"the Own hardware plan", BillingActive, "own", 1},
-		{"on trial on Own hardware", BillingTrial, "own", 1},
+		{"billing off is the exempt account", BillingOff, "", true},
+		{"a billing-exempt account", BillingExempt, "", true},
+		{"no plan at all", BillingNone, "", false},
+		{"a hosted plan sells no host", BillingActive, "solo", false},
+		{"the Own hardware plan", BillingActive, "own", true},
+		{"on trial on Own hardware", BillingTrial, "own", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := New(Options{})
@@ -213,22 +216,23 @@ func TestFakeHostFollowsTheBillingMode(t *testing.T) {
 			if err := f.SetBillingState(state); err != nil {
 				t.Fatal(err)
 			}
-			for i := 1; i <= c.allowed; i++ {
+			if !c.sells {
+				r := call(t, f, "POST", "/v1/hosts", tok, nil)
+				wantErr(t, r, 402, "payment_required")
+				if detailOf(t, r)["reason"] != "own_hardware_plan_required" {
+					t.Fatalf("mode %s plan %q: detail %v", c.mode, c.plan, detailOf(t, r))
+				}
+				return
+			}
+			// A second and a third host go in: no plan sold limits them.
+			for i := 1; i <= 3; i++ {
 				if r := call(t, f, "POST", "/v1/hosts", tok, nil); r.status != 201 {
 					t.Fatalf("mode %s plan %q: host %d: %d %s, want a host", c.mode, c.plan, i, r.status, r.body)
 				}
 			}
-			r := call(t, f, "POST", "/v1/hosts", tok, nil)
-			if c.allowed > 0 {
-				wantErr(t, r, 409, "conflict")
-				if d := detailOf(t, r); d["reason"] != "host_limit" || d["limit"] != float64(c.allowed) {
-					t.Fatalf("mode %s plan %q: host %d: detail %v, want host_limit %d", c.mode, c.plan, c.allowed+1, d, c.allowed)
-				}
-				return
-			}
-			wantErr(t, r, 402, "payment_required")
-			if detailOf(t, r)["reason"] != "own_hardware_plan_required" {
-				t.Fatalf("mode %s plan %q: detail %v", c.mode, c.plan, detailOf(t, r))
+			r := call(t, f, "GET", "/v1/me", tok, nil)
+			if !strings.Contains(string(r.body), fmt.Sprintf(`"hosts":%d`, unlimitedHosts)) {
+				t.Fatalf("mode %s plan %q: /me %s, want limits.hosts %d", c.mode, c.plan, r.body, unlimitedHosts)
 			}
 		})
 	}

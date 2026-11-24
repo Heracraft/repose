@@ -113,7 +113,7 @@ sentence under a machine whose host is quiet.
 
 ## 1. The plan
 
-The Own hardware plan sells one host and no memory, disk or egress on
+The Own hardware plan sells any number of hosts (I-1594) and no memory, disk or egress on
 repose's own servers; the hardware's own memory is the only cap on what
 runs at once and its disk the only cap on what is kept. It sells no
 seats. The price is in `docs/PRICING.md` and
@@ -125,14 +125,16 @@ Two questions the rest of the api asks the plan, and nothing else
 
 - **How many hosts may this account own**, which `POST /hosts` refuses
   past with `host_limit` and `detail.limit`. The figure is
-  `billing.Plan.Hosts`.
+  `billing.Plan.Hosts`: `billing.UnlimitedHosts` on Own hardware, a
+  finite number the count never reaches, and 0 on a plan that sells
+  none.
 - **May this account's machines run on hardware repose bought**, which
   is `billing.Plan.MemoryGB` and which placement reads rather than
   refusing on: an Own hardware account has a host of its own to be placed
   on, so a filter is the right shape and a refusal is not.
 
-A billing-exempt account owns one host without a plan
-(`billing.ExemptHosts`), because an exempt account is refused nothing
+A billing-exempt account owns any number of hosts without a plan
+(`billing.ExemptHosts`, the same `UnlimitedHosts` since I-1594), because an exempt account is refused nothing
 (I-1090) and the owner adding their own Mac must not have to sell
 themselves a plan first.
 
@@ -407,7 +409,7 @@ The routes (I-1366):
   `own_hardware_plan_required`, and that sentence names the plan, its
   price and its host count, read from the plan table
   (`billing.OwnHardwareRequiredMessage`): "Your plan does not include a
-  host of your own. The Own hardware plan is $10 a month for one host:
+  host of your own. The Own hardware plan is $10 a month for any number of hosts:
   choose it at https://repose.run/billing." It is the only place in the
   product that tells a buyer what a host costs while the public copy is
   held, which is what the customer review found missing (ENG-39).
@@ -523,7 +525,6 @@ one-disk disko layout is the Mac's, and an x86 box still needs two disks
 and a way to place the join bundle (`/run/repose/launcher/join` by hand
 would do; nothing ships it).
 Snapshots to a bucket of the user's own (I-1372, revisit when a user
-asks). More than one host per account, which is a number in `plans.go`
-and nothing else. Unattended updates, which may ship after launch.
+asks). Unattended updates, which may ship after launch.
 Moving a running machine between hosts, which restore already does and
 nothing else will.

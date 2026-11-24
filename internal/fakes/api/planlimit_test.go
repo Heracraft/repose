@@ -64,8 +64,16 @@ func TestOwnHardwareRefusalIsTheApis(t *testing.T) {
 	}
 	// It carries the figure, not a word for it: a buyer who reads only
 	// this line knows the price.
-	if !strings.Contains(got, "$10 a month") || !strings.Contains(got, "one host") {
+	if !strings.Contains(got, "$10 a month") || !strings.Contains(got, "any number of hosts") {
 		t.Errorf("the refusal does not name the price and the host count: %q", got)
+	}
+}
+
+// The fake's unlimited figure is the api's (I-1594): /me's limits.hosts
+// says the same number whichever api answered.
+func TestUnlimitedHostsIsTheApis(t *testing.T) {
+	if unlimitedHosts != billing.UnlimitedHosts || OwnPlan.Hosts != billing.Own.Hosts {
+		t.Errorf("fake %d (own %d), api %d (own %d)", unlimitedHosts, OwnPlan.Hosts, billing.UnlimitedHosts, billing.Own.Hosts)
 	}
 }
 

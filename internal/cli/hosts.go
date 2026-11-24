@@ -487,7 +487,8 @@ func hostSnapshotsSentence(h *Host) string {
 
 // hostErr turns the api's answers on the host routes into the line the
 // user reads: an api from before these routes, a name that is taken, a
-// host that is not theirs, the one-host plan, and an account with no
+// host that is not theirs, a plan's host limit (none is sold since
+// I-1594; an api from before it answers one), and an account with no
 // Own hardware plan.
 func hostErr(err error, name string) error {
 	var apiErr *APIError

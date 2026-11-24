@@ -213,8 +213,7 @@
 				<span class="per">a month</span>
 			</p>
 			<p class="hw-what">
-				{OWN_HARDWARE.hosts === 1 ? 'For one machine.' : `For ${OWN_HARDWARE.hosts} machines.`} Run as
-				many sandboxes as its memory and disk hold.
+				Any number of machines. Each runs as many sandboxes as its memory and disk hold.
 			</p>
 		</div>
 	</section>
