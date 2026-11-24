@@ -228,6 +228,52 @@ func TestCreateWithSeveralOwnHosts(t *testing.T) {
 	}
 }
 
+// TestWaitingHostsAreCapped is ENG-211's per-account half: hosts that
+// have not joined yet each hold one of the thousand host addresses every
+// account shares, so one account may have ten at once. The eleventh is
+// refused with waiting_limit; one that joins, one whose token expired
+// and one removed each make room; another account is not touched.
+func TestWaitingHostsAreCapped(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-owner", "owner")
+	uid := e.exempt(t, "sub-owner")
+	for i := 1; i <= hostmgr.MaxWaitingHosts; i++ {
+		if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": fmt.Sprintf("box-%d", i)}); r.status != 201 {
+			t.Fatalf("waiting host %d: %d %s, want 201", i, r.status, r.raw)
+		}
+	}
+	refused := func(why string) {
+		t.Helper()
+		r := e.do(t, tok, "POST", "/hosts", nil)
+		d := detailOf(t, r)
+		msg, _ := r.body["error"].(map[string]any)["message"].(string)
+		if r.status != 409 || d["reason"] != "waiting_limit" || d["limit"] != float64(hostmgr.MaxWaitingHosts) ||
+			msg != "10 hosts have not joined yet; install repose on one, or remove one, before you add another" {
+			t.Fatalf("%s: %d %s, want 409 waiting_limit", why, r.status, r.raw)
+		}
+	}
+	refused("an eleventh")
+	stok := e.signIn(t, "sub-stranger", "stranger")
+	e.exempt(t, "sub-stranger")
+	if r := e.do(t, stok, "POST", "/hosts", nil); r.status != 201 {
+		t.Fatalf("another account: %d %s, want 201", r.status, r.raw)
+	}
+	for _, c := range []struct{ why, sql string }{
+		{"one joined", "update hosts set registered_at = now(), state = 'ready', join_token_hash = null where owner_account_id = $1 and name = 'box-1'"},
+		{"one's token expired", "update hosts set join_token_expires_at = now() - interval '1 second' where owner_account_id = $1 and name = 'box-2'"},
+		{"one removed", "update hosts set state = 'retired', join_token_hash = null where owner_account_id = $1 and name = 'box-3'"},
+	} {
+		if _, err := e.h.Pool.Exec(ctx, c.sql, uid); err != nil {
+			t.Fatal(err)
+		}
+		if r := e.do(t, tok, "POST", "/hosts", nil); r.status != 201 {
+			t.Fatalf("after %s: %d %s, want 201", c.why, r.status, r.raw)
+		}
+		refused("after " + c.why + " and one more")
+	}
+}
+
 // TestCreateOnANamedHost: `host` on POST /projects puts the machine on
 // that host of the account's own or refuses it as that host, never on
 // another (DECISIONS I-1584). Without it the scheduler picks, as before.
@@ -268,8 +314,11 @@ func TestCreateOnANamedHost(t *testing.T) {
 	}
 
 	// Full: the named host is refused as that host, with its figure
-	// (I-1586).
-	if _, err := e.h.Pool.Exec(ctx, "update hosts set free_mem_bytes = 1 where id = $1", e.h.HostID); err != nil {
+	// (I-1586). By its size, which only Register writes: the fake host's
+	// heartbeat rewrites free_mem_bytes every 100 ms, so a free figure
+	// set here could be gone before the pick or between the pick and the
+	// sentence (ENG-214). 2 GiB is all reserve, so 0 GB is free.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set mem_bytes = 2::bigint << 30 where id = $1", e.h.HostID); err != nil {
 		t.Fatal(err)
 	}
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "full", "class": "small", "host": "e2e-x86-a"})

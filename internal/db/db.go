@@ -95,6 +95,10 @@ const (
 	// The trigger clock (DECISIONS I-1252): one replica claims the
 	// schedules whose fire has passed, every minute.
 	LockTriggers int64 = 1017
+	// LockHostAddress serialises the choice of a host's guest range and
+	// hub address (hostmgr.nextSlot, ENG-211): two host adds at once must
+	// not both take the same free slot.
+	LockHostAddress int64 = 1018
 )
 
 // TryLock takes a session-level advisory lock on a dedicated connection

@@ -347,3 +347,21 @@ func TestFakeOwnHostFullNamesTheFigure(t *testing.T) {
 		t.Fatalf("message %q, want prefix %q", body.Error.Message, want)
 	}
 }
+
+// TestFakeCapsWaitingHosts mirrors the api's cap on hosts that have not
+// joined yet (ENG-211): the eleventh is refused with waiting_limit, and
+// one that joins makes room for the next.
+func TestFakeCapsWaitingHosts(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	for i := 1; i <= maxWaitingHosts; i++ {
+		want(t, call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": fmt.Sprintf("box-%d", i)}), 201)
+	}
+	r := call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "box-11"})
+	wantErr(t, r, 409, "conflict")
+	if d := detailOf(t, r); d["reason"] != "waiting_limit" || d["limit"] != float64(maxWaitingHosts) {
+		t.Fatalf("eleventh waiting host: %v", d)
+	}
+	f.SetOwnedHostState("box-1", "ready")
+	want(t, call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "box-11"}), 201)
+}

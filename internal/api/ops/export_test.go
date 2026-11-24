@@ -50,3 +50,9 @@ func (e *Engine) RecordGuestAddressForOpTest(ctx context.Context, p *store.Proje
 func (e *Engine) ReleaseGuestAddressForTest(ctx context.Context, p *store.Project) {
 	e.releaseGuestAddress(ctx, p)
 }
+
+// SetAfterOwnRefusalForTest runs f in PlaceNewOn between a pick an owned
+// host refused and the read of that host's figures (ENG-214).
+func (e *Engine) SetAfterOwnRefusalForTest(f func(ctx context.Context)) {
+	e.afterOwnRefusal = f
+}

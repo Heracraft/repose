@@ -119,6 +119,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`mac-mini still has todo-app on it.`** `repose host rm` refuses to remove a host that is still answering while machines remain on it. Run `repose rm` on each listed machine first, then `repose host rm mac-mini`. If you already ran `repose host rm --local` on the Mac first, the host stays on your account until its heartbeat times out (about 90 seconds): wait until `repose host ls` shows `offline`, then run `repose host rm mac-mini` and `repose rm` each stranded machine ([Taking it off](/docs/own-hardware#taking-it-off)).
 
+**`10 hosts have not joined yet`**. Ten hosts at a time can be waiting to join, and nothing was added. A host stops waiting when its install finishes, when you remove it, or when its token runs out 24 hours after `repose host add`. `repose host ls` lists them as `waiting`.
+
 **`Hardware of your own needs the Own hardware plan`**. Your plan sells no host. The [Own hardware plan](/docs/billing#own-hardware) is $10 a month for any number of hosts.
 
 ## Sync
