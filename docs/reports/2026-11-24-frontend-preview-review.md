@@ -290,3 +290,193 @@ follow.
   - *Do not rank from the only state you could reach.* The shared preview
     is billing-exempt. F4 exists only on a paying account, which is why I
     ran `-billing`.
+
+## Pass 2 (after the fixes)
+
+2026-11-24, 22:00 to 22:30. One reviewer, the interface surface. This is
+not the session that ran pass 1, but it read pass 1 before it started, so
+it was primed (docs/REVIEW.md, "the second pass"). Subject: the combined
+preview at `:4722`, built from PR #203 at 263ba178 (open-in-claude, with
+dashboard-create 715de54c merged in), and a private copy of that build on
+the fake api's `-billing` mode for the plan states.
+
+### Gate: passes
+
+No P0 and no P1 remain or are new. ENG-224 is fixed: the page now says
+the one-time setup, plainly, beside the button. ENG-229 (a setup with no
+terminal) stays the owner's decision. The page does not pretend that
+route exists, so its absence is not ranked here.
+
+### What would make a user scream, now
+
+Nothing on the P0 or P1 level. The remaining items, ranked:
+
+1. **P2, unchanged, owner's decision. A machine made on the dashboard has
+   no agent and no Messages** (ENG-226, Needs you). Open in Claude now
+   leads that page, so Dana has one way in: Claude Desktop at `~`.
+2. **P3, new. The Windows line breaks into spaced pieces.** It reads
+   "Claude Desktop on Windows can't reach a machine yet: ␣␣Windows␣␣ ."
+   (N1 below).
+3. **P3, new. An iPad shows Open in Claude** (N2 below).
+4. **P3, new. A plan-full form says the same thing twice, and Create stays
+   the primary action** (N3 below).
+5. **P3, still open, unverified. No "click again" after a long start**
+   (F6).
+
+### Each pass-1 finding, re-measured
+
+| # | Card | Pass 1 | Now | Evidence |
+|---|---|---|---|---|
+| F1 | ENG-224 | P1 | **Fixed** | below |
+| F2 | ENG-225 | P2 | **Fixed** (iPad remains, new P3, N2) | below |
+| F3 | ENG-226 | P2 | **Not fixed**, owner's decision (Needs you) | `dash-made` Overview: Connect, Machine, Latest events, Details. No Messages section, no way to start an agent |
+| F4 | ENG-227 | P2 | **Fixed** | below |
+| F5 | ENG-228 | P2 | **Fixed** | below |
+| F6 | none | P3, unverified | **Not changed.** PR #203 keeps "the button then becomes the link" with no text. It still needs the owner's Mac (owner-mac-script C2) | PR #203 body, "The button" |
+| F7 | none | P3 | **Fixed.** The tutorial says "The machine side is tested: Other apps." and links `/docs/ssh-and-editors#other-apps` | docs read on `:4722` |
+| F8 | none | P3 | **Fixed.** PR #203's body ends with one Record block. No empty second set | `gh pr view 203`, 22:05 |
+| F9 | none | P3 | **Fixed.** The button says "New project" on the list, the empty account and the full plan | `c10-new-full-1440-dark.png` |
+
+**F1 / ENG-224: fixed.** On a Mac or Linux user agent, every project's
+Connect card (running, stopped, frozen, dashboard-made; 1440 and 390;
+light and dark) starts with Open in Claude, then one line, then the
+terminal commands:
+
+> This computer needs the repose CLI and `repose login`, once: Install.
+
+"Install" goes to `/docs/install`. The line is plain. It is true: the
+host name exists only in the ssh config that `repose login` writes, and
+the Install page says "You stay logged in until repose logout". It is
+enough for a user who will paste two commands: the Install page starts
+with `curl -fsSL https://repose.run/install.sh | sh` and "Open a new
+terminal afterwards", then `repose login`. The SSH and editors page's
+Claude Desktop section says the same ("Without them, Desktop can't find
+todo-app.repose"). So do the T3 tutorial and the Other apps lead.
+
+*Is the route with no terminal honestly absent?* Yes. No page I opened
+says or implies that Open in Claude works without the setup. A search of
+`apps/web/src/content` and `routes` on the branch for "no terminal",
+"without a terminal" and "zero terminal" finds no user-facing promise.
+The only hit is a code comment in `routes/projects/[id]/+page.svelte`
+("The way in that needs no terminal first"), which no user reads. The
+line says "the repose CLI", not "a terminal", so Dana learns it means a
+terminal only on the Install page. That page is written for developers
+(signatures, completion, `--system`) and never says how to open a
+terminal. I rank that no higher than P3 and file nothing, because the
+setup is honest and ENG-229 owns the real fix.
+
+*Instrument.* Playwright reading the Connect section's text and `href`s
+on `:4722`, in 6 browser setups. Screenshots
+`d10-connect-todo-app-1440-light.png`, `d10-connect-old-app-1440-dark.png`.
+*Falsifier:* some state of the card shows the button without the line.
+None did (5 projects × 4 sizes and schemes).
+
+**F2 / ENG-225: fixed.** By user agent, measured:
+
+| Browser | Button | Line |
+|---|---|---|
+| Mac Chrome, 1440 and a 390 window | yes | the setup line |
+| Linux Chrome, 1440 | yes | the setup line |
+| Windows Chrome, 1440 | no | "Claude Desktop on Windows can't reach a machine yet: Windows." (the link goes to `#windows`) |
+| iPhone Safari, 390 and 1440 | no | none |
+| Android Chrome, 390 | no | none |
+| iPad (Safari's default desktop user agent, touch) | **yes** | the setup line (new P3, N2 below) |
+
+The choice follows the user agent, not the width: a narrow Mac window
+keeps the button.
+
+**F4 / ENG-227: fixed.** On the `-billing` fake (Solo, 8 GB):
+
+- Empty account: "large · 2 cores · 8 GB · 8 GB of your plan's 8 GB free".
+- One `small` running: the form starts on **small**, "4 GB of your plan's
+  8 GB free" (`c10-new-partial-1440-light.png`). Choosing large in
+  Options adds "A large machine needs 8 GB; 4 GB is free." before Enter.
+- One `large` running, or two `small`: "Your plan's 8 GB is in use. Stop a
+  machine to make one here.", with one Stop button per running machine
+  (`c10-new-full-*`, all four sizes and schemes).
+- Stop in the form: `POST /projects/:id/stop` 202, and within 0.5 s the
+  line reads "8 GB of your plan's 8 GB free" and the note is gone.
+- Enter on a full plan still sends `POST /projects`, which answers 402,
+  and the form shows the api's sentence. The form had already said so.
+
+**F5 / ENG-228: fixed.** The tutorial's lead is now "Add the machine to
+T3 Code as an SSH environment and drive Claude Code and Codex threads on
+it." It makes no laptop-closed promise. The desktop route says "we don't
+yet know whether its threads keep going after you close the laptop". The
+browser route still says its systemd user service keeps going. PR #203
+measured that on production (`systemd-run --user` unit alive after the
+session, `Linger=yes`). The Codex row now gives the fix: "add the line
+`Host todo-app.repose` at the end of ~/.ssh/config". That line is still
+"Not yet" tested in the app, and the table says so.
+
+### New findings
+
+**N1 (P3). The Windows line comes apart.** On a Windows user agent, the
+Connect card's line renders as "…can't reach a machine yet: ␣␣Windows␣␣ ."
+The `<p>` carries the class `oic`, which is `display: flex; gap: 16px`.
+So the text, the link and the full stop are three flex items 16 px apart,
+and the line touches the command box under it
+(`f10-connect-card-win-1440-light.png`). Only Windows users see it.
+*Falsifier:* the gap is the link's own padding. It is not: computed
+`column-gap` is 16px on the `<p>`.
+
+**N2 (P3). An iPad shows Open in Claude and "This computer needs the
+repose CLI".** iPad Safari sends a Macintosh user agent by default. With
+that agent and touch (`navigator.maxTouchPoints` 1), the button and the
+setup line show (`e10-ua-ipad-1024.png`). Claude Desktop and the CLI do
+not run on an iPad. What iPadOS does with `claude://code/new` is
+unverified. It is the same class as ENG-225, on a smaller audience. No
+card.
+
+**N3 (P3). The full plan says it twice, and Create still leads.** The
+line reads "large · 2 cores · 8 GB · 0 GB of your plan's 8 GB free", and
+the next line says "Your plan's 8 GB is in use." Create stays the filled
+primary button, though the only action that can work is Stop
+(`c10-new-full-390-light.png`). The refusal is clear, so nobody is lost.
+In the same form, "A xl machine needs 16 GB" should read "An xl". No card.
+
+**The 390 dark "greyed buttons" doubt: not a defect.** At 390 dark, Stop,
+Account and the form's Stop buttons are enabled. Their text is
+rgb(244,244,245) on rgb(17,17,19), the same weight as light's
+rgb(24,24,27) on white (`d11-top-todo-app-390-dark.png`,
+`c10-new-full-390-dark.png`). The one grey button is Send, rgb(113,113,122)
+in dark and rgb(139,139,148) in light, while the box is empty. That is
+Send's muted state in both schemes, not a dark-only fault. No horizontal
+scroll at 390: `scrollWidth` 390 on every page captured.
+
+### Would the non-terminal user stay now?
+
+**Yes, if she will paste two commands once, and now she is told so.** In
+pass 1 she clicked Open in Claude and hit a dead end with no reason. Now
+the line beside the button names the setup and links it, the Desktop docs
+say the same, and Windows and phone users no longer see a button that
+cannot work. A Solo customer's second machine starts on a size that fits.
+What still costs her: the Install page is for developers (P3, above), a
+machine made on the dashboard has no agent until she opens Claude
+Desktop (ENG-226), and a user who will not open a terminal at all still
+has no way in (ENG-229). Those last two are the owner's decisions.
+
+### Method, pass 2
+
+- **Ran.** The shared preview `:4722`, read-only: sign-in, the list, five
+  project pages' Connect cards, and the docs pages `install`,
+  `ssh-and-editors` and `tutorial-t3-code`. I pressed no button there.
+  User agents: Mac, Linux, Windows, iPhone, Android and iPad (Safari's
+  desktop agent, touch), at 1x, 1440x900 and 390x844, light and dark. A
+  private copy of the same build (`~/previews/open-in-claude/build`,
+  `fakeapi -billing`, `fake-logto`) on 127.0.0.1:4793 to 4795, in
+  `tmux -L fr2-review`, for the plan states (empty, one large, one small,
+  two small, a Stop from the form, Enter on a full plan). It was shut down
+  after. Scripts and all 57 captures are in
+  `~/previews/frontend-review/pass2/`; the cited ones are in
+  `.dev/shots/frontend-review/pass2/` on this branch.
+- **Could not run.** No Mac and no Claude Desktop, T3 Code or Codex app
+  here, so no real deep link was followed. F6 and what iPadOS does with
+  `claude://` stay unverified. The owner's Mac script covers the first.
+- **Rules that bit.**
+  - *Do not rank from the only state you could reach.* The shared preview
+    is billing-exempt, so ENG-227 was checked only on `-billing`.
+  - *Locate the hit.* The search for zero-terminal promises found a hit in
+    a code comment, not on a page. Not filed.
+  - *Primed.* I read pass 1 before I looked. A fresh, unprimed pass would
+    be a better customer, and this one is mostly verification.
