@@ -209,3 +209,78 @@ test('a frozen machine opens at once, with no start', async ({ page }) => {
 		await destroyProject(api, p.id);
 	}
 });
+
+test('the button comes first and says once what this computer needs', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'needs-app',
+		remote_url: 'github.com/heracraft/needs-app'
+	});
+	try {
+		await page.goto(`/projects/${p.id}`);
+		const card = page.locator('section[aria-labelledby="connect-title"]');
+		const link = card.getByRole('link', { name: 'Open in Claude' });
+		await expect(link).toBeVisible();
+		const need = card.getByText('This computer needs the repose CLI and repose login, once:');
+		await expect(need).toHaveCount(1);
+		await expect(card.getByRole('link', { name: 'Install' })).toHaveAttribute(
+			'href',
+			'/docs/install'
+		);
+		// Above the terminal commands (ENG-224).
+		const linkBox = await link.boundingBox();
+		const listBox = await card.getByRole('list', { name: 'Connect' }).boundingBox();
+		expect(linkBox!.y).toBeLessThan(listBox!.y);
+	} finally {
+		await destroyProject(apiURLFromEnv(), p.id);
+	}
+});
+
+test.describe('on Windows', () => {
+	test.use({
+		userAgent:
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+	});
+	test('there is no button, and one line says why', async ({ page }) => {
+		const p = await createProject(apiURLFromEnv(), {
+			name: 'win-app',
+			remote_url: 'github.com/heracraft/win-app'
+		});
+		try {
+			await page.goto(`/projects/${p.id}`);
+			const card = page.locator('section[aria-labelledby="connect-title"]');
+			await expect(
+				card.getByText("Claude Desktop on Windows can't reach a machine yet")
+			).toBeVisible();
+			await expect(card.getByRole('link', { name: 'Windows' })).toHaveAttribute(
+				'href',
+				'/docs/ssh-and-editors#windows'
+			);
+			await expect(page.getByTestId('open-in-claude')).toHaveCount(0);
+		} finally {
+			await destroyProject(apiURLFromEnv(), p.id);
+		}
+	});
+});
+
+test.describe('on a phone', () => {
+	test.use({
+		viewport: { width: 390, height: 844 },
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+	});
+	test('there is no button and no setup line', async ({ page }) => {
+		const p = await createProject(apiURLFromEnv(), {
+			name: 'phone-app',
+			remote_url: 'github.com/heracraft/phone-app'
+		});
+		try {
+			await page.goto(`/projects/${p.id}`);
+			const card = page.locator('section[aria-labelledby="connect-title"]');
+			await expect(card.getByRole('list', { name: 'Connect' })).toBeVisible();
+			await expect(page.getByTestId('open-in-claude')).toHaveCount(0);
+			await expect(card.getByText('This computer needs')).toHaveCount(0);
+		} finally {
+			await destroyProject(apiURLFromEnv(), p.id);
+		}
+	});
+});

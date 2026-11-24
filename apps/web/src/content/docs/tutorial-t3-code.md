@@ -1,14 +1,16 @@
 ---
 title: T3 Code on your machine
-description: Add the machine to T3 Code as an SSH environment and drive Claude Code and Codex threads on it, with the laptop closed.
+description: Add the machine to T3 Code as an SSH environment and drive Claude Code and Codex threads on it.
 section: Tutorials
 order: 25
 status: experimental
 ---
 
-[T3 Code](https://github.com/pingdotgg/t3code) is an open-source app for running coding agents as threads, each with its diff and its own worktree. On a repose machine the threads run the machine's own Claude Code and Codex, keep going after you close the laptop, and survive a stop, start or restore.
+[T3 Code](https://github.com/pingdotgg/t3code) is an open-source app for running coding agents as threads, each with its diff and its own worktree. On a repose machine the threads run the machine's own Claude Code and Codex.
 
 ## Add the machine to T3 Code
+
+T3 Code connects with the `ssh` of the computer it runs on, so that computer needs the repose CLI and `repose login`, once ([Install](/docs/install)).
 
 In the T3 Code desktop app, open **Settings**, then **Environments**, then **Add environment**, and choose **SSH**. Type the host `todo-app.repose`. T3 Code connects with your own `ssh`, so [the certificate renews by itself](/docs/ssh-and-editors#how-it-works). It installs its server on the machine under `~/.t3/runtime`, starts it, and forwards its port for you.
 
@@ -16,7 +18,7 @@ Add your checkout as a project, `/home/dev/todo-app`, and start a thread. The th
 
 A stopped machine doesn't start when T3 Code connects. Start it with **Start** on the project's page, or `repose start todo-app`.
 
-We haven't tested this route in the app yet. The machine side is tested: [Desktop apps](/docs/ssh-and-editors#other-apps).
+We haven't tested this route in the app yet, so we don't yet know whether its threads keep going after you close the laptop. The machine side is tested: [Other apps](/docs/ssh-and-editors#other-apps).
 
 ## From a browser
 
@@ -26,7 +28,7 @@ With no desktop app, run T3 Code's server as a service on the machine and open i
 ssh todo-app.repose 'npx -y t3@latest service install'
 ```
 
-The service is a systemd user unit, so a `repose stop` and `repose start` brings it back. It listens on `localhost:3773` on the machine, and only there.
+The service is a systemd user unit, so its threads keep going after you close the laptop, and a `repose stop` and `repose start` brings it back. It listens on `localhost:3773` on the machine, and only there.
 
 While you're attached, [the port is already on your laptop](/docs/machine#ports): open http://localhost:3773. If you aren't, forward it, and keep the command running while you use the page:
 

@@ -42,7 +42,7 @@ pointer, not a summary.
 
 ## Network and access
 
-- **R2-5** SSH certificate authority in the control plane, short-lived certificates, a gateway that routes by login name — L130
+- **R2-5** SSH certificate authority in the control plane, short-lived certificates, a gateway that routes by login name — amended by I-1606; L130
 - **R2-6** Dev-server access is `repose open <port>` (SSH forward) now; per- project HTTPS preview URLs later, documented from day one — amended by I-1116; L136
 - **R3-7** The gateway is custom Go, not OpenSSH ProxyJump — L139
 - **R3-8** hostd dials out to the API over a mutual-TLS gRPC stream; hosts have no inbound ports — L143
@@ -508,9 +508,9 @@ pointer, not a summary.
 - **I-445** Guest notifications are bounded and rate-limited at hostd, and the api bounds them again — 2026-10-03; amended by I-690; amended by I-691; L11381
 - **I-446** Each guest's sample rows are stored apart, and the guest's part of a sample is cleaned — 2026-10-03; L11418
 - **I-447** A host's reports count only for its own guests; a question id acts only inside the sending guest's project — 2026-10-03; L11438
-- **I-434** The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory — 2026-10-03; L11455
+- **I-434** The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory — 2026-10-03; amended by I-1606; L11455
 - **I-435** The gateway bounds unauthenticated connections separately from relays — 2026-10-03; L11475
-- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; L11512
+- **I-436** A relay ends when its certificate is revoked or expires — 2026-10-03; amended by I-1606; L11512
 - **I-437** The gateway answers a login under another user's handle the same way whether or not the project exists — 2026-10-03; L11546
 - **I-438** The preview host parser no longer splits a slug from a handle — 2026-10-03; L11566
 - **I-448** Egress and CPU are metered from a guest's boot to its stop — 2026-10-03; L11578
@@ -1161,7 +1161,7 @@ pointer, not a summary.
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
 - **I-1606** Open in Claude: the project page's Connect card and `repose code --editor claude` open the machine in Claude Desktop through Desktop's own documented link, `claude://code/new?ssh_host=<slug>.repose&ssh_folder=<folder>`; a stopped machine starts first, a frozen one needs nothing (open-in-claude, 2026-11-24) — L39434
-- **I-1608** `repose-hook` names the agent from the hook payload when no `--agent` and no `REPOSE_HOOK_AGENT` does, so an agent that an app runs over SSH outside repose's wrappers, Claude Desktop's own Claude Code, reports its turns (open-in-claude, 2026-11-24) — L39443
-- **I-1610** The api stores the name of a project's checkout under `/home/dev` as the CLI last found it, `projects.checkout` (migration 0053), served as `Project.checkout` and set by `PATCH /projects/:id {checkout}` (open-in-claude, 2026-11-24) — L39451
-- **I-1602** New machine on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — L39457
-- **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39465
+- **I-1608** `repose-hook` names the agent from the hook payload when no `--agent` and no `REPOSE_HOOK_AGENT` does, so an agent that an app runs over SSH outside repose's wrappers, Claude Desktop's own Claude Code, reports its turns (open-in-claude, 2026-11-24) — L39444
+- **I-1610** The api stores the name of a project's checkout under `/home/dev` as the CLI last found it, `projects.checkout` (migration 0053), served as `Project.checkout` and set by `PATCH /projects/:id {checkout}` (open-in-claude, 2026-11-24) — L39452
+- **I-1602** New machine on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — L39458
+- **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39466

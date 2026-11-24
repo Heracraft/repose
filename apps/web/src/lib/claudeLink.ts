@@ -28,3 +28,19 @@ export function claudeLink(slug: string, checkout: string | null | undefined): s
 	// Every character of both values is one a query value carries as it is.
 	return `claude://code/new?ssh_host=${encodeURIComponent(`${slug}.repose`)}&ssh_folder=${encodeURIComponent(checkoutFolder(checkout)).replaceAll('%2F', '/')}`;
 }
+
+/**
+ * Where Claude Desktop can open the link (ENG-225): `desktop` on macOS
+ * and Linux; `windows`, where Desktop connects with Windows' ssh, which
+ * cannot reach a machine yet (ssh-and-editors.md, "Windows"); `phone` on a
+ * phone or tablet, where Claude Desktop does not run. An iPad asks for
+ * the desktop site and says Macintosh, so touch points tell it apart.
+ */
+export type ClaudePlatform = 'desktop' | 'windows' | 'phone';
+
+export function claudePlatform(ua: string, touchPoints = 0, uaMobile?: boolean): ClaudePlatform {
+	if (uaMobile || /Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return 'phone';
+	if (/Macintosh/.test(ua) && touchPoints > 1) return 'phone';
+	if (/Windows/.test(ua)) return 'windows';
+	return 'desktop';
+}

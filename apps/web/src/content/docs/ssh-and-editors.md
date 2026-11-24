@@ -52,6 +52,8 @@ If your shell has no `code`, run **Shell Command: Install 'code' command in PATH
 
 On the project's page, **Open in Claude** opens a new session in Claude Desktop's Code tab, on the machine, in its checkout. Desktop asks you to confirm the connection. A stopped machine starts first. A frozen one wakes when Desktop connects.
 
+Desktop connects with the `ssh` of the computer it runs on, so that computer needs the repose CLI and `repose login`, once ([Install](/docs/install)). Without them, Desktop can't find `todo-app.repose`.
+
 From a terminal:
 
 ```
@@ -60,7 +62,7 @@ repose code --editor claude todo-app
 
 By hand: in the Code tab, add an SSH environment with the host `todo-app.repose`.
 
-Desktop needs v2.110.0 or later for the link, on macOS or Linux.
+Desktop needs v2.110.0 or later for the link, on macOS or Linux. On Windows and on a phone the project page shows no button ([Windows](#windows)).
 
 - **Disk.** Desktop installs its own Claude Code under `~/.claude/remote` on the machine. Claude's docs ask for about 1 GB, which counts against your [disk](/docs/limits#disk-and-console).
 - **Notifications.** Desktop's Claude Code reads the machine's `~/.claude/settings.json`, so a finished turn shows in `repose events` and [notifies you](/docs/notifications) as one in tmux does. It doesn't show in `repose status`, which lists the agents in the project's tmux windows.
@@ -70,12 +72,12 @@ Desktop needs v2.110.0 or later for the link, on macOS or Linux.
 
 ## Other apps
 
-T3 Code, the Codex app and Antigravity add the machine by its host name, and install what they need on it the first time they connect.
+T3 Code, the Codex app and Antigravity add the machine by its host name, and install what they need on it the first time they connect. Like Claude Desktop, they need the repose CLI and `repose login` on the computer they run on.
 
 | App | How to add the machine | Tested in the app |
 | --- | --- | --- |
 | T3 Code (desktop) | Settings, Environments, Add environment, SSH: `todo-app.repose`. Then add the folder `/home/dev/todo-app`. [Tutorial](/docs/tutorial-t3-code) | Not yet |
-| Codex app | Settings, Connections, then pick `todo-app.repose` | Not yet. Codex lists the hosts in `~/.ssh/config`; repose's are in a file that `~/.ssh/config` includes |
+| Codex app | Settings, Connections, then pick `todo-app.repose`. If it isn't listed, add the line `Host todo-app.repose` at the end of `~/.ssh/config`: Codex lists only the hosts that file names, and repose's are in a file it includes | Not yet |
 | Antigravity | Connect over SSH: `todo-app.repose` | Not yet |
 
 On every machine, measured on 2026-11-24 on the Ubuntu base: the SSH server offers SFTP, a program copied into `~/.claude/remote` runs, a process started over SSH keeps running after the connection closes, port forwarding is on, and the machine reaches the internet over HTTPS.

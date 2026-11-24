@@ -376,6 +376,8 @@
 		<div class="hk-section-head">
 			<h2 id="connect-title" class="hk-h2-app">Connect</h2>
 		</div>
+		<!-- The way in that needs no terminal first (ENG-224). -->
+		<OpenInClaude {project} />
 		<CommandList
 			label="Connect"
 			commands={[
@@ -391,7 +393,6 @@
 				{ command: `repose code ${project.slug}`, what: 'the repose code command' }
 			]}
 		/>
-		<OpenInClaude {project} />
 	</section>
 
 	<!-- From a 760px column, the events on the left and what runs now on
