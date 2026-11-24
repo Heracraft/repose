@@ -442,8 +442,8 @@ export async function ownedHost(body: {
 
 /**
  * Removes every host the shared account still owns, and fails when one
- * stays. A test about one host starts from none: with eight allowed
- * (I-1582) a host another file left behind turns the create's refusal
+ * stays. A test about one host starts from none: with any number allowed
+ * (I-1582, I-1594) a host another file left behind turns the create's refusal
  * into "none of your hosts can take ...", which names them all.
  */
 export async function removeOwnedHosts(apiURL: string): Promise<void> {

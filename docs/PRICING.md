@@ -6,8 +6,8 @@ and a week free. A hosted plan buys memory that may run at once,
 disk for the bytes its projects hold, and egress for the month; a plan
 sells no project count, and a stopped project costs only the disk it holds
 (DECISIONS I-569, I-585). One plan buys none of those: "Own hardware"
-buys a host the user owns, and the machine's own memory and disk are
-what it may run (DECISIONS I-1364). The shape is flat because the pitch is "the agent
+buys hosts the user owns, any number of them, and those machines' own memory and disk are
+what they may run (DECISIONS I-1364, I-1594). The shape is flat because the pitch is "the agent
 keeps working after the laptop closes", and an hourly meter told people to
 stop machines at night (DECISIONS I-289, superseding R2-12, R4-7, R4-8,
 I-77, I-179 to I-185 and I-205; the hourly design is kept in
@@ -146,7 +146,7 @@ with 300 GB of egress pays $49 plus $2.50. Two `large` machines at once need Plu
 
 ## Own hardware
 
-**Own hardware is $10 a month for one host.** The host is the user's own
+**Own hardware is $10 a month for any number of hosts.** A host is the user's own
 machine: a Mac mini running the repose appliance, or an x86 box running
 the host system (`workstreams/19-mac-mini.md`, DECISIONS I-1364, which
 settles the price I-647 left open). Everything else is the hosted control
@@ -169,9 +169,10 @@ The plan sells none of repose's compute, so it caps none of it:
 - **Seats.** None. An owned host is outside the seat count, the waitlist
   and the pool gauges (I-1366), so a checkout for this plan is never
   waitlisted and a full fleet does not block it.
-- **Hosts.** One per account. `GET /me` reports it as `limits.hosts`
-  and `POST /hosts` refuses past it. A billing-exempt account gets one
-  host too, so an operator can add a machine of their own without
+- **Hosts.** No limit (I-1594, which replaced one per account). `GET /me`
+  reports `limits.hosts` as 2147483647 (`billing.UnlimitedHosts`), a
+  number `POST /hosts`'s count never reaches. A billing-exempt account
+  has the same rule, so an operator adds machines of their own without
   selling a plan to themselves.
 - **Projects.** The same 100 abuse bound as every account.
 

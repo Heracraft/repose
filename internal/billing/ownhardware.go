@@ -39,10 +39,11 @@ const (
 // an api that does not enforce billing. An exempt account pays for
 // nothing and is refused nothing (I-1090), and the owner adding their
 // own Mac must not have to sell themselves a plan first. It was one, the
-// Own hardware plan's figure, until the several-host program needed the
-// owner's account to hold two x86 test hosts beside the Mac (I-1582).
-// It is not the plan's figure: what a customer is sold is Plan.Hosts.
-const ExemptHosts = 8
+// Own hardware plan's figure, then eight so the owner's account could
+// hold x86 test hosts beside the Mac (I-1582). Since the Own hardware
+// plan sells any number (I-1594) it is that rule too: an account that is
+// refused nothing must not be refused what a $10 customer is sold.
+const ExemptHosts = UnlimitedHosts
 
 // planHosts is the plan's own answer: the hosts an account's live
 // subscription sells it, and ExemptHosts for a billing-exempt account,
@@ -134,12 +135,8 @@ func OwnHardwareRequiredMessage(url string) string {
 		// rather than quote a price for a plan nobody sells.
 		return "Your plan does not include a host of your own. See " + url + "."
 	}
-	hosts := "one host"
-	if plan.Hosts != 1 {
-		hosts = fmt.Sprintf("%d hosts", plan.Hosts)
-	}
 	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s.",
-		plan.Name, Dollars(plan.PriceCents), hosts, url)
+		plan.Name, Dollars(plan.PriceCents), HostsPhrase(plan.Hosts), url)
 }
 
 // Dollars prints a price the way the product says it: "$10", and "$10.50"

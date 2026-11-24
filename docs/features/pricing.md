@@ -111,7 +111,7 @@ account was over and that creating was refused, then created.
 
 ## Own hardware
 
-$10 a month for one host the user owns: a Mac mini with the repose
+$10 a month for any number of hosts the user owns (I-1594): a Mac mini with the repose
 appliance, or an x86 box with the host system (DECISIONS I-1364,
 `../PRICING.md` "Own hardware"). It buys none of repose's compute, so
 none of the refusals above can come from it: there is no memory figure

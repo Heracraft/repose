@@ -113,13 +113,14 @@ func TestHostAddListRm(t *testing.T) {
 	if err := HostAddCmd(ctx, e, "mac-mini", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "already have a host named mac-mini") {
 		t.Fatalf("taken name: %v", err)
 	}
-	// The plan's limit is the api's number, not the CLI's.
+	// The plan's limit is the api's number, not the CLI's. No plan sells
+	// a limit since I-1594, but an api from before it still answers one.
 	fake.SetHostLimit(1)
 	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
 		t.Fatalf("limit: %v", err)
 	}
 	// A plan that sells no host at all is 0; a figure below 0 puts the
-	// fake's default plan back, which sells one (I-1390's knob).
+	// fake's default plan back, which sells any number (I-1390's knob).
 	fake.SetHostLimit(0)
 	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
 		t.Fatalf("no plan: %v", err)

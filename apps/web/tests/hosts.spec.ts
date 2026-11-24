@@ -25,9 +25,9 @@ async function shots(page: Page, name: string): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => {
-	// Every test starts from the plan's default of one host and the
-	// fake's install line, whatever an earlier test left.
-	await ownedHost({ limit: 1, set_install: false });
+	// Every test starts from the plan's default, any number of hosts
+	// (I-1594), and the fake's install line, whatever an earlier test left.
+	await ownedHost({ limit: -1, set_install: false });
 	await signIn(page);
 });
 
@@ -49,7 +49,7 @@ test.afterAll(async () => {
 			});
 		}
 	}
-	await ownedHost({ limit: 1, set_install: false });
+	await ownedHost({ limit: -1, set_install: false });
 });
 
 /**
@@ -135,13 +135,26 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	// by design and the token inside it never is.
 	await expect(page.locator('body')).not.toContainText(bundle.token);
 
-	// A second host is refused by the plan, in the api's own sentence,
-	// and the sentence is IN the dialog rather than behind it (ENG-25).
+	// A second and a third host go in: the plan sells any number
+	// (I-1594).
+	for (const spare of ['spare', 'spare-2']) {
+		await section.getByRole('button', { name: 'Add a host' }).click();
+		await dialog.getByLabel('Name', { exact: true }).fill(spare);
+		await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+		await expect(dialog.getByRole('heading', { name: spare })).toBeVisible();
+		await dialog.getByRole('button', { name: 'Done' }).click();
+	}
+	await expect(table.getByRole('row').filter({ hasText: 'spare' })).toHaveCount(2);
+	await expect(section.getByRole('heading', { name: '3 hosts' })).toBeVisible();
+
+	// A plan that sells no host refuses in the api's own sentence, and
+	// the sentence is IN the dialog rather than behind it (ENG-25).
+	await ownedHost({ limit: 0 });
 	await section.getByRole('button', { name: 'Add a host' }).click();
-	await dialog.getByLabel('Name', { exact: true }).fill('spare');
+	await dialog.getByLabel('Name', { exact: true }).fill('spare-3');
 	await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 	const refusal = dialog.getByTestId('host-add-error');
-	await expect(refusal).toHaveText(/your plan includes 1 host/);
+	await expect(refusal).toHaveText(/Your plan does not include a host of your own/);
 	// Visible is not enough: a toast is "visible" while sitting under the
 	// dialog's backdrop, because a dialog opened with showModal() is in
 	// the top layer and no z-index reaches it. The customer pressed Add,
@@ -156,6 +169,7 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	expect(onTop, 'the refusal is covered by something').toBe(true);
 	await shots(page, 'hosts-refused');
 	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await ownedHost({ limit: -1 });
 
 	// The same name twice is the name's own error, in the field.
 	await section.getByRole('button', { name: 'Add a host' }).click();
@@ -181,12 +195,12 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	// A removed host leaves the list: it is not hardware you have, and
 	// `repose host ls` leaves it out too.
 	await expect(row).toHaveCount(0);
-	await expect(section.getByRole('heading', { name: 'Your own hardware' })).toBeVisible();
-	// And the slot is free: a removed host does not hold the plan's one.
+	await expect(section.getByRole('heading', { name: '2 hosts' })).toBeVisible();
+	// A removed host's name is free again.
 	await section.getByRole('button', { name: 'Add a host' }).click();
-	await dialog.getByLabel('Name', { exact: true }).fill('mac-mini-2');
+	await dialog.getByLabel('Name', { exact: true }).fill('mac-mini');
 	await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(dialog.getByRole('heading', { name: 'mac-mini-2' })).toBeVisible();
+	await expect(dialog.getByRole('heading', { name: 'mac-mini' })).toBeVisible();
 	await dialog.getByRole('button', { name: 'Done' }).click();
 });
 

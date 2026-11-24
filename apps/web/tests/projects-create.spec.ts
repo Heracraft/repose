@@ -295,9 +295,9 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	await openForm(page);
 	await expect(form(page).getByLabel('Runs on')).toHaveCount(0);
 
-	// The default plan: one host, and memory on repose's servers too, so
-	// repose's servers is a way out. hosts.spec.ts sets a limit of its
-	// own, which the fake reads as the Own hardware plan, and the files
+	// The default plan: any number of hosts, and memory on repose's
+	// servers too, so repose's servers is a way out. Other files set a
+	// limit of their own, which the fake reads as the Own hardware plan, and the files
 	// run in name order whatever the command line says. Those files
 	// leave hosts behind, so the account starts with none: one waiting
 	// host is what this test is about.

@@ -31,8 +31,9 @@ const FakeHostInstall = "repose host add --join %s"
 
 // maxFakeHosts is billing.ExemptHosts: the hosts a billing-exempt
 // account, or an api with billing off, may own (DECISIONS I-1366,
-// I-1582). TestExemptHostsIsTheApis holds the two equal.
-const maxFakeHosts = 8
+// I-1582, and since I-1594 the Own hardware plan's any number).
+// TestExemptHostsIsTheApis holds the two equal.
+const maxFakeHosts = unlimitedHosts
 
 // ownHardwareRequired is billing.OwnHardwareRequiredMessage's sentence,
 // word for word, built from the fake's own plan table so that a change
@@ -41,12 +42,20 @@ const maxFakeHosts = 8
 // price: the refusal is the one place in the product that tells a
 // buyer what a host costs while the public copy is held (ENG-39).
 func ownHardwareRequired() string {
-	hosts := "one host"
-	if OwnPlan.Hosts != 1 {
-		hosts = fmt.Sprintf("%d hosts", OwnPlan.Hosts)
-	}
 	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s/billing.",
-		OwnPlan.Name, dollars(OwnPlan.PriceCents), hosts, FakeDashboard)
+		OwnPlan.Name, dollars(OwnPlan.PriceCents), hostsPhrase(OwnPlan.Hosts), FakeDashboard)
+}
+
+// hostsPhrase is billing.HostsPhrase: "one host", "3 hosts", or "any
+// number of hosts" for unlimitedHosts.
+func hostsPhrase(n int) string {
+	switch {
+	case n >= unlimitedHosts:
+		return "any number of hosts"
+	case n == 1:
+		return "one host"
+	}
+	return fmt.Sprintf("%d hosts", n)
 }
 
 // dollars is billing.Dollars: "$10", or "$10.50" when the cents are not
@@ -144,8 +153,11 @@ func (f *Fake) SetHostInstall(line string) {
 
 // SetHostLimit replaces the hosts an account may own, which is the
 // plan's figure in the real api; 0 is a plan that sells none, and a
-// figure below 0 puts the default back (one host, and memory on
-// repose's servers too). A figure a test set above 0 is read as the
+// figure below 0 puts the default back (the billing mode's figure, any
+// number of hosts with billing off, and memory on repose's servers too).
+// No plan the api sells has a figure above 0 that a count reaches
+// (I-1594); a test sets one to reach the host_limit refusal an older
+// plan answered. A figure a test set above 0 is read as the
 // Own hardware plan, which sells no fleet memory, so `hosted` is
 // refused on it (createProject).
 func (f *Fake) SetHostLimit(n int) {
@@ -166,10 +178,11 @@ func (f *Fake) hostsAllowed() int {
 		return *f.hostLimit
 	}
 	// The api's answer, in the fake's terms (billing.Gate.HostsAllowed):
-	// a billing-exempt account and an api with billing off get one, an
-	// account with no live subscription gets none, and otherwise the
-	// plan's own figure decides -- one on Own hardware, none on the
-	// plans that sell memory on repose's fleet.
+	// a billing-exempt account and an api with billing off get any
+	// number, an account with no live subscription gets none, and
+	// otherwise the plan's own figure decides -- any number on Own
+	// hardware (I-1594), none on the plans that sell memory on repose's
+	// fleet.
 	//
 	// It used to hand one to every account whatever its plan, which is a
 	// fake that says yes where the api says no: a reviewer running

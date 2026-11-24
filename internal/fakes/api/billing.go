@@ -74,10 +74,15 @@ var Plans = []PlanDef{
 }
 
 // OwnPlan is the Own hardware plan (billing.Own, DECISIONS I-1364): $10 a
-// month for one host the user owns. It sells no memory, disk or egress of
-// ours, so those are 0 and no gate of theirs refuses anything; the host's
-// own memory and disk are the limits.
-var OwnPlan = PlanDef{ID: "own", Name: "Own hardware", PriceCents: 1000, Currency: "USD", TrialDays: 7, Hosts: 1, ProjectLimit: ProjectCap}
+// month for any number of hosts the user owns (I-1594). It sells no
+// memory, disk or egress of ours, so those are 0 and no gate of theirs
+// refuses anything; the hosts' own memory and disk are the limits.
+var OwnPlan = PlanDef{ID: "own", Name: "Own hardware", PriceCents: 1000, Currency: "USD", TrialDays: 7, Hosts: unlimitedHosts, ProjectLimit: ProjectCap}
+
+// unlimitedHosts is billing.UnlimitedHosts: the hosts figure of a plan
+// that sells any number (I-1594), a finite number so every comparison
+// reads it right. TestUnlimitedHostsIsTheApis holds the two equal.
+const unlimitedHosts = math.MaxInt32
 
 // ProjectCap is how many live projects, running or stopped, an account
 // may have on every plan (billing.ProjectCap, DECISIONS I-569).

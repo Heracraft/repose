@@ -181,9 +181,11 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 	token, hostID := "", uuid.Nil
 	var hub *hostmgr.HubBootstrap
 	err = db.InTx(r.Context(), s.d.Pool, func(tx db.Tx) error {
-		// The name before the count: an account at its one-host limit
+		// The name before the count: an account at its plan's limit
 		// asking for the name it already uses is told about the name,
-		// which is the mistake it made, and not about the limit.
+		// which is the mistake it made, and not about the limit. No plan
+		// sold today has a limit the count reaches (I-1594), but the
+		// check stays: Plan.Hosts is the one place a limit is written.
 		reissue := false
 		if name == "" {
 			// The api names it rather than the caller inventing one, so

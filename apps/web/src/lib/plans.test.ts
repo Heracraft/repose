@@ -6,6 +6,7 @@ import {
 	MEMORY_STATES,
 	OWN_HARDWARE,
 	PLANS,
+	UNLIMITED_HOSTS,
 	fromApi,
 	memoryLine,
 	ordinal
@@ -87,7 +88,12 @@ describe('plans', () => {
 		expect(OWN_HARDWARE.name).toBe(go.Name);
 		expect(OWN_HARDWARE.priceCents).toBe(Number(go.PriceCents));
 		expect(OWN_HARDWARE.trialDays).toBe(Number(go.TrialDays));
-		expect(OWN_HARDWARE.hosts).toBe(Number(go.Hosts));
+		// plans.go writes the figure as UnlimitedHosts, math.MaxInt32.
+		expect(go.Hosts).toBeUndefined();
+		expect(goSource).toMatch(/Own = Plan\{[^}]*Hosts: UnlimitedHosts[,}]/);
+		expect(goSource).toMatch(/const UnlimitedHosts = math\.MaxInt32\b/);
+		expect(OWN_HARDWARE.hosts).toBe(UNLIMITED_HOSTS);
+		expect(UNLIMITED_HOSTS).toBe(2 ** 31 - 1);
 		// plans.go leaves the rest at zero, which is what "sells none of
 		// ours" is written as there; the page must not invent figures.
 		expect([
@@ -104,10 +110,10 @@ describe('plans', () => {
 	// the markdown through llms.txt (I-660).
 	it('say the Own hardware price and host count in /docs/billing.md', () => {
 		const md = readFileSync(join(__dirname, '..', 'content', 'docs', 'billing.md'), 'utf8');
-		const m = md.match(/\*\*\$(\d+) a month\*\* for (one) host you own/);
+		const m = md.match(/\*\*\$(\d+) a month\*\* for (any number of) hosts you own/);
 		expect(m, 'billing.md states the Own hardware price and host count').not.toBeNull();
 		expect(Number(m![1]) * 100).toBe(OWN_HARDWARE.priceCents);
-		expect(OWN_HARDWARE.hosts).toBe(1);
+		expect(OWN_HARDWARE.hosts).toBe(UNLIMITED_HOSTS);
 	});
 
 	// /docs/billing draws PlanCells over its table, but /docs/billing.md, the

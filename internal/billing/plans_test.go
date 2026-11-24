@@ -49,14 +49,14 @@ func TestPlansMatchPricingDoc(t *testing.T) {
 	if found[own.ID] {
 		t.Errorf("PRICING.md's hosted plan table has a row for %s", own.Name)
 	}
-	if m := regexp.MustCompile(`\*\*Own hardware is \$(\d+) a month for (one) host\.\*\*`).FindStringSubmatch(doc); m == nil {
+	if m := regexp.MustCompile(`\*\*Own hardware is \$(\d+) a month for (any number of) hosts\.\*\*`).FindStringSubmatch(doc); m == nil {
 		t.Errorf("PRICING.md no longer states the Own hardware price and host count in one sentence")
 	} else {
 		if n, _ := strconv.Atoi(m[1]); int64(n)*100 != own.PriceCents {
 			t.Errorf("PRICING.md's Own hardware price $%s; plans.go has %d cents", m[1], own.PriceCents)
 		}
-		if own.Hosts != 1 {
-			t.Errorf("PRICING.md says one host; plans.go has %d", own.Hosts)
+		if own.Hosts != billing.UnlimitedHosts {
+			t.Errorf("PRICING.md says any number of hosts; plans.go has %d", own.Hosts)
 		}
 	}
 	if own.MemoryGB != 0 || own.DiskGB != 0 || own.EgressGB != 0 || own.Seats != 0 || own.BurstCoreHours != 0 || own.HasIntro() {
