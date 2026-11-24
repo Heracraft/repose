@@ -405,6 +405,15 @@ window's contents: nothing here reads the window.
   message waits per window and a second replaces it. A delivery is an
   `agent_prompted` event that notifies nobody and carries the sender and
   the window, never the text. `notifications.md` has the whole rule.
+- On the dashboard (DECISIONS I-1604, amending I-1220) the same message
+  is written under **Messages** on a project's Overview: one thread of
+  the owner's messages (`GET /projects/:id/says`, newest 30) and the
+  agents' own events (`completed` with its 200-character summary of the
+  last message, `agent_message`, `agent_done`, `agent_question`,
+  `needs_input`, `error`), oldest first, each message with what became
+  of it. The box sends to the only agent, else the one picked in **To**,
+  else the one that spoke last. A phone gets the same page. The thread
+  shows on a machine that runs an agent or ever had a message or a reply.
 - A missing login produces the agent's own login prompt in the window plus
   the CLI message above; it never produces a crash loop.
 - `repose status` shows per agent window: `working`, `idle`,

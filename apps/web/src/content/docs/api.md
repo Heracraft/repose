@@ -26,14 +26,14 @@ A token has a name, one or more scopes, a project or all of them, and an end: 30
 
 ## Scopes
 
-| Scope      | What it opens                                                      |
-| ---------- | ------------------------------------------------------------------ |
-| `read`     | every project's status, events, questions, triggers and settings   |
-| `projects` | create, start, stop, resize, snapshot, restore and remove projects |
-| `config`   | change a project's config                                          |
-| `secrets`  | set and remove secrets (never read a value)                        |
-| `triggers` | make, change, fire and remove triggers and webhook routes          |
-| `agents`   | message an agent and answer its questions                          |
+| Scope      | What it opens                                                              |
+| ---------- | -------------------------------------------------------------------------- |
+| `read`     | every project's status, events, messages, questions, triggers and settings |
+| `projects` | create, start, stop, resize, snapshot, restore and remove projects         |
+| `config`   | change a project's config                                                  |
+| `secrets`  | set and remove secrets (never read a value)                                |
+| `triggers` | make, change, fire and remove triggers and webhook routes                  |
+| `agents`   | message an agent and answer its questions                                  |
 
 A token bound to one project sees that project alone: `GET /projects` lists only it, and a call on another project, or on an account route other than `GET /me`, `GET /catalog` and `GET /projects`, is refused.
 
@@ -64,6 +64,7 @@ The scope each route needs. `:id` is a project's id, which `GET /projects` lists
 | `GET /projects/destroyed`                        | `read`                                                                        |
 | `GET /projects/:id/events`                       | `read`                                                                        |
 | `GET /projects/:id/logs`                         | `read`                                                                        |
+| `GET /projects/:id/says`                         | `read` (the messages you sent its agents)                                     |
 | `GET /projects/:id/samples`                      | `read`                                                                        |
 | `GET /projects/:id/ops/:op_id`                   | `read`                                                                        |
 | `GET /projects/:id/ops/:op_id/log`               | `read`                                                                        |
@@ -120,14 +121,14 @@ Request and answer bodies are not listed here. They are what the CLI sends and r
 
 `POST /projects` takes `placement`: `own`, the default, is a host [you own](/docs/own-hardware) when you have one and repose's servers when you have none; `hosted` is repose's servers whatever you own. `host` names one of your hosts, by its id or its name: the project goes there or is refused, never to another host; without it, the host with the most room takes it. `repose run --host` sends both. A project stays on its host for life, so `PATCH /projects/:id` does not take it.
 
-| Answer | When |
-| ------ | ---- |
-| `201` | The project, with `host_id`, `host_name` when that host is one you own, and `placement`. Placement is decided before anything is written. |
-| `503 capacity`, `detail.reason: "no_own_host"` | Your host cannot take it: `detail.host` and `detail.host_state` (`registering`, `unreachable`, `draining`, or `ready` with no room) name which and why, and the message says it in words. With `host`, that is the host named. Nothing is created. `detail.hosted_allowed` is whether `placement: "hosted"` would work on your plan. |
-| `503 capacity`, `detail.reason: "no_capacity"` or `"no_cpu"` | Repose's servers have no room. Nothing is created. |
-| `402 payment_required`, `detail.reason: "hosted_plan_required"` | `hosted` on a plan that buys no memory on repose's servers. |
-| `400 invalid`, `detail.reason: "placement"` | A value other than `own` or `hosted`. |
-| `400 invalid`, `detail.reason: "host"` | `host` names no host you have, or comes with `placement: "hosted"`. |
+| Answer                                                          | When                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `201`                                                           | The project, with `host_id`, `host_name` when that host is one you own, and `placement`. Placement is decided before anything is written.                                                                                                                                                                                            |
+| `503 capacity`, `detail.reason: "no_own_host"`                  | Your host cannot take it: `detail.host` and `detail.host_state` (`registering`, `unreachable`, `draining`, or `ready` with no room) name which and why, and the message says it in words. With `host`, that is the host named. Nothing is created. `detail.hosted_allowed` is whether `placement: "hosted"` would work on your plan. |
+| `503 capacity`, `detail.reason: "no_capacity"` or `"no_cpu"`    | Repose's servers have no room. Nothing is created.                                                                                                                                                                                                                                                                                   |
+| `402 payment_required`, `detail.reason: "hosted_plan_required"` | `hosted` on a plan that buys no memory on repose's servers.                                                                                                                                                                                                                                                                          |
+| `400 invalid`, `detail.reason: "placement"`                     | A value other than `own` or `hosted`.                                                                                                                                                                                                                                                                                                |
+| `400 invalid`, `detail.reason: "host"`                          | `host` names no host you have, or comes with `placement: "hosted"`.                                                                                                                                                                                                                                                                  |
 
 ## Give an agent a token
 

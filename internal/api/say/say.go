@@ -319,6 +319,39 @@ func (s *Service) wait(ctx context.Context, id uuid.UUID) (*Say, error) {
 	return answer(w)
 }
 
+// ListCap is the most messages List answers: the dashboard's thread
+// shows the newest of them, and a longer history is the CLI's terminal.
+const ListCap = 100
+
+// List is the project's messages, newest first, at most limit of them
+// (DECISIONS I-1604): the owner's half of the conversation the project
+// page draws. The two hand-off states are left out, as they are left
+// out of every answer: a message in them is still being sent, and its
+// sender is waiting on the POST that will answer it.
+func (s *Service) List(ctx context.Context, projectID uuid.UUID, limit int) ([]Say, error) {
+	if limit <= 0 || limit > ListCap {
+		limit = ListCap
+	}
+	rows, err := s.pool.Query(ctx,
+		`select id, project_id, tmux_window, text, sender, state, replaced, created_at
+		 from says where project_id = $1 and state not in ($2, $3)
+		 order by created_at desc, id desc limit $4`,
+		projectID, StatePending, StateSending, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Say{}
+	for rows.Next() {
+		var m Say
+		if err := rows.Scan(&m.ID, &m.ProjectID, &m.Window, &m.Text, &m.Sender, &m.State, &m.Replaced, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // answer turns a finished row into what the route returns.
 func answer(w *row) (*Say, error) {
 	if w.state == StateFailed {

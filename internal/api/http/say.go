@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/heracraft/repose/internal/api/say"
 )
@@ -38,6 +39,31 @@ func (s *Server) sayToAgent(w http.ResponseWriter, r *http.Request) error {
 		return sayErr(err)
 	}
 	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// listSays is GET /projects/:id/says (DECISIONS I-1604): the messages
+// the owner sent the project's agents, newest first, which the project
+// page draws as its half of the conversation. `limit` is 1 to
+// say.ListCap; anything else is `400 invalid`.
+func (s *Server) listSays(w http.ResponseWriter, r *http.Request) error {
+	p, err := s.userProject(r)
+	if err != nil {
+		return err
+	}
+	limit := say.ListCap
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > say.ListCap {
+			return errf("invalid", "limit must be between 1 and %d", say.ListCap)
+		}
+		limit = n
+	}
+	out, err := s.d.Say.List(r.Context(), p.ID, limit)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"says": out})
 	return nil
 }
 

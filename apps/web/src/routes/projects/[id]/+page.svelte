@@ -47,7 +47,8 @@
 		listProjectQuestions,
 		getUsage,
 		patchProject,
-		listEventsPage
+		listEventsPage,
+		listSays
 	} from '$lib/api/client';
 	import { ApiError, errorText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
@@ -61,13 +62,15 @@
 	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
 	import OpenInClaude from '$lib/components/project/OpenInClaude.svelte';
+	import Conversation from '$lib/components/project/Conversation.svelte';
+	import { AGENT_KINDS, THREAD_READ } from '$lib/thread';
 	import DetailsList from '$lib/components/project/DetailsList.svelte';
 	import LatestEvents, { LATEST_EVENTS } from '$lib/components/project/LatestEvents.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
 	import { destroyRefusalMessage } from '$lib/components/project/host';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { latest, type Pt } from '$lib/usage';
-	import type { ProjectEvent, Question, Revision, Samples } from '$lib/api/types';
+	import type { ProjectEvent, Question, Revision, Samples, Say } from '$lib/api/types';
 
 	const ctx = useProject();
 	const id = ctx.id;
@@ -76,6 +79,8 @@
 	let ready = $state(false);
 	let questions = $state<Question[]>([]);
 	let events = $state<ProjectEvent[] | undefined>(undefined);
+	/** The conversation's two halves, read with the rest (I-1604). */
+	let thread = $state<{ says: Say[]; events: ProjectEvent[] }>({ says: [], events: [] });
 	const cache = keep(id);
 	let revisions = $state<Revision[]>(cache.revisions ?? []);
 	let samples = $state<Samples | undefined>(cache.samples);
@@ -90,14 +95,19 @@
 		const want = ctx.project?.config_revision_id;
 		const haveRevision =
 			!!cache.revisions && (!want || revisions.some((r) => r.revision_id === want));
-		const [qs, ev, smp, revs] = await Promise.all([
+		const [qs, ev, smp, revs, sent, replies] = await Promise.all([
 			listProjectQuestions(id).catch(() => [] as Question[]),
 			listEventsPage(id, { limit: LATEST_EVENTS })
 				.then((r) => r.events)
 				.catch(() => undefined),
 			freshSamples ? undefined : getSamples(id, '1h').catch(() => undefined),
-			haveRevision ? revisions : listRevisions(id).catch(() => [] as Revision[])
+			haveRevision ? revisions : listRevisions(id).catch(() => [] as Revision[]),
+			listSays(id, THREAD_READ).catch(() => [] as Say[]),
+			listEventsPage(id, { limit: THREAD_READ, kinds: [...AGENT_KINDS] })
+				.then((r) => r.events)
+				.catch(() => [] as ProjectEvent[])
 		]);
+		thread = { says: sent, events: replies };
 		questions = qs;
 		events = ev;
 		revisions = revs;
@@ -359,6 +369,9 @@
 	<!-- What waits on you first: an agent is stopped until it is answered. -->
 	<WaitingCard projectId={id} pollFailures={ctx.pollFailures} bind:questions />
 
+	<!-- Then the agents' conversation: what was said, and the next message. -->
+	<Conversation {project} initial={thread} pollFailures={ctx.pollFailures} />
+
 	<section class="hk-section" aria-labelledby="connect-title">
 		<div class="hk-section-head">
 			<h2 id="connect-title" class="hk-h2-app">Connect</h2>
@@ -386,12 +399,7 @@
 	<div class="ogrid">
 		<div class="oside">
 			{#if agents}
-				<AgentsCard
-					projectId={project.id}
-					signals={project.signals}
-					{questions}
-					updated={ctx.lastUpdated}
-				/>
+				<AgentsCard signals={project.signals} {questions} updated={ctx.lastUpdated} />
 			{/if}
 			<MachineCard
 				{project}

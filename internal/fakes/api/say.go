@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -108,7 +109,69 @@ func (f *Fake) sayToAgent(w http.ResponseWriter, r *http.Request) *apiError {
 		Sender: userFrom(r).Handle, State: state, Replaced: f.sayReplaced,
 		CreatedAt: f.now().UTC(),
 	}
+	if s.Replaced {
+		// The row it took the place of moves out of waiting, as the
+		// api's does: one row per window claims to be waiting.
+		for i := len(f.says) - 1; i >= 0; i-- {
+			if o := &f.says[i]; o.ProjectID == p.ID && o.Window == window && o.State == "waiting" {
+				o.State = "replaced"
+				break
+			}
+		}
+	}
 	f.says = append(f.says, s)
+	if f.sayReply != "" && state == "delivered" {
+		f.replyLater(p.ID, window, f.sayReply, f.sayReplyAfter)
+	}
 	writeJSON(w, http.StatusOK, s)
 	return nil
+}
+
+// listSays is GET /v1/projects/{id}/says (DECISIONS I-1604): the
+// project's messages newest first, at most `limit` (1 to 100, default
+// 100), as the api answers them.
+func (f *Fake) listSays(w http.ResponseWriter, r *http.Request) *apiError {
+	p, e := f.project(userFrom(r), r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 100 {
+			return invalid("limit must be between 1 and 100")
+		}
+		limit = n
+	}
+	out := []Say{}
+	for i := len(f.says) - 1; i >= 0 && len(out) < limit; i-- {
+		if f.says[i].ProjectID == p.ID {
+			out = append(out, f.says[i])
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"says": out})
+	return nil
+}
+
+// SetSayReply makes the fake answer a delivered message the way an
+// agent would, for a preview with no machine behind it: after `after`,
+// the window's agent ends its turn with `text` as its last message (a
+// `completed` event, which is what an agent's Stop hook sends). Empty
+// text turns it off, which is the default.
+func (f *Fake) SetSayReply(text string, after time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sayReply, f.sayReplyAfter = text, after
+}
+
+// replyLater adds the reply SetSayReply asked for. Called under f.mu.
+func (f *Fake) replyLater(projectID, window, text string, after time.Duration) {
+	go func() {
+		time.Sleep(after)
+		agent := window
+		if i := strings.IndexByte(agent, '-'); i > 0 {
+			agent = agent[:i]
+		}
+		f.AddEventAs(projectID, f.now(), "completed", agent, window, text)
+	}()
 }

@@ -94,9 +94,11 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 serves a static grey screen over RFB instead of refusing, so a test can reach
 //	                 the watching state and its clipboard panel; "copy" is handed to the page as the
 //	                 machine's own cut-text. GET /desktop -> f.DesktopPastes, what Send sent (I-1216)
-//	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool}
-//	                 -> f.SetSayAgents and f.SetSayState: which agents the machines run and what a
-//	                 `repose say` is answered with (I-1144)
+//	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool,
+//	                 "reply": "text", "reply_ms": 1500}
+//	                 -> f.SetSayAgents, f.SetSayState and f.SetSayReply: which agents the machines run,
+//	                 what a `repose say` is answered with (I-1144), and the turn-ended event a
+//	                 delivered message gets back after reply_ms (I-1604; empty reply: none)
 //	POST /agents     {"project_id","agents": [{agent, window, state}],"ssh_sessions","tmux_clients"}
 //	                 -> f.SetAgents, and f.SetSessions when either count is given
 //
@@ -438,6 +440,11 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Agents   *[]string `json:"agents"`
 			State    string    `json:"state"`
 			Replaced bool      `json:"replaced"`
+			// Reply is what the agent answers a delivered message with,
+			// ReplyMS how long it takes; a preview's stand-in for an
+			// agent (I-1604). Empty turns it off.
+			Reply   string `json:"reply"`
+			ReplyMS int    `json:"reply_ms"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -447,6 +454,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			f.SetSayAgents(*body.Agents...)
 		}
 		f.SetSayState(body.State, body.Replaced)
+		f.SetSayReply(body.Reply, time.Duration(body.ReplyMS)*time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
