@@ -630,6 +630,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// The machine has its checkout now: point this checkout's `repose`
 	// remote at it (I-272).
 	e.addReposeRemote(ctx, project, target, checkout)
+	// The machine's own checkout, not one `run --on` added (I-480).
+	if checkout != nil && target.Checkout == "" {
+		e.noteCheckout(ctx, project, *checkout)
+	}
 	if !skipSync && !opts.NoSync && !homeRun && target.Checkout == "" && checkout != nil {
 		e.addSecondMachineRemote(project, *checkout)
 	}

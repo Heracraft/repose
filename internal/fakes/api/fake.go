@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,10 @@ import (
 
 // Options configures New. The zero value is a usable fake.
 type Options struct {
+	// Listen is the address to serve on; empty is 127.0.0.1 on a random
+	// port. A preview for someone on another machine sets one that
+	// machine reaches.
+	Listen string
 	// Users maps bearer tokens to users. Nil accepts any non-empty token
 	// as the canned user (CannedUser); non-nil rejects every other token.
 	Users map[string]User
@@ -239,7 +244,18 @@ func New(opts Options) *Fake {
 		f.setMode(BillingActive)
 	}
 	f.register()
-	f.Server = httptest.NewServer(f)
+	if opts.Listen == "" {
+		f.Server = httptest.NewServer(f)
+		return f
+	}
+	ln, err := net.Listen("tcp", opts.Listen)
+	if err != nil {
+		panic("fake api: listen: " + err.Error()) // test fixture
+	}
+	f.Server = httptest.NewUnstartedServer(f)
+	_ = f.Server.Listener.Close()
+	f.Server.Listener = ln
+	f.Server.Start()
 	return f
 }
 

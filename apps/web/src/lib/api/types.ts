@@ -305,6 +305,10 @@ export interface Project {
 	/** erofs only: the newer base the machine boots at its next start
 	 * (I-1462); null otherwise. */
 	pending_base_version?: string | null;
+	/** The checkout's name under /home/dev as the CLI last found it
+	 * (I-1610): "" when the machine has none, null until a CLI has said.
+	 * Absent from an older api, which means unknown. */
+	checkout?: string | null;
 }
 
 export type GuestRuntime = 'nix' | 'erofs';

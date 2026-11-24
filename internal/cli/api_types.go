@@ -110,6 +110,10 @@ type Project struct {
 	// PendingBaseVersion is the newer base an erofs machine boots at its
 	// next start (I-1462); null otherwise and from an older api.
 	PendingBaseVersion *string `json:"pending_base_version,omitempty"`
+	// Checkout is the checkout's name under /home/dev as a CLI last told
+	// the api (I-1610): "" for none, nil until one has, and from an older
+	// api.
+	Checkout *string `json:"checkout,omitempty"`
 	// LastError is the api's "code: message" for the op that last failed
 	// (the ops engine writes it; cleared by a successful start), and
 	// HostUnreachable its flag for a host that stopped answering. Both are

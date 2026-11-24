@@ -30,6 +30,7 @@ func main() {
 	configDelay := flag.Duration("config-delay", 0, "keep a PUT /config op running this long, streaming its log line by line (0: done at first read)")
 	defaultRuntime := flag.String("default-runtime", "nix", "the guest runtime a new machine gets, nix or erofs (settings.default_guest_runtime)")
 	gatewayHost := flag.String("gateway-host", "", "the gateway POST /certs names (default 127.0.0.1, at a port nothing listens on)")
+	listen := flag.String("listen", "", "the address the api listens on (default 127.0.0.1 on a random port)")
 	gatewayPort := flag.Int("gateway-port", 0, "the gateway port POST /certs names (default api.FakeGatewayPort)")
 	flag.Parse()
 	if *defaultRuntime != "nix" && *defaultRuntime != "erofs" {
@@ -37,7 +38,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest, ConfigDelay: *configDelay,
+	f := api.New(api.Options{Listen: *listen, Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest, ConfigDelay: *configDelay,
 		GatewayHost: *gatewayHost, GatewayPort: *gatewayPort})
 	f.SetDefaultGuestRuntime(*defaultRuntime)
 	defer f.Close()

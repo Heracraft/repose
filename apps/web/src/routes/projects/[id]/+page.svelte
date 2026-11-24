@@ -60,6 +60,7 @@
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
+	import OpenInClaude from '$lib/components/project/OpenInClaude.svelte';
 	import DetailsList from '$lib/components/project/DetailsList.svelte';
 	import LatestEvents, { LATEST_EVENTS } from '$lib/components/project/LatestEvents.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
@@ -377,6 +378,7 @@
 				{ command: `repose code ${project.slug}`, what: 'the repose code command' }
 			]}
 		/>
+		<OpenInClaude {project} />
 	</section>
 
 	<!-- From a 760px column, the events on the left and what runs now on

@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/heracraft/repose/internal/checkoutname"
 )
 
 // The machine's checkout lives at /home/dev/<name>, where <name> is the
@@ -365,5 +368,21 @@ func (e *Env) forgetCheckout(id, name string) {
 	}
 	if err != nil {
 		e.warn("Could not save %s (%s).", projectsPath(e.Dir), oneLine(err.Error()))
+	}
+}
+
+// noteCheckout tells the api the checkout's name when it differs from
+// what the project says (DECISIONS I-1610), so the dashboard's Open in
+// Claude link opens that folder. Best effort, at most two seconds: an
+// api older than I-1610 refuses the field, and a missed update only
+// leaves the link on the home until the next command that finds it.
+func (e *Env) noteCheckout(ctx context.Context, p *Project, name string) {
+	if p == nil || e.Client == nil || !checkoutname.Valid(name) || (p.Checkout != nil && *p.Checkout == name) {
+		return
+	}
+	pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := e.Client.SetCheckout(pctx, p.ID, name); err == nil {
+		p.Checkout = &name
 	}
 }

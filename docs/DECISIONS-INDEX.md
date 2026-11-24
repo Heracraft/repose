@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1128 entries.
+1131 entries.
 
 ## Scope
 
@@ -359,7 +359,7 @@ pointer, not a summary.
 - **I-276** Did-you-mean for commands, `-q` on listings — 2026-09-26; amended by I-630; amended by I-635; L7173
 - **I-277** `repose secrets import` sets every NAME=VALUE of a .env file — 2026-09-26; L7193
 - **I-281** Every ssh to `<project>.repose` first runs `repose ssh-prepare`, so plain ssh, scp, rsync, git and editors reach every project — 2026-09-26; L7220
-- **I-282** `repose code [PROJECT]` opens the checkout in VS Code, Cursor or Zed over that host — 2026-09-26; L7283
+- **I-282** `repose code [PROJECT]` opens the checkout in VS Code, Cursor or Zed over that host — 2026-09-26; partly amended by I-1606; L7283
 - **I-280** `run` and `attach` proxy the terminal, so a dropped file or a Ctrl+V image reaches the agent in the guest — 2026-09-26; amended by I-468; amended by I-509; partly superseded by I-940; L7302
 - **I-278** One Claude login per user: the login share — 2026-09-26; amended by I-464; amended by I-556; L7401
 - **I-283** No auto-mode offer on a machine in bypass mode — 2026-09-27; L7490
@@ -1160,3 +1160,6 @@ pointer, not a summary.
 - **I-1594** The Own hardware plan sells any number of hosts: `Plan.Hosts` is `billing.UnlimitedHosts` (math.MaxInt32), and a billing-exempt account has the same rule (own-hosts, 2026-11-24) — partly amended by I-1598; L39405
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
+- **I-1606** Open in Claude: the project page's Connect card and `repose code --editor claude` open the machine in Claude Desktop through Desktop's own documented link, `claude://code/new?ssh_host=<slug>.repose&ssh_folder=<folder>`; a stopped machine starts first, a frozen one needs nothing (open-in-claude, 2026-11-24) — L39434
+- **I-1608** `repose-hook` names the agent from the hook payload when no `--agent` and no `REPOSE_HOOK_AGENT` does, so an agent that an app runs over SSH outside repose's wrappers, Claude Desktop's own Claude Code, reports its turns (open-in-claude, 2026-11-24) — L39442
+- **I-1610** The api stores the name of a project's checkout under `/home/dev` as the CLI last found it, `projects.checkout` (migration 0053), served as `Project.checkout` and set by `PATCH /projects/:id {checkout}` (open-in-claude, 2026-11-24) — L39450

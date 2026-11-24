@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,9 +60,12 @@ type issuedToken struct {
 // Fake is the running server.
 type Fake struct {
 	listener net.Listener
-	server   *http.Server
-	key      *rsa.PrivateKey
-	kid      string
+	// issuer is the URL the browser reaches this fake at, when a proxy in
+	// front of it (a preview's HTTPS) makes that differ from the listener.
+	issuer string
+	server *http.Server
+	key    *rsa.PrivateKey
+	kid    string
 
 	mu            sync.Mutex
 	codes         map[string]authRequest
@@ -70,12 +74,17 @@ type Fake struct {
 
 // New starts the fake on 127.0.0.1 with a random port and returns once it
 // is accepting connections.
-func New() (*Fake, error) {
+func New() (*Fake, error) { return NewOn("127.0.0.1:0") }
+
+// NewOn is New on addr, which is also the issuer the browser is sent to:
+// a preview for someone on another machine listens on an address that
+// machine reaches.
+func NewOn(addr string) (*Fake, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("fake-logto: generating key: %w", err)
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("fake-logto: listen: %w", err)
 	}
@@ -105,7 +114,16 @@ func New() (*Fake, error) {
 
 // Issuer is this fake's base URL (what the dashboard's PUBLIC_LOGTO_ENDPOINT
 // should be set to).
-func (f *Fake) Issuer() string { return "http://" + f.listener.Addr().String() }
+func (f *Fake) Issuer() string {
+	if f.issuer != "" {
+		return f.issuer
+	}
+	return "http://" + f.listener.Addr().String()
+}
+
+// SetIssuer makes the fake answer as `url`, the address a proxy in front
+// of it serves it at, in its discovery document and its tokens.
+func (f *Fake) SetIssuer(url string) { f.issuer = strings.TrimRight(url, "/") }
 
 // Close stops the server.
 func (f *Fake) Close() error { return f.server.Close() }

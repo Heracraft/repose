@@ -48,6 +48,10 @@ If your shell has no `code`, run **Shell Command: Install 'code' command in PATH
 
 `repose code --editor zed` opens the checkout in Zed. By hand, `zed ssh://todo-app.repose/home/dev/todo-app`.
 
+## Claude Desktop and other apps
+
+`repose code --editor claude` opens the checkout in Claude Desktop. T3 Code, the Codex app and Antigravity add the machine by its host name: [Desktop apps](/docs/desktop-apps).
+
 ## JetBrains Gateway
 
 Gateway brings its own SSH client instead of yours, so it renews no certificate and writes no Host block. `ssh todo-app.repose true` does both: run it before you connect, and again each time Gateway drops the connection. Point it at host `todo-app.repose` and tell it to authenticate from your OpenSSH config, where repose's key and certificate are named and nowhere else. We haven't tested Gateway yet.

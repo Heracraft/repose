@@ -6,10 +6,18 @@
 // way mounted.
 import { getContext, setContext } from 'svelte';
 import { toast } from 'svelte-sonner';
-import { getOp, getProject, listDestroyed, listProjects, stopProject } from '$lib/api/client';
+import {
+	getOp,
+	getProject,
+	listDestroyed,
+	listProjects,
+	startProject,
+	stopProject
+} from '$lib/api/client';
 import { ApiError } from '$lib/api/errors';
 import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 import { loadErrorText } from '$lib/components/LoadState.svelte';
+import { capacityRefusalText } from './host';
 import { defaultRestoreName } from '$lib/destroyed';
 import { pollUntilDone } from '$lib/poll';
 import { projectsStore } from '$lib/projects.svelte';
@@ -172,6 +180,40 @@ export class ProjectState {
 		}
 		this.startBanner = 'payment_required';
 		this.refusal = { message: err.message, reason, projects: named };
+	};
+
+	/**
+	 * Start, as the header's button does it: a payment or capacity
+	 * refusal goes under the tabs, an op's failure is its own toast.
+	 * Resolves true once the machine is started and read again (the
+	 * header's Start and Open in Claude, I-1606).
+	 */
+	start = async (): Promise<boolean> => {
+		if (this.opBusy) return false;
+		this.opBusy = 'start';
+		this.startBanner = undefined;
+		this.capacityMessage = undefined;
+		try {
+			const { op_id } = await startProject(this.id);
+			const done = await this.waitForOp(op_id, () => {
+				this.opBusy = undefined;
+			});
+			if (done) await this.refresh();
+			return done;
+		} catch (err) {
+			this.opBusy = undefined;
+			if (err instanceof ApiError && err.code === 'payment_required') {
+				await this.refuse(err);
+				return false;
+			}
+			if (err instanceof ApiError && err.code === 'capacity') {
+				this.startBanner = err.code;
+				this.capacityMessage = capacityRefusalText(err);
+				return false;
+			}
+			toastApiError(err, 'Could not start the project.');
+			return false;
+		}
 	};
 
 	/** Stops a machine the refusal named, so this one can start. */

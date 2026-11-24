@@ -131,14 +131,16 @@ Open a login shell in the checkout on the machine, outside the session `attach` 
 
 Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over [SSH](/docs/ssh-and-editors) to `<project>.repose`. A machine that isn't running comes up first, as with `attach`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed, whose command is `zed` or `zeditor`; on a Mac it also looks in `/Applications` and `~/Applications`. A named editor that isn't installed exits 1, as does having none of the three. Under WSL it refuses an editor whose command is the Windows app, which would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
 
+`--editor claude` opens a new [Claude Desktop](/docs/desktop-apps#claude-desktop) session on the machine, in the checkout, through Desktop's `claude://code/new` link. It is used only when named, since nothing on the laptop shows whether Desktop is installed. With no display to open the link on, it prints the link: `Open this link on the computer with Claude Desktop: claude://code/new?ssh_host=todo-app.repose&ssh_folder=/home/dev/todo-app`. Under WSL it refuses, as for an editor installed on Windows.
+
 ```
 $ repose code todo-app
 Opening todo-app.repose:/home/dev/todo-app in VS Code
 ```
 
-| Flag              | What it does                                                                                             |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| `--editor EDITOR` | `code`, `cursor` or `zed`. Default: `REPOSE_EDITOR`, else `editor` in config.toml, else the first found. |
+| Flag              | What it does                                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--editor EDITOR` | `code`, `cursor`, `zed` or `claude`. Default: `REPOSE_EDITOR`, else `editor` in config.toml, else the first found of `code`, `cursor` and `zed`. |
 
 ### `repose open [LOCAL:]PORT`
 
@@ -581,7 +583,7 @@ reverse = ["15432:5432"]
 | --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `default_size`        | `large`  | Size of new projects: `tiny`, `small`, `large` or `xl`; anything else makes every command exit 2 naming the file. `default_class` is its old name and still works; `default_size` wins when a file has both.                                                                                            |
 | `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                     |
-| `editor`              | none     | What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                            |
+| `editor`              | none     | What `repose code` opens: `code`, `cursor`, `zed` or `claude`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                  |
 | `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
 | `remote_control`      | `false`  | Offer the machine's Claude Code to the Claude app, so you can read and drive its agents from your phone. See [Drive it from the Claude app](/docs/agents#drive-it-from-the-claude-app).                      |
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
@@ -614,7 +616,7 @@ reverse = ["15432:5432"]
 | `VISUAL`, `EDITOR`           | The editor for `repose config edit`. Default `vi`.                                                                                                                                          |
 | `WAYLAND_DISPLAY`            | On Linux, `repose paste` reads the Wayland clipboard with `wl-paste` when this is set.                                                                                                      |
 | `DISPLAY`                    | Otherwise it reads the X11 clipboard with `xclip`.                                                                                                                                          |
-| `REPOSE_EDITOR`              | The editor `repose code` opens: `code`, `cursor` or `zed`, over `editor` in config.toml.                                                                                                    |
+| `REPOSE_EDITOR`              | The editor `repose code` opens: `code`, `cursor`, `zed` or `claude`, over `editor` in config.toml.                                                                                          |
 
 ## Other servers
 

@@ -3,12 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/heracraft/repose/internal/checkoutname"
 )
 
 // `repose code [PROJECT]` (DECISIONS I-282): open an editor on the
@@ -24,6 +27,11 @@ type editorSpec struct {
 	// installed without its shell command; relative to /Applications and
 	// ~/Applications.
 	Apps []string
+	// Link is an app opened by a URL rather than a command: Claude
+	// Desktop's claude:// link (DECISIONS I-1606). It is never picked when
+	// nothing names an editor, because nothing on the laptop says it is
+	// installed.
+	Link bool
 }
 
 // editors in the order `repose code` tries them when nothing names one.
@@ -31,6 +39,7 @@ var editors = []editorSpec{
 	{Name: "code", Label: "VS Code", Bins: []string{"code"}, Apps: []string{"Visual Studio Code.app/Contents/Resources/app/bin/code"}},
 	{Name: "cursor", Label: "Cursor", Bins: []string{"cursor"}, Apps: []string{"Cursor.app/Contents/Resources/app/bin/cursor"}},
 	{Name: "zed", Label: "Zed", Bins: []string{"zed", "zeditor"}, Apps: []string{"Zed.app/Contents/MacOS/cli"}},
+	{Name: "claude", Label: "Claude Desktop", Link: true},
 }
 
 func editorNames() []string {
@@ -88,6 +97,9 @@ func pickEditor(flag, configured, home string) (editorSpec, string, error) {
 	if name != "" {
 		for _, ed := range editors {
 			if ed.Name == name {
+				if ed.Link {
+					return ed, "", nil
+				}
 				bin := ed.find(home)
 				if bin == "" {
 					return ed, "", exitf(ExitGeneric, "%s is not installed, or its `%s` command is not on your PATH.%s", ed.Label, ed.Bins[0], installHint(ed))
@@ -98,6 +110,9 @@ func pickEditor(flag, configured, home string) (editorSpec, string, error) {
 		return editorSpec{}, "", exitf(ExitUsage, "%s must be one of %s, got %q.", from, strings.Join(editorNames(), ", "), name)
 	}
 	for _, ed := range editors {
+		if ed.Link {
+			continue
+		}
 		if bin := ed.find(home); bin != "" {
 			return ed, bin, nil
 		}
@@ -169,6 +184,9 @@ func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
 	if err != nil {
 		return err
 	}
+	if ed.Link && isWSL() {
+		return exitf(ExitGeneric, "%s on Windows connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.", ed.Label)
+	}
 	if windowsEditor(bin) {
 		return exitf(ExitGeneric, "%s here is the Windows app, which connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.", ed.Label)
 	}
@@ -184,8 +202,22 @@ func CodeCmd(ctx context.Context, e *Env, projectArg, editorFlag string) error {
 	if err != nil {
 		return err
 	}
+	if target.Checkout == "" {
+		e.noteCheckout(ctx, project, name)
+	}
 	dir := guestHomePath(name)
 	_, _ = fmt.Fprintf(e.Out, "Opening %s:%s in %s\n", host, dir, ed.Label)
+	if ed.Link {
+		link := claudeDesktopLink(project.Slug, name)
+		if !browserAvailable(false, false, displayEnv(), goos()) {
+			_, _ = fmt.Fprintf(e.Out, "Open this link on the computer with Claude Desktop: %s\n", link)
+			return nil
+		}
+		if err := openLink(link); err != nil {
+			_, _ = fmt.Fprintf(e.ErrOut, "Could not open Claude Desktop (%v). Open this link: %s\n", err, link)
+		}
+		return nil
+	}
 	cmd := exec.CommandContext(ctx, bin, editorArgs(ed, host, dir)...)
 	// The editor's own ssh runs later, outside this command: it must run
 	// `repose ssh-prepare` like any other ssh.
@@ -201,9 +233,9 @@ func newCodeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	var editor string
 	cmd := &cobra.Command{
 		Use:   "code [PROJECT[:CHECKOUT]]",
-		Short: "Open the checkout in VS Code, Cursor or Zed over SSH",
-		Long: "Open the project's checkout in VS Code, Cursor or Zed on this laptop, over SSH\n" +
-			"to PROJECT.repose. A stopped machine starts first.",
+		Short: "Open the checkout in VS Code, Cursor, Zed or Claude Desktop over SSH",
+		Long: "Open the project's checkout in VS Code, Cursor, Zed or Claude Desktop on this\n" +
+			"laptop, over SSH to PROJECT.repose. A stopped machine starts first.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -218,7 +250,38 @@ func newCodeCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return CodeCmd(cmd.Context(), e, project, editor)
 		},
 	}
-	cmd.Flags().StringVar(&editor, "editor", "", "code, cursor or zed (default: $REPOSE_EDITOR, editor in config.toml, else the first one installed)")
+	cmd.Flags().StringVar(&editor, "editor", "", "code, cursor, zed or claude (default: $REPOSE_EDITOR, editor in config.toml, else the first one installed of code, cursor and zed)")
 	_ = cmd.RegisterFlagCompletionFunc("editor", cobra.FixedCompletions(editorNames(), cobra.ShellCompDirectiveNoFileComp))
 	return cmd
+}
+
+// openLink opens a URL with the laptop's handler for its scheme; tests
+// replace it.
+var openLink = openBrowser
+
+// displayEnv is what browserAvailable reads on Linux: an X or a Wayland
+// display.
+func displayEnv() string {
+	if d := os.Getenv("DISPLAY"); d != "" {
+		return d
+	}
+	return os.Getenv("WAYLAND_DISPLAY")
+}
+
+// claudeDesktopLink is Claude Desktop's documented link to a new session
+// on an SSH host (code.claude.com/docs/en/desktop, "Open an SSH session
+// from a link"; DECISIONS I-1606): ssh_host is the project's alias in the
+// user's ssh config, which names the user and the certificate, and
+// ssh_folder the checkout, or the home when the machine has none. The
+// link carries no prompt, user, token or project id. The dashboard builds
+// the same link (apps/web/src/lib/claudeLink.ts).
+func claudeDesktopLink(slug, checkout string) string {
+	folder := guestHomePath(checkout)
+	if !checkoutname.Valid(checkout) {
+		folder = "~"
+	}
+	// Both values are letters, digits, '.', '_', '-' and '/', which a
+	// query value carries as they are; '/' stays unescaped, as in the
+	// documented example.
+	return "claude://code/new?ssh_host=" + url.QueryEscape(slug+".repose") + "&ssh_folder=" + strings.ReplaceAll(url.QueryEscape(folder), "%2F", "/")
 }

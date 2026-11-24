@@ -129,6 +129,13 @@ type PatchProjectRequest struct {
 	Multiplexer *string `json:"multiplexer,omitempty"`
 }
 
+// SetCheckout stores the checkout's name the CLI found on the machine:
+// PATCH {checkout} (DECISIONS I-1610). From a map, so "" (no checkout)
+// is sent rather than omitted.
+func (c *Client) SetCheckout(ctx context.Context, id, name string) error {
+	return c.patch(ctx, "/projects/"+url.PathEscape(id), map[string]any{"checkout": name}, nil)
+}
+
 // KeepProject makes a temporary project a normal one: PATCH
 // {expires_at: null} (DECISIONS I-347). PatchProjectRequest omits empty
 // fields, so the null is sent from a map of its own.
