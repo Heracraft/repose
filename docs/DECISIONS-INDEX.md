@@ -10,11 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-<<<<<<< HEAD
-1133 entries.
-=======
-1131 entries.
->>>>>>> origin/dashboard-create
+1134 entries.
 
 ## Scope
 
@@ -1164,14 +1160,9 @@ pointer, not a summary.
 - **I-1594** The Own hardware plan sells any number of hosts: `Plan.Hosts` is `billing.UnlimitedHosts` (math.MaxInt32), and a billing-exempt account has the same rule (own-hosts, 2026-11-24) — partly amended by I-1598; L39405
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
-<<<<<<< HEAD
 - **I-1606** Open in Claude: the project page's Connect card and `repose code --editor claude` open the machine in Claude Desktop through Desktop's own documented link, `claude://code/new?ssh_host=<slug>.repose&ssh_folder=<folder>`; a stopped machine starts first, a frozen one needs nothing (open-in-claude, 2026-11-24) — L39434
 - **I-1608** `repose-hook` names the agent from the hook payload when no `--agent` and no `REPOSE_HOOK_AGENT` does, so an agent that an app runs over SSH outside repose's wrappers, Claude Desktop's own Claude Code, reports its turns (open-in-claude, 2026-11-24) — L39444
 - **I-1610** The api stores the name of a project's checkout under `/home/dev` as the CLI last found it, `projects.checkout` (migration 0053), served as `Project.checkout` and set by `PATCH /projects/:id {checkout}` (open-in-claude, 2026-11-24) — L39452
-- **I-1602** New machine on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — L39458
+- **I-1602** New project on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — amended by I-1612; L39458
 - **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39466
-=======
-- **I-1602** New project on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — amended by I-1612; L39434
-- **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39442
-- **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — L39453
->>>>>>> origin/dashboard-create
+- **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — L39477
