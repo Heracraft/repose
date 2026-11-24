@@ -43,7 +43,7 @@ type Config struct {
 	DefaultClass string `toml:"default_class"`
 	DefaultAgent string `toml:"default_agent"`
 	// Editor is what `repose code` opens when neither --editor nor
-	// $REPOSE_EDITOR names one: code, cursor or zed (I-622).
+	// $REPOSE_EDITOR names one: code, cursor, zed or claude (I-622, I-1606).
 	Editor string `toml:"editor"`
 	// DefaultMultiplexer is the multiplexer of projects `run` creates,
 	// tmux or herdr; empty lets the CLI pick (DECISIONS I-502).

@@ -70,6 +70,9 @@ type Project struct {
 	// the next start boots, null when none (I-1462).
 	GuestRuntime       string  `json:"guest_runtime"`
 	PendingBaseVersion *string `json:"pending_base_version"`
+	// Checkout is the checkout's name under /home/dev as a CLI last named
+	// it: "" for none, null until one has (I-1610).
+	Checkout *string `json:"checkout"`
 }
 
 // Idle is Project.idle.

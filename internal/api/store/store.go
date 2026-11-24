@@ -134,6 +134,10 @@ type Project struct {
 	// KeepAwake keeps this machine out of the rest rule (DECISIONS
 	// I-820). The api decides what rests, so it takes effect at once.
 	KeepAwake bool `db:"keep_awake"`
+	// Checkout is the checkout's name under /home/dev as the CLI last
+	// found it on the machine (0053, DECISIONS I-1610): "" for none,
+	// nil until a CLI has said.
+	Checkout *string `db:"checkout"`
 }
 
 // HeldBytes is the bytes the plan's disk counts for p: the measured or
@@ -145,7 +149,7 @@ func (p *Project) HeldBytes() int64 {
 	return p.VolumeBytes
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake, guest_runtime, pending_base_version`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake, guest_runtime, pending_base_version, checkout`
 
 // Host is a hosts row. Cores is the host's physical cores, which
 // placement counts committed guest vCPUs against (0027, DECISIONS I-735,

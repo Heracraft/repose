@@ -61,6 +61,7 @@
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
+	import OpenInClaude from '$lib/components/project/OpenInClaude.svelte';
 	import Conversation from '$lib/components/project/Conversation.svelte';
 	import { AGENT_KINDS, THREAD_READ } from '$lib/thread';
 	import DetailsList from '$lib/components/project/DetailsList.svelte';
@@ -375,6 +376,8 @@
 		<div class="hk-section-head">
 			<h2 id="connect-title" class="hk-h2-app">Connect</h2>
 		</div>
+		<!-- The way in that needs no terminal first (ENG-224). -->
+		<OpenInClaude {project} />
 		<CommandList
 			label="Connect"
 			commands={[

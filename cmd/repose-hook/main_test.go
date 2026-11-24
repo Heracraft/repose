@@ -229,3 +229,31 @@ func TestHookNamesTheHerdrPane(t *testing.T) {
 		}
 	}
 }
+
+// TestHookNamesAnAgentRunOutsideTheWrappers is I-1608: Claude Desktop's
+// own Claude Code runs `repose-hook` from ~/.claude/settings.json with no
+// REPOSE_HOOK_AGENT, and the payload names it.
+func TestHookNamesAnAgentRunOutsideTheWrappers(t *testing.T) {
+	sink := newHookSink(t)
+	bin := buildHook(t)
+	payload := `{"hook_event_name":"Stop","transcript_path":"/home/dev/.claude/projects/x/absent.jsonl","last_assistant_message":"Wrote hello.txt."}`
+	env := []string{"REPOSE_HOOK_SOCKET=" + sink.path, "REPOSE_HOOK_AGENT=", "REPOSE_AGENT="}
+	if code, out := runHook(t, bin, payload, env); code != 0 {
+		t.Fatalf("exit = %d; output: %s", code, out)
+	}
+	codex := `{"type":"agent-turn-complete","last-assistant-message":"auth flow done"}`
+	if code, out := runHook(t, bin, "", env, codex); code != 0 {
+		t.Fatalf("exit = %d; output: %s", code, out)
+	}
+	got := sink.all()
+	if len(got) != 2 || !strings.HasPrefix(got[0], "claude|completed|") || !strings.HasPrefix(got[1], "codex|completed|auth flow done") {
+		t.Fatalf("posted = %v", got)
+	}
+	// A payload that names no agent still posts nothing.
+	if _, out := runHook(t, bin, `{"hook_event_name":"UserPromptSubmit"}`, env); !strings.Contains(out, "no agent given") {
+		t.Fatalf("output: %s", out)
+	}
+	if len(sink.all()) != 2 {
+		t.Fatalf("posted = %v", sink.all())
+	}
+}

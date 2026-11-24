@@ -14,7 +14,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { listHosts, restoreProject, startProject, stopProject } from '$lib/api/client';
+	import { listHosts, restoreProject, stopProject } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
@@ -31,13 +31,7 @@
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
 	import { tabOf } from './tabs';
 	import { splitTicks } from './ticks';
-	import {
-		capacityRefusalText,
-		errorBannerText,
-		offlineHostText,
-		ownHostName,
-		projectHostLabel
-	} from './host';
+	import { errorBannerText, offlineHostText, ownHostName, projectHostLabel } from './host';
 	import ErrorView from '$lib/components/ErrorView.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
@@ -122,29 +116,7 @@
 	};
 
 	async function onStart() {
-		if (ctx.opBusy) return;
-		ctx.opBusy = 'start';
-		ctx.startBanner = undefined;
-		ctx.capacityMessage = undefined;
-		try {
-			const { op_id } = await startProject(id);
-			void ctx.waitForOp(op_id, () => {
-				ctx.opBusy = undefined;
-				void ctx.refresh();
-			});
-		} catch (err) {
-			ctx.opBusy = undefined;
-			if (err instanceof ApiError && err.code === 'payment_required') {
-				await ctx.refuse(err);
-				return;
-			}
-			if (err instanceof ApiError && err.code === 'capacity') {
-				ctx.startBanner = err.code;
-				ctx.capacityMessage = capacityRefusalText(err);
-				return;
-			}
-			toastApiError(err, 'Could not start the project.');
-		}
+		await ctx.start();
 	}
 
 	function onStopPressed() {

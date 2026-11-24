@@ -87,6 +87,9 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
                 -- closure, or an erofs base image. Fixed at create from the request (exempt
                 -- accounts only) or settings.default_guest_runtime; a restore copies its
                 -- source's. Never changed in place: the two volume layouts differ
+              checkout text null,  -- the checkout's name under /home/dev as the CLI last found it
+                -- (0053, I-1610): "" when the machine has none, null until a CLI has said;
+                -- checkoutname.Valid. Read by the dashboard's Open in Claude link (I-1606)
               pending_base_version text null,  -- the erofs base the next start boots (0051, I-1462),
                 -- set by the base bump for an unheld erofs project behind the latest erofs
                 -- base for its host's arch, cleared (and base_version set to it) when a

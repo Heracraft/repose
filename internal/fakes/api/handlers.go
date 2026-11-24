@@ -18,6 +18,7 @@ import (
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/ca/sshca"
+	"github.com/heracraft/repose/internal/checkoutname"
 	"github.com/heracraft/repose/internal/menu"
 	"github.com/heracraft/repose/internal/multiplexer"
 )
@@ -654,6 +655,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		Multiplexer *string `json:"multiplexer"`
 		// Kept out of the rest rule, effective at once (I-820).
 		KeepAwake *bool `json:"keep_awake"`
+		// The checkout's name the CLI found on the machine (I-1610).
+		Checkout *string `json:"checkout"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -661,6 +664,14 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
 		return e
+	}
+	// Checked before anything changes, as the api does.
+	if body.Checkout != nil && !checkoutname.Valid(*body.Checkout) {
+		return invalid("checkout must be a folder name of letters, digits, '.', '_' and '-', at most 100 characters, or empty")
+	}
+	if body.Checkout != nil {
+		c := *body.Checkout
+		p.Checkout = &c
 	}
 	if body.Multiplexer != nil {
 		// Checked before anything changes, as the api does.

@@ -25,6 +25,7 @@ import (
 	"github.com/heracraft/repose/internal/api/temp"
 	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
+	"github.com/heracraft/repose/internal/checkoutname"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/multiplexer"
 	"github.com/heracraft/repose/internal/obs"
@@ -130,6 +131,9 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// start boots, null when none.
 		"guest_runtime":        store.NormalizeRuntime(p.GuestRuntime),
 		"pending_base_version": p.PendingBaseVersion,
+		// The checkout's name under /home/dev (I-1610): "" for none,
+		// null until a CLI has said.
+		"checkout": p.Checkout,
 	}
 	if p.HostID != nil {
 		// The name the account gave its host, beside the id (I-1392): a
@@ -577,11 +581,17 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		// has to be pushed to the machine, and a machine already resting
 		// is woken here.
 		KeepAwake *bool `json:"keep_awake"`
+		// Checkout is the checkout's name under /home/dev, which the CLI
+		// sends when it finds a different one on the machine (I-1610).
+		Checkout *string `json:"checkout"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
 	}
 	ctx := r.Context()
+	if body.Checkout != nil && !checkoutname.Valid(*body.Checkout) {
+		return errf("invalid", "checkout must be a folder name of letters, digits, '.', '_' and '-', at most 100 characters, or empty")
+	}
 	if body.Multiplexer != nil {
 		// Checked before any field is written, so a refusal here
 		// changes nothing.
@@ -687,6 +697,12 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 			if _, err := s.d.Resting.Wake(ctx, p.ID, resting.ReasonKeepAwake); err != nil {
 				obs.Logger(ctx, s.d.Log).Warn("keep-awake wake failed", "event", "guest_wake_fail", "project_id", p.ID.String(), "err", err.Error())
 			}
+		}
+	}
+	if body.Checkout != nil {
+		// Never logged: the name comes from the user's laptop folder.
+		if _, err := s.d.Pool.Exec(ctx, "update projects set checkout = $2 where id = $1", p.ID, *body.Checkout); err != nil {
+			return err
 		}
 	}
 	if keep && p.ExpiresAt != nil {

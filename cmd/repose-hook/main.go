@@ -70,16 +70,20 @@ func run() string {
 		fmt.Println("repose-hook", version)
 		return ""
 	}
-	if *agent == "" {
-		return "no agent given; pass --agent or set REPOSE_HOOK_AGENT"
-	}
-
 	payload, err := readPayload(fs.Args())
 	if err != nil {
 		return err.Error()
 	}
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return "empty payload"
+	}
+	if *agent == "" {
+		// An agent run outside the wrappers, as an app's own copy over
+		// SSH is (Claude Desktop's, I-1608): the payload names it.
+		*agent = hooks.Detect(payload)
+	}
+	if *agent == "" {
+		return "no agent given; pass --agent or set REPOSE_HOOK_AGENT"
 	}
 	// Before the mapping: every payload carries the id, also those that
 	// are no event (I-636).

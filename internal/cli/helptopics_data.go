@@ -32,7 +32,7 @@ var envTopic = []topicRow{
 	{[]string{"`VISUAL`, `EDITOR`"}, "The editor for `repose config edit`. Default `vi`."},
 	{[]string{"`WAYLAND_DISPLAY`"}, "On Linux, `repose paste` reads the Wayland clipboard with `wl-paste` when this is set."},
 	{[]string{"`DISPLAY`"}, "Otherwise it reads the X11 clipboard with `xclip`."},
-	{[]string{"`REPOSE_EDITOR`"}, "The editor `repose code` opens: `code`, `cursor` or `zed`, over `editor` in config.toml."},
+	{[]string{"`REPOSE_EDITOR`"}, "The editor `repose code` opens: `code`, `cursor`, `zed` or `claude`, over `editor` in config.toml."},
 }
 
 // exitTopic is cli.md's "Exit codes" table.
@@ -54,7 +54,7 @@ var exitTopic = []topicRow{
 var configTopic = []topicRow{
 	{[]string{"`default_size`", "`large`"}, "Size of new projects: `tiny`, `small`, `large` or `xl`; anything else makes every command exit 2 naming the file. `default_class` is its old name and still works; `default_size` wins when a file has both."},
 	{[]string{"`default_agent`", "`claude`"}, "Agent for new projects."},
-	{[]string{"`editor`", "none"}, "What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it."},
+	{[]string{"`editor`", "none"}, "What `repose code` opens: `code`, `cursor`, `zed` or `claude`. `--editor` and `REPOSE_EDITOR` win over it."},
 	{[]string{"`default_multiplexer`", "none"}, "`tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key."},
 	{[]string{"`remote_control`", "`false`"}, "Offer the machine's Claude Code to the Claude app, so you can read and drive its agents from your phone. See [Drive it from the Claude app](/docs/agents#drive-it-from-the-claude-app)."},
 	{[]string{"`sync.exclude`", "none"}, "More gitignore-style patterns the sync leaves out."},
