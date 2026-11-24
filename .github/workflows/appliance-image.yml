@@ -1,8 +1,8 @@
 # The own-hardware hosts' release (DECISIONS I-1494, I-1496, I-1498).
 #
 # On a pull request touching them: the installer carries exactly the
-# files the appliance is built from (embed.sh --check), and every script
-# is shellcheck clean.
+# files the appliance is built from (embed.sh --check), every script
+# is shellcheck clean, and the kernel check passes its tests.
 #
 # On a tag `appliance-<version>` (`git tag appliance-2026.11.22 && git push
 # origin appliance-2026.11.22`):
@@ -29,6 +29,7 @@ on:
     paths:
       - images/appliance-arm64/**
       - ops/install-host-x86.sh
+      - ops/install-host-x86-test
       - .github/workflows/appliance-image.yml
   push:
     tags: ["appliance-*"]
@@ -43,7 +44,9 @@ jobs:
       - name: the installer carries the appliance's files
         run: images/appliance-arm64/embed.sh --check
       - name: shellcheck
-        run: shellcheck ops/install-host-x86.sh images/appliance-arm64/*.sh images/appliance-arm64/host/bin/* images/appliance-arm64/x86/bin/*
+        run: shellcheck ops/install-host-x86.sh ops/install-host-x86-test images/appliance-arm64/*.sh images/appliance-arm64/host/bin/* images/appliance-arm64/x86/bin/*
+      - name: the installer's kernel check
+        run: ops/install-host-x86-test
       - name: the installer's dry run
         run: bash ops/install-host-x86.sh --dry-run --join e30 --loop-file "$RUNNER_TEMP/guests.img" --size 20 --uplink eth0
 

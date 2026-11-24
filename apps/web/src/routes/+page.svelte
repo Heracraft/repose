@@ -213,7 +213,7 @@
 				<span class="per">a month</span>
 			</p>
 			<p class="hw-what">
-				Any number of machines. Each runs as many sandboxes as its memory and disk hold.
+				Any number of hosts you own. Each runs as many sandboxes as its memory and disk hold.
 			</p>
 		</div>
 	</section>

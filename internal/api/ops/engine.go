@@ -439,7 +439,7 @@ func (e *Engine) ownHostMemoryRefusal(ctx context.Context, hostID, projectID uui
 	if err != nil || !owned {
 		return "", false
 	}
-	return "your host " + name + " has " + gbText(max(free, 0)) + " of memory free for machines, and a " + class + " machine needs " +
+	return "your host " + name + " has " + gbText(max(free, 0)) + " of memory free for machines, and " + aClass(class) + " machine needs " +
 		gbText(scheduler.ClassRAM(class)+guestOverheadBytes) + " there. A machine holds its memory while it runs, so stopping one frees room for it", true
 }
 

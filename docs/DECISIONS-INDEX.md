@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1126 entries.
+1127 entries.
 
 ## Scope
 
@@ -1153,8 +1153,9 @@ pointer, not a summary.
 - **I-1574** The Mac appliance boots with `transparent_hugepage_shmem=advise`, so Cloud Hypervisor's memfd guest RAM is mapped in 2 MiB blocks: under Apple's nested virtualization a 4 KiB stage-2 fault is an exit to the appliance kernel costing 25 to 35 us, and a JavaScript agent starting takes hundreds of thousands of them. Amends I-1040 for the appliance; repose's x86 hosts keep `shmem_enabled` at `never` (mac-jit, 2026-11-23) — L39344
 - **I-1582** A billing-exempt account may own eight hosts, not one: `billing.ExemptHosts` is 8, and the Own hardware plan still sells one (exempt-hosts, 2026-11-23) — L39355
 - **I-1584** A create may name one host of the account's own: `POST /projects` takes `host` (id or name), the scheduler considers that host alone and refuses as that host, `repose run --host NAME` sends it, the create line names the host, and the dashboard's Runs on lists every host (host-pin, 2026-11-23) — L39364
-- **I-1588** The x86 installer warns about CVE-2026-99999 only for a kernel it cannot show carries the fix, says it at the end of its output with the remedy for Ubuntu 24.04 and Debian, and installs anyway; a kernel carries the fix when it is 6.18.57 or a later 6.18, or when its package changelog names the CVE or the fix's subject (x86-installer, 2026-11-23) — L39374
+- **I-1588** The x86 installer warns about CVE-2026-99999 only for a kernel it cannot show carries the fix, says it at the end of its output with the remedy for Ubuntu 24.04 and Debian, and installs anyway; a kernel carries the fix when it is 6.18.57 or a later 6.18, or when its package changelog names the CVE or the fix's subject (x86-installer, 2026-11-23) — partly amended by I-1600; L39374
 - **I-1590** The x86 installer takes repose off the machine with `--uninstall`, refused while the host is on the account unless `--force`; `repose host rm` of an x86 host prints that line, and `repose host rm --local` on Linux prints it instead of "There is no appliance on this Mac." (x86-installer, 2026-11-23) — L39382
 - **I-1592** The x86 install line passes the join argument through a file, `printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`, and the installer deletes that file once it has copied the argument to `/run/repose/launcher/join` (x86-installer, 2026-11-23) — L39390
 - **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — L39395
 - **I-1594** The Own hardware plan sells any number of hosts: `Plan.Hosts` is `billing.UnlimitedHosts` (math.MaxInt32), and a billing-exempt account has the same rule (own-hosts, 2026-11-24) — L39405
+- **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415

@@ -533,7 +533,7 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 		for i, h := range own {
 			why[i] = h.Name + " " + f.ownHostWhy(h, class, true)
 		}
-		msg = "none of your hosts can take a " + class + " machine (" + gbText(need) + "): " + strings.Join(why, "; ")
+		msg = "none of your hosts can take " + aClass(class) + " machine (" + gbText(need) + "): " + strings.Join(why, "; ")
 	}
 	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
 		"reason": "no_own_host", "host": own[0].Name, "host_state": own[0].State, "hosted_allowed": hostedAllowed})
@@ -583,7 +583,7 @@ func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
 	if short {
 		return "has " + gbText(free) + " free"
 	}
-	return "has " + gbText(free) + " of memory free for machines, and a " + class + " machine needs " + gbText(int64(classGB[class])<<30) +
+	return "has " + gbText(free) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(int64(classGB[class])<<30) +
 		". A machine holds its memory while it runs, so stopping one frees room for it"
 }
 
@@ -604,6 +604,14 @@ func (f *Fake) ownedHostFree(h *ownedHostRec) int64 {
 		}
 	}
 	return max(free, 0)
+}
+
+// aClass is a size class with its article, as the api's: "a small", "an xl".
+func aClass(class string) string {
+	if class == "xl" {
+		return "an xl"
+	}
+	return "a " + class
 }
 
 // gbText is the api's ops.gbText: GiB, whole or to one decimal.
