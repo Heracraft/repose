@@ -267,7 +267,14 @@ export async function addEvents(
  * Defaults: one window `claude`, state `delivered`.
  */
 export async function setSay(
-	opts: { agents?: string[]; state?: string; replaced?: boolean } = {}
+	opts: {
+		agents?: string[];
+		state?: string;
+		replaced?: boolean;
+		/** What the agent answers a delivered message with, after replyMs (I-1604). */
+		reply?: string;
+		replyMs?: number;
+	} = {}
 ): Promise<void> {
 	const res = await fetch(`${adminURL()}/say`, {
 		method: 'POST',
@@ -275,7 +282,9 @@ export async function setSay(
 		body: JSON.stringify({
 			agents: opts.agents,
 			state: opts.state ?? '',
-			replaced: opts.replaced ?? false
+			replaced: opts.replaced ?? false,
+			reply: opts.reply ?? '',
+			reply_ms: opts.replyMs ?? 0
 		})
 	});
 	if (!res.ok) throw new Error(`/say: ${res.status} ${await res.text()}`);

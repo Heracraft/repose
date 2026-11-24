@@ -105,12 +105,22 @@ Identity:
   resolution for every command, so scripts can run `repose stop --project
   todo-app` from anywhere.
 
-On the dashboard (DECISIONS I-1354, under I-1266):
+On the dashboard (DECISIONS I-1354, under I-1266; I-1602):
 
-- **New project** in the head of `/projects` opens a form in place with
-  Name, Size, Keep it and Repository, and calls `POST /projects` with
-  nothing the CLI does not send. The machine opens on its own page, where
-  Connect says `repose attach <slug>` (I-1350).
+- **New project** in the head of `/projects`, or `n` on that page, opens
+  a form in place whose one field is Name, offered and selected: two
+  plain words no project of the account has, or the repository's own
+  name while the user has not typed one. Enter or Create calls `POST
+  /projects` with the defaults `repose run` gets and nothing the CLI does
+  not send. A line under the field shows those defaults and opens
+  Options: Size, Keep it, Runs on (an account with a host) and
+  Repository. On a plan that meters memory (I-1612), the size starts on
+  the largest class up to `large` that fits beside what runs now, the
+  line says the plan's free GB, and when nothing fits the form says so
+  before Enter with a Stop for each machine holding the memory.
+  Repository. An account with no project opens on the form, and
+  `/projects?new[&size=&name=]` opens it filled in. The machine opens on
+  its own page, where Connect says `repose attach <slug>` (I-1350).
 - A project made there has no checkout: the user works in `/home/dev`
   until a `repose sync` makes one, as on a `run --no-sync` machine.
   Nothing is cloned.

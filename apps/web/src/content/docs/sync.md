@@ -20,7 +20,7 @@ Checkout: ~/factory on the machine
 
 The `Checkout:` line prints on the sync that makes the checkout and on no run after it. The [SSH host](/docs/ssh-and-editors#every-project-is-an-ssh-host) is the project's name; the path under it is your folder's. A folder name with spaces or other awkward characters becomes a safe one: `job search` is `job-search`. If anything but an empty directory already holds that name, `~/go` say, the checkout takes the project's name instead.
 
-A machine with no checkout, one made by `repose run --no-sync`, from a folder that isn't a git repository, or with [**New project**](/docs/lifecycle) on the dashboard, has you working in `/home/dev` itself. Its first `repose sync` makes the checkout.
+A machine with no checkout, one made by `repose run --no-sync`, from a folder that isn't a git repository, or with [**New project**](/docs/lifecycle#make-one-in-the-browser) on the dashboard, has you working in `/home/dev` itself. Its first `repose sync` makes the checkout.
 
 Later runs, from any folder or any laptop, use the checkout the machine already has. A machine whose checkout an earlier version of repose made keeps it at `/home/dev/<project>`.
 

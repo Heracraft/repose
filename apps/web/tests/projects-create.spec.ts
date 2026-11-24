@@ -1,8 +1,9 @@
-// New project on /projects: the dashboard makes a machine, which is the
-// first of I-1266's gaps in the owner's order (DECISIONS I-1354). A
-// project made here is an empty machine; Repository is the remote the
-// laptop's `repose run` looks the project up by, in the CLI's normalized
-// form, and never a clone.
+// New project on /projects: the dashboard makes a machine (DECISIONS
+// I-1354), in one action (I-1602): the name is offered and selected, so
+// Enter makes it with the defaults `repose run` gives, and Options holds
+// the rest. A project made here is an empty machine; Repository is the
+// remote the laptop's `repose run` looks the project up by, in the CLI's
+// normalized form, and never a clone.
 import { test, expect, type Page } from '@playwright/test';
 import {
 	signIn,
@@ -62,12 +63,34 @@ const unique = (stem: string) => `${stem}-${Math.random().toString(36).slice(2, 
  * page whose list is not empty, a bare getByLabel('Size') also matches a
  * row's "Stop resize-app" button, because getByLabel matches a substring.
  */
-const form = (page: Page) => page.getByTestId('new-project-form');
+const form = (page: Page) => page.getByTestId('new-machine-form');
 
+/** The form, opened by its button on a list that is not empty. */
 async function openForm(page: Page) {
 	await page.goto('/projects');
-	await page.getByRole('button', { name: 'New project' }).click();
+	await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
+	const open = page.getByRole('button', { name: 'New project' });
+	// An account with no machine opens on the form.
+	if (await open.isVisible()) await open.click();
 	await expect(form(page)).toBeVisible();
+}
+
+/** Opens Options, where size, lifetime, place and repository are. */
+async function options(page: Page) {
+	const t = form(page).getByRole('button', { name: 'Options' });
+	if (await t.isVisible()) await t.click();
+	await expect(form(page).getByLabel('Size')).toBeVisible();
+}
+
+/** A running project made straight on the fake, of this class. */
+async function createProjectAs(api: string, name: string, cls: string) {
+	const res = await fetch(`${api}/projects`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ name, class: cls })
+	});
+	expect(res.status).toBe(201);
+	return (await res.json()) as { id: string; name: string };
 }
 
 /** The project the fake api holds under this name, read straight from it. */
@@ -89,12 +112,142 @@ async function fromApi(name: string) {
 	return list.find((p) => p.name === name);
 }
 
-test('New project makes a machine, which opens on its page and is in the list', async ({
+// An account with no machine opens on the form: making one is the first
+// thing to do there. This runs first, while beforeAll's prune holds.
+test('an account with no machine opens on the form, the name offered and selected', async ({
+	page
+}) => {
+	await page.goto('/projects');
+	await expect(form(page)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'New project' })).toHaveCount(0);
+	const field = form(page).getByLabel('Name');
+	await expect(field).toBeFocused();
+	await expect(field).toHaveValue(/^[a-z]+-[a-z]+$/);
+	const offered = await field.inputValue();
+	// Selected: typing replaces it.
+	expect(
+		await field.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])
+	).toEqual([0, offered.length]);
+	await expect(form(page).getByTestId('nm-summary')).toHaveText(
+		'large · 2 cores · 8 GB · kept until you destroy it'
+	);
+});
+
+// The fastest path (I-1602): New project, then Enter. The machine has the
+// offered name and what `repose run` gives: the api's default size, kept,
+// no remote.
+test('New project then Enter makes a machine with the defaults', async ({ page }) => {
+	await openForm(page);
+	const name = await form(page).getByLabel('Name').inputValue();
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	expect(made!.class).toBe('large');
+	expect(made!.remote_url).toBe('');
+	expect(made!.expires_at ?? null).toBeNull();
+	await expect(page.locator('main h1')).toHaveText(name);
+});
+
+test('n opens the form from the list, and not while a field has the keys', async ({ page }) => {
+	await openForm(page);
+	await form(page).getByLabel('Name').press('Escape');
+	await expect(form(page)).toHaveCount(0);
+	await page.locator('body').press('n');
+	await expect(form(page)).toBeVisible();
+	await expect(form(page).getByLabel('Name')).toBeFocused();
+	await form(page).getByLabel('Name').press('Escape');
+	// Typed into the search, n is a letter.
+	const search = page.getByRole('searchbox', { name: 'Search projects' });
+	if (await search.isVisible()) {
+		await search.press('n');
+		await expect(form(page)).toHaveCount(0);
+	}
+});
+
+// A link can start one: /projects?new, with the size and the name filled in.
+test('/projects?new opens the form with what the link fills in', async ({ page }) => {
+	const name = unique('linked');
+	await page.goto(`/projects?new&size=small&name=${name}`);
+	await expect(form(page).getByLabel('Name')).toHaveValue(name);
+	await expect(form(page).getByTestId('nm-summary')).toContainText('small · 1 core · 4 GB');
+	await form(page).getByRole('button', { name: 'Create' }).click();
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	expect(made!.class).toBe('small');
+});
+
+test('a repository names the machine while the name is the one offered', async ({ page }) => {
+	await openForm(page);
+	await options(page);
+	const repo = unique('Repo-Named');
+	await form(page).getByLabel('Repository').fill(`https://github.com/heracraft/${repo}.git`);
+	await expect(form(page).getByLabel('Name')).toHaveValue(repo.toLowerCase());
+	await expect(form(page).getByTestId('nm-summary')).toContainText(`github.com/heracraft/${repo}`);
+	// A name the user typed is theirs: the repository leaves it alone.
+	await form(page).getByLabel('Name').fill('mine');
+	await form(page).getByLabel('Repository').fill('github.com/heracraft/other');
+	await expect(form(page).getByLabel('Name')).toHaveValue('mine');
+});
+
+// On a plan that meters memory, the fast path never defaults into a
+// refusal (I-1612, ENG-227): the size starts on what fits beside the
+// running machines, the line says what is free, and when nothing fits
+// the form says so before Enter with a Stop for each machine. The fake's
+// billing refuses as the api's gate does, so Enter here proves the api
+// would take it.
+test('on a full Solo plan New project starts on the size that fits, and says when none does', async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	await pruneProjects(api);
+	await setBilling({ mode: 'active', plan: 'solo' });
+	const first = await createProjectAs(api, unique('solo-one'), 'small');
+	litter.push(first.id);
+
+	await openForm(page);
+	const summary = form(page).getByTestId('nm-summary');
+	await expect(summary).toContainText("small · 1 core · 4 GB · 4 GB of your plan's 8 GB free");
+	await expect(form(page).getByTestId('nm-room')).toHaveCount(0);
+	const name = await form(page).getByLabel('Name').inputValue();
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
+	expect(made!.class).toBe('small');
+
+	// Now the plan's 8 GB is in use: the form says so before Enter, with
+	// the way out.
+	await openForm(page);
+	const room = form(page).getByTestId('nm-room');
+	await expect(room).toHaveText(/Your plan's 8 GB is in use\. Stop a machine to make one here\./);
+	await expect(summary).toContainText("0 GB of your plan's 8 GB free");
+	await expect(room.getByRole('button', { name: /^Stop / })).toHaveCount(2);
+	await shots(page, 'new-project-plan-full');
+	await room.getByRole('button', { name: `Stop ${first.name}` }).click();
+	// Stopped, the room is back and so is the size that fits.
+	await expect(form(page).getByTestId('nm-room')).toHaveCount(0);
+	await expect(summary).toContainText("small · 1 core · 4 GB · 4 GB of your plan's 8 GB free");
+
+	// A size picked in Options that does not fit says what it needs.
+	await options(page);
+	await form(page).getByLabel('Size').selectOption('large');
+	await expect(form(page).getByTestId('nm-room')).toHaveText(
+		'A large machine needs 8 GB; 4 GB is free.'
+	);
+});
+
+test('Options make a machine of the size and repository asked for, which opens on its page and is in the list', async ({
 	page
 }) => {
 	const name = unique('dash-made');
 	await openForm(page);
 	await form(page).getByLabel('Name').fill(name);
+	await options(page);
 	await form(page).getByLabel('Size').selectOption('small');
 	// Typed as a user has it in their browser's address bar; what is stored
 	// has to be the form `repose run` looks a project up by.
@@ -135,10 +288,10 @@ test('the api refuses the name and the form keeps what was typed', async ({ page
 	// its own sentence is what the field shows.
 	await form(page).getByLabel('Name').fill('not a name');
 	await form(page).getByRole('button', { name: 'Create' }).click();
-	const error = form(page).getByTestId('new-project-error');
+	const error = form(page).getByTestId('new-machine-error');
 	await expect(error).toContainText('[A-Za-z0-9._-]');
 	expect(page.url()).toContain('/projects');
-	await expect(page.getByTestId('new-project-form')).toBeVisible();
+	await expect(form(page)).toBeVisible();
 	await expect(form(page).getByLabel('Name')).toHaveValue('not a name');
 
 	// An empty name never reaches the api.
@@ -172,8 +325,8 @@ test('a name the account already has is refused in the api’s words', async ({ 
 	await openForm(page);
 	await form(page).getByLabel('Name').fill(name);
 	await form(page).getByRole('button', { name: 'Create' }).click();
-	await expect(form(page).getByTestId('new-project-error')).toContainText(name);
-	await expect(form(page).getByTestId('new-project-error')).toContainText('exists');
+	await expect(form(page).getByTestId('new-machine-error')).toContainText(name);
+	await expect(form(page).getByTestId('new-machine-error')).toContainText('exists');
 });
 
 // `repose run --temp` is the only other door to a temporary machine, and
@@ -182,10 +335,11 @@ test('Keep it makes a temporary machine and takes the repository away', async ({
 	const name = unique('dash-temp');
 	await openForm(page);
 	await form(page).getByLabel('Name').fill(name);
+	await options(page);
 	await expect(form(page).getByLabel('Repository')).toBeVisible();
 	await form(page).getByLabel('Keep it').selectOption('3600');
 	await expect(form(page).getByLabel('Repository')).toHaveCount(0);
-	await expect(form(page).getByTestId('np-temp-note')).toContainText('no snapshot');
+	await expect(form(page).getByTestId('nm-temp-note')).toContainText('no snapshot');
 	await form(page).getByRole('button', { name: 'Create' }).click();
 
 	await page.waitForURL(/\/projects\/[^/]+$/);
@@ -210,7 +364,7 @@ test('an account with no plan is refused in place, with a link to the plan', asy
 	await openForm(page);
 	await form(page).getByLabel('Name').fill(unique('no-plan'));
 	await form(page).getByRole('button', { name: 'Create' }).click();
-	const error = form(page).getByTestId('new-project-error');
+	const error = form(page).getByTestId('new-machine-error');
 	await expect(error).toBeVisible();
 	await expect(error.getByRole('link', { name: 'See your plan' })).toBeVisible();
 	// The api's sentence, without the raw URL it ends with (refusal.ts).
@@ -253,9 +407,11 @@ test('New project shots', async ({ page }, testInfo) => {
 			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
 			await page.emulateMedia({ colorScheme: scheme });
 			await openForm(page);
+			await shot(`nm-offered-${width}-${scheme}`);
 			await form(page).getByLabel('Name').fill(name);
+			await options(page);
 			await form(page).getByLabel('Repository').fill('github.com/heracraft/todo-app');
-			await shot(`np-form-${width}-${scheme}`);
+			await shot(`nm-options-${width}-${scheme}`);
 			// An account holds one project per remote, and this test makes
 			// four machines: the field is emptied after the shot so each
 			// shot can show the same URL.
@@ -265,19 +421,23 @@ test('New project shots', async ({ page }, testInfo) => {
 			const made = await fromApi(name);
 			litter.push(made!.id);
 			await expect(page.getByRole('list', { name: 'Connect' })).toBeVisible();
-			await shot(`np-made-${width}-${scheme}`);
+			await shot(`nm-made-${width}-${scheme}`);
 			await page.goto('/projects');
 			await expect(page.getByRole('link', { name, exact: true })).toBeVisible();
-			await shot(`np-list-${width}-${scheme}`);
+			await shot(`nm-list-${width}-${scheme}`);
 		}
 	}
 	await page.emulateMedia({ colorScheme: null });
 });
 
-test('Cancel closes the form and puts focus back on New project', async ({ page }) => {
+test('Cancel and Escape close the form and put focus back on New project', async ({ page }) => {
 	await openForm(page);
 	await form(page).getByRole('button', { name: 'Cancel' }).click();
-	await expect(page.getByTestId('new-project-form')).toHaveCount(0);
+	await expect(form(page)).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
+	await page.getByRole('button', { name: 'New project' }).click();
+	await form(page).getByLabel('Name').press('Escape');
+	await expect(form(page)).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
 });
 
@@ -293,6 +453,7 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	const api = apiURLFromEnv();
 	// Without a host there is nothing to choose, so no control.
 	await openForm(page);
+	await options(page);
 	await expect(form(page).getByLabel('Runs on')).toHaveCount(0);
 
 	// The default plan: any number of hosts, and memory on repose's
@@ -308,6 +469,9 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 	const name = unique('on-mac');
 	try {
 		await openForm(page);
+		// The summary says where it runs before Options is opened.
+		await expect(form(page).getByTestId('nm-summary')).toContainText('on mac-mini · waiting');
+		await options(page);
 		const runsOn = form(page).getByLabel('Runs on');
 		await expect(runsOn).toBeVisible();
 		// Your host is the default, and its state is on the option.
@@ -315,7 +479,7 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		await expect(runsOn.locator('option[value="own"]')).toHaveText('mac-mini · waiting');
 		await form(page).getByLabel('Name').fill(name);
 		await form(page).getByRole('button', { name: 'Create' }).click();
-		const error = form(page).getByTestId('new-project-error');
+		const error = form(page).getByTestId('new-machine-error');
 		// Hosts other files left behind make it the several-host form
 		// (I-1582), which names mac-mini the same way.
 		await expect(error).toContainText('mac-mini has not registered yet');
@@ -356,6 +520,7 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 	let madeId: string | undefined;
 	try {
 		await openForm(page);
+		await options(page);
 		const runsOn = form(page).getByLabel('Runs on');
 		await expect(runsOn).toHaveValue('own');
 		await expect(runsOn.locator('option')).toHaveText([
@@ -367,7 +532,7 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 		await form(page).getByLabel('Name').fill(name);
 		await runsOn.selectOption({ label: 'box-b · waiting' });
 		await form(page).getByRole('button', { name: 'Create' }).click();
-		await expect(form(page).getByTestId('new-project-error')).toHaveText(
+		await expect(form(page).getByTestId('new-machine-error')).toHaveText(
 			'your host box-b has not registered yet'
 		);
 		expect(await fromApi(name)).toBeUndefined();
@@ -409,9 +574,10 @@ test('a full host of your own names itself and the memory it has', async ({ page
 		const name = unique('no-room');
 		await openForm(page);
 		await form(page).getByLabel('Name').fill(name);
+		await options(page);
 		await form(page).getByLabel('Size').selectOption('large');
 		await form(page).getByRole('button', { name: 'Create' }).click();
-		await expect(form(page).getByTestId('new-project-error')).toContainText(
+		await expect(form(page).getByTestId('new-machine-error')).toContainText(
 			'your host mac-full has 5 GB of memory free for machines, and a large machine needs 8 GB'
 		);
 		expect(await fromApi(name)).toBeUndefined();

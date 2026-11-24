@@ -53,6 +53,7 @@ var tokenRouteScope = map[string]string{
 	"GET /v1/projects/{id}/snapshots":             tokens.ScopeRead,
 	"GET /v1/projects/{id}/events":                tokens.ScopeRead,
 	"GET /v1/projects/{id}/logs":                  tokens.ScopeRead,
+	"GET /v1/projects/{id}/says":                  tokens.ScopeRead,
 	"GET /v1/questions":                           tokens.ScopeRead,
 	"GET /v1/projects/{id}/questions":             tokens.ScopeRead,
 	// Projects: their life and their disks.

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1128 entries.
+1131 entries.
 
 ## Scope
 
@@ -1000,7 +1000,7 @@ pointer, not a summary.
 - **I-1210** The landing's drawn pictures are exempt from the legacy-class grep, as they are from every other look rule (conductor, r20261115-1, 2026-11-15) — L33984
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — amended by I-1452; L34001
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34038
-- **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — L34089
+- **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — amended by I-1604; L34089
 - **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; L34133
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34314
 - **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34350
@@ -1052,7 +1052,7 @@ pointer, not a summary.
 - **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — L36053
 - **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36101
 - **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36121
-- **I-1354** A project made on the dashboard is an empty machine, and its repository is what the laptop's `repose run` looks it up by, not a clone (dash-create, 2026-11-19) — L36195
+- **I-1354** A project made on the dashboard is an empty machine, and its repository is what the laptop's `repose run` looks it up by, not a clone (dash-create, 2026-11-19) — partly amended by I-1602; L36195
 - **I-1360** One door, two receivers: the Triggers tab lists every way the outside reaches a machine with what answers it, and Config's Webhooks section is gone (doors, 2026-11-19) — L36272
 - **I-1370** `repose host` is the noun for hardware you own: `host add` prints the install step, `host ls` is the one table, `host rm` takes it off; an owned host that has stopped answering is named wherever it shows (mac-mini 19c, 2026-11-19) — L36326
 - **I-1372** Snapshots of an owned host's machines stay on that host's own disk, and the docs say a dead disk loses them (mac-mini 19c, 2026-11-19) — L36390
@@ -1160,3 +1160,6 @@ pointer, not a summary.
 - **I-1594** The Own hardware plan sells any number of hosts: `Plan.Hosts` is `billing.UnlimitedHosts` (math.MaxInt32), and a billing-exempt account has the same rule (own-hosts, 2026-11-24) — partly amended by I-1598; L39405
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
+- **I-1602** New project on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — amended by I-1612; L39434
+- **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39442
+- **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — L39453

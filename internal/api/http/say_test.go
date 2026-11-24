@@ -230,3 +230,59 @@ func TestAWaitingSayStopsWaitingWhenTheMachineTypesItIn(t *testing.T) {
 		return state == "delivered"
 	})
 }
+
+// TestListSaysIsTheOwnersHalfOfTheThread (I-1604): GET
+// /projects/:id/says answers the project's messages newest first, with
+// the state each one reached, leaves out a row still in the hand-off,
+// honours limit and refuses a bad one, and is the owner's only.
+func TestListSaysIsTheOwnersHalfOfTheThread(t *testing.T) {
+	a := newAskEnv(t, "saylist")
+	path := "/projects/" + a.p.ID.String() + "/says"
+
+	if r := a.do(t, a.tok, "GET", path, nil); r.status != 200 {
+		t.Fatalf("empty list: %d %s", r.status, r.raw)
+	} else if got, _ := r.body["says"].([]any); got == nil || len(got) != 0 {
+		t.Fatalf("empty list = %s, want says: []", r.raw)
+	}
+
+	for _, text := range []string{"first", "second"} {
+		if r := a.do(t, a.tok, "POST", "/projects/"+a.p.ID.String()+"/say", map[string]any{"text": text}); r.status != 200 {
+			t.Fatalf("POST say %q: %d %s", text, r.status, r.raw)
+		}
+	}
+	// A row another process has not picked up yet is nobody's to show.
+	if _, err := a.h.Pool.Exec(a.h.Ctx,
+		`insert into says (id, project_id, user_id, text, state, command_id) values ($1, $2, $3, 'in flight', 'pending', $4)`,
+		uuid.Must(uuid.NewV7()), a.p.ID, a.u.ID, uuid.Must(uuid.NewV7())); err != nil {
+		t.Fatal(err)
+	}
+
+	r := a.do(t, a.tok, "GET", path, nil)
+	if r.status != 200 {
+		t.Fatalf("list: %d %s", r.status, r.raw)
+	}
+	got, _ := r.body["says"].([]any)
+	if len(got) != 2 {
+		t.Fatalf("%d messages, want 2: %s", len(got), r.raw)
+	}
+	newest, _ := got[0].(map[string]any)
+	if newest["text"] != "second" || newest["state"] != "delivered" || newest["window"] != "claude" {
+		t.Fatalf("newest = %v, want second, delivered, in claude", newest)
+	}
+
+	if r := a.do(t, a.tok, "GET", path+"?limit=1", nil); r.status != 200 {
+		t.Fatalf("limit=1: %d %s", r.status, r.raw)
+	} else if got, _ := r.body["says"].([]any); len(got) != 1 {
+		t.Fatalf("limit=1 gave %d", len(got))
+	}
+	for _, bad := range []string{"0", "101", "x"} {
+		if r := a.do(t, a.tok, "GET", path+"?limit="+bad, nil); r.status != 400 {
+			t.Fatalf("limit=%s: %d, want 400", bad, r.status)
+		}
+	}
+
+	other := a.signIn(t, "sub-saylistother", "saylistother")
+	if r := a.do(t, other, "GET", path, nil); r.status != 404 {
+		t.Fatalf("a stranger's list: %d, want 404", r.status)
+	}
+}

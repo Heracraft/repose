@@ -6,6 +6,7 @@
 	import { listDestroyed, listHosts, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { billingStore } from '$lib/billing.svelte';
+	import { planRoom } from '$lib/planRoom';
 	import { projectsStore } from '$lib/projects.svelte';
 	import { title } from '$lib/title';
 	import { withoutBillingURL } from '$lib/refusal';
@@ -43,7 +44,7 @@
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import AgentChips from '$lib/components/projects/AgentChips.svelte';
-	import NewProjectForm from '$lib/components/projects/NewProjectForm.svelte';
+	import NewMachineForm from '$lib/components/projects/NewMachineForm.svelte';
 	import RecentActivity from '$lib/components/projects/RecentActivity.svelte';
 	import { runRowAction, type RowAction } from '$lib/components/projects/actions';
 	import {
@@ -277,12 +278,49 @@
 		};
 	});
 
-	/** The New project form is open (I-1354). */
-	let creating = $state(false);
+	/**
+	 * The New project form is open (I-1354, I-1602): by its button, by
+	 * `n`, by `/projects?new` (with `size` and `name` to fill in, so a
+	 * link can start one), and on an account with no machine yet, where
+	 * it is the first thing to do.
+	 */
+	let creating = $state(page.url.searchParams.has('new'));
+	let closedEmpty = $state(false);
+	let formOpen = $derived(
+		creating ||
+			(!closedEmpty &&
+				projects !== undefined &&
+				projects.length === 0 &&
+				!me?.waitlist &&
+				me?.billing.status !== 'none')
+	);
 
 	function closeForm() {
 		creating = false;
-		void focusAfterRender('new-project-open');
+		closedEmpty = true;
+		if (page.url.searchParams.has('new')) {
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a one-off copy, read once
+			const rest = new URLSearchParams(page.url.searchParams);
+			for (const k of ['new', 'size', 'name']) rest.delete(k);
+			const qs = rest.toString();
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- starts with resolve()
+			void goto(`${resolve('/projects')}${qs ? `?${qs}` : ''}`, {
+				replaceState: true,
+				noScroll: true,
+				keepFocus: true
+			});
+		}
+		void focusAfterRender('new-machine-open');
+	}
+
+	/** `n` opens New project, as `c` opens Linear's create, unless a field has the keys. */
+	function onWindowKey(e: KeyboardEvent) {
+		if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+		const t = e.target as HTMLElement | null;
+		if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+		if (formOpen) return;
+		e.preventDefault();
+		creating = true;
 	}
 
 	/**
@@ -611,16 +649,20 @@
 
 <!-- Until the list answers, the lede's line is held empty, so the page
      under it does not drop 28px when the count arrives (I-664). -->
+<svelte:window onkeydown={onWindowKey} />
+
 <PageShell title="Projects" lede={projects === undefined ? '\u00a0' : summary}>
 	{#snippet action()}
-		<!-- The form's own head says New project, so the button that opened
-		     it gives way while it is open, as the Triggers tab's Add does;
-		     Cancel brings it back and takes the focus. -->
-		{#if !creating}
+		<!-- The button that opened the form gives way while it is open, as
+		     the Triggers tab's Add does; Cancel brings it back and takes
+		     the focus. -->
+		{#if !formOpen}
 			<button
 				type="button"
-				id="new-project-open"
+				id="new-machine-open"
 				class="hk-btn-secondary hk-btn-sm"
+				aria-keyshortcuts="n"
+				title="New project (n)"
 				onclick={() => (creating = true)}>New project</button
 			>
 		{/if}
@@ -628,8 +670,19 @@
 
 	<!-- Above the list and outside its LoadState: making a machine does not
 	     wait on the list that failed to load. -->
-	{#if creating}
-		<NewProjectForm onsaved={created} oncancel={closeForm} />
+	{#if formOpen}
+		<NewMachineForm
+			taken={(projects ?? []).map((p) => p.name)}
+			size={page.url.searchParams.get('size') ?? undefined}
+			named={page.url.searchParams.get('name') ?? undefined}
+			room={planRoom(billingStore.mode, billingStore.info, projects)}
+			onstop={(id) => {
+				const p = (projects ?? []).find((x) => x.id === id);
+				if (p) pressed(p, 'stop');
+			}}
+			onsaved={created}
+			oncancel={closeForm}
+		/>
 	{/if}
 
 	<LoadState

@@ -608,6 +608,7 @@ a mid-turn message went in at the end of the turn.
 | Method | Path | Body / result |
 |---|---|---|
 | POST | `/projects/:id/say` | `{text, agent?}` → `Say`. `agent` names the window (`claude`, `codex-2`, `t-apply`); without it the machine uses its one agent window, whatever it is named, and leaves a trigger's run out of that pick while the user has an agent of their own (I-1356). `400 invalid` for an empty message, for one over 4 KB (`detail.reason = text_too_long`) and when several agents run and none was named (`detail.reason = several_agents`; the message names the windows). `409 conflict` when the machine is not running (`detail.reason = not_running`), when no agent is running there (`detail.reason = no_agent`), and when the machine did not take the message within 20 seconds or its host is not connected (`detail.reason = machine_unreachable`). A delivery the machine made records an `agent_prompted` event, which notifies nobody and carries the sender and the window, never the message |
+| GET | `/projects/:id/says?limit=` | `{says: [Say]}`, the project's messages newest first, `limit` 1..100 (default 100; anything else is `400 invalid`), DECISIONS I-1604. A message still being handed to the machine (the `pending` and `sending` hand-off of I-1162) is not listed; a `failed` one is, without the machine's reason. The dashboard draws these with the agents' own events as one conversation. A client older than I-1604 never calls it |
 
 ## Questions (DECISIONS I-244, I-245)
 

@@ -30,6 +30,7 @@ func main() {
 	configDelay := flag.Duration("config-delay", 0, "keep a PUT /config op running this long, streaming its log line by line (0: done at first read)")
 	defaultRuntime := flag.String("default-runtime", "nix", "the guest runtime a new machine gets, nix or erofs (settings.default_guest_runtime)")
 	gatewayHost := flag.String("gateway-host", "", "the gateway POST /certs names (default 127.0.0.1, at a port nothing listens on)")
+	listen := flag.String("listen", "", "the address the api listens on (default 127.0.0.1 on a random port)")
 	gatewayPort := flag.Int("gateway-port", 0, "the gateway port POST /certs names (default api.FakeGatewayPort)")
 	flag.Parse()
 	if *defaultRuntime != "nix" && *defaultRuntime != "erofs" {
@@ -37,7 +38,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	f := api.New(api.Options{Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest, ConfigDelay: *configDelay,
+	f := api.New(api.Options{Listen: *listen, Billing: *billing, CLILatest: *cliLatest, CLIOldest: *cliOldest, ConfigDelay: *configDelay,
 		GatewayHost: *gatewayHost, GatewayPort: *gatewayPort})
 	f.SetDefaultGuestRuntime(*defaultRuntime)
 	defer f.Close()
@@ -93,9 +94,11 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 serves a static grey screen over RFB instead of refusing, so a test can reach
 //	                 the watching state and its clipboard panel; "copy" is handed to the page as the
 //	                 machine's own cut-text. GET /desktop -> f.DesktopPastes, what Send sent (I-1216)
-//	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool}
-//	                 -> f.SetSayAgents and f.SetSayState: which agents the machines run and what a
-//	                 `repose say` is answered with (I-1144)
+//	POST /say        {"agents": ["claude","codex-2"], "state": delivered|waiting, "replaced": bool,
+//	                 "reply": "text", "reply_ms": 1500}
+//	                 -> f.SetSayAgents, f.SetSayState and f.SetSayReply: which agents the machines run,
+//	                 what a `repose say` is answered with (I-1144), and the turn-ended event a
+//	                 delivered message gets back after reply_ms (I-1604; empty reply: none)
 //	POST /agents     {"project_id","agents": [{agent, window, state}],"ssh_sessions","tmux_clients"}
 //	                 -> f.SetAgents, and f.SetSessions when either count is given
 //
@@ -437,6 +440,11 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Agents   *[]string `json:"agents"`
 			State    string    `json:"state"`
 			Replaced bool      `json:"replaced"`
+			// Reply is what the agent answers a delivered message with,
+			// ReplyMS how long it takes; a preview's stand-in for an
+			// agent (I-1604). Empty turns it off.
+			Reply   string `json:"reply"`
+			ReplyMS int    `json:"reply_ms"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -446,6 +454,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			f.SetSayAgents(*body.Agents...)
 		}
 		f.SetSayState(body.State, body.Replaced)
+		f.SetSayReply(body.Reply, time.Duration(body.ReplyMS)*time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
