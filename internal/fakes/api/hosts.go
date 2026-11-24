@@ -35,6 +35,10 @@ const FakeHostInstall = "repose host add --join %s"
 // TestExemptHostsIsTheApis holds the two equal.
 const maxFakeHosts = unlimitedHosts
 
+// maxWaitingHosts is hostmgr.MaxWaitingHosts: the hosts one account may
+// have added that have not joined yet (ENG-211).
+const maxWaitingHosts = 10
+
 // ownHardwareRequired is billing.OwnHardwareRequiredMessage's sentence,
 // word for word, built from the fake's own plan table so that a change
 // to the real one is a deliberate change here too
@@ -255,12 +259,15 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 		return errf("payment_required", "%s", ownHardwareRequired()).
 			withDetail(map[string]any{"reason": "own_hardware_plan_required", "limit": 0})
 	}
-	have := 0
+	have, waiting := 0, 0
 	var revive *ownedHostRec
 	for _, h := range f.ownedHosts {
 		gone := h.State == "retired" || h.State == "lost"
 		if h.owner == u.ID && !gone {
 			have++
+		}
+		if h.owner == u.ID && h.State == "registering" && h.JoinTokenExpiresAt != nil && h.JoinTokenExpiresAt.After(f.now()) {
+			waiting++
 		}
 		if h.owner == u.ID && name != "" && h.Name == name {
 			if !gone {
@@ -279,6 +286,12 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		return errf("conflict", "your plan includes %d %s; remove one before you add another", allowed, word).
 			withDetail(map[string]any{"reason": "host_limit", "limit": allowed})
+	}
+	// The api's per-account cap on hosts that have not joined (ENG-211),
+	// checked after the plan's as there.
+	if waiting >= maxWaitingHosts {
+		return errf("conflict", "%d hosts have not joined yet; install repose on one, or remove one, before you add another", waiting).
+			withDetail(map[string]any{"reason": "waiting_limit", "limit": maxWaitingHosts})
 	}
 	if name == "" {
 		name = f.nextHostName(u.ID)

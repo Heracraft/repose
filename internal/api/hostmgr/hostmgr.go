@@ -305,8 +305,8 @@ func PrepareHub(ctx context.Context, tx db.Tx, hostID uuid.UUID) (*HubBootstrap,
 		return nil, fmt.Errorf("host %s is registered; a hub bootstrap is for a host that has not", hostID)
 	}
 	if cidr == nil || wgIP == nil {
-		var seq int64
-		if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
+		seq, err := nextSlot(ctx, tx)
+		if err != nil {
 			return nil, err
 		}
 		c, ip, err := allocate(seq)
@@ -356,7 +356,7 @@ var wgReservedOffsets = []uint32{3}
 // the nth host registered gets the nth address after the edge's that
 // wgReservedOffsets does not hold. The /22 stays a plain function of n.
 func allocate(n int64) (netip.Prefix, netip.Addr, error) {
-	if n < 1 || n > 1000 {
+	if n < 1 || n > MaxSlots {
 		return netip.Prefix{}, netip.Addr{}, fmt.Errorf("host sequence %d out of range", n)
 	}
 	base := uint32(10)<<24 | uint32(64)<<16
@@ -371,6 +371,127 @@ func allocate(n int64) (netip.Prefix, netip.Addr, error) {
 	wgInt := uint32(10)<<24 | uint32(255)<<16 | off
 	wg := netip.AddrFrom4([4]byte{byte(wgInt >> 24), byte(wgInt >> 16), byte(wgInt >> 8), byte(wgInt)})
 	return netip.PrefixFrom(cidr, 22), wg, nil
+}
+
+// MaxSlots is how many hosts the address plan holds at once: allocate's
+// thousand guest /22s in 10.64.0.0/12 and hub addresses in the edge's
+// hostCIDR 10.255.0.0/22 (nix/edge/default.nix, I-1382). Every account's
+// hosts and repose's own share it.
+const MaxSlots = 1000
+
+// MaxWaitingHosts is how many hosts one account may have that have not
+// joined yet: added, with a token still good, and not registered. Each
+// holds a slot until its token expires, so without a cap one account
+// could hold every slot for a day (ENG-211). A host that joins stops
+// counting at once, so a customer installing a rack adds the next ten as
+// soon as the first ten are up.
+const MaxWaitingHosts = 10
+
+// ErrNoSlot is nextSlot's answer when every slot is held by a host.
+var ErrNoSlot = errors.New("every host address is in use")
+
+// releaseSlotsSQL frees the addresses of the rows of hosts users own
+// that no machine can use again (ENG-211): one the user removed that
+// holds no project (the edge stops peering a retired host, and a project
+// left on one keeps a guest address inside its range), and one that
+// never registered before its token expired or was cleared (the edge
+// stops peering it at expiry, and Register refuses its token). Such a row
+// asked for again by name gets new addresses, as a row that never had
+// any does. Hosts repose runs keep theirs: an operator reissues a retired
+// one by name and expects the address it had.
+const releaseSlotsSQL = `update hosts h set guest_cidr = null, wg_ip = null, wg_pubkey = null
+	 where h.owner_account_id is not null
+	   and (h.guest_cidr is not null or h.wg_ip is not null)
+	   and ((h.state = 'retired' and not exists (select 1 from projects p where p.host_id = h.id and p.destroyed_at is null))
+	     or (h.state = 'registering' and h.registered_at is null and (h.join_token_hash is null or h.join_token_expires_at <= now())))`
+
+// nextSlot is the sequence number allocate turns into a new host's
+// addresses. Until ENG-211 it was nextval('host_seq'), so every host add
+// spent a number for good, a removed or never-installed host's included,
+// and allocate refuses past MaxSlots for every account: one account that
+// adds and removes hosts in a loop stopped host adds for everyone. Now a
+// number is free while no row holds its addresses, and the lowest free
+// one below the sequence's high-water mark is taken first; with none
+// free, the sequence moves on as before. An api from before this one
+// takes nextval alone, which never returns a number this one has taken:
+// a reused number is below the mark, a new one is the sequence's own.
+// The mark itself is never reused, because it may be a number an older
+// api has just taken in a transaction this one cannot see yet.
+func nextSlot(ctx context.Context, tx db.Tx) (int64, error) {
+	if _, err := tx.Exec(ctx, "select pg_advisory_xact_lock($1)", db.LockHostAddress); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, releaseSlotsSQL); err != nil {
+		return 0, err
+	}
+	var mark int64
+	var called bool
+	if err := tx.QueryRow(ctx, "select last_value, is_called from host_seq").Scan(&mark, &called); err != nil {
+		return 0, err
+	}
+	if !called {
+		mark = 0
+	}
+	if mark > MaxSlots {
+		mark = MaxSlots
+	}
+	if mark > 0 {
+		held, err := heldSlots(ctx, tx)
+		if err != nil {
+			return 0, err
+		}
+		for n := int64(1); n < mark; n++ {
+			if !held[n] {
+				return n, nil
+			}
+		}
+	}
+	var n int64
+	if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&n); err != nil {
+		return 0, err
+	}
+	if n > MaxSlots {
+		return 0, ErrNoSlot
+	}
+	return n, nil
+}
+
+// heldSlots is the sequence numbers whose guest range or hub address a
+// host row holds, by allocate's own arithmetic read backwards.
+func heldSlots(ctx context.Context, tx db.Tx) (map[int64]bool, error) {
+	byCIDR := make(map[netip.Prefix]int64, MaxSlots)
+	byWG := make(map[netip.Addr]int64, MaxSlots)
+	for n := int64(1); n <= MaxSlots; n++ {
+		c, ip, err := allocate(n)
+		if err != nil {
+			return nil, err
+		}
+		byCIDR[c], byWG[ip] = n, n
+	}
+	rows, err := tx.Query(ctx, "select guest_cidr, wg_ip from hosts where guest_cidr is not null or wg_ip is not null")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	held := map[int64]bool{}
+	for rows.Next() {
+		var c *netip.Prefix
+		var ip *netip.Addr
+		if err := rows.Scan(&c, &ip); err != nil {
+			return nil, err
+		}
+		if c != nil {
+			if n, ok := byCIDR[c.Masked()]; ok {
+				held[n] = true
+			}
+		}
+		if ip != nil {
+			if n, ok := byWG[*ip]; ok {
+				held[n] = true
+			}
+		}
+	}
+	return held, rows.Err()
 }
 
 // wgKeypair generates a WireGuard key pair, base64 encoded.
@@ -489,8 +610,8 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 		if h.GuestCIDR != nil && h.WGIP != nil {
 			cidr, wgIP = *h.GuestCIDR, *h.WGIP
 		} else {
-			var seq int64
-			if err := tx.QueryRow(ctx, "select nextval('host_seq')").Scan(&seq); err != nil {
+			seq, err := nextSlot(ctx, tx)
+			if err != nil {
 				return err
 			}
 			if cidr, wgIP, err = allocate(seq); err != nil {
