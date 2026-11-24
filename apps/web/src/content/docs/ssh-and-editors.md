@@ -1,6 +1,6 @@
 ---
 title: SSH and editors
-description: Reach every project with ssh, scp, rsync and git, and open it in VS Code, Cursor, Zed or JetBrains Gateway.
+description: Reach every project with ssh, scp, rsync and git, and open it in VS Code, Cursor, Zed, Claude Desktop, T3 Code or JetBrains Gateway.
 section: Using repose
 order: 10.5
 ---
@@ -48,9 +48,37 @@ If your shell has no `code`, run **Shell Command: Install 'code' command in PATH
 
 `repose code --editor zed` opens the checkout in Zed. By hand, `zed ssh://todo-app.repose/home/dev/todo-app`.
 
-## Claude Desktop and other apps
+## Claude Desktop
 
-`repose code --editor claude` opens the checkout in Claude Desktop. T3 Code, the Codex app and Antigravity add the machine by its host name: [Desktop apps](/docs/desktop-apps).
+On the project's page, **Open in Claude** opens a new session in Claude Desktop's Code tab, on the machine, in its checkout. Desktop asks you to confirm the connection. A stopped machine starts first. A frozen one wakes when Desktop connects.
+
+From a terminal:
+
+```
+repose code --editor claude todo-app
+```
+
+By hand: in the Code tab, add an SSH environment with the host `todo-app.repose`.
+
+Desktop needs v2.110.0 or later for the link, on macOS or Linux.
+
+- **Disk.** Desktop installs its own Claude Code under `~/.claude/remote` on the machine. Claude's docs ask for about 1 GB, which counts against your [disk](/docs/limits#disk-and-console).
+- **Notifications.** Desktop's Claude Code reads the machine's `~/.claude/settings.json`, so a finished turn shows in `repose events` and [notifies you](/docs/notifications) as one in tmux does. It doesn't show in `repose status`, which lists the agents in the project's tmux windows.
+- **Overnight.** A Desktop task can stop when Desktop's sign-in for it lapses, which Claude's docs say can be minutes after Desktop disconnects. Start work that must run overnight with `repose run -p` or in `repose attach`.
+- **A stopped machine.** A saved environment that you pick in Desktop doesn't start the machine, because `ssh` can't. Use **Open in Claude** or `repose start`.
+- **The folder.** The link opens the checkout that `repose run`, `sync` or `code` last found on the machine. A project made on the dashboard, with no run from a laptop yet, opens in the home folder.
+
+## Other apps
+
+T3 Code, the Codex app and Antigravity add the machine by its host name, and install what they need on it the first time they connect.
+
+| App | How to add the machine | Tested in the app |
+| --- | --- | --- |
+| T3 Code (desktop) | Settings, Environments, Add environment, SSH: `todo-app.repose`. Then add the folder `/home/dev/todo-app`. [Tutorial](/docs/tutorial-t3-code) | Not yet |
+| Codex app | Settings, Connections, then pick `todo-app.repose` | Not yet. Codex lists the hosts in `~/.ssh/config`; repose's are in a file that `~/.ssh/config` includes |
+| Antigravity | Connect over SSH: `todo-app.repose` | Not yet |
+
+On every machine, measured on 2026-11-24 on the Ubuntu base: the SSH server offers SFTP, a program copied into `~/.claude/remote` runs, a process started over SSH keeps running after the connection closes, port forwarding is on, and the machine reaches the internet over HTTPS.
 
 ## JetBrains Gateway
 
@@ -86,4 +114,4 @@ So the machine has no key of yours to push with. [Pushing from the machine](/doc
 
 Inside WSL, `ssh`, `scp`, `rsync` and `git` reach a project as above, with the CLI [installed inside WSL](/docs/install).
 
-An editor installed on Windows can't reach a project yet. It connects with Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, where repose writes the Host block and the certificate. `repose code` refuses that editor: `VS Code here is the Windows app, which connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.`
+An editor or app installed on Windows, Claude Desktop included, can't reach a project yet. It connects with Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, where repose writes the Host block and the certificate. `repose code` refuses that editor: `VS Code here is the Windows app, which connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.`

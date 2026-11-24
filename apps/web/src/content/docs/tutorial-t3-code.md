@@ -16,7 +16,7 @@ Add your checkout as a project, `/home/dev/todo-app`, and start a thread. The th
 
 A stopped machine doesn't start when T3 Code connects. Start it with **Start** on the project's page, or `repose start todo-app`.
 
-We haven't tested this route in the app yet. The machine side is tested: [Desktop apps](/docs/desktop-apps#other-apps).
+We haven't tested this route in the app yet. The machine side is tested: [Desktop apps](/docs/ssh-and-editors#other-apps).
 
 ## From a browser
 
