@@ -10,7 +10,6 @@
 // A browser must never read that, so every refusal this feature can get
 // has a sentence of its own here.
 import { ApiError } from '$lib/api/errors';
-import type { Say } from '$lib/api/types';
 
 /** The longest message, internal/api/say/say.go's TextCap. */
 export const TEXT_CAP = 4 << 10;
@@ -37,23 +36,4 @@ export function sayRefusal(err: unknown): string | undefined {
 		default:
 			return undefined;
 	}
-}
-
-/**
- * What the machine did with the message, in one line: the answer's own
- * `state` and `replaced` (api.md "Messages for an agent"). Every state has
- * its line here, `delivered` included, so the words have one home.
- */
-export function sayState(s: Pick<Say, 'state' | 'window' | 'replaced'>): string {
-	const who = s.window || 'the agent';
-	if (s.state === 'waiting') {
-		return s.replaced
-			? `${who} is mid-turn. It gets this message at the end of the turn, in place of the one that was waiting.`
-			: `${who} is mid-turn. It gets the message when the turn ends.`;
-	}
-	if (s.state === 'replaced') return `It replaced the message waiting for ${who}.`;
-	if (s.state === 'failed') return `The machine did not type it into ${who}.`;
-	return s.replaced
-		? `Delivered to ${who}, in place of the message that was waiting.`
-		: `Delivered to ${who}.`;
 }

@@ -2,8 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '$lib/api/errors';
-import type { Say } from '$lib/api/types';
-import { TEXT_CAP, sayRefusal, sayState } from './say';
+import { TEXT_CAP, sayRefusal } from './say';
 
 const repo = join(__dirname, '..', '..', '..', '..');
 const guestSource = readFileSync(join(repo, 'internal', 'guestd', 'sample', 'say.go'), 'utf8');
@@ -26,9 +25,6 @@ function refusal(reason: string, code = 'conflict'): ApiError {
 		null
 	);
 }
-
-const say = (s: Partial<Say>): Pick<Say, 'state' | 'window' | 'replaced'> =>
-	({ state: 'delivered', window: 'claude', ...s }) as Say;
 
 describe('sayRefusal', () => {
 	it('owns a sentence for every reason the api can send', () => {
@@ -79,29 +75,6 @@ describe('sayRefusal', () => {
 	it('is load-bearing: the api still passes a sentence naming --agent through', () => {
 		expect(guestSource).toContain('Name one with --agent');
 		expect(apiSource).toContain('agentErr.Detail');
-	});
-});
-
-describe('sayState', () => {
-	it('says what the machine did, for every state', () => {
-		expect(sayState(say({}))).toBe('Delivered to claude.');
-		expect(sayState(say({ replaced: true }))).toBe(
-			'Delivered to claude, in place of the message that was waiting.'
-		);
-		expect(sayState(say({ state: 'waiting' }))).toBe(
-			'claude is mid-turn. It gets the message when the turn ends.'
-		);
-		expect(sayState(say({ state: 'waiting', replaced: true }))).toBe(
-			'claude is mid-turn. It gets this message at the end of the turn, in place of the one that was waiting.'
-		);
-		expect(sayState(say({ state: 'replaced', window: 'codex-2' }))).toBe(
-			'It replaced the message waiting for codex-2.'
-		);
-		expect(sayState(say({ state: 'failed' }))).toBe('The machine did not type it into claude.');
-	});
-
-	it('names the agent plainly when the answer carries no window', () => {
-		expect(sayState(say({ window: '' }))).toBe('Delivered to the agent.');
 	});
 });
 

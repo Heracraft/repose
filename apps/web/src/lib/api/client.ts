@@ -521,3 +521,6 @@ export async function opLogUrl(
 	if (sinceSeq !== undefined) params.set('since', String(sinceSeq));
 	return `${baseUrl()}/projects/${projectId}/ops/${opId}/log?${params}`;
 }
+/** The messages sent to the project's agents, newest first (I-1604). */
+export const listSays = (id: string, limit = 30) =>
+	request<{ says: Say[] }>(`/projects/${id}/says?limit=${limit}`).then((r) => r.says);

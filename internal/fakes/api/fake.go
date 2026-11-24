@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,10 @@ import (
 
 // Options configures New. The zero value is a usable fake.
 type Options struct {
+	// Listen is the address to serve on; empty is 127.0.0.1 on a random
+	// port. A preview for someone on another machine sets one that
+	// machine reaches.
+	Listen string
 	// Users maps bearer tokens to users. Nil accepts any non-empty token
 	// as the canned user (CannedUser); non-nil rejects every other token.
 	Users map[string]User
@@ -193,11 +198,15 @@ type Fake struct {
 	holds     []string    // question ids the dashboard held (I-1242)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
-	says          []Say
-	sayAgents     []string
-	sayAgentsSet  bool
-	sayState      string
-	sayReplaced   bool
+	says         []Say
+	sayAgents    []string
+	sayAgentsSet bool
+	sayState     string
+	sayReplaced  bool
+	// sayReply is the agent's answer SetSayReply makes up for a
+	// preview, and sayReplyAfter how long the agent takes to give it.
+	sayReply      string
+	sayReplyAfter time.Duration
 	secretAnswers map[string][]byte // question id -> the value its secret answer stored (I-929)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
@@ -239,7 +248,18 @@ func New(opts Options) *Fake {
 		f.setMode(BillingActive)
 	}
 	f.register()
-	f.Server = httptest.NewServer(f)
+	if opts.Listen == "" {
+		f.Server = httptest.NewServer(f)
+		return f
+	}
+	ln, err := net.Listen("tcp", opts.Listen)
+	if err != nil {
+		panic("fake api: listen: " + err.Error()) // test fixture
+	}
+	f.Server = httptest.NewUnstartedServer(f)
+	_ = f.Server.Listener.Close()
+	f.Server.Listener = ln
+	f.Server.Start()
 	return f
 }
 
@@ -806,6 +826,7 @@ func (f *Fake) register() {
 	f.handle("POST /v1/projects/{id}/questions/{qid}/hold", f.holdQuestion)
 	// A message for the project's agent (DECISIONS I-1144).
 	f.handle("POST /v1/projects/{id}/say", f.sayToAgent)
+	f.handle("GET /v1/projects/{id}/says", f.listSays)
 	f.handle("GET /v1/questions/reply", f.replyQuestion)
 	f.handle("POST /v1/questions/reply", f.replyQuestion)
 	// Usage and billing.
