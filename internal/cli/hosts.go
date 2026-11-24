@@ -505,6 +505,8 @@ func hostErr(err error, name string) error {
 		return exitf(ExitGeneric, "You already have a host named %s.", name)
 	case reason == "host_limit":
 		return exitf(ExitGeneric, "Your plan takes %s. `repose host ls` lists what you have.", hostCount(detailInt(apiErr.Detail["limit"])))
+	case reason == "waiting_limit":
+		return exitf(ExitGeneric, "%s have not joined yet. Install repose on one, or `repose host rm` one, before you add another.", hostCount(detailInt(apiErr.Detail["limit"])))
 	case reason == "own_hardware_plan_required":
 		return exitf(ExitPaymentRequired, "Hardware of your own needs the Own hardware plan: https://repose.run/billing")
 	case reason == "host_has_projects":

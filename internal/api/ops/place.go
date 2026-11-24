@@ -59,6 +59,21 @@ func (e *Engine) PlaceNewOn(ctx context.Context, tx db.Tx, p *store.Project, hos
 	}
 	t.Host = host
 	pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+	if errors.Is(err, scheduler.ErrNoOwnHost) {
+		if e.afterOwnRefusal != nil {
+			e.afterOwnRefusal(ctx)
+		}
+		// The sentence below reads the account's hosts after the pick
+		// refused, and a heartbeat can land in between: a host that was
+		// full at the pick reports room by the time its figure is read,
+		// and the sentence fell back to "has no room", which named no
+		// figure and was no longer true (ENG-214). Room read now is room
+		// the pick can take, so it is asked once more; a second refusal
+		// is answered with the figures that refused it.
+		if roomAppeared(ctx, tx, p, host) {
+			pk, err = scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+		}
+	}
 	if err == nil {
 		e.m.ScheduleTotal.WithLabelValues("ok").Inc()
 		e.log.Info("placed project", "event", "schedule", "project_id", p.ID.String(), "host_id", pk.HostID.String(), "class", p.Class)
@@ -110,4 +125,29 @@ func (e *Engine) PlaceNewOn(ctx context.Context, tx db.Tx, p *store.Project, hos
 	e.log.Error("placement failed", "event", "schedule_fail",
 		"project_id", p.ID.String(), "class", p.Class, "reason", "error", "err", err.Error())
 	return nil, err
+}
+
+// roomAppeared reports whether a ready host of the account's own that
+// the placement could use (pin's alone when the project named one) has
+// room for p by placement's own memory and disk figures, read in tx. It
+// is asked after a pick refused, so true means the figures changed in
+// between. A failed read answers false: the refusal stands.
+func roomAppeared(ctx context.Context, tx db.Tx, p *store.Project, pin uuid.UUID) bool {
+	hosts, err := store.ListAccountHosts(ctx, tx, p.UserID)
+	if err != nil {
+		return false
+	}
+	rooms, err := scheduler.OwnedRooms(ctx, tx, p.UserID, p.HeldBytes(), p.VolumeBytes)
+	if err != nil {
+		return false
+	}
+	for _, h := range hosts {
+		if h.State != "ready" || h.Draining || (pin != uuid.Nil && h.ID != pin) {
+			continue
+		}
+		if r, ok := rooms[h.ID]; ok && roomWhy(r, p.Class, false) == "" {
+			return true
+		}
+	}
+	return false
 }

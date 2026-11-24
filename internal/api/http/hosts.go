@@ -217,6 +217,19 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 			return withDetail(errf("conflict", "your plan includes %s; remove one before you add another", plural(allowed, "host")),
 				map[string]any{"reason": "host_limit", "limit": allowed})
 		}
+		// Hosts that have not joined yet are capped per account, whatever
+		// the plan: each holds one of the thousand host addresses every
+		// account shares until its token expires, so an account adding
+		// them without limit could leave none for anyone (ENG-211).
+		var waiting int
+		if err := tx.QueryRow(r.Context(), `select count(*) from hosts where owner_account_id = $1 and state = 'registering'
+			and registered_at is null and join_token_hash is not null and join_token_expires_at > now()`, u.ID).Scan(&waiting); err != nil {
+			return err
+		}
+		if waiting >= hostmgr.MaxWaitingHosts {
+			return withDetail(errf("conflict", "%s have not joined yet; install repose on one, or remove one, before you add another", plural(waiting, "host")),
+				map[string]any{"reason": "waiting_limit", "limit": hostmgr.MaxWaitingHosts})
+		}
 		owner := u.ID
 		var err error
 		token, hostID, err = hostmgr.MintJoinTokenIn(r.Context(), tx,

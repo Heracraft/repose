@@ -131,6 +131,11 @@ type Engine struct {
 	// runs (DECISIONS I-1366); nil says yes for every account.
 	fleet FleetPolicy
 
+	// afterOwnRefusal runs in PlaceNewOn after a pick an owned host
+	// refused and before its figures are read; nil outside tests, which
+	// use it to land a heartbeat in that window (ENG-214).
+	afterOwnRefusal func(ctx context.Context)
+
 	kick    chan struct{}
 	driving atomic.Bool
 	now     func() time.Time
