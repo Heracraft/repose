@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1130 entries.
+1131 entries.
 
 ## Scope
 
@@ -1160,5 +1160,6 @@ pointer, not a summary.
 - **I-1594** The Own hardware plan sells any number of hosts: `Plan.Hosts` is `billing.UnlimitedHosts` (math.MaxInt32), and a billing-exempt account has the same rule (own-hosts, 2026-11-24) — partly amended by I-1598; L39405
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
-- **I-1602** New machine on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — L39434
+- **I-1602** New project on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — amended by I-1612; L39434
 - **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39442
+- **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — L39453

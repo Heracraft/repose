@@ -1,5 +1,5 @@
 <!--
-  New machine on /projects (DECISIONS I-1602, amending I-1354): one field
+  New project on /projects (DECISIONS I-1602, I-1612, amending I-1354): one field
   and one button. The name is filled in and selected, so Create, or
   Enter, makes the machine at once; typing replaces it. Everything else
   has the default `repose run` gives and is shown as one line under the
@@ -29,12 +29,15 @@
 	import { hostStateWord } from '$lib/offlinehost';
 	import { withoutBillingURL } from '$lib/refusal';
 	import { repoName, wordName } from '$lib/machineName';
+	import { defaultClass, fits, freeGB, type PlanRoom } from '$lib/planRoom';
 	import type { OwnedHost, Placement, Project } from '$lib/api/types';
 
 	let {
 		taken = [],
 		size,
 		named,
+		room,
+		onstop,
 		onsaved,
 		oncancel
 	}: {
@@ -43,6 +46,10 @@
 		/** A size or a name from the page's URL (`/projects?new&size=small`). */
 		size?: string;
 		named?: string;
+		/** The plan's memory and what holds it, where the plan meters it (I-1612). */
+		room?: PlanRoom;
+		/** Stops a machine that holds the plan's memory, as its row's Stop does. */
+		onstop?: (id: string) => void;
 		onsaved: (p: Project) => void;
 		oncancel: () => void;
 	} = $props();
@@ -67,10 +74,16 @@
 	/** The name is still the one offered, so a repository may rename it. */
 	// svelte-ignore state_referenced_locally
 	let nameIsOurs = $state(!named);
-	// The api's own default, so a user who leaves it alone gets what
-	// `repose run` gives them.
+	// The size the user chose (Options, or the link's `size`). Until they
+	// choose, it is the api's own default, which `repose run` gets, or
+	// the largest class the plan has room for now when that one would be
+	// refused (I-1612). It follows the plan as machines stop and start.
 	// svelte-ignore state_referenced_locally
-	let cls = $state(size && CLASSES.includes(size) ? size : 'large');
+	let chosen = $state<string | undefined>(size && CLASSES.includes(size) ? size : undefined);
+	let cls = $derived(chosen ?? defaultClass(room));
+	let free = $derived(freeGB(room));
+	/** Nothing fits beside what runs now: the form says so before Enter. */
+	let full = $derived(!!room && !fits(room, 'tiny'));
 	let repo = $state('');
 	/** 0 keeps the machine; anything else makes it temporary. */
 	let life = $state(0);
@@ -120,6 +133,7 @@
 	let summary = $derived(
 		[
 			sizeLabel(cls),
+			room ? `${free} GB of your plan's ${room.limitGB} GB free` : '',
 			whereWords,
 			life === 0
 				? 'kept until you destroy it'
@@ -185,7 +199,7 @@
 </script>
 
 <section class="hk-section" aria-labelledby="nm-title">
-	<h2 id="nm-title" class="hk-sr">New machine</h2>
+	<h2 id="nm-title" class="hk-sr">New project</h2>
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<form class="nmform" {onsubmit} {onkeydown} data-testid="new-machine-form">
 		<div class="nmrow">
@@ -222,6 +236,27 @@
 			</button>
 		</div>
 
+		{#if room && !error && !fits(room, cls)}
+			<!-- The api would refuse this size by the plan (I-1612): said
+			     before Enter, with the way out beside it. -->
+			<div class="nmroom" data-testid="nm-room">
+				<p>
+					{full
+						? `Your plan's ${room.limitGB} GB is in use. Stop a machine to make one here.`
+						: `A ${cls} machine needs ${classMemoryGB(cls)} GB; ${free} GB is free.`}
+				</p>
+				{#if full && onstop}
+					<div class="nmstops">
+						{#each room.holders as h (h.id)}
+							<button type="button" class="hk-btn-secondary hk-btn-sm" onclick={() => onstop(h.id)}
+								>Stop {h.name}</button
+							>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
 		{#if error}
 			<p id="nm-error" class="hk-field-error" data-testid="new-machine-error">
 				{error}
@@ -233,7 +268,7 @@
 			<div id="nm-options" class="nmoptions">
 				<div class="nmfield">
 					<label for="nm-size" class="hk-field-label">Size</label>
-					<select id="nm-size" class="hk-select" bind:value={cls}>
+					<select id="nm-size" class="hk-select" bind:value={() => cls, (v) => (chosen = v)}>
 						{#each CLASSES as c (c)}
 							<option value={c}>{sizeLabel(c)}</option>
 						{/each}
@@ -365,6 +400,21 @@
 	.nmwide {
 		grid-column: 1 / -1;
 		max-width: 28rem;
+	}
+	.nmroom {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--hk-text-2);
+	}
+	.nmroom p {
+		margin: 0;
+	}
+	.nmstops {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 	.nmhelp {
 		margin: 0;

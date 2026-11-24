@@ -148,7 +148,7 @@ describe('normalizeRemoteDisplay', () => {
 		expect(a).toBe(b);
 	});
 
-	// What New machine sends has to be byte-for-byte what the laptop's
+	// What New project sends has to be byte-for-byte what the laptop's
 	// `repose run` looks the project up by (I-1354), and internal/cli's
 	// normalizeRemote drops a trailing slash before the `.git`.
 	it('drops a trailing slash, as the CLI does', () => {
