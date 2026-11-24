@@ -1,0 +1,8 @@
+rate limit/429               outputs=   45 sessions=36
+network/dns                  outputs=   40 sessions=30
+lock wait/flock              outputs=   14 sessions=1
+oom/killed                   outputs=   12 sessions=10
+playwright browser missing   outputs=    8 sessions=8
+port in use                  outputs=    8 sessions=7
+no space                     outputs=    2 sessions=2
+timeout exceeded (test)      outputs=    1 sessions=1

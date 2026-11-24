@@ -1,0 +1,9 @@
+Counter({'bash': 51207, 'env_prefix': 30511, 'grep': 10433, 'nix_develop': 2559, 'grep_def': 1467, 'grep_word': 340, 'install': 213, 'grep_recursive': 168})
+grep that look like definition lookups: 1467 of 10433 (14.1%); word/identifier greps 340; recursive 168
+read/search chains between other actions: n=7985 median 2 p90 7 p99 35; calls in chains>=5: 16569
+dep install calls 213, 0.5 h
+bash calls with env/cd prefix 30511 of 51207; nix develop 2559
+test runs 3623, identical reruns in same session 24, total 24.4 h, median 3s p90 42s
+test runners: [('go test', 2335, 15.9), ('playwright', 849, 6.4), ('vitest', 329, 1.1), ('pnpm test', 90, 0.9), ('pnpm check', 19, 0.1), ('pytest', 1, 0.0)]
+wait duration buckets: [('<10s', 2588, 0.9), ('10-60s', 529, 3.7), ('1-2m', 134, 3.1), ('2-10m', 191, 14.7), ('>10m', 69, 14.6)]
+wait error kinds: [('exit code (check not yet true or cmd failed)', 170), ('blocked sleep (harness refused)', 78), ('timeout', 5), ('other', 5)]

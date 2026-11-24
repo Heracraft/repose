@@ -1,0 +1,1 @@
+build/test calls 5350 (30.1 h); with compile/type errors in output 148 (2.8%), 0.16 h; by runner [('go build', 90), ('go test', 40), ('go vet', 8), ('tsc', 3), ('nix build', 2), ('golangci', 2), ('svelte-check', 2), ('pnpm check', 1)]; ctx tokens of those turns 0.06 G

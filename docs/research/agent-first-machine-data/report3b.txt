@@ -1,0 +1,14 @@
+heavy calls 5029 distinct commands 2202
+share of heavy calls with >=1 other heavy call in flight on average (overlap>=1.0): 22.7%; any overlap: 32.3%
+heavy-call hours 29.6; of which run with others in flight (overlap>0) 15.2
+paired same-command comparisons (median alone >=5s): n=55, slowdown busy/alone median 1.02 p25 0.51 p75 1.70
+    vitest 1 2.0
+    pnpm install 1 0.6
+    go test 29 0.74
+    go vet 2 1.01
+    pnpm build 2 2.22
+    svelte-check 1 0.8
+    golangci 4 1.47
+    playwright 10 1.48
+    nix build 2 1.1
+    go build 3 0.71
