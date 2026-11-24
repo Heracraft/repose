@@ -1769,7 +1769,7 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 	for i, h := range live {
 		why[i] = h.Name + " " + e.ownHostWhy(h, p.Class, true, rooms)
 	}
-	return "none of your hosts can take a " + p.Class + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
+	return "none of your hosts can take " + aClass(p.Class) + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
 }
 
 // ownHostWhy is why one host of the account's own took no placement, as
@@ -1805,7 +1805,7 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uu
 	if short {
 		return "has no room"
 	}
-	return "has no room for a " + class + " machine"
+	return "has no room for " + aClass(class) + " machine"
 }
 
 // roomWhy is the figure that keeps a machine of class off a ready host
@@ -1822,7 +1822,7 @@ func roomWhy(r scheduler.Room, class string, short bool) string {
 		if short {
 			return "has " + gbText(r.FreeBytes) + " free"
 		}
-		return "has " + gbText(r.FreeBytes) + " of memory free for machines, and a " + class + " machine needs " + gbText(need) +
+		return "has " + gbText(r.FreeBytes) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
 			". A machine holds its memory while it runs, so stopping one frees room for it"
 	case r.PoolUnavailable:
 		return "cannot use its disk for machines"
@@ -1833,6 +1833,14 @@ func roomWhy(r scheduler.Room, class string, short bool) string {
 		return "has " + gbText(r.PoolFreeBytes) + " of disk free, and a new machine needs " + gbText(r.PoolNeedBytes) + " free"
 	}
 	return ""
+}
+
+// aClass is a size class with its article: "a small", "an xl".
+func aClass(class string) string {
+	if class == "xl" {
+		return "an xl"
+	}
+	return "a " + class
 }
 
 // gbText is a size in the GB the docs and `repose host ls` use (GiB),

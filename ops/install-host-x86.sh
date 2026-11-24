@@ -76,6 +76,7 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEq1BgpU75F46qQ3iMHL1E0VOqye+4
 
 join="" join_file="" device="" loop_file="" size="" uplink=""
 api="" api_name="" api_ca_file="" hostd_binary="" manifest_url="" dry=0
+doc_dir=/usr/share/doc
 uninstall=0 force=0
 while [ $# -gt 0 ]; do
   case $1 in
@@ -112,21 +113,31 @@ step() {
   "$@"
 }
 
-# kernel_fix_shown KVER: whether this kernel is shown to carry the fix for
-# CVE-2026-99999 (docs/security/cve-2026-99999.md, DECISIONS I-778,
-# I-1588): a 6.18 from 6.18.57 on, the first 6.18 with the backport of
-# 6785011f8b16; or any kernel whose package changelog names the CVE or
-# that commit's subject, which is how a distribution kernel that took the
-# backport says so: Ubuntu 24.04's linux 6.8.0-149 lists the subject under
-# its 2026-10-21 stable patchset, Debian 13's linux 6.12.113-1 lists it
-# with the CVE. The changelog is read from the package's own copy, and
-# from `apt-get changelog` when the machine has none (minimal images leave
-# /usr/share/doc out). Ubuntu's signed image package's changelog is only
-# a version bump, so its modules package is read first. A changelog that
-# cannot be read shows nothing, which is why this warns and never
-# refuses.
-kernel_fix_shown() {
-  local kver=$1 v maj rest min pat pkg f log
+# ---- kernel check (ops/install-host-x86-test sources this block) ---------
+# kernel_fix_status KVER OSID: prints fixed, unfixed or unknown: whether
+# this kernel carries the fix for CVE-2026-99999
+# (docs/security/cve-2026-99999.md, DECISIONS I-778, I-1588, I-1600).
+#
+# First the version, which needs nothing but the version:
+# - a 6.18 from 6.18.57 on, the first 6.18 with the backport of
+#   6785011f8b16;
+# - Ubuntu's generic and lowlatency kernels, whose ABI number in `uname -r`
+#   only grows within a series: 6.8.0 has it from ABI 149 and not below
+#   (6.8.0-147 lacks it), the HWE 7.0.0 from ABI 43. Other Ubuntu flavours
+#   (azure, aws, ...) number their ABIs their own way (7.0.0-1014-azure
+#   lacks it, 7.0.0-1020-azure has it), so they fall through;
+# - Debian's 6.12, from package version 6.12.113-1.
+# Then the package changelog, which is how any other distribution kernel
+# that took the backport says so: the CVE or the fix's subject in the
+# changelog of the modules or unsigned image package, read from
+# $doc_dir and else from `apt-get changelog`, which needs the apt lists
+# (the installer fills them before it asks). A full changelog without
+# either is unfixed. The signed image package's changelog may be only a
+# version bump, so it can show the fix and never its absence. Nothing
+# readable is unknown, which the installer says as "could not check".
+kernel_fix_status() {
+  local kver=$1 osid=$2 v maj rest min pat abi series pkg f log pver full_read=0
+  local fix='validate checksum_start before completing checksum'
   v=${kver%%-*}
   maj=${v%%.*} rest=${v#*.}
   min=${rest%%.*}
@@ -134,26 +145,71 @@ kernel_fix_shown() {
   [ "$rest" != "$min" ] && pat=${rest#*.}
   pat=${pat%%[!0-9]*}
   if [ "$maj" = 6 ] && [ "$min" = 18 ] && [ "${pat:-0}" -ge 57 ]; then
-    return 0
+    echo fixed; return
+  fi
+  if [ "$osid" = ubuntu ] && [[ $kver =~ ^(6\.8\.0|7\.0\.0)-([0-9]{1,3})-(generic|lowlatency)$ ]]; then
+    abi=${BASH_REMATCH[2]} series=${BASH_REMATCH[1]}
+    case $series in
+      6.8.0) if [ "$abi" -ge 149 ]; then echo fixed; else echo unfixed; fi; return ;;
+      7.0.0) if [ "$abi" -ge 43 ]; then echo fixed; return; fi ;;
+    esac
+  fi
+  if [ "$osid" = debian ] && [ "$maj.$min" = 6.12 ] && command -v dpkg-query >/dev/null; then
+    pver=$(dpkg-query -W -f='${Version}' "linux-image-$kver" 2>/dev/null || true)
+    if [ -n "$pver" ]; then
+      if dpkg --compare-versions "$pver" ge 6.12.113-1; then echo fixed; else echo unfixed; fi
+      return
+    fi
   fi
   for pkg in "linux-modules-$kver" "linux-image-unsigned-$kver" "linux-image-$kver-unsigned" "linux-image-$kver"; do
-    for f in "/usr/share/doc/$pkg/changelog.Debian.gz" "/usr/share/doc/$pkg/changelog.gz"; do
+    for f in "$doc_dir/$pkg/changelog.Debian.gz" "$doc_dir/$pkg/changelog.gz"; do
       [ -r "$f" ] || continue
-      if zgrep -q -F -e CVE-2026-99999 -e 'validate checksum_start before completing checksum' "$f" 2>/dev/null; then
-        return 0
+      if zgrep -q -F -e CVE-2026-99999 -e "$fix" "$f" 2>/dev/null; then
+        echo fixed; return
       fi
+      [ "$pkg" = "linux-image-$kver" ] || full_read=1
     done
   done
-  command -v apt-get >/dev/null || return 1
-  for pkg in "linux-modules-$kver" "linux-image-unsigned-$kver" "linux-image-$kver-unsigned" "linux-image-$kver"; do
-    log=$(timeout 60 apt-get changelog -qq "$pkg" 2>/dev/null || true)
-    [ -n "$log" ] || continue
-    if grep -q -F -e CVE-2026-99999 -e 'validate checksum_start before completing checksum' <<< "$log"; then
-      return 0
-    fi
-  done
-  return 1
+  if command -v apt-get >/dev/null; then
+    for pkg in "linux-modules-$kver" "linux-image-unsigned-$kver" "linux-image-$kver-unsigned" "linux-image-$kver"; do
+      log=$(timeout 60 apt-get changelog -qq "$pkg" 2>/dev/null || true)
+      [ -n "$log" ] || continue
+      if grep -q -F -e CVE-2026-99999 -e "$fix" <<< "$log"; then
+        echo fixed; return
+      fi
+      [ "$pkg" = "linux-image-$kver" ] || full_read=1
+    done
+  fi
+  if [ "$full_read" = 1 ]; then echo unfixed; else echo unknown; fi
 }
+
+# kernel_note KVER OSID STATUS: the line the installer ends with, or
+# nothing for a fixed kernel (DECISIONS I-1588, I-1600). The Ubuntu remedy
+# installs the newest kernel of the series the box runs, not a full
+# upgrade: an image can carry a second series (Latitude's Ubuntu 24.04
+# carries the HWE 7.0 beside the 6.8 it boots), a full upgrade moves that
+# one too, and repose's x86 hosts were measured on 6.8 only.
+kernel_note() {
+  local kver=$1 osid=$2 status=$3 note remedy
+  local what="through which code in one of your machines could take over this box"
+  case $status in
+    fixed) return ;;
+    unfixed) note="warning: kernel $kver does not carry the fix for CVE-2026-99999, $what." ;;
+    *) note="warning: could not check whether kernel $kver carries the fix for CVE-2026-99999, $what: its version is not one this installer knows and its package changelog could not be read." ;;
+  esac
+  case $osid in
+    ubuntu)
+      case $kver in
+        6.8.0-*-generic | 6.8.0-*-lowlatency) remedy="Ubuntu 24.04's kernels carry it from 6.8.0-149: apt-get update && apt-get install linux-image-generic, reboot, check that uname -r shows 6.8.0-149 or later" ;;
+        7.0.0-*-generic | 7.0.0-*-lowlatency) remedy="Ubuntu 24.04's HWE 7.0 kernels carry it from 7.0.0-43: apt-get update && apt-get install linux-image-generic-hwe-24.04, reboot, check that uname -r shows 7.0.0-43 or later" ;;
+        *) remedy="Ubuntu 24.04's generic kernels carry it from 6.8.0-149 and its HWE 7.0 kernels from 7.0.0-43: install one, or a kernel whose changelog names the CVE, reboot into it" ;;
+      esac
+      note+=" $remedy, and run this installer again to check." ;;
+    debian) note+=" Debian 13's kernel carries it from 6.12.113-1, and Debian 12's did not on 2026-11-23; with a kernel that does, reboot and run this installer again to check." ;;
+  esac
+  echo "$note"
+}
+# ---- end of kernel check -------------------------------------------------
 
 prepare_install() {
 # ---- what this machine is ------------------------------------------------
@@ -179,14 +235,6 @@ kver=$(uname -r)
 kmaj=${kver%%.*} krest=${kver#*.} kmin=${krest%%[!0-9]*}
 if [ "$kmaj" -lt 6 ] || { [ "$kmaj" = 6 ] && [ "$kmin" -lt 8 ]; }; then
   die "kernel $kver is older than 6.8; upgrade the kernel first."
-fi
-kernel_note=""
-if ! kernel_fix_shown "$kver"; then
-  kernel_note="warning: kernel $kver is not shown to carry the fix for CVE-2026-99999, through which code in one of your machines could take over this box."
-  case $ID in
-    ubuntu) kernel_note+=" Ubuntu 24.04's kernels carry it from 6.8.0-149: apt-get update && apt-get full-upgrade, then reboot and run this installer again to check." ;;
-    debian) kernel_note+=" Debian 13's kernel carries it from 6.12.113-1, and Debian 12's did not on 2026-11-23; with a kernel that does, reboot and run this installer again to check." ;;
-  esac
 fi
 if [ -n "$join_file" ]; then
   [ -r "$join_file" ] || die "cannot read $join_file"
@@ -238,6 +286,14 @@ if [ "${#missing[@]}" -gt 0 ]; then
 else
   say "packages: all present"
 fi
+# The kernel's fix, checked after the package step, because a fresh
+# image can have no apt lists, without which `apt-get changelog` cannot
+# fetch anything (x86 pass 2, I-1600). The update failing (no route to
+# the archive) only leaves the check to the kernel's version.
+if [ "$dry" = 0 ] && ! compgen -G "/var/lib/apt/lists/*Release" >/dev/null; then
+  step "apt-get update" -- bash -c 'apt-get update -qq || true'
+fi
+kernel_note=$(kernel_note "$kver" "$ID" "$(kernel_fix_status "$kver" "$ID")")
 }
 
 kernel_note=""

@@ -910,6 +910,12 @@ func TestCreateOnAFullOwnHostNamesTheFigure(t *testing.T) {
 	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != want {
 		t.Fatalf("message %q, want %q", msg, want)
 	}
+	// "an xl", not "a xl" (x86 pass 2 N6, I-1600).
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-xl", "class": "xl"})
+	want = "your host " + name + " has " + gb + " GB of memory free for machines, and an xl machine needs 16 GB."
+	if msg, _ := r.body["error"].(map[string]any)["message"].(string); r.status != 503 || !strings.HasPrefix(msg, want) {
+		t.Fatalf("an xl on a full own host: %d %q, want 503 starting %q", r.status, msg, want)
+	}
 }
 
 // TestStartRefusedOnAFullOwnHostNamesTheFigure: a start that hostd

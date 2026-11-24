@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Tests for the kernel check in ops/install-host-x86.sh (DECISIONS I-1588,
+# I-1600): which kernels it calls fixed, unfixed or unknown, the line it
+# prints for each, and that it runs after the installer has filled the apt
+# lists. The check is sourced from the installer, between its "kernel
+# check" markers, and run against stub apt-get, dpkg-query and dpkg on a
+# scratch PATH and a scratch doc directory, so nothing here reads this
+# machine's packages or the network.
+#
+#   ops/install-host-x86-test     run every test; exit 1 when any fails
+set -uo pipefail
+
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+installer=$repo/ops/install-host-x86.sh
+world=$(mktemp -d)
+trap 'rm -rf "$world"' EXIT
+
+block=$(sed -n '/^# ---- kernel check /,/^# ---- end of kernel check/p' "$installer")
+[ -n "$block" ] || { echo "FAIL: no kernel check block in $installer"; exit 1; }
+# shellcheck source=/dev/null
+. <(printf '%s\n' "$block")
+
+# The stubs. apt-get changelog PKG prints $world/apt/PKG, or fails the way
+# apt does without lists. dpkg-query prints $world/ver/PKG. dpkg
+# --compare-versions A ge B is sort -V, which orders the versions used here
+# as dpkg does.
+mkdir -p "$world/bin" "$world/apt" "$world/ver" "$world/doc"
+cat > "$world/bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = changelog ] || exit 100
+pkg=${!#}
+if [ -f "$STUB_WORLD/apt/$pkg" ]; then cat "$STUB_WORLD/apt/$pkg"; exit 0; fi
+echo "E: Failed to fetch changelog:/linux.changelog Changelog unavailable" >&2
+exit 100
+EOF
+cat > "$world/bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+pkg=${!#}
+[ -f "$STUB_WORLD/ver/$pkg" ] || exit 1
+cat "$STUB_WORLD/ver/$pkg"
+EOF
+cat > "$world/bin/dpkg" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = --compare-versions ] && [ "$3" = ge ] || exit 2
+[ "$(printf '%s\n%s\n' "$2" "$4" | sort -V | head -1)" = "$4" ]
+EOF
+chmod +x "$world/bin/"*
+export STUB_WORLD=$world
+PATH=$world/bin:$PATH
+doc_dir=$world/doc
+
+reset_world() { rm -rf "${world:?}/apt/"* "${world:?}/ver/"* "${world:?}/doc/"*; }
+# doc PKG TEXT: a gzipped changelog for PKG in the doc directory.
+doc() { mkdir -p "$doc_dir/$1"; printf '%s\n' "$2" | gzip > "$doc_dir/$1/changelog.Debian.gz"; }
+
+fix_line='  - ipv4: validate checksum_start before completing checksum'
+old_line='  - net: an older stable patch'
+pass=0 fail=0
+check() { # NAME WANT GOT
+  if [ "$2" = "$3" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL $1: want '$2', got '$3'"; fi
+}
+status() { kernel_fix_status "$1" "$2"; }
+
+# ---- status --------------------------------------------------------------
+
+# The pass 2 box: Ubuntu's 6.8.0-149, no apt lists and no docs.
+reset_world
+check ubuntu_6.8.0-149_without_lists fixed "$(status 6.8.0-149-generic ubuntu)"
+check ubuntu_6.8.0-151 fixed "$(status 6.8.0-151-generic ubuntu)"
+check ubuntu_6.8.0-149_lowlatency fixed "$(status 6.8.0-149-lowlatency ubuntu)"
+check ubuntu_6.8.0-147_without_lists unfixed "$(status 6.8.0-147-generic ubuntu)"
+# The ABI rule wins over a changelog that cannot show it.
+doc linux-image-6.8.0-147-generic "$old_line"
+check ubuntu_6.8.0-147_signed_changelog unfixed "$(status 6.8.0-147-generic ubuntu)"
+
+reset_world
+check ubuntu_hwe_7.0.0-43 fixed "$(status 7.0.0-43-generic ubuntu)"
+check ubuntu_hwe_7.0.0-40_without_lists unknown "$(status 7.0.0-40-generic ubuntu)"
+printf '%s\n' "$old_line" > "$world/apt/linux-modules-7.0.0-40-generic"
+check ubuntu_hwe_7.0.0-40_changelog_without_fix unfixed "$(status 7.0.0-40-generic ubuntu)"
+
+# Flavours with their own ABI numbers go by the changelog.
+reset_world
+check ubuntu_azure_without_lists unknown "$(status 7.0.0-1014-azure ubuntu)"
+printf '%s\n' "$old_line" > "$world/apt/linux-modules-7.0.0-1014-azure"
+check ubuntu_azure_1014_changelog unfixed "$(status 7.0.0-1014-azure ubuntu)"
+printf '%s\n%s\n' "$old_line" "$fix_line" > "$world/apt/linux-modules-7.0.0-1020-azure"
+check ubuntu_azure_1020_changelog fixed "$(status 7.0.0-1020-azure ubuntu)"
+doc linux-modules-6.8.0-1030-aws "$fix_line"
+check ubuntu_aws_local_changelog fixed "$(status 6.8.0-1030-aws ubuntu)"
+# A signed image package's changelog can be a version bump: it shows the
+# fix when it names it and never shows its absence.
+reset_world
+doc linux-image-6.8.0-1030-aws "  * Version bump"
+check signed_bump_changelog_is_unknown unknown "$(status 6.8.0-1030-aws ubuntu)"
+doc linux-image-6.8.0-1030-aws "  * CVE-2026-99999"
+check signed_changelog_naming_the_cve fixed "$(status 6.8.0-1030-aws ubuntu)"
+
+# Upstream 6.18.
+reset_world
+check upstream_6.18.57 fixed "$(status 6.18.57 nixos)"
+check upstream_6.18.64 fixed "$(status 6.18.64-repose ubuntu)"
+check upstream_6.18.56_unknown unknown "$(status 6.18.56 ubuntu)"
+
+# Debian: 6.12 by package version, 6.1 by changelog.
+reset_world
+echo 6.12.113-1 > "$world/ver/linux-image-6.12.0-1-amd64"
+check debian_6.12.113-1 fixed "$(status 6.12.0-1-amd64 debian)"
+echo 6.12.117-1 > "$world/ver/linux-image-6.12.0-1-amd64"
+check debian_6.12.117-1 fixed "$(status 6.12.0-1-amd64 debian)"
+echo 6.12.95-1~bpo12+1 > "$world/ver/linux-image-6.12.0-1-amd64"
+check debian_backports_6.12.95 unfixed "$(status 6.12.0-1-amd64 debian)"
+reset_world
+check debian_6.1_without_changelog unknown "$(status 6.1.0-28-amd64 debian)"
+printf '%s\n' "$old_line" > "$world/apt/linux-image-6.1.0-28-amd64"
+check debian_6.1_signed_changelog_unknown unknown "$(status 6.1.0-28-amd64 debian)"
+printf '%s\n' "  * ipv4: fix (CVE-2026-99999)" > "$world/apt/linux-image-6.1.0-28-amd64"
+check debian_6.1_changelog_names_cve fixed "$(status 6.1.0-28-amd64 debian)"
+
+# ---- the line ------------------------------------------------------------
+
+check note_fixed_is_empty "" "$(kernel_note 6.8.0-149-generic ubuntu fixed)"
+n=$(kernel_note 6.8.0-147-generic ubuntu unfixed)
+check note_unfixed_says_so 1 "$(grep -c '^warning: kernel 6.8.0-147-generic does not carry the fix for CVE-2026-99999' <<< "$n")"
+check note_unfixed_6.8_remedy 1 "$(grep -c 'apt-get update && apt-get install linux-image-generic, reboot, check that uname -r shows 6.8.0-149 or later, and run this installer again to check.$' <<< "$n")"
+check note_no_full_upgrade 0 "$(grep -c full-upgrade <<< "$n")"
+n=$(kernel_note 7.0.0-40-generic ubuntu unfixed)
+check note_hwe_remedy 1 "$(grep -c 'apt-get install linux-image-generic-hwe-24.04, reboot, check that uname -r shows 7.0.0-43 or later' <<< "$n")"
+n=$(kernel_note 7.0.0-1014-azure ubuntu unfixed)
+check note_other_flavour_names_no_package 0 "$(grep -c 'apt-get install' <<< "$n")"
+check note_other_flavour_remedy 1 "$(grep -c 'install one, or a kernel whose changelog names the CVE, reboot into it, and run this installer again to check.$' <<< "$n")"
+n=$(kernel_note 7.0.0-1014-azure ubuntu unknown)
+check note_unknown_says_could_not_check 1 "$(grep -c '^warning: could not check whether kernel 7.0.0-1014-azure carries the fix' <<< "$n")"
+check note_unknown_does_not_say_unfixed 0 "$(grep -c 'does not carry' <<< "$n")"
+n=$(kernel_note 6.1.0-28-amd64 debian unknown)
+check note_debian 1 "$(grep -c "Debian 13's kernel carries it from 6.12.113-1" <<< "$n")"
+
+# ---- order ---------------------------------------------------------------
+
+# The check reads `apt-get changelog`, which needs the apt lists a fresh
+# image does not have: it comes after the package step's apt-get update
+# and after the update for a box whose packages were all present.
+packages_at=$(grep -n 'step "apt-get install' "$installer" | head -1 | cut -d: -f1)
+update_at=$(grep -n 'step "apt-get update" --' "$installer" | head -1 | cut -d: -f1)
+# shellcheck disable=SC2016 # the installer's text, not an expansion
+check_at=$(grep -n 'kernel_note=$(kernel_note ' "$installer" | head -1 | cut -d: -f1)
+check order_check_after_packages 1 "$([ -n "$check_at" ] && [ -n "$packages_at" ] && [ "$check_at" -gt "$packages_at" ] && echo 1)"
+check order_check_after_update 1 "$([ -n "$check_at" ] && [ -n "$update_at" ] && [ "$check_at" -gt "$update_at" ] && [ "$update_at" -gt "$packages_at" ] && echo 1)"
+# shellcheck disable=SC2016 # the installer's text, not an expansion
+check one_check_call 1 "$(grep -c 'kernel_fix_status "\$kver"' "$installer")"
+
+echo "$pass passed, $fail failed"
+[ "$fail" = 0 ]

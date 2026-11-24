@@ -339,6 +339,13 @@ func TestFakeOwnHostFullNamesTheFigure(t *testing.T) {
 	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
+	// "an xl", as the api says it (x86 pass 2 N6, I-1600).
+	r = call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m3", "class": "xl"})
+	wantErr(t, r, 503, "capacity")
+	r.json(t, &body)
+	if want := "your host mac-mini has 1 GB of memory free for machines, and an xl machine needs 16 GB."; !strings.HasPrefix(body.Error.Message, want) {
+		t.Fatalf("message %q, want prefix %q", body.Error.Message, want)
+	}
 }
 
 // TestFakeCapsWaitingHosts mirrors the api's cap on hosts that have not
