@@ -1,0 +1,7 @@
+1core-io-disk cold_s=54.92 warm_after_touch_s=4.22 cache_MB=199
+1core-noio-disk cold_s=47.98 warm_after_touch_s=4.18 cache_MB=199
+4core-io-disk cold_s=17.74 warm_after_touch_s=1.39 cache_MB=199
+4core-noio-disk cold_s=20.72 warm_after_touch_s=2.15 cache_MB=199
+4core-io-tmpfs cold_s=22.73 warm_after_touch_s=2.27 cache_MB=198
+1core-io-tmpfs cold_s=58.33 warm_after_touch_s=4.84 cache_MB=198
+8core-noio-disk cold_s=15.93 warm_after_touch_s=1.26 (touch only, no content change; cache hit) cache_MB=197

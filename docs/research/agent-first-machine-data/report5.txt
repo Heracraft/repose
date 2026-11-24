@@ -1,0 +1,3 @@
+other grep     n=  9125 chars= 15.23M median=   944 p90=   3870
+def-like       n=  1118 chars=  1.77M median=  1155 p90=   3466
+single-symbol  n=   190 chars=  0.26M median=   587 p90=   3446
