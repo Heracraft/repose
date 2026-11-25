@@ -10,6 +10,8 @@ You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not
 
 ## 1. Install and log in
 
+Or paste [one block](/docs/install#set-up-by-an-agent) into the coding agent on your computer, and it does this and step 4 for you.
+
 ```
 curl -fsSL https://repose.run/install.sh | sh
 repose login
