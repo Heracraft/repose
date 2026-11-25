@@ -298,3 +298,18 @@ func TestOwnedReclaim(t *testing.T) {
 	tick(30e9)
 	waitDrops(4)
 }
+
+// The owned reserve replaces the fleet's eighth (I-1628), and burst is off
+// on an owned host whatever the flag says.
+func TestOwnedDefaults(t *testing.T) {
+	c := Config{Owned: true, TotalMemBytes: 12 << 30, Burst: true}.Defaults()
+	if c.HostReserveBytes != OwnedReserveBytes || OwnedReserveBytes != 512<<20 {
+		t.Fatalf("owned reserve %d", c.HostReserveBytes)
+	}
+	if c.Burst {
+		t.Fatal("burst on an owned host")
+	}
+	if f := (Config{TotalMemBytes: 12 << 30}).Defaults(); f.HostReserveBytes != 2<<30 {
+		t.Fatalf("fleet reserve %d", f.HostReserveBytes)
+	}
+}

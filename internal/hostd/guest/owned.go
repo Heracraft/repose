@@ -22,10 +22,12 @@ import (
 
 // OwnedReserveBytes is what an owned host keeps for itself: what the
 // appliance's own processes and the kernel hold with one idle guest
-// running, measured on the lab Mac, plus a margin (DECISIONS I-1628).
-// guests.slice's MemoryMax is the host's memory less this, and so is
-// the memory each guest boots with.
-const OwnedReserveBytes = 1 << 30
+// running, measured on the lab Mac, plus a margin (DECISIONS I-1628):
+// about 300 MB measured (the appliance's processes 131 MB, kernel slab,
+// stacks and page tables 160 MB, the hypervisor's own 4 MB), 512 MiB
+// kept. guests.slice's MemoryMax is the host's memory less this, and so
+// is the memory each guest boots with.
+const OwnedReserveBytes = 512 << 20
 
 // OwnedStartFreeBytes is the free memory a guest needs to start on an
 // owned host: what FreeMemBytes reports, the host's own figure, not a
