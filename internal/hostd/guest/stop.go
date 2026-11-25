@@ -76,7 +76,15 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 		return nil, stopErr
 	}
 	if u.err != nil {
-		return nil, u.err
+		// The guest is down and its volume intact; only the snapshot is
+		// missing (a full store: the Mac appliance's root, 2026-11-25).
+		// The stop is what the user asked for and it happened, so it is
+		// ok, and the reason there is no snapshot goes back with it
+		// (DECISIONS I-1636), as a stop whose snapshot phase fails after
+		// the guest is down already ends stopped (I-158).
+		m.log(g).Warn("guest stopped without its snapshot", "event", "snapshot_fail", "code", u.err.Code)
+		res.SnapshotError = u.err.Code + ": " + u.err.Message
+		return res, nil
 	}
 	res.SnapshotId, res.BlobPath, res.Bytes, res.Sha256, res.BaseVersion = u.sr.SnapshotId, u.sr.BlobPath, u.sr.Bytes, u.sr.Sha256, u.sr.BaseVersion
 	return res, nil

@@ -4180,6 +4180,11 @@ func (x *CreateResult) GetMenuError() *Error {
 
 // base_version (I-1458): the erofs base the guest ran when the snapshot
 // was taken; empty for a Nix guest, and accepted empty for one release.
+// blob_path, bytes and sha256 when snapshot_first (I-26, I-462).
+// snapshot_error is set when the guest stopped and its snapshot could not
+// be written (`<code>: <message>`, hostd's words; DECISIONS I-1636): the
+// stop is ok, the guest is stopped with its volume intact, and there is no
+// blob. Empty from a hostd before it, which failed the whole stop instead.
 type StopResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
@@ -4187,6 +4192,7 @@ type StopResult struct {
 	Bytes         uint64                 `protobuf:"varint,3,opt,name=bytes,proto3" json:"bytes,omitempty"`
 	Sha256        string                 `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	BaseVersion   string                 `protobuf:"bytes,5,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
+	SnapshotError string                 `protobuf:"bytes,6,opt,name=snapshot_error,json=snapshotError,proto3" json:"snapshot_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4252,6 +4258,13 @@ func (x *StopResult) GetSha256() string {
 func (x *StopResult) GetBaseVersion() string {
 	if x != nil {
 		return x.BaseVersion
+	}
+	return ""
+}
+
+func (x *StopResult) GetSnapshotError() string {
+	if x != nil {
+		return x.SnapshotError
 	}
 	return ""
 }
@@ -6812,7 +6825,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\tvsock_cid\x18\x02 \x01(\rR\bvsockCid\x120\n" +
 	"\x04boot\x18\x03 \x01(\v2\x1c.repose.hostd.v1.BootTimingsR\x04boot\x125\n" +
 	"\n" +
-	"menu_error\x18\x04 \x01(\v2\x16.repose.hostd.v1.ErrorR\tmenuError\"\x9b\x01\n" +
+	"menu_error\x18\x04 \x01(\v2\x16.repose.hostd.v1.ErrorR\tmenuError\"\xc2\x01\n" +
 	"\n" +
 	"StopResult\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
@@ -6820,7 +6833,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\tblob_path\x18\x02 \x01(\tR\bblobPath\x12\x14\n" +
 	"\x05bytes\x18\x03 \x01(\x04R\x05bytes\x12\x16\n" +
 	"\x06sha256\x18\x04 \x01(\tR\x06sha256\x12!\n" +
-	"\fbase_version\x18\x05 \x01(\tR\vbaseVersion\"\x80\x01\n" +
+	"\fbase_version\x18\x05 \x01(\tR\vbaseVersion\x12%\n" +
+	"\x0esnapshot_error\x18\x06 \x01(\tR\rsnapshotError\"\x80\x01\n" +
 	"\vBuildResult\x12%\n" +
 	"\x0esystem_closure\x18\x01 \x01(\tR\rsystemClosure\x12#\n" +
 	"\rclosure_bytes\x18\x02 \x01(\x04R\fclosureBytes\x12%\n" +

@@ -956,6 +956,64 @@ vgchange -q --setautoactivation n "$vg"
 vgchange -q --metadataprofile repose-thin "$vg"
 say "event=pool_created device=$dev pv_bytes=$pv metadata_bytes=$meta"
 REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-snapshots-volume <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# The snapshot store on its own thin volume (DECISIONS I-1636): hostd's
+# --snapshot-dir, /var/lib/repose/snapshots, sat on the appliance's 2 GiB
+# root, and one large stop (1.3 GB) and four tiny ones filled it on the
+# lab Mac, after which every stop failed. After the pool is active and
+# before hostd: make vg-guests/snapshots once, thin, ext4, and mount it.
+#
+# Its size is half the volume group's at creation, rounded down to a GiB.
+# It is thin, so it costs the pool what the snapshots hold and no more,
+# and the pool's own thresholds (I-586) count it with the guests'
+# volumes. Every step is skipped when already done, and snapshots
+# already on the root are moved in, not hidden under the mount.
+set -euo pipefail
+vg=${REPOSE_SNAPSHOTS_VG:-vg-guests}
+lv=snapshots
+dir=${REPOSE_SNAPSHOTS_DIR:-/var/lib/repose/snapshots}
+say() { echo "repose-snapshots-volume: $*"; }
+
+if ! lvs "$vg/$lv" >/dev/null 2>&1; then
+  vg_bytes=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
+  gib=$((vg_bytes / 2 / 1073741824))
+  if [ "$gib" -lt 4 ]; then gib=4; fi
+  lvcreate -q -y -V "${gib}G" -T "$vg/thin" -n "$lv"
+  udevadm settle --timeout 30 || true
+  mkfs.ext4 -q -L repose-snapshots -E lazy_itable_init=1 "/dev/$vg/$lv"
+  say "event=volume_created size_gib=$gib"
+fi
+if [ "$(lvs --noheadings -o lv_active "$vg/$lv" | tr -d ' ')" != active ]; then
+  lvchange -ay "$vg/$lv"
+fi
+mkdir -p "$dir"
+if mountpoint -q "$dir"; then
+  say "event=volume_mounted_already"
+else
+  if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+    tmp=$(mktemp -d "${REPOSE_SNAPSHOTS_TMP:-/run}/repose-snapshots.XXXXXX")
+    mount -o noatime,discard "/dev/$vg/$lv" "$tmp"
+    # Copied, then checked, then deleted: a snapshot is never in neither.
+    # A copy that fails or differs leaves the root as it was, and hostd
+    # keeps writing there until the cause is fixed.
+    if ! cp -a "$dir"/. "$tmp"/ || ! diff -rq "$dir" "$tmp" >/dev/null; then
+      umount "$tmp"
+      rmdir "$tmp"
+      say "event=snapshots_not_moved reason=copy_failed"
+      exit 1
+    fi
+    n=$(find "$dir" -type f | wc -l)
+    umount "$tmp"
+    rmdir "$tmp"
+    find "$dir" -mindepth 1 -delete
+    say "event=snapshots_moved files=$n"
+  fi
+  mount -o noatime,discard "/dev/$vg/$lv" "$dir"
+  say "event=volume_mounted"
+fi
+chmod 0755 "$dir"
+REPOSE_HOST_FILE
   install_file 0755 /usr/local/lib/repose/repose-guest-loop <<'REPOSE_HOST_FILE'
 #!/bin/bash
 # Attach the file that holds vg-guests on a machine with one disk
@@ -1010,8 +1068,8 @@ REPOSE_HOST_FILE
 # update included, does not stop them, and hostd reconciles them at start.
 [Unit]
 Description=repose hostd: runs tenants' guests on this host
-Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-nftables.service
-After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service lvm2-monitor.service
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service lvm2-monitor.service
 
 [Service]
 EnvironmentFile=/etc/repose/hostd.env
@@ -1246,6 +1304,23 @@ Unit=repose-snapshot.service
 
 [Install]
 WantedBy=timers.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-snapshots-volume.service <<'REPOSE_HOST_FILE'
+# hostd's snapshot store on vg-guests/snapshots (DECISIONS I-1636).
+[Unit]
+Description=Mount the snapshot store volume on /var/lib/repose/snapshots
+After=repose-guest-pool.service repose-mac-grow.service
+Wants=repose-guest-pool.service
+Before=hostd.service
+ConditionPathExists=!/run/repose/pool-hold
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-snapshots-volume
+
+[Install]
+WantedBy=multi-user.target
 REPOSE_HOST_FILE
   install_file 0644 /etc/systemd/system/virtiofsd-auth@.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
 [Unit]
@@ -1899,7 +1974,7 @@ fi
 
 # ---- the units -----------------------------------------------------------------
 units=(systemd-networkd.service repose-nftables.service repose-fault-around.service
-  repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service
+  repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service repose-launcher-join.service
   repose-host-net.service repose-register.service hostd.service
   repose-snapshot.timer repose-hostd-update.timer)
 if [ "$dry" = 1 ]; then
@@ -1916,7 +1991,7 @@ else
     esac
   done
   systemctl start repose-fault-around.service || say "warning: fault-around could not be set (no debugfs?); see docs/ops for I-1040"
-  systemctl start repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service repose-host-net.service
+  systemctl start repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service repose-launcher-join.service repose-host-net.service
   systemctl start --no-block repose-register.service
   restart_hostd=0
   for f in "${changed[@]}"; do

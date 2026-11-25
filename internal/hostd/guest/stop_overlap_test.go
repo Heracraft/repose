@@ -86,14 +86,16 @@ func TestStopRetriesTheSnapshotFromTheStoppedVolume(t *testing.T) {
 }
 
 // TestStopReportsASnapshotThatFailsTwice: when the retry fails too, the
-// stop reports the upload failure; the guest is down and its volume kept.
+// stop is ok and reports the upload failure in snapshot_error; the guest
+// is down and its volume kept (DECISIONS I-1636; before it the whole stop
+// failed, and the api put the project in error).
 func TestStopReportsASnapshotThatFailsTwice(t *testing.T) {
 	h := newHarness(t, nil)
 	h.create(gid1)
 	h.blob.FailNext = 2
-	res := h.mustFail(cmd(&hostdv1.StopGuest{GuestId: gid1, SnapshotFirst: true}), CodeInternal)
-	if !strings.Contains(res.Error.Message, "snapshot upload failed") {
-		t.Fatalf("message %s", res.Error.Message)
+	res := h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1, SnapshotFirst: true}))
+	if sr := res.GetStop(); sr.BlobPath != "" || !strings.Contains(sr.SnapshotError, "snapshot upload failed") {
+		t.Fatalf("stop result %v", sr)
 	}
 	if h.guest(gid1).State != StateStopped {
 		t.Fatalf("state %s", h.guest(gid1).State)

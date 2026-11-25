@@ -147,6 +147,19 @@ type Fake struct {
 	// menuFailCode and menuFailMsg fail every menu (SetMenuFail).
 	menuFailCode string
 	menuFailMsg  string
+	// stopSnapErr is the snapshot_error every stop that snapshots
+	// answers instead of a blob (SetStopSnapshotError, DECISIONS I-1636).
+	stopSnapErr string
+}
+
+// SetStopSnapshotError makes every stop that would snapshot stop the
+// guest without one and answer ok with snapshot_error, as hostd does when
+// its snapshot store cannot write (DECISIONS I-1636); empty restores the
+// snapshot.
+func (f *Fake) SetStopSnapshotError(msg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stopSnapErr = msg
 }
 
 // Reboot models a host restart under hostd (DECISIONS I-645): the boot id
@@ -760,17 +773,26 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		if e != nil {
 			return e
 		}
-		var blob string
+		var blob, snapErr string
 		if c.StopGuest.SnapshotFirst && f.guestdGone(g) {
 			return unresponsive(id, g)
 		}
-		if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" {
+		f.mu.Lock()
+		failSnap := f.stopSnapErr
+		f.mu.Unlock()
+		if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" && failSnap != "" {
+			snapErr = failSnap
+		} else if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" {
 			blob = fmt.Sprintf("%s/%s/%d.img.zst", "user", g.ProjectID, time.Now().UnixNano())
 			f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}})
 		}
 		f.setState(g, "stopping", "")
 		f.setState(g, "stopped", "")
 		return ok(func(r *hostdv1.Result) {
+			if snapErr != "" {
+				r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{SnapshotError: snapErr}}
+				return
+			}
 			r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}
 		})
 	case *hostdv1.Command_DestroyGuest:

@@ -521,7 +521,12 @@ message BootTimings { uint32 volume_ms = 1; uint32 prepare_ms = 2; uint32 ready_
 message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; Error menu_error = 4; }
 // base_version (I-1458): the erofs base the guest ran when the snapshot
 // was taken; empty for a Nix guest, and accepted empty for one release.
-message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
+// blob_path, bytes and sha256 when snapshot_first (I-26, I-462).
+// snapshot_error is set when the guest stopped and its snapshot could not
+// be written (`<code>: <message>`, hostd's words; DECISIONS I-1636): the
+// stop is ok, the guest is stopped with its volume intact, and there is no
+// blob. Empty from a hostd before it, which failed the whole stop instead.
+message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; string snapshot_error = 6; }
 message BuildResult { string system_closure = 1; uint64 closure_bytes = 2; bool kernel_changed = 3; }
 message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
 // StartResult says which system a started guest runs. failed_closure is

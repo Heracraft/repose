@@ -555,6 +555,17 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   `cache_moved`. 16 GiB is two arm64 bundles of about 3 GB and a third
   being fetched during a base rotation, with room for the root image to
   grow; thin, so it costs what it holds.
+- **The snapshot store volume** (DECISIONS I-1636): `vg-guests/snapshots`,
+  thin, half the volume group's size at creation rounded down to a GiB
+  (at least 4), ext4 labelled `repose-snapshots`, made once by
+  `repose-snapshots-volume` (after the pool and `repose-mac-grow`, before
+  `hostd`, which wants it) and mounted at every boot on
+  `/var/lib/repose/snapshots`, hostd's `--snapshot-dir`. Snapshots already
+  on the root are copied onto it, compared, and only then deleted from the
+  root; a copy that fails or differs leaves them where they were and logs
+  `snapshots_not_moved`. It logs `volume_created size_gib=`,
+  `volume_mounted`, `volume_mounted_already`, `snapshots_moved files=`. The
+  x86 installer installs and starts the same unit.
 - **The kernel**: kernel.org 6.18.57 with Debian's cloud-arm64 config,
   release `6.18.57-repose`, no initramfs (`root=PARTUUID=...-8a02`,
   `console=hvc0`, the fleet's `transparent_hugepage=madvise hashdist=0
