@@ -22,7 +22,7 @@ import (
 
 // FeatureShared is the Hello feature an owned host's hostd names: its
 // guests share the host and it reports real free memory, so the api
-// places on it by that figure and not by class (I-1630). An owned host
+// places on it by that figure and not by class (the api's owned placement, PR #213). An owned host
 // without it is a hostd from before I-1626 and keeps class arithmetic.
 const FeatureShared = "shared"
 
@@ -37,7 +37,7 @@ const OwnedReserveBytes = 512 << 20
 
 // OwnedStartFreeBytes is the free memory a guest needs to start on an
 // owned host: what FreeMemBytes reports, the host's own figure, not a
-// reservation (DECISIONS I-1630, the api's scheduler.OwnedStartFreeBytes;
+// reservation (the api's scheduler.OwnedStartFreeBytes, PR #213;
 // the two are one number).
 const OwnedStartFreeBytes = 1 << 30
 

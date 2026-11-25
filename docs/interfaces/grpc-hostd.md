@@ -289,7 +289,7 @@ it. No field changes shape; what some mean there:
 
 - Hello `features` names `shared` (only with `--owned-host`): the api
   places on such a host by its reported free memory, not by class
-  (I-1630). An owned host whose hostd does not name it predates I-1626
+  (the api's owned placement). An owned host whose hostd does not name it predates I-1626
   and keeps the class arithmetic.
 
 - `class` on CreateGuest, StartGuest and Restore is still validated and
@@ -303,7 +303,7 @@ it. No field changes shape; what some mean there:
   memory.current))`, not total less the reserve less class reservations.
   A create, restore or start is refused `insufficient_capacity` when it
   is under 1 GiB, with a message that holds "not enough free memory"
-  (the api's own threshold is the same number, I-1630).
+  (the api's own threshold is the same number).
 - A guest the kernel's OOM killer ended (systemd's `Result=oom-kill` on
   `guest@<id>`, seen by the monitor or by the reconcile at hostd's start)
   is torn down and sent as `guest_state_changed {state: stopped, reason:
