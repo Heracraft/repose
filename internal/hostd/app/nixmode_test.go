@@ -29,3 +29,15 @@ func TestNixEnabled(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnedVCPUs(t *testing.T) {
+	for _, c := range []struct {
+		flag uint
+		host uint32
+		want uint32
+	}{{0, 8, 8}, {2, 8, 2}, {6, 8, 6}, {12, 8, 8}} {
+		if got := ownedVCPUs(c.flag, c.host); got != c.want {
+			t.Fatalf("ownedVCPUs(%d, %d) = %d, want %d", c.flag, c.host, got, c.want)
+		}
+	}
+}

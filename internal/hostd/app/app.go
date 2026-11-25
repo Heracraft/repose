@@ -122,6 +122,9 @@ type Options struct {
 	// and every vCPU whatever class the api sends, free page reporting
 	// is on, and guests.slice holds all but the owned reserve (I-1628).
 	OwnedHost bool
+	// OwnedVCPUs is how many vCPUs an owned host's guests boot with; 0
+	// is the rule ownedVCPUs applies (I-1626). Never more than the host's.
+	OwnedVCPUs uint
 	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
 	// offline and back after a guest's hypervisor exits. auto is on
 	// under Apple's Virtualization framework, the Mac appliance, where a
@@ -363,7 +366,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		NoAuthShare:        !o.ClaudeLoginShare,
 		FreePageReporting:  o.Park.FreePageReporting || o.OwnedHost,
 		Owned:              o.OwnedHost,
-		HostVCPUs:          hostinfo.VCPUs(),
+		HostVCPUs:          ownedVCPUs(o.OwnedVCPUs, hostinfo.VCPUs()),
 		PauseIdle:          o.PauseIdle,
 		Burst:              o.Burst,
 		BurstGate:          o.BurstGate,
@@ -741,4 +744,16 @@ func ownedSlice(ctx context.Context, r shell.Runner, total uint64, log *slog.Log
 		return
 	}
 	log.Info("guests share the host", "event", "start", "part", "owned", "slice_max_bytes", max, "reserve_bytes", uint64(guest.OwnedReserveBytes), "vcpus", hostinfo.VCPUs())
+}
+
+// ownedVCPUs is the vCPU count an owned host's guests boot with
+// (DECISIONS I-1626): the --owned-vcpus figure when set, never more than
+// the host has, else every vCPU the host has. The lab measured a build
+// spread over all eight of the M4 appliance's vCPUs slower than on two
+// (18:50Z); the default follows the lab's sweep once it is recorded.
+func ownedVCPUs(flag uint, host uint32) uint32 {
+	if flag == 0 || uint32(flag) > host {
+		return host
+	}
+	return uint32(flag)
 }

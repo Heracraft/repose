@@ -109,6 +109,7 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.DurationVar(&o.Park.RestoreTimeout, "park-restore-timeout", 180*time.Second, "longest one restore's surroundings may take at the next start; the image's own read is added from the write rate")
 	fs.StringVar(&o.CPUReset, "cpu-reset", "auto", "take each CPU offline and back after a guest's hypervisor exits: auto (on under Apple's Virtualization framework, where a powered-off guest leaves CPUs busy on the Mac; DECISIONS I-1578), on or off")
 	fs.BoolVar(&o.OwnedHost, "owned-host", false, "this host is its user's own (the Mac appliance, an x86 machine from ops/install-host-x86.sh): every guest boots with the host's placeable memory and every vCPU whatever class the api sends, guests share the host, free page reporting is on, and guests.slice keeps only the owned reserve back (DECISIONS I-1626, I-1628)")
+	fs.UintVar(&o.OwnedVCPUs, "owned-vcpus", 0, "with --owned-host, the vCPUs every guest boots with; 0 is every vCPU the host has, and more than that is taken as that (DECISIONS I-1626)")
 	fs.BoolVar(&o.Park.FreePageReporting, "free-page-reporting", false, "start guests with a balloon that returns freed pages to the host")
 	fs.BoolVar(&o.Park.ScheduledEvents, "scheduled-events", false, "park guests on Azure Scheduled Events reboot notices and approve them")
 	fs.StringVar(&o.Park.VMName, "vm-name", "", "this VM's name in Scheduled Events (default: hostname)")
