@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -686,6 +687,42 @@ func hostUnreachableLine(p *Project, own map[string]Host, now time.Time) string 
 // one the account owns, and "" while it is one of repose's: the
 // project's `host_name` (I-1392), or, for an api that does not send the
 // field, the hosts already read because one of them is quiet.
+// unsized reports whether p has no size: a machine on a host of the
+// account's own shares that host's memory and cores (DECISIONS I-1630),
+// so its class says nothing and it shows what it uses instead (I-1632).
+// An api older than the field never says so.
+func unsized(p *Project) bool { return p.Sized != nil && !*p.Sized }
+
+// usedCell is the memory an unsized machine uses while it runs, "1.4 GB
+// used", or "" when it is not running or the api has no sample yet.
+func usedCell(p *Project) string {
+	if p.State != "running" || p.MemUsedBytes <= 0 {
+		return ""
+	}
+	return humanBytes(p.MemUsedBytes) + " used"
+}
+
+// sizeCell is a machine's size where `repose ls` and `repose status`
+// print one: its class, or for an unsized machine what it uses (I-1632).
+func sizeCell(p *Project) string {
+	if unsized(p) {
+		return usedCell(p)
+	}
+	return p.Class
+}
+
+// sizeIgnored is the one stderr line for --size on a machine of a host of
+// the account's own (I-1632): accepted, so an old script keeps working,
+// and ignored, because the machine there has no size. host may be "",
+// for a host the api did not name.
+func sizeIgnored(w io.Writer, slug, host string) {
+	where := "a host of your own"
+	if host != "" {
+		where = "your host " + host
+	}
+	_, _ = fmt.Fprintf(w, "--size is ignored: %s runs on %s, where a machine has no size and uses the memory it needs.\n", slug, where)
+}
+
 func ownHostName(p *Project, own map[string]Host) string {
 	if p.HostName != "" {
 		return p.HostName

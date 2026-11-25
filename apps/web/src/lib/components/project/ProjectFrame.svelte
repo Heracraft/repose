@@ -21,7 +21,7 @@
 	import { clock } from '$lib/clock.svelte';
 	import { dateTime } from '$lib/format';
 	import { title } from '$lib/title';
-	import { abuseStopReason } from '$lib/abuse';
+	import { platformStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusOnMount } from '$lib/focus';
@@ -91,7 +91,7 @@
 		project ? projectHostLabel(project, projectsStore.list, ownHosts) : undefined
 	);
 	let errorReason = $derived(project ? errorBannerText(project) : '');
-	let abuseReason = $derived(project ? abuseStopReason(project) : '');
+	let abuseReason = $derived(project ? platformStopReason(project) : '');
 	let bootReason = $derived(project ? bootFallbackReason(project) : '');
 	let showCapacityBanner = $derived(
 		ctx.startBanner === 'capacity' &&

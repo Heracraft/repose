@@ -2,7 +2,10 @@
 # guests.slice gets everything but the host reserve: an eighth of RAM,
 # floor 2 GiB, ceiling 16 GiB, the rule of the api's scheduler.HostReserve
 # and hostd's HostReserveBytes (DECISIONS I-724). Ported from
-# nix/hosts/hostd.nix (I-1494).
+# nix/hosts/hostd.nix (I-1494). On a host its user owns, hostd
+# --owned-host sets it again at every start to all but the owned reserve
+# (DECISIONS I-1628), before any guest starts; this boot figure stands
+# only for a hostd without the flag.
 set -euo pipefail
 total=$(awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo)
 gib=$((1024 * 1024 * 1024))

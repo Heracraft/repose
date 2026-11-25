@@ -19,7 +19,9 @@
 		normalizeRemoteDisplay,
 		relativeTime,
 		sinceLabel,
+		sizeText,
 		tempLeft,
+		unsized,
 		upLabel,
 		uptime
 	} from '$lib/format';
@@ -267,6 +269,9 @@
 	 * each project's own `host_name` with no extra `/hosts` request.
 	 */
 	let showHost = $derived((projects ?? []).some((p) => !!ownHostName(p, ownHosts)));
+	// A machine on a host of the account's own has no size (I-1632): while
+	// one is listed the column is Memory, as `repose ls` names it.
+	let sizeHead = $derived((projects ?? []).some(unsized) ? 'Memory' : 'Size');
 
 	onMount(() => {
 		// The State cell's "up 3m" moves with the 30-second clock, not the poll.
@@ -839,7 +844,7 @@
 									{#if showHost}
 										<th scope="col" class="c-host">Host</th>
 									{/if}
-									<th scope="col" class="c-size">Size</th>
+									<th scope="col" class="c-size">{sizeHead}</th>
 									<th scope="col" class="c-agents">Agents</th>
 									<th scope="col" class="c-disk hk-num-col">Disk</th>
 									<th scope="col" class="c-act"><span class="hk-sr">Actions</span></th>
@@ -899,10 +904,16 @@
 													>
 												</td>
 											{/if}
-											<td class="c-size whitespace-nowrap">
-												<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
-														class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
-													>{/if}
+											<td class="c-size whitespace-nowrap" data-testid="row-size">
+												{#if unsized(p)}
+													<!-- No size on a host of the account's own: what it
+													     uses while it runs (I-1632). -->
+													<span class={sizeText(p) ? 'hk-num' : 'muted'}>{sizeText(p) || '-'}</span>
+												{:else}
+													<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
+															class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
+														>{/if}
+												{/if}
 											</td>
 											<td class="c-agents">
 												<AgentChips agents={p.signals?.agents} asked={!!questionsFor.get(p.id)} />
@@ -948,7 +959,7 @@
 												? `last run ${relativeTime(lastActive(p))}`
 												: `made ${relativeTime(p.created_at)}`
 											: '',
-										`${p.class}${classMemoryGB(p.class) ? ` · ${classMemoryGB(p.class)} GB` : ''}`,
+										sizeText(p),
 										agents.map((a) => a.agent).join(', '),
 										d ? (d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used) : ''
 									].filter(Boolean)}

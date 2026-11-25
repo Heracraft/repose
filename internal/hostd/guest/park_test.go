@@ -1065,7 +1065,7 @@ func TestImageVolumeHasRoomForAnIncompressibleImage(t *testing.T) {
 	const gib = uint64(1) << 30
 	for _, class := range []string{"small", "large", "xl"} {
 		mem := uint64(Classes[class].MemMiB) << 20
-		got := imageVolumeBytes(class)
+		got := imageVolumeBytes(Classes[class])
 		need := (mem+gib-1)/gib*gib + 288<<20
 		if got < need {
 			t.Fatalf("%s: image volume %d bytes, an incompressible image needs %d", class, got, need)

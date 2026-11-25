@@ -240,3 +240,35 @@ export function classMemoryGB(size: string): number {
 export function classVCPUs(size: string): number {
 	return ({ tiny: 0.5, small: 1, large: 2, xl: 4 } as Record<string, number>)[size] ?? 0;
 }
+
+/** Whether a project has no size: a machine on a host of the account's
+ * own shares that host and shows what it uses instead (I-1632). */
+export function unsized(p: { sized?: boolean }): boolean {
+	return p.sized === false;
+}
+
+/**
+ * A project's size where a row or a head names one: its class and the
+ * class's memory ("large · 8 GB"), or for a machine on a host of the
+ * account's own what it uses while it runs ("1.4 GB used"), and '' when
+ * it does not run (I-1632).
+ */
+export function sizeText(p: {
+	class: string;
+	sized?: boolean;
+	state: string;
+	mem_used_bytes?: number;
+}): string {
+	if (unsized(p)) {
+		return p.state === 'running' && p.mem_used_bytes ? `${bytes(p.mem_used_bytes)} used` : '';
+	}
+	const mem = classMemoryGB(p.class);
+	return mem ? `${p.class} · ${mem} GB` : p.class;
+}
+
+/** The plan memory a project's class counts, in GB: none for a machine
+ * on a host of the account's own, which the plan does not meter
+ * (I-1364, I-1632). */
+export function planMemoryGB(p: { class: string; sized?: boolean }): number {
+	return unsized(p) ? 0 : classMemoryGB(p.class);
+}

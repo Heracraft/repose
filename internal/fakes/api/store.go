@@ -73,6 +73,46 @@ type Project struct {
 	// Checkout is the checkout's name under /home/dev as a CLI last named
 	// it: "" for none, null until one has (I-1610).
 	Checkout *string `json:"checkout"`
+	// Sized is whether the class is a size: false on a host the account
+	// owns whose hostd shares, where a machine has no size (I-1630,
+	// I-1632). Fake.out sets it.
+	Sized bool `json:"sized"`
+	// MemUsedBytes is memory in use as the guest sees it, from the newest
+	// sample, on a running machine only (I-1632). Fake.out sets it.
+	MemUsedBytes int64 `json:"mem_used_bytes,omitempty"`
+}
+
+// fakeMemUsed is the memory every running fake machine reports in use,
+// 1.4 GiB, unless a test set its own (SetMemUsed).
+const fakeMemUsed = 1503238553
+
+// out is p as the api answers it: the fields it derives on every read
+// (sized and mem_used_bytes, I-1632) filled in from the record.
+func (f *Fake) out(p *project) Project {
+	o := p.Project
+	o.Sized = true
+	for _, h := range f.ownedHosts {
+		if h.ID == o.HostID && !h.oldHostd {
+			o.Sized = false
+		}
+	}
+	o.MemUsedBytes = 0
+	if o.State == "running" {
+		o.MemUsedBytes = fakeMemUsed
+		if p.memUsed > 0 {
+			o.MemUsedBytes = p.memUsed
+		}
+	}
+	return o
+}
+
+// SetMemUsed sets the memory a running project reports in use.
+func (f *Fake) SetMemUsed(projectID string, b int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p := f.projects[projectID]; p != nil {
+		p.memUsed = b
+	}
 }
 
 // Idle is Project.idle.
@@ -254,6 +294,8 @@ type userRec struct {
 type project struct {
 	Project
 	owner string
+	// memUsed is what SetMemUsed set, 0 for the default.
+	memUsed int64
 	// hostOwner is the account that owns the project's host, "" for a
 	// host repose runs (DECISIONS I-1368).
 	hostOwner   string

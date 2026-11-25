@@ -625,3 +625,50 @@ func TestAgentPromptedIsRecordedAndNotifiesNobody(t *testing.T) {
 		t.Fatalf("a delivered message queued %d notifications, want 0", n)
 	}
 }
+
+// TestOOMStopIsNamedOnAnOwnedHost: a machine the kernel stopped when a
+// host the user owns ran out of memory (hostd's `stopped` with reason
+// `oom_killed`, DECISIONS I-1626) is stopped with a last_error that says
+// which host and why, and an oom_stopped event that notifies (I-1632).
+// The same reason from a host repose runs changes the state only.
+func TestOOMStopIsNamedOnAnOwnedHost(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	stop := func(host uuid.UUID, gid uuid.UUID, id string) {
+		t.Helper()
+		ev := &hostdv1.Event{EventId: id, Ts: time.Now().Unix(), Ev: &hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: gid.String(), State: "stopped", Reason: events.OOMReason}}}
+		if !ing.OnEvent(ctx, host, ev) {
+			t.Fatal("oom stop not acked")
+		}
+	}
+
+	pid, gid, hid := seedOn(t, pool)
+	stop(hid, gid, "oom-fleet")
+	p, _ := store.GetProject(ctx, pool, pid)
+	var n int
+	_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = $2", pid, events.OOMStoppedKind).Scan(&n)
+	if p.State != "stopped" || p.LastError != nil || n != 0 {
+		t.Fatalf("fleet host: state %s, last_error %v, %d oom events; want stopped, none, 0", p.State, derefStr(p.LastError), n)
+	}
+
+	// A second database: seedOn's guest address is one per database.
+	pool = testdb.Open(t)
+	ing = events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, gid, hid = seedOn(t, pool)
+	if _, err := pool.Exec(ctx, "update hosts set name = 'mac-mini', owner_account_id = (select user_id from projects where id = $2) where id = $1", hid, pid); err != nil {
+		t.Fatal(err)
+	}
+	stop(hid, gid, "oom-own")
+	p, _ = store.GetProject(ctx, pool, pid)
+	want := "oom_stopped: stopped: your host mac-mini ran out of memory, and the kernel stopped todo to keep the others running. `repose start todo` starts it again"
+	if p.State != "stopped" || p.LastError == nil || *p.LastError != want {
+		t.Fatalf("owned host: state %s, last_error %q, want stopped, %q", p.State, derefStr(p.LastError), want)
+	}
+	var outbox int
+	_ = pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = $2", pid, events.OOMStoppedKind).Scan(&n)
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox o join events e on e.id = o.event_id where e.project_id = $1 and e.kind = $2", pid, events.OOMStoppedKind).Scan(&outbox)
+	if n != 1 || outbox == 0 {
+		t.Fatalf("oom_stopped events %d, outbox rows %d; want 1 and at least 1", n, outbox)
+	}
+}

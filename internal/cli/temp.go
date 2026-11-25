@@ -172,17 +172,26 @@ func tempLine(p *Project, now time.Time) string {
 // took it is the one fact the user cannot otherwise see (I-1584). A
 // machine on repose's servers, or one not placed yet, says nothing.
 func createdLabel(p *Project, class string) string {
+	// A machine on a host of the account's own has no size (I-1632), so
+	// its class is not named.
+	var notes []string
+	if !unsized(p) {
+		notes = append(notes, class)
+	}
 	if multiplexer.Normalize(p.Multiplexer) == multiplexer.Herdr {
-		class += ", herdr"
+		notes = append(notes, "herdr")
+	}
+	if p.ExpiresAt != nil {
+		notes = append(notes, "temporary until "+p.ExpiresAt.Local().Format("Jan 2 15:04"))
 	}
 	slug := p.Slug
 	if p.HostName != "" {
 		slug += " on " + p.HostName
 	}
-	if p.ExpiresAt == nil {
-		return fmt.Sprintf("Created %s (%s)", slug, class)
+	if len(notes) == 0 {
+		return "Created " + slug
 	}
-	return fmt.Sprintf("Created %s (%s, temporary until %s)", slug, class, p.ExpiresAt.Local().Format("Jan 2 15:04"))
+	return fmt.Sprintf("Created %s (%s)", slug, strings.Join(notes, ", "))
 }
 
 // parseKeepDuration reads `repose keep PROJECT DURATION`: a Go duration

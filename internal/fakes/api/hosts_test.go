@@ -261,7 +261,7 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
+	if want := "none of your hosts can start a machine: e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 
@@ -308,24 +308,26 @@ func TestSetOwnedHostStateLeavesRemovedHostsRemoved(t *testing.T) {
 	}
 }
 
-// TestFakeOwnHostFullNamesTheFigure: as the api (I-1586), a host of the
-// account's own takes machines to its memory line, past any CPU ratio,
-// and the one past the line is refused with the host's name, what it has
-// and what the machine needs. The fake's Mac is 24 GiB: 21 for machines.
+// TestFakeOwnHostFullNamesTheFigure: as the api (I-1586, I-1630), a host
+// of the account's own takes any number of machines of any class while
+// it reports a gigabyte free, says they have no size and what a running
+// one uses, and refuses the next once it reports less, with the host's
+// name, what it has and what a start needs.
 func TestFakeOwnHostFullNamesTheFigure(t *testing.T) {
 	f := New(Options{})
 	defer f.Close()
 	mac := f.AddOwnedHost("mac-mini")
-	for i, class := range []string{"xl", "small"} { // 20 of 21 GiB
+	for i, class := range []string{"xl", "xl", "large", "small"} { // 48 GiB of classes on a 24 GiB Mac
 		var p Project
 		r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": fmt.Sprintf("m%d", i), "class": class})
 		want(t, r, 201)
 		r.json(t, &p)
-		if p.HostID != mac {
-			t.Fatalf("%s placed on %q, want mac-mini", class, p.HostID)
+		if p.HostID != mac || p.Sized {
+			t.Fatalf("%s placed on %q sized %v, want mac-mini and no size", class, p.HostID, p.Sized)
 		}
 	}
-	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m2", "class": "tiny"})
+	f.SetOwnedHostFree("mac-mini", 900<<20)
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m4", "class": "tiny"})
 	wantErr(t, r, 503, "capacity")
 	if d := detailOf(t, r); d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "ready" {
 		t.Fatalf("detail %v", d)
@@ -336,16 +338,11 @@ func TestFakeOwnHostFullNamesTheFigure(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
+	if want := "your host mac-mini has 0.9 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
-	// "an xl", as the api says it (x86 pass 2 N6, I-1600).
-	r = call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m3", "class": "xl"})
-	wantErr(t, r, 503, "capacity")
-	r.json(t, &body)
-	if want := "your host mac-mini has 1 GB of memory free for machines, and an xl machine needs 16 GB."; !strings.HasPrefix(body.Error.Message, want) {
-		t.Fatalf("message %q, want prefix %q", body.Error.Message, want)
-	}
+	f.SetOwnedHostFree("mac-mini", 1<<30)
+	want(t, call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m5", "class": "xl"}), 201)
 }
 
 // TestFakeCapsWaitingHosts mirrors the api's cap on hosts that have not
@@ -364,4 +361,34 @@ func TestFakeCapsWaitingHosts(t *testing.T) {
 	}
 	f.SetOwnedHostState("box-1", "ready")
 	want(t, call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "box-11"}), 201)
+}
+
+// TestFakeOldHostdPlacesByClass: as the api, an owned host whose hostd
+// does not share keeps the class arithmetic and its machines keep their
+// size (I-1630): the fake's 24 GiB Mac takes 21 GiB of classes.
+func TestFakeOldHostdPlacesByClass(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	f.AddOwnedHost("mac-mini")
+	f.SetOwnedHostOldHostd("mac-mini", true)
+	for i, class := range []string{"xl", "small"} {
+		var p Project
+		r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": fmt.Sprintf("m%d", i), "class": class})
+		want(t, r, 201)
+		r.json(t, &p)
+		if !p.Sized {
+			t.Fatalf("%s on an old hostd: sized false, want true", class)
+		}
+	}
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m2", "class": "tiny"})
+	wantErr(t, r, 503, "capacity")
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	r.json(t, &body)
+	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
+		t.Fatalf("message %q, want %q", body.Error.Message, want)
+	}
 }

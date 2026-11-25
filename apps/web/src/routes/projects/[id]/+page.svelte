@@ -53,7 +53,7 @@
 	import { ApiError, errorText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
-	import { dateOnly, classMemoryGB, classVCPUs } from '$lib/format';
+	import { dateOnly, classMemoryGB, classVCPUs, unsized } from '$lib/format';
 	import { billingStore } from '$lib/billing.svelte';
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
@@ -423,47 +423,56 @@
 				bind:this={resizePanel}
 			>
 				<h2 id="resize-title" class="hk-sr">Resize the machine</h2>
-				<form
-					class="resize-form"
-					onsubmit={(e) => {
-						e.preventDefault();
-						askSize();
-					}}
-				>
-					<label for="size-to" class="hk-field-label resize-label">Size</label>
-					<select id="size-to" class="hk-select resize-select" bind:value={sizeTo} use:focusOnMount>
-						{#each CLASSES as c (c)}
-							<option value={c}>{classLabel(c)}</option>
-						{/each}
-					</select>
-					<button
-						type="submit"
-						class="hk-btn-secondary"
-						disabled={!!ctx.opBusy || !sizeTo || sizeTo === project.class || askingSize}
+				<!-- A machine on a host of the account's own has no size (I-1632):
+				     only its disk grows here. -->
+				{#if !unsized(project)}
+					<form
+						class="resize-form"
+						onsubmit={(e) => {
+							e.preventDefault();
+							askSize();
+						}}
 					>
-						{ctx.opBusy === 'stop' || ctx.opBusy === 'start' ? 'Changing…' : 'Change size'}
-					</button>
-					{#if askingSize}
-						<div class="hk-confirm resize-ask" data-testid="confirm-size">
-							<p>
-								Changing {project.slug} from {project.class} to {sizeTo} stops it, which ends every process
-								on it, agents included, then starts it again.
-							</p>
-							<div class="hk-confirm-actions">
-								<button
-									type="button"
-									class="hk-btn-danger hk-btn-sm"
-									onclick={() => void changeSize()}>Stop, change and start</button
-								>
-								<button
-									type="button"
-									class="hk-btn-ghost hk-btn-sm"
-									onclick={() => (askingSize = false)}>Keep it running</button
-								>
+						<label for="size-to" class="hk-field-label resize-label">Size</label>
+						<select
+							id="size-to"
+							class="hk-select resize-select"
+							bind:value={sizeTo}
+							use:focusOnMount
+						>
+							{#each CLASSES as c (c)}
+								<option value={c}>{classLabel(c)}</option>
+							{/each}
+						</select>
+						<button
+							type="submit"
+							class="hk-btn-secondary"
+							disabled={!!ctx.opBusy || !sizeTo || sizeTo === project.class || askingSize}
+						>
+							{ctx.opBusy === 'stop' || ctx.opBusy === 'start' ? 'Changing…' : 'Change size'}
+						</button>
+						{#if askingSize}
+							<div class="hk-confirm resize-ask" data-testid="confirm-size">
+								<p>
+									Changing {project.slug} from {project.class} to {sizeTo} stops it, which ends every
+									process on it, agents included, then starts it again.
+								</p>
+								<div class="hk-confirm-actions">
+									<button
+										type="button"
+										class="hk-btn-danger hk-btn-sm"
+										onclick={() => void changeSize()}>Stop, change and start</button
+									>
+									<button
+										type="button"
+										class="hk-btn-ghost hk-btn-sm"
+										onclick={() => (askingSize = false)}>Keep it running</button
+									>
+								</div>
 							</div>
-						</div>
-					{/if}
-				</form>
+						{/if}
+					</form>
+				{/if}
 				{#if largerSizes.length === 0}
 					<p class="resize-note resize-disk">
 						{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.

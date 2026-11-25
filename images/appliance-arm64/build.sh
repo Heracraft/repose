@@ -174,7 +174,7 @@ ln -sf ../run/systemd/resolve/stub-resolv.conf "$root/etc/resolv.conf"
 chroot "$root" systemctl enable systemd-networkd.service systemd-resolved.service systemd-timesyncd.service \
   hostd.service repose-guests-slice.service repose-guest-pool.service repose-host-net.service \
   repose-launcher-join.service repose-register.service repose-guest-park.service \
-  repose-snapshot.timer repose-hostd-update.timer repose-fault-around.service repose-nftables.service \
+  repose-snapshot.timer repose-hostd-update.timer repose-fault-around.service repose-nftables.service repose-zram.service \
   repose-guest-vg-init.service repose-mac-grow.service repose-mac-trim.service repose-images-volume.service repose-snapshots-volume.service \
   fstrim.timer >/dev/null
 chroot "$root" systemctl disable nftables.service >/dev/null 2>&1 || true
