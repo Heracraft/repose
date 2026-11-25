@@ -1769,6 +1769,13 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 	for i, h := range live {
 		why[i] = h.Name + " " + e.ownHostWhy(h, p.Class, true, rooms)
 	}
+	for _, h := range live {
+		if r, ok := rooms[h.ID]; ok && !r.Shares {
+			// A host whose hostd does not share yet places by class
+			// (I-1630), so the sentence names the class it asked for.
+			return "none of your hosts can take " + aClass(p.Class) + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
+		}
+	}
 	return "none of your hosts can start a machine: " + strings.Join(why, "; "), detail
 }
 
@@ -1798,29 +1805,41 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uu
 		return "is being removed, so nothing can be placed on it"
 	}
 	if r, ok := rooms[h.ID]; ok {
-		if why := roomWhy(r, short); why != "" {
+		if why := roomWhy(r, class, short); why != "" {
 			return why
 		}
 	}
 	if short {
 		return "has no room"
 	}
+	if r, ok := rooms[h.ID]; ok && !r.Shares {
+		return "has no room for " + aClass(class) + " machine"
+	}
 	return "has no room for a machine"
 }
 
-// roomWhy is the figure that keeps a machine off a ready host of the
-// user's own with room r, as the words after the host's name, or ""
-// when neither memory nor disk is short (a host that missed a
+// roomWhy is the figure that keeps a machine of class off a ready host
+// of the user's own with room r, as the words after the host's name, or
+// "" when neither memory nor disk is short (a host that missed a
 // heartbeat, or one at its guest slots), which "has no room" still
-// covers. Memory first: it is what the user frees by stopping a
-// machine. On a host the user owns a machine has no size (I-1630), so
-// the memory is what the host reports free against
-// scheduler.OwnedStartFreeBytes, never a class.
-func roomWhy(r scheduler.Room, short bool) string {
+// covers. Memory first: it is what the user frees by stopping a machine.
+// On a host that shares (I-1630) a machine has no size, so the memory is
+// what the host reports free against scheduler.OwnedStartFreeBytes and no
+// class is named; on an owned host whose hostd does not share yet it is
+// placement's class figure, as before (I-1586).
+func roomWhy(r scheduler.Room, class string, short bool) string {
+	need := scheduler.OwnedStartFreeBytes
+	if !r.Shares {
+		need = scheduler.ClassRAM(class)
+	}
 	switch {
-	case r.FreeBytes < scheduler.OwnedStartFreeBytes:
+	case r.FreeBytes < need:
 		if short {
 			return "has " + gbText(r.FreeBytes) + " free"
+		}
+		if !r.Shares {
+			return "has " + gbText(r.FreeBytes) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
+				". A machine holds its memory while it runs, so stopping one frees room for it"
 		}
 		return ownMemoryWhy(r.FreeBytes)
 	case r.PoolUnavailable:
@@ -1832,6 +1851,14 @@ func roomWhy(r scheduler.Room, short bool) string {
 		return "has " + gbText(r.PoolFreeBytes) + " of disk free, and a new machine needs " + gbText(r.PoolNeedBytes) + " free"
 	}
 	return ""
+}
+
+// aClass is a size class with its article: "a small", "an xl".
+func aClass(class string) string {
+	if class == "xl" {
+		return "an xl"
+	}
+	return "a " + class
 }
 
 // ownMemoryWhy is the words after a host's name when a host the user

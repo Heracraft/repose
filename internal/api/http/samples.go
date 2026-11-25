@@ -46,7 +46,8 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	since := time.Now().Add(-win.span)
 
-	// A machine on a host its account owns has no size (I-1630): it may
+	// A machine on a host its account owns, whose hostd shares it, has no
+	// size (I-1630): it may
 	// use every vCPU and all the memory of the host, so its CPU is a
 	// share of the host's vCPUs and its memory is drawn against the
 	// host's (I-1632). ownMilli is null on a host repose runs, where each
@@ -56,7 +57,7 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	if p.HostID != nil {
 		var hv int64
 		var hm int64
-		err := s.d.Pool.QueryRow(ctx, "select vcpus, mem_bytes from hosts where id = $1 and owner_account_id = $2", *p.HostID, p.UserID).Scan(&hv, &hm)
+		err := s.d.Pool.QueryRow(ctx, "select vcpus, mem_bytes from hosts where id = $1 and owner_account_id = $2 and $3 = any(features)", *p.HostID, p.UserID, scheduler.SharedFeature).Scan(&hv, &hm)
 		switch {
 		case err == nil && hv > 0 && hm > 0:
 			m := hv * 1000

@@ -13,9 +13,11 @@
 // plan sells no fleet memory is never placed on a host repose runs. That
 // term is `ownedSQL` and the caller supplies it as a Target.
 //
-// Since DECISIONS I-1630 an owned host is not placed by class at all: its
-// machines share the host's memory, so a machine goes there when the host
-// reports at least OwnedStartFreeBytes free (memSQL). The fleet's terms,
+// Since DECISIONS I-1630 an owned host whose hostd shares (SharedFeature)
+// is not placed by class at all: its machines share the host's memory, so
+// a machine goes there when the host reports at least OwnedStartFreeBytes
+// free (memSQL). An owned host whose hostd does not share keeps the class
+// arithmetic until it updates. The fleet's terms,
 // reserve and class reservations included, are unchanged.
 package scheduler
 
@@ -175,20 +177,34 @@ const hostReserveSQL = `least(greatest(h.mem_bytes / 8, 2::bigint<<30), 16::bigi
 // places a machine hostd then refuses for memory.
 const OwnedStartFreeBytes int64 = 1 << 30
 
+// SharedFeature is the Hello feature a hostd names when it runs an owned
+// host whose machines share it (DECISIONS I-1626, I-1630): guests boot
+// at the host's size, its admission is OwnedStartFreeBytes and its
+// free_mem_bytes is real free memory. An owned host whose hostd does not
+// name it (one from before I-1626, or not started --owned-host) still
+// boots each guest at its class and admits by class, so placement keeps
+// the class arithmetic there.
+const SharedFeature = "shared"
+
+// sharesSQL is true for a host h that is owned and shares (I-1630).
+const sharesSQL = `(h.owner_account_id is not null and '` + SharedFeature + `' = any(h.features))`
+
 // fleetFreeSQL is the memory a host repose runs has for one more guest:
 // what it reports free, and what is left below its reserve after the
 // class reservations of the guests placed on it (DECISIONS I-724, R3-2).
 const fleetFreeSQL = `least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0))`
 
 // freeSQL is the free memory placement orders by and reports: what an
-// owned host reports (I-1630), and fleetFreeSQL for a host repose runs.
-const freeSQL = `(case when h.owner_account_id is not null then h.free_mem_bytes else ` + fleetFreeSQL + ` end)`
+// owned host that shares reports (I-1630), and fleetFreeSQL for any other
+// host, an owned one whose hostd does not share included.
+const freeSQL = `(case when ` + sharesSQL + ` then h.free_mem_bytes else ` + fleetFreeSQL + ` end)`
 
 // memSQL is the memory condition for hosts h, with $3 the class memory:
-// an owned host takes a machine while it reports OwnedStartFreeBytes free
-// and no class is asked of it (I-1630); a host repose runs takes the
+// an owned host that shares takes a machine while it reports
+// OwnedStartFreeBytes free and no class is asked of it (I-1630); any other
+// host, an owned one whose hostd does not share included, takes the
 // class's memory under its reserve, as it always has.
-var memSQL = `(case when h.owner_account_id is not null
+var memSQL = `(case when ` + sharesSQL + `
 		        then h.free_mem_bytes >= ` + strconv.FormatInt(OwnedStartFreeBytes, 10) + `
 		        else ` + fleetFreeSQL + ` >= $3 end)`
 
@@ -466,7 +482,7 @@ func Freeing(ctx context.Context, q interface {
 		   and `+ownedSQL+`
 		   and `+runtimeSQL+`
 		   and `+pinSQL+`
-		   and (h.owner_account_id is not null
+		   and (`+sharesSQL+`
 		        or least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3))`,
 		t.args(now, class, holdBytes, volumeBytes)...).Scan(&ok)
 	return ok, err
@@ -490,6 +506,10 @@ type Room struct {
 	PoolFreeBytes, PoolNeedBytes int64
 	// PoolUnavailable is hosts.pool_unavailable (I-644).
 	PoolUnavailable bool
+	// Shares is whether the host's hostd names SharedFeature: its
+	// machines have no size and FreeBytes is placed against
+	// OwnedStartFreeBytes; without it, against the class (I-1630).
+	Shares bool
 }
 
 // OwnedRooms is Room for every host account owns, by host id, computed
@@ -505,7 +525,8 @@ func OwnedRooms(ctx context.Context, q interface {
 		       case when h.pool_bytes > 0
 		            then h.pool_bytes / 100 * (100 - `+strconv.Itoa(PlacementPoolPct)+`) + $2
 		            else $3 end,
-		       h.pool_unavailable
+		       h.pool_unavailable,
+		       `+sharesSQL+`
 		  from hosts h
 		  left join host_reservations r on r.host_id = h.id
 		 where h.owner_account_id = $1`, account, holdBytes, volumeBytes)
@@ -517,7 +538,7 @@ func OwnedRooms(ctx context.Context, q interface {
 	for rows.Next() {
 		var id uuid.UUID
 		var r Room
-		if err := rows.Scan(&id, &r.FreeBytes, &r.PoolFreeBytes, &r.PoolNeedBytes, &r.PoolUnavailable); err != nil {
+		if err := rows.Scan(&id, &r.FreeBytes, &r.PoolFreeBytes, &r.PoolNeedBytes, &r.PoolUnavailable, &r.Shares); err != nil {
 			return nil, err
 		}
 		out[id] = r

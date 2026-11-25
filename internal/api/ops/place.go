@@ -145,7 +145,7 @@ func roomAppeared(ctx context.Context, tx db.Tx, p *store.Project, pin uuid.UUID
 		if h.State != "ready" || h.Draining || (pin != uuid.Nil && h.ID != pin) {
 			continue
 		}
-		if r, ok := rooms[h.ID]; ok && roomWhy(r, false) == "" {
+		if r, ok := rooms[h.ID]; ok && roomWhy(r, p.Class, false) == "" {
 			return true
 		}
 	}

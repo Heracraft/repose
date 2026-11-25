@@ -74,7 +74,8 @@ type Project struct {
 	// it: "" for none, null until one has (I-1610).
 	Checkout *string `json:"checkout"`
 	// Sized is whether the class is a size: false on a host the account
-	// owns, where a machine has no size (I-1630, I-1632). Fake.out sets it.
+	// owns whose hostd shares, where a machine has no size (I-1630,
+	// I-1632). Fake.out sets it.
 	Sized bool `json:"sized"`
 	// MemUsedBytes is memory in use as the guest sees it, from the newest
 	// sample, on a running machine only (I-1632). Fake.out sets it.
@@ -89,7 +90,12 @@ const fakeMemUsed = 1503238553
 // (sized and mem_used_bytes, I-1632) filled in from the record.
 func (f *Fake) out(p *project) Project {
 	o := p.Project
-	o.Sized = o.HostName == ""
+	o.Sized = true
+	for _, h := range f.ownedHosts {
+		if h.ID == o.HostID && !h.oldHostd {
+			o.Sized = false
+		}
+	}
 	o.MemUsedBytes = 0
 	if o.State == "running" {
 		o.MemUsedBytes = fakeMemUsed

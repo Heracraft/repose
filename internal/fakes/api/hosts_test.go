@@ -362,3 +362,33 @@ func TestFakeCapsWaitingHosts(t *testing.T) {
 	f.SetOwnedHostState("box-1", "ready")
 	want(t, call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "box-11"}), 201)
 }
+
+// TestFakeOldHostdPlacesByClass: as the api, an owned host whose hostd
+// does not share keeps the class arithmetic and its machines keep their
+// size (I-1630): the fake's 24 GiB Mac takes 21 GiB of classes.
+func TestFakeOldHostdPlacesByClass(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	f.AddOwnedHost("mac-mini")
+	f.SetOwnedHostOldHostd("mac-mini", true)
+	for i, class := range []string{"xl", "small"} {
+		var p Project
+		r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": fmt.Sprintf("m%d", i), "class": class})
+		want(t, r, 201)
+		r.json(t, &p)
+		if !p.Sized {
+			t.Fatalf("%s on an old hostd: sized false, want true", class)
+		}
+	}
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "m2", "class": "tiny"})
+	wantErr(t, r, 503, "capacity")
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	r.json(t, &body)
+	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
+		t.Fatalf("message %q, want %q", body.Error.Message, want)
+	}
+}

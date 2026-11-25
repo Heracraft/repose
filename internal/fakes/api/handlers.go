@@ -562,7 +562,7 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	ownHostID, e := f.placeNew(u, placement, pin)
+	ownHostID, e := f.placeNew(u, body.Class, placement, pin)
 	if e != nil {
 		return e
 	}
@@ -1212,7 +1212,7 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 	// A machine on a host of the account's own has no size: its figures
 	// are the host's, and what it uses is the project's own (I-1632).
 	for _, h := range f.ownedHosts {
-		if h.ID == p.HostID && h.MemBytes > 0 && h.VCPUs > 0 {
+		if h.ID == p.HostID && !h.oldHostd && h.MemBytes > 0 && h.VCPUs > 0 {
 			vcpus, mem = float64(h.VCPUs), h.MemBytes
 			used = f.out(p).MemUsedBytes
 		}

@@ -160,7 +160,8 @@ func TestProjectCarriesRootFilesystem(t *testing.T) {
 	}
 }
 
-// TestOwnHostMachineHasNoSize: a machine on a host its account owns is
+// TestOwnHostMachineHasNoSize: a machine on a host its account owns, whose
+// hostd shares it, is
 // `sized: false` and reports what it uses (`mem_used_bytes`, running
 // only), and its samples are drawn against the host's vCPUs and memory,
 // since it may use all of them (DECISIONS I-1630, I-1632). The same
@@ -200,6 +201,11 @@ func TestOwnHostMachineHasNoSize(t *testing.T) {
 	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1, vcpus = 16, mem_bytes = 24::bigint << 30 where id = $2", uid, e.h.HostID); err != nil {
 		t.Fatal(err)
 	}
+	// Owned but its hostd does not share yet: still sized (I-1630).
+	if b := get(); b["sized"] != true {
+		t.Fatalf("on an owned host that does not share: sized %v, want true", b["sized"])
+	}
+	shareHost(t, e)
 	b := get()
 	if b["sized"] != false || b["mem_used_bytes"] != float64(3<<30) || b["class"] != "large" {
 		t.Fatalf("on the account's own host: sized %v, mem_used_bytes %v, class %v; want false, 3 GiB, large kept", b["sized"], b["mem_used_bytes"], b["class"])

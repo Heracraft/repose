@@ -20,8 +20,7 @@ import (
 // refused for memory, and a heartbeat that reports room before the
 // refusal's figures are read. The sentence used to fall back to "has no
 // room for a small machine", naming no figure and no longer true; the
-// placement now takes the room that appeared. Since I-1630 the figure is
-// the host's reported free memory against 1 GB, with no class. Without the heartbeat the
+// placement now takes the room that appeared. Without the heartbeat the
 // refusal names the figure. The fake host's own heartbeat is an hour
 // apart, so only the hook moves free_mem_bytes.
 func TestOwnRefusalReadsTheRoomAgain(t *testing.T) {
@@ -43,7 +42,7 @@ func TestOwnRefusalReadsTheRoomAgain(t *testing.T) {
 	for _, pin := range []uuid.UUID{uuid.Nil, h.HostID} {
 		_, err := place(pin)
 		var refused *ops.PlacementRefusal
-		if !errors.As(err, &refused) || !strings.HasPrefix(refused.Message, "your host e2e-x86-a has 0 GB of memory free, and a machine starts there when it has at least 1 GB free") {
+		if !errors.As(err, &refused) || !strings.HasPrefix(refused.Message, "your host e2e-x86-a has 0 GB of memory free for machines, and a small machine needs 4 GB") {
 			t.Fatalf("pin %v, full host: %v, want the figure", pin, err)
 		}
 	}

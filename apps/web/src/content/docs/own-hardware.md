@@ -30,7 +30,7 @@ A machine starts while the host has at least 1 GB free. Otherwise the start or t
 
 If memory runs out even so, the kernel stops one machine, the one started most recently, and never repose's own services. Its disk is kept. `repose ls`, `repose status` and the project's page say which machine stopped and why, you get a notification, and `repose start` starts it again.
 
-`repose ls` and `repose status` show what each machine uses, under MEMORY, and the dashboard shows the same. `--memory` at `repose host add` changes the virtual machine's share. `--size` on `repose run`, `repose sync` and `repose resize` is accepted and changes nothing on your hardware; the command says so in one line.
+`repose ls` and `repose status` show what each machine uses, under MEMORY, and the dashboard shows the same. A host still running an older version of repose's software places machines by size, as before, and they keep showing their size until it is updated. `--memory` at `repose host add` changes the virtual machine's share. `--size` on `repose run`, `repose sync` and `repose resize` is accepted and changes nothing on your hardware; the command says so in one line.
 
 ## What an x86 box needs
 

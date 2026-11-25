@@ -123,6 +123,50 @@ type ownedHostRec struct {
 	// places a machine on an owned host against (DECISIONS I-1630); -1
 	// is the fake's default, half the host's memory.
 	freeMem int64
+	// oldHostd is a host whose hostd does not share (no "shared" Hello
+	// feature): the api places there by class, as before I-1630.
+	oldHostd bool
+}
+
+// SetOwnedHostOldHostd makes the account's live host called name one
+// whose hostd does not share, or one that does again.
+func (f *Fake) SetOwnedHostOldHostd(name string, old bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range f.ownedHosts {
+		if h.Name == name && h.State != "retired" && h.State != "lost" {
+			h.oldHostd = old
+		}
+	}
+}
+
+// room is what placement counts free on h and what a machine of class
+// needs there: the reported free against a gigabyte on a host that
+// shares, the class arithmetic on one that does not (I-1630).
+func (f *Fake) room(h *ownedHostRec, class string) (free, need int64) {
+	if h.oldHostd {
+		return f.ownedHostFree(h), int64(classGB[class]) << 30
+	}
+	return h.reportedFree(), ownedStartFreeBytes
+}
+
+// ownedHostFree is the memory the api's placement counts free on an
+// owned host whose hostd does not share: its memory, less the eighth it
+// keeps (never under 2 GiB, never over 16), less the class memory of
+// every machine on it that holds memory.
+func (f *Fake) ownedHostFree(h *ownedHostRec) int64 {
+	reserve := min(max(h.MemBytes/8, 2<<30), 16<<30)
+	free := h.MemBytes - reserve
+	for _, p := range f.projects {
+		if p.destroyed || p.HostID != h.ID {
+			continue
+		}
+		switch p.State {
+		case "creating", "building", "starting", "running", "stopping", "restoring":
+			free -= int64(classGB[p.Class]) << 30
+		}
+	}
+	return max(free, 0)
 }
 
 // reportedFree is what the host reports free: freeMem once a test has
@@ -530,7 +574,7 @@ func (f *Fake) ownedHostName(hostID string) string {
 //
 // pin is the host the create named (`host`, I-1584): that host when it
 // is online, else a refusal about it alone, never another host.
-func (f *Fake) placeNew(u *userRec, placement string, pin *ownedHostRec) (string, *apiError) {
+func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) (string, *apiError) {
 	if placement == "hosted" {
 		return "", nil
 	}
@@ -541,10 +585,10 @@ func (f *Fake) placeNew(u *userRec, placement string, pin *ownedHostRec) (string
 	if pin != nil {
 		// The pinned host alone, under the same memory term (I-1586,
 		// I-1630).
-		if pin.State == "ready" && pin.reportedFree() >= ownedStartFreeBytes {
+		if free, need := f.room(pin, class); pin.State == "ready" && free >= need {
 			return pin.ID, nil
 		}
-		return "", errf("capacity", "your host %s %s", pin.Name, f.ownHostWhy(pin, false)).withDetail(map[string]any{
+		return "", errf("capacity", "your host %s %s", pin.Name, f.ownHostWhy(pin, class, false)).withDetail(map[string]any{
 			"reason": "no_own_host", "host": pin.Name, "host_state": pin.State, "hosted_allowed": hostedAllowed})
 	}
 	var own []*ownedHostRec
@@ -555,7 +599,7 @@ func (f *Fake) placeNew(u *userRec, placement string, pin *ownedHostRec) (string
 			// it reports free against a gigabyte and no class (I-1630),
 			// and no CPU term (I-1586): the most free first, as the
 			// scheduler orders.
-			if free := h.reportedFree(); h.State == "ready" && free >= ownedStartFreeBytes && free > bestFree {
+			if free, need := f.room(h, class); h.State == "ready" && free >= need && free > bestFree {
 				best, bestFree = h.ID, free
 			}
 			own = append(own, h)
@@ -567,13 +611,19 @@ func (f *Fake) placeNew(u *userRec, placement string, pin *ownedHostRec) (string
 	if len(own) == 0 {
 		return "", nil
 	}
-	msg := "your host " + own[0].Name + " " + f.ownHostWhy(own[0], false)
+	msg := "your host " + own[0].Name + " " + f.ownHostWhy(own[0], class, false)
 	if len(own) > 1 {
 		why := make([]string, len(own))
 		for i, h := range own {
-			why[i] = h.Name + " " + f.ownHostWhy(h, true)
+			why[i] = h.Name + " " + f.ownHostWhy(h, class, true)
 		}
 		msg = "none of your hosts can start a machine: " + strings.Join(why, "; ")
+		for _, h := range own {
+			if h.oldHostd {
+				msg = "none of your hosts can take " + aClass(class) + " machine (" + gbText(int64(classGB[class])<<30) + "): " + strings.Join(why, "; ")
+				break
+			}
+		}
 	}
 	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
 		"reason": "no_own_host", "host": own[0].Name, "host_state": own[0].State, "hosted_allowed": hostedAllowed})
@@ -601,7 +651,7 @@ func (f *Fake) hostPin(u *userRec, host *string, placement string) (*ownedHostRe
 
 // ownHostWhy is the api's ops.Engine.ownHostWhy: why one host took no
 // placement, as the words after its name.
-func (f *Fake) ownHostWhy(h *ownedHostRec, short bool) string {
+func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
 	switch h.State {
 	case "registering":
 		return "has not registered yet"
@@ -620,15 +670,22 @@ func (f *Fake) ownHostWhy(h *ownedHostRec, short bool) string {
 	// The api names the figure that refused (I-1586); the fake has no
 	// disk, so memory is the only one it can. Since I-1630 that is what
 	// the host reports free against a gigabyte, with no class.
-	free := h.reportedFree()
-	if free >= ownedStartFreeBytes {
+	free, need := f.room(h, class)
+	if free >= need {
 		if short {
 			return "has no room"
+		}
+		if h.oldHostd {
+			return "has no room for " + aClass(class) + " machine"
 		}
 		return "has no room for a machine"
 	}
 	if short {
 		return "has " + gbText(free) + " free"
+	}
+	if h.oldHostd {
+		return "has " + gbText(free) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
+			". A machine holds its memory while it runs, so stopping one frees room for it"
 	}
 	return "has " + gbText(max(free, 0)) + " of memory free, and a machine starts there when it has at least " + gbText(ownedStartFreeBytes) +
 		" free. Stopping a machine frees the memory it uses"
@@ -637,6 +694,14 @@ func (f *Fake) ownHostWhy(h *ownedHostRec, short bool) string {
 // ownedStartFreeBytes is scheduler.OwnedStartFreeBytes, the free memory
 // an owned host must report for a machine to go there (I-1630).
 const ownedStartFreeBytes int64 = 1 << 30
+
+// aClass is a size class with its article, as the api's: "a small", "an xl".
+func aClass(class string) string {
+	if class == "xl" {
+		return "an xl"
+	}
+	return "a " + class
+}
 
 // gbText is the api's ops.gbText: GiB, whole or to one decimal.
 func gbText(b int64) string {
