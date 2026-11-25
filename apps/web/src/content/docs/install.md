@@ -51,6 +51,54 @@ repose login
 
 [`repose login --status`](/docs/cli#account) shows the account you're logged in as. You stay logged in until `repose logout`. Starting a machine needs a [plan](/docs/billing).
 
+## Set up by an agent
+
+Paste this into the coding agent on the computer you work on, in your project's folder:
+
+```text
+Set up repose for me.
+Instructions: https://repose.run/docs/install#set-up-by-an-agent
+
+It gives each of my projects its own Linux machine, where coding
+agents keep working after I close my laptop. Do this in order, and
+stop at any step that fails, telling me what it printed:
+
+1. If `repose --version` fails, install the CLI with
+   `curl -fsSL https://repose.run/install.sh | sh`. Until I open a
+   new terminal, it is at ~/.local/bin/repose.
+2. Run `repose login --status`. If I am not logged in, run
+   `repose login` in the background, show me the address and the
+   code it prints, and wait for me to say I have signed in. Then run
+   `repose login --status` again. If it says I have no plan, give me
+   https://repose.run/billing and wait for me.
+3. Only if I asked for repose to run my machines on this computer (a
+   Mac with an M3 chip or newer, or a Linux x86_64 box with 16 GB of
+   memory): run `repose host add` here and do what it prints. If
+   sudo asks for my password, give me the command to run in my own
+   terminal. Never use `--join`, never print or read the files named
+   `join-*` under ~/.config/repose, and never ask me to paste an
+   install line from the dashboard: each of those holds a key that
+   must stay out of this conversation.
+4. In the folder of the project I want on repose (this one, unless I
+   named another), run `repose run -d`. It copies the folder,
+   uncommitted work included, to a new machine. Never run it in my
+   home folder.
+5. Tell me to run `repose attach NAME` in a terminal of my own, with
+   the name `repose run` printed, to log Claude Code in on the
+   machine once. That login is never copied from this computer.
+
+Do not run `repose run` without `-d`: it attaches to a terminal and
+waits.
+```
+
+Signing in is yours: the agent shows you an address and a code, and you approve it in your browser. The sign-in page is on `accounts.herakraft.co`, repose's login service.
+
+### What stays out of the conversation
+
+Nothing the agent reads holds a key. `repose login` keeps your login in `~/.config/repose`, and the agent only ever sees the code you approve. On a Mac, `repose host add` hands the host's key to the install inside the same process. On an x86 box it writes the key to `~/.config/repose/join-NAME`, readable by you alone, and prints an install line that names the file; [Your own hardware](/docs/own-hardware#adding-it) has the rest.
+
+The install line the dashboard's **Add a host** shows carries the key itself. Paste it into a terminal, not into an agent.
+
 ## Shell completion
 
 `repose completion SHELL` prints a script that completes commands, flags and project names. To load it in every new shell:
