@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
@@ -69,16 +70,10 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 		return hostErr(err, name)
 	}
 	if e.JSON {
-		return writeJSONOut(e.Out, h)
+		return hostAddJSON(ctx, e, h, o)
 	}
 	if onAppleSilicon() {
-		argument := ""
-		if h.Install != nil {
-			argument = h.Install.Argument
-		}
-		if argument == "" {
-			argument = encodeTokenBundle(h.JoinToken)
-		}
+		argument := joinArgument(h)
 		_, _ = fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
 		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
 			return err
@@ -119,6 +114,87 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 	}
 	_, _ = fmt.Fprintln(e.ErrOut, hostAddedLine(h, installed))
 	return nil
+}
+
+// joinArgument is the argument the install takes: the bundle the api
+// composed, or, from an api older than I-1380, the token made into one.
+func joinArgument(h *Host) string {
+	if h.Install != nil && h.Install.Argument != "" {
+		return h.Install.Argument
+	}
+	if h.JoinToken == "" {
+		return ""
+	}
+	return encodeTokenBundle(h.JoinToken)
+}
+
+// hostAddJSON is `repose host add --json` (ENG-102, DECISIONS I-1614).
+// --json is the flag an agent adds so it can parse the answer, and the
+// answer then lands in the agent's transcript, so it never carries the
+// join token or the argument, whose bundle holds a WireGuard private
+// key. On a Mac the install runs here as it does without --json, its
+// progress on stderr, and the host follows on stdout. Anywhere else the
+// argument goes into a file only its owner reads, and the output names
+// the file instead.
+func hostAddJSON(ctx context.Context, e *Env, h *Host, o applianceOptions) error {
+	argument := joinArgument(h)
+	out := *h
+	out.JoinToken = ""
+	out.Install = nil
+	if onAppleSilicon() {
+		_, _ = fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
+		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
+			return err
+		}
+		return writeJSONOut(e.Out, out)
+	}
+	if argument == "" {
+		return exitf(ExitGeneric, "%s was added, but this repose api sent nothing to install it with.", h.Name)
+	}
+	path, err := writeJoinFile(h.Name, argument)
+	if err != nil {
+		return exitf(ExitGeneric, "%s was added, but its join file could not be written: %v", h.Name, err)
+	}
+	out.Install = &Install{JoinFile: path}
+	if h.Install != nil {
+		out.Install.URL = h.Install.URL
+	}
+	if onLinuxX86() {
+		out.Install.Command = hostInstallX86FromFile(path)
+	}
+	return writeJSONOut(e.Out, out)
+}
+
+// writeJoinFile keeps a host's join argument in the config directory,
+// 0600, so that it reaches the install without being printed (ENG-102,
+// ENG-42). The x86 installer deletes the file once it has read it.
+func writeJoinFile(name, argument string) (string, error) {
+	dir, err := configDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "join-"+name)
+	// A file left by an earlier add of the same name is replaced, and
+	// made again rather than rewritten so that it is 0600 whatever it
+	// was before.
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString(argument + "\n"); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	return path, f.Close()
+}
+
+// hostInstallX86FromFile is the x86 install step with the argument in a
+// file this machine already has (DECISIONS I-1614).
+func hostInstallX86FromFile(path string) string {
+	return "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file " + shQuote(path)
 }
 
 // hostInstallX86 is the step `repose host add` prints on a Linux x86

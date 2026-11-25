@@ -71,7 +71,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return HostAddCmd(cmd.Context(), e, name, ao)
 		},
 	}
-	add.Flags().BoolVar(&g.json, "json", false, "print every field, the install step and the token included, as JSON")
+	add.Flags().BoolVar(&g.json, "json", false, "print the host as JSON; the join argument goes to a file, never to the output")
 	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere; `-` reads it from standard input")
 	add.Flags().StringVar(&joinFile, "join-file", "", "install on this Mac with the argument in `PATH`, which keeps it off the command line")
 	add.Flags().StringVar(&diskArg, "disk", "", "the appliance's disk in `GB` (default 100, at least 40, bounded by the volume's free space less 20)")
