@@ -82,19 +82,18 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 		return nil
 	}
 	// On a Linux x86 machine the step is the installer, which makes this
-	// machine, or the one the line is carried to, a host (DECISIONS
-	// I-1498); the api's line is the Mac's.
+	// machine, or one the file is copied to, a host (DECISIONS I-1498).
+	// The argument goes into a file and the line names the file, so the
+	// key in it reaches no terminal, log or agent's transcript (ENG-42,
+	// DECISIONS I-1616); the api's line is the Mac's.
 	if onLinuxX86() {
-		argument := ""
-		if h.Install != nil {
-			argument = h.Install.Argument
-		}
-		if argument == "" && h.JoinToken != "" {
-			argument = encodeTokenBundle(h.JoinToken)
-		}
-		if argument != "" {
-			_, _ = fmt.Fprintf(e.Out, hostInstallX86+"\n", argument)
-			_, _ = fmt.Fprintln(e.ErrOut, hostAddedLine(h, true))
+		if argument := joinArgument(h); argument != "" {
+			path, err := writeJoinFile(h.Name, argument)
+			if err != nil {
+				return exitf(ExitGeneric, "%s was added, but its join file could not be written: %v", h.Name, err)
+			}
+			_, _ = fmt.Fprintln(e.Out, hostInstallX86FromFile(path))
+			_, _ = fmt.Fprintln(e.ErrOut, hostJoinFileLine(h, path))
 			return nil
 		}
 	}
@@ -197,13 +196,18 @@ func hostInstallX86FromFile(path string) string {
 	return "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file " + shQuote(path)
 }
 
-// hostInstallX86 is the step `repose host add` prints on a Linux x86
-// machine: ops/install-host-x86.sh as repose.run serves it, run as root,
-// with the join argument (DECISIONS I-1498). The argument goes to a file
-// through printf, a shell builtin, so it is in no process's argv and not
-// in the COMMAND sudo logs; the installer deletes the file once read
-// (ENG-206, DECISIONS I-1592).
-const hostInstallX86 = "printf '%%s\\n' %s > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join"
+// hostJoinFileLine is what `repose host add` says on stderr on a Linux
+// x86 machine: where the argument is, how long it lasts, and how to use
+// it on another machine (DECISIONS I-1616).
+func hostJoinFileLine(h *Host, path string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: run this on the machine you are adding. It reads %s, which works once", h.Name, path)
+	if h.JoinTokenExpiresAt != nil {
+		fmt.Fprintf(&b, ", before %s", h.JoinTokenExpiresAt.Local().Format("Mon 2 Jan 15:04"))
+	}
+	b.WriteString("; for another machine, copy that file there first and give its path.")
+	return b.String()
+}
 
 // hostUninstallX86 takes repose off a Linux x86 machine again (ENG-204,
 // DECISIONS I-1590).
