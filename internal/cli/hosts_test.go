@@ -14,9 +14,11 @@ import (
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
-// On a Linux x86 machine `repose host add` prints the x86 installer with
-// the join argument in it, whatever line the api recorded for a Mac, and
-// the argument is the one the api minted, hub and all (DECISIONS I-1498).
+// On a Linux x86 machine `repose host add` prints the x86 installer,
+// whatever line the api recorded for a Mac, and the argument the api
+// minted, hub and all, goes into a 0600 file the line names: no
+// terminal, log or agent's transcript holds the key (DECISIONS I-1498,
+// ENG-42, I-1616).
 func TestHostAddOnLinuxX86(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -26,42 +28,40 @@ func TestHostAddOnLinuxX86(t *testing.T) {
 	onLinuxX86 = func() bool { return true }
 	t.Cleanup(func() { onLinuxX86 = func() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" } })
 
-	fake.SetHostInstall("repose host add --join %s")
-	if err := HostAddCmd(context.Background(), e, "box", applianceOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	step := strings.TrimRight(out.buf.String(), "\n")
-	// ENG-206: the argument reaches the installer through a file written
-	// by printf, a shell builtin, so sudo's log of the command holds no
-	// token.
-	const prefix = "printf '%s\\n' "
-	const suffix = " > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join"
-	if strings.Contains(step, "\n") || !strings.HasPrefix(step, prefix) || !strings.HasSuffix(step, suffix) {
-		t.Fatalf("stdout is the x86 install step alone: %q", out.buf.String())
-	}
-	if sudo := step[strings.Index(step, "sudo"):]; strings.Contains(sudo, strings.TrimSuffix(strings.TrimPrefix(step, prefix), suffix)) {
-		t.Fatalf("the argument is on sudo's command line: %q", step)
-	}
-	arg := strings.TrimSuffix(strings.TrimPrefix(step, prefix), suffix)
-	if arg == "" || strings.ContainsAny(arg, " '\"") {
-		t.Fatalf("the argument is one shell word: %q", arg)
-	}
-	if b, err := decodeJoinBundle(arg); err != nil || b.Token == "" {
-		t.Fatalf("the argument is not a join bundle: %v", err)
-	}
-	if got := errOut.buf.String(); !strings.HasPrefix(got, "box: run this on the machine you are adding.") {
-		t.Fatalf("stderr: %q", got)
-	}
-
-	// With no line recorded the token is still made into the argument.
-	fake.SetHostInstall("")
-	fake.SetHostLimit(2)
-	out.buf.Reset()
-	if err := HostAddCmd(context.Background(), e, "box2", applianceOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(out.buf.String(), prefix) {
-		t.Fatalf("no recorded line: %q", out.buf.String())
+	for i, line := range []string{"repose host add --join %s", ""} {
+		// With no line recorded the token is still made into the argument.
+		fake.SetHostInstall(line)
+		fake.SetHostLimit(2)
+		name := []string{"box", "box2"}[i]
+		out.buf.Reset()
+		errOut.buf.Reset()
+		if err := HostAddCmd(context.Background(), e, name, applianceOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		dir, _ := configDir()
+		path := filepath.Join(dir, "join-"+name)
+		if got := out.buf.String(); got != hostInstallX86FromFile(path)+"\n" {
+			t.Fatalf("stdout is the x86 install step with the file alone: %q", got)
+		}
+		const want = "curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file '"
+		if !strings.HasPrefix(out.buf.String(), want) {
+			t.Fatalf("the installer line: %q", out.buf.String())
+		}
+		fi, err := os.Stat(path)
+		if err != nil || fi.Mode().Perm() != 0o600 {
+			t.Fatalf("join file: %v %v", fi, err)
+		}
+		b, _ := os.ReadFile(path)
+		arg := strings.TrimSpace(string(b))
+		if bundle, err := decodeJoinBundle(arg); err != nil || bundle.Token == "" {
+			t.Fatalf("the file holds no join bundle: %v", err)
+		}
+		if strings.Contains(out.buf.String()+errOut.buf.String(), arg[:40]) {
+			t.Fatalf("the argument was printed: %q %q", out.buf.String(), errOut.buf.String())
+		}
+		if got := errOut.buf.String(); !strings.HasPrefix(got, name+": run this on the machine you are adding. It reads "+path+", which works once, before ") {
+			t.Fatalf("stderr: %q", got)
+		}
 	}
 }
 

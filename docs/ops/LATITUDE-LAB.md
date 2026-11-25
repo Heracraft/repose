@@ -56,11 +56,13 @@ made, unless the owner says to keep it.
    `ops/dev/latitude create`, then `ops/dev/latitude wait`.
 3. On the box, check the customer's preconditions before installing:
    `ls -l /dev/kvm`, `nproc`, `free -g`, `df -h /`, the OS release.
-4. From a logged-in CLI here, `repose host add` prints the join argument
-   for an x86 box; run the installer on the server as the docs give it
-   (`printf '%s\n' <argument> > repose-join && curl -fsSL
+4. From a logged-in CLI here, `repose host add` writes the join argument
+   to `~/.config/repose/join-NAME` and prints the installer line that
+   reads it (I-1616). Copy the file to the box (`scp` it to
+   `repose-join`), then run there `curl -fsSL
    https://repose.run/install-host.sh | sudo bash -s -- --join-file
-   repose-join`, I-1592). Machines made on it are throwaway `e2e-*`
+   repose-join`. Or log a CLI in on the box and run `repose host add`
+   there, as a customer would. Machines made on it are throwaway `e2e-*`
    projects, never the owner's (docs/ops/RELEASE.md).
 5. `repose host ls` until `online`, then `repose run e2e-x86-... --temp`
    and the checks the change under test needs.

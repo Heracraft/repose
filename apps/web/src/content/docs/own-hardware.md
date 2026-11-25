@@ -55,15 +55,14 @@ A download that fails is tried twice more, continuing from the bytes already on 
 
 From any other machine, `repose host add` prints one step and nothing else, so you can pipe it: `repose host add --join <argument>`, to run on the Mac. It carries a token that works once, within 24 hours, and the machine's place on repose's network. Treat it as a password until the machine has joined: anyone who runs it adds a machine to your account, and anything running on the Mac can read it from the command line while the install does. To keep it off there, put it in a file and use `repose host add --join-file <path>`, or pipe it to `repose host add` and give `--join` a lone dash, which means standard input. If you lose it, or let it go stale, `repose host rm` and `repose host add` again; the old step then opens nothing. `repose host add --json` never prints the argument, so a script or an agent that reads the output never holds the key: on the Mac it installs, and elsewhere it puts the argument in `~/.config/repose/join-NAME`, readable by you alone, and names that file instead.
 
-On an x86 box the same argument goes to the installer instead, run there as root:
+On an x86 box, run `repose host add` on the box itself. It puts the argument in `~/.config/repose/join-NAME`, readable by you alone, and prints the installer, to run there as root:
 
 ```shell
-printf '%s\n' <argument> > repose-join
 curl -fsSL https://repose.run/install-host.sh \
-  | sudo bash -s -- --join-file repose-join
+  | sudo bash -s -- --join-file '/home/you/.config/repose/join-box'
 ```
 
-It sets repose up and joins your account. The argument goes through the file so that it is on no command line and not in the copy of the command sudo logs; the installer deletes the file once it has read it. It keeps your machines' disks in `/var/lib/repose/guests.img`, 100 GB or the free space less 20 GB, whichever is smaller; with `--device /dev/sdb` it takes over that whole disk instead, and it refuses a disk that holds anything. The dashboard's **Add a host** shows this line beside the Mac's.
+It sets repose up and joins your account. The argument stays in the file so that it is on no screen, no command line and not in the copy of the command sudo logs, and an agent you ask to run the line never holds the key; the installer deletes the file once it has read it. To add another x86 box from this one, copy the file there and give its path. It keeps your machines' disks in `/var/lib/repose/guests.img`, 100 GB or the free space less 20 GB, whichever is smaller; with `--device /dev/sdb` it takes over that whole disk instead, and it refuses a disk that holds anything. The dashboard's **Add a host** shows the line with the argument in it, `printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`, for you to paste into the box's terminal; don't paste it into an agent's conversation.
 
 The machine's disk is one file, `disk.raw`, 100 GB unless the volume has less free, never under 20 GB and never closer than 20 GB to what the volume has (`--disk` sets it); it takes space only as your machines fill it. The machine gets three quarters of the Mac's memory, 12 GB of 16 and 18 GB of 24, and all but two cores (`--memory`, `--cpus`). Its logs are in `~/Library/Logs/repose` and hold nothing of yours beyond the ids repose logs.
 
