@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/heracraft/repose/internal/api/scheduler"
 )
@@ -43,6 +46,26 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	since := time.Now().Add(-win.span)
 
+	// A machine on a host its account owns has no size (I-1630): it may
+	// use every vCPU and all the memory of the host, so its CPU is a
+	// share of the host's vCPUs and its memory is drawn against the
+	// host's (I-1632). ownMilli is null on a host repose runs, where each
+	// row is divided by its own class as before.
+	var ownMilli *int64
+	vcpus, memBytes := scheduler.ClassVCPUs(p.Class), scheduler.ClassRAM(p.Class)
+	if p.HostID != nil {
+		var hv int64
+		var hm int64
+		err := s.d.Pool.QueryRow(ctx, "select vcpus, mem_bytes from hosts where id = $1 and owner_account_id = $2", *p.HostID, p.UserID).Scan(&hv, &hm)
+		switch {
+		case err == nil && hv > 0 && hm > 0:
+			m := hv * 1000
+			ownMilli, vcpus, memBytes = &m, float64(hv), hm
+		case err != nil && !errors.Is(err, pgx.ErrNoRows):
+			return err
+		}
+	}
+
 	// Each row is about a minute of the guest (I-448), so a bucket's
 	// fraction is its sum over count(*) minutes. CPU is divided by the
 	// row's own class, so a resize mid-window draws right. A row from a
@@ -50,14 +73,14 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	// unknown rather than zero: both come back null.
 	rows, err := s.d.Pool.Query(ctx, `
 		select date_bin($3::interval, ts, timestamptz 'epoch') as t,
-		       least(sum(cpu_ns::float8 * 1000 / `+scheduler.ClassMilliVCPUSQL("class")+`) / (count(*) * 60e9), 1),
+		       least(sum(cpu_ns::float8 * 1000 / coalesce($4::bigint, `+scheduler.ClassMilliVCPUSQL("class")+`)) / (count(*) * 60e9), 1),
 		       avg(nullif(mem_used, 0))::bigint,
 		       case when bool_or(mem_used > 0) then least(sum(cpu_pressure_us) filter (where mem_used > 0)::float8 / (count(*) filter (where mem_used > 0) * 60e6), 1) end,
 		       least(sum(host_cpu_wait_us)::float8 / (count(*) * 60e6), 1),
 		       max(disk_used)
 		from meter_samples
 		where project_id = $1 and ts > $2 and state = 'running'
-		group by 1 order by 1`, p.ID, since, fmt.Sprintf("%d seconds", int(win.step.Seconds())))
+		group by 1 order by 1`, p.ID, since, fmt.Sprintf("%d seconds", int(win.step.Seconds())), ownMilli)
 	if err != nil {
 		return err
 	}
@@ -113,8 +136,8 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"window":       name,
 		"step_s":       int(win.step.Seconds()),
-		"vcpus":        scheduler.ClassVCPUs(p.Class),
-		"memory_bytes": scheduler.ClassRAM(p.Class),
+		"vcpus":        vcpus,
+		"memory_bytes": memBytes,
 		"points":       points,
 		"procs":        procs,
 	})

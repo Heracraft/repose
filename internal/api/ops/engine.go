@@ -425,27 +425,23 @@ func (e *Engine) hostGone(ctx context.Context, hostID uuid.UUID) (bool, error) {
 	return state == "lost" || state == "retired", err
 }
 
-// guestOverheadBytes is hostd's guest.OverheadMiB: what each guest's
-// unit may hold beyond its RAM, which hostd's admission counts.
-const guestOverheadBytes = 512 << 20
-
 // ownHostMemoryRefusal is the sentence for hostd's "not enough free
-// memory" on a host the user owns (DECISIONS I-1586): the host's name,
-// the free memory its hostd last reported and what the project's class
-// needs there, its size plus the overhead hostd counts. ok is false for
-// a host repose runs, which keeps humanError's sentence, and when the
-// rows cannot be read.
+// memory" on a host the user owns (DECISIONS I-1586): the host's name
+// and the free memory its hostd last reported. Since I-1630 a machine
+// there has no size, and hostd starts one when it has
+// scheduler.OwnedStartFreeBytes free, so the sentence names that figure
+// and no class. ok is false for a host repose runs, which keeps
+// humanError's sentence, and when the rows cannot be read.
 func (e *Engine) ownHostMemoryRefusal(ctx context.Context, hostID, projectID uuid.UUID) (string, bool) {
-	var name, class string
+	var name string
 	var free int64
 	var owned bool
-	err := e.pool.QueryRow(ctx, `select h.name, h.free_mem_bytes, h.owner_account_id is not null, p.class
-		  from hosts h, projects p where h.id = $1 and p.id = $2`, hostID, projectID).Scan(&name, &free, &owned, &class)
+	err := e.pool.QueryRow(ctx, `select h.name, h.free_mem_bytes, h.owner_account_id is not null
+		  from hosts h, projects p where h.id = $1 and p.id = $2`, hostID, projectID).Scan(&name, &free, &owned)
 	if err != nil || !owned {
 		return "", false
 	}
-	return "your host " + name + " has " + gbText(max(free, 0)) + " of memory free for machines, and " + aClass(class) + " machine needs " +
-		gbText(scheduler.ClassRAM(class)+guestOverheadBytes) + " there. A machine holds its memory while it runs, so stopping one frees room for it", true
+	return "your host " + name + " " + ownMemoryWhy(free), true
 }
 
 // restingNow reports whether the api believes the op's project rests.

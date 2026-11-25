@@ -264,14 +264,18 @@ type Latest struct {
 	// (I-818). Its state is still `running` and its guest-written signals
 	// are the last ones read before the pause.
 	Resting bool
+	// MemUsed is memory in use as the guest sees it (I-493), 0 when the
+	// guest did not say: what a machine on a host the user owns shows in
+	// place of a size (I-1632).
+	MemUsed int64
 }
 
 // LatestSample reads the newest sample; ok=false when there is none.
 func LatestSample(ctx context.Context, q store.Querier, projectID uuid.UUID) (*Latest, bool, error) {
 	var l Latest
 	var agents []byte
-	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size, resting from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
-		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize, &l.Resting)
+	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size, resting, mem_used from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
+		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize, &l.Resting, &l.MemUsed)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return nil, false, nil

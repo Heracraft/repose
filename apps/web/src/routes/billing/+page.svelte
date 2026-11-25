@@ -29,7 +29,7 @@
 		dateOnly,
 		dateTime,
 		timeUntil,
-		classMemoryGB
+		planMemoryGB
 	} from '$lib/format';
 	import {
 		HOLD_HOURS,
@@ -137,7 +137,7 @@
 	let memFrozen = $derived(
 		projects
 			.filter((p) => holdsMemory(p) && frozenSince(p))
-			.reduce((n, p) => n + classMemoryGB(p.class), 0)
+			.reduce((n, p) => n + planMemoryGB(p), 0)
 	);
 	let memRunning = $derived(Math.max(0, (billing?.usage.running_gb ?? 0) - memFrozen));
 	/** Nothing caps the account, so there is nothing to meter. The plan

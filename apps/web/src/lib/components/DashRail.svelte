@@ -28,7 +28,7 @@
 	import { billingStore } from '$lib/billing.svelte';
 	import { footerLines, planLine } from '$lib/billingMode';
 	import { band, orderProjects } from '$lib/projectList';
-	import { classMemoryGB } from '$lib/format';
+	import { planMemoryGB } from '$lib/format';
 	import { holdsMemory } from '$lib/plans';
 	import { frozenSince } from '$lib/frozen';
 	import type { GuestState, Project } from '$lib/api/types';
@@ -124,7 +124,7 @@
 	// rail has one, so a start shows here before the next billing read.
 	let runningGB = $derived(
 		projectsStore.list
-			? projectsStore.list.filter(holdsMemory).reduce((n, p) => n + classMemoryGB(p.class), 0)
+			? projectsStore.list.filter(holdsMemory).reduce((n, p) => n + planMemoryGB(p), 0)
 			: Math.round((billingStore.info?.usage.running_gb ?? 0) * 10) / 10
 	);
 	let facts = $derived({ me: billingStore.me, billing: billingStore.info, off: billingStore.off });

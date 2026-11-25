@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1136 entries.
+1139 entries.
 
 ## Scope
 
@@ -101,7 +101,7 @@ pointer, not a summary.
 - **I-13** Dashboard design language is the recruiting app's, minus its non-text controls — superseded by I-369; L352
 - **I-14** Pre-launch host is `Standard_D16s_v5`; the host size is a variable, not a constant — 2026-09-17; amended by I-786; L360
 - **I-36** Guests set `NPM_CONFIG_PREFIX=/home/dev/.npm-global` and put its `bin` on `PATH` — L370
-- **I-15** The product is named Repose — 2026-09-19 — version suffix dropped by I-1624; L377
+- **I-15** The product is named Repose — 2026-09-19; partly amended by I-1624; L377
 - **I-16** Stripe is not needed until milestone M4; accounts can be billing- exempt — 2026-09-19; L393
 - **I-17** hostd ships a one-host dev driver, `cmd/hostdev` — L404
 - **I-18** Host runtime configuration has one input, `host.json`; the host owns the network files, the bridge isolation lives in an nftables `bridge` table, and guests are cut off from every private range — L412
@@ -1156,7 +1156,7 @@ pointer, not a summary.
 - **I-1588** The x86 installer warns about CVE-2026-99999 only for a kernel it cannot show carries the fix, says it at the end of its output with the remedy for Ubuntu 24.04 and Debian, and installs anyway; a kernel carries the fix when it is 6.18.57 or a later 6.18, or when its package changelog names the CVE or the fix's subject (x86-installer, 2026-11-23) — partly amended by I-1600; L39374
 - **I-1590** The x86 installer takes repose off the machine with `--uninstall`, refused while the host is on the account unless `--force`; `repose host rm` of an x86 host prints that line, and `repose host rm --local` on Linux prints it instead of "There is no appliance on this Mac." (x86-installer, 2026-11-23) — L39382
 - **I-1592** The x86 install line passes the join argument through a file, `printf '%s\n' <argument> > repose-join && curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --join-file repose-join`, and the installer deletes that file once it has copied the argument to `/run/repose/launcher/join` (x86-installer, 2026-11-23) — partly amended by I-1616; L39390
-- **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — L39395
+- **I-1586** A host the user owns is not held to the vCPU commit ratio: memory and disk bound it, and every capacity refusal on it names the host and the figure that refused (owned-capacity, 2026-11-23) — partly amended by I-1630; L39395
 - **I-1594** The Own hardware plan sells any number of hosts: `Plan.Hosts` is `billing.UnlimitedHosts` (math.MaxInt32), and a billing-exempt account has the same rule (own-hosts, 2026-11-24) — partly amended by I-1598; L39405
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
@@ -1165,7 +1165,9 @@ pointer, not a summary.
 - **I-1610** The api stores the name of a project's checkout under `/home/dev` as the CLI last found it, `projects.checkout` (migration 0053), served as `Project.checkout` and set by `PATCH /projects/:id {checkout}` (open-in-claude, 2026-11-24) — L39452
 - **I-1602** New project on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — amended by I-1612; L39458
 - **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39466
-- **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — L39477
+- **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — partly amended by I-1632; L39477
 - **I-1614** `repose host add --json` never prints the join token or the install argument: on a Mac it installs as it does without `--json` and prints the host; elsewhere it writes the argument to a 0600 file in the config directory and prints that file's path as `install.join_file` (agent-setup, ENG-102, 2026-11-25) — L39486
 - **I-1616** The join argument passes through no agent's context when repose is set up on the machine being added: on a Mac `repose host add` consumes it in process (as before), and on a Linux x86 machine it writes it to `~/.config/repose/join-NAME` (0600) and prints an installer line that names the file; the argument is printed only where a person carries it, by the dashboard's Add a host and by `repose host add` on a machine that cannot be a host (agent-setup, ENG-42, 2026-11-25) — L39494
 - **I-1624** `repose version` and `repose --version` print `repose <version>`, without the `(herakraft)` suffix (release conductor, 2026-11-25) — L39503
+- **I-1630** On a host the user owns, placement asks one question: does the host report at least 1 GiB free (`scheduler.OwnedStartFreeBytes`); no class, no reserve and no class reservations are counted there, and the refusal names the host, what it has free and that figure (sharing-control, 2026-11-25) — L39510
+- **I-1632** A machine on a host the user owns shows what it uses, not a size: `Project.sized` false and `Project.mem_used_bytes`; `repose ls`'s column is MEMORY, `repose status`'s header and the dashboard say `1.4 GB used`; `--size` there is accepted and ignored with one stderr line for one release; a machine the kernel stopped for memory is named with `oom_stopped` (sharing-control, 2026-11-25) — L39520

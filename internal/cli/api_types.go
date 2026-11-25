@@ -81,7 +81,15 @@ type Project struct {
 	// Placement is what the project asked for (I-1366): `own`, a host
 	// the account owns when it owns one, or `hosted`, repose's servers.
 	// Absent from an older api, which the CLI reads as own.
-	Placement        string     `json:"placement,omitempty"`
+	Placement string `json:"placement,omitempty"`
+	// Sized is false for a machine on a host of the account's own, which
+	// shares that host's memory and cores and has no size (DECISIONS
+	// I-1630, I-1632): Class says nothing there. Absent from an older
+	// api, which means sized.
+	Sized *bool `json:"sized,omitempty"`
+	// MemUsedBytes is the memory the running machine uses, as it sees it,
+	// from the newest sample (I-1632); 0 when the api did not say.
+	MemUsedBytes     int64      `json:"mem_used_bytes,omitempty"`
 	GuestIP          string     `json:"guest_ip,omitempty"`
 	AgentDefault     string     `json:"agent_default"`
 	HoldBaseUpdates  bool       `json:"hold_base_updates"`

@@ -1,4 +1,4 @@
-import { abuseStopReason } from '$lib/abuse';
+import { platformStopReason } from '$lib/abuse';
 import { ApiError } from '$lib/api/errors';
 import type { GuestState, OwnedHost, Project } from '$lib/api/types';
 import { bootFallbackReason } from '$lib/bootfail';
@@ -86,7 +86,7 @@ export function errorDetailText(p: Pick<Project, 'state' | 'last_error'>): strin
  * or an error's sentence.
  */
 export function projectRowReason(p: Pick<Project, 'state' | 'last_error'>): string {
-	const abuse = abuseStopReason(p);
+	const abuse = platformStopReason(p);
 	if (abuse) return abuse;
 	const boot = bootFallbackReason(p);
 	if (boot) return boot;

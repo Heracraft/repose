@@ -28,6 +28,10 @@ APIs and writes documents; `small` runs an agent on a codebase; `large`
 and `xl` are for builds, test suites and several agents at once. Agents
 run on all of them.
 
+A machine on [hardware you own](/docs/own-hardware#what-fits-on-a-mac) has
+no size: it shares every core and the memory of that host with your other
+machines there, and shows what it uses instead.
+
 ## What's installed
 
 - **Agents:** [Claude Code, Codex CLI, opencode, Gemini CLI and pi](/docs/agents).
@@ -266,7 +270,7 @@ The machine then installs again what you added with `repose config add` and what
 
 ## Changing the size
 
-`repose resize --size tiny|small|large|xl` changes a project's size. **Resize…** under Disk on the project's **Overview** does the same, with the same question for a running machine. Only the cores and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size tiny|small|large|xl` changes a project's size. A machine on hardware you own has none, so there the flag changes nothing ([What fits](/docs/own-hardware#what-fits-on-a-mac)). **Resize…** under Disk on the project's **Overview** does the same, with the same question for a running machine. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 

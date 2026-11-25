@@ -781,6 +781,7 @@ func Title(m Message) string {
 var platformSubjects = map[string]string{
 	"billing_stopped":        "Your machines were stopped: a payment failed",
 	"abuse_stopped":          "Your machine was stopped: a cryptocurrency miner was running",
+	"oom_stopped":            "Your machine was stopped: your host ran out of memory",
 	"welcome":                "Welcome to repose",
 	"waitlist_joined":        "You're on the waitlist",
 	"waitlist_invited":       "A seat is yours for 72 hours",
@@ -933,7 +934,7 @@ func ntfyPriority(kind string) string {
 	switch kind {
 	case "needs_input", "agent_question":
 		return "5"
-	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "stop_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted", "trigger_failed":
+	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "stop_failed", "abuse_stopped", "oom_stopped", "personal_failed", "boot_failed", "machines_restarted", "trigger_failed":
 		return "4"
 	}
 	return "3"

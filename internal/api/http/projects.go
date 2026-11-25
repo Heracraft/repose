@@ -149,6 +149,11 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			return nil, err
 		}
 	}
+	sized, err := s.projectSized(ctx, p, out["host_name"] != nil)
+	if err != nil {
+		return nil, err
+	}
+	out["sized"] = sized
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no
 		// snapshot once this has passed, unless `repose keep` clears it.
@@ -182,6 +187,12 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			out["root_used_bytes"] = x.latest.RootUsed
 			out["root_size_bytes"] = x.latest.RootSize
 		}
+		if p.State == "running" && x.latest.MemUsed > 0 && !sampleBeforeStart(p, x.latest) {
+			// What the machine uses now, as the guest sees it (I-1632):
+			// on a host the user owns it is what the clients show in
+			// place of a size.
+			out["mem_used_bytes"] = x.latest.MemUsed
+		}
 		agents := []map[string]string{}
 		for _, a := range x.latest.Agents {
 			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"]})
@@ -194,6 +205,25 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			"docker_containers": x.latest.DockerContainers, "guestd_ok": guestdOK, "sampled_at": x.latest.TS, "gateway_sessions": s.sessions.Count(ctx, p.ID)}
 	}
 	return out, nil
+}
+
+// projectSized is the Project's `sized` (DECISIONS I-1632): whether its
+// class is a size. A machine on a host its account owns shares that
+// host's memory and cores and has no size (I-1630); so does one not
+// placed yet that will be placed there, a project asking for `own` in an
+// account that owns a host that is not retired or lost (ownedSQL's
+// rule). onOwn is whether the project's host is one of the account's.
+func (s *Server) projectSized(ctx context.Context, p *store.Project, onOwn bool) (bool, error) {
+	if onOwn {
+		return false, nil
+	}
+	if p.HostID != nil || store.NormalizePlacement(p.Placement) == "hosted" {
+		return true, nil
+	}
+	var owns bool
+	err := s.d.Pool.QueryRow(ctx, `select exists (select 1 from hosts
+		 where owner_account_id = $1 and state not in ('retired', 'lost'))`, p.UserID).Scan(&owns)
+	return !owns, err
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {

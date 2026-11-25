@@ -39,6 +39,9 @@ var notifyKinds = map[string]bool{
 	"notifications_paused": true,
 	// A guest stopped because a miner was running (DECISIONS I-239).
 	"abuse_stopped": true,
+	// A machine on a host the user owns that the kernel stopped when the
+	// host ran out of memory (DECISIONS I-1632).
+	OOMStoppedKind: true,
 	// repose-notify, repose-notify --done and repose-ask (DECISIONS
 	// I-244, I-688).
 	"agent_message": true, "agent_question": true, "agent_done": true,
@@ -437,6 +440,46 @@ func PausedSummary(until time.Time, tz *string) string {
 	return fmt.Sprintf("%d notifications in the last hour. Paused until %s.", RatePerHour, until.In(loc).Format("15:04 MST"))
 }
 
+// OOMReason is the GuestStateChanged reason hostd sends with `stopped`
+// for a guest on a host the user owns that the kernel's OOM killer
+// ended (grpc-hostd.md, DECISIONS I-1626, I-1632).
+const OOMReason = "oom_killed"
+
+// OOMStoppedKind is the event, and the last_error code, of such a stop:
+// the user is told which machine stopped and why, where a stopped
+// machine's reason shows and on their channels (DECISIONS I-1632).
+const OOMStoppedKind = "oom_stopped"
+
+// OOMStoppedMessage is the sentence after the code: the host's name, what
+// happened and what brings the machine back. The host is the user's own,
+// so it is named.
+func OOMStoppedMessage(host, slug string) string {
+	return "stopped: your host " + host + " ran out of memory, and the kernel stopped " + slug +
+		" to keep the others running. `repose start " + slug + "` starts it again"
+}
+
+// oomStopped records a stop the OOM killer made: last_error on the
+// stopped project, which the CLI and the dashboard show as they show
+// abuse_stopped, and an oom_stopped event, which notifies. A host of
+// repose's never sends the reason (the fleet keeps `error`), and one that
+// did is answered as any stop.
+func (i *Ingest) oomStopped(ctx context.Context, hostID uuid.UUID, p *store.Project) error {
+	var host string
+	err := i.pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id is not null", hostID).Scan(&host)
+	if db.IsNoRows(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	msg := OOMStoppedMessage(host, p.Slug)
+	if _, err := i.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, OOMStoppedKind+": "+msg); err != nil {
+		return err
+	}
+	i.log.Warn("guest stopped: host out of memory", "event", "guest_state", "project_id", p.ID.String(), "host_id", hostID.String(), "reason", OOMReason)
+	return i.Platform(ctx, p.ID, OOMStoppedKind, msg)
+}
+
 // OnEvent handles a hostd Event and reports whether to ack it.
 func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Event) bool {
 	ts := time.Unix(ev.Ts, 0)
@@ -466,6 +509,12 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 					reason += " (" + r + ")"
 				}
 				_, _ = i.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, reason) // best effort; the event below carries the state
+			}
+			if st == "stopped" && e.GuestStateChanged.Reason == OOMReason {
+				if err := i.oomStopped(ctx, hostID, p); err != nil {
+					i.log.Error("out of memory stop", "event", "guest_state", "project_id", p.ID.String(), "err", err.Error())
+					return false
+				}
 			}
 		}
 		_, _, err = i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: "guest_state_changed", Summary: st, Source: "host", HostEventID: ev.EventId})

@@ -252,7 +252,11 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// flag chooses where a new one is made and can do nothing here.
 		return exitf(ExitUsage, "%s exists and stays on its host; --host chooses where a new machine is made. A machine moves host only by restoring a snapshot.", res.Project.Slug)
 	}
-	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
+	if !attachOnly && res.Project != nil && opts.Size != "" && unsized(res.Project) {
+		// A machine on a host of the account's own has no size (I-1632):
+		// the flag is accepted for one release and changes nothing.
+		sizeIgnored(e.ErrOut, res.Project.Slug, res.Project.HostName)
+	} else if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
 		if err := waitOutStop(ctx, e, res.Project, pr); err != nil {
 			return err
 		}
@@ -305,7 +309,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		if opts.Sync && opts.Temp == 0 {
 			// sync sends a checkout to its machine; it never makes one on
 			// its own (I-1532). --temp is the explicit request for one.
-			if err := confirmSyncCreate(e, res.CreateRemote(), opts, pr); err != nil {
+			if err := confirmSyncCreate(ctx, e, res.CreateRemote(), opts, pr); err != nil {
 				return err
 			}
 		}
@@ -2054,13 +2058,23 @@ func newProjectClass(e *Env, opts RunOptions) string {
 // confirmSyncCreate is sync's question before it makes a machine
 // (DECISIONS I-1532): on a terminal one [y/N] naming the machine and its
 // size, no by default; without one, a refusal naming `repose run`.
-func confirmSyncCreate(e *Env, remote string, opts RunOptions, pr *progress) error {
+func confirmSyncCreate(ctx context.Context, e *Env, remote string, opts RunOptions, pr *progress) error {
 	if opts.Confirm == nil {
 		return exitf(ExitProjectNotFound, "No repose machine for this checkout; `repose run` creates one.")
 	}
 	name, err := newProjectName(e, remote, opts)
 	if err != nil {
 		return err
+	}
+	if host, own := newOnOwnHost(ctx, e, opts.Host); own {
+		// No size on a host of the account's own (I-1632): the
+		// question names where it goes instead.
+		where := "on one of your hosts"
+		if host != "" {
+			where = "on " + host
+		}
+		pr.Fail()
+		return confirmOr(opts.Confirm, fmt.Sprintf("No machine for this checkout. Create %s %s and sync to it? [y/N] ", name, where), "Not created.")
 	}
 	size := newProjectClass(e, opts)
 	if size == "" {
@@ -2143,6 +2157,9 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			// typed ("teksafari.org" is created as teksafari-org); the
 			// POST itself takes well under a second (I-191).
 			pr.Phase("Creating "+p.Slug, createdLabel(p, class))
+			if opts.Size != "" && unsized(p) {
+				sizeIgnored(e.ErrOut, p.Slug, p.HostName)
+			}
 			if opts.Temp > 0 {
 				return p, nil
 			}
@@ -2231,6 +2248,38 @@ func placementFor(ctx context.Context, e *Env, host string) (string, error) {
 		}
 	}
 	return "", exitf(ExitUsage, "You have no host called %s. `repose host ls` lists yours; `--host repose` is repose's servers.", host)
+}
+
+// newOnOwnHost is whether a machine this command creates goes to a host
+// of the account's own, and which when that is one host: the host --host
+// named, or, with no --host, the account's one live host ("" when it has
+// several). `own` placement goes to the account's hosts whenever it has
+// one that is not retired or lost (ownedSQL, I-1366). An api that does
+// not answer is read as no host, and the caller says what it always did.
+func newOnOwnHost(ctx context.Context, e *Env, host string) (string, bool) {
+	if host == hostRepose {
+		return "", false
+	}
+	if host != "" {
+		return host, true
+	}
+	hosts, err := e.Client.ListHosts(ctx)
+	if err != nil {
+		return "", false
+	}
+	var live []string
+	for _, h := range hosts {
+		if h.State != "retired" && h.State != "lost" {
+			live = append(live, h.Name)
+		}
+	}
+	switch len(live) {
+	case 0:
+		return "", false
+	case 1:
+		return live[0], true
+	}
+	return "", true
 }
 
 // hostRepose is --host's name for repose's own servers.

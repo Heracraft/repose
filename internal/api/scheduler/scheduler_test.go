@@ -738,8 +738,9 @@ func TestPinnedHost(t *testing.T) {
 		}
 	})
 	t.Run("a full pinned host is refused as that host", func(t *testing.T) {
-		// xl needs 16 GiB; a has 30 free: fill it to 8.
-		if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", a, int64(8<<30)); err != nil {
+		// An owned host takes a machine while it reports a gigabyte free,
+		// whatever the class (I-1630); a has 30 free: fill it to half that.
+		if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", a, scheduler.OwnedStartFreeBytes/2); err != nil {
 			t.Fatal(err)
 		}
 		if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true, Host: a}, "xl", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrPinnedHost) {
@@ -801,8 +802,17 @@ func TestOwnedHostIsBoundByMemoryNotCores(t *testing.T) {
 		}
 		commit(t, pool, box, c, "past-"+c)
 	}
-	// Memory is the line: 54 of 54.17 GiB placeable, so a tiny is
-	// refused, by the account's own host.
+	// Memory is the line, and since I-1630 it is the memory the host
+	// reports free, not the classes placed there: 54 GiB of classes and
+	// 60 GiB reported free still takes a tiny, and a host that reports
+	// less than OwnedStartFreeBytes takes nothing, by the account's own
+	// host.
+	if p, err := pickFor(t, pool, target, "tiny", 1<<30, 10<<30); err != nil || p.Name != "e2e-x86-a" || p.FreeBytes != 60<<30 {
+		t.Fatalf("a tiny on a host reporting 60 GiB free: %+v %v, want e2e-x86-a with 60 GiB", p, err)
+	}
+	if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", box, scheduler.OwnedStartFreeBytes-1); err != nil {
+		t.Fatal(err)
+	}
 	if p, err := pickFor(t, pool, target, "tiny", 1<<30, 10<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
 		t.Fatalf("a tiny past the memory line: %+v %v, want ErrNoOwnHost", p, err)
 	}
@@ -810,7 +820,7 @@ func TestOwnedHostIsBoundByMemoryNotCores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := rooms[box].FreeBytes, mem-scheduler.HostReserve(mem)-54<<30; got != want {
+	if got, want := rooms[box].FreeBytes, scheduler.OwnedStartFreeBytes-1; got != want {
 		t.Fatalf("OwnedRooms free %d, want %d", got, want)
 	}
 
@@ -835,7 +845,11 @@ func TestFullOwnedHostIsTheOwnersRefusal(t *testing.T) {
 	mac := addHostPool(t, pool, host{"mac-mini", "ready", false, 24 << 30, 20 << 30, 100 << 30, now}, 200<<30)
 	owner := addAccount(t, pool, "owner")
 	own(t, pool, mac, owner)
-	commit(t, pool, mac, "xl", "big") // 16 of 21 GiB
+	commit(t, pool, mac, "xl", "big")
+	// The host reports 512 MiB free: below OwnedStartFreeBytes (I-1630).
+	if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", mac, int64(512<<20)); err != nil {
+		t.Fatal(err)
+	}
 	if p, err := pickFor(t, pool, scheduler.Target{Account: owner, Fleet: true}, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
 		t.Fatalf("a large on a full own host: %+v %v, want ErrNoOwnHost", p, err)
 	}
@@ -844,7 +858,105 @@ func TestFullOwnedHostIsTheOwnersRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := rooms[mac]
-	if r.FreeBytes != 5<<30 || r.PoolFreeBytes != 100<<30 || r.PoolNeedBytes != (200<<30)/100*30+1<<30 {
-		t.Fatalf("room %+v, want 5 GiB free, 100 GiB of pool free against 61 GiB", r)
+	if r.FreeBytes != 512<<20 || r.PoolFreeBytes != 100<<30 || r.PoolNeedBytes != (200<<30)/100*30+1<<30 {
+		t.Fatalf("room %+v, want 512 MiB free, 100 GiB of pool free against 61 GiB", r)
+	}
+}
+
+// TestOwnedHostPlacesByReportedFreeMemory is the owner's ruling of
+// 2026-11-25 (DECISIONS I-1630): on a host the user owns a machine has
+// no size, so placement asks only whether the host reports
+// OwnedStartFreeBytes free. Classes placed there, the class asked for and
+// the fleet's reserve are not counted: an 8 GiB box reporting 1 GiB free
+// takes an xl, and one reporting a byte less takes a tiny nowhere.
+// Shown red with memSQL's owned branch replaced by the fleet's.
+func TestOwnedHostPlacesByReportedFreeMemory(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	box := addHost(t, pool, host{"e2e-mac", "ready", false, 8 << 30, scheduler.OwnedStartFreeBytes, 1 << 40, now})
+	owner := addAccount(t, pool, "owner")
+	own(t, pool, box, owner)
+	for i := range 4 { // 64 GiB of classes on an 8 GiB box: sharing
+		commit(t, pool, box, "xl", fmt.Sprintf("x%d", i))
+	}
+	target := scheduler.Target{Account: owner}
+	for _, c := range []string{"tiny", "xl"} {
+		p, err := pickFor(t, pool, target, c, 1<<30, 10<<30)
+		if err != nil || p.Name != "e2e-mac" || p.FreeBytes != scheduler.OwnedStartFreeBytes {
+			t.Fatalf("an owned %s with 1 GiB reported free: %+v %v, want e2e-mac with 1 GiB", c, p, err)
+		}
+	}
+	if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", box, scheduler.OwnedStartFreeBytes-1); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := pickFor(t, pool, target, "tiny", 1<<30, 10<<30); !errors.Is(err, scheduler.ErrNoOwnHost) {
+		t.Fatalf("a tiny under the owned threshold: %+v %v, want ErrNoOwnHost", p, err)
+	}
+	// Freeing: a machine stopping there gives back what it holds, which
+	// no class says, so the create waits for it.
+	if ok, err := scheduler.Freeing(ctx, pool, target, "tiny", 1<<30, 10<<30, now); err != nil || ok {
+		t.Fatalf("freeing with nothing stopping: %v %v, want false", ok, err)
+	}
+	if _, err := pool.Exec(ctx, "update projects set state = 'stopping' where slug = 'x0'"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, target, "xl", 1<<30, 10<<30, now); err != nil || !ok {
+		t.Fatalf("freeing with an xl stopping: %v %v, want true", ok, err)
+	}
+}
+
+// TestFleetPlacementIsUnchangedBySharing pins the fleet's memory path
+// against I-1630: a host repose runs is still placed by class against
+// its reserve and the class reservations of the guests on it, whatever
+// it reports free, and the free figure placement returns is still that
+// least. The same box, owned, is placed by what it reports.
+func TestFleetPlacementIsUnchangedBySharing(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	// 64 GiB: an 8 GiB reserve, 56 GiB for classes. 48 GiB placed, 60
+	// GiB reported free (the guests use little): 8 GiB of room by class.
+	fleet := addHost(t, pool, host{"fleet-01", "ready", false, 64 << 30, 60 << 30, 1 << 40, now})
+	for i := range 3 {
+		commit(t, pool, fleet, "xl", fmt.Sprintf("f%d", i))
+	}
+	p, err := pick(t, pool, "large", 1<<30, 40<<30)
+	if err != nil || p.Name != "fleet-01" || p.FreeBytes != 8<<30 {
+		t.Fatalf("a large into the fleet's last 8 GiB: %+v %v, want fleet-01 with 8 GiB", p, err)
+	}
+	if p, err := pick(t, pool, "xl", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoCapacity) || errors.Is(err, scheduler.ErrNoOwnHost) {
+		t.Fatalf("an xl past the fleet's class room with 60 GiB reported free: %+v %v, want ErrNoCapacity", p, err)
+	}
+	commit(t, pool, fleet, "large", "f3")
+	if p, err := pick(t, pool, "tiny", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+		t.Fatalf("a tiny on a fleet host full by class: %+v %v, want ErrNoCapacity", p, err)
+	}
+	// Reported free still bounds the fleet too: room by class, but the
+	// host says 4 GiB.
+	if _, err := pool.Exec(ctx, "update projects set state = 'stopped' where slug = 'f3'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "update hosts set free_mem_bytes = $2 where id = $1", fleet, int64(4<<30)); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := pick(t, pool, "large", 1<<30, 40<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+		t.Fatalf("a large on a fleet host reporting 4 GiB: %+v %v, want ErrNoCapacity", p, err)
+	}
+	if p, err := pick(t, pool, "small", 1<<30, 40<<30); err != nil || p.FreeBytes != 4<<30 {
+		t.Fatalf("a small on a fleet host reporting 4 GiB: %+v %v, want placed with 4 GiB", p, err)
+	}
+	// Freeing on the fleet still counts the stopping class.
+	if _, err := pool.Exec(ctx, "update projects set state = 'stopping' where slug = 'f0'"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, fleetTarget(), "xl", 1<<30, 40<<30, now); err != nil || !ok {
+		t.Fatalf("fleet freeing an xl while an xl stops: %v %v, want true", ok, err)
+	}
+	if _, err := pool.Exec(ctx, "update projects set state = 'running' where slug = 'f0'"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, fleetTarget(), "xl", 1<<30, 40<<30, now); err != nil || ok {
+		t.Fatalf("fleet freeing with nothing stopping: %v %v, want false", ok, err)
 	}
 }

@@ -233,7 +233,9 @@ func TestRunHostPicksOneOfSeveral(t *testing.T) {
 	if p := bySlug(listed(t, e), "web"); p == nil || p.HostID != b {
 		t.Fatalf("--host box-b made %+v, want it on box-b", p)
 	}
-	if out := errOut.buf.String(); !strings.Contains(out, "Created web on box-b (") {
+	// No class: a machine on a host of the account's own has no size
+	// (I-1632).
+	if out := errOut.buf.String(); !strings.Contains(out, "Created web on box-b ") || strings.Contains(out, "Created web on box-b (") {
 		t.Fatalf("create output does not name the host:\n%s", out)
 	}
 

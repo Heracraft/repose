@@ -7,7 +7,7 @@ order: 31
 
 ## Your plan
 
-Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. A `tiny` takes 2 GB, so Solo runs four of them; an `xl` takes 16 GB on its own, so it needs Plus or Pro. The [Own hardware plan](/docs/billing#own-hardware) ($10 a month) buys any number of hosts you own instead of memory on repose's servers, so your hardware's memory and disk are the limits. Ten of your hosts at a time can be waiting to join; one that joins, or whose 24-hour token runs out, stops counting.
+Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. A `tiny` takes 2 GB, so Solo runs four of them; an `xl` takes 16 GB on its own, so it needs Plus or Pro. The [Own hardware plan](/docs/billing#own-hardware) ($10 a month) buys any number of hosts you own instead of memory on repose's servers, so your hardware's memory and disk are the limits: machines there have no size and share the host ([What fits](/docs/own-hardware#what-fits-on-a-mac)). Ten of your hosts at a time can be waiting to join; one that joins, or whose 24-hour token runs out, stops counting.
 
 Starting a machine, or growing one, that would pass the total is refused with exit code 7. On a terminal `repose run`, `start` and `attach` [ask to stop one](/docs/billing#what-a-plan-means) instead.
 
