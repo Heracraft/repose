@@ -102,6 +102,9 @@ func TestOwnedGuestTakesTheHostShape(t *testing.T) {
 					t.Fatalf("owned guest has a quota: %s", p)
 				}
 			}
+			if !slices.Contains(o.m.Features(), "shared") {
+				t.Fatalf("owned features %v", o.m.Features())
+			}
 			if g := o.guest(gid1); g.Class != class {
 				t.Fatalf("class on the record %q, the api sent %q", g.Class, class)
 			}
@@ -127,6 +130,9 @@ func TestFleetGuestKeepsItsClass(t *testing.T) {
 		if strings.HasPrefix(p, "OOMScoreAdjust=") {
 			t.Fatalf("fleet guest has %s", p)
 		}
+	}
+	if slices.Contains(h.m.Features(), "shared") {
+		t.Fatalf("fleet features %v", h.m.Features())
 	}
 }
 
@@ -250,7 +256,7 @@ func TestOwnedReclaim(t *testing.T) {
 	o := newOwnedHarness(t)
 	var drops atomic.Int32
 	o.gopts.OnExec = func(argv []string) *guestdv1.ExecResult {
-		if len(argv) == 3 && strings.Contains(argv[2], "drop_caches") {
+		if len(argv) == 3 && strings.Contains(argv[2], "drop_caches") && strings.Contains(argv[2], "compact_memory") {
 			drops.Add(1)
 		}
 		return nil

@@ -387,7 +387,9 @@ hostd sets `guests.slice` `MemoryMax` to MemTotal less the owned reserve
 (I-1628) with `systemctl set-property --runtime`. `repose-zram.service`
 gives the host a zstd zram swap of half its memory at priority 100,
 `vm.swappiness=150` and `vm.page-cluster=0`. hostd drops the page cache
-(`sync; echo 1 > /proc/sys/vm/drop_caches`, through guestd) of a guest
+(`sync; echo 1 > /proc/sys/vm/drop_caches`, then `echo 1 >
+/proc/sys/vm/compact_memory` so free page reporting, which returns only
+free 2 MiB blocks, can hand the freed pages back; through guestd) of a guest
 idle for five samples in a row, once until it is busy again, and of every
 running guest when free memory is under 1 GiB, at most every 5 minutes. A parked guest is
 restored with `cloud-hypervisor --api-socket ch.sock --restore

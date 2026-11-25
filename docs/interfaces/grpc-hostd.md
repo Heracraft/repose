@@ -287,6 +287,11 @@ stopped, destroyed or created when the api places the next one
 `ops/install-host-x86.sh`; the installer writes it, the api does not send
 it. No field changes shape; what some mean there:
 
+- Hello `features` names `shared` (only with `--owned-host`): the api
+  places on such a host by its reported free memory, not by class
+  (I-1630). An owned host whose hostd does not name it predates I-1626
+  and keeps the class arithmetic.
+
 - `class` on CreateGuest, StartGuest and Restore is still validated and
   recorded, and reported back in samples, but sizes nothing: every guest
   boots with every vCPU the host has and the host's placeable memory

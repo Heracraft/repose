@@ -20,6 +20,12 @@ import (
 // recently started guest first; hostd reports that guest stopped with
 // ReasonOOMKilled.
 
+// FeatureShared is the Hello feature an owned host's hostd names: its
+// guests share the host and it reports real free memory, so the api
+// places on it by that figure and not by class (I-1630). An owned host
+// without it is a hostd from before I-1626 and keeps class arithmetic.
+const FeatureShared = "shared"
+
 // OwnedReserveBytes is what an owned host keeps for itself: what the
 // appliance's own processes and the kernel hold with one idle guest
 // running, measured on the lab Mac, plus a margin (DECISIONS I-1628):
@@ -68,6 +74,10 @@ const (
 
 // PressureEvery bounds how often the pressure drop runs.
 var PressureEvery = 5 * time.Minute
+
+// dropScript is what dropGuestCache runs in the guest. compact_memory
+// exists only in a kernel built with compaction.
+const dropScript = "sync; echo 1 > /proc/sys/vm/drop_caches; if [ -w /proc/sys/vm/compact_memory ]; then echo 1 > /proc/sys/vm/compact_memory; fi"
 
 // ownedState is the reclaim's memory between samples.
 type ownedState struct {
@@ -272,9 +282,14 @@ func (m *Manager) ownedReclaim(ctx context.Context, cpu map[string]uint64) {
 }
 
 // dropGuestCache asks a guest with the balloon to write back and drop its
-// page cache, so free page reporting hands the pages back to the host
-// (the pause's write-back, pause.go). A guest without the balloon keeps
-// its cache: its dropped pages would stay with the hypervisor anyway.
+// page cache and then compact its free memory, so free page reporting
+// hands the pages back to the host (the pause's write-back, pause.go).
+// The compaction is the larger half: free page reporting returns only
+// free blocks of 2 MiB or more (page_reporting_order 9), and on the M4 a
+// large guest idle after builds held 6.28 GiB on the host, 4.24 after the
+// drop and 1.82 after the compaction (the lab, 2026-11-25). A guest
+// without the balloon keeps its cache: its dropped pages would stay with
+// the hypervisor anyway.
 func (m *Manager) dropGuestCache(ctx context.Context, id, why string) {
 	if !m.argsHaveBalloon(id) || m.restingMark(id) != nil {
 		return
@@ -285,7 +300,7 @@ func (m *Manager) dropGuestCache(ctx context.Context, id, why string) {
 	}
 	dctx, cancel := context.WithTimeout(ctx, PrepareTimeout)
 	defer cancel()
-	r, xerr := sess.Exec(dctx, []string{"/bin/sh", "-c", "sync; echo 1 > /proc/sys/vm/drop_caches"}, uint32(PrepareTimeout/time.Second), "")
+	r, xerr := sess.Exec(dctx, []string{"/bin/sh", "-c", dropScript}, uint32(PrepareTimeout/time.Second), "")
 	result := "ok"
 	if xerr != nil || r.GetExitCode() != 0 {
 		result = "failed"
