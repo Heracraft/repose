@@ -345,6 +345,9 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 	}
 	lost := 0
 	egress := m.egressDeltas(ctx, gs)
+	// Each answering guest's CPU over the sample, for an owned host's
+	// reclaim (I-1626).
+	awake := map[string]uint64{}
 	for _, g := range gs {
 		gsm := &hostdv1.GuestSample{GuestId: g.GuestID, State: g.State, Class: g.Class, DiskAllocBytes: g.VolumeBytes, Signals: &hostdv1.GuestSignals{}}
 		if size, used, err := m.d.LVM.VolumeStats(ctx, VolumeName(g.GuestID)); err == nil {
@@ -409,6 +412,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					gsm.GuestMemUsedBytes = min(sr.GetMemUsedBytes(), maxGuestMem)
 					gsm.RootUsedBytes, gsm.RootSizeBytes = boundRootFS(sr.GetRootUsedBytes(), sr.GetRootSizeBytes(), gsm.DiskAllocBytes)
 					m.keepGuestFigures(g.GuestID, gsm)
+					awake[g.GuestID] = gsm.CpuNsDelta
 				} else {
 					lost++
 				}
@@ -446,6 +450,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 			m.d.Metrics.Load1.Set(s.Host.GetLoad1())
 		}
 	}
+	m.ownedReclaim(m.ctx, awake)
 	m.sampleBlocked(ctx)
 	m.poolWarning()
 	return s

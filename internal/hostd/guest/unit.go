@@ -35,15 +35,28 @@ func GuestUnitProps(class Class, user, guestsDir, dir, volumeDev string, bundle 
 	p := []string{
 		fmt.Sprintf("MemoryMax=%dM", class.MemMiB+OverheadMiB),
 		fmt.Sprintf("MemoryHigh=%dM", class.MemMiB+OverheadMiB-HighMarginMiB),
-		// Both from MilliVCPUs, the CPU the class sells: a quota in
-		// percent of one core (tiny 50) and a weight proportional to it
-		// (tiny 25), with the other three classes' numbers unchanged
-		// (DECISIONS I-1168, I-737).
-		fmt.Sprintf("CPUQuota=%d%%", class.MilliVCPUs/10),
-		fmt.Sprintf("CPUWeight=%d", class.MilliVCPUs*CPUWeightPerVCPU/1000),
+	}
+	if class.Shared {
+		// An owned host's guest (DECISIONS I-1626): no quota, since it
+		// may use every core; the weight every other guest and its own
+		// virtiofsd have, so guests share the cores equally; and the OOM
+		// killer's first choice until a newer guest starts (rankOOM).
+		// Its memory caps are the host's placeable memory, which
+		// guests.slice also holds them all to together.
+		p = append(p, "CPUWeight=100", fmt.Sprintf("OOMScoreAdjust=%d", OOMAdjNewest))
+	} else {
+		p = append(p,
+			// Both from MilliVCPUs, the CPU the class sells: a quota in
+			// percent of one core (tiny 50) and a weight proportional to
+			// it (tiny 25), with the other three classes' numbers
+			// unchanged (DECISIONS I-1168, I-737).
+			fmt.Sprintf("CPUQuota=%d%%", class.MilliVCPUs/10),
+			fmt.Sprintf("CPUWeight=%d", class.MilliVCPUs*CPUWeightPerVCPU/1000))
+	}
+	p = append(p,
 		"Restart=no",
 		"Slice=guests.slice",
-		"User=" + user,
+		"User="+user,
 		"NoNewPrivileges=yes",
 		"CapabilityBoundingSet=",
 		"UMask=0077",
@@ -62,15 +75,15 @@ func GuestUnitProps(class Class, user, guestsDir, dir, volumeDev string, bundle 
 		"SystemCallArchitectures=native",
 		// Only this guest's directory is visible under the guests root:
 		// another guest's vsock.sock is a direct line to its guestd.
-		"TemporaryFileSystem=" + guestsDir,
-		"BindPaths=" + dir,
-		"ReadWritePaths=" + dir,
+		"TemporaryFileSystem="+guestsDir,
+		"BindPaths="+dir,
+		"ReadWritePaths="+dir,
 		"DevicePolicy=closed",
 		"DeviceAllow=/dev/kvm rw",
 		"DeviceAllow=/dev/net/tun rw",
-		"DeviceAllow=" + volumeDev + " rw",
+		"DeviceAllow="+volumeDev+" rw",
 		"RestrictAddressFamilies=AF_UNIX AF_VSOCK",
-	}
+	)
 	if bundle.Dir == "" {
 		return p
 	}

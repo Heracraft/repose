@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1137 entries.
+1139 entries.
 
 ## Scope
 
@@ -768,7 +768,7 @@ pointer, not a summary.
 - **I-733** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-15) — L21625
 - **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21723
 - **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21841
-- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — amended by I-771; L21934
+- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — amended by I-771; amended by I-1628; L21934
 - **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21995
 - **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L22042
 - **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L22136
@@ -1061,7 +1061,7 @@ pointer, not a summary.
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36650
 - **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; partly amended by I-1586; L36691
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36800
-- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; L36912
+- **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; amended by I-1626; L36912
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; partly amended by I-1614; L37069
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37234
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37297
@@ -1169,3 +1169,5 @@ pointer, not a summary.
 - **I-1614** `repose host add --json` never prints the join token or the install argument: on a Mac it installs as it does without `--json` and prints the host; elsewhere it writes the argument to a 0600 file in the config directory and prints that file's path as `install.join_file` (agent-setup, ENG-102, 2026-11-25) — L39486
 - **I-1616** The join argument passes through no agent's context when repose is set up on the machine being added: on a Mac `repose host add` consumes it in process (as before), and on a Linux x86 machine it writes it to `~/.config/repose/join-NAME` (0600) and prints an installer line that names the file; the argument is printed only where a person carries it, by the dashboard's Add a host and by `repose host add` on a machine that cannot be a host (agent-setup, ENG-42, 2026-11-25) — L39494
 - **I-1624** `repose version` and `repose --version` print `repose <version>`, without the `(herakraft)` suffix (release conductor, 2026-11-25) — L39503
+- **I-1626** On a host its user owns, a machine has no size: every guest boots with the host's placeable memory and every vCPU, the guests share the host, unused memory goes back to it, overflow is compressed swap, and when memory truly runs out the newest guest is the one the kernel kills, reported `stopped`/`oom_killed` (shared-host, sharing program, 2026-11-25) — L39510
+- **I-1628** The owned reserve: what an owned host keeps back from its guests is what the appliance's own processes and the kernel hold with one idle guest running, plus a margin (shared-host, sharing program, 2026-11-25) — L39523
