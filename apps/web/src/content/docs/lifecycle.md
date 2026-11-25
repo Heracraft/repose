@@ -201,7 +201,7 @@ $ repose rm -y
 Destroying todo-app. Its final snapshot is kept until 2026-11-07.
 $ repose run
 ✓ Destroyed the old todo-app  14s
-✓ Created todo-app (large)  0.4s
+✓ Created todo-app (large)  6.0s
 ...
 ```
 
@@ -252,14 +252,14 @@ A plain `repose run` there stops with ``Your home folder is not a project. cd in
 ```
 $ cd ~/code/todo-app
 $ repose run --temp
-✓ Created tmp-k3f9 (large, temporary until Sep 29 14:02)  4s
-Synced: 2 modified, 1 untracked (48 new commits)  3.2s
-Ready in 21s.
+✓ Created tmp-k3f9 (large, temporary until Sep 29 14:02)  6.0s
+Synced: 2 modified, 1 untracked (48 new commits)  0.4s
+Ready in 7.2s.
 tmp-k3f9 is temporary: destroyed in 24h.
 
 $ cd ~/Downloads
 $ repose run --temp spike
-✓ Created spike (large, temporary until Sep 29 14:05)  4s
+✓ Created spike (large, temporary until Sep 29 14:05)  6.0s
 Not a git repository, so nothing was synced.
 ```
 

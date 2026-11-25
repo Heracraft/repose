@@ -31,12 +31,11 @@ repose run -p "write tests for src/billing.ts and commit them"
 ```
 
 ```text
-✓ Created your-project (large)  0.3s
-✓ Booted your-project  5.2s
+✓ Created your-project (large)  6.0s
 Connected to your-project (large)
-Synced: 3 modified, 1 untracked (2 new commits)  1.4s
-Logins copied: gh
-Ready in 16s.
+Synced: 3 modified, 1 untracked (2 new commits)  0.5s
+Logins copied: gh, git
+Ready in 7.5s.
 ```
 
 The first `run` creates the machine and copies your folder to `/home/dev/your-project`, uncommitted changes and unpushed commits included. Then the CLI starts your default agent in a tmux window, types your prompt and attaches you. Detach with `Ctrl-b` then `d` (inside a tmux on your laptop, `Ctrl-b` `Ctrl-b` `d`) and close the laptop; the agent keeps working.
@@ -69,7 +68,7 @@ Stop the machine when you're done:
 repose stop
 ```
 
-Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward [your plan's disk](/docs/billing#what-a-plan-means). The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.
+Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward [your plan's disk](/docs/billing#what-a-plan-means). The next `repose run` or `repose attach` starts it again in about 5 seconds with your files where you left them.
 
 ## Light and dark
 

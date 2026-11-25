@@ -10,13 +10,13 @@ const index = join(__dirname, '..', '..', '..', 'content', 'docs', 'index.md');
 // changes, the picture changes with it.
 describe('OneCommand', () => {
 	it("shows the quickstart's ready time", () => {
-		const m = readFileSync(index, 'utf8').match(/^Ready in (\d+)s\.$/m);
+		const m = readFileSync(index, 'utf8').match(/^Ready in ([\d.]+)s\.$/m);
 		expect(m, 'index.md has a "Ready in Ns." line').not.toBeNull();
 		expect(READY).toBe(`Ready in ${m![1]}s`);
 
 		// The machine's title shows it, and the story read aloud says it.
 		const src = readFileSync(join(__dirname, 'OneCommand.svelte'), 'utf8');
 		expect(src).toMatch(/class="ready[^"]*"\s*>\s*\{READY\}/);
-		expect(src).toContain("ready in ${READY.replace(/\\D/g, '')} seconds");
+		expect(src).toContain("ready in ${READY.slice('Ready in '.length, -1)} seconds");
 	});
 });
