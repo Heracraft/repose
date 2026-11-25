@@ -61,13 +61,16 @@ const (
 	OOMAdjFloor  = 100
 )
 
-// Reclaim on an owned host. A guest is idle when it used under
-// IdleCPUShare of one vCPU over a sample; IdleSamples such samples in a
+// Reclaim on an owned host. A guest is idle when its hypervisor's unit
+// used under IdleCPUShare of one vCPU over a sample, host-side: an idle
+// 8-vCPU guest on the M4 appliance costs 4.7 percent of one there (the
+// lab, 2026-11-25 19:01Z; 1.3 percent inside the guest), and a build or
+// an agent at work costs whole vCPUs, so a tenth sits between them; IdleSamples such samples in a
 // row drop its page cache once, until it is busy again. FreeMemBytes
 // under PressureFreeBytes drops the page cache of every running guest,
 // at most once per PressureEvery.
 const (
-	IdleCPUShare      = 0.02
+	IdleCPUShare      = 0.10
 	IdleSamples       = 5
 	PressureFreeBytes = 1 << 30
 )

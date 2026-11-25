@@ -319,3 +319,43 @@ func TestOwnedDefaults(t *testing.T) {
 		t.Fatalf("fleet reserve %d", f.HostReserveBytes)
 	}
 }
+
+// An idle 8-vCPU guest on the M4 appliance costs its hypervisor 2.85 s of
+// host CPU a minute (the lab, 19:01Z: 4.7 percent of one vCPU, the
+// guest itself 1.3 percent), which the first threshold of 2 percent never
+// called idle. It is idle; a build is not.
+func TestOwnedIdleCountsTheHypervisorsOwnIdleCost(t *testing.T) {
+	o := newOwnedHarness(t)
+	var drops atomic.Int32
+	o.gopts.OnExec = func(argv []string) *guestdv1.ExecResult {
+		if len(argv) == 3 && strings.Contains(argv[2], "drop_caches") {
+			drops.Add(1)
+		}
+		return nil
+	}
+	o.createClass(gid1, "large")
+	now := time.Unix(1_800_000_000, 0)
+	tick := func(cpu uint64) {
+		now = now.Add(time.Minute)
+		o.clock.Store(now.UnixNano())
+		o.m.ownedReclaim(context.Background(), map[string]uint64{gid1: cpu})
+	}
+	tick(0)
+	for range IdleSamples {
+		tick(2_850_000_000)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for drops.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if drops.Load() != 1 {
+		t.Fatalf("an idle guest at 2.85 s a minute was not dropped (drops %d)", drops.Load())
+	}
+	for range IdleSamples + 1 {
+		tick(60_000_000_000) // a build: a whole vCPU
+	}
+	time.Sleep(50 * time.Millisecond)
+	if drops.Load() != 1 {
+		t.Fatalf("a busy guest was dropped (drops %d)", drops.Load())
+	}
+}
