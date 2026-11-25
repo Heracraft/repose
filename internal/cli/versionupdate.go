@@ -354,7 +354,8 @@ func VersionUpdateCmd(ctx context.Context, out, errw io.Writer, target string) e
 	if err != nil {
 		return exitf(ExitGeneric, "Not updated: the downloaded repose did not start (%s).", lastClause(err))
 	}
-	// "repose <version> (herakraft)": the version is the second word.
+	// "repose <version>", and "repose <version> (herakraft)" before
+	// I-1624: the version is the second word either way.
 	if fields := strings.Fields(string(printed)); len(fields) < 2 || fields[1] != plainVersion(tag) {
 		return exitf(ExitGeneric, "Not updated: the downloaded repose says %q, not %s.", strings.TrimSpace(string(printed)), plainVersion(tag))
 	}

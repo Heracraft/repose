@@ -39499,3 +39499,10 @@ except where §6's gating is overtaken, below.)
 - *Rejected.* Printing the argument when stdout is a terminal and the file line when it is not: an agent's Bash tool may run under a pty, and a rule a customer cannot see is not one they can rely on. The file everywhere, including off-host machines: the file is on the wrong computer there, so the line would be one more step for the only people who use it, people at a keyboard.
 - *Cost.* A person who ran `repose host add` on an x86 laptop to carry the line to another box now copies a file instead (docs/ops/LATITUDE-LAB.md step 4 says how). Under two days: no api, schema or installer change.
 - *Evidence.* `TestHostAddOnLinuxX86` rewritten: stdout is the installer line naming `join-<name>` and nothing else, the file is 0600 and holds a bundle, neither stream holds the argument, with and without an install line recorded. Red first on the old code: `stdout is the x86 install step with the file alone: "printf '%s\\n' eyJ2...`.
+
+**I-1624. `repose version` and `repose --version` print `repose <version>`, without the `(herakraft)` suffix (release conductor, 2026-11-25).** *Made during implementation; amends I-15's version line and the "byte for byte" note under I-1086*
+- *Why.* An agent setting repose up (ENG-72) read `(herakraft)` next to a sign-in page on `accounts.herakraft.co` and warned its user that the tool might not be what it claims. The owner: "Just remove that tag."
+- *What still tells the two `repose` binaries apart.* `install.sh` and `repose version update` name another `repose` first on PATH (I-15); Arch's package does not print `repose <semver>`.
+- *Scripts.* The version stays the second word, so a script that reads it, `repose version update` included, reads old and new binaries alike; `versionupdate_test.go` keeps two old-format binaries to prove the downgrade path.
+- *Not changed.* The sign-in address `accounts.herakraft.co` (I-84): Logto serves one endpoint, and moving it needs DNS and proxy work; parked by the owner the same day.
+- *Evidence.* `TestVersionLine`: both forms print exactly `repose 0.1.65\n`.

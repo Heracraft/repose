@@ -164,10 +164,10 @@ func newRootCmd(version string) *cobra.Command {
 		SilenceUsage:  true,
 		// Version makes cobra accept `repose --version` (docs/CHECKLIST.md
 		// "Release (M5)"); the template keeps it byte-identical to
-		// `repose version`, herakraft suffix included.
+		// `repose version` (DECISIONS I-1624).
 		Version: version,
 	}
-	root.SetVersionTemplate("repose {{.Version}} (herakraft)\n")
+	root.SetVersionTemplate("repose {{.Version}}\n")
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		msg := err.Error()
 		if s := flagSuggestion(cmd, err); s != "" {
@@ -2262,9 +2262,9 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	return root
 }
 
-// newVersionCmd prints "repose <version> (herakraft)" (DECISIONS I-15: the
-// suffix lets a user tell this binary apart from Arch's unrelated
-// `repose` package on the same PATH).
+// newVersionCmd prints "repose <version>" (DECISIONS I-1624, which
+// dropped the "(herakraft)" suffix I-15 had added; install.sh and
+// `repose version update` name another repose first on PATH).
 func newVersionCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "version",
@@ -2274,7 +2274,7 @@ func newVersionCmd(version string) *cobra.Command {
 		// the command that updates the CLI lives (DECISIONS I-1086).
 		SuggestFor: []string{"update", "upgrade", "self-update"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Printf("repose %s (herakraft)\n", version)
+			fmt.Printf("repose %s\n", version)
 			return nil
 		},
 	}

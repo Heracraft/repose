@@ -101,7 +101,7 @@ pointer, not a summary.
 - **I-13** Dashboard design language is the recruiting app's, minus its non-text controls — superseded by I-369; L352
 - **I-14** Pre-launch host is `Standard_D16s_v5`; the host size is a variable, not a constant — 2026-09-17; amended by I-786; L360
 - **I-36** Guests set `NPM_CONFIG_PREFIX=/home/dev/.npm-global` and put its `bin` on `PATH` — L370
-- **I-15** The product is named Repose — 2026-09-19; L377
+- **I-15** The product is named Repose — 2026-09-19 — version suffix dropped by I-1624; L377
 - **I-16** Stripe is not needed until milestone M4; accounts can be billing- exempt — 2026-09-19; L393
 - **I-17** hostd ships a one-host dev driver, `cmd/hostdev` — L404
 - **I-18** Host runtime configuration has one input, `host.json`; the host owns the network files, the bridge isolation lives in an nftables `bridge` table, and guests are cut off from every private range — L412
@@ -1168,3 +1168,4 @@ pointer, not a summary.
 - **I-1612** New project starts on a size the plan has room for, and says before Enter when nothing fits; the button keeps the name "New project" (dashboard-create, 2026-11-24) — L39477
 - **I-1614** `repose host add --json` never prints the join token or the install argument: on a Mac it installs as it does without `--json` and prints the host; elsewhere it writes the argument to a 0600 file in the config directory and prints that file's path as `install.join_file` (agent-setup, ENG-102, 2026-11-25) — L39486
 - **I-1616** The join argument passes through no agent's context when repose is set up on the machine being added: on a Mac `repose host add` consumes it in process (as before), and on a Linux x86 machine it writes it to `~/.config/repose/join-NAME` (0600) and prints an installer line that names the file; the argument is printed only where a person carries it, by the dashboard's Add a host and by `repose host add` on a machine that cannot be a host (agent-setup, ENG-42, 2026-11-25) — L39494
+- **I-1624** `repose version` and `repose --version` print `repose <version>`, without the `(herakraft)` suffix (release conductor, 2026-11-25) — L39503
