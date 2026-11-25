@@ -1770,7 +1770,7 @@ uninstall_host() {
 
   # hostd and its timers first, so nothing starts a guest again; then the
   # guests, which with their host gone have nowhere else to be.
-  # shellcheck disable=SC2329 # run through step
+  # shellcheck disable=SC2329,SC2317 # run through step (SC2317 is the older shellcheck's name, CI's)
   quiet() { "$@" >/dev/null 2>&1 || true; }
   step "stop hostd and its timers" -- quiet systemctl stop repose-hostd-update.timer repose-snapshot.timer \
     repose-hostd-update.service repose-snapshot.service repose-register.service hostd.service
