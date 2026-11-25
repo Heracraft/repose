@@ -133,6 +133,10 @@ type Fake struct {
 	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
 	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
 	poolDown bool
+	// freeMem is the free_mem_bytes this host reports, 200 GiB unless a
+	// test sets it (SetFreeMem): on a host the user owns it is what
+	// placement and the refusal read (DECISIONS I-1630).
+	freeMem uint64
 	// bootID and bootAt are the host's boot, which Hello carries (I-645).
 	bootID string
 	bootAt time.Time
@@ -388,11 +392,27 @@ func (f *Fake) SetPoolUnavailable(down bool) {
 	f.mu.Unlock()
 }
 
+// SetFreeMem sets the free_mem_bytes the fake host reports from its next
+// heartbeat on; 0 is the default, 200 GiB.
+func (f *Fake) SetFreeMem(b uint64) {
+	f.mu.Lock()
+	f.freeMem = b
+	f.mu.Unlock()
+}
+
+// freeMemLocked is the free_mem_bytes to report; f.mu is held.
+func (f *Fake) freeMemLocked() uint64 {
+	if f.freeMem == 0 {
+		return 200 << 30
+	}
+	return f.freeMem
+}
+
 // Hello is the reconciliation message.
 func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID, Arch: f.opts.Arch}
+	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: f.freeMemLocked(), PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID, Arch: f.opts.Arch}
 	if !f.opts.NoClone {
 		h.Features = append(h.Features, "local_clone")
 	}
@@ -470,7 +490,7 @@ func (f *Fake) Run(ctx context.Context, conn grpc.ClientConnInterface) error {
 					}
 				}
 				dr := f.draining
-				hb := &hostdv1.Heartbeat{FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}
+				hb := &hostdv1.Heartbeat{FreeMemBytes: f.freeMemLocked(), PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}
 				if f.poolDown {
 					hb.PoolFreeBytes, hb.PoolBytes, hb.PoolUnavailable = 0, 0, true
 				}

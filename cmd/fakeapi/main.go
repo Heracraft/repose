@@ -172,6 +172,15 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			StateHost    string `json:"state_host"`
 			State        string `json:"state"`
 			Arch         string `json:"arch"`
+			// FreeBytes, with state_host, is the free memory that host
+			// reports (I-1630).
+			FreeBytes *int64 `json:"free_bytes"`
+			// OldHostd, with state_host: that host's hostd does not
+			// share, so it is placed by class (I-1630).
+			OldHostd *bool `json:"old_hostd"`
+			// MemUsedBytes, with project_id, is what that running
+			// machine reports in use (I-1632).
+			MemUsedBytes int64 `json:"mem_used_bytes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -191,6 +200,15 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		if body.StateHost != "" && body.State != "" {
 			f.SetOwnedHostState(body.StateHost, body.State)
+		}
+		if body.StateHost != "" && body.OldHostd != nil {
+			f.SetOwnedHostOldHostd(body.StateHost, *body.OldHostd)
+		}
+		if body.StateHost != "" && body.FreeBytes != nil {
+			f.SetOwnedHostFree(body.StateHost, *body.FreeBytes)
+		}
+		if body.ProjectID != "" && body.MemUsedBytes > 0 {
+			f.SetMemUsed(body.ProjectID, body.MemUsedBytes)
 		}
 		id := ""
 		if body.Name != "" {

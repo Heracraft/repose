@@ -159,3 +159,70 @@ func TestProjectCarriesRootFilesystem(t *testing.T) {
 		t.Fatalf("root_size_bytes from a sample without it: %s", g.raw)
 	}
 }
+
+// TestOwnHostMachineHasNoSize: a machine on a host its account owns, whose
+// hostd shares it, is
+// `sized: false` and reports what it uses (`mem_used_bytes`, running
+// only), and its samples are drawn against the host's vCPUs and memory,
+// since it may use all of them (DECISIONS I-1630, I-1632). The same
+// machine on a host repose runs is sized and drawn against its class.
+func TestOwnHostMachineHasNoSize(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-own", "own")
+	uid := e.exempt(t, "sub-own")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "shared", "class": "large"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	id := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	get := func() map[string]any {
+		t.Helper()
+		g := e.do(t, tok, "GET", "/projects/"+id, nil)
+		if g.status != 200 {
+			t.Fatalf("get: %d %s", g.status, g.raw)
+		}
+		return g.body
+	}
+	if b := get(); b["sized"] != true {
+		t.Fatalf("on a host repose runs: sized %v, want true", b["sized"])
+	}
+	if _, err := e.h.Pool.Exec(ctx, "delete from meter_samples where project_id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	busy := int64(8) * 60e9 // a minute of 8 vCPUs
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, cpu_ns, mem_used)
+		values (now(), $1, 'running', 'large', $2, $3)`, id, busy, int64(3<<30)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1, vcpus = 16, mem_bytes = 24::bigint << 30 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	// Owned but its hostd does not share yet: still sized (I-1630).
+	if b := get(); b["sized"] != true {
+		t.Fatalf("on an owned host that does not share: sized %v, want true", b["sized"])
+	}
+	shareHost(t, e)
+	b := get()
+	if b["sized"] != false || b["mem_used_bytes"] != float64(3<<30) || b["class"] != "large" {
+		t.Fatalf("on the account's own host: sized %v, mem_used_bytes %v, class %v; want false, 3 GiB, large kept", b["sized"], b["mem_used_bytes"], b["class"])
+	}
+	s := e.do(t, tok, "GET", "/projects/"+id+"/samples", nil)
+	if s.status != 200 || s.body["vcpus"] != float64(16) || s.body["memory_bytes"] != float64(24<<30) {
+		t.Fatalf("samples header %s, want the host's 16 vCPUs and 24 GiB", s.raw)
+	}
+	pts := s.body["points"].([]any)
+	if len(pts) == 0 || pts[len(pts)-1].(map[string]any)["cpu"] != 0.5 {
+		t.Fatalf("points %v, want 8 of the host's 16 vCPUs, 0.5", pts)
+	}
+	// Stopped, it uses nothing, and says nothing.
+	if _, err := e.h.Pool.Exec(ctx, "update projects set state = 'stopped' where id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	if b := get(); b["sized"] != false || b["mem_used_bytes"] != nil {
+		t.Fatalf("stopped on the own host: sized %v, mem_used_bytes %v; want false, absent", b["sized"], b["mem_used_bytes"])
+	}
+}

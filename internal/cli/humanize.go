@@ -161,6 +161,27 @@ func abuseStopReason(p *Project) string {
 	return strings.TrimSpace(msg)
 }
 
+// oomStopCode is the last_error code the api writes when the kernel
+// stopped a machine because a host of the account's own ran out of
+// memory (DECISIONS I-1632).
+const oomStopCode = "oom_stopped"
+
+// oomStopReason is the api's sentence for such a machine ("stopped:
+// your host mac-mini ran out of memory, and the kernel stopped api to
+// keep the others running. `repose start api` starts it again"), or ""
+// for any other project. It is shown on a stopped project, as
+// abuseStopReason is.
+func oomStopReason(p *Project) string {
+	if p.State != "stopped" || p.LastError == nil {
+		return ""
+	}
+	code, msg := splitLastError(*p.LastError)
+	if code != oomStopCode {
+		return ""
+	}
+	return strings.TrimSpace(msg)
+}
+
 // notRunningError is what every command that needs a running guest says
 // when the project is not running: the true state, why (when known), and
 // the command that fixes it. The exit code stays 5 (cli-config.md).
@@ -173,6 +194,9 @@ func notRunningMessage(p *Project) string {
 	switch p.State {
 	case "stopped":
 		if r := abuseStopReason(p); r != "" {
+			return fmt.Sprintf("%s is %s", s, strings.TrimSuffix(r, ".")+".")
+		}
+		if r := oomStopReason(p); r != "" {
 			return fmt.Sprintf("%s is %s", s, strings.TrimSuffix(r, ".")+".")
 		}
 		return fmt.Sprintf("%s is stopped. `repose start %s` starts it.", s, s)

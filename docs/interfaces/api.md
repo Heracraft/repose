@@ -169,7 +169,7 @@ the machines go first: destroy them, or restore them onto another host.
 | GET | `/projects/:id/ops/:op_id/log` | SSE stream of `BuildLog` lines (`id:` = seq, `data:` = `{seq, line, ts}`; `ts`, when the line reached the api, since I-322, and a client must accept a line without it), then a `done` event whose data is `{state}`; `?since=<seq>` or `Last-Event-ID` resumes after a line. Browsers cannot set headers on EventSource, so this route also accepts `?access_token=<jwt>`; the token is never logged and the route is the only one that accepts it. |
 | POST | `/projects/:id/resize` | `{volume_bytes}` (grow only) |
 | GET | `/projects/:id/route` | `{host_id, host_name?, host_state?, guest_ip, state, host_unreachable}` (used by CLI for `status` detail; `host_name` is what it shows, I-192) |
-| GET | `/projects/:id/samples?window=1h\|24h\|7d` | `{window, step_s, vcpus, memory_bytes, points: [{ts, cpu, mem_used_bytes, cpu_pressure, host_cpu_wait, disk_used_bytes}], procs: [{comm, cpu_s, rss_max_bytes}]}`: the machine over the window from its minute samples while running (I-492, I-493). `window` defaults to `1h`; `step_s` is 60, 300 or 3600. `vcpus` is the cores the class sells and is fractional on `tiny` (0.5, I-1168); `cpu` is the share of the class's vCPUs used, `cpu_pressure` the share of the time a task in the guest waited for a vCPU, `host_cpu_wait` the share of the time the machine waited for a host CPU (all 0 to 1). `mem_used_bytes` is memory in use as the guest sees it. `mem_used_bytes` and `cpu_pressure` are null in a bucket whose samples came from a guest older than I-493. `procs` is the eight process names with the most CPU in the window, their CPU seconds and largest RSS. Any other `window` is `invalid` |
+| GET | `/projects/:id/samples?window=1h\|24h\|7d` | `{window, step_s, vcpus, memory_bytes, points: [{ts, cpu, mem_used_bytes, cpu_pressure, host_cpu_wait, disk_used_bytes}], procs: [{comm, cpu_s, rss_max_bytes}]}`: the machine over the window from its minute samples while running (I-492, I-493). `window` defaults to `1h`; `step_s` is 60, 300 or 3600. `vcpus` is the cores the class sells and is fractional on `tiny` (0.5, I-1168), and on a host the account owns whose hostd names `shared` the host's vCPUs, with `memory_bytes` the host's memory (I-1632: a machine there has no size); `cpu` is the share of those vCPUs used, `cpu_pressure` the share of the time a task in the guest waited for a vCPU, `host_cpu_wait` the share of the time the machine waited for a host CPU (all 0 to 1). `mem_used_bytes` is memory in use as the guest sees it. `mem_used_bytes` and `cpu_pressure` are null in a bucket whose samples came from a guest older than I-493. `procs` is the eight process names with the most CPU in the window, their CPU seconds and largest RSS. Any other `window` is `invalid` |
 
 ```
 Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_ip?,
@@ -190,7 +190,9 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           placement,                                   -- own|hosted, where it is placed (I-1366)
           guest_runtime,                               -- nix|erofs, what the machine boots (I-1462)
           pending_base_version,                        -- erofs: the base the next start boots, else null (I-1462)
-          checkout }                                   -- the checkout's name under /home/dev, "" none, null unknown (I-1610)
+          checkout,                                    -- the checkout's name under /home/dev, "" none, null unknown (I-1610)
+          sized,                                       -- false on a host the account owns: class is no size there (I-1632)
+          mem_used_bytes? }                            -- running only: memory in use, newest sample (I-1632)
                                                        -- host_name: the owned host's name beside host_id,
                                                        -- absent on a host repose runs (I-1392)
 
@@ -221,7 +223,12 @@ that failed; on a `stopped` project it may instead be
 `abuse_stopped: stopped: a cryptocurrency miner (<name>) was running;
 mining is not allowed on repose, see the terms at <url>`, left by a stop
 the api made itself (added with I-239), which the CLI and the
-dashboard show; `host_unreachable` is true while the project's host
+dashboard show; or `oom_stopped: stopped: your host <name> ran out of
+memory, and the kernel stopped <slug> to keep the others running. ...`,
+the sentence ending with the `repose start` that brings it back, left when hostd reports a
+guest on a host the account owns `stopped` with reason `oom_killed`
+(added with I-1632; an `oom_stopped` event, which notifies, goes with
+it); `host_unreachable` is true while the project's host
 has missed heartbeats for 90 seconds; `signals.guestd_ok` is false when
 the newest sample found the environment's agent not answering (I-157).
 The api has returned all three since I-157/I-159; they are documented
@@ -238,6 +245,23 @@ local day) and `running_seconds_month` (the subscription's current period,
 else the calendar month) replace the cost fields, which answer 0 for one
 release. Older clients ignore them; an api without them means "not idle"
 and no hours.
+
+`sized` (DECISIONS I-1632) is false for a machine on a host its account
+owns whose hostd shares it (its Hello `features` name `shared`,
+grpc-hostd.md), and for one not placed yet that will go there
+(`placement` `own` and the account owns such a host that is not
+`retired` or `lost`). An owned host whose hostd does not name `shared`
+(one from before I-1626) keeps the class arithmetic, and its machines
+are `sized: true`, until its hostd is updated. Such a
+machine has no size (I-1630): it may use every vCPU and all the memory of
+that host, shared with the account's other machines there, and is placed
+and started by the host's reported free memory alone. `class` is still
+stored, returned and accepted on create and PATCH, and means nothing
+there; a client shows `mem_used_bytes` instead. `mem_used_bytes` is
+memory in use as the guest sees it (MemTotal less MemAvailable) from the
+newest sample, present on a `running` project whose newest sample is
+from this run and carries it, on any host. An api older than I-1632
+sends neither; a client reads a missing `sized` as true.
 
 `guest_runtime` (DECISIONS I-1462) is `nix` (a NixOS machine built from
 its configuration, every project before I-1462) or `erofs` (a machine
@@ -329,7 +353,9 @@ api older than I-1366 has no field and places as it always did.
 `host` (DECISIONS I-1584) pins the create to one host the account owns,
 by id or by name: the scheduler considers that host alone, and when it
 cannot take the machine (`registering`, `unreachable`, `draining`, or
-`ready` without the memory, disk or cores) the answer is `503 capacity`
+`ready` without the memory or disk; since I-1630 the memory of a host the
+account owns whose hostd names `shared` is the free memory it reports, at
+least `scheduler.OwnedStartFreeBytes`, 1 GiB, whatever the class) the answer is `503 capacity`
 with `detail.reason = "no_own_host"`, `detail.host` and
 `detail.host_state` naming that host and a message about it alone. It is
 read at the create only: a re-placement (`create: true` on start) picks

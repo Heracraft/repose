@@ -135,6 +135,9 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// null until a CLI has said.
 		"checkout": p.Checkout,
 	}
+	// onShared: the project's host is one of the account's own whose
+	// hostd shares it (I-1630).
+	onShared := false
 	if p.HostID != nil {
 		// The name the account gave its host, beside the id (I-1392): a
 		// script reading --json got an opaque uuid and never the name
@@ -142,13 +145,18 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// repose runs stays an id: that one is a platform internal
 		// (I-616), and its name is not the user's.
 		var name string
-		err := s.d.Pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id = $2", *p.HostID, u.ID).Scan(&name)
+		err := s.d.Pool.QueryRow(ctx, "select name, $3 = any(features) from hosts where id = $1 and owner_account_id = $2", *p.HostID, u.ID, scheduler.SharedFeature).Scan(&name, &onShared)
 		if err == nil {
 			out["host_name"] = name
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, err
 		}
 	}
+	sized, err := s.projectSized(ctx, p, onShared)
+	if err != nil {
+		return nil, err
+	}
+	out["sized"] = sized
 	if p.ExpiresAt != nil {
 		// A temporary machine (DECISIONS I-347): destroyed with no
 		// snapshot once this has passed, unless `repose keep` clears it.
@@ -182,6 +190,12 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			out["root_used_bytes"] = x.latest.RootUsed
 			out["root_size_bytes"] = x.latest.RootSize
 		}
+		if p.State == "running" && x.latest.MemUsed > 0 && !sampleBeforeStart(p, x.latest) {
+			// What the machine uses now, as the guest sees it (I-1632):
+			// on a host the user owns it is what the clients show in
+			// place of a size.
+			out["mem_used_bytes"] = x.latest.MemUsed
+		}
 		agents := []map[string]string{}
 		for _, a := range x.latest.Agents {
 			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"]})
@@ -194,6 +208,27 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			"docker_containers": x.latest.DockerContainers, "guestd_ok": guestdOK, "sampled_at": x.latest.TS, "gateway_sessions": s.sessions.Count(ctx, p.ID)}
 	}
 	return out, nil
+}
+
+// projectSized is the Project's `sized` (DECISIONS I-1632): whether its
+// class is a size. A machine on a host its account owns whose hostd
+// shares it (scheduler.SharedFeature) has no size (I-1630); so does one
+// not placed yet that will be placed there, a project asking for `own`
+// in an account that owns such a host that is not retired or lost. An
+// owned host whose hostd does not share yet boots each machine at its
+// class, so a machine there keeps its size. onShared is whether the
+// project's host is one of the account's that shares.
+func (s *Server) projectSized(ctx context.Context, p *store.Project, onShared bool) (bool, error) {
+	if onShared {
+		return false, nil
+	}
+	if p.HostID != nil || store.NormalizePlacement(p.Placement) == "hosted" {
+		return true, nil
+	}
+	var shares bool
+	err := s.d.Pool.QueryRow(ctx, `select exists (select 1 from hosts
+		 where owner_account_id = $1 and state not in ('retired', 'lost') and $2 = any(features))`, p.UserID, scheduler.SharedFeature).Scan(&shares)
+	return !shares, err
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {

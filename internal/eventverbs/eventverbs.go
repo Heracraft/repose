@@ -37,6 +37,9 @@ var Verbs = map[string]string{
 	// project event, and the user's notice that names no project.
 	"host_restarted":     "server restarted",
 	"machines_restarted": "server restarted",
+	// A host of the user's own ran out of memory and the kernel stopped
+	// this machine (DECISIONS I-1632).
+	"oom_stopped": "stopped, host out of memory",
 }
 
 // Verb is kind's word, or the kind with its separators as spaces.

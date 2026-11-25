@@ -30,7 +30,7 @@ const AGENT_KINDS = [
 ];
 
 /** Kinds that say something failed, beyond the *_failed ones. */
-const FAILED_KINDS = ['abuse_stopped'];
+const FAILED_KINDS = ['abuse_stopped', 'oom_stopped'];
 
 /**
  * Why an event notified nobody, in a few words, or undefined when it went
@@ -53,8 +53,6 @@ export function notSent(delivered?: Record<string, string>): string | undefined 
 	return undefined;
 }
 
-
-
 /**
  * The pager's filters (I-662), as explicit kind lists so the api can
  * filter by them. An agent's error is in both Agents and Errors.
@@ -71,6 +69,7 @@ export const EVENT_FILTERS = {
 		'personal_failed',
 		'boot_failed',
 		'abuse_stopped',
+		'oom_stopped',
 		'billing_stopped'
 	],
 	machine: [

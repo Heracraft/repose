@@ -12,6 +12,13 @@
 // host takes its owner's projects and nobody else's, and an account whose
 // plan sells no fleet memory is never placed on a host repose runs. That
 // term is `ownedSQL` and the caller supplies it as a Target.
+//
+// Since DECISIONS I-1630 an owned host whose hostd shares (SharedFeature)
+// is not placed by class at all: its machines share the host's memory, so
+// a machine goes there when the host reports at least OwnedStartFreeBytes
+// free (memSQL). An owned host whose hostd does not share keeps the class
+// arithmetic until it updates. The fleet's terms,
+// reserve and class reservations included, are unchanged.
 package scheduler
 
 import (
@@ -151,6 +158,55 @@ func HostReserve(memBytes int64) int64 {
 // hostReserveSQL is HostReserve for host rows h, kept beside it so the
 // two cannot drift (DECISIONS I-724).
 const hostReserveSQL = `least(greatest(h.mem_bytes / 8, 2::bigint<<30), 16::bigint<<30)`
+
+// OwnedStartFreeBytes is the free memory a host the user owns must report
+// for a machine to be placed or started there (DECISIONS I-1630, the
+// owner's ruling of 2026-11-25): on hardware the user owns a machine has
+// no size, every machine may use the whole host, and memory a machine is
+// not using goes back to the host. So nothing is reserved per machine and
+// the only question is whether the host has room to boot one more: what
+// hostd reports as free_mem_bytes, which on an owned host is the memory
+// the kernel says is available less the appliance's own measured share
+// (grpc-hostd.md), at least this much.
+//
+// 1 GiB because that is what a machine needs to come up and take a login:
+// a booted machine with nothing running in it holds a few hundred MB,
+// and its hypervisor and file server a little more on the host. Below
+// it, the boot itself would push the host into swap. hostd's own start
+// admission on an owned host uses the same figure, so the api never
+// places a machine hostd then refuses for memory.
+const OwnedStartFreeBytes int64 = 1 << 30
+
+// SharedFeature is the Hello feature a hostd names when it runs an owned
+// host whose machines share it (DECISIONS I-1626, I-1630): guests boot
+// at the host's size, its admission is OwnedStartFreeBytes and its
+// free_mem_bytes is real free memory. An owned host whose hostd does not
+// name it (one from before I-1626, or not started --owned-host) still
+// boots each guest at its class and admits by class, so placement keeps
+// the class arithmetic there.
+const SharedFeature = "shared"
+
+// sharesSQL is true for a host h that is owned and shares (I-1630).
+const sharesSQL = `(h.owner_account_id is not null and '` + SharedFeature + `' = any(h.features))`
+
+// fleetFreeSQL is the memory a host repose runs has for one more guest:
+// what it reports free, and what is left below its reserve after the
+// class reservations of the guests placed on it (DECISIONS I-724, R3-2).
+const fleetFreeSQL = `least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0))`
+
+// freeSQL is the free memory placement orders by and reports: what an
+// owned host that shares reports (I-1630), and fleetFreeSQL for any other
+// host, an owned one whose hostd does not share included.
+const freeSQL = `(case when ` + sharesSQL + ` then h.free_mem_bytes else ` + fleetFreeSQL + ` end)`
+
+// memSQL is the memory condition for hosts h, with $3 the class memory:
+// an owned host that shares takes a machine while it reports
+// OwnedStartFreeBytes free and no class is asked of it (I-1630); any other
+// host, an owned one whose hostd does not share included, takes the
+// class's memory under its reserve, as it always has.
+var memSQL = `(case when ` + sharesSQL + `
+		        then h.free_mem_bytes >= ` + strconv.FormatInt(OwnedStartFreeBytes, 10) + `
+		        else ` + fleetFreeSQL + ` >= $3 end)`
 
 // Target is who a placement is for (DECISIONS I-1366). A host a user
 // owns takes only that user's projects, and a user whose plan sells no
@@ -366,7 +422,7 @@ func pickSQL(cpuRoom, owned string) string { return pickSQLWith(cpuRoom, owned, 
 func pickSQLWith(cpuRoom, owned, runtime string) string {
 	return `
 		select h.id, h.name,
-		       least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) as free
+		       ` + freeSQL + ` as free
 		  from hosts h
 		  left join host_reservations r on r.host_id = h.id
 		 where h.state = 'ready'
@@ -380,7 +436,7 @@ func pickSQLWith(cpuRoom, owned, runtime string) string {
 		   and ` + owned + `
 		   and ` + runtime + `
 		   and ` + pinSQL + `
-		   and least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) >= $3
+		   and ` + memSQL + `
 		 order by free desc, h.name
 		 limit 1`
 }
@@ -395,6 +451,10 @@ func pickSQLWith(cpuRoom, owned, runtime string) string {
 // term is asked as if the stopping guests were already down. q need not
 // hold the lock: the answer only decides whether a placement is tried
 // again.
+//
+// On a host the user owns a stopping or destroying machine gives back
+// what it really holds, which no class says (I-1630), so any such
+// machine there is reason to wait and ask again.
 func Freeing(ctx context.Context, q interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }, t Target, class string, holdBytes, volumeBytes int64, now time.Time) (bool, error) {
@@ -422,7 +482,8 @@ func Freeing(ctx context.Context, q interface {
 		   and `+ownedSQL+`
 		   and `+runtimeSQL+`
 		   and `+pinSQL+`
-		   and least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
+		   and (`+sharesSQL+`
+		        or least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3))`,
 		t.args(now, class, holdBytes, volumeBytes)...).Scan(&ok)
 	return ok, err
 }
@@ -434,7 +495,9 @@ func Freeing(ctx context.Context, q interface {
 // names these, so they read the figure that refused them and not "no
 // room".
 type Room struct {
-	// FreeBytes is the memory placement counts free, never below 0.
+	// FreeBytes is the memory placement counts free, never below 0: on
+	// a host the user owns, what the host reports free (I-1630), which a
+	// machine is placed against with OwnedStartFreeBytes.
 	FreeBytes int64
 	// PoolFreeBytes and PoolNeedBytes are the thin pool's free bytes and
 	// what a new volume needs free there: PlacementPoolPct's headroom
@@ -443,21 +506,27 @@ type Room struct {
 	PoolFreeBytes, PoolNeedBytes int64
 	// PoolUnavailable is hosts.pool_unavailable (I-644).
 	PoolUnavailable bool
+	// Shares is whether the host's hostd names SharedFeature: its
+	// machines have no size and FreeBytes is placed against
+	// OwnedStartFreeBytes; without it, against the class (I-1630).
+	Shares bool
 }
 
 // OwnedRooms is Room for every host account owns, by host id, computed
-// by the same expressions PickHost places with.
+// by the same expressions PickHost places with: the memory is what the
+// host reports free (I-1630).
 func OwnedRooms(ctx context.Context, q interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }, account uuid.UUID, holdBytes, volumeBytes int64) (map[uuid.UUID]Room, error) {
 	rows, err := q.Query(ctx, `
 		select h.id,
-		       greatest(least(h.free_mem_bytes, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0)), 0),
+		       greatest(`+freeSQL+`, 0),
 		       h.pool_free_bytes,
 		       case when h.pool_bytes > 0
 		            then h.pool_bytes / 100 * (100 - `+strconv.Itoa(PlacementPoolPct)+`) + $2
 		            else $3 end,
-		       h.pool_unavailable
+		       h.pool_unavailable,
+		       `+sharesSQL+`
 		  from hosts h
 		  left join host_reservations r on r.host_id = h.id
 		 where h.owner_account_id = $1`, account, holdBytes, volumeBytes)
@@ -469,7 +538,7 @@ func OwnedRooms(ctx context.Context, q interface {
 	for rows.Next() {
 		var id uuid.UUID
 		var r Room
-		if err := rows.Scan(&id, &r.FreeBytes, &r.PoolFreeBytes, &r.PoolNeedBytes, &r.PoolUnavailable); err != nil {
+		if err := rows.Scan(&id, &r.FreeBytes, &r.PoolFreeBytes, &r.PoolNeedBytes, &r.PoolUnavailable, &r.Shares); err != nil {
 			return nil, err
 		}
 		out[id] = r
