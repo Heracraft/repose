@@ -17,7 +17,7 @@ describe('the hero terminal', () => {
 			'cd ~/code/your-project',
 			expect.stringMatching(/^repose run -p ".+"$/)
 		]);
-		const ready = index.match(/^Ready in \d+s\.$/m);
+		const ready = index.match(/^Ready in [\d.]+s\.$/m);
 		expect(ready, 'index.md has a "Ready in Ns." line').not.toBeNull();
 		expect(SESSION.output.at(-1)).toBe(ready![0]);
 		expect(SESSION.output.length).toBeGreaterThan(1);

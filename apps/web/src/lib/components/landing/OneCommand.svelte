@@ -7,7 +7,7 @@
   machine starts empty and every commit travels. The graph is cropped to
   the branch's two commits; master's base commit under them, a note about
   the app's own UI, told a stranger nothing (I-961). The machine's title reads the quickstart's
-  "Ready in 16s" (docs index.md, held there by OneCommand.test.ts), the
+  "Ready in 7.5s" (docs index.md, held there by OneCommand.test.ts), the
   time of a run that creates the machine (I-397, I-400). On the machine
   the edits sit under Changes exactly as on the laptop: the sync sends
   staged and unstaged work as two patches and keeps the split (I-258,
@@ -36,7 +36,7 @@
 -->
 <script module lang="ts">
 	/** The quickstart's time for a run that creates the machine (docs index.md). */
-	export const READY = 'Ready in 16s';
+	export const READY = 'Ready in 7.5s';
 </script>
 
 <script lang="ts">
@@ -64,7 +64,7 @@
 	const story =
 		'Two source control panels side by side, your laptop and your cloud machine. On the laptop, branch fetch-timeout ' +
 		'has 2 new commits, 2 modified files (.env.example and poller.ts), an untracked timeout.test.ts and a gitignored .env; ' +
-		`its node_modules folder is struck out and stays behind. After repose run, ready in ${READY.replace(/\D/g, '')} seconds, the cloud machine shows ` +
+		`its node_modules folder is struck out and stays behind. After repose run, ready in ${READY.slice('Ready in '.length, -1)} seconds, the cloud machine shows ` +
 		'the same branch, the same commits, the same two modified files and untracked test, and the same .env. ' +
 		'An agent on the machine then commits "Retry fetchBoard once", and git fetch repose ' +
 		'brings that commit to the laptop as repose/fetch-timeout.';

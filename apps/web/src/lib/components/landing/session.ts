@@ -43,7 +43,7 @@ export function parseSession(md: string): Session {
 	return { commands, output };
 }
 
-/** "about 12 seconds": the restart time index.md gives for a stopped machine. */
+/** "about 5 seconds": the restart time index.md gives for a stopped machine. */
 export function parseRestart(md: string): string {
 	const m = md.match(/starts it again in (about \d+ seconds)/);
 	if (!m) throw new Error('index.md lost "starts it again in about N seconds"');

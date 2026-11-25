@@ -101,7 +101,7 @@ A machine on your Mac starts in about 33 seconds, and a new one is ready in
 about 40 seconds once the base image is on the Mac. The first machine also
 downloads that image, 2.9 GB, so it takes about two minutes. On repose's own
 servers the same machine starts in about
-[6 seconds](/docs#6-come-back-and-stop). Measured on an M4 Mac mini on
+[5 seconds](/docs#6-come-back-and-stop). Measured on an M4 Mac mini on
 2026-11-22.
 
 Once it is running it is a machine like any other. Agents start as fast as on
