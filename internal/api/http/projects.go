@@ -728,8 +728,8 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		// on its next pass, and a machine already frozen when the user
 		// turns the switch on is woken now rather than at whatever next
 		// reaches it (I-820).
-		if *body.KeepAwake && p.RestingSince != nil && s.d.Resting != nil {
-			if _, err := s.d.Resting.Wake(ctx, p.ID, resting.ReasonKeepAwake); err != nil {
+		if waker := s.userWake(); *body.KeepAwake && p.RestingSince != nil && waker != nil {
+			if _, err := waker.Wake(ctx, p.ID, resting.ReasonKeepAwake); err != nil {
 				obs.Logger(ctx, s.d.Log).Warn("keep-awake wake failed", "event", "guest_wake_fail", "project_id", p.ID.String(), "err", err.Error())
 			}
 		}
