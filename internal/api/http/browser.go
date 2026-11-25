@@ -125,12 +125,12 @@ func (s *Server) mintBrowserView(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if !ok || time.Since(last) >= viewWakeWindow {
-			if s.d.Resting == nil {
+			waker := s.userWake()
+			if waker == nil {
 				return errf("internal", "waking is not configured on this api")
 			}
-			if _, err := s.d.Resting.Wake(ctx, p.ID, resting.ReasonView); err != nil {
-				obs.Logger(ctx, s.d.Log).Warn("wake failed", "event", "guest_wake_fail", "project_id", p.ID.String(), "reason", resting.ReasonView, "err", err.Error())
-				return errf("internal", "%s did not wake", p.Slug)
+			if _, err := waker.Wake(ctx, p.ID, resting.ReasonView); err != nil {
+				return wakeFailed(p.Slug, err)
 			}
 			if err := store.MarkViewWake(ctx, s.d.Pool, p.ID); err != nil {
 				return err

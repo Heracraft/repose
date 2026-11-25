@@ -498,6 +498,7 @@ Refusals, beside the usual envelope codes:
 | `view_budget` | 409 | The ticket has carried its 2 GiB. The page mints another |
 | `view_capacity` | 503 | This api or the edge's relay is at its concurrent-view cap |
 | `unavailable` | 503 | No view relay is configured on this api, or the edge did not answer |
+| `unavailable` | 503 | `detail.reason = wake_failed`: the machine is frozen and this mint's wake did not reach it. The message says why in words: its host is not connected, the host refused (with the host's reason), or no answer within 30 s. The machine is left as it was; before I-1642 this was `500 internal` |
 | `conflict` | 409 | The machine is not running (`detail.state`), has no address, or its desktop did not answer (`detail.reason` is the relay's code) |
 | `rate_limited` | 429 | The 11th mint in an hour, or too many connects from one source prefix at once |
 | `forbidden` | 403 | An `Origin` that is not the dashboard's, or a source prefix refused for 10 minutes after 20 refused tickets |
