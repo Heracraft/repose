@@ -89,6 +89,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	}
 	m.SweepAuthShares(ctx)
 	m.refreshGuestGauge()
+	m.rankOOM(ctx)
 	return nil
 }
 
@@ -304,6 +305,11 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 		// failed (a VG gone mid-reconcile) leaves the guest stopped.
 		if vol, err := m.d.LVM.VolumeExists(ctx, VolumeName(g.GuestID)); err == nil && !vol {
 			_ = m.setState(g, StateError, "reconciled: volume missing") // see above
+			return
+		}
+		if m.cfg.Owned && m.oomExit(ctx, g) {
+			// The OOM killer took it while hostd was down (I-1626).
+			_ = m.setState(g, StateStopped, ReasonOOMKilled) // see above
 			return
 		}
 		_ = m.setState(g, StateStopped, "reconciled: hypervisor not running after hostd restart") // see above

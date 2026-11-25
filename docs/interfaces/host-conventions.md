@@ -371,7 +371,25 @@ virtiofsd/virtiofsd.sock`, `--vsock cid=<1000+index>,socket=vsock.sock`,
 `--serial socket=console.sock`, `--console off`, `--memory
 size=<RAM>M,shared=on`, `--seccomp true` (the default, written out), and
 with `--free-page-reporting` `--balloon size=0,free_page_reporting=on`
-(DECISIONS I-652; from the guest's next start). A parked guest is
+(DECISIONS I-652; from the guest's next start).
+
+On a host its user owns (hostd `--owned-host`, DECISIONS I-1626) the class
+sizes nothing: `--cpus boot=<host CPUs>`, `--memory size=<MemTotal - owned
+reserve - 512M, down to 128M>M,shared=on`, no `bw_size`/`ops_size`, the
+balloon always, and the unit's `CPUQuota` and class weight are replaced by
+`CPUWeight=100` and `OOMScoreAdjust=1000`; MemoryMax and MemoryHigh follow
+the same RAM + 512M and + 384M rule. Each time a guest reaches running,
+hostd rewrites the running hypervisors' `/proc/<pid>/oom_score_adj` by
+start order, newest 1000 and each older one 250 lower, never under 100,
+so the OOM killer takes the newest guest first and never the appliance's
+services (`hostd.service` keeps -900, the rest systemd's 0). At its start
+hostd sets `guests.slice` `MemoryMax` to MemTotal less the owned reserve
+(I-1628) with `systemctl set-property --runtime`. `repose-zram.service`
+gives the host a zstd zram swap of half its memory at priority 100,
+`vm.swappiness=150` and `vm.page-cluster=0`. hostd drops the page cache
+(`sync; echo 1 > /proc/sys/vm/drop_caches`, through guestd) of a guest
+idle for five samples in a row, once until it is busy again, and of every
+running guest when free memory is under 1 GiB, at most every 5 minutes. A parked guest is
 restored with `cloud-hypervisor --api-socket ch.sock --restore
 source_url=file://<guest dir>/freeze/snap,memory_restore_mode=copy
 --seccomp true` in the same unit and sandbox; every device comes from the

@@ -287,7 +287,7 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 		m.countSkipped(ctx, reason, "no_key", run)
 		return nil
 	}
-	sort.SliceStable(run, func(i, j int) bool { return Classes[run[i].Class].MemMiB < Classes[run[j].Class].MemMiB })
+	sort.SliceStable(run, func(i, j int) bool { return m.classOf(run[i].Class).MemMiB < m.classOf(run[j].Class).MemMiB })
 	m.d.Log.Info("parking guests", "event", "guest_park", "reason", reason, "guests", len(run))
 
 	// Room in the pool: an image takes at most the class's memory; stop
@@ -296,7 +296,7 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	results := make([]ParkResult, len(run))
 	take := make([]bool, len(run))
 	for i, g := range run {
-		need := Classes[g.Class].MemMiB << 20
+		need := m.classOf(g.Class).MemMiB << 20
 		if room >= 0 && need > uint64(room) {
 			results[i] = ParkResult{GuestID: g.GuestID, Outcome: "skipped", Reason: "pool has no room for the image"}
 			continue
@@ -736,7 +736,7 @@ func (w *writeRate) observe(n uint64, d time.Duration) {
 // hypervisor's unit holds (with free page reporting, what the guest
 // uses), or the class's memory when that cannot be read.
 func (m *Manager) memoryBytes(ctx context.Context, g *state.Guest) uint64 {
-	class := (Classes[g.Class].MemMiB + 256) << 20
+	class := (m.classOf(g.Class).MemMiB + 256) << 20
 	props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "MemoryCurrent")
 	if err != nil {
 		return class
@@ -866,7 +866,7 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 	if err != nil {
 		return fail("guest user unknown", err)
 	}
-	if err := m.d.Park.Image.Create(ctx, id, imageVolumeBytes(g.Class), key, m.imageMount(id), uid, gid); err != nil {
+	if err := m.d.Park.Image.Create(ctx, id, imageVolumeBytes(m.classOf(g.Class)), key, m.imageMount(id), uid, gid); err != nil {
 		return fail("image volume not made", err)
 	}
 	if err := ensureDir(m.imageMount(id), 0o700, uid, gid); err != nil {
@@ -1006,8 +1006,8 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 // full of incompressible bytes -- from running the volume out of space:
 // btrfs allocates data in chunks of up to 1 GiB and needs a metadata and a
 // system chunk besides (I-685).
-func imageVolumeBytes(class string) uint64 {
-	return (Classes[class].MemMiB + 1536) << 20
+func imageVolumeBytes(class Class) uint64 {
+	return (class.MemMiB + 1536) << 20
 }
 
 // snapshotTimeout bounds one vm.snapshot where no wall does: an xl
@@ -1662,7 +1662,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 	for _, s := range []string{"ch.sock", "vsock.sock"} {
 		_ = os.Remove(filepath.Join(dir, s)) // the hypervisor makes them anew; a stale one fails its bind
 	}
-	props := GuestUnitProps(Classes[g.Class], m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
+	props := GuestUnitProps(m.classOf(g.Class), m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
 	argv := ch.RestoreArgs(dir, m.snapDir(g.GuestID))
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, argv); err != nil {
 		return fmt.Errorf("hypervisor: %w", err)
@@ -1710,7 +1710,11 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 	phase("guestd")
 	m.log(g).Info("restore phases", append([]any{"event", "guest_unpark"}, phases...)...)
 	m.markGood(g, g.SystemClosure)
-	return m.setState(g, StateRunning, "restored from a parked image")
+	if err := m.setState(g, StateRunning, "restored from a parked image"); err != nil {
+		return err
+	}
+	m.rankOOM(ctx)
+	return nil
 }
 
 // SyncClocks sets every running guest's clock to the host's, after the

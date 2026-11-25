@@ -116,6 +116,12 @@ type Options struct {
 	// (DECISIONS I-1484). "on", the default, keeps it, unless no nix is
 	// on PATH, which a host without Nix (an appliance) is.
 	NixMode string
+	// OwnedHost is a host its user owns: the Mac appliance and an x86
+	// machine set up by ops/install-host-x86.sh write --owned-host into
+	// hostd.env (DECISIONS I-1626). Its guests share the host's memory
+	// and every vCPU whatever class the api sends, free page reporting
+	// is on, and guests.slice holds all but the owned reserve (I-1628).
+	OwnedHost bool
 	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
 	// offline and back after a guest's hypervisor exits. auto is on
 	// under Apple's Virtualization framework, the Mac appliance, where a
@@ -355,7 +361,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		VirtiofsSocketWait: 10 * time.Second,
 		GuestUser:          o.GuestUser,
 		NoAuthShare:        !o.ClaudeLoginShare,
-		FreePageReporting:  o.Park.FreePageReporting,
+		FreePageReporting:  o.Park.FreePageReporting || o.OwnedHost,
+		Owned:              o.OwnedHost,
+		HostVCPUs:          hostinfo.VCPUs(),
 		PauseIdle:          o.PauseIdle,
 		Burst:              o.Burst,
 		BurstGate:          o.BurstGate,
@@ -394,6 +402,8 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		BootID:         hostinfo.BootID, BootTime: hostinfo.BootTime,
 		Park:                fdeps,
 		AfterHypervisorExit: resetter.Kick,
+		GuestsSliceMemory:   hostinfo.GuestsSliceMemory,
+		SetOOMScoreAdj:      hostinfo.SetOOMScoreAdj,
 	})
 	if err != nil {
 		return err
@@ -404,6 +414,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		images.Refs = mgr.BaseRefs
 	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
+	if o.OwnedHost {
+		ownedSlice(ctx, r, total, log)
+	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
@@ -709,4 +722,23 @@ func systemStopping(r shell.Runner) func(ctx context.Context) bool {
 		res, _ := r.Run(cctx, "systemctl", "is-system-running")
 		return strings.TrimSpace(string(res.Stdout)) == "stopping"
 	}
+}
+
+// ownedSlice gives guests.slice every byte of an owned host's memory but
+// the owned reserve (DECISIONS I-1628): together the guests may hold that
+// much, and the appliance's own services keep the rest. It runs at every
+// start, after repose-guests-slice.service set the fleet's eighth at
+// boot, and before any guest starts. A failure is logged and the boot's
+// figure stays, which only holds the guests to less.
+func ownedSlice(ctx context.Context, r shell.Runner, total uint64, log *slog.Logger) {
+	if total <= guest.OwnedReserveBytes {
+		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "reason", "total_unread")
+		return
+	}
+	max := total - guest.OwnedReserveBytes
+	if _, err := r.Run(ctx, "systemctl", "set-property", "--runtime", hostinfo.GuestsSlice, fmt.Sprintf("MemoryMax=%d", max)); err != nil {
+		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "err", err.Error())
+		return
+	}
+	log.Info("guests share the host", "event", "start", "part", "owned", "slice_max_bytes", max, "reserve_bytes", uint64(guest.OwnedReserveBytes), "vcpus", hostinfo.VCPUs())
 }

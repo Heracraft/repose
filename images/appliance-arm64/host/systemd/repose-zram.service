@@ -1,0 +1,15 @@
+# Compressed swap in memory for a host its user owns (DECISIONS I-1626):
+# guests share the host's memory, and overflow is compressed into RAM
+# before the OOM killer ends a guest.
+[Unit]
+Description=Compressed swap in memory for guests that share the host
+After=systemd-modules-load.service
+Before=hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-zram
+
+[Install]
+WantedBy=multi-user.target
