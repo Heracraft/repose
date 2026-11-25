@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1136 entries.
+1137 entries.
 
 ## Scope
 
@@ -101,7 +101,7 @@ pointer, not a summary.
 - **I-13** Dashboard design language is the recruiting app's, minus its non-text controls — superseded by I-369; L352
 - **I-14** Pre-launch host is `Standard_D16s_v5`; the host size is a variable, not a constant — 2026-09-17; amended by I-786; L360
 - **I-36** Guests set `NPM_CONFIG_PREFIX=/home/dev/.npm-global` and put its `bin` on `PATH` — L370
-- **I-15** The product is named Repose — 2026-09-19 — version suffix dropped by I-1624; L377
+- **I-15** The product is named Repose — 2026-09-19; partly amended by I-1624; L377
 - **I-16** Stripe is not needed until milestone M4; accounts can be billing- exempt — 2026-09-19; L393
 - **I-17** hostd ships a one-host dev driver, `cmd/hostdev` — L404
 - **I-18** Host runtime configuration has one input, `host.json`; the host owns the network files, the bridge isolation lives in an nftables `bridge` table, and guests are cut off from every private range — L412
