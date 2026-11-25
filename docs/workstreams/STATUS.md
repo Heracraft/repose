@@ -896,3 +896,4 @@ month the line is dated in.
 2026-11-25 | release r20261125-1 | conductor, woker-1 | released | 2 branches: host-json (I-1614), first-start shipped as cli,web. Evidence and what is not done: docs/releases/r20261125-1.md
 2026-11-25 | release r20261125-2 | conductor, woker-1 | released | 2 branches: join-file (I-1616), agent-page (I-1616) shipped as cli,web. Evidence and what is not done: docs/releases/r20261125-2.md
 2026-11-25 | release r20261125-3 | conductor, woker-1 | released | 1 branches: version-tag (I-1624) shipped as cli,web. Evidence and what is not done: docs/releases/r20261125-3.md
+2026-11-25 | sharing-lab | lab, woker-1, worktree kanali-sharing-lab, branch sharing-lab | claimed | Mac e2e-mac as owned host, workload harness, baseline S1-S5 on 12G/18G, measurements for shared-host
