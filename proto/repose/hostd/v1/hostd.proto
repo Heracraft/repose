@@ -474,8 +474,16 @@ message Command {
     SetTriggers set_triggers = 28;   // DECISIONS I-1248
     RunTrigger run_trigger = 29;     // DECISIONS I-1252
     WriteTriggerPrompt write_trigger_prompt = 30; // DECISIONS I-1266
+    DeleteSnapshot delete_snapshot = 31; // DECISIONS I-1636
   }
 }
+
+// DeleteSnapshot removes one snapshot a host keeps on its own disk (an
+// owned host's --snapshot-dir, DECISIONS I-1372, I-1636): the api's
+// retention sends it for each expired row whose snapshot lives on that
+// host. Idempotent: a snapshot already gone is ok. A host that keeps no
+// snapshots (Blob) answers invalid_argument.
+message DeleteSnapshot { string blob_path = 1; }
 
 message Error {
   string code = 1;      // see docs/interfaces/grpc-hostd.md

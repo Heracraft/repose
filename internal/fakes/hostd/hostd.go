@@ -609,6 +609,8 @@ func kind(cmd *hostdv1.Command) string {
 		return "WakeGuest"
 	case *hostdv1.Command_SetBurst:
 		return "SetBurst"
+	case *hostdv1.Command_DeleteSnapshot:
+		return "DeleteSnapshot"
 	}
 	return ""
 }
@@ -1079,6 +1081,10 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Lock()
 		f.draining = true
 		f.mu.Unlock()
+		return ok(nil)
+	case *hostdv1.Command_DeleteSnapshot:
+		// The fake keeps no files; a delete is always ok, as hostd's is
+		// for a snapshot already gone (DECISIONS I-1636).
 		return ok(nil)
 	case *hostdv1.Command_AnswerQuestion:
 		a := c.AnswerQuestion

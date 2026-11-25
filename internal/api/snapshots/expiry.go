@@ -31,6 +31,17 @@ type BlobStore interface {
 	Delete(ctx context.Context, path string) error
 }
 
+// HostDeleter deletes a snapshot a host keeps on its own disk: an owned
+// host's (DECISIONS I-1372), which no Blob holds (I-1636). The app sends
+// hostd's DeleteSnapshot through the host's stream.
+type HostDeleter interface {
+	DeleteOnHost(ctx context.Context, hostID uuid.UUID, path string) error
+}
+
+// ErrHostAway is a HostDeleter's answer for a host with no stream now: the
+// row stays for the next run, and this run is not failed for it.
+var ErrHostAway = errors.New("host not connected")
+
 // Retention is the live-project window.
 const Retention = 7 * 24 * time.Hour
 
@@ -58,9 +69,12 @@ const MaxPerProject = 7
 type Expiry struct {
 	pool *db.Pool
 	blob BlobStore
-	m    *metrics.M
-	log  *slog.Logger
-	Now  func() time.Time
+	// Hosts deletes an owned host's snapshots on that host. Nil keeps
+	// every such row, failing it, since no Blob holds the file.
+	Hosts HostDeleter
+	m     *metrics.M
+	log   *slog.Logger
+	Now   func() time.Time
 }
 
 // New builds the job.
@@ -168,18 +182,35 @@ func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, er
 	rows.Close()
 	for _, id := range ids {
 		var path string
+		var owned *uuid.UUID
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
 			// Still expired, not taken by a restore since the candidate list,
-			// and not locked by another replica's sweep.
-			err := tx.QueryRow(ctx, `select s.blob_path from snapshots s join projects p on p.id = s.project_id where s.id = $4 and `+expiredWhere+` for update of s skip locked`, now, now.Add(-Retention), MaxPerProject, id).Scan(&path)
+			// and not locked by another replica's sweep. owned is the host
+			// that keeps the file when that is an owned host still there
+			// (I-1636); a removed host took its snapshots with it.
+			err := tx.QueryRow(ctx, `select s.blob_path, case when h.owner_account_id is not null and s.gone_with_host is null then h.id end
+				from snapshots s join projects p on p.id = s.project_id left join hosts h on h.id = s.host_id
+				where s.id = $4 and `+expiredWhere+` for update of s skip locked`, now, now.Add(-Retention), MaxPerProject, id).Scan(&path, &owned)
 			if err != nil {
 				if db.IsNoRows(err) {
 					return errSkip
 				}
 				return err
 			}
-			if err := e.blob.Delete(ctx, path); err != nil {
-				return fmt.Errorf("delete blob: %w", err)
+			switch {
+			case owned != nil && e.Hosts == nil:
+				return fmt.Errorf("delete on host: no host sender")
+			case owned != nil:
+				if err := e.Hosts.DeleteOnHost(ctx, *owned, path); err != nil {
+					if errors.Is(err, ErrHostAway) {
+						return errAway
+					}
+					return fmt.Errorf("delete on host: %w", err)
+				}
+			default:
+				if err := e.blob.Delete(ctx, path); err != nil {
+					return fmt.Errorf("delete blob: %w", err)
+				}
 			}
 			_, err = tx.Exec(ctx, "update snapshots set deleted_at = $2 where id = $1", id, now)
 			return err
@@ -187,13 +218,17 @@ func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, er
 		switch {
 		case errors.Is(err, errSkip):
 			continue
+		case errors.Is(err, errAway):
+			// The host is asleep or offline: next run.
+			e.log.Info("snapshot expiry waits for its host", "event", "snapshot_expired", "snapshot_id", id.String(), "reason", "host_away")
+			continue
 		case err != nil:
 			failed++
 			// The reason is bounded on purpose: the error text carries a
 			// path and a provider message, which is not a metric label
 			// (I-800).
 			reason := "db"
-			if strings.Contains(err.Error(), "delete blob") {
+			if strings.Contains(err.Error(), "delete blob") || strings.Contains(err.Error(), "delete on host") {
 				reason = "blob"
 			}
 			if e.m != nil {
@@ -208,7 +243,10 @@ func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, er
 	return deleted, failed, nil
 }
 
-var errSkip = errors.New("snapshot no longer expired")
+var (
+	errSkip = errors.New("snapshot no longer expired")
+	errAway = errors.New("snapshot's host away")
+)
 
 // UpdateAgeGauge sets repose_api_snapshot_age_seconds, the SnapshotStale
 // input: over running projects, the longest time since the later of the

@@ -1232,6 +1232,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "WakeGuest"
 	case *hostdv1.Command_SetBurst:
 		return "SetBurst"
+	case *hostdv1.Command_DeleteSnapshot:
+		return "DeleteSnapshot"
 	}
 	return ""
 }
@@ -1597,6 +1599,8 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Wake{Wake: r} })
 	case *hostdv1.Command_SetBurst:
 		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
+	case *hostdv1.Command_DeleteSnapshot:
+		return payloadOrErr(id, m.deleteSnapshot(ctx, c.DeleteSnapshot), nil)
 	case *hostdv1.Command_SetTriggers:
 		return payloadOrErr(id, m.setTriggers(ctx, c.SetTriggers), nil)
 	case *hostdv1.Command_RunTrigger:

@@ -1408,8 +1408,13 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 			if len(short) > 200 {
 				short = short[:200]
 			}
+			// A store with no room says what frees it: the retention, which
+			// deletes on the host too (I-1636). The user has nothing to run.
+			if strings.Contains(s.SnapshotError, "no space left on device") {
+				short = "the host's snapshot space is full. Repose deletes snapshots older than seven days, and all but a project's newest seven, once a day"
+			}
 			_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, "snapshot_failed: "+short) // best effort; the event below carries it too
-			e.notifyPlatform(ctx, p.ID, "snapshot_failed", p.Slug+" stopped, but its snapshot was not saved: "+short)
+			e.notifyPlatform(ctx, p.ID, "snapshot_failed", p.Slug+" stopped, but its snapshot was not saved: "+short+".")
 		}
 		if op.Kind == KindDestroy {
 			return nil

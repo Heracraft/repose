@@ -26,7 +26,7 @@ func TestStopWithoutItsSnapshotLeavesProjectStopped(t *testing.T) {
 		t.Fatalf("stop op %s %+v", op.State, op.Error)
 	}
 	p = h.Project(pid)
-	if p.State != "stopped" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "snapshot_failed: ") || !strings.Contains(*p.LastError, "no space left on device") {
+	if p.State != "stopped" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "snapshot_failed: the host's snapshot space is full. Repose deletes snapshots older than seven days") {
 		t.Fatalf("project %s %v, want stopped with the snapshot's error", p.State, p.LastError)
 	}
 	after, _ := store.ListSnapshots(h.Ctx, h.Pool, pid)
@@ -36,7 +36,7 @@ func TestStopWithoutItsSnapshotLeavesProjectStopped(t *testing.T) {
 	evs, _ := store.ListEvents(h.Ctx, h.Pool, pid, time.Time{}, 50)
 	found := false
 	for _, e := range evs {
-		found = found || (e.Kind == "snapshot_failed" && strings.Contains(e.Summary, "stopped") && strings.Contains(e.Summary, "no space left on device"))
+		found = found || (e.Kind == "snapshot_failed" && e.Summary == "todo-app stopped, but its snapshot was not saved: the host's snapshot space is full. Repose deletes snapshots older than seven days, and all but a project's newest seven, once a day.")
 	}
 	if !found {
 		t.Fatalf("no snapshot_failed event: %+v", evs)
