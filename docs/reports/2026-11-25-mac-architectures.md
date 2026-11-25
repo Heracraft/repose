@@ -17,7 +17,7 @@ a second for gVisor (22:24Z-23:00Z).
   appliance. Prototype: the unchanged repose guest bundle 2026.11.24.1
   (kernel, initramfs, `rootfs.erofs`) and a copy of a real guest's
   volume, booted by vfkit 0.6.4 (the binary repose already ships) and by
-  `vzx`, a 100-line VZ launcher written for this spike to reach what
+  `vzx`, an 84-line VZ launcher written for this spike to reach what
   vfkit does not expose (save/restore, balloon target, pause).
 - **D3:** each sandbox is a gVisor (`runsc` release-20261123.0, arm64)
   sandbox inside the appliance, no nested VM, on the same root and volume.
