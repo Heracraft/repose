@@ -52,7 +52,7 @@ installer puts ours in `~/.local/bin` and prepends that to PATH in the shell
 rc if it is not already first; when `command -v repose` resolves to another
 file after install, the installer prints `another repose is on your PATH at
 <path>; ours is at ~/.local/bin/repose` and exits 0. `repose version` prints
-`repose <version> (herakraft)` so a user can tell which one answered.
+`repose <version>` (I-1624; `(herakraft)` followed it until 0.1.64).
 
 ## 3. Scope: does not build
 

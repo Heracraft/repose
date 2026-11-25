@@ -81,11 +81,11 @@ func archiveName(tag string) string {
 }
 
 // publish makes tag's archive, checksums.txt and checksums.txt.sig. The
-// binary inside prints `repose <says> (herakraft)`, so a release whose
+// binary inside prints `repose <says>`, so a release whose
 // binary is the wrong one can be told from one that will not start.
 func (f *fakeRelease) publish(tag, says string) {
 	f.t.Helper()
-	script := "#!/bin/sh\necho \"repose " + says + " (herakraft)\"\n"
+	script := "#!/bin/sh\necho \"repose " + says + "\"\n"
 	f.assets[tag+"/"+archiveName(tag)] = tarGz(f.t, "repose", []byte(script))
 	f.sign(tag)
 }
@@ -138,7 +138,7 @@ func installFakeCLI(t *testing.T, f *fakeRelease, version string) (dir, exe stri
 	t.Helper()
 	dir = t.TempDir()
 	exe = filepath.Join(dir, "repose")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho \"repose "+version+" (herakraft)\"\n"), 0o755); err != nil {
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho \"repose "+version+"\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(envInGuest, "")
