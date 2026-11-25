@@ -586,6 +586,18 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   `snapshots_not_moved`. It logs `volume_created size_gib=`,
   `volume_mounted`, `volume_mounted_already`, `snapshots_moved files=`. The
   x86 installer installs and starts the same unit.
+- **Host files hostd brings** (DECISIONS I-1638): at every start, before
+  anything writes a snapshot, hostd on a host with
+  `/etc/repose/appliance-version` or a `hostd.env` that begins with the x86
+  installer's header writes `repose-zram`, `repose-snapshots-volume` and
+  their two units when missing or different (temporary file, fsync,
+  rename), runs `systemctl daemon-reload` when a unit changed, `systemctl
+  enable --now` each unit not yet enabled, and last puts `--owned-host`
+  at the front of `HOSTD_ARGS` in `hostd.env` (the same rename). A changed
+  `hostd.env` ends that start with exit 0 and systemd starts hostd again
+  with it (`Restart=always`; `KillMode=process` keeps the guests). One
+  `host_file` event per file written and per unit started. A host with
+  neither marker, every NixOS host, is never written to.
 - **The kernel**: kernel.org 6.18.57 with Debian's cloud-arm64 config,
   release `6.18.57-repose`, no initramfs (`root=PARTUUID=...-8a02`,
   `console=hvc0`, the fleet's `transparent_hugepage=madvise hashdist=0

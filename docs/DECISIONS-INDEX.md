@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1142 entries.
+1143 entries.
 
 ## Scope
 
@@ -1132,7 +1132,7 @@ pointer, not a summary.
 - **I-1536** An ApplyMenu says each step of each item as it starts, the api keeps every line of it, and a failed apt install's reason is apt's own `E:` line with the exit code after it (nonix-guestd-2, 2026-11-22) — L39202
 - **I-1530** hostd deletes the host's neighbour entry for a guest address on `br-guests` when the guest is destroyed (after its tap is gone) and at every boot and restore (before the guest can be dialled), so an address reused by the next guest does not answer with the old guest's MAC (nonix-hostd-2, 2026-11-22) — L39209
 - **I-1494** The Mac appliance is Debian 13 arm64 built by `images/appliance-arm64/build.sh` (mmdebstrap, no loop device): a 64 MiB ESP with systemd-boot and the kernel, a 2 GiB ext4 root, and a 2 MiB third partition that becomes vg-guests at first boot; the kernel is kernel.org 6.18.57 with Debian trixie's cloud-arm64 config and no initramfs; the host units are ported 1:1 from `nix/hosts/` as plain files under `images/appliance-arm64/host/` (nonix-appliances, 2026-11-22) — amended by I-1540; amended by I-1550; L39214
-- **I-1496** hostd on an owned host updates itself from the newest `hostd-<version>` release's `manifest.json`, found through GitHub's releases API and signed with the release key, through `repose-hostd-update` every 30 minutes; a script, not a hostd subcommand (nonix-appliances, 2026-11-22; amended the same day: no moving channel release) — L39223
+- **I-1496** hostd on an owned host updates itself from the newest `hostd-<version>` release's `manifest.json`, found through GitHub's releases API and signed with the release key, through `repose-hostd-update` every 30 minutes; a script, not a hostd subcommand (nonix-appliances, 2026-11-22; amended the same day: no moving channel release) — amended by I-1638; L39223
 - **I-1498** A Linux x86_64 machine becomes a host with `ops/install-host-x86.sh` (served as `https://repose.run/install-host.sh`), which carries the appliance's host files inside itself, and `repose host add` on linux/amd64 prints its line with the join argument (nonix-appliances, 2026-11-22) — amended by I-1540; partly amended by I-1588; amended by I-1590; partly amended by I-1592; L39231
 - **I-1538** A 503 `capacity` whose `detail.reason` is `no_runtime_host` reads "No host can run the kind of machine your account makes (Ubuntu or NixOS), so stopping machines frees nothing for it.", with `repose run --host repose` as the next step on a create when `hosted_allowed` and no `--host` was given (nonix-config-cli-web-4, 2026-11-22) — L39238
 - **I-1540** An x86 host runs virtiofsd 1.14.0, the NixOS hosts' version, as upstream's static build pinned by sha256, with an AppArmor `userns` profile where Ubuntu restricts user namespaces; the installer refuses to enable anything if its virtiofsd lacks `--translate-uid`; the appliance's build checks the same of trixie's 1.13.2, and refuses to build from anything but main's head (nonix-appliances-2, 2026-11-22) — L39242
@@ -1174,3 +1174,4 @@ pointer, not a summary.
 - **I-1628** The owned reserve: what an owned host keeps back from its guests is what the appliance's own processes and the kernel hold with one idle guest running, plus a margin (shared-host, sharing program, 2026-11-25) — L39534
 - **I-1630** On a host the user owns whose hostd shares it, placement asks one question: does the host report at least 1 GiB free (`scheduler.OwnedStartFreeBytes`); no class, no reserve and no class reservations are counted there, and the refusal names the host, what it has free and that figure (sharing-control, 2026-11-25) — L39539
 - **I-1632** A machine on a host the user owns shows what it uses, not a size: `Project.sized` false and `Project.mem_used_bytes`; `repose ls`'s column is MEMORY, `repose status`'s header and the dashboard say `1.4 GB used`; `--size` there is accepted and ignored with one stderr line for one release; a machine the kernel stopped for memory is named with `oom_stopped` (sharing-control, 2026-11-25) — L39549
+- **I-1638** hostd brings an appliance or an installer-made x86 host the host files it was set up without, and the `--owned-host` flag, at its own start (host-files, 2026-11-25) — L39559
