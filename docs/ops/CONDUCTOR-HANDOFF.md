@@ -22,16 +22,62 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
-## Where things stand (2026-11-22, 19:35 UTC)
+## Where things stand (2026-11-25, 00:30 UTC)
 
-- **The No-Nix Guests and Own-Hardware Appliances program is released and closed.** `origin/main` and local `main` are at `e4c67d25` (pushed 20:05 UTC); batches `r20261122-4` to `-24` are live. The api, the site, host-02 (hostd `74850e0`) and the edge run it. The record for a cold reader, with 29 decisions and every billing event, is `/home/azureuser/briefs/nonix-executive-summary.md` (a rendered copy with four companion pages was served at a temporary trycloudflare address from `/mnt/nixstore/tmp/nonix-site/out`); measurements in `docs/research/nonix-staging-e2e/`, `docs/research/nonix-aws-x86-2026-11-22.md`, `docs/research/nonix-aws-mac-2026-11-22.md`; the three customer reviews in `docs/reports/2026-11-22-nonix-council*.md`.
-- **Published artefacts:** CLI `v0.1.58` (`releases/latest`; v0.1.55 to .57 earlier the same day, each with standalone notes), appliance `appliance-2026.11.22.2` (self-updating; `.1` and `2026.11.22` are superseded and say so), guest bases `guest-2026.11.22.8` and `.10` (split files, I-1504), host daemon `hostd-2026.11.22.2` with its signed manifest (the updater reads the newest `hostd-<version>` release through the releases API, I-1496 amended; `hostd-stable` is a dead, empty, immutable release). Production bases: `2026.11.22.10` newest, `.8`, then Nix; `default_guest_runtime = erofs` since 14:13 UTC (D-24). The repository publishes immutable releases: a republish means a new tag and a CLI pin.
-- **Closed tonight (20:05 UTC):** batches `-21` to `-24` added the handoff and records, the lost-host destroy re-run (I-1548, api), and the shutdown ordering of guest units against `blk-availability` and the image-cache volume (I-1550; the x86 installer on the site carries it; **the Mac appliance needs a rebuild as `appliance-2026.11.22.3` plus a CLI pin to carry it**, not done tonight: `rebuild-main.sh <main commit> 2026.11.22.3` in `/mnt/nixstore/tmp/nonix-appliance/`, push the tag so CI publishes `hostd-2026.11.22.3`, publish the two files as a prerelease, bump `applianceVersion`, tag the CLI). The x86 bare-metal proof ran on c5n.metal (19:25 to about 20:05 UTC, about $3; report queued by its spark as a documents PR; one more re-add finding on ENG-175: `host add` with a retired host's name revives the same host id). The records of `-21` to `-25` are the next conductor's to write.
-- **AWS lab** (`repose-lab`, eu-west-1): Dedicated Host `h-0bb8c3933099faac7` (mac-m4.metal, allocated 14:04:17 UTC, $1.353/h) is empty (its instance was terminated 19:25 UTC) and **must be released from 2026-11-23 14:04:17 UTC**: `aws ec2 release-hosts --host-ids h-0bb8c3933099faac7 --region eu-west-1 --profile repose-lab` (AWS refuses it before the minimum; the No-Nix session scheduled it for 14:09 UTC, which dies with the session). The vCPU quota in eu-west-1 is 72 now (request granted 19:2x UTC). Billing lines: `/home/azureuser/briefs/nonix-aws-billing.log`.
-- **Staging** (`repose-staging`): both VMs **deallocated** at 19:25 UTC (D-29). To use it: `az vm start -g repose-staging -n edge-01` and `-n host-stg-01`, then `ssh -F ~/repose-ws/staging-ssh-config stg-edge /var/lib/repose-staging/up.sh` brings the test control plane (api, admin, idp, gateway from main `0ffd4915`) back; details in `/home/azureuser/briefs/nonix-staging-control-plane-STATE.md`. The host runs hostd `c460b3a`; bases `.10`, `.8`, `.5`; no projects.
-- **Owner decisions received today:** release and push are the conductor's to cut on the repository's gates (D-20); the conductor may act as the owner's account through `ops/dev/dashboard-session` (D-22); own-hardware snapshots stay on the customer's hardware, no copy, no migration, and Mac machines start fresh after the Mac restarts (ENG-183 closed, the page says it).
-- **Open on the board:** `Needs you`: ENG-171 (own hardware for hosted plans, host count, price; the owner leans to allow, probably free), ENG-102 (`host add --json` prints the join key). High: ENG-180 (many hosts per account with placement, the owner's next program; brief in `/home/azureuser/briefs/next-programs-2026-11-22.md`), ENG-179 (Mac start in seconds; cause not shown, suspects listed), ENG-184 to ENG-187 (the Mac review's P1s: installs starved while an agent works, opencode one-shot mode, a menu change stops the agent, headless reboot). Medium/low: ENG-166, 168, 173 to 178, 181, 182, 188. The reviews' remaining P2s are in the reports.
-- **Box hygiene:** `ops/dev/release-queue worktrees` lists the released worktrees (about twenty from today); none deleted by the conductor. `/mnt/nixstore/tmp/nonix-guest/` (about 35 GB of built bundles) and `/mnt/nixstore/tmp/nonix-appliance/` can go once nobody needs a rebuild; the detached worktree `/mnt/nixstore/tmp/nonix-guest/src-0ffd4915` too.
+Written by the release conductor of 2026-11-23 to 25 (woker-1). The two
+program books are `/home/azureuser/briefs/x86-multihost-2026-11-23.md`
+and `/home/azureuser/briefs/frontend-users-2026-11-24.md`; each ends in a
+dated log.
+
+- **main is `becc81f4`, pushed and live; the queue is empty.** Batches
+  `r20261123-4` to `r20261124-9` are merged. Released last: nix base
+  `2026.11.24`, erofs (Ubuntu) base `2026.11.24.1`, CLI `v0.1.63`
+  (signed, `release-assets` and CI green at `becc81f4`). host-02 was not
+  switched this shift; nothing in these batches needed it.
+- **Release records are owed for `r20261124-3` to `-9`** (`docs/releases/`
+  has up to `r20261124-2`). `ops/dev/release-queue record`, on a
+  `records-N` branch, PR body shaped like the earlier records PR (it needs
+  the ```record block or `pr-record check` refuses it).
+- **Program 1, many own hosts per account (x86), is shipped and closed.**
+  The Own plan takes any number of hosts (I-1594), addresses are reused
+  and an account may have 10 waiting (I-1598), placement re-reads room on
+  refusal (ENG-214), the x86 installer checks the kernel after apt
+  (I-1600). Customer gate passed on Latitude hardware (pass 2b, report
+  `docs/reports/2026-11-24-x86-multihost-2.md`). All Latitude servers are
+  destroyed; spend under $10 of $100 (`/home/azureuser/briefs/latitude-billing.log`).
+- **Program 2, front-end users (Desktop, web, phone), is shipped and
+  live-checked.** Research `docs/research/frontend-users-2026-11-24.md`;
+  review `docs/reports/2026-11-24-frontend-preview-review.md` (pass 2 has
+  nothing at P0 or P1). Shipped: the one-field New project form (I-1602,
+  I-1612), Messages instead of the say field (I-1604), Open in Claude and
+  `repose code --editor claude` (I-1606), the hook detecting the agent from
+  the payload (I-1608), `projects.checkout` (migration 0053, I-1610). Live
+  checks on 2026-11-24 23:30-23:50: href exact, Messages reply in 5 s,
+  hook outside the wrapper "finished ok" on erofs `2026.11.24.1`.
+- **Research: agent-first machine** (`docs/research/agent-first-machine-2026-11-24.md`).
+  One survivor: language servers on PATH plus each harness's own switch
+  (ENG-212), measured in a real guest first (ENG-213). The owner's
+  gimmick tests apply to anything proposed from it (rules below).
+- **Owner decisions this shift:** unlimited hosts on the $10 Own plan;
+  ENG-229 (setup with no terminal) is parked to 2027-01-15, the one-time
+  CLI install stays; 50 merged, clean, idle worktrees were removed with
+  the owner's word (audit `/home/azureuser/briefs/worktree-audit-2026-11-24.txt`;
+  15 kept, listed there).
+- **Waiting on the owner:** ENG-226 (a dashboard-made machine has no
+  code and no agent), ENG-215 (the 1000-host deployment-wide address
+  ceiling; POST /hosts answers 500 when full), ENG-171, ENG-190, ENG-131,
+  ENG-5; the owner's Mac script `~/previews/open-in-claude/owner-mac-script.md`
+  (the only test of the real Desktop, T3 Code and Codex apps); and a gh
+  token rotation advised after pass 2b copied the owner's gh and git
+  logins into e2e guests on a Latitude box (since wiped).
+- **Open, ready for builders:** ENG-232 (a Messages send makes Claude
+  exit while it sits at its trust prompt; agents repose starts are not
+  affected), ENG-234 (the erofs publish message says "at their next
+  start"; it is the 04:00 sweep), ENG-233 (review P3s), ENG-212, ENG-213,
+  flakes ENG-220, ENG-230, ENG-231; the research follow-ups (a dashboard
+  Remote Control switch, `sshHostCommands`).
+- **Box:** `/` at 85 % on 2026-11-25 00:20; clear `/tmp/rt` and the Go
+  cache before the next batch.
 
 ## The owner's rules this week
 
@@ -47,6 +93,14 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   (2026-11-18, shipped as carry-lite).
 - Secrets come as a 0600 file under `~/.config/repose-ops/` written with
   `read -rs`, never pasted in chat.
+
+- Gimmicks (2026-11-24): forks, receipts and acceptance passes, phone
+  reach, `config add` were rejected. Before proposing a machine-side
+  feature ask: can the agent already do it; does it rest on user intent
+  or self-grading; does a harness vendor ship it; is it harness-side.
+- Run `repose run` and `create` from an empty `mktemp -d`, never a repo
+  checkout: the CLI copies the folder, env files and gh and git logins
+  into the machine (2026-11-24).
 
 ## The commands that worked
 
@@ -392,7 +446,38 @@ in words, for that one. "Integrate" needs no word. "Switch whatever" on
   fixture, because widening a bound is how a guard quietly stops
   guarding.
 
+- **Two bases, two publishes.** New machines boot the erofs (Ubuntu)
+  base, not the nix one. Build it with `gh workflow run guest-image.yml
+  --ref main -f version=YYYY.MM.DD.N -f publish=true`, then
+  `repose-admin base publish --format erofs` on the control VM.
+  `docs/research/nonix-staging-e2e/publish-erofs.sh --dry-run` prints the
+  command, but rootfs is split into parts: pass the whole-file SHA256s
+  from each manifest's `.files["rootfs.erofs"].sha256` (2026-11-24).
+- **A restart does not pick up a new erofs base.** `erofsBase`
+  (`internal/api/ops/erofs.go`) takes the op's param, then
+  `pending_base_version` (set by the 04:00 sweep), then `base_version`.
+  Check a new base on a new project; ten restarts proved nothing
+  (2026-11-24, ENG-234).
+- **The CLI sign job needs 400 bytes of notes before it runs.** Set them
+  with `gh release edit vX --notes-file` as soon as goreleaser's draft
+  exists; otherwise `gh run rerun <id> --failed` (v0.1.62).
+- **`cut` takes every queued branch; there is no hold.** Cut r20261124-9
+  took held branches meant to wait; `release-queue abandon <rel>`
+  requeues them, before any merge.
+- **Playwright here needs** `PLAYWRIGHT_CHROMIUM_PATH=/nix/store/8kf2nnmqqg7i5h8h8yfw5w29biwwccas-repose-chromium/bin/chromium`
+  and a unique `REPOSE_WEB_TEST_PORT`; strip ANSI before grepping the
+  summary, a coloured "1 passed" hid 406.
+- **An owner CLI session for live checks:** adapt
+  `~/briefs/mint-owner-cli-session.sh` to a private `XDG_CONFIG_HOME`
+  (the CLI honours it), run from an empty directory, shred after the hour.
+  The script's final `rm` deleted the credentials before they moved, once.
+- **A Claude started by hand waits at its trust prompt** and exits on a
+  Messages send (ENG-232). Accept the prompt before a live Messages check.
+
 ## Owed
+
+- Release records for `r20261124-3` to `-9`.
+- Mac-only checks of Open in Claude in the real apps: the owner's script.
 
 - Dashboard-only live checks: dash-acts' say field, browser-view's frames
   and clipboard on a live machine, notify-hold's typing hold, the
