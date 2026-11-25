@@ -55,6 +55,9 @@ type Install struct {
 	// user with the docs page can still run the step by hand.
 	Argument string `json:"argument,omitempty"`
 	URL      string `json:"url"`
+	// JoinFile is the CLI's, never the api's: where `repose host add
+	// --json` put the argument instead of printing it (DECISIONS I-1614).
+	JoinFile string `json:"join_file,omitempty"`
 }
 
 // CreateHostRequest is POST /hosts. An empty Name lets the api name it.
