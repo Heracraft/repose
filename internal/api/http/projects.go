@@ -269,6 +269,22 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
 // live rows).
 const countsTowardLimit = "destroyed_at is null and state <> 'destroying'"
 
+// notCreated is the 404 for a project whose create the host refused for
+// room (DECISIONS I-1648): it was removed at once, and a page opened on it
+// says so and why, in the op's own sentence, rather than "not found".
+// Any other missing project keeps err.
+func (s *Server) notCreated(r *http.Request, err error) error {
+	p, aerr := s.userProjectAny(r)
+	if aerr != nil || p.DestroyedAt == nil || p.LastError == nil {
+		return err
+	}
+	why, ok := strings.CutPrefix(*p.LastError, ops.CreateRefusedPrefix)
+	if !ok {
+		return err
+	}
+	return withDetail(errf("not_found", "%s was not created: %s", p.Slug, why), map[string]any{"reason": "create_refused"})
+}
+
 func (s *Server) userProject(r *http.Request) (*store.Project, error) {
 	id, err := pathID(r, "id")
 	if err != nil {
@@ -561,6 +577,9 @@ func (s *Server) createHostPin(ctx context.Context, u *store.User, host *string,
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) error {
 	p, err := s.userProject(r)
+	if errors.Is(err, db.ErrNotFound) {
+		return s.notCreated(r, err)
+	}
 	if err != nil {
 		return err
 	}
