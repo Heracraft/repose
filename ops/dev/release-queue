@@ -165,7 +165,12 @@ pr_upsert() {
   if [ -n "$n" ]; then
     gh pr edit "$n" --base "$base" --body-file "$tmp" "${labels[@]}" >/dev/null || die "add: gh pr edit $n failed"
   else
-    gh pr create --base "$base" --head "$branch" --title "${title:-$(git log -1 --format=%s)}" --body-file "$tmp" >/dev/null || die "add: gh pr create failed"
+    # The title is the newest commit that is not a STATUS.md line: a builder's
+    # last commit is often "STATUS: <branch> queued", which titled whole
+    # feature PRs as status updates (#207, #213, #217 on 2026-11-25).
+    [ -n "$title" ] || title=$(git log --format=%s "$integrated_branch..HEAD" 2>/dev/null | grep -v -i -E '^(status|merge)\b' | head -1)
+    [ -n "$title" ] || title=$(git log -1 --format=%s)
+    gh pr create --base "$base" --head "$branch" --title "$title" --body-file "$tmp" >/dev/null || die "add: gh pr create failed"
     n=$(pr_of "$branch")
     [ -n "$n" ] && gh pr edit "$n" "${labels[@]}" >/dev/null
   fi

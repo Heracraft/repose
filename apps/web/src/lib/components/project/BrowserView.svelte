@@ -54,6 +54,8 @@
 	let phase = $state<Phase>('connecting');
 	/** Why it stopped, in one line; undefined while frames are coming. */
 	let note = $state<string | undefined>(undefined);
+	/** The mint in flight is waking a frozen machine, which takes seconds. */
+	let waking = $state(false);
 
 	let screen: HTMLDivElement | undefined;
 	let rfb: RFBClass | undefined;
@@ -155,11 +157,14 @@
 		if (dropped) return;
 
 		let ticket;
+		waking = !!project.resting;
 		try {
 			ticket = await mintBrowserView(project.id);
 		} catch (err) {
 			stop(errorText(err, 'The view could not be opened.'));
 			return;
+		} finally {
+			waking = false;
 		}
 		if (dropped) return;
 		if (ticket.resting) {
@@ -244,7 +249,9 @@
 		<div class="screen" bind:this={screen} data-testid="view-screen"></div>
 		{#if phase !== 'watching'}
 			<div class="over">
-				<p class="line" role="status">{phase === 'connecting' ? 'Connecting…' : note}</p>
+				<p class="line" role="status">
+					{phase === 'connecting' ? (waking ? `Waking ${project.slug}…` : 'Connecting…') : note}
+				</p>
 				{#if phase === 'stopped'}
 					<button type="button" class="resume" onclick={() => void connect()}>Resume view</button>
 				{/if}

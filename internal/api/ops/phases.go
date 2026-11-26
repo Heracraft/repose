@@ -60,6 +60,11 @@ const (
 	KindUpdateSecrets = "update_secrets"
 	KindExec          = "exec"
 	KindDrain         = "drain"
+	// KindWake is a wake on its own (DECISIONS I-1642): a user route in
+	// the http process, which holds no host's stream, asks for one the way
+	// `repose start` asks for a start, and the process that holds the
+	// stream sends it.
+	KindWake = "wake"
 )
 
 // PlanCreate is build then create, for a Nix project.
@@ -258,6 +263,9 @@ func PlanUpdateSecrets() []string { return []string{PhaseWake, PhaseUpdateSecret
 // exec that answers guest_unresponsive on a resting machine is a false
 // incident.
 func PlanExec() []string { return []string{PhaseWake, PhaseExec} }
+
+// PlanWake is the wake alone (I-1642).
+func PlanWake() []string { return []string{PhaseWake} }
 
 // PlanDrain drains a host.
 func PlanDrain() []string { return []string{PhaseDrain} }
@@ -473,7 +481,13 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		if !e.send.Connected(*p.HostID) {
 			return nil, uuid.Nil, true, nil
 		}
-		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_WakeGuest{WakeGuest: &hostdv1.WakeGuest{GuestId: p.GuestID.String(), Reason: "op"}}}, *p.HostID, false, nil
+		// A wake op carries its caller's reason (`view`, `keep_awake`),
+		// so hostd's line names what woke the machine (I-1642).
+		reason := "op"
+		if r, ok := op.Params["reason"].(string); ok && op.Kind == KindWake && r != "" {
+			reason = r
+		}
+		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_WakeGuest{WakeGuest: &hostdv1.WakeGuest{GuestId: p.GuestID.String(), Reason: reason}}}, *p.HostID, false, nil
 	case PhaseBuild:
 		return e.buildBuild(ctx, op, p)
 	case PhaseCreateGuest:
@@ -1478,6 +1492,11 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 				return err
 			}
 		}
+		if op.Kind == KindWake {
+			// The caller reads whether the host answered; a phase skipped
+			// for a host that is away leaves no result (I-1642).
+			return e.setResult(ctx, op, map[string]any{"was_resting": res.GetWake().GetWasResting(), "wake_ms": res.GetWake().GetWakeMs()})
+		}
 		return nil
 	case PhaseExec:
 		x := res.GetExec()
@@ -1625,6 +1644,10 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 			_, _ = e.pool.Exec(ctx, "update projects set host_id = null where id = $1", p.ID) // free the placement
 		}
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'error', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short)
+	case op.Kind == KindWake:
+		// The route that asked is still waiting and tells the user; the
+		// machine is as it was, so there is nothing to record on it
+		// (I-1642).
 	case op.Kind == KindSnapshot:
 		_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, code+": "+short)
 		e.notifyPlatform(ctx, p.ID, "snapshot_failed", "snapshot failed: "+short)
