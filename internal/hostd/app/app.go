@@ -126,7 +126,11 @@ type Options struct {
 	// OwnedVCPUs is how many vCPUs an owned host's guests boot with; 0
 	// is the rule ownedVCPUs applies (I-1640). Never more than the host's.
 	OwnedVCPUs uint
-	// OwnedGuestTHP keeps 2 MiB pages for owned guests' RAM (I-1650).
+	// OwnedMaxVCPUs replaces the bound on the vCPUs guests hold together;
+	// 0 is the rule (I-1640).
+	OwnedMaxVCPUs uint
+	// OwnedGuestTHP keeps 2 MiB pages for owned guests' RAM, the default
+	// (I-1650); false boots it as 4 KiB shmem.
 	OwnedGuestTHP bool
 	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
 	// offline and back after a guest's hypervisor exits. auto is on
@@ -385,8 +389,8 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		FreePageReporting:  o.Park.FreePageReporting || o.OwnedHost,
 		Owned:              o.OwnedHost,
 		HostVCPUs:          ownedVCPUs(o.OwnedVCPUs, hostinfo.VCPUs(), nested),
-		OwnedMaxVCPUs:      ownedMaxVCPUs(nested),
-		OwnedGuestTHP:      o.OwnedGuestTHP,
+		OwnedMaxVCPUs:      ownedBound(o.OwnedMaxVCPUs, nested, hostinfo.VCPUs()),
+		OwnedGuestNoTHP:    !o.OwnedGuestTHP,
 		PauseIdle:          o.PauseIdle,
 		Burst:              o.Burst,
 		BurstGate:          o.BurstGate,
@@ -438,7 +442,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
 	if o.OwnedHost {
-		ownedSlice(ctx, r, total, hostinfo.VCPUs(), log)
+		ownedSlice(ctx, r, total, log)
 	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
@@ -753,31 +757,45 @@ func systemStopping(r shell.Runner) func(ctx context.Context) bool {
 // start, after repose-guests-slice.service set the fleet's eighth at
 // boot, and before any guest starts. A failure is logged and the boot's
 // figure stays, which only holds the guests to less.
-func ownedSlice(ctx context.Context, r shell.Runner, total uint64, vcpus uint32, log *slog.Logger) {
+func ownedSlice(ctx context.Context, r shell.Runner, total uint64, log *slog.Logger) {
 	if total <= guest.OwnedReserveBytes {
 		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "reason", "total_unread")
 		return
 	}
 	max := total - guest.OwnedReserveBytes
-	argv := []string{"systemctl", "set-property", "--runtime", hostinfo.GuestsSlice, fmt.Sprintf("MemoryMax=%d", max), fmt.Sprintf("CPUWeight=%d", guest.OwnedSliceCPUWeight)}
-	if vcpus > 1 {
-		argv = append(argv, fmt.Sprintf("CPUQuota=%d%%", (vcpus-1)*100))
-	}
+	// CPUWeight gives the appliance's own services the CPU they ask for
+	// without throttling the guests; "CPUQuota=" clears a quota an
+	// earlier hostd set (DECISIONS I-1640: a quota throttled the nested
+	// guests in every period, and four busy ones hung).
+	argv := []string{"systemctl", "set-property", "--runtime", hostinfo.GuestsSlice, fmt.Sprintf("MemoryMax=%d", max), fmt.Sprintf("CPUWeight=%d", guest.OwnedSliceCPUWeight), "CPUQuota="}
 	if _, err := r.Run(ctx, argv...); err != nil {
 		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "err", err.Error())
 		return
 	}
-	log.Info("guests share the host", "event", "start", "part", "owned", "slice_max_bytes", max, "reserve_bytes", uint64(guest.OwnedReserveBytes), "vcpus", vcpus)
+	log.Info("guests share the host", "event", "start", "part", "owned", "slice_max_bytes", max, "reserve_bytes", uint64(guest.OwnedReserveBytes), "vcpus", hostinfo.VCPUs())
+}
+
+// ownedBound is --owned-max-vcpus when set, else ownedMaxVCPUs's rule.
+func ownedBound(flag uint, nested bool, host uint32) uint32 {
+	if flag > 0 {
+		return uint32(flag)
+	}
+	return ownedMaxVCPUs(nested, host)
 }
 
 // ownedMaxVCPUs is the bound on the vCPUs an owned host's guests boot with
-// together: the host's own count under a hypervisor, none on bare metal
-// (DECISIONS I-1640).
-func ownedMaxVCPUs(nested bool) uint32 {
-	if nested {
-		return hostinfo.VCPUs()
+// together (DECISIONS I-1640): under a hypervisor the host's vCPUs less
+// two, three machines of two on the M4 appliance's eight, where four busy
+// ones hung three times; never less than one machine; none on bare metal.
+func ownedMaxVCPUs(nested bool, host uint32) uint32 {
+	if !nested {
+		return 0
 	}
-	return 0
+	one := min(guest.OwnedNestedVCPUs, host)
+	if host < 2+one {
+		return one
+	}
+	return host - 2
 }
 
 // ownedVCPUs is the vCPU count an owned host's guests boot with

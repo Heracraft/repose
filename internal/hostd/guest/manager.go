@@ -328,10 +328,12 @@ type Config struct {
 	// OwnedMaxVCPUs bounds the vCPUs an owned host's guests boot with
 	// together; 0 is no bound.
 	OwnedMaxVCPUs uint32
-	// OwnedGuestTHP keeps 2 MiB pages for an owned host's guest RAM
-	// (Cloud Hypervisor's thp, I-1574); false boots it as 4 KiB shmem,
-	// which reclaim can swap (DECISIONS I-1650).
-	OwnedGuestTHP bool
+	// OwnedGuestNoTHP boots an owned host's guest RAM as 4 KiB shmem
+	// (Cloud Hypervisor's thp=off), which reclaim can swap; false, the
+	// default, keeps the hypervisor's 2 MiB pages, without which a build
+	// on the M4 appliance did not finish its first step in 12.7 minutes
+	// (DECISIONS I-1650, I-1574).
+	OwnedGuestNoTHP bool
 	// OwnedGuardEvery is how often the memory guard looks on an owned
 	// host (I-1650); 0 is a second.
 	OwnedGuardEvery time.Duration

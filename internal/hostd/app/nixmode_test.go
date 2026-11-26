@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -66,23 +67,54 @@ func (r *recRunner) Start(context.Context, io.Reader, ...string) (shell.Proc, er
 	return nil, errors.New("not used")
 }
 
-// guests.slice on an owned host keeps one vCPU and a larger CPU share for
-// the appliance's own services (DECISIONS I-1640), beside its memory.
-func TestOwnedSliceKeepsACPUForTheHost(t *testing.T) {
+// guests.slice on an owned host keeps the larger CPU share for the
+// appliance's own services and no CPUQuota (DECISIONS I-1640): a quota
+// throttled the nested guests' vCPUs in every period, and four busy guests
+// hung with 1.3 GiB free (the lab, 2026-11-26 02:51Z). "CPUQuota=" clears
+// a quota an earlier hostd set at runtime.
+func TestOwnedSliceKeepsAShareForTheHostWithoutAQuota(t *testing.T) {
 	r := &recRunner{}
-	ownedSlice(context.Background(), r, 16<<30, 8, slog.New(slog.DiscardHandler))
+	ownedSlice(context.Background(), r, 16<<30, slog.New(slog.DiscardHandler))
 	if len(r.argv) != 1 {
 		t.Fatalf("runs %v", r.argv)
 	}
-	got := strings.Join(r.argv[0], " ")
-	for _, want := range []string{"set-property --runtime guests.slice", "MemoryMax=16642998272", "CPUQuota=700%", "CPUWeight=50"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("argv %q lacks %q", got, want)
+	got := r.argv[0]
+	joined := strings.Join(got, " ")
+	for _, want := range []string{"set-property --runtime guests.slice", "MemoryMax=16642998272", "CPUWeight=50"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("argv %q lacks %q", joined, want)
 		}
 	}
-	r = &recRunner{}
-	ownedSlice(context.Background(), r, 16<<30, 1, slog.New(slog.DiscardHandler))
-	if got := strings.Join(r.argv[0], " "); strings.Contains(got, "CPUQuota") {
-		t.Fatalf("a one-vCPU host has no vCPU to keep back: %q", got)
+	if !slices.Contains(got, "CPUQuota=") || strings.Contains(joined, "%") {
+		t.Fatalf("argv %q: want CPUQuota= (cleared), no quota", joined)
+	}
+}
+
+// The bound on a nested owned host is its vCPUs less two (DECISIONS
+// I-1640): three machines of two on the M4's eight; never under one
+// machine; bare metal none.
+func TestOwnedMaxVCPUs(t *testing.T) {
+	for _, c := range []struct {
+		nested bool
+		host   uint32
+		want   uint32
+	}{{true, 8, 6}, {true, 10, 8}, {true, 4, 2}, {true, 3, 2}, {true, 2, 2}, {true, 1, 1}, {false, 8, 0}} {
+		if got := ownedMaxVCPUs(c.nested, c.host); got != c.want {
+			t.Fatalf("ownedMaxVCPUs(nested %v, %d) = %d, want %d", c.nested, c.host, got, c.want)
+		}
+	}
+}
+
+// --owned-max-vcpus replaces the bound (the lab's runs past it); 0 keeps
+// the rule.
+func TestOwnedMaxVCPUsOverride(t *testing.T) {
+	if got := ownedBound(8, true, 8); got != 8 {
+		t.Fatalf("override 8 on a nested 8: %d", got)
+	}
+	if got := ownedBound(0, true, 8); got != 6 {
+		t.Fatalf("no override on a nested 8: %d", got)
+	}
+	if got := ownedBound(4, false, 8); got != 4 {
+		t.Fatalf("override 4 on bare metal: %d", got)
 	}
 }

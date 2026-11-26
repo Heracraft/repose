@@ -384,7 +384,7 @@ start order, newest 1000 and each older one 250 lower, never under 100,
 so the OOM killer takes the newest guest first and never the appliance's
 services (`hostd.service` keeps -900, the rest systemd's 0). At its start
 hostd sets `guests.slice` `MemoryMax` to MemTotal less the owned reserve
-(I-1628) with `systemctl set-property --runtime`. `repose-zram.service`
+(I-1628), `CPUWeight=50` and `CPUQuota=` (none: a quota throttled the nested guests, I-1640) with `systemctl set-property --runtime`. `repose-zram.service`
 gives the host a zstd zram swap of half its memory at priority 100,
 `vm.swappiness=150` and `vm.page-cluster=0`. hostd drops the page cache
 (`sync; echo 1 > /proc/sys/vm/drop_caches`, then `echo 1 >
