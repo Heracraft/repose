@@ -301,7 +301,8 @@ it. No field changes shape; what some mean there:
   hostd.env overrides both, never above the host's. No class disk caps,
   `CPUWeight=100` per guest, no per-guest `CPUQuota`, burst off;
   `guests.slice` has `CPUWeight=50` and no `CPUQuota` (I-1640: a quota
-  throttled the nested guests, which hung). `volume_bytes` is the volume's
+  throttled the nested guests, which hung), and under a hypervisor
+  `MemorySwapMax=0`: guest RAM is never swapped there (I-1656). `volume_bytes` is the volume's
   size as on the fleet.
 - `free_mem_bytes` (Hello, Heartbeat) is the host's real free memory:
   `max(0, min(MemAvailable, MemTotal - reserve - guests.slice
