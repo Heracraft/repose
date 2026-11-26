@@ -918,6 +918,11 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 		// server.
 		return errf("conflict", "%s's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start %s` works then", p.Slug, p.Slug)
 	}
+	if p.State == "running" && p.Parked != nil {
+		// The api's guestdDead is false for a parked machine (I-1672):
+		// a start is the conflict any running machine gets.
+		return errf("conflict", "%s is already running", p.Slug)
+	}
 	if p.State == "stopping" {
 		// lifecycle.Start's refusal while a stop op is open.
 		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)

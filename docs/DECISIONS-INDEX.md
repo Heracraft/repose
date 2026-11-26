@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1153 entries.
+1154 entries.
 
 ## Scope
 
@@ -1185,4 +1185,5 @@ pointer, not a summary.
 - **I-1658** The dashboard's second customer pass on sharing: Create waits while the form says the host is full, a machine on a host the account owns counts no plan memory under Running, the memory stop reads as the CLI says it, and a machine that is not answering says so in the header, the sidebar and Hosts, from when it last answered (review-fixes-2, sharing program, 2026-11-26) — L39631
 - **I-1660** After every boot of a guest reaches running, hostd asks guestd to grow the root filesystem to its volume, so a disk grown while the machine was stopped is filled out at the next start; every host, the fleet's too (host, sharing program, 2026-11-26) — L39641
 - **I-1662** Virtualization.framework saves and restores a running repose guest with every device repose uses; the spike's "save kills the guest" was the missing login session, because VZ encrypts each save file with a Secure Enclave key of the logged-in user; a restore needs that user's session unlocked, and neither works as root (d2-arch, design 2 program, 2026-11-26) — L39647
-- **I-1674** The landing gets a band "03 Your Mac" between Safety and Pricing: four measured comparisons on one M4 Mac mini (start, snapshots, idle memory, a restart through repose), every figure from `apps/web/src/lib/data/mac-figures.ts`; held on branch `landing-d2` until design 2 ships (landing-d2, design 2 program, 2026-11-26) — amends I-1552, I-1446; L39655
+- **I-1672** A machine parked on a Mac that waits for the Mac's user to log in has a state of its own on the api, `parked: {since, waits_for: "login"}`, and is never called not answering, never offered a restart and never restarted by a start (d2-runtime, design 2 program, 2026-11-26) — L39655
+- **I-1674** The landing gets a band "03 Your hardware" between Safety and Pricing: what ships for an x86 box or a Mac you own (the same commands, sandboxes sharing its memory, reached from anywhere), and the Mac's measured design-2 charts as a plus behind one switch, `MAC_DESIGN2_LIVE` in `apps/web/src/lib/data/mac-figures.ts`, off until design 2 ships (landing-d2, design 2 program, 2026-11-26) — amends I-1552, I-1446; L39655

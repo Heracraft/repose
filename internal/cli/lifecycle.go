@@ -51,6 +51,12 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 	if err != nil {
 		return err
 	}
+	if l := parkedLine(project); l != "" {
+		// Parked on a Mac (I-1672): nothing to start, and a restart would
+		// lose the memory it waits with.
+		_, _ = fmt.Fprintf(e.Out, "%s is %s\n", project.Slug, l)
+		return nil
+	}
 	if project.State == "running" && !guestdDead(project) && !project.HostUnreachable {
 		_, _ = fmt.Fprintf(e.Out, "%s is already running.\n", project.Slug)
 		return nil
@@ -77,7 +83,7 @@ func guestdDead(p *Project) bool {
 	// true while it rests, and reading a false one as dead would have
 	// `repose start` reboot a machine whose memory is intact and lose
 	// every process (I-824).
-	if frozen(p) {
+	if frozen(p) || parked(p) {
 		return false
 	}
 	// A sample from before the guest's current run (taken while it was

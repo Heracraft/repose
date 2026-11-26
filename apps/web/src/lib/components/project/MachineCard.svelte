@@ -18,7 +18,7 @@
 	import { bytes, classMemoryGB, gb, gbs, unsized } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince } from '$lib/answering';
+	import { notAnsweringSince, parkedText } from '$lib/answering';
 
 	let {
 		project,
@@ -87,7 +87,7 @@
 			<div class="line">
 				<span class="line-label">{memLabel}</span>
 				<span class="line-value line-value--off"
-					>{notAnsweringSince(project) ? 'not answering' : 'not running'}</span
+					>{parkedText(project) ? 'parked, kept' : notAnsweringSince(project) ? 'not answering' : 'not running'}</span
 				>
 			</div>
 		{/if}

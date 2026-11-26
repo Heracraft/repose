@@ -20,3 +20,10 @@ export function notAnsweringText(
 	if (!since) return '';
 	return `Not answering for ${uptime(since, now) === '0m' ? '1m' : uptime(since, now)}`;
 }
+
+/** The words for a machine parked on a Mac that waits for its user to
+ * log in (I-1672): its memory is kept, so nothing here offers a restart. */
+export function parkedText(p: Pick<Project, 'state' | 'parked' | 'host_name'>): string {
+	if (p.state !== 'running' || !p.parked) return '';
+	return `Parked: waits for you to log in to ${p.host_name || 'its Mac'}; its memory is kept`;
+}

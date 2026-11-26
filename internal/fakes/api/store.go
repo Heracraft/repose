@@ -59,6 +59,9 @@ type Project struct {
 	// answered for about three minutes (DECISIONS I-1652). SetNotAnswering
 	// sets it; Fake.out drops it where the api would not send it.
 	NotAnswering *NotAnswering `json:"not_answering,omitempty"`
+	// Parked is set on a machine parked on a Mac that waits for the
+	// Mac's user to log in (DECISIONS I-1672). SetParked sets it.
+	Parked *Parked `json:"parked,omitempty"`
 	// KeepAwake keeps this machine out of the rest rule (I-820).
 	KeepAwake bool `json:"keep_awake"`
 	// ExpiresAt is set on a temporary project (DECISIONS I-347).
@@ -102,6 +105,12 @@ func (f *Fake) out(p *project) Project {
 	}
 	if o.State != "running" || o.Resting != nil || o.HostUnreachable {
 		o.NotAnswering = nil
+	}
+	if o.State != "running" {
+		o.Parked = nil // projects.go sends it on a running machine only
+	}
+	if o.Parked != nil {
+		o.NotAnswering = nil // never both (I-1672)
 	}
 	o.MemUsedBytes = 0
 	if o.State == "running" && o.NotAnswering == nil {
@@ -152,6 +161,32 @@ func (f *Fake) SetNotAnswering(projectID string, since *time.Time) {
 		return
 	}
 	p.NotAnswering = &NotAnswering{Since: *since}
+	if p.Signals == nil {
+		p.Signals = &Signals{Agents: []AgentSignal{}}
+	}
+	p.Signals.GuestdOK = false
+}
+
+// Parked is Project.parked.
+type Parked struct {
+	Since    time.Time `json:"since"`
+	WaitsFor string    `json:"waits_for"`
+}
+
+// SetParked marks a running machine parked and waiting for its Mac's
+// user to log in, guestd silent as the real one is; nil clears it.
+func (f *Fake) SetParked(projectID string, since *time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return
+	}
+	if since == nil {
+		p.Parked = nil
+		return
+	}
+	p.Parked = &Parked{Since: *since, WaitsFor: "login"}
 	if p.Signals == nil {
 		p.Signals = &Signals{Agents: []AgentSignal{}}
 	}

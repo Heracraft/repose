@@ -1,5 +1,6 @@
 <!--
-  03 Your Mac (DECISIONS I-1674): four measured comparisons of the two ways
+  The Mac part of 03 Your hardware (DECISIONS I-1674), drawn only while
+  MAC_DESIGN2_LIVE is true: four measured comparisons of the two ways
   repose has run sandboxes on one Mac, each sandbox its own VM (accent) and
   every sandbox inside one Linux VM (grey). Every length, value and sentence
   comes from lib/data/mac-figures.ts; nothing here is typed in. Static: no
@@ -8,6 +9,7 @@
 <script lang="ts">
 	import {
 		LAYOUTS,
+		MEASURED,
 		REST,
 		RESTART,
 		SNAPSHOT,
@@ -56,7 +58,7 @@
 {/snippet}
 
 {#snippet chart(c: Chart)}
-	<figure class="mf-chart" role="img" aria-label={sentence(c)}>
+	<div class="mf-chart" role="img" aria-label={sentence(c)}>
 		{#each c.rows as r (r.label)}
 			<p class="mf-label" aria-hidden="true">{r.label}</p>
 			{@render track(r.own, c.max, 'own')}
@@ -66,7 +68,7 @@
 		{/each}
 		<span class="mf-ticks" aria-hidden="true">
 			{#each ticks(c) as t (t)}
-				<!-- On a phone only the axis's ends stand. -->
+				<!-- Only the axis's ends are labelled; the inner ticks are marks. -->
 				<span
 					class="mf-tick"
 					class:mf-minor={t !== 0 && t !== c.max}
@@ -74,47 +76,59 @@
 				>
 			{/each}
 		</span>
-		{#if c.note}<figcaption class="mf-note">{c.note}</figcaption>{/if}
-	</figure>
+	</div>
+	{#if c.note}<p class="mf-note">{c.note}</p>{/if}
 {/snippet}
 
-<ul class="cells mf" data-testid="mac-figures">
+<div class="mf-head" data-testid="mac-figures">
+	<h3 class="mf-h" id="mac-h">And on a Mac, each sandbox is its own VM</h3>
+	<div class="mf-side">
+		<ul class="mf-legend">
+			<li><i class="mf-key mf-own" aria-hidden="true"></i>{LAYOUTS.own}</li>
+			<li>
+				<i class="mf-key mf-nested" aria-hidden="true"></i><span
+					>{LAYOUTS.nested} <span class="mf-ver nw">({LAYOUTS.nestedVersion})</span></span
+				>
+			</li>
+		</ul>
+		<p class="mf-where">
+			Measured on {MEASURED.machine}, {MEASURED.date}. A bar runs from the fastest run to the
+			slowest.
+		</p>
+	</div>
+</div>
+<ul class="mf" aria-labelledby="mac-h">
 	<li>
-		<div class="cell-copy">
-			<p class="label num"><span class="n">3.1 </span>Start</p>
-			<h3 class="item-title">Start a sandbox in seconds</h3>
-			<p class="copy">
-				A new one arrives with your checkout copied in; a stopped one keeps its disk.
-			</p>
+		<div class="mf-copy">
+			<p class="label num"><span class="n">3.4 </span>Start</p>
+			<h4 class="item-title">Start in seconds</h4>
 		</div>
 		<div class="mf-fig">{@render chart(START)}</div>
 	</li>
 	<li>
-		<div class="cell-copy">
-			<p class="label num"><span class="n">3.2 </span>Snapshots</p>
-			<h3 class="item-title">Snapshot in under a second</h3>
-			<p class="copy">A snapshot is an APFS clone: it copies nothing until the sandbox writes.</p>
+		<div class="mf-copy">
+			<p class="label num"><span class="n">3.5 </span>Snapshots</p>
+			<h4 class="item-title">Snapshot in under a second</h4>
 		</div>
 		<div class="mf-fig">{@render chart(SNAPSHOT)}</div>
 	</li>
 	<li>
-		<div class="cell-copy">
-			<p class="label num"><span class="n">3.3 </span>Memory</p>
-			<h3 class="item-title">Idle sandboxes give their memory back</h3>
+		<div class="mf-copy">
+			<p class="label num"><span class="n">3.6 </span>Memory</p>
+			<h4 class="item-title">Idle sandboxes give memory back</h4>
 			<p class="copy">
-				{#if REST.unlocked}While your Mac is unlocked, an{:else}An{/if} idle sandbox is saved to disk
-				in {seconds(REST.save)} and quits. Your next command wakes it in {seconds(REST.wake)}.
+				{#if REST.unlocked}While your Mac is unlocked, an{:else}An{/if} idle one is saved to disk in
+				{seconds(REST.save)} and woken by your next command in {seconds(REST.wake)}.
 			</p>
 		</div>
 		<div class="mf-fig">{@render chart(REST.chart)}</div>
 	</li>
 	<li>
-		<div class="cell-copy">
-			<p class="label num"><span class="n">3.4 </span>Restart</p>
-			<h3 class="item-title">Restart through repose and keep what is running</h3>
+		<div class="mf-copy">
+			<p class="label num"><span class="n">3.7 </span>Restart</p>
+			<h4 class="item-title">Restart through repose and keep memory</h4>
 			<p class="copy">
-				<code>repose host restart</code> saves each sandbox's memory first. They come back once you log
-				in.
+				<code>repose host restart</code> saves each sandbox's memory; they are back once you log in.
 			</p>
 		</div>
 		<div class="mf-fig">{@render chart(RESTART)}</div>
@@ -122,8 +136,75 @@
 </ul>
 
 <style>
-	.mf-fig {
-		padding: 0.5rem var(--shot-r) 1.75rem var(--shot-l);
+	/* The Mac's own head inside the band: a serif h3 at the left, the
+	   legend and where it was measured on the right, like a band's head. */
+	.mf-head {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		row-gap: 0.75rem;
+		margin: 0 calc(-1 * var(--edge));
+		padding: 2rem var(--edge) var(--head-gap);
+		border-top: 1px solid var(--rule-in);
+	}
+	.mf-h {
+		margin: 0;
+		font-family: var(--hk-font-display);
+		font-size: clamp(1.375rem, 1.1rem + 0.8vw, 1.75rem);
+		font-weight: 400;
+		line-height: 1.2;
+		letter-spacing: -0.015em;
+		color: var(--hk-text);
+		text-wrap: balance;
+	}
+	.mf-side {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.mf-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 1.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-2);
+	}
+	.mf-legend li {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.5rem;
+	}
+	.mf-key {
+		flex: none;
+		align-self: center;
+		width: 0.875rem;
+		height: 0.625rem;
+		border-radius: 1px;
+	}
+	.mf-ver,
+	.mf-where {
+		color: var(--hk-text-3);
+	}
+	.mf-where {
+		margin: 0;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+	}
+	@media (min-width: 1024px) {
+		.mf-head {
+			grid-template-columns: repeat(12, minmax(0, 1fr));
+			column-gap: var(--col-gap);
+			align-items: last baseline;
+		}
+		.mf-h {
+			grid-column: 1 / 7;
+		}
+		.mf-side {
+			grid-column: 7 / -1;
+		}
 	}
 	/* One grid per chart: the bars' column, and the values' column sized to
 	   its longest value, so a value never runs past the rule. */
@@ -135,8 +216,7 @@
 		row-gap: 0.375rem;
 		margin: 0;
 	}
-	.mf-label,
-	.mf-note {
+	.mf-label {
 		grid-column: 1 / -1;
 	}
 	.mf-label {
@@ -230,22 +310,92 @@
 		right: 0;
 	}
 	.mf-note {
-		margin-top: 0.5rem;
+		margin: 0.875rem 0 0;
 		font-size: 0.75rem;
 		line-height: 1.125rem;
 		color: var(--hk-text-3);
 		text-wrap: pretty;
 	}
-	/* From 1024px the two cells of a row share their rows, so the charts of
-	   a row start on one line whatever their copy's length. */
+	/* The four charts: one column, two from 1024px, four from 1280px; the
+	   cells of a row share their rows (subgrid), so the charts start on
+	   one line whatever the copy's length. */
+	.mf {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		margin: 0 calc(-1 * var(--edge));
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--rule-in);
+	}
+	.mf > li {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		padding: 1.375rem var(--edge) 1.75rem;
+	}
+	.mf > li + li {
+		border-top: 1px solid var(--rule-in);
+	}
+	.mf-copy > :global(.num) {
+		margin-bottom: 0.375rem;
+	}
+	.mf-copy > :global(.item-title) {
+		text-wrap: balance;
+	}
+	.mf-copy > :global(.copy) {
+		margin-top: 0.25rem;
+	}
+	.mf-fig {
+		padding: 1rem 0 0;
+	}
+	.mf-tick.mf-minor {
+		font-size: 0;
+		padding: 0;
+	}
 	@media (min-width: 1024px) {
+		.mf {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 		.mf > li {
 			display: grid;
 			grid-row: span 2;
 			grid-template-rows: subgrid;
+			padding: 1.5rem var(--in) 1.75rem;
 		}
-		.mf > li > :global(.cell-copy) {
-			order: 0;
+		.mf > li + li {
+			border-top: 0;
+		}
+		.mf > li:nth-child(odd) {
+			padding-left: var(--edge);
+		}
+		.mf > li:nth-child(even) {
+			padding-right: var(--edge);
+			border-left: 1px solid var(--rule-in);
+		}
+		.mf > li:nth-child(n + 3) {
+			border-top: 1px solid var(--rule-in);
+		}
+	}
+	@media (min-width: 1280px) {
+		.mf {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+		}
+		.mf > li:nth-child(n) {
+			padding: 1.5rem var(--in) 1.75rem;
+			border-top: 0;
+		}
+		.mf > li:first-child {
+			padding-left: var(--edge);
+		}
+		.mf > li:last-child {
+			padding-right: var(--edge);
+		}
+		.mf > li + li {
+			border-left: 1px solid var(--rule-in);
+		}
+		.mf-chart {
+			grid-template-columns: minmax(0, 1fr) 5.5rem;
+			column-gap: 0.625rem;
 		}
 	}
 	@media (max-width: 639.98px) {
@@ -255,9 +405,6 @@
 		}
 		.mf-val {
 			font-size: 0.6875rem;
-		}
-		.mf-minor {
-			display: none;
 		}
 	}
 </style>

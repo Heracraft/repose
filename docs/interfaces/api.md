@@ -202,7 +202,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           checkout,                                    -- the checkout's name under /home/dev, "" none, null unknown (I-1610)
           sized,                                       -- false on a host the account owns: class is no size there (I-1632)
           mem_used_bytes?,                             -- running only: memory in use, newest sample (I-1632)
-          not_answering?: {since} }                    -- running, guestd silent ~3 minutes (I-1652)
+          not_answering?: {since},                     -- running, guestd silent ~3 minutes (I-1652)
+          parked?: {since, waits_for} }                -- running, parked on a Mac until its user logs in (I-1672)
                                                        -- host_name: the owned host's name beside host_id,
                                                        -- absent on a host repose runs (I-1392)
 
@@ -293,6 +294,18 @@ first silent one). One `not_answering` event
 `POST /projects/:id/start` restarts the machine, as it does for any
 running project whose guestd is not answering. An api older than I-1652
 sends nothing.
+
+`parked` (I-1672) is set on a `running` project on a host an account
+owns whose newest sample says the machine is parked and waits for the
+Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
+on a Mac without the appliance, where Virtualization.framework restores a
+save file only in the user's unlocked session, I-1662): `since` is when it
+was parked, `waits_for` is `login`. Its memory is kept and it runs again
+at the login, so it is never `not_answering` though its guestd is silent,
+the `not_answering` event is not raised, and `POST /projects/:id/start`
+answers `409 conflict` as for any running machine, never the restart a
+silent guestd gets. A sample from a fleet host never sets it. An api older
+than I-1672 sends nothing, and says `not_answering` instead.
 
 `guest_runtime` (DECISIONS I-1462) is `nix` (a NixOS machine built from
 its configuration, every project before I-1462) or `erofs` (a machine

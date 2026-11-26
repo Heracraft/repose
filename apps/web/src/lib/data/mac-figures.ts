@@ -1,5 +1,5 @@
 /*
- * Every figure the landing's "03 Your Mac" band draws (DECISIONS I-1674).
+ * The Mac figures of the landing's "03 Your hardware" band (DECISIONS I-1674).
  * Nothing in MacFigures.svelte is typed in: a bar's length, its value, the
  * screen reader's sentence and the notes all come from here, so a better
  * measurement is one edit to one number.
@@ -44,6 +44,17 @@ export interface Chart {
 	/** What differs between the two runs, or a condition, said on the page. */
 	note?: string;
 }
+
+/**
+ * The switch. The Mac figures below are design 2's, a prototype on branch
+ * design2; repose 0.1.66 on a Mac is the nested layout they beat. While
+ * design 2 is not shipped they stay off the page (no ghost features), and
+ * the band "03 Your hardware" says only what ships today. The day design 2
+ * ships, and its public docs say what these figures say, set this to true:
+ * the band then adds "And on a Mac, each sandbox is its own VM" with the
+ * four charts. Nothing else changes.
+ */
+export const MAC_DESIGN2_LIVE = false;
 
 /** Where and when every figure below was measured. */
 export const MEASURED = {
@@ -152,7 +163,7 @@ export const REST = {
 		step: 5,
 		rows: [
 			{
-				label: 'Memory held once the sandboxes are idle',
+				label: 'Memory held once idle',
 				// own: 0, the rested VM's process is gone (d2-runtime 16:17Z n=3,
 				// d2-arch 17:00Z n=1).
 				own: { lo: 0, hi: 0, n: 4 },

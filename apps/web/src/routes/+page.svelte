@@ -18,7 +18,8 @@
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import PauseButton from '$lib/components/landing/PauseButton.svelte';
 	import MacFigures from '$lib/components/landing/MacFigures.svelte';
-	import { LAYOUTS, MEASURED } from '$lib/data/mac-figures';
+	import YourHardware from '$lib/components/landing/YourHardware.svelte';
+	import { MAC_DESIGN2_LIVE } from '$lib/data/mac-figures';
 	import { loadHero } from '$lib/components/landing/heroes';
 
 	/** Optional `?hero=` gallery candidate override; defaults to HeroVisual. */
@@ -172,26 +173,17 @@
 		</div>
 	</section>
 
-	<section class="band" id="mac" aria-labelledby="mac-h">
+	<section class="band" id="hardware" aria-labelledby="hardware-h">
 		<div class="head">
-			{@render label('03', 'Your Mac')}
-			<h2 class="hk-h2" id="mac-h">On your Mac, each sandbox is its own VM</h2>
-			<div class="side mac-side">
-				<ul class="mac-legend">
-					<li><i class="mac-key mac-key--own" aria-hidden="true"></i>{LAYOUTS.own}</li>
-					<li>
-						<i class="mac-key mac-key--nested" aria-hidden="true"></i><span
-							>{LAYOUTS.nested} <span class="mac-ver nw">({LAYOUTS.nestedVersion})</span></span
-						>
-					</li>
-				</ul>
-				<p class="mac-where">
-					Measured on {MEASURED.machine}, {MEASURED.date}. A bar runs from the fastest run to the
-					slowest.
-				</p>
+			{@render label('03', 'Your hardware')}
+			<h2 class="hk-h2" id="hardware-h">Run it on hardware you own</h2>
+			<div class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}>What it needs</a
+				>
 			</div>
 		</div>
-		<MacFigures />
+		<YourHardware />
+		{#if MAC_DESIGN2_LIVE}<MacFigures />{/if}
 	</section>
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
