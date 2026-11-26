@@ -1,4 +1,4 @@
-# hostd's snapshot store on vg-guests/snapshots (DECISIONS I-1636).
+# hostd's snapshot store on vg-guests/repose-snapshots (DECISIONS I-1636).
 [Unit]
 Description=Mount the snapshot store volume on /var/lib/repose/snapshots
 After=repose-guest-pool.service repose-mac-grow.service

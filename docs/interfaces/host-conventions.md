@@ -575,7 +575,7 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   `cache_moved`. 16 GiB is two arm64 bundles of about 3 GB and a third
   being fetched during a base rotation, with room for the root image to
   grow; thin, so it costs what it holds.
-- **The snapshot store volume** (DECISIONS I-1636): `vg-guests/snapshots`,
+- **The snapshot store volume** (DECISIONS I-1636): `vg-guests/repose-snapshots`,
   thin, half the volume group's size at creation rounded down to a GiB
   (at least 4), ext4 labelled `repose-snapshots`, made once by
   `repose-snapshots-volume` (after the pool and `repose-mac-grow`, before
