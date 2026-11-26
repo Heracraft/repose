@@ -604,7 +604,9 @@ func (f *Fake) seatsFor() int {
 func (f *Fake) runningGB(u *userRec, exclude *project) int {
 	n := 0
 	for _, p := range f.userProjects(u) {
-		if p == exclude {
+		if p == exclude || f.onOwnedHost(p) {
+			// A machine on a host the account owns holds no plan
+			// memory (I-1364, I-1658), as the api's RunningMemory.
 			continue
 		}
 		switch p.State {
@@ -613,6 +615,16 @@ func (f *Fake) runningGB(u *userRec, exclude *project) int {
 		}
 	}
 	return n
+}
+
+// onOwnedHost reports whether p is placed on a host an account owns.
+func (f *Fake) onOwnedHost(p *project) bool {
+	for _, h := range f.ownedHosts {
+		if h.ID == p.HostID {
+			return true
+		}
+	}
+	return false
 }
 
 // diskHeldGB is what the user's projects hold, as the api counts the

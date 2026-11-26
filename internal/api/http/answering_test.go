@@ -66,7 +66,7 @@ func TestMachineThatStopsAnsweringSaysSo(t *testing.T) {
 
 	sample(now.Add(-10*time.Minute), true)
 	sample(now.Add(-9*time.Minute), false)
-	sample(now.Add(-8*time.Minute), true)
+	sample(now.Add(-3*time.Minute), true)
 	sample(now.Add(-2*time.Minute), false)
 	sample(now.Add(-time.Minute), false)
 	if s, ok := silentSince(); ok {
@@ -81,8 +81,11 @@ func TestMachineThatStopsAnsweringSaysSo(t *testing.T) {
 	if !ok {
 		t.Fatal("three silent samples over two minutes: no not_answering on the project")
 	}
-	if got, _ := time.Parse(time.RFC3339, s); !got.Equal(now.Add(-2 * time.Minute)) {
-		t.Fatalf("not_answering.since %s, want %s", s, now.Add(-2*time.Minute).Format(time.RFC3339))
+	// Since the last sample that answered: the machine went quiet after
+	// it, and the first silent sample came up to a minute later
+	// (pass2-dash N5: "for 1m" 2m26s after the freeze, I-1658).
+	if got, _ := time.Parse(time.RFC3339, s); !got.Equal(now.Add(-3 * time.Minute)) {
+		t.Fatalf("not_answering.since %s, want %s", s, now.Add(-3*time.Minute).Format(time.RFC3339))
 	}
 	if n, err := warner.Run(ctx, now); err != nil || n != 1 {
 		t.Fatalf("warner: n=%d err=%v, want one event", n, err)
@@ -95,7 +98,7 @@ func TestMachineThatStopsAnsweringSaysSo(t *testing.T) {
 	if err := e.h.Pool.QueryRow(ctx, "select e.summary, (select count(*) from events_outbox o where o.event_id = e.id) from events e where e.project_id = $1 and e.kind = $2", p.ID, answering.Kind).Scan(&summary, &outbox); err != nil {
 		t.Fatal(err)
 	}
-	if want := "stuck has not answered for 2m. `repose start stuck` restarts it; what was in its memory is lost."; summary != want || outbox != 0 {
+	if want := "stuck has not answered for 3m. `repose start stuck` restarts it; what was in its memory is lost."; summary != want || outbox != 0 {
 		t.Fatalf("summary %q outbox %d, want %q and no notification", summary, outbox, want)
 	}
 
@@ -115,7 +118,7 @@ func TestMachineThatStopsAnsweringSaysSo(t *testing.T) {
 	if s, ok := silentSince(); ok {
 		t.Fatalf("a machine that answered again reads not answering since %s", s)
 	}
-	if !strings.Contains(string(e.do(t, tok, "GET", "/projects/"+p.ID.String()+"/events", nil).raw), "has not answered for 2m") {
+	if !strings.Contains(string(e.do(t, tok, "GET", "/projects/"+p.ID.String()+"/events", nil).raw), "has not answered for 3m") {
 		t.Fatal("the event is not listed under the project's events")
 	}
 }

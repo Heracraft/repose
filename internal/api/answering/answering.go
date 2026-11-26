@@ -46,14 +46,17 @@ const Kind = "not_answering"
 // Silence is the trailing run of samples, since the guest last started,
 // in which guestd did not answer: from the first of them to the newest.
 type Silence struct {
+	// Since is when it went quiet: the last sample that answered, or the
+	// first silent one when none since the start did.
 	Since   time.Time
+	First   time.Time
 	Newest  time.Time
 	Samples int
 }
 
 // Long reports whether s is long enough to show at now.
 func (s Silence) Long(now time.Time) bool {
-	return s.Samples >= Samples && s.Newest.Sub(s.Since) >= Span && now.Sub(s.Newest) < Fresh
+	return s.Samples >= Samples && s.Newest.Sub(s.First) >= Span && now.Sub(s.Newest) < Fresh
 }
 
 // Read reads the silent run of a project's samples since startedAt: the
@@ -62,16 +65,26 @@ func (s Silence) Long(now time.Time) bool {
 // as answering, I-818). The (project_id, ts) key bounds it to the
 // project's own rows.
 func Read(ctx context.Context, q store.Querier, projectID uuid.UUID, startedAt time.Time) (Silence, error) {
-	var since, newest *time.Time
+	var first, newest, answered *time.Time
 	var n int
-	err := q.QueryRow(ctx, `select min(ts), max(ts), count(*) from meter_samples
-		where project_id = $1 and ts >= $2
-		  and ts > coalesce((select max(ts) from meter_samples where project_id = $1 and ts >= $2 and (guestd_ok or resting)), $2 - interval '1 second')`,
-		projectID, startedAt).Scan(&since, &newest, &n)
-	if err != nil || since == nil || newest == nil {
+	err := q.QueryRow(ctx, `with last_ok as (select max(ts) as ts from meter_samples where project_id = $1 and ts >= $2 and (guestd_ok or resting))
+		select min(m.ts), max(m.ts), count(*), (select ts from last_ok) from meter_samples m
+		where m.project_id = $1 and m.ts >= $2
+		  and m.ts > coalesce((select ts from last_ok), $2 - interval '1 second')`,
+		projectID, startedAt).Scan(&first, &newest, &n, &answered)
+	if err != nil || first == nil || newest == nil {
 		return Silence{}, err
 	}
-	return Silence{Since: *since, Newest: *newest, Samples: n}, nil
+	// Silent since the last sample that answered, when there is one: the
+	// guest went quiet after it, and the first silent sample came up to a
+	// minute later, so counting from that one read "for 1m" two and a
+	// half minutes in (pass2-dash N5, I-1658). Long still counts from the
+	// first silent sample.
+	s := Silence{Since: *first, First: *first, Newest: *newest, Samples: n}
+	if answered != nil {
+		s.Since = *answered
+	}
+	return s, nil
 }
 
 // Project reports since when p has not answered, and whether it is so

@@ -204,7 +204,9 @@
 
 	async function onsubmit(event: SubmitEvent) {
 		event.preventDefault();
-		if (saving) return;
+		// The host would refuse it (I-1654): Create waits until there is
+		// room, or until Runs on is repose's servers (pass2-dash N2).
+		if (saving || hostFull) return;
 		const n = name.trim();
 		if (n === '') {
 			error = 'Name is required.';
@@ -269,7 +271,7 @@
 				oninput={() => (nameIsOurs = false)}
 			/>
 			<div class="nmacts">
-				<button type="submit" class="hk-btn" aria-disabled={saving ? 'true' : undefined}
+				<button type="submit" class="hk-btn" aria-disabled={saving || hostFull ? 'true' : undefined}
 					>{saving ? 'Creating…' : 'Create'}</button
 				>
 				<button type="button" class="hk-btn-ghost" onclick={oncancel}>Cancel</button>

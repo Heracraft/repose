@@ -6,6 +6,7 @@
 	import type { Project } from '$lib/api/types';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { frozenSince } from '$lib/frozen';
+	import { notAnsweringSince } from '$lib/answering';
 	import { onMount } from 'svelte';
 	import { clock } from '$lib/clock.svelte';
 	import {
@@ -45,7 +46,11 @@
 	{/if}
 	<p class="status">
 		<span class="status-state" data-testid="project-state"
-			><StateDot state={project.state} frozen={!!frozen} /></span
+			><StateDot
+				state={project.state}
+				frozen={!!frozen}
+				silent={!!notAnsweringSince(project)}
+			/></span
 		>
 		<!-- Frozen reads as the list does, "frozen for 1h35m", with the size
 	     facts every other state shows (review r1 dash-r1-4). Nothing says

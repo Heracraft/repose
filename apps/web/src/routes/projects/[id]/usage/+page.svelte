@@ -100,6 +100,7 @@
 				end={samplesAt}
 				format={pct}
 				maxLabel="100% of {samples.vcpus} {samples.vcpus === 1 ? 'core' : 'cores'}"
+				live={ctx.project?.state === 'running'}
 			/>
 			<UsageChart
 				label="Memory"
@@ -110,6 +111,7 @@
 				end={samplesAt}
 				format={bytes}
 				maxLabel={gb(samples.memory_bytes)}
+				live={ctx.project?.state === 'running'}
 			/>
 			<UsageChart
 				label="Waiting for a core"
@@ -120,6 +122,7 @@
 				end={samplesAt}
 				format={pct}
 				maxLabel="100%"
+				live={ctx.project?.state === 'running'}
 			/>
 			<UsageChart
 				label="Waiting for the server"

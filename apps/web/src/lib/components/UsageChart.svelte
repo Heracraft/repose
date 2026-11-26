@@ -19,7 +19,8 @@
 		start,
 		end,
 		format,
-		maxLabel
+		maxLabel,
+		live = true
 	}: {
 		label: string;
 		points: Pt[];
@@ -32,6 +33,9 @@
 		format: (v: number) => string;
 		/** The words at the top gridline ("100%", "8 GB"). */
 		maxLabel: string;
+		/** The machine runs, so the newest point is "now"; a stopped one's
+		 * is its "last" (pass2-dash N7, I-1658). */
+		live?: boolean;
 	} = $props();
 
 	// The box is 80px whatever the data, so a poll swaps path data and
@@ -50,7 +54,9 @@
 	let top = $derived(peak(points));
 	let now = $derived(latest(points));
 	let reading = $derived(
-		now === undefined ? 'no data' : `now ${format(now)}, peak ${format(top ?? now)}`
+		now === undefined
+			? 'no data'
+			: `${live ? 'now' : 'last'} ${format(now)}, peak ${format(top ?? now)}`
 	);
 	let hp = $derived(hover !== undefined ? reported[hover] : undefined);
 

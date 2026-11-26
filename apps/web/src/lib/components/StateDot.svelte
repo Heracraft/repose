@@ -14,11 +14,15 @@
 
 	let {
 		state,
-		frozen = false
+		frozen = false,
+		silent = false
 	}: {
 		state: GuestState;
 		/** A running machine frozen while idle (I-683). */
 		frozen?: boolean;
+		/** A running machine that has stopped answering (I-1652): red,
+		 * and the word says so, as `repose ls` does (I-1658). */
+		silent?: boolean;
 	} = $props();
 
 	type Tone = 'idle' | 'on' | 'busy' | 'err';
@@ -53,6 +57,11 @@
 	>
 		<Snowflake size={13} />
 		<span>frozen</span>
+	</span>
+{:else if silent && state === 'running'}
+	<span class="state" data-state={state} data-silent="">
+		<span class="hk-dot hk-dot--err" data-tone="err" aria-hidden="true"></span>
+		<span>running, not answering</span>
 	</span>
 {:else}
 	<span class="state" data-state={state}>

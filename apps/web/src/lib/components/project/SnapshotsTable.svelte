@@ -12,7 +12,7 @@
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import { focusAfterRender } from '$lib/focus';
-	import { dateTime, gb, timeUntil } from '$lib/format';
+	import { bytes, dateTime, timeUntil } from '$lib/format';
 	import type { Project, Snapshot } from '$lib/api/types';
 
 	let {
@@ -132,13 +132,13 @@
 							<span class="num">{dateTime(s.created_at)}</span>
 							<!-- Below 640px the other columns go under the time. -->
 							<span class="sub block sm:hidden"
-								>{gb(s.bytes)} · {s.reason} ·
+								>{bytes(s.bytes)} · {s.reason} ·
 								<span title={s.expires_at ? dateTime(s.expires_at) : undefined}
 									>{s.expires_at && !s.gone_with_host ? `expires ${expiry(s)}` : expiry(s)}</span
 								></span
 							>
 						</td>
-						<td class="hk-num-col num hidden whitespace-nowrap sm:table-cell">{gb(s.bytes)}</td>
+						<td class="hk-num-col num hidden whitespace-nowrap sm:table-cell">{bytes(s.bytes)}</td>
 						<td class="muted hidden sm:table-cell">{s.reason}</td>
 						<td class="muted num hidden whitespace-nowrap sm:table-cell">
 							<span title={s.expires_at ? dateTime(s.expires_at) : undefined}>{expiry(s)}</span>

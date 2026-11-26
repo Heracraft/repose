@@ -4,6 +4,7 @@
 // the account's own still showed a size.
 import { test, expect, type Page } from '@playwright/test';
 import {
+	addEvents,
 	signIn,
 	createProject,
 	apiURLFromEnv,
@@ -54,6 +55,11 @@ test('a machine that stopped answering says so, with Restart as the way back', a
 			.locator('table.ptable tbody tr')
 			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
 		await expect(row.getByTestId('row-not-answering')).toHaveText('Not answering for 4m');
+		await expect(row).toContainText('running, not answering');
+		// The rail's dot is red, and its name says so (pass2-dash N5).
+		await expect(
+			page.getByRole('link', { name: `${p.name}, running, not answering` })
+		).toBeVisible();
 		await expect(row.getByRole('button', { name: `Restart ${p.name}` })).toBeVisible();
 		await shots(page, 'not-answering-list');
 
@@ -63,7 +69,10 @@ test('a machine that stopped answering says so, with Restart as the way back', a
 			'Not answering for 4m. Restart starts it again; what was in its memory is lost.'
 		);
 		await shots(page, 'not-answering-page');
-		await banner.getByRole('button', { name: 'Restart' }).click();
+		// The header says so too, and offers Restart in place of Stop (I-1658).
+		await expect(page.getByTestId('project-state')).toContainText('running, not answering');
+		await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+		await page.getByRole('button', { name: 'Restart', exact: true }).first().click();
 		await expect(banner).toHaveCount(0);
 	} finally {
 		await destroyProject(api, p.id);
@@ -87,5 +96,36 @@ test('Recently destroyed names no size for a machine from a host of your own', a
 		await expect(row).not.toContainText('large');
 	} finally {
 		await removeOwnedHosts(api).catch(() => {});
+	}
+});
+
+// pass2-dash N6: the memory stop reads as the CLI says it, amber, not
+// "failed" in red; and repose's own sentence draws its command as code,
+// not in backticks (N5).
+test('a memory stop reads as the CLI says it, and its command is code', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'oom-app',
+		remote_url: 'github.com/heracraft/oom-app'
+	});
+	try {
+		await addEvents(p.id, 1, {
+			kinds: ['oom_stopped'],
+			summaries: [
+				'stopped: your host mac-mini ran out of memory, so repose stopped oom-app, the machine started last, to keep the others running. `repose start oom-app` starts it again'
+			]
+		});
+		await page.goto(`/projects/${p.id}/events`);
+		const row = page
+			.getByTestId('events-card')
+			.locator('li')
+			.filter({ hasText: 'ran out of memory' })
+			.first();
+		await expect(row).toContainText('stopped, host out of memory');
+		await expect(row).not.toContainText('failed');
+		await expect(row).not.toContainText('`');
+		await expect(row.locator('code')).toHaveText('repose start oom-app');
+	} finally {
+		await destroyProject(api, p.id);
 	}
 });

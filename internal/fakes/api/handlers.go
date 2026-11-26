@@ -2095,7 +2095,12 @@ func (f *Fake) listEvents(w http.ResponseWriter, r *http.Request) *apiError {
 		if len(kinds) > 0 && !slices.Contains(kinds, ev.Kind) {
 			continue
 		}
-		all = append(all, *ev)
+		e := *ev
+		if e.Source == "" {
+			// The api's own notices name no agent; a machine's do.
+			e.Source = map[bool]string{true: "api", false: "host"}[e.Agent == ""]
+		}
+		all = append(all, e)
 	}
 	sort.SliceStable(all, func(i, j int) bool {
 		if !all[i].TS.Equal(all[j].TS) {

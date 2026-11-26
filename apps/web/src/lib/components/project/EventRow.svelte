@@ -15,6 +15,7 @@
 	import { eventKind, notSent, toneDot as dotFor } from '$lib/events';
 	import { clockTime, dateTime } from '$lib/format';
 	import { agentLink } from '$lib/agent-link';
+	import { splitTicks } from './ticks';
 	import type { GuestState, ProjectEvent } from '$lib/api/types';
 
 	let { event }: { event: ProjectEvent } = $props();
@@ -70,6 +71,12 @@
 		title={event.window && event.window !== event.agent ? `window ${event.window}` : undefined}
 		>{event.agent ?? ''}</span
 	>
+	<!-- repose's own sentences quote a command in backticks; it is drawn
+	     as code, never the backticks (I-837). An agent's words stay as it
+	     wrote them (pass2-dash N5, I-1658). -->
+	{#snippet words()}{#if event.source === 'api'}{#each splitTicks(event.summary) as part, i (i)}{#if part.code}<code
+						>{part.text}</code
+					>{:else}{part.text}{/if}{/each}{:else}{event.summary}{/if}{/snippet}
 	<span class="summary">
 		{#if machineState}
 			<StateDot state={machineState} />
@@ -80,10 +87,10 @@
 				class:line-clamp-2={!open}
 				aria-expanded={open}
 				onclick={() => (open = !open)}
-				bind:this={text}>{event.summary}</button
+				bind:this={text}>{@render words()}</button
 			>
 		{:else}
-			<span class="line-clamp-2" bind:this={text}>{event.summary}</span>
+			<span class="line-clamp-2" bind:this={text}>{@render words()}</span>
 		{/if}
 		{#if link}
 			<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->

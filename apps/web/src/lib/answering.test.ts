@@ -27,3 +27,27 @@ describe('bytes', () => {
 		expect(bytes(1.6 * 1024 * 1024 * 1024)).toBe('1.6 GB');
 	});
 });
+
+describe('eventKind of a memory stop (pass2-dash N6)', () => {
+	it('says what the CLI says, amber, under Errors', async () => {
+		const { eventKind } = await import('./events');
+		expect(eventKind('oom_stopped')).toEqual({
+			label: 'stopped, host out of memory',
+			tone: 'attention',
+			group: 'error'
+		});
+	});
+});
+
+describe('dashboardWords (pass2-dash N2)', () => {
+	it("names New project, not the CLI's flag, as the second way out", async () => {
+		const { dashboardWords } = await import('./refusal');
+		expect(
+			dashboardWords(
+				"your host mac-mini runs as many machines at once as its cores allow, and a and b are running there. Stopping one of them frees room, or `repose run --host repose` makes this one on repose's servers"
+			)
+		).toBe(
+			"your host mac-mini runs as many machines at once as its cores allow, and a and b are running there. Stopping one of them frees room, or New project can make it on repose's servers"
+		);
+	});
+});

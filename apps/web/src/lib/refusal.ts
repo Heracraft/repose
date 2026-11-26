@@ -11,3 +11,16 @@ export function withoutBillingURL(message: string): string {
 		.replace(/ at https?:\/\/\S*?(?=\.?(?:\s|$))/g, '')
 		.trim();
 }
+
+/**
+ * The api's refusal in the dashboard's words: its second way out names
+ * the CLI's flag (I-1654), and here the same choice is New project's Runs
+ * on, so the clause says that instead of showing a command in backticks
+ * (pass2-dash N2).
+ */
+export function dashboardWords(message: string): string {
+	return message.replace(
+		/, or `repose run --host repose` makes this one on repose's servers/,
+		", or New project can make it on repose's servers"
+	);
+}

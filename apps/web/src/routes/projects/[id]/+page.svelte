@@ -33,7 +33,7 @@
 	// questions, the newest 5 events, the memory sample (Machine's "in
 	// use"; the project carries no memory figure) and the config revision
 	// once, together, so nothing lands above what is on screen.
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
@@ -70,6 +70,7 @@
 	import { destroyRefusalMessage } from '$lib/components/project/host';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { latest, type Pt } from '$lib/usage';
+	import { notAnsweringSince } from '$lib/answering';
 	import type { ProjectEvent, Question, Revision, Samples, Say } from '$lib/api/types';
 
 	const ctx = useProject();
@@ -159,9 +160,16 @@
 
 	/** The memory in use now: the newest sample's, while the machine runs. */
 	let memNow = $derived.by(() => {
-		if (project?.state !== 'running' || !samples) return undefined;
-		const pts: Pt[] = samples.points.map((p) => ({ t: Date.parse(p.ts), v: p.mem_used_bytes }));
-		return latest(pts);
+		if (project?.state !== 'running') return undefined;
+		// Silent: no figure is current, and the card says why (I-1658).
+		if (notAnsweringSince(project)) return undefined;
+		const pts: Pt[] = (samples?.points ?? []).map((p) => ({
+			t: Date.parse(p.ts),
+			v: p.mem_used_bytes
+		}));
+		// Until the samples read has a point from this run, the project's
+		// own figure, which the header already shows (pass2-dash N3).
+		return latest(pts) ?? project.mem_used_bytes ?? undefined;
 	});
 
 	/**
@@ -226,6 +234,9 @@
 		sizeTo = project?.class;
 		askingSize = false;
 		showResize = true;
+		// The panel opens under the Machine row, below the fold at 1440,
+		// and a click that shows nothing reads as broken (pass2-dash N8).
+		void tick().then(() => resizePanel?.scrollIntoView({ block: 'nearest' }));
 	}
 
 	// The size class, as `repose resize --size` changes it (I-1518): the

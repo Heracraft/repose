@@ -21,6 +21,8 @@
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { OwnedHost, HostState } from '$lib/api/types';
+	import { projectsStore } from '$lib/projects.svelte';
+	import { notAnsweringSince } from '$lib/answering';
 
 	const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 	/** The Mac image's download and the free disk it needs (I-1490). The
@@ -192,7 +194,13 @@
 	function machines(h: OwnedHost): string {
 		if (!h.projects) return 'None';
 		const word = h.projects === 1 ? 'machine' : 'machines';
-		return `${h.projects} ${word}, ${h.running_projects} running`;
+		// Running machines that stopped answering are named apart, so the
+		// host does not read healthy while they hang (pass2-dash N5,
+		// I-1658); the projects list the rail already holds says which.
+		const silent = (projectsStore.list ?? []).filter(
+			(p) => p.host_id === h.id && !!notAnsweringSince(p)
+		).length;
+		return `${h.projects} ${word}, ${h.running_projects} running${silent ? `, ${silent} not answering` : ''}`;
 	}
 
 	// What the confirmation says. A host that is answering cannot be
