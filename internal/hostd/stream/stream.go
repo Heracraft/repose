@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"net"
 	"sync"
 	"time"
 
@@ -43,6 +44,11 @@ type Dialer interface {
 type GRPCDialer struct {
 	Addr string
 	TLS  *tls.Config
+	// NetDial, when set, opens the connection under gRPC: on macOS the api's
+	// hub address is reached through hostd's own WireGuard netstack
+	// (unet.Edge.DialContext, DECISIONS I-1670). Nil is gRPC's own dial,
+	// as on every Linux host.
+	NetDial func(ctx context.Context, addr string) (net.Conn, error)
 }
 
 // Dial implements Dialer.
@@ -54,6 +60,9 @@ func (d GRPCDialer) Dial(ctx context.Context) (hostdv1.HostService_SessionClient
 		grpc.WithTransportCredentials(credentials.NewTLS(d.TLS)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 30 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true}),
 	}, instrument.GRPCDialOptions()...)
+	if d.NetDial != nil {
+		opts = append(opts, grpc.WithContextDialer(d.NetDial))
+	}
 	conn, err := grpc.NewClient(d.Addr, opts...)
 	if err != nil {
 		return nil, nil, err
