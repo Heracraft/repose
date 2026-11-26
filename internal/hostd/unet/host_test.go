@@ -106,3 +106,66 @@ func TestSocketDirPortTakesTheLauncherAfterVFKT(t *testing.T) {
 		t.Fatalf("socket outlived DelTap: %v", err)
 	}
 }
+
+func TestEdgeWakesAParkedGuest(t *testing.T) {
+	in := newInternet(t)
+	dir, err := os.MkdirTemp("", "un")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	woke := make(chan string, 1)
+	var n *Net
+	vmUp := func() net.Conn {
+		local := filepath.Join(dir, "net0.dgram")
+		_ = os.Remove(local)
+		c, err := net.DialUnix("unixgram", &net.UnixAddr{Name: local, Net: "unixgram"}, &net.UnixAddr{Name: filepath.Join(dir, "tap-aaaaaaaa.sock"), Net: "unixgram"})
+		if err != nil {
+			t.Error(err)
+			return nil
+		}
+		_, _ = c.Write([]byte("VFKT"))
+		return c
+	}
+	var g *testGuest
+	n, err = New(Config{Gateway: mustAddr(testGW), Dial: in.dial, SocketDir: dir, OnWake: func(tap string) {
+		woke <- tap
+		go func() { // the VM restores and its NIC connects again
+			time.Sleep(200 * time.Millisecond)
+			g2 := bootGuest(t, vmUp(), ipA, macA, testGW)
+			l := g2.listen(t, 22)
+			go func() {
+				if c, err := l.Accept(); err == nil {
+					_, _ = c.Write([]byte("SSH-2.0-woken"))
+					_ = c.Close()
+				}
+			}()
+		}()
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer n.Close()
+	ctx := context.Background()
+	_ = n.AddTap(ctx, "tap-aaaaaaaa")
+	_ = n.AddGuestRules(ctx, gA, ipA, macA, "tap-aaaaaaaa")
+	g = bootGuest(t, vmUp(), ipA, macA, testGW)
+	te, _ := startTestEdge(t, n)
+	_ = g.conn.Close() // the VM parks
+	n.Detach("tap-aaaaaaaa")
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	c, err := te.net.DialContextTCPAddrPort(cctx, mustAddrPort(ipA+":22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	buf := make([]byte, 13)
+	_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := ioReadFull(c, buf); err != nil || string(buf) != "SSH-2.0-woken" {
+		t.Fatalf("%q %v", buf, err)
+	}
+	if tap := <-woke; tap != "tap-aaaaaaaa" {
+		t.Fatal(tap)
+	}
+}

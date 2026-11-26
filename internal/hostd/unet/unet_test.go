@@ -391,3 +391,5 @@ func TestGateOrderMatchesNftables(t *testing.T) {
 }
 
 func mustAddr(s string) netip.Addr { return netip.MustParseAddr(s) }
+
+func mustAddrPort(s string) netip.AddrPort { return netip.MustParseAddrPort(s) }

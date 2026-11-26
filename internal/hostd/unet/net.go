@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 
 	hnet "github.com/heracraft/repose/internal/hostd/net"
+	"github.com/heracraft/repose/internal/obs"
 )
 
 // Reconnect asks whatever runs a guest's VM to connect its NIC to the
@@ -61,7 +62,12 @@ type Config struct {
 	// Reconnect: nil leaves a port with no VM connected waiting for the
 	// VM to connect on its own.
 	Reconnect Reconnect
-	Log       *slog.Logger
+	// OnWake is called when the edge opens a connection to a guest whose
+	// port has no VM connected (the VM is parked or resting); hostd wakes
+	// it, and the connection waits up to WakeWait for the VM's NIC.
+	OnWake   func(tap string)
+	WakeWait time.Duration
+	Log      *slog.Logger
 }
 
 // Net is the network: one stack, a port per guest, the counters.
@@ -137,7 +143,7 @@ func New(cfg Config) (*Net, error) {
 	}
 	lg := cfg.Log
 	if lg == nil {
-		lg = slog.New(slog.DiscardHandler)
+		lg = obs.Nop(obs.ComponentHostd)
 	}
 	dial := cfg.Dial
 	if dial == nil {
@@ -234,6 +240,24 @@ func (n *Net) Attach(tap string, c FrameConn) bool {
 	}
 	p.attach(c)
 	return true
+}
+
+// Detach tells a guest's port its VM is gone (parked): the port waits
+// for the next VM to connect, and the edge's next connection calls
+// OnWake. The rules and counters stay.
+func (n *Net) Detach(tap string) {
+	n.mu.Lock()
+	p := n.ports[tap]
+	n.mu.Unlock()
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	c := p.conn
+	p.mu.Unlock()
+	if f, ok := c.(interface{ Forget() }); ok {
+		f.Forget()
+	}
 }
 
 // Attached reports whether a tap's port has a frame connection.

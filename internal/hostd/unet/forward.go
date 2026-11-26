@@ -130,6 +130,16 @@ func (n *Net) fromEdgeTCP(r *tcp.ForwarderRequest, src netip.Addr, dst netip.Add
 		r.Complete(true)
 		return
 	}
+	if !p.ready() && n.cfg.OnWake != nil {
+		n.cfg.OnWake(p.tap)
+		wait := n.cfg.WakeWait
+		if wait == 0 {
+			wait = 20 * time.Second
+		}
+		for end := time.Now().Add(wait); !p.ready() && time.Now().Before(end); {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
 	ctx, cancel := context.WithTimeout(n.ctx, 15*time.Second)
 	defer cancel()
 	out, err := gonet.DialTCPWithBind(ctx, n.s,

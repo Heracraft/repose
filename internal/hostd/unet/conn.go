@@ -44,6 +44,10 @@ func ListenDgram(path string) (*DgramConn, error) {
 	return &DgramConn{path: path, c: c}, nil
 }
 
+// Forget drops the peer: the VM has gone (parked) and frames for it are
+// dropped until a VM sends vfkitMagic again.
+func (d *DgramConn) Forget() { d.mu.Lock(); d.peer = nil; d.mu.Unlock() }
+
 // Ready reports whether a VM has connected.
 func (d *DgramConn) Ready() bool { d.mu.Lock(); defer d.mu.Unlock(); return d.peer != nil }
 
