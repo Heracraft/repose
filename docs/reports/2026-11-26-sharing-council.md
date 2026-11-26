@@ -123,11 +123,27 @@ is recorded as such (W1): the vCPU count was not shown to cause a hang.
   says ("Processes get killed ... `sudo dmesg | grep -i killed` names what
   the kernel stopped"): the guest kernel kills the program, the machine
   keeps answering.
-- **Actual:** the last hog line read 1792 MiB at +4 s; from +7 s every
-  `repose exec` answers `did not answer ssh in 15 s ... cannot reach
-  environment: no route to host`, still at 03:41Z (9 min). `ls` says
-  `running`, MEMORY `-`. The other machine answered, `free` 10060 MiB, so
-  the host was not full and the guard did not fire.
+- **Actual (review-cli F-D):** the last hog line read 1792 MiB at +4 s;
+  from +7 s every `repose exec` answers `e2e-cli-empty is running but did
+  not answer ssh in 15 s. Last error from ssh: cannot reach environment: no
+  route to host`, 03:32:21Z to 03:47Z (15 min), no recovery. `ls` says
+  `running`, MEMORY `-`; host `online`; no event of any kind. `repose
+  status` was the one line that helped: `repose's service on the machine is
+  not answering ... repose start e2e-cli-empty restarts it`. The other
+  machine answered, `free` 10060 MiB (03:35:24Z), so the host was not full
+  and the guard did not fire. Recovery only by `repose start`: **223.0 s**
+  (`Restarting e2e-cli-empty (its agent stopped answering)...`, `ready in
+  3m43s`), everything in memory gone.
+- **And an idle machine (review-cli F-E, P0 candidate, trigger
+  unverified):** e2e-cli-courses, no load on it, answered at 03:35:24Z and
+  was sampled at 03:40:56Z (328.8 MB used); from 03:51:5xZ its ssh said
+  `gateway cannot reach control plane; try again shortly; ...: Permission
+  denied (publickey)` once, then `no route to host` every 20 s to 03:55Z.
+  Recovered only by `repose start`: 170.1 s. In that window: review-cli's
+  stop and restart of e2e-cli-empty (03:47 to 03:51Z) and review-mac's two
+  creates (03:41:42Z, 03:51:24Z) and two Claude agents; any of those may
+  be the trigger. Distinct guest IPs, so not an address clash. review-mac's
+  machines answered throughout (0.5 s at 03:59Z, 04:01Z).
 - **Why P0:** an agent's build that overshoots memory in one machine is an
   ordinary day, and this loses that machine's work with no word, on the
   hostd that passed the ship gate 12 minutes earlier. Single run;
@@ -135,7 +151,11 @@ is recorded as such (W1): the vCPU count was not shown to cause a hang.
   guard lines) at 03:41Z.
 - **Instrument:** `repose exec` timings, `free` in the other guest, `ls`.
 - **Falsifier:** a second hog run in which the guest kernel kills python
-  and the machine answers within a minute. Owed: one run is a margin.
+  and the machine answers within a minute. Owed: one run (n=1) is a
+  margin, and the host-side cause was not read (the lab was done at
+  03:32Z). F-E has no falsifier run at all; it is kept, marked
+  unverified, because it is the second hang on the gate-passing hostd in
+  twenty minutes.
 
 ### S2. The update path does not move an existing Mac's snapshots
 
@@ -351,6 +371,10 @@ is recorded as such (W1): the vCPU count was not shown to cause a hang.
 | P2-18 | The appliance never gives memory back to macOS | No balloon in vfkit's argv; the VZ footprint rose 9.9 to 12 GB and never fell, idle included (lab F3). At 18 GB on a 24 GB Mac, macOS compressed 8.2 GiB (lab 01:24Z). The page says the share is held "whether machines run in it or not", so this is documented; listed because 18 GB is the page's own figure for a 24 GB Mac. | Mac `footprint`, `vm_stat` | | lab |
 | P2-19 | Park across a Mac restart is unavailable on this Mac | `park-key: event=key_unavailable ... security add-generic-password: exit 195 ... Write permissions error.` every minute in `~/Library/Logs/repose/launcher.log`, still at 02:09:57Z (review-mac read). Deliberately absent as ENG-245 for headless Macs; noted because the log fills with it. | launcher.log | | lab F12, review-mac |
 | P2-20 | `--memory` on `repose host add` may not change an installed Mac | The page says it changes the share; the lab read the CLI and found it written only when no config exists (lab F7, code reading only, not run: it needs a join argument and the brief forbids changing e2e-mac's memory). Unreproduced, kept and marked. | code reading | a re-run `host add --memory` that changes `VM_MEMORY_MIB` | lab |
+| P2-22 | CPU refusal carries the code and no way out | `the host has as many machines running as its cores allow; stopping a running machine frees room (insufficient_capacity)`: no host name, no `--host repose`, the raw code; the memory refusal has all three. Also measured by review-mac 03:42:39Z with one of the three running machines hung, so "stopping a running machine" was the only way out and nothing said which one was dead. | CLI | the sentence names the host, the running machines and `--host repose` | review-cli 7, review-mac |
+| P2-23 | Boot-failure banner says "The environment did not answer" | a second name for a machine; it points at the CLI-only `repose logs --kind console`, with no console in the dashboard. | dashboard | | review-dash 6 |
+| P2-24 | Destroy promises a snapshot of a machine that never booted | `The last snapshot is kept on your host e2e-mac` (dashboard) and `Its final snapshot is kept on your host` (CLI) for a create that never booted; nothing in `ls --destroyed --all`. With I-1648 such a create leaves no project, so this now needs a machine that failed its first boot. | dashboard, CLI | | review-dash 7, review-cli F-A |
+| P2-25 | Small dashboard faults | `1006 MB used` instead of GB; "Memory in use" wraps at 1440; a stray `·` starts host rows at 390; the sticky header shows content through it; `/projects/<name>` shows `id is not a valid id`; Recently destroyed shows `large` for an owned machine. | dashboard at 1x | | review-dash 5, 9 |
 | P2-21 | The join argument stays on the Mac after a good install | `~/Library/Application Support/repose/join-argument`, 340 bytes, mode 0600, dated 2026-11-25 17:27 (the install), still there at 02:10Z. The page says the token works once; whether the file still opens anything after the join is not checked (contents not read). | `ls -la` on the Mac | the file removed once the host is online | review-mac |
 
 ## Withdrawn
@@ -487,5 +511,21 @@ after snapshots and machines are deleted was not checked.
 ## Signatures
 
 - review-mac: written from the three, 2026-11-26.
-- review-cli: PENDING.
-- review-dash: PENDING.
+- review-cli: **not signed.** Its session ended before the report was
+  written (conductor, after 04:05Z). Its word is its final file,
+  /mnt/nixstore/sharing/review-cli/findings.md (ranked list at the top);
+  everything in it is folded in above as it stands: F-D and F-E (S1b), F-A
+  (S5), F-B (S8), S6, F-C (P2-16), items 7 to 14 (P2-22, P2-9, P2-1, P2-8,
+  P2-4, P2-5, P2-6, P2-7, P2-10). Its rank order matches this report's,
+  except that it ranks F-E P0 outright where this report keeps it inside
+  S1b as unverified.
+- review-dash: **not signed**, for the same reason. Its word is
+  /mnt/nixstore/sharing/review-dash/findings.md (copied by the conductor
+  from its final message, its tools refused the file); folded in as it
+  stands: P1-1 (S6), P1-2 (S5, plus the form showing no room before
+  Create), P2 3 to 9 (P2-2, P2-13, P2-16, P2-23, P2-24, P2-3, P2-25, P2-1).
+  It ranks S6 and the create-on-a-full-Mac page P1, as here.
+- Disagreements recorded: none written by either reviewer. One reading
+  differs: review-dash treated its 02:10Z disk refusal as transient (the
+  lab's hostd swap); review-mac's CLI got the same refusal at 02:09:39Z
+  and ranks P2-3 on its words, not its frequency.
