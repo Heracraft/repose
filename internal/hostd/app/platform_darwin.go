@@ -186,7 +186,11 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		net = ownedPorts{Net: net, dir: m.NetDir, u: u}
 	}
 	d.Net = net
-	d.Mount = noMount{}
+	d.Mount = macMount{r: r}
+	if os.Getuid() == 0 {
+		// Attaching a disk image at the share needs root (I-1666).
+		d.BoundAuthShare = boundShare(r)
+	}
 	session := func(ctx context.Context) vzpark.Session {
 		s, err := vzpark.ReadSession(ctx, r, uid)
 		if err != nil {
@@ -270,19 +274,6 @@ func (noNet) DelCounter(context.Context, string) error   { return nil }
 func (noNet) TapStats(string) (uint64, uint64, error)    { return 0, 0, nil }
 func (noNet) ListTaps(context.Context) ([]string, error) { return nil, nil }
 func (noNet) FlushNeigh(context.Context, string) error   { return nil }
-
-// noMount: nothing on a Mac host mounts a guest's filesystem (the login
-// share and the park image are directories).
-type noMount struct{}
-
-func (noMount) IsMounted(string) (bool, error) { return false, nil }
-func (noMount) Mount(context.Context, string, string) error {
-	return errors.New("mount: not on macOS")
-}
-func (noMount) MountType(context.Context, string, string, string, string) error {
-	return errors.New("mount: not on macOS")
-}
-func (noMount) Unmount(context.Context, string) error { return nil }
 
 // macMgr is the running manager, for MacWake.
 var macMgr atomic.Pointer[guest.Manager]

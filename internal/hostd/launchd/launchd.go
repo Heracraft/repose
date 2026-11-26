@@ -272,7 +272,7 @@ func Plist(label, userName string, argv []string, log string, exitTimeOut int) [
 	b.WriteString("</array>\n")
 	b.WriteString("<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><false/>\n")
 	kv("ProcessType", "Interactive")
-	b.WriteString(fmt.Sprintf("<key>ExitTimeOut</key><integer>%d</integer>\n", exitTimeOut))
+	fmt.Fprintf(&b, "<key>ExitTimeOut</key><integer>%d</integer>\n", exitTimeOut)
 	kv("StandardOutPath", log)
 	kv("StandardErrorPath", log)
 	b.WriteString("</dict></plist>\n")

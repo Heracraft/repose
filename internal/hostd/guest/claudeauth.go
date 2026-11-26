@@ -369,6 +369,17 @@ func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
 			return err
 		}
 	}
+	if m.d.BoundAuthShare != nil {
+		// The bound filesystem's own root is what the guest sees: it is
+		// given to the user after the mount, as the volume's root is on
+		// Linux.
+		if err := m.d.BoundAuthShare(context.Background(), udir, share, m.cfg.AuthVolumeBytes); err != nil {
+			return fmt.Errorf("login share bound: %w", err)
+		}
+		if err := ensureDir(share, 0o700, auid, agid); err != nil {
+			return err
+		}
+	}
 	if err := touch(filepath.Join(udir, authLastGuest), m.d.Now()); err != nil {
 		return err
 	}

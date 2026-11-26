@@ -14,7 +14,7 @@ import (
 type saveCH struct{ parkCH }
 
 func (c saveCH) Snapshot(ctx context.Context, sock, dir string) error {
-	if err := c.parkCH.Fake.Snapshot(ctx, sock, dir); err != nil {
+	if err := c.Fake.Snapshot(ctx, sock, dir); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "repose-vm.json"), []byte("{}"), 0o600)
