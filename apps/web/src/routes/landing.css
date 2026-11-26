@@ -551,6 +551,52 @@ main.landing .plans .p-name {
 	}
 }
 
+/* ---------- 03 Your Mac (I-1674): the legend and where it was measured ---------- */
+
+.landing .mac-side {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.landing .mac-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1.5rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-size: 0.875rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-2);
+}
+.landing .mac-legend li {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+.landing .mac-key {
+	flex: none;
+	align-self: center;
+	width: 0.875rem;
+	height: 0.625rem;
+	border-radius: 1px;
+}
+.landing .mac-key--own {
+	background: var(--pic-accent);
+}
+.landing .mac-key--nested {
+	background: var(--hk-text-4);
+}
+.landing .mac-ver,
+.landing .mac-where {
+	color: var(--hk-text-3);
+}
+.landing .mac-where {
+	margin: 0;
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+}
+
 /* ---------- Links ---------- */
 
 .landing .links {
