@@ -64,3 +64,11 @@ func (c *Client) Unpark(ctx context.Context) ([]guest.ParkResult, error) {
 	var res []guest.ParkResult
 	return res, c.do(ctx, http.MethodPost, "/unpark", &res)
 }
+
+// ParkOperatorReason is the reason a park asked for by an operator or by
+// `repose host restart` carries.
+const ParkOperatorReason = guest.ParkOperator
+
+// ParkSkippedStopped is the park result's reason for a machine that was
+// not running, which a park leaves as it is and loses nothing.
+const ParkSkippedStopped = guest.SkipNotRunning

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/control"
-	"github.com/heracraft/repose/internal/hostd/guest"
 )
 
 // hostdControlSock is where hostd on a Mac without the appliance listens
@@ -42,7 +41,7 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	t0 := time.Now()
-	res, err := c.Park(pctx, guest.ParkOperator)
+	res, err := c.Park(pctx, control.ParkOperatorReason)
 	if err != nil {
 		return exitf(ExitGeneric, "The machines were not parked: %v. Nothing restarted.", err)
 	}
@@ -51,7 +50,7 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 		switch {
 		case r.Outcome == "parked":
 			parked++
-		case r.Outcome == "skipped" && r.Reason == "guest is not running":
+		case r.Outcome == "skipped" && r.Reason == control.ParkSkippedStopped:
 		default:
 			lost = append(lost, r.GuestID)
 		}

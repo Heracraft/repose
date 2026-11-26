@@ -204,6 +204,10 @@ type ParkResult struct {
 	ImageBytes uint64 `json:"image_bytes,omitempty"`
 }
 
+// SkipNotRunning is a park result's reason for a guest that was not
+// running.
+const SkipNotRunning = "guest is not running"
+
 // Fixed park reasons, the record's Reason.
 const (
 	ParkShutdown       = "shutdown"
@@ -807,7 +811,7 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 		return res
 	}
 	if g.State != StateRunning {
-		res.Outcome, res.Reason = "skipped", "guest is not running"
+		res.Outcome, res.Reason = "skipped", SkipNotRunning
 		return res
 	}
 	if cp := m.d.Park.CanPark; cp != nil {
@@ -823,7 +827,7 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 	// fails on the pause and is counted, rather than leaving the guest
 	// out of the park and out of the tally.
 	if !m.unitRunning(ctx, g) {
-		res.Outcome, res.Reason = "skipped", "guest is not running"
+		res.Outcome, res.Reason = "skipped", SkipNotRunning
 		return res
 	}
 	if r, _ := m.records().Get(id); r != nil {
