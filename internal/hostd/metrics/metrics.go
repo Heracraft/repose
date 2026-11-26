@@ -9,6 +9,7 @@ package metrics
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -306,6 +307,12 @@ func (m *M) Registry() *prometheus.Registry { return m.obs.Registry() }
 // Serve runs the /metrics endpoint until ctx is done. The address must name
 // an interface: docs/ops/OBSERVABILITY.md requires the WireGuard address.
 func (m *M) Serve(ctx context.Context, addr string) error { return m.obs.Serve(ctx, addr) }
+
+// ServeListener serves on a listener the caller opened (the Mac's mesh
+// address, DECISIONS I-1670).
+func (m *M) ServeListener(ctx context.Context, ln net.Listener) error {
+	return m.obs.ServeListener(ctx, ln)
+}
 
 type promauto struct{ reg *obsmetrics.Metrics }
 

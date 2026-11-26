@@ -43,11 +43,8 @@ type port struct {
 	conn    FrameConn
 	dispat  stack.NetworkDispatcher
 	closed  bool
-	wake    chan struct{}
-	shapedQ chan []byte
-	freeQ   chan []byte
+	txq     *txQueue
 
-	queued atomic.Int64  // bytes in shapedQ
 	rx, tx atomic.Uint64 // guest view: rx what it received, tx what it sent
 	drops  atomic.Uint64 // frames refused before the rules: spoofed, not IPv4/ARP
 }
@@ -70,8 +67,13 @@ func shapedQueueBytes(s *Shaper) int64 {
 }
 
 func newPort(n *Net, tap string, nic tcpip.NICID) *port {
-	return &port{n: n, tap: tap, nic: nic, wake: make(chan struct{}, 1),
-		shapedQ: make(chan []byte, queueFrames), freeQ: make(chan []byte, queueFrames)}
+	p := &port{n: n, tap: tap, nic: nic}
+	p.txq = newTxQueue(n.cfg.PlainFIFO, func() int64 {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return shapedQueueBytes(p.shape)
+	})
+	return p
 }
 
 // gatewayMAC is the stack's MAC on every guest link. Each guest sees only
@@ -100,10 +102,13 @@ func (p *port) Attach(d stack.NetworkDispatcher) {
 func (p *port) IsAttached() bool { p.mu.Lock(); defer p.mu.Unlock(); return p.dispat != nil }
 func (p *port) Close()           {}
 
-// WritePackets is the stack sending to the guest: framed, then queued in
-// the shaped queue (from anywhere but ShapeExempt) or the free one.
+// WritePackets is the stack sending to the guest: framed, then queued
+// in the free FIFO (from ShapeExempt, and ARP) or the fair queue the
+// shaper drains. ToView is already the caller's own copy, written as it
+// is (I-1668: the second copy of each frame cost a quarter of the rate).
 func (p *port) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
+	now := time.Now()
 	for _, pkt := range pkts.AsSlice() {
 		r := pkt.EgressRoute
 		src := r.LocalLinkAddress
@@ -112,36 +117,22 @@ func (p *port) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 		}
 		eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 		eth.Encode(&header.EthernetFields{Type: pkt.NetworkProtocolNumber, SrcAddr: src, DstAddr: r.RemoteLinkAddress})
-		b := pkt.ToView().AsSlice()
-		frame := make([]byte, len(b))
-		copy(frame, b)
-		q := p.freeQ
+		v := pkt.ToView()
+		shaped := false
 		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
 			if a, ok := netip.AddrFromSlice(r.LocalAddress.AsSlice()); ok && !inAny(a, p.n.rules.ShapeExempt) {
-				p.mu.Lock()
-				limit := shapedQueueBytes(p.shape)
-				p.mu.Unlock()
-				if p.queued.Load()+int64(len(frame)) > limit {
-					n++
-					continue // over the queue's bytes: dropped, as a full qdisc drops
-				}
-				q = p.shapedQ
+				shaped = true
 			}
 		}
-		select {
-		case q <- frame:
-			if q == p.shapedQ {
-				p.queued.Add(int64(len(frame)))
-			}
-		default: // the queue is full: dropped, as a full qdisc drops
-		}
+		p.txq.put(txItem{b: v.AsSlice(), v: v, at: now}, shaped)
 		n++
 	}
-	select {
-	case p.wake <- struct{}{}:
-	default:
-	}
 	return n, nil
+}
+
+// queueFrame queues a frame hostd built (an echo reply).
+func (p *port) queueFrame(b []byte, shaped bool) {
+	p.txq.put(txItem{b: b, at: time.Now()}, shaped)
 }
 
 // attach gives the port its frame connection and starts its two loops.
@@ -183,27 +174,24 @@ func (p *port) current(c FrameConn) bool {
 
 func (p *port) writeLoop(c FrameConn) {
 	for p.current(c) {
-		select {
-		case f := <-p.freeQ:
-			p.send(c, f)
+		it, shaped, ok := p.txq.next(time.Now())
+		if !ok {
+			select {
+			case <-p.txq.wake:
+			case <-time.After(time.Second):
+			}
 			continue
-		default:
 		}
-		select {
-		case f := <-p.freeQ:
-			p.send(c, f)
-		case f := <-p.shapedQ:
-			p.queued.Add(-int64(len(f)))
+		if shaped {
 			p.mu.Lock()
 			sh := p.shape
 			p.mu.Unlock()
-			if d := sh.Reserve(len(f), time.Now()); d > 0 {
+			if d := sh.Reserve(len(it.b), time.Now()); d > 0 {
 				time.Sleep(d)
 			}
-			p.send(c, f)
-		case <-p.wake:
-		case <-time.After(time.Second):
 		}
+		p.send(c, it.b)
+		it.release()
 	}
 }
 
@@ -251,7 +239,7 @@ func (p *port) detach(c FrameConn) {
 func (p *port) inbound(frame []byte) {
 	eth := header.Ethernet(frame)
 	p.mu.Lock()
-	ip, mac, gate, police, d := p.ip, p.mac, p.gate, p.police, p.dispat
+	ip, mac, gate, police, d, gid := p.ip, p.mac, p.gate, p.police, p.dispat, p.guestID
 	p.mu.Unlock()
 	if gate == nil || d == nil || eth.SourceAddress() != mac {
 		p.drops.Add(1)
@@ -280,26 +268,30 @@ func (p *port) inbound(frame []byte) {
 		now := time.Now()
 		// tc's ingress policer runs before netfilter (I-217).
 		if !inAny(pk.Dst, p.n.rules.ShapeExempt) && !police.Allow(len(payload), now) {
-			p.n.count(p.guestIDLocked(), "policed", 1)
+			p.n.count(gid, "policed", 1)
 			return
 		}
 		v, kind, dest := gate.Check(pk, now)
 		if v == Drop {
 			if kind != "" {
-				p.n.count(p.guestIDLocked(), kind, 1)
+				p.n.count(gid, kind, 1)
 			}
 			return
 		}
 		if dest == DestInternet {
-			p.n.addEgress(p.guestIDLocked(), uint64(len(h)))
+			p.n.addEgress(gid, uint64(len(h)))
+			if pk.Proto == 1 {
+				p.pingOut(h)
+				return
+			}
 		}
 	default:
 		// IPv6 and the rest: dropped (`meta nfproto ipv6 drop`).
 		p.drops.Add(1)
 		return
 	}
-	data := buffer.MakeWithData(append([]byte(nil), payload...))
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: data})
+	// One copy, into the stack's pooled chunks: the read buffer is reused.
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithView(buffer.NewViewWithData(payload))})
 	d.DeliverNetworkPacket(eth.Type(), pkt)
 	pkt.DecRef()
 }
@@ -342,6 +334,7 @@ func (p *port) close() {
 	c := p.conn
 	p.conn, p.closed = nil, true
 	p.mu.Unlock()
+	p.txq.drain()
 	if c != nil {
 		_ = c.Close() // the port is going away
 	}

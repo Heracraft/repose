@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"time"
 
 	hnet "github.com/heracraft/repose/internal/hostd/net"
 	"github.com/heracraft/repose/internal/hostd/register"
@@ -31,7 +32,60 @@ var macNet struct {
 	last unet.EdgeConfig
 }
 
-func init() { NewMacNet = newMacNet }
+func init() {
+	NewMacNet = newMacNet
+	meshListen = macMeshListen
+}
+
+// macMeshListen opens the metrics listener on the mesh address inside the
+// netstack (on Linux the kernel's wg0 carries it); any other address is
+// the kernel's (nil).
+func macMeshListen(addr string) (net.Listener, error) {
+	ap, err := netip.ParseAddrPort(addr)
+	if err != nil {
+		return nil, nil // not an address: Serve reports it
+	}
+	macNet.mu.Lock()
+	e := macNet.e
+	macNet.mu.Unlock()
+	if e == nil || e.Addr() != ap.Addr() {
+		return nil, nil
+	}
+	return e.Listen(ap.Port())
+}
+
+// watchEdge applies a changed host.json (a rotation's new WireGuard key,
+// a registration replacing the bundle's) to the running tunnel within
+// edgeWatch, with no restart: on Linux the renderer restarts wg-quick.
+func watchEdge(ctx context.Context, o Options, log *slog.Logger) {
+	host, _ := edgeFiles(o)
+	var last time.Time
+	if st, err := os.Stat(host); err == nil {
+		last = st.ModTime()
+	}
+	t := time.NewTicker(edgeWatch)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		st, err := os.Stat(host)
+		if err != nil || !st.ModTime().After(last) {
+			continue
+		}
+		last = st.ModTime()
+		macNet.mu.Lock()
+		if err := refreshEdgeLocked(o, log); err != nil {
+			log.Warn("edge not reconfigured", "event", "edge", "err", err.Error())
+		}
+		macNet.mu.Unlock()
+	}
+}
+
+// edgeWatch is how often host.json is looked at.
+const edgeWatch = 5 * time.Second
 
 func edgeFiles(o Options) (hostJSON, hubJSON string) {
 	return filepath.Join(o.StateDir, register.HostFile), filepath.Join(o.StateDir, "hub.json")
@@ -54,6 +108,8 @@ func prepareMacNet(ctx context.Context, o Options, log *slog.Logger) (Options, e
 		guests := o.GuestsDir
 		n, err := unet.New(unet.Config{
 			MTU: uint32(m.NetMTU), SocketDir: m.NetDir, Log: log,
+			// The counters outlive a hostd restart, as nft's do (I-1668).
+			CounterFile: filepath.Join(o.StateDir, "unet-counters.json"),
 			Reconnect: unet.LauncherReconnect(func(id string) string { return filepath.Join(guests, id, "ch.sock") }),
 			// A connection for a machine resting as a save file wakes it
 			// (I-1666); the edge waits for its NIC.
@@ -63,6 +119,7 @@ func prepareMacNet(ctx context.Context, o Options, log *slog.Logger) (Options, e
 			return o, err
 		}
 		macNet.n = n
+		go watchEdge(context.WithoutCancel(ctx), o, log)
 	}
 	if err := refreshEdgeLocked(o, log); err != nil {
 		return o, err

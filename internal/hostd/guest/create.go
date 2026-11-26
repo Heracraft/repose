@@ -308,6 +308,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: m.bootVCPUs(class), MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
+		MTU:               m.cfg.GuestMTU,
 		FreePageReporting: m.cfg.FreePageReporting,
 		NoTHP:             m.cfg.Owned && m.cfg.OwnedGuestNoTHP,
 	}

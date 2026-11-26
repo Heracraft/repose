@@ -633,10 +633,27 @@ func (d *Daemon) serveMetrics(ctx context.Context) {
 		}
 	}
 	d.log.Info("metrics listening", "event", "metrics", "addr", addr)
+	if meshListen != nil {
+		// A Mac's WireGuard address lives in hostd's own netstack.
+		if ln, err := meshListen(addr); err != nil {
+			d.log.Error("metrics server failed", "event", "metrics", "err", err.Error())
+			return
+		} else if ln != nil {
+			if err := d.metrics.ServeListener(ctx, ln); err != nil {
+				d.log.Error("metrics server failed", "event", "metrics", "err", err.Error())
+			}
+			return
+		}
+	}
 	if err := d.metrics.Serve(ctx, addr); err != nil {
 		d.log.Error("metrics server failed", "event", "metrics", "err", err.Error())
 	}
 }
+
+// meshListen, when set (the Mac, DECISIONS I-1670), opens a listener on
+// an address of hostd's own WireGuard netstack; it returns nil for any
+// other address, which Serve binds as on Linux.
+var meshListen func(addr string) (net.Listener, error)
 
 // --- control.Backend ----------------------------------------------------
 

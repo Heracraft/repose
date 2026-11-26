@@ -187,3 +187,18 @@ func TestVolumeDiskIDNeverReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestCmdlineMTU(t *testing.T) {
+	s := Spec{IP: "10.64.0.2", Gateway: "10.64.0.1", Netmask: "255.255.252.0", Hostname: "web"}
+	if got := s.Cmdline(); strings.Contains(got, "eth0:off:") {
+		t.Fatalf("no MTU: %q", got)
+	}
+	s.MTU = 1500
+	if got := s.Cmdline(); strings.Contains(got, "eth0:off:") {
+		t.Fatalf("1500 is the default and stays off the line: %q", got)
+	}
+	s.MTU = 65520
+	if got := s.Cmdline(); !strings.Contains(got, "ip=10.64.0.2::10.64.0.1:255.255.252.0:web:eth0:off:65520 ") {
+		t.Fatalf("mtu: %q", got)
+	}
+}

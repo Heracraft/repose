@@ -240,7 +240,11 @@ type Config struct {
 	// DownloadMbit limits what a guest receives from outside the host
 	// (DECISIONS I-451); EgressMbit what it sends (I-217).
 	DownloadMbit int
-	StoreTag     string
+	// GuestMTU is the guest NIC's MTU when the host's network runs one
+	// above 1500 (the Mac, DECISIONS I-1668); zero leaves the kernel line
+	// as it is on Linux.
+	GuestMTU int
+	StoreTag string
 	// StoreExport is what each guest's virtiofsd shares: storeview.Dir
 	// (the default) gives every guest a view of its own closure only
 	// (I-463); any other directory is shared whole, as before I-463.

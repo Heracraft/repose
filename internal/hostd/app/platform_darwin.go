@@ -128,7 +128,7 @@ func macDefaults(o Options) MacOptions {
 		}
 	}
 	if m.NetMTU == 0 {
-		m.NetMTU = 1500
+		m.NetMTU = 65520 // I-1668: 27-38 Gbit/s to the Mac against 4.9 at 1500
 	}
 	return m
 }
@@ -177,6 +177,10 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 			return fmt.Errorf("hostd: network: %w", err)
 		}
 		net = n
+		// The guest's eth0 takes the NIC's MTU from its kernel line
+		// (I-1668: 65520 is what moves the file-handle NIC from 4 to
+		// tens of Gbit/s; segments are cut by the stack, not the wire).
+		cfg.GuestMTU = m.NetMTU
 	} else {
 		log.Warn("no switch: each VM is on VZ's NAT, without isolation or egress rules (lab only)", "event", "start", "part", "network")
 	}

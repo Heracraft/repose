@@ -62,12 +62,28 @@ type Config struct {
 	// Reconnect: nil leaves a port with no VM connected waiting for the
 	// VM to connect on its own.
 	Reconnect Reconnect
+	// Pinger sends a guest's ICMP echo beyond the gateway on the host's
+	// own sockets; nil is the host's unprivileged ICMP socket (SysPinger).
+	Pinger Pinger
+	// PlainFIFO puts every download frame in one queue with no CoDel, the
+	// shape before I-1668's amendment: for the tests and the lab's
+	// before-and-after, never a host.
+	PlainFIFO bool
+	// CounterFile keeps the counters across a hostd restart; empty keeps
+	// them in memory only.
+	CounterFile string
 	// OnWake is called when the edge opens a connection to a guest whose
 	// port has no VM connected (the VM is parked or resting); hostd wakes
 	// it, and the connection waits up to WakeWait for the VM's NIC.
 	OnWake   func(tap string)
 	WakeWait time.Duration
 	Log      *slog.Logger
+}
+
+// Pinger sends one ICMP echo request to dst and returns the reply's
+// payload, or an error when none came back in time.
+type Pinger interface {
+	Echo(ctx context.Context, dst netip.Addr, id, seq uint16, payload []byte) ([]byte, error)
 }
 
 // Net is the network: one stack, a port per guest, the counters.
@@ -86,6 +102,9 @@ type Net struct {
 	egress  map[string]uint64            // guest -> bytes to the internet
 	blocked map[string]map[string]uint64 // guest -> kind -> packets
 	edge    *Edge
+	// savedTaps are tap counters read from CounterFile, given to a port
+	// when it is made again.
+	savedTaps map[string][2]uint64
 
 	udpMu sync.Mutex
 	udp   map[udpKey]*udpSession
@@ -164,13 +183,16 @@ func New(cfg Config) (*Net, error) {
 		ports: map[string]*port{}, byIP: map[netip.Addr]*port{}, nextNIC: edgeNIC + 1,
 		egress: map[string]uint64{}, blocked: map[string]map[string]uint64{},
 		udp: map[udpKey]*udpSession{}, kickc: make(chan struct{}, 1), ctx: ctx, cancel: cancel}
+	n.loadCounters()
 	n.installForwarders()
 	go n.attachLoop()
+	go n.saveLoop()
 	return n, nil
 }
 
 // Close ends every port and the edge.
 func (n *Net) Close() {
+	n.saveCounters()
 	n.cancel()
 	n.mu.Lock()
 	ps := make([]*port, 0, len(n.ports))
@@ -368,6 +390,11 @@ func (n *Net) ensurePort(tap string) (*port, error) {
 	id := n.nextNIC
 	n.nextNIC++
 	p := newPort(n, tap, id)
+	if c, ok := n.savedTaps[tap]; ok {
+		p.rx.Store(c[0])
+		p.tx.Store(c[1])
+		delete(n.savedTaps, tap)
+	}
 	if err := n.s.CreateNICWithOptions(id, p, stack.NICOptions{Name: tap}); err != nil {
 		return nil, fmt.Errorf("unet: create nic for %s: %s", tap, err)
 	}

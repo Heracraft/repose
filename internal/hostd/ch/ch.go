@@ -37,12 +37,16 @@ type Spec struct {
 	IP           string
 	Gateway      string
 	Netmask      string
-	Tap          string
-	MAC          string
-	CID          uint32
-	VolumeDev    string
-	VCPUs        uint32
-	MemMiB       uint64
+	// MTU, when set and not 1500, goes on the kernel's ip= line, so the
+	// guest's eth0 matches a NIC whose MTU the host raised (the Mac's
+	// file-handle NIC, DECISIONS I-1668). Zero on Linux hosts.
+	MTU       int
+	Tap       string
+	MAC       string
+	CID       uint32
+	VolumeDev string
+	VCPUs     uint32
+	MemMiB    uint64
 	// NoTHP boots guest RAM as 4 KiB shmem (Cloud Hypervisor's thp=off,
 	// no MADV_HUGEPAGE on the memfd), which reclaim can swap; an owned
 	// host's default (DECISIONS I-1650). False keeps the hypervisor's
@@ -132,8 +136,11 @@ func (s Spec) Cmdline() string {
 		}
 	}
 	host := Hostname(s.Hostname)
-	parts = append(parts, "console="+ConsoleTTY(),
-		fmt.Sprintf("ip=%s::%s:%s:%s:eth0:off", s.IP, s.Gateway, s.Netmask, host))
+	ipArg := fmt.Sprintf("ip=%s::%s:%s:%s:eth0:off", s.IP, s.Gateway, s.Netmask, host)
+	if s.MTU > 0 && s.MTU != 1500 {
+		ipArg += fmt.Sprintf(":%d", s.MTU) // systemd-network-generator's [:mtu]
+	}
+	parts = append(parts, "console="+ConsoleTTY(), ipArg)
 	if host != "" {
 		parts = append(parts, "systemd.hostname="+host)
 	}

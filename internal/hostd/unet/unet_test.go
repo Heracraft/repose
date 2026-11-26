@@ -370,7 +370,8 @@ func TestGateOrderMatchesNftables(t *testing.T) {
 		{Packet{Proto: 6, Dst: netip.MustParseAddr("10.255.0.1"), DstPort: 8443, New: true}, Accept, ""},
 		{Packet{Proto: 6, Dst: netip.MustParseAddr("10.255.0.1"), DstPort: 22, New: true}, Drop, ""},
 		{Packet{Proto: 1, Dst: netip.MustParseAddr(testGW), Echo: true}, Accept, ""},
-		{Packet{Proto: 1, Dst: netip.MustParseAddr("8.8.8.8"), Echo: true, New: true}, Drop, ""},
+		{Packet{Proto: 1, Dst: netip.MustParseAddr("8.8.8.8"), Echo: true, New: true}, Accept, ""}, // forwarded by pingOut (I-1668 amended)
+		{Packet{Proto: 1, Dst: netip.MustParseAddr("8.8.8.8"), New: false}, Drop, ""},
 	}
 	for i, c := range cases {
 		v, k, _ := g.Check(c.p, now)

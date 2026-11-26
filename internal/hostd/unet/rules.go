@@ -171,9 +171,6 @@ func (g *Gate) Check(p Packet, now time.Time) (Verdict, string, Dest) {
 		}
 		return Drop, "", DestHost
 	}
-	if g.IsHost(p.Dst) {
-		return Drop, "", DestHost
-	}
 	// `ct state established,related accept`, first in guest_fwd: a TCP
 	// segment that opens nothing belongs to a connection the stack holds
 	// (one the rules admitted, or the edge's SSH to the guest), or to none,
@@ -188,6 +185,9 @@ func (g *Gate) Check(p Packet, now time.Time) (Verdict, string, Dest) {
 			return Accept, "", DestNone
 		}
 		return Accept, "", DestInternet
+	}
+	if g.IsHost(p.Dst) {
+		return Drop, "", DestHost
 	}
 	if p.Proto == 6 && p.DstPort != 0 && hasPort(r.SMTPPorts, p.DstPort) {
 		return Drop, hnet.BlockedSMTP, DestInternet
@@ -216,9 +216,9 @@ func (g *Gate) Check(p Packet, now time.Time) (Verdict, string, Dest) {
 		return Drop, "", DestInternet
 	}
 	// The stack answers ICMP echo for any address it is promiscuous for,
-	// which would tell a guest the whole internet is up; repose does not
-	// forward ICMP (I-1668), so echo beyond the host is dropped.
-	if p.Proto == 1 {
+	// which would tell a guest the whole internet is up, so the port
+	// forwards echo itself (pingOut) and drops the rest of ICMP.
+	if p.Proto == 1 && !p.Echo {
 		return Drop, "", DestInternet
 	}
 	return Accept, "", DestInternet

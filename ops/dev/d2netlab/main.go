@@ -63,6 +63,8 @@ func main() {
 	up := flag.Int("up", 0, "upload Mbit (0 none)")
 	down := flag.Int("down", 0, "download Mbit (0 none)")
 	ctl := flag.String("ctl", "127.0.0.1:9900", "control listen")
+	mtu := flag.Int("mtu", 1500, "guest link MTU")
+	fifo := flag.Bool("fifo", false, "plain FIFO download queue (the shape before I-1668's amendment)")
 	var guests, fwds, maps multi
 	flag.Var(&maps, "map", "dst=real: the lab's dialer sends a guest's dial of dst to real (a benchmark server on the Mac, which the rules rightly refuse to a guest)")
 	flag.Var(&guests, "guest", "tap,id,ip,mac")
@@ -80,7 +82,7 @@ func main() {
 		}
 		return d.DialContext(ctx, network, addr)
 	}
-	n, err := unet.New(unet.Config{Gateway: netip.MustParseAddr(*gw), SocketDir: *dir, Dial: dial})
+	n, err := unet.New(unet.Config{Gateway: netip.MustParseAddr(*gw), SocketDir: *dir, Dial: dial, MTU: uint32(*mtu), PlainFIFO: *fifo})
 	if err != nil {
 		log.Fatal(err)
 	}
