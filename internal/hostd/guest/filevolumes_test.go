@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -48,4 +49,35 @@ func TestFileVolumesSnapshotOfAMissingDiskIsUnresponsive(t *testing.T) {
 		t.Fatalf("message %q", res.Error.Message)
 	}
 	h.mustOK(cmd(&hostdv1.DestroyGuest{GuestId: gid1}))
+}
+
+// With SnapshotClones (a Mac) a snapshot keeps its frozen volume as a
+// clone, a restore of it is a clone of that with nothing read from the
+// store, and the sweep removes a clone whose snapshot the store no longer
+// lists. d2-lab measured every restore --as writing 4.4 GB again.
+func TestSnapshotClonesRestoreWithoutTheStore(t *testing.T) {
+	h := newHarness(t, nil)
+	h.m.d.SnapshotClones = true
+	h.create(gid1)
+	h.lvm.SetData("g-"+gid1, []byte("the tenant's filesystem"))
+	sr := h.mustOK(cmd(&hostdv1.Snapshot{GuestId: gid1, Reason: "manual"})).GetSnapshot()
+	kept := KeptCloneName(sr.BlobPath)
+	if _, ok := h.lvm.Volumes[kept]; !ok {
+		t.Fatalf("no kept clone %s", kept)
+	}
+	h.blob.BeforeDownload = func(string) { t.Error("the restore read the store") }
+	rq := &hostdv1.Restore{ProjectId: "proj-0192f0a1", GuestId: gid2, BlobPath: sr.BlobPath, Class: "large", VolumeBytes: 40 << 30,
+		SystemClosure: h.closure, UserId: "user-1", ProjectSlug: "todo-app", HostKey: []byte("hk")}
+	h.mustOK(cmd(rq))
+	if string(h.lvm.GetData("g-"+gid2)) != "the tenant's filesystem" {
+		t.Fatal("restored bytes differ")
+	}
+	h.m.SweepKeptClones(context.Background(), []string{sr.BlobPath})
+	if _, ok := h.lvm.Volumes[kept]; !ok {
+		t.Fatal("a listed snapshot's clone was swept")
+	}
+	h.m.SweepKeptClones(context.Background(), nil)
+	if _, ok := h.lvm.Volumes[kept]; ok {
+		t.Fatal("an unlisted snapshot's clone was kept")
+	}
 }

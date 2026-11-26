@@ -71,6 +71,11 @@ struct Spec: Codable {
   var netDir = ""
   var netMTU = 1500
   var parkDir = ""
+  // The writable volume's VZ caching and synchronization modes
+  // (--disk-cache automatic|cached|uncached, --disk-sync full|fsync|none);
+  // the read-only root keeps the defaults.
+  var diskCache = "automatic"
+  var diskSync = "full"
   var shares: [Share] = []
 }
 
@@ -146,6 +151,8 @@ func parse(_ a: [String], into s: inout Spec, restore: inout String?) {
     case "--net-dir": s.netDir = next()
     case "--net-mtu": s.netMTU = Int(next()) ?? 1500
     case "--park-dir": s.parkDir = next()
+    case "--disk-cache": s.diskCache = next()
+    case "--disk-sync": s.diskSync = next()
     case "cloud-hypervisor": break  // argv[0] as hostd renders it, when passed through
     default: die("unknown argument \(f)")
     }
@@ -170,6 +177,8 @@ if let dir = restoreDir {
   if !keep.netDir.isEmpty { s2.netDir = keep.netDir }
   if keep.netMTU != 1500 { s2.netMTU = keep.netMTU }
   s2.parkDir = keep.parkDir
+  s2.diskCache = keep.diskCache
+  s2.diskSync = keep.diskSync
   spec = s2
   bootArgs = sv.args
   savedMachineID = sv.machineID
@@ -178,7 +187,7 @@ if let dir = restoreDir {
 func coreArgs(_ a: [String]) -> [String] {
   var out: [String] = []; var i = 0
   while i < a.count {
-    if ["--net-dir", "--net-mtu", "--park-dir"].contains(a[i]) { i += 2; continue }
+    if ["--net-dir", "--net-mtu", "--park-dir", "--disk-cache", "--disk-sync"].contains(a[i]) { i += 2; continue }
     out.append(a[i]); i += 1
   }
   return out
@@ -370,8 +379,10 @@ func configuration() -> VZVirtualMachineConfiguration {
   c.platform = platform()
   do {
     c.storageDevices = try spec.disks.map { d in
+      let cache: VZDiskImageCachingMode = d.readOnly ? .automatic : ["cached": .cached, "uncached": .uncached][spec.diskCache] ?? .automatic
+      let sync: VZDiskImageSynchronizationMode = d.readOnly ? .full : ["fsync": .fsync, "none": .none][spec.diskSync] ?? .full
       let a = try VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: d.path), readOnly: d.readOnly,
-                                                     cachingMode: .automatic, synchronizationMode: .full)
+                                                     cachingMode: cache, synchronizationMode: sync)
       return VZVirtioBlockDeviceConfiguration(attachment: a)
     }
   } catch { die("disk: \(error)") }
@@ -649,7 +660,7 @@ term.resume()
 
 startConsole()
 let t0 = now()
-say("event=launch pid=\(getpid()) restore=\(restoreDir != nil) cpus=\(vmConfig.cpuCount) mem_mib=\(spec.memMiB) net=\(spec.netDir.isEmpty ? "nat" : "switch") shares=\(spec.shares.count)")
+say("event=launch pid=\(getpid()) restore=\(restoreDir != nil) cpus=\(vmConfig.cpuCount) mem_mib=\(spec.memMiB) net=\(spec.netDir.isEmpty ? "nat" : "switch") shares=\(spec.shares.count) disk=\(spec.diskCache)/\(spec.diskSync)")
 if let dir = restoreDir {
   vm.restoreMachineStateFrom(url: URL(fileURLWithPath: dir + "/vz.state")) { e in
     if let e = e { say("event=restore_error code=\((e as NSError).code) msg=\(jsonString(e.localizedDescription))"); exit(3) }

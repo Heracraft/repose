@@ -51,6 +51,18 @@ type Pipeline struct {
 	// the api asks for refused every extent past it (DECISIONS I-1666).
 	// False on Linux, where the device is a thin volume.
 	GrowToSnapshot bool
+	// AllCores compresses with a thread per core (zstd -T0) instead of
+	// four: on the 10-core M4 a real 4.2 GB extent stream compressed in
+	// 3.21 s against 4.91 s, the same bytes out (DECISIONS I-1666). False
+	// on Linux.
+	AllCores bool
+}
+
+func (p *Pipeline) threads() string {
+	if p.AllCores {
+		return "-T0"
+	}
+	return "-T4"
 }
 
 // Mode names how a stream was produced, for the snapshot log line.
@@ -185,7 +197,7 @@ func (p *Pipeline) readExtents(ctx context.Context, dev string, l *usedLayout, r
 		_ = pw.CloseWithError(err) // zstd sees EOF, or a failed read
 		gen <- err
 	}()
-	zs, err := p.R.Start(ctx, pr, "zstd", "-T4", "-3", "-q", "-c")
+	zs, err := p.R.Start(ctx, pr, "zstd", p.threads(), "-3", "-q", "-c")
 	if err != nil {
 		_ = pr.CloseWithError(err) // stops the generator
 		<-gen
@@ -208,7 +220,7 @@ func (p *Pipeline) readRaw(ctx context.Context, dev, why string) (io.ReadCloser,
 		return nil, fmt.Errorf("dd: %w", err)
 	}
 	go func() { _, _ = io.Copy(io.Discard, dd.Stderr()) }() // status=none keeps it empty; drained so dd never blocks
-	zs, err := p.R.Start(ctx, dd.Stdout(), "zstd", "-T4", "-3", "-q", "-c")
+	zs, err := p.R.Start(ctx, dd.Stdout(), "zstd", p.threads(), "-3", "-q", "-c")
 	if err != nil {
 		_ = dd.Kill() // zstd failed to start; nothing consumed dd's output
 		return nil, fmt.Errorf("zstd: %w", err)

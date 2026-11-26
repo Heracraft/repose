@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,11 +72,16 @@ func platformFor(o Options) platform {
 			}()
 			t := time.NewTicker(3 * time.Second)
 			defer t.Stop()
+			var swept time.Time
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-t.C:
+				}
+				if time.Since(swept) > 10*time.Minute && o.SnapshotDir != "" {
+					swept = time.Now()
+					mgr.SweepKeptClones(ctx, storedSnapshots(o.SnapshotDir))
 				}
 				if _, err := mgr.RestoreHeld(ctx); err != nil {
 					log.Warn("held parked machines not restored", "event", "guest_unpark", "err", err.Error())
@@ -214,10 +220,12 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		ChownLog:    u.chown,
 		ExitTimeOut: 60 * time.Second,
 		ExtraArgs: func(unit string, _ []string) []string {
+			// The volume's VZ caching and synchronization modes (I-1666).
+			args := []string{"--disk-cache", m.DiskCache, "--disk-sync", m.DiskSync}
 			if m.NetDir == "" {
-				return nil
+				return args
 			}
-			return []string{"--net-dir", m.NetDir, "--net-mtu", fmt.Sprint(m.NetMTU)}
+			return append(args, "--net-dir", m.NetDir, "--net-mtu", fmt.Sprint(m.NetMTU))
 		},
 	}
 	if os.Getuid() == 0 {
@@ -245,9 +253,12 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	}
 	// e2fsprogs from --mac-mke2fs's directory, zstd and dd from PATH; no
 	// systemd-run sandbox on macOS.
-	d.Stream = &snapshot.Pipeline{R: r, ReplayJournal: true, GrowToSnapshot: true}
+	d.Stream = &snapshot.Pipeline{R: r, ReplayJournal: true, GrowToSnapshot: true, AllCores: true}
 	// VZ cannot resize an attached disk (I-1666).
 	d.FileVolumes = true
+	// Each snapshot's frozen clone is kept beside its stream, and a
+	// restore of it is a clone (I-1666).
+	d.SnapshotClones = true
 	vols := m.VolumesDir
 	d.StoreStat = func() (uint64, uint64, error) {
 		size, free, err := (&apfsvol.Volumes{Dir: vols}).PoolStats(context.Background())
@@ -381,4 +392,20 @@ func macGuestMemMiB(flag, totalBytes uint64) uint64 {
 	}
 	half := totalBytes / 2 >> 20
 	return min(half-half%128, 12288)
+}
+
+// storedSnapshots lists the store paths a local snapshot directory holds
+// (snapshot.FileBlob's layout: Dir/<path>).
+func storedSnapshots(dir string) []string {
+	var out []string
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".img.zst") {
+			return nil
+		}
+		if rel, err := filepath.Rel(dir, p); err == nil {
+			out = append(out, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return out
 }

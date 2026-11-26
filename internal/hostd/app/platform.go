@@ -50,4 +50,9 @@ type MacOptions struct {
 	// GuestMemMiB caps each guest's memory below the host's placeable
 	// memory; 0 is no cap (DECISIONS I-1666).
 	GuestMemMiB uint64
+	// DiskCache and DiskSync are each volume's VZ caching mode
+	// (automatic, cached, uncached) and synchronization mode (full,
+	// fsync, none), passed to repose-vm (DECISIONS I-1666).
+	DiskCache string
+	DiskSync  string
 }

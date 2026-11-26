@@ -557,6 +557,11 @@ type Deps struct {
 	// budget: a Mac, where a VM is one process and D1's launcher
 	// relaunched its VM. False on Linux: the machine goes to error.
 	RestartOnExit bool
+	// SnapshotClones keeps each snapshot's frozen volume as a clone
+	// (KeptCloneName) and restores from it when it is there: volumes are
+	// APFS files, where a clone costs nothing until either side is
+	// written (a Mac, DECISIONS I-1666). False on Linux.
+	SnapshotClones bool
 	// BoundAuthShare, with DirectAuthShare, mounts a filesystem of bytes
 	// at share (a sparse disk image on a Mac) unless one is mounted there
 	// already, so the share is bounded as Linux's volume bounds it

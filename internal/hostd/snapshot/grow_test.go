@@ -44,3 +44,10 @@ func TestGrowToSnapshot(t *testing.T) {
 		t.Fatalf("shrunk to %d", fi.Size())
 	}
 }
+
+// The fleet keeps four compression threads; a Mac uses every core.
+func TestCompressionThreads(t *testing.T) {
+	if (&Pipeline{}).threads() != "-T4" || (&Pipeline{AllCores: true}).threads() != "-T0" {
+		t.Fatal("threads")
+	}
+}
