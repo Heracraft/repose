@@ -119,11 +119,17 @@ type Deps struct {
 	// documented ("v0.1.30"), named in every answer's X-Repose-CLI-Oldest
 	// header (DECISIONS I-1088); "" sends no header.
 	CLIOldest string
-	// Resting wakes a machine that rests (DECISIONS I-818): the gateway's
-	// POST /internal/wake and a keep_awake the user has just turned on.
-	// nil makes the wake route answer 503 and keep_awake take effect at
-	// the next rest rule rather than at once.
+	// Resting wakes a machine that rests (DECISIONS I-818) for the
+	// gateway's POST /internal/wake, which the grpc process serves, so it
+	// sends on that process's host stream. nil makes the wake route
+	// answer 503.
 	Resting Waker
+	// UserWake is the wake a user route asks for: the browser view's mint
+	// and a keep_awake the user has just turned on. Those routes run in
+	// the http process, which holds no host's stream, so the wake is an
+	// op, as `repose start` is (DECISIONS I-1642). nil uses Engine's
+	// Wake; tests put a fake here.
+	UserWake Waker
 	// DashboardURL is the deployment's own origin, which the addresses
 	// in a host refusal are built from (DECISIONS I-1366). Empty uses
 	// https://repose.run, the same fallback billing.Config has.
@@ -159,6 +165,34 @@ type ViewDialer interface {
 // depend on the service that owns the host stream.
 type Waker interface {
 	Wake(ctx context.Context, projectID uuid.UUID, reason string) (*hostdv1.WakeResult, error)
+}
+
+// userWake is the waker for a user route (I-1642): Deps.UserWake, or
+// the ops engine, or nil when neither is configured.
+func (s *Server) userWake() Waker {
+	if s.d.UserWake != nil {
+		return s.d.UserWake
+	}
+	if s.d.Engine != nil {
+		return s.d.Engine
+	}
+	return nil
+}
+
+// wakeFailed is a user route's answer to a wake that failed, in words the
+// user can act on (I-1642): `503 unavailable` with detail.reason
+// wake_failed. An error the wake did not produce stays a 500.
+func wakeFailed(slug string, err error) error {
+	var we *ops.WakeError
+	switch {
+	case errors.Is(err, ops.ErrWakeNoHost):
+		return withDetail(errf("unavailable", "%s is frozen and cannot be woken now: its host is not connected", slug), map[string]any{"reason": "wake_failed"})
+	case errors.Is(err, ops.ErrWakeTimeout):
+		return withDetail(errf("unavailable", "%s did not wake within %d seconds", slug, int(ops.WakeWait.Seconds())), map[string]any{"reason": "wake_failed"})
+	case errors.As(err, &we):
+		return withDetail(errf("unavailable", "%s did not wake: %s", slug, strings.TrimSuffix(we.Message, ".")), map[string]any{"reason": "wake_failed"})
+	}
+	return err
 }
 
 // RateLimits are the per-user limits from docs/interfaces/api.md.

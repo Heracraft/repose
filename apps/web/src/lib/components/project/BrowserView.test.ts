@@ -76,12 +76,12 @@ let target: HTMLDivElement;
 let view: Record<string, unknown> | undefined;
 
 /** Mounts the tab's view and lets the mint and the import settle. */
-async function open() {
+async function open(p: Project = project) {
 	target = document.createElement('div');
 	document.body.appendChild(target);
 	view = mount(BrowserView, {
 		target,
-		props: { project, openSocket: (url: string) => new FakeSocket(url) as unknown as WebSocket }
+		props: { project: p, openSocket: (url: string) => new FakeSocket(url) as unknown as WebSocket }
 	});
 	flushSync();
 	await vi.advanceTimersByTimeAsync(0);
@@ -190,6 +190,37 @@ describe('BrowserView', () => {
 		await open();
 		expect(sockets).toHaveLength(0);
 		expect(line()).toBe('todo-app is frozen, so its screen is off.');
+		expect(resume()?.textContent?.trim()).toBe('Resume view');
+	});
+
+	it('says it is waking a frozen machine, then shows its screen', async () => {
+		let answer!: (t: ViewTicket) => void;
+		mintBrowserView.mockReturnValue(new Promise((r) => (answer = r)));
+		await open({ ...project, resting: { since: new Date().toISOString() } });
+		expect(line()).toBe('Waking todo-app…');
+		answer({ ...ticket });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(line()).toBe('Connecting…');
+		views[0].dispatchEvent(new CustomEvent('connect', { detail: {} }));
+		flushSync();
+		expect(target.querySelector('.over')).toBeNull();
+	});
+
+	it('says in words why a frozen machine did not wake', async () => {
+		const { ApiError } = await import('$lib/api/errors');
+		mintBrowserView.mockRejectedValue(
+			new ApiError(
+				{
+					code: 'unavailable',
+					message: 'todo-app is frozen and cannot be woken now: its host is not connected',
+					detail: { reason: 'wake_failed' }
+				},
+				503,
+				null
+			)
+		);
+		await open({ ...project, resting: { since: new Date().toISOString() } });
+		expect(line()).toBe('todo-app is frozen and cannot be woken now: its host is not connected');
 		expect(resume()?.textContent?.trim()).toBe('Resume view');
 	});
 
