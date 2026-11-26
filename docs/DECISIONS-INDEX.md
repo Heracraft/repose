@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1153 entries.
+1155 entries.
 
 ## Scope
 
@@ -1185,5 +1185,7 @@ pointer, not a summary.
 - **I-1658** The dashboard's second customer pass on sharing: Create waits while the form says the host is full, a machine on a host the account owns counts no plan memory under Running, the memory stop reads as the CLI says it, and a machine that is not answering says so in the header, the sidebar and Hosts, from when it last answered (review-fixes-2, sharing program, 2026-11-26) — L39631
 - **I-1660** After every boot of a guest reaches running, hostd asks guestd to grow the root filesystem to its volume, so a disk grown while the machine was stopped is filled out at the next start; every host, the fleet's too (host, sharing program, 2026-11-26) — L39641
 - **I-1662** Virtualization.framework saves and restores a running repose guest with every device repose uses; the spike's "save kills the guest" was the missing login session, because VZ encrypts each save file with a Secure Enclave key of the logged-in user; a restore needs that user's session unlocked, and neither works as root (d2-arch, design 2 program, 2026-11-26) — L39647
-- **I-1668** On macOS hostd's guest network is a gVisor netstack in hostd's own process, one NIC per guest fed by the VM's file-handle attachment, with today's egress rules as checks on every frame a guest sends, its policer and shaper as token buckets and its counters under today's names; it implements `hnet.Net`, so the guest manager is unchanged (d2-net, design 2 program, 2026-11-26) — L39655
-- **I-1670** On macOS the edge tunnel is wireguard-go on a NIC of the same netstack: the gateway's SSH to a guest's port 22 is spliced to the guest from the edge's own address, a guest's hook-ingest connection leaves the tunnel with the guest's own address, and hostd's api connections, registration included, are dials on that NIC (d2-net, design 2 program, 2026-11-26) — L39667
+- **I-1664** On a Mac, hostd keeps its Linux code and gets a second substrate behind the same interfaces: repose-vm runs each VM from the Cloud Hypervisor argv hostd already renders and answers Cloud Hypervisor's API and hybrid vsock, each VM is a launchd job of its own in the user's GUI session, and each volume is an APFS file with clones for snapshots (d2-runtime, design 2 program, 2026-11-26) — L39655
+- **I-1666** On a Mac the guest park is VZ's save file: hostd's existing park code drives it through repose-vm's `vm.snapshot` and `--restore`, the image is a plain directory, the key the park records protects nothing, and hostd waits for the user's unlocked session before it restores a parked machine (d2-runtime, design 2 program, 2026-11-26) — L39662
+- **I-1668** On macOS hostd's guest network is a gVisor netstack in hostd's own process, one NIC per guest fed by the VM's file-handle attachment, with today's egress rules as checks on every frame a guest sends, its policer and shaper as token buckets and its counters under today's names; it implements `hnet.Net`, so the guest manager is unchanged (d2-net, design 2 program, 2026-11-26) — L39669
+- **I-1670** On macOS the edge tunnel is wireguard-go on a NIC of the same netstack: the gateway's SSH to a guest's port 22 is spliced to the guest from the edge's own address, a guest's hook-ingest connection leaves the tunnel with the guest's own address, and hostd's api connections, registration included, are dials on that NIC (d2-net, design 2 program, 2026-11-26) — L39681

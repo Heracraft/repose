@@ -122,7 +122,7 @@ const edgeNIC tcpip.NICID = 1
 
 // New builds the stack and starts the attach loop.
 func New(cfg Config) (*Net, error) {
-	if !cfg.Gateway.Is4() {
+	if cfg.Gateway.IsValid() && !cfg.Gateway.Is4() {
 		return nil, errors.New("unet: gateway must be an IPv4 address")
 	}
 	if cfg.MTU == 0 {
@@ -313,11 +313,33 @@ func (n *Net) AddTap(_ context.Context, tap string) error {
 	return err
 }
 
+// SetGateway sets the guests' gateway when New had none (on macOS it is
+// known only once the host has registered and host.json names its
+// range). It cannot change once a port exists.
+func (n *Net) SetGateway(a netip.Addr) error {
+	if !a.Is4() {
+		return errors.New("unet: gateway must be an IPv4 address")
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.cfg.Gateway == a {
+		return nil
+	}
+	if len(n.ports) > 0 {
+		return errors.New("unet: gateway changed with guests attached")
+	}
+	n.cfg.Gateway = a
+	return nil
+}
+
 func (n *Net) ensurePort(tap string) (*port, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if p := n.ports[tap]; p != nil {
 		return p, nil
+	}
+	if !n.cfg.Gateway.IsValid() {
+		return nil, errors.New("unet: no gateway yet")
 	}
 	id := n.nextNIC
 	n.nextNIC++
@@ -385,10 +407,13 @@ func (n *Net) AddGuestRules(_ context.Context, guestID, ip, mac, tap string) err
 	if err != nil {
 		return err
 	}
+	n.mu.Lock()
+	gw := n.cfg.Gateway
+	n.mu.Unlock()
 	p.mu.Lock()
 	p.guestID, p.ip, p.mac = guestID, a, tcpip.LinkAddress(hw)
 	if p.gate == nil {
-		p.gate = newGate(&n.rules, n.cfg.Gateway, time.Now())
+		p.gate = newGate(&n.rules, gw, time.Now())
 	}
 	p.mu.Unlock()
 	_ = n.s.AddStaticNeighbor(p.nic, ipv4.ProtocolNumber, tcpipAddr(a), tcpip.LinkAddress(hw)) // the NIC exists

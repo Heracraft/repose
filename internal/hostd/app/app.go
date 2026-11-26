@@ -65,7 +65,7 @@ type Options struct {
 	// the Session): on macOS through hostd's WireGuard netstack
 	// (unet.Edge.DialContext, DECISIONS I-1670). Nil on Linux, where
 	// wg0 is the kernel's.
-	APIDial func(ctx context.Context, addr string) (net.Conn, error)
+	APIDial       func(ctx context.Context, addr string) (net.Conn, error)
 	TokenPath     string
 	MetricsAddr   string
 	ControlSock   string
@@ -89,6 +89,8 @@ type Options struct {
 	LogLevel         string
 	// Park is the guest park across host restarts (park.go, I-652).
 	Park ParkOptions
+	// Mac is a Mac host's substrate (design 2); unused elsewhere.
+	Mac MacOptions
 	// PauseIdle lets this host rest an idle guest (DECISIONS I-818). It
 	// is what puts `pause` in Hello.features, so an api asks this host
 	// for no pause and no wake without it.
@@ -311,13 +313,25 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	// I-1638). The state lock above makes this the only hostd doing it.
 	// A changed hostd.env ends this start: systemd starts hostd again with
 	// the new flags, and the guests, units of their own, keep running.
-	if res, err := (&hostfiles.Ensurer{Root: "/", R: r, Log: log}).Ensure(ctx); err != nil {
-		log.Warn("host files not complete; the next start tries again", "event", "host_file", "err", err.Error())
-	} else if res.Restart {
-		log.Info("hostd.env changed; restarting with it", "event", "host_file", "written", len(res.Written))
-		return nil
+	plat := platformFor(o)
+	if plat.prepare != nil {
+		var perr error
+		if o, perr = plat.prepare(ctx, o, log); perr != nil {
+			return perr
+		}
 	}
-	l := &lvm.Real{VG: o.VG, Pool: o.Pool, R: r, Sandbox: true}
+	if !plat.noHostFiles {
+		if res, err := (&hostfiles.Ensurer{Root: "/", R: r, Log: log}).Ensure(ctx); err != nil {
+			log.Warn("host files not complete; the next start tries again", "event", "host_file", "err", err.Error())
+		} else if res.Restart {
+			log.Info("hostd.env changed; restarting with it", "event", "host_file", "written", len(res.Written))
+			return nil
+		}
+	}
+	var l lvm.LVM = &lvm.Real{VG: o.VG, Pool: o.Pool, R: r, Sandbox: true}
+	if plat.volumes != nil {
+		l = plat.volumes(r)
+	}
 	id, err := EnsureIdentity(ctx, o, log, r, l)
 	if err != nil {
 		return err
@@ -404,7 +418,13 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		PathsTimeout:       o.PathsTimeout,
 		SetupTimeout:       o.SetupTimeout,
 	}
-	fcfg, fdeps := parkSetup(o, r, l, log)
+	var fcfg guest.ParkConfig
+	var fdeps guest.ParkDeps
+	if plat.park != nil {
+		fcfg, fdeps = plat.park(o, log)
+	} else {
+		fcfg, fdeps = parkSetup(o, r, l, log)
+	}
 	cfg.Park = fcfg
 	if os.Getenv("REPOSE_HOSTD_TESTING") == "1" {
 		cfg.FailAtStep = o.FailAtStep
@@ -425,7 +445,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if nixOn {
 		view = &storeview.Real{SD: sdr}
 	}
-	mgr, err := guest.New(cfg, guest.Deps{
+	deps := guest.Deps{
 		State: st, LVM: l, Mount: &mount.Real{R: r}, View: view, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcRoots, Images: images, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
@@ -438,7 +458,13 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		GuestMemory:         hostinfo.GuestMemory,
 		SliceOOMKills:       hostinfo.SliceOOMKills,
 		SetOOMScoreAdj:      hostinfo.SetOOMScoreAdj,
-	})
+	}
+	if plat.adapt != nil {
+		if err := plat.adapt(ctx, r, log, &cfg, &deps); err != nil {
+			return err
+		}
+	}
+	mgr, err := guest.New(cfg, deps)
 	if err != nil {
 		return err
 	}
@@ -448,8 +474,11 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		images.Refs = mgr.BaseRefs
 	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
-	if o.OwnedHost {
+	if o.OwnedHost && !plat.noSlice {
 		ownedSlice(ctx, r, total, nested, log)
+	}
+	if plat.beforeReconcile != nil {
+		plat.beforeReconcile(ctx, r, log)
 	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
