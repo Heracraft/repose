@@ -27,11 +27,17 @@ func TestConfigPutConcurrentAndStale(t *testing.T) {
 	path := "/projects/" + pid + "/config"
 	seen := e.do(t, tok, "GET", path, nil).body["revision_id"].(string)
 
-	// An op open on the project refuses a second change.
+	// An op open on the project refuses a second change. It is running
+	// with its command out and no answer yet, which the engine leaves
+	// alone (no sent_at, so no timeout either): a pending one is the
+	// engine's to run, and a tick between the insert and the PUT (every
+	// 500 ms, and on each result the fake host sends) ran it to an error
+	// and the PUT was taken (release r20261126-1, 2 of 2 full runs).
 	opID := store.NewID()
-	if _, err := e.h.Pool.Exec(ctx, "insert into ops (id, project_id, kind, state, params) values ($1, $2, 'build', 'pending', '{}')", opID, uuid.MustParse(pid)); err != nil {
+	if _, err := e.h.Pool.Exec(ctx, "insert into ops (id, project_id, kind, state, params, command_id) values ($1, $2, 'build', 'running', '{}', $3)", opID, uuid.MustParse(pid), store.NewID()); err != nil {
 		t.Fatal(err)
 	}
+	e.h.Engine.Tick(ctx)
 	if r := e.do(t, tok, "PUT", path, map[string]any{"fragment": "{ pkgs, ... }: { }"}); r.status != 409 || errCode(r) != "conflict" {
 		t.Fatalf("PUT while an op is open: %d %s", r.status, r.raw)
 	}
