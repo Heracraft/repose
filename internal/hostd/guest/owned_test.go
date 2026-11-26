@@ -181,14 +181,18 @@ func TestOwnedOOMKillStopsTheGuest(t *testing.T) {
 	if g := o.guest(gid1); g.Reason != ReasonOOMKilled {
 		t.Fatalf("reason %q", g.Reason)
 	}
-	var sent bool
-	o.rec.mu.Lock()
-	for _, e := range o.rec.events {
-		if s := e.GetGuestStateChanged(); s != nil && s.GuestId == gid1 && s.State == StateStopped && s.Reason == "oom_killed" {
-			sent = true
+	// setState stores the state before it sends the event, so the state
+	// can read stopped a moment before the event is there.
+	sent := false
+	for deadline := time.Now().Add(3 * time.Second); !sent && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		o.rec.mu.Lock()
+		for _, e := range o.rec.events {
+			if s := e.GetGuestStateChanged(); s != nil && s.GuestId == gid1 && s.State == StateStopped && s.Reason == "oom_killed" {
+				sent = true
+			}
 		}
+		o.rec.mu.Unlock()
 	}
-	o.rec.mu.Unlock()
 	if !sent {
 		t.Fatal("no guest_state_changed stopped/oom_killed sent")
 	}
