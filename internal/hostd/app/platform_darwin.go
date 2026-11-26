@@ -94,6 +94,7 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, r shell.Runner, log 
 	// macOS itself, its compressor and the user's apps keep more than
 	// the 512 MiB a Linux owned host keeps (OwnedReserveBytes).
 	cfg.HostReserveBytes = macReserveBytes
+	cfg.OwnedGuestMemMiB = m.GuestMemMiB
 	cfg.HostVCPUs = ownedVCPUs(o.OwnedVCPUs, uint32(cfg.Cores), false)
 	cfg.OwnedMaxVCPUs = ownedBound(o.OwnedMaxVCPUs, false, cfg.Cores)
 

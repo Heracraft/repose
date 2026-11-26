@@ -41,4 +41,7 @@ type MacOptions struct {
 	NetMTU     int
 	Mke2fs     string
 	E2fsck     string
+	// GuestMemMiB caps each guest's memory below the host's placeable
+	// memory; 0 is no cap (DECISIONS I-1666).
+	GuestMemMiB uint64
 }

@@ -210,6 +210,11 @@ type Config struct {
 	GuestCIDR        string
 	TotalMemBytes    uint64
 	HostReserveBytes uint64
+	// OwnedGuestMemMiB caps an owned host's guest memory below the host's
+	// placeable memory (a Mac on design 2: VZ's park and wake time follow
+	// the configured memory, DECISIONS I-1666). Zero is no cap, every
+	// host before design 2.
+	OwnedGuestMemMiB uint64
 	MaxOps           int
 	MaxBuilds        int
 	MaxBuildQueue    int
