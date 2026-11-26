@@ -563,3 +563,21 @@ func TestOwnedKernelOOMKillReadsAsOOM(t *testing.T) {
 	o.sd.Exit("guest@"+gid1, 3)
 	o.waitState(gid1, StateError)
 }
+
+// A Mac on design 2 caps its guests' memory (DECISIONS I-1666): VZ's park
+// and wake time follow the configured memory. Zero leaves every other
+// owned host's rule (the placeable memory) as it was.
+func TestOwnedGuestMemCap(t *testing.T) {
+	m := &Manager{cfg: Config{Owned: true, TotalMemBytes: 24 << 30, HostReserveBytes: 4 << 30, HostVCPUs: 10}}
+	if got := m.ownedClass().MemMiB; got != (20<<10)-OverheadMiB-((20<<10)-OverheadMiB)%128 {
+		t.Fatalf("uncapped %d", got)
+	}
+	m.cfg.OwnedGuestMemMiB = 6144
+	if got := m.ownedClass().MemMiB; got != 6144 {
+		t.Fatalf("capped %d", got)
+	}
+	m.cfg.OwnedGuestMemMiB = 1 << 20
+	if got := m.ownedClass().MemMiB; got >= 1<<20 {
+		t.Fatalf("a cap above the host is not a raise: %d", got)
+	}
+}

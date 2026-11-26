@@ -137,6 +137,9 @@ func (m *Manager) ownedClass() Class {
 	} else {
 		mib = 128
 	}
+	if c := m.cfg.OwnedGuestMemMiB; c > 0 && mib > c {
+		mib = c - c%128
+	}
 	return Class{VCPUs: v, MilliVCPUs: v * 1000, CeilingVCPUs: v, MemMiB: mib, Shared: true}
 }
 
