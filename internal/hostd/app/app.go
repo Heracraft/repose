@@ -120,9 +120,12 @@ type Options struct {
 	// OwnedHost is a host its user owns: the Mac appliance and an x86
 	// machine set up by ops/install-host-x86.sh write --owned-host into
 	// hostd.env (DECISIONS I-1626). Its guests share the host's memory
-	// and every vCPU whatever class the api sends, free page reporting
+	// and its vCPUs (I-1640) whatever class the api sends, free page reporting
 	// is on, and guests.slice holds all but the owned reserve (I-1628).
 	OwnedHost bool
+	// OwnedVCPUs is how many vCPUs an owned host's guests boot with; 0
+	// is the rule ownedVCPUs applies (I-1640). Never more than the host's.
+	OwnedVCPUs uint
 	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
 	// offline and back after a guest's hypervisor exits. auto is on
 	// under Apple's Virtualization framework, the Mac appliance, where a
@@ -367,6 +370,10 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		}
 		images = &baseimg.Cache{Dir: o.ImagesDir, Arch: hostinfo.Arch(), Store: st, Metrics: m, Log: log}
 	}
+	// An owned host's kernel under a hypervisor (the Mac appliance) runs
+	// nested guests: two vCPUs each and no more than the host's together
+	// (DECISIONS I-1640).
+	nested := o.OwnedHost && hostinfo.UnderHypervisor()
 	cfg := guest.Config{
 		HostID: id.Host.HostID, GuestsDir: o.GuestsDir, GuestCIDR: id.Host.GuestCIDR, TotalMemBytes: total,
 		MaxOps: o.MaxOps, MaxBuilds: o.MaxBuilds, StoreExport: o.StoreExport, VirtiofsUser: o.VirtiofsUser,
@@ -375,7 +382,8 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		NoAuthShare:        !o.ClaudeLoginShare,
 		FreePageReporting:  o.Park.FreePageReporting || o.OwnedHost,
 		Owned:              o.OwnedHost,
-		HostVCPUs:          hostinfo.VCPUs(),
+		HostVCPUs:          ownedVCPUs(o.OwnedVCPUs, hostinfo.VCPUs(), nested),
+		OwnedMaxVCPUs:      ownedMaxVCPUs(nested),
 		PauseIdle:          o.PauseIdle,
 		Burst:              o.Burst,
 		BurstGate:          o.BurstGate,
@@ -427,7 +435,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
 	if o.OwnedHost {
-		ownedSlice(ctx, r, total, log)
+		ownedSlice(ctx, r, total, hostinfo.VCPUs(), log)
 	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
@@ -742,15 +750,44 @@ func systemStopping(r shell.Runner) func(ctx context.Context) bool {
 // start, after repose-guests-slice.service set the fleet's eighth at
 // boot, and before any guest starts. A failure is logged and the boot's
 // figure stays, which only holds the guests to less.
-func ownedSlice(ctx context.Context, r shell.Runner, total uint64, log *slog.Logger) {
+func ownedSlice(ctx context.Context, r shell.Runner, total uint64, vcpus uint32, log *slog.Logger) {
 	if total <= guest.OwnedReserveBytes {
 		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "reason", "total_unread")
 		return
 	}
 	max := total - guest.OwnedReserveBytes
-	if _, err := r.Run(ctx, "systemctl", "set-property", "--runtime", hostinfo.GuestsSlice, fmt.Sprintf("MemoryMax=%d", max)); err != nil {
+	argv := []string{"systemctl", "set-property", "--runtime", hostinfo.GuestsSlice, fmt.Sprintf("MemoryMax=%d", max), fmt.Sprintf("CPUWeight=%d", guest.OwnedSliceCPUWeight)}
+	if vcpus > 1 {
+		argv = append(argv, fmt.Sprintf("CPUQuota=%d%%", (vcpus-1)*100))
+	}
+	if _, err := r.Run(ctx, argv...); err != nil {
 		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "err", err.Error())
 		return
 	}
-	log.Info("guests share the host", "event", "start", "part", "owned", "slice_max_bytes", max, "reserve_bytes", uint64(guest.OwnedReserveBytes), "vcpus", hostinfo.VCPUs())
+	log.Info("guests share the host", "event", "start", "part", "owned", "slice_max_bytes", max, "reserve_bytes", uint64(guest.OwnedReserveBytes), "vcpus", vcpus)
+}
+
+// ownedMaxVCPUs is the bound on the vCPUs an owned host's guests boot with
+// together: the host's own count under a hypervisor, none on bare metal
+// (DECISIONS I-1640).
+func ownedMaxVCPUs(nested bool) uint32 {
+	if nested {
+		return hostinfo.VCPUs()
+	}
+	return 0
+}
+
+// ownedVCPUs is the vCPU count an owned host's guests boot with
+// (DECISIONS I-1640): the --owned-vcpus figure when set, never more than
+// the host has; else two under a hypervisor (the Mac appliance), where
+// the lab measured nested builds slowest and pairs collapsing as guest
+// vCPUs grow, and every vCPU on bare metal, as I-1626 has it.
+func ownedVCPUs(flag uint, host uint32, nested bool) uint32 {
+	switch {
+	case flag > 0:
+		return min(uint32(flag), host)
+	case nested:
+		return min(guest.OwnedNestedVCPUs, host)
+	}
+	return host
 }

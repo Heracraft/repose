@@ -82,6 +82,17 @@ var PressureEvery = 5 * time.Minute
 // exists only in a kernel built with compaction.
 const dropScript = "sync; echo 1 > /proc/sys/vm/drop_caches; if [ -w /proc/sys/vm/compact_memory ]; then echo 1 > /proc/sys/vm/compact_memory; fi"
 
+// OwnedNestedVCPUs is the vCPUs each guest of an owned host under a
+// hypervisor boots with (DECISIONS I-1640): on the M4 appliance a node
+// build was fastest at two, within 1.1-1.3x of the same build run in the
+// appliance itself, and two guests at once suffered least at two.
+const OwnedNestedVCPUs uint32 = 2
+
+// OwnedSliceCPUWeight is guests.slice's CPU weight on an owned host,
+// half of system.slice's default 100, so the appliance's own services
+// win the CPU they ask for (DECISIONS I-1640).
+const OwnedSliceCPUWeight = 50
+
 // ownedState is the reclaim's memory between samples.
 type ownedState struct {
 	mu         sync.Mutex
@@ -158,6 +169,35 @@ func (m *Manager) ownedFreeBytes() uint64 {
 func (m *Manager) ownedRoom() *Error {
 	if free := m.FreeMemBytes(); free < OwnedStartFreeBytes {
 		return errf(CodeInsufficientCapacity, "not enough free memory: %d MiB free on this host, a machine starts with %d MiB", free>>20, uint64(OwnedStartFreeBytes)>>20)
+	}
+	return m.ownedCPURoom()
+}
+
+// ownedCPURoom refuses a start or a create on a nested owned host when the
+// guests that hold vCPUs (every one not stopped, failed or destroyed)
+// and the new one would boot with more vCPUs than the host has: on the
+// M4 appliance sixteen guest vCPUs on eight hung every guest, and they
+// stayed hung once the load was gone (the lab, 2026-11-25 23:49Z;
+// DECISIONS I-1640). Each counts at today's per-guest figure.
+func (m *Manager) ownedCPURoom() *Error {
+	limit, per := m.cfg.OwnedMaxVCPUs, m.ownedClass().VCPUs
+	if limit == 0 {
+		return nil
+	}
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return errf(CodeInternal, "listing guests: %v", err)
+	}
+	var taken uint32
+	for _, g := range gs {
+		switch g.State {
+		case StateStopped, StateError, StateDestroying, StateDestroyed:
+			continue
+		}
+		taken += per
+	}
+	if taken+per > limit {
+		return errf(CodeInsufficientCapacity, "not enough free CPU: %d of %d vCPUs taken by running machines on this host, a machine starts with %d", taken, limit, per)
 	}
 	return nil
 }

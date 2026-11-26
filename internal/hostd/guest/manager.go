@@ -325,6 +325,9 @@ type Config struct {
 	// HostVCPUs is the CPUs this host's kernel runs on, what an owned
 	// host's guests boot with: never more than the host has.
 	HostVCPUs uint32
+	// OwnedMaxVCPUs bounds the vCPUs an owned host's guests boot with
+	// together; 0 is no bound.
+	OwnedMaxVCPUs uint32
 }
 
 // Defaults fills documented values into zero fields.

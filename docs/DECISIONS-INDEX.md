@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1144 entries.
+1145 entries.
 
 ## Scope
 
@@ -1170,9 +1170,10 @@ pointer, not a summary.
 - **I-1616** The join argument passes through no agent's context when repose is set up on the machine being added: on a Mac `repose host add` consumes it in process (as before), and on a Linux x86 machine it writes it to `~/.config/repose/join-NAME` (0600) and prints an installer line that names the file; the argument is printed only where a person carries it, by the dashboard's Add a host and by `repose host add` on a machine that cannot be a host (agent-setup, ENG-42, 2026-11-25) — L39494
 - **I-1624** `repose version` and `repose --version` print `repose <version>`, without the `(herakraft)` suffix (release conductor, 2026-11-25) — L39503
 - **I-1636** An owned host keeps its snapshots on a thin volume in its guest pool, not on its root; its retention deletes them there through hostd; and a stop whose snapshot cannot be written stops the machine, which is `stopped` with `snapshot_failed`, not `error` (appliance-snapshots, 2026-11-25) — L39510
-- **I-1626** On a host its user owns, a machine has no size: every guest boots with the host's placeable memory and every vCPU, the guests share the host, unused memory goes back to it, overflow is compressed swap, and when memory truly runs out the newest guest is the one the kernel kills, reported `stopped`/`oom_killed` (shared-host, sharing program, 2026-11-25) — L39521
+- **I-1626** On a host its user owns, a machine has no size: every guest boots with the host's placeable memory and every vCPU, the guests share the host, unused memory goes back to it, overflow is compressed swap, and when memory truly runs out the newest guest is the one the kernel kills, reported `stopped`/`oom_killed` (shared-host, sharing program, 2026-11-25) — partly amended by I-1640; L39521
 - **I-1628** The owned reserve: what an owned host keeps back from its guests is what the appliance's own processes and the kernel hold with one idle guest running, plus a margin (shared-host, sharing program, 2026-11-25) — L39534
 - **I-1630** On a host the user owns whose hostd shares it, placement asks one question: does the host report at least 1 GiB free (`scheduler.OwnedStartFreeBytes`); no class, no reserve and no class reservations are counted there, and the refusal names the host, what it has free and that figure (sharing-control, 2026-11-25) — L39539
 - **I-1632** A machine on a host the user owns shows what it uses, not a size: `Project.sized` false and `Project.mem_used_bytes`; `repose ls`'s column is MEMORY, `repose status`'s header and the dashboard say `1.4 GB used`; `--size` there is accepted and ignored with one stderr line for one release; a machine the kernel stopped for memory is named with `oom_stopped` (sharing-control, 2026-11-25) — L39549
 - **I-1638** hostd brings an appliance or an installer-made x86 host the host files it was set up without, and the `--owned-host` flag, at its own start (host-files, 2026-11-25) — L39559
-- **I-1642** A wake a user route asks for (the browser view's mint, `keep_awake` turned on) is an op of kind `wake`, which the grpc process drives, the way `repose start` reaches its host; a wake that fails is `503 unavailable`, `detail.reason = wake_failed`, with the cause in words (view-wake, ENG-242, 2026-11-25) — L39568
+- **I-1640** On a host its user owns that itself runs under a hypervisor (the Mac appliance, an x86 VM), each guest boots with two vCPUs and the guests together with no more vCPUs than the host has; bare metal keeps every vCPU per guest and no bound; guests.slice keeps one vCPU and the larger CPU share for the host's own services (host, sharing program, 2026-11-26) — L39568
+- **I-1642** A wake a user route asks for (the browser view's mint, `keep_awake` turned on) is an op of kind `wake`, which the grpc process drives, the way `repose start` reaches its host; a wake that fails is `503 unavailable`, `detail.reason = wake_failed`, with the cause in words (view-wake, ENG-242, 2026-11-25) — L39575
