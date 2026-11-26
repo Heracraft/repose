@@ -11,6 +11,7 @@ import {
 	destroyProject,
 	ownedHost,
 	pruneProjects,
+	refuseNextCreate,
 	removeOwnedHosts,
 	resetBilling,
 	setBilling
@@ -634,4 +635,34 @@ test('a machine on your own host shows what it uses, not a size', async ({ page 
 		if (madeId) await destroyProject(api, madeId);
 		await removeOwnedHosts(api).catch(() => {});
 	}
+});
+
+// A create the host refuses for room leaves nothing (I-1648): the page
+// the form opens says the machine was not created and why, in the api's
+// sentence, the list has no row for it, and the name works again.
+test('a create the host refuses says why and leaves no row', async ({ page }) => {
+	const why =
+		'the host has as many machines running as its cores allow; stopping a running machine frees room';
+	await openForm(page);
+	const name = unique('refused');
+	await form(page).getByLabel('Name').fill(name);
+	await refuseNextCreate(why);
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	await expect(page.getByRole('heading', { name: 'Not created', level: 1 })).toBeVisible();
+	await expect(page.getByTestId('not-created')).toHaveText(`${name} was not created: ${why}.`);
+	await expect(page.getByText('Destroyed')).toHaveCount(0);
+	await shots(page, 'create-refused');
+	expect(await fromApi(name)).toBeFalsy();
+	await page.getByRole('link', { name: 'Back to Projects' }).click();
+	await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
+	await expect(page.getByRole('link', { name, exact: true })).toHaveCount(0);
+	// The name is free: the same name makes a machine.
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
 });

@@ -115,6 +115,16 @@ export async function triggerPrompt(projectId: string, trigger: string): Promise
 	return res.text();
 }
 
+/** The host refuses the next create for room; the project is gone at once (I-1648). */
+export async function refuseNextCreate(message: string): Promise<void> {
+	const res = await fetch(`${adminURL()}/refuse-create`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ message })
+	});
+	if (!res.ok) throw new Error(`/refuse-create: ${res.status}`);
+}
+
 export const failNext = (method: string, path: string, code: string) =>
 	adminCall('/fail-next', { method, path, code });
 export const fail = (method: string, path: string, code: string) =>

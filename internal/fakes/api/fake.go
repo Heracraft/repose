@@ -142,6 +142,9 @@ type Fake struct {
 	startOutcome map[string]startOutcome
 	// stopOutcome is how the next stop of a project ends, when set.
 	stopOutcome map[string]stopOutcome
+	// refuseCreate is the sentence the next create's host refuses it
+	// with, "" for none (RefuseNextCreate, DECISIONS I-1648).
+	refuseCreate string
 	// console is each project's console lines from failed boots, what
 	// GET /logs?kind=console serves (I-592).
 	console map[string][]string
@@ -866,6 +869,17 @@ func (f *Fake) SetStopFailure(projectID, message string) {
 		f.stopOutcome = map[string]stopOutcome{}
 	}
 	f.stopOutcome[projectID] = stopOutcome{failMsg: message}
+}
+
+// RefuseNextCreate makes the host refuse the next create for room, as
+// hostd does when its memory, its vCPUs or its pool are taken by the time
+// the command lands (DECISIONS I-1648): the create answers 201 with its
+// op, the op ends in error with message, and the project is gone at once,
+// its read a 404 with detail.reason create_refused.
+func (f *Fake) RefuseNextCreate(message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refuseCreate = message
 }
 
 // SetStopSnapshotFailure makes the next stop of the project take no

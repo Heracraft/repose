@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1145 entries.
+1146 entries.
 
 ## Scope
 
@@ -1065,7 +1065,7 @@ pointer, not a summary.
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; partly amended by I-1614; L37069
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37234
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37297
-- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — amended by I-1584; L37348
+- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — amended by I-1584; partly amended by I-1648; L37348
 - **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37418
 - **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37476
 - **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37547
@@ -1177,3 +1177,4 @@ pointer, not a summary.
 - **I-1638** hostd brings an appliance or an installer-made x86 host the host files it was set up without, and the `--owned-host` flag, at its own start (host-files, 2026-11-25) — L39559
 - **I-1640** On a host its user owns that itself runs under a hypervisor (the Mac appliance, an x86 VM), each guest boots with two vCPUs and the guests together with no more vCPUs than the host has; bare metal keeps every vCPU per guest and no bound; guests.slice keeps one vCPU and the larger CPU share for the host's own services (host, sharing program, 2026-11-26) — L39568
 - **I-1642** A wake a user route asks for (the browser view's mint, `keep_awake` turned on) is an op of kind `wake`, which the grpc process drives, the way `repose start` reaches its host; a wake that fails is `503 unavailable`, `detail.reason = wake_failed`, with the cause in words (view-wake, ENG-242, 2026-11-25) — L39575
+- **I-1648** A create the host refuses for room leaves no project: the api marks it destroyed when the op fails, its read is `404 not_found` with `detail.reason: "create_refused"` and why, the CLI's exit 8 and sentence are unchanged, and the dashboard says "Not created" with that sentence (host, sharing program, 2026-11-26) — L39584
