@@ -123,7 +123,7 @@ A running machine nobody is using has its cores paused after about 15 minutes of
 
 Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change.
 
-Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
+Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 
 The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 
