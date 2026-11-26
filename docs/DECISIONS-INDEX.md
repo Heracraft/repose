@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1150 entries.
+1151 entries.
 
 ## Scope
 
@@ -1181,5 +1181,5 @@ pointer, not a summary.
 - **I-1650** On a host its user owns, hostd stops the newest guest itself when the host's free memory stays under 512 MiB for 5 seconds, reported `stopped`/`oom_killed`, because on the Mac appliance the kernel at the limit neither swapped guest RAM nor OOM-killed and every guest hung; and owned guests' RAM is 4 KiB shmem (Cloud Hypervisor's `thp=off`) unless hostd.env names `--owned-guest-thp` (host, sharing program, 2026-11-26) — L39592
 - **I-1656** A host its user owns that runs under a hypervisor never swaps guest RAM: hostd sets `guests.slice` `MemorySwapMax=0` at every start, because on the Mac appliance a guest some of whose RAM went to zram spun both vCPUs and never answered again, idle or not; bare metal keeps the kernel's default (host, sharing program, 2026-11-26) — L39602
 - **I-1652** A running machine whose guestd has not answered for three samples in a row, a minute apart (about three minutes), is `not answering`: `Project.not_answering {since}`, `running not answering` in `repose ls` and the `status` header with a line naming the `repose start` that restarts it and what that loses, the dashboard's row (Restart in place of Stop) and a banner with Restart on its page, and one `not_answering` event per stretch, which notifies nobody (review-fixes, sharing program, 2026-11-26) — L39610
-- **I-1654** The customer review's other fixes on the api, CLI, dashboard and docs side of sharing on owned hosts (review-fixes, sharing program, 2026-11-26) — L39618
-- **I-1658** Dashboard pass 2 on sharing: Create waits on a full host, owned machines count no plan memory under Running, the memory stop reads as the CLI says it, a not-answering machine says so in the header, sidebar and Hosts, from its last answer (review-fixes-2, sharing program, 2026-11-26) — L39630
+- **I-1654** The customer review's other fixes on the api, CLI, dashboard and docs side of sharing on owned hosts (review-fixes, sharing program, 2026-11-26) — amended by I-1658; L39618
+- **I-1658** The dashboard's second customer pass on sharing: Create waits while the form says the host is full, a machine on a host the account owns counts no plan memory under Running, the memory stop reads as the CLI says it, and a machine that is not answering says so in the header, the sidebar and Hosts, from when it last answered (review-fixes-2, sharing program, 2026-11-26) — L39630
