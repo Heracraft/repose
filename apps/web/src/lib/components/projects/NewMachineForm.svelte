@@ -5,7 +5,8 @@
   has the default `repose run` gives and is shown as one line under the
   field, which opens Options: size, how long to keep it, where it runs
   (only for an account that owns a host, I-1390, I-1584) and the
-  repository.
+  repository. A machine that runs on a host of the account's own has no
+  size (I-1632), so Size is there only for repose's servers.
 
   `POST /projects` is what the first `repose run` in a checkout calls,
   and nothing in it sends code to a machine: a project made here is an
@@ -121,6 +122,11 @@
 		return `${c} · ${cores} ${cores === 1 ? 'core' : 'cores'} · ${classMemoryGB(c)} GB`;
 	}
 
+	/** It goes to a host of the account's own, where a machine has no
+	 * size and shares the host's memory (I-1630, I-1632): no Size field,
+	 * no size in the summary, and the plan's memory does not apply. */
+	let onOwnHost = $derived(hosts.length > 0 && runsOn !== 'hosted');
+
 	/** Where it runs, in the summary's words; '' for an account with no host. */
 	let whereWords = $derived.by(() => {
 		if (hosts.length === 0) return '';
@@ -132,8 +138,8 @@
 	});
 	let summary = $derived(
 		[
-			sizeLabel(cls),
-			room ? `${free} GB of your plan's ${room.limitGB} GB free` : '',
+			onOwnHost ? '' : sizeLabel(cls),
+			room && !onOwnHost ? `${free} GB of your plan's ${room.limitGB} GB free` : '',
 			whereWords,
 			life === 0
 				? 'kept until you destroy it'
@@ -236,7 +242,7 @@
 			</button>
 		</div>
 
-		{#if room && !error && !fits(room, cls)}
+		{#if room && !error && !onOwnHost && !fits(room, cls)}
 			<!-- The api would refuse this size by the plan (I-1612): said
 			     before Enter, with the way out beside it. -->
 			<div class="nmroom" data-testid="nm-room">
@@ -266,14 +272,16 @@
 
 		{#if options}
 			<div id="nm-options" class="nmoptions">
-				<div class="nmfield">
-					<label for="nm-size" class="hk-field-label">Size</label>
-					<select id="nm-size" class="hk-select" bind:value={() => cls, (v) => (chosen = v)}>
-						{#each CLASSES as c (c)}
-							<option value={c}>{sizeLabel(c)}</option>
-						{/each}
-					</select>
-				</div>
+				{#if !onOwnHost}
+					<div class="nmfield">
+						<label for="nm-size" class="hk-field-label">Size</label>
+						<select id="nm-size" class="hk-select" bind:value={() => cls, (v) => (chosen = v)}>
+							{#each CLASSES as c (c)}
+								<option value={c}>{sizeLabel(c)}</option>
+							{/each}
+						</select>
+					</div>
+				{/if}
 				<div class="nmfield">
 					<label for="nm-life" class="hk-field-label">Keep it</label>
 					<select id="nm-life" class="hk-select" bind:value={life}>

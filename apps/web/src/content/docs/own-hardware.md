@@ -13,8 +13,8 @@ Your hardware takes only your projects. Nobody else's machine is ever placed on 
 
 - An M3 chip or newer. Nested virtualization, which repose needs to run your machines, arrived with M3; an M1 or M2 cannot do it.
 - macOS 15 or later.
-- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes three quarters of the memory and leaves macOS the rest. [What fits](#what-fits-on-a-mac) says how many machines that holds.
-- At least 40 GB of free disk: the machine's disk is 20 GB at least, and 20 GB of the volume stays free for you. The download is about 85 MB; with less free, `repose host add` says how much to free. From there a machine costs what it actually writes, up to the size of its disk (40 GB for a `large`, [the sizes](/docs/machine)), and its snapshots are kept here too.
+- 16 GB of memory or more. Your machines run inside repose's virtual machine on the Mac, which takes three quarters of the memory and leaves macOS the rest. [What fits](#what-fits-on-a-mac) says how your machines share it.
+- At least 40 GB of free disk: the machine's disk is 20 GB at least, and 20 GB of the volume stays free for you. The download is about 85 MB; with less free, `repose host add` says how much to free. From there a machine costs what it actually writes, up to the size of its disk (40 GB to begin with; `repose resize 80G` grows it), and its snapshots are kept here too.
 - A network connection and no sleep. Repose keeps the Mac awake while it holds your machines; a Mac that sleeps or loses Wi-Fi goes [offline](#when-your-hardware-is-offline) and your machines are out of reach until it is back.
 - No inbound ports, no public address, nothing to forward on your router. The Mac dials out to repose.
 
@@ -24,21 +24,22 @@ Repose runs on your Mac as one virtual machine, and nothing of yours is touched:
 
 Repose's virtual machine takes three quarters of the Mac's memory, and macOS keeps the other quarter: 4 GB of 16, 6 GB of 24. The virtual machine holds its share for as long as it runs, whether machines run in it or not.
 
-Of that share, repose keeps an eighth for itself, never less than 2 GB, and each machine counts its size plus half a gigabyte. So this is what runs at once:
+A machine on your hardware has no size. On a Mac each one has two of the virtual machine's cores and may use all of its memory share, less the little repose's own services hold, and the machines share that memory: nothing is set aside per machine. Memory a machine stops using goes back to the others, and a machine left idle for five minutes drops its file cache. When the machines together want more than the share, the least used memory is compressed in place: they slow down, and keep running.
 
-| Mac | Machines at once |
-|---|---|
-| 16 GB | 1 `large`, or 2 `small`, or 3 `tiny` |
-| 24 GB | 1 `large` and 1 `small`, or 3 `small`, or 6 `tiny` |
+A machine starts while the host has at least 1 GB free. Otherwise the start or the create is refused with exit code 8, and the refusal names the host and what it has free: `your host mac-mini has 0.8 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses`.
 
-An `xl` fits on neither; it needs a Mac with 32 GB. The 24 GB row is measured, on an M4 Mac mini on 2026-11-22; the 16 GB row is the same rule worked out. `--memory` at `repose host add` changes the share, and the same rule applies to what you give it. `repose host ls` shows the share under MEMORY. A machine that does not fit is refused with exit code 8, and the refusal names the host, the memory it has free and what the machine needs: `your host mac-mini has 5 GB of memory free for machines, and a large machine needs 8 GB`.
+On a Mac, a machine also starts only while the machines running there have fewer cores between them than the virtual machine has, so a Mac whose virtual machine has eight cores runs four at once. A machine inside the virtual machine runs slower the more cores it has, and machines busy at once slow each other more the more cores they have. The refusal has exit code 8: `the host has as many machines running as its cores allow; stopping a running machine frees room`. A create refused by the host, for cores or for memory, leaves nothing: no project in `repose ls`, and the dashboard's page for it says it was not created and why.
+
+If memory runs out even so, repose stops one machine, the one started most recently, and never its own services: when the host has had under 0.5 GB free for five seconds, so the machines never hang waiting for memory. Its disk is kept. `repose ls`, `repose status` and the project's page say which machine stopped and why, you get a notification, and `repose start` starts it again.
+
+`repose ls` and `repose status` show what each machine uses, under MEMORY, and the dashboard shows the same. A host still running an older version of repose's software places machines by size, as before, and they keep showing their size until it is updated. It updates itself within about half an hour, a Mac and an x86 machine alike: nothing to reinstall or run again, and the machines on it keep running through the update. `--memory` at `repose host add` changes the virtual machine's share. `--size` on `repose run`, `repose sync` and `repose resize` is accepted and changes nothing on your hardware; the command says so in one line.
 
 ## What an x86 box needs
 
 - x86_64 with hardware virtualization and `/dev/kvm`. Bare metal, Intel or AMD. A virtual machine works only if its own host passes virtualization through, which on Proxmox or libvirt is one setting; most cheap VPSes do not.
 - Ubuntu 24.04, or Debian 12 or later, and room for your machines' disks: 40 GB free on the system disk, or a whole empty disk.
 - A kernel with the fix for CVE-2026-99999, through which code in one of your machines could take over the box. Ubuntu 24.04's kernels carry it from 6.8.0-149 (`sudo apt-get update && sudo apt-get install linux-image-generic`, then reboot and check that `uname -r` shows 6.8.0-149 or later) and its HWE 7.0 kernels from 7.0.0-43; Debian 13's from 6.12.113-1; Debian 12's did not on 2026-11-23. The installer knows these versions, and for any other kernel it reads the package changelog for the CVE or `ipv4: validate checksum_start before completing checksum`. When the kernel lacks the fix, or the installer could not check, it says which at the end and installs anyway, since the only machines on the box are yours; run it again after the reboot to check.
-- 16 GB of memory or more. Repose takes the whole box and keeps an eighth of its memory, never less than 2 GB, for itself; the rest is what your machines may hold at once, each counting its size plus half a gigabyte. The number of cores does not limit how many machines run; memory and disk do.
+- 16 GB of memory or more. Repose takes the whole box. Your machines share its memory as they do [on a Mac](#what-fits-on-a-mac): a machine has no size and a new one starts while the box has at least 1 GB free. Each machine has every core of the box, and the number of cores does not limit how many run. A box that is itself a virtual machine (a cloud VM) is treated as a Mac is: two cores a machine, and no more machines at once than half its cores. Compressing memory needs the kernel's zram module, which Ubuntu's and Debian's own kernels have; without it the installer warns `no compressed swap (zram)`, and running out of memory stops a machine at once instead of slowing them first.
 - Outbound UDP 51820 and TCP 443. No inbound port.
 
 ## Adding it
@@ -143,7 +144,7 @@ macOS gives repose about a second when the Mac goes down, measured, and writing 
 
 ## Snapshots stay on its disk
 
-Snapshots of machines on repose's servers go to cloud storage. **Snapshots of machines on your hardware are written to that machine's own disk, and repose keeps no copy.** If the disk dies, every snapshot of every machine on it dies with it, and so do the machines. Back the disk up yourself, or keep in your git remote anything you would miss.
+Snapshots of machines on repose's servers go to cloud storage. **Snapshots of machines on your hardware are written to that machine's own disk, and repose keeps no copy.** If the disk dies, every snapshot of every machine on it dies with it, and so do the machines. Back the disk up yourself, or keep in your git remote anything you would miss. They share the space the machines' disks use: a volume of half of it, which costs what the snapshots hold. They are deleted on the host by the same rule as anywhere: after seven days, keeping a project's newest, at most seven a project, and a destroyed machine's last one for 30 days.
 
 This is on purpose. The alternative is the keys to a storage bucket sitting on a machine in your house, which is a kind of credential repose does not keep anywhere ([secrets](/docs/secrets)).
 

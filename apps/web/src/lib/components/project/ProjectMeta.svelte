@@ -13,7 +13,9 @@
 		classVCPUs,
 		normalizeRemoteDisplay,
 		sinceLabel,
+		sizeText,
 		tempLeft,
+		unsized,
 		upLabel
 	} from '$lib/format';
 
@@ -55,9 +57,18 @@
 			<span class="status-frozen" data-testid="frozen">{sinceLabel(frozen, 'for', clock.now)}</span>
 		{/if}
 		<span class="status-facts">
-			<span aria-hidden="true">·</span>
-			<span class="hk-mono" data-testid="project-class">{project.class}</span>
-			{#if vcpus}
+			{#if unsized(project)}
+				<!-- No size on a host of the account's own (I-1632): what it
+				     uses while it runs, and nothing when it does not. -->
+				{#if sizeText(project)}
+					<span aria-hidden="true">·</span>
+					<span data-testid="project-used">{sizeText(project)}</span>
+				{/if}
+			{:else}
+				<span aria-hidden="true">·</span>
+				<span class="hk-mono" data-testid="project-class">{project.class}</span>
+			{/if}
+			{#if vcpus && !unsized(project)}
 				<span aria-hidden="true">·</span>
 				<span>{coresLabel}</span>
 				<span aria-hidden="true">·</span>

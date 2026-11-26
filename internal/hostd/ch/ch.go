@@ -43,6 +43,11 @@ type Spec struct {
 	VolumeDev    string
 	VCPUs        uint32
 	MemMiB       uint64
+	// NoTHP boots guest RAM as 4 KiB shmem (Cloud Hypervisor's thp=off,
+	// no MADV_HUGEPAGE on the memfd), which reclaim can swap; an owned
+	// host's default (DECISIONS I-1650). False keeps the hypervisor's
+	// 2 MiB pages.
+	NoTHP bool
 	// DiskIOPS and DiskBytesPerSec are the disk's rate limiter, read and
 	// write together, each a token bucket holding one second's worth
 	// (DECISIONS I-450); zero leaves that one unlimited.
@@ -151,6 +156,14 @@ func (s Spec) diskLimits() string {
 	return b.String()
 }
 
+// thp is the --memory option that turns the hypervisor's huge pages off.
+func (s Spec) thp() string {
+	if s.NoTHP {
+		return ",thp=off"
+	}
+	return ""
+}
+
 // Args renders the cloud-hypervisor argv.
 func (s Spec) Args() []string {
 	args := []string{
@@ -160,7 +173,7 @@ func (s Spec) Args() []string {
 		"--initramfs", s.Initrd,
 		"--cmdline", s.Cmdline(),
 		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
-		"--memory", fmt.Sprintf("size=%dM,shared=on", s.MemMiB),
+		"--memory", fmt.Sprintf("size=%dM,shared=on%s", s.MemMiB, s.thp()),
 		// image_type=raw: Cloud Hypervisor 53 refuses sector-0 writes on a
 		// disk whose type it auto-detected, and ext4 keeps its superblock
 		// there (DECISIONS I-63). direct=on: the volume is opened O_DIRECT,

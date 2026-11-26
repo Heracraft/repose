@@ -133,6 +133,10 @@ type Fake struct {
 	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
 	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
 	poolDown bool
+	// freeMem is the free_mem_bytes this host reports, 200 GiB unless a
+	// test sets it (SetFreeMem): on a host the user owns it is what
+	// placement and the refusal read (DECISIONS I-1630).
+	freeMem uint64
 	// bootID and bootAt are the host's boot, which Hello carries (I-645).
 	bootID string
 	bootAt time.Time
@@ -147,6 +151,19 @@ type Fake struct {
 	// menuFailCode and menuFailMsg fail every menu (SetMenuFail).
 	menuFailCode string
 	menuFailMsg  string
+	// stopSnapErr is the snapshot_error every stop that snapshots
+	// answers instead of a blob (SetStopSnapshotError, DECISIONS I-1636).
+	stopSnapErr string
+}
+
+// SetStopSnapshotError makes every stop that would snapshot stop the
+// guest without one and answer ok with snapshot_error, as hostd does when
+// its snapshot store cannot write (DECISIONS I-1636); empty restores the
+// snapshot.
+func (f *Fake) SetStopSnapshotError(msg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stopSnapErr = msg
 }
 
 // Reboot models a host restart under hostd (DECISIONS I-645): the boot id
@@ -388,11 +405,27 @@ func (f *Fake) SetPoolUnavailable(down bool) {
 	f.mu.Unlock()
 }
 
+// SetFreeMem sets the free_mem_bytes the fake host reports from its next
+// heartbeat on; 0 is the default, 200 GiB.
+func (f *Fake) SetFreeMem(b uint64) {
+	f.mu.Lock()
+	f.freeMem = b
+	f.mu.Unlock()
+}
+
+// freeMemLocked is the free_mem_bytes to report; f.mu is held.
+func (f *Fake) freeMemLocked() uint64 {
+	if f.freeMem == 0 {
+		return 200 << 30
+	}
+	return f.freeMem
+}
+
 // Hello is the reconciliation message.
 func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID, Arch: f.opts.Arch}
+	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: f.freeMemLocked(), PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID, Arch: f.opts.Arch}
 	if !f.opts.NoClone {
 		h.Features = append(h.Features, "local_clone")
 	}
@@ -470,7 +503,7 @@ func (f *Fake) Run(ctx context.Context, conn grpc.ClientConnInterface) error {
 					}
 				}
 				dr := f.draining
-				hb := &hostdv1.Heartbeat{FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}
+				hb := &hostdv1.Heartbeat{FreeMemBytes: f.freeMemLocked(), PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, Load1: 0.1, RunningGuests: running, Draining: dr}
 				if f.poolDown {
 					hb.PoolFreeBytes, hb.PoolBytes, hb.PoolUnavailable = 0, 0, true
 				}
@@ -596,6 +629,8 @@ func kind(cmd *hostdv1.Command) string {
 		return "WakeGuest"
 	case *hostdv1.Command_SetBurst:
 		return "SetBurst"
+	case *hostdv1.Command_DeleteSnapshot:
+		return "DeleteSnapshot"
 	}
 	return ""
 }
@@ -760,17 +795,26 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		if e != nil {
 			return e
 		}
-		var blob string
+		var blob, snapErr string
 		if c.StopGuest.SnapshotFirst && f.guestdGone(g) {
 			return unresponsive(id, g)
 		}
-		if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" {
+		f.mu.Lock()
+		failSnap := f.stopSnapErr
+		f.mu.Unlock()
+		if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" && failSnap != "" {
+			snapErr = failSnap
+		} else if c.StopGuest.SnapshotFirst && f.stateOf(g) == "running" {
 			blob = fmt.Sprintf("%s/%s/%d.img.zst", "user", g.ProjectID, time.Now().UnixNano())
 			f.event(&hostdv1.Event{Ev: &hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}})
 		}
 		f.setState(g, "stopping", "")
 		f.setState(g, "stopped", "")
 		return ok(func(r *hostdv1.Result) {
+			if snapErr != "" {
+				r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{SnapshotError: snapErr}}
+				return
+			}
 			r.Payload = &hostdv1.Result_Stop{Stop: &hostdv1.StopResult{BlobPath: blob, Bytes: 1 << 30, Sha256: f.sum(blob), BaseVersion: g.BaseVersion}}
 		})
 	case *hostdv1.Command_DestroyGuest:
@@ -1057,6 +1101,10 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Lock()
 		f.draining = true
 		f.mu.Unlock()
+		return ok(nil)
+	case *hostdv1.Command_DeleteSnapshot:
+		// The fake keeps no files; a delete is always ok, as hostd's is
+		// for a snapshot already gone (DECISIONS I-1636).
 		return ok(nil)
 	case *hostdv1.Command_AnswerQuestion:
 		a := c.AnswerQuestion

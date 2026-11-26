@@ -60,6 +60,11 @@ const (
 	KindUpdateSecrets = "update_secrets"
 	KindExec          = "exec"
 	KindDrain         = "drain"
+	// KindWake is a wake on its own (DECISIONS I-1642): a user route in
+	// the http process, which holds no host's stream, asks for one the way
+	// `repose start` asks for a start, and the process that holds the
+	// stream sends it.
+	KindWake = "wake"
 )
 
 // PlanCreate is build then create, for a Nix project.
@@ -258,6 +263,9 @@ func PlanUpdateSecrets() []string { return []string{PhaseWake, PhaseUpdateSecret
 // exec that answers guest_unresponsive on a resting machine is a false
 // incident.
 func PlanExec() []string { return []string{PhaseWake, PhaseExec} }
+
+// PlanWake is the wake alone (I-1642).
+func PlanWake() []string { return []string{PhaseWake} }
 
 // PlanDrain drains a host.
 func PlanDrain() []string { return []string{PhaseDrain} }
@@ -473,7 +481,13 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		if !e.send.Connected(*p.HostID) {
 			return nil, uuid.Nil, true, nil
 		}
-		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_WakeGuest{WakeGuest: &hostdv1.WakeGuest{GuestId: p.GuestID.String(), Reason: "op"}}}, *p.HostID, false, nil
+		// A wake op carries its caller's reason (`view`, `keep_awake`),
+		// so hostd's line names what woke the machine (I-1642).
+		reason := "op"
+		if r, ok := op.Params["reason"].(string); ok && op.Kind == KindWake && r != "" {
+			reason = r
+		}
+		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_WakeGuest{WakeGuest: &hostdv1.WakeGuest{GuestId: p.GuestID.String(), Reason: reason}}}, *p.HostID, false, nil
 	case PhaseBuild:
 		return e.buildBuild(ctx, op, p)
 	case PhaseCreateGuest:
@@ -1398,6 +1412,24 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 				return err
 			}
 		}
+		if s := res.GetStop(); s != nil && s.SnapshotError != "" {
+			// The machine stopped and its volume is intact; only the
+			// snapshot is missing (a full store, DECISIONS I-1636). The
+			// same as a stop whose snapshot phase fails after the guest is
+			// down (I-158): stopped, the reason on the project, and the
+			// user told. The earlier snapshots are kept.
+			short := s.SnapshotError
+			if len(short) > 200 {
+				short = short[:200]
+			}
+			// A store with no room says what frees it: the retention, which
+			// deletes on the host too (I-1636). The user has nothing to run.
+			if strings.Contains(s.SnapshotError, "no space left on device") {
+				short = "the host's snapshot space is full. Repose deletes snapshots older than seven days, and all but a project's newest seven, once a day"
+			}
+			_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, "snapshot_failed: "+short) // best effort; the event below carries it too
+			e.notifyPlatform(ctx, p.ID, "snapshot_failed", p.Slug+" stopped, but its snapshot was not saved: "+short+".")
+		}
 		if op.Kind == KindDestroy {
 			return nil
 		}
@@ -1459,6 +1491,11 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 			if _, err := e.pool.Exec(ctx, "update projects set resting_since = null where id = $1 and resting_since is not null", p.ID); err != nil {
 				return err
 			}
+		}
+		if op.Kind == KindWake {
+			// The caller reads whether the host answered; a phase skipped
+			// for a host that is away leaves no result (I-1642).
+			return e.setResult(ctx, op, map[string]any{"was_resting": res.GetWake().GetWasResting(), "wake_ms": res.GetWake().GetWakeMs()})
 		}
 		return nil
 	case PhaseExec:
@@ -1602,11 +1639,24 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		// error with its host: freeing the placement would orphan hostd's
 		// record, and the scheduler already places nothing there.
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'stopped', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short) // best effort; the op carries the error
+	case op.Kind == KindCreate && phase == PhaseCreateGuest && code == "insufficient_capacity":
+		// The host refused the create for room (memory, CPU, its pool,
+		// its store) before it wrote a record or a volume, so there is
+		// nothing to keep or clean: the project goes, as one refused at
+		// placement never exists (DECISIONS I-1648). Left in error it
+		// read "`repose start X` restarts it", and the host no longer had
+		// the machine (the lab's F2). The op keeps the refusal, which the
+		// CLI and the dashboard show; no event, nothing billed.
+		_, _ = e.pool.Exec(ctx, "update projects set state = 'destroyed', destroyed_at = now(), host_id = null, last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, CreateRefusedPrefix+short) // best effort; the op carries the error
 	case op.Kind == KindCreate || op.Kind == KindStart || op.Kind == KindRestore:
 		if code == "capacity" {
 			_, _ = e.pool.Exec(ctx, "update projects set host_id = null where id = $1", p.ID) // free the placement
 		}
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'error', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short)
+	case op.Kind == KindWake:
+		// The route that asked is still waiting and tells the user; the
+		// machine is as it was, so there is nothing to record on it
+		// (I-1642).
 	case op.Kind == KindSnapshot:
 		_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, code+": "+short)
 		e.notifyPlatform(ctx, p.ID, "snapshot_failed", "snapshot failed: "+short)
@@ -1614,6 +1664,12 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, code+": "+short)
 	}
 }
+
+// CreateRefusedPrefix begins the last_error of a project whose create the
+// host refused for room (DECISIONS I-1648), followed by the sentence the
+// op's error gave: GET /projects/:id reads it to say the project was not
+// created, and a destroy never writes it.
+const CreateRefusedPrefix = "create_refused: "
 
 // notifyPlatform records a platform-originated event (13-notifications.md
 // §2), best effort: a failure to notify must never fail the op it reports.
@@ -1769,7 +1825,14 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 	for i, h := range live {
 		why[i] = h.Name + " " + e.ownHostWhy(h, p.Class, true, rooms)
 	}
-	return "none of your hosts can take " + aClass(p.Class) + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
+	for _, h := range live {
+		if r, ok := rooms[h.ID]; ok && !r.Shares {
+			// A host whose hostd does not share yet places by class
+			// (I-1630), so the sentence names the class it asked for.
+			return "none of your hosts can take " + aClass(p.Class) + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
+		}
+	}
+	return "none of your hosts can start a machine: " + strings.Join(why, "; "), detail
 }
 
 // ownHostWhy is why one host of the account's own took no placement, as
@@ -1805,25 +1868,36 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uu
 	if short {
 		return "has no room"
 	}
-	return "has no room for " + aClass(class) + " machine"
+	if r, ok := rooms[h.ID]; ok && !r.Shares {
+		return "has no room for " + aClass(class) + " machine"
+	}
+	return "has no room for a machine"
 }
 
 // roomWhy is the figure that keeps a machine of class off a ready host
-// with room r, as the words after the host's name, or "" when neither
-// memory nor disk is short (a host that missed a heartbeat, or one at
-// its guest slots), which "has no room" still covers. Memory first: it
-// is what the user frees by stopping a machine. The memory is
-// placement's own figure, so a host that is "6 GB free" here took a
-// small and refuses a large.
+// of the user's own with room r, as the words after the host's name, or
+// "" when neither memory nor disk is short (a host that missed a
+// heartbeat, or one at its guest slots), which "has no room" still
+// covers. Memory first: it is what the user frees by stopping a machine.
+// On a host that shares (I-1630) a machine has no size, so the memory is
+// what the host reports free against scheduler.OwnedStartFreeBytes and no
+// class is named; on an owned host whose hostd does not share yet it is
+// placement's class figure, as before (I-1586).
 func roomWhy(r scheduler.Room, class string, short bool) string {
-	need := scheduler.ClassRAM(class)
+	need := scheduler.OwnedStartFreeBytes
+	if !r.Shares {
+		need = scheduler.ClassRAM(class)
+	}
 	switch {
 	case r.FreeBytes < need:
 		if short {
 			return "has " + gbText(r.FreeBytes) + " free"
 		}
-		return "has " + gbText(r.FreeBytes) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
-			". A machine holds its memory while it runs, so stopping one frees room for it"
+		if !r.Shares {
+			return "has " + gbText(r.FreeBytes) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
+				". A machine holds its memory while it runs, so stopping one frees room for it"
+		}
+		return ownMemoryWhy(r.FreeBytes)
 	case r.PoolUnavailable:
 		return "cannot use its disk for machines"
 	case r.PoolFreeBytes < r.PoolNeedBytes:
@@ -1841,6 +1915,15 @@ func aClass(class string) string {
 		return "an xl"
 	}
 	return "a " + class
+}
+
+// ownMemoryWhy is the words after a host's name when a host the user
+// owns has too little memory free to start a machine (I-1630): what it
+// reports free and the figure a start needs. Shared by placement's
+// refusal and by a start hostd refused for memory, so both read alike.
+func ownMemoryWhy(free int64) string {
+	return "has " + gbText(max(free, 0)) + " of memory free, and a machine starts there when it has at least " +
+		gbText(scheduler.OwnedStartFreeBytes) + " free. Stopping a machine frees the memory it uses"
 }
 
 // gbText is a size in the GB the docs and `repose host ls` use (GiB),

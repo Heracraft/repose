@@ -106,6 +106,12 @@ type Class struct {
 	MemMiB       uint64
 	DiskIOPS     uint64
 	DiskMBps     uint64
+	// Shared marks the shape a guest on a host its user owns boots with
+	// (DECISIONS I-1626): no class, every vCPU the host has, the host's
+	// placeable memory, no disk caps, and a unit that shares the host
+	// with the other guests instead of holding a slice of it
+	// (GuestUnitProps). Only ownedClass sets it.
+	Shared bool
 }
 
 // Classes are the four size classes from DESIGN.md §5: 4 GB of memory
@@ -307,6 +313,28 @@ type Config struct {
 	// (hostinfo.PhysicalCores, I-735). 0 leaves the gate shut, so a host
 	// that cannot read its own topology hands out no burst.
 	Cores uint32
+	// Owned is a host the user owns, a Mac appliance or an x86 machine
+	// set up by ops/install-host-x86.sh, which says so with --owned-host
+	// in hostd.env (DECISIONS I-1626). Its guests have no size: each
+	// boots with HostVCPUs vCPUs and the host's placeable memory whatever
+	// class the api sent, they share the host, and a start needs real
+	// free memory (OwnedStartFreeBytes), not a class's reservation.
+	// HostReserveBytes is then the owned reserve (I-1628), not the
+	// fleet's eighth.
+	Owned bool
+	// HostVCPUs is the CPUs this host's kernel runs on, what an owned
+	// host's guests boot with: never more than the host has.
+	HostVCPUs uint32
+	// OwnedMaxVCPUs bounds the vCPUs an owned host's guests boot with
+	// together; 0 is no bound.
+	OwnedMaxVCPUs uint32
+	// OwnedGuestTHP keeps 2 MiB pages for an owned host's guest RAM
+	// (Cloud Hypervisor's thp, I-1574); false boots it as 4 KiB shmem,
+	// which reclaim can swap (DECISIONS I-1650).
+	OwnedGuestTHP bool
+	// OwnedGuardEvery is how often the memory guard looks on an owned
+	// host (I-1650); 0 is a second.
+	OwnedGuardEvery time.Duration
 }
 
 // Defaults fills documented values into zero fields.
@@ -396,6 +424,15 @@ func (c Config) Defaults() Config {
 	if c.UnitPoll == 0 {
 		c.UnitPoll = 5 * time.Second
 	}
+	if c.Owned {
+		// An owned guest boots with every vCPU the host has (I-1626):
+		// there is no base above which to burst, and the controller's
+		// caps would hold it to a class it does not have.
+		c.Burst = false
+		if c.HostReserveBytes == 0 {
+			c.HostReserveBytes = OwnedReserveBytes
+		}
+	}
 	if c.HostReserveBytes == 0 {
 		// An eighth of the host's memory, never below 2 GiB and never
 		// above 16 GiB, the same rule the api's scheduler and
@@ -482,6 +519,12 @@ type Deps struct {
 	// Park is the guest park's key, image volume and fingerprint
 	// (I-652, I-653); empty when the park is off.
 	Park ParkDeps
+	// GuestsSliceMemory returns guests.slice's memory.current, and
+	// SetOOMScoreAdj writes a process's oom_score_adj: an owned host's
+	// free memory and OOM order (owned.go, DECISIONS I-1626). Nil in
+	// either leaves that part out (tests that do not exercise it).
+	GuestsSliceMemory func() (uint64, error)
+	SetOOMScoreAdj    func(pid, adj int) error
 	// AfterHypervisorExit is called once a guest's hypervisor is gone
 	// (teardown). On the Mac appliance it resets the host's CPUs, which a
 	// powered-off guest leaves busy in macOS (package cpureset, DECISIONS
@@ -619,6 +662,10 @@ type Manager struct {
 	// this file's caps touch runs at all.
 	burst *burstState
 
+	// owned is the reclaim's state between samples and the OOM order's
+	// lock on a host its user owns (owned.go, DECISIONS I-1626).
+	owned ownedState
+
 	// tallyOnce publishes the host's park and unpark totals at the first
 	// unpark of this process, which is hostd's start: adding them again at
 	// a later `hostd unpark` would count what this process has already
@@ -656,6 +703,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 		ops:       make(chan struct{}, cfg.MaxOps),
 		buildCh:   make(chan job, cfg.MaxBuildQueue),
 		cidr:      ipn, base: ipn.IP.To4(), maxIndex: size - 4,
+		owned: ownedState{idle: map[string]int{}, dropped: map[string]bool{}},
 	}
 	if cfg.Burst {
 		m.burst = newBurstState()
@@ -669,6 +717,11 @@ func (m *Manager) Run() {
 	for i := 0; i < m.cfg.MaxBuilds; i++ {
 		m.wg.Add(1)
 		go m.buildWorker()
+	}
+	if m.cfg.Owned {
+		// The memory guard (DECISIONS I-1650).
+		m.wg.Add(1)
+		go m.guardLoop()
 	}
 }
 
@@ -928,8 +981,12 @@ func (m *Manager) getGuest(id string) (*state.Guest, *Error) {
 	return g, nil
 }
 
-// FreeMemBytes is total minus reserve minus what running guests hold.
+// FreeMemBytes is total minus reserve minus what running guests hold;
+// on an owned host, the host's real free memory (ownedFreeBytes).
 func (m *Manager) FreeMemBytes() uint64 {
+	if m.cfg.Owned {
+		return m.ownedFreeBytes()
+	}
 	total := m.cfg.TotalMemBytes
 	if m.d.MemInfo != nil {
 		if t, _, err := m.d.MemInfo(); err == nil && t > 0 {
@@ -1232,6 +1289,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "WakeGuest"
 	case *hostdv1.Command_SetBurst:
 		return "SetBurst"
+	case *hostdv1.Command_DeleteSnapshot:
+		return "DeleteSnapshot"
 	}
 	return ""
 }
@@ -1597,6 +1656,8 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Wake{Wake: r} })
 	case *hostdv1.Command_SetBurst:
 		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
+	case *hostdv1.Command_DeleteSnapshot:
+		return payloadOrErr(id, m.deleteSnapshot(ctx, c.DeleteSnapshot), nil)
 	case *hostdv1.Command_SetTriggers:
 		return payloadOrErr(id, m.setTriggers(ctx, c.SetTriggers), nil)
 	case *hostdv1.Command_RunTrigger:

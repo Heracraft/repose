@@ -501,3 +501,21 @@ func (m *Manager) snapBusy(lv string) bool {
 	defer m.snapMu.Unlock()
 	return m.snapInFlight[lv]
 }
+
+// deleteSnapshot removes one snapshot this host keeps on its own disk,
+// for the api's retention (DECISIONS I-1636). A store hostd cannot delete
+// from (Azure Blob, whose snapshots the api deletes itself) refuses.
+func (m *Manager) deleteSnapshot(ctx context.Context, c *hostdv1.DeleteSnapshot) *Error {
+	d, ok := m.d.Blob.(snapshot.Deleter)
+	if !ok {
+		return errf(CodeInvalidArgument, "this host keeps no snapshots to delete")
+	}
+	if c.BlobPath == "" || strings.Contains(c.BlobPath, "..") || strings.HasPrefix(c.BlobPath, "/") {
+		return errf(CodeInvalidArgument, "blob_path %q is not a snapshot path", c.BlobPath)
+	}
+	if err := d.Delete(ctx, c.BlobPath); err != nil {
+		return errf(CodeInternal, "snapshot delete: %v", err)
+	}
+	m.d.Log.Info("snapshot deleted", "event", "snapshot_delete")
+	return nil
+}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -158,6 +159,11 @@ type FakeUnit struct {
 	CPUNSec  uint64
 	MemBytes uint64
 	MainPID  int
+	// Result is systemd's Result of a unit that stopped ("oom-kill"
+	// for one the OOM killer ended); ActiveEnter orders the starts, as
+	// ActiveEnterTimestampMonotonic does.
+	Result      string
+	ActiveEnter uint64
 }
 
 // Fake is the in-memory unit table for tests. OnRun runs before a unit is
@@ -168,6 +174,7 @@ type Fake struct {
 	OnRun  func(unit string, argv []string) error
 	OnStop func(unit string)
 	Ops    []string
+	starts uint64
 }
 
 // NewFake returns an empty fake.
@@ -188,7 +195,8 @@ func (f *Fake) Run(_ context.Context, unit string, props []string, argv []string
 		}
 	}
 	f.mu.Lock()
-	f.Units[unit] = &FakeUnit{Argv: argv, Props: props, Active: true}
+	f.starts++
+	f.Units[unit] = &FakeUnit{Argv: argv, Props: props, Active: true, Result: "success", ActiveEnter: f.starts * 1000, MainPID: int(10000 + f.starts)}
 	f.mu.Unlock()
 	return nil
 }
@@ -212,6 +220,14 @@ func (f *Fake) Stop(_ context.Context, unit string) error {
 		hook(unit)
 	}
 	return nil
+}
+
+// HasOp reports whether op (such as "kill guest@<id>") was recorded,
+// under the lock, for a test whose guests are torn down concurrently.
+func (f *Fake) HasOp(op string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Contains(f.Ops, op)
 }
 
 func (f *Fake) Kill(_ context.Context, unit string) error {
@@ -249,6 +265,10 @@ func (f *Fake) Show(_ context.Context, unit string, props ...string) (map[string
 			out[p] = fmt.Sprint(u.MemBytes)
 		case "MainPID":
 			out[p] = fmt.Sprint(u.MainPID)
+		case "Result":
+			out[p] = u.Result
+		case "ActiveEnterTimestampMonotonic":
+			out[p] = fmt.Sprint(u.ActiveEnter)
 		case "ControlGroup":
 			out[p] = "/system.slice/" + unit
 		}
@@ -289,6 +309,18 @@ func (f *Fake) Exit(unit string, code int) {
 	if u, ok := f.Units[unit]; ok {
 		u.Active = false
 		u.ExitCode = code
+	}
+}
+
+// OOMKill marks a unit as ended by the OOM killer: SIGKILL, and the
+// Result systemd records for it.
+func (f *Fake) OOMKill(unit string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if u, ok := f.Units[unit]; ok {
+		u.Active = false
+		u.ExitCode = 9
+		u.Result = "oom-kill"
 	}
 }
 

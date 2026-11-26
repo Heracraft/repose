@@ -55,7 +55,7 @@ A stop ends every process on the machine. It asks first when the machine's last 
 
 The dashboard asks the same question, in the same words, before a Stop that would end an agent's turn, on the project's page and on a row of **Projects**, with **Stop anyway** and **Keep it running**. A machine with no agent mid-turn or waiting on an answer stops on one click.
 
-The command comes back once the stop is under way. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
+The command comes back once the stop is under way. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again. A stop whose snapshot could not be saved still stops the machine, its disk intact: the project is `stopped`, shows `snapshot_failed:` and the reason, and you are notified; its earlier snapshots are kept. On [your own hardware](/docs/own-hardware#snapshots-stay-on-its-disk) the reason can be that the host's snapshot space is full; the daily deletion of snapshots older than seven days, and of all but a project's newest seven, makes room.
 
 Your plan's memory is given back the moment the project reads `stopping`. The disk is kept, and a stopped project keeps counting toward [your plan's disk](/docs/billing#what-a-plan-means) until `repose rm`. A [webhook route](/docs/webhooks) answers 503 while the machine is stopped, unless it was added with `--start`.
 
@@ -123,7 +123,7 @@ A running machine nobody is using has its cores paused after about 15 minutes of
 
 Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change.
 
-Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
+Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 
 The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 

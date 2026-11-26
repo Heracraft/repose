@@ -963,6 +963,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "WakeGuest"
 	case *hostdv1.Command_SetBurst:
 		return "SetBurst"
+	case *hostdv1.Command_DeleteSnapshot:
+		return "DeleteSnapshot"
 	}
 	return "unknown"
 }

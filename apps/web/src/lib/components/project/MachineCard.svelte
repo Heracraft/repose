@@ -15,7 +15,7 @@
 <script lang="ts">
 	import Meter from '$lib/components/Meter.svelte';
 	import { diskFullPercent } from '$lib/disk';
-	import { bytes, classMemoryGB, gb, gbs } from '$lib/format';
+	import { bytes, classMemoryGB, gb, gbs, unsized } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
 
@@ -46,6 +46,16 @@
 	const GIB = 1024 * 1024 * 1024;
 
 	let memBytes = $derived(memTotal ?? classMemoryGB(project.class) * GIB);
+	// A machine on a host of the account's own has no size and may use the
+	// whole host (I-1630): the samples' memory is the host's, and the
+	// figure says whose (I-1632).
+	let memText = $derived(
+		memUsed === undefined
+			? ''
+			: unsized(project) && project.host_name
+				? `${bytes(memUsed)} of ${project.host_name}'s ${bytes(memBytes)}`
+				: `${bytes(memUsed)} of ${bytes(memBytes)}`
+	);
 
 	// Used is the guest's root filesystem, what its writes run out of; the
 	// volume's allocated figure keeps deleted files until the daily fstrim
@@ -70,7 +80,7 @@
 					label="Memory in use"
 					used={memUsed / GIB}
 					limit={memBytes / GIB}
-					valueText="{bytes(memUsed)} of {bytes(memBytes)}"
+					valueText={memText}
 				/>
 			</div>
 		{:else}

@@ -72,6 +72,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	POST /fail       {"method","path","code"} -> f.Fail
 //	POST /fail-next  {"method","path","code"} -> f.FailNext
 //	POST /unfail     {"method","path"}        -> f.Unfail
+//	POST /refuse-create {"message"}           -> f.RefuseNextCreate: the host refuses the next create
+//	                 for room and the project is gone (I-1648)
 //	POST /billing    api.BillingState as JSON -> f.SetBillingState: {"mode": off|none|trial|active|past_due|suspended|exempt,
 //	                 "plan", "scheduled_plan", "cancelled", "seats": {total, held, waiting},
 //	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices",
@@ -172,6 +174,15 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			StateHost    string `json:"state_host"`
 			State        string `json:"state"`
 			Arch         string `json:"arch"`
+			// FreeBytes, with state_host, is the free memory that host
+			// reports (I-1630).
+			FreeBytes *int64 `json:"free_bytes"`
+			// OldHostd, with state_host: that host's hostd does not
+			// share, so it is placed by class (I-1630).
+			OldHostd *bool `json:"old_hostd"`
+			// MemUsedBytes, with project_id, is what that running
+			// machine reports in use (I-1632).
+			MemUsedBytes int64 `json:"mem_used_bytes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -191,6 +202,15 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		if body.StateHost != "" && body.State != "" {
 			f.SetOwnedHostState(body.StateHost, body.State)
+		}
+		if body.StateHost != "" && body.OldHostd != nil {
+			f.SetOwnedHostOldHostd(body.StateHost, *body.OldHostd)
+		}
+		if body.StateHost != "" && body.FreeBytes != nil {
+			f.SetOwnedHostFree(body.StateHost, *body.FreeBytes)
+		}
+		if body.ProjectID != "" && body.MemUsedBytes > 0 {
+			f.SetMemUsed(body.ProjectID, body.MemUsedBytes)
 		}
 		id := ""
 		if body.Name != "" {
@@ -487,6 +507,14 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		if body, ok := decode(w, r); ok {
 			f.Unfail(body.Method + " " + body.Path)
 		}
+	})
+	mux.HandleFunc("POST /refuse-create", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Message string }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		f.RefuseNextCreate(body.Message)
 	})
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -327,14 +327,22 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 	// LEFT, a temporary machine's time left (I-347), is a column only
 	// while one of them is listed (I-484).
 	// DISK, a nearly full disk (I-567), likewise.
-	host, left, disk := false, false, false
+	// A machine on a host of the account's own has no size, and its cell
+	// is the memory it uses (I-1632); while one is listed the column is
+	// MEMORY, and a machine on repose's servers keeps its class there,
+	// which is a memory size too. An account with none reads SIZE.
+	host, left, disk, used := false, false, false, false
 	for i := range projects {
 		host = host || ownHostName(&projects[i], own) != ""
 		left = left || projects[i].ExpiresAt != nil
 		disk = disk || diskFullCell(&projects[i]) != ""
+		used = used || unsized(&projects[i])
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	head := "PROJECT\tSIZE\tSTATE\tUP\tAGENTS"
+	if used {
+		head = "PROJECT\tMEMORY\tSTATE\tUP\tAGENTS"
+	}
 	if host {
 		head += "\tHOST"
 	}
@@ -352,7 +360,7 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 			name += " *"
 		}
 		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s",
-			name, p.Class, stateWithFrozen(p), orDash(uptime(p)), orDash(agentState(p)))
+			name, orDash(sizeCell(p)), stateWithFrozen(p), orDash(uptime(p)), orDash(agentState(p)))
 		if host {
 			row += "\t" + orDash(hostCell(p, own))
 		}
@@ -369,6 +377,9 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 		p := &projects[i]
 		if r := abuseStopReason(p); r != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, r)
+		}
+		if r := oomStopReason(p); r != "" {
+			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, withNext(r, ""))
 		}
 		if l := idleLine(p, now); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
@@ -505,6 +516,10 @@ func writeStatus(w io.Writer, v statusView) {
 	if r := abuseStopReason(p); r != "" {
 		// DECISIONS I-239: the platform stopped it, and says why.
 		_, _ = fmt.Fprintf(w, "  %s\n", r)
+	}
+	if r := oomStopReason(p); r != "" {
+		// DECISIONS I-1632: its host ran out of memory.
+		_, _ = fmt.Fprintf(w, "  %s\n", withNext(r, ""))
 	}
 	if l := idleLine(p, v.now); l != "" {
 		// DECISIONS I-262, I-617: nobody on it for a day.
@@ -722,7 +737,13 @@ func statusFirstLineMux(p *Project, mux string) string {
 	if frozen(p) {
 		state += "  " + frozenWord
 	}
-	line := fmt.Sprintf("%s  %s  %s", p.Slug, state, p.Class)
+	// A machine on a host of the account's own has no size: the header
+	// says what it uses while it runs, and nothing when it does not
+	// (I-1632).
+	line := p.Slug + "  " + state
+	if c := sizeCell(p); c != "" {
+		line += "  " + c
+	}
 	if mux == multiplexer.Herdr {
 		line += "  herdr"
 	}

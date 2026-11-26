@@ -53,9 +53,10 @@ func TestEveryCommandKindIsHandled(t *testing.T) {
 		seen++
 	}
 	// 18 before SetTriggers and RunTrigger (DECISIONS I-1248, I-1252),
-	// 20 before WriteTriggerPrompt (I-1266).
-	if seen != 21 {
-		t.Fatalf("expected 21 commands in the contract, saw %d", seen)
+	// 20 before WriteTriggerPrompt (I-1266), 21 before DeleteSnapshot
+	// (I-1636).
+	if seen != 22 {
+		t.Fatalf("expected 22 commands in the contract, saw %d", seen)
 	}
 }
 

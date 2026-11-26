@@ -371,7 +371,27 @@ virtiofsd/virtiofsd.sock`, `--vsock cid=<1000+index>,socket=vsock.sock`,
 `--serial socket=console.sock`, `--console off`, `--memory
 size=<RAM>M,shared=on`, `--seccomp true` (the default, written out), and
 with `--free-page-reporting` `--balloon size=0,free_page_reporting=on`
-(DECISIONS I-652; from the guest's next start). A parked guest is
+(DECISIONS I-652; from the guest's next start).
+
+On a host its user owns (hostd `--owned-host`, DECISIONS I-1626) the class
+sizes nothing: `--cpus boot=<host CPUs>`, `--memory size=<MemTotal - owned
+reserve - 512M, down to 128M>M,shared=on`, no `bw_size`/`ops_size`, the
+balloon always, and the unit's `CPUQuota` and class weight are replaced by
+`CPUWeight=100` and `OOMScoreAdjust=1000`; MemoryMax and MemoryHigh follow
+the same RAM + 512M and + 384M rule. Each time a guest reaches running,
+hostd rewrites the running hypervisors' `/proc/<pid>/oom_score_adj` by
+start order, newest 1000 and each older one 250 lower, never under 100,
+so the OOM killer takes the newest guest first and never the appliance's
+services (`hostd.service` keeps -900, the rest systemd's 0). At its start
+hostd sets `guests.slice` `MemoryMax` to MemTotal less the owned reserve
+(I-1628) with `systemctl set-property --runtime`. `repose-zram.service`
+gives the host a zstd zram swap of half its memory at priority 100,
+`vm.swappiness=150` and `vm.page-cluster=0`. hostd drops the page cache
+(`sync; echo 1 > /proc/sys/vm/drop_caches`, then `echo 1 >
+/proc/sys/vm/compact_memory` so free page reporting, which returns only
+free 2 MiB blocks, can hand the freed pages back; through guestd) of a guest
+idle (its hypervisor's unit under a tenth of one vCPU) for five samples in a row, once until it is busy again, and of every
+running guest when free memory is under 1 GiB, at most every 5 minutes. A parked guest is
 restored with `cloud-hypervisor --api-socket ch.sock --restore
 source_url=file://<guest dir>/freeze/snap,memory_restore_mode=copy
 --seccomp true` in the same unit and sandbox; every device comes from the
@@ -395,7 +415,10 @@ for the same two reasons as `virtiofsd`, I-69) with `--sandbox namespace
 volume, I-464), MemoryMax=64M (DECISIONS I-278). hostd adds the second `--fs` only once that socket exists; a share
 that fails to start is logged (`auth_share`) and the guest boots without
 it. `repose.host.claudeLoginShare = false` (hostd
-`--claude-login-share=false`) starts no share at all.
+`--claude-login-share=false`) starts no share at all. On the Mac appliance the kernel did neither at the limit, so hostd's
+memory guard stops the newest guest itself first (free memory under
+512 MiB for 5 s, then 30 s before another; event `guest_memory_guard`,
+DECISIONS I-1650).
 
 ## Base images on the host
 
@@ -555,6 +578,29 @@ image (`nix/hosts/mac.nix`, `repose-appliance.raw.gz`) keeps running it;
   `cache_moved`. 16 GiB is two arm64 bundles of about 3 GB and a third
   being fetched during a base rotation, with room for the root image to
   grow; thin, so it costs what it holds.
+- **The snapshot store volume** (DECISIONS I-1636): `vg-guests/repose-snapshots`,
+  thin, half the volume group's size at creation rounded down to a GiB
+  (at least 4), ext4 labelled `repose-snapshots`, made once by
+  `repose-snapshots-volume` (after the pool and `repose-mac-grow`, before
+  `hostd`, which wants it) and mounted at every boot on
+  `/var/lib/repose/snapshots`, hostd's `--snapshot-dir`. Snapshots already
+  on the root are copied onto it, compared, and only then deleted from the
+  root; a copy that fails or differs leaves them where they were and logs
+  `snapshots_not_moved`. It logs `volume_created size_gib=`,
+  `volume_mounted`, `volume_mounted_already`, `snapshots_moved files=`. The
+  x86 installer installs and starts the same unit.
+- **Host files hostd brings** (DECISIONS I-1638): at every start, before
+  anything writes a snapshot, hostd on a host with
+  `/etc/repose/appliance-version` or a `hostd.env` that begins with the x86
+  installer's header writes `repose-zram`, `repose-snapshots-volume` and
+  their two units when missing or different (temporary file, fsync,
+  rename), runs `systemctl daemon-reload` when a unit changed, `systemctl
+  enable --now` each unit not yet enabled, and last puts `--owned-host`
+  at the front of `HOSTD_ARGS` in `hostd.env` (the same rename). A changed
+  `hostd.env` ends that start with exit 0 and systemd starts hostd again
+  with it (`Restart=always`; `KillMode=process` keeps the guests). One
+  `host_file` event per file written and per unit started. A host with
+  neither marker, every NixOS host, is never written to.
 - **The kernel**: kernel.org 6.18.57 with Debian's cloud-arm64 config,
   release `6.18.57-repose`, no initramfs (`root=PARTUUID=...-8a02`,
   `console=hvc0`, the fleet's `transparent_hugepage=madvise hashdist=0

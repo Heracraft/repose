@@ -513,7 +513,10 @@ REPOSE_HOST_FILE
 # guests.slice gets everything but the host reserve: an eighth of RAM,
 # floor 2 GiB, ceiling 16 GiB, the rule of the api's scheduler.HostReserve
 # and hostd's HostReserveBytes (DECISIONS I-724). Ported from
-# nix/hosts/hostd.nix (I-1494).
+# nix/hosts/hostd.nix (I-1494). On a host its user owns, hostd
+# --owned-host sets it again at every start to all but the owned reserve
+# (DECISIONS I-1628), before any guest starts; this boot figure stands
+# only for a hostd without the flag.
 set -euo pipefail
 total=$(awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo)
 gib=$((1024 * 1024 * 1024))
@@ -956,6 +959,112 @@ vgchange -q --setautoactivation n "$vg"
 vgchange -q --metadataprofile repose-thin "$vg"
 say "event=pool_created device=$dev pv_bytes=$pv metadata_bytes=$meta"
 REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-snapshots-volume <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# The snapshot store on its own thin volume (DECISIONS I-1636): hostd's
+# --snapshot-dir, /var/lib/repose/snapshots, sat on the appliance's 2 GiB
+# root, and one large stop (1.3 GB) and four tiny ones filled it on the
+# lab Mac, after which every stop failed. After the pool is active and
+# before hostd: make vg-guests/repose-snapshots once, thin, ext4, and mount it.
+#
+# Its size is half the volume group's at creation, rounded down to a GiB.
+# It is thin, so it costs the pool what the snapshots hold and no more,
+# and the pool's own thresholds (I-586) count it with the guests'
+# volumes. Every step is skipped when already done, and snapshots
+# already on the root are moved in, not hidden under the mount.
+set -euo pipefail
+vg=${REPOSE_SNAPSHOTS_VG:-vg-guests}
+lv=repose-snapshots
+dir=${REPOSE_SNAPSHOTS_DIR:-/var/lib/repose/snapshots}
+say() { echo "repose-snapshots-volume: $*"; }
+
+if ! lvs "$vg/$lv" >/dev/null 2>&1; then
+  vg_bytes=$(vgs --noheadings --units b --nosuffix -o vg_size "$vg" | tr -d ' ')
+  gib=$((vg_bytes / 2 / 1073741824))
+  if [ "$gib" -lt 4 ]; then gib=4; fi
+  lvcreate -q -y -V "${gib}G" -T "$vg/thin" -n "$lv"
+  udevadm settle --timeout 30 || true
+  mkfs.ext4 -q -L repose-snapshots -E lazy_itable_init=1 "/dev/$vg/$lv"
+  say "event=volume_created size_gib=$gib"
+fi
+if [ "$(lvs --noheadings -o lv_active "$vg/$lv" | tr -d ' ')" != active ]; then
+  lvchange -ay "$vg/$lv"
+fi
+mkdir -p "$dir"
+if mountpoint -q "$dir"; then
+  say "event=volume_mounted_already"
+else
+  if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+    tmp=$(mktemp -d "${REPOSE_SNAPSHOTS_TMP:-/run}/repose-snapshots.XXXXXX")
+    mount -o noatime,discard "/dev/$vg/$lv" "$tmp"
+    # Copied, then checked, then deleted: a snapshot is never in neither.
+    # A copy that fails or differs leaves the root as it was, and hostd
+    # keeps writing there until the cause is fixed. The check skips the
+    # new filesystem's lost+found, which mkfs.ext4 made and the root never
+    # had (every move failed on it, the lab 2026-11-26 01:42Z); it stays,
+    # as e2fsck's place for what it recovers.
+    if ! cp -a "$dir"/. "$tmp"/ || ! diff -rq -x lost+found "$dir" "$tmp" >/dev/null; then
+      umount "$tmp"
+      rmdir "$tmp"
+      say "event=snapshots_not_moved reason=copy_failed"
+      exit 1
+    fi
+    n=$(find "$dir" -type f | wc -l)
+    umount "$tmp"
+    rmdir "$tmp"
+    find "$dir" -mindepth 1 -delete
+    say "event=snapshots_moved files=$n"
+  fi
+  mount -o noatime,discard "/dev/$vg/$lv" "$dir"
+  say "event=volume_mounted"
+fi
+chmod 0755 "$dir"
+REPOSE_HOST_FILE
+  install_file 0755 /usr/local/lib/repose/repose-zram <<'REPOSE_HOST_FILE'
+#!/bin/bash
+# Compressed swap in memory for a host its user owns (DECISIONS I-1626):
+# when the guests together want more than the host has, the coldest guest
+# pages are compressed into RAM instead of the OOM killer ending a guest,
+# so overflow is slowness first. Guest RAM is a shared memfd, which the
+# kernel can swap like any anonymous page.
+#
+# One zram device of half the host's memory, compressed with zstd: guest
+# memory compresses about three to one, so a full device holds about a
+# sixth of the host. Highest priority, so a host that also has a swap
+# file or partition fills this first. A kernel without zram leaves the
+# host as it was and says so; nothing else depends on this unit. There is
+# no stop: a swapoff at shutdown would page every guest's swapped memory
+# back in while guests may still run, and power-off ends the device.
+set -euo pipefail
+dev=/dev/zram0
+sys=/sys/block/zram0
+say() { echo "repose-zram: $*"; }
+
+if grep -q "^$dev " /proc/swaps; then
+  say "event=zram_ready already=1"
+  exit 0
+fi
+modprobe zram num_devices=1 2>/dev/null || true
+if [ ! -d "$sys" ]; then
+  say "event=zram_unavailable reason=no_module"
+  exit 0
+fi
+total=$(awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo)
+size=$((total / 2))
+echo 1 > "$sys/reset" 2>/dev/null || true
+if ! echo zstd > "$sys/comp_algorithm" 2>/dev/null; then
+  say "event=zram_algorithm algorithm=$(sed 's/.*\[\([^]]*\)\].*/\1/' "$sys/comp_algorithm")"
+fi
+echo "$size" > "$sys/disksize"
+mkswap "$dev" >/dev/null
+swapon -p 100 "$dev"
+# For swap in memory the kernel's documentation suggests a swappiness
+# over 100 and no read-ahead: a page in zram costs a decompression, not a
+# disk seek, so there is nothing to gain from reading its neighbours.
+echo 150 > /proc/sys/vm/swappiness
+echo 0 > /proc/sys/vm/page-cluster
+say "event=zram_ready disksize_bytes=$size algorithm=$(sed 's/.*\[\([^]]*\)\].*/\1/' "$sys/comp_algorithm")"
+REPOSE_HOST_FILE
   install_file 0755 /usr/local/lib/repose/repose-guest-loop <<'REPOSE_HOST_FILE'
 #!/bin/bash
 # Attach the file that holds vg-guests on a machine with one disk
@@ -1010,8 +1119,8 @@ REPOSE_HOST_FILE
 # update included, does not stop them, and hostd reconciles them at start.
 [Unit]
 Description=repose hostd: runs tenants' guests on this host
-Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-nftables.service
-After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service lvm2-monitor.service
+Wants=network-online.target repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service repose-nftables.service
+After=network-online.target repose-nftables.service repose-host-net.service repose-register.service repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service lvm2-monitor.service
 
 [Service]
 EnvironmentFile=/etc/repose/hostd.env
@@ -1246,6 +1355,40 @@ Unit=repose-snapshot.service
 
 [Install]
 WantedBy=timers.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-snapshots-volume.service <<'REPOSE_HOST_FILE'
+# hostd's snapshot store on vg-guests/repose-snapshots (DECISIONS I-1636).
+[Unit]
+Description=Mount the snapshot store volume on /var/lib/repose/snapshots
+After=repose-guest-pool.service repose-mac-grow.service
+Wants=repose-guest-pool.service
+Before=hostd.service
+ConditionPathExists=!/run/repose/pool-hold
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-snapshots-volume
+
+[Install]
+WantedBy=multi-user.target
+REPOSE_HOST_FILE
+  install_file 0644 /etc/systemd/system/repose-zram.service <<'REPOSE_HOST_FILE'
+# Compressed swap in memory for a host its user owns (DECISIONS I-1626):
+# guests share the host's memory, and overflow is compressed into RAM
+# before the OOM killer ends a guest.
+[Unit]
+Description=Compressed swap in memory for guests that share the host
+After=systemd-modules-load.service
+Before=hostd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-zram
+
+[Install]
+WantedBy=multi-user.target
 REPOSE_HOST_FILE
   install_file 0644 /etc/systemd/system/virtiofsd-auth@.service.d/10-repose.conf <<'REPOSE_HOST_FILE'
 [Unit]
@@ -1630,7 +1773,7 @@ uninstall_host() {
 
   # hostd and its timers first, so nothing starts a guest again; then the
   # guests, which with their host gone have nowhere else to be.
-  # shellcheck disable=SC2329 # run through step
+  # shellcheck disable=SC2329,SC2317 # run through step (SC2317 is the older shellcheck's name, CI's)
   quiet() { "$@" >/dev/null 2>&1 || true; }
   step "stop hostd and its timers" -- quiet systemctl stop repose-hostd-update.timer repose-snapshot.timer \
     repose-hostd-update.service repose-snapshot.service repose-register.service hostd.service
@@ -1823,6 +1966,12 @@ else
     die "hostd did not install: GitHub's releases API refused the lookup. Nothing is registered yet; run this again in an hour, or pass --manifest-url."
 fi
 
+# A hostd from before DECISIONS I-1626 refuses a flag it does not know, so
+# the flag goes in only when the hostd just installed takes it.
+owned_flag=""
+if /usr/local/bin/hostd --help 2>&1 | grep -q -- '-owned-host'; then
+  owned_flag="--owned-host "
+fi
 {
   echo "# hostd's flags on an x86 host (ops/install-host-x86.sh, DECISIONS I-1498)."
   if [ -n "$api" ]; then
@@ -1831,8 +1980,9 @@ fi
     echo "HOSTD_API_ARGS=--api-addr $API_ADDR --api-server-name $API_SERVER_NAME --api-ca /etc/repose/api-ca.pem"
   fi
   echo "# Snapshots on its own disk (DECISIONS I-1372); no park: an x86 host has"
-  echo "# no launcher and no Key Vault to wrap the image key with."
-  echo "HOSTD_ARGS=--snapshot-dir /var/lib/repose/snapshots"
+  echo "# no launcher and no Key Vault to wrap the image key with. The machine is"
+  echo "# its user's own: guests share its memory and every vCPU (I-1626, I-1628)."
+  echo "HOSTD_ARGS=${owned_flag}--snapshot-dir /var/lib/repose/snapshots"
 } | install_file 0644 /etc/repose/hostd.env
 if [ -n "$api_ca_file" ]; then
   install_file 0644 /etc/repose/api-ca.pem < "$api_ca_file"
@@ -1898,8 +2048,8 @@ else
 fi
 
 # ---- the units -----------------------------------------------------------------
-units=(systemd-networkd.service repose-nftables.service repose-fault-around.service
-  repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service
+units=(systemd-networkd.service repose-nftables.service repose-fault-around.service repose-zram.service
+  repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service repose-launcher-join.service
   repose-host-net.service repose-register.service hostd.service
   repose-snapshot.timer repose-hostd-update.timer)
 if [ "$dry" = 1 ]; then
@@ -1916,7 +2066,9 @@ else
     esac
   done
   systemctl start repose-fault-around.service || say "warning: fault-around could not be set (no debugfs?); see docs/ops for I-1040"
-  systemctl start repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-launcher-join.service repose-host-net.service
+  systemctl start repose-zram.service || say "warning: no compressed swap (zram): guests that overflow memory are stopped rather than slowed"
+
+  systemctl start repose-guests-slice.service repose-guest-pool.service repose-images-volume.service repose-snapshots-volume.service repose-launcher-join.service repose-host-net.service
   systemctl start --no-block repose-register.service
   restart_hostd=0
   for f in "${changed[@]}"; do

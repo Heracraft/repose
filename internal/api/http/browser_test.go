@@ -33,7 +33,7 @@ func newViewEnv(t *testing.T, relay *fakeRelay, waker httpapi.Waker) *env {
 		d.ViewRelay = relay
 		d.ViewOrigins = []string{"https://repose.run"}
 		if waker != nil {
-			d.Resting = waker
+			d.UserWake = waker
 		}
 	})
 }

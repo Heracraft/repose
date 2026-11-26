@@ -11,6 +11,7 @@ import {
 	destroyProject,
 	ownedHost,
 	pruneProjects,
+	refuseNextCreate,
 	removeOwnedHosts,
 	resetBilling,
 	setBilling
@@ -75,11 +76,12 @@ async function openForm(page: Page) {
 	await expect(form(page)).toBeVisible();
 }
 
-/** Opens Options, where size, lifetime, place and repository are. */
+/** Opens Options, where size, lifetime, place and repository are. Size
+ * is there only for repose's servers (I-1632), so Keep it says it opened. */
 async function options(page: Page) {
 	const t = form(page).getByRole('button', { name: 'Options' });
 	if (await t.isVisible()) await t.click();
-	await expect(form(page).getByLabel('Size')).toBeVisible();
+	await expect(form(page).getByLabel('Keep it')).toBeVisible();
 }
 
 /** A running project made straight on the fake, of this class. */
@@ -554,41 +556,113 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 });
 
 // A host of the customer's own that is full says which host and what it
-// has against what the machine needs, as the CLI does (I-1586). The
-// x86 pass measured "repose has no room for this machine" here, which
-// named neither. The fake's Mac is 24 GB: 21 GB for machines, so after
-// an xl (16 GB) a large (8 GB) does not fit.
+// has, as the CLI does (I-1586). The x86 pass measured "repose has no
+// room for this machine" here, which named neither. Since I-1630 full
+// is the host reporting less than the gigabyte a machine needs to start,
+// whatever the classes already there, and no class is named.
 test('a full host of your own names itself and the memory it has', async ({ page }) => {
 	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
 	await ownedHost({ limit: -1 });
 	await ownedHost({ name: 'mac-full' });
 	try {
-		const res = await fetch(`${api}/projects`, {
-			method: 'POST',
-			headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
-			body: JSON.stringify({ name: unique('big'), class: 'xl', placement: 'own' })
-		});
-		expect(res.status).toBe(201);
-		litter.push(((await res.json()) as { id: string }).id);
+		// Two xl on a 24 GB Mac: sharing, not a refusal.
+		for (const big of ['big-a', 'big-b']) {
+			const res = await fetch(`${api}/projects`, {
+				method: 'POST',
+				headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: unique(big), class: 'xl', placement: 'own' })
+			});
+			expect(res.status).toBe(201);
+			litter.push(((await res.json()) as { id: string }).id);
+		}
+		await ownedHost({ state_host: 'mac-full', free_bytes: Math.round(0.8 * 2 ** 30) });
 
 		const name = unique('no-room');
 		await openForm(page);
 		await form(page).getByLabel('Name').fill(name);
-		await options(page);
-		await form(page).getByLabel('Size').selectOption('large');
 		await form(page).getByRole('button', { name: 'Create' }).click();
 		await expect(form(page).getByTestId('new-machine-error')).toContainText(
-			'your host mac-full has 5 GB of memory free for machines, and a large machine needs 8 GB'
+			'your host mac-full has 0.8 GB of memory free, and a machine starts there when it has at least 1 GB free'
 		);
 		expect(await fromApi(name)).toBeUndefined();
 	} finally {
 		while (litter.length) await destroyProject(api, litter.pop()!);
-		const res = await fetch(`${api}/hosts`, { headers: { Authorization: 'Bearer playwright' } });
-		for (const h of (await res.json()) as { id: string }[]) {
-			await fetch(`${api}/hosts/${h.id}`, {
-				method: 'DELETE',
-				headers: { Authorization: 'Bearer playwright' }
-			});
-		}
+		await removeOwnedHosts(api).catch(() => {});
 	}
+});
+
+// A machine that runs on a host of your own has no size (I-1630): the
+// form asks no size and its summary names none while Runs on is your
+// host, and asks it again for repose's servers; the list's column is
+// Memory and says what the machine uses, and so does its page (I-1632).
+test('a machine on your own host shows what it uses, not a size', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	await ownedHost({ limit: -1 });
+	await ownedHost({ name: 'mac-mini' });
+	const name = unique('shared');
+	let madeId: string | undefined;
+	try {
+		await openForm(page);
+		const summary = form(page).getByTestId('nm-summary');
+		await expect(summary).toContainText('on mac-mini');
+		await expect(summary).not.toContainText('GB');
+		await options(page);
+		await expect(form(page).getByLabel('Size')).toHaveCount(0);
+		await shots(page, 'new-project-own-host-no-size');
+		await form(page).getByLabel('Runs on').selectOption('hosted');
+		await expect(form(page).getByLabel('Size')).toBeVisible();
+		await expect(summary).toContainText('large · 2 cores · 8 GB');
+		await form(page).getByLabel('Runs on').selectOption('own');
+
+		await form(page).getByLabel('Name').fill(name);
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		await page.waitForURL(/\/projects\/[^/]+$/);
+		const made = await fromApi(name);
+		expect(made).toBeTruthy();
+		madeId = made!.id;
+		await expect(page.getByTestId('project-used')).toHaveText('1.4 GB used');
+		await expect(page.getByTestId('project-class')).toHaveCount(0);
+		await shots(page, 'project-own-host-used');
+
+		await page.goto('/projects');
+		const row = page.locator('tr', { has: page.getByRole('link', { name, exact: true }) });
+		await expect(page.getByRole('columnheader', { name: 'Memory' })).toBeVisible();
+		await expect(row.getByTestId('row-size')).toHaveText('1.4 GB used');
+		await shots(page, 'projects-own-host-memory');
+	} finally {
+		if (madeId) await destroyProject(api, madeId);
+		await removeOwnedHosts(api).catch(() => {});
+	}
+});
+
+// A create the host refuses for room leaves nothing (I-1648): the page
+// the form opens says the machine was not created and why, in the api's
+// sentence, the list has no row for it, and the name works again.
+test('a create the host refuses says why and leaves no row', async ({ page }) => {
+	const why =
+		'the host has as many machines running as its cores allow; stopping a running machine frees room';
+	await openForm(page);
+	const name = unique('refused');
+	await form(page).getByLabel('Name').fill(name);
+	await refuseNextCreate(why);
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	await expect(page.getByRole('heading', { name: 'Not created', level: 1 })).toBeVisible();
+	await expect(page.getByTestId('not-created')).toHaveText(`${name} was not created: ${why}.`);
+	await expect(page.getByText('Destroyed')).toHaveCount(0);
+	await shots(page, 'create-refused');
+	expect(await fromApi(name)).toBeFalsy();
+	await page.getByRole('link', { name: 'Back to Projects' }).click();
+	await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
+	await expect(page.getByRole('link', { name, exact: true })).toHaveCount(0);
+	// The name is free: the same name makes a machine.
+	await openForm(page);
+	await form(page).getByLabel('Name').fill(name);
+	await form(page).getByLabel('Name').press('Enter');
+	await page.waitForURL(/\/projects\/[^/]+$/);
+	const made = await fromApi(name);
+	expect(made).toBeTruthy();
+	litter.push(made!.id);
 });

@@ -104,6 +104,30 @@ func (f *FileBlob) Upload(_ context.Context, path string, r io.Reader, meta map[
 	return cr.n, nil
 }
 
+// Deleter is a store hostd removes snapshots from itself: an owned
+// host's FileBlob, whose snapshots the api's retention cannot reach
+// (DECISIONS I-1636). Azure's are deleted by the api.
+type Deleter interface {
+	// Delete removes path and its metadata; a path already gone is not
+	// an error.
+	Delete(ctx context.Context, path string) error
+}
+
+// Delete implements Deleter: the snapshot, its metadata and any upload
+// left half-written.
+func (f *FileBlob) Delete(_ context.Context, path string) error {
+	p, err := f.full(path)
+	if err != nil {
+		return err
+	}
+	for _, q := range []string{p, p + ".meta", p + ".part"} {
+		if err := os.Remove(q); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
 // fileVersion is a FileBlob's version: an upload renames a new file into
 // place, so its modification time and size change with the bytes.
 func fileVersion(fi os.FileInfo) string {

@@ -5,7 +5,7 @@
 // so its default is one the api takes, and says so before Enter when
 // nothing fits.
 import type { BillingMode } from './billingMode';
-import { classMemoryGB } from './format';
+import { classMemoryGB, unsized } from './format';
 import { holdsMemory } from './plans';
 import type { Billing, Project } from './api/types';
 
@@ -36,11 +36,11 @@ export interface PlanRoom {
 export function planRoom(
 	mode: BillingMode,
 	billing: Pick<Billing, 'usage'> | undefined,
-	projects: Pick<Project, 'id' | 'name' | 'slug' | 'class' | 'state'>[] | undefined
+	projects: Pick<Project, 'id' | 'name' | 'slug' | 'class' | 'state' | 'sized'>[] | undefined
 ): PlanRoom | undefined {
 	const limitGB = billing?.usage.memory_gb ?? 0;
 	if (!METERED.has(mode) || limitGB <= 0 || !projects) return undefined;
-	const holders = projects.filter(holdsMemory);
+	const holders = projects.filter((p) => holdsMemory(p) && !unsized(p));
 	return {
 		limitGB,
 		usedGB: holders.reduce((n, p) => n + classMemoryGB(p.class), 0),

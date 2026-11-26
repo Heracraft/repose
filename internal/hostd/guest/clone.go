@@ -54,6 +54,9 @@ func (m *Manager) Features() []string {
 	if m.ErofsOn() {
 		f = append(f, FeatureErofs)
 	}
+	if m.cfg.Owned {
+		f = append(f, FeatureShared)
+	}
 	return f
 }
 

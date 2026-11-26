@@ -115,6 +115,16 @@ export async function triggerPrompt(projectId: string, trigger: string): Promise
 	return res.text();
 }
 
+/** The host refuses the next create for room; the project is gone at once (I-1648). */
+export async function refuseNextCreate(message: string): Promise<void> {
+	const res = await fetch(`${adminURL()}/refuse-create`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ message })
+	});
+	if (!res.ok) throw new Error(`/refuse-create: ${res.status}`);
+}
+
 export const failNext = (method: string, path: string, code: string) =>
 	adminCall('/fail-next', { method, path, code });
 export const fail = (method: string, path: string, code: string) =>
@@ -439,6 +449,10 @@ export async function ownedHost(body: {
 	state?: string;
 	/** Overrides the host's reported arch, for layout resilience tests (ENG-88). */
 	arch?: string;
+	/** With state_host: the free memory that host reports (I-1630). */
+	free_bytes?: number;
+	/** With project_id: the memory that running machine reports in use (I-1632). */
+	mem_used_bytes?: number;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',
@@ -453,7 +467,7 @@ export async function ownedHost(body: {
  * Removes every host the shared account still owns, and fails when one
  * stays. A test about one host starts from none: with any number allowed
  * (I-1582, I-1594) a host another file left behind turns the create's refusal
- * into "none of your hosts can take ...", which names them all.
+ * into "none of your hosts can start a machine: ...", which names them all.
  */
 export async function removeOwnedHosts(apiURL: string): Promise<void> {
 	const auth = { Authorization: 'Bearer playwright' };

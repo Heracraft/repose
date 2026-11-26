@@ -76,8 +76,7 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 	if m.Draining() {
 		return errf(CodeInsufficientCapacity, "host draining")
 	}
-	c, ok := Classes[class]
-	if !ok {
+	if _, ok := Classes[class]; !ok {
 		return errf(CodeInvalidArgument, "class %q must be tiny, small, large or xl", class)
 	}
 	if volumeBytes < m.cfg.MinVolumeBytes || volumeBytes > m.cfg.MaxVolumeBytes {
@@ -86,8 +85,10 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 	if err := m.poolRoom(); err != nil {
 		return err
 	}
-	if needMem && m.FreeMemBytes() < (c.MemMiB+OverheadMiB)<<20 {
-		return errf(CodeInsufficientCapacity, "not enough free memory for a %s guest", class)
+	if needMem {
+		if err := m.memRoom(class); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -290,7 +291,7 @@ func (m *Manager) fail(g *state.Guest, step int, err error) *Error {
 func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op string, volume time.Duration) *Error {
 	bootStart := m.d.Now()
 	m.setMenuErr(g.GuestID, nil)
-	class := Classes[g.Class]
+	class := m.classOf(g.Class)
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
 		return m.fail(g, firstStep, err)
@@ -308,6 +309,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
 		FreePageReporting: m.cfg.FreePageReporting,
+		NoTHP:             m.cfg.Owned && !m.cfg.OwnedGuestTHP,
 	}
 	if erofs {
 		// The bundle from the image cache: vda the rootfs.erofs, the
@@ -453,6 +455,9 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	if err := m.setState(g, StateRunning, ""); err != nil {
 		return m.fail(g, stepReady, err)
 	}
+	// The newest guest is the OOM killer's first choice on an owned host;
+	// the older ones move down (I-1626).
+	m.rankOOM(ctx)
 	done := m.d.Now()
 	// SetupMs is the set-up phase as deliver measured it, not what is
 	// left of the delivery after the registration: since I-1408 the ssh
@@ -821,8 +826,8 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		m.log(g).Info("guest class changed", "event", "guest_start", "class", c.Class, "prev", g.Class)
 		g.Class = c.Class
 	}
-	if m.FreeMemBytes() < (Classes[g.Class].MemMiB+OverheadMiB)<<20 {
-		return nil, errf(CodeInsufficientCapacity, "not enough free memory for a %s guest", g.Class)
+	if err := m.memRoom(g.Class); err != nil {
+		return nil, err
 	}
 	// A start adds no bytes, but a running guest writes: past
 	// PoolStartRefusePct the pool is minutes from full, and one more
@@ -1315,6 +1320,14 @@ func (mon *monitor) checkUnits() {
 		return
 	}
 	if !active {
+		if m.cfg.Owned && m.oomExit(mon.ctx, g) {
+			// On a host its user owns the OOM killer may take a guest
+			// when memory truly runs out; it is stopped, not broken
+			// (DECISIONS I-1626).
+			mon.cancel()
+			m.enqueue(g.GuestID, job{internal: func(ctx context.Context) { m.oomStopped(ctx, g.GuestID) }})
+			return
+		}
 		code := "unknown"
 		if props, err := m.d.Systemd.Show(mon.ctx, GuestUnit(g.GuestID), "ExecMainStatus"); err == nil {
 			code = props["ExecMainStatus"]

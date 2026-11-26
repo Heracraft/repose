@@ -482,7 +482,7 @@ func (f *Fake) listProjects(w http.ResponseWriter, r *http.Request) *apiError {
 		if bound != nil && bound.Project != nil && bound.Project.ID != p.ID {
 			continue
 		}
-		out = append(out, p.Project)
+		out = append(out, f.out(p))
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -595,6 +595,22 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 			rev.Personal, rev.personalText = true, cur.Fragment
 		}
 	}
+	if msg := f.refuseCreate; msg != "" {
+		// The host refused it (I-1648): the op says why, and the project
+		// is removed, as the api's onFail does.
+		f.refuseCreate = ""
+		o := f.newOp(p, "create")
+		o.State, o.Error = "error", msg
+		p.State = "creating"
+		p.OpID = o.id
+		out := f.out(p)
+		p.OpID = ""
+		p.State, p.destroyed, p.destroyedAt, p.HostID, p.HostName = "destroyed", true, f.now(), "", ""
+		le := createRefusedPrefix + msg
+		p.LastError = &le
+		writeJSON(w, http.StatusCreated, out)
+		return nil
+	}
 	if f.opts.CreateDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
 		o := f.newOp(p, "create")
@@ -617,16 +633,26 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		writeJSON(w, http.StatusCreated, out)
 		return nil
 	}
-	writeJSON(w, http.StatusCreated, p.Project)
+	writeJSON(w, http.StatusCreated, f.out(p))
 	return nil
 }
+
+// createRefusedPrefix is the api's ops.CreateRefusedPrefix (I-1648).
+const createRefusedPrefix = "create_refused: "
 
 func (f *Fake) getProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
+		// A project whose create the host refused reads as not created,
+		// and why (the api's notCreated, I-1648).
+		if gone, ae := f.projectAny(userFrom(r), r.PathValue("id")); ae == nil && gone.destroyed && gone.LastError != nil {
+			if why, ok := strings.CutPrefix(*gone.LastError, createRefusedPrefix); ok {
+				return errf("not_found", "%s was not created: %s", gone.Slug, why).withDetail(map[string]any{"reason": "create_refused"})
+			}
+		}
 		return e
 	}
-	out := p.Project
+	out := f.out(p)
 	if f.opts.NoProjectOpID {
 		out.OpID = ""
 	}
@@ -751,7 +777,7 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if body.Multiplexer != nil {
 		p.Multiplexer = *body.Multiplexer
 	}
-	writeJSON(w, http.StatusOK, p.Project)
+	writeJSON(w, http.StatusOK, f.out(p))
 	return nil
 }
 
@@ -1208,6 +1234,15 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 	// class table the way its own copy of it did before I-784.
 	vcpus := scheduler.ClassVCPUs(p.Class)
 	mem := scheduler.ClassRAM(p.Class)
+	used := mem * 45 / 100
+	// A machine on a host of the account's own has no size: its figures
+	// are the host's, and what it uses is the project's own (I-1632).
+	for _, h := range f.ownedHosts {
+		if h.ID == p.HostID && !h.oldHostd && h.MemBytes > 0 && h.VCPUs > 0 {
+			vcpus, mem = float64(h.VCPUs), h.MemBytes
+			used = f.out(p).MemUsedBytes
+		}
+	}
 	points := []map[string]any{}
 	procs := []map[string]any{}
 	if p.State == "running" {
@@ -1222,7 +1257,7 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 				pressure = 0.62
 			}
 			points = append(points, map[string]any{
-				"ts": end.Add(-time.Duration(i*step) * time.Second), "cpu": busy, "mem_used_bytes": mem * 45 / 100,
+				"ts": end.Add(-time.Duration(i*step) * time.Second), "cpu": busy, "mem_used_bytes": used,
 				"cpu_pressure": pressure, "host_cpu_wait": 0.02, "disk_used_bytes": int64(6200) << 20,
 			})
 		}

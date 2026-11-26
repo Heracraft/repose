@@ -590,6 +590,7 @@ func (a *App) loops(ctx context.Context) {
 		a.m.BlobConfigured.Set(configured)
 	}
 	expiry := snapshots.New(a.pool, blob, a.m, a.log)
+	expiry.Hosts = hostSnapshots{a.hostMgr}
 	go expiry.Run(ctx, 24*time.Hour)
 	go expiry.RunAgeGauge(ctx, time.Hour)
 	rollup := billing.NewRollup(a.pool, a.m, a.log)
@@ -966,4 +967,21 @@ func (a *App) someoneAttached(ctx context.Context, projectID uuid.UUID) (bool, e
 		return false, nil
 	}
 	return sessions > 0 || clients > 0, nil
+}
+
+// hostSnapshots sends an owned host's snapshot expiry to that host as
+// hostd's DeleteSnapshot (DECISIONS I-1636). The send is the delete's
+// whole part here: hostd's delete is idempotent, and a host with no
+// stream now keeps the row for the next run.
+type hostSnapshots struct{ m *hostmgr.Server }
+
+func (h hostSnapshots) DeleteOnHost(ctx context.Context, hostID uuid.UUID, path string) error {
+	cmd := &hostdv1.Command{CommandId: store.NewID().String(), Cmd: &hostdv1.Command_DeleteSnapshot{DeleteSnapshot: &hostdv1.DeleteSnapshot{BlobPath: path}}}
+	if err := h.m.Send(ctx, hostID, cmd); err != nil {
+		if errors.Is(err, hostmgr.ErrHostNotConnected) {
+			return snapshots.ErrHostAway
+		}
+		return err
+	}
+	return nil
 }

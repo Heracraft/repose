@@ -252,6 +252,13 @@ export interface Project {
 	/** The name the account gave the host it is on, for a host of its own
 	 * only (I-1392); a host repose runs has host_id alone. */
 	host_name?: string;
+	/** False for a machine on a host of the account's own: it shares that
+	 * host's memory and cores and has no size, so `class` says nothing
+	 * (I-1630, I-1632). Absent from an older api, which means sized. */
+	sized?: boolean;
+	/** Memory the running machine uses, as it sees it, from the newest
+	 * sample (I-1632); absent when it is not running or not sampled yet. */
+	mem_used_bytes?: number;
 	guest_ip?: string;
 	agent_default: string;
 	hold_base_updates: boolean;

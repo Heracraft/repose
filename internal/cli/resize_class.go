@@ -206,6 +206,13 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 		return err
 	}
 	s := project.Slug
+	if unsized(project) {
+		// A machine on a host of the account's own has no size (I-1632):
+		// accepted for one release, so a script keeps working, and
+		// nothing is stopped or changed.
+		sizeIgnored(e.ErrOut, s, project.HostName)
+		return nil
+	}
 	if project.Class == class {
 		_, _ = fmt.Fprintf(e.Out, "%s is already %s (%s).\n", s, class, classSummary(class))
 		return nil
