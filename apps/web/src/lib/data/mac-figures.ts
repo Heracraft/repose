@@ -209,7 +209,7 @@ export const RESTART: Chart = {
 	],
 	// I-1662: a restart repose does not start (Apple menu, a macOS update, a
 	// power loss) ends every VZ VM at its first signal, so memory is lost
-	// there in design 2 too. I-1666: parked sandboxes are restored once the
+	// there in design 2 too. the design-2 park decision (on branch design2, not yet on main): parked sandboxes are restored once the
 	// user's session is unlocked; the restarts above ran with autologin.
 	note: 'A restart from the Apple menu, a macOS update or a power cut still loses memory. Timed to the sandboxes restored, and for the Linux VM to ssh answering.'
 };
