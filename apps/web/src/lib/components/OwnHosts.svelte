@@ -326,8 +326,7 @@
 									<span class="pm-line"
 										><span class="dot" data-tone={tone(h.state)}></span>{stateWord(
 											h.state
-										)}{#if h.last_heartbeat_at}<span class="nw">
-												· heard {heard(h)}</span
+										)}{#if h.last_heartbeat_at}<span class="nw">&nbsp;· heard {heard(h)}</span
 											>{/if}</span
 									>
 									{#if h.mem_bytes}<span class="pm-line">{size(h)}</span>{/if}
