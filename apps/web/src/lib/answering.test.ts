@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { notAnsweringSince, notAnsweringText } from './answering';
+import { notAnsweringSince, notAnsweringText, parkedText } from './answering';
 import { bytes } from './format';
 
 describe('notAnswering (I-1652)', () => {
@@ -16,6 +16,19 @@ describe('notAnswering (I-1652)', () => {
 		).toBeUndefined();
 		expect(notAnsweringSince({ state: 'stopped', not_answering: { since } })).toBeUndefined();
 		expect(notAnsweringText({ state: 'running' }, now)).toBe('');
+	});
+});
+
+describe('parked (I-1672)', () => {
+	const parked = { since: '2026-11-26T03:32:00Z', waits_for: 'login' };
+	it('names the host and that its memory is kept', () => {
+		expect(parkedText({ state: 'running', parked, host_name: 'mac-mini' })).toBe(
+			'Parked: waits for you to log in to mac-mini; its memory is kept'
+		);
+	});
+	it('says nothing of a machine that is not running or not parked', () => {
+		expect(parkedText({ state: 'stopped', parked })).toBe('');
+		expect(parkedText({ state: 'running' })).toBe('');
 	});
 });
 
