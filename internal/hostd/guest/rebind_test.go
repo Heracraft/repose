@@ -19,7 +19,7 @@ func rebinds(fh *parkHarness, id string) int {
 	return n
 }
 
-// On a Mac the guest's bind of ~/.claude/.credentials.json went stale
+// On a Mac the guest's bind of the login file went stale
 // after a VZ restore while the share's directory still worked (lab Mac,
 // 2026-11-26 16:17Z); after every restore of a guest with the login share,
 // hostd binds the file again.

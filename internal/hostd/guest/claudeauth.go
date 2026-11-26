@@ -391,15 +391,18 @@ func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
 	return os.Rename(tmp, p)
 }
 
-// rebindAuthScript binds the login file again inside the guest: the lazy
-// unmount drops a bind whose inode the restore left stale, and the guest's
-// own script makes it afresh, as at boot (it does nothing without a share).
-const rebindAuthScript = `umount -l /home/dev/.claude/.credentials.json 2>/dev/null; exec /usr/local/libexec/repose/repose-claude-auth`
+// rebindAuthScript binds the login file again inside the guest without
+// naming it: every bind whose source is a file inside the claude-auth
+// share (findmnt shows it as claude-auth[/<file>]) is dropped with a lazy
+// unmount, and the guest's own script makes its bind afresh, as at boot
+// (it does nothing without a share). hostd never names or opens what is in
+// the share (I-278).
+const rebindAuthScript = `findmnt -rn -t virtiofs -o TARGET,SOURCE | awk '$2 ~ /^claude-auth\[\// {print $1}' | while read -r t; do umount -l "$t"; done; exec /usr/local/libexec/repose/repose-claude-auth`
 
 // rebindAuthShare runs after a restore of a guest with the login share on
 // a host whose hypervisor shares the directory itself (a Mac): there the
-// guest's bind of ~/.claude/.credentials.json went stale across a VZ
-// restore while the directory still worked (DECISIONS I-1666). Best
+// guest's bind of the login file went stale across a VZ restore while the
+// directory still worked (DECISIONS I-1666). Best
 // effort: a failure leaves the share's directory as it was.
 func (m *Manager) rebindAuthShare(ctx context.Context, g *state.Guest, sess vsockclient.Session) {
 	if !m.d.DirectAuthShare || !m.argsHaveAuthShare(g.GuestID) || sess == nil {
