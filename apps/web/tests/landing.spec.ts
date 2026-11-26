@@ -374,7 +374,7 @@ test('03 Your hardware says what ships for a box you own, and the Mac figures on
 		'Sandboxes share its memory',
 		'Reach it from anywhere'
 	]);
-	await expect(hw.locator('.yh')).toContainText('repose run puts new sandboxes on it');
+	await expect(hw.locator('.yh')).toContainText('your new sandboxes go there');
 	await expect(hw.locator('.yh')).toContainText('repose ls shows what each one uses');
 	// Checked against own-hardware.md for both an x86 box and a Mac (I-1674): none of
 	// these is true of both without a condition, so none is on the page.

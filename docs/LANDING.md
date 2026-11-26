@@ -124,9 +124,9 @@ your hardware."). It replaces no band.
 - **Three cells on the thirds** (`YourHardware.svelte`), each its label,
   a serif title, one paragraph and a small drawn figure, every sentence
   true of an x86 box and a Mac alike (`own-hardware.md`,
-  `ssh-and-editors.md`): 3.1 "Add a box you already have" (`repose host
-  add` on the box; once it is added, `repose run` puts new sandboxes on
-  it), 3.2 "Sandboxes share its memory" (no size; `repose ls` shows what
+  `ssh-and-editors.md`): 3.1 "Add a box you already have" ("your new
+  sandboxes go there"; the figure: `repose host add` on the box, `repose
+  run` in any repo), 3.2 "Sandboxes share its memory" (no size; `repose ls` shows what
   each uses; one bar of the box's memory shared by three sandboxes and the
   free rest), 3.3 "Reach it from anywhere" (the box dials out; after
   `repose login` on any laptop, `ssh your-project.repose` reaches it). Cut

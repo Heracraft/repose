@@ -2,7 +2,7 @@
   03 Your hardware (DECISIONS I-1674): what ships today for a box you own,
   an x86 box or a Mac. Every line is the public docs' and true of both
   (own-hardware.md, I-1626 to I-1660; ssh-and-editors.md): `repose host
-  add` run on the box, `repose run` placing new sandboxes there, sandboxes
+  add` run on the box, "your new projects go there" (the docs' words), sandboxes
   that share the box's memory with no size, and SSH through repose's
   gateway with no inbound port. Not said, because it is not true of both
   or not without a condition: "one command" (an x86 box also runs the
@@ -28,8 +28,7 @@
 			<p class="label num"><span class="n">3.1 </span>Setup</p>
 			<h3 class="item-title">Add a box you already have</h3>
 			<p class="copy">
-				Run <code>repose host add</code> on an x86 box or a Mac you own. Once it is added,
-				<code>repose run</code> puts new sandboxes on it.
+				It can be an x86 box or a Mac. Once it is added, your new sandboxes go there.
 			</p>
 		</div>
 		<div class="yh-fig" aria-hidden="true">
