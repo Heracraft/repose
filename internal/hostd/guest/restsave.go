@@ -107,6 +107,9 @@ func (m *Manager) restResume(ctx context.Context, g *state.Guest, sock string) e
 		if a, _ := m.d.Systemd.IsActive(rctx, GuestUnit(g.GuestID)); !a {
 			// The save file stays: a wake once the session is unlocked
 			// can still read it (a locked restore fails, I-1662).
+			if cr := m.d.Park.CanRestore; cr != nil && !cr(ctx) {
+				return errors.New("this Mac's screen is locked; the machine wakes once someone unlocks it")
+			}
 			return errors.New("the hypervisor exited during the restore of the rest save")
 		}
 		select {

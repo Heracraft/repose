@@ -49,3 +49,15 @@ func TestParseSession(t *testing.T) {
 		t.Fatal("no session read as unlocked")
 	}
 }
+
+func TestScreenLockOff(t *testing.T) {
+	// sysadminctl's own lines on the lab Mac (macOS 15.8.3), on stderr.
+	if !ScreenLockOff([]byte("2026-11-26 17:09:14.297 sysadminctl[3858:19749] screenLock is off\n")) {
+		t.Fatal("off read as on")
+	}
+	for _, s := range []string{"2026-11-26 sysadminctl[1:2] screenLock delay is 300 seconds\n", "screenLock is immediate\n", ""} {
+		if ScreenLockOff([]byte(s)) {
+			t.Fatalf("%q read as off", s)
+		}
+	}
+}
