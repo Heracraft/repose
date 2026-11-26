@@ -538,6 +538,10 @@ type Deps struct {
 	// from another death (DECISIONS I-1650). Nil leaves that part out.
 	GuestMemory   func(id string) (uint64, error)
 	SliceOOMKills func() (uint64, error)
+	// DirectAuthShare makes the login share a plain directory the
+	// hypervisor attaches itself (claudeauth.go, a Mac): no volume, no
+	// virtiofsd. False on every Linux host.
+	DirectAuthShare bool
 	// RestBySave, when set, says whether an idle pause of this guest may
 	// also save the VM and end its hypervisor, giving back its memory
 	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a

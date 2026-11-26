@@ -54,6 +54,19 @@ func platformFor(o Options) platform {
 		// are restored when it comes.
 		loop: func(ctx context.Context, mgr *guest.Manager, log *slog.Logger) {
 			macMgr.Store(mgr)
+			// The control socket is the user's, so `repose host restart`
+			// parks without sudo (hostd, root, still connects).
+			go func() {
+				for i := 0; i < 100 && ctx.Err() == nil; i++ {
+					if _, err := os.Stat(o.ControlSock); err == nil {
+						if err := u.chown(o.ControlSock); err != nil {
+							log.Warn("control socket not given to the Mac user", "event", "control", "err", err.Error())
+						}
+						return
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+			}()
 			t := time.NewTicker(3 * time.Second)
 			defer t.Stop()
 			for {
@@ -136,9 +149,14 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	uid, gid := u.uid, u.gid
 	cfg.Lookup = func(string) (int, int, error) { return uid, gid, nil }
 	cfg.GuestUser, cfg.VirtiofsUser = u.name, u.name
-	// The login share is a VZ shared directory on a Mac, not virtiofsd;
-	// not built yet.
-	cfg.NoAuthShare = true
+	// The login share is a directory VZ shares into each guest of the
+	// user: every file the guest sees is its own uid, mode kept, so no
+	// uid mapping and no virtiofsd (I-1666).
+	d.DirectAuthShare = true
+	cfg.AuthUser = u.name
+	if cfg.UsersDir == "" {
+		cfg.UsersDir = filepath.Join(o.StateDir, "users")
+	}
 	// VZ's balloon has no free page reporting (proposal section 2.5).
 	cfg.FreePageReporting = false
 	// macOS itself, its compressor and the user's apps keep more than

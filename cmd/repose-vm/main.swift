@@ -71,7 +71,13 @@ struct Spec: Codable {
   var netDir = ""
   var netMTU = 1500
   var parkDir = ""
+  var shares: [Share] = []
 }
+
+// A shared directory: hostd names it in a share-dir file beside the
+// virtio-fs socket path Cloud Hypervisor's --fs carries (the login share,
+// DECISIONS I-1666); VZ attaches the directory itself under the tag.
+struct Share: Codable { var tag: String; var dir: String }
 
 // opts parses CH's "k=v,k=v" option lists.
 func opts(_ s: String) -> [String: String] {
@@ -128,7 +134,15 @@ func parse(_ a: [String], into s: inout Spec, restore: inout String?) {
     case "--serial": s.serialSocket = opts(next())["socket"] ?? ""
     case "--balloon": _ = next(); s.balloon = true
     case "--restore": restore = fileURLPath(opts(next())["source_url"] ?? "")
-    case "--console", "--seccomp", "--fs": _ = next()
+    case "--fs":
+      let o = opts(next())
+      if let tag = o["tag"], let sock = o["socket"] {
+        let f = (sock as NSString).deletingLastPathComponent + "/share-dir"
+        if let d = try? String(contentsOfFile: f, encoding: .utf8) {
+          s.shares.append(Share(tag: tag, dir: d.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+      }
+    case "--console", "--seccomp": _ = next()
     case "--net-dir": s.netDir = next()
     case "--net-mtu": s.netMTU = Int(next()) ?? 1500
     case "--park-dir": s.parkDir = next()
@@ -356,6 +370,11 @@ func configuration() -> VZVirtualMachineConfiguration {
   con.attachment = VZFileHandleSerialPortAttachment(fileHandleForReading: consoleIn.fileHandleForReading,
                                                     fileHandleForWriting: consoleOut.fileHandleForWriting)
   c.serialPorts = [con]
+  for sh in spec.shares {
+    let fs = VZVirtioFileSystemDeviceConfiguration(tag: sh.tag)
+    fs.share = VZSingleDirectoryShare(directory: VZSharedDirectory(url: URL(fileURLWithPath: sh.dir), readOnly: false))
+    c.directorySharingDevices.append(fs)
+  }
   do { try c.validate() } catch { die("config: \(error)") }
   return c
 }
@@ -607,7 +626,7 @@ term.resume()
 
 startConsole()
 let t0 = now()
-say("event=launch pid=\(getpid()) restore=\(restoreDir != nil) cpus=\(vmConfig.cpuCount) mem_mib=\(spec.memMiB) net=\(spec.netDir.isEmpty ? "nat" : "switch")")
+say("event=launch pid=\(getpid()) restore=\(restoreDir != nil) cpus=\(vmConfig.cpuCount) mem_mib=\(spec.memMiB) net=\(spec.netDir.isEmpty ? "nat" : "switch") shares=\(spec.shares.count)")
 if let dir = restoreDir {
   vm.restoreMachineStateFrom(url: URL(fileURLWithPath: dir + "/vz.state")) { e in
     if let e = e { say("event=restore_error code=\((e as NSError).code) msg=\(jsonString(e.localizedDescription))"); exit(3) }

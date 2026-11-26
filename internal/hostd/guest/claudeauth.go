@@ -216,6 +216,13 @@ func (m *Manager) startAuthShare(ctx context.Context, g *state.Guest, dir string
 	if m.cfg.NoAuthShare || !hasAuthShare(g) {
 		return false
 	}
+	if m.d.DirectAuthShare {
+		if err := m.prepareDirectAuthShare(g, dir); err != nil {
+			m.log(g).Warn("guest starts without the login share", "event", "auth_share", "err", err.Error())
+			return false
+		}
+		return true
+	}
 	cfg, err := m.prepareAuthShare(ctx, g, dir)
 	if err == nil {
 		err = virtiofs.StartAuth(ctx, m.d.Systemd, cfg, g.GuestID, ch.AuthSocket(dir))
@@ -314,4 +321,60 @@ func touch(path string, t time.Time) error {
 		return err
 	}
 	return os.Chtimes(path, t, t)
+}
+
+// AuthShareDirFile names, beside the share's socket path, the directory a
+// hypervisor that shares directories itself attaches under AuthTag
+// (repose-vm on a Mac, DECISIONS I-1666).
+const AuthShareDirFile = "share-dir"
+
+// prepareDirectAuthShare is the login share of a host whose hypervisor
+// shares a directory itself (a Mac: a VZ shared directory, which gives
+// every file the guest's own uid with its mode kept, so no uid mapping and
+// no virtiofsd). The share is a plain directory: no volume bounds it, so
+// on a Mac it is bounded by the user's own disk. hostd never opens what is
+// inside it.
+func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
+	lookup := m.cfg.Lookup
+	if lookup == nil {
+		lookup = LookupUser
+	}
+	auid, agid, err := lookup(m.cfg.AuthUser)
+	if err != nil {
+		return fmt.Errorf("login share user %s: %w", m.cfg.AuthUser, err)
+	}
+	_, ggid, err := lookup(m.cfg.GuestUser)
+	if err != nil {
+		return fmt.Errorf("guest user %s: %w", m.cfg.GuestUser, err)
+	}
+	defer m.lockUser(g.UserID)()
+	udir := m.authUserDir(g.UserID)
+	share := filepath.Join(udir, "claude-auth")
+	sock := filepath.Dir(ch.AuthSocket(dir))
+	if err := os.MkdirAll(filepath.Dir(m.cfg.UsersDir), 0o755); err != nil {
+		return err
+	}
+	for _, d := range []struct {
+		path     string
+		mode     os.FileMode
+		uid, gid int
+	}{
+		{m.cfg.UsersDir, 0o711, -1, -1},
+		{udir, 0o711, -1, -1},
+		{share, 0o700, auid, agid},
+		{sock, 0o750, auid, ggid},
+	} {
+		if err := ensureDir(d.path, d.mode, d.uid, d.gid); err != nil {
+			return err
+		}
+	}
+	if err := touch(filepath.Join(udir, authLastGuest), m.d.Now()); err != nil {
+		return err
+	}
+	p := filepath.Join(sock, AuthShareDirFile)
+	tmp := p + ".new"
+	if err := os.WriteFile(tmp, []byte(share+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
 }

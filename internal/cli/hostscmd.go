@@ -187,7 +187,40 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	rm.Flags().BoolVarP(&yes, "yes", "y", false, "skip the confirmation")
 	rm.Flags().BoolVar(&local, "local", false, "remove the appliance on this Mac, disk included, and nothing on your account; on a Linux host, print the installer's uninstall line")
 
-	root.AddCommand(add, run, boot, list, rm)
+	var restartYes, restartForce bool
+	restart := &cobra.Command{
+		Use:   "restart",
+		Short: "Restart this Mac, keeping every machine's memory",
+		Long: "Park every machine on this Mac, each one's memory saved to a file, then\n" +
+			"restart the Mac; when you log in again the machines come back where they\n" +
+			"were. For a Mac whose machines run without the appliance. A machine that\n" +
+			"cannot be parked stops the restart, and the parked ones run again;\n" +
+			"--force restarts anyway, and those machines start fresh.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			if !restartYes {
+				if !canPrompt(os.Stdin) {
+					return exitf(ExitUsage, "Restarting this Mac needs a confirmation; pass --yes to skip it.")
+				}
+				ok, err := askYesNo(cmd.Context(), "Restart this Mac? Its machines keep their memory.", false, "restarting")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return exitf(ExitGeneric, "Nothing restarted.")
+				}
+			}
+			return HostRestartCmd(cmd.Context(), e, restartForce)
+		},
+	}
+	restart.Flags().BoolVarP(&restartYes, "yes", "y", false, "skip the confirmation")
+	restart.Flags().BoolVar(&restartForce, "force", false, "restart even if a machine could not be parked; it starts fresh")
+
+	root.AddCommand(add, run, boot, list, rm, restart)
 	bareRuns(root, list)
 	return root
 }
