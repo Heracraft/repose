@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -610,7 +611,13 @@ func TestMe(t *testing.T) {
 }
 
 func TestInternal(t *testing.T) {
-	f := New(Options{})
+	// One clock for the whole test: an event's dedupe key is its second,
+	// and two posts that straddled a second on a loaded box read as two
+	// events (`go test -race ./...`, 2026-11-26: "duplicate event:
+	// deduped:false").
+	var clock atomic.Int64
+	clock.Store(time.Now().UTC().Truncate(time.Second).UnixNano())
+	f := New(Options{Now: func() time.Time { return time.Unix(0, clock.Load()) }})
 	defer f.Close()
 	p := mkProject(t, f, tok, "gw", "")
 
