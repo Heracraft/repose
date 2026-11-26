@@ -300,8 +300,9 @@ it. No field changes shape; what some mean there:
   appliance, an x86 VM) two vCPUs (I-1640); `--owned-vcpus N` in
   hostd.env overrides both, never above the host's. No class disk caps,
   `CPUWeight=100` per guest, no per-guest `CPUQuota`, burst off;
-  `guests.slice` has `CPUWeight=50` and `CPUQuota` of the host's vCPUs
-  less one. `volume_bytes` is the volume's size as on the fleet.
+  `guests.slice` has `CPUWeight=50` and no `CPUQuota` (I-1640: a quota
+  throttled the nested guests, which hung). `volume_bytes` is the volume's
+  size as on the fleet.
 - `free_mem_bytes` (Hello, Heartbeat) is the host's real free memory:
   `max(0, min(MemAvailable, MemTotal - reserve - guests.slice
   memory.current))`, not total less the reserve less class reservations.
@@ -310,13 +311,15 @@ it. No field changes shape; what some mean there:
   (the api's own threshold is the same number).
   Under a hypervisor, also when the guests not stopped, failed or
   destroyed and the new one would boot with more vCPUs together than the
-  host has, with a message that holds "not enough free CPU" (I-1640).
+  host's less two (`--owned-max-vcpus N` replaces that bound), with a
+  message that holds "not enough free CPU" (I-1640).
 - hostd stops the newest running guest itself when the host's free memory
   (`free_mem_bytes` above) stays under 512 MiB for 5 s, and reports it as
   the OOM killer's below (I-1650): on the Mac appliance the kernel neither
-  swapped nor OOM-killed at the limit, and every guest hung. Guest RAM is
-  4 KiB shmem there (Cloud Hypervisor's `thp=off`) unless hostd.env
-  names `--owned-guest-thp`.
+  swapped nor OOM-killed at the limit, and every guest hung. Guest RAM
+  keeps Cloud Hypervisor's 2 MiB pages; `--owned-guest-thp=false` in
+  hostd.env boots it as 4 KiB shmem (`thp=off`), which reclaim can swap
+  but which made the Mac appliance's guests unusably slow.
 - A guest the kernel's OOM killer ended (systemd's `Result=oom-kill` on
   `guest@<id>`, seen by the monitor or by the reconcile at hostd's start)
   is torn down and sent as `guest_state_changed {state: stopped, reason:
