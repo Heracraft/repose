@@ -181,6 +181,15 @@ type ParkDeps struct {
 	// ImageBytes returns what an image directory holds on disk; nil
 	// walks it.
 	ImageBytes func(dir string) uint64
+	// CanRestore reports whether parked guests can be restored now. False
+	// holds them, records, images and state untouched, until
+	// RestoreHeld finds it true: a Mac restores a save file only in the
+	// user's unlocked session (DECISIONS I-1662, I-1666). Nil is always.
+	CanRestore func(ctx context.Context) bool
+	// CanPark reports whether a running guest can be parked, with a fixed
+	// reason when not: a Mac VM started with nobody logged in cannot
+	// (I-1664). Nil is always.
+	CanPark func(ctx context.Context, id string) (bool, string)
 }
 
 // ParkResult is one guest's outcome, for the operator and the log.
@@ -801,6 +810,12 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 		res.Outcome, res.Reason = "skipped", "guest is not running"
 		return res
 	}
+	if cp := m.d.Park.CanPark; cp != nil {
+		if ok, why := cp(ctx, id); !ok {
+			res.Outcome, res.Reason = "skipped", why
+			return res
+		}
+	}
 	// Checked again here, on the guest's worker: a guest parked since it
 	// was listed has no hypervisor and a record, and a second park would
 	// re-create (that is, remove) its finished image. A unit that cannot
@@ -1158,6 +1173,16 @@ func (m *Manager) UnparkAll(ctx context.Context) []ParkResult {
 	}
 	m.sweepImageVolumes(ctx, ids)
 	if len(ids) == 0 {
+		return nil
+	}
+	if cr := m.d.Park.CanRestore; cr != nil && !cr(ctx) {
+		m.mu.Lock()
+		m.held = map[string]bool{}
+		for _, id := range ids {
+			m.held[id] = true
+		}
+		m.mu.Unlock()
+		m.d.Log.Warn("parked guests held until they can be restored", "event", "guest_unpark", "images", len(ids))
 		return nil
 	}
 	results := make([]ParkResult, len(ids))
@@ -1756,4 +1781,36 @@ func diskBytes(fi os.FileInfo) uint64 {
 		return uint64(st.Blocks) * 512
 	}
 	return uint64(fi.Size())
+}
+
+// isHeld reports whether a parked guest waits for CanRestore: reconcile
+// leaves it as the park left it.
+func (m *Manager) isHeld(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.held[id]
+}
+
+// RestoreHeld restores the parked guests UnparkAll held, once CanRestore
+// says they can be, through a reconcile (whose UnparkAll restores them and
+// settles any it could not). It reports whether it ran.
+func (m *Manager) RestoreHeld(ctx context.Context) (bool, error) {
+	m.mu.Lock()
+	n := len(m.held)
+	m.mu.Unlock()
+	if n == 0 || m.d.Park.CanRestore == nil || !m.d.Park.CanRestore(ctx) {
+		return false, nil
+	}
+	m.mu.Lock()
+	m.held = nil
+	m.mu.Unlock()
+	m.d.Log.Info("restoring held parked guests", "event", "guest_unpark", "images", n)
+	return true, m.Reconcile(ctx)
+}
+
+// HeldGuests is how many parked guests wait for CanRestore.
+func (m *Manager) HeldGuests() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.held)
 }

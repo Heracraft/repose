@@ -8,6 +8,7 @@ import (
 
 // platformFlags are hostd's flags on macOS (design 2, DECISIONS I-1664).
 func platformFlags(fs *flag.FlagSet, o *app.Options) {
+	fs.StringVar(&o.Mac.User, "mac-user", "", "the user every VM runs as when hostd is root (a LaunchDaemon); a VM never runs as root (DECISIONS I-1664)")
 	fs.StringVar(&o.Mac.VolumesDir, "mac-volumes-dir", "", "guest volumes, one sparse file each, on APFS (default <state>/volumes)")
 	fs.StringVar(&o.Mac.LaunchdDir, "mac-launchd-dir", "", "the launchd jobs hostd writes for its VMs, and their logs (default <state>/launchd)")
 	fs.StringVar(&o.Mac.Launcher, "mac-launcher", "", "repose-vm, the VM launcher (default: beside hostd)")

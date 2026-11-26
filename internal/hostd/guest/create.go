@@ -1322,6 +1322,9 @@ func (mon *monitor) checkUnits() {
 	if err != nil {
 		return
 	}
+	if !active && m.restSaved(g) {
+		return // resting as a save file (restsave.go): no hypervisor is expected
+	}
 	if !active {
 		if m.cfg.Owned && m.oomExit(mon.ctx, g) {
 			// On a host its user owns the OOM killer may take a guest

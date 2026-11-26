@@ -538,6 +538,11 @@ type Deps struct {
 	// from another death (DECISIONS I-1650). Nil leaves that part out.
 	GuestMemory   func(id string) (uint64, error)
 	SliceOOMKills func() (uint64, error)
+	// RestBySave, when set, says whether an idle pause of this guest may
+	// also save the VM and end its hypervisor, giving back its memory
+	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a
+	// Mac.
+	RestBySave func(ctx context.Context, id string) bool
 	// AfterHypervisorExit is called once a guest's hypervisor is gone
 	// (teardown). On the Mac appliance it resets the host's CPUs, which a
 	// powered-off guest leaves busy in macOS (package cpureset, DECISIONS
@@ -595,6 +600,9 @@ type Manager struct {
 	// are: hostd keeps none of it on disk.
 	triggers map[string][]*guestdv1.Trigger
 	monitors map[string]*monitor
+	// held are parked guests whose restore waits for Park.CanRestore
+	// (park.go); guarded by mu.
+	held map[string]bool
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
 	boots map[string]*hostdv1.BootTimings

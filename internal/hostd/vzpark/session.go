@@ -3,9 +3,6 @@ package vzpark
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"path/filepath"
-	"time"
 
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
@@ -50,48 +47,4 @@ func parseSession(b []byte, uid int) (Session, error) {
 		return Session{LoggedIn: done, OnConsole: on, Locked: locked}, nil
 	}
 	return Session{}, nil
-}
-
-// HasParked reports whether the park left records in dir: guests whose
-// memory is in a save file waiting to be restored.
-func HasParked(dir string) bool {
-	m, _ := filepath.Glob(filepath.Join(dir, "*.json"))
-	return len(m) > 0
-}
-
-// WaitUnlocked holds hostd's start while parked machines wait and the
-// user's session is locked or absent: a restore now fails and the park
-// would discard the machine's memory. It returns when the session is
-// unlocked, when nothing is parked, or when ctx ends. A session that
-// cannot be read is taken as unlocked: the restore then tries, as on
-// Linux.
-func WaitUnlocked(ctx context.Context, r shell.Runner, uid int, recordDir string, poll time.Duration, log *slog.Logger) {
-	if !HasParked(recordDir) {
-		return
-	}
-	said := false
-	t0 := time.Now()
-	for {
-		s, err := ReadSession(ctx, r, uid)
-		if err != nil {
-			log.Warn("login session unreadable; restoring parked machines anyway", "event", "guest_unpark", "err", err.Error())
-			return
-		}
-		if s.Unlocked() {
-			if said {
-				log.Info("session unlocked; restoring parked machines", "event", "guest_unpark", "waited_ms", time.Since(t0).Milliseconds())
-			}
-			return
-		}
-		if !said {
-			log.Warn("parked machines wait for this Mac's login session to be unlocked", "event", "guest_unpark",
-				"logged_in", s.LoggedIn, "locked", s.Locked)
-			said = true
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(poll):
-		}
-	}
 }

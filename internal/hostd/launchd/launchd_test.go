@@ -155,3 +155,58 @@ func TestPsTime(t *testing.T) {
 		}
 	}
 }
+
+// With nobody logged in a VM starts in the system domain as the user
+// (DECISIONS I-1664), and Stop, Domain and ListUnits find it there.
+func TestNoSessionRunsInSystemDomainAsTheUser(t *testing.T) {
+	dir := t.TempDir()
+	missing := &shell.ExitError{Argv: []string{"launchctl"}, Result: shell.Result{ExitCode: 113}}
+	r := &shell.Fake{Scripts: []shell.Script{
+		{Prefix: []string{"launchctl", "print", "gui/501/run.repose.guest@g1"}, Err: missing},
+		{Prefix: []string{"launchctl", "print", "system/run.repose.guest@g1"}, Err: missing},
+	}}
+	l := &Launchd{R: r, UID: 501, UserName: "dev1", Dir: dir, Launcher: "/x",
+		HasSession: func(context.Context) bool { return false }}
+	if err := l.Run(context.Background(), "guest@g1", nil, []string{"cloud-hypervisor"}); err != nil {
+		t.Fatal(err)
+	}
+	c := r.CallsWithPrefix("launchctl", "bootstrap")
+	if len(c) != 1 || c[0][2] != "system" {
+		t.Fatalf("bootstrap %v", c)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "run.repose.guest@g1.plist"))
+	if !strings.Contains(string(b), "<key>UserName</key><string>dev1</string>") {
+		t.Fatalf("a system job must run as the user:\n%s", b)
+	}
+	// Now it runs, in the system domain.
+	r.Scripts = []shell.Script{
+		{Prefix: []string{"launchctl", "print", "gui/501/run.repose.guest@g1"}, Err: missing},
+		{Prefix: []string{"launchctl", "print", "system/run.repose.guest@g1"}, Result: shell.Result{Stdout: []byte(printRunning)}},
+		{Prefix: []string{"launchctl", "print", "gui/501"}, Err: missing},
+		{Prefix: []string{"launchctl", "print", "system"}, Result: shell.Result{Stdout: []byte(printDomain)}},
+	}
+	if d := l.Domain(context.Background(), "guest@g1"); d != "system" {
+		t.Fatalf("domain %q", d)
+	}
+	if err := l.Stop(context.Background(), "guest@g1"); err != nil {
+		t.Fatal(err)
+	}
+	if c := r.CallsWithPrefix("launchctl", "bootout"); len(c) == 0 || c[len(c)-1][2] != "system/run.repose.guest@g1" {
+		t.Fatalf("bootout %v", c)
+	}
+	u, err := l.ListUnits(context.Background(), "guest@*")
+	if err != nil || strings.Join(u, ",") != "guest@g1" {
+		t.Fatalf("units %v %v", u, err)
+	}
+	// With a session, a new start is an agent job again.
+	r.Scripts = r.Scripts[:2]
+	r.Scripts[1] = shell.Script{Prefix: []string{"launchctl", "print", "system/run.repose.guest@g1"}, Err: missing}
+	l.HasSession = func(context.Context) bool { return true }
+	r.Reset()
+	if err := l.Run(context.Background(), "guest@g1", nil, []string{"cloud-hypervisor"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := r.CallsWithPrefix("launchctl", "bootstrap"); len(c) != 1 || c[0][2] != "gui/501" {
+		t.Fatalf("bootstrap %v", c)
+	}
+}

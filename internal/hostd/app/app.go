@@ -466,9 +466,6 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if o.OwnedHost && !plat.noSlice {
 		ownedSlice(ctx, r, total, nested, log)
 	}
-	if plat.beforeReconcile != nil {
-		plat.beforeReconcile(ctx, r, log)
-	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
@@ -491,6 +488,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("samples", func() { d.samplesLoop(ctx) })
 	run("rotation", func() { d.rotationLoop(ctx, roots) })
 	run("prune", func() { d.pruneLoop(ctx) })
+	if plat.loop != nil {
+		run("platform", func() { plat.loop(ctx, mgr, log) })
+	}
 	run("metrics", func() { d.serveMetrics(ctx) })
 	if resetter != nil {
 		run("cpu-reset", func() { resetter.Run(ctx) })

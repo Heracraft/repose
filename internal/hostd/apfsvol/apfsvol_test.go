@@ -106,3 +106,18 @@ func TestMkfsRWAndFsckWithE2fsprogs(t *testing.T) {
 		t.Fatalf("label %q", out)
 	}
 }
+
+func TestChownOnCreateAndClone(t *testing.T) {
+	var got []string
+	v := &Volumes{Dir: t.TempDir(), R: shell.Exec{}, Chown: func(p string) error { got = append(got, p); return nil }}
+	ctx := context.Background()
+	if err := v.CreateVolume(ctx, "a", 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Clone(ctx, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("chown calls %v", got)
+	}
+}

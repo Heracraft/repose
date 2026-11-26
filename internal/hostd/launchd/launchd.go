@@ -38,8 +38,19 @@ const Prefix = "run.repose."
 // Launchd implements systemd.Systemd over launchctl.
 type Launchd struct {
 	R shell.Runner
-	// UID is the GUI domain's user, normally hostd's own.
+	// UID is the user every VM runs as: its GUI domain (gui/<uid>) holds
+	// the jobs started while the user's session exists.
 	UID int
+	// UserName, when set, lets a job start with nobody logged in: in the
+	// system domain with UserName set, so it still runs as the user, never
+	// as root (DECISIONS I-1664). Only a root hostd can do that. Such a
+	// VM cannot park (VZ's save needs the session, I-1662).
+	UserName string
+	// HasSession reports whether the user's GUI session exists now; nil
+	// is always.
+	HasSession func(ctx context.Context) bool
+	// ChownLog gives a new job log to the user, who writes it.
+	ChownLog func(path string) error
 	// Dir holds the jobs' plists and their stdout/stderr logs.
 	Dir string
 	// Launcher replaces argv[0] "cloud-hypervisor".
@@ -56,6 +67,40 @@ type Launchd struct {
 
 func (l *Launchd) domain() string         { return "gui/" + strconv.Itoa(l.UID) }
 func (l *Launchd) target(u string) string { return l.domain() + "/" + Label(u) }
+
+// SystemDomain is launchd's system domain, where a job runs with nobody
+// logged in.
+const SystemDomain = "system"
+
+func systemTarget(u string) string { return SystemDomain + "/" + Label(u) }
+
+// find returns the domain target that holds unit's job ("" when none
+// does) and what launchctl says of it.
+func (l *Launchd) find(ctx context.Context, unit string) (string, job, error) {
+	j, err := l.printTarget(ctx, l.target(unit))
+	if err != nil || j.loaded || l.UserName == "" {
+		if !j.loaded {
+			return "", j, err
+		}
+		return l.target(unit), j, err
+	}
+	j, err = l.printTarget(ctx, systemTarget(unit))
+	if err != nil || !j.loaded {
+		return "", j, err
+	}
+	return systemTarget(unit), j, nil
+}
+
+// Domain names the domain a unit's job is in: "gui" (it can park),
+// "system" (it runs with nobody logged in and cannot), or "" for none.
+func (l *Launchd) Domain(ctx context.Context, unit string) string {
+	t, _, err := l.find(ctx, unit)
+	if err != nil || t == "" {
+		return ""
+	}
+	d, _, _ := strings.Cut(t, "/")
+	return d
+}
 
 // Label is a unit's launchd label.
 func Label(unit string) string { return Prefix + strings.TrimSuffix(unit, ".service") }
@@ -83,7 +128,12 @@ type job struct {
 }
 
 func (l *Launchd) print(ctx context.Context, unit string) (job, error) {
-	res, err := l.R.Run(ctx, "launchctl", "print", l.target(unit))
+	_, j, err := l.find(ctx, unit)
+	return j, err
+}
+
+func (l *Launchd) printTarget(ctx context.Context, target string) (job, error) {
+	res, err := l.R.Run(ctx, "launchctl", "print", target)
 	if notFound(err) {
 		return job{}, nil
 	}
@@ -135,7 +185,7 @@ func parsePrint(out []byte) job {
 // Run implements systemd.Systemd: a job already running is left alone; a
 // loaded job that has exited is removed and bootstrapped anew.
 func (l *Launchd) Run(ctx context.Context, unit string, props []string, argv []string) error {
-	j, err := l.print(ctx, unit)
+	t, j, err := l.find(ctx, unit)
 	if err != nil {
 		return err
 	}
@@ -143,9 +193,13 @@ func (l *Launchd) Run(ctx context.Context, unit string, props []string, argv []s
 		return nil
 	}
 	if j.loaded {
-		if _, err := l.R.Run(ctx, "launchctl", "bootout", l.target(unit)); err != nil && !notFound(err) {
+		if _, err := l.R.Run(ctx, "launchctl", "bootout", t); err != nil && !notFound(err) {
 			return err
 		}
+	}
+	domain, user := l.domain(), ""
+	if l.UserName != "" && l.HasSession != nil && !l.HasSession(ctx) {
+		domain, user = SystemDomain, l.UserName
 	}
 	if len(argv) == 0 {
 		return errors.New("launchd: empty argv")
@@ -164,10 +218,18 @@ func (l *Launchd) Run(ctx context.Context, unit string, props []string, argv []s
 		return err
 	}
 	p := l.PlistPath(unit)
-	if err := os.WriteFile(p, Plist(Label(unit), args, l.LogPath(unit), l.exitTimeOut()), 0o600); err != nil {
+	if err := os.WriteFile(p, Plist(Label(unit), user, args, l.LogPath(unit), l.exitTimeOut()), 0o600); err != nil {
 		return err
 	}
-	_, err = l.R.Run(ctx, "launchctl", "bootstrap", l.domain(), p)
+	if l.ChownLog != nil {
+		if f, err := os.OpenFile(l.LogPath(unit), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			_ = f.Close()
+		}
+		if err := l.ChownLog(l.LogPath(unit)); err != nil {
+			return err
+		}
+	}
+	_, err = l.R.Run(ctx, "launchctl", "bootstrap", domain, p)
 	return err
 }
 
@@ -180,7 +242,8 @@ func (l *Launchd) exitTimeOut() int {
 
 // Plist renders a job: started once at bootstrap, never restarted by
 // launchd (hostd decides), interactive so App Nap does not throttle a VM.
-func Plist(label string, argv []string, log string, exitTimeOut int) []byte {
+// userName, when set, runs a system-domain job as that user.
+func Plist(label, userName string, argv []string, log string, exitTimeOut int) []byte {
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -194,6 +257,9 @@ func Plist(label string, argv []string, log string, exitTimeOut int) []byte {
 		b.WriteString("</string>\n")
 	}
 	kv("Label", label)
+	if userName != "" {
+		kv("UserName", userName)
+	}
 	b.WriteString("<key>ProgramArguments</key><array>\n")
 	for _, a := range argv {
 		b.WriteString("<string>")
@@ -219,7 +285,11 @@ func (l *Launchd) IsActive(ctx context.Context, unit string) (bool, error) {
 // Stop implements systemd.Systemd: bootout sends SIGTERM and, after the
 // job's ExitTimeOut, SIGKILL. An absent job is stopped already.
 func (l *Launchd) Stop(ctx context.Context, unit string) error {
-	_, err := l.R.Run(ctx, "launchctl", "bootout", l.target(unit))
+	t, _, err := l.find(ctx, unit)
+	if err != nil || t == "" {
+		return err
+	}
+	_, err = l.R.Run(ctx, "launchctl", "bootout", t)
 	if notFound(err) {
 		return nil
 	}
@@ -229,7 +299,11 @@ func (l *Launchd) Stop(ctx context.Context, unit string) error {
 // Kill implements systemd.Systemd. The job stays loaded, so its exit
 // status can still be read; the next Run removes it.
 func (l *Launchd) Kill(ctx context.Context, unit string) error {
-	_, err := l.R.Run(ctx, "launchctl", "kill", "SIGKILL", l.target(unit))
+	t, _, err := l.find(ctx, unit)
+	if err != nil || t == "" {
+		return err
+	}
+	_, err = l.R.Run(ctx, "launchctl", "kill", "SIGKILL", t)
 	if notFound(err) {
 		return nil
 	}
@@ -325,10 +399,20 @@ func psTime(s string) (uint64, bool) {
 // whose unit name matches pattern (a glob, e.g. "guest@*").
 func (l *Launchd) ListUnits(ctx context.Context, pattern string) ([]string, error) {
 	res, err := l.R.Run(ctx, "launchctl", "print", l.domain())
-	if err != nil {
+	if err != nil && l.UserName == "" {
 		return nil, err
 	}
-	return parseServices(res.Stdout, pattern), nil
+	// With nobody logged in there is no gui/<uid> domain to print: its
+	// jobs are none, and the system domain's are listed below.
+	units := parseServices(res.Stdout, pattern)
+	if l.UserName != "" {
+		sys, err := l.R.Run(ctx, "launchctl", "print", SystemDomain)
+		if err != nil {
+			return nil, err
+		}
+		units = append(units, parseServices(sys.Stdout, pattern)...)
+	}
+	return units, nil
 }
 
 // parseServices reads the "services = {" block of `launchctl print

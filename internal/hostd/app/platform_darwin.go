@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/apfsvol"
@@ -30,11 +32,12 @@ var NewMacNet func(ctx context.Context, o Options, log *slog.Logger) (hnet.Net, 
 // repose-vm, and the park is VZ's own save file.
 func platformFor(o Options) platform {
 	m := macDefaults(o)
+	u := macUserOf(m)
 	return platform{
 		noHostFiles: true,
 		noSlice:     true,
 		volumes: func(r shell.Runner) lvm.LVM {
-			return &apfsvol.Volumes{Dir: m.VolumesDir, R: r, Mke2fs: m.Mke2fs, E2fsck: m.E2fsck}
+			return &apfsvol.Volumes{Dir: m.VolumesDir, R: r, Mke2fs: m.Mke2fs, E2fsck: m.E2fsck, Chown: u.chown}
 		},
 		park: func(o Options, log *slog.Logger) (guest.ParkConfig, guest.ParkDeps) {
 			cfg := guest.ParkConfig{
@@ -45,14 +48,55 @@ func platformFor(o Options) platform {
 			return cfg, vzpark.Deps()
 		},
 		adapt: func(ctx context.Context, r shell.Runner, log *slog.Logger, cfg *guest.Config, d *guest.Deps) error {
-			return adaptMac(ctx, o, m, r, log, cfg, d)
+			return adaptMac(ctx, o, m, u, r, log, cfg, d)
 		},
-		// A restore needs the user's session unlocked (I-1662): hostd
-		// waits for it rather than let a parked machine start cold.
-		beforeReconcile: func(ctx context.Context, r shell.Runner, log *slog.Logger) {
-			vzpark.WaitUnlocked(ctx, r, os.Getuid(), filepath.Join(o.StateDir, "freeze"), 2*time.Second, log)
+		// Parked machines held for the user's unlocked session (I-1666)
+		// are restored when it comes.
+		loop: func(ctx context.Context, mgr *guest.Manager, log *slog.Logger) {
+			macMgr.Store(mgr)
+			t := time.NewTicker(3 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+				if _, err := mgr.RestoreHeld(ctx); err != nil {
+					log.Warn("held parked machines not restored", "event", "guest_unpark", "err", err.Error())
+				}
+			}
 		},
 	}
+}
+
+// macUser is who the VMs run as: --mac-user under a root hostd (a
+// LaunchDaemon), else hostd's own user.
+type macUser struct {
+	name     string
+	uid, gid int
+	err      error
+}
+
+func macUserOf(m MacOptions) macUser {
+	if m.User == "" {
+		u, err := user.Current()
+		if err != nil {
+			return macUser{err: err}
+		}
+		return macUser{name: u.Username, uid: os.Getuid(), gid: os.Getgid()}
+	}
+	uid, gid, err := guest.LookupUser(m.User)
+	return macUser{name: m.User, uid: uid, gid: gid, err: err}
+}
+
+// chown gives a file hostd made to the user; nothing to do when hostd is
+// that user.
+func (u macUser) chown(p string) error {
+	if os.Getuid() == u.uid {
+		return nil
+	}
+	return os.Chown(p, u.uid, u.gid)
 }
 
 // macDefaults fills the Mac flags left empty from the state directory.
@@ -75,17 +119,23 @@ func macDefaults(o Options) MacOptions {
 	return m
 }
 
-func adaptMac(ctx context.Context, o Options, m MacOptions, r shell.Runner, log *slog.Logger, cfg *guest.Config, d *guest.Deps) error {
+func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.Runner, log *slog.Logger, cfg *guest.Config, d *guest.Deps) error {
 	if _, err := os.Stat(m.Launcher); err != nil {
 		return fmt.Errorf("hostd: the VM launcher: %w", err)
 	}
-	// Every unit runs as hostd's own user, in its GUI session: VZ's save
-	// file is sealed with that session's Secure Enclave key (I-1662).
-	uid, gid := os.Getuid(), os.Getgid()
-	if uid == 0 {
-		return errors.New("hostd: on macOS hostd runs as the logged-in user, not root (a VM saved as root dies, DECISIONS I-1662)")
+	// Every VM runs as the user, never as root: a VM saved as root dies
+	// (I-1662). hostd itself may be root (a LaunchDaemon, I-1664): then
+	// --mac-user names the user, and with nobody logged in a VM starts in
+	// the system domain as that user, without a park.
+	if u.err != nil {
+		return fmt.Errorf("hostd: the Mac user: %w", u.err)
 	}
+	if u.uid == 0 {
+		return errors.New("hostd: VMs never run as root on a Mac; run hostd as the user, or as root with --mac-user (DECISIONS I-1662, I-1664)")
+	}
+	uid, gid := u.uid, u.gid
 	cfg.Lookup = func(string) (int, int, error) { return uid, gid, nil }
+	cfg.GuestUser, cfg.VirtiofsUser = u.name, u.name
 	// The login share is a VZ shared directory on a Mac, not virtiofsd;
 	// not built yet.
 	cfg.NoAuthShare = true
@@ -113,8 +163,19 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, r shell.Runner, log 
 	}
 	d.Net = net
 	d.Mount = noMount{}
-	d.Systemd = &launchd.Launchd{
+	session := func(ctx context.Context) vzpark.Session {
+		s, err := vzpark.ReadSession(ctx, r, uid)
+		if err != nil {
+			// Unreadable is taken as present: the start or restore then
+			// tries, as before this check existed.
+			return vzpark.Session{LoggedIn: true, OnConsole: true}
+		}
+		return s
+	}
+	ld := &launchd.Launchd{
 		R: r, UID: uid, Dir: m.LaunchdDir, Launcher: m.Launcher,
+		HasSession:  func(ctx context.Context) bool { return session(ctx).LoggedIn },
+		ChownLog:    u.chown,
 		ExitTimeOut: 60 * time.Second,
 		ExtraArgs: func(unit string, _ []string) []string {
 			if m.NetDir == "" {
@@ -122,6 +183,23 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, r shell.Runner, log 
 			}
 			return []string{"--net-dir", m.NetDir, "--net-mtu", fmt.Sprint(m.NetMTU)}
 		},
+	}
+	if os.Getuid() == 0 {
+		ld.UserName = u.name
+	}
+	d.Systemd = ld
+	d.Park.CanRestore = func(ctx context.Context) bool { return session(ctx).Unlocked() }
+	// An idle machine rests by save, giving its memory back, only where
+	// the save can be restored at the wake: an agent job in an unlocked
+	// session. Otherwise it rests by pause (I-1666).
+	d.RestBySave = func(ctx context.Context, id string) bool {
+		return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
+	}
+	d.Park.CanPark = func(ctx context.Context, id string) (bool, string) {
+		if ld.Domain(ctx, guest.GuestUnit(id)) == launchd.SystemDomain {
+			return false, "started with nobody logged in"
+		}
+		return true, ""
 	}
 	// e2fsprogs from --mac-mke2fs's directory, zstd and dd from PATH; no
 	// systemd-run sandbox on macOS.
@@ -181,3 +259,19 @@ func (noMount) MountType(context.Context, string, string, string, string) error 
 	return errors.New("mount: not on macOS")
 }
 func (noMount) Unmount(context.Context, string) error { return nil }
+
+// macMgr is the running manager, for MacWake.
+var macMgr atomic.Pointer[guest.Manager]
+
+// MacWake wakes the resting machine behind a switch port and waits for
+// it, up to a minute: the userspace switch's OnWake (d2-net) calls it when
+// a connection arrives for a VM that rests as a save file.
+func MacWake(tap string) {
+	m := macMgr.Load()
+	if m == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	_, _ = m.WakeTap(ctx, tap) // a failed wake is logged and counted by the manager
+}

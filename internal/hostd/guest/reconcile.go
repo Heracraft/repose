@@ -59,6 +59,16 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	known := map[string]bool{}
 	for _, g := range gs {
 		known[g.GuestID] = true
+		if m.restSaved(g) {
+			// Resting as a save file (restsave.go): its hypervisor is
+			// meant to be gone, and the wake restores it.
+			active[g.GuestID] = true
+		}
+		if m.isHeld(g.GuestID) && !active[g.GuestID] {
+			// Its memory waits in a park image (CanRestore): neither
+			// interrupted nor stopped until RestoreHeld runs.
+			continue
+		}
 		if rebooted && !active[g.GuestID] {
 			m.markInterrupted(g, bootID, stoppedAt)
 		}
@@ -357,6 +367,12 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 // wake clears the mark either way.
 func (m *Manager) reconcileResting(ctx context.Context, g *state.Guest) {
 	if g.State != StateRunning {
+		return
+	}
+	if m.restSaved(g) {
+		// Resting as a save file (restsave.go): no hypervisor to ask.
+		m.noteResting(g.GuestID, g.Resting)
+		m.armTimerWake(g)
 		return
 	}
 	sock := ch.APISocket(m.guestDir(g.GuestID))

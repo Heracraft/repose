@@ -34,6 +34,9 @@ type Volumes struct {
 	R      shell.Runner
 	Mke2fs string // path to mke2fs
 	E2fsck string // path to e2fsck
+	// Chown gives a new volume file to the user its VM runs as, when hostd
+	// is root (DECISIONS I-1664); nil leaves it hostd's.
+	Chown func(path string) error
 	// Statfs returns the size and free bytes of the filesystem holding a
 	// path; nil uses the platform's statfs.
 	Statfs func(path string) (size, free uint64, err error)
@@ -83,6 +86,10 @@ func (v *Volumes) CreateVolume(ctx context.Context, name string, bytes uint64) e
 		return err
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := v.chown(tmp); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
@@ -180,6 +187,10 @@ func (v *Volumes) Clone(ctx context.Context, origin, name string) error {
 	if err := cloneFile(v.DevPath(origin), tmp); err != nil {
 		return fmt.Errorf("clone %s: %w", origin, err)
 	}
+	if err := v.chown(tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
 	return os.Rename(tmp, v.DevPath(name))
 }
 
@@ -270,4 +281,11 @@ func (v *Volumes) ListVolumes(context.Context) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func (v *Volumes) chown(p string) error {
+	if v.Chown == nil {
+		return nil
+	}
+	return v.Chown(p)
 }
