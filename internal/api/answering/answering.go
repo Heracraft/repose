@@ -62,12 +62,13 @@ func (s Silence) Long(now time.Time) bool {
 // Read reads the silent run of a project's samples since startedAt: the
 // samples after the newest one where guestd answered or the guest was
 // paused (a paused guest's guestd is paused with it and hostd reports it
-// as answering, I-818). The (project_id, ts) key bounds it to the
+// as answering, I-818), or parked waiting for its Mac's user to log in
+// (I-1672). The (project_id, ts) key bounds it to the
 // project's own rows.
 func Read(ctx context.Context, q store.Querier, projectID uuid.UUID, startedAt time.Time) (Silence, error) {
 	var first, newest, answered *time.Time
 	var n int
-	err := q.QueryRow(ctx, `with last_ok as (select max(ts) as ts from meter_samples where project_id = $1 and ts >= $2 and (guestd_ok or resting))
+	err := q.QueryRow(ctx, `with last_ok as (select max(ts) as ts from meter_samples where project_id = $1 and ts >= $2 and (guestd_ok or resting or parked_waiting_since is not null))
 		select min(m.ts), max(m.ts), count(*), (select ts from last_ok) from meter_samples m
 		where m.project_id = $1 and m.ts >= $2
 		  and m.ts > coalesce((select ts from last_ok), $2 - interval '1 second')`,

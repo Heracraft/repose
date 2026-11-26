@@ -129,3 +129,51 @@ test('a memory stop reads as the CLI says it, and its command is code', async ({
 		await destroyProject(api, p.id);
 	}
 });
+
+/** The fake's parked machine (cmd/fakeapi POST /parked, I-1672). */
+async function setParked(projectID: string, minutes: number): Promise<void> {
+	const res = await fetch(`${process.env.FAKEAPI_ADMIN_URL}/parked`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectID, minutes })
+	});
+	if (!res.ok) throw new Error(`/parked: ${res.status}`);
+}
+
+// I-1672: a machine parked on a Mac waiting for its user's login says so,
+// names the Mac and that its memory is kept, and offers no Restart.
+test('a parked machine waits for the login and keeps its memory', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	const hostID = await ownedHost({ name: 'mac-mini' });
+	const p = await createProject(api, {
+		name: 'parked-app',
+		remote_url: 'github.com/heracraft/parked-app'
+	});
+	try {
+		await ownedHost({ project_id: p.id, host_id: hostID });
+		await setParked(p.id, 20);
+		await page.goto('/projects');
+		const row = page
+			.locator('table.ptable tbody tr')
+			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
+		await expect(row.getByTestId('row-parked')).toHaveText(
+			'Parked: waits for you to log in to mac-mini; its memory is kept'
+		);
+		await expect(row).not.toContainText('not answering');
+		await expect(row.getByRole('button', { name: `Restart ${p.name}` })).toHaveCount(0);
+		await expect(
+			page.getByRole('link', { name: `${p.name}, parked, waiting for your login` })
+		).toBeVisible();
+		await shots(page, 'parked-list');
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('parked')).toHaveText(
+			'Parked: waits for you to log in to mac-mini; its memory is kept'
+		);
+		await expect(page.getByTestId('not-answering')).toHaveCount(0);
+		await shots(page, 'parked-page');
+	} finally {
+		await destroyProject(api, p.id).catch(() => {});
+		await removeOwnedHosts(api).catch(() => {});
+	}
+});

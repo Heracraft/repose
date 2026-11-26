@@ -147,6 +147,11 @@ type Project struct {
 	// answered for about three minutes (DECISIONS I-1652): hung, its
 	// memory full or its kernel stuck. Absent from older apis.
 	NotAnswering *ProjectNotAnswering `json:"not_answering,omitempty"`
+	// Parked is set while a machine on a Mac without the appliance is
+	// parked and waits for the Mac's user to log in before it runs again,
+	// with its memory kept (DECISIONS I-1672). Absent from older apis and
+	// on every other host.
+	Parked *ProjectParked `json:"parked,omitempty"`
 	// KeepAwake is set while the project is held awake from its Config
 	// page: the api never freezes it (DECISIONS I-820). Set there, as
 	// hold_base_updates is, with no CLI flag.
@@ -179,6 +184,13 @@ type ProjectIdle struct {
 // ProjectNotAnswering is Project.not_answering: since when.
 type ProjectNotAnswering struct {
 	Since time.Time `json:"since"`
+}
+
+// ProjectParked is Project.parked: when the machine was parked, and what
+// it waits for (`login`).
+type ProjectParked struct {
+	Since    time.Time `json:"since"`
+	WaitsFor string    `json:"waits_for"`
 }
 
 // ProjectResting is Project.resting: when the machine was frozen.

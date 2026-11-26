@@ -257,3 +257,48 @@ func TestEventsInOneSecondKeepTheirOrder(t *testing.T) {
 		t.Fatalf("order %s, %s, %s; want snapshot, stopping, stopped", evs[0].Summary, evs[1].Summary, evs[2].Summary)
 	}
 }
+
+// A machine parked on a Mac waiting for its user's login (DECISIONS
+// I-1672): `repose ls` and `status` say `running parked` with one line
+// naming the host and that its memory is kept; never "not answering",
+// never a hint that a start loses memory; `repose start` says the same and
+// restarts nothing.
+func TestParkedIsShownAndStartRestartsNothing(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out, e.ErrOut = out, &discardWriter{}
+	fake.SetState(p.ID, "running")
+	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
+	since := time.Now().Add(-20 * time.Minute)
+	fake.SetParked(p.ID, &since)
+	line := "todo-app: parked; it waits for you to log in to mac-mini, and its memory is kept.\n"
+
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	got := out.buf.String()
+	if !strings.Contains(squash(got), "running parked") || !strings.Contains(got, line) || strings.Contains(got, "not answering") || strings.Contains(got, "memory is lost") {
+		t.Fatalf("repose ls:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StatusCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	got = out.buf.String()
+	if first, _, _ := strings.Cut(got, "\n"); !strings.Contains(first, "  parked") {
+		t.Fatalf("status first line %q", first)
+	}
+	if !strings.Contains(got, "  "+strings.TrimPrefix(line, "todo-app: ")) || strings.Contains(got, "not answering") || strings.Contains(got, "restarts it") {
+		t.Fatalf("repose status:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StartCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); got != "todo-app is "+strings.TrimPrefix(line, "todo-app: ") {
+		t.Fatalf("repose start: %q", got)
+	}
+}
