@@ -35,6 +35,11 @@ type world struct {
 	r    *shell.Fake
 	e    *Ensurer
 	logs *bytes.Buffer
+	// systemd's view of the units, when enabledAfter models it.
+	enabled   map[string]bool
+	active    map[string]string
+	failStart map[string]bool
+	starts    int
 }
 
 func newWorld(t *testing.T, files map[string]string) *world {
@@ -62,17 +67,46 @@ func (w *world) read(p string) string {
 	return string(b)
 }
 
-// enabledAfter scripts `systemctl is-enabled` to say what the last
-// `enable --now` made true.
+// enabledAfter models systemd for the units: `enable --now` enables a
+// unit and starts it, and a start fails while failStart names the unit,
+// which leaves it enabled and failed, as systemd does (the lab's
+// appliance, 2026-11-26 00:20Z: the snapshot volume's unit enabled, its
+// start refused by LVM). `is-enabled` and `is-active` answer from that.
 func (w *world) enabledAfter() {
-	w.r.Scripts = append(w.r.Scripts, shell.Script{Prefix: []string{"systemctl", "is-enabled"}, Handle: func(argv []string) (shell.Result, error) {
-		for _, c := range w.r.Calls {
-			if len(c) == 4 && c[1] == "enable" && c[3] == argv[2] {
+	if w.enabled == nil {
+		w.enabled, w.active, w.failStart = map[string]bool{}, map[string]string{}, map[string]bool{}
+	}
+	w.r.Scripts = append(w.r.Scripts,
+		shell.Script{Prefix: []string{"systemctl", "is-enabled"}, Handle: func(argv []string) (shell.Result, error) {
+			if w.enabled[argv[2]] {
 				return shell.Result{Stdout: []byte("enabled\n")}, nil
 			}
-		}
-		return shell.Result{Stdout: []byte("disabled\n"), ExitCode: 1}, &shell.ExitError{Argv: argv}
-	}})
+			return shell.Result{Stdout: []byte("disabled\n"), ExitCode: 1}, &shell.ExitError{Argv: argv}
+		}},
+		shell.Script{Prefix: []string{"systemctl", "is-active"}, Handle: func(argv []string) (shell.Result, error) {
+			st := w.active[argv[2]]
+			if st == "" {
+				st = "inactive"
+			}
+			if st == "active" {
+				return shell.Result{Stdout: []byte("active\n")}, nil
+			}
+			return shell.Result{Stdout: []byte(st + "\n"), ExitCode: 3}, &shell.ExitError{Argv: argv}
+		}},
+		shell.Script{Prefix: []string{"systemctl", "enable", "--now"}, Handle: func(argv []string) (shell.Result, error) {
+			u := argv[3]
+			w.enabled[u] = true
+			if w.failStart[u] {
+				w.active[u] = "failed"
+				return shell.Result{ExitCode: 1, Stderr: []byte("Job for " + u + " failed.\n")}, &shell.ExitError{Argv: argv}
+			}
+			if w.active[u] != "active" {
+				w.starts++
+			}
+			w.active[u] = "active"
+			return shell.Result{}, nil
+		}},
+	)
 }
 
 // A fleet host has neither the appliance's version file nor the
@@ -158,7 +192,7 @@ func TestOldHostsGetTheFilesOnce(t *testing.T) {
 				t.Fatalf("second start: %+v %v", res, err)
 			}
 			for _, c := range w.r.Calls[n:] {
-				if len(c) > 1 && c[1] != "is-enabled" {
+				if len(c) > 1 && c[1] != "is-enabled" && c[1] != "is-active" {
 					t.Fatalf("second start ran %v", c)
 				}
 			}
@@ -199,5 +233,38 @@ func TestAHostWithTheFlagIsLeftAlone(t *testing.T) {
 	res, err := w.e.Ensure(context.Background())
 	if err != nil || res.Restart || slices.Contains(res.Written, HostdEnv) || w.read(HostdEnv) != env {
 		t.Fatalf("res %+v err %v", res, err)
+	}
+}
+
+// The lab's 2026.11.22.4 appliance (2026-11-26 00:20Z): the snapshot
+// volume's unit was enabled and its start failed. The next start must
+// start it again, and write --owned-host only once it is active; while it
+// keeps failing, hostd.env stays as it was (DECISIONS I-1638).
+func TestAUnitThatFailedIsRetriedBeforeTheFlag(t *testing.T) {
+	w := newWorld(t, map[string]string{ApplianceVersion: "2026.11.22.4\n", HostdEnv: env224})
+	w.enabledAfter()
+	vol := "repose-snapshots-volume.service"
+	w.failStart[vol] = true
+	if _, err := w.e.Ensure(context.Background()); err == nil {
+		t.Fatal("the failed start was not reported")
+	}
+	if w.read(HostdEnv) != env224 {
+		t.Fatal("hostd.env changed with a unit failed")
+	}
+	// Still failing: no flag.
+	if res, err := w.e.Ensure(context.Background()); err == nil || res.Restart || w.read(HostdEnv) != env224 {
+		t.Fatalf("second start with the unit still failing: %+v %v\n%s", res, err, w.read(HostdEnv))
+	}
+	w.failStart[vol] = false
+	n := len(w.r.Calls)
+	res, err := w.e.Ensure(context.Background())
+	if err != nil || !res.Restart || !strings.Contains(w.read(HostdEnv), "HOSTD_ARGS=--owned-host --snapshot-dir") {
+		t.Fatalf("third start %+v %v\n%s", res, err, w.read(HostdEnv))
+	}
+	if !slices.ContainsFunc(w.r.Calls[n:], func(c []string) bool { return slices.Equal(c, []string{"systemctl", "enable", "--now", vol}) }) {
+		t.Fatalf("the failed unit was not started again: %v", w.r.Calls[n:])
+	}
+	if w.active[vol] != "active" {
+		t.Fatalf("%s is %q", vol, w.active[vol])
 	}
 }

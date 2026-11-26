@@ -95,7 +95,8 @@ func (e *Ensurer) Eligible() bool {
 // Ensure writes the missing or changed host files, enables and starts
 // their units, and adds OwnedFlag to hostd.env, in that order. A failed
 // step stops the ones after it, so hostd.env never names a flag whose
-// host files are not in place, and the next start tries again.
+// host files are not in place and running, and the next start tries
+// again, a unit that is enabled but not active included.
 func (e *Ensurer) Ensure(ctx context.Context) (Result, error) {
 	var res Result
 	if !e.Eligible() {
@@ -132,8 +133,12 @@ func (e *Ensurer) Ensure(ctx context.Context) (Result, error) {
 			return res, err
 		}
 	}
+	// A unit is done when it is enabled and active: `enable --now` leaves
+	// a unit whose start failed enabled, and on the lab's appliance the
+	// next start took that for done and wrote the flag (2026-11-26).
+	// `start` runs a failed oneshot again.
 	for _, u := range units {
-		if !changedUnits && e.enabled(ctx, u) {
+		if !changedUnits && e.enabled(ctx, u) && e.active(ctx, u) {
 			continue
 		}
 		if err := e.run(ctx, "systemctl", "enable", "--now", u); err != nil {
@@ -164,6 +169,13 @@ func (e *Ensurer) run(ctx context.Context, argv ...string) error {
 func (e *Ensurer) enabled(ctx context.Context, unit string) bool {
 	r, err := e.R.Run(ctx, "systemctl", "is-enabled", unit)
 	return err == nil && strings.TrimSpace(string(r.Stdout)) == "enabled"
+}
+
+// active reports whether a unit is active (a oneshot with
+// RemainAfterExit that succeeded); failed, inactive or an error read as no.
+func (e *Ensurer) active(ctx context.Context, unit string) bool {
+	r, err := e.R.Run(ctx, "systemctl", "is-active", unit)
+	return err == nil && strings.TrimSpace(string(r.Stdout)) == "active"
 }
 
 // ownedFlag puts OwnedFlag at the front of hostd.env's HOSTD_ARGS line,
