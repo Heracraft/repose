@@ -374,7 +374,12 @@ test('03 Your hardware says what ships for a box you own, and the Mac figures on
 		'Sandboxes share its memory',
 		'Reach it from anywhere'
 	]);
-	await expect(hw.locator('.yh')).toContainText('A new one starts while 1 GB is free');
+	await expect(hw.locator('.yh')).toContainText('repose run puts new sandboxes on it');
+	await expect(hw.locator('.yh')).toContainText('repose ls shows what each one uses');
+	// Checked against own-hardware.md for both an x86 box and a Mac (I-1674): none of
+	// these is true of both without a condition, so none is on the page.
+	for (const cut of [/one command/, /every new sandbox/, /1 GB is free/, /hands? back/])
+		expect((await hw.locator('.yh').textContent())!).not.toMatch(cut);
 	await expect(hw.locator('.yh')).toContainText('ssh your-project.repose');
 	// Design 2 is not shipped: with the switch off nothing of it is on the page.
 	await expect(hw.getByTestId('mac-figures')).toHaveCount(MAC_DESIGN2_LIVE ? 1 : 0);

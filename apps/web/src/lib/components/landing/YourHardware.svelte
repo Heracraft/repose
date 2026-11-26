@@ -1,14 +1,17 @@
 <!--
   03 Your hardware (DECISIONS I-1674): what ships today for a box you own,
-  an x86 box or a Mac. Every line is the public docs' (own-hardware.md,
-  I-1626 to I-1660): the same commands, sandboxes that share the box's
-  memory with no size, a start while 1 GB is free, and SSH through repose's
-  gateway with no inbound port. The figures are diagrams of those rules, not
+  an x86 box or a Mac. Every line is the public docs' and true of both
+  (own-hardware.md, I-1626 to I-1660; ssh-and-editors.md): `repose host
+  add` run on the box, `repose run` placing new sandboxes there, sandboxes
+  that share the box's memory with no size, and SSH through repose's
+  gateway with no inbound port. Not said, because it is not true of both
+  or not without a condition: "one command" (an x86 box also runs the
+  installer `repose host add` prints), a start "while 1 GB is free" (a
+  Mac also limits sandboxes by cores), memory "handed back" (an idle one
+  returns part of it, its file cache, after five minutes). The figures are diagrams of those rules, not
   measurements: they carry no number the docs do not. Static.
 -->
 <script lang="ts">
-	/** The docs' start rule (own-hardware.md, "What fits on a Mac", I-1630). */
-	const START_FREE_GB = 1;
 	/* The memory bar: three sandboxes and the free rest. A diagram of
 	   sharing (no sizes), so the widths are drawn, not measured; the names
 	   are short so each fits under its part. */
@@ -25,7 +28,8 @@
 			<p class="label num"><span class="n">3.1 </span>Setup</p>
 			<h3 class="item-title">Add a box you already have</h3>
 			<p class="copy">
-				An x86 box or a Mac joins your account with one command. Then every new sandbox goes there.
+				Run <code>repose host add</code> on an x86 box or a Mac you own. Once it is added,
+				<code>repose run</code> puts new sandboxes on it.
 			</p>
 		</div>
 		<div class="yh-fig" aria-hidden="true">
@@ -38,8 +42,8 @@
 			<p class="label num"><span class="n">3.2 </span>Memory</p>
 			<h3 class="item-title">Sandboxes share its memory</h3>
 			<p class="copy">
-				A sandbox has no size: it uses what it needs and hands back what it stops using. A new one
-				starts while {START_FREE_GB} GB is free.
+				A sandbox there has no size. They share the box's memory, and <code>repose ls</code> shows what
+				each one uses.
 			</p>
 		</div>
 		<div class="yh-fig" aria-hidden="true">
@@ -58,9 +62,9 @@
 			<p class="label num"><span class="n">3.3 </span>Reach</p>
 			<h3 class="item-title">Reach it from anywhere</h3>
 			<p class="copy">
-				The box dials out to repose, so nothing opens on your router. <code
-					>ssh your-project.repose</code
-				> works from any laptop.
+				The box dials out to repose, so nothing opens on your router. After <code>repose login</code
+				>
+				on any laptop, <code>ssh your-project.repose</code> reaches it.
 			</p>
 		</div>
 		<div class="yh-fig" aria-hidden="true">

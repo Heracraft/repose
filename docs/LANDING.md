@@ -122,14 +122,20 @@ your hardware."). It replaces no band.
 - **Head.** "03 Your hardware", the h2 "Run it on hardware you own", and
   one docs link on the right, "What it needs" (`/docs/own-hardware`).
 - **Three cells on the thirds** (`YourHardware.svelte`), each its label,
-  a serif title, one paragraph from `own-hardware.md` and a small drawn
-  figure: 3.1 "Add a box you already have" (`repose host add` on the box,
-  `repose run` in any repo, in the reference treatment), 3.2 "Sandboxes
-  share its memory" (one bar of the box's memory shared by three
-  sandboxes and the free rest; no size, a start while 1 GB is free,
-  I-1626 to I-1660), 3.3 "Reach it from anywhere" (your laptop, repose,
-  your box, the box dialling out; `ssh your-project.repose`). The figures
-  are diagrams of shipped rules and carry no number the docs do not.
+  a serif title, one paragraph and a small drawn figure, every sentence
+  true of an x86 box and a Mac alike (`own-hardware.md`,
+  `ssh-and-editors.md`): 3.1 "Add a box you already have" (`repose host
+  add` on the box; once it is added, `repose run` puts new sandboxes on
+  it), 3.2 "Sandboxes share its memory" (no size; `repose ls` shows what
+  each uses; one bar of the box's memory shared by three sandboxes and the
+  free rest), 3.3 "Reach it from anywhere" (the box dials out; after
+  `repose login` on any laptop, `ssh your-project.repose` reaches it). Cut
+  because not true of both without a condition: "one command" (an x86 box
+  also runs the installer `repose host add` prints), "every new sandbox"
+  (`--host repose` places one on our servers), "starts while 1 GB is free"
+  (a Mac also limits by cores), memory "handed back" (an idle sandbox
+  returns part of it after five minutes). The figures are diagrams of
+  shipped rules and carry no number.
 - **The Mac part, behind one switch.** `MAC_DESIGN2_LIVE` in
   `apps/web/src/lib/data/mac-figures.ts`. Off (today), the band ends on
   the three cells. On, it adds `MacFigures.svelte` under an inner rule: an
