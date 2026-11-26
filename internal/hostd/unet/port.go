@@ -45,8 +45,9 @@ type port struct {
 	closed  bool
 	txq     *txQueue
 
-	rx, tx atomic.Uint64 // guest view: rx what it received, tx what it sent
-	drops  atomic.Uint64 // frames refused before the rules: spoofed, not IPv4/ARP
+	rx, tx  atomic.Uint64 // guest view: rx what it received, tx what it sent
+	drops   atomic.Uint64 // frames refused before the rules: spoofed, not IPv4/ARP
+	policed atomic.Uint64 // packets the upload policer dropped
 }
 
 // queueFrames bounds each of a port's two transmit queues: frames beyond
@@ -268,7 +269,7 @@ func (p *port) inbound(frame []byte) {
 		now := time.Now()
 		// tc's ingress policer runs before netfilter (I-217).
 		if !inAny(pk.Dst, p.n.rules.ShapeExempt) && !police.Allow(len(payload), now) {
-			p.n.count(gid, "policed", 1)
+			p.policed.Add(1)
 			return
 		}
 		v, kind, dest := gate.Check(pk, now)

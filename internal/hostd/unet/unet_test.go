@@ -328,23 +328,53 @@ func transfer(t *testing.T, g *testGuest, size int) time.Duration {
 }
 
 func TestPolicerAndShaperLimitTheGuest(t *testing.T) {
-	if testing.Short() {
+	if testing.Short() || raceOn {
 		t.Skip("timing")
 	}
 	in := newInternet(t)
 	n := newTestNet(t, in, nil)
 	g := newTestGuest(t, n, "tap-aaaaaaaa", gA, ipA, macA, testGW)
 	free := transfer(t, g, 4<<20)
-	// 20 Mbit up and down: 4 MiB each way is about 1.7 s at the rate,
-	// less the burst.
-	if err := n.Shape(context.Background(), "tap-aaaaaaaa", 20, 20); err != nil {
+	// The shaper: what the guest receives, at 20 Mbit (the echo's return
+	// leg). 4 MiB is about 1.7 s at the rate, less the burst.
+	if err := n.Shape(context.Background(), "tap-aaaaaaaa", 0, 20); err != nil {
 		t.Fatal(err)
 	}
 	shaped := transfer(t, g, 4<<20)
 	mbit := float64(4<<20) * 8 / shaped.Seconds() / 1e6
-	t.Logf("4 MiB echo: unshaped %v, shaped at 20/20 Mbit %v (%.1f Mbit/s)", free, shaped, mbit)
-	if mbit > 24 || mbit < 8 {
+	t.Logf("4 MiB echo: unshaped %v, shaped down to 20 Mbit %v (%.1f Mbit/s)", free, shaped, mbit)
+	if mbit > 24 || mbit < 12 {
 		t.Fatalf("shaped rate %.1f Mbit/s; want about 20", mbit)
+	}
+	// The policer: what the guest sends beyond the burst is dropped. The
+	// test guest is gVisor's TCP, which recovers from a policer's drops
+	// far worse than Linux does (the lab Mac's Linux guests held 0.19-0.205
+	// and 0.048-0.051 Gbit/s at 200 and 50), so only the bound and the
+	// drops are asserted here, not the rate a Linux guest reaches.
+	if err := n.Shape(context.Background(), "tap-aaaaaaaa", 20, 0); err != nil {
+		t.Fatal(err)
+	}
+	c, err := g.dial(context.Background(), "203.0.113.5:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now()
+	go func() { _, _ = io.Copy(io.Discard, c) }()
+	sent := 0
+	buf := make([]byte, 64<<10)
+	_ = c.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for {
+		k, err := c.Write(buf)
+		sent += k
+		if err != nil {
+			break
+		}
+	}
+	_ = c.Close()
+	up := float64(sent) * 8 / time.Since(t0).Seconds() / 1e6
+	t.Logf("policed at 20 Mbit: %.1f Mbit/s accepted by the guest's socket in 3 s, %d packets policed", up, n.Policed("tap-aaaaaaaa"))
+	if n.Policed("tap-aaaaaaaa") == 0 {
+		t.Fatal("nothing policed")
 	}
 	if err := n.Unshape(context.Background(), "tap-aaaaaaaa"); err != nil {
 		t.Fatal(err)

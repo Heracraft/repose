@@ -291,7 +291,7 @@ func (n *Net) Attached(tap string) bool {
 }
 
 func (n *Net) count(guestID, kind string, v uint64) {
-	if guestID == "" || kind == "policed" {
+	if guestID == "" {
 		return
 	}
 	n.mu.Lock()
@@ -616,6 +616,17 @@ func (n *Net) ListTaps(context.Context) ([]string, error) {
 // entry from a destroyed guest cannot answer for the next one (the cause
 // of I-1530 does not exist here); nothing to flush.
 func (n *Net) FlushNeigh(context.Context, string) error { return nil }
+
+// Policed is how many packets a tap's upload policer dropped.
+func (n *Net) Policed(tap string) uint64 {
+	n.mu.Lock()
+	p := n.ports[tap]
+	n.mu.Unlock()
+	if p == nil {
+		return 0
+	}
+	return p.policed.Load()
+}
 
 // Drops is how many frames a tap's port refused before the rules
 // (spoofed source, not IPv4 or ARP), for the tests and the lab.

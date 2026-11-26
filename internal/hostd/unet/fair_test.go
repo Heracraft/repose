@@ -100,7 +100,7 @@ func keystrokeRTT(t *testing.T, fifo bool) (p50, p99 time.Duration, mbit float64
 }
 
 func TestKeystrokeDoesNotWaitBehindADownload(t *testing.T) {
-	if testing.Short() {
+	if testing.Short() || raceOn {
 		t.Skip("timing")
 	}
 	f50, f99, fm := keystrokeRTT(t, true)

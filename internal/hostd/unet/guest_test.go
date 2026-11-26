@@ -85,6 +85,9 @@ func bootGuest(t *testing.T, conn net.Conn, ip, mac, gw string) *testGuest {
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4},
 	})
+	// A Linux guest's TCP: SACK on, as its kernel has it.
+	sack := tcpip.TCPSACKEnabled(true)
+	_ = s.SetTransportProtocolOption(tcp.ProtocolNumber, &sack)
 	if err := s.CreateNIC(1, ethernet.New(ep)); err != nil {
 		t.Fatal(err)
 	}
