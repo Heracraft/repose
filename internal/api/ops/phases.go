@@ -1639,6 +1639,15 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		// error with its host: freeing the placement would orphan hostd's
 		// record, and the scheduler already places nothing there.
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'stopped', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short) // best effort; the op carries the error
+	case op.Kind == KindCreate && phase == PhaseCreateGuest && code == "insufficient_capacity":
+		// The host refused the create for room (memory, CPU, its pool,
+		// its store) before it wrote a record or a volume, so there is
+		// nothing to keep or clean: the project goes, as one refused at
+		// placement never exists (DECISIONS I-1648). Left in error it
+		// read "`repose start X` restarts it", and the host no longer had
+		// the machine (the lab's F2). The op keeps the refusal, which the
+		// CLI and the dashboard show; no event, nothing billed.
+		_, _ = e.pool.Exec(ctx, "update projects set state = 'destroyed', destroyed_at = now(), host_id = null, last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, CreateRefusedPrefix+short) // best effort; the op carries the error
 	case op.Kind == KindCreate || op.Kind == KindStart || op.Kind == KindRestore:
 		if code == "capacity" {
 			_, _ = e.pool.Exec(ctx, "update projects set host_id = null where id = $1", p.ID) // free the placement
@@ -1655,6 +1664,12 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, code+": "+short)
 	}
 }
+
+// CreateRefusedPrefix begins the last_error of a project whose create the
+// host refused for room (DECISIONS I-1648), followed by the sentence the
+// op's error gave: GET /projects/:id reads it to say the project was not
+// created, and a destroy never writes it.
+const CreateRefusedPrefix = "create_refused: "
 
 // notifyPlatform records a platform-originated event (13-notifications.md
 // §2), best effort: a failure to notify must never fail the op it reports.

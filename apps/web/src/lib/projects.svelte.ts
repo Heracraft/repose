@@ -27,6 +27,12 @@ class Projects {
 		this.list[i] = p;
 	}
 
+	/** Takes a project the api removed off the list (a refused create, I-1648). */
+	drop(id: string): void {
+		if (!this.list) return;
+		this.list = this.list.filter((p) => p.id !== id);
+	}
+
 	/** Reads the list again unless it was read less than `maxAge` ms ago. */
 	async refresh(maxAge = 0): Promise<void> {
 		if (Date.now() - this.#at < maxAge) return;

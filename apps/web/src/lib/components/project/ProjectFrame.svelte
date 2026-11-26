@@ -293,8 +293,10 @@
 {/snippet}
 
 {#if ctx.notFound}
-	<ErrorView status={404} title="Not found">
-		{#if ctx.gone}
+	<ErrorView status={404} title={ctx.notCreated ? 'Not created' : 'Not found'}>
+		{#if ctx.notCreated}
+			<p data-testid="not-created">{ctx.notCreated}.</p>
+		{:else if ctx.gone}
 			<p class="gone">Destroyed {dateTime(ctx.gone.destroyed_at)}.</p>
 			<div class="gone-form">
 				<RestoreNameForm

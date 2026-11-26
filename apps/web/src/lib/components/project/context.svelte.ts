@@ -56,6 +56,12 @@ export class ProjectState {
 	 * secondary there, so the page has one primary.
 	 */
 	holdPrimary = $state(false);
+	/**
+	 * The api's sentence when the host refused this project's create for
+	 * room and the project was removed (I-1648): "<name> was not created:
+	 * why". The 404 page shows it instead of a bare "Not found".
+	 */
+	notCreated = $state<string | undefined>(undefined);
 	/** A destroyed project's row from "Recently destroyed", with a name to restore it under. */
 	gone = $state<DestroyedProject | undefined>(undefined);
 	goneName = $state('');
@@ -97,7 +103,11 @@ export class ProjectState {
 			this.#failure.ok();
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'not_found') {
-				if (!this.notFound) void this.#findDestroyed();
+				if (err.detail?.reason === 'create_refused') {
+					// Never made: nothing was destroyed and nothing restores.
+					this.notCreated = err.message;
+					projectsStore.drop(this.id);
+				} else if (!this.notFound) void this.#findDestroyed();
 				this.notFound = true;
 				return;
 			}
