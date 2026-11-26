@@ -126,7 +126,7 @@ func (e *Ensurer) Ensure(ctx context.Context) (Result, error) {
 		if strings.HasSuffix(f.dst, ".service") {
 			changedUnits = true
 		}
-		e.Log.Info("host file written", "event", "host_file", "path", f.dst, "bytes", len(want))
+		e.Log.Info("host file written", "event", "host_file", "part", filepath.Base(f.dst), "bytes", len(want))
 	}
 	if changedUnits {
 		if err := e.run(ctx, "systemctl", "daemon-reload"); err != nil {
@@ -153,7 +153,7 @@ func (e *Ensurer) Ensure(ctx context.Context) (Result, error) {
 	if changed {
 		res.Written = append(res.Written, HostdEnv)
 		res.Restart = true
-		e.Log.Info("host file written", "event", "host_file", "path", HostdEnv, "flag", OwnedFlag)
+		e.Log.Info("host file written", "event", "host_file", "part", filepath.Base(HostdEnv), "flag", OwnedFlag)
 	}
 	return res, nil
 }

@@ -37,8 +37,11 @@ else
     mount -o noatime,discard "/dev/$vg/$lv" "$tmp"
     # Copied, then checked, then deleted: a snapshot is never in neither.
     # A copy that fails or differs leaves the root as it was, and hostd
-    # keeps writing there until the cause is fixed.
-    if ! cp -a "$dir"/. "$tmp"/ || ! diff -rq "$dir" "$tmp" >/dev/null; then
+    # keeps writing there until the cause is fixed. The check skips the
+    # new filesystem's lost+found, which mkfs.ext4 made and the root never
+    # had (every move failed on it, the lab 2026-11-26 01:42Z); it stays,
+    # as e2fsck's place for what it recovers.
+    if ! cp -a "$dir"/. "$tmp"/ || ! diff -rq -x lost+found "$dir" "$tmp" >/dev/null; then
       umount "$tmp"
       rmdir "$tmp"
       say "event=snapshots_not_moved reason=copy_failed"

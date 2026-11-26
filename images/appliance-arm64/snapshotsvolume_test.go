@@ -43,7 +43,9 @@ case "$n" in snapshot*|pvmove*) echo "  Names starting \"${n:0:8}\" are reserved
 case "$n" in *_cdata*|*_cmeta*|*_corig*|*_cpool*|*_cvol*|*_iorig*|*_mimage*|*_mlog*|*_pmspare*|*_rimage*|*_rmeta*|*_tdata*|*_tmeta*|*_vdata*|*_vorigin*|*_wcorig*) echo "  Names including \"_\" suffixes are reserved." >&2; exit 3;; esac
 touch "$S/created"`)
 	stub("udevadm", `:`)
-	stub("mkfs.ext4", `:`)
+	// A fresh ext4 has lost+found at its root, which the move's diff saw
+	// as a difference on the lab's appliance (2026-11-26 01:42Z).
+	stub("mkfs.ext4", `mkdir -p "$LV/lost+found"`)
 	stub("lvchange", `:`)
 	stub("mountpoint", `[ "$2" = "$DIR" ] && [ -e "$S/mounted" ]`)
 	// A mount anywhere but DIR shows the volume's files there; an umount
