@@ -180,6 +180,11 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	} else {
 		log.Warn("no switch: each VM is on VZ's NAT, without isolation or egress rules (lab only)", "event", "start", "part", "network")
 	}
+	if m.NetDir != "" && os.Getuid() != u.uid {
+		// A root hostd binds each machine's port socket; the launcher,
+		// the user's, must be able to send to it.
+		net = ownedPorts{Net: net, dir: m.NetDir, u: u}
+	}
 	d.Net = net
 	d.Mount = noMount{}
 	session := func(ctx context.Context) vzpark.Session {
@@ -293,4 +298,51 @@ func MacWake(tap string) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	_, _ = m.WakeTap(ctx, tap) // a failed wake is logged and counted by the manager
+}
+
+// ownedPorts gives each switch port socket a root hostd binds to the
+// user its VM runs as (DECISIONS I-1664): a 0755 root socket refuses the
+// launcher's datagrams, which left every NIC dead (lab Mac, 16:06Z).
+type ownedPorts struct {
+	hnet.Net
+	dir string
+	u   macUser
+}
+
+// The switch binds a port the first time any of these names it (a start,
+// or a reconcile under a running VM): each hands its socket to the user.
+func (p ownedPorts) AddTap(ctx context.Context, tap string) error {
+	if err := p.Net.AddTap(ctx, tap); err != nil {
+		return err
+	}
+	return p.own(tap)
+}
+
+func (p ownedPorts) AddGuestRules(ctx context.Context, guestID, ip, mac, tap string) error {
+	if err := p.Net.AddGuestRules(ctx, guestID, ip, mac, tap); err != nil {
+		return err
+	}
+	return p.own(tap)
+}
+
+func (p ownedPorts) Shape(ctx context.Context, tap string, up, down int) error {
+	if err := p.Net.Shape(ctx, tap, up, down); err != nil {
+		return err
+	}
+	return p.own(tap)
+}
+
+func (p ownedPorts) own(tap string) error {
+	err := p.u.chown(filepath.Join(p.dir, tap+".sock"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// Detach passes the rest-by-save's detach through to the switch.
+func (p ownedPorts) Detach(tap string) {
+	if d, ok := p.Net.(interface{ Detach(tap string) }); ok {
+		d.Detach(tap)
+	}
 }

@@ -72,3 +72,7 @@ const ParkOperatorReason = guest.ParkOperator
 // ParkSkippedStopped is the park result's reason for a machine that was
 // not running, which a park leaves as it is and loses nothing.
 const ParkSkippedStopped = guest.SkipNotRunning
+
+// ParkSkippedParked is the reason for a machine parked already: its memory
+// is saved, so a restart loses nothing of it.
+const ParkSkippedParked = guest.SkipParked

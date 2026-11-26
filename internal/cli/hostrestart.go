@@ -20,6 +20,9 @@ var hostdControlSock = func() string {
 	return filepath.Join(home, ".repose", "hostd.sock")
 }
 
+// onMac is whether this binary runs on macOS; a var for tests.
+var onMac = func() bool { return runtime.GOOS == "darwin" }
+
 // macRestart restarts the Mac as the Apple menu does; a var for tests.
 var macRestart = func(ctx context.Context) error {
 	return exec.CommandContext(ctx, "/usr/bin/osascript", "-e", `tell application "System Events" to restart`).Run()
@@ -30,7 +33,7 @@ var macRestart = func(ctx context.Context) error {
 // machines at the next login. A machine that could not be parked stops
 // the restart (the parked ones are unparked) unless force.
 func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
-	if runtime.GOOS != "darwin" {
+	if !onMac() {
 		return exitf(ExitUsage, "repose host restart runs on the Mac it restarts.")
 	}
 	sock := hostdControlSock()
@@ -48,7 +51,7 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 	parked, lost := 0, []string{}
 	for _, r := range res {
 		switch {
-		case r.Outcome == "parked":
+		case r.Outcome == "parked", r.Outcome == "skipped" && r.Reason == control.ParkSkippedParked:
 			parked++
 		case r.Outcome == "skipped" && r.Reason == control.ParkSkippedStopped:
 		default:
@@ -56,8 +59,19 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 		}
 	}
 	if len(lost) > 0 && !force {
-		if _, err := c.Unpark(pctx); err != nil {
+		back, err := c.Unpark(pctx)
+		if err != nil {
 			return exitf(ExitGeneric, "%d machines could not be parked (%s), and the parked ones did not run again: %v. Nothing restarted.", len(lost), strings.Join(lost, ", "), err)
+		}
+		restored := 0
+		for _, r := range back {
+			if r.OK {
+				restored++
+			}
+		}
+		if restored < parked {
+			// A Mac restores a parked machine only in an unlocked session.
+			return exitf(ExitGeneric, "%d machines could not be parked and would start fresh (%s). Nothing restarted; the parked machines run again once this Mac's screen is unlocked. --force restarts anyway.", len(lost), strings.Join(lost, ", "))
 		}
 		return exitf(ExitGeneric, "%d machines could not be parked and would start fresh (%s). Nothing restarted; --force restarts anyway.", len(lost), strings.Join(lost, ", "))
 	}

@@ -279,44 +279,67 @@ func platform() -> VZGenericPlatformConfiguration {
 }
 
 // The NIC's datagram socket and the switch port it is connected to. A new
-// hostd binds a new port socket: the launcher connects to it again when
-// told (vm.net-reconnect) or when it sees the socket file change.
-var netFd: Int32 = -1
+// hostd binds a new port socket, and VZ drops a file-handle attachment
+// whose peer went away (the guest's eth0 lost carrier for good, lab Mac
+// 16:02Z): so a reconnect makes a new socket and gives the running VM a
+// new attachment, when told (vm.net-reconnect) or when the launcher sees
+// the port's socket file change.
 var netRemote = ""
+var netLocal = ""
 var netInode: ino_t = 0
 let netLock = NSLock()
+var netFd: Int32 = -1
 
 func inode(_ p: String) -> ino_t {
   var st = stat()
   return stat(p, &st) == 0 ? st.st_ino : 0
 }
 
-// netConnect (re)connects netFd to netRemote and sends vfkit's "VFKT".
+// netSocket makes the datagram socket bound to netLocal and connected to
+// netRemote, and sends vfkit's "VFKT"; -1 when the port refuses.
+func netSocket() -> Int32 {
+  let fd = socket(AF_UNIX, SOCK_DGRAM, 0)
+  precondition(fd >= 0)
+  unlink(netLocal)
+  var l = sockaddrUn(netLocal), r = sockaddrUn(netRemote)
+  let len = socklen_t(MemoryLayout<sockaddr_un>.size)
+  if withUnsafePointer(to: &l, { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) } }) != 0 { die("bind \(netLocal): errno \(errno)") }
+  var snd: Int32 = 1 << 20, rcv: Int32 = 4 << 20
+  setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd, socklen_t(4))
+  setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcv, socklen_t(4))
+  if withUnsafePointer(to: &r, { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, len) } }) != 0 {
+    say("event=net_connect_error errno=\(errno)")
+    close(fd)
+    return -1
+  }
+  _ = "VFKT".withCString { send(fd, $0, 4, 0) }
+  return fd
+}
+
+func attachment(_ fd: Int32) -> VZFileHandleNetworkDeviceAttachment {
+  let at = VZFileHandleNetworkDeviceAttachment(fileHandle: FileHandle(fileDescriptor: fd, closeOnDealloc: true))
+  at.maximumTransmissionUnit = spec.netMTU
+  return at
+}
+
+// netConnect replaces the running VM's NIC attachment with a new socket.
 func netConnect() -> Bool {
   netLock.lock(); defer { netLock.unlock() }
-  var r = sockaddrUn(netRemote)
-  let len = socklen_t(MemoryLayout<sockaddr_un>.size)
-  if withUnsafePointer(to: &r, { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(netFd, $0, len) } }) != 0 {
-    say("event=net_connect_error errno=\(errno)")
-    return false
-  }
+  let fd = netSocket()
+  if fd < 0 { return false }
   netInode = inode(netRemote)
-  _ = "VFKT".withCString { send(netFd, $0, 4, 0) }
+  netFd = fd
+  let at = attachment(fd)
+  DispatchQueue.main.async { vm.networkDevices.first?.attachment = at }
   return true
 }
 
 func unixgram(_ remote: String, local: String) -> Int32 {
-  let fd = socket(AF_UNIX, SOCK_DGRAM, 0)
-  precondition(fd >= 0)
-  unlink(local)
-  var l = sockaddrUn(local)
-  let len = socklen_t(MemoryLayout<sockaddr_un>.size)
-  if withUnsafePointer(to: &l, { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) } }) != 0 { die("bind \(local): errno \(errno)") }
-  var snd: Int32 = 1 << 20, rcv: Int32 = 4 << 20
-  setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd, socklen_t(4))
-  setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcv, socklen_t(4))
-  netFd = fd; netRemote = remote
-  if !netConnect() { die("connect \(remote): the switch port is not there", 4) }
+  netRemote = remote; netLocal = local
+  let fd = netSocket()
+  if fd < 0 { die("connect \(remote): the switch port is not there", 4) }
+  netFd = fd
+  netInode = inode(remote)
   // Watch the port: a hostd that restarted binds a new socket file.
   Thread.detachNewThread {
     while true {
@@ -356,10 +379,7 @@ func configuration() -> VZVirtualMachineConfiguration {
   if spec.netDir.isEmpty {
     n.attachment = VZNATNetworkDeviceAttachment()
   } else {
-    let fd = unixgram(spec.netDir + "/" + spec.tap + ".sock", local: guestDir + "/net0.dgram")
-    let at = VZFileHandleNetworkDeviceAttachment(fileHandle: FileHandle(fileDescriptor: fd, closeOnDealloc: true))
-    at.maximumTransmissionUnit = spec.netMTU
-    n.attachment = at
+    n.attachment = attachment(unixgram(spec.netDir + "/" + spec.tap + ".sock", local: guestDir + "/net0.dgram"))
   }
   if !spec.mac.isEmpty, let m = VZMACAddress(string: spec.mac) { n.macAddress = m }
   c.networkDevices = [n]
@@ -387,6 +407,9 @@ final class Delegate: NSObject, VZVirtualMachineDelegate {
   func virtualMachine(_ vm: VZVirtualMachine, didStopWithError e: Error) { say("event=vm_error err=\((e as NSError).code)"); exit(1) }
   func virtualMachine(_ vm: VZVirtualMachine, networkDevice: VZNetworkDevice, attachmentWasDisconnectedWithError e: Error) {
     say("event=nic_disconnected err=\((e as NSError).code)")
+    // A port that comes back gets a new attachment from the watch; try
+    // once now too, a second on.
+    DispatchQueue.global().asyncAfter(deadline: .now() + 1) { if netConnect() { say("event=net_reconnected by=disconnect") } }
   }
 }
 let delegate = Delegate()

@@ -161,8 +161,10 @@ func TestPsTime(t *testing.T) {
 func TestNoSessionRunsInSystemDomainAsTheUser(t *testing.T) {
 	dir := t.TempDir()
 	missing := &shell.ExitError{Argv: []string{"launchctl"}, Result: shell.Result{ExitCode: 113}}
+	// What gui/501 answers when nobody is logged in.
+	noDomain := &shell.ExitError{Argv: []string{"launchctl"}, Result: shell.Result{ExitCode: 125, Stderr: []byte("Could not print domain: 125: Domain does not support specified action")}}
 	r := &shell.Fake{Scripts: []shell.Script{
-		{Prefix: []string{"launchctl", "print", "gui/501/run.repose.guest@g1"}, Err: missing},
+		{Prefix: []string{"launchctl", "print", "gui/501/run.repose.guest@g1"}, Err: noDomain},
 		{Prefix: []string{"launchctl", "print", "system/run.repose.guest@g1"}, Err: missing},
 	}}
 	l := &Launchd{R: r, UID: 501, UserName: "dev1", Dir: dir, Launcher: "/x",

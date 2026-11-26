@@ -111,11 +111,14 @@ func (l *Launchd) PlistPath(unit string) string { return filepath.Join(l.Dir, La
 // LogPath is a unit's stdout and stderr.
 func (l *Launchd) LogPath(unit string) string { return filepath.Join(l.Dir, Label(unit)+".log") }
 
-// notFound is launchctl's "Could not find service" (exit 113) and
-// bootout's "No such process" (exit 3).
+// notFound is launchctl's "Could not find service" (exit 113), bootout's
+// "No such process" (exit 3), and "Domain does not support specified
+// action" (exit 125), which is what gui/<uid> answers when nobody is
+// logged in and the domain does not exist (lab Mac, 16:24Z: it failed
+// every start after a power loss).
 func notFound(err error) bool {
 	var ee *shell.ExitError
-	return errors.As(err, &ee) && (ee.Result.ExitCode == 113 || ee.Result.ExitCode == 3)
+	return errors.As(err, &ee) && (ee.Result.ExitCode == 113 || ee.Result.ExitCode == 3 || ee.Result.ExitCode == 125)
 }
 
 // job is what `launchctl print` says of one job.

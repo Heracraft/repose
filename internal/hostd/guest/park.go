@@ -208,6 +208,9 @@ type ParkResult struct {
 // running.
 const SkipNotRunning = "guest is not running"
 
+// SkipParked is a park result's reason for a guest parked already.
+const SkipParked = "guest already parked"
+
 // Fixed park reasons, the record's Reason.
 const (
 	ParkShutdown       = "shutdown"
@@ -831,7 +834,7 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 		return res
 	}
 	if r, _ := m.records().Get(id); r != nil {
-		res.Outcome, res.Reason = "skipped", "guest already parked"
+		res.Outcome, res.Reason = "skipped", SkipParked
 		return res
 	}
 	fz, ok := m.d.CH.(ch.Parker)
