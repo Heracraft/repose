@@ -55,4 +55,8 @@ type MacOptions struct {
 	// fsync, none), passed to repose-vm (DECISIONS I-1666).
 	DiskCache string
 	DiskSync  string
+	// MemoryCommitPct is how much of the Mac's memory, less the reserve,
+	// the machines may be started with together, in percent; 0 is no
+	// bound (DECISIONS I-1666).
+	MemoryCommitPct uint
 }

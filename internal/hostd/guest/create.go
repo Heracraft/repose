@@ -89,6 +89,9 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 		if err := m.memRoom(class); err != nil {
 			return err
 		}
+		if err := m.commitRoom(guestID, class); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -292,6 +295,15 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	bootStart := m.d.Now()
 	m.setMenuErr(g.GuestID, nil)
 	class := m.classOf(g.Class)
+	if m.cfg.CommitMemMiB > 0 {
+		// Sized to what the running machines leave of the host's memory
+		// (commit.go); refused when that is too little.
+		mib, e := m.commitSize(g)
+		if e != nil {
+			return m.fail(g, firstStep, e)
+		}
+		g.MemMiB, class.MemMiB = mib, mib
+	}
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
 		return m.fail(g, firstStep, err)
@@ -829,6 +841,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		}
 		m.log(g).Info("guest class changed", "event", "guest_start", "class", c.Class, "prev", g.Class)
 		g.Class = c.Class
+	}
+	if err := m.commitRoom(g.GuestID, g.Class); err != nil {
+		return nil, err
 	}
 	if err := m.memRoom(g.Class); err != nil {
 		return nil, err

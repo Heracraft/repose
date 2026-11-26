@@ -559,6 +559,20 @@ func handleAPI(_ fd: Int32) {
   case ("PUT", "vm.net-reconnect"):
     if netFd < 0 { respond(fd, 500, "{\"error\":\"this VM has no switch port\"}"); return }
     if netConnect() { say("event=net_reconnected by=api"); respond(fd, 204) } else { respond(fd, 500, "{\"error\":\"connect to the switch port failed\"}") }
+  case ("PUT", "vm.resize"):
+    // Cloud Hypervisor's balloon resize: desired_balloon bytes taken back
+    // from the guest, through VZ's traditional balloon.
+    guard let o = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
+          let b = (o["desired_balloon"] as? NSNumber)?.uint64Value else {
+      respond(fd, 400, "{\"error\":\"desired_balloon is required\"}"); return
+    }
+    let e: String? = onMain { k in
+      guard let dev = vm.memoryBalloonDevices.first as? VZVirtioTraditionalMemoryBalloonDevice else { k("this VM has no balloon"); return }
+      let total = spec.memMiB * 1024 * 1024
+      dev.targetVirtualMachineMemorySize = b >= total ? 1024 * 1024 * 1024 : total - b
+      k(nil)
+    }
+    if let e = e { respond(fd, 500, "{\"error\":\(jsonString(e))}") } else { say("event=balloon target_mib=\((spec.memMiB * 1024 * 1024 - b) >> 20)"); respond(fd, 204) }
   case ("PUT", "vm.resize-disk"):
     respond(fd, 500, "{\"error\":\"resize of a running VM's disk is not supported on this host\"}")
   default:

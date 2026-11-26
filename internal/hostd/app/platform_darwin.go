@@ -171,6 +171,12 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// the 512 MiB a Linux owned host keeps (OwnedReserveBytes).
 	cfg.HostReserveBytes = macReserveBytes
 	cfg.OwnedGuestMemMiB = macGuestMemMiB(m.GuestMemMiB, cfg.TotalMemBytes)
+	// The machines' memory together stays within the Mac's less the
+	// reserve (times --mac-memory-commit-pct): VZ keeps what a guest
+	// touches, and three 12 GiB machines swapped a 24 GB Mac (I-1666).
+	if cfg.TotalMemBytes > cfg.HostReserveBytes && m.MemoryCommitPct > 0 {
+		cfg.CommitMemMiB = (cfg.TotalMemBytes - cfg.HostReserveBytes) >> 20 * uint64(m.MemoryCommitPct) / 100
+	}
 	// A VM is one process: one that ends under a running machine is
 	// booted again (I-1664).
 	d.RestartOnExit = true

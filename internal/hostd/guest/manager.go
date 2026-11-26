@@ -215,10 +215,15 @@ type Config struct {
 	// the configured memory, DECISIONS I-1666). Zero is no cap, every
 	// host before design 2.
 	OwnedGuestMemMiB uint64
-	MaxOps           int
-	MaxBuilds        int
-	MaxBuildQueue    int
-	ReadyTimeout     time.Duration
+	// CommitMemMiB, when set, is the memory the host's machines may be
+	// started with together: each start gets the class's memory or what
+	// the others leave, and is refused below MinCommitMiB. A Mac, whose
+	// VZ VMs never give memory back (DECISIONS I-1666). Zero is off.
+	CommitMemMiB  uint64
+	MaxOps        int
+	MaxBuilds     int
+	MaxBuildQueue int
+	ReadyTimeout  time.Duration
 	// PathsTimeout and SetupTimeout bound the two phases that run after
 	// guestd answers: the registration of the closure's paths, and the
 	// project's set-up. They are the host's to choose, since how long
