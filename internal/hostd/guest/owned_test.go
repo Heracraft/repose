@@ -27,12 +27,20 @@ type ownedHarness struct {
 
 func newOwnedHarness(t *testing.T) *ownedHarness {
 	t.Helper()
+	return newOwnedHarnessWith(t, nil)
+}
+
+func newOwnedHarnessWith(t *testing.T, cfg func(*Config)) *ownedHarness {
+	t.Helper()
 	o := &ownedHarness{adj: map[int]int{}}
 	o.avail.Store(12 << 30)
 	o.harness = newHarnessWith(t, func(c *Config) {
 		c.Owned, c.HostVCPUs = true, 8
 		c.TotalMemBytes, c.HostReserveBytes = 16<<30, 1<<30
 		c.FreePageReporting = true
+		if cfg != nil {
+			cfg(c)
+		}
 	}, func(d *Deps) {
 		d.MemInfo = func() (uint64, uint64, error) { return 16 << 30, o.avail.Load(), nil }
 		d.GuestsSliceMemory = func() (uint64, error) { return o.slice.Load(), nil }
@@ -168,6 +176,47 @@ func TestOwnedStartNeedsRealFreeMemory(t *testing.T) {
 	o.avail.Store(12 << 30)
 	o.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
 	o.createClass(gid2, "xl")
+}
+
+// Under a hypervisor (the Mac appliance), guests together boot with no
+// more vCPUs than the host has: on the M4, four guests of four vCPUs on
+// the appliance's eight hung every one of them (the lab, 2026-11-25
+// 23:49Z). The refusal names CPU, not memory; a stopped guest frees its
+// vCPUs (DECISIONS I-1640).
+const (
+	gid4 = "0192f0a4-4444-7000-8000-000000000004"
+	gid5 = "0192f0a5-5555-7000-8000-000000000005"
+)
+
+func TestOwnedStartBoundedByHostVCPUs(t *testing.T) {
+	o := newOwnedHarnessWith(t, func(c *Config) { c.HostVCPUs, c.OwnedMaxVCPUs = 2, 8 })
+	ids := []string{gid1, gid2, gid3, gid4}
+	for _, id := range ids {
+		o.createClass(id, "small")
+	}
+	if argv, _ := o.unitOf(gid1); !strings.Contains(strings.Join(argv, " "), "--cpus boot=2") {
+		t.Fatalf("argv %q lacks --cpus boot=2", argv)
+	}
+	req := createReq(gid5)
+	req.SystemClosure = o.closure
+	res := o.mustFail(cmd(req), CodeInsufficientCapacity)
+	if !strings.Contains(res.Error.Message, "not enough free CPU") || !strings.Contains(res.Error.Message, "8 of 8 vCPUs") {
+		t.Fatalf("refusal %q", res.Error.Message)
+	}
+	o.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	o.createClass(gid5, "small")
+	res = o.mustFail(cmd(&hostdv1.StartGuest{GuestId: gid1}), CodeInsufficientCapacity)
+	if !strings.Contains(res.Error.Message, "not enough free CPU") {
+		t.Fatalf("start refusal %q", res.Error.Message)
+	}
+}
+
+// Without the bound (bare metal), the vCPU count limits nothing.
+func TestOwnedBareMetalHasNoVCPUBound(t *testing.T) {
+	o := newOwnedHarness(t)
+	for _, id := range []string{gid1, gid2, gid3} {
+		o.createClass(id, "small")
+	}
 }
 
 // A guest the OOM killer took on an owned host is stopped with the agreed

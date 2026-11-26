@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -46,4 +47,33 @@ func SetOOMScoreAdj(pid, adj int) error {
 		return fmt.Errorf("hostinfo: oom_score_adj %d outside -1000..1000", adj)
 	}
 	return os.WriteFile(filepath.Join(procRoot, strconv.Itoa(pid), "oom_score_adj"), []byte(strconv.Itoa(adj)+"\n"), 0o644)
+}
+
+// sysRoot is /sys; a var so a test writes into a directory.
+var sysRoot = "/sys"
+
+// UnderHypervisor reports whether this host's kernel itself runs in a
+// virtual machine, so its guests are nested: the Mac appliance under
+// Apple's Virtualization framework, or an x86 VM whose CPU flags name
+// "hypervisor". A nested guest's vCPUs cost far more as their number
+// grows (DECISIONS I-1640).
+func UnderHypervisor() bool { return underHypervisorFrom(sysRoot, procRoot) }
+
+func underHypervisorFrom(sys, proc string) bool {
+	if b, err := os.ReadFile(filepath.Join(sys, "class", "dmi", "id", "product_name")); err == nil &&
+		strings.HasPrefix(strings.TrimSpace(string(b)), "Apple Virtualization") {
+		return true
+	}
+	b, err := os.ReadFile(filepath.Join(proc, "cpuinfo"))
+	if err != nil {
+		return false
+	}
+	for line := range strings.Lines(string(b)) {
+		if k, v, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(k) == "flags" {
+			if slices.Contains(strings.Fields(v), "hypervisor") {
+				return true
+			}
+		}
+	}
+	return false
 }
