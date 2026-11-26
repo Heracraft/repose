@@ -74,7 +74,7 @@ func (r *recRunner) Start(context.Context, io.Reader, ...string) (shell.Proc, er
 // a quota an earlier hostd set at runtime.
 func TestOwnedSliceKeepsAShareForTheHostWithoutAQuota(t *testing.T) {
 	r := &recRunner{}
-	ownedSlice(context.Background(), r, 16<<30, slog.New(slog.DiscardHandler))
+	ownedSlice(context.Background(), r, 16<<30, false, slog.New(slog.DiscardHandler))
 	if len(r.argv) != 1 {
 		t.Fatalf("runs %v", r.argv)
 	}
@@ -116,5 +116,21 @@ func TestOwnedMaxVCPUsOverride(t *testing.T) {
 	}
 	if got := ownedBound(4, false, 8); got != 4 {
 		t.Fatalf("override 4 on bare metal: %d", got)
+	}
+}
+
+// A nested owned host never swaps guest RAM (DECISIONS I-1656): on the M4
+// appliance a guest some of whose RAM the host swapped to zram spun both
+// vCPUs and never answered again, idle or not (builder host, 2026-11-26
+// 04:07Z and 04:10Z; 2 hangs in 4 runs with swap, none in 3 without).
+// Bare metal keeps the kernel's default, and "infinity" clears a 0 an
+// earlier setting left at runtime.
+func TestOwnedSliceNeverSwapsANestedGuest(t *testing.T) {
+	for nested, want := range map[bool]string{true: "MemorySwapMax=0", false: "MemorySwapMax=infinity"} {
+		r := &recRunner{}
+		ownedSlice(context.Background(), r, 16<<30, nested, slog.New(slog.DiscardHandler))
+		if len(r.argv) != 1 || !slices.Contains(r.argv[0], want) {
+			t.Fatalf("nested %v: argv %v lacks %s", nested, r.argv, want)
+		}
 	}
 }
