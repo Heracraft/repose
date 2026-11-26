@@ -187,7 +187,9 @@
 				<div class="win" class:on={w.running} class:front={w.key === 'call'} data-k={w.key}>
 					<div class="head">
 						<span class="ag">{@render markSvg(w.agent)}</span>
-						<span class="who"><span class="bd">{w.agent.name}</span><span class="use">{w.use}</span></span>
+						<span class="who"
+							><span class="bd">{w.agent.name}</span><span class="use">{w.use}</span></span
+						>
 						<span class="state"
 							><i class="dot"></i><span class="sw"
 								><span class="s-run">running</span><span class="s-frz">frozen</span></span

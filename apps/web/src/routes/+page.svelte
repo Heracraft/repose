@@ -17,6 +17,9 @@
 	import ScrollWheel from '$lib/components/landing/ScrollWheel.svelte';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import PauseButton from '$lib/components/landing/PauseButton.svelte';
+	import MacFigures from '$lib/components/landing/MacFigures.svelte';
+	import YourHardware from '$lib/components/landing/YourHardware.svelte';
+	import { MAC_DESIGN2_LIVE } from '$lib/data/mac-figures';
 	import { loadHero } from '$lib/components/landing/heroes';
 
 	/** Optional `?hero=` gallery candidate override; defaults to HeroVisual. */
@@ -170,9 +173,22 @@
 		</div>
 	</section>
 
+	<section class="band" id="hardware" aria-labelledby="hardware-h">
+		<div class="head">
+			{@render label('03', 'Your hardware')}
+			<h2 class="hk-h2" id="hardware-h">Run it on hardware you own</h2>
+			<div class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}>What it needs</a
+				>
+			</div>
+		</div>
+		<YourHardware />
+		{#if MAC_DESIGN2_LIVE}<MacFigures />{/if}
+	</section>
+
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head head--pricing">
-			{@render label('03', 'Pricing')}
+			{@render label('04', 'Pricing')}
 			<div class="pricing-title">
 				<h2 class="hk-h2" id="pricing-h">Pay for what runs at once</h2>
 				<p class="copy pricing-lead">Stopped sandboxes don't count against your memory.</p>
@@ -220,7 +236,7 @@
 
 	<section class="band install-band" id="install" aria-labelledby="install-h">
 		<div class="head">
-			{@render label('04', 'Start')}
+			{@render label('05', 'Start')}
 			<h2 class="hk-h2" id="install-h">Run it in your repo</h2>
 		</div>
 		<div class="start-tabs">
