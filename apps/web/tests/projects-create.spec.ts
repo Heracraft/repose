@@ -581,10 +581,11 @@ test('a full host of your own names itself and the memory it has', async ({ page
 		const name = unique('no-room');
 		await openForm(page);
 		await form(page).getByLabel('Name').fill(name);
-		await form(page).getByRole('button', { name: 'Create' }).click();
-		await expect(form(page).getByTestId('new-machine-error')).toContainText(
-			'your host mac-full has 0.8 GB of memory free, and a machine starts there when it has at least 1 GB free'
+		// The form says so before Create, and Create waits (I-1654, I-1658).
+		await expect(form(page).getByTestId('nm-host-full')).toContainText(
+			'mac-full has 819 MB of memory free, and a machine starts there at 1 GB.'
 		);
+		await form(page).getByRole('button', { name: 'Create' }).click({ force: true });
 		expect(await fromApi(name)).toBeUndefined();
 	} finally {
 		while (litter.length) await destroyProject(api, litter.pop()!);
@@ -695,7 +696,7 @@ test('New project on a full Mac says so before Create, with both ways out', asyn
 		const create = form(page).getByRole('button', { name: 'Create' });
 		await expect(create).toHaveAttribute('aria-disabled', 'true');
 		await form(page).getByLabel('Name').press('Enter');
-		await create.click();
+		await create.click({ force: true });
 		await expect(page).toHaveURL(/\/projects(\?.*)?$/);
 		await shots(page, 'new-project-host-full');
 		await full.getByRole('button', { name: "Use repose's servers" }).click();
