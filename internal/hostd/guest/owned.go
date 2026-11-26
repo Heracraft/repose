@@ -2,6 +2,7 @@ package guest
 
 import (
 	"context"
+	"maps"
 	"sort"
 	"strconv"
 	"sync"
@@ -103,7 +104,13 @@ type ownedState struct {
 	// lowSince is when free memory went under the guard's floor, zero
 	// while above it; lastGuard is the guard's last stop.
 	lowSince, lastGuard time.Time
-	rankMu              sync.Mutex
+	// memHist is each running guest's memory over OwnedGuardWindow;
+	// guarding the guests the guard has stopped and not yet seen go;
+	// oomSeen the slice's oom_kill count already attributed.
+	memHist  map[string][]memSample
+	guarding map[string]bool
+	oomSeen  uint64
+	rankMu   sync.Mutex
 }
 
 // classOf is the shape a guest of class boots with on this host: the
@@ -335,8 +342,46 @@ func (m *Manager) dropGuestCache(ctx context.Context, id, why string) {
 // a process of the unit, whichever OOM it was (the guest's own, the
 // slice's or the host's).
 func (m *Manager) oomExit(ctx context.Context, g *state.Guest) bool {
-	props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "Result")
-	return err == nil && props["Result"] == "oom-kill"
+	if props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "Result"); err == nil && props["Result"] == "oom-kill" {
+		return true
+	}
+	// The appliance kernel's memory cgroup OOM kill left Result as it was
+	// and the hypervisor's exit status 0 (pass-2 B1); guests.slice counts
+	// it in memory.events, which outlives the dead guest's own cgroup.
+	return m.sliceOOMKilled()
+}
+
+// sliceOOMKilled reports whether guests.slice's oom_kill count rose since
+// hostd last attributed one, and takes the rise (DECISIONS I-1650).
+func (m *Manager) sliceOOMKilled() bool {
+	if m.d.SliceOOMKills == nil {
+		return false
+	}
+	n, err := m.d.SliceOOMKills()
+	if err != nil {
+		return false
+	}
+	o := &m.owned
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if n > o.oomSeen {
+		o.oomSeen = n
+		return true
+	}
+	return false
+}
+
+// initOOMSeen takes guests.slice's oom_kill count at hostd's start, so a
+// kill from before it is not counted against a later death.
+func (m *Manager) initOOMSeen() {
+	if m.d.SliceOOMKills == nil {
+		return
+	}
+	if n, err := m.d.SliceOOMKills(); err == nil {
+		m.owned.mu.Lock()
+		m.owned.oomSeen = n
+		m.owned.mu.Unlock()
+	}
 }
 
 // oomStopped records a guest the OOM killer took on an owned host: torn
@@ -358,19 +403,27 @@ func (m *Manager) oomStopped(ctx context.Context, id string) {
 
 // The memory guard (DECISIONS I-1650). On the M4 appliance a guests.slice
 // at its MemoryMax neither swapped guest RAM nor OOM-killed a guest: every
-// guest hung, and stayed hung (the lab, 2026-11-26 01:46Z, free 6 MB of
-// room and MemAvailable 0.12 GiB; at 23:49Z the night before, 0.59 GiB of
-// room). Runs that finished went no lower than 0.83 GiB. So hostd does not
-// wait for the kernel: free memory (FreeMemBytes) under
-// OwnedGuardFloorBytes for OwnedGuardHold stops the newest running guest,
-// the one the OOM order (I-1626) would have taken, and reports it as the
-// OOM killer's; then nothing more for OwnedGuardCooldown, so what that
-// stop freed is seen before another goes.
+// guest hung (the lab, 2026-11-26 01:46Z). So hostd does not wait for the
+// kernel: free memory (FreeMemBytes) under OwnedGuardFloorBytes for
+// OwnedGuardHold stops one running guest: the one whose memory grew most
+// over OwnedGuardWindow, at least OwnedGuardGrowthBytes, else the newest,
+// the one I-1626's OOM order would take. A guest it stops reads as the
+// OOM killer's. If free memory is still short OwnedGuardCooldown later it
+// stops the next by the same rule at once: the kernel's own OOM kill came
+// 9-13 s after a stop that took the wrong guest (pass-2 B1).
 const (
-	OwnedGuardFloorBytes = 512 << 20
-	OwnedGuardHold       = 5 * time.Second
-	OwnedGuardCooldown   = 30 * time.Second
+	OwnedGuardFloorBytes  = 512 << 20
+	OwnedGuardHold        = 5 * time.Second
+	OwnedGuardCooldown    = 5 * time.Second
+	OwnedGuardWindow      = 30 * time.Second
+	OwnedGuardGrowthBytes = 512 << 20
 )
+
+// memSample is one reading of a guest's memory.
+type memSample struct {
+	at    time.Time
+	bytes uint64
+}
 
 // guardLoop runs the guard on an owned host until the manager stops.
 func (m *Manager) guardLoop() {
@@ -397,8 +450,9 @@ func (m *Manager) guardTick(ctx context.Context) {
 	if !m.cfg.Owned {
 		return
 	}
-	free, ok := m.ownedFree()
 	now := m.d.Now()
+	m.recordGuestMemory(now)
+	free, ok := m.ownedFree()
 	o := &m.owned
 	o.mu.Lock()
 	if !ok || free >= OwnedGuardFloorBytes {
@@ -413,15 +467,20 @@ func (m *Manager) guardTick(ctx context.Context) {
 		o.mu.Unlock()
 		return
 	}
-	o.lastGuard, o.lowSince = now, time.Time{}
 	o.mu.Unlock()
-	run := m.runningByAge(ctx)
-	if len(run) == 0 {
+	id, why, grew := m.guardVictim(ctx)
+	if id == "" {
 		return
 	}
-	id := run[0].id
+	o.mu.Lock()
+	o.lastGuard = now
+	if o.guarding == nil {
+		o.guarding = map[string]bool{}
+	}
+	o.guarding[id] = true
+	o.mu.Unlock()
 	if g, err := m.d.State.GetGuest(id); err == nil {
-		m.log(g).Warn("guest stopped: the host is out of memory", "event", "guest_memory_guard", "free_bytes", free, "running", len(run))
+		m.log(g).Warn("guest stopped: the host is out of memory", "event", "guest_memory_guard", "free_bytes", free, "chosen", why, "grew_bytes", grew)
 	}
 	// Off the guest's queue: a hung guest's own job may never end. The
 	// monitor goes first, so the kill reads as this stop and not as a
@@ -431,6 +490,85 @@ func (m *Manager) guardTick(ctx context.Context) {
 	}
 	_ = m.d.Systemd.Kill(ctx, GuestUnit(id)) // best effort; the teardown stops the unit too
 	m.enqueue(id, job{internal: func(ctx context.Context) { m.oomStopped(ctx, id) }})
+}
+
+// recordGuestMemory adds each running guest's memory to its window and
+// forgets guests that are no longer running.
+func (m *Manager) recordGuestMemory(now time.Time) {
+	if m.d.GuestMemory == nil {
+		return
+	}
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return
+	}
+	running := map[string]bool{}
+	for _, g := range gs {
+		if g.State == StateRunning {
+			running[g.GuestID] = true
+		}
+	}
+	read := map[string]uint64{}
+	for id := range running {
+		if b, err := m.d.GuestMemory(id); err == nil {
+			read[id] = b
+		}
+	}
+	o := &m.owned
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.memHist == nil {
+		o.memHist = map[string][]memSample{}
+	}
+	for id := range o.memHist {
+		if !running[id] {
+			delete(o.memHist, id)
+		}
+	}
+	for id := range o.guarding {
+		if !running[id] {
+			delete(o.guarding, id)
+		}
+	}
+	for id, b := range read {
+		h := append(o.memHist[id], memSample{now, b})
+		for len(h) > 0 && now.Sub(h[0].at) > OwnedGuardWindow {
+			h = h[1:]
+		}
+		o.memHist[id] = h
+	}
+}
+
+// guardVictim is the guest the guard stops: the one whose memory grew most
+// over the window (its newest reading less its lowest), when that is at
+// least OwnedGuardGrowthBytes, else the newest running guest. A guest
+// already being stopped is never chosen again.
+func (m *Manager) guardVictim(ctx context.Context) (id, why string, grew uint64) {
+	o := &m.owned
+	o.mu.Lock()
+	for gid, h := range o.memHist {
+		if o.guarding[gid] || len(h) == 0 {
+			continue
+		}
+		low := h[0].bytes
+		for _, s := range h {
+			low = min(low, s.bytes)
+		}
+		if g := h[len(h)-1].bytes - low; g > grew || (g == grew && gid < id) {
+			id, grew = gid, g
+		}
+	}
+	guarding := maps.Clone(o.guarding)
+	o.mu.Unlock()
+	if id != "" && grew >= OwnedGuardGrowthBytes {
+		return id, "grew", grew
+	}
+	for _, r := range m.runningByAge(ctx) {
+		if !guarding[r.id] {
+			return r.id, "newest", 0
+		}
+	}
+	return "", "", 0
 }
 
 // ranked is a running guest with its hypervisor's pid and start.

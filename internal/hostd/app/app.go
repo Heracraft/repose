@@ -430,6 +430,8 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		Park:                fdeps,
 		AfterHypervisorExit: resetter.Kick,
 		GuestsSliceMemory:   hostinfo.GuestsSliceMemory,
+		GuestMemory:         hostinfo.GuestMemory,
+		SliceOOMKills:       hostinfo.SliceOOMKills,
 		SetOOMScoreAdj:      hostinfo.SetOOMScoreAdj,
 	})
 	if err != nil {

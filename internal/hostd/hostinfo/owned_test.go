@@ -77,3 +77,19 @@ func TestUnderHypervisor(t *testing.T) {
 		}
 	}
 }
+
+// guests.slice's oom_kill is read from memory.events, the line named so
+// and not oom_group_kill (DECISIONS I-1650).
+func TestSliceOOMKills(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, GuestsSlice), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ev := "low 0\nhigh 0\nmax 38\noom 2\noom_kill 3\noom_group_kill 0\n"
+	if err := os.WriteFile(filepath.Join(root, GuestsSlice, "memory.events"), []byte(ev), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := oomKillsFrom(root, GuestsSlice); err != nil || n != 3 {
+		t.Fatalf("oom_kill %d %v, want 3", n, err)
+	}
+}

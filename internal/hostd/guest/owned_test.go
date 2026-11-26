@@ -28,6 +28,10 @@ type ownedHarness struct {
 	clock atomic.Int64
 	// memErr makes /proc/meminfo unreadable.
 	memErr atomic.Bool
+	// guestMem is each guest's cgroup memory.current; sliceOOM the
+	// slice's memory.events oom_kill.
+	guestMem sync.Map
+	sliceOOM atomic.Uint64
 }
 
 func newOwnedHarness(t *testing.T) *ownedHarness {
@@ -55,6 +59,13 @@ func newOwnedHarnessWith(t *testing.T, cfg func(*Config)) *ownedHarness {
 			return 16 << 30, o.avail.Load(), nil
 		}
 		d.GuestsSliceMemory = func() (uint64, error) { return o.slice.Load(), nil }
+		d.GuestMemory = func(id string) (uint64, error) {
+			if v, ok := o.guestMem.Load(id); ok {
+				return v.(uint64), nil
+			}
+			return 1 << 30, nil
+		}
+		d.SliceOOMKills = func() (uint64, error) { return o.sliceOOM.Load(), nil }
 		d.Now = func() time.Time {
 			if n := o.clock.Load(); n != 0 {
 				return time.Unix(0, n)
@@ -459,13 +470,14 @@ func TestOwnedGuardStopsTheNewestBeforeTheLivelock(t *testing.T) {
 	if g := o.guest(gid1); g.State != StateRunning {
 		t.Fatalf("older guest %s", g.State)
 	}
-	// Still short: the cooldown first.
-	at(20 * time.Second)
-	at(30 * time.Second)
+	// Still short: the cooldown first, then the next at once, before the
+	// kernel would act (it did 9-13 s after a stop, pass-2 B1; I-1650).
+	at(11 * time.Second)
+	at(13 * time.Second)
 	if killed(gid1) {
 		t.Fatal("a second guest stopped within the cooldown")
 	}
-	at(40 * time.Second)
+	at(14 * time.Second)
 	o.waitState(gid1, StateStopped)
 	// A meminfo that cannot be read stops nothing.
 	o.avail.Store(12 << 30)
@@ -502,4 +514,52 @@ func TestOwnedGuestRAMHugePagesAreASwitch(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(f.cfg.GuestsDir, gid1, "ch.args")); strings.Contains(string(b), "thp=") {
 		t.Fatalf("fleet argv names thp:\n%s", b)
 	}
+}
+
+// The guard stops the machine whose memory grew most over its recent
+// window, not the newest (pass-2 B1, 2026-11-26: a runaway in the oldest
+// machine; the guard took the newest, idle one, and the kernel then
+// OOM-killed the runaway's anyway, so two machines lost their memory).
+// With no machine grown it falls back to the newest (DECISIONS I-1650).
+func TestOwnedGuardStopsTheMachineThatGrew(t *testing.T) {
+	o := newOwnedHarness(t)
+	o.createClass(gid1, "large")
+	o.createClass(gid2, "large")
+	ctx := context.Background()
+	t0 := time.Unix(1_800_000_000, 0)
+	at := func(d time.Duration) { o.clock.Store(t0.Add(d).UnixNano()); o.m.guardTick(ctx) }
+	o.guestMem.Store(gid2, uint64(1<<30))
+	for i, gib := range []uint64{1, 3, 5, 7, 9, 9, 9, 9, 9, 9} {
+		o.guestMem.Store(gid1, gib<<30)
+		if i >= 3 {
+			o.avail.Store(100 << 20)
+		}
+		at(time.Duration(i) * time.Second)
+	}
+	o.waitState(gid1, StateStopped)
+	if o.sd.HasOp("kill guest@" + gid2) {
+		t.Fatal("the idle newest guest was stopped")
+	}
+	if g := o.guest(gid1); g.Reason != ReasonOOMKilled {
+		t.Fatalf("the guest that grew: reason %q", g.Reason)
+	}
+}
+
+// A guest the appliance kernel's memory cgroup OOM-killed is stopped with
+// the memory reason, not an error: on pass-2 B1 its hypervisor exited 0,
+// systemd's Result said nothing, and only guests.slice's memory.events
+// oom_kill counted it (DECISIONS I-1650).
+func TestOwnedKernelOOMKillReadsAsOOM(t *testing.T) {
+	o := newOwnedHarness(t)
+	o.createClass(gid1, "large")
+	o.sliceOOM.Add(1)
+	o.sd.Exit("guest@"+gid1, 0)
+	o.waitState(gid1, StateStopped)
+	if g := o.guest(gid1); g.Reason != ReasonOOMKilled {
+		t.Fatalf("reason %q, want %q", g.Reason, ReasonOOMKilled)
+	}
+	// A later exit with no new kill is an ordinary death.
+	o.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	o.sd.Exit("guest@"+gid1, 3)
+	o.waitState(gid1, StateError)
 }

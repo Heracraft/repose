@@ -23,6 +23,33 @@ func GuestsSliceMemory() (uint64, error) {
 	return cgroupMemoryFrom(cgroupRoot, GuestsSlice)
 }
 
+// GuestMemory returns a guest unit's cgroup memory.current in bytes
+// (guest@<id>.service under guests.slice): what the memory guard reads to
+// find the guest that grew (DECISIONS I-1650).
+func GuestMemory(id string) (uint64, error) {
+	return cgroupMemoryFrom(cgroupRoot, filepath.Join(GuestsSlice, "guest@"+id+".service"))
+}
+
+// SliceOOMKills returns guests.slice's memory.events oom_kill: the kernel's
+// OOM kills of the guests' processes, counted where the dead guest's own
+// cgroup cannot be read any more (DECISIONS I-1650).
+func SliceOOMKills() (uint64, error) {
+	return oomKillsFrom(cgroupRoot, GuestsSlice)
+}
+
+func oomKillsFrom(root, cgroup string) (uint64, error) {
+	b, err := os.ReadFile(filepath.Join(root, cgroup, "memory.events"))
+	if err != nil {
+		return 0, err
+	}
+	for line := range strings.Lines(string(b)) {
+		if k, v, ok := strings.Cut(strings.TrimSpace(line), " "); ok && k == "oom_kill" {
+			return strconv.ParseUint(v, 10, 64)
+		}
+	}
+	return 0, fmt.Errorf("%s/memory.events: no oom_kill", cgroup)
+}
+
 func cgroupMemoryFrom(root, cgroup string) (uint64, error) {
 	b, err := os.ReadFile(filepath.Join(root, cgroup, "memory.current"))
 	if err != nil {
