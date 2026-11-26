@@ -415,7 +415,10 @@ for the same two reasons as `virtiofsd`, I-69) with `--sandbox namespace
 volume, I-464), MemoryMax=64M (DECISIONS I-278). hostd adds the second `--fs` only once that socket exists; a share
 that fails to start is logged (`auth_share`) and the guest boots without
 it. `repose.host.claudeLoginShare = false` (hostd
-`--claude-login-share=false`) starts no share at all.
+`--claude-login-share=false`) starts no share at all. On the Mac appliance the kernel did neither at the limit, so hostd's
+memory guard stops the newest guest itself first (free memory under
+512 MiB for 5 s, then 30 s before another; event `guest_memory_guard`,
+DECISIONS I-1650).
 
 ## Base images on the host
 

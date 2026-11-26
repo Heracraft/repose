@@ -328,6 +328,13 @@ type Config struct {
 	// OwnedMaxVCPUs bounds the vCPUs an owned host's guests boot with
 	// together; 0 is no bound.
 	OwnedMaxVCPUs uint32
+	// OwnedGuestTHP keeps 2 MiB pages for an owned host's guest RAM
+	// (Cloud Hypervisor's thp, I-1574); false boots it as 4 KiB shmem,
+	// which reclaim can swap (DECISIONS I-1650).
+	OwnedGuestTHP bool
+	// OwnedGuardEvery is how often the memory guard looks on an owned
+	// host (I-1650); 0 is a second.
+	OwnedGuardEvery time.Duration
 }
 
 // Defaults fills documented values into zero fields.
@@ -710,6 +717,11 @@ func (m *Manager) Run() {
 	for i := 0; i < m.cfg.MaxBuilds; i++ {
 		m.wg.Add(1)
 		go m.buildWorker()
+	}
+	if m.cfg.Owned {
+		// The memory guard (DECISIONS I-1650).
+		m.wg.Add(1)
+		go m.guardLoop()
 	}
 }
 

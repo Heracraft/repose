@@ -311,6 +311,12 @@ it. No field changes shape; what some mean there:
   Under a hypervisor, also when the guests not stopped, failed or
   destroyed and the new one would boot with more vCPUs together than the
   host has, with a message that holds "not enough free CPU" (I-1640).
+- hostd stops the newest running guest itself when the host's free memory
+  (`free_mem_bytes` above) stays under 512 MiB for 5 s, and reports it as
+  the OOM killer's below (I-1650): on the Mac appliance the kernel neither
+  swapped nor OOM-killed at the limit, and every guest hung. Guest RAM is
+  4 KiB shmem there (Cloud Hypervisor's `thp=off`) unless hostd.env
+  names `--owned-guest-thp`.
 - A guest the kernel's OOM killer ended (systemd's `Result=oom-kill` on
   `guest@<id>`, seen by the monitor or by the reconcile at hostd's start)
   is torn down and sent as `guest_state_changed {state: stopped, reason:

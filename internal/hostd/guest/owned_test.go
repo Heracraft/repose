@@ -2,6 +2,9 @@ package guest
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -23,6 +26,8 @@ type ownedHarness struct {
 	adj          map[int]int
 	// clock, when set, is the manager's now in unix nanoseconds.
 	clock atomic.Int64
+	// memErr makes /proc/meminfo unreadable.
+	memErr atomic.Bool
 }
 
 func newOwnedHarness(t *testing.T) *ownedHarness {
@@ -38,11 +43,17 @@ func newOwnedHarnessWith(t *testing.T, cfg func(*Config)) *ownedHarness {
 		c.Owned, c.HostVCPUs = true, 8
 		c.TotalMemBytes, c.HostReserveBytes = 16<<30, 1<<30
 		c.FreePageReporting = true
+		c.OwnedGuardEvery = time.Hour // the tests call guardTick themselves
 		if cfg != nil {
 			cfg(c)
 		}
 	}, func(d *Deps) {
-		d.MemInfo = func() (uint64, uint64, error) { return 16 << 30, o.avail.Load(), nil }
+		d.MemInfo = func() (uint64, uint64, error) {
+			if o.memErr.Load() {
+				return 0, 0, errors.New("meminfo unreadable")
+			}
+			return 16 << 30, o.avail.Load(), nil
+		}
 		d.GuestsSliceMemory = func() (uint64, error) { return o.slice.Load(), nil }
 		d.Now = func() time.Time {
 			if n := o.clock.Load(); n != 0 {
@@ -410,5 +421,84 @@ func TestOwnedIdleCountsTheHypervisorsOwnIdleCost(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if drops.Load() != 1 {
 		t.Fatalf("a busy guest was dropped (drops %d)", drops.Load())
+	}
+}
+
+// DECISIONS I-1650: on the M4 appliance a guests.slice at its MemoryMax
+// with THP-backed guest RAM swapped nothing and OOM-killed nothing; every
+// guest hung and stayed hung (the lab, 2026-11-26 01:46Z). hostd does not
+// wait for the kernel: free memory under OwnedGuardFloorBytes for
+// OwnedGuardHold stops the newest running guest itself, killed and
+// reported stopped/oom_killed as an OOM kill is; then nothing more for
+// OwnedGuardCooldown, so what the stop freed is seen first.
+func TestOwnedGuardStopsTheNewestBeforeTheLivelock(t *testing.T) {
+	o := newOwnedHarness(t)
+	o.createClass(gid1, "large")
+	o.createClass(gid2, "large")
+	ctx := context.Background()
+	t0 := time.Unix(1_800_000_000, 0)
+	at := func(d time.Duration) { o.clock.Store(t0.Add(d).UnixNano()); o.m.guardTick(ctx) }
+	killed := func(id string) bool { return o.sd.HasOp("kill guest@" + id) }
+	o.avail.Store(100 << 20)
+	at(0)
+	at(2 * time.Second)
+	// Back above the floor: the hold starts again.
+	o.avail.Store(2 << 30)
+	at(3 * time.Second)
+	o.avail.Store(100 << 20)
+	at(4 * time.Second)
+	at(8 * time.Second)
+	if killed(gid1) || killed(gid2) {
+		t.Fatal("a guest was stopped before free memory stayed under the floor for the hold")
+	}
+	at(9 * time.Second)
+	o.waitState(gid2, StateStopped)
+	if g := o.guest(gid2); g.Reason != ReasonOOMKilled || !killed(gid2) {
+		t.Fatalf("newest: reason %q killed %v", g.Reason, killed(gid2))
+	}
+	if g := o.guest(gid1); g.State != StateRunning {
+		t.Fatalf("older guest %s", g.State)
+	}
+	// Still short: the cooldown first.
+	at(20 * time.Second)
+	at(30 * time.Second)
+	if killed(gid1) {
+		t.Fatal("a second guest stopped within the cooldown")
+	}
+	at(40 * time.Second)
+	o.waitState(gid1, StateStopped)
+	// A meminfo that cannot be read stops nothing.
+	o.avail.Store(12 << 30)
+	o.createClass(gid3, "large")
+	o.avail.Store(100 << 20)
+	o.memErr.Store(true)
+	for s := 50; s < 120; s += 5 {
+		at(time.Duration(s) * time.Second)
+	}
+	if killed(gid3) {
+		t.Fatal("stopped a guest on an unreadable /proc/meminfo")
+	}
+}
+
+// Guest RAM on an owned host is 4 KiB shmem by default (Cloud
+// Hypervisor's thp=off), which reclaim can swap to zram; OwnedGuestTHP
+// keeps 2 MiB pages, as I-1574 chose for speed. The fleet is unchanged.
+func TestOwnedGuestRAMHugePagesAreASwitch(t *testing.T) {
+	o := newOwnedHarness(t)
+	o.createClass(gid1, "small")
+	if argv, _ := o.unitOf(gid1); !strings.Contains(strings.Join(argv, " "), ",shared=on,thp=off") {
+		t.Fatalf("owned default argv %q lacks thp=off", argv)
+	}
+	on := newOwnedHarnessWith(t, func(c *Config) { c.OwnedGuestTHP = true })
+	on.createClass(gid1, "small")
+	if argv, _ := on.unitOf(gid1); strings.Contains(strings.Join(argv, " "), "thp=") {
+		t.Fatalf("THP on: argv %q names thp", argv)
+	}
+	f := newHarness(t, nil)
+	req := createReq(gid1)
+	req.SystemClosure = f.closure
+	f.mustOK(cmd(req))
+	if b, _ := os.ReadFile(filepath.Join(f.cfg.GuestsDir, gid1, "ch.args")); strings.Contains(string(b), "thp=") {
+		t.Fatalf("fleet argv names thp:\n%s", b)
 	}
 }

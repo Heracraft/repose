@@ -309,6 +309,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
 		FreePageReporting: m.cfg.FreePageReporting,
+		NoTHP:             m.cfg.Owned && !m.cfg.OwnedGuestTHP,
 	}
 	if erofs {
 		// The bundle from the image cache: vda the rootfs.erofs, the
