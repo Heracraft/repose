@@ -126,6 +126,8 @@ type Options struct {
 	// OwnedVCPUs is how many vCPUs an owned host's guests boot with; 0
 	// is the rule ownedVCPUs applies (I-1640). Never more than the host's.
 	OwnedVCPUs uint
+	// OwnedGuestTHP keeps 2 MiB pages for owned guests' RAM (I-1650).
+	OwnedGuestTHP bool
 	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
 	// offline and back after a guest's hypervisor exits. auto is on
 	// under Apple's Virtualization framework, the Mac appliance, where a
@@ -384,6 +386,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		Owned:              o.OwnedHost,
 		HostVCPUs:          ownedVCPUs(o.OwnedVCPUs, hostinfo.VCPUs(), nested),
 		OwnedMaxVCPUs:      ownedMaxVCPUs(nested),
+		OwnedGuestTHP:      o.OwnedGuestTHP,
 		PauseIdle:          o.PauseIdle,
 		Burst:              o.Burst,
 		BurstGate:          o.BurstGate,

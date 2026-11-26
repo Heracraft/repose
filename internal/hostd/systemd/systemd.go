@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -219,6 +220,14 @@ func (f *Fake) Stop(_ context.Context, unit string) error {
 		hook(unit)
 	}
 	return nil
+}
+
+// HasOp reports whether op (such as "kill guest@<id>") was recorded,
+// under the lock, for a test whose guests are torn down concurrently.
+func (f *Fake) HasOp(op string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Contains(f.Ops, op)
 }
 
 func (f *Fake) Kill(_ context.Context, unit string) error {

@@ -100,7 +100,10 @@ type ownedState struct {
 	dropped    map[string]bool // guest id -> cache dropped since it was last busy
 	lastPress  time.Time
 	lastSample time.Time
-	rankMu     sync.Mutex
+	// lowSince is when free memory went under the guard's floor, zero
+	// while above it; lastGuard is the guard's last stop.
+	lowSince, lastGuard time.Time
+	rankMu              sync.Mutex
 }
 
 // classOf is the shape a guest of class boots with on this host: the
@@ -136,31 +139,37 @@ func (m *Manager) ownedClass() Class {
 // MemAvailable already leaves out what the appliance's processes hold, so
 // the reserve is not taken from it a second time.
 func (m *Manager) ownedFreeBytes() uint64 {
+	free, _ := m.ownedFree()
+	return free
+}
+
+// ownedFree is ownedFreeBytes, with ok false when /proc/meminfo could not
+// be read (the guard acts only on a reading).
+func (m *Manager) ownedFree() (uint64, bool) {
+	if m.d.MemInfo == nil {
+		return 0, false
+	}
 	total := m.cfg.TotalMemBytes
-	var avail uint64
-	if m.d.MemInfo != nil {
-		t, a, err := m.d.MemInfo()
-		if err != nil {
-			return 0
-		}
-		if t > 0 {
-			total = t
-		}
-		avail = a
+	t, avail, err := m.d.MemInfo()
+	if err != nil {
+		return 0, false
+	}
+	if t > 0 {
+		total = t
 	}
 	if total <= m.cfg.HostReserveBytes {
-		return 0
+		return 0, true
 	}
 	room := total - m.cfg.HostReserveBytes
 	if m.d.GuestsSliceMemory != nil {
 		if used, err := m.d.GuestsSliceMemory(); err == nil {
 			if used >= room {
-				return 0
+				return 0, true
 			}
 			room -= used
 		}
 	}
-	return min(avail, room)
+	return min(avail, room), true
 }
 
 // ownedRoom refuses a start or a create on an owned host that has less
@@ -225,37 +234,7 @@ func (m *Manager) rankOOM(ctx context.Context) {
 	}
 	m.owned.rankMu.Lock()
 	defer m.owned.rankMu.Unlock()
-	gs, err := m.d.State.ListGuests()
-	if err != nil {
-		return
-	}
-	type ranked struct {
-		id  string
-		pid int
-		at  uint64
-	}
-	var run []ranked
-	for _, g := range gs {
-		if g.State != StateRunning {
-			continue
-		}
-		props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "MainPID", "ActiveEnterTimestampMonotonic")
-		if err != nil {
-			continue
-		}
-		pid, _ := strconv.Atoi(props["MainPID"])
-		at, _ := strconv.ParseUint(props["ActiveEnterTimestampMonotonic"], 10, 64)
-		if pid <= 0 {
-			continue
-		}
-		run = append(run, ranked{id: g.GuestID, pid: pid, at: at})
-	}
-	sort.SliceStable(run, func(i, j int) bool {
-		if run[i].at != run[j].at {
-			return run[i].at > run[j].at
-		}
-		return run[i].id < run[j].id
-	})
+	run := m.runningByAge(ctx)
 	for i, r := range run {
 		adj := max(OOMAdjFloor, OOMAdjNewest-i*OOMAdjStep)
 		if err := m.d.SetOOMScoreAdj(r.pid, adj); err != nil {
@@ -375,4 +354,119 @@ func (m *Manager) oomStopped(ctx context.Context, id string) {
 	m.log(g).Warn("guest stopped by the OOM killer", "event", "guest_state", "reason", ReasonOOMKilled)
 	m.teardown(ctx, g)
 	_ = m.setState(g, StateStopped, ReasonOOMKilled) // logged inside; nothing else to do on failure
+}
+
+// The memory guard (DECISIONS I-1650). On the M4 appliance a guests.slice
+// at its MemoryMax neither swapped guest RAM nor OOM-killed a guest: every
+// guest hung, and stayed hung (the lab, 2026-11-26 01:46Z, free 6 MB of
+// room and MemAvailable 0.12 GiB; at 23:49Z the night before, 0.59 GiB of
+// room). Runs that finished went no lower than 0.83 GiB. So hostd does not
+// wait for the kernel: free memory (FreeMemBytes) under
+// OwnedGuardFloorBytes for OwnedGuardHold stops the newest running guest,
+// the one the OOM order (I-1626) would have taken, and reports it as the
+// OOM killer's; then nothing more for OwnedGuardCooldown, so what that
+// stop freed is seen before another goes.
+const (
+	OwnedGuardFloorBytes = 512 << 20
+	OwnedGuardHold       = 5 * time.Second
+	OwnedGuardCooldown   = 30 * time.Second
+)
+
+// guardLoop runs the guard on an owned host until the manager stops.
+func (m *Manager) guardLoop() {
+	defer m.wg.Done()
+	every := m.cfg.OwnedGuardEvery
+	if every <= 0 {
+		every = time.Second
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-t.C:
+			m.guardTick(m.ctx)
+		}
+	}
+}
+
+// guardTick is one look of the memory guard. An unreadable
+// /proc/meminfo stops nothing.
+func (m *Manager) guardTick(ctx context.Context) {
+	if !m.cfg.Owned {
+		return
+	}
+	free, ok := m.ownedFree()
+	now := m.d.Now()
+	o := &m.owned
+	o.mu.Lock()
+	if !ok || free >= OwnedGuardFloorBytes {
+		o.lowSince = time.Time{}
+		o.mu.Unlock()
+		return
+	}
+	if o.lowSince.IsZero() {
+		o.lowSince = now
+	}
+	if now.Sub(o.lowSince) < OwnedGuardHold || (!o.lastGuard.IsZero() && now.Sub(o.lastGuard) < OwnedGuardCooldown) {
+		o.mu.Unlock()
+		return
+	}
+	o.lastGuard, o.lowSince = now, time.Time{}
+	o.mu.Unlock()
+	run := m.runningByAge(ctx)
+	if len(run) == 0 {
+		return
+	}
+	id := run[0].id
+	if g, err := m.d.State.GetGuest(id); err == nil {
+		m.log(g).Warn("guest stopped: the host is out of memory", "event", "guest_memory_guard", "free_bytes", free, "running", len(run))
+	}
+	// Off the guest's queue: a hung guest's own job may never end. The
+	// monitor goes first, so the kill reads as this stop and not as a
+	// hypervisor that died; the teardown and the report are queued.
+	if mon := m.removeMonitor(id); mon != nil {
+		mon.stop()
+	}
+	_ = m.d.Systemd.Kill(ctx, GuestUnit(id)) // best effort; the teardown stops the unit too
+	m.enqueue(id, job{internal: func(ctx context.Context) { m.oomStopped(ctx, id) }})
+}
+
+// ranked is a running guest with its hypervisor's pid and start.
+type ranked struct {
+	id  string
+	pid int
+	at  uint64
+}
+
+// runningByAge lists the running guests, newest first.
+func (m *Manager) runningByAge(ctx context.Context) []ranked {
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return nil
+	}
+	var run []ranked
+	for _, g := range gs {
+		if g.State != StateRunning {
+			continue
+		}
+		props, err := m.d.Systemd.Show(ctx, GuestUnit(g.GuestID), "MainPID", "ActiveEnterTimestampMonotonic")
+		if err != nil {
+			continue
+		}
+		pid, _ := strconv.Atoi(props["MainPID"])
+		at, _ := strconv.ParseUint(props["ActiveEnterTimestampMonotonic"], 10, 64)
+		if pid <= 0 {
+			continue
+		}
+		run = append(run, ranked{id: g.GuestID, pid: pid, at: at})
+	}
+	sort.SliceStable(run, func(i, j int) bool {
+		if run[i].at != run[j].at {
+			return run[i].at > run[j].at
+		}
+		return run[i].id < run[j].id
+	})
+	return run
 }
