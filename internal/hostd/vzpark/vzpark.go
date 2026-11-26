@@ -18,21 +18,24 @@ import (
 // never holds.
 const KeyID = "vz-secure-enclave"
 
-// Sealer satisfies park.Sealer without a key: the record's "wrapped key"
-// is a fixed marker and Unwrap returns a key the image does not use.
+// Sealer satisfies park.Sealer without a key of its own. The park makes a
+// random image key and records a check of it; on a Mac that key encrypts
+// nothing (the image is a plain directory and VZ seals the save file), so
+// the "wrapped" key is the key itself, kept only so the record's check
+// holds at the restore.
 type Sealer struct{}
-
-var marker = []byte("vz")
 
 func (Sealer) Ready() error { return nil }
 
-func (Sealer) Wrap([]byte) ([]byte, string, error) { return marker, KeyID, nil }
+func (Sealer) Wrap(key []byte) ([]byte, string, error) {
+	return append([]byte(nil), key...), KeyID, nil
+}
 
 func (Sealer) Unwrap(_ context.Context, wrapped []byte, keyID string) ([]byte, error) {
-	if keyID != KeyID || string(wrapped) != string(marker) {
+	if keyID != KeyID {
 		return nil, errors.New("vzpark: the record was not written by a Mac park")
 	}
-	return make([]byte, park.KeyBytes), nil
+	return append([]byte(nil), wrapped...), nil
 }
 
 func (Sealer) Refresh(context.Context) error { return nil }

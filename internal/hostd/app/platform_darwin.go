@@ -47,6 +47,11 @@ func platformFor(o Options) platform {
 		adapt: func(ctx context.Context, r shell.Runner, log *slog.Logger, cfg *guest.Config, d *guest.Deps) error {
 			return adaptMac(ctx, o, m, r, log, cfg, d)
 		},
+		// A restore needs the user's session unlocked (I-1662): hostd
+		// waits for it rather than let a parked machine start cold.
+		beforeReconcile: func(ctx context.Context, r shell.Runner, log *slog.Logger) {
+			vzpark.WaitUnlocked(ctx, r, os.Getuid(), filepath.Join(o.StateDir, "freeze"), 2*time.Second, log)
+		},
 	}
 }
 

@@ -25,6 +25,9 @@ type platform struct {
 	// adapt replaces the rest of the host facilities in the manager's
 	// config and deps, after Run has filled them for Linux.
 	adapt func(ctx context.Context, r shell.Runner, log *slog.Logger, cfg *guest.Config, d *guest.Deps) error
+	// beforeReconcile runs before the first reconcile, which restores
+	// parked guests.
+	beforeReconcile func(ctx context.Context, r shell.Runner, log *slog.Logger)
 }
 
 // MacOptions are the flags of hostd on macOS (design 2, DECISIONS I-1664):

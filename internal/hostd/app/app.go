@@ -466,6 +466,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if o.OwnedHost && !plat.noSlice {
 		ownedSlice(ctx, r, total, nested, log)
 	}
+	if plat.beforeReconcile != nil {
+		plat.beforeReconcile(ctx, r, log)
+	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
