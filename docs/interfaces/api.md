@@ -88,6 +88,7 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 ```
 Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
        projects, running_projects, snapshots?, last_heartbeat_at?, registered_at?,
+       free_mem_bytes?, running_limit?,          -- GET, a ready host that shares (I-1654)
        created_at,
        join_token?, join_token_expires_at?,     -- the POST answer only
        install?: {command, argument, url} }     -- the POST answer only
@@ -110,6 +111,14 @@ registers; `arch` is the CPU architecture it reported (`x86_64`,
 `/nix/store/...` closure path. `projects` counts the account's live projects
 placed on it and `running_projects` those of them in a state that holds
 memory, which is what the dashboard's list shows.
+
+`free_mem_bytes` and `running_limit` (I-1654, GET only) are present on a
+`ready` host whose hostd shares it (I-1630): `free_mem_bytes` is the
+memory its hostd last reported free, against which a machine starts at
+1 GiB; `running_limit` is, on an `aarch64` host (the Mac appliance,
+which runs its guests nested), the machines its cores run at once,
+`max((vcpus - 2) / 2, 1)` (I-1640), and absent on any other host, where
+the api cannot tell. The New project form shows both before Create.
 
 `install` is the one line to run on the machine, with its argument
 already in it, the argument on its own, and the address of the page that
@@ -192,12 +201,14 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           pending_base_version,                        -- erofs: the base the next start boots, else null (I-1462)
           checkout,                                    -- the checkout's name under /home/dev, "" none, null unknown (I-1610)
           sized,                                       -- false on a host the account owns: class is no size there (I-1632)
-          mem_used_bytes? }                            -- running only: memory in use, newest sample (I-1632)
+          mem_used_bytes?,                             -- running only: memory in use, newest sample (I-1632)
+          not_answering?: {since} }                    -- running, guestd silent ~3 minutes (I-1652)
                                                        -- host_name: the owned host's name beside host_id,
                                                        -- absent on a host repose runs (I-1392)
 
 DestroyedProject { id, name, slug, class, remote_url?, volume_bytes,
           destroyed_at, name_free, restorable_until?, gone_with_host?,
+          sized,                                       -- false: it ran on a host the account owns that shares (I-1654)
           snapshot: {id, created_at, bytes, reason, expires_at?, gone_with_host?} }
 ```
 
@@ -224,7 +235,9 @@ that failed; on a `stopped` project it may instead be
 mining is not allowed on repose, see the terms at <url>`, left by a stop
 the api made itself (added with I-239), which the CLI and the
 dashboard show; or `oom_stopped: stopped: your host <name> ran out of
-memory, and the kernel stopped <slug> to keep the others running. ...`,
+memory, so repose stopped <slug>, the machine started last, to keep the
+others running. ...` (worded so since I-1654; before it, `and the kernel
+stopped <slug> to keep the others running`),
 the sentence ending with the `repose start` that brings it back, left when hostd reports a
 guest on a host the account owns `stopped` with reason `oom_killed`
 (added with I-1632; an `oom_stopped` event, which notifies, goes with
@@ -261,7 +274,22 @@ there; a client shows `mem_used_bytes` instead. `mem_used_bytes` is
 memory in use as the guest sees it (MemTotal less MemAvailable) from the
 newest sample, present on a `running` project whose newest sample is
 from this run and carries it, on any host. An api older than I-1632
-sends neither; a client reads a missing `sized` as true.
+sends neither; a client reads a missing `sized` as true. On such a host
+a create's `class` changes nothing, the disk included: the project is
+made `class: "large"` with a 40 GiB volume whatever was asked (I-1654;
+before it, the class's volume, so `xl` got 80 GiB). A `DestroyedProject`
+says `sized: false` when its snapshot is on a host the account owns that
+shares (I-1654; absent from an older api, read as true).
+
+`not_answering` (I-1652) is set on a `running` project that is not
+frozen and whose host is answering, when its guestd has not answered for
+three samples in a row (hostd samples each guest every minute), the
+first and newest at least two minutes apart and the newest under five
+minutes old; `since` is the first of them. One `not_answering` event
+(source `api`, notifying nobody) is written per such stretch, and
+`POST /projects/:id/start` restarts the machine, as it does for any
+running project whose guestd is not answering. An api older than I-1652
+sends nothing.
 
 `guest_runtime` (DECISIONS I-1462) is `nix` (a NixOS machine built from
 its configuration, every project before I-1462) or `erofs` (a machine
@@ -594,7 +622,10 @@ expiry finishes) were added by DECISIONS I-347. `host_restarted` (source
 written on each machine a host restart stopped, and
 `machines_restarted` is the user's one notice per host restart, an event
 with no project that `GET /projects/:id/events` never lists: its summary
-is the notice's text, a line per machine (DECISIONS I-645).
+is the notice's text, a line per machine (DECISIONS I-645). `not_answering` (source `api`, notifying nobody; the summary says how
+long and that `repose start <slug>` restarts it, losing what was in its
+memory) is written once per stretch in which a running machine's guestd
+did not answer (DECISIONS I-1652).
 
 `POST /projects/:id/start` on a project whose host is `unreachable`
 answers `409 conflict` with `detail: {host_state: "unreachable"}` and the

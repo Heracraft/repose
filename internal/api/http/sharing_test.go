@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,5 +103,87 @@ func TestOwnHostThatDoesNotShareKeepsItsSize(t *testing.T) {
 	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "old-host", "class": "large"})
 	if r.status != 201 || r.body["host_name"] == nil || r.body["sized"] != true {
 		t.Fatalf("a machine on an owned host that does not share: %d %s, want 201 on it, sized", r.status, r.raw)
+	}
+}
+
+// TestOwnedCreateTakesNoSizeFromTheClass: on a host the account owns whose
+// hostd shares it, a class asked for changes nothing, the disk included
+// (DECISIONS I-1654). review-cli 2026-11-26 03:04Z: `--size xl` said it
+// was ignored and gave the machine an 80G disk.
+func TestOwnedCreateTakesNoSizeFromTheClass(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-disk", "disk")
+	uid := e.exempt(t, "sub-disk")
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	shareHost(t, e)
+	for _, class := range []string{"tiny", "xl"} {
+		r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "disk-" + class, "class": class})
+		if r.status != 201 {
+			t.Fatalf("create %s: %d %s", class, r.status, r.raw)
+		}
+		if vb, _ := r.body["volume_bytes"].(float64); int64(vb) != scheduler.OwnedVolumeBytes || r.body["class"] != "large" {
+			t.Fatalf("asked for %s on a shared owned host: class %v volume %v, want large and %d", class, r.body["class"], r.body["volume_bytes"], scheduler.OwnedVolumeBytes)
+		}
+	}
+}
+
+// TestDestroyedOwnedMachineHasNoSize: GET /projects/destroyed says
+// `sized: false` for a project whose snapshot is on a host the account
+// owns that shares, so `repose ls --destroyed` and Recently destroyed name
+// no class for it (I-1654, review-dash 5); one on repose's servers stays
+// sized.
+func TestDestroyedOwnedMachineHasNoSize(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-gone", "gone")
+	uid := e.exempt(t, "sub-gone")
+	for _, owned := range []bool{true, false} {
+		pid := store.NewID()
+		slug := fmt.Sprintf("gone-%v", owned)
+		if _, err := e.h.Pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, volume_bytes, destroyed_at)
+			values ($1, $2, $3, $3, 'large', 'destroyed', 1, now())`, pid, uid, slug); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.h.Pool.Exec(ctx, `insert into snapshots (id, project_id, host_id, blob_path, bytes, reason, taken_at, expires_at)
+			values ($1, $2, $3, $4, 1, 'scheduled', now(), now() + interval '1 day')`, store.NewID(), pid, map[bool]any{true: e.h.HostID, false: nil}[owned], "p/"+slug); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	shareHost(t, e)
+	r := e.do(t, tok, "GET", "/projects/destroyed", nil)
+	if r.status != 200 {
+		t.Fatalf("list: %d %s", r.status, r.raw)
+	}
+	if strings.Count(string(r.raw), `"sized":false`) != 1 || strings.Count(string(r.raw), `"sized":true`) != 1 {
+		t.Fatalf("destroyed list: %s, want one sized false (owned) and one sized true", r.raw)
+	}
+}
+
+// TestOwnedHostSaysItsRoom: GET /hosts carries what a host of the
+// account's own that shares has free and, on a Mac (an aarch64 host,
+// I-1640), how many machines its cores run at once, so the New project
+// form can say before Create that the host is full (I-1654,
+// review-dash P1-2).
+func TestOwnedHostSaysItsRoom(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-room", "room")
+	uid := e.exempt(t, "sub-room")
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set owner_account_id = $1, arch = 'aarch64', vcpus = 8 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	shareHost(t, e)
+	setOwnFree(t, e, 3<<30)
+	r := e.do(t, tok, "GET", "/hosts", nil)
+	if r.status != 200 {
+		t.Fatalf("hosts: %d %s", r.status, r.raw)
+	}
+	raw := string(r.raw)
+	if !strings.Contains(raw, `"free_mem_bytes":3221225472`) || !strings.Contains(raw, `"running_limit":3`) {
+		t.Fatalf("hosts: %s, want free_mem_bytes 3 GiB and running_limit 3", raw)
 	}
 }

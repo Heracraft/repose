@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/heracraft/repose/internal/api/abuse"
+	"github.com/heracraft/repose/internal/api/answering"
 	"github.com/heracraft/repose/internal/api/auth"
 	"github.com/heracraft/repose/internal/api/basebump"
 	"github.com/heracraft/repose/internal/api/buildlog"
@@ -601,6 +602,9 @@ func (a *App) loops(ctx context.Context) {
 	dunning := billing.NewDunning(a.pool, a.engine, a.events, a.bcfg, a.m, a.log)
 	bump := basebump.New(a.pool, a.engine, a.events, a.log)
 	idleWarn := &idle.Warner{Pool: a.pool, Events: a.events}
+	// A machine whose guestd has not answered for about three minutes
+	// (DECISIONS I-1652): one event per silent stretch.
+	silentWarn := &answering.Warner{Pool: a.pool, Events: a.events}
 	reaper := &temp.Reaper{Pool: a.pool, Engine: a.engine, Events: a.events, Log: a.log}
 	inviter := &waitlist.Inviter{Pool: a.pool, Total: a.cfg.SeatsTotal, M: a.m, Log: a.log}
 	a.engine.SetOnFinished(func(ctx context.Context, op *store.Op) {
@@ -696,6 +700,11 @@ func (a *App) loops(ctx context.Context) {
 				}
 				if res.Warned > 0 || res.Destroyed > 0 {
 					a.log.Info("temporary machines", "event", "temp_reap", "warned", res.Warned, "destroyed", res.Destroyed, "waiting", res.Waiting)
+				}
+				if n, err := silentWarn.Run(ctx, now); err != nil && ctx.Err() == nil {
+					a.log.Error("not answering", "event", "not_answering_fail", "err", err.Error())
+				} else if n > 0 {
+					a.log.Info("machines not answering", "event", "not_answering", "count", n)
 				}
 				release()
 			}

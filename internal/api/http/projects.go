@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/heracraft/repose/internal/api/abuse"
+	"github.com/heracraft/repose/internal/api/answering"
 	"github.com/heracraft/repose/internal/api/idle"
 	"github.com/heracraft/repose/internal/api/lifecycle"
 	"github.com/heracraft/repose/internal/api/meter"
@@ -206,6 +207,18 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		}
 		out["signals"] = map[string]any{"ssh_sessions": x.latest.SSHSessions, "tmux_clients": x.latest.TmuxClients, "agents": agents,
 			"docker_containers": x.latest.DockerContainers, "guestd_ok": guestdOK, "sampled_at": x.latest.TS, "gateway_sessions": s.sessions.Count(ctx, p.ID)}
+		if !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
+			// Its guestd has not answered for about three minutes
+			// (I-1652): read only when the newest sample already says
+			// so, so a list of answering machines costs nothing more.
+			since, silent, err := answering.Project(ctx, s.d.Pool, p, time.Now())
+			if err != nil {
+				return nil, err
+			}
+			if silent {
+				out["not_answering"] = map[string]any{"since": since}
+			}
+		}
 	}
 	return out, nil
 }
@@ -229,6 +242,29 @@ func (s *Server) projectSized(ctx context.Context, p *store.Project, onShared bo
 	err := s.d.Pool.QueryRow(ctx, `select exists (select 1 from hosts
 		 where owner_account_id = $1 and state not in ('retired', 'lost') and $2 = any(features))`, p.UserID, scheduler.SharedFeature).Scan(&shares)
 	return !shares, err
+}
+
+// createsUnsized reports whether a create with this placement and pin
+// lands on a host the account owns whose hostd shares it (I-1654): the
+// pinned host when one is named, else any live one of the account's,
+// which is where `own` placement puts it.
+func (s *Server) createsUnsized(ctx context.Context, userID uuid.UUID, placement string, pin uuid.UUID) (bool, error) {
+	if store.NormalizePlacement(placement) == store.PlacementHosted {
+		return false, nil
+	}
+	var shares bool
+	err := s.d.Pool.QueryRow(ctx, `select exists (select 1 from hosts
+		 where owner_account_id = $1 and state not in ('retired', 'lost') and $2 = any(features)
+		   and ($3::uuid is null or id = $3))`, userID, scheduler.SharedFeature, nullUUID(pin)).Scan(&shares)
+	return shares, err
+}
+
+// nullUUID is id, or nil for uuid.Nil, as a query argument.
+func nullUUID(id uuid.UUID) any {
+	if id == uuid.Nil {
+		return nil
+	}
+	return id
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
@@ -415,6 +451,17 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if slug == "" {
 		return errf("invalid", "name has no usable characters for a slug")
 	}
+	// A machine on a host the account owns whose hostd shares it has no
+	// size (I-1630, I-1632), and the class asked for changes nothing
+	// there, its disk included (I-1654): it is made as `repose run`
+	// without --size makes it. The class stays a field for older
+	// clients, and means nothing on such a host.
+	volume := scheduler.DefaultVolume(body.Class)
+	if owned, err := s.createsUnsized(ctx, u.ID, placement, pin); err != nil {
+		return err
+	} else if owned {
+		body.Class, volume = "large", scheduler.OwnedVolumeBytes
+	}
 	if body.TZ != nil {
 		if _, err := time.LoadLocation(*body.TZ); err != nil {
 			return errf("invalid", "tz is not an IANA zone name")
@@ -434,7 +481,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	// The compute gate (I-289): a plan, its memory for this class and its
 	// disk for the new volume. No waitlist gate here since I-290: checkout
 	// is where the seats question is answered.
-	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: scheduler.DefaultVolume(body.Class)}); err != nil {
+	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: volume}); err != nil {
 		return err
 	}
 	// A plan that sells no memory on repose's own hosts cannot ask for
@@ -479,12 +526,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// row in this transaction, which is PickHost's contract.
 		held := billing.NewProjectHeldBytes
 		hostID, err := s.d.Engine.PlaceNewOn(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
-			VolumeBytes: scheduler.DefaultVolume(body.Class), Placement: placement, DiskHeldBytes: &held, GuestRuntime: runtime}, pin)
+			VolumeBytes: volume, Placement: placement, DiskHeldBytes: &held, GuestRuntime: runtime}, pin)
 		if err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `insert into projects (id, user_id, name, slug, remote_url, class, state, volume_bytes, tz, agent_default, config_revision_id, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, host_id, guest_runtime) values ($1, $2, $3, $4, $5, $6, 'creating', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, scheduler.DefaultVolume(body.Class), body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, held, hostID, runtime)
+			pid, u.ID, body.Name, slug, body.RemoteURL, body.Class, volume, body.TZ, agent, rid, expiresAt, body.PersonalOptOut, mux, placement, held, hostID, runtime)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {

@@ -607,7 +607,9 @@ test('a machine on your own host shows what it uses, not a size', async ({ page 
 		await openForm(page);
 		const summary = form(page).getByTestId('nm-summary');
 		await expect(summary).toContainText('on mac-mini');
-		await expect(summary).not.toContainText('GB');
+		// The host's room, not a size (I-1654).
+		await expect(summary).toContainText('12 GB free · 0 of 3 running');
+		await expect(summary).not.toContainText('8 GB');
 		await options(page);
 		await expect(form(page).getByLabel('Size')).toHaveCount(0);
 		await shots(page, 'new-project-own-host-no-size');
@@ -665,4 +667,34 @@ test('a create the host refuses says why and leaves no row', async ({ page }) =>
 	const made = await fromApi(name);
 	expect(made).toBeTruthy();
 	litter.push(made!.id);
+});
+
+// A Mac runs three machines at once on eight cores (I-1640): with three
+// running there, the form says so before Create, names the machines with
+// a Stop each, and offers repose's servers (I-1654, review-dash P1-2).
+test('New project on a full Mac says so before Create, with both ways out', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	await ownedHost({ limit: -1 });
+	await ownedHost({ name: 'mac-mini' });
+	const made: string[] = [];
+	try {
+		for (const stem of ['alpha', 'beta', 'gamma']) {
+			made.push((await createProjectAs(api, unique(stem), 'large')).id);
+		}
+		await openForm(page);
+		await expect(form(page).getByTestId('nm-summary')).toContainText('3 of 3 running');
+		const full = form(page).getByTestId('nm-host-full');
+		await expect(full).toContainText(
+			"mac-mini runs as many machines at once as its cores allow. Stop one of its machines, or make this one on repose's servers."
+		);
+		await expect(full.getByRole('button', { name: /^Stop alpha-/ })).toBeVisible();
+		await shots(page, 'new-project-host-full');
+		await full.getByRole('button', { name: "Use repose's servers" }).click();
+		await expect(form(page).getByLabel('Runs on')).toHaveValue('hosted');
+		await expect(full).toHaveCount(0);
+	} finally {
+		for (const id of made) await destroyProject(api, id);
+		await removeOwnedHosts(api).catch(() => {});
+	}
 });

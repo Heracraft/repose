@@ -18,7 +18,7 @@ func TestUnresponsiveBootSaysWhichPhaseRanOut(t *testing.T) {
 	if strings.Contains(noReady, "within a minute") {
 		t.Errorf("a five-minute wait is reported as a minute: %q", noReady)
 	}
-	if !strings.HasPrefix(noReady, "the environment did not answer while it was starting;") || !strings.Contains(noReady, "`repose start` tries again") {
+	if !strings.HasPrefix(noReady, "the machine did not answer while it was starting;") || !strings.Contains(noReady, "`repose start` tries again") {
 		t.Errorf("no Ready: %q", noReady)
 	}
 
@@ -182,7 +182,7 @@ func TestSilentMenuApplySaysTheMachineStoppedAnswering(t *testing.T) {
 	}
 	// Any other guest_unresponsive in the phase keeps the guestd sentence.
 	other, _ := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive, "guestd unreachable for guest g", false)
-	if !strings.Contains(other, "(guestd) stopped answering") {
+	if !strings.Contains(other, "service on the machine stopped answering") {
 		t.Fatalf("%q", other)
 	}
 }

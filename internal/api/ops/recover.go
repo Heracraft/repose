@@ -73,7 +73,7 @@ func (e *Engine) recoverFrom(ctx context.Context, op *store.Op, code string) boo
 	// (their 30-day expiry is set by markDestroyed).
 	case op.Kind == KindDestroy && code == codeGuestUnresponsive && ph == PhaseSnapshot && recovered != "":
 		e.notifyPlatform(ctx, *op.ProjectID, "snapshot_failed",
-			"the final snapshot before destroy was skipped because the environment could not be read; the newest earlier snapshot is kept for 30 days")
+			"the final snapshot before destroy was skipped because the machine could not be read; the newest earlier snapshot is kept for 30 days")
 		skip = true
 
 	// A paused guest answers no vsock call, and hostd reports that as
@@ -167,7 +167,7 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 		if phase == PhaseApplyConfig {
 			return "the new system did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
 		}
-		return "the environment did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
+		return "the machine did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
 	case codeGuestUnresponsive:
 		if phase == PhaseCreateGuest || phase == PhaseStartGuest || phase == PhaseRestore {
 			// guestd answered, and then one of the two phases that
@@ -182,11 +182,11 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			if strings.Contains(msg, "deadline exceeded") {
 				switch {
 				case strings.Contains(msg, "RegisterPaths: "):
-					return "the environment started but did not finish loading its system in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+					return "the machine started but did not finish loading its system in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 				case strings.Contains(msg, "SetupProject: "):
-					return "the environment started but did not finish setting up the project in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+					return "the machine started but did not finish setting up the project in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 				case strings.Contains(msg, "WriteSecrets: "), strings.Contains(msg, "SetPrincipals: "):
-					return "the environment started but did not take its ssh keys in time, so nothing can log in to it; `repose start` tries again", true
+					return "the machine started but did not take its ssh keys in time, so nothing can log in to it; `repose start` tries again", true
 				}
 			}
 			// Not "booted": a guest that stopped before its system
@@ -195,7 +195,7 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// a Mac appliance against sixty seconds on Azure), so the
 			// sentence names no figure; it named a minute until I-1408,
 			// which was false on every Mac start it was shown for.
-			return "the environment did not answer while it was starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+			return "the machine did not answer while it was starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 		}
 		if phase == PhaseApplyConfig && strings.Contains(msg, "while it applied the menu") {
 			// hostd's silence guard on an ApplyMenu (DECISIONS I-1558):
@@ -205,11 +205,11 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 		}
 		switch kind {
 		case KindResize:
-			return "the disk grew but the filesystem inside did not: the environment's agent (guestd) stopped answering. `repose start` restarts it, then resize again", true
+			return "the disk grew but the filesystem inside did not: repose's service on the machine stopped answering. `repose start` restarts it, then resize again", true
 		case KindSnapshot:
-			return "the environment's agent (guestd) stopped answering, so the filesystem could not be frozen for a snapshot; `repose start` restarts it", true
+			return "repose's service on the machine stopped answering, so the filesystem could not be frozen for a snapshot; `repose start` restarts it", true
 		}
-		return "the environment's agent (guestd) stopped answering; `repose start` restarts it", true
+		return "repose's service on the machine stopped answering; `repose start` restarts it", true
 	case codeNotFound:
 		if phase == PhaseApplyConfig {
 			// guestd's store does not show the new system (I-593); the

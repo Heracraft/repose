@@ -14,11 +14,11 @@ export function abuseStopReason(p: Pick<Project, 'state' | 'last_error'>): strin
 }
 
 /**
- * The api's sentence for a machine the kernel stopped because a host of
+ * The api's sentence for a machine repose stopped because a host of
  * the account's own ran out of memory (DECISIONS I-1632), from last_error
- * "oom_stopped: stopped: your host mac-mini ran out of memory, and the
- * kernel stopped api to keep the others running. `repose start api`
- * starts it again". The dashboard has a Start button beside it, so the
+ * "oom_stopped: stopped: your host mac-mini ran out of memory, so repose
+ * stopped api, the machine started last, to keep the others running.
+ * `repose start api` starts it again" (I-1654). The dashboard has a Start button beside it, so the
  * command is left off. Empty for any other project.
  */
 export function oomStopReason(p: Pick<Project, 'state' | 'last_error'>): string {

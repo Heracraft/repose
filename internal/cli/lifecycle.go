@@ -63,7 +63,7 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		return err
 	}
 	pr.Fail()
-	_, _ = fmt.Fprintf(e.Out, "%s is running (%s), ready in %s.\n", project.Slug, project.Class, fmtElapsed(pr.Total()))
+	_, _ = fmt.Fprintf(e.Out, "%s is running%s, ready in %s.\n", project.Slug, classNote(project), fmtElapsed(pr.Total()))
 	return nil
 }
 
@@ -1079,5 +1079,11 @@ func humanBytes(n int64) string {
 		exp++
 	}
 	units := "KMGTPE"
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), units[exp])
+	v := float64(n) / float64(div)
+	if v >= 999.95 && exp < len(units)-1 {
+		// 1005.6 MB is said 1.0 GB, beside 1.6 GB in the same column
+		// (review-cli N4, I-1654).
+		v, exp = v/unit, exp+1
+	}
+	return fmt.Sprintf("%.1f %cB", v, units[exp])
 }

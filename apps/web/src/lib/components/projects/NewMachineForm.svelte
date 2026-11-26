@@ -26,7 +26,7 @@
 	import { createProject, listHosts } from '$lib/api/client';
 	import { ApiError, errorText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
-	import { classMemoryGB, classVCPUs, normalizeRemoteDisplay } from '$lib/format';
+	import { bytes, classMemoryGB, classVCPUs, normalizeRemoteDisplay } from '$lib/format';
 	import { hostStateWord } from '$lib/offlinehost';
 	import { withoutBillingURL } from '$lib/refusal';
 	import { repoName, wordName } from '$lib/machineName';
@@ -38,6 +38,7 @@
 		size,
 		named,
 		room,
+		machines = [],
 		onstop,
 		onsaved,
 		oncancel
@@ -49,6 +50,9 @@
 		named?: string;
 		/** The plan's memory and what holds it, where the plan meters it (I-1612). */
 		room?: PlanRoom;
+		/** The account's machines, so a full host of its own names the ones
+		 * running there, with a Stop each (I-1654). */
+		machines?: Pick<Project, 'id' | 'name' | 'state' | 'host_id'>[];
 		/** Stops a machine that holds the plan's memory, as its row's Stop does. */
 		onstop?: (id: string) => void;
 		onsaved: (p: Project) => void;
@@ -97,17 +101,26 @@
 	let billingRefusal = $state(false);
 	let nameField = $state<HTMLInputElement | undefined>();
 
-	onMount(async () => {
+	onMount(() => {
 		nameField?.focus();
 		nameField?.select();
-		// A side read: an account that owns no host gets the form without
-		// Runs on, and so does one whose /hosts did not answer.
-		try {
-			const all = await listHosts({ passive: true });
-			hosts = all.filter((h) => h.state !== 'retired' && h.state !== 'lost');
-		} catch {
-			hosts = [];
-		}
+	});
+
+	// A side read: an account that owns no host gets the form without
+	// Runs on, and so does one whose /hosts did not answer. Read again
+	// whenever the running machines change, so a Stop from the host-full
+	// note clears it once the host has the room (I-1654).
+	let runningKey = $derived(
+		machines
+			.filter((m) => m.state === 'running')
+			.map((m) => m.id)
+			.join(',')
+	);
+	$effect(() => {
+		void runningKey;
+		listHosts({ passive: true })
+			.then((all) => (hosts = all.filter((h) => h.state !== 'retired' && h.state !== 'lost')))
+			.catch(() => (hosts = []));
 	});
 
 	function placementBody(v: string): { placement: Placement; host?: string } {
@@ -127,6 +140,39 @@
 	 * no size in the summary, and the plan's memory does not apply. */
 	let onOwnHost = $derived(hosts.length > 0 && runsOn !== 'hosted');
 
+	/** The one host of the account's own this would go to, when that is
+	 * known before Create: the only host, or the one chosen. */
+	let target = $derived.by(() => {
+		if (!onOwnHost) return undefined;
+		if (runsOn === 'own') return hosts.length === 1 ? hosts[0] : undefined;
+		return hosts.find((x) => x.id === runsOn);
+	});
+	/** A machine starts on a host that shares at 1 GB free (I-1630). */
+	const START_FREE = 1024 * 1024 * 1024;
+	/** Why the host would refuse now, in the api's terms (I-1640, I-1630),
+	 * or '' while it has room. */
+	let hostFull = $derived.by(() => {
+		const h = target;
+		if (!h || h.state !== 'ready') return '';
+		if (h.running_limit && h.running_projects >= h.running_limit)
+			return `${h.name} runs as many machines at once as its cores allow.`;
+		if (h.free_mem_bytes !== undefined && h.free_mem_bytes < START_FREE)
+			return `${h.name} has ${bytes(h.free_mem_bytes)} of memory free, and a machine starts there at 1 GB.`;
+		return '';
+	});
+	/** What the host has, for the summary: "3.2 GB free · 2 of 3 running". */
+	let hostRoom = $derived.by(() => {
+		const h = target;
+		if (!h || h.state !== 'ready' || h.free_mem_bytes === undefined) return '';
+		const running = h.running_limit
+			? `${h.running_projects} of ${h.running_limit} running`
+			: `${h.running_projects} running`;
+		return `${bytes(h.free_mem_bytes)} free · ${running}`;
+	});
+	let hostRunning = $derived(
+		target ? machines.filter((m) => m.host_id === target.id && m.state === 'running') : []
+	);
+
 	/** Where it runs, in the summary's words; '' for an account with no host. */
 	let whereWords = $derived.by(() => {
 		if (hosts.length === 0) return '';
@@ -141,6 +187,7 @@
 			onOwnHost ? '' : sizeLabel(cls),
 			room && !onOwnHost ? `${free} GB of your plan's ${room.limitGB} GB free` : '',
 			whereWords,
+			hostRoom,
 			life === 0
 				? 'kept until you destroy it'
 				: `destroyed after ${LIVES.find((l) => l.value === life)?.label}`,
@@ -260,6 +307,31 @@
 						{/each}
 					</div>
 				{/if}
+			</div>
+		{/if}
+
+		{#if hostFull && !error}
+			<!-- The host would refuse it (I-1654): said before Create, with
+			     both ways out beside it. -->
+			<div class="nmroom" data-testid="nm-host-full">
+				<p>{hostFull} Stop one of its machines, or make this one on repose's servers.</p>
+				<div class="nmstops">
+					{#if onstop}
+						{#each hostRunning as m (m.id)}
+							<button type="button" class="hk-btn-secondary hk-btn-sm" onclick={() => onstop(m.id)}
+								>Stop {m.name}</button
+							>
+						{/each}
+					{/if}
+					<button
+						type="button"
+						class="hk-btn-secondary hk-btn-sm"
+						onclick={() => {
+							runsOn = 'hosted';
+							options = true;
+						}}>Use repose's servers</button
+					>
+				</div>
 			</div>
 		{/if}
 

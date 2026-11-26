@@ -161,14 +161,15 @@ func abuseStopReason(p *Project) string {
 	return strings.TrimSpace(msg)
 }
 
-// oomStopCode is the last_error code the api writes when the kernel
+// oomStopCode is the last_error code the api writes when repose
 // stopped a machine because a host of the account's own ran out of
 // memory (DECISIONS I-1632).
 const oomStopCode = "oom_stopped"
 
 // oomStopReason is the api's sentence for such a machine ("stopped:
-// your host mac-mini ran out of memory, and the kernel stopped api to
-// keep the others running. `repose start api` starts it again"), or ""
+// your host mac-mini ran out of memory, so repose stopped api, the
+// machine started last, to keep the others running. `repose start api`
+// starts it again"), or ""
 // for any other project. It is shown on a stopped project, as
 // abuseStopReason is.
 func oomStopReason(p *Project) string {
@@ -239,6 +240,12 @@ func opFailed(verb, slug string, e OpError, next string) error {
 	code := ""
 	if e.Code != "" {
 		code = " (" + e.Code + ")"
+	}
+	if (e.Code == "insufficient_capacity" || e.Code == "capacity") && strings.TrimSpace(e.Message) != "" {
+		// The api's sentence names the cause and the way out (I-771,
+		// I-1654), as its refusal at placement does with no code beside
+		// it; exit 8 is what a script reads.
+		code = ""
 	}
 	msg := fmt.Sprintf("Could not %s %s: %s%s.", verb, slug, reason, code)
 	if next != "" && !strings.Contains(reason, "`repose ") && !strings.Contains(strings.ToLower(reason), "try again") {

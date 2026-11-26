@@ -226,3 +226,42 @@ func TestOwnHostMachineHasNoSize(t *testing.T) {
 		t.Fatalf("stopped on the own host: sized %v, mem_used_bytes %v; want false, absent", b["sized"], b["mem_used_bytes"])
 	}
 }
+
+// TestNestedOwnedMachineDrawsAgainstItsCores: on a Mac (an aarch64 host
+// the account owns, which runs its guests nested), a machine boots with
+// two vCPUs (I-1640), so its CPU is a share of those two and not of the
+// host's eight: a pegged machine read 23% of the host (review-dash 3,
+// I-1654). Memory stays drawn against the host's.
+func TestNestedOwnedMachineDrawsAgainstItsCores(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "nested", "class": "large"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	id := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "delete from meter_samples where project_id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, cpu_ns, mem_used)
+		values (now(), $1, 'running', 'large', $2, $3)`, id, int64(60e9), int64(1<<30)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1, vcpus = 8, mem_bytes = 12::bigint << 30, arch = 'aarch64' where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	shareHost(t, e)
+	s := e.do(t, tok, "GET", "/projects/"+id+"/samples", nil)
+	if s.status != 200 || s.body["vcpus"] != float64(2) || s.body["memory_bytes"] != float64(12<<30) {
+		t.Fatalf("samples header %s, want the machine's 2 vCPUs and the host's 12 GiB", s.raw)
+	}
+	pts := s.body["points"].([]any)
+	if len(pts) == 0 || pts[len(pts)-1].(map[string]any)["cpu"] != 0.5 {
+		t.Fatalf("points %v, want one of the machine's two vCPUs, 0.5", pts)
+	}
+}

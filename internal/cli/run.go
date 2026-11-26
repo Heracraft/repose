@@ -250,7 +250,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	if !attachOnly && res.Project != nil && opts.Host != "" {
 		// A machine is pinned to its host for life (DESIGN.md §3): the
 		// flag chooses where a new one is made and can do nothing here.
-		return exitf(ExitUsage, "%s exists and stays on its host; --host chooses where a new machine is made. A machine moves host only by restoring a snapshot.", res.Project.Slug)
+		return exitf(ExitUsage, "%s exists and stays on the host it was made on; --host chooses where a new machine is made.", res.Project.Slug)
 	}
 	if !attachOnly && res.Project != nil && opts.Size != "" && unsized(res.Project) {
 		// A machine on a host of the account's own has no size (I-1632):
@@ -368,7 +368,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	}
 	endConnect()
 	pr.End()
-	_, _ = fmt.Fprintf(e.Out, "Connected to %s (%s)\n", project.Slug, project.Class)
+	_, _ = fmt.Fprintf(e.Out, "Connected to %s%s\n", project.Slug, classNote(project))
 	made = nil
 	idleNote(project.ID)
 	// Another checkout of the machine (I-480): the folder's, or the one

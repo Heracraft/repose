@@ -64,6 +64,10 @@
 	let diskSize = $derived(project.root_size_bytes || project.volume_bytes);
 	let full = $derived(diskFullPercent(project));
 	let frozen = $derived(frozenSince(project));
+	// "Memory in use" beside "2.4 GB of e2e-mac's 11.7 GB" wrapped at 1440
+	// (review-dash 9): on an owned machine the figure carries the host's
+	// name, so the label is the one word (I-1654).
+	let memLabel = $derived(unsized(project) ? 'Memory' : 'Memory in use');
 </script>
 
 <section class="hk-section machine" data-testid="machine-card" aria-labelledby="machine-title">
@@ -76,16 +80,11 @@
 			<!-- A frozen machine's memory is what is frozen: the bar fills in
 			     ice ink with a lit top edge (lib/hk/frost.css). -->
 			<div class:hk-meter-ice={!!frozen}>
-				<Meter
-					label="Memory in use"
-					used={memUsed / GIB}
-					limit={memBytes / GIB}
-					valueText={memText}
-				/>
+				<Meter label={memLabel} used={memUsed / GIB} limit={memBytes / GIB} valueText={memText} />
 			</div>
 		{:else}
 			<div class="line">
-				<span class="line-label">Memory in use</span>
+				<span class="line-label">{memLabel}</span>
 				<span class="line-value line-value--off">not running</span>
 			</div>
 		{/if}

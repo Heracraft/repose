@@ -574,6 +574,10 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	p.GuestRuntime = runtime
 	if ownHostID != "" {
 		p.HostID, p.HostName = ownHostID, f.ownedHostName(ownHostID)
+		if !f.out(p).Sized {
+			// No size on a host that shares, the disk included (I-1654).
+			p.Class, p.VolumeBytes = "large", 40<<30
+		}
 	}
 	if body.ExpiresIn != nil {
 		t := f.now().Add(time.Duration(*body.ExpiresIn) * time.Second)
@@ -846,6 +850,7 @@ func (f *Fake) finishDestroy(p *project) {
 		// The real destroy stops, then snapshots the stopped volume (I-165).
 		f.snapshot(p, "stop")
 	}
+	p.goneUnsized = !f.out(p).Sized
 	p.State = "destroyed"
 	p.HostID = ""
 	p.destroyed = true
@@ -924,6 +929,13 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	o := f.newOp(p, "start")
 	restart := p.State == "error" // api.md: a start from error is a restart (I-157)
+	if p.State == "running" && p.NotAnswering != nil {
+		// A running machine whose guestd is silent is restarted, as the
+		// api's guestdDead makes it (I-157, I-1652).
+		restart = true
+		p.NotAnswering = nil
+		p.Signals.GuestdOK = true
+	}
 	if p.State != "running" && f.opts.StartDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
 		o.State = "running"
@@ -1240,6 +1252,10 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 	for _, h := range f.ownedHosts {
 		if h.ID == p.HostID && !h.oldHostd && h.MemBytes > 0 && h.VCPUs > 0 {
 			vcpus, mem = float64(h.VCPUs), h.MemBytes
+			if h.Arch == "aarch64" {
+				// Two vCPUs each on a Mac (I-1640, I-1654).
+				vcpus = min(vcpus, 2)
+			}
 			used = f.out(p).MemUsedBytes
 		}
 	}
@@ -1928,7 +1944,7 @@ func (f *Fake) listDestroyed(w http.ResponseWriter, r *http.Request) *apiError {
 			until = nil // gone with its host (I-1542): listed, never restorable
 		}
 		out = append(out, DestroyedProject{ID: p.ID, Name: p.Name, Slug: p.Slug, Class: p.Class, RemoteURL: p.RemoteURL,
-			VolumeBytes: p.VolumeBytes, DestroyedAt: p.destroyedAt, NameFree: !live[p.Slug], RestorableUntil: until, GoneWithHost: s.GoneWithHost, Snapshot: *s})
+			VolumeBytes: p.VolumeBytes, DestroyedAt: p.destroyedAt, NameFree: !live[p.Slug], RestorableUntil: until, GoneWithHost: s.GoneWithHost, Snapshot: *s, Sized: !p.goneUnsized})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].DestroyedAt.Equal(out[j].DestroyedAt) {

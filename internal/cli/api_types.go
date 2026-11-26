@@ -143,6 +143,10 @@ type Project struct {
 	// (I-826). Absent from older apis, which the CLI reads as "not
 	// frozen".
 	Resting *ProjectResting `json:"resting,omitempty"`
+	// NotAnswering is set while a running machine's guestd has not
+	// answered for about three minutes (DECISIONS I-1652): hung, its
+	// memory full or its kernel stuck. Absent from older apis.
+	NotAnswering *ProjectNotAnswering `json:"not_answering,omitempty"`
 	// KeepAwake is set while the project is held awake from its Config
 	// page: the api never freezes it (DECISIONS I-820). Set there, as
 	// hold_base_updates is, with no CLI flag.
@@ -170,6 +174,11 @@ type Project struct {
 type ProjectIdle struct {
 	Since       time.Time `json:"since"`
 	HourlyCents int64     `json:"hourly_cents"`
+}
+
+// ProjectNotAnswering is Project.not_answering: since when.
+type ProjectNotAnswering struct {
+	Since time.Time `json:"since"`
 }
 
 // ProjectResting is Project.resting: when the machine was frozen.

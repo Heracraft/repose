@@ -319,7 +319,7 @@ func EventsCmd(ctx context.Context, e *Env, projectArg, since string, follow boo
 			batch = append(batch, events...)
 		}
 		first = false
-		sort.SliceStable(batch, func(i, j int) bool { return batch[i].TS.Before(batch[j].TS) })
+		sortEvents(batch)
 		printed += len(batch)
 		w.fit(batch)
 		for _, ev := range batch {
@@ -535,4 +535,18 @@ func eventsBackTo(ctx context.Context, e *Env, projectID, since string, got []Ev
 		}
 	}
 	return got, nil
+}
+
+// sortEvents puts events oldest first in the api's own order, (ts, id):
+// two events in one second keep the order they were written in. A stable
+// sort on ts alone kept the api's newest-first order inside a second, so
+// `stopped` printed before `stopping` (review-cli N5, I-1654). Event ids
+// are UUIDv7, which sort by when they were made.
+func sortEvents(evs []Event) {
+	sort.SliceStable(evs, func(i, j int) bool {
+		if !evs[i].TS.Equal(evs[j].TS) {
+			return evs[i].TS.Before(evs[j].TS)
+		}
+		return evs[i].ID < evs[j].ID
+	})
 }

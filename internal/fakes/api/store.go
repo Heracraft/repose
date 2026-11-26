@@ -55,6 +55,10 @@ type Project struct {
 	// `resting`). It was a mock of I-683's frozen look until I-818 made
 	// the field real.
 	Resting *Resting `json:"resting,omitempty"`
+	// NotAnswering is set on a running machine whose guestd has not
+	// answered for about three minutes (DECISIONS I-1652). SetNotAnswering
+	// sets it; Fake.out drops it where the api would not send it.
+	NotAnswering *NotAnswering `json:"not_answering,omitempty"`
 	// KeepAwake keeps this machine out of the rest rule (I-820).
 	KeepAwake bool `json:"keep_awake"`
 	// ExpiresAt is set on a temporary project (DECISIONS I-347).
@@ -96,8 +100,11 @@ func (f *Fake) out(p *project) Project {
 			o.Sized = false
 		}
 	}
+	if o.State != "running" || o.Resting != nil || o.HostUnreachable {
+		o.NotAnswering = nil
+	}
 	o.MemUsedBytes = 0
-	if o.State == "running" {
+	if o.State == "running" && o.NotAnswering == nil {
 		o.MemUsedBytes = fakeMemUsed
 		if p.memUsed > 0 {
 			o.MemUsedBytes = p.memUsed
@@ -121,6 +128,36 @@ type Idle struct {
 	HourlyCents int64     `json:"hourly_cents"`
 }
 
+// NotAnswering is Project.not_answering (I-1652).
+type NotAnswering struct {
+	Since time.Time `json:"since"`
+}
+
+// SetNotAnswering marks a running project's guestd silent since the
+// given time, as the api does after three silent samples, or clears it
+// with a nil since. A silent sample carries no memory figure and says
+// guestd_ok false, so the signals say so too.
+func (f *Fake) SetNotAnswering(projectID string, since *time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return
+	}
+	if since == nil {
+		p.NotAnswering = nil
+		if p.Signals != nil {
+			p.Signals.GuestdOK = true
+		}
+		return
+	}
+	p.NotAnswering = &NotAnswering{Since: *since}
+	if p.Signals == nil {
+		p.Signals = &Signals{Agents: []AgentSignal{}}
+	}
+	p.Signals.GuestdOK = false
+}
+
 // Resting is Project.resting.
 type Resting struct {
 	Since time.Time `json:"since"`
@@ -139,6 +176,9 @@ type DestroyedProject struct {
 	RestorableUntil *time.Time `json:"restorable_until"`
 	GoneWithHost    *string    `json:"gone_with_host"`
 	Snapshot        Snapshot   `json:"snapshot"`
+	// Sized is false for one that ran on a host of the account's own
+	// that shares (I-1654).
+	Sized bool `json:"sized"`
 }
 
 // Signals is Project.signals.
@@ -296,6 +336,9 @@ type project struct {
 	owner string
 	// memUsed is what SetMemUsed set, 0 for the default.
 	memUsed int64
+	// goneUnsized: destroyed off a host of the account's own that
+	// shares, where it had no size (I-1654).
+	goneUnsized bool
 	// hostOwner is the account that owns the project's host, "" for a
 	// host repose runs (DECISIONS I-1368).
 	hostOwner   string

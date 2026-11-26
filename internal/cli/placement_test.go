@@ -48,7 +48,9 @@ func TestRunHostChoosesWhereTheMachineIsMade(t *testing.T) {
 	// A machine is pinned to its host for life: the flag on one that
 	// exists exits 2 and says so, whatever it names.
 	err = runRun(ctx, e, RunOptions{Name: "web", Host: "repose", NoSync: true, NoAttach: true}, false)
-	if exitCodeOf(err) != ExitUsage || !strings.Contains(err.Error(), "web exists and stays on its host") {
+	// No command moves a machine to another host, so nothing is offered
+	// that would (review-cli N9, I-1654).
+	if exitCodeOf(err) != ExitUsage || err.Error() != "web exists and stays on the host it was made on; --host chooses where a new machine is made." {
 		t.Fatalf("--host on a project that exists: %v", err)
 	}
 	if p := bySlug(listed(t, e), "web"); p.HostID != mac || p.State != "running" {

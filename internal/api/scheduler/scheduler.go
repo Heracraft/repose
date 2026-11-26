@@ -86,6 +86,12 @@ func ClassVCPUs(class string) float64 {
 	return float64(ClassMilliVCPU(class)) / 1000
 }
 
+// OwnedVolumeBytes is the disk a new machine gets on a host the user
+// owns whose hostd shares it (DECISIONS I-1654): a machine there has no
+// size, so its disk is the one `repose run` gives without --size,
+// whatever class was asked for; `repose resize --disk` grows it.
+const OwnedVolumeBytes int64 = 40 << 30
+
 // DefaultVolume is the default thin volume per class.
 func DefaultVolume(class string) int64 {
 	switch class {

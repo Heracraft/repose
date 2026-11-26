@@ -450,6 +450,71 @@ func (e *Engine) ownHostMemoryRefusal(ctx context.Context, hostID, projectID uui
 	return "your host " + name + " " + ownMemoryWhy(free), true
 }
 
+// ownHostCPURefusal is the sentence for hostd's "not enough free CPU" on
+// a host the user owns (DECISIONS I-1640, I-1654): the host's name and
+// the machines running there, which are what a user stops to make room.
+// ok is false for a host repose runs and when the rows cannot be read.
+func (e *Engine) ownHostCPURefusal(ctx context.Context, hostID, projectID uuid.UUID) (string, bool) {
+	var name string
+	err := e.pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id is not null", hostID).Scan(&name)
+	if err != nil {
+		return "", false
+	}
+	rows, err := e.pool.Query(ctx, `select slug from projects
+		 where host_id = $1 and id <> $2 and destroyed_at is null and state in ('creating', 'building', 'starting', 'running', 'restoring')
+		 order by slug`, hostID, projectID)
+	if err != nil {
+		return "", false
+	}
+	var slugs []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			rows.Close()
+			return "", false
+		}
+		slugs = append(slugs, slug)
+	}
+	rows.Close()
+	if rows.Err() != nil {
+		return "", false
+	}
+	full := "your host " + name + " runs as many machines at once as its cores allow"
+	switch len(slugs) {
+	case 0:
+		return full + ". Stopping a running machine frees room", true
+	case 1:
+		return full + ", and " + slugs[0] + " is running there. Stopping it frees room", true
+	}
+	return full + ", and " + andList(slugs) + " are running there. Stopping one of them frees room", true
+}
+
+// andList is "a", "a and b", "a, b and c".
+func andList(s []string) string {
+	if len(s) < 2 {
+		return strings.Join(s, "")
+	}
+	return strings.Join(s[:len(s)-1], ", ") + " and " + s[len(s)-1]
+}
+
+// elsewhere is the second way out of a create an owned host refused for
+// room (I-1654): repose's servers, when the account's plan runs machines
+// there. A start stays where its disk is, so it has none.
+func (e *Engine) elsewhere(ctx context.Context, op *store.Op) string {
+	if op.Kind != KindCreate || op.ProjectID == nil {
+		return ""
+	}
+	p, err := store.GetProject(ctx, e.pool, *op.ProjectID)
+	if err != nil {
+		return ""
+	}
+	t, err := e.target(ctx, e.pool, p)
+	if err != nil || !t.Fleet {
+		return ""
+	}
+	return ", or `repose run --host repose` makes this one on repose's servers"
+}
+
 // guestOverheadBytes is hostd's guest.OverheadMiB: what each guest's
 // unit may hold beyond its RAM, which a hostd that does not share counts.
 const guestOverheadBytes = 512 << 20
@@ -1104,6 +1169,16 @@ func (e *Engine) failWithLines(ctx context.Context, op *store.Op, code, msg stri
 	// owns names that host and hostd's own figures (I-1586).
 	if code == "insufficient_capacity" && strings.Contains(hostMsg, "not enough free memory") && op.HostID != nil && op.ProjectID != nil {
 		if own, ok := e.ownHostMemoryRefusal(ctx, *op.HostID, *op.ProjectID); ok {
+			own += e.elsewhere(ctx, op)
+			errObj["message"], errObj["detail"] = own, hostMsg
+			msg = own
+		}
+	}
+	// One refused for its cores (I-1640) names the host, the machines
+	// that hold them and both ways out (I-1654).
+	if code == "insufficient_capacity" && strings.Contains(hostMsg, "not enough free CPU") && op.HostID != nil && op.ProjectID != nil {
+		if own, ok := e.ownHostCPURefusal(ctx, *op.HostID, *op.ProjectID); ok {
+			own += e.elsewhere(ctx, op)
 			errObj["message"], errObj["detail"] = own, hostMsg
 			msg = own
 		}

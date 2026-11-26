@@ -72,6 +72,7 @@
 	} from '$lib/projectList';
 	import type { DestroyedProject, OwnedHost, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
+	import { notAnsweringSince, notAnsweringText } from '$lib/answering';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { tabStopWhenScrolls } from '$lib/scroller';
@@ -347,6 +348,10 @@
 
 	function actionFor(p: Project): RowAction | undefined {
 		if (pending[p.id]) return pending[p.id];
+		// A running machine that stopped answering is restarted by POST
+		// /start (I-157, I-1652); stopping it would take as long and
+		// leave it off.
+		if (p.state === 'running' && notAnsweringSince(p)) return 'start';
 		if (p.state === 'running') return 'stop';
 		if (p.state === 'stopped' || p.state === 'error') return 'start';
 		return undefined;
@@ -579,6 +584,13 @@
 		<!-- A newer base waits for the machine's next restart (I-1522). -->
 		<span class="sub">new base at next restart</span>
 	{/if}
+	{#if notAnsweringSince(p)}
+		<!-- Its guestd has been silent for about three minutes (I-1652):
+		     the row's button is Restart, which is the way back. -->
+		<span class="sub sub--reason" data-testid="row-not-answering"
+			>{notAnsweringText(p, clock.now)}</span
+		>
+	{/if}
 	{#if p.host_unreachable}
 		<!-- A host going unreachable takes every machine on it at once.
 		     A host the user owns is named, with how long it has been
@@ -610,10 +622,14 @@
 			pending[p.id] === 'stop'
 				? 'Stopping…'
 				: pending[p.id] === 'start'
-					? 'Starting…'
+					? p.state === 'running'
+						? 'Restarting…'
+						: 'Starting…'
 					: a === 'stop'
 						? 'Stop'
-						: 'Start'}
+						: p.state === 'running'
+							? 'Restart'
+							: 'Start'}
 		<button
 			type="button"
 			class="hk-btn-ghost hk-btn-sm row-action"
@@ -681,6 +697,7 @@
 			size={page.url.searchParams.get('size') ?? undefined}
 			named={page.url.searchParams.get('name') ?? undefined}
 			room={planRoom(billingStore.mode, billingStore.info, projects)}
+			machines={projects ?? []}
 			onstop={(id) => {
 				const p = (projects ?? []).find((x) => x.id === id);
 				if (p) pressed(p, 'stop');
@@ -836,7 +853,11 @@
 					     a head row; Running ends on the stopped machines that ran
 					     last and a link to the rest. -->
 					<div class="hk-table-wrap ptable-wrap" use:tabStopWhenScrolls={'Projects'}>
-						<table class="hk-table hk-table--hover ptable" class:ptable--host={showHost}>
+						<table
+							class="hk-table hk-table--hover ptable"
+							class:ptable--host={showHost}
+							class:ptable--restart={(projects ?? []).some((p) => !!notAnsweringSince(p))}
+						>
 							<thead>
 								<tr>
 									<th scope="col" class="c-name">Project</th>
@@ -989,8 +1010,11 @@
 										<!-- A temporary machine's countdown and the unused warning
 										     are losses the reader cannot undo, so the stacked row
 										     carries them as the table's state cell does. -->
-										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p)}
+										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p) || notAnsweringSince(p)}
 											<div class="mrow-sub">
+												{#if notAnsweringSince(p)}<span data-testid="row-not-answering"
+														>{notAnsweringText(p, clock.now)}</span
+													>{/if}
 												{#if p.host_unreachable}<span
 														>{offlineHostText(p, ownHosts, clock.now)}</span
 													>{/if}
@@ -1194,6 +1218,11 @@
 		padding-left: 1.5rem;
 		text-align: right;
 		white-space: nowrap;
+	}
+	/* Restart, on a machine that stopped answering (I-1652), is wider
+	   than Stop or Start. */
+	.ptable--restart .c-act {
+		width: 6.75rem;
 	}
 	.ptable td.c-act {
 		padding-top: 0.6875rem;
