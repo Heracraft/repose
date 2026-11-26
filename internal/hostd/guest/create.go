@@ -458,6 +458,9 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	// The newest guest is the OOM killer's first choice on an owned host;
 	// the older ones move down (I-1626).
 	m.rankOOM(ctx)
+	// A volume grown while the guest was stopped is filled out now.
+	m.wg.Add(1)
+	go m.growFsAfterBoot(g.GuestID)
 	done := m.d.Now()
 	// SetupMs is the set-up phase as deliver measured it, not what is
 	// left of the delivery after the registration: since I-1408 the ssh
@@ -1373,5 +1376,28 @@ func (m *Manager) flushNeigh(ctx context.Context, g *state.Guest) {
 	}
 	if err := m.d.Net.FlushNeigh(ctx, g.IP); err != nil {
 		m.log(g).Warn("neighbour entry not flushed", "event", "guest_network", "err", err.Error())
+	}
+}
+
+// growFsAfterBoot asks a guest that just reached running to grow its root
+// filesystem to its volume (DECISIONS I-1660). A resize of a stopped guest
+// only extends the volume, and nothing else runs resize2fs, so a disk
+// grown while stopped kept its old filesystem (pass2-dash N1). resize2fs
+// on a filesystem that fills its device does nothing and never shrinks,
+// so every boot asks; a failure is logged and the guest runs on.
+func (m *Manager) growFsAfterBoot(id string) {
+	defer m.wg.Done()
+	ctx, cancel := context.WithTimeout(m.ctx, PrepareTimeout)
+	defer cancel()
+	sess, err := m.session(id)
+	if err != nil {
+		return
+	}
+	g, gerr := m.getGuest(id)
+	if gerr != nil {
+		return
+	}
+	if _, err := sess.GrowFs(ctx); err != nil {
+		m.log(g).Warn("filesystem not grown to the volume", "event", "guest_grow_fs", "err", err.Error())
 	}
 }
