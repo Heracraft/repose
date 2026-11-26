@@ -24,8 +24,16 @@ let
       # kept too, or cleanSourceWith never descends to it. test/fake-logto
       # is imported by cmd/fake-logto (the dashboard's dev login), so the
       # vendor step needs it without the rest of test/.
+      # images/appliance-arm64's files.go is imported by
+      # internal/hostd/hostfiles (DECISIONS I-1638) and embeds the four host
+      # files named here; the rest of that image tree is not Go's.
       in lib.any (p: rel == p || lib.hasPrefix (p + "/") rel || lib.hasPrefix (rel + "/") p)
-        [ "go.mod" "go.sum" "cmd" "internal" "proto" "buf.yaml" "test/fake-logto" ];
+        [ "go.mod" "go.sum" "cmd" "internal" "proto" "buf.yaml" "test/fake-logto"
+          "images/appliance-arm64/files.go"
+          "images/appliance-arm64/host/bin/repose-zram"
+          "images/appliance-arm64/host/bin/repose-snapshots-volume"
+          "images/appliance-arm64/host/systemd/repose-zram.service"
+          "images/appliance-arm64/host/systemd/repose-snapshots-volume.service" ];
   };
 
   bufTemplate = pkgs.writeText "buf.gen.nix.yaml" (builtins.toJSON {

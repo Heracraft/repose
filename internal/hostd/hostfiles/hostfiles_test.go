@@ -17,13 +17,13 @@ import (
 // The Mac appliance's hostd.env as 2026.11.22.4 shipped it: no
 // --owned-host (I-1626).
 const env224 = `# hostd's flags on the Mac appliance (nix/hosts/mac.nix, DECISIONS I-1494).
-HOSTD_API_ARGS=--api-addr 10.255.255.1:8443 --api-server-name api.repose.herakraft.co --api-ca /etc/repose/api-ca.pem
+HOSTD_API_ARGS=--api-addr 10.255.255.1:8443 --api-server-name api.repose.run --api-ca /etc/repose/api-ca.pem
 HOSTD_ARGS=--snapshot-dir /var/lib/repose/snapshots --ready-timeout 5m --park --free-page-reporting
 `
 
 // An x86 host's, as the installer wrote it before I-1626.
 const envX86 = `# hostd's flags on an x86 host (ops/install-host-x86.sh, DECISIONS I-1498).
-HOSTD_API_ARGS=--api-addr 10.255.255.1:8443 --api-server-name api.repose.herakraft.co --api-ca /etc/repose/api-ca.pem
+HOSTD_API_ARGS=--api-addr 10.255.255.1:8443 --api-server-name api.repose.run --api-ca /etc/repose/api-ca.pem
 # Snapshots on its own disk (DECISIONS I-1372); no park: an x86 host has
 # no launcher and no Key Vault to wrap the image key with.
 HOSTD_ARGS=--snapshot-dir /var/lib/repose/snapshots
