@@ -796,6 +796,9 @@ in
           # Notification and Stop into.
           prompt_cmds = [h["command"] for e in s["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
           assert prompt_cmds == ["repose-hook"], prompt_cmds
+          # I-1676: the agent registry's session start and end.
+          for ev in ("SessionStart", "SessionEnd"):
+              assert [h["command"] for e in s["hooks"][ev] for h in e["hooks"]] == ["repose-hook"], (ev, s["hooks"])
           guest.succeed("""sudo -u dev sh -c 'mkdir -p /tmp/old/.claude && echo "{\\"hooks\\":{\\"Stop\\":[{\\"matcher\\":\\"\\",\\"hooks\\":[{\\"type\\":\\"command\\",\\"command\\":\\"repose-hook\\"}]}]}}" > /tmp/old/.claude/settings.json && HOME=/tmp/old repose-agent-setup claude'""")
           old = json.loads(guest.succeed("cat /tmp/old/.claude/settings.json"))
           assert [h["command"] for e in old["hooks"]["UserPromptSubmit"] for h in e["hooks"]] == ["repose-hook"], old

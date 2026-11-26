@@ -27,10 +27,13 @@ import (
 // ones docs/interfaces/grpc-hostd.md gives; the rest are generous for what
 // guestd sends (agent names like "opencode", tmux window names).
 const (
-	capSummary    = 1024
-	capText       = 1024
-	capAgent      = 32
-	capWindow     = 64
+	capSummary = 1024
+	capText    = 1024
+	capAgent   = 32
+	capWindow  = 64
+	// capAgentID bounds AgentProc.agent_id and terminal: a window name
+	// and its "herdr:" prefix (I-1676).
+	capAgentID    = capWindow + 8
 	capOption     = 64
 	capOptions    = 3
 	capComm       = 16
@@ -306,7 +309,10 @@ func cleanSignals(in *hostdv1.GuestSignals, now time.Time) *hostdv1.GuestSignals
 		if !agentStates[st] {
 			st = "unknown"
 		}
-		out.Agents = append(out.Agents, &hostdv1.AgentProc{Agent: cleanToken(a.Agent, capAgent), TmuxWindow: cleanLine(a.TmuxWindow, capWindow), State: st})
+		// agent_id and terminal (DECISIONS I-1676) are a process key or a
+		// "tmux:"/"herdr:" prefix on a window name: one line, bounded.
+		out.Agents = append(out.Agents, &hostdv1.AgentProc{Agent: cleanToken(a.Agent, capAgent), TmuxWindow: cleanLine(a.TmuxWindow, capWindow), State: st,
+			AgentId: cleanLine(a.AgentId, capAgentID), Terminal: cleanLine(a.Terminal, capAgentID)})
 	}
 	return out
 }

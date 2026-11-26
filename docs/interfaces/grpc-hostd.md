@@ -461,8 +461,15 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok;
                uint64 last_input_unix; }                             // I-1272
-AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
-// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504)
+AgentProc { string agent; string tmux_window; string state;      // state: working|idle|needs_input|running|unknown (running: I-694)
+            string agent_id; string terminal; }                   // I-1676
+// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504); empty
+// for an agent outside any terminal repose can see (Claude Desktop's session, I-1676)
+// agent_id (I-1676): the agent's process as "pid:starttime", or, where guestd knows no
+// process (a herdr pane), the terminal; terminal is "tmux:<window>", "herdr:<key>" or
+// empty. hostd keeps both as one line of at most 72 bytes. A guestd older than I-1676
+// sends neither, and the api reads such an agent as agent_id = terminal = "tmux:<window>"
+// for one release (a herdr key from such a guestd reads as a tmux window).
 // tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)
 // last_input_unix (I-1272): the newest `client_activity` of a tmux client of the project's
 // session, which tmux moves on when a client sends input: when somebody last typed in the
@@ -496,7 +503,11 @@ sender's name and never the message, I-1144), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
 I-121; a tmux window name or a herdr agent key since I-504), link_url and
 link_label (fields 6 and 7, I-931: a `repose-notify --link`, which hostd
-checks with internal/msglink and drops, keeping the event, when it fails)}`,
+checks with internal/msglink and drops, keeping the event, when it fails),
+agent_id (field 8, I-1676: AgentProc.agent_id of the agent the hook came
+from, set by a guestd with the agent registry for an agent outside any
+terminal; empty otherwise and from an older guestd; the api does not
+store it yet)}`,
 `agent_question {guest_id, question_id, agent, tmux_window, text (capped 1
 KB), options, timeout_s, state, reason}` (a guest's `Question` notify, relayed;
 DECISIONS I-244: the api stores it by question_id, so a re-announcement

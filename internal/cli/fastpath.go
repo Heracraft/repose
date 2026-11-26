@@ -260,6 +260,11 @@ func attachFast(ctx context.Context, e *Env, opts RunOptions) (done bool, err er
 		// at once (DECISIONS I-1328).
 		return false, nil
 	}
+	if opts.Window != "" {
+		// `attach -w AGENT` reads the agents list first: an agent that
+		// runs outside tmux has no window to open (DECISIONS I-1676).
+		return false, nil
+	}
 	explicit := e.resolveArg(opts.ProjectArg)
 	deps := defaultResolveDeps()
 	guess := cachedGuess(e, explicit, deps)

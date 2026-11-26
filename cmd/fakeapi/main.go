@@ -103,7 +103,7 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 -> f.SetSayAgents, f.SetSayState and f.SetSayReply: which agents the machines run,
 //	                 what a `repose say` is answered with (I-1144), and the turn-ended event a
 //	                 delivered message gets back after reply_ms (I-1604; empty reply: none)
-//	POST /agents     {"project_id","agents": [{agent, window, state}],"ssh_sessions","tmux_clients"}
+//	POST /agents     {"project_id","agents": [{agent, window, state, agent_id?, terminal?}],"ssh_sessions","tmux_clients"}
 //	                 -> f.SetAgents, and f.SetSessions when either count is given
 //
 // Every answer carries permissive CORS headers, so a Playwright test can

@@ -227,6 +227,7 @@ func New(cfg Config) (*Server, error) {
 	_, devGID := sysdep.DevIdentity()
 	s.hooks = hooks.NewServer(hookPath, devGID, s.onHook, s.sampler.WindowOfPane, log)
 	s.hooks.SetHerdrResolver(s.watcher.ResolveHerdr)
+	s.hooks.SetAgentSink(s.onAgentHook)
 	s.hooks.SetProcRoot(paths.Proc())
 	s.asks = questions.New(paths.QuestionsDir(), s.emitQuestion, log, cfg.Now)
 	s.hooks.EnableAsk(s.asks, s.AgentEvent)
@@ -484,11 +485,23 @@ func (s *Server) AgentState(agent, window, state string) {
 	}})
 }
 
+// AgentStateOf is AgentState with the agent's id (the
+// sample.AgentIDEmitter interface, DECISIONS I-1676).
+func (s *Server) AgentStateOf(agent, window, agentID, state string) {
+	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_AgentState{
+		AgentState: &guestdv1.AgentState{Agent: agent, TmuxWindow: window, State: state, AgentId: agentID},
+	}})
+}
+
 // AgentEvent queues an AgentEvent notification (the sample.Emitter interface).
 func (s *Server) AgentEvent(agent, window, kind, summary string) {
+	s.agentEventOf(agent, window, "", kind, summary)
+}
+
+func (s *Server) agentEventOf(agent, window, agentID, kind, summary string) {
 	s.triggers.OnAgentEvent(window, kind, summary, "", "")
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_AgentEvent{
-		AgentEvent: &guestdv1.AgentEvent{Agent: agent, TmuxWindow: window, Kind: kind, Summary: summary},
+		AgentEvent: &guestdv1.AgentEvent{Agent: agent, TmuxWindow: window, Kind: kind, Summary: summary, AgentId: agentID},
 	}})
 }
 
@@ -539,6 +552,18 @@ func (s *Server) onHook(agent, window, kind, summary string) {
 	}
 	s.watcher.RecordHook(window, kind, s.now())
 	s.AgentEvent(agent, window, kind, summary)
+}
+
+// onAgentHook is what the hook socket calls for an agent with no
+// terminal (DECISIONS I-1676): the agent registry records it, and a
+// completion, a needs_input or an error is relayed as before, under the
+// agent's name, now with the agent's id.
+func (s *Server) onAgentHook(h hooks.AgentHook) {
+	s.watcher.RecordAgentHook(sample.AgentHook{Agent: h.Agent, Kind: h.Kind, Proc: h.Proc, SessionID: h.SessionID, Inbox: h.Inbox}, s.now())
+	switch h.Kind {
+	case sample.KindCompleted, sample.KindNeedsInput, sample.KindError:
+		s.agentEventOf(h.Agent, h.Agent, h.Proc, h.Kind, h.Summary)
+	}
 }
 
 func (s *Server) emitReady() {

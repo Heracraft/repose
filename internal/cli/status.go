@@ -1037,6 +1037,9 @@ func agentList(p *Project) string {
 		if name == "" {
 			name = a.Agent
 		}
+		if a.noTerminal() {
+			name += " (" + noTerminalWords + ")"
+		}
 		if w := agentWord(a.State); w != "" {
 			name += " " + w + staleMark(p, now) + waitAge(p, a, now)
 		}

@@ -52,6 +52,12 @@ type PsRow struct {
 	// IdleSecs is how long since the window last printed; null on herdr.
 	IdleSecs *int64 `json:"idle_seconds"`
 
+	// AgentID and Terminal are the api's (DECISIONS I-1676): an agent
+	// that runs outside any terminal (Claude Desktop's) is a row of its
+	// own, with an empty name, a null command and an empty terminal.
+	AgentID  string `json:"agent_id,omitempty"`
+	Terminal string `json:"terminal,omitempty"`
+
 	// Kept one release (I-606).
 	Index     *int       `json:"index,omitempty"`
 	Current   *bool      `json:"current,omitempty"`
@@ -337,8 +343,27 @@ func psRowsTmux(l psListing, sig *Signals, now time.Time) []PsRow {
 		if a := windowAgent(w.Name, w.Command); a != "" {
 			st := windowState(w, a, sig, now)
 			r.Agent, r.AgentState, r.State = &a, &st, &st
+			r.Terminal = "tmux:" + w.Name
 		}
 		rows = append(rows, r)
+	}
+	return append(rows, noTerminalRows(sig, now)...)
+}
+
+// noTerminalRows is the agents that run outside any terminal repose can
+// see (DECISIONS I-1676), from a fresh sample: ps lists them after the
+// windows, and -n prints nothing for them, since there is no screen.
+func noTerminalRows(sig *Signals, now time.Time) []PsRow {
+	if sig == nil || sig.SampledAt == nil || now.Sub(*sig.SampledAt) >= signalFresh {
+		return nil
+	}
+	var rows []PsRow
+	for _, a := range sig.Agents {
+		if !a.noTerminal() {
+			continue
+		}
+		agent, st := a.Agent, a.State
+		rows = append(rows, PsRow{Agent: &agent, AgentState: &st, State: &st, AgentID: a.AgentID})
 	}
 	return rows
 }
@@ -537,13 +562,21 @@ func PsCmdWith(ctx context.Context, e *Env, opts PsOptions) error {
 		return writeJSONOut(e.Out, rows)
 	case e.Quiet:
 		for _, r := range rows {
-			_, _ = fmt.Fprintln(e.Out, r.Name)
+			if r.Index != nil {
+				_, _ = fmt.Fprintln(e.Out, r.Name)
+			}
 		}
 		return nil
 	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "WINDOW\tCOMMAND\tSTATE\tTREE\tACTIVE")
 	for _, r := range rows {
+		if r.Index == nil {
+			// An agent outside any terminal: its name where the
+			// program goes, and nothing a window would have.
+			_, _ = fmt.Fprintf(tw, "%s \t%s\t%s\t-\t-\n", noTerminalWords, *r.Agent, stateCell(*r.AgentState))
+			continue
+		}
 		mark := " "
 		if r.Focused {
 			mark = "*"

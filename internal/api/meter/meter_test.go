@@ -407,3 +407,48 @@ func TestIngestKeepsParkedWaitingOnlyFromAnOwnedHost(t *testing.T) {
 		t.Fatalf("a fleet host's sample kept parked_waiting_since: %+v %v %v", l, ok, err)
 	}
 }
+
+// TestAgentsKeepTheirIDAndOldGuestsGetOne (I-1676): a windowless agent is
+// stored with its id and no window; a window agent from a guestd that
+// sends no id reads back with "tmux:<window>" as both id and terminal.
+func TestAgentsKeepTheirIDAndOldGuestsGetOne(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := meter.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Now().UTC().Truncate(time.Second)
+	ing.SetNow(func() time.Time { return now })
+	pid, gid := seed(t, pool, "large", now.Add(-time.Hour))
+	ing.OnSamples(ctx, testHost, &hostdv1.Samples{Ts: now.Unix(), Guests: []*hostdv1.GuestSample{{
+		GuestId: gid.String(), State: "running", Class: "large",
+		Signals: &hostdv1.GuestSignals{GuestdOk: true, Agents: []*hostdv1.AgentProc{
+			{Agent: "claude", TmuxWindow: "claude", State: "idle"},
+			{Agent: "claude", State: "working", AgentId: "501:4100"},
+		}},
+	}}})
+	latest, ok, err := meter.LatestSample(ctx, pool, pid)
+	if err != nil || !ok || len(latest.Agents) != 2 {
+		t.Fatalf("latest = %+v %v %v", latest, ok, err)
+	}
+	old, windowless := latest.Agents[0], latest.Agents[1]
+	if old["agent_id"] != "tmux:claude" || old["terminal"] != "tmux:claude" || old["window"] != "claude" {
+		t.Fatalf("old guest's agent = %v", old)
+	}
+	if windowless["agent_id"] != "501:4100" || windowless["window"] != "" || windowless["terminal"] != "" || windowless["state"] != "working" {
+		t.Fatalf("windowless agent = %v", windowless)
+	}
+	// The rest rule's agent term counts it (idle.UsedSQL reads this list).
+	var working bool
+	if err := pool.QueryRow(ctx, `select exists (select 1 from meter_samples, jsonb_array_elements(agents) a
+		where project_id = $1 and a->>'window' = '' and a->>'state' not in ('idle', 'needs_input'))`, pid).Scan(&working); err != nil || !working {
+		t.Fatalf("a working windowless agent is not in the stored list: %v %v", working, err)
+	}
+}
+
+func TestAgentRowDerivesOnlyForAWindow(t *testing.T) {
+	if got := meter.AgentRow(map[string]string{"agent": "claude", "window": "claude-2"}); got["agent_id"] != "tmux:claude-2" || got["terminal"] != "tmux:claude-2" {
+		t.Fatalf("derived = %v", got)
+	}
+	if got := meter.AgentRow(map[string]string{"agent": "claude", "window": "", "agent_id": "1:2"}); got["agent_id"] != "1:2" || got["terminal"] != "" {
+		t.Fatalf("windowless = %v", got)
+	}
+}

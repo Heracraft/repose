@@ -199,7 +199,10 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		}
 		agents := []map[string]string{}
 		for _, a := range x.latest.Agents {
-			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"]})
+			// agent_id and terminal (I-1676); a row from an older guestd
+			// gets them derived from its window.
+			a = meter.AgentRow(a)
+			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"], "agent_id": a["agent_id"], "terminal": a["terminal"]})
 		}
 		var guestdOK any = x.latest.GuestdOK
 		if sampleBeforeStart(p, x.latest) {

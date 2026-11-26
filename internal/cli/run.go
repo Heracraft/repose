@@ -439,6 +439,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			_, _ = fmt.Fprintln(e.ErrOut, l)
 		}
 		if opts.Session == "" {
+			if err := noTerminalAttach(project, opts.Window); err != nil {
+				return err
+			}
 			return attach(opts.Window, opts.Window != "")
 		}
 		// `attach --session` is the one thing an attach does before the
@@ -2758,4 +2761,26 @@ func (e *Env) startAgentFor(ctx context.Context, pr *progress, target sshTarget,
 		_, _ = fmt.Fprintf(e.Out, "%s: %s\n", capitalize(mux.Unit()), name)
 	}
 	return name, nil
+}
+
+// noTerminalAttach refuses `attach -w AGENT` for an agent that runs
+// outside tmux (DECISIONS I-1676), Claude Desktop's: there is no window
+// to open, and a `claude --resume` in a new one would be a second process
+// writing the same conversation. nil when a window has that name, or no
+// such agent is listed.
+func noTerminalAttach(p *Project, window string) error {
+	if window == "" || p == nil || p.Signals == nil {
+		return nil
+	}
+	found := false
+	for _, a := range p.Signals.Agents {
+		if a.Window == window {
+			return nil
+		}
+		found = found || (a.noTerminal() && a.Agent == window)
+	}
+	if !found {
+		return nil
+	}
+	return exitf(ExitUsage, "%s runs outside tmux on %s; open it where it was started.", window, p.Slug)
 }

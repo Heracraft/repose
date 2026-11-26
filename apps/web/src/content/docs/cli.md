@@ -54,7 +54,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 
 ### `repose attach [PROJECT[:CHECKOUT]] [WINDOW]`
 
-Attach to the project's session, on its current window, without syncing. WINDOW (or `-w`/`--window NAME`) opens on that window instead: a name or number as `repose ps` shows it, or on herdr an agent's name. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2.
+Attach to the project's session, on its current window, without syncing. WINDOW (or `-w`/`--window NAME`) opens on that window instead: a name or number as `repose ps` shows it, or on herdr an agent's name. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2, as does the name of an agent that runs outside any terminal: `claude runs outside tmux on todo-app; open it where it was started.`
 
 A machine that isn't running comes up first, as [`repose start`](#repose-start-project) does. A machine being removed, or one stopped for running a miner, exits 5.
 
@@ -92,13 +92,13 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
-WINDOW is the window's number and name, with `*` on the one `attach` opens on. COMMAND is the program in the window's active pane, its name and never its arguments. STATE is the [agent's state](/docs/agents#agent-states); `-` is a window with no agent, or one whose agent exited or never reported. TREE is the folder the window works in, `checkout`, `worktree-N`, `~/PATH`, or the path itself outside your home folder, as [`exec --workdir`](#repose-exec-project-checkout-command-arg) takes it. ACTIVE is how long since the window last printed. `-q`/`--quiet` prints the names alone, one per line.
+WINDOW is the window's number and name, with `*` on the one `attach` opens on. COMMAND is the program in the window's active pane, its name and never its arguments. STATE is the [agent's state](/docs/agents#agent-states); `-` is a window with no agent, or one whose agent exited or never reported. TREE is the folder the window works in, `checkout`, `worktree-N`, `~/PATH`, or the path itself outside your home folder, as [`exec --workdir`](#repose-exec-project-checkout-command-arg) takes it. ACTIVE is how long since the window last printed. `-q`/`--quiet` prints the names alone, one per line. An agent outside any terminal ([Agent states](/docs/agents#agent-states)) is a row after the windows, `no terminal` under WINDOW and the agent under COMMAND; `-q` leaves it out.
 
 A herdr project lists herdr's agents instead, under `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
 
 With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, unwrapped; `-n`/`--tail N` for N lines, 1 to 10000. `-n` without a window prints every window's, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. Where a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
 
-`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `agent_state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `agent_state` for a window with no agent). `agent_state` spells `needs input` as `needs_input`, and reads `unknown` where an agent exited or never reported, which the table shows as `-`. `state` repeats `agent_state`, except on herdr, where it keeps herdr's own word (`blocked`, `done`) for this release. For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
+`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `agent_state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `agent_state` for a window with no agent). `agent_state` spells `needs input` as `needs_input`, and reads `unknown` where an agent exited or never reported, which the table shows as `-`. `state` repeats `agent_state`, except on herdr, where it keeps herdr's own word (`blocked`, `done`) for this release. For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr. A tmux agent's row has `terminal`, `tmux:NAME`. An agent outside any terminal has `name` empty, `command` null and `agent_id`, its process on the machine.
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 

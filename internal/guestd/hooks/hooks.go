@@ -57,20 +57,45 @@ const KindPrompt = "prompt"
 // the guest and closes no question; guestd marks the agent working.
 const KindResume = "resume"
 
+// KindSessionStart and KindSessionEnd are Claude Code's SessionStart and
+// SessionEnd (DECISIONS I-1676): an agent with no terminal enters the
+// agent registry at its start and leaves it at its end. They never leave
+// the guest, and a hook from a tmux window or herdr pane of either kind
+// changes nothing, since the window is the record there.
+const (
+	KindSessionStart = "session_start"
+	KindSessionEnd   = "session_end"
+)
+
 // Kinds an agent may report.
-var kinds = map[string]bool{"completed": true, "needs_input": true, "error": true, KindPrompt: true, KindResume: true}
+var kinds = map[string]bool{"completed": true, "needs_input": true, "error": true, KindPrompt: true, KindResume: true, KindSessionStart: true, KindSessionEnd: true}
 
 // agents that may report. A wrapper for an agent not in this list is a
 // packaging mistake, and saying so is more useful than accepting it.
 var agents = map[string]bool{"claude": true, "opencode": true, "codex": true, "gemini": true, "pi": true}
 
-// Payload is what a wrapper POSTs.
+// Payload is what a wrapper POSTs. session_id and inbox are what
+// repose-hook read from the agent's own payload and environment
+// (DECISIONS I-1676); an older repose-hook sends neither.
 type Payload struct {
-	Agent   string `json:"agent"`
-	Kind    string `json:"kind"`
-	Summary string `json:"summary"`
-	Window  string `json:"window,omitempty"`
+	Agent     string `json:"agent"`
+	Kind      string `json:"kind"`
+	Summary   string `json:"summary"`
+	Window    string `json:"window,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	Inbox     string `json:"inbox,omitempty"`
 }
+
+// AgentHook is a hook from an agent the socket found no terminal for
+// (DECISIONS I-1676): Proc is its process as "pid:starttime". Summary is
+// set for the kinds that are events (completed, needs_input, error) and
+// empty for the rest.
+type AgentHook struct {
+	Agent, Kind, Summary, Proc, SessionID, Inbox string
+}
+
+// AgentSink takes a hook from an agent with no terminal.
+type AgentSink func(AgentHook)
 
 // Sink receives a validated hook event. window is the caller's tmux
 // window or herdr agent key, or "" when the payload named none (or a herdr
@@ -109,7 +134,14 @@ type Server struct {
 	procRoot string
 	// presence backs /presence once SetPresence is called (I-1098).
 	presence Presence
+	// agentSink takes the hooks of agents with no terminal once
+	// SetAgentSink is called (I-1676); without it they are relayed as
+	// before, under the agent's name.
+	agentSink AgentSink
 }
+
+// SetAgentSink routes the hooks of agents with no terminal to f.
+func (s *Server) SetAgentSink(f AgentSink) { s.agentSink = f }
 
 // NewServer builds the hook server. gid owns the socket's group, so the dev
 // user can write to it and nothing else can.
@@ -234,6 +266,21 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if p.Window == "" && s.agentSink != nil {
+		// Resolved once: the paths below take the window as given.
+		if p.Window = s.windowOfCaller(r); p.Window == "" {
+			pid, _ := r.Context().Value(peerKey{}).(int)
+			if proc := agentOrAncestor(s.procRoot, pid, p.Agent); proc != "" {
+				s.handleWindowless(w, p, proc)
+				return
+			}
+		}
+	}
+	if p.Kind == KindSessionStart || p.Kind == KindSessionEnd {
+		// A window's agent is its window; a session hook changes nothing.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if p.Kind == KindPrompt {
 		s.handlePrompt(w, r, p)
 		return
@@ -270,6 +317,28 @@ func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request, p Payload)
 	}
 	s.sink(p.Agent, window, KindPrompt, "")
 	s.log.Info("agent prompt received", "event", "agent_event", "agent", p.Agent, "kind", KindPrompt, "questions_closed", closed)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleWindowless takes a hook from an agent with no terminal: a prompt
+// closes the questions asked from its process, and the hook goes to the
+// agent sink. The prompt's text is dropped unread, as handlePrompt drops
+// it.
+func (s *Server) handleWindowless(w http.ResponseWriter, p Payload, proc string) {
+	h := AgentHook{Agent: p.Agent, Kind: p.Kind, Proc: proc, SessionID: p.SessionID, Inbox: p.Inbox}
+	closed := 0
+	switch p.Kind {
+	case KindPrompt:
+		if s.questions != nil {
+			closed = s.questions.CloseWhere(askedFrom(proc, ""), questions.ReasonTerminal)
+		}
+	case KindResume, KindSessionStart, KindSessionEnd:
+	default:
+		h.Summary = truncate(p.Summary, SummaryCap)
+	}
+	s.agentSink(h)
+	s.log.Info("agent hook received", "event", "agent_event", "agent", p.Agent, "kind", p.Kind,
+		"windowless", true, "summary_bytes", len(h.Summary), "questions_closed", closed)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -322,6 +391,79 @@ func agentProc(root string, pid int, agent string) string {
 		pid, _ = strconv.Atoi(f[1])
 	}
 	return ""
+}
+
+// passThrough are the process names between an agent and its hook that
+// are not the agent: the shell Claude Code runs a hook command with
+// (`sh -c`, which does not exec; measured on Claude Code 2.1.331), and
+// the wrappers a user may put around a command.
+var passThrough = map[string]bool{
+	"sh": true, "bash": true, "dash": true, "zsh": true, "fish": true, "ash": true, "ksh": true,
+	"env": true, "nice": true, "nohup": true, "timeout": true, "setsid": true, "stdbuf": true, "flock": true,
+	"repose-hook": true, ".repose-hook-wr": true, "repose-notify": true, "repose-ask": true,
+}
+
+// stopAt are the process names that are never an agent and above which
+// none is: a hook run from a login shell, a tmux server, or a service is
+// no agent's.
+var stopAt = map[string]bool{
+	"sshd": true, "sshd-session": true, "systemd": true, "init": true, "(sd-pam)": true, "login": true,
+	"su": true, "sudo": true, "runuser": true, "tmux: server": true, "tmux": true, "herdr": true,
+	"guestd": true, "cron": true, "crond": true,
+}
+
+// agentOrAncestor is agentProc, and, when no ancestor is the agent's
+// program, the nearest ancestor above the caller that is neither a
+// shell nor a wrapper: that is how Claude Desktop's CLI is found, whose
+// binary is named for its version (`ccd-cli/2.1.330-3cc8a8679c34`,
+// ENG-255). "" when the walk meets a login, a multiplexer or a service
+// first. It reads stat only.
+func agentOrAncestor(root string, pid int, agent string) string {
+	if p := agentProc(root, pid, agent); p != "" {
+		return p
+	}
+	if !agents[agent] || pid <= 1 {
+		return ""
+	}
+	_, ppid, _, ok := readProcStat(root, pid)
+	if !ok {
+		return ""
+	}
+	pid = ppid // the caller itself is the hook command
+	for i := 0; i < 32 && pid > 1; i++ {
+		comm, ppid, start, ok := readProcStat(root, pid)
+		if !ok || stopAt[comm] {
+			return ""
+		}
+		if !passThrough[comm] {
+			return strconv.Itoa(pid) + ":" + start
+		}
+		pid = ppid
+	}
+	return ""
+}
+
+// readProcStat is a process's comm, parent and start time from its stat
+// file.
+func readProcStat(root string, pid int) (comm string, ppid int, start string, ok bool) {
+	b, err := os.ReadFile(filepath.Join(root, strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return "", 0, "", false
+	}
+	st := string(b)
+	open, end := strings.IndexByte(st, '('), strings.LastIndexByte(st, ')')
+	if open < 0 || end < open {
+		return "", 0, "", false
+	}
+	f := strings.Fields(st[end+1:])
+	if len(f) < 20 {
+		return "", 0, "", false
+	}
+	ppid, err = strconv.Atoi(f[1])
+	if err != nil {
+		return "", 0, "", false
+	}
+	return st[open+1 : end], ppid, f[19], true
 }
 
 // exeName is the basename of a process's exe link: Gemini CLI is node,

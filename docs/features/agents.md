@@ -46,11 +46,29 @@ once.
 A project keeps the default it was created with; `repose run --agent NAME`
 picks another for one prompt.
 
+An agent something else started on the machine, with no terminal repose
+can see, is still an agent (DECISIONS I-1676, ENG-255). Claude Desktop's
+"Open in Claude" session is the first: its hooks reach guestd from a
+process outside tmux, guestd's agent registry keys it by `pid:starttime`,
+and the dashboard's Agents card, `repose status` and `repose ps` list it
+with `no terminal` where the window goes:
+
+```
+$ repose status todo-app
+...
+agents     claude (no terminal) working
+```
+
+It counts for the stop question and the rest rule as a window's agent
+does, and its process is OOM-protected. `repose say` and `attach -w`
+refuse it with a sentence that says where it runs. The model and its
+later stages are in `docs/proposals/2026-11-26-agent-model.md`.
+
 ## The five agents
 
 | Agent | Binary | Window | How it reports | Login in guest |
 |---|---|---|---|---|
-| Claude Code | `claude` | `claude` | `Notification`, `Stop` and `UserPromptSubmit` hooks in `~/.claude/settings.json` run `repose-hook`: prompt, finished, needs input | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
+| Claude Code | `claude` | `claude` | `Notification`, `Stop`, `UserPromptSubmit`, `SessionStart` and `SessionEnd` hooks in `~/.claude/settings.json` run `repose-hook`: prompt, finished, needs input, and an agent outside tmux entering and leaving the registry (I-1676) | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
 | opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 2, the machine's, and version 1 for a reader who kept one: I-481, I-1050) sends prompt (V2 `session.execution.started`; V1 `chat.message`, I-690), finished (V2 `session.execution.succeeded`; V1 `session.idle`), needs input (`permission.asked`), error (V2 `session.execution.failed`; V1 `session.error`) | `~/.local/share/opencode/auth.json` synced from the laptop; version 2 keeps its own logins in `~/.local/share/opencode/opencode.db`, so whether a copied `auth.json` still reaches it is the live check on I-1050 |
 | Codex CLI | `codex` | `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`: finished; a `UserPromptSubmit` hook in `/etc/codex/config.toml` (I-690): prompt | `~/.codex/auth.json` synced from the laptop |
 | Gemini CLI | `gemini` | `gemini` | `BeforeAgent` and `AfterAgent` hooks in the platform extension's `hooks/hooks.json` (I-690): prompt, finished; the tmux pane-idle heuristic until the first hook, or herdr's own detection on a herdr project (I-504) | `GEMINI_API_KEY` named secret, or log in on the machine |

@@ -52,8 +52,8 @@ for a CPU (inside the environment and on the server), bytes sent and received, d
 allocated and used, the number of open SSH sessions and attached tmux
 clients, the time at which somebody last typed into one of those tmux
 clients, the number of Docker containers running, and which agents are
-running in which tmux windows and whether they are working, idle, or
-waiting for input. The time somebody last typed is a clock time and
+running, in which tmux window when they have one, the process number
+each runs as, and whether they are working, idle, or waiting for input. The time somebody last typed is a clock time and
 nothing else: we do not record what was typed, and the keystroke is
 never read. We use it to decide whether you are at the machine, so that
 a report from an agent is not pushed to your phone while you are

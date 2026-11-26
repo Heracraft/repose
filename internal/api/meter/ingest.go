@@ -96,6 +96,8 @@ const (
 	maxComm   = 16
 	maxAgent  = 32
 	maxWindow = 64
+	// maxAgentID bounds agent_id and terminal (DECISIONS I-1676).
+	maxAgentID = 72
 	// maxPressureUs is an hour of CPU pressure in microseconds: more than
 	// one sample can hold (DECISIONS I-493).
 	maxPressureUs = 3_600_000_000
@@ -155,7 +157,12 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 		if len(agents) == maxAgents {
 			break
 		}
-		agents = append(agents, map[string]string{"agent": store.CleanText(a.Agent, maxAgent), "window": store.CleanText(a.TmuxWindow, maxWindow), "state": store.CleanText(a.State, maxAgent)})
+		row := map[string]string{"agent": store.CleanText(a.Agent, maxAgent), "window": store.CleanText(a.TmuxWindow, maxWindow), "state": store.CleanText(a.State, maxAgent)}
+		if id := store.CleanText(a.AgentId, maxAgentID); id != "" {
+			row["agent_id"] = id
+			row["terminal"] = store.CleanText(a.Terminal, maxAgentID)
+		}
+		agents = append(agents, AgentRow(row))
 	}
 	aj, _ := json.Marshal(agents)
 	// The guest's CPU pressure is guest-written, so it goes with the other
@@ -297,4 +304,22 @@ func LatestSample(ctx context.Context, q store.Querier, projectID uuid.UUID) (*L
 	}
 	_ = json.Unmarshal(agents, &l.Agents) // stored by us; malformed means empty
 	return &l, true, nil
+}
+
+// AgentRow fills in agent_id and terminal for an agent an older guestd
+// reported, or a row stored before DECISIONS I-1676: such an agent was
+// always a window, so its terminal is "tmux:<window>" and that is its id
+// too. One release of mixed guests lists the same agents as before; a
+// herdr pane's key reads as a tmux window until its guestd is new.
+func AgentRow(a map[string]string) map[string]string {
+	if a["agent_id"] != "" || a["window"] == "" {
+		return a
+	}
+	out := make(map[string]string, len(a)+2)
+	for k, v := range a {
+		out[k] = v
+	}
+	out["agent_id"] = "tmux:" + a["window"]
+	out["terminal"] = "tmux:" + a["window"]
+	return out
 }

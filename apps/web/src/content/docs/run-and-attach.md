@@ -161,6 +161,8 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
+An agent outside any terminal, a [Claude Desktop](/docs/ssh-and-editors#claude-desktop) session for one, is listed after the windows as `no terminal`. It has no lines to print, and `repose attach -w claude` names where it runs instead of opening it.
+
 To read what an agent printed without attaching, name its window: `repose ps todo-app claude-2` prints its last 20 lines, `-n 50` more. `repose ps -n 5` prints the last 5 lines of every window. `repose attach -w claude-2` opens that window. `repose run -w claude-2 -p 1` types `1` and Enter into it, which answers a permission prompt; any other text is a follow-up for the agent.
 
 `repose exec` runs one command in the checkout on the machine and gives you its output and exit code, the way `docker exec` does.

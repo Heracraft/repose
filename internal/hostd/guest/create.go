@@ -1273,6 +1273,7 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 			return
 		}
 		ev.LinkUrl, ev.LinkLabel = cleanLink(ae.LinkUrl, ae.LinkLabel)
+		ev.AgentId = cleanLine(ae.AgentId, capAgentID)
 		m.log(mon.g).Info("agent event", "event", "agent_event", "agent", ev.Agent, "kind", ev.Kind)
 		m.emitGuestEvent(&hostdv1.Event_AgentEvent{AgentEvent: ev})
 	case *guestdv1.Notify_Question:

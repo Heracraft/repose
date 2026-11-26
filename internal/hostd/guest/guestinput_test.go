@@ -428,3 +428,23 @@ func TestGuestTriggerRunIsBounded(t *testing.T) {
 		t.Errorf("trigger %q", r.Trigger)
 	}
 }
+
+// TestCleanSignalsKeepsTheAgentID (I-1676): a windowless agent's id and
+// a window agent's terminal reach the api, bounded to one line.
+func TestCleanSignalsKeepsTheAgentID(t *testing.T) {
+	out := cleanSignals(&hostdv1.GuestSignals{Agents: []*hostdv1.AgentProc{
+		{Agent: "claude", State: "working", AgentId: "501:4100"},
+		{Agent: "claude", TmuxWindow: "claude", State: "idle", AgentId: "101:11", Terminal: "tmux:claude"},
+		{Agent: "claude", State: "idle", AgentId: "1:2\n" + strings.Repeat("x", 200)},
+	}}, time.Now())
+	a := out.GetAgents()
+	if a[0].GetAgentId() != "501:4100" || a[0].GetTmuxWindow() != "" || a[0].GetTerminal() != "" {
+		t.Fatalf("windowless = %+v", a[0])
+	}
+	if a[1].GetAgentId() != "101:11" || a[1].GetTerminal() != "tmux:claude" {
+		t.Fatalf("window = %+v", a[1])
+	}
+	if id := a[2].GetAgentId(); strings.Contains(id, "\n") || len(id) > capAgentID {
+		t.Fatalf("an unbounded id passed: %q", id)
+	}
+}

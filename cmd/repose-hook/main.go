@@ -99,6 +99,13 @@ func run() string {
 	if *window != "" {
 		p.Window = *window
 	}
+	// What the agent registry keeps of the session (DECISIONS I-1676):
+	// the agent's own conversation id, and Claude Code's per-session
+	// socket path from this process's own environment. Never its token.
+	p.SessionID = sessionIDOf(*agent, payload)
+	if *agent == "claude" {
+		p.Inbox = os.Getenv("CLAUDE_CODE_MESSAGING_SOCKET")
+	}
 
 	if err := post(*socket, p); err != nil {
 		return err.Error()
