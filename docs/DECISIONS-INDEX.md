@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1151 entries.
+1152 entries.
 
 ## Scope
 
@@ -151,7 +151,7 @@ pointer, not a summary.
 - **I-63** The guest disk is passed to Cloud Hypervisor with `image_type=raw` — 2026-09-20; L1396
 - **I-64** guestd binds its vsock listener to any CID — 2026-09-20; L1405
 - **I-65** virtiofsd does not announce submounts — 2026-09-20; L1413
-- **I-66** `ResizeVolume` on a running guest calls Cloud Hypervisor's `vm.resize-disk` between `lvextend` and `GrowFs` — 2026-09-20; L1428
+- **I-66** `ResizeVolume` on a running guest calls Cloud Hypervisor's `vm.resize-disk` between `lvextend` and `GrowFs` — 2026-09-20; amended by I-1660; L1428
 - **I-67** hostd registers the guest's closure in the guest's nix database: `RegisterPaths` after `Ready`, and `registration` inside `Switch` — 2026-09-20; L1436
 - **I-68** Reconcile removes `snap-*` volumes left by an interrupted snapshot — 2026-09-20; L1458
 - **I-69** The `virtiofsd` user is in group `hostd` — 2026-09-20; L1471
@@ -1183,3 +1183,4 @@ pointer, not a summary.
 - **I-1652** A running machine whose guestd has not answered for three samples in a row, a minute apart (about three minutes), is `not answering`: `Project.not_answering {since}`, `running not answering` in `repose ls` and the `status` header with a line naming the `repose start` that restarts it and what that loses, the dashboard's row (Restart in place of Stop) and a banner with Restart on its page, and one `not_answering` event per stretch, which notifies nobody (review-fixes, sharing program, 2026-11-26) — L39610
 - **I-1654** The customer review's other fixes on the api, CLI, dashboard and docs side of sharing on owned hosts (review-fixes, sharing program, 2026-11-26) — amended by I-1658; L39618
 - **I-1658** The dashboard's second customer pass on sharing: Create waits while the form says the host is full, a machine on a host the account owns counts no plan memory under Running, the memory stop reads as the CLI says it, and a machine that is not answering says so in the header, the sidebar and Hosts, from when it last answered (review-fixes-2, sharing program, 2026-11-26) — L39630
+- **I-1660** After every boot of a guest reaches running, hostd asks guestd to grow the root filesystem to its volume, so a disk grown while the machine was stopped is filled out at the next start; every host, the fleet's too (host, sharing program, 2026-11-26) — L39640
