@@ -22,6 +22,13 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
+## Where things stand (2026-11-26, 10:30 UTC)
+
+The sharing program (machines on hardware you own share it) is built, reviewed twice (pass 2: no P0) and shipped: hostd 2026.11.26.2, appliance 2026.11.26.1, CLI v0.1.66; main 20871b13. Reports: docs/reports/2026-11-25-sharing-lab.md, 2026-11-25-mac-architectures.md, 2026-11-26-sharing-council.md, -pass2.md. Decisions I-1624 to I-1660.
+
+- **Owed:** the rented AWS Mac (eu-west-1b, host h-02930697783cd33c2) is not released: the AWS session expired at teardown (ENG-249, Needs you). `aws login --remote --profile repose-lab`, then `ops/dev/macmini destroy`.
+- **Lessons:** run `go test ./...` for the whole repo and the nix Go build on every batch (a package list missed obslint, test/domain and the nix source filter); never hand-edit DECISIONS-INDEX.md; unix socket tests fail under a long TMPDIR; woker-1's root disk near 90 percent trips guestd's disk_high test (ENG-248); `release-queue cut` takes everything queued (use `drop` to ship one alone); the appliance image CI job fails, build it on woker-1 with /mnt/nixstore/tmp/nonix-appliance/rebuild-main.sh; on a nested Mac, swapping guest RAM freezes the guest (I-1656).
+
 ## Where things stand (2026-11-25, 00:30 UTC)
 
 Written by the release conductor of 2026-11-23 to 25 (woker-1). The two

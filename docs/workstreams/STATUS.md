@@ -928,3 +928,4 @@ month the line is dated in.
 2026-11-26 | release r20261126-5 | conductor, woker-1 | released | 1 branches: appliance-pin shipped as cli. Evidence and what is not done: docs/releases/r20261126-5.md
 2026-11-26 | release r20261126-6 | conductor, woker-1 | released | 1 branches: review-fixes-2 (I-1658) shipped as api,web. Evidence and what is not done: docs/releases/r20261126-6.md
 2026-11-26 | release r20261126-7 | conductor, woker-1 | released | 2 branches: grow-on-start (I-1660), guard-runaway (I-1660) shipped as api,cli,host,web. Evidence and what is not done: docs/releases/r20261126-7.md
+2026-11-26 | sharing on owned hosts program | release conductor, woker-1 | done | shipped hostd 2026.11.26.2, appliance 2026.11.26.1, CLI v0.1.66; review pass 2 no P0. Not done: the AWS Mac is not released (ENG-249, owner's AWS login); design 2 for Macs not started (proofs first); ENG-243/244/245/247/248 open. Progress: ~/briefs/sharing-progress.md
