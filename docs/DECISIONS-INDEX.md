@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1152 entries.
+1153 entries.
 
 ## Scope
 
@@ -1184,3 +1184,4 @@ pointer, not a summary.
 - **I-1654** The customer review's other fixes on the api, CLI, dashboard and docs side of sharing on owned hosts (review-fixes, sharing program, 2026-11-26) — amended by I-1658; L39619
 - **I-1658** The dashboard's second customer pass on sharing: Create waits while the form says the host is full, a machine on a host the account owns counts no plan memory under Running, the memory stop reads as the CLI says it, and a machine that is not answering says so in the header, the sidebar and Hosts, from when it last answered (review-fixes-2, sharing program, 2026-11-26) — L39631
 - **I-1660** After every boot of a guest reaches running, hostd asks guestd to grow the root filesystem to its volume, so a disk grown while the machine was stopped is filled out at the next start; every host, the fleet's too (host, sharing program, 2026-11-26) — L39641
+- **I-1662** Virtualization.framework saves and restores a running repose guest with every device repose uses; the spike's "save kills the guest" was the missing login session, because VZ encrypts each save file with a Secure Enclave key of the logged-in user; a restore needs that user's session unlocked, and neither works as root (d2-arch, design 2 program, 2026-11-26) — L39647
