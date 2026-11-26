@@ -965,7 +965,7 @@ REPOSE_HOST_FILE
 # --snapshot-dir, /var/lib/repose/snapshots, sat on the appliance's 2 GiB
 # root, and one large stop (1.3 GB) and four tiny ones filled it on the
 # lab Mac, after which every stop failed. After the pool is active and
-# before hostd: make vg-guests/snapshots once, thin, ext4, and mount it.
+# before hostd: make vg-guests/repose-snapshots once, thin, ext4, and mount it.
 #
 # Its size is half the volume group's at creation, rounded down to a GiB.
 # It is thin, so it costs the pool what the snapshots hold and no more,
@@ -974,7 +974,7 @@ REPOSE_HOST_FILE
 # already on the root are moved in, not hidden under the mount.
 set -euo pipefail
 vg=${REPOSE_SNAPSHOTS_VG:-vg-guests}
-lv=snapshots
+lv=repose-snapshots
 dir=${REPOSE_SNAPSHOTS_DIR:-/var/lib/repose/snapshots}
 say() { echo "repose-snapshots-volume: $*"; }
 
@@ -1354,7 +1354,7 @@ Unit=repose-snapshot.service
 WantedBy=timers.target
 REPOSE_HOST_FILE
   install_file 0644 /etc/systemd/system/repose-snapshots-volume.service <<'REPOSE_HOST_FILE'
-# hostd's snapshot store on vg-guests/snapshots (DECISIONS I-1636).
+# hostd's snapshot store on vg-guests/repose-snapshots (DECISIONS I-1636).
 [Unit]
 Description=Mount the snapshot store volume on /var/lib/repose/snapshots
 After=repose-guest-pool.service repose-mac-grow.service

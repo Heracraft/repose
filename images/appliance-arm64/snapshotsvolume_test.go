@@ -35,7 +35,13 @@ func newSnapWorld(t *testing.T) *snapWorld {
 	}
 	stub("lvs", `if [ "$1" = --noheadings ]; then echo "  active"; exit 0; fi; [ -e "$S/created" ]`)
 	stub("vgs", `echo "  99857989632"`) // 93 GiB
-	stub("lvcreate", `touch "$S/created"`)
+	// LVM refuses LV names it reserves, as LVM 2.03.31 on the appliance
+	// did to "snapshots" (the lab, 2026-11-26 00:22Z): a name starting
+	// "snapshot" or "pvmove", or holding one of its internal suffixes.
+	stub("lvcreate", `n=; while [ $# -gt 0 ]; do [ "$1" = -n ] && n=$2; shift; done
+case "$n" in snapshot*|pvmove*) echo "  Names starting \"${n:0:8}\" are reserved. Please choose a different LV name." >&2; exit 3;; esac
+case "$n" in *_cdata*|*_cmeta*|*_corig*|*_cpool*|*_cvol*|*_iorig*|*_mimage*|*_mlog*|*_pmspare*|*_rimage*|*_rmeta*|*_tdata*|*_tmeta*|*_vdata*|*_vorigin*|*_wcorig*) echo "  Names including \"_\" suffixes are reserved." >&2; exit 3;; esac
+touch "$S/created"`)
 	stub("udevadm", `:`)
 	stub("mkfs.ext4", `:`)
 	stub("lvchange", `:`)
@@ -71,7 +77,7 @@ func TestSnapshotsVolumeFresh(t *testing.T) {
 	if !strings.Contains(out, "event=volume_created size_gib=46") || !strings.Contains(out, "event=volume_mounted") {
 		t.Fatalf("output %s", out)
 	}
-	if !strings.Contains(s.called(), "lvcreate -q -y -V 46G -T vg-guests/thin -n snapshots") || !strings.Contains(s.called(), "mount -o noatime,discard /dev/vg-guests/snapshots "+s.dir) {
+	if !strings.Contains(s.called(), "lvcreate -q -y -V 46G -T vg-guests/thin -n repose-snapshots") || !strings.Contains(s.called(), "mount -o noatime,discard /dev/vg-guests/repose-snapshots "+s.dir) {
 		t.Fatalf("calls %s", s.called())
 	}
 	if out := s.run(); !strings.Contains(out, "event=volume_mounted_already") || strings.Count(s.called(), "lvcreate") != 1 {
@@ -107,7 +113,7 @@ func TestSnapshotsVolumeMovesWhatTheRootHolds(t *testing.T) {
 	if len(left) != 0 {
 		t.Fatalf("root still holds %d entries", len(left))
 	}
-	if !strings.Contains(s.called(), "mount -o noatime,discard /dev/vg-guests/snapshots "+s.dir) {
+	if !strings.Contains(s.called(), "mount -o noatime,discard /dev/vg-guests/repose-snapshots "+s.dir) {
 		t.Fatalf("not mounted: %s", s.called())
 	}
 }
