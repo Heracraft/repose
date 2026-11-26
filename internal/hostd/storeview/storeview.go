@@ -162,7 +162,7 @@ func rootOf(proc string, pid int) (rootKind, error) {
 	if err := unix.Statfs(p, &fs); err != nil {
 		return 0, err
 	}
-	if fs.Type == unix.TMPFS_MAGIC {
+	if fs.Type == tmpfsMagic {
 		return rootView, nil
 	}
 	return rootOther, nil

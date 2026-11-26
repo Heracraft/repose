@@ -115,6 +115,7 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.BoolVar(&o.Park.FreePageReporting, "free-page-reporting", false, "start guests with a balloon that returns freed pages to the host")
 	fs.BoolVar(&o.Park.ScheduledEvents, "scheduled-events", false, "park guests on Azure Scheduled Events reboot notices and approve them")
 	fs.StringVar(&o.Park.VMName, "vm-name", "", "this VM's name in Scheduled Events (default: hostname)")
+	platformFlags(fs, o)
 	return o
 }
 

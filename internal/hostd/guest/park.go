@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1554,7 +1553,7 @@ func syncDir(dir string) error {
 		return err
 	}
 	defer f.Close() //nolint:errcheck // read-only handle
-	return unix.Syncfs(int(f.Fd()))
+	return syncfs(f)
 }
 
 // unparkGuest restores one checked image, or discards it.

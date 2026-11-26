@@ -1,3 +1,5 @@
+//go:build linux
+
 package storeview
 
 import (
@@ -135,3 +137,6 @@ func mkpoint(target string, e entry) error {
 	}
 	return unix.Close(fd)
 }
+
+// tmpfsMagic is statfs's f_type of a tmpfs, the view's root.
+const tmpfsMagic = unix.TMPFS_MAGIC
