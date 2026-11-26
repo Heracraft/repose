@@ -61,6 +61,11 @@ type Options struct {
 	APIAddr       string
 	APIServerName string
 	APICA         string
+	// APIDial, when set, opens every api connection (register, rotate,
+	// the Session): on macOS through hostd's WireGuard netstack
+	// (unet.Edge.DialContext, DECISIONS I-1670). Nil on Linux, where
+	// wg0 is the kernel's.
+	APIDial       func(ctx context.Context, addr string) (net.Conn, error)
 	TokenPath     string
 	MetricsAddr   string
 	ControlSock   string
@@ -209,7 +214,7 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 	if err != nil {
 		return nil, err
 	}
-	cfg := register.Config{Dir: o.StateDir, TokenPath: o.TokenPath, APIAddr: o.APIAddr, ServerName: o.APIServerName, Roots: roots}
+	cfg := register.Config{Dir: o.StateDir, TokenPath: o.TokenPath, APIAddr: o.APIAddr, ServerName: o.APIServerName, Roots: roots, Dial: o.APIDial}
 	for {
 		cfg.Info = hostinfo.Collect(ctx, r, l)
 		id, err := register.Register(ctx, cfg)
@@ -309,6 +314,12 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	// A changed hostd.env ends this start: systemd starts hostd again with
 	// the new flags, and the guests, units of their own, keep running.
 	plat := platformFor(o)
+	if plat.prepare != nil {
+		var perr error
+		if o, perr = plat.prepare(ctx, o, log); perr != nil {
+			return perr
+		}
+	}
 	if !plat.noHostFiles {
 		if res, err := (&hostfiles.Ensurer{Root: "/", R: r, Log: log}).Ensure(ctx); err != nil {
 			log.Warn("host files not complete; the next start tries again", "event", "host_file", "err", err.Error())
@@ -332,7 +343,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	m := newMetrics(o)
 	total, _, _ := hostinfo.MemInfo() // an unreadable meminfo means no memory accounting; Defaults() copes with zero
 	d := &Daemon{o: o, log: log, st: st, metrics: m, id: id, start: time.Now()}
-	d.dialer = &rotatingDialer{inner: stream.GRPCDialer{Addr: o.APIAddr, TLS: id.TLSConfig(roots, o.APIServerName)}}
+	d.dialer = &rotatingDialer{inner: stream.GRPCDialer{Addr: o.APIAddr, TLS: id.TLSConfig(roots, o.APIServerName), NetDial: o.APIDial}}
 	lh := &lateHost{}
 	d.strm = stream.New(stream.Config{}, streamDialer{d.dialer}, lh, m, log)
 
@@ -552,7 +563,7 @@ func (d *Daemon) rotationLoop(ctx context.Context, roots *x509.CertPool) {
 		if !cur.ShouldRotate(time.Now()) {
 			continue
 		}
-		cfg := register.Config{Dir: d.o.StateDir, APIAddr: d.o.APIAddr, ServerName: d.o.APIServerName, Roots: roots, Info: hostinfo.Collect(ctx, shell.Exec{}, nil)}
+		cfg := register.Config{Dir: d.o.StateDir, APIAddr: d.o.APIAddr, ServerName: d.o.APIServerName, Roots: roots, Info: hostinfo.Collect(ctx, shell.Exec{}, nil), Dial: d.o.APIDial}
 		next, err := register.Rotate(ctx, cfg, cur)
 		if err != nil {
 			d.log.Warn("certificate rotation failed", "event", "rotate", "err", err.Error())
@@ -571,7 +582,7 @@ func (d *Daemon) rotationLoop(ctx context.Context, roots *x509.CertPool) {
 			}
 		}
 		d.dialer.mu.Lock()
-		d.dialer.inner = stream.GRPCDialer{Addr: d.o.APIAddr, TLS: next.TLSConfig(roots, d.o.APIServerName)}
+		d.dialer.inner = stream.GRPCDialer{Addr: d.o.APIAddr, TLS: next.TLSConfig(roots, d.o.APIServerName), NetDial: d.o.APIDial}
 		d.dialer.mu.Unlock()
 		d.log.Info("certificate rotated", "event", "rotate", "not_after", next.NotAfter.Format(time.RFC3339))
 		d.strm.Reconnect()

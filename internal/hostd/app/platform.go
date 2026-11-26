@@ -27,6 +27,10 @@ type platform struct {
 	adapt func(ctx context.Context, r shell.Runner, log *slog.Logger, cfg *guest.Config, d *guest.Deps) error
 	// loop runs beside the manager for the life of hostd.
 	loop func(ctx context.Context, mgr *guest.Manager, log *slog.Logger)
+	// prepare runs before the identity is ensured, so registration can
+	// travel over a network hostd itself brings up (the Mac's WireGuard
+	// netstack, DECISIONS I-1670); it may set Options.APIDial.
+	prepare func(ctx context.Context, o Options, log *slog.Logger) (Options, error)
 }
 
 // MacOptions are the flags of hostd on macOS (design 2, DECISIONS I-1664):

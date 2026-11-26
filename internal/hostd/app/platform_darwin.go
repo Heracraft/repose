@@ -36,6 +36,7 @@ func platformFor(o Options) platform {
 	return platform{
 		noHostFiles: true,
 		noSlice:     true,
+		prepare:     prepareMacNet,
 		volumes: func(r shell.Runner) lvm.LVM {
 			return &apfsvol.Volumes{Dir: m.VolumesDir, R: r, Mke2fs: m.Mke2fs, E2fsck: m.E2fsck, Chown: u.chown}
 		},
