@@ -30,7 +30,7 @@ const AGENT_KINDS = [
 ];
 
 /** Kinds that say something failed, beyond the *_failed ones. */
-const FAILED_KINDS = ['abuse_stopped', 'oom_stopped'];
+const FAILED_KINDS = ['abuse_stopped'];
 
 /**
  * Why an event notified nobody, in a few words, or undefined when it went
@@ -134,6 +134,12 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 
 /** The label, tone and group of an event's kind. */
 export function eventKind(kind: string, agent?: string): EventKindInfo {
+	if (kind === 'oom_stopped') {
+		// repose stopped it so the others keep running (I-1650): the
+		// CLI's words (eventverbs), amber, still under Errors. It read
+		// "failed" in red (pass2-dash N6, I-1658).
+		return { label: 'stopped, host out of memory', tone: 'attention', group: 'error' };
+	}
 	if (kind.endsWith('_failed') || FAILED_KINDS.includes(kind)) {
 		return { label: 'failed', tone: 'error', group: 'error' };
 	}

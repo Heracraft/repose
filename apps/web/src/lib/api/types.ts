@@ -666,6 +666,9 @@ export interface ProjectEvent {
 	/** The tmux window the agent ran in, when the event names one. */
 	window?: string;
 	summary: string;
+	/** Who raised it: `api` for repose's own notices, `host` or `http`
+	 * for a machine's (api.md's events route). */
+	source?: string;
 	/** The agent's `--link URL --label TEXT` (I-931). */
 	link?: AgentLink;
 	/**

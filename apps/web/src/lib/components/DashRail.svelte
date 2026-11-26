@@ -31,6 +31,7 @@
 	import { planMemoryGB } from '$lib/format';
 	import { holdsMemory } from '$lib/plans';
 	import { frozenSince } from '$lib/frozen';
+	import { notAnsweringSince } from '$lib/answering';
 	import type { GuestState, Project } from '$lib/api/types';
 	import Snowflake from './Snowflake.svelte';
 	import { notFound } from '$lib/notFound.svelte';
@@ -116,7 +117,11 @@
 
 	function rowName(p: Project): string {
 		const asks = pendingQuestions.waiting(p.id);
-		const state = frozenSince(p) ? 'frozen' : p.state;
+		const state = frozenSince(p)
+			? 'frozen'
+			: notAnsweringSince(p)
+				? 'running, not answering'
+				: p.state;
 		return `${p.name}, ${state}${asks ? ', waiting on you' : ''}`;
 	}
 
@@ -274,6 +279,9 @@
 										<span class="hk-dot hk-dot--warn" data-tone="warn"></span>
 									{:else if frozenSince(p)}
 										<Snowflake size={12} />
+									{:else if notAnsweringSince(p)}
+										<!-- Not answering (I-1652): red, not the healthy dot. -->
+										<span class="hk-dot hk-dot--err" data-tone="err"></span>
 									{:else}
 										<span class="hk-dot hk-dot--{TONE[p.state]}" data-tone={TONE[p.state]}></span>
 									{/if}

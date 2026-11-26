@@ -219,6 +219,8 @@ type Event struct {
 	Agent   string    `json:"agent,omitempty"`
 	Window  string    `json:"window,omitempty"`
 	Summary string    `json:"summary"`
+	// Source is api for repose's own notices, host for a machine's.
+	Source string `json:"source,omitempty"`
 	// Link is an agent's `--link` (DECISIONS I-931): {url, label}.
 	Link map[string]string `json:"link,omitempty"`
 	// Delivered is each channel's outcome (I-689, I-1280): a send time,

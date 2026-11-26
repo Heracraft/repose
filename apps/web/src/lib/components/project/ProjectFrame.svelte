@@ -284,6 +284,17 @@
 			>
 				{ctx.opBusy === 'start' ? 'Restarting…' : 'Restart'}
 			</button>
+		{:else if project?.state === 'running' && silent}
+			<!-- Not answering (I-1652): the way back is a restart, so the
+			     header offers that, not a Stop (pass2-dash N5, I-1658). -->
+			<button
+				type="button"
+				class={headClass}
+				aria-disabled={ctx.opBusy ? 'true' : undefined}
+				onclick={onStart}
+			>
+				{ctx.opBusy === 'start' ? 'Restarting…' : 'Restart'}
+			</button>
 		{:else if project?.state === 'running'}
 			<label class="hk-check snap-check">
 				<input type="checkbox" bind:checked={stopSnapshotFirst} />
@@ -422,18 +433,10 @@
 					</div>
 				{/if}
 				{#if silent}
-					<!-- The one way back is a restart, and it costs what is in
-					     the machine's memory (I-1652). -->
+					<!-- The one way back is a restart, the header's button, and it
+					     costs what is in the machine's memory (I-1652, I-1658). -->
 					<div class="hk-banner hk-banner--err" role="alert" data-testid="not-answering">
 						<p>{silent}. Restart starts it again; what was in its memory is lost.</p>
-						<div class="refusal-stops">
-							<button
-								type="button"
-								class="hk-btn-secondary hk-btn-sm"
-								aria-disabled={ctx.opBusy ? 'true' : undefined}
-								onclick={onStart}>{ctx.opBusy === 'start' ? 'Restarting…' : 'Restart'}</button
-							>
-						</div>
 					</div>
 				{/if}
 				{#if abuseReason}

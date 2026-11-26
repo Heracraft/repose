@@ -553,7 +553,7 @@
      state means right now. -->
 {#snippet stateCell(p: Project)}
 	{@const frozen = frozenSince(p)}
-	<StateDot state={p.state} frozen={!!frozen} />
+	<StateDot state={p.state} frozen={!!frozen} silent={!!notAnsweringSince(p)} />
 	{#if frozen}
 		<span class="sub">{sinceLabel(frozen, 'for', clock.now)}</span>
 	{:else if p.state === 'running' && !p.idle}
@@ -998,7 +998,7 @@
 											<span class="premote">{normalizeRemoteDisplay(p.remote_url)}</span>
 										{/if}
 										<div class="mrow-meta">
-											<StateDot state={p.state} frozen={!!frozen} />
+											<StateDot state={p.state} frozen={!!frozen} silent={!!notAnsweringSince(p)} />
 											{#if h}
 												<span aria-hidden="true">·</span><span
 													class={h === '-' ? '' : 'hk-mono'}

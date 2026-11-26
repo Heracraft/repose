@@ -20,11 +20,16 @@ type RunningProject struct {
 	State string
 }
 
-// RunningMemory lists the user's machines that hold memory, with the GB
-// they take; except excludes the project being acted on (a restart of a
-// running project does not count itself twice).
+// RunningMemory lists the user's machines that hold the plan's memory,
+// with the GB they take; except excludes the project being acted on (a
+// restart of a running project does not count itself twice). A machine
+// on a host the account owns holds none of it (I-1364, I-1632): it ran
+// there on the host's memory, and counting its class read Billing's
+// Running as 8 GB a machine (pass2-dash N4, I-1658).
 func RunningMemory(ctx context.Context, q store.Querier, userID uuid.UUID, except uuid.UUID) ([]RunningProject, int, error) {
-	rows, err := q.Query(ctx, "select id, slug, class, state from projects where user_id = $1 and destroyed_at is null and state in ("+memoryStates+") and id <> $2 order by created_at, slug", userID, except)
+	rows, err := q.Query(ctx, `select id, slug, class, state from projects p where user_id = $1 and destroyed_at is null and state in (`+memoryStates+`) and id <> $2
+		  and not exists (select 1 from hosts h where h.id = p.host_id and h.owner_account_id = p.user_id)
+		order by created_at, slug`, userID, except)
 	if err != nil {
 		return nil, 0, err
 	}

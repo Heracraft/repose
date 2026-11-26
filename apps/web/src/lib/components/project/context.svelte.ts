@@ -4,6 +4,7 @@
 // Start and Stop. Each tab reads the project here and fetches only its
 // own data, so switching tabs keeps the header, the poll and an op under
 // way mounted.
+import { dashboardWords } from '$lib/refusal';
 import { getContext, setContext } from 'svelte';
 import { toast } from 'svelte-sonner';
 import {
@@ -105,7 +106,7 @@ export class ProjectState {
 			if (err instanceof ApiError && err.code === 'not_found') {
 				if (err.detail?.reason === 'create_refused') {
 					// Never made: nothing was destroyed and nothing restores.
-					this.notCreated = err.message;
+					this.notCreated = dashboardWords(err.message);
 					projectsStore.drop(this.id);
 				} else if (!this.notFound) void this.#findDestroyed();
 				this.notFound = true;

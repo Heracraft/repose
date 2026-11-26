@@ -27,7 +27,7 @@ Your plan's memory is how much runs at once, around the clock: the month costs t
 
 If you have machines of your own, Mac minis or x86 boxes, the Own hardware plan is **$10 a month** for any number of hosts you own, with [seven days free](#the-free-week) first. Your projects run on them, and everything else is included: the dashboard, the CLI, SSH through the gateway, the browser view, triggers, notifications and snapshots.
 
-The plan buys none of repose's compute, disk or egress, so you can't place machines on repose's servers on it and it doesn't limit your hardware. What may run at once is whatever your machines' memory holds, a project's disk is whatever its host's disk holds, and egress isn't counted, because your machines send their traffic over your own connection. There is no seat to wait for: you can choose it while repose is full.
+The plan buys none of repose's compute, disk or egress, so you can't place machines on repose's servers on it and it doesn't limit your hardware. What may run at once is whatever your machines' memory holds, a project's disk is whatever its host's disk holds, and egress isn't counted, because your machines send their traffic over your own connection. A machine on your own host counts nothing under **Running** on the Billing page or in the memory running on the plan line under `repose ls`. There is no seat to wait for: you can choose it while repose is full.
 
 The card at checkout, tax and what happens after a failed payment are the same as on any plan. Solo's founding price does not apply. Your snapshots stay on your own host's disk, and repose keeps no copy, so a dead disk loses them.
 
