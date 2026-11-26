@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1142 entries.
+1143 entries.
 
 ## Scope
 
@@ -1001,7 +1001,7 @@ pointer, not a summary.
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — amended by I-1452; L34001
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34038
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — amended by I-1604; L34089
-- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; L34133
+- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; partly amended by I-1642; L34133
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34314
 - **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34350
 - **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34414
@@ -1174,3 +1174,4 @@ pointer, not a summary.
 - **I-1630** On a host the user owns whose hostd shares it, placement asks one question: does the host report at least 1 GiB free (`scheduler.OwnedStartFreeBytes`); no class, no reserve and no class reservations are counted there, and the refusal names the host, what it has free and that figure (sharing-control, 2026-11-25) — L39528
 - **I-1632** A machine on a host the user owns shows what it uses, not a size: `Project.sized` false and `Project.mem_used_bytes`; `repose ls`'s column is MEMORY, `repose status`'s header and the dashboard say `1.4 GB used`; `--size` there is accepted and ignored with one stderr line for one release; a machine the kernel stopped for memory is named with `oom_stopped` (sharing-control, 2026-11-25) — L39538
 - **I-1640** On a host its user owns that itself runs under a hypervisor (the Mac appliance, an x86 VM), each guest boots with two vCPUs and the guests together with no more vCPUs than the host has; bare metal keeps every vCPU per guest and no bound; guests.slice keeps one vCPU and the larger CPU share for the host's own services (host, sharing program, 2026-11-26) — L39548
+- **I-1642** A wake a user route asks for (the browser view's mint, `keep_awake` turned on) is an op of kind `wake`, which the grpc process drives, the way `repose start` reaches its host; a wake that fails is `503 unavailable`, `detail.reason = wake_failed`, with the cause in words (view-wake, ENG-242, 2026-11-25) — L39555
