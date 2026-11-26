@@ -1,0 +1,15 @@
+# hostd's snapshot store on vg-guests/repose-snapshots (DECISIONS I-1636).
+[Unit]
+Description=Mount the snapshot store volume on /var/lib/repose/snapshots
+After=repose-guest-pool.service repose-mac-grow.service
+Wants=repose-guest-pool.service
+Before=hostd.service
+ConditionPathExists=!/run/repose/pool-hold
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/repose/repose-snapshots-volume
+
+[Install]
+WantedBy=multi-user.target

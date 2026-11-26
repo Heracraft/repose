@@ -408,6 +408,8 @@ func cmd(c any) *hostdv1.Command {
 		out.Cmd = &hostdv1.Command_PauseGuest{PauseGuest: v}
 	case *hostdv1.WakeGuest:
 		out.Cmd = &hostdv1.Command_WakeGuest{WakeGuest: v}
+	case *hostdv1.DeleteSnapshot:
+		out.Cmd = &hostdv1.Command_DeleteSnapshot{DeleteSnapshot: v}
 	}
 	return out
 }

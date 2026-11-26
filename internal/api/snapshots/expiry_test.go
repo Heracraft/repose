@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"log/slog"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -303,5 +304,83 @@ func TestSnapshotAgeCountsFromTheLaterOfSnapshotAndStart(t *testing.T) {
 	e.UpdateAgeGauge(ctx)
 	if got := testutil.ToFloat64(m.SnapshotAgeSeconds); got < 3500 || got > 3700 {
 		t.Fatalf("age once the fresh project is snapshotted = %.0fs, want the restarted project's hour", got)
+	}
+}
+
+// hostDeletes records the deletes the expiry sends to hosts.
+type hostDeletes struct {
+	away map[uuid.UUID]bool
+	sent map[uuid.UUID][]string
+}
+
+func (h *hostDeletes) DeleteOnHost(_ context.Context, host uuid.UUID, path string) error {
+	if h.away[host] {
+		return snapshots.ErrHostAway
+	}
+	h.sent[host] = append(h.sent[host], path)
+	return nil
+}
+
+// An owned host's snapshot lives on that host's disk (I-1372), so its
+// expiry is a DeleteSnapshot to that host, not a Blob delete (I-1636). A
+// host that is away keeps the row for the next run without failing this
+// one; a host that was removed took the file with it.
+func TestOwnedHostSnapshotsExpireOnTheirHost(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	b := blob.New()
+	hd := &hostDeletes{away: map[uuid.UUID]bool{}, sent: map[uuid.UUID][]string{}}
+	e := snapshots.New(pool, b, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	e.Hosts = hd
+	live := project(t, pool, false)
+	var owner uuid.UUID
+	if err := pool.QueryRow(ctx, "select user_id from projects where id = $1", live).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	mac, away, fleet := store.NewID(), store.NewID(), store.NewID()
+	for _, h := range []struct {
+		id    uuid.UUID
+		owner *uuid.UUID
+	}{{mac, &owner}, {away, &owner}, {fleet, nil}} {
+		if _, err := pool.Exec(ctx, "insert into hosts (id, name, state, owner_account_id) values ($1, $2, 'ready', $3)", h.id, "h"+h.id.String()[24:], h.owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hd.away[away] = true
+	onHost := func(age time.Duration, host uuid.UUID) uuid.UUID {
+		id := snap(t, pool, b, live, age, nil)
+		if _, err := pool.Exec(ctx, "update snapshots set host_id = $2 where id = $1", id, host); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	onMac := onHost(10*24*time.Hour, mac)
+	onAway := onHost(9*24*time.Hour, away)
+	onFleet := onHost(8*24*time.Hour, fleet)
+	_ = onHost(time.Hour, mac) // the newest stays
+	macPath, _ := store.GetSnapshot(ctx, pool, onMac)
+
+	deleted, err := e.Once(ctx)
+	if err != nil {
+		t.Fatalf("a host that is away must not fail the run: %v", err)
+	}
+	if len(deleted) != 2 || !slices.Contains(deleted, onMac) || !slices.Contains(deleted, onFleet) {
+		t.Fatalf("deleted %v, want the mac's and the fleet's", deleted)
+	}
+	if got := hd.sent[mac]; len(got) != 1 || got[0] != macPath.BlobPath {
+		t.Fatalf("sent to the mac %v", got)
+	}
+	if !b.Exists(macPath.BlobPath) {
+		t.Fatal("an owned host's snapshot was deleted through Blob")
+	}
+	if s, _ := store.GetSnapshot(ctx, pool, onFleet); b.Exists(s.BlobPath) {
+		t.Fatal("the fleet's snapshot was not deleted through Blob")
+	}
+	if s, _ := store.GetSnapshot(ctx, pool, onAway); s.DeletedAt != nil || len(hd.sent[away]) != 0 {
+		t.Fatal("the away host's row was marked deleted")
+	}
+	hd.away[away] = false
+	if d, err := e.Once(ctx); err != nil || len(d) != 1 || d[0] != onAway {
+		t.Fatalf("back: %v %v", d, err)
 	}
 }
