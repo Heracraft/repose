@@ -19,10 +19,14 @@ the end.
   fewer cores with two busy guests than with one. At 18G, four builds at once each took
   10-13x as long as one alone.
 - **Four busy machines on the 12G appliance hung every machine, 3 times in 3**, with 16
-  or 8 guest vCPUs, with memory full or 1.3 GiB free, with and without the new memory
-  guard. The machines stayed `running` in `repose ls` and the dashboard; only `repose stop`
+  or 8 guest vCPUs, with memory full or 1.3 GiB free, with and without the memory guard.
+  The machines stayed `running` in `repose ls` and the dashboard; only `repose stop`
   (about 70 s each, power-off) got them back, and their work was lost. Neither zram nor
   the OOM killer ever acted on guest memory. At 18G the same four finished.
+- **With shared-host's last build (owned-cpu 5d6dc807: no CPU quota, at most 3 machines,
+  the memory guard), nothing hung.** Three builds at 12G: the guard stopped the newest
+  machine within 1.5-10 minutes, 2 times in 2, the CLI named it, and the other two
+  finished. A fourth create was refused and left nothing behind.
 - **Guest RAM without huge pages is not an option on the Mac**: a build's first step took
   more than 12.7 minutes instead of about 25 s.
 - **Ship blockers found and since fixed on branches:** the snapshot LV name LVM refuses
@@ -444,6 +448,35 @@ the memory limit. In no run did zram take guest memory or the kernel OOM-kill a 
 so ruling 3 (overflow is slowness) and ruling 4 (the least valuable machine is killed and
 the user told) were not seen working on this appliance.
 
+## Three busy, owned-cpu 5d6dc807 (second session, 03:04Z-)
+
+shared-host's build after the hangs (I-1640 amended): guest THP on by default, no CPU quota
+on guests.slice (`CPUQuotaPerSecUSec=infinity`, `CPUWeight=50`), at most 3 machines of 2
+vCPUs on the 8-vCPU appliance. 12G.
+
+- A fourth create while three build (03:09:06Z): exit 8, `Creating e2e-pocketmail... Could
+  not start e2e-pocketmail: the host has as many machines running as its cores allow;
+  stopping a running machine frees room (insufficient_capacity).`, nothing left behind.
+- Run 1, H on citebook, recruiting, unwrap at once from 03:05Z. At 03:14:47Z the memory
+  guard fired: `guest stopped: the host is out of memory`, `event=guest_memory_guard
+  free_bytes=422199296 running=3`, on e2e-unwrap, the newest; then `reason=oom_killed`,
+  state `stopped`. The CLI: `e2e-unwrap: stopped: your host e2e-mac ran out of memory, and
+  the kernel stopped e2e-unwrap to keep the others running. ` + "`repose start e2e-unwrap`
+  starts it again." (`status` adds `last event 6m ago, stopped, host out of memory`). It
+  was hostd's guard, not the kernel, that stopped it. The other two answered ssh
+  throughout (03:09Z, 03:14Z, 03:20Z) and finished: citebook 828.9 s, recruiting 824.6 s
+  (rc 0, user 861-891, sys 299-345), 10-13x one alone. No hang.
+- Run 2 on the same boots (unwrap started again), from 03:21Z: the guard stopped unwrap
+  again at 03:22:20Z (`free_bytes 478052352`, `running 3`), 80 s in. citebook 454.2 s,
+  recruiting 470.5 s, rc 0, the two answering ssh throughout.
+- Host, 03:05-03:29Z: MemAvailable min 0.77 GiB, guests.slice peak 10.73 GiB, zram 0, PSI
+  memory some peak 3.96, kernel `oom_kill` 0 (the stops are hostd's).
+
+So on the 12G appliance three heavy builds do not fit: the guard stops the newest every
+time (2 of 2), the older two finish, and nothing hangs. The bound of 3 is never reached for
+this workload; memory decides first. Not run: four busy with no quota and the bound
+overridden (the conductor's knowledge run; it would have taken more than 20 minutes).
+
 ## Findings outside the numbers
 
 | # | Rank | Finding | Evidence |
@@ -464,6 +497,7 @@ the user told) were not seen working on this appliance.
 | F14 | P1, ship-relevant | The snapshot move failed on every appliance with existing snapshots: `diff -rq` of the root dir against the new ext4 LV reports `lost+found` and the unit gives up (`event=snapshots_not_moved reason=copy_failed`). Fixed in dd2d64c7; re-tested: 4 files moved, sha256 equal, a moved snapshot restored. | move sections, 01:41Z and 02:11Z |
 | F15 | P2 | When the thin pool is past LVM's threshold, the snapshot volume cannot be made (`Cannot create new thin volume, free space in thin pool vg-guests/thin reached threshold.`); snapshots stay on the 2 GiB root and host-files retries at every start. Seen at 82 % pool use (my lab LV took most of it). | 02:09:56Z |
 | F16 | P2 | A restore of a 264.2 MB snapshot took 4m48s. | 02:11-02:16Z |
+| F17 | P3 | When hostd's memory guard stops a machine, the CLI says `your host e2e-mac ran out of memory, and the kernel stopped e2e-unwrap to keep the others running.` The kernel did not: hostd's guard did (`event=guest_memory_guard`), and the kernel's `oom_kill` count stayed 0. | 03:14:47Z, 03:22:20Z |
 
 ## What could not be run, or was cut
 
