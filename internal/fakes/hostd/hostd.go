@@ -349,8 +349,8 @@ func (f *Fake) SetFailMessage(kind, msg string) {
 // fakeTmuxAgentID is the tmux claude's process key in the fake's samples,
 // and FakeDesktopAgentID the windowless one's (DECISIONS I-1676).
 const (
-	fakeTmuxAgentID    = "101:11"
-	FakeDesktopAgentID = "501:4100"
+	fakeTmuxAgentID    = "a5f0c2e19b7d4a630"
+	FakeDesktopAgentID = "a3e81b07c4d29f560"
 )
 
 // SetDesktopAgent adds or removes the windowless agent of a guest's

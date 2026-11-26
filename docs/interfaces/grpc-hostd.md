@@ -465,9 +465,10 @@ AgentProc { string agent; string tmux_window; string state;      // state: worki
             string agent_id; string terminal; }                   // I-1676
 // tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504); empty
 // for an agent outside any terminal repose can see (Claude Desktop's session, I-1676)
-// agent_id (I-1676): the agent's process as "pid:starttime", or, where guestd knows no
-// process (a herdr pane), the terminal; terminal is "tmux:<window>", "herdr:<key>" or
-// empty. hostd keeps both as one line of at most 72 bytes. A guestd older than I-1676
+// agent_id (I-1676): opaque, "a" and 16 hex digits, guestd's keyed hash of the agent's
+// process (never a pid), or, where guestd knows no process (a herdr pane), the terminal;
+// terminal is "tmux:<window>", "herdr:<key>" or empty. hostd drops either in any other
+// form and keeps them as one line of at most 72 bytes. A guestd older than I-1676
 // sends neither, and the api reads such an agent as agent_id = terminal = "tmux:<window>"
 // for one release (a herdr key from such a guestd reads as a tmux window).
 // tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)

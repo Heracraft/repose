@@ -562,7 +562,7 @@ func (s *Server) onAgentHook(h hooks.AgentHook) {
 	s.watcher.RecordAgentHook(sample.AgentHook{Agent: h.Agent, Kind: h.Kind, Proc: h.Proc, SessionID: h.SessionID, Inbox: h.Inbox}, s.now())
 	switch h.Kind {
 	case sample.KindCompleted, sample.KindNeedsInput, sample.KindError:
-		s.agentEventOf(h.Agent, h.Agent, h.Proc, h.Kind, h.Summary)
+		s.agentEventOf(h.Agent, h.Agent, s.watcher.WireID(h.Proc), h.Kind, h.Summary)
 	}
 }
 

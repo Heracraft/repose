@@ -54,9 +54,11 @@ func TestProcSampleCarriesOnlyNameCPUAndMemory(t *testing.T) {
 	// last_input_unix (I-1272) is a clock time, never what was typed; the
 	// privacy policy's metering paragraph and SECURITY.md name it.
 	assertFields(t, (&hostdv1.GuestSignals{}).ProtoReflect(), "ssh_sessions", "tmux_clients", "agents", "docker_containers", "guestd_ok", "last_input_unix")
-	// agent_id and terminal (I-1676): a process number and start time,
-	// and the window name with its multiplexer; SECURITY.md and the
-	// policy's metering paragraph name them.
+	// agent_id and terminal (I-1676) add nothing about the tenant's
+	// processes: an opaque keyed hash (never a pid; hostd drops any
+	// other form, TestCleanSignalsKeepsTheAgentID) and the window name
+	// tmux_window already carries, with its multiplexer. SECURITY.md
+	// says so; the policy's metering paragraph needs no change.
 	assertFields(t, (&hostdv1.AgentProc{}).ProtoReflect(), "agent", "tmux_window", "state", "agent_id", "terminal")
 }
 

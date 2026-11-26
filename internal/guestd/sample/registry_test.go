@@ -3,6 +3,8 @@ package sample
 import (
 	"context"
 	"os"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/heracraft/repose/internal/guestd/sysdep"
@@ -49,16 +51,16 @@ func TestWindowlessSessionPromptsAndCompletes(t *testing.T) {
 		w.RecordAgentHook(AgentHook{Agent: "claude", Kind: kind, Proc: desktopID, SessionID: "08b87fc9-c37a-4bc4-b0af-a55bc5dfc98a"}, clk.now())
 	}
 	hook(KindSessionStart)
-	if got := agentsOf(t, w); got[desktopID] != StateIdle || len(got) != 1 {
+	if got := agentsOf(t, w); got[w.WireID(desktopID)] != StateIdle || len(got) != 1 {
 		t.Fatalf("after SessionStart, agents = %v, want %s idle", got, desktopID)
 	}
 	hook(KindPrompt)
-	if got := agentsOf(t, w)[desktopID]; got != StateWorking {
+	if got := agentsOf(t, w)[w.WireID(desktopID)]; got != StateWorking {
 		t.Fatalf("after a prompt = %q, want working at once", got)
 	}
 	settle()
 	hook(KindCompleted)
-	if got := agentsOf(t, w)[desktopID]; got != StateIdle {
+	if got := agentsOf(t, w)[w.WireID(desktopID)]; got != StateIdle {
 		t.Fatalf("after its Stop = %q, want idle", got)
 	}
 	settle()
@@ -88,7 +90,7 @@ func TestWindowlessAgentGoesWithItsProcess(t *testing.T) {
 	w.RecordAgentHook(AgentHook{Agent: "claude", Kind: KindPrompt, Proc: desktopID}, clk.now())
 	clk.advance(StateDebounce)
 	w.Refresh(ctx)
-	if got := agentsOf(t, w)[desktopID]; got != StateWorking {
+	if got := agentsOf(t, w)[w.WireID(desktopID)]; got != StateWorking {
 		t.Fatalf("state = %q", got)
 	}
 	if err := os.RemoveAll(p.ProcPID("501")); err != nil {
@@ -125,11 +127,11 @@ func TestGuestdRestartRediscoversAWindowlessAgent(t *testing.T) {
 	again := NewWatcher(p, run, &sysdep.FakeDocker{Up: true}, fixedSlug("todo-app"), rec, quietLog(), clk.now)
 	clk.advance(Interval)
 	again.Refresh(ctx)
-	if got := agentsOf(t, again); got[desktopID] != StateWorking || len(got) != 1 {
+	if got := agentsOf(t, again); got[again.WireID(desktopID)] != StateWorking || len(got) != 1 {
 		t.Fatalf("after a restart, agents = %v, want %s working", got, desktopID)
 	}
 	again.RecordAgentHook(AgentHook{Agent: "claude", Kind: KindCompleted, Proc: desktopID}, clk.now())
-	if got := agentsOf(t, again)[desktopID]; got != StateIdle {
+	if got := agentsOf(t, again)[again.WireID(desktopID)]; got != StateIdle {
 		t.Fatalf("its Stop after the restart = %q", got)
 	}
 
@@ -166,7 +168,7 @@ func TestTmuxAgentIsUnchangedAndNotListedTwice(t *testing.T) {
 		t.Fatalf("agents = %v, want the window alone", sig.GetAgents())
 	}
 	a := sig.GetAgents()[0]
-	if a.GetTmuxWindow() != "claude" || a.GetState() != StateWorking || a.GetTerminal() != "tmux:claude" || a.GetAgentId() != "101:11" {
+	if a.GetTmuxWindow() != "claude" || a.GetState() != StateWorking || a.GetTerminal() != "tmux:claude" || a.GetAgentId() != w.WireID("101:11") {
 		t.Fatalf("agent = %+v", a)
 	}
 }
@@ -190,12 +192,12 @@ func TestWindowlessWorkingGoesQuiet(t *testing.T) {
 	w.Refresh(ctx)
 	clk.advance(WindowlessQuietAfter - Interval)
 	w.Refresh(ctx)
-	if got := agentsOf(t, w)[desktopID]; got != StateWorking {
+	if got := agentsOf(t, w)[w.WireID(desktopID)]; got != StateWorking {
 		t.Fatalf("before the quiet time = %q", got)
 	}
 	clk.advance(2 * Interval)
 	w.Refresh(ctx)
-	if got := agentsOf(t, w)[desktopID]; got != StateIdle {
+	if got := agentsOf(t, w)[w.WireID(desktopID)]; got != StateIdle {
 		t.Fatalf("after the quiet time = %q, want idle", got)
 	}
 }
@@ -236,5 +238,51 @@ func TestWindowlessWorkCountsForTheBrowserStamp(t *testing.T) {
 	w.RecordAgentHook(AgentHook{Agent: "claude", Kind: KindCompleted, Proc: desktopID}, clk.now())
 	if w.agentWorking() {
 		t.Fatal("an idle one still is")
+	}
+}
+
+var opaqueAgentID = regexp.MustCompile(`^a[0-9a-f]{16}$`)
+
+// TestSignalsCarryNoProcessNumber (I-1676, as amended): what leaves the
+// guest names an agent by an opaque id, never its pid or start time, so
+// the privacy policy's metering paragraph stays as it is. The id is the
+// same across a guestd restart and differs between two agents.
+func TestSignalsCarryNoProcessNumber(t *testing.T) {
+	procs := append([]fakeProc{
+		{pid: 100, ppid: 1, comm: "bash", start: 10},
+		{pid: 101, ppid: 100, comm: "claude", ticks: 50, start: 11},
+	}, desktop...)
+	w, run, rec, clk, p := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	ctx := context.Background()
+	w.RecordAgentHook(AgentHook{Agent: "claude", Kind: KindPrompt, Proc: desktopID}, clk.now())
+	w.Refresh(ctx)
+	sig, _ := w.Signals()
+	if len(sig.GetAgents()) != 2 {
+		t.Fatalf("agents = %v", sig.GetAgents())
+	}
+	ids := map[string]bool{}
+	for _, a := range sig.GetAgents() {
+		id := a.GetAgentId()
+		if !opaqueAgentID.MatchString(id) {
+			t.Fatalf("agent_id %q is not an opaque id", id)
+		}
+		for _, n := range []string{"101", "11", "501", "4100"} {
+			if strings.Contains(id, n) && !opaqueAgentID.MatchString(id) {
+				t.Fatalf("agent_id %q carries a process number", id)
+			}
+		}
+		ids[id] = true
+	}
+	if len(ids) != 2 {
+		t.Fatalf("two agents share an id: %v", ids)
+	}
+	again := NewWatcher(p, run, &sysdep.FakeDocker{Up: true}, fixedSlug("todo-app"), rec, quietLog(), clk.now)
+	again.Refresh(ctx)
+	sig2, _ := again.Signals()
+	for _, a := range sig2.GetAgents() {
+		if !ids[a.GetAgentId()] {
+			t.Fatalf("after a restart agent_id %q is new; want one of %v", a.GetAgentId(), ids)
+		}
 	}
 }

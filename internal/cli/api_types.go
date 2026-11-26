@@ -219,7 +219,7 @@ type AgentSignal struct {
 	Agent  string `json:"agent"`
 	Window string `json:"window"`
 	State  string `json:"state"`
-	// AgentID is the agent's process, or its terminal (DECISIONS
+	// AgentID is an opaque id for the agent, or its terminal (DECISIONS
 	// I-1676); Terminal is "tmux:<window>", "herdr:<key>", or "" for an
 	// agent that runs outside any terminal repose can see (Claude
 	// Desktop's). An older api sends neither.

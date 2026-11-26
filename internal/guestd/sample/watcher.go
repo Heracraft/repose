@@ -174,7 +174,9 @@ type Watcher struct {
 	hooks   map[string]hookRecord
 	// agents is the registry of agents with no terminal, keyed by
 	// "pid:starttime" (registry.go, DECISIONS I-1676).
-	agents     map[string]*agentRecord
+	agents map[string]*agentRecord
+	// idKey is WireID's key (registry.go).
+	idKey      []byte
 	clients    uint32
 	lastInput  int64 // unix seconds; see the refresh, and Signals
 	containers uint32
@@ -248,6 +250,7 @@ func NewWatcher(p sysdep.Paths, run sysdep.Runner, docker sysdep.Docker, slugs S
 		started:  now(),
 	}
 	w.loadHooks()
+	w.loadAgentKey()
 	w.loadAgents()
 	return w
 }
@@ -896,7 +899,7 @@ func (w *Watcher) Signals() (*hostdv1.GuestSignals, bool) {
 		LastInputUnix:    w.lastInputUnix(),
 	}
 	for name, ws := range w.windows {
-		sig.Agents = append(sig.Agents, windowProc(name, ws))
+		sig.Agents = append(sig.Agents, w.windowProc(name, ws))
 	}
 	sig.Agents = append(sig.Agents, w.registryProcs()...)
 	// Windows by name, then the agents with no terminal by id.

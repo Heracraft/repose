@@ -380,8 +380,9 @@ restore (`grpc-hostd.md`, I-26).
 
 `signals.agents[].agent_id` and `terminal` (DECISIONS I-1676): an agent
 outside any terminal repose can see (Claude Desktop's session) has
-`window` and `terminal` empty and `agent_id` its process on the machine,
-`pid:starttime`; a tmux agent has `terminal` `tmux:<window>`, a herdr one
+`window` and `terminal` empty and `agent_id` an opaque id (`a` and 16
+hex digits) that stays the same while the agent runs and is never a
+process number; a tmux agent has `terminal` `tmux:<window>`, a herdr one
 `herdr:<key>`. A machine on a base older than I-1676 sends neither, and
 the api fills both with `tmux:<window>` for one release, so a client can
 key every agent by `agent_id`.

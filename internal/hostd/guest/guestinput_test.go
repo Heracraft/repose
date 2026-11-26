@@ -429,22 +429,32 @@ func TestGuestTriggerRunIsBounded(t *testing.T) {
 	}
 }
 
-// TestCleanSignalsKeepsTheAgentID (I-1676): a windowless agent's id and
-// a window agent's terminal reach the api, bounded to one line.
+// TestCleanSignalsKeepsTheAgentID (I-1676): a windowless agent's opaque
+// id and a window agent's terminal reach the api, bounded to one line;
+// an id in any other form, a process number above all, is dropped, so
+// a guest cannot send the api a pid under this field.
 func TestCleanSignalsKeepsTheAgentID(t *testing.T) {
 	out := cleanSignals(&hostdv1.GuestSignals{Agents: []*hostdv1.AgentProc{
-		{Agent: "claude", State: "working", AgentId: "501:4100"},
-		{Agent: "claude", TmuxWindow: "claude", State: "idle", AgentId: "101:11", Terminal: "tmux:claude"},
-		{Agent: "claude", State: "idle", AgentId: "1:2\n" + strings.Repeat("x", 200)},
+		{Agent: "claude", State: "working", AgentId: "a0123456789abcdef"},
+		{Agent: "claude", TmuxWindow: "claude", State: "idle", AgentId: "afedcba9876543210", Terminal: "tmux:claude"},
+		{Agent: "claude", State: "idle", AgentId: "501:4100"},
+		{Agent: "claude", TmuxWindow: "x", State: "idle", AgentId: "herdr:claude (herdr)", Terminal: "herdr:claude (herdr)"},
+		{Agent: "claude", TmuxWindow: "y", State: "idle", AgentId: "a1\n", Terminal: "/proc/501"},
 	}}, time.Now())
 	a := out.GetAgents()
-	if a[0].GetAgentId() != "501:4100" || a[0].GetTmuxWindow() != "" || a[0].GetTerminal() != "" {
+	if a[0].GetAgentId() != "a0123456789abcdef" || a[0].GetTmuxWindow() != "" || a[0].GetTerminal() != "" {
 		t.Fatalf("windowless = %+v", a[0])
 	}
-	if a[1].GetAgentId() != "101:11" || a[1].GetTerminal() != "tmux:claude" {
+	if a[1].GetAgentId() != "afedcba9876543210" || a[1].GetTerminal() != "tmux:claude" {
 		t.Fatalf("window = %+v", a[1])
 	}
-	if id := a[2].GetAgentId(); strings.Contains(id, "\n") || len(id) > capAgentID {
-		t.Fatalf("an unbounded id passed: %q", id)
+	if a[2].GetAgentId() != "" {
+		t.Fatalf("a process number passed as agent_id: %+v", a[2])
+	}
+	if a[3].GetAgentId() != "herdr:claude (herdr)" || a[3].GetTerminal() != "herdr:claude (herdr)" {
+		t.Fatalf("herdr = %+v", a[3])
+	}
+	if a[4].GetAgentId() != "" || a[4].GetTerminal() != "" {
+		t.Fatalf("a malformed id or terminal passed: %+v", a[4])
 	}
 }

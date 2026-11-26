@@ -29,7 +29,7 @@ func writeStartProc(t *testing.T, p sysdep.Paths, pid, ppid int, comm, start str
 // TestDesktopSessionIsListed is ENG-255 end to end through the hook
 // socket: Claude Desktop's CLI, outside tmux and named for its version,
 // starts a session, takes a prompt and finishes it. The Agents list
-// shows it idle, working, idle; the Stop is relayed with its agent id;
+// shows it idle, working, idle; the Stop is relayed with its agent's opaque id;
 // its SessionEnd takes it off the list. On main before I-1676 the list
 // stayed empty throughout.
 func TestDesktopSessionIsListed(t *testing.T) {
@@ -54,7 +54,7 @@ func TestDesktopSessionIsListed(t *testing.T) {
 		}
 		return out
 	}
-	const key = "claude@300:777/"
+	key := "claude@" + h.srv.watcher.WireID("300:777") + "/"
 	sock := h.srv.HookSocketPath()
 	postHook(t, sock, `{"agent":"claude","kind":"session_start","session_id":"08b87fc9-c37a-4bc4-b0af-a55bc5dfc98a"}`)
 	if got := listed(); got[key] != sample.StateIdle || len(got) != 1 {
@@ -69,7 +69,7 @@ func TestDesktopSessionIsListed(t *testing.T) {
 		t.Fatalf("after the Stop, agents = %v, want idle", got)
 	}
 	n := h.waitForNotify(t, "AgentEvent", func(n *guestdv1.Notify) bool { return n.GetAgentEvent() != nil })
-	if ev := n.GetAgentEvent(); ev.GetAgentId() != "300:777" || ev.GetTmuxWindow() != "claude" || ev.GetKind() != "completed" {
+	if ev := n.GetAgentEvent(); ev.GetAgentId() != h.srv.watcher.WireID("300:777") || ev.GetTmuxWindow() != "claude" || ev.GetKind() != "completed" {
 		t.Fatalf("event = %+v, want it under the agent's name with its id", ev)
 	}
 	postHook(t, sock, `{"agent":"claude","kind":"session_end"}`)

@@ -422,7 +422,7 @@ func TestAgentsKeepTheirIDAndOldGuestsGetOne(t *testing.T) {
 		GuestId: gid.String(), State: "running", Class: "large",
 		Signals: &hostdv1.GuestSignals{GuestdOk: true, Agents: []*hostdv1.AgentProc{
 			{Agent: "claude", TmuxWindow: "claude", State: "idle"},
-			{Agent: "claude", State: "working", AgentId: "501:4100"},
+			{Agent: "claude", State: "working", AgentId: "a3e81b07c4d29f560"},
 		}},
 	}}})
 	latest, ok, err := meter.LatestSample(ctx, pool, pid)
@@ -433,7 +433,7 @@ func TestAgentsKeepTheirIDAndOldGuestsGetOne(t *testing.T) {
 	if old["agent_id"] != "tmux:claude" || old["terminal"] != "tmux:claude" || old["window"] != "claude" {
 		t.Fatalf("old guest's agent = %v", old)
 	}
-	if windowless["agent_id"] != "501:4100" || windowless["window"] != "" || windowless["terminal"] != "" || windowless["state"] != "working" {
+	if windowless["agent_id"] != "a3e81b07c4d29f560" || windowless["window"] != "" || windowless["terminal"] != "" || windowless["state"] != "working" {
 		t.Fatalf("windowless agent = %v", windowless)
 	}
 	// The rest rule's agent term counts it (idle.UsedSQL reads this list).
@@ -448,7 +448,7 @@ func TestAgentRowDerivesOnlyForAWindow(t *testing.T) {
 	if got := meter.AgentRow(map[string]string{"agent": "claude", "window": "claude-2"}); got["agent_id"] != "tmux:claude-2" || got["terminal"] != "tmux:claude-2" {
 		t.Fatalf("derived = %v", got)
 	}
-	if got := meter.AgentRow(map[string]string{"agent": "claude", "window": "", "agent_id": "1:2"}); got["agent_id"] != "1:2" || got["terminal"] != "" {
+	if got := meter.AgentRow(map[string]string{"agent": "claude", "window": "", "agent_id": "a0000000000000001"}); got["agent_id"] != "a0000000000000001" || got["terminal"] != "" {
 		t.Fatalf("windowless = %v", got)
 	}
 }

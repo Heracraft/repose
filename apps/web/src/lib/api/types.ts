@@ -232,7 +232,7 @@ export interface AgentSignal {
 	window: string;
 	state: string;
 	/**
-	 * The agent's process, or its terminal (I-1676). An agent outside any
+	 * An opaque id for the agent, never a process number, or its terminal (I-1676). An agent outside any
 	 * terminal repose can see (Claude Desktop's) has an id and an empty
 	 * window and terminal. An older api sends neither.
 	 */

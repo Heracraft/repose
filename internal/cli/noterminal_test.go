@@ -19,17 +19,17 @@ func TestNoTerminalAgentInTheLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig := &Signals{SampledAt: &fresh, Agents: []AgentSignal{{Agent: "claude", State: "working", AgentID: "501:4100"}}}
+	sig := &Signals{SampledAt: &fresh, Agents: []AgentSignal{{Agent: "claude", State: "working", AgentID: "a3e81b07c4d29f560"}}}
 	rows := psRowsTmux(l, sig, now)
 	if len(rows) != 2 {
 		t.Fatalf("rows = %d, want the window and the agent", len(rows))
 	}
 	r := rows[1]
-	if r.Name != "" || r.Command != nil || r.Agent == nil || *r.Agent != "claude" || *r.AgentState != "working" || r.AgentID != "501:4100" || r.Terminal != "" || r.Index != nil {
+	if r.Name != "" || r.Command != nil || r.Agent == nil || *r.Agent != "claude" || *r.AgentState != "working" || r.AgentID != "a3e81b07c4d29f560" || r.Terminal != "" || r.Index != nil {
 		t.Fatalf("row = %+v", r)
 	}
 	b, _ := json.Marshal(r)
-	if !strings.Contains(string(b), `"agent_id":"501:4100"`) || !strings.Contains(string(b), `"command":null`) {
+	if !strings.Contains(string(b), `"agent_id":"a3e81b07c4d29f560"`) || !strings.Contains(string(b), `"command":null`) {
 		t.Fatalf("json = %s", b)
 	}
 	stale := now.Add(-5 * time.Minute)
@@ -40,8 +40,8 @@ func TestNoTerminalAgentInTheLists(t *testing.T) {
 
 	recent := time.Now().Add(-30 * time.Second)
 	p := &Project{Slug: "todo-app", State: "running", Signals: &Signals{SampledAt: &recent, Agents: []AgentSignal{
-		{Agent: "claude", Window: "claude", State: "idle", AgentID: "101:11", Terminal: "tmux:claude"},
-		{Agent: "claude", State: "working", AgentID: "501:4100"},
+		{Agent: "claude", Window: "claude", State: "idle", AgentID: "a5f0c2e19b7d4a630", Terminal: "tmux:claude"},
+		{Agent: "claude", State: "working", AgentID: "a3e81b07c4d29f560"},
 	}}}
 	if got := agentList(p); got != "claude (no terminal) working, claude idle" {
 		t.Fatalf("status row %q", got)

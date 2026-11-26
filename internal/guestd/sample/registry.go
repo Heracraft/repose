@@ -2,6 +2,10 @@ package sample
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -34,6 +38,10 @@ const (
 // agentsFile keeps the registry across a guestd restart, beside
 // hooksFile in the run directory (a tmpfs).
 const agentsFile = "agents.json"
+
+// agentKeyFile holds the key WireID hashes a process key with, beside
+// agentsFile, so an agent keeps its id across a guestd restart.
+const agentKeyFile = "agent-id.key"
 
 // MaxAgentRecords caps the registry. A guest that reports more agents
 // than this is reporting noise; the oldest records stay.
@@ -103,6 +111,37 @@ func splitProcKey(id string) (int, string, bool) {
 		return 0, "", false
 	}
 	return pid, start, true
+}
+
+// loadAgentKey reads the id key a previous guestd made, or makes one.
+// A run directory that cannot be written costs only the ids' stability
+// across a restart.
+func (w *Watcher) loadAgentKey() {
+	path := filepath.Join(w.paths.RunDir(), agentKeyFile)
+	if b, err := os.ReadFile(path); err == nil && len(b) == 32 {
+		w.idKey = b
+		return
+	}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	w.idKey = key
+	if os.MkdirAll(w.paths.RunDir(), 0o755) == nil {
+		_ = os.WriteFile(path, key, 0o600)
+	}
+}
+
+// WireID is the id an agent process is known by off the guest
+// (DECISIONS I-1676, as amended): a keyed hash of its "pid:starttime",
+// "a" and 16 hex digits, so no process number leaves the machine and the
+// privacy policy's metering paragraph stays as it is. The key lives in
+// the run directory and never leaves the guest.
+func (w *Watcher) WireID(proc string) string {
+	if proc == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, w.idKey)
+	mac.Write([]byte(proc))
+	return "a" + hex.EncodeToString(mac.Sum(nil))[:16]
 }
 
 // loadAgents reads the registry a previous guestd kept. Each record is
@@ -218,7 +257,7 @@ func validInbox(p string) bool {
 func (w *Watcher) announce(agent, id, state string) {
 	w.log.Info("agent state changed", "event", "agent_state", "agent", agent, "state", state)
 	if e, ok := w.emit.(AgentIDEmitter); ok {
-		e.AgentStateOf(agent, "", id, state)
+		e.AgentStateOf(agent, "", w.WireID(id), state)
 		return
 	}
 	w.emit.AgentState(agent, "", state)
@@ -356,13 +395,14 @@ func (w *Watcher) agentIDIn(children map[int][]int, root int, agent string) stri
 	return ""
 }
 
-// windowProc is what Signals reports for a window's agent.
-func windowProc(name string, ws *windowState) *hostdv1.AgentProc {
+// windowProc is what Signals reports for a window's agent; called with
+// mu held.
+func (w *Watcher) windowProc(name string, ws *windowState) *hostdv1.AgentProc {
 	terminal := multiplexer.Tmux + ":" + name
 	if ws.source == multiplexer.Herdr {
 		terminal = multiplexer.Herdr + ":" + name
 	}
-	id := ws.agentID
+	id := w.WireID(ws.agentID)
 	if id == "" {
 		id = terminal
 	}
@@ -373,7 +413,7 @@ func windowProc(name string, ws *windowState) *hostdv1.AgentProc {
 func (w *Watcher) registryProcs() []*hostdv1.AgentProc {
 	out := make([]*hostdv1.AgentProc, 0, len(w.agents))
 	for id, r := range w.agents {
-		out = append(out, &hostdv1.AgentProc{Agent: r.Agent, State: r.state, AgentId: id})
+		out = append(out, &hostdv1.AgentProc{Agent: r.Agent, State: r.state, AgentId: w.WireID(id)})
 	}
 	return out
 }
