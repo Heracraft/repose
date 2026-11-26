@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -190,7 +191,11 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		net = ownedPorts{Net: net, dir: m.NetDir, u: u}
 	}
 	d.Net = net
-	d.Mount = noMount{}
+	d.Mount = macMount{r: r}
+	if os.Getuid() == 0 {
+		// Attaching a disk image at the share needs root (I-1666).
+		d.BoundAuthShare = boundShare(r)
+	}
 	session := func(ctx context.Context) vzpark.Session {
 		s, err := vzpark.ReadSession(ctx, r, uid)
 		if err != nil {
@@ -220,8 +225,14 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// An idle machine rests by save, giving its memory back, only where
 	// the save can be restored at the wake: an agent job in an unlocked
 	// session. Otherwise it rests by pause (I-1666).
+	// And only where the screen cannot lock: a save cannot be restored on
+	// a locked screen, so on a Mac whose screen locks (by default, a few
+	// minutes after the display sleeps) a machine resting as a save would
+	// be out of reach of an ssh until someone unlocks it. There it rests
+	// by pause: its memory stays held, and any connection wakes it.
+	lockOff := cachedLockOff(r, uid, u.name)
 	d.RestBySave = func(ctx context.Context, id string) bool {
-		return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
+		return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked() && lockOff(ctx)
 	}
 	d.Park.CanPark = func(ctx context.Context, id string) (bool, string) {
 		if ld.Domain(ctx, guest.GuestUnit(id)) == launchd.SystemDomain {
@@ -274,19 +285,6 @@ func (noNet) DelCounter(context.Context, string) error   { return nil }
 func (noNet) TapStats(string) (uint64, uint64, error)    { return 0, 0, nil }
 func (noNet) ListTaps(context.Context) ([]string, error) { return nil, nil }
 func (noNet) FlushNeigh(context.Context, string) error   { return nil }
-
-// noMount: nothing on a Mac host mounts a guest's filesystem (the login
-// share and the park image are directories).
-type noMount struct{}
-
-func (noMount) IsMounted(string) (bool, error) { return false, nil }
-func (noMount) Mount(context.Context, string, string) error {
-	return errors.New("mount: not on macOS")
-}
-func (noMount) MountType(context.Context, string, string, string, string) error {
-	return errors.New("mount: not on macOS")
-}
-func (noMount) Unmount(context.Context, string) error { return nil }
 
 // macMgr is the running manager, for MacWake.
 var macMgr atomic.Pointer[guest.Manager]
@@ -348,5 +346,21 @@ func (p ownedPorts) own(tap string) error {
 func (p ownedPorts) Detach(tap string) {
 	if d, ok := p.Net.(interface{ Detach(tap string) }); ok {
 		d.Detach(tap)
+	}
+}
+
+// cachedLockOff reads whether the user's screen lock is off at most once
+// a minute (sysadminctl takes a few hundred milliseconds).
+func cachedLockOff(r shell.Runner, uid int, name string) func(context.Context) bool {
+	var mu sync.Mutex
+	var at time.Time
+	var off bool
+	return func(ctx context.Context) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if time.Since(at) > time.Minute {
+			off, at = vzpark.ReadScreenLockOff(ctx, r, uid, name), time.Now()
+		}
+		return off
 	}
 }

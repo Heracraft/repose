@@ -444,6 +444,7 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	}
 	start := m.d.Now()
 	sock := ch.APISocket(m.guestDir(id))
+	fromSave := m.restSaved(g)
 	if err := m.restResume(ctx, g, sock); err != nil {
 		m.countWakeFailed("resume")
 		m.Warn("guest_wake_failed", "guest "+id+": the hypervisor did not resume")
@@ -496,6 +497,11 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		m.Warn("guest_wake_failed", "guest "+id+": no answer from the guest after the resume")
 		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "guestd", "err", perr.Error())
 		return nil, errf(CodeGuestUnresponsive, "guestd did not answer after the resume: %v", perr)
+	}
+	if fromSave {
+		if cur, err := m.session(id); err == nil {
+			m.rebindAuthShare(ctx, g, cur)
+		}
 	}
 	took := m.d.Now().Sub(start)
 	if m.d.Metrics != nil {

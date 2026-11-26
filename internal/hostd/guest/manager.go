@@ -546,6 +546,11 @@ type Deps struct {
 	// hypervisor attaches itself (claudeauth.go, a Mac): no volume, no
 	// virtiofsd. False on every Linux host.
 	DirectAuthShare bool
+	// BoundAuthShare, with DirectAuthShare, mounts a filesystem of bytes
+	// at share (a sparse disk image on a Mac) unless one is mounted there
+	// already, so the share is bounded as Linux's volume bounds it
+	// (I-464). Nil leaves the share a plain directory.
+	BoundAuthShare func(ctx context.Context, userDir, share string, bytes uint64) error
 	// RestBySave, when set, says whether an idle pause of this guest may
 	// also save the VM and end its hypervisor, giving back its memory
 	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a

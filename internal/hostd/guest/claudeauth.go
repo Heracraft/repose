@@ -15,6 +15,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
+	"github.com/heracraft/repose/internal/hostd/vsockclient"
 )
 
 // The Claude login share (DECISIONS I-278). A user signs in to Claude Code
@@ -368,6 +369,17 @@ func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
 			return err
 		}
 	}
+	if m.d.BoundAuthShare != nil {
+		// The bound filesystem's own root is what the guest sees: it is
+		// given to the user after the mount, as the volume's root is on
+		// Linux.
+		if err := m.d.BoundAuthShare(context.Background(), udir, share, m.cfg.AuthVolumeBytes); err != nil {
+			return fmt.Errorf("login share bound: %w", err)
+		}
+		if err := ensureDir(share, 0o700, auid, agid); err != nil {
+			return err
+		}
+	}
 	if err := touch(filepath.Join(udir, authLastGuest), m.d.Now()); err != nil {
 		return err
 	}
@@ -377,4 +389,26 @@ func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
 		return err
 	}
 	return os.Rename(tmp, p)
+}
+
+// rebindAuthScript binds the login file again inside the guest without
+// naming it: every bind whose source is a file inside the claude-auth
+// share (findmnt shows it as claude-auth[/<file>]) is dropped with a lazy
+// unmount, and the guest's own script makes its bind afresh, as at boot
+// (it does nothing without a share). hostd never names or opens what is in
+// the share (I-278).
+const rebindAuthScript = `findmnt -rn -t virtiofs -o TARGET,SOURCE | awk '$2 ~ /^claude-auth\[\// {print $1}' | while read -r t; do umount -l "$t"; done; exec /usr/local/libexec/repose/repose-claude-auth`
+
+// rebindAuthShare runs after a restore of a guest with the login share on
+// a host whose hypervisor shares the directory itself (a Mac): there the
+// guest's bind of the login file went stale across a VZ restore while the
+// directory still worked (DECISIONS I-1666). Best
+// effort: a failure leaves the share's directory as it was.
+func (m *Manager) rebindAuthShare(ctx context.Context, g *state.Guest, sess vsockclient.Session) {
+	if !m.d.DirectAuthShare || !m.argsHaveAuthShare(g.GuestID) || sess == nil {
+		return
+	}
+	if r, err := sess.Exec(ctx, []string{"/bin/sh", "-c", rebindAuthScript}, 20, ""); err != nil || r.GetExitCode() != 0 {
+		m.log(g).Warn("login file not bound again after the restore", "event", "auth_share")
+	}
 }

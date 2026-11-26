@@ -1738,6 +1738,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 	if r, err := sess.Exec(ctx, []string{"date", "-u", "-s", "@" + sec}, 10, ""); err != nil || r.ExitCode != 0 {
 		m.log(g).Warn("guest clock not set after the restore", "event", "guest_unpark")
 	}
+	m.rebindAuthShare(ctx, g, sess)
 	phase("guestd")
 	m.log(g).Info("restore phases", append([]any{"event", "guest_unpark"}, phases...)...)
 	m.markGood(g, g.SystemClosure)
@@ -1802,6 +1803,7 @@ func (m *Manager) isHeld(id string) bool {
 // says they can be, through a reconcile (whose UnparkAll restores them and
 // settles any it could not). It reports whether it ran.
 func (m *Manager) RestoreHeld(ctx context.Context) (bool, error) {
+	m.expireHeld(ctx)
 	m.mu.Lock()
 	n := len(m.held)
 	m.mu.Unlock()
@@ -1820,4 +1822,59 @@ func (m *Manager) HeldGuests() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.held)
+}
+
+// heldSince is when a held guest was parked, unix seconds, or 0 when it
+// is not held (I-1672).
+func (m *Manager) heldSince(id string) int64 {
+	if !m.isHeld(id) {
+		return 0
+	}
+	r, err := m.records().Get(id)
+	if err != nil || r == nil {
+		return 0
+	}
+	return r.DoneAt.Unix()
+}
+
+// ReasonHeldTooLong is the stop reason of a held guest whose image passed
+// the park's MaxAge without a login (I-653, I-1386): its memory is gone and
+// its next start boots it.
+const ReasonHeldTooLong = "parked more than 6 hours with no login; it starts fresh"
+
+// expireHeld applies the park's age limit to held guests (I-653: an image
+// is removed once read, and after six hours whether read or not; I-1386
+// keeps it for a host the customer owns). A held guest's image is never
+// read by a start, so without this it would wait for a login forever. Its
+// image goes and the guest is stopped with ReasonHeldTooLong; the api's
+// own resume window is six hours too (resume.Window), so a start is the
+// user's.
+func (m *Manager) expireHeld(ctx context.Context) {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.held))
+	for id := range m.held {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	maxAge := m.fcfg().MaxAge
+	for _, id := range ids {
+		r, err := m.records().Get(id)
+		if err != nil || r == nil || m.d.Now().Sub(r.DoneAt) <= maxAge {
+			continue
+		}
+		m.discardImage(ctx, id, "held past the age limit")
+		m.mu.Lock()
+		delete(m.held, id)
+		m.mu.Unlock()
+		g, gerr := m.getGuest(id)
+		if gerr != nil {
+			continue
+		}
+		m.teardown(ctx, g)
+		if err := m.setState(g, StateStopped, ReasonHeldTooLong); err != nil {
+			m.log(g).Warn("held guest past the age limit not stopped", "event", "guest_unpark", "err", err.Error())
+			continue
+		}
+		m.log(g).Warn("parked guest held past the age limit; its memory is not kept", "event", "guest_unpark", "parked_s", int64(m.d.Now().Sub(r.DoneAt).Seconds()))
+	}
 }

@@ -5209,6 +5209,14 @@ type GuestSample struct {
 	// core: its base when the gate is shut, up to its class ceiling when
 	// the host is quiet. 0 when the host runs no controller.
 	BurstCapMillicores uint32 `protobuf:"varint,20,opt,name=burst_cap_millicores,json=burstCapMillicores,proto3" json:"burst_cap_millicores,omitempty"`
+	// When this guest was parked, unix seconds, while it waits for its
+	// host's user to log in before it can be restored; 0 when it is not
+	// waiting (DECISIONS I-1672). Only hostd on a Mac without the appliance
+	// sets it: Virtualization.framework restores a save file only in the
+	// user's unlocked session (I-1662). Its memory is kept; the guest runs
+	// again at the login. 0 from every other hostd, which the api reads as
+	// "not waiting".
+	ParkedWaitingSince int64 `protobuf:"varint,21,opt,name=parked_waiting_since,json=parkedWaitingSince,proto3" json:"parked_waiting_since,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -5379,6 +5387,13 @@ func (x *GuestSample) GetBurstCpuNsDelta() uint64 {
 func (x *GuestSample) GetBurstCapMillicores() uint32 {
 	if x != nil {
 		return x.BurstCapMillicores
+	}
+	return 0
+}
+
+func (x *GuestSample) GetParkedWaitingSince() int64 {
+	if x != nil {
+		return x.ParkedWaitingSince
 	}
 	return 0
 }
@@ -6967,7 +6982,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
 	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\x12&\n" +
-	"\x0flast_input_unix\x18\x06 \x01(\x04R\rlastInputUnix\"\x84\a\n" +
+	"\x0flast_input_unix\x18\x06 \x01(\x04R\rlastInputUnix\"\xb6\a\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +
@@ -6990,7 +7005,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\aresting\x18\x11 \x01(\bR\aresting\x128\n" +
 	"\x16net_egress_bytes_delta\x18\x12 \x01(\x04H\x00R\x13netEgressBytesDelta\x88\x01\x01\x120\n" +
 	"\x12burst_cpu_ns_delta\x18\x13 \x01(\x04H\x01R\x0fburstCpuNsDelta\x88\x01\x01\x120\n" +
-	"\x14burst_cap_millicores\x18\x14 \x01(\rR\x12burstCapMillicoresB\x19\n" +
+	"\x14burst_cap_millicores\x18\x14 \x01(\rR\x12burstCapMillicores\x120\n" +
+	"\x14parked_waiting_since\x18\x15 \x01(\x03R\x12parkedWaitingSinceB\x19\n" +
 	"\x17_net_egress_bytes_deltaB\x15\n" +
 	"\x13_burst_cpu_ns_delta\"\x81\x01\n" +
 	"\n" +
