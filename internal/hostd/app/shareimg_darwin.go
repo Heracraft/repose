@@ -48,9 +48,15 @@ func boundShare(r shell.Runner) func(ctx context.Context, userDir, share string,
 				return err
 			}
 		}
-		_, err := r.Run(ctx, "/usr/bin/hdiutil", "attach", "-quiet", "-nobrowse", "-noautoopen", "-owners", "on",
-			"-mountpoint", share, img)
-		return err
+		if _, err := r.Run(ctx, "/usr/bin/hdiutil", "attach", "-quiet", "-nobrowse", "-noautoopen", "-owners", "on",
+			"-mountpoint", share, img); err != nil {
+			return err
+		}
+		// No Spotlight on a user's login directory: mds opened it as soon
+		// as it was mounted (lab Mac, 19:30Z). Best effort; the share works
+		// without it.
+		_, _ = r.Run(ctx, "/usr/bin/mdutil", "-i", "off", share)
+		return nil
 	}
 }
 

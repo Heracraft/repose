@@ -164,7 +164,10 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// macOS itself, its compressor and the user's apps keep more than
 	// the 512 MiB a Linux owned host keeps (OwnedReserveBytes).
 	cfg.HostReserveBytes = macReserveBytes
-	cfg.OwnedGuestMemMiB = m.GuestMemMiB
+	cfg.OwnedGuestMemMiB = macGuestMemMiB(m.GuestMemMiB, cfg.TotalMemBytes)
+	// A VM is one process: one that ends under a running machine is
+	// booted again (I-1664).
+	d.RestartOnExit = true
 	cfg.HostVCPUs = ownedVCPUs(o.OwnedVCPUs, uint32(cfg.Cores), false)
 	cfg.OwnedMaxVCPUs = ownedBound(o.OwnedMaxVCPUs, false, cfg.Cores)
 
@@ -242,7 +245,9 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	}
 	// e2fsprogs from --mac-mke2fs's directory, zstd and dd from PATH; no
 	// systemd-run sandbox on macOS.
-	d.Stream = &snapshot.Pipeline{R: r, ReplayJournal: true}
+	d.Stream = &snapshot.Pipeline{R: r, ReplayJournal: true, GrowToSnapshot: true}
+	// VZ cannot resize an attached disk (I-1666).
+	d.FileVolumes = true
 	vols := m.VolumesDir
 	d.StoreStat = func() (uint64, uint64, error) {
 		size, free, err := (&apfsvol.Volumes{Dir: vols}).PoolStats(context.Background())
@@ -363,4 +368,17 @@ func cachedLockOff(r shell.Runner, uid int, name string) func(context.Context) b
 		}
 		return off
 	}
+}
+
+// macGuestMemMiB is each machine's configured memory: the flag when set,
+// else half the Mac's memory up to 12 GiB. Measured on the M4 (24 GiB),
+// with 1 GiB touched: 12 GiB costs 0.56 s more per wake (restore 2.07 s
+// against 1.52 s at 6 GiB, n=5 each), 1.5 s more per save and about 126 MB
+// more held idle, and doubles what one machine can use (DECISIONS I-1666).
+func macGuestMemMiB(flag, totalBytes uint64) uint64 {
+	if flag > 0 {
+		return flag
+	}
+	half := totalBytes / 2 >> 20
+	return min(half-half%128, 12288)
 }

@@ -546,6 +546,17 @@ type Deps struct {
 	// hypervisor attaches itself (claudeauth.go, a Mac): no volume, no
 	// virtiofsd. False on every Linux host.
 	DirectAuthShare bool
+	// FileVolumes says volumes are files whose attached size the
+	// hypervisor cannot change while it runs (a Mac, VZ): a grow of a
+	// running machine is refused, a snapshot of a volume that is gone
+	// says so as unresponsive, and a restore grows the volume to its
+	// snapshot's size (DECISIONS I-1666). False on Linux.
+	FileVolumes bool
+	// RestartOnExit boots a running machine again when its hypervisor
+	// process ends unexpectedly (create.go unexpectedExit), within a
+	// budget: a Mac, where a VM is one process and D1's launcher
+	// relaunched its VM. False on Linux: the machine goes to error.
+	RestartOnExit bool
 	// BoundAuthShare, with DirectAuthShare, mounts a filesystem of bytes
 	// at share (a sparse disk image on a Mac) unless one is mounted there
 	// already, so the share is bounded as Linux's volume bounds it
@@ -616,6 +627,8 @@ type Manager struct {
 	// held are parked guests whose restore waits for Park.CanRestore
 	// (park.go); guarded by mu.
 	held map[string]bool
+	// restarts are RestartOnExit's recent restarts per guest; under mu.
+	restarts map[string][]time.Time
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
 	boots map[string]*hostdv1.BootTimings

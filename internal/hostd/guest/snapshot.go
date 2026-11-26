@@ -114,6 +114,16 @@ func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv
 		_, e = t.fail(e)
 		return nil, e
 	}
+	if m.d.FileVolumes {
+		// A machine whose disk is gone (a restore that did not finish)
+		// has nothing to snapshot. Said as guest_unresponsive, which the
+		// api's destroy answers by stopping it, asking once more and then
+		// skipping the final snapshot with a notice, so such a machine can
+		// still be removed (DECISIONS I-1666; e2e-pocketmail, 2026-11-26).
+		if ok, err := m.d.LVM.VolumeExists(ctx, vol); err == nil && !ok {
+			return failed(errf(CodeGuestUnresponsive, "the machine's disk is gone; there is nothing to snapshot"))
+		}
+	}
 	if g.State == StateRunning {
 		// The fsfreeze needs guestd, so a resting guest is woken first:
 		// without this every resting guest produced one failed snapshot
@@ -407,6 +417,14 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 		}
 		if code > 1 {
 			return fail(errf(CodeInternal, "filesystem check failed after restore (e2fsck exit %d)", code))
+		}
+		if m.d.FileVolumes {
+			// The restore grew the file to its snapshot's size when that
+			// was bigger (snapshot.Pipeline.GrowToSnapshot): the record
+			// says what the machine has.
+			if size, _, err := m.d.LVM.VolumeStats(ctx, vol); err == nil && size > g.VolumeBytes {
+				g.VolumeBytes = size
+			}
 		}
 		// The stages a slow restore spent its time on: the download and
 		// the write overlap, the check follows (I-403). verify_ms stays,

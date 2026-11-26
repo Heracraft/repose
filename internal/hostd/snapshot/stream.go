@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -43,6 +44,13 @@ type Pipeline struct {
 	// where dev is a throwaway copy: hostd reads LVM snapshots, never a
 	// guest's own volume.
 	ReplayJournal bool
+	// GrowToSnapshot grows a volume that is a regular file to the size
+	// of the snapshot written into it, when the snapshot is bigger: on a
+	// Mac a volume grown while its machine ran (a resize VZ cannot apply
+	// live) was snapshotted at its new size, and a restore into the size
+	// the api asks for refused every extent past it (DECISIONS I-1666).
+	// False on Linux, where the device is a thin volume.
+	GrowToSnapshot bool
 }
 
 // Mode names how a stream was produced, for the snapshot log line.
@@ -259,6 +267,11 @@ func (p *Pipeline) Write(ctx context.Context, dev string, r io.Reader) error {
 }
 
 func (p *Pipeline) writeExtentStream(dev string, r io.Reader) error {
+	if p.GrowToSnapshot {
+		if err := growToSnapshot(dev, r); err != nil {
+			return err
+		}
+	}
 	return withDevice(dev, func(f, d *os.File) error {
 		if err := readExtents(r, f, d); err != nil {
 			return fmt.Errorf("restore extents: %w", err)
@@ -337,4 +350,23 @@ func (f *FakeStreamer) Write(_ context.Context, dev string, r io.Reader) error {
 	}
 	f.LVM.SetData(devName(dev), b)
 	return nil
+}
+
+// growToSnapshot reads the extent header's device size without consuming
+// it and grows dev, a regular file, to it when it is smaller.
+func growToSnapshot(dev string, r io.Reader) error {
+	br, ok := r.(*bufio.Reader)
+	if !ok {
+		return nil
+	}
+	hdr, err := br.Peek(16)
+	if err != nil {
+		return nil // a short stream is reported by the restore itself
+	}
+	want := binary.LittleEndian.Uint64(hdr[8:])
+	fi, err := os.Stat(dev)
+	if err != nil || !fi.Mode().IsRegular() || uint64(fi.Size()) >= want {
+		return err
+	}
+	return os.Truncate(dev, int64(want))
 }

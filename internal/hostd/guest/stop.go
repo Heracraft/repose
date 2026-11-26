@@ -271,6 +271,13 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 	if c.NewBytes > m.cfg.MaxVolumeBytes {
 		return errf(CodeInvalidArgument, "volume_bytes %d above the %d maximum", c.NewBytes, m.cfg.MaxVolumeBytes)
 	}
+	if m.d.FileVolumes && c.NewBytes > g.VolumeBytes && g.State != StateStopped {
+		// VZ cannot resize an attached disk. Growing the file and
+		// failing the hypervisor's resize left hostd's size and the api's
+		// apart, and every later snapshot unrestorable (DECISIONS I-1666):
+		// a grow is refused before anything changes, and done at stop.
+		return errf(CodeInvalidArgument, "a machine on this host gets a bigger disk while it is stopped: stop it, resize, and start it again")
+	}
 	if c.NewBytes > g.VolumeBytes {
 		if err := m.poolRoom(); err != nil {
 			return err

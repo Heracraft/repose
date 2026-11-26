@@ -1367,7 +1367,53 @@ func (m *Manager) unexpectedExit(ctx context.Context, id, reason string) {
 	}
 	m.log(g).Error("guest died", "event", "guest_state", "reason", reason)
 	m.teardown(ctx, g)
+	if m.d.RestartOnExit && m.mayRestart(id) {
+		// A Mac's VM is one process; one that ends under a running
+		// machine (killed, crashed) is booted again at once, as D1's
+		// launcher relaunched its VM (DECISIONS I-1664). What was in its
+		// memory is gone, and the state says so.
+		_ = m.setState(g, StateStarting, ReasonRestartedAfterExit) // boot writes the state from here
+		if err := m.boot(ctx, g, stepRunner, "restart", 0); err == nil {
+			m.log(g).Warn("guest booted again after its hypervisor exited; its memory was lost", "event", "guest_start", "reason", reason)
+			return
+		}
+		return // boot set the error state and logged why
+	}
 	_ = m.setState(g, StateError, reason) // the failure is already logged above; the state write is best effort here
+}
+
+// ReasonRestartedAfterExit is the state reason of a machine booted again
+// because its hypervisor process ended while it ran.
+const ReasonRestartedAfterExit = "its process ended unexpectedly; it is starting again, and what was in its memory is lost"
+
+// restartBudget bounds RestartOnExit: a machine whose process ends this
+// many times inside restartWindow stays in error, so one that cannot run
+// is not booted for ever.
+const (
+	restartBudget = 3
+	restartWindow = 10 * time.Minute
+)
+
+// mayRestart counts a restart of id against the budget.
+func (m *Manager) mayRestart(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.restarts == nil {
+		m.restarts = map[string][]time.Time{}
+	}
+	now := m.d.Now()
+	kept := m.restarts[id][:0]
+	for _, t := range m.restarts[id] {
+		if now.Sub(t) < restartWindow {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= restartBudget {
+		m.restarts[id] = kept
+		return false
+	}
+	m.restarts[id] = append(kept, now)
+	return true
 }
 
 // flushNeigh removes the host's neighbour entry for g's address on the
