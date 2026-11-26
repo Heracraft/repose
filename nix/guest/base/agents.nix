@@ -29,6 +29,16 @@ let
       UserPromptSubmit = [
         { matcher = ""; hooks = [ { type = "command"; command = "repose-hook"; } ]; }
       ];
+      # A Claude Code outside any terminal repose can see (Claude
+      # Desktop's "Open in Claude", ENG-255) enters guestd's agent
+      # registry at its start and leaves it at its end (DECISIONS
+      # I-1676). From a tmux window they change nothing.
+      SessionStart = [
+        { matcher = ""; hooks = [ { type = "command"; command = "repose-hook"; } ]; }
+      ];
+      SessionEnd = [
+        { matcher = ""; hooks = [ { type = "command"; command = "repose-hook"; } ]; }
+      ];
     };
   };
 in
@@ -104,7 +114,7 @@ in
       binary = pkg.binary;
       version = pkg.version;
       hook = {
-        claude-code = "settings.json hooks Notification+Stop+UserPromptSubmit";
+        claude-code = "settings.json hooks Notification+Stop+UserPromptSubmit+SessionStart+SessionEnd";
         codex = "config.toml notify, /etc/codex/config.toml hooks UserPromptSubmit";
         opencode = "plugin ~/.config/opencode/plugins/repose.js";
         gemini-cli = "extension hooks BeforeAgent+AfterAgent";

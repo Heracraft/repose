@@ -197,7 +197,7 @@ func (w *Watcher) sayWindow(want string, runs map[string]bool) (string, error) {
 	if want != "" {
 		if _, ok := w.windows[want]; !ok {
 			if len(all) == 0 {
-				return "", sysdep.NotFound("no agent is running on this machine")
+				return "", w.noAgentToType()
 			}
 			return "", sysdep.NotFound("no agent in window %s; the agents here are %s", want, strings.Join(all, ", "))
 		}
@@ -209,12 +209,31 @@ func (w *Watcher) sayWindow(want string, runs map[string]bool) (string, error) {
 	}
 	switch len(names) {
 	case 0:
-		return "", sysdep.NotFound("no agent is running on this machine")
+		return "", w.noAgentToType()
 	case 1:
 		return names[0], nil
 	default:
 		return "", sysdep.Invalid("%d agents are running: %s. Name one with --agent", len(names), strings.Join(names, ", "))
 	}
+}
+
+// noAgentToType is the refusal when no window has an agent: an agent
+// with no terminal (DECISIONS I-1676) is named, since the owner sees it
+// in the agents list. The caller holds the lock.
+func (w *Watcher) noAgentToType() error {
+	seen := map[string]bool{}
+	var names []string
+	for _, r := range w.agents {
+		if !seen[r.Agent] {
+			seen[r.Agent] = true
+			names = append(names, r.Agent)
+		}
+	}
+	if len(names) == 0 {
+		return sysdep.NotFound("no agent is running on this machine")
+	}
+	sort.Strings(names)
+	return sysdep.NotFound("%s runs outside a terminal repose can type into", strings.Join(names, " and "))
 }
 
 // rememberSay keeps a delivered say id so a resent command is answered

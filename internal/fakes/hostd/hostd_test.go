@@ -157,3 +157,24 @@ func TestProjectJSONPassesThrough(t *testing.T) {
 		t.Fatalf("a bare start lost it: %s", g.ProjectJSON)
 	}
 }
+
+// TestFakeSamplesMirrorTheRegistry (I-1676): the fake's tmux agent has
+// its process and terminal, and a guest set to run a Desktop session
+// also reports an agent with an id and no window, as guestd does.
+func TestFakeSamplesMirrorTheRegistry(t *testing.T) {
+	f := New(Options{})
+	f.mu.Lock()
+	f.guests["g1"] = &Guest{GuestID: "g1", State: "running", Class: "small"}
+	f.mu.Unlock()
+	f.SetDesktopAgent("g1", true)
+	agents := f.Samples().GetGuests()[0].GetSignals().GetAgents()
+	if len(agents) != 2 {
+		t.Fatalf("agents = %v", agents)
+	}
+	if a := agents[0]; a.GetTmuxWindow() != "claude" || a.GetTerminal() != "tmux:claude" || a.GetAgentId() == "" {
+		t.Fatalf("tmux agent = %+v", a)
+	}
+	if a := agents[1]; a.GetTmuxWindow() != "" || a.GetTerminal() != "" || a.GetAgentId() != FakeDesktopAgentID || a.GetState() != "working" {
+		t.Fatalf("windowless agent = %+v", a)
+	}
+}

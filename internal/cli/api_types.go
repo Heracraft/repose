@@ -219,7 +219,20 @@ type AgentSignal struct {
 	Agent  string `json:"agent"`
 	Window string `json:"window"`
 	State  string `json:"state"`
+	// AgentID is an opaque id for the agent, or its terminal (DECISIONS
+	// I-1676); Terminal is "tmux:<window>", "herdr:<key>", or "" for an
+	// agent that runs outside any terminal repose can see (Claude
+	// Desktop's). An older api sends neither.
+	AgentID  string `json:"agent_id,omitempty"`
+	Terminal string `json:"terminal,omitempty"`
 }
+
+// noTerminal reports whether an agent runs outside any terminal repose
+// can see: an api with I-1676 says so with an id and no window.
+func (a AgentSignal) noTerminal() bool { return a.Window == "" && a.AgentID != "" }
+
+// noTerminalWords is what the lists say where a window name goes.
+const noTerminalWords = "no terminal"
 
 type Op struct {
 	State  string  `json:"state"`

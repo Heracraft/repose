@@ -1,6 +1,7 @@
 <!--
   The agents running on the machine, from the newest signals (I-157,
-  I-837): one hairline row each, its name, its tmux window and its state
+  I-837): one hairline row each, its name, its tmux window (or "no
+  terminal" for an agent outside one, Claude Desktop's, I-1676) and its state
   as a dot and a word (working, needs input or idle from an agent's
   hooks, running for one without hooks, I-694, any other word as the api
   sends it). An agent that needs input and has a question waiting links
@@ -12,7 +13,7 @@
 <script lang="ts">
 	import { agentStateLabel, relativeTime } from '$lib/format';
 	import { agentTone } from '$lib/components/projects/agentTone';
-	import type { Question, Signals } from '$lib/api/types';
+	import { noTerminal, type Question, type Signals } from '$lib/api/types';
 
 	let {
 		signals,
@@ -38,13 +39,15 @@
 		<h2 id="agents-title" class="hk-h2-app">Agents</h2>
 	</div>
 	<ul class="agents">
-		{#each agents as a, i (`${a.agent}-${a.window}-${i}`)}
+		{#each agents as a, i (`${a.agent}-${a.window}-${a.agent_id ?? ''}-${i}`)}
 			{@const label = agentStateLabel(a.state)}
 			<li class="agent">
 				<div class="line">
 					<span class="who">
 						<span class="name">{a.agent}</span>
-						{#if a.window && a.window !== a.agent}
+						{#if noTerminal(a)}
+							<span class="where" data-testid="agent-no-terminal">no terminal</span>
+						{:else if a.window && a.window !== a.agent}
 							<span class="window">{a.window}</span>
 						{/if}
 					</span>
@@ -110,6 +113,10 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.where {
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
 	}

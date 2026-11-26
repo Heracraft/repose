@@ -231,6 +231,19 @@ export interface AgentSignal {
 	agent: string;
 	window: string;
 	state: string;
+	/**
+	 * An opaque id for the agent, never a process number, or its terminal (I-1676). An agent outside any
+	 * terminal repose can see (Claude Desktop's) has an id and an empty
+	 * window and terminal. An older api sends neither.
+	 */
+	agent_id?: string;
+	/** `tmux:<window>`, `herdr:<key>`, or empty for no terminal. */
+	terminal?: string;
+}
+
+/** Whether an agent runs outside any terminal repose can see (I-1676). */
+export function noTerminal(a: AgentSignal): boolean {
+	return !a.window && !!a.agent_id;
 }
 
 export interface Signals {

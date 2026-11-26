@@ -27,10 +27,13 @@ import (
 // ones docs/interfaces/grpc-hostd.md gives; the rest are generous for what
 // guestd sends (agent names like "opencode", tmux window names).
 const (
-	capSummary    = 1024
-	capText       = 1024
-	capAgent      = 32
-	capWindow     = 64
+	capSummary = 1024
+	capText    = 1024
+	capAgent   = 32
+	capWindow  = 64
+	// capAgentID bounds AgentProc.agent_id and terminal: a window name
+	// and its "herdr:" prefix (I-1676).
+	capAgentID    = capWindow + 8
 	capOption     = 64
 	capOptions    = 3
 	capComm       = 16
@@ -306,7 +309,8 @@ func cleanSignals(in *hostdv1.GuestSignals, now time.Time) *hostdv1.GuestSignals
 		if !agentStates[st] {
 			st = "unknown"
 		}
-		out.Agents = append(out.Agents, &hostdv1.AgentProc{Agent: cleanToken(a.Agent, capAgent), TmuxWindow: cleanLine(a.TmuxWindow, capWindow), State: st})
+		out.Agents = append(out.Agents, &hostdv1.AgentProc{Agent: cleanToken(a.Agent, capAgent), TmuxWindow: cleanLine(a.TmuxWindow, capWindow), State: st,
+			AgentId: cleanAgentID(a.AgentId), Terminal: cleanTerminal(a.Terminal)})
 	}
 	return out
 }
@@ -394,4 +398,31 @@ func (o *openQuestions) close(id string, now time.Time) bool {
 	}
 	delete(*o, id)
 	return now.Sub(at) <= openQuestionTTL
+}
+
+// opaqueAgentID is guestd's id for an agent process (sample.WireID): a
+// keyed hash, never the process number.
+var opaqueAgentID = regexp.MustCompile(`^a[0-9a-f]{16}$`)
+
+// cleanAgentID keeps an AgentProc.agent_id (DECISIONS I-1676) only in a
+// form guestd sends: its opaque id, or a terminal where it knows no
+// process. Anything else is dropped, so a guest cannot put a pid, or
+// anything else about its processes, in front of the api this way.
+func cleanAgentID(id string) string {
+	if opaqueAgentID.MatchString(id) {
+		return id
+	}
+	return cleanTerminal(id)
+}
+
+// cleanTerminal keeps "tmux:<window>" or "herdr:<key>", one line,
+// bounded; anything else is "".
+func cleanTerminal(t string) string {
+	if !strings.HasPrefix(t, "tmux:") && !strings.HasPrefix(t, "herdr:") {
+		return ""
+	}
+	if strings.ContainsAny(t, "\n\t") {
+		return ""
+	}
+	return cleanLine(t, capAgentID)
 }

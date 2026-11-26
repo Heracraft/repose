@@ -151,6 +151,9 @@ type windowState struct {
 	announced string
 	// whether the heuristic completion for this quiet period has been sent
 	heuristicSent bool
+	// agentID is the agent's process in the pane as "pid:starttime"
+	// (DECISIONS I-1676), "" for a herdr pane or before it is found.
+	agentID string
 }
 
 // Watcher keeps the guest's signals fresh in the background so that a Sample
@@ -166,9 +169,14 @@ type Watcher struct {
 	log    *slog.Logger
 	now    func() time.Time
 
-	mu         sync.Mutex
-	windows    map[string]*windowState
-	hooks      map[string]hookRecord
+	mu      sync.Mutex
+	windows map[string]*windowState
+	hooks   map[string]hookRecord
+	// agents is the registry of agents with no terminal, keyed by
+	// "pid:starttime" (registry.go, DECISIONS I-1676).
+	agents map[string]*agentRecord
+	// idKey is WireID's key (registry.go).
+	idKey      []byte
 	clients    uint32
 	lastInput  int64 // unix seconds; see the refresh, and Signals
 	containers uint32
@@ -236,11 +244,14 @@ func NewWatcher(p sysdep.Paths, run sysdep.Runner, docker sysdep.Docker, slugs S
 		now:      now,
 		windows:  map[string]*windowState{},
 		hooks:    map[string]hookRecord{},
+		agents:   map[string]*agentRecord{},
 		warned:   map[string]bool{},
 		warnedAt: map[string]time.Time{},
 		started:  now(),
 	}
 	w.loadHooks()
+	w.loadAgentKey()
+	w.loadAgents()
 	return w
 }
 
@@ -314,6 +325,7 @@ func (w *Watcher) Refresh(ctx context.Context) {
 
 	w.refreshDocker(ctx)
 	w.refreshPanes(ctx)
+	w.refreshAgents()
 	w.refreshProcs()
 }
 
@@ -333,6 +345,11 @@ func (w *Watcher) refreshProcs() {
 	// protected the same way.
 	servers := w.procs.herdrServers(devUID)
 	for pid := range w.procs.herdrAgentPIDs(children, servers) {
+		agents[pid] = true
+	}
+	// The agents with no terminal (DECISIONS I-1676): Claude Desktop's
+	// process is not named claude, so only the registry knows it.
+	for _, pid := range w.registryPIDs() {
 		agents[pid] = true
 	}
 	if changes := w.procs.applyOOM(devUID, agents, servers); len(changes) > 0 {
@@ -545,6 +562,9 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		busy := false
 		if p.RootPID > 0 {
 			panes[p.RootPID] = p.Agent
+			if pid, start, ok := splitProcKey(ws.agentID); !ok || w.procStart(pid) != start {
+				ws.agentID = w.agentIDIn(children, p.RootPID, p.Agent)
+			}
 			cpu, ok := w.procs.treeCPU(children, p.RootPID)
 			busy = ok && cpu > ws.lastCPU
 			if busy {
@@ -879,12 +899,19 @@ func (w *Watcher) Signals() (*hostdv1.GuestSignals, bool) {
 		LastInputUnix:    w.lastInputUnix(),
 	}
 	for name, ws := range w.windows {
-		sig.Agents = append(sig.Agents, &hostdv1.AgentProc{
-			Agent: ws.agent, TmuxWindow: name, State: ws.state,
-		})
+		sig.Agents = append(sig.Agents, w.windowProc(name, ws))
 	}
+	sig.Agents = append(sig.Agents, w.registryProcs()...)
+	// Windows by name, then the agents with no terminal by id.
 	sort.Slice(sig.Agents, func(i, j int) bool {
-		return sig.Agents[i].GetTmuxWindow() < sig.Agents[j].GetTmuxWindow()
+		a, b := sig.Agents[i], sig.Agents[j]
+		if (a.GetTmuxWindow() == "") != (b.GetTmuxWindow() == "") {
+			return a.GetTmuxWindow() != ""
+		}
+		if a.GetTmuxWindow() != b.GetTmuxWindow() {
+			return a.GetTmuxWindow() < b.GetTmuxWindow()
+		}
+		return a.GetAgentId() < b.GetAgentId()
 	})
 	fresh := !w.refreshed.IsZero() && w.now().Sub(w.refreshed) <= CacheStale
 	return sig, fresh

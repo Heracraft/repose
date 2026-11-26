@@ -312,7 +312,7 @@ export async function says(): Promise<
 /** Sets the agents a running project's signals report, and its sessions (cmd/fakeapi POST /agents). */
 export async function setAgents(
 	projectId: string,
-	agents: { agent: string; window: string; state: string }[],
+	agents: { agent: string; window: string; state: string; agent_id?: string; terminal?: string }[],
 	sessions: { ssh_sessions?: number; tmux_clients?: number } = {}
 ): Promise<void> {
 	const res = await fetch(`${adminURL()}/agents`, {

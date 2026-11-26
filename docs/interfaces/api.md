@@ -185,8 +185,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           agent_default, hold_base_updates, base_version, config_revision_id,
           volume_bytes, disk_used_bytes?, created_at, started_at?,
           root_used_bytes?, root_size_bytes?,          -- the guest's root filesystem (I-567)
-          signals?: {ssh_sessions, tmux_clients, agents: [{agent, window, state}],
-                     guestd_ok},
+          signals?: {ssh_sessions, tmux_clients, agents: [{agent, window, state, agent_id, terminal}],
+                     guestd_ok},                   -- agent_id, terminal: I-1676 (below)
           cost_today_cents, cost_month_cents,          -- 0 since I-289, kept one release
           running_seconds_today, running_seconds_month, -- what `repose status` shows (I-289)
           last_snapshot_at?, last_error?, host_unreachable, tz,
@@ -377,6 +377,15 @@ counts tmux clients only and is 0 on herdr, whose clients are in
 that ignores the field in `Project` sees what it saw before. The api
 writes `multiplexer` into `project_json` on every create, start and
 restore (`grpc-hostd.md`, I-26).
+
+`signals.agents[].agent_id` and `terminal` (DECISIONS I-1676): an agent
+outside any terminal repose can see (Claude Desktop's session) has
+`window` and `terminal` empty and `agent_id` an opaque id (`a` and 16
+hex digits) that stays the same while the agent runs and is never a
+process number; a tmux agent has `terminal` `tmux:<window>`, a herdr one
+`herdr:<key>`. A machine on a base older than I-1676 sends neither, and
+the api fills both with `tmux:<window>` for one release, so a client can
+key every agent by `agent_id`.
 
 `placement` (DECISIONS I-1366) is where the machine goes when it is
 placed: `own`, the default, is a host this account owns when it owns any

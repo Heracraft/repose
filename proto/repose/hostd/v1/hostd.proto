@@ -579,7 +579,19 @@ message BuildLog { string command_id = 1; uint64 seq = 2; string line = 3; }
 
 // tmux_window: a tmux window name or a herdr agent key, at most 64 bytes
 // (DECISIONS I-504).
-message AgentProc { string agent = 1; string tmux_window = 2; string state = 3; }
+// AgentProc is one running agent (DECISIONS I-1676). agent_id is the
+// agent's process as "pid:starttime", or, where guestd knows no process
+// (a herdr pane), the terminal; an older guestd sends none and the api
+// derives "tmux:<tmux_window>". tmux_window is the tmux window name or
+// herdr agent key, empty for an agent with no terminal. terminal is
+// "tmux:<window>", "herdr:<key>" or empty.
+message AgentProc {
+  string agent = 1;
+  string tmux_window = 2;
+  string state = 3;
+  string agent_id = 4;
+  string terminal = 5;
+}
 message ProcSample { string comm = 1; uint64 cpu_ns_delta = 2; uint64 rss_bytes = 3; }
 message GuestSignals {
   uint32 ssh_sessions = 1;
@@ -681,6 +693,9 @@ message AgentEvent {
   // (DECISIONS I-931), as internal/msglink checked it; tenant content.
   string link_url = 6;
   string link_label = 7;
+  // The agent the hook came from, as AgentProc.agent_id (I-1676); empty
+  // from an older guestd.
+  string agent_id = 8;
 }
 // AgentQuestion is a guest's Question notify, relayed (DECISIONS I-244).
 // The text is tenant content: delivered to the user's channels, never

@@ -88,6 +88,8 @@ A hookless agent's turn ends in `repose events` as `finished` with the summary `
 
 A window with another name counts as an agent's while the agent is its foreground program, `claude` typed in the `shell` window for example; Gemini CLI counts only in a window named `gemini`, because it runs as `node`.
 
+An agent outside any terminal repose can see, such as Claude Code in a [Claude Desktop](/docs/ssh-and-editors#claude-desktop) session, shows with `no terminal` where the window goes: on the dashboard, in `repose status`, and after the windows in `repose ps`. It's listed from its session's start to its end, or until its process ends. Its state comes from its hooks as above; with no window to read, a turn that sends no hook and uses no CPU for 10 minutes shows `idle`. A working one counts as busy, as an agent in a window does: `repose stop` asks first. A machine lists such agents from its next [base update](/docs/machine#base-updates).
+
 ## Drive it from the Claude app
 
 Claude Code has its own [Remote Control](https://code.claude.com/docs/en/remote-control): a session on one machine shows up in the Claude app on your phone, on the desktop app and at claude.ai/code, where you can read it, prompt it and answer its permission prompts. repose can switch it on for a machine. It's off until you ask for it:
@@ -124,6 +126,8 @@ Any agent can message you or ask you a question from the machine with `repose-no
 On the dashboard, **Messages** on a project's Overview is the same conversation, on a laptop or a phone. It lists what you sent, with what became of each message, and what the agents said back: the end of each turn with the first 200 characters of the agent's last message, its [`repose-notify`](#let-it-ask-you) messages, its questions and its permission prompts. The terminal has the full text. Write the next message in the box under it and press Enter; Shift+Enter starts a new line. The box goes to the machine's agent; with more than one, pick it in **To**, which starts on the agent that spoke last.
 
 An agent at its prompt, or waiting for your permission, gets the message at once. An agent in the middle of a turn gets it when the turn ends: the five agents don't all take input typed mid-turn, and a message half-swallowed is worse than one that lands five seconds later. One message waits per agent, so a second while one waits replaces it.
+
+An agent with [no terminal](#agent-states) can't take a message: `repose say` refuses with `claude runs outside a terminal repose can type into`, and the dashboard's box says the same. Write to it where it runs.
 
 `--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. A [trigger's run](/docs/triggers) takes a message only when you name its window or it is the machine's only agent. The dashboard sends to the agent named under the box. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
 

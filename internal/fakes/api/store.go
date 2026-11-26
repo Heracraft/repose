@@ -229,6 +229,10 @@ type AgentSignal struct {
 	Agent  string `json:"agent"`
 	Window string `json:"window"`
 	State  string `json:"state"`
+	// AgentID and Terminal as the api serves them (DECISIONS I-1676): an
+	// agent outside any terminal has an id, no window and no terminal.
+	AgentID  string `json:"agent_id,omitempty"`
+	Terminal string `json:"terminal,omitempty"`
 }
 
 // Snapshot is one row of GET /projects/:id/snapshots.
