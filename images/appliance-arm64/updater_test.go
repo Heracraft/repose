@@ -1,7 +1,3 @@
-// Package appliance holds the tests of the host scripts under host/bin
-// that have logic worth a test: repose-hostd-update's channel lookup
-// (DECISIONS I-1496). The scripts need bash, curl, jq, openssl and
-// coreutils, which every host has.
 package appliance
 
 import (

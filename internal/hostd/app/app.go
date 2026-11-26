@@ -28,6 +28,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/cpureset"
 	"github.com/heracraft/repose/internal/hostd/gcroot"
 	"github.com/heracraft/repose/internal/hostd/guest"
+	"github.com/heracraft/repose/internal/hostd/hostfiles"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/metrics"
@@ -291,6 +292,17 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	defer func() { _ = st.Close() }() // read-only at exit; a close error changes nothing
 	r := shell.Exec{}
+	// An appliance or installer host set up before its host files existed
+	// gets them here, before anything writes a snapshot (DECISIONS
+	// I-1638). The state lock above makes this the only hostd doing it.
+	// A changed hostd.env ends this start: systemd starts hostd again with
+	// the new flags, and the guests, units of their own, keep running.
+	if res, err := (&hostfiles.Ensurer{Root: "/", R: r, Log: log}).Ensure(ctx); err != nil {
+		log.Warn("host files not complete; the next start tries again", "event", "host_file", "err", err.Error())
+	} else if res.Restart {
+		log.Info("hostd.env changed; restarting with it", "event", "host_file", "written", len(res.Written))
+		return nil
+	}
 	l := &lvm.Real{VG: o.VG, Pool: o.Pool, R: r, Sandbox: true}
 	id, err := EnsureIdentity(ctx, o, log, r, l)
 	if err != nil {
