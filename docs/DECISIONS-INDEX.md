@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1141 entries.
+1142 entries.
 
 ## Scope
 
@@ -1169,7 +1169,8 @@ pointer, not a summary.
 - **I-1614** `repose host add --json` never prints the join token or the install argument: on a Mac it installs as it does without `--json` and prints the host; elsewhere it writes the argument to a 0600 file in the config directory and prints that file's path as `install.join_file` (agent-setup, ENG-102, 2026-11-25) — L39486
 - **I-1616** The join argument passes through no agent's context when repose is set up on the machine being added: on a Mac `repose host add` consumes it in process (as before), and on a Linux x86 machine it writes it to `~/.config/repose/join-NAME` (0600) and prints an installer line that names the file; the argument is printed only where a person carries it, by the dashboard's Add a host and by `repose host add` on a machine that cannot be a host (agent-setup, ENG-42, 2026-11-25) — L39494
 - **I-1624** `repose version` and `repose --version` print `repose <version>`, without the `(herakraft)` suffix (release conductor, 2026-11-25) — L39503
-- **I-1626** On a host its user owns, a machine has no size: every guest boots with the host's placeable memory and every vCPU, the guests share the host, unused memory goes back to it, overflow is compressed swap, and when memory truly runs out the newest guest is the one the kernel kills, reported `stopped`/`oom_killed` (shared-host, sharing program, 2026-11-25) — L39510
+- **I-1626** On a host its user owns, a machine has no size: every guest boots with the host's placeable memory and every vCPU, the guests share the host, unused memory goes back to it, overflow is compressed swap, and when memory truly runs out the newest guest is the one the kernel kills, reported `stopped`/`oom_killed` (shared-host, sharing program, 2026-11-25) — partly amended by I-1640; L39510
 - **I-1628** The owned reserve: what an owned host keeps back from its guests is what the appliance's own processes and the kernel hold with one idle guest running, plus a margin (shared-host, sharing program, 2026-11-25) — L39523
 - **I-1630** On a host the user owns whose hostd shares it, placement asks one question: does the host report at least 1 GiB free (`scheduler.OwnedStartFreeBytes`); no class, no reserve and no class reservations are counted there, and the refusal names the host, what it has free and that figure (sharing-control, 2026-11-25) — L39528
 - **I-1632** A machine on a host the user owns shows what it uses, not a size: `Project.sized` false and `Project.mem_used_bytes`; `repose ls`'s column is MEMORY, `repose status`'s header and the dashboard say `1.4 GB used`; `--size` there is accepted and ignored with one stderr line for one release; a machine the kernel stopped for memory is named with `oom_stopped` (sharing-control, 2026-11-25) — L39538
+- **I-1640** On a host its user owns that itself runs under a hypervisor (the Mac appliance, an x86 VM), each guest boots with two vCPUs and the guests together with no more vCPUs than the host has; bare metal keeps every vCPU per guest and no bound; guests.slice keeps one vCPU and the larger CPU share for the host's own services (host, sharing program, 2026-11-26) — L39548

@@ -29,8 +29,8 @@ and `xl` are for builds, test suites and several agents at once. Agents
 run on all of them.
 
 A machine on [hardware you own](/docs/own-hardware#what-fits-on-a-mac) has
-no size: it shares every core and the memory of that host with your other
-machines there, and shows what it uses instead.
+no size: it shares the memory of that host with your other machines there,
+and shows what it uses instead.
 
 ## What's installed
 

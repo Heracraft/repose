@@ -92,6 +92,8 @@ func TestCapacitySaysWhichKindAndWhatWorks(t *testing.T) {
 	}{
 		// internal/hostd/guest/create.go:89 and :637
 		{"create: not enough free memory for a large guest", "no free memory for a machine this size", true},
+		// internal/hostd/guest/owned.go ownedCPURoom (I-1640)
+		{"not enough free CPU: 8 of 8 vCPUs taken by running machines on this host, a machine starts with 2", "as many machines running as its cores allow", true},
 		// internal/hostd/guest/create.go:105 and :645
 		{"create: thin pool 96% full", "disk pool is full", false},
 		// internal/hostd/guest/manager.go:1033

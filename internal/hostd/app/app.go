@@ -119,11 +119,11 @@ type Options struct {
 	// OwnedHost is a host its user owns: the Mac appliance and an x86
 	// machine set up by ops/install-host-x86.sh write --owned-host into
 	// hostd.env (DECISIONS I-1626). Its guests share the host's memory
-	// and every vCPU whatever class the api sends, free page reporting
+	// and its vCPUs (I-1640) whatever class the api sends, free page reporting
 	// is on, and guests.slice holds all but the owned reserve (I-1628).
 	OwnedHost bool
 	// OwnedVCPUs is how many vCPUs an owned host's guests boot with; 0
-	// is the rule ownedVCPUs applies (I-1626). Never more than the host's.
+	// is the rule ownedVCPUs applies (I-1640). Never more than the host's.
 	OwnedVCPUs uint
 	// CPUReset is "auto", "on" or "off": whether hostd takes each CPU
 	// offline and back after a guest's hypervisor exits. auto is on

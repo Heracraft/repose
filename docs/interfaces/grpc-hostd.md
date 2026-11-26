@@ -282,7 +282,7 @@ every Result, so `free_mem_bytes` already counts a guest the command
 stopped, destroyed or created when the api places the next one
 (DECISIONS I-409).
 
-**A host its user owns** (DECISIONS I-1626, I-1628). hostd runs with
+**A host its user owns** (DECISIONS I-1626, I-1628, I-1640). hostd runs with
 `--owned-host` on the Mac appliance and on an x86 machine set up by
 `ops/install-host-x86.sh`; the installer writes it, the api does not send
 it. No field changes shape; what some mean there:
@@ -294,16 +294,23 @@ it. No field changes shape; what some mean there:
 
 - `class` on CreateGuest, StartGuest and Restore is still validated and
   recorded, and reported back in samples, but sizes nothing: every guest
-  boots with every vCPU the host has and the host's placeable memory
-  (MemTotal less the owned reserve less the hypervisor's 512 MiB
-  overhead), with no class disk caps, `CPUWeight=100`, no `CPUQuota`, and
-  burst off. `volume_bytes` is the volume's size as on the fleet.
+  boots with the host's placeable memory (MemTotal less the owned reserve
+  less the hypervisor's 512 MiB overhead) and, on bare metal, every vCPU
+  the host has; when hostd itself runs under a hypervisor (the Mac
+  appliance, an x86 VM) two vCPUs (I-1640); `--owned-vcpus N` in
+  hostd.env overrides both, never above the host's. No class disk caps,
+  `CPUWeight=100` per guest, no per-guest `CPUQuota`, burst off;
+  `guests.slice` has `CPUWeight=50` and `CPUQuota` of the host's vCPUs
+  less one. `volume_bytes` is the volume's size as on the fleet.
 - `free_mem_bytes` (Hello, Heartbeat) is the host's real free memory:
   `max(0, min(MemAvailable, MemTotal - reserve - guests.slice
   memory.current))`, not total less the reserve less class reservations.
   A create, restore or start is refused `insufficient_capacity` when it
   is under 1 GiB, with a message that holds "not enough free memory"
   (the api's own threshold is the same number).
+  Under a hypervisor, also when the guests not stopped, failed or
+  destroyed and the new one would boot with more vCPUs together than the
+  host has, with a message that holds "not enough free CPU" (I-1640).
 - A guest the kernel's OOM killer ended (systemd's `Result=oom-kill` on
   `guest@<id>`, seen by the monitor or by the reconcile at hostd's start)
   is torn down and sent as `guest_state_changed {state: stopped, reason:
