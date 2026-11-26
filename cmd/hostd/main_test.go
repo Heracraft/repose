@@ -38,3 +38,22 @@ func TestRuntimeFlags(t *testing.T) {
 		t.Fatalf("parsed images-dir %q nix-mode %q", o.ImagesDir, o.NixMode)
 	}
 }
+
+// Guest RAM keeps 2 MiB pages on an owned host unless hostd.env says
+// --owned-guest-thp=false (DECISIONS I-1650): 4 KiB pages made a build on
+// the M4 appliance not finish its first step in 12.7 minutes.
+func TestOwnedGuestTHPOnByDefault(t *testing.T) {
+	fs := flag.NewFlagSet("hostd", flag.ContinueOnError)
+	o := options(fs)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	if !o.OwnedGuestTHP {
+		t.Fatal("--owned-guest-thp defaults to false")
+	}
+	fs = flag.NewFlagSet("hostd", flag.ContinueOnError)
+	o = options(fs)
+	if err := fs.Parse([]string{"--owned-guest-thp=false"}); err != nil || o.OwnedGuestTHP {
+		t.Fatalf("--owned-guest-thp=false: %v %v", o.OwnedGuestTHP, err)
+	}
+}

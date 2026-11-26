@@ -480,19 +480,20 @@ func TestOwnedGuardStopsTheNewestBeforeTheLivelock(t *testing.T) {
 	}
 }
 
-// Guest RAM on an owned host is 4 KiB shmem by default (Cloud
-// Hypervisor's thp=off), which reclaim can swap to zram; OwnedGuestTHP
-// keeps 2 MiB pages, as I-1574 chose for speed. The fleet is unchanged.
+// Guest RAM on an owned host keeps the hypervisor's 2 MiB pages by
+// default (I-1574; 4 KiB pages were unusable on the M4, I-1650);
+// OwnedGuestNoTHP boots it as 4 KiB shmem (thp=off), which reclaim can
+// swap. The fleet is unchanged.
 func TestOwnedGuestRAMHugePagesAreASwitch(t *testing.T) {
 	o := newOwnedHarness(t)
 	o.createClass(gid1, "small")
-	if argv, _ := o.unitOf(gid1); !strings.Contains(strings.Join(argv, " "), ",shared=on,thp=off") {
-		t.Fatalf("owned default argv %q lacks thp=off", argv)
+	if argv, _ := o.unitOf(gid1); strings.Contains(strings.Join(argv, " "), "thp=") {
+		t.Fatalf("owned default argv %q names thp", argv)
 	}
-	on := newOwnedHarnessWith(t, func(c *Config) { c.OwnedGuestTHP = true })
-	on.createClass(gid1, "small")
-	if argv, _ := on.unitOf(gid1); strings.Contains(strings.Join(argv, " "), "thp=") {
-		t.Fatalf("THP on: argv %q names thp", argv)
+	off := newOwnedHarnessWith(t, func(c *Config) { c.OwnedGuestNoTHP = true })
+	off.createClass(gid1, "small")
+	if argv, _ := off.unitOf(gid1); !strings.Contains(strings.Join(argv, " "), ",shared=on,thp=off") {
+		t.Fatalf("THP off: argv %q lacks thp=off", argv)
 	}
 	f := newHarness(t, nil)
 	req := createReq(gid1)
