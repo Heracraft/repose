@@ -442,7 +442,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
 	if o.OwnedHost {
-		ownedSlice(ctx, r, total, log)
+		ownedSlice(ctx, r, total, nested, log)
 	}
 	if err := mgr.Reconcile(ctx); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
@@ -757,7 +757,7 @@ func systemStopping(r shell.Runner) func(ctx context.Context) bool {
 // start, after repose-guests-slice.service set the fleet's eighth at
 // boot, and before any guest starts. A failure is logged and the boot's
 // figure stays, which only holds the guests to less.
-func ownedSlice(ctx context.Context, r shell.Runner, total uint64, log *slog.Logger) {
+func ownedSlice(ctx context.Context, r shell.Runner, total uint64, nested bool, log *slog.Logger) {
 	if total <= guest.OwnedReserveBytes {
 		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "reason", "total_unread")
 		return
@@ -768,6 +768,15 @@ func ownedSlice(ctx context.Context, r shell.Runner, total uint64, log *slog.Log
 	// earlier hostd set (DECISIONS I-1640: a quota throttled the nested
 	// guests in every period, and four busy ones hung).
 	argv := []string{"systemctl", "set-property", "--runtime", hostinfo.GuestsSlice, fmt.Sprintf("MemoryMax=%d", max), fmt.Sprintf("CPUWeight=%d", guest.OwnedSliceCPUWeight), "CPUQuota="}
+	// A nested host never swaps guest RAM (DECISIONS I-1656): on the M4
+	// appliance a guest some of whose RAM went to zram spun both vCPUs and
+	// never answered again. Bare metal keeps the kernel's default;
+	// "infinity" clears a 0 left at runtime.
+	if nested {
+		argv = append(argv, "MemorySwapMax=0")
+	} else {
+		argv = append(argv, "MemorySwapMax=infinity")
+	}
 	if _, err := r.Run(ctx, argv...); err != nil {
 		log.Warn("guests.slice memory left as booted", "event", "start", "part", "owned", "err", err.Error())
 		return
