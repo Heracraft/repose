@@ -7,7 +7,7 @@ order: 29
 
 Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing#own-hardware) ($10 a month) it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
 
-Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. `repose run --host repose` makes one on repose's servers instead, `repose run --host mac-mini` names your hardware, and a project made through the [API](/docs/api#where-a-project-runs) says the same with `placement` and `host`. With more than one host, a new machine goes to the one with the most room, and `--host box-b` puts it on box-b or refuses with box-b's state and exit 8; it never puts it on another host. The create line names the host a machine went to: `✓ Created todo-app on box-a (large)`. Repose's servers need a plan that buys memory there. A machine stays on its host for life. It does not move to repose's servers or to another host, and a machine on repose's servers does not move to your hardware: a snapshot is only readable where it was taken.
+Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. `repose run --host repose` makes one on repose's servers instead, `repose run --host mac-mini` names your hardware, and a project made through the [API](/docs/api#where-a-project-runs) says the same with `placement` and `host`. With more than one host, a new machine goes to the one with the most room, and `--host box-b` puts it on box-b or refuses with box-b's state and exit 8; it never puts it on another host. The create line names the host a machine went to: `✓ Created todo-app on box-a`. Repose's servers need a plan that buys memory there. A machine stays on its host for life. It does not move to repose's servers or to another host, and a machine on repose's servers does not move to your hardware: a snapshot is only readable where it was taken.
 
 ## What a Mac mini needs
 
@@ -28,11 +28,13 @@ A machine on your hardware has no size. On a Mac each one has two of the virtual
 
 A machine starts while the host has at least 1 GB free. Otherwise the start or the create is refused with exit code 8, and the refusal names the host and what it has free: `your host mac-mini has 0.8 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses`.
 
-On a Mac, a machine also starts only while the machines running there hold at least two fewer cores between them than the virtual machine has, so a Mac whose virtual machine has eight cores runs three at once. A machine inside the virtual machine runs slower the more cores it has, and machines busy at once slow each other more the more cores they have. The refusal has exit code 8: `the host has as many machines running as its cores allow; stopping a running machine frees room`. A create refused by the host, for cores or for memory, leaves nothing: no project in `repose ls`, and the dashboard's page for it says it was not created and why.
+On a Mac, a machine also starts only while the machines running there hold at least two fewer cores between them than the virtual machine has, so a Mac whose virtual machine has eight cores runs three at once. The refusal has exit code 8 and names the machines that hold the cores: ``your host mac-mini runs as many machines at once as its cores allow, and api and web are running there. Stopping one of them frees room, or `repose run --host repose` makes this one on repose's servers``; the second way out is named for a new machine on a plan that runs machines on repose's servers. A create refused by the host, for cores or for memory, leaves nothing: no project in `repose ls`, and the dashboard's page for it says it was not created and why.
 
-If memory runs out even so, repose stops one machine, the one started most recently, and never its own services: when the host has had under 0.5 GB free for five seconds, so the machines never hang waiting for memory. On a Mac a machine's memory is never moved to compressed swap, which serves only repose's own processes there, so when the Mac's share is used up the newest machine is stopped and named, without a slowdown first. On an x86 box that is not itself a virtual machine, the least used memory is compressed first, and the machines slow down before one is stopped. Its disk is kept. `repose ls`, `repose status` and the project's page say which machine stopped and why, you get a notification, and `repose start` starts it again.
+Machines busy at the same time on a Mac slow each other down many times over, because each runs inside repose's virtual machine. On an M4 Mac mini a node build that took 61 to 88 seconds alone took 1.5 to 15 times as long with a second one beside it, and 10 to 13 times as long, 802 to 811 seconds each, with four at once. The same two builds run straight in the virtual machine slowed each other 1.4 to 1.5 times. A machine that waits, for you or for its agent's model, costs the others nothing. Measured on 2026-11-25.
 
-`repose ls` and `repose status` show what each machine uses, under MEMORY, and the dashboard shows the same. A host still running an older version of repose's software places machines by size, as before, and they keep showing their size until it is updated. It updates itself within about half an hour, a Mac and an x86 machine alike: nothing to reinstall or run again, and the machines on it keep running through the update. `--memory` at `repose host add` changes the virtual machine's share. `--size` on `repose run`, `repose sync` and `repose resize` is accepted and changes nothing on your hardware; the command says so in one line.
+If memory runs out even so, repose stops one machine, the one started most recently, and never its own services: when the host has had under 0.5 GB free for five seconds, so the machines never hang waiting for memory. On a Mac this comes before any slowdown, because the memory of a machine there cannot be compressed: it is kept in large pages, without which machines run many times slower. On an x86 box that is not itself a virtual machine, the least used memory is compressed first, and the machines slow down before one is stopped. Its disk is kept. `repose ls`, `repose status` and the project's page say which machine stopped and why (`stopped: your host mac-mini ran out of memory, so repose stopped todo-app, the machine started last, to keep the others running`), you get a notification, and `repose start` starts it again. A machine that stops answering for any other reason says so too ([Not answering](/docs/troubleshooting#machine-state)).
+
+`repose ls` and `repose status` show what each machine uses, under MEMORY, and the dashboard shows the same. A host still running an older version of repose's software places machines by size, as before, and they keep showing their size until it is updated. It updates itself within about half an hour, a Mac and an x86 machine alike: nothing to reinstall or run again, and the machines on it keep running through the update. `--memory` at `repose host add` changes the virtual machine's share. `--size` on `repose run`, `repose sync` and `repose resize` is accepted and changes nothing on your hardware, the disk included: a new machine's disk is 40 GB whatever it says. The command says so in one line, and no line about the machine names a size.
 
 ## What an x86 box needs
 
@@ -84,16 +86,16 @@ mac-mini  online  24 GB   0         0        just now
 
 ```
 $ repose ls
-PROJECT     SIZE   STATE    UP     AGENTS           HOST
-todo-app *  large  running  2h14m  claude: working  mac-mini
-api         small  running  3d     -                repose
+PROJECT     MEMORY       STATE    UP     AGENTS           HOST
+todo-app *  1.4 GB used  running  2h14m  claude: working  mac-mini
+api         small        running  3d     -                repose
 ```
 
 `repose status` says it in a `host` row, and a project's `--json` carries `host_name` beside `host_id`.
 
 To name it yourself, `repose host add mac-mini`. A name is 1 to 32 characters of `a-z`, `0-9` and `-`. It is yours alone: another account may use the same one.
 
-On the dashboard, **New project** has **Runs on** under **Options** once you have a host: your host, or repose's servers, the same choice as `--host`. The line under the name says where the machine will run before you open it. With more than one host it lists each with its state, after **Any of your hosts**, the default, which takes the one with the most room. While your host is waiting or offline the form says so in the same words and creates nothing, and repose's servers is the way out. Settings → Hosts does the same three things. **Add a host** takes a name, or none, and shows the step to run on the machine once, with a copy button; it is not shown again, and a host that is still waiting can be removed and added again for a fresh one. The list shows each host's state, its memory and cores, how many of your machines are on it and how many are running, and when it last answered.
+On the dashboard, **New project** has **Runs on** under **Options** once you have a host: your host, or repose's servers, the same choice as `--host`. The line under the name says where the machine will run before you open it. With more than one host it lists each with its state, after **Any of your hosts**, the default, which takes the one with the most room. For one host, the line also says what it has free and, on a Mac, how many machines are running of the number its cores allow (`3.2 GB free · 2 of 3 running`); when it is full the form says so before **Create**, with a **Stop** for each machine running there and **Use repose's servers**. While your host is waiting or offline the form says so in the same words and creates nothing, and repose's servers is the way out. Settings → Hosts does the same three things. **Add a host** takes a name, or none, and shows the step to run on the machine once, with a copy button; it is not shown again, and a host that is still waiting can be removed and added again for a fresh one. The list shows each host's state, its memory and cores, how many of your machines are on it and how many are running, and when it last answered.
 
 ## Starting a machine takes about half a minute
 
@@ -104,9 +106,8 @@ servers the same machine starts in about
 [5 seconds](/docs#6-come-back-and-stop). Measured on an M4 Mac mini on
 2026-11-22.
 
-Once it is running it is a machine like any other. Agents start as fast as on
-repose's servers: on an M4 Mac mini a small machine showed Claude Code's first
-screen in half a second and Gemini CLI's in 1.5 to 2 seconds, and opencode,
+Once it is running it is a machine like any other. On an M4 Mac mini a
+machine showed Claude Code's first screen in half a second and Gemini CLI's in 1.5 to 2 seconds, and opencode,
 started with `repose run -d --agent opencode -p`, wrote a one-line file 31 to
 40 seconds after the command. Measured on 2026-11-23.
 
@@ -122,8 +123,8 @@ mac-mini  offline  24 GB   2         1        14m ago
 `repose ls` says the same under each machine on it, and so does the dashboard:
 
 ```
-PROJECT     SIZE   STATE    UP     AGENTS
-todo-app *  large  running  2h14m  claude: working
+PROJECT     MEMORY  STATE    UP     AGENTS           HOST
+todo-app *  -       running  2h14m  claude: working  mac-mini
 todo-app: your host mac-mini has not answered for 14m.
 ```
 

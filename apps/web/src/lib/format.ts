@@ -59,7 +59,8 @@ export function gb(n: number): string {
  */
 export function bytes(n: number): string {
 	if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
-	if (n < GB) return `${Math.round(n / (1024 * 1024))} MB`;
+	// 1006 MB reads as a gigabyte, as the CLI's 1.0 GB does (I-1654).
+	if (Math.round(n / (1024 * 1024)) < 1000) return `${Math.round(n / (1024 * 1024))} MB`;
 	return `${(n / GB).toFixed(1).replace(/\.0$/, '')} GB`;
 }
 

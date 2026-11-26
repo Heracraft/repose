@@ -693,6 +693,17 @@ func hostUnreachableLine(p *Project, own map[string]Host, now time.Time) string 
 // An api older than the field never says so.
 func unsized(p *Project) bool { return p.Sized != nil && !*p.Sized }
 
+// classNote is " (large)" after a machine's name in a one-line report
+// (connected, running, restored), or "" for a machine with no size
+// (DECISIONS I-1654): those lines named a class a machine on the user's
+// own host does not have.
+func classNote(p *Project) string {
+	if unsized(p) || p.Class == "" {
+		return ""
+	}
+	return " (" + p.Class + ")"
+}
+
 // usedCell is the memory an unsized machine uses while it runs, "1.4 GB
 // used", or "" when it is not running or the api has no sample yet.
 func usedCell(p *Project) string {

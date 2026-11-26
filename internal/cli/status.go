@@ -381,6 +381,9 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 		if r := oomStopReason(p); r != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, withNext(r, ""))
 		}
+		if l := notAnsweringLine(p, now); l != "" {
+			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
+		}
 		if l := idleLine(p, now); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
 		}
@@ -552,7 +555,11 @@ func writeStatus(w io.Writer, v statusView) {
 		_, _ = fmt.Fprintf(w, "  %s\n", withNext(r, ""))
 	}
 	running := p.State == "running"
-	if running && guestdDead(p) {
+	if l := notAnsweringLine(p, v.now); l != "" {
+		// Silent for about three minutes (I-1652): said as `repose ls`
+		// says it, in place of the shorter silence's line.
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
+	} else if running && guestdDead(p) {
 		_, _ = fmt.Fprintf(w, "  repose's service on the machine is not answering, so the agents and sessions below are old; `repose start %s` restarts it\n", p.Slug)
 	}
 	if l := diskFullLine(p, gd); l != "" {
@@ -736,6 +743,9 @@ func statusFirstLineMux(p *Project, mux string) string {
 	// change, so neither reads as the other's figure (I-826).
 	if frozen(p) {
 		state += "  " + frozenWord
+	}
+	if notAnswering(p) {
+		state += "  " + notAnsweringWord
 	}
 	// A machine on a host of the account's own has no size: the header
 	// says what it uses while it runs, and nothing when it does not

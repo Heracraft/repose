@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -100,7 +101,7 @@ func TestOOMStopIsShown(t *testing.T) {
 	e.Out, e.ErrOut = out, &discardWriter{}
 	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
 	fake.SetState(p.ID, "stopped")
-	msg := "stopped: your host mac-mini ran out of memory, and the kernel stopped todo-app to keep the others running. `repose start todo-app` starts it again"
+	msg := "stopped: your host mac-mini ran out of memory, so repose stopped todo-app, the machine started last, to keep the others running. `repose start todo-app` starts it again"
 	fake.SetLastError(p.ID, "oom_stopped: "+msg)
 
 	if err := ProjectsCmd(ctx, e); err != nil {
@@ -145,4 +146,114 @@ func squash(s string) string {
 		lines[i] = strings.Join(strings.Fields(l), " ")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// A running machine whose guestd has not answered for about three
+// minutes says so (DECISIONS I-1652): the STATE cell of `repose ls` and
+// the `status` header carry `not answering`, a line under each names how
+// long and the one command that brings it back, with what it costs.
+func TestNotAnsweringIsShown(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out, e.ErrOut = out, &discardWriter{}
+	fake.SetState(p.ID, "running")
+	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
+	since := time.Now().Add(-4*time.Minute - 10*time.Second)
+	fake.SetNotAnswering(p.ID, &since)
+	line := "todo-app: not answering for 4m. `repose start todo-app` restarts it; what was in its memory is lost.\n"
+
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	got := out.buf.String()
+	if !strings.Contains(squash(got), "todo-app * - running not answering") || !strings.Contains(got, line) {
+		t.Fatalf("repose ls:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StatusCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	got = out.buf.String()
+	first, _, _ := strings.Cut(got, "\n")
+	if !strings.Contains(first, "running") || !strings.Contains(first, "  not answering") {
+		t.Fatalf("status first line %q", first)
+	}
+	if !strings.Contains(got, "  "+strings.TrimPrefix(line, "todo-app: ")) || strings.Contains(got, "repose's service on the machine is not answering") {
+		t.Fatalf("repose status:\n%s", got)
+	}
+}
+
+// No line names a size for a machine on a host of the account's own
+// (DECISIONS I-1654, review-cli F-C): the start, the restore, the
+// connect line and `ls --destroyed`. A machine on repose's servers keeps
+// its class in each.
+func TestOwnedLinesNameNoSize(t *testing.T) {
+	no := false
+	own := &Project{Slug: "api", Class: "large", Sized: &no}
+	fleet := &Project{Slug: "web", Class: "small"}
+	if got := classNote(own); got != "" {
+		t.Fatalf("own host class note %q, want none", got)
+	}
+	if got := classNote(fleet); got != " (small)" {
+		t.Fatalf("fleet class note %q", got)
+	}
+
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out, e.ErrOut = out, &discardWriter{}
+	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
+	fake.SetState(p.ID, "stopped")
+	if err := StartCmd(ctx, e, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "todo-app is running, ready in") || strings.Contains(got, "large") {
+		t.Fatalf("start on an own host: %q", got)
+	}
+
+	var buf strings.Builder
+	writeDestroyedTable(&buf, []DestroyedProject{
+		{Slug: "api", Class: "large", Sized: &no, DestroyedAt: time.Now(), NameFree: true},
+		{Slug: "web", Class: "small", DestroyedAt: time.Now(), NameFree: true},
+	})
+	got := squash(buf.String())
+	if !strings.Contains(got, "api - ") || !strings.Contains(got, "web small ") || strings.Contains(got, "large") {
+		t.Fatalf("ls --destroyed:\n%s", got)
+	}
+}
+
+// A figure that rounds to 1000 of a unit is said in the next one
+// (review-cli N4/N8): `1005.6 MB used` beside `1.6 GB used`.
+func TestHumanBytesRollsOverAtAThousand(t *testing.T) {
+	for n, want := range map[int64]string{
+		1054448435: "1.0 GB", // 1005.6 MiB
+		800 << 20:  "800.0 MB",
+		1717986918: "1.6 GB",
+		999 << 10:  "999.0 KB",
+	} {
+		if got := humanBytes(n); got != want {
+			t.Errorf("humanBytes(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// Events in one second print in the order they were written (review-cli
+// N5): the api lists them newest first, and `machine stopped` came out
+// above `machine stopping`.
+func TestEventsInOneSecondKeepTheirOrder(t *testing.T) {
+	ts := time.Date(2026, 11, 25, 22, 57, 57, 0, time.UTC)
+	evs := []Event{
+		{ID: "01a2160b-0000-7000-8000-000000000003", TS: ts, Summary: "stopped"},
+		{ID: "01a2160b-0000-7000-8000-000000000002", TS: ts, Summary: "stopping"},
+		{ID: "01a2160b-0000-7000-8000-000000000001", TS: ts.Add(-time.Second), Summary: "snapshot"},
+	}
+	sortEvents(evs)
+	if evs[0].Summary != "snapshot" || evs[1].Summary != "stopping" || evs[2].Summary != "stopped" {
+		t.Fatalf("order %s, %s, %s; want snapshot, stopping, stopped", evs[0].Summary, evs[1].Summary, evs[2].Summary)
+	}
 }

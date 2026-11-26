@@ -14,7 +14,8 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { listHosts, restoreProject, stopProject } from '$lib/api/client';
+	import { listEventsPage, listHosts, restoreProject, stopProject } from '$lib/api/client';
+	import { EVENT_FILTERS } from '$lib/events';
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
@@ -37,6 +38,7 @@
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import ProjectMeta from './ProjectMeta.svelte';
 	import { frozenSince } from '$lib/frozen';
+	import { notAnsweringText } from '$lib/answering';
 	import { notFound } from '$lib/notFound.svelte';
 	import { ProjectState, provideProject } from './context.svelte';
 	import type { OwnedHost, PaymentRequiredReason, Project } from '$lib/api/types';
@@ -93,6 +95,28 @@
 	let errorReason = $derived(project ? errorBannerText(project) : '');
 	let abuseReason = $derived(project ? platformStopReason(project) : '');
 	let bootReason = $derived(project ? bootFallbackReason(project) : '');
+	/**
+	 * Whether the Errors filter has anything for this project, read only
+	 * while the error banner shows: its link opened "0 events" for a
+	 * failure that records none, such as a create the host refused
+	 * (review-dash P1-2, I-1654). Until it answers the link is left off.
+	 */
+	let errorsListed = $state(false);
+	let errorsAskedFor = '';
+	$effect(() => {
+		if (!errorReason) {
+			errorsAskedFor = '';
+			errorsListed = false;
+			return;
+		}
+		if (errorsAskedFor === errorReason) return;
+		errorsAskedFor = errorReason;
+		listEventsPage(id, { limit: 1, kinds: [...EVENT_FILTERS.errors] })
+			.then((p) => (errorsListed = (p.total ?? p.events.length) > 0))
+			.catch(() => (errorsListed = false));
+	});
+	/** Its guestd has been silent for about three minutes (I-1652). */
+	let silent = $derived(project ? notAnsweringText(project, clock.now) : '');
 	let showCapacityBanner = $derived(
 		ctx.startBanner === 'capacity' &&
 			(!errorReason || (ctx.capacityMessage ?? 'No capacity right now.') !== errorReason)
@@ -223,7 +247,8 @@
 			!!errorReason ||
 			!!project?.host_unreachable ||
 			!!abuseReason ||
-			!!bootReason
+			!!bootReason ||
+			!!silent
 	);
 </script>
 
@@ -374,12 +399,14 @@
 					<div class="hk-banner hk-banner--err" role="alert" data-testid="last-error">
 						<p>
 							{@render ticks(errorReason)}
-							<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a query appended -->
-							<a
-								href={resolve('/projects/[id]/events', { id }) + '?events_kind=errors'}
-								data-testid="last-error-link">Errors</a
-							>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#if errorsListed}
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a query appended -->
+								<a
+									href={resolve('/projects/[id]/events', { id }) + '?events_kind=errors'}
+									data-testid="last-error-link">Errors</a
+								>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{/if}
 						</p>
 					</div>
 				{/if}
@@ -392,6 +419,21 @@
 								The server running this machine is not answering.
 							{/if}
 						</p>
+					</div>
+				{/if}
+				{#if silent}
+					<!-- The one way back is a restart, and it costs what is in
+					     the machine's memory (I-1652). -->
+					<div class="hk-banner hk-banner--err" role="alert" data-testid="not-answering">
+						<p>{silent}. Restart starts it again; what was in its memory is lost.</p>
+						<div class="refusal-stops">
+							<button
+								type="button"
+								class="hk-btn-secondary hk-btn-sm"
+								aria-disabled={ctx.opBusy ? 'true' : undefined}
+								onclick={onStart}>{ctx.opBusy === 'start' ? 'Restarting…' : 'Restart'}</button
+							>
+						</div>
 					</div>
 				{/if}
 				{#if abuseReason}

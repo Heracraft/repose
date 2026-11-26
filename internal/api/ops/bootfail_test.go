@@ -180,7 +180,7 @@ func TestCreateWhoseBootFailsSaysHow(t *testing.T) {
 		t.Fatalf("create: %s %v", op.State, op.Error)
 	}
 	msg, _ := op.Error["message"].(string)
-	if !strings.HasPrefix(msg, "the environment did not boot: "+fakehostd.BadBootMessage) || !strings.Contains(msg, "`repose logs --kind console`") {
+	if !strings.HasPrefix(msg, "the machine did not boot: "+fakehostd.BadBootMessage) || !strings.Contains(msg, "`repose logs --kind console`") {
 		t.Fatalf("message %q", msg)
 	}
 	if strings.Contains(msg, "NixOS Stage 1") {
@@ -189,7 +189,7 @@ func TestCreateWhoseBootFailsSaysHow(t *testing.T) {
 	if c, _ := op.Result["console"].(string); !strings.Contains(c, "NixOS Stage 1") {
 		t.Fatalf("console not kept: %q", c)
 	}
-	if p := h.Project(pid); p.State != "error" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "boot_failed: the environment did not boot") {
+	if p := h.Project(pid); p.State != "error" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "boot_failed: the machine did not boot") {
 		t.Fatalf("project %s %v", p.State, p.LastError)
 	}
 }

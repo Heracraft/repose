@@ -33,6 +33,10 @@ type DestroyedProject struct {
 	// snapshot was kept on (I-1542); the row is listed, not restorable.
 	GoneWithHost *string  `json:"gone_with_host,omitempty"`
 	Snapshot     Snapshot `json:"snapshot"`
+	// Sized is false for a project that ran on a host of the account's
+	// own that shares it, where a machine has no size (I-1654). Absent
+	// from older apis: sized.
+	Sized *bool `json:"sized,omitempty"`
 }
 
 // RestoreRequest is POST /projects/restore's body.
@@ -429,6 +433,16 @@ func destroyedCells(d DestroyedProject) (until, destroyed, snap, size string) {
 	return until, d.DestroyedAt.Local().Format("2006-01-02 15:04"), d.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(d.Snapshot.Bytes)
 }
 
+// destroyedSize is the SIZE cell of `ls --destroyed`: the class, or "-"
+// for a project that had no size, on a host of the account's own
+// (I-1654).
+func destroyedSize(d DestroyedProject) string {
+	if d.Sized != nil && !*d.Sized {
+		return "-"
+	}
+	return d.Class
+}
+
 func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 	groups := destroyedByName(list)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -446,7 +460,7 @@ func writeDestroyedTable(w io.Writer, list []DestroyedProject) {
 		if len(g) > 1 {
 			more = fmt.Sprint(len(g) - 1)
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, d.Class, destroyed, snap, size, until, more)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, destroyedSize(d), destroyed, snap, size, until, more)
 	}
 	_ = tw.Flush()
 	for _, d := range inUse {
@@ -468,7 +482,7 @@ func writeDestroyedTableAll(w io.Writer, list []DestroyedProject) {
 			} else if !d.NameFree {
 				name += " (name in use)"
 			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, d.ID, d.Class, destroyed, snap, size, until)
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, d.ID, destroyedSize(d), destroyed, snap, size, until)
 		}
 	}
 	_ = tw.Flush()

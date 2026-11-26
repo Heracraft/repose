@@ -250,7 +250,13 @@ test('the last-error banner links to the errors on the Events tab', async ({ pag
 			json: { ...json, state: 'error', last_error: 'boot_failed: the machine did not boot.' }
 		});
 	});
+	// With nothing under Errors, the banner has no link to an empty list
+	// (review-dash P1-2, I-1654).
 	await page.goto(`/projects/${p.id}`);
+	await expect(page.getByTestId('last-error')).toContainText('The machine did not boot.');
+	await expect(page.getByTestId('last-error-link')).toHaveCount(0);
+	await addEvents(p.id, 1, { kinds: ['boot_failed'], summaries: ['the machine did not boot'] });
+	await page.reload();
 	await page.getByTestId('last-error').getByRole('link', { name: 'Errors' }).click();
 	await expect(page).toHaveURL(`/projects/${p.id}/events?events_kind=errors`);
 	await expect(

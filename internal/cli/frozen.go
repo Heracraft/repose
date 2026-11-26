@@ -1,5 +1,10 @@
 package cli
 
+import (
+	"fmt"
+	"time"
+)
+
 // The idle pause (DECISIONS I-818, I-826). The api freezes a running
 // machine nobody has touched for fifteen minutes: the host stops its
 // vCPUs and keeps its memory, so every process, open file and socket
@@ -33,5 +38,42 @@ func stateWithFrozen(p *Project) string {
 	if frozen(p) {
 		return p.State + " " + frozenWord
 	}
+	if notAnswering(p) {
+		return p.State + " " + notAnsweringWord
+	}
 	return p.State
+}
+
+// notAnsweringWord is what a user reads for a running machine whose
+// guestd has not answered for about three minutes (DECISIONS I-1652).
+// Like frozen it follows the state and is never one of its own.
+const notAnsweringWord = "not answering"
+
+// notAnswering reports whether the api says the machine has stopped
+// answering. A frozen machine never is: its guestd is paused on purpose.
+func notAnswering(p *Project) bool {
+	return p != nil && p.State == "running" && p.NotAnswering != nil && !frozen(p)
+}
+
+// notAnsweringLine is the line under `ls` and `status` for such a
+// machine: how long, and the one command that brings it back, with what
+// it costs; "" for any other.
+func notAnsweringLine(p *Project, now time.Time) string {
+	if !notAnswering(p) {
+		return ""
+	}
+	return fmt.Sprintf("not answering for %s. `repose start %s` restarts it; what was in its memory is lost.", silentFor(now.Sub(p.NotAnswering.Since)), p.Slug)
+}
+
+// silentFor is a silence in the shortest true unit, as the api's event
+// says it (internal/api/answering.Duration): "4m", "2h", "3d".
+func silentFor(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", max(int(d/time.Minute), 1))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d/time.Hour))
+	default:
+		return fmt.Sprintf("%dd", int(d/(24*time.Hour)))
+	}
 }

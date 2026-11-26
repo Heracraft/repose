@@ -85,6 +85,8 @@ export const EVENT_FILTERS = {
 		'temp_destroyed',
 		'host_moved',
 		'host_restarted',
+		// Its guestd stopped answering for about three minutes (I-1652).
+		'not_answering',
 		'snapshot.created',
 		'project.created'
 	]
@@ -124,6 +126,9 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 	// A server restart stopped the machine (I-645); the summary says when
 	// the server was back.
 	host_restarted: { label: 'server restart', tone: 'attention' },
+	// A running machine that has not answered for about three minutes
+	// (I-1652): the summary says how long and what `repose start` costs.
+	not_answering: { label: 'not answering', tone: 'attention' },
 	notifications_paused: { label: 'paused', tone: 'neutral' }
 };
 

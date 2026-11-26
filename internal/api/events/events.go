@@ -39,8 +39,8 @@ var notifyKinds = map[string]bool{
 	"notifications_paused": true,
 	// A guest stopped because a miner was running (DECISIONS I-239).
 	"abuse_stopped": true,
-	// A machine on a host the user owns that the kernel stopped when the
-	// host ran out of memory (DECISIONS I-1632).
+	// A machine on a host the user owns that repose stopped when the
+	// host ran out of memory (DECISIONS I-1632, I-1650).
 	OOMStoppedKind: true,
 	// repose-notify, repose-notify --done and repose-ask (DECISIONS
 	// I-244, I-688).
@@ -452,10 +452,14 @@ const OOMStoppedKind = "oom_stopped"
 
 // OOMStoppedMessage is the sentence after the code: the host's name, what
 // happened and what brings the machine back. The host is the user's own,
-// so it is named.
+// so it is named. Who stopped it is repose: on the Mac appliance hostd's
+// memory guard does it before the kernel would (I-1650), and where the
+// kernel's OOM killer is faster, the machine it picks is the one hostd's
+// order puts first (I-1626), so "the kernel stopped" was true of neither
+// (the lab's 03:14Z run, I-1654).
 func OOMStoppedMessage(host, slug string) string {
-	return "stopped: your host " + host + " ran out of memory, and the kernel stopped " + slug +
-		" to keep the others running. `repose start " + slug + "` starts it again"
+	return "stopped: your host " + host + " ran out of memory, so repose stopped " + slug +
+		", the machine started last, to keep the others running. `repose start " + slug + "` starts it again"
 }
 
 // oomStopped records a stop the OOM killer made: last_error on the

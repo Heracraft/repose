@@ -23,7 +23,7 @@ func TestResizeClassPrintsNoSuccessBeforeTheStartFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fake.SetStartFailure(p.ID, "boot_failed", "the environment did not boot: the system it boots is missing from the machine's store (stage 1 found no stage 2 init); `repose logs --kind console` shows what it printed")
+	fake.SetStartFailure(p.ID, "boot_failed", "the machine did not boot: the system it boots is missing from the machine's store (stage 1 found no stage 2 init); `repose logs --kind console` shows what it printed")
 	err = ResizeClassCmd(ctx, e, "kanali", "xl", nil)
 	if err == nil {
 		t.Fatal("the resize reported success")

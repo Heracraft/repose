@@ -40,6 +40,9 @@ var Verbs = map[string]string{
 	// A host of the user's own ran out of memory and the kernel stopped
 	// this machine (DECISIONS I-1632).
 	"oom_stopped": "stopped, host out of memory",
+	// A running machine whose guestd has not answered for about three
+	// minutes (DECISIONS I-1652). It notifies nobody.
+	"not_answering": "not answering",
 }
 
 // Verb is kind's word, or the kind with its separators as spaces.

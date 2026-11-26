@@ -140,7 +140,10 @@
 							     go under the name, the date it is kept until on a line
 							     of its own. -->
 							<span class="dsub block sm:hidden">
-								<span class="hk-mono">{d.class}</span> · destroyed {relativeTime(d.destroyed_at)}
+								<!-- No size for one that ran on a host of the account's
+								     own (I-1654). -->
+								{#if d.sized !== false}<span class="hk-mono">{d.class}</span> ·
+								{/if}destroyed {relativeTime(d.destroyed_at)}
 								{#if d.gone_with_host}
 									<span class="block">gone with host {d.gone_with_host}</span>
 								{:else if until}
@@ -150,8 +153,10 @@
 								{/if}
 							</span>
 						</td>
-						<td class="hidden whitespace-nowrap md:table-cell">
-							<span class="hk-mono">{d.class}</span>
+						<td class="hidden whitespace-nowrap md:table-cell" data-testid="destroyed-size">
+							{#if d.sized === false}<span class="muted">-</span>{:else}<span class="hk-mono"
+									>{d.class}</span
+								>{/if}
 						</td>
 						<td class="muted hidden whitespace-nowrap sm:table-cell">
 							<time datetime={d.destroyed_at} title={dateTime(d.destroyed_at)}

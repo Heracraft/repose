@@ -153,7 +153,8 @@ test('a project in error offers Restart', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('last-error')).toContainText('The machine did not boot.');
-	await expect(page.getByTestId('last-error').getByRole('link', { name: 'Errors' })).toBeVisible();
+	// No error event is recorded for it, so no link to an empty list (I-1654).
+	await expect(page.getByTestId('last-error').getByRole('link', { name: 'Errors' })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'Restart' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Start', exact: true })).toHaveCount(0);
 });

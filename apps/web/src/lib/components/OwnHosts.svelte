@@ -320,11 +320,17 @@
 								{#if h.arch}<span class="arch">{h.arch}</span>{/if}
 								<!-- A host that has not registered has nothing to say but
 								     its state: no size, no machines, no heartbeat. -->
+								<!-- One fact a line, so a wrap never starts a line with
+								     a separator (review-dash 9, I-1654). -->
 								<span class="phone-meta">
-									<span class="dot" data-tone={tone(h.state)}></span>{stateWord(h.state)}
-									{#if h.last_heartbeat_at}<span class="nw">· heard {heard(h)}</span>{/if}
-									{#if h.mem_bytes}<span class="nw">· {size(h)}</span>{/if}
-									{#if h.projects}<span class="nw">· {machines(h)}</span>{/if}
+									<span class="pm-line"
+										><span class="dot" data-tone={tone(h.state)}></span>{stateWord(
+											h.state
+										)}{#if h.last_heartbeat_at}<span class="nw">&nbsp;· heard {heard(h)}</span
+											>{/if}</span
+									>
+									{#if h.mem_bytes}<span class="pm-line">{size(h)}</span>{/if}
+									{#if h.projects}<span class="pm-line">{machines(h)}</span>{/if}
 								</span>
 							</td>
 							<td class="c-state"
@@ -605,6 +611,9 @@
 		}
 		.nw {
 			white-space: nowrap;
+		}
+		.pm-line {
+			display: block;
 		}
 	}
 	@media (forced-colors: active) {

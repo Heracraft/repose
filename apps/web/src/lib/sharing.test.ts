@@ -32,10 +32,10 @@ describe('a machine on a host of your own', () => {
 
 describe('oomStopReason', () => {
 	const le =
-		'oom_stopped: stopped: your host mac-mini ran out of memory, and the kernel stopped api to keep the others running. `repose start api` starts it again';
+		'oom_stopped: stopped: your host mac-mini ran out of memory, so repose stopped api, the machine started last, to keep the others running. `repose start api` starts it again';
 	it('is the sentence without the command, which the Start button replaces', () => {
 		const want =
-			'stopped: your host mac-mini ran out of memory, and the kernel stopped api to keep the others running.';
+			'stopped: your host mac-mini ran out of memory, so repose stopped api, the machine started last, to keep the others running.';
 		expect(oomStopReason({ state: 'stopped', last_error: le })).toBe(want);
 		expect(platformStopReason({ state: 'stopped', last_error: le })).toBe(want);
 	});

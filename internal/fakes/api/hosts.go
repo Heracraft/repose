@@ -95,6 +95,11 @@ type OwnedHost struct {
 	Cores           int    `json:"cores"`
 	Projects        int    `json:"projects"`
 	RunningProjects int    `json:"running_projects"`
+	// FreeMemBytes and RunningLimit are a sharing host's room (I-1654):
+	// what it reports free, and on a Mac the machines its cores run at
+	// once. The listing fills them in.
+	FreeMemBytes *int64 `json:"free_mem_bytes,omitempty"`
+	RunningLimit int    `json:"running_limit,omitempty"`
 	// Snapshots counts the live snapshots kept on the host's disk, which
 	// removing it deletes (I-1542).
 	Snapshots       int        `json:"snapshots"`
@@ -285,6 +290,15 @@ func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
 		row.JoinToken, row.JoinTokenExpiresAt, row.Install = "", nil, nil
 		row.Projects, row.RunningProjects = f.machinesOn(h.ID)
 		row.Snapshots = f.snapshotsOn(h.ID)
+		if h.State == "ready" && !h.oldHostd {
+			// The api's hostRoom: a sharing host's free memory, and the
+			// I-1640 bound on a Mac.
+			free := h.reportedFree()
+			row.FreeMemBytes = &free
+			if row.Arch == "aarch64" && row.VCPUs > 0 {
+				row.RunningLimit = max((row.VCPUs-2)/2, 1)
+			}
+		}
 		out = append(out, &row)
 	}
 	writeJSON(w, 200, out)
@@ -422,7 +436,7 @@ func (f *Fake) deleteHost(w http.ResponseWriter, r *http.Request) *apiError {
 			if len(slugs) == 1 {
 				word = "machine"
 			}
-			return errf("conflict", "%s still holds %d %s. A machine moves host only by restoring a snapshot, so remove them first: %s.",
+			return errf("conflict", "%s still holds %d %s. A machine stays on the host it was made on, so remove them first: %s.",
 				h.Name, len(slugs), word, strings.Join(slugs, ", ")).
 				withDetail(map[string]any{"reason": "host_has_projects", "projects": slugs})
 		}

@@ -289,6 +289,10 @@ export interface Project {
 	 * `running`, never a state of its own; the word a reader sees is
 	 * "frozen" (I-683). */
 	resting?: { since: string } | null;
+	/** Set while a running machine's guestd has not answered for about
+	 * three minutes (I-1652): hung, its memory full or its kernel stuck.
+	 * A Start restarts it, which loses what is in its memory. */
+	not_answering?: { since: string } | null;
 	/** The machine is never frozen while idle (I-818, I-826); the switch
 	 * is on its Config page. Absent from an older api, which means off. */
 	keep_awake?: boolean;
@@ -342,6 +346,11 @@ export interface OwnedHost {
 	projects: number;
 	/** Those of them in a state that holds memory. */
 	running_projects: number;
+	/** What a host whose hostd shares it last reported free (I-1654); a
+	 * machine starts there at 1 GB free (I-1630). */
+	free_mem_bytes?: number;
+	/** On a Mac, the machines its cores run at once (I-1640, I-1654). */
+	running_limit?: number;
 	/** Snapshots kept on its disk, which removing it deletes (I-1542). */
 	snapshots?: number;
 	last_heartbeat_at?: string;
@@ -397,6 +406,9 @@ export interface DestroyedProject {
 	/** Its snapshot went with a removed host of the account's own (I-1542). */
 	gone_with_host?: string | null;
 	snapshot: Snapshot;
+	/** False for one that ran on a host of the account's own, where a
+	 * machine has no size (I-1654). Absent from an older api: sized. */
+	sized?: boolean;
 }
 
 /** POST /projects/restore's answer (I-167). */

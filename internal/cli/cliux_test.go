@@ -152,7 +152,7 @@ func TestNotRunningMessagesSayTheTruth(t *testing.T) {
 		t.Errorf("error-state message: %s", msg)
 	}
 
-	sentence := "guest_unresponsive: the environment's agent (guestd) stopped answering; `repose start` restarts it"
+	sentence := "guest_unresponsive: repose's service on the machine stopped answering; `repose start` restarts it"
 	msg = notRunningMessage(&Project{Slug: "izma", State: "error", LastError: &sentence})
 	if !strings.Contains(msg, "stopped answering; `repose start` restarts it.") || strings.Count(msg, "repose start") != 1 {
 		t.Errorf("api sentence not used as is, or advice doubled: %s", msg)
@@ -511,7 +511,7 @@ func TestReasonFor(t *testing.T) {
 	if got := reasonFor("guest_unresponsive", rawGuestdError); strings.Contains(got, "01a0") || !strings.Contains(got, "stopped answering") {
 		t.Errorf("raw host wording: %q", got)
 	}
-	s := "the environment's agent (guestd) stopped answering; `repose start` restarts it"
+	s := "repose's service on the machine stopped answering; `repose start` restarts it"
 	// The api's sentence, in the CLI's word for the machine (I-630).
 	if got := reasonFor("guest_unresponsive", s+"."); got != "repose's service on the machine stopped answering; `repose start` restarts it" {
 		t.Errorf("api sentence: %q", got)

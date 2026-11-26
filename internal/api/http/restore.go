@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/heracraft/repose/internal/api/ops"
+	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
@@ -39,6 +40,9 @@ type destroyedRow struct {
 	SnapExpires *time.Time `db:"snap_expires"`
 	NameFree    bool       `db:"name_free"`
 	SnapGone    *string    `db:"snap_gone"`
+	// OwnedShared: its snapshot is on a host the account owns that
+	// shares, where a machine has no size (I-1654).
+	OwnedShared bool `db:"owned_shared"`
 }
 
 // listDestroyed is GET /v1/projects/destroyed: the user's destroyed
@@ -67,7 +71,8 @@ func (s *Server) listDestroyed(w http.ResponseWriter, r *http.Request) error {
 	rows, err := s.d.Pool.Query(r.Context(), `
 		select p.id, p.name, p.slug, p.class, p.remote_url, p.volume_bytes, p.destroyed_at,
 		       s.id as snap_id, s.taken_at as snap_taken, s.bytes as snap_bytes, s.reason as snap_reason, s.expires_at as snap_expires, s.gone_with_host as snap_gone,
-		       not exists (select 1 from projects l where l.user_id = p.user_id and l.slug = p.slug and l.destroyed_at is null) as name_free
+		       not exists (select 1 from projects l where l.user_id = p.user_id and l.slug = p.slug and l.destroyed_at is null) as name_free,
+		       exists (select 1 from hosts h where h.id = s.host_id and h.owner_account_id = p.user_id and $4 = any(h.features)) as owned_shared
 		from projects p
 		join lateral (
 			select s.* from snapshots s where s.project_id = p.id and `+store.RestorableSnapshotWhere+`
@@ -76,7 +81,7 @@ func (s *Server) listDestroyed(w http.ResponseWriter, r *http.Request) error {
 		where p.user_id = $1 and p.destroyed_at is not null
 		  and ($2::uuid is null or (p.destroyed_at, p.id) < (select b.destroyed_at, b.id from projects b where b.id = $2 and b.user_id = $1 and b.destroyed_at is not null))
 		order by p.destroyed_at desc, p.id desc
-		limit $3`, u.ID, before, limit)
+		limit $3`, u.ID, before, limit, scheduler.SharedFeature)
 	if err != nil {
 		return err
 	}
@@ -95,7 +100,7 @@ func (s *Server) listDestroyed(w http.ResponseWriter, r *http.Request) error {
 		out = append(out, map[string]any{
 			"id": d.ID, "name": d.Name, "slug": d.Slug, "class": d.Class, "remote_url": d.RemoteURL,
 			"volume_bytes": d.VolumeBytes, "destroyed_at": d.DestroyedAt, "name_free": d.NameFree,
-			"restorable_until": until, "gone_with_host": d.SnapGone,
+			"restorable_until": until, "gone_with_host": d.SnapGone, "sized": !d.OwnedShared,
 			"snapshot": map[string]any{"id": d.SnapID, "created_at": d.SnapTaken, "bytes": d.SnapBytes, "reason": d.SnapReason, "expires_at": d.SnapExpires, "gone_with_host": d.SnapGone},
 		})
 	}

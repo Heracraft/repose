@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/heracraft/repose/internal/api/hostmgr"
+	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
@@ -124,6 +125,27 @@ func (s *Server) hostSnapshots(r *http.Request, hostID uuid.UUID) (n int, err er
 	return n, err
 }
 
+// hostRoom adds what a host whose hostd shares it has room for
+// (DECISIONS I-1654): `free_mem_bytes`, the memory its hostd last said
+// was free, against which a machine starts at 1 GiB (I-1630); and on a
+// Mac, an aarch64 host, which runs its guests nested, `running_limit`,
+// the machines its cores run at once: two vCPUs each and two of the
+// host's left over, never under one (I-1640). hostd does not report the
+// bound, so it is computed here from the rule it applies, and left out
+// where the api cannot tell (an x86 host, nested or not).
+func (s *Server) hostRoom(r *http.Request, h *store.Host, row map[string]any) error {
+	var shares bool
+	err := s.d.Pool.QueryRow(r.Context(), "select $2 = any(features) from hosts where id = $1", h.ID, scheduler.SharedFeature).Scan(&shares)
+	if err != nil || !shares || h.State != "ready" {
+		return err
+	}
+	row["free_mem_bytes"] = max(h.FreeMemBytes, 0)
+	if hostArch(h) == "aarch64" && h.VCPUs > 0 {
+		row["running_limit"] = max((h.VCPUs-2)/nestedOwnedVCPUs, 1)
+	}
+	return nil
+}
+
 func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 	u := userFrom(r.Context())
 	hosts, err := store.ListAccountHosts(r.Context(), s.d.Pool, u.ID)
@@ -142,6 +164,9 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 		}
 		row := hostJSON(&hosts[i], projects, running, "", nil, nil)
 		row["snapshots"] = snaps
+		if err := s.hostRoom(r, &hosts[i], row); err != nil {
+			return err
+		}
 		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -314,7 +339,7 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) error {
 		for _, p := range projects {
 			slugs = append(slugs, p.Slug)
 		}
-		return withDetail(errf("conflict", "%s still holds %s. A machine moves host only by restoring a snapshot, so remove them first: %s.",
+		return withDetail(errf("conflict", "%s still holds %s. A machine stays on the host it was made on, so remove them first: %s.",
 			h.Name, plural(len(slugs), "machine"), strings.Join(slugs, ", ")),
 			map[string]any{"reason": "host_has_projects", "projects": slugs})
 	}

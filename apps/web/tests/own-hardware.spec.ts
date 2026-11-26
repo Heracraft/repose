@@ -315,7 +315,8 @@ test('a broken project shows its error reason on every tab and Restart surfaces 
 		await page.goto(`/projects/${p.id}`);
 		const banner = page.getByTestId('last-error');
 		await expect(banner).toContainText('Your host stalehost has not registered yet.');
-		await expect(banner.getByRole('link', { name: 'Errors' })).toBeVisible();
+		// No error event is recorded for it, so no link to an empty list (I-1654).
+		await expect(banner.getByRole('link', { name: 'Errors' })).toHaveCount(0);
 		await shots(page, 'project-error-detail');
 
 		// Error reason remains visible when switching tabs.

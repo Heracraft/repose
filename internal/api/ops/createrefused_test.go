@@ -85,3 +85,48 @@ func TestCreateFailedOtherwiseKeepsItsProject(t *testing.T) {
 		t.Fatalf("project %s destroyed_at %v, want error and kept", p.State, p.DestroyedAt)
 	}
 }
+
+// DECISIONS I-1654: on a host the account owns, a create or start the host
+// refuses for its cores names the host, the machines running there and
+// both ways out: stopping one of them, or, for a create, repose's
+// servers. review-cli 7 and review-mac 03:42Z: the sentence named
+// neither the host nor the machines, one of which was hung.
+func TestOwnedCPURefusalNamesTheHostAndTheWayOut(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("ines")
+	if _, err := h.Pool.Exec(h.Ctx, "update hosts set name = 'mac-mini', owner_account_id = $1 where id = $2", u.ID, h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	for _, slug := range []string{"beta", "alpha"} {
+		if _, err := h.Pool.Exec(h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes, started_at)
+			values ($1, $2, $3, $3, 'large', 'running', $4, 1, now())`, store.NewID(), u.ID, slug, h.HostID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.Fake.SetFail("CreateGuest", "insufficient_capacity")
+	h.Fake.SetFailMessage("CreateGuest", "not enough free CPU: 6 of 6 vCPUs taken by running machines on this host, a machine starts with 2")
+	p := h.NewProject(u, "pocketmail", "small")
+	pid := p.ID
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}))
+	want := "your host mac-mini runs as many machines at once as its cores allow, and alpha and beta are running there. Stopping one of them frees room, or `repose run --host repose` makes this one on repose's servers"
+	if op.Error["code"] != "insufficient_capacity" || op.Error["message"] != want {
+		t.Fatalf("create refused for cores: %+v\nwant message %q", op.Error, want)
+	}
+
+	h.Fake.SetFail("CreateGuest", "")
+	q := h.NewProject(u, "folio", "small")
+	qid := q.ID
+	if op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindCreate, ProjectID: &qid, Phases: ops.PlanCreate()})); op.State != "done" {
+		t.Fatalf("create folio: %+v", op.Error)
+	}
+	if op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &qid, Phases: ops.PlanStop()})); op.State != "done" {
+		t.Fatalf("stop folio: %+v", op.Error)
+	}
+	h.Fake.SetFail("StartGuest", "insufficient_capacity")
+	h.Fake.SetFailMessage("StartGuest", "not enough free CPU: 6 of 6 vCPUs taken by running machines on this host, a machine starts with 2")
+	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &qid, Phases: ops.PlanStart(false)}))
+	want = "your host mac-mini runs as many machines at once as its cores allow, and alpha and beta are running there. Stopping one of them frees room"
+	if op.Error["message"] != want {
+		t.Fatalf("start refused for cores: %+v\nwant message %q", op.Error, want)
+	}
+}

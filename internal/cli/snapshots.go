@@ -306,7 +306,7 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		p = q
 	}
 	if p.State == "running" {
-		_, _ = fmt.Fprintf(e.Out, "Restored %s; it is running (%s).\n", p.Slug, p.Class)
+		_, _ = fmt.Fprintf(e.Out, "Restored %s; it is running%s.\n", p.Slug, classNote(p))
 		return nil
 	}
 	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is %s.\n", p.Slug, stateWords(p.State))

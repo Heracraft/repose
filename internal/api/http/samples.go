@@ -57,7 +57,14 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	if p.HostID != nil {
 		var hv int64
 		var hm int64
-		err := s.d.Pool.QueryRow(ctx, "select vcpus, mem_bytes from hosts where id = $1 and owner_account_id = $2 and $3 = any(features)", *p.HostID, p.UserID, scheduler.SharedFeature).Scan(&hv, &hm)
+		var arch *string
+		err := s.d.Pool.QueryRow(ctx, "select vcpus, mem_bytes, arch from hosts where id = $1 and owner_account_id = $2 and $3 = any(features)", *p.HostID, p.UserID, scheduler.SharedFeature).Scan(&hv, &hm, &arch)
+		if err == nil && arch != nil && *arch == "aarch64" {
+			// A Mac runs its guests nested, two vCPUs each (I-1640), so
+			// a machine's CPU is a share of its two: drawn against the
+			// host's eight, a pegged machine read 23% (I-1654).
+			hv = min(hv, nestedOwnedVCPUs)
+		}
 		switch {
 		case err == nil && hv > 0 && hm > 0:
 			m := hv * 1000
@@ -144,3 +151,9 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	})
 	return nil
 }
+
+// nestedOwnedVCPUs is hostd's guest.OwnedNestedVCPUs: what each guest on
+// a host the user owns that runs under a hypervisor boots with (I-1640).
+// The api tells such a host only by its arch, aarch64 being the Mac
+// appliance; an x86 host keeps the host's count.
+const nestedOwnedVCPUs = 2
