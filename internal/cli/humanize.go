@@ -167,9 +167,9 @@ func abuseStopReason(p *Project) string {
 const oomStopCode = "oom_stopped"
 
 // oomStopReason is the api's sentence for such a machine ("stopped:
-// your host mac-mini ran out of memory, so repose stopped api, the
-// machine started last, to keep the others running. `repose start api`
-// starts it again"), or ""
+// your host mac-mini ran out of memory, so repose stopped api to keep
+// the others running. `repose start api` starts it again"; I-1654's
+// "..., the machine started last, ..." reads the same way), or ""
 // for any other project. It is shown on a stopped project, as
 // abuseStopReason is.
 func oomStopReason(p *Project) string {

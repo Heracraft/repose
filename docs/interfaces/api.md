@@ -235,9 +235,10 @@ that failed; on a `stopped` project it may instead be
 mining is not allowed on repose, see the terms at <url>`, left by a stop
 the api made itself (added with I-239), which the CLI and the
 dashboard show; or `oom_stopped: stopped: your host <name> ran out of
-memory, so repose stopped <slug>, the machine started last, to keep the
-others running. ...` (worded so since I-1654; before it, `and the kernel
-stopped <slug> to keep the others running`),
+memory, so repose stopped <slug> to keep the others running. ...` (worded
+so since I-1650's amendment of 2026-11-26; from I-1654 to it, `..., the
+machine started last, to keep the others running`; before I-1654, `and the
+kernel stopped <slug> to keep the others running`),
 the sentence ending with the `repose start` that brings it back, left when hostd reports a
 guest on a host the account owns `stopped` with reason `oom_killed`
 (added with I-1632; an `oom_stopped` event, which notifies, goes with
