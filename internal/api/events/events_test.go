@@ -661,7 +661,7 @@ func TestOOMStopIsNamedOnAnOwnedHost(t *testing.T) {
 	}
 	stop(hid, gid, "oom-own")
 	p, _ = store.GetProject(ctx, pool, pid)
-	want := "oom_stopped: stopped: your host mac-mini ran out of memory, so repose stopped todo, the machine started last, to keep the others running. `repose start todo` starts it again"
+	want := "oom_stopped: stopped: your host mac-mini ran out of memory, so repose stopped todo to keep the others running. `repose start todo` starts it again"
 	if p.State != "stopped" || p.LastError == nil || *p.LastError != want {
 		t.Fatalf("owned host: state %s, last_error %q, want stopped, %q", p.State, derefStr(p.LastError), want)
 	}

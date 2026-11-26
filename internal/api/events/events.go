@@ -456,10 +456,13 @@ const OOMStoppedKind = "oom_stopped"
 // memory guard does it before the kernel would (I-1650), and where the
 // kernel's OOM killer is faster, the machine it picks is the one hostd's
 // order puts first (I-1626), so "the kernel stopped" was true of neither
-// (the lab's 03:14Z run, I-1654).
+// (the lab's 03:14Z run, I-1654). It does not say which machine is
+// chosen: hostd takes the one whose memory grew most, and the newest only
+// when none grew (I-1650), so "the machine started last" was false of a
+// runaway in an older one (pass-2 B1).
 func OOMStoppedMessage(host, slug string) string {
 	return "stopped: your host " + host + " ran out of memory, so repose stopped " + slug +
-		", the machine started last, to keep the others running. `repose start " + slug + "` starts it again"
+		" to keep the others running. `repose start " + slug + "` starts it again"
 }
 
 // oomStopped records a stop the OOM killer made: last_error on the

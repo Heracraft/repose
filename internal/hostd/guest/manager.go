@@ -527,6 +527,12 @@ type Deps struct {
 	// either leaves that part out (tests that do not exercise it).
 	GuestsSliceMemory func() (uint64, error)
 	SetOOMScoreAdj    func(pid, adj int) error
+	// GuestMemory returns a guest unit's cgroup memory.current and
+	// SliceOOMKills guests.slice's memory.events oom_kill: what the guard
+	// reads to find the guest that grew, and how a kernel OOM kill is told
+	// from another death (DECISIONS I-1650). Nil leaves that part out.
+	GuestMemory   func(id string) (uint64, error)
+	SliceOOMKills func() (uint64, error)
 	// AfterHypervisorExit is called once a guest's hypervisor is gone
 	// (teardown). On the Mac appliance it resets the host's CPUs, which a
 	// powered-off guest leaves busy in macOS (package cpureset, DECISIONS
@@ -722,6 +728,7 @@ func (m *Manager) Run() {
 	}
 	if m.cfg.Owned {
 		// The memory guard (DECISIONS I-1650).
+		m.initOOMSeen()
 		m.wg.Add(1)
 		go m.guardLoop()
 	}
