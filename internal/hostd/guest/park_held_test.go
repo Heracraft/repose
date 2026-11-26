@@ -3,6 +3,7 @@ package guest
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // A Mac holds a parked guest while its save file cannot be restored (the
@@ -29,6 +30,16 @@ func TestParkedGuestHeldUntilItCanBeRestored(t *testing.T) {
 	if fh.record(gid1) == nil || !fh.img.has(gid1) {
 		t.Fatal("held guest lost its record or image")
 	}
+	// The api is told it waits (I-1672), so it is not called not answering.
+	var parked int64
+	for _, gs := range fh.m.CollectSamples(context.Background()).Guests {
+		if gs.GuestId == gid1 {
+			parked = gs.ParkedWaitingSince
+		}
+	}
+	if want := fh.record(gid1).DoneAt.Unix(); parked != want || parked == 0 {
+		t.Fatalf("parked_waiting_since %d, want %d", parked, want)
+	}
 	if ran, _ := fh.m.RestoreHeld(context.Background()); ran {
 		t.Fatal("RestoreHeld ran while CanRestore is false")
 	}
@@ -42,6 +53,11 @@ func TestParkedGuestHeldUntilItCanBeRestored(t *testing.T) {
 	if fh.m.HeldGuests() != 0 {
 		t.Fatal("still held")
 	}
+	for _, gs := range fh.m.CollectSamples(context.Background()).Guests {
+		if gs.GuestId == gid1 && gs.ParkedWaitingSince != 0 {
+			t.Fatal("a restored guest still says it waits")
+		}
+	}
 }
 
 // A guest the Mac cannot park is skipped with its reason, untouched.
@@ -52,5 +68,41 @@ func TestCanParkSkips(t *testing.T) {
 	r := fh.parkOne(gid1)
 	if r.OK || r.Outcome != "skipped" || r.Reason != "started with nobody logged in" || !fh.unitActive(gid1) {
 		t.Fatalf("%+v active=%v", r, fh.unitActive(gid1))
+	}
+}
+
+// A held image past the park's age limit (six hours, I-653, I-1386) is
+// removed and its guest stopped with the reason, even with no session:
+// it never waits for a login forever.
+func TestHeldParkExpiresAfterTheAgeLimit(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.create(gid1)
+	if r := fh.parkOne(gid1); !r.OK {
+		t.Fatalf("park: %+v", r)
+	}
+	fh.m.d.Park.CanRestore = func(context.Context) bool { return false }
+	if err := fh.m.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fh.m.HeldGuests() != 1 {
+		t.Fatal("not held")
+	}
+	if ran, _ := fh.m.RestoreHeld(context.Background()); ran {
+		t.Fatal("restored with no session")
+	}
+	if fh.record(gid1) == nil {
+		t.Fatal("a fresh held image was discarded")
+	}
+	parkedAt := fh.record(gid1).DoneAt
+	fh.m.d.Now = func() time.Time { return parkedAt.Add(6*time.Hour + time.Minute) }
+	_, _ = fh.m.RestoreHeld(context.Background())
+	if fh.record(gid1) != nil || fh.img.has(gid1) {
+		t.Fatal("image kept past the age limit")
+	}
+	if g := fh.guest(gid1); g.State != StateStopped || g.Reason != ReasonHeldTooLong {
+		t.Fatalf("state %s reason %q", g.State, g.Reason)
+	}
+	if fh.m.HeldGuests() != 0 {
+		t.Fatal("still held")
 	}
 }

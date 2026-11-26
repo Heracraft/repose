@@ -15,6 +15,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
+	"github.com/heracraft/repose/internal/hostd/vsockclient"
 )
 
 // The Claude login share (DECISIONS I-278). A user signs in to Claude Code
@@ -377,4 +378,23 @@ func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
 		return err
 	}
 	return os.Rename(tmp, p)
+}
+
+// rebindAuthScript binds the login file again inside the guest: the lazy
+// unmount drops a bind whose inode the restore left stale, and the guest's
+// own script makes it afresh, as at boot (it does nothing without a share).
+const rebindAuthScript = `umount -l /home/dev/.claude/.credentials.json 2>/dev/null; exec /usr/local/libexec/repose/repose-claude-auth`
+
+// rebindAuthShare runs after a restore of a guest with the login share on
+// a host whose hypervisor shares the directory itself (a Mac): there the
+// guest's bind of ~/.claude/.credentials.json went stale across a VZ
+// restore while the directory still worked (DECISIONS I-1666). Best
+// effort: a failure leaves the share's directory as it was.
+func (m *Manager) rebindAuthShare(ctx context.Context, g *state.Guest, sess vsockclient.Session) {
+	if !m.d.DirectAuthShare || !m.argsHaveAuthShare(g.GuestID) || sess == nil {
+		return
+	}
+	if r, err := sess.Exec(ctx, []string{"/bin/sh", "-c", rebindAuthScript}, 20, ""); err != nil || r.GetExitCode() != 0 {
+		m.log(g).Warn("login file not bound again after the restore", "event", "auth_share")
+	}
 }
