@@ -264,8 +264,13 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// be out of reach of an ssh until someone unlocks it. There it rests
 	// by pause: its memory stays held, and any connection wakes it.
 	lockOff := cachedLockOff(r, uid, u.name)
+	// And only when macOS is short of memory: a rest by pause wakes on
+	// the first ssh in 1.19 s end to end, a rest by save in 2.8-2.95 s (a
+	// 12 GiB machine, its restore 1.44-1.47 s), so a machine gives its
+	// memory back only when the Mac needs it (I-1666).
+	memInfo := d.MemInfo
 	d.RestBySave = func(ctx context.Context, id string) bool {
-		return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked() && lockOff(ctx)
+		return memoryTight(memInfo) && ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked() && lockOff(ctx)
 	}
 	d.Park.CanPark = func(ctx context.Context, id string) (bool, string) {
 		if ld.Domain(ctx, guest.GuestUnit(id)) == launchd.SystemDomain {
@@ -404,7 +409,10 @@ func cachedLockOff(r shell.Runner, uid int, name string) func(context.Context) b
 }
 
 // macGuestMemMiB is each machine's configured memory: the flag when set,
-// else half the Mac's memory up to 12 GiB. Measured on the M4 (24 GiB),
+// else half the Mac's memory up to 8 GiB: restore (every wake from a rest
+// by save, every unpark) 1.70 s at 8 GiB against 2.08 at 12, and three
+// Go builds at once peaked at 3.4-4.9 GB a 12 GiB machine, so 8 holds
+// them (DECISIONS I-1666). Measured on the M4 (24 GiB),
 // with 1 GiB touched: 12 GiB costs 0.56 s more per wake (restore 2.07 s
 // against 1.52 s at 6 GiB, n=5 each), 1.5 s more per save and about 126 MB
 // more held idle, and doubles what one machine can use (DECISIONS I-1666).
@@ -413,7 +421,7 @@ func macGuestMemMiB(flag, totalBytes uint64) uint64 {
 		return flag
 	}
 	half := totalBytes / 2 >> 20
-	return min(half-half%128, 12288)
+	return min(half-half%128, 8192)
 }
 
 // storedSnapshots lists the store paths a local snapshot directory holds
@@ -464,4 +472,19 @@ func macGuestVCPUs(flag uint, cores uint32) uint32 {
 		return uint32(flag)
 	}
 	return max(cores/2, 2)
+}
+
+// memoryTight reports whether macOS has less than a quarter of its memory
+// free (vm_stat's free, inactive, speculative and purgeable pages), the
+// point from which a resting machine gives its memory back. An unreadable
+// figure is tight: the save returns memory, which is never wrong.
+func memoryTight(memInfo func() (uint64, uint64, error)) bool {
+	if memInfo == nil {
+		return true
+	}
+	total, avail, err := memInfo()
+	if err != nil || total == 0 {
+		return true
+	}
+	return avail < total/4
 }

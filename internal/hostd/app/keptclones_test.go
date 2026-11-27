@@ -16,3 +16,18 @@ func TestNewestPerProject(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestMemoryTight(t *testing.T) {
+	mi := func(total, avail uint64) func() (uint64, uint64, error) {
+		return func() (uint64, uint64, error) { return total, avail, nil }
+	}
+	if memoryTight(mi(24<<30, 18<<30)) {
+		t.Fatal("18 of 24 GiB free read as tight")
+	}
+	if !memoryTight(mi(24<<30, 5<<30)) {
+		t.Fatal("5 of 24 GiB free read as not tight")
+	}
+	if !memoryTight(nil) {
+		t.Fatal("no reading read as not tight")
+	}
+}
