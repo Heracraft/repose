@@ -225,7 +225,7 @@ nothing is lost by waiting. This was written after the release of
      merely contains `Docs`; `just fast-check` and `release-queue add` run this same selector, DECISIONS I-1456); the
      `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
      `200` for every URL the CLI fetches on a customer's machine (the
-     appliance image the batch pins and its checksum, vfkit, the latest
+     Mac bundle the batch pins with its signed manifest (I-1686), the latest
      CLI release's six assets, `install.sh`) and what hosts fetch (the
      newest `guest-*` release's files, a file over 2 GiB in `.partN` parts and the newest
      `hostd-<version>` release's manifest, I-1500, I-1496), and exits 1 naming the one that does not
@@ -475,9 +475,22 @@ job signs `checksums.txt`, attests the archives and publishes the draft
 (DECISIONS I-430). A tag whose `sign` job fails leaves a draft that
 install.sh never sees; fix the cause and re-run the job from the Actions
 page. The job also fails before the publish when an asset the tag's code
-fetches at run time (the appliance image it pins, its checksum, vfkit)
+fetches at run time (the Mac bundle it pins and its signed manifest)
 does not answer 200 to an anonymous client, and after it when the
 published release's own assets do not (`ops/dev/release-assets`, I-1398).
+
+**The Mac's bundle comes before the CLI that pins it** (DECISIONS
+I-1686). `repose host add` on a Mac installs the `hostd-<version>` release
+that `macHostVersion` in `internal/cli/machost.go` names, so that release
+is published first: push the tag `appliance-<macHostVersion>` on the
+commit the batch ships (`.github/workflows/appliance-image.yml` builds the
+bundle on a macOS runner, twice, to the same bytes, and publishes it with
+hostd for Linux and both signed manifests as `hostd-<macHostVersion>`).
+Until it is published, `ops/dev/release-assets` (and so `release-queue
+add` and `release.yml`) fails naming that release; nothing else does. A
+batch that changes nothing of the Mac's keeps the pin, and an
+`appliance-*` tag with a newer version reaches every Mac through its
+updater within 30 minutes with no CLI release at all.
 
 **Only a CLI release is "latest".** `install.sh` and `repose version
 update` turn "latest" into a tag by following `releases/latest`, so a

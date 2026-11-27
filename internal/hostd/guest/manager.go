@@ -568,6 +568,10 @@ type Deps struct {
 	// budget: a Mac, where a VM is one process and D1's launcher
 	// relaunched its VM. False on Linux: the machine goes to error.
 	RestartOnExit bool
+	// RestartHost restarts the machine hostd runs on, for RestartHost
+	// after every guest is parked (DECISIONS I-1690). Nil on Linux, where
+	// RestartHost is refused.
+	RestartHost func(ctx context.Context) error
 	// SnapshotClones keeps each snapshot's frozen volume as a clone
 	// (KeptCloneName) and restores from it when it is there: volumes are
 	// APFS files, where a clone costs nothing until either side is
@@ -1366,6 +1370,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "SetBurst"
 	case *hostdv1.Command_DeleteSnapshot:
 		return "DeleteSnapshot"
+	case *hostdv1.Command_RestartHost:
+		return "RestartHost"
 	}
 	return ""
 }
@@ -1733,6 +1739,9 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
 	case *hostdv1.Command_DeleteSnapshot:
 		return payloadOrErr(id, m.deleteSnapshot(ctx, c.DeleteSnapshot), nil)
+	case *hostdv1.Command_RestartHost:
+		r, err := m.restartHost(ctx, c.RestartHost)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Restart{Restart: r} })
 	case *hostdv1.Command_SetTriggers:
 		return payloadOrErr(id, m.setTriggers(ctx, c.SetTriggers), nil)
 	case *hostdv1.Command_RunTrigger:

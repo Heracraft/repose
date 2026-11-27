@@ -235,6 +235,11 @@ const SkipParked = "guest already parked"
 // unlocks it (lab Mac, 2026-11-27; DECISIONS I-1682).
 const SkipLocked = "this Mac's screen is locked"
 
+// ReasonHeldForUnlock is an unpark result's reason (outcome "held") for a
+// guest whose restore the Mac refused because its session could not
+// restore a save file at that moment; it is restored at the unlock.
+const ReasonHeldForUnlock = "waits for the Mac's session to be unlocked"
+
 // Fixed park reasons, the record's Reason.
 const (
 	ParkShutdown       = "shutdown"
@@ -1735,8 +1740,27 @@ func (m *Manager) unparkGuest(ctx context.Context, p *unparkPrep) ParkResult {
 	}
 	phase("image_open")
 	if err := m.restoreGuest(ctx, g, rec); err != nil {
-		m.log(g).Warn("restore failed; the guest starts cold", "event", "guest_unpark", "err", err.Error())
 		m.teardown(context.WithoutCancel(ctx), g)
+		if cr := m.d.Park.CanRestore; cr != nil && !cr(ctx) {
+			// A Mac whose session locked after it was read: VZ refuses the
+			// save file until the unlock (I-1662). The image is as good as
+			// one never tried, so it is held for RestoreHeld like one, and
+			// the machine keeps its memory (vz_test.go).
+			if err := m.d.Park.Image.Close(ctx, id, m.imageMount(id)); err != nil {
+				m.log(g).Warn("image not closed after a refused restore", "event", "guest_unpark", "err", err.Error())
+			}
+			m.mu.Lock()
+			if m.held == nil {
+				m.held = map[string]bool{}
+			}
+			m.held[id] = true
+			m.mu.Unlock()
+			m.log(g).Warn("restore refused while the session cannot restore; held until it can", "event", "guest_unpark", "err", err.Error())
+			res.Outcome, res.Reason = "held", ReasonHeldForUnlock
+			res.Ms = m.d.Now().Sub(p.start).Milliseconds()
+			return res
+		}
+		m.log(g).Warn("restore failed; the guest starts cold", "event", "guest_unpark", "err", err.Error())
 		return discard("restore failed")
 	}
 	phase("restore")

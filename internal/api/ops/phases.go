@@ -36,6 +36,9 @@ const (
 	PhaseUpdateSecrets = "update_secrets"
 	PhaseExec          = "exec"
 	PhaseDrain         = "drain"
+	// PhaseRestartHost parks every machine on an owned host and restarts
+	// it (DECISIONS I-1690).
+	PhaseRestartHost = "restart_host"
 	// PhaseWake resumes a machine that rests, before the first phase of
 	// the plan that reaches its guest (DECISIONS I-818). It is a phase,
 	// not an op: the engine allows one open op per project and the wake
@@ -60,6 +63,10 @@ const (
 	KindUpdateSecrets = "update_secrets"
 	KindExec          = "exec"
 	KindDrain         = "drain"
+	// KindHostRestart is a user's restart of a host of their own that
+	// parks its machines first (DECISIONS I-1690): a Mac without the
+	// appliance, which names `restart` in Hello.features.
+	KindHostRestart = "host_restart"
 	// KindWake is a wake on its own (DECISIONS I-1642): a user route in
 	// the http process, which holds no host's stream, asks for one the way
 	// `repose start` asks for a start, and the process that holds the
@@ -270,6 +277,9 @@ func PlanWake() []string { return []string{PhaseWake} }
 // PlanDrain drains a host.
 func PlanDrain() []string { return []string{PhaseDrain} }
 
+// PlanHostRestart is the one RestartHost (DECISIONS I-1690).
+func PlanHostRestart() []string { return []string{PhaseRestartHost} }
+
 // delivery is what CreateGuest, StartGuest and Restore carry (I-26).
 type delivery struct {
 	secrets    []*hostdv1.Secret
@@ -442,6 +452,13 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 			return nil, uuid.Nil, false, errors.New("drain op has no host")
 		}
 		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Drain{Drain: &hostdv1.Drain{}}}, *op.HostID, false, nil
+	}
+	if phase == PhaseRestartHost {
+		if op.HostID == nil {
+			return nil, uuid.Nil, false, errors.New("host restart op has no host")
+		}
+		force, _ := op.Params["force"].(bool)
+		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_RestartHost{RestartHost: &hostdv1.RestartHost{Force: force}}}, *op.HostID, false, nil
 	}
 	p, u, err := e.projectAndUser(ctx, op)
 	if err != nil {
@@ -1277,6 +1294,9 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 	if phase == PhaseDrain {
 		_, err := e.pool.Exec(ctx, "update hosts set draining = true, state = case when state = 'ready' then 'draining' else state end where id = $1", *op.HostID)
 		return err
+	}
+	if phase == PhaseRestartHost {
+		return e.onRestartHost(ctx, op, res.GetRestart())
 	}
 	p, u, err := e.projectAndUser(ctx, op)
 	if err != nil {

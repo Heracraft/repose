@@ -469,6 +469,10 @@ type op struct {
 	// lines is the op's log when it is not the Nix build's buildLines:
 	// an erofs menu's ApplyMenu lines (I-1460).
 	lines []string
+	// hostID and errCode are a host op's (a host restart, I-1690): the
+	// host it is on, and its error's code.
+	hostID  string
+	errCode string
 }
 
 type cert struct {

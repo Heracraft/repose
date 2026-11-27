@@ -26,6 +26,14 @@ func TestReleaseKeyIsTheSameInInstallShAndTheCLI(t *testing.T) {
 	if shKey != goKey {
 		t.Errorf("install.sh carries\n%s\nand internal/cli carries\n%s", shKey, goKey)
 	}
+	// The Mac's updater and `repose host add` check manifest-darwin.json
+	// with the same key (DECISIONS I-1686).
+	macKey := extract(t,
+		filepath.Join(root, "internal/machost/manifest.go"),
+		regexp.MustCompile("(?s)ReleasePubKeyPEM = `(-----BEGIN PUBLIC KEY-----.*?-----END PUBLIC KEY-----)`"))
+	if shKey != macKey {
+		t.Errorf("install.sh carries\n%s\nand internal/machost carries\n%s", shKey, macKey)
+	}
 }
 
 func extract(t *testing.T, path string, re *regexp.Regexp) string {

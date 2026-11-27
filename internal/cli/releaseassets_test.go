@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/heracraft/repose/internal/machost"
 )
 
 // The URLs this package fetches on a customer's machine must answer 200 to
@@ -37,8 +40,9 @@ import (
 //
 // Overrides, for showing it red and for checking a tag that is not the
 // latest one:
-//   - REPOSE_RELEASE_ASSETS_APPLIANCE=<version>: the appliance version to
-//     check instead of applianceVersion.
+//   - REPOSE_RELEASE_ASSETS_MAC=<version>|none: the hostd release whose
+//     manifest-darwin.json and bundle `repose host add` installs on a Mac,
+//     instead of macHostVersion (DECISIONS I-1684, I-1686).
 //   - REPOSE_RELEASE_ASSETS_CLI=latest|none|v0.1.N: which CLI release to
 //     check (default latest). A tag also requires releases/latest to
 //     resolve to it, since that is what a customer gets.
@@ -54,27 +58,18 @@ import (
 //     updates from (DECISIONS I-1496): ops/dev/release-assets passes the
 //     newest hostd-* release that carries one. Unset is "none".
 //
-// The appliance image is the one the code pins (applianceURL), so the
-// switch from .raw.gz to .raw.zst is a change of that constant, not of
-// this check; the size floor follows the suffix. REPOSE_RELEASE_ASSETS_APPLIANCE=none
-// skips the image and its checksum.
+// The Mac's bundle is the one the code pins (macHostVersion): its
+// manifest must verify against the release key and name a bundle that
+// answers, matches its checksum and unpacks.
 
 const (
-	envReleaseAssets          = "REPOSE_RELEASE_ASSETS"
-	envReleaseAssetsAppliance = "REPOSE_RELEASE_ASSETS_APPLIANCE"
-	envReleaseAssetsCLI       = "REPOSE_RELEASE_ASSETS_CLI"
-	envReleaseAssetsInstall   = "REPOSE_RELEASE_ASSETS_INSTALL"
-	envReleaseAssetsGuest     = "REPOSE_RELEASE_ASSETS_GUEST"
-	envReleaseAssetsHostd     = "REPOSE_RELEASE_ASSETS_HOSTD"
-	installScriptURL          = "https://repose.run/install.sh"
-	// applianceImageMinBytes: the Nix image is about 2 GB compressed
-	// (2,081,526,806 bytes for 2026.11.19); an asset under this is a
-	// placeholder or a broken upload, not the image.
-	applianceImageMinBytes = 1 << 30
-	// applianceZstMinBytes: the Debian appliance (.raw.zst) is 84,275,749
-	// bytes for 2026.11.22 (DECISIONS I-1494); under 50 MiB is a
-	// placeholder or a broken upload, not the image.
-	applianceZstMinBytes = 50 << 20
+	envReleaseAssets        = "REPOSE_RELEASE_ASSETS"
+	envReleaseAssetsMac     = "REPOSE_RELEASE_ASSETS_MAC"
+	envReleaseAssetsCLI     = "REPOSE_RELEASE_ASSETS_CLI"
+	envReleaseAssetsInstall = "REPOSE_RELEASE_ASSETS_INSTALL"
+	envReleaseAssetsGuest   = "REPOSE_RELEASE_ASSETS_GUEST"
+	envReleaseAssetsHostd   = "REPOSE_RELEASE_ASSETS_HOSTD"
+	installScriptURL        = "https://repose.run/install.sh"
 	// guestFileMinBytes: the smallest of a guest bundle's files is the
 	// initramfs, a few MiB; a file under 1 MiB is a placeholder.
 	guestFileMinBytes = 1 << 20
@@ -102,15 +97,8 @@ func TestReleaseAssetsAnswerAnonymously(t *testing.T) {
 	c := &releaseAssetCheck{t: t, client: anonymousClient(), noRedirect: anonymousClient()}
 	c.noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-	if version := envOr(envReleaseAssetsAppliance, applianceVersion); version != "none" {
-		c.appliance(ctx, version)
-	}
-
-	if body, ok := c.get(ctx, vfkitURL, "vfkit", "bump vfkitVersion and vfkitSHA256 in internal/cli/appliance.go to a published release"); ok {
-		sum := sha256.Sum256(body)
-		if got := hex.EncodeToString(sum[:]); got != vfkitSHA256 {
-			c.fail("%s: checksum %s, not the %s the code pins; every host add would refuse it", vfkitURL, got, vfkitSHA256)
-		}
+	if version := envOr(envReleaseAssetsMac, macHostVersion); version != "none" {
+		c.macHost(ctx, version)
 	}
 
 	switch v := envOr(envReleaseAssetsGuest, "none"); v {
@@ -156,26 +144,38 @@ func TestReleaseAssetsAnswerAnonymously(t *testing.T) {
 	fmt.Printf("%d assets answer 200 anonymously\n", c.checked)
 }
 
-// appliance checks the image `repose host add` fetches and its .sha256,
-// at the version the code pins or the one asked for.
-func (c *releaseAssetCheck) appliance(ctx context.Context, version string) {
-	image := strings.Replace(applianceURL, applianceVersion, version, 1)
-	if version != applianceVersion {
-		fmt.Printf("appliance %s (the shipped code pins %s)\n", version, applianceVersion)
+// macHost checks what `repose host add` fetches on a Mac: the pinned
+// release's manifest-darwin.json, signed by the release key, and the
+// bundle it names, whole, matching its checksum (DECISIONS I-1686).
+func (c *releaseAssetCheck) macHost(ctx context.Context, version string) {
+	if version != macHostVersion {
+		fmt.Printf("mac host %s (the shipped code pins %s)\n", version, macHostVersion)
 	}
-	floor := int64(applianceImageMinBytes)
-	if strings.HasSuffix(image, ".zst") {
-		floor = applianceZstMinBytes
+	fix := "publish it: an appliance-" + version + " tag runs the mac and hostd jobs in .github/workflows/appliance-image.yml"
+	body, ok := c.get(ctx, machost.ManifestURL(version), "the Mac's manifest", fix)
+	if !ok {
+		return
 	}
-	fix := `publish it: docs/ops/RUNBOOK.md "The Mac appliance image and install line"`
-	if n, ok := c.head(ctx, image, "the appliance image", fix); ok && n < floor {
-		c.fail("%s is %d bytes, under the %d an image has; the upload is not the image", image, n, floor)
+	m, err := machost.ParseManifest(body, machost.ReleasePubKeyPEM)
+	if err != nil {
+		c.fail("%s: %v; every Mac would refuse it", machost.ManifestURL(version), err)
+		return
 	}
-	if body, ok := c.get(ctx, image+".sha256", "the appliance image's checksum", fix); ok {
-		f := strings.Fields(string(body))
-		if len(f) == 0 || !hex64.MatchString(f[0]) {
-			c.fail("%s.sha256 does not hold a SHA-256 (%q)", image, firstLineOf(body))
-		}
+	if m.Version != version {
+		c.fail("%s names %s, not %s", machost.ManifestURL(version), m.Version, version)
+	}
+	b, ok := c.get(ctx, m.Darwin.ARM64.URL, "the Mac's bundle", fix)
+	if !ok {
+		return
+	}
+	sum := sha256.Sum256(b)
+	if got := hex.EncodeToString(sum[:]); got != m.Darwin.ARM64.SHA256 {
+		c.fail("%s: checksum %s, not the manifest's %s", m.Darwin.ARM64.URL, got, m.Darwin.ARM64.SHA256)
+		return
+	}
+	dir := filepath.Join(c.t.TempDir(), "bundle")
+	if v, err := machost.ExtractBundle(bytes.NewReader(b), dir); err != nil || v != version {
+		c.fail("%s does not unpack as bundle %s: %v", m.Darwin.ARM64.URL, version, err)
 	}
 }
 
@@ -524,8 +524,6 @@ func anonymousClient() *http.Client {
 // how the check goes quiet while the code fetches something new.
 func TestReleaseAssetURLsAreAllChecked(t *testing.T) {
 	covered := map[string]bool{
-		"appliance.go:applianceURL":           true, // the image and its .sha256
-		"appliance.go:vfkitURL":               true,
 		"versionupdate.go:releaseLatestURL":   true,
 		"versionupdate.go:releaseDownloadURL": true,
 	}

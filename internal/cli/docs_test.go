@@ -43,6 +43,10 @@ var hiddenCommands = map[string]string{
 	// Removed in v0.1.45 (I-1082): hidden for one release, it prints
 	// where to go and exits 2, and v0.1.46 deletes it.
 	"repose fork": "removed in v0.1.45; prints where to go",
+	// What design 1's appliance job ran at every boot (I-1376); on a Mac
+	// that still has that job it says what to do, once, in the job's log
+	// (I-1684). Nobody types it.
+	"repose host run": "run by design 1's leftover launchd job; prints what to do",
 	// What a git or npm user types for the CLI's settings; each only
 	// says those are config.toml keys (I-622).
 	"repose config set": "answers that the CLI's settings are config.toml keys",
@@ -89,18 +93,17 @@ var undocumentedFlags = map[string]string{
 
 // internalEnvVars are REPOSE_* names the package reads that no user sets.
 var internalEnvVars = map[string]string{
-	"REPOSE_SESSION":         "the session helper's options, set by the CLI for its own child (session.go)",
-	"REPOSE_SSH_PREPARED":    "set by the CLI for its own ssh, so ssh-prepare skips work already done (sshprepare.go)",
-	"REPOSE_DEVSHELL_QUIET":  "set in the guest by the exec script for the dev-shell loader, never read on the laptop (exec.go)",
-	"REPOSE_TEST_GOOS":       "tests only: pretend to be another OS (goos())",
-	"REPOSE_CLAUDE_PLATFORM": "tests only: the guest's platform settings path in the Claude merge script",
-	"REPOSE_ENV_GEN":         "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
-	"REPOSE_CARRY_EARLY":     "set in the guest by a first sync's apply for the carry it runs in the background, never read on the laptop (sync_prefetch.go, DECISIONS I-743)",
-	"REPOSE_CHECKOUT":        "never read: part of @@REPOSE_CHECKOUT@@, the placeholder the MCP carry's guest script replaces (carry_mcp.go, DECISIONS I-556)",
-	"REPOSE_APPLIANCE_URL":   "a lab knob: where `repose host add` on a Mac fetches the appliance image instead of the published release (appliance.go, research doc §9, RUNBOOK); no Mac owner sets it",
-	"REPOSE_VFKIT_URL":       "a lab knob: where the appliance install fetches vfkit instead of the pinned release (appliance.go)",
-	"REPOSE_VFKIT_SHA256":    "a lab knob: the checksum that goes with REPOSE_VFKIT_URL (appliance.go)",
-	"REPOSE_PAYLOAD":         "never read: a variable the machine sets for a trigger's own session, named in `triggers add`'s example (triggerscmd.go, DECISIONS I-1256); the set is in /docs/triggers",
+	"REPOSE_SESSION":               "the session helper's options, set by the CLI for its own child (session.go)",
+	"REPOSE_SSH_PREPARED":          "set by the CLI for its own ssh, so ssh-prepare skips work already done (sshprepare.go)",
+	"REPOSE_DEVSHELL_QUIET":        "set in the guest by the exec script for the dev-shell loader, never read on the laptop (exec.go)",
+	"REPOSE_TEST_GOOS":             "tests only: pretend to be another OS (goos())",
+	"REPOSE_CLAUDE_PLATFORM":       "tests only: the guest's platform settings path in the Claude merge script",
+	"REPOSE_ENV_GEN":               "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
+	"REPOSE_CARRY_EARLY":           "set in the guest by a first sync's apply for the carry it runs in the background, never read on the laptop (sync_prefetch.go, DECISIONS I-743)",
+	"REPOSE_CHECKOUT":              "never read: part of @@REPOSE_CHECKOUT@@, the placeholder the MCP carry's guest script replaces (carry_mcp.go, DECISIONS I-556)",
+	"REPOSE_MAC_HOST_MANIFEST_URL": "a lab knob: the manifest `repose host add` on a Mac installs from instead of the pinned release's (machost.go, DECISIONS I-1684); no Mac owner sets it",
+	"REPOSE_MAC_HOST_PUBKEY":       "a lab knob: the key that manifest is signed with instead of the release key (machost.go); no Mac owner sets it",
+	"REPOSE_PAYLOAD":               "never read: a variable the machine sets for a trigger's own session, named in `triggers add`'s example (triggerscmd.go, DECISIONS I-1256); the set is in /docs/triggers",
 }
 
 func readCLIDoc(t *testing.T) string {

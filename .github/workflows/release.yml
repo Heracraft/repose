@@ -101,8 +101,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: what this CLI fetches at run time is published
-        # The appliance image this tag's code pins, its checksum and vfkit,
-        # fetched with no credentials as a customer's Mac fetches them.
+        # The Mac bundle this tag's code pins (macHostVersion), its signed
+        # manifest and its checksum, fetched with no credentials as a
+        # customer's Mac fetches them (I-1686).
         # v0.1.51 was published pinning an image whose release did not
         # exist, and `repose host add` answered 404 on every Mac for 47
         # minutes (DECISIONS I-1398). The CLI's own assets are still a

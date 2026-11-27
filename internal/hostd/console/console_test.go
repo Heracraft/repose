@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -73,6 +74,11 @@ func TestRunCopiesSocket(t *testing.T) {
 // thread exits on that error without detaching the socket, after which the
 // guest's console output stalls for good.
 func TestCloseWithUnreadBytesResetsThePeer(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		// Linux's behaviour, and Cloud Hypervisor's bug; macOS hands the
+		// peer EOF, and a Mac's launcher is not Cloud Hypervisor.
+		t.Skip("a Linux kernel behaviour")
+	}
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "s")
 	ln, err := net.Listen("unix", sock)

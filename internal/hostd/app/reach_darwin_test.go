@@ -12,6 +12,13 @@ import (
 // directory). unreachable names the directory that blocks.
 func TestUnreachableNamesTheBlockingDirectory(t *testing.T) {
 	root := t.TempDir()
+	// t.TempDir and the directory Go makes above it are 0700, which would
+	// block on their own.
+	for _, d := range []string{filepath.Dir(root), root} {
+		if err := os.Chmod(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	state := filepath.Join(root, "state")
 	vols := filepath.Join(state, "volumes")
 	if err := os.MkdirAll(vols, 0o755); err != nil {

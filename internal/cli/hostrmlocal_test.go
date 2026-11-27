@@ -22,6 +22,7 @@ func TestHostRmLocalSaysWhatGoesWithIt(t *testing.T) {
 		local  string
 		host   *Host
 		unread bool
+		d2     bool
 		want   []string
 		not    []string
 	}{
@@ -29,7 +30,8 @@ func TestHostRmLocalSaysWhatGoesWithIt(t *testing.T) {
 			name:  "three machines are counted",
 			local: "mac-park3",
 			host:  &Host{Name: "mac-park3", Projects: 3},
-			want:  []string{"mac-park3's appliance on this Mac", "The 3 machines on it cannot be recovered", "their disks are on this Mac"},
+			d2:    true,
+			want:  []string{"Remove mac-park3 from this Mac?", "The 3 machines on it cannot be recovered", "their disks are on this Mac"},
 			not:   []string{"every machine and snapshot"},
 		},
 		{
@@ -57,6 +59,12 @@ func TestHostRmLocalSaysWhatGoesWithIt(t *testing.T) {
 			not:    []string{"cannot be recovered"},
 		},
 		{
+			name:  "repose added with --join has no name to look up",
+			local: "",
+			d2:    true,
+			want:  []string{"Remove repose from this Mac, with every machine and snapshot on its disk?"},
+		},
+		{
 			name:  "an appliance added with --join has no name to look up",
 			local: "",
 			want:  []string{"Remove the appliance on this Mac, with every machine and snapshot on its disk?"},
@@ -65,7 +73,7 @@ func TestHostRmLocalSaysWhatGoesWithIt(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := localRemovePrompt(c.local, c.host, c.unread)
+			got := localRemovePrompt(c.local, c.host, c.unread, c.d2)
 			for _, w := range c.want {
 				if !strings.Contains(got, w) {
 					t.Errorf("prompt does not say %q:\n%s", w, got)
@@ -88,17 +96,17 @@ func TestHostRmLocalSaysWhatGoesWithIt(t *testing.T) {
 // what gets rid of it. Without this the customer has three documented
 // commands that all refuse (ENG-119, ENG-120, ENG-141).
 func TestHostRmLocalNamesTheWayOutOfTheWedge(t *testing.T) {
-	e, _, p := fakeMac(t, 200)
+	e, _, m := newD2Mac(t)
 	var errOut strings.Builder
 	e.ErrOut = &errOut
-	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+	root := m.mapped(macHostPaths.Root)
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := applianceConfig{MemoryMiB: 8192, CPUs: 4, MAC: "aa:bb:cc:dd:ee:ff", HostName: "mac-park3"}
-	if err := os.WriteFile(p.Config, []byte(cfg.String()), 0o644); err != nil {
+	if err := os.WriteFile(m.mapped(macHostPaths.Record()), []byte(`{"host":"mac-park3","user":"dev","uid":501}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(p.Dir, "disk.raw"), []byte("a machine's disk"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "volumes.raw"), []byte("a machine's disk"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -130,8 +138,8 @@ func TestHostRmLocalNamesTheWayOutOfTheWedge(t *testing.T) {
 			t.Errorf("after the removal, nothing says %q:\n%s", w, said)
 		}
 	}
-	if _, err := os.Stat(p.Dir); err == nil {
-		t.Error("the appliance directory is still there")
+	if _, err := os.Stat(root); err == nil {
+		t.Error("repose's directory is still there")
 	}
 }
 
@@ -139,14 +147,14 @@ func TestHostRmLocalNamesTheWayOutOfTheWedge(t *testing.T) {
 // `--local` is the one command that works when the api does not, and
 // that is deliberate (ENG-141).
 func TestHostRmLocalRunsWithNoSession(t *testing.T) {
-	e, _, p := fakeMac(t, 200)
+	e, _, m := newD2Mac(t)
 	var errOut strings.Builder
 	e.ErrOut = &errOut
-	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+	root := m.mapped(macHostPaths.Root)
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := applianceConfig{MemoryMiB: 8192, CPUs: 4, MAC: "aa:bb:cc:dd:ee:ff", HostName: "mac-park3"}
-	if err := os.WriteFile(p.Config, []byte(cfg.String()), 0o644); err != nil {
+	if err := os.WriteFile(m.mapped(macHostPaths.Record()), []byte(`{"host":"mac-park3","user":"dev","uid":501}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -168,7 +176,7 @@ func TestHostRmLocalRunsWithNoSession(t *testing.T) {
 	if errOut.String() != "" {
 		t.Errorf("it told the user about an account it could not read: %q", errOut.String())
 	}
-	if _, err := os.Stat(p.Dir); err == nil {
-		t.Error("the appliance directory is still there")
+	if _, err := os.Stat(root); err == nil {
+		t.Error("repose's directory is still there")
 	}
 }

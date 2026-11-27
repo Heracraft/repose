@@ -36,13 +36,17 @@ mkdir -p "$X/a"
     --cpus boot=2 --memory size=2048M \
     --disk "path=$IMG/rootfs.erofs,image_type=raw,readonly=on,id=vda" --disk "path=$X/vol.img,image_type=raw,id=vdb" \
     --net tap=t0,mac=52:54:00:aa:bb:10 --vsock "cid=3,socket=$X/a/vsock.sock" --serial "socket=$X/a/console.sock" \
-    --balloon size=0 --park-dir "$X/park" > "$X/a.log" 2>&1 < /dev/null & )
+    --park-dir "$X/park" > "$X/a.log" 2>&1 < /dev/null & )
 waitsock "$S" || { echo "FAIL boot: no API socket"; cat "$X/a.log"; exit 1; }
 
 r=$(api "$S" GET vmm.ping); check "GET vmm.ping" 200 "$(code "$r")"
-r=$(api "$S" GET vm.info); check "GET vm.info" 200 "$(code "$r")"; has "vm.info running" '"state":"Running"' "$r"
+for _ in $(seq 1 50); do r=$(api "$S" GET vm.info); case "$r" in *'"state":"Running"'*) break ;; esac; sleep 0.1; done
+check "GET vm.info" 200 "$(code "$r")"; has "vm.info running" '"state":"Running"' "$r"
 r=$(api "$S" PUT vm.resize-disk '{"desired_size":1}'); check "PUT vm.resize-disk refused" 500 "$(code "$r")"
-r=$(api "$S" PUT vm.resize '{"desired_balloon":536870912}'); check "PUT vm.resize (balloon)" 204 "$(code "$r")"
+# hostd gives a Mac VM no balloon (VZ's has no free page reporting), and
+# a VM saved with one did not restore ("invalid argument", lab Mac
+# 2026-11-27), so the resize is refused here.
+r=$(api "$S" PUT vm.resize '{"desired_balloon":536870912}'); check "PUT vm.resize without a balloon refused" 500 "$(code "$r")"
 r=$(api "$S" PUT vm.resize '{}'); check "PUT vm.resize without desired_balloon" 400 "$(code "$r")"
 r=$(api "$S" PUT vm.net-reconnect); check "PUT vm.net-reconnect without a switch port" 500 "$(code "$r")"
 r=$(api "$S" PUT vm.nonsense); check "an unknown verb" 404 "$(code "$r")"
@@ -69,8 +73,10 @@ r=$(api "$S" PUT vm.snapshot "{\"destination_url\":\"file://$X/s1\"}"); check "P
 check "the save and its config" yes "$([ -s "$X/s1/vz.state" ] && [ -s "$X/s1/repose-vm.json" ] && echo yes || echo no)"
 r=$(api "$S" PUT vm.resume); check "PUT vm.resume" 204 "$(code "$r")"
 r=$(api "$S" PUT vm.shutdown); check "PUT vm.shutdown" 204 "$(code "$r")"
+r=$(api "$S" GET vm.info); has "vm.info after vm.shutdown" '"state":"Shutdown"' "$r"
+r=$(api "$S" PUT vmm.shutdown); check "PUT vmm.shutdown" 204 "$(code "$r")"
 gone "$S" && ok=yes || ok=no
-check "the process ends with its VM" yes "$ok"
+check "vmm.shutdown ends the process" yes "$ok"
 
 # A restore comes up paused, as Cloud Hypervisor's does.
 mkdir -p "$X/b"
