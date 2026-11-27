@@ -462,7 +462,7 @@ project is destroyed as a create the host refused is (I-1648), and
 with `detail.reason = "create_refused"`. `DELETE /projects/:id` while it
 waits ends the create (its op `error`, code `cancelled`) and is accepted
 instead of `409 conflict`. A host that has not registered and can no
-longer join is refused as before. An api older than I-1700 refuses every
+longer join is refused as before, since I-1722 with `your host NAME never finished installing, and its join token has expired; ...` (`never finished installing` in the several-host list) in place of `has not registered yet`, which promised a join that cannot come. An api older than I-1700 refuses every
 such create with `503 capacity` `your host NAME has not registered yet`.
 
 `host` (DECISIONS I-1584) pins the create to one host the account owns,

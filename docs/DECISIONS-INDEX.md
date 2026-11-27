@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1179 entries.
+1181 entries.
 
 ## Scope
 
@@ -423,7 +423,7 @@ pointer, not a summary.
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9090
 - **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; amended by I-728; L9105
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9121
-- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; L9140
+- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; amended by I-1720; L9140
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; amended by I-782; L9163
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9190
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9211
@@ -672,7 +672,7 @@ pointer, not a summary.
 - **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17407
 - **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; amended by I-634; L17419
 - **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; amended by I-631; amended by I-633; L17434
-- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; L17459
+- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; amended by I-1722; L17459
 - **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; amended by I-632; amended by I-635; L17495
 - **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17514
 - **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17571
@@ -1211,3 +1211,5 @@ pointer, not a summary.
 - **I-1714** Agents open their own pull requests with `gh pr create --base integrated --label queued --title ... --body-file ...` and write the title; a `pr-record` check on the PR refuses a body or a title that breaks docs/PR.md; `release-queue` keeps the conductor's half, and `add` stays one release with a required `--title` (queue-prs, 2026-11-27) — L39880
 - **I-1716** A signed-in visitor to repose.run goes to the dashboard before the landing paints; the logo shows the landing on purpose (sweep-dash, 2026-11-27) — L39889
 - **I-1718** Dashboard sweep, batch 2: temporary machines' snapshots, Messages to the latest 3, a webhook route's deliveries, the browser view's paste and full screen, and the suite's per-file host reset (sweep-dash, 2026-11-27) — L39895
+- **I-1720** A `repose run` with no terminal, from a folder that is not a git repository, that would make a new machine and names none, is refused with exit 2 before anything is made; named, or with `--temp`, it makes the empty machine as before (sweep-cli, board sweep 2, 2026-11-27) — L39903
+- **I-1722** What the CLI tells a customer about money and about a host that cannot join: `repose login --status` names the next charge or the trial's end beside the plan, and an own host that never registered and whose join token has expired is "never finished installing", not "has not registered yet" (sweep-cli, board sweep 2, 2026-11-27) — L39909

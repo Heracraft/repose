@@ -232,6 +232,12 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		case opts.Sync:
 			// `repose sync` exists to send a checkout (I-358).
 			return exitf(ExitUsage, "This folder is not a git checkout, so there is nothing to sync.")
+		case outcome == gitInitNotAsked && !canAskGitInit() && res.Project == nil && opts.Name == "" && opts.ProjectArg == "" && opts.Temp == 0 && !e.inHome():
+			// No terminal to ask on, and nothing named the machine: a
+			// script in the wrong folder would build one with nothing
+			// synced to it (ENG-30, I-1720). Named, an empty machine is
+			// what was asked for (I-358).
+			return exitf(ExitUsage, "%s isn't a git repository, so a new machine would get nothing from it. Run from your checkout, or name the machine to make an empty one: `repose run NAME`.", filepath.Base(e.Cwd))
 		default:
 			skipSync = true // outside a repository: an empty machine (I-358)
 			noRepo = outcome

@@ -205,6 +205,10 @@ func TestHomeFolderForgetsAnOldLink(t *testing.T) {
 // there makes a new one instead of landing on it while it is destroyed.
 func TestDestroyForgetsLinkedFolders(t *testing.T) {
 	f, _ := homeFixture(t)
+	// From a terminal, a user who declines the git offer: the empty
+	// machine named after the folder (I-358). Without one the unnamed run
+	// is refused (I-1720).
+	gitInitAnswers(t, true, false)
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "job search")
 	if err := os.Mkdir(dir, 0o755); err != nil {

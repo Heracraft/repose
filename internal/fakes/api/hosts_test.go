@@ -266,7 +266,7 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "none of your hosts can start a machine: e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
+	if want := "none of your hosts can start a machine: e2e-x86-1 never finished installing; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 

@@ -221,7 +221,7 @@ func TestCreateWithSeveralOwnHosts(t *testing.T) {
 		t.Fatalf("both hosts down: %d %s, want 503 no_own_host naming e2e-x86-1 first", r.status, r.raw)
 	}
 	msg, _ := r.body["error"].(map[string]any)["message"].(string)
-	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; msg != want {
+	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 never finished installing; e2e-x86-2 has not answered for 14m"; msg != want {
 		t.Fatalf("message %q, want %q", msg, want)
 	}
 
@@ -653,7 +653,7 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 		if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "registering" || d["hosted_allowed"] != true {
 			t.Fatalf("attempt %d while the host waits: %d %s, want 503 capacity no_own_host for mac-mini", attempt, r.status, r.raw)
 		}
-		if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your host mac-mini has not registered yet") {
+		if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != "your host mac-mini never finished installing, and its join token has expired; `repose host rm mac-mini` and `repose host add` start over" {
 			t.Fatalf("attempt %d: message %q does not name the host and its state", attempt, msg)
 		}
 		if n := rows(); n != 0 {

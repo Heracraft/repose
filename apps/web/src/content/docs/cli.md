@@ -438,7 +438,7 @@ A delivered message is an event, so `repose events` and the project page show th
 | `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the snapshot as JSON. |
 | `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after [a question](/docs/lifecycle#snapshots) about whether the restore can be undone. `--as NAME` restores into a new project instead, which starts too and ends as [`repose restore`](#repose-restore-name) does; `-y`/`--yes` skips the question. |
 
-SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only one snapshot has them. `--as-new` is the old name of `--as`.
+SNAPSHOT_ID is the id as `repose snapshots list` shows it, or 4 or more of its first characters, or a whole id or its first or last characters, when only one snapshot has them. `--as-new` is the old name of `--as`.
 
 ## Secrets
 
@@ -533,7 +533,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 
 | Command | What it does |
 | ------- | ------------ |
-| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan (`billing-exempt` for an account that has none and is refused nothing), and exits 3 when you aren't; with `REPOSE_TOKEN` set it prints your handle with the token's name, scopes, project and end, and no plan. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
+| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server, its plan and what it costs next (`Solo plan, trial until 2026-12-04, then $39`, `next charge $39 on 2026-12-04`, or `ends 2026-12-04` once cancelled; `billing-exempt` for an account that has none and is refused nothing), and exits 3 when you aren't; with `REPOSE_TOKEN` set it prints your handle with the token's name, scopes, project and end, and no plan. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
 | `repose logout`                                 | Log out and revoke your SSH certificates; the connections they opened [close within 30 seconds, on any device](/docs/limits#ssh-connections). A failed revoke still logs out on this laptop, says so and exits 1; the certificates stop working within 24 hours. `--purge` also removes [the CLI's files](#files-on-your-laptop). |
 | `repose notify`                                 | Where notifications go: `email: on, to you@example.com`, `ntfy: off` or its URL, `gchat: on, space AAAA...`, `off`, or `broken since 2026-01-02 (Google refused the webhook)`, and `hold: 2m` or `off`. `--json` for JSON. |
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook), `--hold off\|DURATION` ([how long a report waits while you're at the machine](/docs/notifications#while-youre-at-the-machine), an hour at most). |
