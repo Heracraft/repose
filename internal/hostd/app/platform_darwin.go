@@ -91,6 +91,13 @@ func platformFor(o Options) platform {
 				if r, ok := macSession.Load().(*sessionReader); ok && r != nil {
 					lw.step(ctx, r.read(ctx), time.Now(), mgr, log)
 				}
+				if tick%30 == 0 {
+					// The second step of a rest: a machine paused long
+					// enough, or any when macOS is short, is saved.
+					if n := mgr.SaveRests(ctx); n > 0 {
+						log.Info("resting machines saved", "event", "guest_resting", "guests", n)
+					}
+				}
 				if tick%3 != 0 {
 					continue
 				}
@@ -320,6 +327,11 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		d.RestBySave = func(ctx context.Context, id string) bool {
 			return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
 		}
+		// Two steps (I-1682): a pause first, the save after
+		// --mac-rest-save-after, or at once when macOS is short.
+		d.RestSaveAfter = m.RestSaveAfter
+		memInfo := d.MemInfo
+		d.MemoryTight = func() bool { return memoryTight(memInfo) }
 	}
 	d.SessionState = func(ctx context.Context) string {
 		switch s := session(ctx); {
@@ -549,4 +561,19 @@ func unreachable(path string, uid, gid int) string {
 		}
 		p = parent
 	}
+}
+
+// memoryTight reports whether macOS has under a quarter of its memory free
+// (free, inactive, speculative and purgeable pages): then a resting
+// machine is saved at once rather than after --mac-rest-save-after. An
+// unreadable figure is not tight: the save waits for its time.
+func memoryTight(memInfo func() (uint64, uint64, error)) bool {
+	if memInfo == nil {
+		return false
+	}
+	total, avail, err := memInfo()
+	if err != nil || total == 0 {
+		return false
+	}
+	return avail < total/4
 }

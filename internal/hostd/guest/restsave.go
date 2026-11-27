@@ -47,6 +47,11 @@ func (m *Manager) restPause(ctx context.Context, g *state.Guest, sock string) er
 	if m.d.RestBySave == nil || !m.d.RestBySave(ctx, g.GuestID) {
 		return nil
 	}
+	if m.d.RestSaveAfter > 0 && (m.d.MemoryTight == nil || !m.d.MemoryTight()) {
+		// The first step of the rest: a pause. SaveRests saves it once
+		// it has rested RestSaveAfter, or at once when macOS is short.
+		return nil
+	}
 	m.saveRest(ctx, g, sock)
 	return nil
 }
@@ -122,6 +127,11 @@ func (m *Manager) restoreRest(ctx context.Context, g *state.Guest, sock string) 
 		_ = os.Remove(filepath.Join(dir, s)) // the launcher makes them anew
 	}
 	props := GuestUnitProps(m.classOf(g.Class), m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
+	// The save file is read ahead, in large sequential reads, beside the
+	// restore: VZ's own reads of a file macOS no longer caches took 44.8 s
+	// for 4.6 GB on the lab Mac, against 9.8-14.2 s with the read-ahead
+	// and 3.2-4.9 s when it was cached (DECISIONS I-1682).
+	readAhead(m.restDir(g.GuestID))
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, ch.RestoreArgs(dir, m.restDir(g.GuestID))); err != nil {
 		return 0, err
 	}
@@ -214,9 +224,13 @@ func (m *Manager) SaveRests(ctx context.Context) int {
 	if err != nil {
 		return 0
 	}
+	tight := m.d.MemoryTight != nil && m.d.MemoryTight()
 	n := 0
 	for _, g := range gs {
 		if g.Resting == nil || g.State != StateRunning || m.restSaved(g) || !m.d.RestBySave(ctx, g.GuestID) {
+			continue
+		}
+		if !tight && m.d.RestSaveAfter > 0 && m.d.Now().Sub(g.Resting.Since) < m.d.RestSaveAfter {
 			continue
 		}
 		id := g.GuestID
@@ -348,4 +362,32 @@ func (m *Manager) WakeTap(ctx context.Context, tap string) (*hostdv1.WakeResult,
 		}
 	}
 	return nil, errors.New("no guest on that port")
+}
+
+// readAhead reads every file in dir once, in the background, in 8 MiB
+// reads, so macOS caches a save file before VZ's own smaller reads need
+// it (I-1682). Best effort: an error stops the read and nothing else.
+func readAhead(dir string) {
+	des, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, de := range des {
+		if !de.Type().IsRegular() {
+			continue
+		}
+		go func(p string) {
+			f, err := os.Open(p)
+			if err != nil {
+				return
+			}
+			defer func() { _ = f.Close() }()
+			buf := make([]byte, 8<<20)
+			for {
+				if _, err := f.Read(buf); err != nil {
+					return
+				}
+			}
+		}(filepath.Join(dir, de.Name()))
+	}
 }

@@ -2324,6 +2324,12 @@ func (f *Fake) internalWake(w http.ResponseWriter, r *http.Request) *apiError {
 		return notFound("project")
 	}
 	f.wakes++
+	if d := f.wakeDelay; d > 0 {
+		// Under f.mu (ServeHTTP), as the real wake holds the request.
+		f.mu.Unlock()
+		time.Sleep(d)
+		f.mu.Lock()
+	}
 	if f.wakeFails {
 		return errf("internal", "%s did not wake", p.Slug)
 	}

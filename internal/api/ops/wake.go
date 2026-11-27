@@ -10,11 +10,12 @@ import (
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
-// WakeWait is how long Wake waits for its op. A wake answers in well
-// under a second once sent; the rest is the op reaching the process that
+// WakeWait is how long Wake waits for its op. A pause's wake answers in
+// well under a second once sent, a Mac's rest by save in up to tens of
+// seconds (I-1696); the rest is the op reaching the process that
 // drives it, and an op the project already had open, which the wake
 // queues behind.
-const WakeWait = 30 * time.Second
+const WakeWait = 120 * time.Second
 
 // ErrWakeNoHost is a wake whose host is not connected: the phase was
 // skipped and the machine still rests.

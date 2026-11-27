@@ -1016,3 +1016,53 @@ func TestBuildPacingReuseAndQueueFullBackpressure(t *testing.T) {
 		t.Fatalf("revision after retry: %s", rev.Status)
 	}
 }
+
+// DECISIONS I-1696: a restore into a project with no host goes where the
+// snapshot is. A snapshot taken on repose's servers is in repose's store,
+// so its copy goes to the fleet even for an account whose placement is its
+// own Mac (review-cli 2026-11-27 08:51Z: it landed on the Mac and failed
+// "not in the store"); one taken on the account's own host goes back to
+// that host.
+func TestRestoreAsNewGoesWhereTheSnapshotIs(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("rhea")
+	p := h.CreateRunning(u, "fleetapp")
+	pid := p.ID
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Phases: ops.PlanStop()}))
+	if op.State != "done" || op.SnapshotID == nil {
+		t.Fatalf("stop: %+v", op.Error)
+	}
+	sid := *op.SnapshotID
+	fleet := h.HostID
+	mac, _ := h.AddHost(t, "e2e-mac", fakehostd.Options{})
+	if _, err := h.Pool.Exec(h.Ctx, "update hosts set owner_account_id = $1 where id = $2", u.ID, mac); err != nil {
+		t.Fatal(err)
+	}
+	restoreInto := func(slug string, snap uuid.UUID) *store.Project {
+		// The fake hosts number their guests alike; addresses are per
+		// host on real ones.
+		if _, err := h.Pool.Exec(h.Ctx, "update projects set guest_ip = null where user_id = $1", u.ID); err != nil {
+			t.Fatal(err)
+		}
+		nid := store.NewID()
+		if _, err := h.Pool.Exec(h.Ctx, `insert into projects (id, user_id, name, slug, class, state, volume_bytes, placement)
+			values ($1, $2, $3, $3, 'small', 'stopped', $4, 'own')`, nid, u.ID, slug, p.VolumeBytes); err != nil {
+			t.Fatal(err)
+		}
+		if rop := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindRestore, ProjectID: &nid, SnapshotID: &snap, Phases: []string{ops.PhaseRestore}})); rop.State != "done" {
+			t.Fatalf("restore %s: %+v", slug, rop.Error)
+		}
+		return h.Project(nid)
+	}
+	got := restoreInto("fleetcopy", sid)
+	if got.HostID == nil || *got.HostID != fleet {
+		t.Fatalf("a fleet snapshot's copy went to %v, want the fleet host %s (not the Mac %s)", got.HostID, fleet, mac)
+	}
+
+	if _, err := h.Pool.Exec(h.Ctx, "update snapshots set host_id = $2 where id = $1", sid, mac); err != nil {
+		t.Fatal(err)
+	}
+	if got := restoreInto("maccopy", sid); got.HostID == nil || *got.HostID != mac {
+		t.Fatalf("a snapshot on the Mac's disk was restored on %v, want the Mac %s", got.HostID, mac)
+	}
+}

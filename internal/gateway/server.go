@@ -100,9 +100,10 @@ type Config struct {
 	// be resumed, before and on top of DialTimeout (DECISIONS I-818).
 	// Separate on purpose: a wake held inside DialTimeout would eat the
 	// handshake's share of it, so a 4 s wake would halve the budget the
-	// SSH handshake is measured against. It is under the api client's own
-	// timeout (10 s in cmd/gateway), so a slow wake fails with this
-	// deadline rather than with an HTTP one.
+	// SSH handshake is measured against. 125 s: over the api's own 120 s
+	// wake deadline, because a Mac's rest by save is a restore of up to
+	// tens of seconds and at 8 s the first ssh failed (I-1696). The api
+	// client's wake call has no deadline of its own but this one.
 	WakeTimeout time.Duration
 	Keepalive   time.Duration
 	SessionCap  time.Duration
@@ -180,7 +181,7 @@ func New(cfg Config) (*Gateway, error) {
 		cfg.DialTimeout = 10 * time.Second
 	}
 	if cfg.WakeTimeout == 0 {
-		cfg.WakeTimeout = 8 * time.Second
+		cfg.WakeTimeout = 125 * time.Second
 	}
 	if cfg.Keepalive == 0 {
 		cfg.Keepalive = 30 * time.Second

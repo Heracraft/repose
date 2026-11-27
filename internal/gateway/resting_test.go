@@ -135,3 +135,29 @@ func TestWakeGroupAsksOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// DECISIONS I-1696: a Mac's rest by save wakes by restoring the machine
+// from its save, 9 to 31 s after builds on the lab Mac, and the first ssh
+// to each of three such machines failed (rc 255 after 8.1-8.2 s, d2-lab
+// 2026-11-27 09:15Z): the wake waited 8 s, under an api client timeout of
+// 10. The wake now waits as long as the api's own deadline allows, past
+// the client's timeout for every other call.
+func TestDialWaitsForASlowWake(t *testing.T) {
+	h := newHarness(t, harnessOpts{apiTimeout: time.Second})
+	_, key := genKey(t)
+	cert := h.userCert(t, key, []string{h.project.ID}, time.Hour)
+	since := time.Now().Add(-20 * time.Minute)
+	if err := h.api.SetResting(h.project.ID, &since); err != nil {
+		t.Fatal(err)
+	}
+	h.api.SetWakeDelay(2500 * time.Millisecond)
+	c, banner, err := h.dial(h.login, cert)
+	if err != nil {
+		t.Fatalf("dial: %v (banner %q)", err, banner)
+	}
+	defer func() { _ = c.Close() }()
+	out, errb, status := run(t, c, "echo restored")
+	if out != "restored\n" || status != 0 {
+		t.Fatalf("first command after a slow wake: %q %q %d", out, errb, status)
+	}
+}

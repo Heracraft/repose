@@ -194,6 +194,9 @@ type Fake struct {
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
+	// wakeDelay is how long POST /internal/wake takes, as a Mac's
+	// restore from a rest save does (I-1696).
+	wakeDelay time.Duration
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests;
 	// userWakes counts POST /projects/:id/wake (I-1682).
 	userWakes int

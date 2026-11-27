@@ -1035,10 +1035,35 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 		hostID = uuid.MustParse(to)
 	}
 	if hostID == uuid.Nil {
+		// Where the snapshot is decides where it can be restored
+		// (DECISIONS I-1696): one taken on a host the account owns is on
+		// that host's own disk (I-1372), so only that host can restore
+		// it; one taken on repose's servers is in repose's store, which
+		// only those servers read. The project's placement used to
+		// decide, and a fleet snapshot restored `--as` landed on the
+		// account's Mac and failed "not in the store" (review-cli,
+		// 2026-11-27 08:51Z).
+		local, fleet, perr := e.snapshotHome(ctx, snap)
+		if perr != nil {
+			return nil, uuid.Nil, false, perr
+		}
+		if local != uuid.Nil {
+			h, err := store.GetHost(ctx, e.pool, local)
+			if err != nil || h.State != "ready" || h.Draining {
+				return nil, uuid.Nil, false, &opError{code: "unavailable", msg: "this snapshot is kept on " + hostName(h) + ", which is not connected; it restores there once that host is back"}
+			}
+			hostID = local
+		}
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
+			if hostID != uuid.Nil {
+				return nil
+			}
 			t, err := e.target(ctx, tx, p)
 			if err != nil {
 				return err
+			}
+			if fleet {
+				t.Hosted = true
 			}
 			pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 			if err != nil {
@@ -1715,6 +1740,35 @@ func vmSizeOf(v *hostdv1.VmSize) *store.VMSize {
 		return nil
 	}
 	return &store.VMSize{VCPUs: v.Vcpus, MemMiB: v.MemMib, FullVCPUs: max(v.FullVcpus, v.Vcpus), FullMemMiB: max(v.FullMemMib, v.MemMib)}
+}
+
+// snapshotHome is where snap can be restored from: local is the host of
+// the account's own whose disk holds it (I-1372), fleet whether it is in
+// repose's store, which only repose's servers read (DECISIONS I-1696). A
+// snapshot from before host_id was recorded is the fleet's.
+func (e *Engine) snapshotHome(ctx context.Context, snap *store.Snapshot) (local uuid.UUID, fleet bool, err error) {
+	if snap.HostID == nil {
+		return uuid.Nil, true, nil
+	}
+	var owner *uuid.UUID
+	if err := e.pool.QueryRow(ctx, "select owner_account_id from hosts where id = $1", *snap.HostID).Scan(&owner); err != nil {
+		if db.IsNoRows(err) {
+			return uuid.Nil, true, nil
+		}
+		return uuid.Nil, false, err
+	}
+	if owner != nil {
+		return *snap.HostID, false, nil
+	}
+	return uuid.Nil, true, nil
+}
+
+// hostName is "your host NAME" for a sentence, "your host" when unknown.
+func hostName(h *store.Host) string {
+	if h == nil || h.Name == "" {
+		return "your host"
+	}
+	return "your host " + h.Name
 }
 
 // CreateRefusedPrefix begins the last_error of a project whose create the

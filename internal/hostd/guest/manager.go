@@ -587,6 +587,13 @@ type Deps struct {
 	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a
 	// Mac.
 	RestBySave func(ctx context.Context, id string) bool
+	// RestSaveAfter is how long a guest rests by pause before it is
+	// saved (SaveRests), so a short idle wakes in a resume and only a
+	// long one pays a restore (DECISIONS I-1682, the conductor's two-step
+	// rest); 0 saves at the pause. MemoryTight, when it says true, saves
+	// at once whatever the time.
+	RestSaveAfter time.Duration
+	MemoryTight   func() bool
 	// SessionState is the Mac user's session: SessionUnlocked,
 	// SessionLocked or SessionNone, for what a guest resting as a save or
 	// a held park waits for (waitsFor, DECISIONS I-1682). Nil on every
