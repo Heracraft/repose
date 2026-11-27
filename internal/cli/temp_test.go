@@ -173,18 +173,21 @@ func TestRunWithoutRemoteNamesTheProjectAfterTheDirectory(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	f := newRunFixture(t, fake)
+	// From a terminal, a user who declines the git offer: the empty
+	// machine named after the folder (I-358). Without one the unnamed run
+	// is refused (I-1720).
+	gitInitAnswers(t, true, false)
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "job search")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	e, out, _ := freshEnv(f.env, dir)
+	e, _, _ := freshEnv(f.env, dir)
 	if err := runRun(ctx, e, RunOptions{NoAttach: true}, false); err != nil {
 		t.Fatalf("plain run outside a repo: %v", err)
 	}
-	if !strings.Contains(out.buf.String(), "Not a git repository, so nothing was synced.") {
-		t.Fatalf("stdout %q", out.buf.String())
-	}
+	// A no prints nothing more (sync.md); the unasked run's line is
+	// TestScriptedRunOutsideARepositoryCreatesNothingUnnamed's.
 	p := bySlug(listed(t, e), "job-search")
 	if p == nil || p.ExpiresAt != nil || p.RemoteURL != "" {
 		t.Fatalf("job-search = %+v in %+v", p, listed(t, e))

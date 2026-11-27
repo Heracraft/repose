@@ -70,7 +70,13 @@ func overlapMenu(r io.Reader, w io.Writer, d *dirtyTreeError) (overlapChoice, er
 			}
 			_, _ = fmt.Fprintf(w, "%c\r\n", c)
 			return overlapMachine, nil
-		case '\r', '\n', 'q', 'Q', 0x1b:
+		case 0x1b:
+			if br.Buffered() > 0 && skipEscapeSequence(br) {
+				continue // an arrow or F-key, not Esc (ENG-192)
+			}
+			_, _ = io.WriteString(w, "\r\n")
+			return overlapStop, nil
+		case '\r', '\n', 'q', 'Q':
 			_, _ = io.WriteString(w, "\r\n")
 			return overlapStop, nil
 		case 0x03:

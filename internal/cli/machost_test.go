@@ -483,3 +483,16 @@ func TestHostRunOnAD1MacSaysWhatToDo(t *testing.T) {
 		t.Errorf("host run said %q", out.String())
 	}
 }
+
+// TestFreeDiskIsInTheGBFinderShows is ENG-87: the free disk the Mac's
+// check states is in the GB that Finder and `df -H` show (10^9 bytes),
+// not GiB under the word GB. The council's volume: 48,937,352 KiB free,
+// which Finder calls 50 GB and the CLI called 46.
+func TestFreeDiskIsInTheGBFinderShows(t *testing.T) {
+	if got := gbOf(48937352 * 1024); got != 50 {
+		t.Fatalf("gbOf = %d, want 50", got)
+	}
+	if got := gbOf(9_999_999_999); got != 9 {
+		t.Fatalf("gbOf just under 10 GB = %d, want 9", got)
+	}
+}

@@ -522,3 +522,16 @@ func TestRunAgentWithoutPromptSticks(t *testing.T) {
 		t.Fatalf("the default agent: %q", l)
 	}
 }
+
+// TestMatchIDTakesTheStartOfTheShownID is ENG-218: tables show an id's
+// last eight characters, so the start of what a user sees there names the
+// snapshot, as the help says (`4 or more of its first or last
+// characters` of the id as list shows it).
+func TestMatchIDTakesTheStartOfTheShownID(t *testing.T) {
+	ids := []string{"01a20b75-85c4-7478-abfa-a7ced76189ee", "01a20b75-9999-7478-abfa-a7ce00000000"}
+	for part, want := range map[string]int{"d761": 1, "d76189ee": 1, "89ee": 1, "01a20b75": 2, "0000": 1} {
+		if got := matchID(ids, part); len(got) != want {
+			t.Errorf("matchID(%q) = %v, want %d", part, got, want)
+		}
+	}
+}

@@ -1996,6 +1996,15 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uuid.UUID]scheduler.Room) string {
 	switch h.State {
 	case "registering":
+		if !waitable(h, e.now()) {
+			// Its token is spent or expired, so it cannot join on it:
+			// "not yet" promised an outcome that will not come (ENG-59,
+			// I-1722). A host that can still join is waited for (I-1700).
+			if short {
+				return "never finished installing"
+			}
+			return "never finished installing, and its join token has expired; `repose host rm " + h.Name + "` and `repose host add` start over"
+		}
 		return "has not registered yet"
 	case "unreachable":
 		// How long it has been quiet, not just that it is: a user

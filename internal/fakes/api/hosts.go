@@ -790,6 +790,13 @@ func (f *Fake) hostPin(u *userRec, host *string, placement string) (*ownedHostRe
 func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
 	switch h.State {
 	case "registering":
+		if !f.waitableHost(h) {
+			// The api's ENG-59 words for a host that can no longer join.
+			if short {
+				return "never finished installing"
+			}
+			return "never finished installing, and its join token has expired; `repose host rm " + h.Name + "` and `repose host add` start over"
+		}
 		return "has not registered yet"
 	case "unreachable":
 		quiet := "90s"

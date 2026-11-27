@@ -190,10 +190,7 @@ func TestPlanLineAndWarnings(t *testing.T) {
 	if planLine(b) != "" || len(planWarnings(nil)) != 0 {
 		t.Fatal("a line with no plan")
 	}
-	b.Subscription = &struct {
-		Plan   string `json:"plan"`
-		Status string `json:"status"`
-	}{Plan: "solo", Status: "active"}
+	b.Subscription = &BillingSubscription{Plan: "solo", Status: "active"}
 	b.Usage.RunningGB, b.Usage.MemoryGB, b.Usage.DiskHeldGB, b.Usage.DiskGB = 8, 8, &held, 100
 	b.Usage.EgressGB, b.Usage.EgressIncludedGB = 212.04, 250
 	if got := planLine(b); got != "Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress this month" {
@@ -225,10 +222,7 @@ func TestPlanLineAndWarnings(t *testing.T) {
 func TestPlanLineIsEmptyOnOwnHardware(t *testing.T) {
 	held := 612.5
 	b := &Billing{}
-	b.Subscription = &struct {
-		Plan   string `json:"plan"`
-		Status string `json:"status"`
-	}{Plan: "own", Status: "active"}
+	b.Subscription = &BillingSubscription{Plan: "own", Status: "active"}
 	b.Plans = append(b.Plans, struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`

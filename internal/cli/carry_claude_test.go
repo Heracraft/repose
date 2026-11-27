@@ -101,7 +101,15 @@ func TestClaudeSettingsMergeGolden(t *testing.T) {
 		}
 		t.Run(c.Name(), func(t *testing.T) {
 			src := filepath.Join("testdata", "claude-merge", c.Name())
-			home := t.TempDir()
+			// A short home, as the guest's /home/dev is: the merge cuts a
+			// dropped hook's line at 100 characters, and a long TMPDIR
+			// (nix develop's /tmp/rt/nix-shell.*) cut the golden's
+			// command short (ENG-209).
+			home, err := os.MkdirTemp("/tmp", "cm")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(home) })
 			settings := filepath.Join(home, ".claude", "settings.json")
 			if err := os.MkdirAll(filepath.Dir(settings), 0o700); err != nil {
 				t.Fatal(err)
