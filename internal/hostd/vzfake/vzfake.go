@@ -12,6 +12,9 @@
 //     launcher exits 3 with "permission denied" (I-1662, n=5 on the lab
 //     Mac);
 //   - a save by a launcher running as root: the VM dies (I-1662);
+//   - a save while the session is locked: it fails and the VM dies with it
+//     (measured on the lab Mac, 2026-11-27, against I-1662's "saves work
+//     locked");
 //   - a resize of a running VM's disk: VZ cannot resize an attached disk
 //     (I-1666);
 //   - a pause of a VM that is not running, a resume of one that is not
@@ -40,6 +43,7 @@ const (
 	ErrResizeDisk = "resize of a running VM's disk is not supported on this host"
 	ErrNoSave     = "no repose-vm.json in the restore directory"
 	ErrLocked     = "permission denied" // VZ's restore error under a locked session
+	ErrSaveLocked = "Internal Virtualization error. The virtual machine stopped unexpectedly."
 )
 
 // VM states as vm.info reports them (main.swift stateName).
@@ -128,6 +132,12 @@ func (h *Host) State(sock string) string {
 		return v.state
 	}
 	return ""
+}
+
+func (h *Host) isLocked() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.locked
 }
 
 func (h *Host) record(s string) {
@@ -337,6 +347,15 @@ func (h *Host) handler(v *vm) http.Handler {
 			}
 			if s := h.stateOf(v); s != Paused {
 				h.fail(w, verb, 500, "the VM must be paused to snapshot, it is "+s)
+				return
+			}
+			if h.isLocked() {
+				// A save on a locked session fails, and VZ can take the
+				// VM with it (d2-core on the lab Mac, 2026-11-27 02:42Z:
+				// "Internal Virtualization error. The virtual machine
+				// stopped unexpectedly", the machine's memory lost).
+				h.fail(w, verb, 500, ErrSaveLocked)
+				h.end(v.sock, ExitError)
 				return
 			}
 			if asRoot {

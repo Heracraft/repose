@@ -155,3 +155,24 @@ func TestRestoreNeedsTheUnlockedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A save on a locked session fails and ends the VM (lab Mac, 2026-11-27).
+func TestSaveOnALockedSessionEndsTheVM(t *testing.T) {
+	h, e, dir := host(t)
+	sock := filepath.Join(dir, "ch.sock")
+	if err := h.Start([]string{"--api-socket", sock}); err != nil {
+		t.Fatal(err)
+	}
+	c := &ch.HTTP{}
+	if err := c.Pause(context.Background(), sock); err != nil {
+		t.Fatal(err)
+	}
+	h.SetLocked(true)
+	err := c.Snapshot(context.Background(), sock, filepath.Join(dir, "s"))
+	if err == nil || !strings.Contains(err.Error(), "stopped unexpectedly") {
+		t.Fatalf("locked save: %v", err)
+	}
+	if code := e.wait(t, sock); code != ExitError {
+		t.Fatalf("exit %d", code)
+	}
+}

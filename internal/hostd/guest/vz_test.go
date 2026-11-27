@@ -313,3 +313,27 @@ func TestVZHeldMachineStoppedBeforeTheUnlockStaysStopped(t *testing.T) {
 		})
 	}
 }
+
+// What a park on a locked session costs when hostd tries it: VZ's save
+// fails and the VM ends, so the machine's memory is gone. This records the
+// fake's refusal through the manager; hostd's own guard against trying is
+// the darwin CanPark (d2-core).
+func TestVZParkOnALockedSessionLosesTheVM(t *testing.T) {
+	// Red on design2 at d7128eb6: the park waits 120 s for the dead VM and
+	// leaves a record behind (d2-core's 02:42Z finding on the lab Mac, which
+	// d2-core is fixing in park.go). Drop this skip with that fix.
+	t.Skip("d2-core: a failed save leaves a park record (design2-build.log 02:42Z)")
+	vh := newVZHarness(t)
+	vh.create(gid1)
+	vh.lock(true)
+	r := vh.parkOne(gid1)
+	if r.OK {
+		t.Fatalf("a park on a locked session succeeded: %+v", r)
+	}
+	if vh.record(gid1) != nil {
+		t.Fatal("a failed park left a record")
+	}
+	if n := vh.vz.Count("PUT vm.snapshot"); n != 1 {
+		t.Fatalf("saves tried: %d", n)
+	}
+}
