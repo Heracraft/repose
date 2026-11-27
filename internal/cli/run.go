@@ -1013,6 +1013,9 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		_, err := ensureCert(ctx, e.Client, params, nil)
 		return err
 	}))
+	if errors.Is(err, errHostOffline) {
+		return sshTarget{}, offlineError(ctx, e, project)
+	}
 	if err != nil {
 		return sshTarget{}, err
 	}
@@ -1318,6 +1321,45 @@ func attachNamedCommand(slug, extra, window string) string {
 const attachTTYGuard = `[ -t 0 ] || { echo 'Attaching needs a terminal, and this command has none.' >&2; exit 1; }
 `
 
+// The gateway's banners the CLI acts on (internal/gateway/server.go).
+const (
+	gatewayResting  = " is resting and wakes once you "
+	gatewayOffline  = " is on a host the control plane cannot reach right now"
+	gatewayNotReady = " is not accepting connections yet"
+)
+
+// errHostOffline is an ssh the gateway refused because the machine's host
+// does not answer; the caller says which host (offlineError).
+var errHostOffline = errors.New("host offline")
+
+// gatewayFinal is the gateway's banner line in ssh's stderr that holds
+// marker, "" when there is none.
+func gatewayFinal(stderr, marker string) string {
+	for _, l := range strings.Split(stderr, "\n") {
+		if l = strings.TrimSpace(l); strings.Contains(l, marker) {
+			return strings.TrimSuffix(l, ".")
+		}
+	}
+	return ""
+}
+
+// offlineError is what a user reads when the machine's host is offline
+// (review pass 2, P1-2): the host by name and the one thing to do.
+func offlineError(ctx context.Context, e *Env, p *Project) error {
+	who := "Its host"
+	if p.HostName != "" {
+		who = "Your host " + p.HostName
+		if hs, err := e.Client.ListHosts(ctx); err == nil {
+			for _, h := range hs {
+				if h.Name == p.HostName && (h.Arch == "aarch64" || h.Arch == "arm64") {
+					who = "Your Mac " + p.HostName
+				}
+			}
+		}
+	}
+	return exitf(ExitGeneric, "%s is offline.\nWake it or turn it on; %s answers again once it is back.", who, p.Slug)
+}
+
 // waitForSSH is step 4: `ssh <target> true` until it answers, for up to
 // sshWaitTimeout. onRefused is offered each ssh failure and returns true
 // when it changed something worth an immediate retry (a re-issued
@@ -1349,6 +1391,18 @@ func waitForSSH(ctx context.Context, t sshTarget, wait time.Duration, slow func(
 				return exitf(ExitGeneric, "%s", strings.TrimSpace(fmt.Sprintf("ssh on this laptop failed before it reached %s: %s. %s", targetName(t), sshStderrDetail(se.Stderr), fix)))
 			}
 		}
+		if se != nil {
+			// The gateway's answer for a machine that waits for its Mac
+			// to be unlocked, or for an offline host, is final: waiting
+			// out the minute changed nothing and then said "did not
+			// answer ssh", which was false (review pass 2, P1-2).
+			if line := gatewayFinal(se.Stderr, gatewayResting); line != "" {
+				return exitf(ExitGeneric, "%s.", line)
+			}
+			if gatewayFinal(se.Stderr, gatewayOffline) != "" {
+				return errHostOffline
+			}
+		}
 		if se != nil && onRefused != nil {
 			retry, err := onRefused(se)
 			if err != nil {
@@ -1359,10 +1413,12 @@ func waitForSSH(ctx context.Context, t sshTarget, wait time.Duration, slow func(
 			}
 		}
 		if time.Now().After(deadline) {
-			msg := fmt.Sprintf("%s is running but did not answer ssh in %d s.", targetName(t), int(wait.Seconds()))
+			msg := fmt.Sprintf("%s did not answer in %d s.", targetName(t), int(wait.Seconds()))
 			if se != nil {
-				if detail := sshStderrDetail(se.Stderr); detail != "" {
-					msg += " Last error from ssh: " + detail
+				// The gateway's "not accepting connections yet" names an
+				// internal noun and adds nothing to the line above.
+				if detail := sshStderrDetail(se.Stderr); detail != "" && !strings.Contains(detail, gatewayNotReady) {
+					msg += " ssh said: " + detail
 				}
 			}
 			return exitf(ExitGeneric, "%s", msg)

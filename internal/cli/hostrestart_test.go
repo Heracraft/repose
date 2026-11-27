@@ -7,9 +7,12 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
 // fakeHostd answers hostd's control socket's park and unpark with fixed
@@ -172,5 +175,49 @@ func TestHostRmRefusesABadNameBeforeAsking(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || strings.Contains(err.Error(), "confirmation") || !strings.Contains(err.Error(), "NAME must match") {
 		t.Errorf("host rm of a bad name: %v", err)
+	}
+}
+
+// Review pass 2, P2-1: `repose host restart` parked through the Mac's own
+// socket, so the api never knew the Mac was restarting and `repose
+// status` called the machines broken and offered `repose start`. Logged
+// in, it restarts through the api, which then reads them parked.
+func TestHostRestartGoesThroughTheAPI(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var errOut bytes.Buffer
+	e.ErrOut = &errOut
+	fake.AddOwnedHost("mac-mini")
+	fake.SetOwnedHostRestart("mac-mini", true, nil, false)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "api", Class: "small"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock, calls := fakeHostd(t, nil, nil)
+	restarted := restartWith(t, sock)
+	root := t.TempDir()
+	macFS = func(path string) string { return filepath.Join(root, path) }
+	t.Cleanup(func() { macFS = func(p string) string { return p } })
+	_ = os.MkdirAll(filepath.Join(root, macHostPaths.Root), 0o755)
+	_ = os.WriteFile(filepath.Join(root, macHostPaths.Record()), []byte(`{"host":"mac-mini"}`), 0o644)
+
+	if err := HostRestartCmd(ctx, e, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 0 || *restarted {
+		t.Errorf("the restart went through the Mac's socket too: calls %v, restarted %v", *calls, *restarted)
+	}
+	if !strings.Contains(errOut.String(), "Parked 1 machines") {
+		t.Errorf("stderr %q", errOut.String())
+	}
+	q, err := e.Client.GetProject(ctx, p.ID)
+	if err != nil || q.Parked == nil || q.Parked.WaitsFor != "restart" {
+		t.Errorf("after the restart the api reads %+v, want parked waits_for restart", q.Parked)
+	}
+	out := parkedLine(q)
+	if out != "parked; mac-mini is restarting, and its memory is kept." {
+		t.Errorf("status line %q", out)
 	}
 }

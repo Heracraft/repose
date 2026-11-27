@@ -401,7 +401,7 @@ func TestSlowSSHShowsConnecting(t *testing.T) {
 	target := sshTarget{Args: []string{"-o", "ConnectTimeout=1", "-p", "1", "127.0.0.1"}}
 	err := waitForSSH(context.Background(), target, 1500*time.Millisecond, slow, nil)
 	done()
-	if err == nil || !strings.Contains(err.Error(), "did not answer ssh in 1 s") {
+	if err == nil || !strings.Contains(err.Error(), "did not answer in 1 s") {
 		t.Fatalf("err %v", err)
 	}
 	if got := errOut.String(); got != "Connecting to todo-app...\n" {

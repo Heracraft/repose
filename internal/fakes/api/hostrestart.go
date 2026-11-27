@@ -77,6 +77,17 @@ func (f *Fake) restartHost(w http.ResponseWriter, r *http.Request) *apiError {
 			o.Error = "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."
 		}
 		o.errCode = "not_parked"
+	} else {
+		// A done restart is what the real api reads the Mac as
+		// restarting from (hostRestartingSince): its running machines
+		// read parked, waits_for restart, until they report again.
+		t := f.now()
+		h.RestartingSince = &t
+		for _, p := range f.projects {
+			if p.HostID == h.ID && p.State == "running" {
+				p.Parked = &Parked{Since: t, WaitsFor: "restart"}
+			}
+		}
 	}
 	f.ops[o.id] = o
 	writeJSON(w, http.StatusAccepted, map[string]string{"op_id": o.id})

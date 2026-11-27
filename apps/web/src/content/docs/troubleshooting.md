@@ -53,7 +53,11 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`repose gateway: gateway busy`.** The gateway is at its limit for connections being set up, which has nothing to do with your account or your certificate. Connect again.
 
-**`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead. If the line under it says the machine is frozen, read the frozen entry below first: a stop there ends processes that are still running.
+**`todo-app is resting and wakes once you unlock mac-mini; its memory is kept.`** `repose exec`, `repose attach` and plain `ssh` say this at once for a machine your Mac keeps saved while its screen is locked. Unlock the Mac and run the command again.
+
+**`Your Mac mac-mini is offline.`**, then `Wake it or turn it on; todo-app answers again once it is back.` The Mac is asleep, turned off or off the network; the machine is kept as it was.
+
+**`todo-app did not answer in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead. If the line under it says the machine is frozen, read the frozen entry below first: a stop there ends processes that are still running.
 
 ## Machine state
 
@@ -115,7 +119,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`Waiting for your Mac (mac-mini) to finish installing.`**, **`Your Mac mac-mini never finished installing.`** (then `Remove it and add it again: repose host rm mac-mini, then repose host add`) (or `repose host ls` stays `waiting`). A new project waits for the host to join and starts there when it does; once the host's join token has expired, new machines are refused with exit code 8 instead. On a Mac, `repose host add` waits for the join and says when it has not happened after 3 minutes; read `/Library/Logs/repose/hostd.log`. The Mac needs outbound UDP 51820 and TCP 443, and its join token expires after 24 hours. To start over, run `repose host rm mac-mini` (on the Mac this removes repose from it too), then `repose host add`. On a hosted plan, `repose run --host repose` creates a project on repose's servers meanwhile ([Where a project runs](/docs/api#where-a-project-runs)).
 
-**`Your Mac mac-mini is full.`**, then `Stop api there, or run it on repose's servers: repose run --host repose` (or **`is out of disk space: 40 GB free, 61 GB needed`**). Your host is full, and nothing was created or started. For memory, stop a machine on that host with `repose stop`; the line names the machines running there, and offers repose's servers when your plan runs machines there. For disk, a stop frees nothing: `repose rm` frees a machine's disk, and its final snapshot, compressed, stays on the host's disk for 30 days. With several hosts, the sentence names each one and what it has.
+**`Your Mac mac-mini is full.`**, then `Stop api there, or run it on repose's servers: repose run --host repose` (or **`Your Mac mac-mini is full: api and web are resting there and hold its memory.`**, then `Stop one of them`, while its screen is locked) (or **`is out of disk space: 40 GB free, 61 GB needed`**). Your host is full, and nothing was created or started. For memory, stop a machine on that host with `repose stop`; the line names the machines running there, and offers repose's servers when your plan runs machines there. For disk, a stop frees nothing: `repose rm` frees a machine's disk, and its final snapshot, compressed, stays on the host's disk for 30 days. With several hosts, the sentence names each one and what it has.
 
 **`Your host box is running as many machines as it can.`**, then `Stop api or web there`, followed for a new machine by `, or run it on repose's servers: repose run --host repose` when your plan runs machines there. Nothing was created or started. A Mac never refuses a machine for its cores: it starts it with fewer ([What fits](/docs/own-hardware#what-fits-on-a-mac)). A machine listed there may be one that is [not answering](#machine-state); `repose ls` says so.
 
