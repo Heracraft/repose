@@ -65,7 +65,7 @@ The checkouts share one machine, so they share these:
 
 - Secrets, tool logins and settings. Every checkout sees the machine's secrets.
 - Your git identity. If your laptop picks a different email per folder (an `includeIf` for work repositories), the machine has the one from the folder you ran in last.
-- The machine's configuration: what [`repose config add`](/docs/config) installed is there for every checkout. An `.envrc` [dev environment](/docs/machine#the-projects-dev-environment) still loads per folder.
+- What you installed with `apt-get`: it is there for every checkout. An `.envrc` [dev environment](/docs/machine#the-projects-dev-environment) still loads per folder.
 - Ports. Two dev servers on port 3000 collide; give one another port.
 - Disk and snapshots. The checkouts fill one disk, `repose snapshots restore` rolls every one of them back, and `repose rm` destroys them all.
 - One record of the `.env` files last sent. Running in two folders by turns sends each set again.

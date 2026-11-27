@@ -79,6 +79,14 @@
 
 	function expiry(s: Snapshot): string {
 		if (s.gone_with_host) return `gone with removed host ${s.gone_with_host}`;
+		// A temporary machine is destroyed with no snapshot (I-347), so its
+		// snapshots go with it: the machine's end is theirs unless their
+		// own comes first (ENG-50).
+		const end = project.expires_at;
+		if (end && (!s.expires_at || Date.parse(end) <= Date.parse(s.expires_at))) {
+			const left = timeUntil(end);
+			return left ? `with the machine, in ${left}` : 'with the machine';
+		}
 		if (!s.expires_at) return 'kept';
 		const left = timeUntil(s.expires_at);
 		return left ? `in ${left}` : 'expired';
@@ -134,7 +142,9 @@
 							<span class="sub block sm:hidden"
 								>{bytes(s.bytes)} · {s.reason} ·
 								<span title={s.expires_at ? dateTime(s.expires_at) : undefined}
-									>{s.expires_at && !s.gone_with_host ? `expires ${expiry(s)}` : expiry(s)}</span
+									>{s.expires_at && !s.gone_with_host && !project.expires_at
+										? `expires ${expiry(s)}`
+										: expiry(s)}</span
 								></span
 							>
 						</td>

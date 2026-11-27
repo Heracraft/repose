@@ -232,6 +232,8 @@ func plainLines(reason, alt string) string {
 	what, action, _ := strings.Cut(strings.TrimSuffix(strings.TrimSpace(reason), "."), ". ")
 	out := capitalFirst(what) + "."
 	switch {
+	case action != "" && alt != "" && strings.Contains(action, "repose "):
+		// The action is a command already: one command a line.
 	case action != "" && alt != "":
 		action = strings.TrimSuffix(action, ".") + ", or " + alt
 	case alt != "":

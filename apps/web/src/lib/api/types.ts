@@ -315,6 +315,10 @@ export interface Project {
 	 * waits for the Mac's user to log in: its memory is kept and it runs
 	 * again at the login (I-1672). Never with not_answering. */
 	parked?: { since: string; waits_for: string } | null;
+	/** Set while the project's create waits for a host of the account's
+	 * own to finish installing (I-1700): the machine starts there once it
+	 * registers. `provider` is `mac` for a Mac added from that Mac. */
+	waiting_for_host?: { name: string; provider: string } | null;
 	/** On a running machine of a host that sizes each start (a Mac), the
 	 * size its VM got and its size with the host to itself (I-1680). */
 	vm?: {
@@ -522,22 +526,6 @@ export interface Revision {
 	created_at: string;
 	status: 'building' | 'applied' | 'failed';
 	error?: string;
-}
-
-export interface CatalogOption {
-	id: string;
-	type: string;
-	values: string[];
-	default: string;
-}
-
-export interface CatalogItem {
-	id: string;
-	label: string;
-	group: string;
-	kind: 'service' | 'package' | 'agent' | 'runtime';
-	description: string;
-	options?: CatalogOption[];
 }
 
 /** One delivery a provider made to a webhook route (DECISIONS I-1110). */

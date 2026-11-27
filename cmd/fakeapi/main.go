@@ -315,6 +315,26 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 	// column reads (I-567). The create leaves every machine at 1 GiB
 	// used, the narrowest figure that column draws, so a test about how
 	// wide it has to be needs this (ENG-24).
+	// {project_id, name, deliveries: [{status, outcome, minutes_ago}]}:
+	// deliveries to a webhook route, oldest first (ENG-56).
+	mux.HandleFunc("POST /webhook-deliveries", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID  string `json:"project_id"`
+			Name       string `json:"name"`
+			Deliveries []struct {
+				Status     int    `json:"status"`
+				Outcome    string `json:"outcome"`
+				MinutesAgo int    `json:"minutes_ago"`
+			} `json:"deliveries"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, d := range body.Deliveries {
+			f.AddDelivery(body.ProjectID, body.Name, api.WebhookDelivery{At: time.Now().Add(-time.Duration(d.MinutesAgo) * time.Minute).UTC(), Status: d.Status, Outcome: d.Outcome, DurationMs: 40, BytesIn: 512, BytesOut: 64})
+		}
+	})
 	mux.HandleFunc("POST /disk", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			ProjectID string `json:"project_id"`

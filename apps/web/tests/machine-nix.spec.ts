@@ -3,7 +3,9 @@
 // laptop since is not overwritten, and each project's Config tab has the
 // opt-out switch.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, cleanSlate } from './helpers';
+
+cleanSlate();
 
 async function putPersonal(fragment: string) {
 	const res = await fetch(`${apiURLFromEnv()}/me/config`, {

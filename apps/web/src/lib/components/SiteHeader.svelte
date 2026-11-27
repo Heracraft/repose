@@ -45,10 +45,13 @@
   rail beside the page, or the strip under this header below 1024px
   (DashRail, I-841).
 -->
+<!-- eslint-disable svelte/no-navigation-without-resolve -- the logo is resolve() with a query appended -->
 <header class="site-header">
 	<div class="frame flex h-14 items-center justify-between gap-4">
+		<!-- ?home: the landing on purpose, not the dashboard a signed-in
+		     visitor to / is sent to (app.html, ENG-239). -->
 		<a
-			href={resolve('/')}
+			href={`${resolve('/')}?home`}
 			aria-label="repose, home"
 			class="-m-2 flex shrink-0 items-center self-center p-2 focus-visible:-outline-offset-2"
 			><span class="sm:hidden"><Logo size="sm" mark word={false} divide={onLanding} /></span><span

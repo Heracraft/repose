@@ -4,7 +4,9 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os/exec"
+	"strings"
 )
 
 const keychainService = "repose"
@@ -28,7 +30,19 @@ var keychainGet = func(account string) (string, bool) {
 
 var keychainSet = func(account, value string) error {
 	_ = keychainDelete(account) // add-generic-password does not overwrite by default
-	return exec.Command("security", "add-generic-password", "-s", keychainService, "-a", account, "-w", value, "-U").Run()
+	// The value on stdin, never in argv, where ps shows it (ENG-275).
+	cmd := exec.Command("security", keychainAddArgs()...)
+	cmd.Stdin = strings.NewReader(keychainAddStdin(keychainService, account, value))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return err
+	}
+	// `security -i` can exit 0 when the command inside it failed, so the
+	// write is read back.
+	if got, ok := keychainGet(account); !ok || got != value {
+		return errors.New("security: the login was not saved in the Keychain: " + string(bytes.TrimSpace(out)))
+	}
+	return nil
 }
 
 var keychainDelete = func(account string) error {

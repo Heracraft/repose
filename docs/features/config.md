@@ -1,5 +1,11 @@
 # Config
 
+> Since DECISIONS I-1698, `repose config add` is refused on an Ubuntu
+> machine and the dashboard has no menu: software is installed on the
+> machine with apt-get, and an earlier menu's entries are kept and listed
+> read-only. What follows describes the Nix runtime, where `config add`
+> still works, hidden.
+
 A project's environment is the platform base plus the user's own Nix
 fragment. Users who write Nix write the fragment; everyone else picks from a
 menu that generates the same fragment. Either way the result is a NixOS

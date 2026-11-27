@@ -10,8 +10,11 @@ import {
 	destroyProject,
 	setResting,
 	stopProject,
-	failNext
+	failNext,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
 
@@ -248,9 +251,10 @@ test.describe('on Windows', () => {
 		try {
 			await page.goto(`/projects/${p.id}`);
 			const card = page.locator('section[aria-labelledby="connect-title"]');
-			await expect(
-				card.getByText("Claude Desktop on Windows can't reach a machine yet")
-			).toBeVisible();
+			// One sentence: no flex gap round the link (ENG-233).
+			const line = card.getByText("Claude Desktop on Windows can't reach a machine yet");
+			await expect(line).toBeVisible();
+			expect(await line.evaluate((el) => getComputedStyle(el).display)).toBe('block');
 			await expect(card.getByRole('link', { name: 'Windows' })).toHaveAttribute(
 				'href',
 				'/docs/ssh-and-editors#windows'

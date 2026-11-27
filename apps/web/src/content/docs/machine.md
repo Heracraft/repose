@@ -39,7 +39,7 @@ and shows what it uses instead.
 - **Build tools:** gcc, g++, make, cmake and pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client, with `pg_config` and `mysql_config` on `PATH`, so native gems like `pg`, `mysql2` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`; neither needs `sudo`. Images, containers and volumes stay through a [base update](#base-updates).
 - **Browser:** Chromium, with fonts for Chinese, Japanese and Korean text and colour emoji. The [agents drive it](#browser).
-- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, [mise](https://mise.jdx.dev), sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config#the-menu)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
+- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, [mise](https://mise.jdx.dev), sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [run one in Docker](/docs/config#databases)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 The shell is bash with the starship prompt. `man` has the pages of the installed tools. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines.
 
@@ -78,7 +78,7 @@ sudo apt install ffmpeg
 
 Typing `repose` gets its own answer: the CLI runs on your laptop, and this machine's commands are `repose-ask`, `repose-notify` and `repose-checkout`.
 
-What you install with `apt-get` is recorded on the machine's disk and installed again after a [base update](#base-updates), as is everything added with [`repose config add`](/docs/config#add-a-package). What `mise`, npm, go, cargo and uv put in `/home/dev` stays as it is.
+What you install with `apt-get` is recorded on the machine's disk and installed again after a [base update](#base-updates). What `mise`, npm, go, cargo and uv put in `/home/dev` stays as it is.
 
 ## Your laptop's tools come along
 
@@ -207,7 +207,7 @@ Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
 
 Your browser reads the password after the link's `#` and never sends it anywhere. The agent's browser tools use whatever you log into there. Text you copy on the machine lands on your clipboard, and `Ctrl+V` (`Cmd+V` on a Mac) in the page, or its paste button, pastes your clipboard on the machine. If no agent has used the browser yet, the command starts it.
 
-The dashboard shows the same browser on a project's **Browser** tab, with no forward and no password; clicks and keys go to the machine as they do here. That view stops after two minutes with a still screen, after four hours, or after 2 GB of frames, and **Resume view** starts it again. It keeps the machine out of its [freeze](/docs/lifecycle#frozen-machines) while the screen is moving, and its frames don't count against your [egress allowance](/docs/limits). Clipboards are not joined on that path: under the screen, **Paste into the machine** sends what you put in the field, and **Copied in the machine** shows what the machine copied, to copy out with the button beside it. `repose browser`'s own view joins them instead, because it runs through your SSH forward and not through repose.
+The dashboard shows the same browser on a project's **Browser** tab, with no forward and no password; clicks and keys go to the machine as they do here. That view stops after two minutes with a still screen, after four hours, or after 2 GB of frames, and **Resume view** starts it again. It keeps the machine out of its [freeze](/docs/lifecycle#frozen-machines) while the screen is moving, and its frames don't count against your [egress allowance](/docs/limits). Clipboards are not joined on that path: under the screen, **Paste into the machine** sends what you put in the field, and **Copied in the machine** shows what the machine copied, to copy out with the button beside it. Ctrl+V or Cmd+V on the screen pastes what you pasted into the machine's focused field. **Full screen**, at the screen's corner, shows the view alone; Esc leaves it. `repose browser`'s own view joins them instead, because it runs through your SSH forward and not through repose.
 
 `repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser stops after 10 minutes with no browser call and nobody watching, once every agent is finished or waiting on you, or after 30 minutes while an agent is working. The next call starts it again with the same tabs and logins; each page reloads. An agent that has a browser tool open but isn't using it doesn't count: the machine watches for browser calls, not an open connection, so a browser nobody is driving stops and the machine can [freeze](/docs/lifecycle#frozen-machines) as usual.
 
@@ -266,7 +266,7 @@ A new base keeps:
 - Docker's images, containers and volumes;
 - the services' data under `/var/lib/repose/services`.
 
-The machine then installs again what you added with `repose config add` and what you installed with `apt-get`. Everything else outside those starts clean: files under `/usr/local` and `/opt`, and edits to `/etc`. Put what must stay in `/home/dev`, or install it with `repose config add`.
+The machine then installs again what you installed with `apt-get`. Everything else outside those starts clean: files under `/usr/local` and `/opt`, edits to `/etc`, and what a database server installed with `apt-get` keeps under `/var/lib` ([run one in Docker](/docs/config#databases)). Put what must stay in `/home/dev` or in Docker.
 
 ## Changing the size
 
@@ -278,4 +278,4 @@ While the machine runs, its size counts toward [the memory your plan runs at onc
 
 ## Older machines
 
-Projects created before the Ubuntu base run NixOS and keep working as before, their `repose.nix`, machine.nix and `repose config edit` included, until they are migrated.
+Projects created before the Ubuntu base run NixOS and keep working as before, their `repose.nix`, machine.nix, `repose config edit` and `repose config add` included, until they are migrated.

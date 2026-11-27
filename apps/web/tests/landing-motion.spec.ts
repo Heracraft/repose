@@ -4,6 +4,9 @@
 // keyboard toggling and scroll persistence, and stops completely under
 // `prefers-reduced-motion: reduce`. `?hero=orbitv1` keeps its gallery contract.
 import { test, expect } from '@playwright/test';
+import { cleanSlate } from './helpers';
+
+cleanSlate();
 
 const frames = '.pic-frame';
 

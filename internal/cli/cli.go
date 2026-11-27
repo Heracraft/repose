@@ -1285,9 +1285,10 @@ func readSecretValue(name, fromFile string, fromEnv bool) ([]byte, error) {
 }
 
 func newConfigCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "config", Short: "Add packages and services to the machine",
-		Long: `Add packages and services to the machine. Alone, print its configuration:
-the project's repose.nix on a Nix machine, the menu on an Ubuntu one.
+	root := &cobra.Command{Use: "config", Short: "Show the machine's configuration and its revisions",
+		Long: `Show the machine's configuration and its revisions. Alone, print it: the
+project's repose.nix on a Nix machine, what an older menu holds on an Ubuntu
+one. On an Ubuntu machine, install software with apt-get on the machine.
 
 With --global, each command acts on your machine.nix instead (Nix machines):
 a home-manager module every Nix machine of your account gets, kept at
@@ -1295,7 +1296,7 @@ a home-manager module every Nix machine of your account gets, kept at
 when it changed; repose config off PROJECT keeps it off one machine.
 
 The CLI's own settings are keys in ~/.config/repose/config.toml.`,
-		Example: "  repose config add gcc air\n  repose config --global add ripgrep fd\n  repose config --global edit"}
+		Example: "  repose config revisions\n  repose config apply --revision 3f2a9c1e\n  repose config --global edit"}
 	var global bool
 	root.PersistentFlags().BoolVar(&global, "global", false, "act on your machine.nix, which every NixOS machine of your account gets")
 	// globalEnv is env() with --global's refusal of a project argument.
@@ -1414,9 +1415,14 @@ The CLI's own settings are keys in ~/.config/repose/config.toml.`,
 	_ = apply.RegisterFlagCompletionFunc("revision", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return revisionIDsForCompletion(env, g.project), cobra.ShellCompDirectiveNoFileComp
 	})
+	// add and remove are hidden since DECISIONS I-1698: refused on an
+	// Ubuntu machine (remove takes an older menu's item off it for one
+	// release), kept on a Nix one and with --global for the rest of the
+	// Nix runtime's life.
 	add := &cobra.Command{
-		Use:   "add [PACKAGE...]",
-		Short: "Add menu entries or package names to the machine",
+		Use:    "add [PACKAGE...]",
+		Hidden: true,
+		Short:  "Add menu entries or package names to the machine",
 		Long: `Add packages and services to the machine.
 
 A name the dashboard's menu has (bun, postgresql, portless, ...) adds that
@@ -1440,10 +1446,6 @@ services are not available.`,
 			if err != nil {
 				return err
 			}
-			if len(args) == 0 && !global {
-				// The names the menu has, for the user who asked (I-633).
-				return ConfigMenuListCmd(cmd.Context(), e)
-			}
 			if global {
 				return GlobalPackagesCmd(cmd.Context(), e, args, true)
 			}
@@ -1452,6 +1454,7 @@ services are not available.`,
 	}
 	remove := &cobra.Command{
 		Use:        "remove PACKAGE...",
+		Hidden:     true,
 		Aliases:    []string{"rm"},
 		SuggestFor: []string{"delete"},
 		Short:      "Remove packages added with config add",

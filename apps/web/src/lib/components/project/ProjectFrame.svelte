@@ -32,7 +32,13 @@
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
 	import { tabOf } from './tabs';
 	import { splitTicks } from './ticks';
-	import { errorBannerText, offlineHostText, ownHostName, projectHostLabel } from './host';
+	import {
+		errorBannerText,
+		offlineHostText,
+		ownHostName,
+		projectHostLabel,
+		waitingForHostText
+	} from './host';
 	import ErrorView from '$lib/components/ErrorView.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
@@ -93,6 +99,8 @@
 		project ? projectHostLabel(project, projectsStore.list, ownHosts) : undefined
 	);
 	let errorReason = $derived(project ? errorBannerText(project) : '');
+	/** The create waits for the account's host to finish installing (I-1700). */
+	let waitingReason = $derived(project ? waitingForHostText(project) : '');
 	let abuseReason = $derived(project ? platformStopReason(project) : '');
 	let bootReason = $derived(project ? bootFallbackReason(project) : '');
 	/**
@@ -152,7 +160,10 @@
 		void onStop();
 	}
 
-	let stopSnapshotFirst = $state(true);
+	// Off by default on a temporary machine, whose snapshots go when it
+	// does (ENG-69); a click is the user's choice either way.
+	let snapChoice = $state<boolean | undefined>(undefined);
+	let stopSnapshotFirst = $derived(snapChoice ?? !project?.expires_at);
 
 	async function onStop() {
 		if (ctx.opBusy) return;
@@ -245,6 +256,7 @@
 			ctx.startBanner === 'payment_required' ||
 			showCapacityBanner ||
 			!!errorReason ||
+			!!waitingReason ||
 			!!project?.host_unreachable ||
 			!!abuseReason ||
 			!!bootReason ||
@@ -297,7 +309,7 @@
 			</button>
 		{:else if project?.state === 'running'}
 			<label class="hk-check snap-check">
-				<input type="checkbox" bind:checked={stopSnapshotFirst} />
+				<input type="checkbox" bind:checked={() => stopSnapshotFirst, (v) => (snapChoice = v)} />
 				Snapshot on stop
 			</label>
 			<button
@@ -419,6 +431,11 @@
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							{/if}
 						</p>
+					</div>
+				{/if}
+				{#if waitingReason}
+					<div class="hk-banner" role="status" data-testid="waiting-for-host">
+						<p>{waitingReason}</p>
 					</div>
 				{/if}
 				{#if project?.host_unreachable}

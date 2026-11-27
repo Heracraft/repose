@@ -199,10 +199,12 @@ func MintJoinTokenIn(ctx context.Context, tx db.Tx, req JoinTokenRequest) (strin
 		// sends you here, I-432), and `hosts retire` left draining set,
 		// so without this the machine would register, reach `ready` and
 		// still take no placement.
+		// provider is what the caller knows the machine is before it
+		// registers (I-1700); none keeps the row's.
 		_, err := tx.Exec(ctx, `update hosts set join_token_hash = $2, join_token_expires_at = $3,
 			registered_at = null, state = 'registering', draining = false,
-			cert_serial = null, prev_cert_serial = null
-			where id = $1`, h.ID, hash, expires)
+			cert_serial = null, prev_cert_serial = null, provider = coalesce($4, provider)
+			where id = $1`, h.ID, hash, expires, nilIfEmpty(req.Provider))
 		return token, h.ID, err
 	}
 	id := store.NewID()

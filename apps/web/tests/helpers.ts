@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import { test, type Locator, type Page } from '@playwright/test';
 import { BASE_URL } from './fixtures';
 
 /** Drives the whole fake-Logto authorization-code round trip. */
@@ -507,4 +507,21 @@ export async function setDisk(projectId: string, usedBytes: number, sizeBytes: n
 		body: JSON.stringify({ project_id: projectId, used_bytes: usedBytes, size_bytes: sizeBytes })
 	});
 	if (!res.ok) throw new Error(`/disk: ${res.status} ${await res.text()}`);
+}
+
+/**
+ * Every spec file starts from the fake's default hosts (ENG-106): none
+ * owned, and the plan's own host limit. The suite shares one fake api and
+ * one account, so a host one file leaves registering or offline made every
+ * later file's creates answer about hosts. Call it once at the top of a
+ * spec file, before its own hooks; tests/suite-hygiene.spec.ts fails a
+ * file that does not.
+ */
+export function cleanSlate(): void {
+	test.beforeAll(async () => {
+		const api = process.env.PUBLIC_API_URL;
+		if (!api) return;
+		await removeOwnedHosts(api);
+		await ownedHost({ limit: -1 });
+	});
 }

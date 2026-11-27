@@ -3,7 +3,16 @@
 // `resting` for real now, so the look is no longer behind a flag and this
 // suite, which runs the production build, guards that it shows.
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, destroyProject, setResting } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	destroyProject,
+	setResting,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

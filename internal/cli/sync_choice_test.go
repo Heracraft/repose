@@ -359,6 +359,7 @@ func TestOverlapMenuKeys(t *testing.T) {
 		"newline":           {"\n", d, overlapStop, nil},
 		"q":                 {"q", d, overlapStop, nil},
 		"Esc":               {"\x1b", d, overlapStop, nil},
+		"an arrow first":    {"\x1b[Bl", d, overlapLaptop, nil}, // ENG-192: a sequence is not Esc
 		"EOF":               {"", d, overlapStop, nil},
 		"Ctrl-C":            {"\x03", d, overlapStop, errPromptInterrupted},
 		"another key first": {"x9l", d, overlapLaptop, nil},

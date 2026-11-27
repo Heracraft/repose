@@ -10,8 +10,11 @@ import {
 	apiURLFromEnv,
 	destroyProject,
 	ownedHost,
-	removeOwnedHosts
+	removeOwnedHosts,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

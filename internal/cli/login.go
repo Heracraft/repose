@@ -140,7 +140,15 @@ func loginStatus(ctx context.Context, e *Env) error {
 	switch {
 	case me.Billing.Plan != nil && *me.Billing.Plan != "":
 		plan = planTitle(*me.Billing.Plan) + " plan"
-		if me.Billing.Status != "" && me.Billing.Status != "active" && me.Billing.Status != "exempt" {
+		charge := ""
+		if b, err := e.Client.GetBilling(ctx); err == nil {
+			charge = chargeClause(b)
+		}
+		if charge != "" {
+			// What it costs and when (ENG-39): the one CLI line that
+			// names a plan names its price too.
+			plan += ", " + charge
+		} else if me.Billing.Status != "" && me.Billing.Status != "active" && me.Billing.Status != "exempt" {
 			plan += " (" + strings.ReplaceAll(me.Billing.Status, "_", " ") + ")"
 		}
 	case me.Billing.Status == "exempt":
@@ -152,6 +160,38 @@ func loginStatus(ctx context.Context, e *Env) error {
 	}
 	_, _ = fmt.Fprintf(e.Out, "%s (%s) on %s, %s\n", me.Handle, me.Email, hostOf(e.Cfg.APIURL), plan)
 	return nil
+}
+
+// chargeClause is what the subscription costs next and when, from GET
+// /billing: "trial until 2026-12-04, then $39", "next charge $39 on
+// 2026-12-04", "ends 2026-12-04" for one cancelled; "" when the api says
+// none of it.
+func chargeClause(b *Billing) string {
+	s := b.Subscription
+	if s == nil {
+		return ""
+	}
+	day := func(t time.Time) string { return t.Local().Format("2006-01-02") }
+	switch {
+	case s.CancelAt != nil:
+		return "ends " + day(*s.CancelAt)
+	case s.Status == "trialing" && s.TrialEnd != nil:
+		if s.NextChargeCents != nil {
+			return "trial until " + day(*s.TrialEnd) + ", then " + dollars(*s.NextChargeCents)
+		}
+		return "trial until " + day(*s.TrialEnd)
+	case s.NextChargeCents != nil && s.NextBilledAt != nil:
+		return "next charge " + dollars(*s.NextChargeCents) + " on " + day(*s.NextBilledAt)
+	}
+	return ""
+}
+
+// dollars is cents as "$39" or "$39.50".
+func dollars(cents int64) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("$%d", cents/100)
+	}
+	return fmt.Sprintf("$%d.%02d", cents/100, cents%100)
 }
 
 func planTitle(p string) string {

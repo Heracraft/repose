@@ -485,8 +485,13 @@ var freeGBOf = func(dir string) int {
 	if err := unix.Statfs(dir, &st); err != nil {
 		return 0
 	}
-	return int(uint64(st.Bavail) * uint64(st.Bsize) >> 30)
+	return gbOf(uint64(st.Bavail) * uint64(st.Bsize))
 }
+
+// gbOf is bytes in whole GB of 10^9 bytes, rounded down: the unit Finder
+// and `df -H` show, so the figure a refusal states is the one a user
+// checks (ENG-87). It was GiB under the word GB, 7 percent apart.
+func gbOf(b uint64) int { return int(b / 1_000_000_000) }
 
 // ---- install ----------------------------------------------------------
 

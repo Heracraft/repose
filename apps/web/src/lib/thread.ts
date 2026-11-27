@@ -23,8 +23,11 @@ export const AGENT_KINDS = [
 
 /** How many of each half one read asks for. */
 export const THREAD_READ = 30;
-/** Items drawn before "Earlier messages". */
-export const THREAD_SHOWN = 12;
+/** Items drawn before "Earlier messages": the latest 3 (the owner,
+ * 2026-11-26, ENG-254). */
+export const THREAD_SHOWN = 3;
+/** How many more each press of "Earlier messages" draws. */
+export const THREAD_MORE = 10;
 
 /** A message's state as the thread shows it: the say's, or `sending`. */
 export type SayState = Say['state'] | 'sending';

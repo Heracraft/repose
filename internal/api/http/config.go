@@ -237,7 +237,7 @@ var menuCatalog = sync.OnceValues(menu.Load)
 
 // MsgNixConfigRetired is what a Nix file sent to an erofs machine answers
 // (DECISIONS I-1462).
-const MsgNixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services."
+const MsgNixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used. Install packages on the machine with apt-get."
 
 // putMenuErofs is PUT /config on an erofs project (DECISIONS I-1462,
 // I-1464): a menu only, nothing built. A running machine applies it in

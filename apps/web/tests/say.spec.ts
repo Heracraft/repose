@@ -16,8 +16,11 @@ import {
 	setSay,
 	signIn,
 	stopProject,
-	unfail
+	unfail,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 /** The fake's say defaults: one window `claude`, answered `delivered`, no reply. */
 async function resetSay() {
@@ -266,4 +269,28 @@ test.describe('the field at 390 on a touch screen', () => {
 			.evaluate((el) => el.getBoundingClientRect().height);
 		expect(send).toBeGreaterThanOrEqual(43.5);
 	});
+});
+
+// ENG-254: the thread shows the latest 3, and Earlier messages adds more
+// a few at a time.
+test('Messages shows the latest 3 and Earlier messages adds the rest', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'say-latest-three',
+		remote_url: 'github.com/heracraft/say-latest-three'
+	});
+	await addEvents(p.id, 15, {
+		kinds: ['agent_done'],
+		agents: ['claude'],
+		windows: ['claude'],
+		summaries: Array.from({ length: 15 }, (_, i) => `Turn ${i + 1} done.`)
+	});
+	await page.goto(`/projects/${p.id}`);
+	const items = thread(page).locator(':scope > li');
+	await expect(items).toHaveCount(3);
+	await expect(items.last()).toContainText('Turn 15 done.');
+	await convo(page).getByRole('button', { name: 'Earlier messages' }).click();
+	await expect(items).toHaveCount(13);
+	await convo(page).getByRole('button', { name: 'Earlier messages' }).click();
+	await expect(items).toHaveCount(15);
+	await expect(convo(page).getByRole('button', { name: 'Earlier messages' })).toHaveCount(0);
 });
