@@ -151,7 +151,8 @@ test.describe('signed in', () => {
 	// landing's setup tabs are the hk-tablist a visitor still meets.
 	test('forced colours mark the current tab and no other', async ({ page }) => {
 		await page.emulateMedia({ forcedColors: 'active' });
-		await page.goto('/');
+		// Signed in, / is the dashboard (I-1716); /?home is the landing.
+		await page.goto('/?home');
 		const tabs = page.getByRole('tablist', { name: 'Setup path' }).getByRole('tab');
 		await expect(tabs).toHaveCount(2);
 		const edges = await tabs.evaluateAll((els) =>
