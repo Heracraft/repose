@@ -35,7 +35,7 @@ func TestHostAddOnLinuxX86(t *testing.T) {
 		name := []string{"box", "box2"}[i]
 		out.buf.Reset()
 		errOut.buf.Reset()
-		if err := HostAddCmd(context.Background(), e, name, applianceOptions{}); err != nil {
+		if err := HostAddCmd(context.Background(), e, name); err != nil {
 			t.Fatal(err)
 		}
 		dir, _ := configDir()
@@ -93,7 +93,7 @@ func TestHostAddListRm(t *testing.T) {
 	// else, so it pipes to the machine being added.
 	fake.SetHostInstall("repose host add --join %s")
 	out.buf.Reset()
-	if err := HostAddCmd(ctx, e, "mac-mini", applianceOptions{}); err != nil {
+	if err := HostAddCmd(ctx, e, "mac-mini"); err != nil {
 		t.Fatal(err)
 	}
 	step := strings.TrimRight(out.buf.String(), "\n")
@@ -106,23 +106,23 @@ func TestHostAddListRm(t *testing.T) {
 
 	// The name is checked before any call, and a name the account has is
 	// the api's conflict in the CLI's words.
-	if err := HostAddCmd(ctx, e, "Mac Mini", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "NAME must match") {
+	if err := HostAddCmd(ctx, e, "Mac Mini"); err == nil || !strings.Contains(err.Error(), "NAME must match") {
 		t.Fatalf("bad name: %v", err)
 	}
 	fake.SetHostLimit(2)
-	if err := HostAddCmd(ctx, e, "mac-mini", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "already have a host named mac-mini") {
+	if err := HostAddCmd(ctx, e, "mac-mini"); err == nil || !strings.Contains(err.Error(), "already have a host named mac-mini") {
 		t.Fatalf("taken name: %v", err)
 	}
 	// The plan's limit is the api's number, not the CLI's. No plan sells
 	// a limit since I-1594, but an api from before it still answers one.
 	fake.SetHostLimit(1)
-	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
+	if err := HostAddCmd(ctx, e, "spare"); err == nil || !strings.Contains(err.Error(), "Your plan takes one host.") {
 		t.Fatalf("limit: %v", err)
 	}
 	// A plan that sells no host at all is 0; a figure below 0 puts the
 	// fake's default plan back, which sells any number (I-1390's knob).
 	fake.SetHostLimit(0)
-	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
+	if err := HostAddCmd(ctx, e, "spare"); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
 		t.Fatalf("no plan: %v", err)
 	}
 	fake.SetHostLimit(2)
@@ -132,7 +132,7 @@ func TestHostAddListRm(t *testing.T) {
 	fake.SetHostInstall("")
 	out.buf.Reset()
 	errOut.buf.Reset()
-	if err := HostAddCmd(ctx, e, "spare", applianceOptions{}); err != nil {
+	if err := HostAddCmd(ctx, e, "spare"); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.TrimRight(out.buf.String(), "\n"); got == "" || strings.ContainsAny(got, " \n") {
@@ -342,7 +342,7 @@ func TestHostsUnderAnAPIToken(t *testing.T) {
 	if got := out.buf.String(); !strings.Contains(got, "mac-mini") {
 		t.Fatalf("host ls under a token:\n%s", got)
 	}
-	if err := HostAddCmd(ctx, te, "spare", applianceOptions{}); err == nil || !strings.Contains(err.Error(), "log in for that") {
+	if err := HostAddCmd(ctx, te, "spare"); err == nil || !strings.Contains(err.Error(), "log in for that") {
 		t.Fatalf("host add under a token: %v", err)
 	}
 	if err := HostRmCmd(ctx, te, "mac-mini", true, nil); err == nil || !strings.Contains(err.Error(), "log in for that") {
@@ -388,7 +388,7 @@ func TestHostLsAgreesWithItsOwnJSON(t *testing.T) {
 	// the customer removed. The removed one is the whole finding.
 	live := fake.AddOwnedHost("mac-mini")
 	fake.SetHostLimit(9)
-	if err := HostAddCmd(ctx, e, "waiting-one", applianceOptions{}); err != nil {
+	if err := HostAddCmd(ctx, e, "waiting-one"); err != nil {
 		t.Fatal(err)
 	}
 	gone := fake.AddOwnedHost("old-mac")

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
+	"github.com/heracraft/repose/internal/machost"
 )
 
 // ENG-102, DECISIONS I-1614: --json is the flag an agent adds to parse
@@ -30,7 +31,7 @@ func TestHostAddJSONPrintsNoSecret(t *testing.T) {
 		if x86 {
 			name = "box-x86"
 		}
-		if err := HostAddCmd(context.Background(), e, name, applianceOptions{}); err != nil {
+		if err := HostAddCmd(context.Background(), e, name); err != nil {
 			t.Fatal(err)
 		}
 		fake.Close()
@@ -84,21 +85,19 @@ func TestHostAddJSONPrintsNoSecret(t *testing.T) {
 }
 
 func TestHostAddJSONOnAMacInstallsAndPrintsNoSecret(t *testing.T) {
-	e, _, p, _ := newBootMac(t)
+	e, _, m := newD2Mac(t)
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	e.Client = newLifecycleEnv(t, fake).Client
 	out := &discardWriter{}
 	e.Out = out
 	e.JSON = true
-	if err := HostAddCmd(context.Background(), e, "mac-mini", applianceOptions{DiskGB: 60}); err != nil {
+	if err := HostAddCmd(context.Background(), e, "mac-mini"); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(p.Argument)
-	if err != nil {
+	if _, err := os.Stat(m.mapped(machost.HostdPlist())); err != nil {
 		t.Fatalf("--json on a Mac did not install: %v", err)
 	}
-	argument := strings.TrimSpace(string(b))
 	var h map[string]any
 	if err := json.Unmarshal([]byte(out.buf.String()), &h); err != nil {
 		t.Fatalf("--json: %v: %s", err, out.buf.String())
@@ -109,7 +108,7 @@ func TestHostAddJSONOnAMacInstallsAndPrintsNoSecret(t *testing.T) {
 	if _, ok := h["join_token"]; ok {
 		t.Fatalf("join_token printed: %s", out.buf.String())
 	}
-	if _, ok := h["install"]; ok || strings.Contains(out.buf.String(), argument) {
+	if _, ok := h["install"]; ok || strings.Contains(out.buf.String(), "private_key") {
 		t.Fatalf("install printed: %s", out.buf.String())
 	}
 }

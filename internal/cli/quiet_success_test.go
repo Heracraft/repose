@@ -31,8 +31,6 @@ var quietAllowed = map[string]string{
 	"status.go:writeStatus:  repose's service on the machine is not":              "a failure that status reports",
 	"run.go:ensureRunningFrom:. `repose stop ":                                    "cut from a failed stop's reason, never printed (I-730)",
 	"run.go:createRefusal:`repose run --host ":                                    "a refusal: exit 8, the user's own host cannot take the machine, and this is the one way out (I-1390)",
-	"appliance.go:applianceStart:The appliance starts at your login, not ":        "prevents a loss: sudo refused, so a Mac restarted with nobody logged in keeps every machine off, and this is the way to the boot job (I-1564)",
-	"hosts.go:HostLsCmd:This Mac's appliance starts at your logi":                 "prevents a loss: a Mac restarted with nobody logged in keeps every machine off until someone logs in (I-1564)",
 	"hosts.go:HostRmLocalCmd:%s is still on your account, with %s. Re":            "unblocks: the removal leaves a host holding machines that have nowhere to run, and until it goes the machines cannot be destroyed and no replacement can be added (I-1440)",
 	"status.go:diskFullLine:%s; `repose resize %s %dG` grows it":                  "a full disk fails writes, a loss the user cannot undo (I-567)",
 	"lifecycle.go:destroyOne:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
@@ -79,8 +77,8 @@ var quietFailureFuncs = map[string]bool{
 	// A download that did not finish, and the install step that
 	// continues it: `repose host add` already minted the host, so the
 	// plain command would be refused by the one-host limit (ENG-117).
-	"applianceFetchFailed": true,
-	"applyScript":          true, // a shell script run on the guest, not output
+	"macInstallFailed": true,
+	"applyScript":      true, // a shell script run on the guest, not output
 	// The api's refusals as sentences, the unknown project, the project
 	// cap and a failed revoke (I-623, I-627).
 	"apiErrorExit": true, "noSuchProjectMessage": true, "projectLimitMessage": true,

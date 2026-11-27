@@ -52,7 +52,7 @@ func hostStateWord(state string) string {
 // silicon the mint is followed by the install here (I-1380); elsewhere
 // the install step is the whole of stdout, so it pipes, and what to do
 // with it is on stderr.
-func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) error {
+func HostAddCmd(ctx context.Context, e *Env, name string) error {
 	if name != "" {
 		if err := checkHostName(name); err != nil {
 			return err
@@ -62,7 +62,7 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 	// host minted and then refused is a record the retry collides with
 	// and a token nobody kept (I-1422).
 	if onAppleSilicon() {
-		if err := applianceCanInstall(e, o); err != nil {
+		if err := macHostCanInstall(e); err != nil {
 			return err
 		}
 	}
@@ -71,16 +71,10 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 		return hostErr(err, name)
 	}
 	if e.JSON {
-		return hostAddJSON(ctx, e, h, o)
+		return hostAddJSON(ctx, e, h)
 	}
 	if onAppleSilicon() {
-		argument := joinArgument(h)
-		_, _ = fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
-		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(e.ErrOut, "%s is starting and joins your account in a few minutes.\n", h.Name)
-		return nil
+		return hostInstallHere(ctx, e, h)
 	}
 	// On a Linux x86 machine the step is the installer, which makes this
 	// machine, or one the file is copied to, a host (DECISIONS I-1498).
@@ -116,6 +110,22 @@ func HostAddCmd(ctx context.Context, e *Env, name string, o applianceOptions) er
 	return nil
 }
 
+// hostInstallHere installs repose on this Mac for h, the host just
+// made. The argument goes into a file first, so a failed install names
+// a way on that keeps the key off the command line (ENG-42).
+func hostInstallHere(ctx context.Context, e *Env, h *Host) error {
+	argument := joinArgument(h)
+	if argument == "" {
+		return exitf(ExitGeneric, "%s was added, but this repose api sent nothing to install it with.", h.Name)
+	}
+	path, err := writeJoinFile(h.Name, argument)
+	if err != nil {
+		return exitf(ExitGeneric, "%s was added, but its join file could not be written: %v", h.Name, err)
+	}
+	_, _ = fmt.Fprintf(e.ErrOut, "%s: installing repose on this Mac.\n", h.Name)
+	return macHostInstall(ctx, e, argument, h.Name, path)
+}
+
 // joinArgument is the argument the install takes: the bundle the api
 // composed, or, from an api older than I-1380, the token made into one.
 func joinArgument(h *Host) string {
@@ -136,14 +146,13 @@ func joinArgument(h *Host) string {
 // progress on stderr, and the host follows on stdout. Anywhere else the
 // argument goes into a file only its owner reads, and the output names
 // the file instead.
-func hostAddJSON(ctx context.Context, e *Env, h *Host, o applianceOptions) error {
+func hostAddJSON(ctx context.Context, e *Env, h *Host) error {
 	argument := joinArgument(h)
 	out := *h
 	out.JoinToken = ""
 	out.Install = nil
 	if onAppleSilicon() {
-		_, _ = fmt.Fprintf(e.ErrOut, "%s: installing the appliance on this Mac.\n", h.Name)
-		if err := applianceInstall(ctx, e, argument, h.Name, o); err != nil {
+		if err := hostInstallHere(ctx, e, h); err != nil {
 			return err
 		}
 		return writeJSONOut(e.Out, out)
@@ -302,11 +311,10 @@ func HostLsCmd(ctx context.Context, e *Env) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
-	// On the Mac itself, the one fact the table cannot show and that
-	// costs every machine on it after a power cut: an appliance under
-	// the login agent stays off until someone logs in (ENG-187, I-1564).
-	if _, installed := localAppliance(e); installed && !bootJobInstalled() {
-		_, _ = fmt.Fprintln(e.ErrOut, "This Mac's appliance starts at your login, not when the Mac boots; `repose host boot` makes it start with nobody logged in.")
+	// On a Mac still holding design 1's appliance, which no longer runs
+	// (I-1684): the table shows its host not answering, and this is why.
+	if appliancePresent(e) {
+		_, _ = fmt.Fprintln(e.ErrOut, d1LeftLine)
 	}
 	return nil
 }
@@ -368,17 +376,28 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 	if err := e.Client.DeleteHost(ctx, h.ID); err != nil {
 		return hostErr(err, name)
 	}
-	// The Mac this runs on, when it is the one that runs h: the appliance
-	// goes with the host. A Mac that runs another host keeps it and says
-	// which; one whose appliance was added with --join has no recorded
+	// The Mac this runs on, when it is the one that runs h: repose goes
+	// with the host, disk and machines included. A Mac that runs another
+	// host keeps it and says which; one added with --join has no recorded
 	// name and keeps it too, `--local` being the way to remove that one.
+	if rec := macRecord(); rec != nil || macHostPresent() {
+		switch {
+		case rec == nil || rec.Host == h.Name:
+			// An install that never wrote its record has no name to check
+			// against h, and only `repose host add` on this Mac makes one:
+			// it was for the host that is going (ENG-118).
+			if err := macHostRemove(e); err != nil {
+				return exitf(ExitGeneric, "%s is off your account, but repose on this Mac could not be removed: %v. `repose host rm --local` tries again.", h.Name, err)
+			}
+		case rec.Host != "":
+			_, _ = fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; repose stays on it.\n", rec.Host, h.Name)
+		default:
+			_, _ = fmt.Fprintln(e.ErrOut, "This Mac's repose was added with --join and stays.")
+		}
+	}
+	// Design 1's appliance, which no longer runs (I-1684).
 	switch local, installed := localAppliance(e); {
 	case !installed && appliancePresent(e):
-		// An install that never reached its config has no name to check
-		// against h, and the only thing that makes one is `repose host
-		// add` on this Mac. The host it was for is the one going, so the
-		// bytes go with it rather than sitting where no command reached
-		// them (ENG-118).
 		if err := applianceRemove(e); err != nil {
 			return exitf(ExitGeneric, "%s is off your account, but the unfinished install on this Mac could not be removed: %v", h.Name, err)
 		}
@@ -388,10 +407,6 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 		if err := applianceRemove(e); err != nil {
 			return exitf(ExitGeneric, "%s is off your account, but the appliance on this Mac could not be removed: %v", h.Name, err)
 		}
-	case local != "":
-		_, _ = fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; its appliance stays.\n", local, h.Name)
-	default:
-		_, _ = fmt.Fprintf(e.ErrOut, "This Mac's appliance was added with --join and stays.\n")
 	}
 	// An x86 box keeps hostd, the guest pool and its disk until its
 	// installer takes them off; nothing here can reach the box to do it
@@ -416,24 +431,42 @@ func HostRmLocalCmd(ctx context.Context, e *Env, yes bool, confirm func(prompt s
 			return exitf(ExitGeneric, "There is no repose host on this machine.")
 		}
 	}
+	d2 := macHostPresent()
 	name, installed := localAppliance(e)
+	if d2 {
+		name = ""
+		if r := macRecord(); r != nil {
+			name = r.Host
+		}
+	}
 	// Present, not installed: an install that stopped before its config.
 	// It still holds the bytes, so it is still what this command is for
 	// (ENG-118).
-	if !installed && !appliancePresent(e) {
-		return exitf(ExitGeneric, "There is no appliance on this Mac.")
+	if !d2 && !installed && !appliancePresent(e) {
+		return exitf(ExitGeneric, "There is no repose host on this Mac.")
+	}
+	what := "the appliance on this Mac"
+	if d2 {
+		what = "repose on this Mac"
 	}
 	h, unread := localHostOnAccount(ctx, e, name)
 	if !yes {
 		if confirm == nil {
-			return exitf(ExitUsage, "Removing the appliance on this Mac needs a confirmation; pass --yes to skip it.")
+			return exitf(ExitUsage, "Removing %s needs a confirmation; pass --yes to skip it.", what)
 		}
-		if err := confirmOr(confirm, localRemovePrompt(name, h, unread), "Nothing removed."); err != nil {
+		if err := confirmOr(confirm, localRemovePrompt(name, h, unread, d2), "Nothing removed."); err != nil {
 			return err
 		}
 	}
-	if err := applianceRemove(e); err != nil {
-		return err
+	if d2 {
+		if err := macHostRemove(e); err != nil {
+			return exitf(ExitGeneric, "%v", err)
+		}
+	}
+	if !d2 || appliancePresent(e) {
+		if err := applianceRemove(e); err != nil {
+			return err
+		}
 	}
 	// Where both of 2026-11-20's wedges happened: the appliance gone, the
 	// host still on the account holding a machine whose destroy needs the
@@ -493,9 +526,14 @@ func localHostOnAccount(ctx context.Context, e *Env, name string) (h *Host, unre
 // many machines go with the appliance whenever the account can be read,
 // because "every machine on its disk" was true and told a customer with
 // three machines the same thing it told one with none (ENG-141).
-func localRemovePrompt(name string, h *Host, unread bool) string {
+func localRemovePrompt(name string, h *Host, unread, d2 bool) string {
 	what := "the appliance on this Mac"
-	if name != "" {
+	switch {
+	case d2 && name != "":
+		what = name + " from this Mac"
+	case d2:
+		what = "repose from this Mac"
+	case name != "":
 		what = name + "'s appliance on this Mac"
 	}
 	switch {

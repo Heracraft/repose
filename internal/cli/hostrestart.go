@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -13,12 +12,10 @@ import (
 	"github.com/heracraft/repose/internal/hostd/control"
 )
 
-// hostdControlSock is where hostd on a Mac without the appliance listens
-// (design 2, DECISIONS I-1666); a var so a test can point it elsewhere.
-var hostdControlSock = func() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".repose", "hostd.sock")
-}
+// hostdControlSock is where hostd on a Mac listens (design 2, DECISIONS
+// I-1666, I-1684: `repose host add` puts it there and gives the socket to
+// the Mac's user); a var so a test can point it elsewhere.
+var hostdControlSock = func() string { return macFS(macHostPaths.ControlSock()) }
 
 // onMac is whether this binary runs on macOS; a var for tests.
 var onMac = func() bool { return runtime.GOOS == "darwin" }
