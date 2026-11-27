@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -160,6 +161,17 @@ func connectProject(ctx context.Context, e *Env, projectArg string, start bool) 
 		if err != nil {
 			return nil, sshTarget{}, err
 		}
+	}
+	if frozen(project) {
+		// A resting machine is woken now, beside the certificate check and
+		// the ssh handshake, rather than when the gateway's first
+		// connection reaches it (DECISIONS I-1682). The gateway still
+		// wakes it if this is lost; a wake that fails says so there.
+		go func(id string) {
+			wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			_ = e.Client.WakeProject(wctx, id)
+		}(project.ID)
 	}
 	target, err := connect(ctx, e, project)
 	if err != nil {

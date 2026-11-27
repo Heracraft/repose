@@ -63,9 +63,8 @@ type MacOptions struct {
 	// 0 is the Mac's cores plus two (DECISIONS I-1666).
 	VCPUCommit uint
 	// RestBySave lets an idle machine rest as a save file, giving its
-	// memory back, instead of by pause (DECISIONS I-1682). Off by default
-	// until the owner rules on the secrets promise: a save holds the
-	// guest's memory on disk, which CLAUDE.md allows only for a host
-	// restart, encrypted, removed once read and after 6 hours.
+	// memory back, instead of by pause (DECISIONS I-1682). On by default
+	// (the owner's ruling, ENG-273): the save is encrypted by VZ, removed
+	// once read and after 6 hours, as the restart image is.
 	RestBySave bool
 }

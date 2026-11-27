@@ -549,3 +549,30 @@ func TestRestRuleCountsAHostThatDoesNotPause(t *testing.T) {
 		t.Fatal("a machine on a host that does not pause was marked resting")
 	}
 }
+
+// POST /projects/:id/wake (DECISIONS I-1682): the CLI asks for the wake
+// the moment it reads a resting machine, beside its ssh handshake; a
+// machine that is not resting answers was_resting false and nothing is
+// sent to its host.
+func TestWakeRouteWakesAFrozenMachine(t *testing.T) {
+	r := newRestingEnv(t, "wakeme")
+	res := r.e.do(t, r.tok, "POST", "/projects/"+r.p.ID.String()+"/wake", nil)
+	if res.status != 200 || res.body["was_resting"] != false {
+		t.Fatalf("awake machine: %d %s", res.status, res.raw)
+	}
+	r.e.h.Fake.SetResting(r.p.GuestID.String(), true)
+	if _, err := r.e.h.Pool.Exec(r.e.h.Ctx, "update projects set resting_since = now() where id = $1", r.p.ID); err != nil {
+		t.Fatal(err)
+	}
+	res = r.e.do(t, r.tok, "POST", "/projects/"+r.p.ID.String()+"/wake", nil)
+	if res.status != 200 || res.body["was_resting"] != true {
+		t.Fatalf("frozen machine: %d %s", res.status, res.raw)
+	}
+	if p := r.e.h.Project(r.p.ID); p.RestingSince != nil {
+		t.Fatal("still frozen after the wake")
+	}
+	other := r.e.signIn(t, "sub-wake-other", "stranger")
+	if res := r.e.do(t, other, "POST", "/projects/"+r.p.ID.String()+"/wake", nil); res.status != 404 {
+		t.Fatalf("another user's wake: %d %s", res.status, res.raw)
+	}
+}
