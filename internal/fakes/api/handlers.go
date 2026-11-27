@@ -1266,7 +1266,11 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 	for _, h := range f.ownedHosts {
 		if h.ID == p.HostID && !h.oldHostd && h.MemBytes > 0 && h.VCPUs > 0 {
 			vcpus, mem = float64(h.VCPUs), h.MemBytes
-			if h.Arch == "aarch64" {
+			switch {
+			case p.VM != nil && p.VM.VCPUs > 0:
+				// A Mac without the appliance: what the VM got (I-1692).
+				vcpus, mem = float64(p.VM.VCPUs), p.VM.MemBytes
+			case h.Arch == "aarch64":
 				// Two vCPUs each on a Mac (I-1640, I-1654).
 				vcpus = min(vcpus, 2)
 			}
