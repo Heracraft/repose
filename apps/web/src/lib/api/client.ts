@@ -33,6 +33,7 @@ import type {
 	ApiToken,
 	CreateTokenRequest,
 	OwnedHost,
+	HostOp,
 	Placement,
 	Samples,
 	SampleWindow,
@@ -373,6 +374,14 @@ export const createHost = (body: { name?: string }) =>
 	request<OwnedHost>('/hosts', { method: 'POST', body });
 export const deleteHost = (id: string) =>
 	request<void>(`/hosts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+/** Parks every machine on a Mac of the account's own, then restarts it (I-1690). */
+export const restartHost = (id: string, force = false) =>
+	request<{ op_id: string }>(`/hosts/${encodeURIComponent(id)}/restart`, {
+		method: 'POST',
+		body: { force }
+	});
+export const getHostOp = (id: string, opId: string) =>
+	request<HostOp>(`/hosts/${encodeURIComponent(id)}/ops/${encodeURIComponent(opId)}`);
 
 // Snapshots.
 export const getSamples = (id: string, window: SampleWindow) =>

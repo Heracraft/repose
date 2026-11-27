@@ -110,6 +110,14 @@ type Options struct {
 	// Arch is Hello.arch (x86_64, aarch64), which placement matches an
 	// erofs base's images against (I-1448, I-1464); "" sends none.
 	Arch string
+	// Restart puts `restart` in Hello's features and makes this fake take
+	// RestartHost, as hostd on a Mac without the appliance does
+	// (DECISIONS I-1690). Off by default, which is every Linux host: the
+	// fake then answers RestartHost invalid_argument, as hostd does there.
+	// NotParked are the guest ids its restart cannot park: the answer
+	// names them, and without force it does not restart.
+	Restart   bool
+	NotParked []string
 }
 
 // Fake is one fake host.
@@ -462,6 +470,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	if f.opts.Erofs {
 		h.Features = append(h.Features, "erofs")
 	}
+	if f.opts.Restart {
+		h.Features = append(h.Features, "restart")
+	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
 	}
@@ -655,8 +666,18 @@ func kind(cmd *hostdv1.Command) string {
 		return "SetBurst"
 	case *hostdv1.Command_DeleteSnapshot:
 		return "DeleteSnapshot"
+	case *hostdv1.Command_RestartHost:
+		return "RestartHost"
 	}
 	return ""
+}
+
+// SetNotParked sets the guest ids the next RestartHost cannot park
+// (Options.NotParked).
+func (f *Fake) SetNotParked(ids []string) {
+	f.mu.Lock()
+	f.opts.NotParked = ids
+	f.mu.Unlock()
 }
 
 // Execute runs a command synchronously, with the documented idempotency.
@@ -1126,6 +1147,28 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.draining = true
 		f.mu.Unlock()
 		return ok(nil)
+	case *hostdv1.Command_RestartHost:
+		// hostd's RestartHost (DECISIONS I-1690): refused on a host that
+		// does not restart; else every running guest parked but those
+		// in NotParked, which stop the restart unless forced.
+		if !f.opts.Restart {
+			return errResult(id, "invalid_argument", "this host does not restart through repose")
+		}
+		f.mu.Lock()
+		running := 0
+		for _, g := range f.guests {
+			if g.State == "running" {
+				running++
+			}
+		}
+		not := append([]string{}, f.opts.NotParked...)
+		f.mu.Unlock()
+		why := make([]string, len(not))
+		for i := range why {
+			why[i] = "started with nobody logged in"
+		}
+		r := &hostdv1.RestartResult{Parked: uint32(max(running-len(not), 0)), NotParked: not, NotParkedReasons: why, Restarting: len(not) == 0 || c.RestartHost.Force, ParkMs: 900}
+		return ok(func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Restart{Restart: r} })
 	case *hostdv1.Command_DeleteSnapshot:
 		// The fake keeps no files; a delete is always ok, as hostd's is
 		// for a snapshot already gone (DECISIONS I-1636).

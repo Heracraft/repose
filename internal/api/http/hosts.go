@@ -164,6 +164,13 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 		}
 		row := hostJSON(&hosts[i], projects, running, "", nil, nil)
 		row["snapshots"] = snaps
+		// A host that parks its machines before a restart says so, and
+		// the dashboard offers its Restart (I-1690).
+		if restarts, err := s.hostRestarts(r, hosts[i].ID); err != nil {
+			return err
+		} else if restarts {
+			row["can_restart"] = true
+		}
 		if err := s.hostRoom(r, &hosts[i], row); err != nil {
 			return err
 		}

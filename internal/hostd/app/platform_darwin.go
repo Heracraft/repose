@@ -272,6 +272,11 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	d.RestBySave = func(ctx context.Context, id string) bool {
 		return memoryTight(memInfo) && ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked() && lockOff(ctx)
 	}
+	// A restart through repose parks every machine, then restarts the
+	// Mac (I-1690).
+	d.RestartHost = func(ctx context.Context) error {
+		return restartMac(ctx, r, os.Getuid() == 0, session(ctx).LoggedIn, uid, u.name)
+	}
 	d.Park.CanPark = func(ctx context.Context, id string) (bool, string) {
 		if ld.Domain(ctx, guest.GuestUnit(id)) == launchd.SystemDomain {
 			return false, "started with nobody logged in"

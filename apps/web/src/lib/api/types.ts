@@ -370,6 +370,9 @@ export interface OwnedHost {
 	running_limit?: number;
 	/** Snapshots kept on its disk, which removing it deletes (I-1542). */
 	snapshots?: number;
+	/** A Mac that parks its machines before a restart, so Restart keeps
+	 * their memory (I-1690). */
+	can_restart?: boolean;
 	last_heartbeat_at?: string;
 	registered_at?: string;
 	created_at: string;
@@ -437,6 +440,13 @@ export interface RestoreResult {
 	snapshot_id: string;
 	snapshot_created_at: string;
 	from_project_id: string;
+}
+
+/** A host op (GET /hosts/:id/ops/:op_id, I-1690): a restart's answer. */
+export interface HostOp {
+	state: 'pending' | 'running' | 'done' | 'error';
+	error?: { code: string; message: string } | string;
+	result?: { parked?: number; not_parked?: string[]; restarting?: boolean; park_ms?: number };
 }
 
 export interface OpStatus {

@@ -757,6 +757,8 @@ func (f *Fake) register() {
 	f.handle("GET /v1/hosts", f.listHosts)
 	f.handle("POST /v1/hosts", f.createHost)
 	f.handle("DELETE /v1/hosts/{id}", f.deleteHost)
+	f.handle("POST /v1/hosts/{id}/restart", f.restartHost)
+	f.handle("GET /v1/hosts/{id}/ops/{op_id}", f.getHostOp)
 	f.handle("GET /v1/projects", f.listProjects)
 	f.handle("POST /v1/projects", f.createProject)
 	f.handle("GET /v1/projects/destroyed", f.listDestroyed)

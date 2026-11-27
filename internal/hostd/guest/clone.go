@@ -57,6 +57,9 @@ func (m *Manager) Features() []string {
 	if m.cfg.Owned {
 		f = append(f, FeatureShared)
 	}
+	if m.RestartOn() {
+		f = append(f, FeatureRestart)
+	}
 	return f
 }
 
