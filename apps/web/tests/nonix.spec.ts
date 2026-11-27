@@ -151,10 +151,10 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 		const dialog = page.getByTestId('host-dialog');
 		await dialog.getByLabel('Name', { exact: true }).fill('box');
 		await dialog.getByRole('button', { name: 'Add', exact: true }).click();
-		await expect(dialog.getByRole('heading', { name: 'On a Mac mini' })).toBeVisible();
+		await expect(dialog.getByRole('heading', { name: 'On a Mac', exact: true })).toBeVisible();
 		await expect(dialog.getByTestId('host-install')).toContainText('repose host add --join ');
 		await expect(dialog.getByTestId('host-mac-size')).toHaveText(
-			'It downloads about 250 MB and needs 20 GB of free disk.'
+			'It downloads about 20 MB, and the first machine about 3 GB more; it needs 10 GB of free disk.'
 		);
 		// Finding 9: what the installer takes for the machines' disks.
 		await expect(dialog.getByTestId('host-x86-disk')).toHaveText(
@@ -280,7 +280,10 @@ test('a reload or back and forward during an install shows it again', async ({ p
 			if (!hold) return route.fallback();
 			const res = await route.fetch();
 			const body = await res.json();
-			await route.fulfill({ response: res, json: { ...body, state: 'running', phase: 'apply_config' } });
+			await route.fulfill({
+				response: res,
+				json: { ...body, state: 'running', phase: 'apply_config' }
+			});
 		}
 	);
 	await page.route(
@@ -331,11 +334,8 @@ test('Resize changes the machine size, as repose resize --size does', async ({ p
 	await expect
 		.poll(
 			async () =>
-				(
-					await (
-						await fetch(`${apiURLFromEnv()}/projects/${p.id}`, { headers: auth })
-					).json()
-				).class,
+				(await (await fetch(`${apiURLFromEnv()}/projects/${p.id}`, { headers: auth })).json())
+					.class,
 			{ timeout: 15_000 }
 		)
 		.toBe('xl');

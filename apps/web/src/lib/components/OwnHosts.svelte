@@ -32,11 +32,14 @@
 	import { pollUntilDone } from '$lib/poll';
 
 	const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
-	/** The Mac image's download and the free disk it needs (I-1490). The
-	 * api's install answer carries neither, so they are the appliance's
-	 * own figures, as own-hardware.md gives them. */
-	const MAC_DOWNLOAD = 'about 250 MB';
-	const MAC_FREE_DISK = '20 GB';
+	/** What a Mac downloads and the free disk `repose host add` asks for
+	 * (I-1684): the bundle (repose-host-darwin-arm64.tar.gz, 18.3 MB), the
+	 * erofs base the first machine fetches, and the 10 GB refusal. The
+	 * api's install answer carries none of them, so they are
+	 * own-hardware.md's figures. */
+	const MAC_DOWNLOAD = 'about 20 MB';
+	const MAC_BASE = 'about 3 GB';
+	const MAC_FREE_DISK = '10 GB';
 	/** What takes repose off an x86 box again (I-1590); `repose host rm` prints it too. */
 	const X86_UNINSTALL =
 		'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall';
@@ -605,13 +608,14 @@
 					<p class="hdlg-once">
 						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
-					{#if x86Step}<h3 class="hdlg-where">On a Mac mini</h3>{/if}
+					{#if x86Step}<h3 class="hdlg-where">On a Mac</h3>{/if}
 					<div data-testid="host-install">
 						<CodeCopy command={step} what="the install step" wrap />
 					</div>
 					{#if x86Step}
 						<p class="hdlg-facts" data-testid="host-mac-size">
-							It downloads {MAC_DOWNLOAD} and needs {MAC_FREE_DISK} of free disk.
+							It downloads {MAC_DOWNLOAD}, and the first machine {MAC_BASE} more; it needs {MAC_FREE_DISK}
+							of free disk.
 						</p>
 						<h3 class="hdlg-where">On an x86 box with Ubuntu 24.04</h3>
 						<div data-testid="host-install-x86">
