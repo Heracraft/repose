@@ -974,7 +974,12 @@ func (m *Manager) startMonitor(g *state.Guest) *monitor {
 	m.monitors[g.GuestID] = mon
 	m.mu.Unlock()
 	if m.d.ConsoleStart != nil {
-		mon.stopCon = m.d.ConsoleStart(g.GuestID, m.guestDir(g.GuestID))
+		// Under mon.mu: the monitor is in m.monitors already, so a Close
+		// or a restart's stop may read stopCon now.
+		stopCon := m.d.ConsoleStart(g.GuestID, m.guestDir(g.GuestID))
+		mon.mu.Lock()
+		mon.stopCon = stopCon
+		mon.mu.Unlock()
 	}
 	go mon.run()
 	return mon
@@ -1057,8 +1062,14 @@ func (mon *monitor) stop() {
 func (mon *monitor) stopKeepConsole() func() {
 	mon.cancel()
 	<-mon.done
+	// Two stops can meet here: a launcher that ended under a running
+	// machine boots it again (RestartOnExit) and stops the old monitor
+	// while Close stops every monitor (TestVZKilledLauncherBootsAgain,
+	// a race 1 in 50). Only one of them gets the console's stop.
+	mon.mu.Lock()
 	stopCon := mon.stopCon
 	mon.stopCon = nil
+	mon.mu.Unlock()
 	return stopCon
 }
 
